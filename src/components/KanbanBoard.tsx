@@ -185,15 +185,18 @@ const SortableTaskCard: React.FC<SortableTaskCardProps> = ({ task, allTasks, onE
 
       {task.subtasks && task.subtasks.length > 0 && (
         <div className="mb-4">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] font-medium text-slate-400">Subtasks</span>
-            <span className="text-[10px] font-bold text-indigo-600">
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center gap-1.5">
+              <CheckSquare className="w-3 h-3 text-slate-400" />
+              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Progress</span>
+            </div>
+            <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
               {Math.round((task.subtasks.filter(s => s.completed).length / task.subtasks.length) * 100)}%
             </span>
           </div>
-          <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
+          <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden shadow-inner">
             <div 
-              className="h-full bg-indigo-500 rounded-full transition-all duration-300"
+              className="h-full bg-gradient-to-r from-indigo-400 to-indigo-600 rounded-full transition-all duration-500 ease-out shadow-sm"
               style={{ width: `${(task.subtasks.filter(s => s.completed).length / task.subtasks.length) * 100}%` }}
             />
           </div>
@@ -545,15 +548,18 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
               
               {activeTask.subtasks && activeTask.subtasks.length > 0 && (
                 <div className="mb-4">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] font-medium text-slate-400">Subtasks</span>
-                    <span className="text-[10px] font-bold text-indigo-600">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <CheckSquare className="w-3 h-3 text-slate-400" />
+                      <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Progress</span>
+                    </div>
+                    <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
                       {Math.round((activeTask.subtasks.filter(s => s.completed).length / activeTask.subtasks.length) * 100)}%
                     </span>
                   </div>
-                  <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
+                  <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden shadow-inner">
                     <div 
-                      className="h-full bg-indigo-500 rounded-full"
+                      className="h-full bg-gradient-to-r from-indigo-400 to-indigo-600 rounded-full"
                       style={{ width: `${(activeTask.subtasks.filter(s => s.completed).length / activeTask.subtasks.length) * 100}%` }}
                     />
                   </div>

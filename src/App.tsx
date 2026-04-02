@@ -34,6 +34,7 @@ import { CHANNELS as INITIAL_CHANNELS, INITIAL_TEMPLATES } from './constants';
 import { Channel, Message, Task, ActivityLogEntry, UserProfile, TaskTemplate, Notification } from './types';
 import { GripVertical, Loader2 } from 'lucide-react';
 import { cn } from './lib/utils';
+import { setFaviconBadge } from './lib/favicon';
 
 export default function App() {
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -43,6 +44,7 @@ export default function App() {
   const [templates, setTemplates] = useState<TaskTemplate[]>([]);
   const [teamMembers, setTeamMembers] = useState<UserProfile[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [chatWidth, setChatWidth] = useState(50); // Percentage
   const [isResizing, setIsResizing] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -243,6 +245,65 @@ export default function App() {
       setStatus('offline');
     };
   }, [user?.id]);
+
+  // Favicon Badge Logic
+  useEffect(() => {
+    setFaviconBadge(0);
+  }, []);
+
+  useEffect(() => {
+    const baseTitle = 'My Google AI Studio App';
+    if (unreadCount > 0) {
+      document.title = `(${unreadCount}) ${baseTitle}`;
+    } else {
+      document.title = baseTitle;
+    }
+  }, [unreadCount]);
+
+  useEffect(() => {
+    if (document.visibilityState === 'visible') {
+      setUnreadCount(0);
+      setFaviconBadge(0);
+    }
+  }, [messages.length, tasks.length]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        setUnreadCount(0);
+        setFaviconBadge(0);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
+
+  // Update unread count when new items arrive and tab is hidden
+  const prevMessagesLength = useRef(messages.length);
+  const prevTasksLength = useRef(tasks.length);
+
+  useEffect(() => {
+    if (document.visibilityState === 'hidden') {
+      let newItems = 0;
+      if (messages.length > prevMessagesLength.current) {
+        newItems += (messages.length - prevMessagesLength.current);
+      }
+      if (tasks.length > prevTasksLength.current) {
+        newItems += (tasks.length - prevTasksLength.current);
+      }
+      
+      if (newItems > 0) {
+        setUnreadCount(prev => {
+          const next = prev + newItems;
+          setFaviconBadge(next);
+          return next;
+        });
+      }
+    }
+    prevMessagesLength.current = messages.length;
+    prevTasksLength.current = tasks.length;
+  }, [messages.length, tasks.length]);
 
   const startResizing = useCallback(() => {
     setIsResizing(true);
@@ -486,6 +547,52 @@ export default function App() {
         newValue: taskData.assignee,
         timestamp: new Date(),
       });
+    }
+
+    // Check for subtask completion notification
+    const oldSubtasks = t.subtasks || [];
+    const newSubtasks = taskData.subtasks || [];
+    const wasCompleted = oldSubtasks.length > 0 && oldSubtasks.every(s => s.completed);
+    const isNowCompleted = newSubtasks.length > 0 && newSubtasks.every(s => s.completed);
+
+    if (!wasCompleted && isNowCompleted) {
+      const notificationTitle = 'Task Subtasks Completed';
+      const notificationContent = `All subtasks for "${t.title}" have been completed. The task is ready for final review.`;
+      
+      // Notify creator (if not the current user)
+      if (t.uid !== user.id) {
+        try {
+          await addDoc(collection(db, 'notifications'), {
+            userId: t.uid,
+            title: notificationTitle,
+            content: notificationContent,
+            type: 'mention',
+            relatedId: taskId,
+            read: false,
+            timestamp: new Date()
+          });
+        } catch (error) {
+          handleFirestoreError(error, OperationType.WRITE, 'notifications');
+        }
+      }
+
+      // Notify assignee (if not the current user and not the creator)
+      const assigneeUser = teamMembers.find(m => m.name === taskData.assignee);
+      if (assigneeUser && assigneeUser.id !== user.id && assigneeUser.id !== t.uid) {
+        try {
+          await addDoc(collection(db, 'notifications'), {
+            userId: assigneeUser.id,
+            title: notificationTitle,
+            content: notificationContent,
+            type: 'task_assigned',
+            relatedId: taskId,
+            read: false,
+            timestamp: new Date()
+          });
+        } catch (error) {
+          handleFirestoreError(error, OperationType.WRITE, 'notifications');
+        }
+      }
     }
     
     try {

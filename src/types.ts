@@ -44,6 +44,7 @@ export interface Attachment {
   type: string;
   url: string;
   timestamp: Date;
+  storagePath?: string;
 }
 
 export type TaskType = 'task' | 'request' | 'idea';

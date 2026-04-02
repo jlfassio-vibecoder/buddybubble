@@ -7,6 +7,7 @@ import { format } from 'date-fns';
 import { Link2 } from 'lucide-react';
 import { hasPermission } from '../lib/permissions';
 import { GoogleGenAI } from "@google/genai";
+import { storage, ref, uploadBytes, getDownloadURL, deleteObject } from '../firebase';
 
 interface TaskModalProps {
   isOpen: boolean;
@@ -56,6 +57,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
   const [isDeleting, setIsDeleting] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const canEdit = hasPermission(user.role, 'EDIT_TASK');
@@ -239,24 +241,53 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
     setTags(tags.filter(t => t !== tagToRemove));
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (!files) return;
+    if (!files || !user) return;
 
-    const newAttachments: Attachment[] = Array.from(files).map((file: File) => ({
-      id: Math.random().toString(36).substr(2, 9),
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      url: URL.createObjectURL(file), // In a real app, this would be a server URL
-      timestamp: new Date(),
-    }));
+    setIsUploading(true);
+    try {
+      const newAttachments: Attachment[] = [];
+      
+      const fileList = Array.from(files) as File[];
+      for (const file of fileList) {
+        const fileId = Math.random().toString(36).substr(2, 9);
+        const storageRef = ref(storage, `tasks/${user.id}/${fileId}_${file.name}`);
+        
+        const snapshot = await uploadBytes(storageRef, file);
+        const downloadURL = await getDownloadURL(snapshot.ref);
+        
+        newAttachments.push({
+          id: fileId,
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          url: downloadURL,
+          timestamp: new Date(),
+          storagePath: storageRef.fullPath
+        });
+      }
 
-    setAttachments([...attachments, ...newAttachments]);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+      setAttachments([...attachments, ...newAttachments]);
+    } catch (error) {
+      console.error("Error uploading files:", error);
+      alert("Failed to upload files. Please try again.");
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
-  const removeAttachment = (id: string) => {
+  const removeAttachment = async (id: string) => {
+    const attachmentToRemove = attachments.find(a => a.id === id);
+    if (attachmentToRemove?.storagePath) {
+      try {
+        const storageRef = ref(storage, attachmentToRemove.storagePath);
+        await deleteObject(storageRef);
+      } catch (error) {
+        console.error("Error deleting file from storage:", error);
+      }
+    }
     setAttachments(attachments.filter(a => a.id !== id));
   };
 
@@ -806,11 +837,19 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
                       {!isReadOnly && (
                         <button
                           type="button"
+                          disabled={isUploading}
                           onClick={() => fileInputRef.current?.click()}
-                          className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full transition-colors"
+                          className={cn(
+                            "flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full transition-colors",
+                            isUploading && "opacity-50 cursor-not-allowed"
+                          )}
                         >
-                          <Paperclip className="w-3 h-3" />
-                          Attach File
+                          {isUploading ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Paperclip className="w-3 h-3" />
+                          )}
+                          {isUploading ? 'Uploading...' : 'Attach File'}
                         </button>
                       )}
                       <input
@@ -869,7 +908,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
                   {/* Subtasks Section */}
                   <div className="pt-2">
                     <div className="flex items-center justify-between mb-2">
-                      <label className="block text-sm font-semibold text-slate-700">Subtasks</label>
+                      <div className="flex items-center gap-2">
+                        <CheckSquare className="w-4 h-4 text-indigo-600" />
+                        <label className="block text-sm font-semibold text-slate-700">Subtasks</label>
+                      </div>
                       {subtasks.length > 0 && (
                         <div className="flex items-center gap-2">
                           <span className="text-[10px] font-medium text-slate-400">
@@ -883,12 +925,15 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
                     </div>
 
                     {subtasks.length > 0 && (
-                      <div className="w-full h-2 bg-slate-100 rounded-full mb-4 overflow-hidden shadow-inner">
+                      <div className="w-full h-2.5 bg-slate-100 rounded-full mb-4 overflow-hidden shadow-inner border border-slate-200/50">
                         <motion.div 
                           initial={{ width: 0 }}
                           animate={{ width: `${progressPercentage}%` }}
-                          className="h-full bg-gradient-to-r from-indigo-400 to-indigo-600 rounded-full shadow-sm"
-                        />
+                          transition={{ duration: 0.5, ease: "easeOut" }}
+                          className="h-full bg-gradient-to-r from-indigo-400 via-indigo-500 to-indigo-600 rounded-full shadow-sm relative"
+                        >
+                          <div className="absolute inset-0 bg-white/20 animate-pulse" />
+                        </motion.div>
                       </div>
                     )}
 
