@@ -339,20 +339,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (title.trim() && assignee.trim()) {
-      onSubmit({ 
+      const taskData: any = { 
         title, 
         description, 
         type: taskType,
-        impact: taskType === 'request' ? impact : undefined,
-        urgency: taskType === 'request' ? urgency : undefined,
-        userStory: taskType === 'request' ? userStory : undefined,
-        category: taskType === 'idea' ? category : undefined,
-        potentialValue: taskType === 'idea' ? potentialValue : undefined,
         upvotes,
         assignee, 
-        assigner: assigner.trim() || undefined,
         priority,
-        dueDate: dueDate ? new Date(dueDate) : undefined,
         channelId,
         comments,
         subtasks,
@@ -360,7 +353,21 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
         relatedTaskIds,
         tags,
         attachments
-      });
+      };
+
+      if (assigner.trim()) taskData.assigner = assigner.trim();
+      if (dueDate) taskData.dueDate = new Date(dueDate);
+
+      if (taskType === 'request') {
+        taskData.impact = impact;
+        taskData.urgency = urgency;
+        taskData.userStory = userStory;
+      } else if (taskType === 'idea') {
+        taskData.category = category;
+        taskData.potentialValue = potentialValue;
+      }
+
+      onSubmit(taskData);
       onClose();
     }
   };
