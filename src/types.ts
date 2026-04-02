@@ -4,6 +4,7 @@ export type UserRole = 'Admin' | 'Lead' | 'Member' | 'Guest';
 export interface Message {
   id: string;
   sender: string;
+  senderAvatar?: string;
   content: string;
   timestamp: Date;
   department: Department;

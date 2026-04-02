@@ -334,8 +334,12 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ channel, allMessages, onSend
               animate={{ opacity: 1, y: 0 }}
               className="flex gap-4 group"
             >
-              <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold shrink-0">
-                {msg.sender[0]}
+              <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold shrink-0 overflow-hidden border border-slate-100">
+                {msg.senderAvatar ? (
+                  <img src={msg.senderAvatar} alt={msg.sender} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                ) : (
+                  msg.sender[0]
+                )}
               </div>
               <div className="flex-1">
                 <div className="flex items-baseline gap-2">

@@ -28,6 +28,7 @@ export default function App() {
     id: 'u1',
     name: 'John Doe',
     email: 'j.doe@teamsync.com',
+    avatar: 'https://picsum.photos/seed/john/100/100',
     role: 'Admin',
     department: 'Dev Ops',
   });
@@ -74,6 +75,7 @@ export default function App() {
     const newMessage: Message = {
       id: Math.random().toString(36).substr(2, 9),
       sender: user.name,
+      senderAvatar: user.avatar,
       content,
       timestamp: new Date(),
       department: activeChannel.name,

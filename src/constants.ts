@@ -41,6 +41,7 @@ export const INITIAL_MESSAGES: Message[] = [
   {
     id: 'm1',
     sender: 'Alice',
+    senderAvatar: 'https://picsum.photos/seed/alice/100/100',
     content: 'Hey team, how is the Q2 campaign looking?',
     timestamp: new Date(Date.now() - 3600000),
     department: 'Sales & Marketing',
@@ -48,6 +49,7 @@ export const INITIAL_MESSAGES: Message[] = [
   {
     id: 'm2',
     sender: 'Bob',
+    senderAvatar: 'https://picsum.photos/seed/bob/100/100',
     content: 'Just finished the draft for the new landing page.',
     timestamp: new Date(Date.now() - 1800000),
     department: 'Sales & Marketing',
@@ -55,6 +57,7 @@ export const INITIAL_MESSAGES: Message[] = [
   {
     id: 'm3',
     sender: 'Charlie',
+    senderAvatar: 'https://picsum.photos/seed/charlie/100/100',
     content: 'Server migration is 80% complete.',
     timestamp: new Date(Date.now() - 7200000),
     department: 'Dev Ops',
@@ -62,10 +65,10 @@ export const INITIAL_MESSAGES: Message[] = [
 ];
 
 export const TEAM_MEMBERS = [
-  { id: 'u1', name: 'John Doe', email: 'j.doe@teamsync.com', avatar: '' },
-  { id: 'u2', name: 'Alice', email: 'alice@teamsync.com', avatar: '' },
-  { id: 'u3', name: 'Bob', email: 'bob@teamsync.com', avatar: '' },
-  { id: 'u4', name: 'Charlie', email: 'charlie@teamsync.com', avatar: '' },
+  { id: 'u1', name: 'John Doe', email: 'j.doe@teamsync.com', avatar: 'https://picsum.photos/seed/john/100/100' },
+  { id: 'u2', name: 'Alice', email: 'alice@teamsync.com', avatar: 'https://picsum.photos/seed/alice/100/100' },
+  { id: 'u3', name: 'Bob', email: 'bob@teamsync.com', avatar: 'https://picsum.photos/seed/bob/100/100' },
+  { id: 'u4', name: 'Charlie', email: 'charlie@teamsync.com', avatar: 'https://picsum.photos/seed/charlie/100/100' },
 ];
 
 export const INITIAL_TASKS: Task[] = [
