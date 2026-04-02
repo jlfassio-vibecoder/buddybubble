@@ -1,5 +1,5 @@
 {
-  "name": "TeamSync: Chat & Kanban",
-  "description": "A unified workspace combining Slack-like departmental chat with a collaborative Kanban board.",
+  "name": "TeamSync: Chat & Plan",
+  "description": "A unified workspace combining departmental chat with a collaborative Kanban board.",
   "requestFramePermissions": []
 }

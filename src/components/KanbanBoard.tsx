@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, MoreHorizontal, Clock, User, Filter, Edit2, Calendar, MessageSquare, CheckSquare, GripVertical, AlertCircle, AlertTriangle, Info, Link2, ArrowUpDown, Paperclip } from 'lucide-react';
+import { Plus, MoreHorizontal, Clock, User, Filter, Edit2, Calendar, MessageSquare, CheckSquare, GripVertical, AlertCircle, AlertTriangle, Info, Link2, ArrowUpDown, Paperclip, Zap, Lightbulb } from 'lucide-react';
 import { Task, Channel, UserProfile, TaskTemplate } from '../types';
 import { cn } from '../lib/utils';
 import { motion } from 'motion/react';
@@ -115,6 +115,17 @@ const SortableTaskCard: React.FC<SortableTaskCardProps> = ({ task, allTasks, onE
             {task.priority === 'Medium' && <AlertTriangle className="w-3 h-3" />}
             {task.priority === 'Low' && <Info className="w-3 h-3" />}
             {task.priority}
+          </div>
+          <div className={cn(
+            "flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded",
+            task.type === 'request' ? "bg-purple-100 text-purple-700" :
+            task.type === 'idea' ? "bg-emerald-100 text-emerald-700" :
+            "bg-slate-100 text-slate-700"
+          )}>
+            {task.type === 'request' && <Zap className="w-3 h-3" />}
+            {task.type === 'idea' && <Lightbulb className="w-3 h-3" />}
+            {(!task.type || task.type === 'task') && <CheckSquare className="w-3 h-3" />}
+            {task.type || 'task'}
           </div>
           {isBlocked && task.status !== 'Done' && (
             <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">
@@ -236,6 +247,12 @@ const SortableTaskCard: React.FC<SortableTaskCardProps> = ({ task, allTasks, onE
             <div className="flex items-center gap-1 text-slate-400">
               <Paperclip className="w-3 h-3" />
               <span className="text-[10px]">{task.attachments.length}</span>
+            </div>
+          )}
+          {task.type === 'request' && task.upvotes && task.upvotes.length > 0 && (
+            <div className="flex items-center gap-1 text-indigo-500 font-bold">
+              <Zap className="w-3 h-3" />
+              <span className="text-[10px]">{task.upvotes.length} upvotes</span>
             </div>
           )}
         </div>
@@ -417,7 +434,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
               className="flex items-center gap-2 px-4 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 active:scale-95"
             >
               <Plus className="w-3.5 h-3.5" />
-              New Task
+              Create New
             </button>
           ) : (
             <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-400 rounded-lg text-[10px] font-medium border border-slate-200 cursor-not-allowed" title="You don't have permission to create tasks">
@@ -475,7 +492,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
                     className="w-full py-2 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 hover:text-slate-600 hover:border-slate-300 hover:bg-slate-100 transition-all flex items-center justify-center gap-2 text-sm font-medium"
                   >
                     <Plus className="w-4 h-4" />
-                    Add Task
+                    Add New
                   </button>
                 </div>
               </SortableContext>
@@ -511,6 +528,17 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
                   {activeTask.priority === 'Low' && <Info className="w-3 h-3" />}
                   {activeTask.priority}
                 </div>
+                <div className={cn(
+                  "flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded",
+                  activeTask.type === 'request' ? "bg-purple-100 text-purple-700" :
+                  activeTask.type === 'idea' ? "bg-emerald-100 text-emerald-700" :
+                  "bg-slate-100 text-slate-700"
+                )}>
+                  {activeTask.type === 'request' && <Zap className="w-3 h-3" />}
+                  {activeTask.type === 'idea' && <Lightbulb className="w-3 h-3" />}
+                  {(!activeTask.type || activeTask.type === 'task') && <CheckSquare className="w-3 h-3" />}
+                  {activeTask.type || 'task'}
+                </div>
               </div>
               <h4 className="font-semibold text-slate-900 mb-1 leading-tight">{activeTask.title}</h4>
               <p className="text-xs text-slate-500 mb-3 line-clamp-2">{activeTask.description}</p>
@@ -529,6 +557,12 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
                       style={{ width: `${(activeTask.subtasks.filter(s => s.completed).length / activeTask.subtasks.length) * 100}%` }}
                     />
                   </div>
+                </div>
+              )}
+              {activeTask.type === 'request' && activeTask.upvotes && activeTask.upvotes.length > 0 && (
+                <div className="flex items-center gap-1 text-indigo-500 font-bold mb-3">
+                  <Zap className="w-3 h-3" />
+                  <span className="text-[10px]">{activeTask.upvotes.length} upvotes</span>
                 </div>
               )}
             </div>

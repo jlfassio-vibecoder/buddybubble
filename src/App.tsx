@@ -9,30 +9,240 @@ import { ChatArea } from './components/ChatArea';
 import { KanbanBoard } from './components/KanbanBoard';
 import { ProfileModal } from './components/ProfileModal';
 import { ManageChannelsModal } from './components/ManageChannelsModal';
-import { CHANNELS as INITIAL_CHANNELS, INITIAL_MESSAGES, INITIAL_TASKS, INITIAL_TEMPLATES } from './constants';
-import { Channel, Message, Task, ActivityLogEntry, UserProfile, TaskTemplate } from './types';
-import { GripVertical } from 'lucide-react';
+import { Login } from './components/Login';
+import { 
+  auth, 
+  db, 
+  onAuthStateChanged, 
+  onSnapshot, 
+  collection, 
+  query, 
+  orderBy, 
+  addDoc, 
+  setDoc, 
+  doc, 
+  getDoc, 
+  updateDoc, 
+  deleteDoc, 
+  where,
+  getDocs,
+  signOut,
+  handleFirestoreError,
+  OperationType
+} from './firebase';
+import { CHANNELS as INITIAL_CHANNELS, INITIAL_TEMPLATES } from './constants';
+import { Channel, Message, Task, ActivityLogEntry, UserProfile, TaskTemplate, Notification } from './types';
+import { GripVertical, Loader2 } from 'lucide-react';
 import { cn } from './lib/utils';
 
 export default function App() {
-  const [channels, setChannels] = useState<Channel[]>(INITIAL_CHANNELS);
-  const [activeChannel, setActiveChannel] = useState<Channel>(INITIAL_CHANNELS[0]);
-  const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
-  const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
-  const [templates, setTemplates] = useState<TaskTemplate[]>(INITIAL_TEMPLATES);
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [templates, setTemplates] = useState<TaskTemplate[]>([]);
+  const [teamMembers, setTeamMembers] = useState<UserProfile[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [chatWidth, setChatWidth] = useState(50); // Percentage
   const [isResizing, setIsResizing] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isManageChannelsModalOpen, setIsManageChannelsModalOpen] = useState(false);
-  const [user, setUser] = useState<UserProfile>({
-    id: 'u1',
-    name: 'John Doe',
-    email: 'j.doe@teamsync.com',
-    avatar: 'https://picsum.photos/seed/john/100/100',
-    role: 'Admin',
-    department: 'Dev Ops',
-  });
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Auth Listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+        if (userDoc.exists()) {
+          setUser(userDoc.data() as UserProfile);
+        } else {
+          const newUser: UserProfile = {
+            id: firebaseUser.uid,
+            name: firebaseUser.displayName || 'Anonymous',
+            email: firebaseUser.email || '',
+            avatar: firebaseUser.photoURL || '',
+            role: firebaseUser.email === 'jlfassio@gmail.com' ? 'Admin' : 'Member',
+            department: 'General',
+            channelIds: []
+          };
+          await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
+          setUser(newUser);
+        }
+      } else {
+        setUser(null);
+      }
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Firestore Listeners
+  useEffect(() => {
+    if (!user) return;
+
+    // Channels
+    const unsubChannels = onSnapshot(collection(db, 'channels'), (snapshot) => {
+      const channelList = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Channel));
+      
+      // Ensure all initial channels exist
+      INITIAL_CHANNELS.forEach(async (c) => {
+        const exists = channelList.some(cl => cl.id === c.id);
+        if (!exists) {
+          try {
+            await setDoc(doc(db, 'channels', c.id), c);
+          } catch (error) {
+            handleFirestoreError(error, OperationType.WRITE, `channels/${c.id}`);
+          }
+        }
+      });
+
+      setChannels(channelList);
+      if (!activeChannel && channelList.length > 0) {
+        setActiveChannel(channelList[0]);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'channels');
+    });
+
+    // Messages
+    const unsubMessages = onSnapshot(query(collection(db, 'messages'), orderBy('timestamp', 'asc')), (snapshot) => {
+      const msgList = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return { 
+          ...data, 
+          id: doc.id, 
+          timestamp: data.timestamp?.toDate() || new Date() 
+        } as Message;
+      });
+      setMessages(msgList);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'messages');
+    });
+
+    // Tasks
+    const unsubTasks = onSnapshot(collection(db, 'tasks'), (snapshot) => {
+      const taskList = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return { 
+          ...data, 
+          id: doc.id, 
+          createdAt: data.createdAt?.toDate() || new Date(),
+          dueDate: data.dueDate?.toDate() || undefined,
+          activityLog: data.activityLog?.map((log: any) => ({
+            ...log,
+            timestamp: log.timestamp?.toDate() || new Date()
+          }))
+        } as Task;
+      });
+      setTasks(taskList);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'tasks');
+    });
+
+    // Templates
+    const unsubTemplates = onSnapshot(collection(db, 'templates'), (snapshot) => {
+      const templateList = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as TaskTemplate));
+      if (templateList.length === 0) {
+        // Seed initial templates if empty
+        INITIAL_TEMPLATES.forEach(async (t) => {
+          try {
+            await setDoc(doc(db, 'templates', t.id), { ...t, uid: user.id });
+          } catch (error) {
+            handleFirestoreError(error, OperationType.WRITE, `templates/${t.id}`);
+          }
+        });
+      }
+      setTemplates(templateList);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'templates');
+    });
+
+    // Team Members
+    const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+      const userList = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          ...data,
+          id: doc.id,
+          lastSeen: data.lastSeen?.toDate()
+        } as UserProfile;
+      });
+      setTeamMembers(userList);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'users');
+    });
+
+    // Notifications
+    const unsubNotifications = onSnapshot(
+      query(collection(db, 'notifications'), where('userId', '==', user.id), orderBy('timestamp', 'desc')),
+      (snapshot) => {
+        const notifList = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            ...data,
+            id: doc.id,
+            timestamp: data.timestamp?.toDate() || new Date()
+          } as Notification;
+        });
+        setNotifications(notifList);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'notifications');
+      }
+    );
+
+    return () => {
+      unsubChannels();
+      unsubMessages();
+      unsubTasks();
+      unsubTemplates();
+      unsubUsers();
+      unsubNotifications();
+    };
+  }, [user, activeChannel]);
+
+  // Presence logic
+  useEffect(() => {
+    if (!user) return;
+
+    const setStatus = async (status: 'online' | 'offline' | 'away') => {
+      try {
+        await updateDoc(doc(db, 'users', user.id), {
+          status,
+          lastSeen: new Date()
+        });
+      } catch (error) {
+        // Silent fail for presence updates to avoid spamming error boundary
+        console.warn('Presence update failed:', error);
+      }
+    };
+
+    setStatus('online');
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        setStatus('online');
+      } else {
+        setStatus('away');
+      }
+    };
+
+    const handleBeforeUnload = () => {
+      setStatus('offline');
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      setStatus('offline');
+    };
+  }, [user?.id]);
 
   const startResizing = useCallback(() => {
     setIsResizing(true);
@@ -45,12 +255,8 @@ export default function App() {
   const resize = useCallback((e: MouseEvent) => {
     if (isResizing && containerRef.current) {
       const containerRect = containerRef.current.getBoundingClientRect();
-      // Calculate relative X position within the main container (excluding sidebar)
-      // Sidebar is fixed width (usually around 260px based on typical layouts, but let's calculate relative to main)
       const relativeX = e.clientX - containerRect.left;
       const newWidth = (relativeX / containerRect.width) * 100;
-      
-      // Constrain width between 20% and 80%
       if (newWidth >= 20 && newWidth <= 80) {
         setChatWidth(newWidth);
       }
@@ -71,236 +277,266 @@ export default function App() {
     };
   }, [isResizing, resize, stopResizing]);
 
-  const handleSendMessage = (content: string) => {
-    const newMessage: Message = {
-      id: Math.random().toString(36).substr(2, 9),
+  const handleSendMessage = async (content: string, parentId?: string) => {
+    if (!user || !activeChannel) return;
+    const newMessage = {
       sender: user.name,
       senderAvatar: user.avatar,
       content,
       timestamp: new Date(),
-      department: activeChannel.name,
+      department: activeChannel.id === 'all' ? 'All Channels' : activeChannel.name,
+      uid: user.id,
+      parentId: parentId || null,
+      threadCount: 0
     };
-    setMessages([...messages, newMessage]);
+    try {
+      await addDoc(collection(db, 'messages'), newMessage);
+      if (parentId) {
+        const parentRef = doc(db, 'messages', parentId);
+        const parentDoc = await getDoc(parentRef);
+        if (parentDoc.exists()) {
+          const parentData = parentDoc.data();
+          const currentCount = parentData.threadCount || 0;
+          await updateDoc(parentRef, { threadCount: currentCount + 1 });
+          
+          // Create notification for parent author if it's not the current user
+          if (parentData.uid !== user.id) {
+            await addDoc(collection(db, 'notifications'), {
+              userId: parentData.uid,
+              title: 'New Thread Reply',
+              content: `${user.name} replied to your message: "${parentData.content.substring(0, 30)}..."`,
+              type: 'thread_reply',
+              relatedId: parentId,
+              read: false,
+              timestamp: new Date()
+            });
+          }
+        }
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'messages');
+    }
   };
 
-  const handleUpdateProfile = (updatedUser: UserProfile) => {
-    setUser(updatedUser);
+  const handleUpdateProfile = async (updatedUser: UserProfile) => {
+    if (!user) return;
+    try {
+      await updateDoc(doc(db, 'users', user.id), { ...updatedUser });
+      setUser(updatedUser);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `users/${user.id}`);
+    }
   };
 
-  const handleAddChannel = (name: string) => {
-    const newChannel: Channel = {
-      id: Math.random().toString(36).substr(2, 9),
+  const handleLogout = async () => {
+    if (user) {
+      try {
+        await updateDoc(doc(db, 'users', user.id), {
+          status: 'offline',
+          lastSeen: new Date()
+        });
+      } catch (error) {
+        console.error('Failed to set offline status on logout:', error);
+      }
+    }
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
+  };
+
+  const handleAddChannel = async (name: string) => {
+    const newChannel = {
       name,
       icon: 'Hash',
     };
-    setChannels([...channels, newChannel]);
-  };
-
-  const handleUpdateChannel = (id: string, name: string) => {
-    setChannels(channels.map(c => c.id === id ? { ...c, name } : c));
-    if (activeChannel.id === id) {
-      setActiveChannel({ ...activeChannel, name });
+    try {
+      await addDoc(collection(db, 'channels'), newChannel);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'channels');
     }
   };
 
-  const handleDeleteChannel = (id: string) => {
-    if (channels.length <= 1) return;
-    const newChannels = channels.filter(c => c.id !== id);
-    setChannels(newChannels);
-    if (activeChannel.id === id) {
-      setActiveChannel(newChannels[0]);
-    }
-    // Optionally reassign tasks or delete them? 
-    // For now, let's just keep them but they won't show up if filtered by channel
-  };
-
-  const handleSaveTemplate = (template: Omit<TaskTemplate, 'id'>) => {
-    const newTemplate: TaskTemplate = {
-      ...template,
-      id: Math.random().toString(36).substr(2, 9),
-    };
-    setTemplates([...templates, newTemplate]);
-  };
-
-  const handleTaskMove = (taskId: string, newStatus: Task['status']) => {
-    setTasks(tasks.map(t => {
-      if (t.id === taskId) {
-        const logEntry: ActivityLogEntry = {
-          id: Math.random().toString(36).substr(2, 9),
-          user: user.name,
-          action: 'changed status',
-          field: 'status',
-          oldValue: t.status,
-          newValue: newStatus,
-          timestamp: new Date(),
-        };
-        return { 
-          ...t, 
-          status: newStatus,
-          activityLog: [logEntry, ...(t.activityLog || [])]
-        };
+  const handleUpdateChannel = async (id: string, name: string) => {
+    try {
+      await updateDoc(doc(db, 'channels', id), { name });
+      if (activeChannel?.id === id) {
+        setActiveChannel({ ...activeChannel, name });
       }
-      return t;
-    }));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `channels/${id}`);
+    }
   };
 
-  const handleCreateTask = (taskData: Omit<Task, 'id' | 'status' | 'createdAt' | 'activityLog'>): string => {
-    const newId = Math.random().toString(36).substr(2, 9);
-    const newTask: Task = {
+  const handleDeleteChannel = async (id: string) => {
+    if (channels.length <= 1) return;
+    try {
+      await deleteDoc(doc(db, 'channels', id));
+      if (activeChannel?.id === id) {
+        setActiveChannel(channels.find(c => c.id !== id) || null);
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `channels/${id}`);
+    }
+  };
+
+  const handleSaveTemplate = async (template: Omit<TaskTemplate, 'id'>) => {
+    if (!user) return;
+    try {
+      await addDoc(collection(db, 'templates'), { ...template, uid: user.id });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'templates');
+    }
+  };
+
+  const handleTaskMove = async (taskId: string, newStatus: Task['status']) => {
+    if (!user) return;
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    const logEntry: ActivityLogEntry = {
+      id: Math.random().toString(36).substr(2, 9),
+      user: user.name,
+      action: 'changed status',
+      field: 'status',
+      oldValue: task.status,
+      newValue: newStatus,
+      timestamp: new Date(),
+    };
+
+    try {
+      await updateDoc(doc(db, 'tasks', taskId), {
+        status: newStatus,
+        activityLog: [logEntry, ...(task.activityLog || [])]
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `tasks/${taskId}`);
+    }
+  };
+
+  const handleCreateTask = async (taskData: Omit<Task, 'id' | 'status' | 'createdAt' | 'activityLog'>): Promise<string> => {
+    if (!user) return '';
+    const newTask = {
       ...taskData,
-      id: newId,
       status: 'Todo',
       createdAt: new Date(),
+      uid: user.id,
       activityLog: [{
         id: Math.random().toString(36).substr(2, 9),
-        user: 'John Doe',
+        user: user.name,
         action: 'created task',
         timestamp: new Date(),
       }],
     };
-    setTasks([newTask, ...tasks]);
-    return newId;
+    try {
+      const docRef = await addDoc(collection(db, 'tasks'), newTask);
+      return docRef.id;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'tasks');
+      return '';
+    }
   };
 
-  const handleUpdateTask = (taskId: string, taskData: Omit<Task, 'id' | 'status' | 'createdAt' | 'activityLog'>) => {
-    setTasks(tasks.map(t => {
-      if (t.id === taskId) {
-        const newLogs: ActivityLogEntry[] = [];
-        const currentUser = user.name;
+  const handleUpdateTask = async (taskId: string, taskData: Omit<Task, 'id' | 'status' | 'createdAt' | 'activityLog'>) => {
+    if (!user) return;
+    const t = tasks.find(task => task.id === taskId);
+    if (!t) return;
 
-        if (t.title !== taskData.title) {
-          newLogs.push({
-            id: Math.random().toString(36).substr(2, 9),
-            user: currentUser,
-            action: `renamed task from "${t.title}" to "${taskData.title}"`,
-            field: 'title',
-            oldValue: t.title,
-            newValue: taskData.title,
-            timestamp: new Date(),
-          });
-        }
-        if (t.description !== taskData.description) {
-          newLogs.push({
-            id: Math.random().toString(36).substr(2, 9),
-            user: currentUser,
-            action: 'updated description',
-            timestamp: new Date(),
-          });
-        }
-        if (t.priority !== taskData.priority) {
-          newLogs.push({
-            id: Math.random().toString(36).substr(2, 9),
-            user: currentUser,
-            action: `changed priority from ${t.priority} to ${taskData.priority}`,
-            field: 'priority',
-            oldValue: t.priority,
-            newValue: taskData.priority,
-            timestamp: new Date(),
-          });
-        }
-        if (t.assignee !== taskData.assignee) {
-          newLogs.push({
-            id: Math.random().toString(36).substr(2, 9),
-            user: currentUser,
-            action: `reassigned task from ${t.assignee} to ${taskData.assignee}`,
-            field: 'assignee',
-            oldValue: t.assignee,
-            newValue: taskData.assignee,
-            timestamp: new Date(),
-          });
-        }
-        if (t.assigner !== taskData.assigner) {
-          newLogs.push({
-            id: Math.random().toString(36).substr(2, 9),
-            user: currentUser,
-            action: `changed assigner from ${t.assigner || 'None'} to ${taskData.assigner || 'None'}`,
-            field: 'assigner',
-            oldValue: t.assigner || 'None',
-            newValue: taskData.assigner || 'None',
-            timestamp: new Date(),
-          });
-        }
-        
-        const oldTags = (t.tags || []).join(', ');
-        const newTags = (taskData.tags || []).join(', ');
-        if (oldTags !== newTags) {
-          newLogs.push({
-            id: Math.random().toString(36).substr(2, 9),
-            user: currentUser,
-            action: `updated tags from [${oldTags || 'none'}] to [${newTags || 'none'}]`,
-            field: 'tags',
-            oldValue: oldTags || 'None',
-            newValue: newTags || 'None',
-            timestamp: new Date(),
-          });
-        }
-        
-        const oldDueTime = t.dueDate ? new Date(t.dueDate).getTime() : 0;
-        const newDueTime = taskData.dueDate ? new Date(taskData.dueDate).getTime() : 0;
-        
-        if (oldDueTime !== newDueTime) {
-          const oldDateStr = t.dueDate ? new Date(t.dueDate).toLocaleDateString() : 'None';
-          const newDateStr = taskData.dueDate ? new Date(taskData.dueDate).toLocaleDateString() : 'None';
-          newLogs.push({
-            id: Math.random().toString(36).substr(2, 9),
-            user: currentUser,
-            action: `changed due date from ${oldDateStr} to ${newDateStr}`,
-            field: 'dueDate',
-            oldValue: oldDateStr,
-            newValue: newDateStr,
-            timestamp: new Date(),
-          });
-        }
+    const newLogs: ActivityLogEntry[] = [];
+    const currentUser = user.name;
 
-        const oldAttachments = (t.attachments || []).length;
-        const newAttachments = (taskData.attachments || []).length;
-        if (oldAttachments !== newAttachments) {
-          const diff = newAttachments - oldAttachments;
-          newLogs.push({
-            id: Math.random().toString(36).substr(2, 9),
-            user: currentUser,
-            action: diff > 0 ? `attached ${diff} file(s)` : `removed ${Math.abs(diff)} file(s)`,
-            timestamp: new Date(),
-          });
-        }
-
-        const oldCompletedCount = (t.subtasks || []).filter(s => s.completed).length;
-        const newCompletedCount = (taskData.subtasks || []).filter(s => s.completed).length;
-        
-        if (oldCompletedCount !== newCompletedCount) {
-          newLogs.push({
-            id: Math.random().toString(36).substr(2, 9),
-            user: currentUser,
-            action: `updated subtasks (${newCompletedCount}/${(taskData.subtasks || []).length} completed)`,
-            timestamp: new Date(),
-          });
-        }
-
-        return { 
-          ...t, 
-          ...taskData,
-          activityLog: [...newLogs, ...(t.activityLog || [])]
-        };
-      }
-      return t;
-    }));
+    if (t.title !== taskData.title) {
+      newLogs.push({
+        id: Math.random().toString(36).substr(2, 9),
+        user: currentUser,
+        action: `renamed task from "${t.title}" to "${taskData.title}"`,
+        field: 'title',
+        oldValue: t.title,
+        newValue: taskData.title,
+        timestamp: new Date(),
+      });
+    }
+    if (t.description !== taskData.description) {
+      newLogs.push({
+        id: Math.random().toString(36).substr(2, 9),
+        user: currentUser,
+        action: 'updated description',
+        timestamp: new Date(),
+      });
+    }
+    if (t.priority !== taskData.priority) {
+      newLogs.push({
+        id: Math.random().toString(36).substr(2, 9),
+        user: currentUser,
+        action: `changed priority from ${t.priority} to ${taskData.priority}`,
+        field: 'priority',
+        oldValue: t.priority,
+        newValue: taskData.priority,
+        timestamp: new Date(),
+      });
+    }
+    if (t.assignee !== taskData.assignee) {
+      newLogs.push({
+        id: Math.random().toString(36).substr(2, 9),
+        user: currentUser,
+        action: `reassigned task from ${t.assignee} to ${taskData.assignee}`,
+        field: 'assignee',
+        oldValue: t.assignee,
+        newValue: taskData.assignee,
+        timestamp: new Date(),
+      });
+    }
+    
+    try {
+      await updateDoc(doc(db, 'tasks', taskId), {
+        ...taskData,
+        activityLog: [...newLogs, ...(t.activityLog || [])]
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `tasks/${taskId}`);
+    }
   };
 
-  const handleDeleteTask = (taskId: string) => {
-    setTasks(tasks.filter(t => t.id !== taskId));
+  const handleDeleteTask = async (taskId: string) => {
+    try {
+      await deleteDoc(doc(db, 'tasks', taskId));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `tasks/${taskId}`);
+    }
   };
 
-  const filteredMessages = messages.filter(m => m.department === activeChannel.name);
+  const handleMarkNotificationRead = async (id: string) => {
+    try {
+      await updateDoc(doc(db, 'notifications', id), { read: true });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `notifications/${id}`);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-slate-50">
+        <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Login />;
+  }
 
   return (
     <div className="flex h-screen w-full bg-slate-100 overflow-hidden font-sans antialiased">
       <Sidebar 
-        activeChannel={activeChannel} 
+        activeChannel={activeChannel || { id: 'all', name: 'All Channels', icon: 'Hash' }} 
         onChannelSelect={setActiveChannel} 
         channels={channels}
         onManageChannels={() => setIsManageChannelsModalOpen(true)}
         user={user}
+        teamMembers={teamMembers}
         onEditProfile={() => setIsProfileModalOpen(true)}
+        onLogout={handleLogout}
       />
       
       <main 
@@ -310,18 +546,18 @@ export default function App() {
           isResizing && "cursor-col-resize"
         )}
       >
-        {/* Left Side: Chat */}
         <div 
           style={{ width: `${chatWidth}%` }}
           className="h-full flex flex-col shadow-2xl z-10 relative"
         >
           <ChatArea 
-            channel={activeChannel} 
+            channel={activeChannel || { id: 'all', name: 'All Channels', icon: 'Hash' }} 
             allMessages={messages} 
             onSendMessage={handleSendMessage} 
+            notifications={notifications}
+            onMarkNotificationRead={handleMarkNotificationRead}
           />
           
-          {/* Resize Handle */}
           <div
             onMouseDown={startResizing}
             className={cn(
@@ -338,14 +574,13 @@ export default function App() {
           </div>
         </div>
 
-        {/* Right Side: Kanban */}
         <div 
           style={{ width: `${100 - chatWidth}%` }}
           className="h-full"
         >
           <KanbanBoard 
             tasks={tasks} 
-            activeChannel={activeChannel}
+            activeChannel={activeChannel || { id: 'all', name: 'All Channels', icon: 'Hash' }}
             channels={channels}
             templates={templates}
             onSaveTemplate={handleSaveTemplate}

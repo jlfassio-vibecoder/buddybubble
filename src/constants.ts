@@ -4,6 +4,7 @@ export const CHANNELS: Channel[] = [
   { id: '1', name: 'Sales & Marketing', icon: 'Megaphone' },
   { id: '2', name: 'Dev Ops', icon: 'Terminal' },
   { id: '3', name: 'Success Managers', icon: 'Users' },
+  { id: '4', name: 'Features Request', icon: 'Lightbulb' },
 ];
 
 export const INITIAL_TEMPLATES: TaskTemplate[] = [
@@ -20,6 +21,7 @@ export const INITIAL_TEMPLATES: TaskTemplate[] = [
       { title: 'Set up account in CRM', completed: false },
       { title: 'Share onboarding documents', completed: false },
     ],
+    uid: 'system',
   },
   {
     id: 'temp2',
@@ -34,6 +36,7 @@ export const INITIAL_TEMPLATES: TaskTemplate[] = [
       { title: 'Apply security patches', completed: false },
       { title: 'Verify backups', completed: false },
     ],
+    uid: 'system',
   },
 ];
 
@@ -45,6 +48,7 @@ export const INITIAL_MESSAGES: Message[] = [
     content: 'Hey team, how is the Q2 campaign looking?',
     timestamp: new Date(Date.now() - 3600000),
     department: 'Sales & Marketing',
+    uid: 'u2',
   },
   {
     id: 'm2',
@@ -53,6 +57,7 @@ export const INITIAL_MESSAGES: Message[] = [
     content: 'Just finished the draft for the new landing page.',
     timestamp: new Date(Date.now() - 1800000),
     department: 'Sales & Marketing',
+    uid: 'u3',
   },
   {
     id: 'm3',
@@ -61,6 +66,7 @@ export const INITIAL_MESSAGES: Message[] = [
     content: 'Server migration is 80% complete.',
     timestamp: new Date(Date.now() - 7200000),
     department: 'Dev Ops',
+    uid: 'u4',
   },
 ];
 
@@ -83,6 +89,7 @@ export const INITIAL_TASKS: Task[] = [
     tags: ['Design', 'Frontend'],
     dueDate: new Date(Date.now() + 86400000 * 2), // 2 days from now
     createdAt: new Date(Date.now() - 86400000 * 3), // 3 days ago
+    uid: 'u3',
     activityLog: [
       {
         id: 'l1',
@@ -103,6 +110,7 @@ export const INITIAL_TASKS: Task[] = [
     tags: ['Infrastructure', 'Critical'],
     dueDate: new Date(Date.now() + 86400000 * 5), // 5 days from now
     createdAt: new Date(Date.now() - 86400000 * 1), // 1 day ago
+    uid: 'u4',
     activityLog: [
       {
         id: 'l2',
@@ -123,6 +131,7 @@ export const INITIAL_TASKS: Task[] = [
     tags: ['Customer Success'],
     dueDate: new Date(Date.now() - 86400000), // Yesterday
     createdAt: new Date(Date.now() - 86400000 * 5), // 5 days ago
+    uid: 'u2',
     activityLog: [
       {
         id: 'l3',

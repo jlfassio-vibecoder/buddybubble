@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { X, MessageSquare, Send, CheckSquare, Square, Plus, Trash2, History, ArrowRight, Tag, Paperclip, FileText, Download, Hash, AlertCircle, Copy, Save } from 'lucide-react';
-import { Task, Comment, Subtask, ActivityLogEntry, Attachment, Channel, UserProfile, TaskTemplate } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, MessageSquare, Send, CheckSquare, Square, Plus, Trash2, History, ArrowRight, Tag, Paperclip, FileText, Download, Hash, AlertCircle, Copy, Save, Sparkles, Loader2, Search, Lightbulb, Zap, Brain } from 'lucide-react';
+import { Task, Comment, Subtask, ActivityLogEntry, Attachment, Channel, UserProfile, TaskTemplate, TaskType } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { format } from 'date-fns';
-import { Link2, Link2Off } from 'lucide-react';
-import { useRef } from 'react';
+import { Link2 } from 'lucide-react';
 import { hasPermission } from '../lib/permissions';
+import { GoogleGenAI } from "@google/genai";
 
 interface TaskModalProps {
   isOpen: boolean;
@@ -26,6 +26,15 @@ interface TaskModalProps {
 export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit, onAddTask, onDeleteTask, initialTask, allTasks, activeChannel, channels, templates, onSaveTemplate, user }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [taskType, setTaskType] = useState<TaskType>('task');
+  // Feature Request fields
+  const [impact, setImpact] = useState<Task['impact']>('Medium');
+  const [urgency, setUrgency] = useState<Task['urgency']>('Medium');
+  const [userStory, setUserStory] = useState('');
+  // Idea fields
+  const [category, setCategory] = useState('');
+  const [potentialValue, setPotentialValue] = useState('');
+  const [upvotes, setUpvotes] = useState<string[]>([]);
   const [assignee, setAssignee] = useState('');
   const [assigner, setAssigner] = useState('');
   const [priority, setPriority] = useState<Task['priority']>('Medium');
@@ -46,6 +55,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
   const [isAddingDependency, setIsAddingDependency] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const canEdit = hasPermission(user.role, 'EDIT_TASK');
@@ -59,6 +69,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
     if (initialTask) {
       setTitle(initialTask.title);
       setDescription(initialTask.description);
+      setTaskType(initialTask.type || 'task');
+      setImpact(initialTask.impact || 'Medium');
+      setUrgency(initialTask.urgency || 'Medium');
+      setUserStory(initialTask.userStory || '');
+      setCategory(initialTask.category || '');
+      setPotentialValue(initialTask.potentialValue || '');
+      setUpvotes(initialTask.upvotes || []);
       setAssignee(initialTask.assignee);
       setAssigner(initialTask.assigner || '');
       setPriority(initialTask.priority);
@@ -74,6 +91,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
     } else {
       setTitle('');
       setDescription('');
+      setTaskType('task');
+      setImpact('Medium');
+      setUrgency('Medium');
+      setUserStory('');
+      setCategory('');
+      setPotentialValue('');
+      setUpvotes([]);
       setAssignee('');
       setAssigner('');
       setPriority('Medium');
@@ -95,6 +119,58 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
     setIsAddingDependency(false);
     setShowTemplates(false);
   }, [initialTask, isOpen]);
+
+  const handleGoogleSearch = async () => {
+    if (!title.trim()) {
+      alert('Please enter a title first to search for details.');
+      return;
+    }
+    
+    setIsSearching(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Research and provide a concise but informative description for a task titled: "${title}". Focus on practical steps, context, and key details. If it's a specific technical or professional topic, include relevant industry context.`,
+        config: {
+          tools: [{ googleSearch: {} }],
+        },
+      });
+      
+      const text = response.text;
+      if (text) {
+        setDescription(text);
+      }
+    } catch (error) {
+      console.error("Error searching Google:", error);
+      alert("Failed to search Google. Please check your title and try again.");
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleUpvote = () => {
+    if (!user.id) return;
+    
+    const isUpvoted = upvotes.includes(user.id);
+    const newUpvotes = isUpvoted 
+      ? upvotes.filter(id => id !== user.id)
+      : [...upvotes, user.id];
+    
+    setUpvotes(newUpvotes);
+    
+    // Automatic priority adjustment for Feature Requests
+    if (taskType === 'request') {
+      const count = newUpvotes.length;
+      if (count >= 10) {
+        setPriority('High');
+      } else if (count >= 5) {
+        setPriority('Medium');
+      } else if (count > 0) {
+        setPriority('Low');
+      }
+    }
+  };
 
   const applyTemplate = (template: TaskTemplate) => {
     setTitle(template.title);
@@ -266,6 +342,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
       onSubmit({ 
         title, 
         description, 
+        type: taskType,
+        impact: taskType === 'request' ? impact : undefined,
+        urgency: taskType === 'request' ? urgency : undefined,
+        userStory: taskType === 'request' ? userStory : undefined,
+        category: taskType === 'idea' ? category : undefined,
+        potentialValue: taskType === 'idea' ? potentialValue : undefined,
+        upvotes,
         assignee, 
         assigner: assigner.trim() || undefined,
         priority,
@@ -301,8 +384,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
           >
             <div className="flex items-center justify-between p-6 border-b border-slate-100 shrink-0">
               <div className="flex items-center gap-3">
-                <h3 className="text-xl font-bold text-slate-900">
-                  {initialTask ? 'Edit Task' : 'Create New Task'}
+                <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                  {taskType === 'request' && <Zap className="w-5 h-5 text-purple-500" />}
+                  {taskType === 'idea' && <Lightbulb className="w-5 h-5 text-emerald-500" />}
+                  {(!taskType || taskType === 'task') && <CheckSquare className="w-5 h-5 text-indigo-500" />}
+                  {initialTask ? `Edit ${taskType === 'request' ? 'Request' : taskType === 'idea' ? 'Idea' : 'Task'}` : `Create New ${taskType === 'request' ? 'Request' : taskType === 'idea' ? 'Idea' : 'Task'}`}
                 </h3>
                 {!initialTask && (
                   <div className="relative">
@@ -385,8 +471,56 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
                     </div>
                   )}
 
+                  {/* Type Selector */}
+                  <div className="flex items-center gap-2 p-1 bg-slate-100 rounded-xl mb-6">
+                    <button
+                      type="button"
+                      onClick={() => setTaskType('task')}
+                      disabled={isReadOnly}
+                      className={cn(
+                        "flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all",
+                        taskType === 'task' 
+                          ? "bg-white text-indigo-600 shadow-sm" 
+                          : "text-slate-500 hover:text-slate-700"
+                      )}
+                    >
+                      <CheckSquare className="w-4 h-4" />
+                      Task
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTaskType('request')}
+                      disabled={isReadOnly}
+                      className={cn(
+                        "flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all",
+                        taskType === 'request' 
+                          ? "bg-white text-indigo-600 shadow-sm" 
+                          : "text-slate-500 hover:text-slate-700"
+                      )}
+                    >
+                      <Zap className="w-4 h-4" />
+                      Feature Request
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTaskType('idea')}
+                      disabled={isReadOnly}
+                      className={cn(
+                        "flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all",
+                        taskType === 'idea' 
+                          ? "bg-white text-indigo-600 shadow-sm" 
+                          : "text-slate-500 hover:text-slate-700"
+                      )}
+                    >
+                      <Lightbulb className="w-4 h-4" />
+                      Idea
+                    </button>
+                  </div>
+
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">Title</label>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">
+                      {taskType === 'task' ? 'Title' : taskType === 'request' ? 'Feature Name' : 'Idea Summary'}
+                    </label>
                     <input
                       autoFocus
                       type="text"
@@ -394,19 +528,145 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
                       disabled={isReadOnly}
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
-                      placeholder="What needs to be done?"
+                      placeholder={taskType === 'task' ? "What needs to be done?" : taskType === 'request' ? "What feature are we requesting?" : "What's on your mind?"}
                       className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all disabled:opacity-60"
                     />
                   </div>
 
+                  {/* Conditional Fields for Feature Request */}
+                  {taskType === 'request' && (
+                    <motion.div 
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="space-y-4 pt-2"
+                    >
+                      <div className="flex items-center justify-between p-3 bg-indigo-50 rounded-xl border border-indigo-100">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-white rounded-lg shadow-sm">
+                            <Zap className="w-5 h-5 text-indigo-600" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-slate-900">{upvotes.length} Upvotes</p>
+                            <p className="text-[10px] text-slate-500">Priority adjusts based on upvote count</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleUpvote}
+                          className={cn(
+                            "px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2",
+                            upvotes.includes(user.id)
+                              ? "bg-indigo-600 text-white shadow-md shadow-indigo-200"
+                              : "bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50"
+                          )}
+                        >
+                          <ArrowRight className={cn("w-3.5 h-3.5 transition-transform", upvotes.includes(user.id) ? "-rotate-90" : "-rotate-90")} />
+                          {upvotes.includes(user.id) ? 'Upvoted' : 'Upvote'}
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-semibold text-slate-700 mb-1">Impact</label>
+                          <select
+                            disabled={isReadOnly}
+                            value={impact}
+                            onChange={(e) => setImpact(e.target.value as Task['impact'])}
+                            className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                          >
+                            <option value="Low">Low Impact</option>
+                            <option value="Medium">Medium Impact</option>
+                            <option value="High">High Impact</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-slate-700 mb-1">Urgency</label>
+                          <select
+                            disabled={isReadOnly}
+                            value={urgency}
+                            onChange={(e) => setUrgency(e.target.value as Task['urgency'])}
+                            className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                          >
+                            <option value="Low">Low Urgency</option>
+                            <option value="Medium">Medium Urgency</option>
+                            <option value="High">High Urgency</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">User Story</label>
+                        <textarea
+                          disabled={isReadOnly}
+                          value={userStory}
+                          onChange={(e) => setUserStory(e.target.value)}
+                          placeholder="As a [user type], I want to [action] so that [benefit]..."
+                          rows={2}
+                          className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-none"
+                        />
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {/* Conditional Fields for Idea */}
+                  {taskType === 'idea' && (
+                    <motion.div 
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="space-y-4 pt-2"
+                    >
+                      <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Category</label>
+                        <input
+                          type="text"
+                          disabled={isReadOnly}
+                          value={category}
+                          onChange={(e) => setCategory(e.target.value)}
+                          placeholder="e.g., UX Improvement, New Revenue Stream..."
+                          className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Potential Value</label>
+                        <textarea
+                          disabled={isReadOnly}
+                          value={potentialValue}
+                          onChange={(e) => setPotentialValue(e.target.value)}
+                          placeholder="Why is this idea worth pursuing?"
+                          rows={2}
+                          className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-none"
+                        />
+                      </div>
+                    </motion.div>
+                  )}
+
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">Description</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-sm font-semibold text-slate-700">Description</label>
+                      <button
+                        type="button"
+                        onClick={handleGoogleSearch}
+                        disabled={isReadOnly || isSearching || !title.trim()}
+                        className={cn(
+                          "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold transition-all",
+                          isSearching 
+                            ? "bg-indigo-100 text-indigo-600 animate-pulse" 
+                            : "bg-indigo-50 text-indigo-600 hover:bg-indigo-100 border border-indigo-100"
+                        )}
+                      >
+                        {isSearching ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Sparkles className="w-3 h-3" />
+                        )}
+                        {isSearching ? 'Searching...' : 'AI Search & Fill'}
+                      </button>
+                    </div>
                     <textarea
-                      disabled={isReadOnly}
+                      disabled={isReadOnly || isSearching}
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
-                      placeholder="Add more details..."
-                      rows={3}
+                      placeholder={isSearching ? "AI is researching and writing..." : "Add more details..."}
+                      rows={4}
                       className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-none disabled:opacity-60"
                     />
                   </div>
@@ -878,9 +1138,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
                       <div className="flex-1 flex gap-2">
                         <button
                           type="submit"
-                          className="flex-1 px-4 py-2.5 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all active:scale-[0.98]"
+                          className="flex-1 px-4 py-2.5 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                         >
-                          {initialTask ? 'Update Task' : 'Create Task'}
+                          {taskType === 'request' && <Zap className="w-4 h-4" />}
+                          {taskType === 'idea' && <Lightbulb className="w-4 h-4" />}
+                          {(!taskType || taskType === 'task') && <CheckSquare className="w-4 h-4" />}
+                          {initialTask ? `Update ${taskType === 'request' ? 'Request' : taskType === 'idea' ? 'Idea' : 'Task'}` : `Create ${taskType === 'request' ? 'Request' : taskType === 'idea' ? 'Idea' : 'Task'}`}
                         </button>
                         {!initialTask && (
                           <button

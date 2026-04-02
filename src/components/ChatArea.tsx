@@ -9,10 +9,12 @@ import { cn } from '../lib/utils';
 interface ChatAreaProps {
   channel: Channel;
   allMessages: Message[];
-  onSendMessage: (content: string) => void;
+  onSendMessage: (content: string, parentId?: string) => void;
+  notifications: Notification[];
+  onMarkNotificationRead: (id: string) => void;
 }
 
-export const ChatArea: React.FC<ChatAreaProps> = ({ channel, allMessages, onSendMessage }) => {
+export const ChatArea: React.FC<ChatAreaProps> = ({ channel, allMessages, onSendMessage, notifications, onMarkNotificationRead }) => {
   const [input, setInput] = useState('');
   const [mentionSearch, setMentionSearch] = useState('');
   const [showMentions, setShowMentions] = useState(false);
@@ -21,23 +23,39 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ channel, allMessages, onSend
   const [searchQuery, setSearchQuery] = useState('');
   const [searchSender, setSearchSender] = useState('');
   const [searchDate, setSearchDate] = useState('');
+  const [activeThreadParent, setActiveThreadParent] = useState<Message | null>(null);
+  const [threadInput, setThreadInput] = useState('');
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>(() => {
     const saved = localStorage.getItem('recentSearches');
     return saved ? JSON.parse(saved) : [];
   });
   const scrollRef = useRef<HTMLDivElement>(null);
+  const threadScrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const displayMessages = useMemo(() => {
-    if (channel.id === 'all') return allMessages;
-    return allMessages.filter(m => m.department === channel.name);
+    const filtered = allMessages.filter(m => !m.parentId);
+    if (channel.id === 'all') return filtered;
+    return filtered.filter(m => m.department === channel.name || m.department === 'All Channels');
   }, [allMessages, channel.name, channel.id]);
+
+  const threadMessages = useMemo(() => {
+    if (!activeThreadParent) return [];
+    return allMessages.filter(m => m.parentId === activeThreadParent.id);
+  }, [allMessages, activeThreadParent]);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [displayMessages]);
+
+  useEffect(() => {
+    if (threadScrollRef.current) {
+      threadScrollRef.current.scrollTop = threadScrollRef.current.scrollHeight;
+    }
+  }, [threadMessages]);
 
   useEffect(() => {
     localStorage.setItem('recentSearches', JSON.stringify(recentSearches));
@@ -123,7 +141,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ channel, allMessages, onSend
       const matchesQuery = !cleanQuery || msg.content.toLowerCase().includes(cleanQuery.toLowerCase());
       const matchesSender = !fromOperator || msg.sender.toLowerCase().includes(fromOperator.toLowerCase());
       const matchesDate = !searchDate || isSameDay(new Date(msg.timestamp), new Date(searchDate));
-      const matchesChannel = !inOperator || msg.department.toLowerCase().includes(inOperator.toLowerCase());
+      const matchesChannel = !inOperator || msg.department.toLowerCase().includes(inOperator.toLowerCase()) || msg.department === 'All Channels';
       const matchesAttachment = !hasAttachment || (msg.attachments && msg.attachments.length > 0);
       
       return matchesQuery && matchesSender && matchesDate && matchesChannel && matchesAttachment;
@@ -173,7 +191,71 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ channel, allMessages, onSend
             )} 
             onClick={() => setIsSearchOpen(!isSearchOpen)}
           />
-          <Bell className="w-5 h-5 cursor-pointer hover:text-slate-900" />
+          <div className="relative">
+            <Bell 
+              className={cn(
+                "w-5 h-5 cursor-pointer transition-colors",
+                isNotificationsOpen ? "text-indigo-600" : "hover:text-slate-900"
+              )} 
+              onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+            />
+            {notifications.some(n => !n.read) && (
+              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 border-2 border-white rounded-full" />
+            )}
+            
+            <AnimatePresence>
+              {isNotificationsOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                  className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden z-50"
+                >
+                  <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                    <h3 className="font-bold text-slate-900 text-sm">Notifications</h3>
+                    <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                      {notifications.filter(n => !n.read).length} New
+                    </span>
+                  </div>
+                  <div className="max-h-96 overflow-y-auto custom-scrollbar">
+                    {notifications.length > 0 ? (
+                      notifications.map((n) => (
+                        <div 
+                          key={n.id}
+                          className={cn(
+                            "p-4 border-b border-slate-50 last:border-0 transition-colors cursor-pointer hover:bg-slate-50",
+                            !n.read && "bg-indigo-50/30"
+                          )}
+                          onClick={() => {
+                            onMarkNotificationRead(n.id);
+                            if (n.type === 'thread_reply') {
+                              const parent = allMessages.find(m => m.id === n.relatedId);
+                              if (parent) setActiveThreadParent(parent);
+                            }
+                            setIsNotificationsOpen(false);
+                          }}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1">
+                              <p className="text-xs font-bold text-slate-900 mb-1">{n.title}</p>
+                              <p className="text-[11px] text-slate-600 leading-relaxed">{n.content}</p>
+                              <p className="text-[10px] text-slate-400 mt-2">{format(n.timestamp, 'MMM d, h:mm a')}</p>
+                            </div>
+                            {!n.read && <div className="w-2 h-2 bg-indigo-600 rounded-full mt-1 shrink-0" />}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-8 text-center">
+                        <Bell className="w-8 h-8 text-slate-200 mx-auto mb-2" />
+                        <p className="text-sm text-slate-400">No notifications yet.</p>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
           <Info className="w-5 h-5 cursor-pointer hover:text-slate-900" />
         </div>
       </header>
@@ -322,38 +404,166 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ channel, allMessages, onSend
       </AnimatePresence>
 
       {/* Messages */}
-      <div 
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth"
-      >
-        <AnimatePresence initial={false}>
-          {displayMessages.map((msg) => (
-            <motion.div
-              key={msg.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex gap-4 group"
-            >
-              <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold shrink-0 overflow-hidden border border-slate-100">
-                {msg.senderAvatar ? (
-                  <img src={msg.senderAvatar} alt={msg.sender} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                ) : (
-                  msg.sender[0]
+      <div className="flex-1 flex overflow-hidden">
+        <div 
+          ref={scrollRef}
+          className="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth"
+        >
+          <AnimatePresence initial={false}>
+            {displayMessages.map((msg) => (
+              <motion.div
+                key={msg.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={cn(
+                  "flex gap-4 group relative",
+                  activeThreadParent?.id === msg.id && "bg-indigo-50/50 -mx-6 px-6 py-2"
                 )}
+              >
+                <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold shrink-0 overflow-hidden border border-slate-100">
+                  {msg.senderAvatar ? (
+                    <img src={msg.senderAvatar} alt={msg.sender} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  ) : (
+                    msg.sender[0]
+                  )}
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-bold text-slate-900">{msg.sender}</span>
+                    {msg.department === 'All Channels' && (
+                      <span className="text-[10px] px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded-full font-bold border border-indigo-100">
+                        All Channels
+                      </span>
+                    )}
+                    <span className="text-xs text-slate-400">
+                      {format(msg.timestamp, 'h:mm a')}
+                    </span>
+                  </div>
+                  <div className="text-slate-700 leading-relaxed mt-0.5">
+                    {renderMessageContent(msg.content)}
+                  </div>
+                  
+                  {/* Thread Indicator */}
+                  {msg.threadCount && msg.threadCount > 0 ? (
+                    <button 
+                      onClick={() => setActiveThreadParent(msg)}
+                      className="mt-2 flex items-center gap-2 text-[10px] font-bold text-indigo-600 hover:text-indigo-700 transition-colors bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100"
+                    >
+                      <MessageSquare className="w-3 h-3" />
+                      {msg.threadCount} {msg.threadCount === 1 ? 'reply' : 'replies'}
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={() => setActiveThreadParent(msg)}
+                      className="mt-1 opacity-0 group-hover:opacity-100 flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-indigo-600 transition-all"
+                    >
+                      <MessageSquare className="w-3 h-3" />
+                      Reply in thread
+                    </button>
+                  )}
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+
+        {/* Thread Panel */}
+        <AnimatePresence>
+          {activeThreadParent && (
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="w-80 border-l border-slate-200 bg-slate-50 flex flex-col shadow-2xl z-10"
+            >
+              <div className="h-16 border-b border-slate-200 flex items-center justify-between px-4 bg-white shrink-0">
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-indigo-600" />
+                  <h3 className="font-bold text-slate-900 text-sm">Thread</h3>
+                </div>
+                <button 
+                  onClick={() => setActiveThreadParent(null)}
+                  className="p-1.5 hover:bg-slate-100 rounded-full text-slate-400 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <div className="flex-1">
-                <div className="flex items-baseline gap-2">
-                  <span className="font-bold text-slate-900">{msg.sender}</span>
-                  <span className="text-xs text-slate-400">
-                    {format(msg.timestamp, 'h:mm a')}
-                  </span>
+
+              <div className="flex-1 overflow-y-auto p-4 custom-scrollbar" ref={threadScrollRef}>
+                {/* Parent Message */}
+                <div className="mb-6 pb-6 border-b border-slate-200">
+                  <div className="flex gap-3 mb-2">
+                    <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold shrink-0 overflow-hidden border border-slate-100">
+                      {activeThreadParent.senderAvatar ? (
+                        <img src={activeThreadParent.senderAvatar} alt={activeThreadParent.sender} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      ) : (
+                        activeThreadParent.sender[0]
+                      )}
+                    </div>
+                    <div>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-sm font-bold text-slate-900">{activeThreadParent.sender}</span>
+                        <span className="text-[10px] text-slate-400">{format(activeThreadParent.timestamp, 'h:mm a')}</span>
+                      </div>
+                      <p className="text-sm text-slate-700 mt-1">{renderMessageContent(activeThreadParent.content)}</p>
+                    </div>
+                  </div>
                 </div>
-                <div className="text-slate-700 leading-relaxed mt-0.5">
-                  {renderMessageContent(msg.content)}
+
+                {/* Replies */}
+                <div className="space-y-6">
+                  {threadMessages.map((reply) => (
+                    <div key={reply.id} className="flex gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold shrink-0 overflow-hidden border border-slate-100">
+                        {reply.senderAvatar ? (
+                          <img src={reply.senderAvatar} alt={reply.sender} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        ) : (
+                          reply.sender[0]
+                        )}
+                      </div>
+                      <div>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-sm font-bold text-slate-900">{reply.sender}</span>
+                          <span className="text-[10px] text-slate-400">{format(reply.timestamp, 'h:mm a')}</span>
+                        </div>
+                        <p className="text-sm text-slate-700 mt-1">{renderMessageContent(reply.content)}</p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
+              </div>
+
+              {/* Thread Input */}
+              <div className="p-4 bg-white border-t border-slate-200">
+                <form 
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (threadInput.trim()) {
+                      onSendMessage(threadInput, activeThreadParent.id);
+                      setThreadInput('');
+                    }
+                  }}
+                  className="relative flex items-center"
+                >
+                  <input
+                    type="text"
+                    value={threadInput}
+                    onChange={(e) => setThreadInput(e.target.value)}
+                    placeholder="Reply to thread..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!threadInput.trim()}
+                    className="absolute right-1.5 p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-30 transition-colors"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </form>
               </div>
             </motion.div>
-          ))}
+          )}
         </AnimatePresence>
       </div>
 
@@ -396,55 +606,46 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ channel, allMessages, onSend
 
       {/* Input */}
       <div className="p-6 pt-0">
-        {channel.id === 'all' ? (
-          <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-center">
-            <p className="text-xs text-slate-500 font-medium italic">
-              Messaging is disabled in the All Channels view. Please select a specific channel to send messages.
-            </p>
-          </div>
-        ) : (
-          <form 
-            onSubmit={handleSubmit}
-            className="relative flex items-center"
-          >
-            <input
-              ref={inputRef}
-              type="text"
-              value={input}
-              onChange={handleInputChange}
-              onKeyDown={(e) => {
-                if (showMentions && filteredMembers.length > 0) {
-                  if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    setMentionIndex(prev => (prev + 1) % filteredMembers.length);
-                  } else if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    setMentionIndex(prev => (prev - 1 + filteredMembers.length) % filteredMembers.length);
-                  } else if (e.key === 'Enter' || e.key === 'Tab') {
-                    e.preventDefault();
-                    insertMention(filteredMembers[mentionIndex].name);
-                  } else if (e.key === 'Escape') {
-                    setShowMentions(false);
-                  }
+        <form 
+          onSubmit={handleSubmit}
+          className="relative flex items-center"
+        >
+          <input
+            ref={inputRef}
+            type="text"
+            value={input}
+            onChange={handleInputChange}
+            onKeyDown={(e) => {
+              if (showMentions && filteredMembers.length > 0) {
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  setMentionIndex(prev => (prev + 1) % filteredMembers.length);
+                } else if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  setMentionIndex(prev => (prev - 1 + filteredMembers.length) % filteredMembers.length);
+                } else if (e.key === 'Enter' || e.key === 'Tab') {
+                  e.preventDefault();
+                  insertMention(filteredMembers[mentionIndex].name);
+                } else if (e.key === 'Escape') {
+                  setShowMentions(false);
                 }
-              }}
-              placeholder={`Message #${channel.name}`}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 pr-12 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-            />
-            <button
-              type="submit"
-              disabled={!input.trim()}
-              className="absolute right-2 p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-            >
-              <Send className="w-5 h-5" />
-            </button>
-          </form>
-        )}
-        {channel.id !== 'all' && (
-          <p className="text-[10px] text-slate-400 mt-2 px-1">
-            <b>Return</b> to send • <b>Shift + Return</b> for new line • <b>@</b> to mention
-          </p>
-        )}
+              }
+            }}
+            placeholder={channel.id === 'all' ? "Message in All Channels..." : `Message #${channel.name}`}
+            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 pr-12 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+          />
+          <button
+            type="submit"
+            disabled={!input.trim()}
+            className="absolute right-2 p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+          >
+            <Send className="w-5 h-5" />
+          </button>
+        </form>
+        <p className="text-[10px] text-slate-400 mt-2 px-1">
+          <b>Return</b> to send • <b>Shift + Return</b> for new line • <b>@</b> to mention
+          {channel.id === 'all' && <span className="ml-2 text-indigo-500 font-bold">• Broadcast to all channels</span>}
+        </p>
       </div>
     </div>
   );
