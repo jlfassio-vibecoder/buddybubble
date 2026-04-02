@@ -23,9 +23,10 @@ interface TaskModalProps {
   onSaveTemplate: (template: Omit<TaskTemplate, 'id'>) => void;
   user: UserProfile;
   isReadOnly?: boolean;
+  isSummaryView?: boolean;
 }
 
-export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit, onAddTask, onDeleteTask, initialTask, allTasks, activeChannel, channels, templates, onSaveTemplate, user, isReadOnly: isReadOnlyProp }) => {
+export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit, onAddTask, onDeleteTask, initialTask, allTasks, activeChannel, channels, templates, onSaveTemplate, user, isReadOnly: isReadOnlyProp, isSummaryView }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [taskType, setTaskType] = useState<TaskType>('task');
@@ -60,6 +61,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
   const [isSearching, setIsSearching] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const descriptionRef = useRef<HTMLTextAreaElement>(null);
 
   const canEdit = hasPermission(user.role, 'EDIT_TASK');
   const canAssign = hasPermission(user.role, 'ASSIGN_TASK');
@@ -67,6 +69,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
   const canCreate = hasPermission(user.role, 'CREATE_TASK');
 
   const isReadOnly = isReadOnlyProp || (initialTask ? !canEdit : !canCreate);
+
+  // Check if the current user is the assignee or the creator (assigner)
+  const isAssignee = user.name === assignee;
+  const isCreator = user.id === (initialTask?.uid || '');
+  const canEditDescription = !isSearching && (canEdit || isAssignee || isCreator);
 
   useEffect(() => {
     if (initialTask) {
@@ -368,8 +375,15 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  useEffect(() => {
+    if (isSummaryView && descriptionRef.current) {
+      descriptionRef.current.style.height = 'auto';
+      descriptionRef.current.style.height = `${descriptionRef.current.scrollHeight}px`;
+    }
+  }, [description, isSummaryView]);
+
+  const handleSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (title.trim() && assignee.trim()) {
       const taskData: any = { 
         title, 
@@ -502,8 +516,72 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
             </div>
 
             <div className="flex-1 overflow-y-auto custom-scrollbar">
-              <div className="flex flex-col md:flex-row">
-                {/* Main Form */}
+              {isSummaryView ? (
+                <div className="p-6 space-y-6">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xl font-bold text-slate-900">{title}</h3>
+                    <div className="flex items-center gap-2">
+                      {initialTask && (
+                        <span className={cn(
+                          "px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider",
+                          initialTask.status === 'Todo' ? "bg-yellow-100 text-yellow-700" :
+                          initialTask.status === 'In Progress' ? "bg-orange-100 text-orange-700" :
+                          "bg-green-100 text-green-700"
+                        )}>
+                          {initialTask.status}
+                        </span>
+                      )}
+                      <span className={cn(
+                        "px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider",
+                        priority === 'High' ? "bg-red-100 text-red-700" :
+                        priority === 'Medium' ? "bg-amber-100 text-amber-700" :
+                        "bg-blue-100 text-blue-700"
+                      )}>
+                        {priority} Priority
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-sm font-semibold text-slate-700">Description</label>
+                    <div className="flex-1 flex flex-col">
+                      <textarea
+                        ref={descriptionRef}
+                        disabled={!canEditDescription}
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        placeholder="Add more details..."
+                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-none text-slate-700 leading-relaxed overflow-hidden"
+                        style={{ minHeight: '300px' }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-6 border-t border-slate-100">
+                    <div className="flex items-center gap-4">
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Assignee</p>
+                        <p className="text-sm font-medium text-slate-700">{assignee}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Assigned By</p>
+                        <p className="text-sm font-medium text-slate-700">{assigner || 'System'}</p>
+                      </div>
+                    </div>
+                    {canEditDescription && (
+                      <button
+                        onClick={handleSubmit}
+                        className="flex items-center gap-2 px-6 py-2 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200"
+                      >
+                        <Save className="w-4 h-4" />
+                        Save Changes
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col md:flex-row">
+                  {/* Main Form */}
                 <form onSubmit={handleSubmit} className="p-6 space-y-4 flex-1 border-b md:border-b-0 md:border-r border-slate-100">
                   {isReadOnly && (
                     <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-100 rounded-xl mb-4">
@@ -705,12 +783,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
                       </button>
                     </div>
                     <textarea
-                      disabled={isReadOnly || isSearching}
+                      ref={descriptionRef}
+                      disabled={!canEditDescription}
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
                       placeholder={isSearching ? "AI is researching and writing..." : "Add more details..."}
-                      rows={4}
-                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-none disabled:opacity-60"
+                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-none disabled:opacity-60 overflow-hidden"
+                      style={{ minHeight: '120px' }}
                     />
                   </div>
 
@@ -1075,9 +1154,17 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
                               )}>
                                 {task.title}
                               </span>
-                              <span className="text-[10px] text-slate-400">
-                                Status: {task.status} • Assignee: {task.assignee}
-                              </span>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className={cn(
+                                  "px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider",
+                                  task.status === 'Todo' ? "bg-yellow-100 text-yellow-700" :
+                                  task.status === 'In Progress' ? "bg-orange-100 text-orange-700" :
+                                  "bg-green-100 text-green-700"
+                                )}>
+                                  {task.status}
+                                </span>
+                                <span className="text-[10px] text-slate-400">• Assignee: {task.assignee}</span>
+                              </div>
                             </div>
                           </label>
                         ))}
@@ -1097,7 +1184,17 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
                             <Link2 className="w-3 h-3 text-amber-400" />
                             <div className="flex flex-col">
                               <span className="text-sm font-medium text-slate-700">{task.title}</span>
-                              <span className="text-[10px] text-slate-400">Status: {task.status} • Assignee: {task.assignee}</span>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className={cn(
+                                  "px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider",
+                                  task.status === 'Todo' ? "bg-yellow-100 text-yellow-700" :
+                                  task.status === 'In Progress' ? "bg-orange-100 text-orange-700" :
+                                  "bg-green-100 text-green-700"
+                                )}>
+                                  {task.status}
+                                </span>
+                                <span className="text-[10px] text-slate-400">• Assignee: {task.assignee}</span>
+                              </div>
                             </div>
                           </div>
                         ))}
@@ -1118,7 +1215,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
                                 <Link2 className="w-3 h-3 text-indigo-400 rotate-180" />
                                 <div className="flex flex-col">
                                   <span className="text-sm font-medium text-slate-700">{task.title}</span>
-                                  <span className="text-[10px] text-slate-400">Status: {task.status}</span>
+                                  <span className={cn(
+                                    "px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider",
+                                    task.status === 'Todo' ? "bg-yellow-100 text-yellow-700" :
+                                    task.status === 'In Progress' ? "bg-orange-100 text-orange-700" :
+                                    "bg-green-100 text-green-700"
+                                  )}>
+                                    {task.status}
+                                  </span>
                                 </div>
                               </div>
                             ))
@@ -1161,9 +1265,17 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
                               )}>
                                 {task.title}
                               </span>
-                              <span className="text-[10px] text-slate-400">
-                                Status: {task.status} • Assignee: {task.assignee}
-                              </span>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className={cn(
+                                  "px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider",
+                                  task.status === 'Todo' ? "bg-yellow-100 text-yellow-700" :
+                                  task.status === 'In Progress' ? "bg-orange-100 text-orange-700" :
+                                  "bg-green-100 text-green-700"
+                                )}>
+                                  {task.status}
+                                </span>
+                                <span className="text-[10px] text-slate-400">• Assignee: {task.assignee}</span>
+                              </div>
                             </div>
                           </label>
                         ))}
@@ -1191,7 +1303,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
                     >
                       Cancel
                     </button>
-                    {!isReadOnly && (
+                    {( !isReadOnly || canEditDescription ) && (
                       <div className="flex-1 flex gap-2">
                         <button
                           type="submit"
@@ -1200,7 +1312,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
                           {taskType === 'request' && <Zap className="w-4 h-4" />}
                           {taskType === 'idea' && <Lightbulb className="w-4 h-4" />}
                           {(!taskType || taskType === 'task') && <CheckSquare className="w-4 h-4" />}
-                          {initialTask ? `Update ${taskType === 'request' ? 'Request' : taskType === 'idea' ? 'Idea' : 'Task'}` : `Create ${taskType === 'request' ? 'Request' : taskType === 'idea' ? 'Idea' : 'Task'}`}
+                          {isReadOnly 
+                            ? "Update Description" 
+                            : initialTask 
+                              ? `Update ${taskType === 'request' ? 'Request' : taskType === 'idea' ? 'Idea' : 'Task'}` 
+                              : `Create ${taskType === 'request' ? 'Request' : taskType === 'idea' ? 'Idea' : 'Task'}`
+                          }
                         </button>
                         {!initialTask && (
                           <button
@@ -1365,8 +1482,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
                   )}
                 </div>
               </div>
-            </div>
-          </motion.div>
+            )}
+          </div>
+        </motion.div>
         </div>
       )}
     </AnimatePresence>

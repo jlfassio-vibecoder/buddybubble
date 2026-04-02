@@ -5,6 +5,7 @@ export const CHANNELS: Channel[] = [
   { id: '2', name: 'Dev Ops', icon: 'Terminal' },
   { id: '3', name: 'Success Managers', icon: 'Users' },
   { id: '4', name: 'Features Request', icon: 'Lightbulb' },
+  { id: '5', name: 'Ideas', icon: 'Lightbulb' },
 ];
 
 export const INITIAL_TEMPLATES: TaskTemplate[] = [

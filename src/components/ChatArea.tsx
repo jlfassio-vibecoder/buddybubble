@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Send, Hash, Info, Search, Bell, Star, AtSign, X, Calendar as CalendarIcon, User, MessageSquare, Clock, Paperclip } from 'lucide-react';
-import { Message, Channel } from '../types';
+import { Send, Hash, Info, Search, Bell, Star, AtSign, X, Calendar as CalendarIcon, User, MessageSquare, Clock, Paperclip, PanelLeftClose } from 'lucide-react';
+import { Message, Channel, Notification } from '../types';
 import { TEAM_MEMBERS } from '../constants';
 import { format, isSameDay } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
@@ -12,9 +12,10 @@ interface ChatAreaProps {
   onSendMessage: (content: string, parentId?: string) => void;
   notifications: Notification[];
   onMarkNotificationRead: (id: string) => void;
+  onCollapse: () => void;
 }
 
-export const ChatArea: React.FC<ChatAreaProps> = ({ channel, allMessages, onSendMessage, notifications, onMarkNotificationRead }) => {
+export const ChatArea: React.FC<ChatAreaProps> = ({ channel, allMessages, onSendMessage, notifications, onMarkNotificationRead, onCollapse }) => {
   const [input, setInput] = useState('');
   const [mentionSearch, setMentionSearch] = useState('');
   const [showMentions, setShowMentions] = useState(false);
@@ -156,6 +157,14 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ channel, allMessages, onSend
     });
   };
 
+  const handleOpenThread = (msg: Message) => {
+    setActiveThreadParent(msg);
+    // Mark related notifications as read
+    notifications
+      .filter(n => n.type === 'thread_reply' && n.relatedId === msg.id && !n.read)
+      .forEach(n => onMarkNotificationRead(n.id));
+  };
+
   const renderMessageContent = (content: string) => {
     const parts = content.split(/(@\w+(?:\s\w+)?)/g);
     return parts.map((part, i) => {
@@ -257,6 +266,13 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ channel, allMessages, onSend
             </AnimatePresence>
           </div>
           <Info className="w-5 h-5 cursor-pointer hover:text-slate-900" />
+          <button 
+            onClick={onCollapse}
+            className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-indigo-600 transition-all"
+            title="Collapse Chat"
+          >
+            <PanelLeftClose className="w-5 h-5" />
+          </button>
         </div>
       </header>
 
@@ -446,15 +462,20 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ channel, allMessages, onSend
                   {/* Thread Indicator */}
                   {msg.threadCount && msg.threadCount > 0 ? (
                     <button 
-                      onClick={() => setActiveThreadParent(msg)}
+                      onClick={() => handleOpenThread(msg)}
                       className="mt-2 flex items-center gap-2 text-[10px] font-bold text-indigo-600 hover:text-indigo-700 transition-colors bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100"
                     >
                       <MessageSquare className="w-3 h-3" />
                       {msg.threadCount} {msg.threadCount === 1 ? 'reply' : 'replies'}
+                      {notifications.some(n => n.type === 'thread_reply' && n.relatedId === msg.id && !n.read) && (
+                        <span className="px-1 py-0.5 bg-red-500 text-white text-[7px] rounded-full uppercase tracking-tighter animate-pulse">
+                          New
+                        </span>
+                      )}
                     </button>
                   ) : (
                     <button 
-                      onClick={() => setActiveThreadParent(msg)}
+                      onClick={() => handleOpenThread(msg)}
                       className="mt-1 opacity-0 group-hover:opacity-100 flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-indigo-600 transition-all"
                     >
                       <MessageSquare className="w-3 h-3" />

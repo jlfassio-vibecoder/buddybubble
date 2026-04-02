@@ -33,13 +33,13 @@ import {
 } from './firebase';
 import { CHANNELS as INITIAL_CHANNELS, INITIAL_TEMPLATES } from './constants';
 import { Channel, Message, Task, ActivityLogEntry, UserProfile, TaskTemplate, Notification } from './types';
-import { GripVertical, Loader2 } from 'lucide-react';
+import { GripVertical, Loader2, PanelLeftOpen, MessageSquare } from 'lucide-react';
 import { cn } from './lib/utils';
 import { setFaviconBadge } from './lib/favicon';
 
 export default function App() {
   const [channels, setChannels] = useState<Channel[]>([]);
-  const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
+  const [activeChannel, setActiveChannel] = useState<Channel | null>({ id: 'all', name: 'All Channels', icon: 'Hash' });
   const [messages, setMessages] = useState<Message[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [templates, setTemplates] = useState<TaskTemplate[]>([]);
@@ -52,6 +52,7 @@ export default function App() {
   const [isManageChannelsModalOpen, setIsManageChannelsModalOpen] = useState(false);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isChatCollapsed, setIsChatCollapsed] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Auth Listener
@@ -103,9 +104,6 @@ export default function App() {
       });
 
       setChannels(channelList);
-      if (!activeChannel && channelList.length > 0) {
-        setActiveChannel(channelList[0]);
-      }
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'channels');
     });
@@ -134,6 +132,10 @@ export default function App() {
           id: doc.id, 
           createdAt: data.createdAt?.toDate() || new Date(),
           dueDate: data.dueDate?.toDate() || undefined,
+          comments: data.comments?.map((c: any) => ({
+            ...c,
+            timestamp: c.timestamp?.toDate() || new Date()
+          })),
           activityLog: data.activityLog?.map((log: any) => ({
             ...log,
             timestamp: log.timestamp?.toDate() || new Date()
@@ -689,8 +691,11 @@ export default function App() {
         )}
       >
         <div 
-          style={{ width: `${chatWidth}%` }}
-          className="h-full flex flex-col shadow-2xl z-10 relative"
+          style={{ width: isChatCollapsed ? '0%' : `${chatWidth}%` }}
+          className={cn(
+            "h-full flex flex-col shadow-2xl z-10 relative transition-all duration-300 ease-in-out",
+            isChatCollapsed ? "invisible overflow-hidden" : "visible"
+          )}
         >
           <ChatArea 
             channel={activeChannel || { id: 'all', name: 'All Channels', icon: 'Hash' }} 
@@ -698,6 +703,7 @@ export default function App() {
             onSendMessage={handleSendMessage} 
             notifications={notifications}
             onMarkNotificationRead={handleMarkNotificationRead}
+            onCollapse={() => setIsChatCollapsed(true)}
           />
           
           <div
@@ -716,9 +722,22 @@ export default function App() {
           </div>
         </div>
 
+        {isChatCollapsed && (
+          <button
+            onClick={() => setIsChatCollapsed(false)}
+            className="absolute left-0 top-1/2 -translate-y-1/2 z-30 bg-white border border-slate-200 shadow-lg rounded-r-xl p-2 hover:bg-slate-50 transition-all group"
+            title="Expand Chat"
+          >
+            <div className="flex flex-col items-center gap-2">
+              <PanelLeftOpen className="w-5 h-5 text-indigo-600 group-hover:scale-110 transition-transform" />
+              <div className="[writing-mode:vertical-lr] text-[10px] font-bold text-slate-400 uppercase tracking-widest">Messages</div>
+            </div>
+          </button>
+        )}
+
         <div 
-          style={{ width: `${100 - chatWidth}%` }}
-          className="h-full"
+          style={{ width: isChatCollapsed ? '100%' : `${100 - chatWidth}%` }}
+          className="h-full transition-all duration-300 ease-in-out"
         >
           <KanbanBoard 
             tasks={tasks} 

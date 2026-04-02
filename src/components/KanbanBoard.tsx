@@ -56,11 +56,16 @@ interface SortableTaskCardProps {
   viewMode: CardViewMode;
   onViewModeChange: (mode: CardViewMode) => void;
   onQuickView: (task: Task) => void;
+  onDetailedView: (task: Task) => void;
+  onSummaryView: (task: Task) => void;
 }
 
-const SortableTaskCard: React.FC<SortableTaskCardProps> = ({ task, allTasks, onEdit, viewMode, onViewModeChange, onQuickView }) => {
+const SortableTaskCard: React.FC<SortableTaskCardProps> = ({ task, allTasks, onEdit, viewMode: globalViewMode, onViewModeChange, onQuickView, onDetailedView, onSummaryView }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [localViewMode, setLocalViewMode] = useState<CardViewMode | null>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
+
+  const viewMode = localViewMode || globalViewMode;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -115,17 +120,29 @@ const SortableTaskCard: React.FC<SortableTaskCardProps> = ({ task, allTasks, onE
     ? task.comments[task.comments.length - 1] 
     : null;
 
+  const formatDateSafe = (date: any) => {
+    if (!date) return '';
+    try {
+      const d = date instanceof Date ? date : date.toDate ? date.toDate() : new Date(date);
+      if (isNaN(d.getTime())) return '';
+      return format(d, 'MMM d');
+    } catch (e) {
+      return '';
+    }
+  };
+
   return (
     <div
       ref={setNodeRef}
       style={style}
       {...attributes}
       {...listeners}
+      onClick={() => onQuickView(task)}
       className={cn(
         "bg-white rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-all group relative border-l-4 cursor-grab active:cursor-grabbing overflow-visible",
-        task.priority === 'High' ? "border-l-red-500" :
-        task.priority === 'Medium' ? "border-l-amber-500" :
-        "border-l-blue-500",
+        task.status === 'Todo' ? "border-l-yellow-400" :
+        task.status === 'In Progress' ? "border-l-orange-500" :
+        "border-l-green-500",
         isDragging && "z-50 ring-2 ring-indigo-500 ring-offset-2 opacity-0",
         isBlocked && task.status !== 'Done' && "opacity-75",
         viewMode === 'summary' ? "p-3" : "p-4"
@@ -135,6 +152,14 @@ const SortableTaskCard: React.FC<SortableTaskCardProps> = ({ task, allTasks, onE
         <div className="flex items-center gap-2">
           <div className="p-1 -ml-1 text-slate-300 hover:text-slate-500">
             <GripVertical className="w-3.5 h-3.5" />
+          </div>
+          <div className={cn(
+            "flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded",
+            task.status === 'Todo' ? "bg-yellow-100 text-yellow-700" :
+            task.status === 'In Progress' ? "bg-orange-100 text-orange-700" :
+            "bg-green-100 text-green-700"
+          )}>
+            {task.status}
           </div>
           <div className={cn(
             "flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded",
@@ -200,7 +225,7 @@ const SortableTaskCard: React.FC<SortableTaskCardProps> = ({ task, allTasks, onE
                     <Eye className="w-3.5 h-3.5" /> Quick View
                   </button>
                   <button 
-                    onClick={() => { onViewModeChange('summary'); setIsMenuOpen(false); }}
+                    onClick={(e) => { e.stopPropagation(); onSummaryView(task); setIsMenuOpen(false); }}
                     className={cn(
                       "w-full px-3 py-2 text-left text-xs font-medium flex items-center gap-2",
                       viewMode === 'summary' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50"
@@ -209,7 +234,7 @@ const SortableTaskCard: React.FC<SortableTaskCardProps> = ({ task, allTasks, onE
                     <Minimize2 className="w-3.5 h-3.5" /> Summary View
                   </button>
                   <button 
-                    onClick={() => { onViewModeChange('full'); setIsMenuOpen(false); }}
+                    onClick={() => { setLocalViewMode('full'); setIsMenuOpen(false); }}
                     className={cn(
                       "w-full px-3 py-2 text-left text-xs font-medium flex items-center gap-2",
                       viewMode === 'full' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50"
@@ -218,13 +243,19 @@ const SortableTaskCard: React.FC<SortableTaskCardProps> = ({ task, allTasks, onE
                     <Layout className="w-3.5 h-3.5" /> Full View
                   </button>
                   <button 
-                    onClick={() => { onViewModeChange('detailed'); setIsMenuOpen(false); }}
+                    onClick={() => { onDetailedView(task); setIsMenuOpen(false); }}
                     className={cn(
                       "w-full px-3 py-2 text-left text-xs font-medium flex items-center gap-2",
                       viewMode === 'detailed' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50"
                     )}
                   >
                     <Maximize2 className="w-3.5 h-3.5" /> Detailed View
+                  </button>
+                  <button 
+                    onClick={() => { setLocalViewMode(null); setIsMenuOpen(false); }}
+                    className="w-full px-3 py-2 text-left text-[10px] font-bold text-indigo-600 hover:bg-indigo-50 flex items-center gap-2"
+                  >
+                    <ArrowUpDown className="w-3 h-3" /> Reset to Global
                   </button>
                   <div className="h-px bg-slate-100 my-1" />
                   <button 
@@ -242,11 +273,14 @@ const SortableTaskCard: React.FC<SortableTaskCardProps> = ({ task, allTasks, onE
 
       <h4 className={cn(
         "font-semibold text-slate-900 leading-tight",
-        viewMode === 'summary' ? "text-sm mb-0" : "text-base mb-1"
+        viewMode === 'summary' ? "text-sm mb-1" : "text-base mb-1"
       )}>{task.title}</h4>
       
-      {viewMode !== 'summary' && (
-        <p className="text-xs text-slate-500 mb-2 line-clamp-2">{task.description}</p>
+      {task.description && (
+        <p className={cn(
+          "text-xs text-slate-500 mb-2",
+          viewMode === 'detailed' || viewMode === 'summary' ? "" : "line-clamp-2"
+        )}>{task.description}</p>
       )}
       
       {viewMode !== 'summary' && task.tags && task.tags.length > 0 && (
@@ -300,7 +334,7 @@ const SortableTaskCard: React.FC<SortableTaskCardProps> = ({ task, allTasks, onE
               {lastComment.author[0]}
             </div>
             <span className="text-[9px] font-bold text-slate-600">{lastComment.author}</span>
-            <span className="text-[8px] text-slate-400 ml-auto">{format(new Date(lastComment.createdAt), 'MMM d')}</span>
+            <span className="text-[8px] text-slate-400 ml-auto">{formatDateSafe(lastComment.timestamp)}</span>
           </div>
           <p className="text-[10px] text-slate-500 line-clamp-1 italic">"{lastComment.text}"</p>
         </div>
@@ -339,7 +373,13 @@ const SortableTaskCard: React.FC<SortableTaskCardProps> = ({ task, allTasks, onE
                 : "text-slate-400"
             )}>
               <Calendar className="w-3 h-3" />
-              <span>{format(new Date(task.dueDate), 'MMM d')}</span>
+              <span>{formatDateSafe(task.dueDate)}</span>
+            </div>
+          )}
+          {viewMode === 'detailed' && task.createdAt && (
+            <div className="flex items-center gap-1 text-[10px] font-medium text-slate-400">
+              <Clock className="w-3 h-3" />
+              <span>{formatDateSafe(task.createdAt)}</span>
             </div>
           )}
           {viewMode !== 'summary' && (
@@ -388,9 +428,11 @@ interface KanbanColumnProps {
   viewMode: CardViewMode;
   onViewModeChange: (mode: CardViewMode) => void;
   onQuickView: (task: Task) => void;
+  onDetailedView: (task: Task) => void;
+  onSummaryView: (task: Task) => void;
 }
 
-const KanbanColumn: React.FC<KanbanColumnProps> = ({ id, tasks, column, onEdit, onAdd, allTasks, sortTasks, viewMode, onViewModeChange, onQuickView }) => {
+const KanbanColumn: React.FC<KanbanColumnProps> = ({ id, tasks, column, onEdit, onAdd, allTasks, sortTasks, viewMode, onViewModeChange, onQuickView, onDetailedView, onSummaryView }) => {
   const { setNodeRef } = useDroppable({
     id,
   });
@@ -402,7 +444,12 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({ id, tasks, column, onEdit, 
       <div className="flex items-center justify-between mb-4 px-2">
         <div className="flex items-center gap-2">
           <h3 className="font-bold text-slate-700">{column}</h3>
-          <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full text-xs font-medium">
+          <span className={cn(
+            "px-2 py-0.5 rounded-full text-xs font-medium",
+            column === 'Todo' ? "bg-yellow-100 text-yellow-700" :
+            column === 'In Progress' ? "bg-orange-100 text-orange-700" :
+            "bg-green-100 text-green-700"
+          )}>
             {sortedTasks.length}
           </span>
         </div>
@@ -426,6 +473,8 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({ id, tasks, column, onEdit, 
               viewMode={viewMode}
               onViewModeChange={onViewModeChange}
               onQuickView={onQuickView}
+              onDetailedView={onDetailedView}
+              onSummaryView={onSummaryView}
             />
           ))}
           
@@ -451,11 +500,14 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
   const [localTasks, setLocalTasks] = useState<Task[]>(tasks);
   const [globalViewMode, setGlobalViewMode] = useState<CardViewMode>('full');
   const [isQuickView, setIsQuickView] = useState(false);
+  const [isSummaryMode, setIsSummaryMode] = useState(false);
 
   // Sync local tasks when tasks prop changes and we're not dragging
   useEffect(() => {
     if (!activeId) {
-      setLocalTasks(tasks);
+      // Sort by position initially if manual sort is selected
+      const sorted = [...tasks].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+      setLocalTasks(sorted);
     }
   }, [tasks, activeId]);
 
@@ -490,7 +542,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       }
       if (sortBy === 'manual') {
-        return (a.position ?? 0) - (b.position ?? 0);
+        // When manual sort is selected, we rely on the array order in localTasks
+        // which is already sorted by position in the useEffect and updated by arrayMove
+        return 0;
       }
       return 0;
     });
@@ -581,18 +635,29 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
 
   const handleOpenCreate = () => {
     setSelectedTask(null);
+    setIsQuickView(false);
+    setIsSummaryMode(false);
     setIsModalOpen(true);
   };
 
   const handleOpenEdit = (task: Task) => {
     setSelectedTask(task);
     setIsQuickView(false);
+    setIsSummaryMode(false);
     setIsModalOpen(true);
   };
 
   const handleQuickView = (task: Task) => {
     setSelectedTask(task);
     setIsQuickView(true);
+    setIsSummaryMode(false);
+    setIsModalOpen(true);
+  };
+
+  const handleSummaryView = (task: Task) => {
+    setSelectedTask(task);
+    setIsQuickView(false);
+    setIsSummaryMode(true);
     setIsModalOpen(true);
   };
 
@@ -620,6 +685,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
         onSaveTemplate={onSaveTemplate}
         user={user}
         isReadOnly={isQuickView}
+        isSummaryView={isSummaryMode}
       />
       
       {/* Filter Bar */}
@@ -725,6 +791,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
               viewMode={globalViewMode}
               onViewModeChange={setGlobalViewMode}
               onQuickView={handleQuickView}
+              onDetailedView={handleQuickView}
+              onSummaryView={handleSummaryView}
             />
           ))}
         </div>
@@ -741,11 +809,19 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
           {activeTask ? (
             <div className={cn(
               "bg-white p-4 rounded-xl shadow-2xl border border-indigo-200 w-80 rotate-3 scale-105 cursor-grabbing border-l-4",
-              activeTask.priority === 'High' ? "border-l-red-500" :
-              activeTask.priority === 'Medium' ? "border-l-amber-500" :
-              "border-l-blue-500"
+              activeTask.status === 'Todo' ? "border-l-yellow-400" :
+              activeTask.status === 'In Progress' ? "border-l-orange-500" :
+              "border-l-green-500"
             )}>
               <div className="flex justify-between items-start mb-2">
+                <div className={cn(
+                  "flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded",
+                  activeTask.status === 'Todo' ? "bg-yellow-100 text-yellow-700" :
+                  activeTask.status === 'In Progress' ? "bg-orange-100 text-orange-700" :
+                  "bg-green-100 text-green-700"
+                )}>
+                  {activeTask.status}
+                </div>
                 <div className={cn(
                   "flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded",
                   activeTask.priority === 'High' ? "bg-red-100 text-red-700" :
