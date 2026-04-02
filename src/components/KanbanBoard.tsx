@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
-import { Plus, MoreHorizontal, Clock, User, Filter, Edit2, Calendar, MessageSquare, CheckSquare, GripVertical, AlertCircle, AlertTriangle, Info, Link2, ArrowUpDown, Paperclip, Zap, Lightbulb } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, MoreHorizontal, Clock, User, Filter, Edit2, Calendar, MessageSquare, CheckSquare, GripVertical, AlertCircle, AlertTriangle, Info, Link2, ArrowUpDown, Paperclip, Zap, Lightbulb, Eye, Copy, Layout, Maximize2, Minimize2, CheckCircle2, Square } from 'lucide-react';
 import { Task, Channel, UserProfile, TaskTemplate } from '../types';
 import { cn } from '../lib/utils';
 import { motion } from 'motion/react';
 import { TaskModal } from './TaskModal';
 import { format, isPast, isToday } from 'date-fns';
 import { hasPermission } from '../lib/permissions';
+import { AnimatePresence } from 'motion/react';
+
+export type CardViewMode = 'summary' | 'full' | 'detailed';
 import {
   DndContext,
   DragOverlay,
@@ -18,6 +21,7 @@ import {
   DragOverEvent,
   DragEndEvent,
   defaultDropAnimationSideEffects,
+  useDroppable,
 } from '@dnd-kit/core';
 import {
   arrayMove,
@@ -49,9 +53,25 @@ interface SortableTaskCardProps {
   task: Task;
   allTasks: Task[];
   onEdit: (task: Task) => void;
+  viewMode: CardViewMode;
+  onViewModeChange: (mode: CardViewMode) => void;
+  onQuickView: (task: Task) => void;
 }
 
-const SortableTaskCard: React.FC<SortableTaskCardProps> = ({ task, allTasks, onEdit }) => {
+const SortableTaskCard: React.FC<SortableTaskCardProps> = ({ task, allTasks, onEdit, viewMode, onViewModeChange, onQuickView }) => {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const {
     attributes,
     listeners,
@@ -61,6 +81,7 @@ const SortableTaskCard: React.FC<SortableTaskCardProps> = ({ task, allTasks, onE
     isDragging,
   } = useSortable({
     id: task.id,
+    disabled: isMenuOpen,
     data: {
       type: 'Task',
       task,
@@ -84,26 +105,35 @@ const SortableTaskCard: React.FC<SortableTaskCardProps> = ({ task, allTasks, onE
 
   const isBlocked = blockedBy.length > 0;
 
+  const handleCopyDetails = () => {
+    const details = `Task: ${task.title}\nDescription: ${task.description}\nStatus: ${task.status}\nPriority: ${task.priority}`;
+    navigator.clipboard.writeText(details);
+    setIsMenuOpen(false);
+  };
+
+  const lastComment = task.comments && task.comments.length > 0 
+    ? task.comments[task.comments.length - 1] 
+    : null;
+
   return (
     <div
       ref={setNodeRef}
       style={style}
+      {...attributes}
+      {...listeners}
       className={cn(
-        "bg-white p-4 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow group relative border-l-4",
+        "bg-white rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-all group relative border-l-4 cursor-grab active:cursor-grabbing overflow-visible",
         task.priority === 'High' ? "border-l-red-500" :
         task.priority === 'Medium' ? "border-l-amber-500" :
         "border-l-blue-500",
-        isDragging && "z-50 ring-2 ring-indigo-500 ring-offset-2",
-        isBlocked && task.status !== 'Done' && "opacity-75"
+        isDragging && "z-50 ring-2 ring-indigo-500 ring-offset-2 opacity-0",
+        isBlocked && task.status !== 'Done' && "opacity-75",
+        viewMode === 'summary' ? "p-3" : "p-4"
       )}
     >
       <div className="flex justify-between items-start mb-2">
         <div className="flex items-center gap-2">
-          <div 
-            {...attributes} 
-            {...listeners}
-            className="p-1 -ml-1 text-slate-300 hover:text-slate-500 cursor-grab active:cursor-grabbing"
-          >
+          <div className="p-1 -ml-1 text-slate-300 hover:text-slate-500">
             <GripVertical className="w-3.5 h-3.5" />
           </div>
           <div className={cn(
@@ -117,40 +147,109 @@ const SortableTaskCard: React.FC<SortableTaskCardProps> = ({ task, allTasks, onE
             {task.priority === 'Low' && <Info className="w-3 h-3" />}
             {task.priority}
           </div>
-          <div className={cn(
-            "flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded",
-            task.type === 'request' ? "bg-purple-100 text-purple-700" :
-            task.type === 'idea' ? "bg-emerald-100 text-emerald-700" :
-            "bg-slate-100 text-slate-700"
-          )}>
-            {task.type === 'request' && <Zap className="w-3 h-3" />}
-            {task.type === 'idea' && <Lightbulb className="w-3 h-3" />}
-            {(!task.type || task.type === 'task') && <CheckSquare className="w-3 h-3" />}
-            {task.type || 'task'}
-          </div>
-          {isBlocked && task.status !== 'Done' && (
-            <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">
-              <Link2 className="w-3 h-3" />
-              Blocked
+          {viewMode !== 'summary' && (
+            <div className={cn(
+              "flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded",
+              task.type === 'request' ? "bg-purple-100 text-purple-700" :
+              task.type === 'idea' ? "bg-emerald-100 text-emerald-700" :
+              "bg-slate-100 text-slate-700"
+            )}>
+              {task.type === 'request' && <Zap className="w-3 h-3" />}
+              {task.type === 'idea' && <Lightbulb className="w-3 h-3" />}
+              {(!task.type || task.type === 'task') && <CheckSquare className="w-3 h-3" />}
+              {task.type || 'task'}
             </div>
           )}
         </div>
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity relative" onPointerDown={e => e.stopPropagation()}>
           <button 
-            onClick={() => onEdit(task)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit(task);
+            }}
             className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-indigo-600 transition-colors"
           >
             <Edit2 className="w-3.5 h-3.5" />
           </button>
-          <button className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 transition-colors">
-            <MoreHorizontal className="w-3.5 h-3.5" />
-          </button>
+          <div className="relative" ref={menuRef}>
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsMenuOpen(!isMenuOpen);
+              }}
+              className={cn(
+                "p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 transition-colors",
+                isMenuOpen && "bg-slate-100 text-slate-600"
+              )}
+            >
+              <MoreHorizontal className="w-3.5 h-3.5" />
+            </button>
+            <AnimatePresence>
+              {isMenuOpen && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                  className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-xl border border-slate-200 z-[100] py-1 overflow-hidden"
+                >
+                  <div className="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-50">View Options</div>
+                  <button 
+                    onClick={() => { onQuickView(task); setIsMenuOpen(false); }}
+                    className="w-full px-3 py-2 text-left text-xs font-medium text-slate-600 hover:bg-slate-50 flex items-center gap-2"
+                  >
+                    <Eye className="w-3.5 h-3.5" /> Quick View
+                  </button>
+                  <button 
+                    onClick={() => { onViewModeChange('summary'); setIsMenuOpen(false); }}
+                    className={cn(
+                      "w-full px-3 py-2 text-left text-xs font-medium flex items-center gap-2",
+                      viewMode === 'summary' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50"
+                    )}
+                  >
+                    <Minimize2 className="w-3.5 h-3.5" /> Summary View
+                  </button>
+                  <button 
+                    onClick={() => { onViewModeChange('full'); setIsMenuOpen(false); }}
+                    className={cn(
+                      "w-full px-3 py-2 text-left text-xs font-medium flex items-center gap-2",
+                      viewMode === 'full' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50"
+                    )}
+                  >
+                    <Layout className="w-3.5 h-3.5" /> Full View
+                  </button>
+                  <button 
+                    onClick={() => { onViewModeChange('detailed'); setIsMenuOpen(false); }}
+                    className={cn(
+                      "w-full px-3 py-2 text-left text-xs font-medium flex items-center gap-2",
+                      viewMode === 'detailed' ? "bg-indigo-50 text-indigo-600" : "text-slate-600 hover:bg-slate-50"
+                    )}
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" /> Detailed View
+                  </button>
+                  <div className="h-px bg-slate-100 my-1" />
+                  <button 
+                    onClick={handleCopyDetails}
+                    className="w-full px-3 py-2 text-left text-xs font-medium text-slate-600 hover:bg-slate-50 flex items-center gap-2"
+                  >
+                    <Copy className="w-3.5 h-3.5" /> Copy Summary
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
       </div>
-      <h4 className="font-semibold text-slate-900 mb-1 leading-tight">{task.title}</h4>
-      <p className="text-xs text-slate-500 mb-2 line-clamp-2">{task.description}</p>
+
+      <h4 className={cn(
+        "font-semibold text-slate-900 leading-tight",
+        viewMode === 'summary' ? "text-sm mb-0" : "text-base mb-1"
+      )}>{task.title}</h4>
       
-      {task.tags && task.tags.length > 0 && (
+      {viewMode !== 'summary' && (
+        <p className="text-xs text-slate-500 mb-2 line-clamp-2">{task.description}</p>
+      )}
+      
+      {viewMode !== 'summary' && task.tags && task.tags.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-3">
           {task.tags.map((tag) => (
             <span 
@@ -163,28 +262,51 @@ const SortableTaskCard: React.FC<SortableTaskCardProps> = ({ task, allTasks, onE
         </div>
       )}
       
-      <div className="flex flex-col gap-1.5 mb-3">
-        {isBlocked && task.status !== 'Done' && (
-          <div className="flex items-center gap-1.5 px-2 py-1 bg-amber-50 border border-amber-100 rounded-md">
-            <Link2 className="w-3 h-3 text-amber-600" />
-            <span className="text-[10px] font-medium text-amber-700">Blocked by {blockedBy.length} task{blockedBy.length > 1 ? 's' : ''}</span>
-          </div>
-        )}
-        {blocks.length > 0 && (
-          <div className="flex items-center gap-1.5 px-2 py-1 bg-indigo-50 border border-indigo-100 rounded-md">
-            <Link2 className="w-3 h-3 text-indigo-600 rotate-180" />
-            <span className="text-[10px] font-medium text-indigo-700">Blocks {blocks.length} task{blocks.length > 1 ? 's' : ''}</span>
-          </div>
-        )}
-        {relatedTasks.length > 0 && (
-          <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-50 border border-slate-100 rounded-md">
-            <Link2 className="w-3 h-3 text-slate-400" />
-            <span className="text-[10px] font-medium text-slate-600">Related to {relatedTasks.length} task{relatedTasks.length > 1 ? 's' : ''}</span>
-          </div>
-        )}
-      </div>
+      {viewMode !== 'summary' && (
+        <div className="flex flex-col gap-1.5 mb-3">
+          {isBlocked && task.status !== 'Done' && (
+            <div className="flex items-center gap-1.5 px-2 py-1 bg-amber-50 border border-amber-100 rounded-md">
+              <Link2 className="w-3 h-3 text-amber-600" />
+              <span className="text-[10px] font-medium text-amber-700">Blocked by {blockedBy.length} task{blockedBy.length > 1 ? 's' : ''}</span>
+            </div>
+          )}
+          {blocks.length > 0 && (
+            <div className="flex items-center gap-1.5 px-2 py-1 bg-indigo-50 border border-indigo-100 rounded-md">
+              <Link2 className="w-3 h-3 text-indigo-600 rotate-180" />
+              <span className="text-[10px] font-medium text-indigo-700">Blocks {blocks.length} task{blocks.length > 1 ? 's' : ''}</span>
+            </div>
+          )}
+        </div>
+      )}
 
-      {task.subtasks && task.subtasks.length > 0 && (
+      {viewMode === 'detailed' && task.subtasks && task.subtasks.length > 0 && (
+        <div className="mb-3 space-y-1">
+          {task.subtasks.slice(0, 3).map((sub, idx) => (
+            <div key={idx} className="flex items-center gap-2 text-[10px] text-slate-500">
+              {sub.completed ? <CheckCircle2 className="w-3 h-3 text-emerald-500" /> : <Square className="w-3 h-3 text-slate-300" />}
+              <span className={cn(sub.completed && "line-through opacity-60")}>{sub.title}</span>
+            </div>
+          ))}
+          {task.subtasks.length > 3 && (
+            <div className="text-[9px] text-slate-400 pl-5">+{task.subtasks.length - 3} more subtasks</div>
+          )}
+        </div>
+      )}
+
+      {viewMode === 'detailed' && lastComment && (
+        <div className="mb-3 p-2 bg-slate-50 rounded-lg border border-slate-100">
+          <div className="flex items-center gap-1.5 mb-1">
+            <div className="w-4 h-4 rounded-full bg-slate-200 flex items-center justify-center text-[8px] font-bold text-slate-500">
+              {lastComment.author[0]}
+            </div>
+            <span className="text-[9px] font-bold text-slate-600">{lastComment.author}</span>
+            <span className="text-[8px] text-slate-400 ml-auto">{format(new Date(lastComment.createdAt), 'MMM d')}</span>
+          </div>
+          <p className="text-[10px] text-slate-500 line-clamp-1 italic">"{lastComment.text}"</p>
+        </div>
+      )}
+
+      {viewMode !== 'summary' && task.subtasks && task.subtasks.length > 0 && (
         <div className="mb-4">
           <div className="flex items-center justify-between mb-1.5">
             <div className="flex items-center gap-1.5">
@@ -204,8 +326,11 @@ const SortableTaskCard: React.FC<SortableTaskCardProps> = ({ task, allTasks, onE
         </div>
       )}
       
-      <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-        <div className="flex flex-col gap-1">
+      <div className={cn(
+        "flex items-center justify-between border-slate-100",
+        viewMode === 'summary' ? "pt-2" : "pt-3 border-t"
+      )}>
+        <div className="flex flex-wrap gap-2">
           {task.dueDate && (
             <div className={cn(
               "flex items-center gap-1 text-[10px] font-medium",
@@ -217,61 +342,102 @@ const SortableTaskCard: React.FC<SortableTaskCardProps> = ({ task, allTasks, onE
               <span>{format(new Date(task.dueDate), 'MMM d')}</span>
             </div>
           )}
-          <div className="flex items-center gap-1 text-slate-400">
-            <Clock className="w-3 h-3" />
-            <span className="text-[10px]">2d left</span>
-          </div>
-          {task.comments && task.comments.length > 0 && (
-            <div className="flex items-center gap-1 text-slate-400">
-              <MessageSquare className="w-3 h-3" />
-              <span className="text-[10px]">{task.comments.length}</span>
-            </div>
-          )}
-          {task.subtasks && task.subtasks.length > 0 && (
-            <div className="flex items-center gap-1 text-slate-400">
-              <CheckSquare className="w-3 h-3" />
-              <span className="text-[10px]">
-                {task.subtasks.filter(s => s.completed).length}/{task.subtasks.length}
-              </span>
-            </div>
-          )}
-          {task.dependencies && task.dependencies.length > 0 && (
-            <div className="flex items-center gap-1 text-slate-400">
-              <Link2 className="w-3 h-3" />
-              <span className="text-[10px]">{task.dependencies.length}</span>
-            </div>
-          )}
-          {task.relatedTaskIds && task.relatedTaskIds.length > 0 && (
-            <div className="flex items-center gap-1 text-slate-400">
-              <Link2 className="w-3 h-3 opacity-60" />
-              <span className="text-[10px]">{task.relatedTaskIds.length}</span>
-            </div>
-          )}
-          {task.attachments && task.attachments.length > 0 && (
-            <div className="flex items-center gap-1 text-slate-400">
-              <Paperclip className="w-3 h-3" />
-              <span className="text-[10px]">{task.attachments.length}</span>
-            </div>
-          )}
-          {task.type === 'request' && task.upvotes && task.upvotes.length > 0 && (
-            <div className="flex items-center gap-1 text-indigo-500 font-bold">
-              <Zap className="w-3 h-3" />
-              <span className="text-[10px]">{task.upvotes.length} upvotes</span>
-            </div>
+          {viewMode !== 'summary' && (
+            <>
+              {task.comments && task.comments.length > 0 && (
+                <div className="flex items-center gap-1 text-slate-400">
+                  <MessageSquare className="w-3 h-3" />
+                  <span className="text-[10px]">{task.comments.length}</span>
+                </div>
+              )}
+              {task.attachments && task.attachments.length > 0 && (
+                <div className="flex items-center gap-1 text-slate-400">
+                  <Paperclip className="w-3 h-3" />
+                  <span className="text-[10px]">{task.attachments.length}</span>
+                </div>
+              )}
+            </>
           )}
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex flex-col items-end">
-            <span className="text-[10px] font-medium text-slate-600">{task.assignee}</span>
-            {task.assigner && (
-              <span className="text-[8px] text-slate-400 leading-none">by {task.assigner}</span>
-            )}
-          </div>
-          <div className="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center text-[10px] font-bold text-indigo-700">
+          {viewMode !== 'summary' && (
+            <div className="flex flex-col items-end">
+              <span className="text-[10px] font-medium text-slate-600">{task.assignee}</span>
+            </div>
+          )}
+          <div className={cn(
+            "rounded-full bg-indigo-100 flex items-center justify-center font-bold text-indigo-700",
+            viewMode === 'summary' ? "w-5 h-5 text-[8px]" : "w-6 h-6 text-[10px]"
+          )}>
             {task.assignee[0]}
           </div>
         </div>
       </div>
+    </div>
+  );
+};
+
+interface KanbanColumnProps {
+  id: string;
+  tasks: Task[];
+  column: Task['status'];
+  onEdit: (task: Task) => void;
+  onAdd: () => void;
+  allTasks: Task[];
+  sortTasks: (tasks: Task[]) => Task[];
+  viewMode: CardViewMode;
+  onViewModeChange: (mode: CardViewMode) => void;
+  onQuickView: (task: Task) => void;
+}
+
+const KanbanColumn: React.FC<KanbanColumnProps> = ({ id, tasks, column, onEdit, onAdd, allTasks, sortTasks, viewMode, onViewModeChange, onQuickView }) => {
+  const { setNodeRef } = useDroppable({
+    id,
+  });
+
+  const sortedTasks = sortTasks(tasks.filter((t) => t.status === column));
+
+  return (
+    <div ref={setNodeRef} className="w-80 flex flex-col h-full">
+      <div className="flex items-center justify-between mb-4 px-2">
+        <div className="flex items-center gap-2">
+          <h3 className="font-bold text-slate-700">{column}</h3>
+          <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full text-xs font-medium">
+            {sortedTasks.length}
+          </span>
+        </div>
+        <button className="p-1 hover:bg-slate-200 rounded transition-colors">
+          <MoreHorizontal className="w-4 h-4 text-slate-400" />
+        </button>
+      </div>
+
+      <SortableContext
+        id={id}
+        items={sortedTasks.map((t) => t.id)}
+        strategy={verticalListSortingStrategy}
+      >
+        <div className="flex-1 space-y-3 overflow-y-auto pr-2 custom-scrollbar pb-20">
+          {sortedTasks.map((task) => (
+            <SortableTaskCard 
+              key={task.id} 
+              task={task} 
+              allTasks={allTasks}
+              onEdit={onEdit} 
+              viewMode={viewMode}
+              onViewModeChange={onViewModeChange}
+              onQuickView={onQuickView}
+            />
+          ))}
+          
+          <button 
+            onClick={onAdd}
+            className="w-full py-2 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 hover:text-slate-600 hover:border-slate-300 hover:bg-slate-100 transition-all flex items-center justify-center gap-2 text-sm font-medium"
+          >
+            <Plus className="w-4 h-4" />
+            Add New
+          </button>
+        </div>
+      </SortableContext>
     </div>
   );
 };
@@ -282,6 +448,16 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [localTasks, setLocalTasks] = useState<Task[]>(tasks);
+  const [globalViewMode, setGlobalViewMode] = useState<CardViewMode>('full');
+  const [isQuickView, setIsQuickView] = useState(false);
+
+  // Sync local tasks when tasks prop changes and we're not dragging
+  useEffect(() => {
+    if (!activeId) {
+      setLocalTasks(tasks);
+    }
+  }, [tasks, activeId]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -320,7 +496,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
     });
   };
 
-  const filteredTasks = tasks.filter(t => {
+  const filteredTasks = localTasks.filter(t => {
     const matchesPriority = priorityFilter === 'All' || t.priority === priorityFilter;
     const matchesChannel = activeChannel.id === 'all' || !t.channelId || t.channelId === activeChannel.id;
     return matchesPriority && matchesChannel;
@@ -339,53 +515,69 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
 
     if (activeId === overId) return;
 
-    const activeTask = tasks.find(t => t.id === activeId);
+    const activeTask = localTasks.find(t => t.id === activeId);
     if (!activeTask) return;
 
     // Check if dropping over a column or another task
-    const overTask = tasks.find(t => t.id === overId);
+    const overTask = localTasks.find(t => t.id === overId);
     const isOverAColumn = COLUMNS.includes(overId as Task['status']);
 
     if (overTask && activeTask.status !== overTask.status) {
-      const overTasks = sortTasks(tasks.filter(t => t.status === overTask.status));
-      const overIndex = overTasks.findIndex(t => t.id === overId);
-      onTaskMove(activeId, overTask.status, overIndex);
+      setLocalTasks(prev => {
+        const activeIndex = prev.findIndex(t => t.id === activeId);
+        const overIndex = prev.findIndex(t => t.id === overId);
+        
+        const newTasks = [...prev];
+        newTasks[activeIndex] = { ...newTasks[activeIndex], status: overTask.status };
+        return arrayMove(newTasks, activeIndex, overIndex);
+      });
     } else if (isOverAColumn && activeTask.status !== overId) {
-      const overTasks = tasks.filter(t => t.status === overId);
-      onTaskMove(activeId, overId as Task['status'], overTasks.length);
+      setLocalTasks(prev => {
+        const activeIndex = prev.findIndex(t => t.id === activeId);
+        const newTasks = [...prev];
+        newTasks[activeIndex] = { ...newTasks[activeIndex], status: overId as Task['status'] };
+        return arrayMove(newTasks, activeIndex, newTasks.length - 1);
+      });
     }
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-    setActiveId(null);
-
-    if (!over) return;
-
     const activeId = active.id as string;
+    
+    if (!over) {
+      setActiveId(null);
+      return;
+    }
+
     const overId = over.id as string;
+    const activeTask = localTasks.find(t => t.id === activeId);
+    const originalTask = tasks.find(t => t.id === activeId);
 
-    if (activeId === overId) return;
+    if (!activeTask || !originalTask) {
+      setActiveId(null);
+      return;
+    }
 
-    const activeTask = tasks.find(t => t.id === activeId);
-    if (!activeTask) return;
-
-    const overTask = tasks.find(t => t.id === overId);
-    if (!overTask) return;
-
-    if (activeTask.status === overTask.status) {
-      const columnTasks = sortTasks(tasks.filter(t => t.status === activeTask.status));
-      const oldIndex = columnTasks.findIndex(t => t.id === activeId);
-      const newIndex = columnTasks.findIndex(t => t.id === overId);
+    // Sync with server
+    if (activeTask.status !== originalTask.status) {
+      const columnTasks = localTasks.filter(t => t.status === activeTask.status);
+      const newIndex = columnTasks.findIndex(t => t.id === activeId);
+      onTaskMove(activeId, activeTask.status, newIndex);
+    } else {
+      const columnTasks = sortTasks(localTasks.filter(t => t.status === activeTask.status));
+      const oldIndex = tasks.filter(t => t.status === activeTask.status).findIndex(t => t.id === activeId);
+      const newIndex = columnTasks.findIndex(t => t.id === activeId);
       
       if (oldIndex !== newIndex) {
-        const reorderedTasks = arrayMove(columnTasks, oldIndex, newIndex);
-        onTaskReorder(activeId, newIndex, reorderedTasks);
+        onTaskReorder(activeId, newIndex, columnTasks);
       }
     }
+
+    setActiveId(null);
   };
 
-  const activeTask = activeId ? tasks.find(t => t.id === activeId) : null;
+  const activeTask = activeId ? localTasks.find(t => t.id === activeId) : null;
 
   const handleOpenCreate = () => {
     setSelectedTask(null);
@@ -394,6 +586,13 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
 
   const handleOpenEdit = (task: Task) => {
     setSelectedTask(task);
+    setIsQuickView(false);
+    setIsModalOpen(true);
+  };
+
+  const handleQuickView = (task: Task) => {
+    setSelectedTask(task);
+    setIsQuickView(true);
     setIsModalOpen(true);
   };
 
@@ -414,12 +613,13 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
         onAddTask={onAddTask}
         onDeleteTask={onDeleteTask}
         initialTask={selectedTask}
-        allTasks={tasks}
+        allTasks={localTasks}
         activeChannel={activeChannel}
         channels={channels}
         templates={templates}
         onSaveTemplate={onSaveTemplate}
         user={user}
+        isReadOnly={isQuickView}
       />
       
       {/* Filter Bar */}
@@ -439,6 +639,26 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
                 )}
               >
                 {p}
+              </button>
+            ))}
+          </div>
+          <div className="h-6 w-px bg-slate-200 mx-1" />
+          <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1 gap-1 shadow-sm">
+            {(['summary', 'full', 'detailed'] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setGlobalViewMode(m)}
+                className={cn(
+                  "px-3 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1.5",
+                  globalViewMode === m 
+                    ? "bg-slate-100 text-slate-900 shadow-sm" 
+                    : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
+                )}
+              >
+                {m === 'summary' && <Minimize2 className="w-3 h-3" />}
+                {m === 'full' && <Layout className="w-3 h-3" />}
+                {m === 'detailed' && <Maximize2 className="w-3 h-3" />}
+                {m.charAt(0).toUpperCase() + m.slice(1)}
               </button>
             ))}
           </div>
@@ -493,45 +713,19 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
       >
         <div className="flex gap-6 h-full min-w-max flex-1 overflow-hidden">
           {COLUMNS.map((column) => (
-            <div key={column} className="w-80 flex flex-col h-full">
-              <div className="flex items-center justify-between mb-4 px-2">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-bold text-slate-700">{column}</h3>
-                  <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full text-xs font-medium">
-                    {filteredTasks.filter(t => t.status === column).length}
-                  </span>
-                </div>
-                <button className="p-1 hover:bg-slate-200 rounded transition-colors">
-                  <MoreHorizontal className="w-4 h-4 text-slate-400" />
-                </button>
-              </div>
-
-              <SortableContext
-                id={column}
-                items={sortTasks(filteredTasks.filter(t => t.status === column)).map(t => t.id)}
-                strategy={verticalListSortingStrategy}
-              >
-                <div className="flex-1 space-y-3 overflow-y-auto pr-2 custom-scrollbar pb-20">
-                  {sortTasks(filteredTasks.filter((t) => t.status === column))
-                    .map((task) => (
-                      <SortableTaskCard 
-                        key={task.id} 
-                        task={task} 
-                        allTasks={tasks}
-                        onEdit={handleOpenEdit} 
-                      />
-                    ))}
-                  
-                  <button 
-                    onClick={handleOpenCreate}
-                    className="w-full py-2 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 hover:text-slate-600 hover:border-slate-300 hover:bg-slate-100 transition-all flex items-center justify-center gap-2 text-sm font-medium"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add New
-                  </button>
-                </div>
-              </SortableContext>
-            </div>
+            <KanbanColumn
+              key={column}
+              id={column}
+              column={column}
+              tasks={filteredTasks}
+              allTasks={localTasks}
+              onEdit={handleOpenEdit}
+              onAdd={handleOpenCreate}
+              sortTasks={sortTasks}
+              viewMode={globalViewMode}
+              onViewModeChange={setGlobalViewMode}
+              onQuickView={handleQuickView}
+            />
           ))}
         </div>
 

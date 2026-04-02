@@ -22,9 +22,10 @@ interface TaskModalProps {
   templates: TaskTemplate[];
   onSaveTemplate: (template: Omit<TaskTemplate, 'id'>) => void;
   user: UserProfile;
+  isReadOnly?: boolean;
 }
 
-export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit, onAddTask, onDeleteTask, initialTask, allTasks, activeChannel, channels, templates, onSaveTemplate, user }) => {
+export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit, onAddTask, onDeleteTask, initialTask, allTasks, activeChannel, channels, templates, onSaveTemplate, user, isReadOnly: isReadOnlyProp }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [taskType, setTaskType] = useState<TaskType>('task');
@@ -65,7 +66,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
   const canDelete = hasPermission(user.role, 'DELETE_TASK');
   const canCreate = hasPermission(user.role, 'CREATE_TASK');
 
-  const isReadOnly = initialTask ? !canEdit : !canCreate;
+  const isReadOnly = isReadOnlyProp || (initialTask ? !canEdit : !canCreate);
 
   useEffect(() => {
     if (initialTask) {
