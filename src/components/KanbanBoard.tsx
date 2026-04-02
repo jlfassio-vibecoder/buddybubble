@@ -35,7 +35,8 @@ interface KanbanBoardProps {
   templates: TaskTemplate[];
   onSaveTemplate: (template: Omit<TaskTemplate, 'id'>) => void;
   user: UserProfile;
-  onTaskMove: (taskId: string, newStatus: Task['status']) => void;
+  onTaskMove: (taskId: string, newStatus: Task['status'], newPosition?: number) => void;
+  onTaskReorder: (taskId: string, newPosition: number, columnTasks: Task[]) => void;
   onAddTask: (task: Omit<Task, 'id' | 'status'>) => void;
   onUpdateTask: (taskId: string, task: Omit<Task, 'id' | 'status'>) => void;
   onDeleteTask: (taskId: string) => void;
@@ -275,9 +276,9 @@ const SortableTaskCard: React.FC<SortableTaskCardProps> = ({ task, allTasks, onE
   );
 };
 
-export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, channels, templates, onSaveTemplate, user, onTaskMove, onAddTask, onUpdateTask, onDeleteTask }) => {
+export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, channels, templates, onSaveTemplate, user, onTaskMove, onTaskReorder, onAddTask, onUpdateTask, onDeleteTask }) => {
   const [priorityFilter, setPriorityFilter] = useState<Task['priority'] | 'All'>('All');
-  const [sortBy, setSortBy] = useState<'dueDate' | 'priority' | 'createdAt'>('createdAt');
+  const [sortBy, setSortBy] = useState<'dueDate' | 'priority' | 'createdAt' | 'manual'>('manual');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -312,6 +313,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
       if (sortBy === 'createdAt') {
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       }
+      if (sortBy === 'manual') {
+        return (a.position ?? 0) - (b.position ?? 0);
+      }
       return 0;
     });
   };
@@ -343,14 +347,42 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
     const isOverAColumn = COLUMNS.includes(overId as Task['status']);
 
     if (overTask && activeTask.status !== overTask.status) {
-      onTaskMove(activeId, overTask.status);
+      const overTasks = sortTasks(tasks.filter(t => t.status === overTask.status));
+      const overIndex = overTasks.findIndex(t => t.id === overId);
+      onTaskMove(activeId, overTask.status, overIndex);
     } else if (isOverAColumn && activeTask.status !== overId) {
-      onTaskMove(activeId, overId as Task['status']);
+      const overTasks = tasks.filter(t => t.status === overId);
+      onTaskMove(activeId, overId as Task['status'], overTasks.length);
     }
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
     setActiveId(null);
+
+    if (!over) return;
+
+    const activeId = active.id as string;
+    const overId = over.id as string;
+
+    if (activeId === overId) return;
+
+    const activeTask = tasks.find(t => t.id === activeId);
+    if (!activeTask) return;
+
+    const overTask = tasks.find(t => t.id === overId);
+    if (!overTask) return;
+
+    if (activeTask.status === overTask.status) {
+      const columnTasks = sortTasks(tasks.filter(t => t.status === activeTask.status));
+      const oldIndex = columnTasks.findIndex(t => t.id === activeId);
+      const newIndex = columnTasks.findIndex(t => t.id === overId);
+      
+      if (oldIndex !== newIndex) {
+        const reorderedTasks = arrayMove(columnTasks, oldIndex, newIndex);
+        onTaskReorder(activeId, newIndex, reorderedTasks);
+      }
+    }
   };
 
   const activeTask = activeId ? tasks.find(t => t.id === activeId) : null;
@@ -416,7 +448,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
             <div className="px-2 text-slate-400">
               <ArrowUpDown className="w-3.5 h-3.5" />
             </div>
-            {(['createdAt', 'dueDate', 'priority'] as const).map((s) => (
+            {(['manual', 'createdAt', 'dueDate', 'priority'] as const).map((s) => (
               <button
                 key={s}
                 onClick={() => setSortBy(s)}
@@ -427,7 +459,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
                     : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
                 )}
               >
-                {s === 'createdAt' ? 'Newest' : s === 'dueDate' ? 'Due Date' : 'Priority'}
+                {s === 'manual' ? 'Manual' : s === 'createdAt' ? 'Newest' : s === 'dueDate' ? 'Due Date' : 'Priority'}
               </button>
             ))}
           </div>

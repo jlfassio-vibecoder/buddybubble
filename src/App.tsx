@@ -28,6 +28,7 @@ import {
   getDocs,
   signOut,
   handleFirestoreError,
+  writeBatch,
   OperationType
 } from './firebase';
 import { CHANNELS as INITIAL_CHANNELS, INITIAL_TEMPLATES } from './constants';
@@ -451,7 +452,7 @@ export default function App() {
     }
   };
 
-  const handleTaskMove = async (taskId: string, newStatus: Task['status']) => {
+  const handleTaskMove = async (taskId: string, newStatus: Task['status'], newPosition?: number) => {
     if (!user) return;
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
@@ -467,21 +468,55 @@ export default function App() {
     };
 
     try {
-      await updateDoc(doc(db, 'tasks', taskId), {
+      const updateData: any = {
         status: newStatus,
         activityLog: [logEntry, ...(task.activityLog || [])]
-      });
+      };
+      
+      if (newPosition !== undefined) {
+        updateData.position = newPosition;
+      }
+
+      await updateDoc(doc(db, 'tasks', taskId), updateData);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `tasks/${taskId}`);
     }
   };
 
+  const handleTaskReorder = async (taskId: string, newPosition: number, columnTasks: Task[]) => {
+    if (!user) return;
+    
+    try {
+      const batch = writeBatch(db);
+      
+      // Update the moved task
+      batch.update(doc(db, 'tasks', taskId), { position: newPosition });
+      
+      // Update other tasks in the same column to ensure consistent ordering
+      columnTasks.forEach((t, index) => {
+        if (t.id !== taskId) {
+          batch.update(doc(db, 'tasks', t.id), { position: index });
+        }
+      });
+      
+      await batch.commit();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'tasks/reorder');
+    }
+  };
+
   const handleCreateTask = async (taskData: Omit<Task, 'id' | 'status' | 'createdAt' | 'activityLog'>): Promise<string> => {
     if (!user) return '';
+    const todoTasks = tasks.filter(t => t.status === 'Todo');
+    const maxPosition = todoTasks.length > 0 
+      ? Math.max(...todoTasks.map(t => t.position ?? 0)) 
+      : -1;
+
     const newTask = {
       ...taskData,
       status: 'Todo',
       createdAt: new Date(),
+      position: maxPosition + 1,
       uid: user.id,
       activityLog: [{
         id: Math.random().toString(36).substr(2, 9),
@@ -693,6 +728,7 @@ export default function App() {
             onSaveTemplate={handleSaveTemplate}
             user={user}
             onTaskMove={handleTaskMove} 
+            onTaskReorder={handleTaskReorder}
             onAddTask={handleCreateTask}
             onUpdateTask={handleUpdateTask}
             onDeleteTask={handleDeleteTask}

@@ -75,6 +75,7 @@ export interface Task {
   relatedTaskIds?: string[]; // Array of task IDs
   channelId?: string; // Associated channel ID
   createdAt: Date;
+  position?: number;
   activityLog?: ActivityLogEntry[];
   uid: string; // Firebase Auth UID
 }

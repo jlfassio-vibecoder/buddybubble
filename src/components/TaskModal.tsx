@@ -398,6 +398,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
         taskData.potentialValue = potentialValue;
       }
 
+      if (initialTask?.position !== undefined) {
+        taskData.position = initialTask.position;
+      }
+
       onSubmit(taskData);
       onClose();
     }
