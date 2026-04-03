@@ -34,17 +34,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeChannel, onChannelSelect
       <div className="p-4 border-b border-slate-800 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold">
-            TS
+            TB
           </div>
-          <h1 className="font-bold text-white tracking-tight">TeamSync</h1>
+          <h1 className="font-bold text-white tracking-tight">TeamBubble</h1>
         </div>
-        <button 
-          onClick={onLogout}
-          className="p-1.5 hover:bg-slate-800 rounded-md text-slate-500 hover:text-red-400 transition-colors"
-          title="Logout"
-        >
-          <LogOut className="w-4 h-4" />
-        </button>
       </div>
       
       <div className="flex-1 overflow-y-auto py-4 space-y-6">
@@ -145,13 +138,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeChannel, onChannelSelect
             </div>
             <p className="text-[10px] text-slate-500 truncate uppercase tracking-wider font-bold">{user.role || 'Member'}</p>
           </div>
-          <button 
-            onClick={onEditProfile}
-            className="p-2 hover:bg-slate-800 rounded-lg text-slate-500 hover:text-white transition-all opacity-0 group-hover:opacity-100"
-            title="Edit Profile"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button 
+              onClick={onEditProfile}
+              className="p-1.5 hover:bg-slate-800 rounded-md text-slate-500 hover:text-white transition-all"
+              title="Edit Profile"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={onLogout}
+              className="p-1.5 hover:bg-slate-800 rounded-md text-slate-500 hover:text-red-400 transition-all"
+              title="Logout"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
     </div>
