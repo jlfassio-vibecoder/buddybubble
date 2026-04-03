@@ -53,6 +53,7 @@ export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isChatCollapsed, setIsChatCollapsed] = useState(false);
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Auth Listener
@@ -61,7 +62,16 @@ export default function App() {
       if (firebaseUser) {
         const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
         if (userDoc.exists()) {
-          setUser(userDoc.data() as UserProfile);
+          const userData = userDoc.data() as UserProfile;
+          // Update status to online if it's not already
+          if (userData.status !== 'online') {
+            await updateDoc(doc(db, 'users', firebaseUser.uid), { 
+              status: 'online',
+              lastSeen: new Date()
+            });
+            userData.status = 'online';
+          }
+          setUser(userData);
         } else {
           const newUser: UserProfile = {
             id: firebaseUser.uid,
@@ -70,7 +80,9 @@ export default function App() {
             avatar: firebaseUser.photoURL || '',
             role: firebaseUser.email === 'jlfassio@gmail.com' ? 'Admin' : 'Member',
             department: 'General',
-            channelIds: []
+            channelIds: [],
+            status: 'online',
+            lastSeen: new Date()
           };
           await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
           setUser(newUser);
@@ -591,6 +603,15 @@ export default function App() {
       });
     }
 
+    if ((t.comments?.length || 0) < (taskData.comments?.length || 0)) {
+      newLogs.push({
+        id: Math.random().toString(36).substr(2, 9),
+        user: currentUser,
+        action: 'added a comment',
+        timestamp: new Date(),
+      });
+    }
+
     // Check for subtask completion notification
     const oldSubtasks = t.subtasks || [];
     const newSubtasks = taskData.subtasks || [];
@@ -731,6 +752,9 @@ export default function App() {
             notifications={notifications}
             onMarkNotificationRead={handleMarkNotificationRead}
             onCollapse={() => setIsChatCollapsed(true)}
+            teamMembers={teamMembers}
+            allTasks={tasks}
+            onOpenTask={(id) => setOpenTaskId(id)}
           />
           
           <div
@@ -773,12 +797,15 @@ export default function App() {
             templates={templates}
             onSaveTemplate={handleSaveTemplate}
             user={user}
+            teamMembers={teamMembers}
             onTaskMove={handleTaskMove} 
             onTaskReorder={handleTaskReorder}
             onAddTask={handleCreateTask}
             onUpdateTask={handleUpdateTask}
             onArchiveTask={handleArchiveTask}
             onDeleteTask={handleDeleteTask}
+            openTaskId={openTaskId}
+            onClearOpenTaskId={() => setOpenTaskId(null)}
           />
         </div>
       </main>

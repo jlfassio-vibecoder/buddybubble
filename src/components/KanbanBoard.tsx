@@ -46,6 +46,9 @@ interface KanbanBoardProps {
   onUpdateTask: (taskId: string, task: Omit<Task, 'id' | 'status' | 'createdAt' | 'activityLog'>) => void;
   onArchiveTask: (taskId: string, archived: boolean) => void;
   onDeleteTask: (taskId: string) => void;
+  teamMembers: UserProfile[];
+  openTaskId?: string | null;
+  onClearOpenTaskId?: () => void;
 }
 
 const COLUMNS: Task['status'][] = ['Todo', 'In Progress', 'Done'];
@@ -496,7 +499,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({ id, tasks, column, onEdit, 
   );
 };
 
-export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, channels, templates, onSaveTemplate, user, onTaskMove, onTaskReorder, onAddTask, onUpdateTask, onArchiveTask, onDeleteTask }) => {
+export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, channels, templates, onSaveTemplate, user, onTaskMove, onTaskReorder, onAddTask, onUpdateTask, onArchiveTask, onDeleteTask, teamMembers, openTaskId, onClearOpenTaskId }) => {
   const [priorityFilter, setPriorityFilter] = useState<Task['priority'] | 'All'>('All');
   const [sortBy, setSortBy] = useState<'dueDate' | 'priority' | 'createdAt' | 'manual'>('manual');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -516,6 +519,29 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
       setLocalTasks(sorted);
     }
   }, [tasks, activeId]);
+
+  // Sync selected task when tasks change (e.g. from Firestore)
+  useEffect(() => {
+    if (selectedTask) {
+      const updatedTask = tasks.find(t => t.id === selectedTask.id);
+      if (updatedTask) {
+        setSelectedTask(updatedTask);
+      }
+    }
+  }, [tasks]);
+
+  useEffect(() => {
+    if (openTaskId) {
+      const task = localTasks.find(t => t.id === openTaskId);
+      if (task) {
+        setSelectedTask(task);
+        setIsModalOpen(true);
+        setIsQuickView(false);
+        setIsSummaryMode(false);
+      }
+      onClearOpenTaskId?.();
+    }
+  }, [openTaskId, localTasks, onClearOpenTaskId]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -692,8 +718,17 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
         templates={templates}
         onSaveTemplate={onSaveTemplate}
         user={user}
+        teamMembers={teamMembers}
         isReadOnly={isQuickView}
         isSummaryView={isSummaryMode}
+        onOpenTask={(taskId) => {
+          const task = localTasks.find(t => t.id === taskId);
+          if (task) {
+            setSelectedTask(task);
+            setIsQuickView(false);
+            setIsSummaryMode(false);
+          }
+        }}
       />
       
       {/* Filter Bar */}

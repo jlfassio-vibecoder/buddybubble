@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Send, Hash, Info, Search, Bell, Star, AtSign, X, Calendar as CalendarIcon, User, MessageSquare, Clock, Paperclip, PanelLeftClose } from 'lucide-react';
-import { Message, Channel, Notification } from '../types';
-import { TEAM_MEMBERS } from '../constants';
+import { Send, Hash, Info, Search, Bell, Star, AtSign, X, Calendar as CalendarIcon, User, MessageSquare, Clock, Paperclip, PanelLeftClose, Zap, Lightbulb, CheckSquare } from 'lucide-react';
+import { Message, Channel, Notification, UserProfile, Task } from '../types';
 import { format, isSameDay } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -13,13 +12,19 @@ interface ChatAreaProps {
   notifications: Notification[];
   onMarkNotificationRead: (id: string) => void;
   onCollapse: () => void;
+  teamMembers: UserProfile[];
+  allTasks: Task[];
+  onOpenTask: (taskId: string) => void;
 }
 
-export const ChatArea: React.FC<ChatAreaProps> = ({ channel, allMessages, onSendMessage, notifications, onMarkNotificationRead, onCollapse }) => {
+export const ChatArea: React.FC<ChatAreaProps> = ({ channel, allMessages, onSendMessage, notifications, onMarkNotificationRead, onCollapse, teamMembers, allTasks, onOpenTask }) => {
   const [input, setInput] = useState('');
   const [mentionSearch, setMentionSearch] = useState('');
   const [showMentions, setShowMentions] = useState(false);
   const [mentionIndex, setMentionIndex] = useState(-1);
+  const [taskMentionSearch, setTaskMentionSearch] = useState('');
+  const [showTaskMentions, setShowTaskMentions] = useState(false);
+  const [taskMentionIndex, setTaskMentionIndex] = useState(-1);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchSender, setSearchSender] = useState('');
@@ -68,19 +73,41 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ channel, allMessages, onSend
 
     const cursorPosition = e.target.selectionStart || 0;
     const textBeforeCursor = value.substring(0, cursorPosition);
+    
+    // Check for @ mentions
     const lastAtSymbol = textBeforeCursor.lastIndexOf('@');
-
     if (lastAtSymbol !== -1) {
-      const query = textBeforeCursor.substring(lastAtSymbol + 1);
-      // Only show mentions if there's no space between @ and cursor
-      if (!query.includes(' ')) {
-        setMentionSearch(query);
-        setShowMentions(true);
-        setMentionIndex(0);
-        return;
+      const charBeforeAt = lastAtSymbol > 0 ? textBeforeCursor[lastAtSymbol - 1] : ' ';
+      if (charBeforeAt === ' ' || charBeforeAt === '\n') {
+        const query = textBeforeCursor.substring(lastAtSymbol + 1);
+        // Only show mentions if there's no space between @ and cursor
+        if (!query.includes(' ')) {
+          setMentionSearch(query);
+          setShowMentions(true);
+          setMentionIndex(0);
+          setShowTaskMentions(false);
+          return;
+        }
       }
     }
     setShowMentions(false);
+
+    // Check for / task mentions
+    const lastSlashSymbol = textBeforeCursor.lastIndexOf('/');
+    if (lastSlashSymbol !== -1) {
+      const charBeforeSlash = lastSlashSymbol > 0 ? textBeforeCursor[lastSlashSymbol - 1] : ' ';
+      if (charBeforeSlash === ' ' || charBeforeSlash === '\n') {
+        const query = textBeforeCursor.substring(lastSlashSymbol + 1);
+        // Only show mentions if there's no space between / and cursor
+        if (!query.includes(' ')) {
+          setTaskMentionSearch(query);
+          setShowTaskMentions(true);
+          setTaskMentionIndex(0);
+          return;
+        }
+      }
+    }
+    setShowTaskMentions(false);
   };
 
   const insertMention = (userName: string) => {
@@ -99,6 +126,22 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ channel, allMessages, onSend
     inputRef.current?.focus();
   };
 
+  const insertTaskMention = (taskTitle: string) => {
+    const cursorPosition = inputRef.current?.selectionStart || 0;
+    const textBeforeCursor = input.substring(0, cursorPosition);
+    const textAfterCursor = input.substring(cursorPosition);
+    const lastSlashSymbol = textBeforeCursor.lastIndexOf('/');
+
+    const newValue = 
+      textBeforeCursor.substring(0, lastSlashSymbol) + 
+      `/${taskTitle} ` + 
+      textAfterCursor;
+
+    setInput(newValue);
+    setShowTaskMentions(false);
+    inputRef.current?.focus();
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (input.trim()) {
@@ -108,7 +151,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ channel, allMessages, onSend
     }
   };
 
-  const filteredMembers = TEAM_MEMBERS.filter(member => 
+  const filteredMembers = teamMembers.filter(member => 
     member.name.toLowerCase().includes(mentionSearch.toLowerCase())
   );
 
@@ -166,21 +209,69 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ channel, allMessages, onSend
   };
 
   const renderMessageContent = (content: string) => {
-    const parts = content.split(/(@\w+(?:\s\w+)?)/g);
-    return parts.map((part, i) => {
-      if (part.startsWith('@')) {
-        const name = part.substring(1);
-        const isMember = TEAM_MEMBERS.some(m => m.name === name);
-        if (isMember) {
-          return (
-            <span key={i} className="text-indigo-600 font-bold bg-indigo-50 px-1 rounded border border-indigo-100">
-              {part}
-            </span>
-          );
-        }
-      }
-      return part;
-    });
+    let parts: (string | React.ReactNode)[] = [content];
+
+    // Handle @ Mentions
+    if (teamMembers && teamMembers.length > 0) {
+      const sortedMembers = [...teamMembers].sort((a, b) => b.name.length - a.name.length);
+      const namesPattern = sortedMembers
+        .map(m => m.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .join('|');
+      const namesRegex = new RegExp(`(@(?:${namesPattern}))`, 'g');
+
+      parts = parts.flatMap(part => {
+        if (typeof part !== 'string') return part;
+        const subParts = part.split(namesRegex);
+        return subParts.map((subPart, i) => {
+          if (subPart.startsWith('@')) {
+            const name = subPart.substring(1);
+            if (teamMembers.some(m => m.name === name)) {
+              return (
+                <span key={`mention-${i}`} className="text-indigo-600 font-bold bg-indigo-50 px-1 rounded border border-indigo-100">
+                  {subPart}
+                </span>
+              );
+            }
+          }
+          return subPart;
+        });
+      });
+    }
+
+    // Handle / Task Mentions
+    if (allTasks && allTasks.length > 0) {
+      const sortedTasks = [...allTasks].sort((a, b) => b.title.length - a.title.length);
+      const titlesPattern = sortedTasks
+        .map(t => t.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .join('|');
+      const titlesRegex = new RegExp(`(/(?:${titlesPattern}))`, 'g');
+
+      parts = parts.flatMap(part => {
+        if (typeof part !== 'string') return part;
+        const subParts = part.split(titlesRegex);
+        return subParts.map((subPart, i) => {
+          if (subPart.startsWith('/')) {
+            const title = subPart.substring(1);
+            const task = allTasks.find(t => t.title === title);
+            if (task) {
+              return (
+                <button 
+                  key={`task-${i}`} 
+                  onClick={() => onOpenTask(task.id)}
+                  className="text-emerald-600 font-bold bg-emerald-50 px-1 rounded border border-emerald-100 cursor-pointer hover:bg-emerald-100 transition-colors" 
+                  title={`View Task: ${task.title}`}
+                >
+                  {subPart}
+                </button>
+              );
+            }
+          }
+          return subPart;
+        });
+      });
+    }
+
+    return parts;
   };
 
   return (
@@ -623,6 +714,48 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ channel, allMessages, onSend
             </div>
           </motion.div>
         )}
+
+        {showTaskMentions && (
+          <motion.div
+            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.95 }}
+            className="absolute bottom-24 left-6 w-80 bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden z-50"
+          >
+            <div className="p-2 bg-slate-50 border-b border-slate-100 flex items-center gap-2">
+              <Hash className="w-3 h-3 text-emerald-600" />
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Link Task / Feature</span>
+            </div>
+            <div className="max-h-48 overflow-y-auto custom-scrollbar">
+              {allTasks.filter(t => t.title.toLowerCase().includes(taskMentionSearch.toLowerCase())).length === 0 ? (
+                <div className="p-4 text-center">
+                  <p className="text-xs text-slate-400">No tasks found</p>
+                </div>
+              ) : (
+                allTasks
+                  .filter(t => t.title.toLowerCase().includes(taskMentionSearch.toLowerCase()))
+                  .map((task, idx) => (
+                    <button
+                      key={task.id}
+                      onClick={() => insertTaskMention(task.title)}
+                      className={cn(
+                        "w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors",
+                        idx === taskMentionIndex ? "bg-emerald-50 text-emerald-700" : "hover:bg-slate-50 text-slate-700"
+                      )}
+                    >
+                      <div className="w-7 h-7 rounded bg-emerald-100 flex items-center justify-center text-emerald-600 text-[10px] font-bold shrink-0">
+                        {task.type === 'request' ? <Zap className="w-3 h-3" /> : task.type === 'idea' ? <Lightbulb className="w-3 h-3" /> : <CheckSquare className="w-3 h-3" />}
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-sm font-semibold truncate">{task.title}</span>
+                        <span className="text-[10px] text-slate-400 truncate">{task.status}</span>
+                      </div>
+                    </button>
+                  ))
+              )}
+            </div>
+          </motion.div>
+        )}
       </AnimatePresence>
 
       {/* Input */}
@@ -649,6 +782,25 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ channel, allMessages, onSend
                   insertMention(filteredMembers[mentionIndex].name);
                 } else if (e.key === 'Escape') {
                   setShowMentions(false);
+                }
+              } else if (showTaskMentions) {
+                const filtered = allTasks.filter(t => t.title.toLowerCase().includes(taskMentionSearch.toLowerCase()));
+                if (filtered.length > 0) {
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setTaskMentionIndex(prev => (prev + 1) % filtered.length);
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setTaskMentionIndex(prev => (prev - 1 + filtered.length) % filtered.length);
+                  } else if (e.key === 'Enter' || e.key === 'Tab') {
+                    e.preventDefault();
+                    if (filtered[taskMentionIndex]) {
+                      insertTaskMention(filtered[taskMentionIndex].title);
+                    }
+                  }
+                }
+                if (e.key === 'Escape') {
+                  setShowTaskMentions(false);
                 }
               }
             }}

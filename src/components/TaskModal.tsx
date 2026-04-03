@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactQuill from 'react-quill-new';
 import DOMPurify from 'dompurify';
-import { X, MessageSquare, Send, CheckSquare, Square, Plus, Trash2, History, ArrowRight, Tag, Paperclip, FileText, Download, Hash, AlertCircle, Copy, Save, Sparkles, Loader2, Search, Lightbulb, Zap, Brain, Eye, ExternalLink, Archive, RotateCcw, Type as TypeIcon } from 'lucide-react';
+import { X, MessageSquare, Send, CheckSquare, Square, Plus, Trash2, History, ArrowRight, Tag, Paperclip, FileText, Download, Hash, AlertCircle, Copy, Save, Sparkles, Loader2, Search, Lightbulb, Zap, Brain, Eye, ExternalLink, Archive, RotateCcw, Type as TypeIcon, GripVertical, AtSign } from 'lucide-react';
 import { Task, Comment, Subtask, ActivityLogEntry, Attachment, Channel, UserProfile, TaskTemplate, TaskType } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -25,8 +25,10 @@ interface TaskModalProps {
   templates: TaskTemplate[];
   onSaveTemplate: (template: Omit<TaskTemplate, 'id'>) => void;
   user: UserProfile;
+  teamMembers: UserProfile[];
   isReadOnly?: boolean;
   isSummaryView?: boolean;
+  onOpenTask?: (taskId: string) => void;
 }
 
 const quillModules = {
@@ -42,11 +44,11 @@ const quillModules = {
 const quillFormats = [
   'header',
   'bold', 'italic', 'underline', 'strike',
-  'list', 'bullet',
+  'list',
   'link', 'blockquote', 'code-block'
 ];
 
-export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit, onAddTask, onArchiveTask, onDeleteTask, initialTask, allTasks, activeChannel, channels, templates, onSaveTemplate, user, isReadOnly: isReadOnlyProp, isSummaryView }) => {
+export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit, onAddTask, onArchiveTask, onDeleteTask, initialTask, allTasks, activeChannel, channels, templates, onSaveTemplate, user, teamMembers, isReadOnly: isReadOnlyProp, isSummaryView, onOpenTask }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [taskType, setTaskType] = useState<TaskType>('task');
@@ -65,6 +67,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
   const [channelId, setChannelId] = useState<string>(activeChannel.id);
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
+  const [mentionSearch, setMentionSearch] = useState('');
+  const [showMentions, setShowMentions] = useState(false);
+  const [mentionIndex, setMentionIndex] = useState(-1);
+  const [taskMentionSearch, setTaskMentionSearch] = useState('');
+  const [showTaskMentions, setShowTaskMentions] = useState(false);
+  const [taskMentionIndex, setTaskMentionIndex] = useState(-1);
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [newSubtask, setNewSubtask] = useState('');
   const [dependencies, setDependencies] = useState<string[]>([]);
@@ -83,7 +91,73 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
   const [showTemplates, setShowTemplates] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(320);
+  const [isResizing, setIsResizing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const sidebarRef = useRef<HTMLDivElement>(null);
+  const commentTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const commentsContainerRef = useRef<HTMLDivElement>(null);
+  const activityContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (commentTextareaRef.current) {
+      commentTextareaRef.current.style.height = 'auto';
+      commentTextareaRef.current.style.height = `${commentTextareaRef.current.scrollHeight}px`;
+    }
+  }, [newComment]);
+
+  useEffect(() => {
+    if (commentsContainerRef.current) {
+      commentsContainerRef.current.scrollTop = commentsContainerRef.current.scrollHeight;
+    }
+  }, [comments, rightSidebarTab]);
+
+  useEffect(() => {
+    if (activityContainerRef.current) {
+      activityContainerRef.current.scrollTop = activityContainerRef.current.scrollHeight;
+    }
+  }, [activityLog, rightSidebarTab]);
+
+  const startResizing = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  };
+
+  const stopResizing = () => {
+    setIsResizing(false);
+  };
+
+  const resize = (e: MouseEvent) => {
+    if (isResizing && sidebarRef.current) {
+      const modalRect = sidebarRef.current.parentElement?.getBoundingClientRect();
+      if (modalRect) {
+        const newWidth = modalRect.right - e.clientX;
+        if (newWidth > 240 && newWidth < 600) {
+          setSidebarWidth(newWidth);
+        }
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (isResizing) {
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      window.addEventListener('mousemove', resize);
+      window.addEventListener('mouseup', stopResizing);
+    } else {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', resize);
+      window.removeEventListener('mouseup', stopResizing);
+    }
+    return () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', resize);
+      window.removeEventListener('mouseup', stopResizing);
+    };
+  }, [isResizing]);
 
   const canEdit = hasPermission(user.role, 'EDIT_TASK');
   const canAssign = hasPermission(user.role, 'ASSIGN_TASK');
@@ -99,26 +173,34 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
 
   useEffect(() => {
     if (initialTask) {
-      setTitle(initialTask.title);
-      setDescription(initialTask.description);
-      setTaskType(initialTask.type || 'task');
-      setImpact(initialTask.impact || 'Medium');
-      setUrgency(initialTask.urgency || 'Medium');
-      setUserStory(initialTask.userStory || '');
-      setCategory(initialTask.category || '');
-      setPotentialValue(initialTask.potentialValue || '');
-      setUpvotes(initialTask.upvotes || []);
-      setAssignee(initialTask.assignee);
-      setAssigner(initialTask.assigner || '');
-      setPriority(initialTask.priority);
-      setDueDate(initialTask.dueDate ? new Date(initialTask.dueDate).toISOString().split('T')[0] : '');
-      setChannelId(initialTask.channelId || (activeChannel.id === 'all' ? (channels[0]?.id || '') : activeChannel.id));
+      // Only update main form fields if the modal is just opening
+      // or if initialTask changes but we haven't started editing
+      // For simplicity, we'll only update these on initial open
+      // to avoid overwriting user edits in real-time.
+      if (isOpen) {
+        setTitle(initialTask.title);
+        setDescription(initialTask.description);
+        setTaskType(initialTask.type || 'task');
+        setImpact(initialTask.impact || 'Medium');
+        setUrgency(initialTask.urgency || 'Medium');
+        setUserStory(initialTask.userStory || '');
+        setCategory(initialTask.category || '');
+        setPotentialValue(initialTask.potentialValue || '');
+        setUpvotes(initialTask.upvotes || []);
+        setAssignee(initialTask.assignee);
+        setAssigner(initialTask.assigner || '');
+        setPriority(initialTask.priority);
+        setDueDate(initialTask.dueDate ? new Date(initialTask.dueDate).toISOString().split('T')[0] : '');
+        setChannelId(initialTask.channelId || (activeChannel.id === 'all' ? (channels[0]?.id || '') : activeChannel.id));
+        setSubtasks(initialTask.subtasks || []);
+        setDependencies(initialTask.dependencies || []);
+        setRelatedTaskIds(initialTask.relatedTaskIds || []);
+        setTags(initialTask.tags || []);
+        setAttachments(initialTask.attachments || []);
+      }
+      
+      // Always sync comments and activity log for real-time updates
       setComments(initialTask.comments || []);
-      setSubtasks(initialTask.subtasks || []);
-      setDependencies(initialTask.dependencies || []);
-      setRelatedTaskIds(initialTask.relatedTaskIds || []);
-      setTags(initialTask.tags || []);
-      setAttachments(initialTask.attachments || []);
       setActivityLog(initialTask.activityLog || []);
     } else {
       setTitle('');
@@ -143,13 +225,17 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
       setAttachments([]);
       setActivityLog([]);
     }
-    setNewComment('');
-    setNewSubtask('');
-    setRightSidebarTab('comments');
-    setNewDependencyTitle('');
-    setNewTag('');
-    setIsAddingDependency(false);
-    setShowTemplates(false);
+    
+    // Only reset these when the modal opens
+    if (isOpen) {
+      setNewComment('');
+      setNewSubtask('');
+      setRightSidebarTab('comments');
+      setNewDependencyTitle('');
+      setNewTag('');
+      setIsAddingDependency(false);
+      setShowTemplates(false);
+    }
   }, [initialTask, isOpen]);
 
   const handleGoogleSearch = async () => {
@@ -352,6 +438,190 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  const getTaskData = (currentComments?: Comment[]) => {
+    const sanitizedDescription = description === '<p><br></p>' ? '' : description;
+    const taskData: any = { 
+      title, 
+      description: sanitizedDescription, 
+      type: taskType,
+      upvotes,
+      assignee, 
+      priority,
+      channelId,
+      comments: currentComments || comments,
+      subtasks,
+      dependencies,
+      relatedTaskIds,
+      tags,
+      attachments
+    };
+
+    if (assigner.trim()) taskData.assigner = assigner.trim();
+    if (dueDate) taskData.dueDate = new Date(dueDate);
+
+    if (taskType === 'request') {
+      taskData.impact = impact;
+      taskData.urgency = urgency;
+      taskData.userStory = userStory;
+    } else if (taskType === 'idea') {
+      taskData.category = category;
+      taskData.potentialValue = potentialValue;
+    }
+
+    if (initialTask?.position !== undefined) {
+      taskData.position = initialTask.position;
+    }
+
+    if (initialTask?.archived !== undefined) {
+      taskData.archived = initialTask.archived;
+    }
+
+    return taskData;
+  };
+
+  const renderCommentText = (text: string): React.ReactNode[] => {
+    let parts: (string | React.ReactNode)[] = [text];
+
+    // Handle @ Mentions
+    if (teamMembers && teamMembers.length > 0) {
+      const sortedMembers = [...teamMembers].sort((a, b) => b.name.length - a.name.length);
+      const namesPattern = sortedMembers
+        .map(m => m.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .join('|');
+      const namesRegex = new RegExp(`(@(?:${namesPattern}))`, 'g');
+
+      parts = parts.flatMap(part => {
+        if (typeof part !== 'string') return part;
+        const subParts = part.split(namesRegex);
+        return subParts.map((subPart, i) => {
+          if (subPart.startsWith('@')) {
+            const name = subPart.substring(1);
+            if (teamMembers.some(m => m.name === name)) {
+              return (
+                <span key={`mention-${i}`} className="text-indigo-600 font-bold bg-indigo-50 px-1 rounded border border-indigo-100">
+                  {subPart}
+                </span>
+              );
+            }
+          }
+          return subPart;
+        });
+      });
+    }
+
+    // Handle / Task Mentions
+    if (allTasks && allTasks.length > 0) {
+      const sortedTasks = [...allTasks].sort((a, b) => b.title.length - a.title.length);
+      const titlesPattern = sortedTasks
+        .map(t => t.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .join('|');
+      const titlesRegex = new RegExp(`(/(?:${titlesPattern}))`, 'g');
+
+      parts = parts.flatMap(part => {
+        if (typeof part !== 'string') return part;
+        const subParts = part.split(titlesRegex);
+        return subParts.map((subPart, i) => {
+          if (subPart.startsWith('/')) {
+            const title = subPart.substring(1);
+            const task = allTasks.find(t => t.title === title);
+            if (task) {
+              return (
+                <button 
+                  key={`task-${i}`} 
+                  onClick={() => onOpenTask?.(task.id)}
+                  className="text-emerald-600 font-bold bg-emerald-50 px-1 rounded border border-emerald-100 cursor-pointer hover:bg-emerald-100 transition-colors" 
+                  title={`View Task: ${task.title}`}
+                >
+                  {subPart}
+                </button>
+              );
+            }
+          }
+          return subPart;
+        });
+      });
+    }
+
+    return parts;
+  };
+
+  const handleCommentInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setNewComment(value);
+
+    const cursorPosition = e.target.selectionStart || 0;
+    const textBeforeCursor = value.substring(0, cursorPosition);
+    
+    // Check for @ mentions
+    const lastAtSymbol = textBeforeCursor.lastIndexOf('@');
+    if (lastAtSymbol !== -1) {
+      // Check if @ is at start or preceded by whitespace
+      const charBeforeAt = lastAtSymbol > 0 ? textBeforeCursor[lastAtSymbol - 1] : ' ';
+      if (charBeforeAt === ' ' || charBeforeAt === '\n') {
+        const query = textBeforeCursor.substring(lastAtSymbol + 1);
+        // Only show mentions if there's no space between @ and cursor
+        if (!query.includes(' ')) {
+          setMentionSearch(query);
+          setShowMentions(true);
+          setMentionIndex(0);
+          setShowTaskMentions(false);
+          return;
+        }
+      }
+    }
+    setShowMentions(false);
+
+    // Check for / task mentions
+    const lastSlashSymbol = textBeforeCursor.lastIndexOf('/');
+    if (lastSlashSymbol !== -1) {
+      // Check if / is at start or preceded by whitespace
+      const charBeforeSlash = lastSlashSymbol > 0 ? textBeforeCursor[lastSlashSymbol - 1] : ' ';
+      if (charBeforeSlash === ' ' || charBeforeSlash === '\n') {
+        const query = textBeforeCursor.substring(lastSlashSymbol + 1);
+        // Only show mentions if there's no space between / and cursor
+        if (!query.includes(' ')) {
+          setTaskMentionSearch(query);
+          setShowTaskMentions(true);
+          setTaskMentionIndex(0);
+          return;
+        }
+      }
+    }
+    setShowTaskMentions(false);
+  };
+
+  const insertCommentMention = (userName: string) => {
+    const cursorPosition = commentTextareaRef.current?.selectionStart || 0;
+    const textBeforeCursor = newComment.substring(0, cursorPosition);
+    const textAfterCursor = newComment.substring(cursorPosition);
+    const lastAtSymbol = textBeforeCursor.lastIndexOf('@');
+
+    const newValue = 
+      textBeforeCursor.substring(0, lastAtSymbol) + 
+      `@${userName} ` + 
+      textAfterCursor;
+
+    setNewComment(newValue);
+    setShowMentions(false);
+    commentTextareaRef.current?.focus();
+  };
+
+  const insertTaskMention = (taskTitle: string) => {
+    const cursorPosition = commentTextareaRef.current?.selectionStart || 0;
+    const textBeforeCursor = newComment.substring(0, cursorPosition);
+    const textAfterCursor = newComment.substring(cursorPosition);
+    const lastSlashSymbol = textBeforeCursor.lastIndexOf('/');
+
+    const newValue = 
+      textBeforeCursor.substring(0, lastSlashSymbol) + 
+      `/${taskTitle} ` + 
+      textAfterCursor;
+
+    setNewComment(newValue);
+    setShowTaskMentions(false);
+    commentTextareaRef.current?.focus();
+  };
+
   const handleAddComment = () => {
     if (!newComment.trim()) return;
     
@@ -362,8 +632,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
       timestamp: new Date(),
     };
     
-    setComments(prev => [...prev, comment]);
+    const updatedComments = [...comments, comment];
+    setComments(updatedComments);
     setNewComment('');
+
+    // If we're editing an existing task, persist the comment immediately
+    if (initialTask) {
+      onSubmit(getTaskData(updatedComments));
+    }
   };
 
   const handleAddSubtask = () => {
@@ -430,44 +706,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
   const handleSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (title.trim() && assignee.trim()) {
-      const sanitizedDescription = description === '<p><br></p>' ? '' : description;
-      const taskData: any = { 
-        title, 
-        description: sanitizedDescription, 
-        type: taskType,
-        upvotes,
-        assignee, 
-        priority,
-        channelId,
-        comments,
-        subtasks,
-        dependencies,
-        relatedTaskIds,
-        tags,
-        attachments
-      };
-
-      if (assigner.trim()) taskData.assigner = assigner.trim();
-      if (dueDate) taskData.dueDate = new Date(dueDate);
-
-      if (taskType === 'request') {
-        taskData.impact = impact;
-        taskData.urgency = urgency;
-        taskData.userStory = userStory;
-      } else if (taskType === 'idea') {
-        taskData.category = category;
-        taskData.potentialValue = potentialValue;
-      }
-
-      if (initialTask?.position !== undefined) {
-        taskData.position = initialTask.position;
-      }
-
-      if (initialTask?.archived !== undefined) {
-        taskData.archived = initialTask.archived;
-      }
-
-      onSubmit(taskData);
+      onSubmit(getTaskData());
       onClose();
     }
   };
@@ -565,9 +804,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto custom-scrollbar">
+            <div className="flex-1 flex flex-col overflow-hidden">
               {isSummaryView ? (
-                <div className="p-6 space-y-6">
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
                   <div className="flex items-center justify-between">
                     <h3 className="text-xl font-bold text-slate-900">{title}</h3>
                     <div className="flex items-center gap-2">
@@ -644,9 +883,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
                   </div>
                 </div>
               ) : (
-                <div className="flex flex-col md:flex-row">
+                <div className="flex-1 flex flex-col md:flex-row relative overflow-hidden">
                   {/* Main Form */}
-                <form onSubmit={handleSubmit} className="p-6 space-y-4 flex-1 border-b md:border-b-0 md:border-r border-slate-100">
+                <form onSubmit={handleSubmit} className="p-6 space-y-4 flex-1 border-b md:border-b-0 border-slate-100 overflow-y-auto custom-scrollbar">
                   {isReadOnly && (
                     <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-100 rounded-xl mb-4">
                       <AlertCircle className="w-4 h-4 text-amber-600" />
@@ -871,15 +1110,20 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-semibold text-slate-700 mb-1">Assignee</label>
-                      <input
-                        type="text"
+                      <select
                         required
                         disabled={isReadOnly || !canAssign}
                         value={assignee}
                         onChange={(e) => setAssignee(e.target.value)}
-                        placeholder="Name"
-                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all disabled:opacity-60"
-                      />
+                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all appearance-none disabled:opacity-60"
+                      >
+                        <option value="">Select Assignee</option>
+                        {teamMembers.map(member => (
+                          <option key={member.id} value={member.name}>
+                            {member.name}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div>
                       <label className="block text-sm font-semibold text-slate-700 mb-1">Priority</label>
@@ -1434,8 +1678,23 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
                   </div>
                 </form>
 
+                {/* Resize Handle */}
+                <div
+                  onMouseDown={startResizing}
+                  className={cn(
+                    "hidden md:flex w-2 hover:w-3 bg-slate-100 hover:bg-indigo-400 cursor-col-resize transition-all items-center justify-center group z-10",
+                    isResizing && "bg-indigo-500 w-3"
+                  )}
+                >
+                  <GripVertical className="w-3 h-3 text-slate-300 group-hover:text-white transition-colors" />
+                </div>
+
                 {/* Right Sidebar: Comments & Activity */}
-                <div className="w-full md:w-80 p-6 bg-slate-50 flex flex-col relative overflow-hidden">
+                <div 
+                  ref={sidebarRef}
+                  style={{ '--sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}
+                  className="w-full md:w-[var(--sidebar-width)] p-6 bg-slate-50 flex flex-col relative overflow-hidden shrink-0"
+                >
                   {/* Delete Confirmation Overlay */}
                   <AnimatePresence>
                     {isDeleting && (
@@ -1617,7 +1876,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
 
                   {rightSidebarTab === 'comments' ? (
                     <>
-                      <div className="flex-1 space-y-4 mb-4 overflow-y-auto max-h-[300px] md:max-h-none pr-2 custom-scrollbar">
+                      <div 
+                        ref={commentsContainerRef}
+                        className="flex-1 space-y-4 mb-4 overflow-y-auto pr-2 custom-scrollbar"
+                      >
                         {comments.length === 0 ? (
                           <div className="text-center py-8">
                             <p className="text-xs text-slate-400">No comments yet.</p>
@@ -1631,21 +1893,149 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
                                   {format(new Date(comment.timestamp), 'MMM d, h:mm a')}
                                 </span>
                               </div>
-                              <p className="text-xs text-slate-600 leading-relaxed">{comment.text}</p>
+                              <p className="text-xs text-slate-600 leading-relaxed">{renderCommentText(comment.text)}</p>
                             </div>
                           ))
                         )}
                       </div>
 
-                      <div className="relative mt-auto">
+                      <div className="relative mt-auto z-20">
+                        <AnimatePresence>
+                          {showMentions && (
+                            <motion.div
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: 10 }}
+                              className="absolute bottom-full left-0 w-48 bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden z-[60] mb-2"
+                            >
+                              <div className="p-2 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Mention Team Member</span>
+                                <AtSign className="w-3 h-3 text-slate-400" />
+                              </div>
+                              <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                                {teamMembers.filter(m => m.name.toLowerCase().includes(mentionSearch.toLowerCase())).length === 0 ? (
+                                  <div className="p-4 text-center">
+                                    <p className="text-xs text-slate-400">No members found</p>
+                                  </div>
+                                ) : (
+                                  teamMembers
+                                    .filter(m => m.name.toLowerCase().includes(mentionSearch.toLowerCase()))
+                                    .map((member, index) => (
+                                      <button
+                                        key={member.id}
+                                        onClick={() => insertCommentMention(member.name)}
+                                        className={cn(
+                                          "w-full flex items-center gap-2 p-2 hover:bg-indigo-50 transition-colors text-left",
+                                          mentionIndex === index && "bg-indigo-50"
+                                        )}
+                                      >
+                                        <div className="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 text-[10px] font-bold shrink-0">
+                                          {member.avatar ? (
+                                            <img src={member.avatar} alt={member.name} className="w-full h-full rounded-full object-cover" referrerPolicy="no-referrer" />
+                                          ) : (
+                                            member.name.charAt(0)
+                                          )}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-xs font-bold text-slate-900 truncate">{member.name}</p>
+                                          <p className="text-[10px] text-slate-500 truncate">{member.role}</p>
+                                        </div>
+                                      </button>
+                                    ))
+                                )}
+                              </div>
+                            </motion.div>
+                          )}
+
+                          {showTaskMentions && (
+                            <motion.div
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: 10 }}
+                              className="absolute bottom-full left-0 w-64 bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden z-[60] mb-2"
+                            >
+                              <div className="p-2 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Link Task / Feature</span>
+                                <Hash className="w-3 h-3 text-slate-400" />
+                              </div>
+                              <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                                {allTasks.filter(t => t.title.toLowerCase().includes(taskMentionSearch.toLowerCase())).length === 0 ? (
+                                  <div className="p-4 text-center">
+                                    <p className="text-xs text-slate-400">No tasks found</p>
+                                  </div>
+                                ) : (
+                                  allTasks
+                                    .filter(t => t.title.toLowerCase().includes(taskMentionSearch.toLowerCase()))
+                                    .map((task, index) => (
+                                      <button
+                                        key={task.id}
+                                        onClick={() => insertTaskMention(task.title)}
+                                        className={cn(
+                                          "w-full flex items-center gap-2 p-2 hover:bg-emerald-50 transition-colors text-left",
+                                          taskMentionIndex === index && "bg-emerald-50"
+                                        )}
+                                      >
+                                        <div className="w-6 h-6 rounded bg-emerald-100 flex items-center justify-center text-emerald-600 text-[10px] font-bold shrink-0">
+                                          {task.type === 'request' ? <Zap className="w-3 h-3" /> : task.type === 'idea' ? <Lightbulb className="w-3 h-3" /> : <CheckSquare className="w-3 h-3" />}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-xs font-bold text-slate-900 truncate">{task.title}</p>
+                                          <p className="text-[10px] text-slate-500 truncate">{task.status}</p>
+                                        </div>
+                                      </button>
+                                    ))
+                                )}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                         <textarea
+                          ref={commentTextareaRef}
                           value={newComment}
-                          onChange={(e) => setNewComment(e.target.value)}
+                          onChange={handleCommentInputChange}
                           placeholder="Write a comment..."
-                          rows={2}
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-none pr-10"
+                          rows={1}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-none pr-10 min-h-[36px] max-h-[200px] overflow-y-auto"
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
+                            if (showMentions) {
+                              const filtered = teamMembers.filter(m => m.name.toLowerCase().includes(mentionSearch.toLowerCase()));
+                              if (filtered.length > 0) {
+                                if (e.key === 'ArrowDown') {
+                                  e.preventDefault();
+                                  setMentionIndex(prev => (prev + 1) % filtered.length);
+                                } else if (e.key === 'ArrowUp') {
+                                  e.preventDefault();
+                                  setMentionIndex(prev => (prev - 1 + filtered.length) % filtered.length);
+                                } else if (e.key === 'Enter' || e.key === 'Tab') {
+                                  e.preventDefault();
+                                  if (filtered[mentionIndex]) {
+                                    insertCommentMention(filtered[mentionIndex].name);
+                                  }
+                                }
+                              }
+                              if (e.key === 'Escape') {
+                                setShowMentions(false);
+                              }
+                            } else if (showTaskMentions) {
+                              const filtered = allTasks.filter(t => t.title.toLowerCase().includes(taskMentionSearch.toLowerCase()));
+                              if (filtered.length > 0) {
+                                if (e.key === 'ArrowDown') {
+                                  e.preventDefault();
+                                  setTaskMentionIndex(prev => (prev + 1) % filtered.length);
+                                } else if (e.key === 'ArrowUp') {
+                                  e.preventDefault();
+                                  setTaskMentionIndex(prev => (prev - 1 + filtered.length) % filtered.length);
+                                } else if (e.key === 'Enter' || e.key === 'Tab') {
+                                  e.preventDefault();
+                                  if (filtered[taskMentionIndex]) {
+                                    insertTaskMention(filtered[taskMentionIndex].title);
+                                  }
+                                }
+                              }
+                              if (e.key === 'Escape') {
+                                setShowTaskMentions(false);
+                              }
+                            } else if (e.key === 'Enter' && !e.shiftKey) {
                               e.preventDefault();
                               handleAddComment();
                             }
@@ -1661,7 +2051,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
                       </div>
                     </>
                   ) : (
-                    <div className="flex-1 space-y-4 overflow-y-auto max-h-[300px] md:max-h-none pr-2 custom-scrollbar">
+                    <div 
+                      ref={activityContainerRef}
+                      className="flex-1 space-y-4 overflow-y-auto pr-2 custom-scrollbar"
+                    >
                       {activityLog.length === 0 ? (
                         <div className="text-center py-8">
                           <p className="text-xs text-slate-400">No activity recorded yet.</p>

@@ -71,13 +71,6 @@ export const INITIAL_MESSAGES: Message[] = [
   },
 ];
 
-export const TEAM_MEMBERS = [
-  { id: 'u1', name: 'John Doe', email: 'j.doe@teamsync.com', avatar: 'https://picsum.photos/seed/john/100/100' },
-  { id: 'u2', name: 'Alice', email: 'alice@teamsync.com', avatar: 'https://picsum.photos/seed/alice/100/100' },
-  { id: 'u3', name: 'Bob', email: 'bob@teamsync.com', avatar: 'https://picsum.photos/seed/bob/100/100' },
-  { id: 'u4', name: 'Charlie', email: 'charlie@teamsync.com', avatar: 'https://picsum.photos/seed/charlie/100/100' },
-];
-
 export const INITIAL_TASKS: Task[] = [
   {
     id: 't1',

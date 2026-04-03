@@ -15,9 +15,15 @@ interface SidebarProps {
   onLogout: () => void;
 }
 
-const StatusDot = ({ status }: { status?: 'online' | 'offline' | 'away' }) => {
+const StatusDot = ({ status, className }: { status?: 'online' | 'offline' | 'away', className?: string }) => {
   const color = status === 'online' ? 'bg-green-500' : status === 'away' ? 'bg-yellow-500' : 'bg-slate-500';
-  return <div className={cn("w-2.5 h-2.5 rounded-full border-2 border-slate-900", color)} />;
+  const label = status === 'online' ? 'Online' : status === 'away' ? 'Away' : 'Offline';
+  return (
+    <div 
+      className={cn("w-2 h-2 rounded-full", color, className)} 
+      title={label}
+    />
+  );
 };
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeChannel, onChannelSelect, channels, onManageChannels, user, teamMembers, onEditProfile, onLogout }) => {
@@ -110,12 +116,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeChannel, onChannelSelect
                       member.name.split(' ').map(n => n[0]).join('').toUpperCase()
                     )}
                   </div>
-                  <div className="absolute -bottom-0.5 -right-0.5">
-                    <StatusDot status={member.status} />
-                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 flex items-center gap-2">
                   <p className="truncate text-slate-300 group-hover:text-white transition-colors">{member.name}</p>
+                  <StatusDot status={member.status} className="shrink-0" />
                 </div>
               </div>
             ))}
@@ -133,12 +137,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeChannel, onChannelSelect
                 user.name.split(' ').map(n => n[0]).join('').toUpperCase()
               )}
             </div>
-            <div className="absolute bottom-0 right-0">
-              <StatusDot status={user.status || 'online'} />
-            </div>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-white truncate">{user.name}</p>
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-semibold text-white truncate">{user.name}</p>
+              <StatusDot status={user.status || 'online'} className="shrink-0" />
+            </div>
             <p className="text-[10px] text-slate-500 truncate uppercase tracking-wider font-bold">{user.role || 'Member'}</p>
           </div>
           <button 
