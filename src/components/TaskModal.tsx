@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, MessageSquare, Send, CheckSquare, Square, Plus, Trash2, History, ArrowRight, Tag, Paperclip, FileText, Download, Hash, AlertCircle, Copy, Save, Sparkles, Loader2, Search, Lightbulb, Zap, Brain } from 'lucide-react';
+import ReactQuill from 'react-quill-new';
+import DOMPurify from 'dompurify';
+import { X, MessageSquare, Send, CheckSquare, Square, Plus, Trash2, History, ArrowRight, Tag, Paperclip, FileText, Download, Hash, AlertCircle, Copy, Save, Sparkles, Loader2, Search, Lightbulb, Zap, Brain, Eye, ExternalLink, Archive, RotateCcw, Type as TypeIcon } from 'lucide-react';
 import { Task, Comment, Subtask, ActivityLogEntry, Attachment, Channel, UserProfile, TaskTemplate, TaskType } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -13,7 +15,8 @@ interface TaskModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (task: Omit<Task, 'id' | 'status' | 'createdAt' | 'activityLog'>) => void;
-  onAddTask?: (task: Omit<Task, 'id' | 'status' | 'createdAt' | 'activityLog'>) => string;
+  onAddTask?: (task: Omit<Task, 'id' | 'status' | 'createdAt' | 'activityLog'>) => Promise<string>;
+  onArchiveTask?: (taskId: string, archived: boolean) => void;
   onDeleteTask?: (taskId: string) => void;
   initialTask?: Task | null;
   allTasks: Task[];
@@ -26,7 +29,24 @@ interface TaskModalProps {
   isSummaryView?: boolean;
 }
 
-export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit, onAddTask, onDeleteTask, initialTask, allTasks, activeChannel, channels, templates, onSaveTemplate, user, isReadOnly: isReadOnlyProp, isSummaryView }) => {
+const quillModules = {
+  toolbar: [
+    [{ 'header': [1, 2, 3, false] }],
+    ['bold', 'italic', 'underline', 'strike'],
+    [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+    ['link', 'blockquote', 'code-block'],
+    ['clean']
+  ],
+};
+
+const quillFormats = [
+  'header',
+  'bold', 'italic', 'underline', 'strike',
+  'list', 'bullet',
+  'link', 'blockquote', 'code-block'
+];
+
+export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit, onAddTask, onArchiveTask, onDeleteTask, initialTask, allTasks, activeChannel, channels, templates, onSaveTemplate, user, isReadOnly: isReadOnlyProp, isSummaryView }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [taskType, setTaskType] = useState<TaskType>('task');
@@ -48,6 +68,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [newSubtask, setNewSubtask] = useState('');
   const [dependencies, setDependencies] = useState<string[]>([]);
+  const [previewFile, setPreviewFile] = useState<Attachment | null>(null);
+  const [previewText, setPreviewText] = useState<string | null>(null);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [relatedTaskIds, setRelatedTaskIds] = useState<string[]>([]);
   const [tags, setTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');
@@ -61,7 +84,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
   const [isSearching, setIsSearching] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const descriptionRef = useRef<HTMLTextAreaElement>(null);
 
   const canEdit = hasPermission(user.role, 'EDIT_TASK');
   const canAssign = hasPermission(user.role, 'ASSIGN_TASK');
@@ -73,7 +95,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
   // Check if the current user is the assignee or the creator (assigner)
   const isAssignee = user.name === assignee;
   const isCreator = user.id === (initialTask?.uid || '');
-  const canEditDescription = !isSearching && (canEdit || isAssignee || isCreator);
+  const canEditDescription = !isReadOnly && !isSearching && (canEdit || isAssignee || isCreator);
 
   useEffect(() => {
     if (initialTask) {
@@ -211,23 +233,27 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
         tags,
         subtasks: subtasks.map(({ title, completed }) => ({ title, completed })),
         channelId,
+        uid: user.id,
       });
     }
   };
 
-  const handleAddDependency = () => {
+  const handleAddDependency = async () => {
     if (!newDependencyTitle.trim() || !onAddTask) return;
     
-    const newTaskId = onAddTask({
+    const newTaskId = await onAddTask({
       title: newDependencyTitle,
       description: 'Created as a dependency',
       assignee: assignee || 'Unassigned',
-      assigner: 'John Doe', // Mock current user
+      assigner: user.name,
       priority: 'Medium',
       dueDate: undefined,
       comments: [],
       subtasks: [],
-      dependencies: []
+      dependencies: [],
+      uid: user.id,
+      tags: [],
+      attachments: []
     });
     
     setDependencies([...dependencies, newTaskId]);
@@ -247,6 +273,25 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
 
   const removeTag = (tagToRemove: string) => {
     setTags(tags.filter(t => t !== tagToRemove));
+  };
+
+  const handlePreview = async (file: Attachment) => {
+    setPreviewFile(file);
+    setPreviewText(null);
+    
+    if (file.name.match(/\.(txt|log|md|json|csv)$/i)) {
+      setIsPreviewLoading(true);
+      try {
+        const response = await fetch(file.url);
+        const text = await response.text();
+        setPreviewText(text);
+      } catch (error) {
+        console.error("Error fetching text preview:", error);
+        setPreviewText("Failed to load text content.");
+      } finally {
+        setIsPreviewLoading(false);
+      }
+    }
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -276,7 +321,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
         });
       }
 
-      setAttachments([...attachments, ...newAttachments]);
+      setAttachments(prev => [...prev, ...newAttachments]);
     } catch (error) {
       console.error("Error uploading files:", error);
       alert("Failed to upload files. Please try again.");
@@ -296,7 +341,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
         console.error("Error deleting file from storage:", error);
       }
     }
-    setAttachments(attachments.filter(a => a.id !== id));
+    setAttachments(prev => prev.filter(a => a.id !== id));
   };
 
   const formatFileSize = (bytes: number) => {
@@ -312,12 +357,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
     
     const comment: Comment = {
       id: Math.random().toString(36).substr(2, 9),
-      author: 'John Doe', // Mock current user
+      author: user.name,
       text: newComment,
       timestamp: new Date(),
     };
     
-    setComments([...comments, comment]);
+    setComments(prev => [...prev, comment]);
     setNewComment('');
   };
 
@@ -330,7 +375,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
       completed: false,
     };
     
-    setSubtasks([...subtasks, subtask]);
+    setSubtasks(prev => [...prev, subtask]);
     setNewSubtask('');
   };
 
@@ -368,6 +413,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
     );
   };
 
+  const handleArchive = () => {
+    if (initialTask && onArchiveTask) {
+      onArchiveTask(initialTask.id, !initialTask.archived);
+      onClose();
+    }
+  };
+
   const handleDelete = () => {
     if (initialTask && onDeleteTask) {
       onDeleteTask(initialTask.id);
@@ -375,19 +427,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
     }
   };
 
-  useEffect(() => {
-    if (isSummaryView && descriptionRef.current) {
-      descriptionRef.current.style.height = 'auto';
-      descriptionRef.current.style.height = `${descriptionRef.current.scrollHeight}px`;
-    }
-  }, [description, isSummaryView]);
-
   const handleSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (title.trim() && assignee.trim()) {
+      const sanitizedDescription = description === '<p><br></p>' ? '' : description;
       const taskData: any = { 
         title, 
-        description, 
+        description: sanitizedDescription, 
         type: taskType,
         upvotes,
         assignee, 
@@ -415,6 +461,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
 
       if (initialTask?.position !== undefined) {
         taskData.position = initialTask.position;
+      }
+
+      if (initialTask?.archived !== undefined) {
+        taskData.archived = initialTask.archived;
       }
 
       onSubmit(taskData);
@@ -543,17 +593,31 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
                   </div>
 
                   <div className="flex flex-col gap-2">
-                    <label className="text-sm font-semibold text-slate-700">Description</label>
-                    <div className="flex-1 flex flex-col">
-                      <textarea
-                        ref={descriptionRef}
-                        disabled={!canEditDescription}
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        placeholder="Add more details..."
-                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-none text-slate-700 leading-relaxed overflow-hidden"
-                        style={{ minHeight: '300px' }}
-                      />
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                        <TypeIcon className="w-4 h-4 text-slate-400" />
+                        Description
+                      </label>
+                    </div>
+                    <div className="flex-1 flex flex-col min-h-[300px]">
+                      {!canEditDescription ? (
+                        <div 
+                          className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl min-h-[300px] overflow-y-auto prose prose-slate max-w-none"
+                          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(description || '<p class="text-slate-400 italic">No description provided.</p>') }}
+                        />
+                      ) : (
+                        <div className="quill-editor-container flex-1 flex flex-col">
+                          <ReactQuill
+                            key={isOpen ? 'open' : 'closed'}
+                            theme="snow"
+                            value={description}
+                            onChange={setDescription}
+                            modules={quillModules}
+                            formats={quillFormats}
+                            placeholder="Add more details..."
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -782,15 +846,26 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
                         {isSearching ? 'Searching...' : 'AI Search & Fill'}
                       </button>
                     </div>
-                    <textarea
-                      ref={descriptionRef}
-                      disabled={!canEditDescription}
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                      placeholder={isSearching ? "AI is researching and writing..." : "Add more details..."}
-                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-none disabled:opacity-60 overflow-hidden"
-                      style={{ minHeight: '120px' }}
-                    />
+                    <div className="flex-1 flex flex-col">
+                      {!canEditDescription ? (
+                        <div 
+                          className="w-full p-4 bg-slate-50 border border-slate-200 rounded-lg min-h-[120px] overflow-y-auto prose prose-slate max-w-none text-sm"
+                          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(description || '<p class="text-slate-400 italic">No description provided.</p>') }}
+                        />
+                      ) : (
+                        <div className="quill-editor-container">
+                          <ReactQuill
+                            key={isOpen ? 'open' : 'closed'}
+                            theme="snow"
+                            value={description}
+                            onChange={setDescription}
+                            modules={quillModules}
+                            formats={quillFormats}
+                            placeholder={isSearching ? "AI is researching and writing..." : "Add more details..."}
+                          />
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
@@ -950,7 +1025,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
                         attachments.map((file) => (
                           <div 
                             key={file.id} 
-                            className="flex items-center gap-3 p-2 bg-slate-50 border border-slate-200 rounded-lg group hover:border-indigo-200 transition-colors"
+                            onClick={() => handlePreview(file)}
+                            className="flex items-center gap-3 p-2 bg-slate-50 border border-slate-200 rounded-lg group hover:border-indigo-200 transition-colors cursor-pointer"
                           >
                             <div className="p-2 bg-white rounded-md border border-slate-100 text-indigo-500">
                               <FileText className="w-4 h-4" />
@@ -959,7 +1035,15 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
                               <p className="text-xs font-semibold text-slate-900 truncate">{file.name}</p>
                               <p className="text-[10px] text-slate-400">{formatFileSize(file.size)} • {format(new Date(file.timestamp), 'MMM d')}</p>
                             </div>
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                onClick={() => handlePreview(file)}
+                                className="p-1.5 text-slate-400 hover:text-indigo-600 transition-colors"
+                                title="View"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
                               <a 
                                 href={file.url} 
                                 download={file.name}
@@ -1285,16 +1369,32 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
                     </div>
                   </div>
 
-                  <div className="pt-4 flex gap-3">
+                  <div className="pt-4 flex gap-2">
                     {initialTask && canDelete && (
-                      <button
-                        type="button"
-                        onClick={() => setIsDeleting(true)}
-                        className="px-4 py-2.5 border border-red-200 text-red-600 font-semibold rounded-lg hover:bg-red-50 transition-colors flex items-center justify-center gap-2"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        Delete
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleArchive}
+                          className={cn(
+                            "px-3 py-2.5 border font-semibold rounded-lg transition-colors flex items-center justify-center gap-2",
+                            initialTask.archived 
+                              ? "border-amber-200 text-amber-600 hover:bg-amber-50" 
+                              : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                          )}
+                          title={initialTask.archived ? "Restore Task" : "Archive Task"}
+                        >
+                          {initialTask.archived ? <RotateCcw className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
+                          {initialTask.archived ? 'Restore' : 'Archive'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsDeleting(true)}
+                          className="px-3 py-2.5 border border-red-200 text-red-600 font-semibold rounded-lg hover:bg-red-50 transition-colors flex items-center justify-center gap-2"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          Delete
+                        </button>
+                      </>
                     )}
                     <button
                       type="button"
@@ -1371,6 +1471,122 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
                             >
                               Delete
                             </button>
+                          </div>
+                        </motion.div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Attachment Preview Modal */}
+                  <AnimatePresence>
+                    {previewFile && (
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 md:p-8"
+                        onClick={() => setPreviewFile(null)}
+                      >
+                        <motion.div
+                          initial={{ scale: 0.9, opacity: 0 }}
+                          animate={{ scale: 1, opacity: 1 }}
+                          exit={{ scale: 0.9, opacity: 0 }}
+                          className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
+                            <div className="flex items-center gap-3">
+                              <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600">
+                                <FileText className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <h4 className="text-sm font-bold text-slate-900 truncate max-w-[200px] md:max-w-md">
+                                  {previewFile.name}
+                                </h4>
+                                <p className="text-[10px] text-slate-500">
+                                  {formatFileSize(previewFile.size)} • {format(new Date(previewFile.timestamp), 'MMM d, yyyy')}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <a
+                                href={previewFile.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                title="Open in new tab"
+                              >
+                                <ExternalLink className="w-5 h-5" />
+                              </a>
+                              <a
+                                href={previewFile.url}
+                                download={previewFile.name}
+                                className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                title="Download"
+                              >
+                                <Download className="w-5 h-5" />
+                              </a>
+                              <button
+                                onClick={() => setPreviewFile(null)}
+                                className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                              >
+                                <X className="w-5 h-5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="flex-1 bg-slate-50 overflow-auto flex items-center justify-center p-4 min-h-[400px] relative">
+                            {isPreviewLoading && (
+                              <div className="absolute inset-0 z-10 bg-slate-50/50 backdrop-blur-[1px] flex items-center justify-center">
+                                <div className="flex flex-col items-center gap-2">
+                                  <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
+                                  <p className="text-xs font-medium text-slate-500">Loading preview...</p>
+                                </div>
+                              </div>
+                            )}
+
+                            {previewFile.name.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i) ? (
+                              <img
+                                src={previewFile.url}
+                                alt={previewFile.name}
+                                className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : previewFile.name.match(/\.pdf$/i) ? (
+                              <iframe
+                                src={`${previewFile.url}#toolbar=0`}
+                                className="w-full h-full min-h-[600px] rounded-lg border border-slate-200 bg-white"
+                                title={previewFile.name}
+                                onLoad={() => setIsPreviewLoading(false)}
+                              />
+                            ) : previewText !== null ? (
+                              <div className="w-full h-full bg-white rounded-lg border border-slate-200 p-6 overflow-auto shadow-inner">
+                                <pre className="text-xs font-mono text-slate-700 whitespace-pre-wrap leading-relaxed">
+                                  {previewText}
+                                </pre>
+                              </div>
+                            ) : (
+                              <div className="text-center p-12 bg-white rounded-2xl border border-slate-200 shadow-sm max-w-sm">
+                                <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                  <FileText className="w-8 h-8 text-slate-400" />
+                                </div>
+                                <h5 className="text-sm font-bold text-slate-900 mb-2">Preview not available</h5>
+                                <p className="text-xs text-slate-500 mb-6">
+                                  We can't preview this file type directly. You can download it or open it in a new tab to view.
+                                </p>
+                                <div className="flex gap-3">
+                                  <a
+                                    href={previewFile.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex-1 px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2"
+                                  >
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                    Open New Tab
+                                  </a>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </motion.div>
                       </motion.div>

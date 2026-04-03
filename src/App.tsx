@@ -139,6 +139,10 @@ export default function App() {
           activityLog: data.activityLog?.map((log: any) => ({
             ...log,
             timestamp: log.timestamp?.toDate() || new Date()
+          })),
+          attachments: data.attachments?.map((a: any) => ({
+            ...a,
+            timestamp: a.timestamp?.toDate() || new Date()
           }))
         } as Task;
       });
@@ -520,6 +524,7 @@ export default function App() {
       createdAt: new Date(),
       position: maxPosition + 1,
       uid: user.id,
+      archived: false,
       activityLog: [{
         id: Math.random().toString(36).substr(2, 9),
         user: user.name,
@@ -642,6 +647,28 @@ export default function App() {
     }
   };
 
+  const handleArchiveTask = async (taskId: string, archived: boolean) => {
+    if (!user) return;
+    const t = tasks.find(task => task.id === taskId);
+    if (!t) return;
+
+    const logEntry: ActivityLogEntry = {
+      id: Math.random().toString(36).substr(2, 9),
+      user: user.name,
+      action: archived ? 'archived task' : 'unarchived task',
+      timestamp: new Date(),
+    };
+
+    try {
+      await updateDoc(doc(db, 'tasks', taskId), {
+        archived,
+        activityLog: [logEntry, ...(t.activityLog || [])]
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `tasks/${taskId}`);
+    }
+  };
+
   const handleDeleteTask = async (taskId: string) => {
     try {
       await deleteDoc(doc(db, 'tasks', taskId));
@@ -750,6 +777,7 @@ export default function App() {
             onTaskReorder={handleTaskReorder}
             onAddTask={handleCreateTask}
             onUpdateTask={handleUpdateTask}
+            onArchiveTask={handleArchiveTask}
             onDeleteTask={handleDeleteTask}
           />
         </div>

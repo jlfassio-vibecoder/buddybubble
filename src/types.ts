@@ -78,6 +78,7 @@ export interface Task {
   position?: number;
   activityLog?: ActivityLogEntry[];
   uid: string; // Firebase Auth UID
+  archived?: boolean;
 }
 
 export interface UserProfile {

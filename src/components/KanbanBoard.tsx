@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, MoreHorizontal, Clock, User, Filter, Edit2, Calendar, MessageSquare, CheckSquare, GripVertical, AlertCircle, AlertTriangle, Info, Link2, ArrowUpDown, Paperclip, Zap, Lightbulb, Eye, Copy, Layout, Maximize2, Minimize2, CheckCircle2, Square } from 'lucide-react';
+import DOMPurify from 'dompurify';
+import { Plus, MoreHorizontal, Clock, User, Filter, Edit2, Calendar, MessageSquare, CheckSquare, GripVertical, AlertCircle, AlertTriangle, Info, Link2, ArrowUpDown, Paperclip, Zap, Lightbulb, Eye, Copy, Layout, Maximize2, Minimize2, CheckCircle2, Square, Archive, RotateCcw } from 'lucide-react';
 import { Task, Channel, UserProfile, TaskTemplate } from '../types';
 import { cn } from '../lib/utils';
 import { motion } from 'motion/react';
@@ -41,8 +42,9 @@ interface KanbanBoardProps {
   user: UserProfile;
   onTaskMove: (taskId: string, newStatus: Task['status'], newPosition?: number) => void;
   onTaskReorder: (taskId: string, newPosition: number, columnTasks: Task[]) => void;
-  onAddTask: (task: Omit<Task, 'id' | 'status'>) => void;
-  onUpdateTask: (taskId: string, task: Omit<Task, 'id' | 'status'>) => void;
+  onAddTask: (task: Omit<Task, 'id' | 'status' | 'createdAt' | 'activityLog'>) => Promise<string>;
+  onUpdateTask: (taskId: string, task: Omit<Task, 'id' | 'status' | 'createdAt' | 'activityLog'>) => void;
+  onArchiveTask: (taskId: string, archived: boolean) => void;
   onDeleteTask: (taskId: string) => void;
 }
 
@@ -277,10 +279,13 @@ const SortableTaskCard: React.FC<SortableTaskCardProps> = ({ task, allTasks, onE
       )}>{task.title}</h4>
       
       {task.description && (
-        <p className={cn(
-          "text-xs text-slate-500 mb-2",
-          viewMode === 'detailed' || viewMode === 'summary' ? "" : "line-clamp-2"
-        )}>{task.description}</p>
+        <div 
+          className={cn(
+            "text-xs text-slate-500 mb-2 prose prose-slate prose-xs max-w-none",
+            viewMode === 'detailed' || viewMode === 'summary' ? "" : "line-clamp-2"
+          )}
+          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(task.description) }}
+        />
       )}
       
       {viewMode !== 'summary' && task.tags && task.tags.length > 0 && (
@@ -491,7 +496,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({ id, tasks, column, onEdit, 
   );
 };
 
-export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, channels, templates, onSaveTemplate, user, onTaskMove, onTaskReorder, onAddTask, onUpdateTask, onDeleteTask }) => {
+export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, channels, templates, onSaveTemplate, user, onTaskMove, onTaskReorder, onAddTask, onUpdateTask, onArchiveTask, onDeleteTask }) => {
   const [priorityFilter, setPriorityFilter] = useState<Task['priority'] | 'All'>('All');
   const [sortBy, setSortBy] = useState<'dueDate' | 'priority' | 'createdAt' | 'manual'>('manual');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -501,6 +506,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
   const [globalViewMode, setGlobalViewMode] = useState<CardViewMode>('full');
   const [isQuickView, setIsQuickView] = useState(false);
   const [isSummaryMode, setIsSummaryMode] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
 
   // Sync local tasks when tasks prop changes and we're not dragging
   useEffect(() => {
@@ -553,7 +559,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
   const filteredTasks = localTasks.filter(t => {
     const matchesPriority = priorityFilter === 'All' || t.priority === priorityFilter;
     const matchesChannel = activeChannel.id === 'all' || !t.channelId || t.channelId === activeChannel.id;
-    return matchesPriority && matchesChannel;
+    const matchesArchive = showArchived ? t.archived === true : !t.archived;
+    return matchesPriority && matchesChannel && matchesArchive;
   });
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -661,11 +668,11 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
     setIsModalOpen(true);
   };
 
-  const handleModalSubmit = (taskData: Omit<Task, 'id' | 'status'>) => {
+  const handleModalSubmit = async (taskData: Omit<Task, 'id' | 'status' | 'createdAt' | 'activityLog'>) => {
     if (selectedTask) {
       onUpdateTask(selectedTask.id, taskData);
     } else {
-      onAddTask(taskData);
+      await onAddTask(taskData);
     }
   };
 
@@ -676,6 +683,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
         onClose={() => setIsModalOpen(false)} 
         onSubmit={handleModalSubmit}
         onAddTask={onAddTask}
+        onArchiveTask={onArchiveTask}
         onDeleteTask={onDeleteTask}
         initialTask={selectedTask}
         allTasks={localTasks}
@@ -728,6 +736,19 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, activeChannel, 
               </button>
             ))}
           </div>
+          <div className="h-6 w-px bg-slate-200 mx-1" />
+          <button
+            onClick={() => setShowArchived(!showArchived)}
+            className={cn(
+              "flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
+              showArchived 
+                ? "bg-amber-100 text-amber-700 border border-amber-200" 
+                : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
+            )}
+          >
+            {showArchived ? <RotateCcw className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
+            {showArchived ? 'View Active' : 'View Archive'}
+          </button>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1 gap-1 shadow-sm mr-2">
