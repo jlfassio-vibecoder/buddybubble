@@ -2,7 +2,9 @@
 
 import { useActionState } from 'react';
 import { createWorkspace, type CreateWorkspaceState } from './actions';
-import { Button } from '@/components/ui/button';
+import { buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { formatUserFacingError } from '@/lib/format-error';
 
 export default function NoWorkspaces() {
   const [state, formAction, pending] = useActionState(
@@ -13,19 +15,19 @@ export default function NoWorkspaces() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-8">
       <div className="w-full max-w-md space-y-4 rounded-xl border border-border bg-card p-8 shadow-sm">
-        <h1 className="text-lg font-semibold">Create your first workspace</h1>
+        <h1 className="text-lg font-semibold">Create your first BuddyBubble</h1>
         <p className="text-sm text-muted-foreground">
-          You are not a member of any workspace yet. Create one to get started.
+          You are not in any BuddyBubble yet. Create one to get started.
         </p>
         {state?.error && (
           <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {state.error}
+            {formatUserFacingError(state.error)}
           </p>
         )}
         <form action={formAction} className="space-y-4">
           <div>
             <label htmlFor="name" className="mb-1 block text-sm font-medium">
-              Workspace name
+              BuddyBubble name
             </label>
             <input
               id="name"
@@ -48,11 +50,16 @@ export default function NoWorkspaces() {
               <option value="business">Business</option>
               <option value="kids">Kids</option>
               <option value="class">Class</option>
+              <option value="community">Community</option>
             </select>
           </div>
-          <Button type="submit" className="w-full" disabled={pending}>
-            {pending ? 'Creating…' : 'Create workspace'}
-          </Button>
+          <button
+            type="submit"
+            className={cn(buttonVariants({ variant: 'default' }), 'w-full')}
+            disabled={pending}
+          >
+            {pending ? 'Creating…' : 'Create BuddyBubble'}
+          </button>
         </form>
       </div>
     </main>

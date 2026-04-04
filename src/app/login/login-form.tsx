@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@utils/supabase/client';
 import { Button } from '@/components/ui/button';
+import { formatUserFacingError } from '@/lib/format-error';
 
 export function LoginForm() {
   const router = useRouter();
@@ -30,7 +31,7 @@ export function LoginForm() {
     });
     setLoading(false);
     if (err) {
-      setError(err.message);
+      setError(formatUserFacingError(err));
       return;
     }
     router.push(next);
@@ -47,7 +48,7 @@ export function LoginForm() {
       options: { redirectTo },
     });
     setLoading(false);
-    if (err) setError(err.message);
+    if (err) setError(formatUserFacingError(err));
   }
 
   async function signUp() {
@@ -62,7 +63,7 @@ export function LoginForm() {
     });
     setLoading(false);
     if (err) {
-      setError(err.message);
+      setError(formatUserFacingError(err));
       return;
     }
     if (data.session) {

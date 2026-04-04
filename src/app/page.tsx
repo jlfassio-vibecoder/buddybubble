@@ -4,7 +4,7 @@ export default function HomePage() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-4 p-8">
       <h1 className="text-2xl font-semibold text-foreground">BuddyBubble</h1>
-      <p className="text-muted-foreground">Workspace chat and tasks.</p>
+      <p className="text-muted-foreground">Chat and tasks in your BuddyBubbles and Bubbles.</p>
       <div className="flex gap-3">
         <Link
           href="/login"

@@ -5,8 +5,10 @@
  */
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
-export type WorkspaceCategory = 'business' | 'kids' | 'class';
+/** Template for a new BuddyBubble (`workspaces.category_type`). */
+export type WorkspaceCategory = 'business' | 'kids' | 'class' | 'community';
 export type MemberRole = 'admin' | 'member' | 'guest';
+/** Built-in Kanban slugs; `tasks.status` may also use workspace-specific slugs from `board_columns`. */
 export type TaskStatus = 'todo' | 'in_progress' | 'done';
 
 export interface Database {
@@ -36,6 +38,7 @@ export interface Database {
           category_type: WorkspaceCategory;
           created_by: string;
           created_at: string;
+          icon_url: string | null;
         };
         Insert: {
           id?: string;
@@ -43,6 +46,7 @@ export interface Database {
           category_type: WorkspaceCategory;
           created_by: string;
           created_at?: string;
+          icon_url?: string | null;
         };
         Update: Partial<Database['public']['Tables']['workspaces']['Insert']>;
       };
@@ -76,6 +80,25 @@ export interface Database {
         };
         Update: Partial<Database['public']['Tables']['bubbles']['Insert']>;
       };
+      board_columns: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          name: string;
+          slug: string;
+          position: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          name: string;
+          slug: string;
+          position: number;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['board_columns']['Insert']>;
+      };
       messages: {
         Row: {
           id: string;
@@ -105,6 +128,10 @@ export interface Database {
           position: number;
           assigned_to: string | null;
           created_at: string;
+          subtasks: Json;
+          comments: Json;
+          activity_log: Json;
+          attachments: Json;
         };
         Insert: {
           id?: string;
@@ -115,6 +142,10 @@ export interface Database {
           position?: number;
           assigned_to?: string | null;
           created_at?: string;
+          subtasks?: Json;
+          comments?: Json;
+          activity_log?: Json;
+          attachments?: Json;
         };
         Update: Partial<Database['public']['Tables']['tasks']['Insert']>;
       };

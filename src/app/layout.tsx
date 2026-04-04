@@ -7,7 +7,7 @@ const geist = Geist({ subsets: ['latin'], variable: '--font-sans' });
 
 export const metadata: Metadata = {
   title: 'BuddyBubble',
-  description: 'BuddyBubble workspace collaboration',
+  description: 'BuddyBubble — chat and tasks in your BuddyBubbles and Bubbles.',
 };
 
 export default function RootLayout({

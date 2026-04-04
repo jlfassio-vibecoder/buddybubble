@@ -1,27 +1,36 @@
 import { create } from 'zustand';
 import { createClient } from '@utils/supabase/client';
+import type { BubbleRow } from '@/types/database';
 
+/** One BuddyBubble the user belongs to (stored in `workspaces`). */
 export type WorkspaceRow = {
   id: string;
   name: string;
-  category_type: 'business' | 'kids' | 'class';
+  category_type: 'business' | 'kids' | 'class' | 'community';
   created_at: string;
   role: 'admin' | 'member' | 'guest';
+  /** Avatar in the far-left rail; optional until set in DB. */
+  icon_url?: string | null;
 };
 
 type WorkspaceStore = {
   activeWorkspace: WorkspaceRow | null;
+  activeBubble: BubbleRow | null;
   userWorkspaces: WorkspaceRow[];
   loading: boolean;
   loadUserWorkspaces: () => Promise<void>;
   syncActiveFromRoute: (workspaceId: string) => Promise<void>;
   setActiveWorkspaceId: (id: string) => void;
+  setActiveBubble: (bubble: BubbleRow | null) => void;
 };
 
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   activeWorkspace: null,
+  activeBubble: null,
   userWorkspaces: [],
   loading: false,
+
+  setActiveBubble: (bubble) => set({ activeBubble: bubble }),
 
   loadUserWorkspaces: async () => {
     set({ loading: true });
@@ -36,7 +45,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
     const { data, error } = await supabase
       .from('workspace_members')
-      .select('role, workspaces(id, name, category_type, created_at)')
+      .select('role, workspaces(id, name, category_type, icon_url, created_at)')
       .eq('user_id', user.id);
 
     if (error || !data) {
@@ -52,6 +61,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         name: string;
         category_type: string;
         created_at: string;
+        icon_url?: string | null;
       };
       return [
         {
@@ -59,6 +69,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           name: ws.name,
           category_type: ws.category_type as WorkspaceRow['category_type'],
           created_at: ws.created_at,
+          icon_url: ws.icon_url ?? null,
           role: row.role as WorkspaceRow['role'],
         },
       ];
