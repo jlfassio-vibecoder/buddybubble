@@ -85,7 +85,8 @@ export default function App() {
               name: firebaseUser.displayName || 'Anonymous',
               email,
               avatar: firebaseUser.photoURL || '',
-              role: email === 'jlfassio@gmail.com' ? 'Admin' : 'Member',
+              // Admin only from Firebase Auth canonical email — not providerData/placeholder used for `email`
+              role: firebaseUser.email?.trim() === 'jlfassio@gmail.com' ? 'Admin' : 'Member',
               department: 'General',
               channelIds: [],
               status: 'online',
