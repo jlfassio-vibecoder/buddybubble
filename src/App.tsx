@@ -284,7 +284,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const baseTitle = 'My Google AI Studio App';
+    const baseTitle = 'BuddyBubble';
     if (unreadCount > 0) {
       document.title = `(${unreadCount}) ${baseTitle}`;
     } else {

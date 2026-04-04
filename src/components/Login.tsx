@@ -54,14 +54,14 @@ export const Login: React.FC = () => {
         className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-8 border border-slate-100"
       >
         <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center text-white font-bold text-2xl mx-auto mb-6 shadow-lg shadow-indigo-200">
-          TB
+          BB
         </div>
         <h1 className="text-3xl font-bold text-slate-900 mb-2 tracking-tight text-center">
           {isSignUp ? 'Create Account' : 'Welcome Back'}
         </h1>
         <p className="text-slate-500 mb-8 text-center">
           {isSignUp 
-            ? 'Join TeamBubble and start collaborating.' 
+            ? 'Join BuddyBubble and start collaborating.' 
             : 'Sign in to continue to your workspace.'}
         </p>
 

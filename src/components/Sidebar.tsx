@@ -34,9 +34,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeChannel, onChannelSelect
       <div className="p-4 border-b border-slate-800 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold">
-            TB
+            BB
           </div>
-          <h1 className="font-bold text-white tracking-tight">TeamBubble</h1>
+          <h1 className="font-bold text-white tracking-tight">BuddyBubble</h1>
         </div>
       </div>
       
