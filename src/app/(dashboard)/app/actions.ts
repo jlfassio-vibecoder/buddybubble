@@ -3,14 +3,19 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@utils/supabase/server';
 
-export async function createWorkspace(formData: FormData) {
+export type CreateWorkspaceState = { error?: string } | null;
+
+export async function createWorkspace(
+  _prevState: CreateWorkspaceState,
+  formData: FormData,
+): Promise<CreateWorkspaceState> {
   const name = String(formData.get('name') ?? '').trim();
   const categoryType = String(formData.get('category_type') ?? 'business');
   if (!name) {
-    return;
+    return { error: 'Enter a workspace name.' };
   }
   if (!['business', 'kids', 'class'].includes(categoryType)) {
-    return;
+    return { error: 'Invalid category.' };
   }
 
   const supabase = await createClient();
@@ -18,7 +23,14 @@ export async function createWorkspace(formData: FormData) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) {
-    return;
+    return { error: 'You must be signed in.' };
+  }
+
+  const { error: profileErr } = await supabase.rpc('ensure_profile_for_uid', {
+    _uid: user.id,
+  });
+  if (profileErr) {
+    return { error: profileErr.message };
   }
 
   const { data: ws, error: wsError } = await supabase
@@ -32,7 +44,7 @@ export async function createWorkspace(formData: FormData) {
     .single();
 
   if (wsError || !ws) {
-    return;
+    return { error: wsError?.message ?? 'Could not create workspace' };
   }
 
   const { error: memError } = await supabase.from('workspace_members').insert({
@@ -42,7 +54,7 @@ export async function createWorkspace(formData: FormData) {
   });
 
   if (memError) {
-    return;
+    return { error: memError.message };
   }
 
   redirect(`/app/${ws.id}`);

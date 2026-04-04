@@ -1,7 +1,15 @@
-import { createWorkspace } from './actions';
+'use client';
+
+import { useActionState } from 'react';
+import { createWorkspace, type CreateWorkspaceState } from './actions';
 import { Button } from '@/components/ui/button';
 
-export function NoWorkspaces() {
+export default function NoWorkspaces() {
+  const [state, formAction, pending] = useActionState(
+    createWorkspace,
+    null as CreateWorkspaceState,
+  );
+
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-8">
       <div className="w-full max-w-md space-y-4 rounded-xl border border-border bg-card p-8 shadow-sm">
@@ -9,7 +17,12 @@ export function NoWorkspaces() {
         <p className="text-sm text-muted-foreground">
           You are not a member of any workspace yet. Create one to get started.
         </p>
-        <form action={createWorkspace} className="space-y-4">
+        {state?.error && (
+          <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {state.error}
+          </p>
+        )}
+        <form action={formAction} className="space-y-4">
           <div>
             <label htmlFor="name" className="mb-1 block text-sm font-medium">
               Workspace name
@@ -37,8 +50,8 @@ export function NoWorkspaces() {
               <option value="class">Class</option>
             </select>
           </div>
-          <Button type="submit" className="w-full">
-            Create workspace
+          <Button type="submit" className="w-full" disabled={pending}>
+            {pending ? 'Creating…' : 'Create workspace'}
           </Button>
         </form>
       </div>

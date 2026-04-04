@@ -85,8 +85,7 @@ export function KanbanPane({ bubbleId, canWrite }: Props) {
     if (!bubbleId || !title.trim() || !canWrite) return;
     setAdding(true);
     const supabase = createClient();
-    const maxPos =
-      tasks.length > 0 ? Math.max(...tasks.map((t) => t.position ?? 0)) + 1 : 0;
+    const maxPos = tasks.length > 0 ? Math.max(...tasks.map((t) => t.position ?? 0)) + 1 : 0;
     const { error } = await supabase.from('tasks').insert({
       bubble_id: bubbleId,
       title: title.trim(),
@@ -141,7 +140,9 @@ export function KanbanPane({ bubbleId, canWrite }: Props) {
                   <CardContent className="space-y-2 p-3 text-sm">
                     <p className="font-medium">{task.title}</p>
                     {task.description && (
-                      <p className="text-xs text-muted-foreground line-clamp-3">{task.description}</p>
+                      <p className="text-xs text-muted-foreground line-clamp-3">
+                        {task.description}
+                      </p>
                     )}
                     {canWrite && (
                       <select

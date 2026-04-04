@@ -13,6 +13,7 @@ export function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const redirectTo = `${typeof window !== 'undefined' ? window.location.origin : ''}/auth/callback?next=${encodeURIComponent(next)}`;
@@ -20,6 +21,7 @@ export function LoginForm() {
   async function signInEmail(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setInfo(null);
     setLoading(true);
     const supabase = createClient();
     const { error: err } = await supabase.auth.signInWithPassword({
@@ -37,6 +39,7 @@ export function LoginForm() {
 
   async function signInGoogle() {
     setError(null);
+    setInfo(null);
     setLoading(true);
     const supabase = createClient();
     const { error: err } = await supabase.auth.signInWithOAuth({
@@ -49,9 +52,10 @@ export function LoginForm() {
 
   async function signUp() {
     setError(null);
+    setInfo(null);
     setLoading(true);
     const supabase = createClient();
-    const { error: err } = await supabase.auth.signUp({
+    const { data, error: err } = await supabase.auth.signUp({
       email,
       password,
       options: { emailRedirectTo: redirectTo },
@@ -61,7 +65,14 @@ export function LoginForm() {
       setError(err.message);
       return;
     }
-    setError('Check your email to confirm, then sign in.');
+    if (data.session) {
+      router.push(next);
+      router.refresh();
+      return;
+    }
+    setInfo(
+      'Account created. If email confirmation is enabled, check your inbox and spam folder, then sign in.',
+    );
   }
 
   return (
@@ -79,8 +90,12 @@ export function LoginForm() {
         )}
 
         {error && (
-          <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {error}
+          <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
+        )}
+
+        {info && (
+          <p className="rounded-md bg-emerald-500/10 px-3 py-2 text-sm text-emerald-800 dark:text-emerald-200">
+            {info}
           </p>
         )}
 

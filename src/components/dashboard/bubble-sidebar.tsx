@@ -79,9 +79,7 @@ export function BubbleSidebar({
                 onClick={() => onSelectBubble(b.id)}
                 className={cn(
                   'mb-1 w-full rounded-md px-2 py-2 text-left text-sm transition-colors',
-                  selectedBubbleId === b.id
-                    ? 'bg-accent text-accent-foreground'
-                    : 'hover:bg-muted',
+                  selectedBubbleId === b.id ? 'bg-accent text-accent-foreground' : 'hover:bg-muted',
                 )}
               >
                 {b.name}

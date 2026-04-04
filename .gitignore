@@ -7,3 +7,9 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Supabase CLI local state
+supabase/.temp/
+
+# Local symlink to agent skills (see skills-lock.json); not portable
+skills/

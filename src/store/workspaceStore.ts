@@ -79,8 +79,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   setActiveWorkspaceId: (id: string) => {
-    const active =
-      get().userWorkspaces.find((w) => w.id === id) ?? get().activeWorkspace;
+    const active = get().userWorkspaces.find((w) => w.id === id) ?? get().activeWorkspace;
     if (active?.id === id) {
       set({ activeWorkspace: active });
       return;

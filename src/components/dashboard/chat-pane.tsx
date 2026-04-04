@@ -97,8 +97,7 @@ export function ChatPane({ bubbleId, canWrite }: Props) {
           {messages.map((m) => (
             <li key={m.id} className="text-sm">
               <span className="text-xs text-muted-foreground">
-                {new Date(m.created_at).toLocaleString()} ·{' '}
-                {m.user_id.slice(0, 8)}…
+                {new Date(m.created_at).toLocaleString()} · {m.user_id.slice(0, 8)}…
               </span>
               <p className="mt-0.5 whitespace-pre-wrap text-foreground">{m.content}</p>
             </li>

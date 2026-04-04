@@ -1,6 +1,10 @@
+import dynamic from 'next/dynamic';
 import { redirect } from 'next/navigation';
 import { createClient } from '@utils/supabase/server';
-import { NoWorkspaces } from './no-workspaces';
+
+const NoWorkspaces = dynamic(() => import('./no-workspaces'), {
+  ssr: true,
+});
 
 export default async function AppHomePage() {
   const supabase = await createClient();
