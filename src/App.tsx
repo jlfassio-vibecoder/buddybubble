@@ -59,38 +59,50 @@ export default function App() {
   // Auth Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-        if (userDoc.exists()) {
-          const userData = userDoc.data() as UserProfile;
-          // Update status to online if it's not already
-          if (userData.status !== 'online') {
-            await updateDoc(doc(db, 'users', firebaseUser.uid), { 
+      try {
+        if (firebaseUser) {
+          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+          if (userDoc.exists()) {
+            const userData = userDoc.data() as UserProfile;
+            // Update status to online if it's not already
+            if (userData.status !== 'online') {
+              await updateDoc(doc(db, 'users', firebaseUser.uid), { 
+                status: 'online',
+                lastSeen: new Date()
+              });
+              userData.status = 'online';
+            }
+            setUser(userData);
+          } else {
+            // Firestore rules require a valid email string; OAuth can omit email in edge cases
+            const safeLocal = firebaseUser.uid.replace(/[^a-zA-Z0-9._%+-]/g, '_') || 'user';
+            const email =
+              firebaseUser.email?.trim() ||
+              firebaseUser.providerData[0]?.email?.trim() ||
+              `${safeLocal}@placeholder.local`;
+            const newUser: UserProfile = {
+              id: firebaseUser.uid,
+              name: firebaseUser.displayName || 'Anonymous',
+              email,
+              avatar: firebaseUser.photoURL || '',
+              role: email === 'jlfassio@gmail.com' ? 'Admin' : 'Member',
+              department: 'General',
+              channelIds: [],
               status: 'online',
               lastSeen: new Date()
-            });
-            userData.status = 'online';
+            };
+            await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
+            setUser(newUser);
           }
-          setUser(userData);
         } else {
-          const newUser: UserProfile = {
-            id: firebaseUser.uid,
-            name: firebaseUser.displayName || 'Anonymous',
-            email: firebaseUser.email || '',
-            avatar: firebaseUser.photoURL || '',
-            role: firebaseUser.email === 'jlfassio@gmail.com' ? 'Admin' : 'Member',
-            department: 'General',
-            channelIds: [],
-            status: 'online',
-            lastSeen: new Date()
-          };
-          await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
-          setUser(newUser);
+          setUser(null);
         }
-      } else {
+      } catch (err) {
+        console.error('Failed to load or create user profile (check Firestore rules and network):', err);
         setUser(null);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     });
     return () => unsubscribe();
   }, []);
