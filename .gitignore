@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Firebase client config (contains API key); copy from firebase-applet-config.example.json
+firebase-applet-config.json
