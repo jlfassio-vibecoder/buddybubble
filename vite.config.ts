@@ -13,11 +13,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  */
 function loadFirebaseOptions(): Record<string, unknown> {
   const fromEnv = process.env.FIREBASE_WEBAPP_CONFIG;
-  if (fromEnv) {
+  if (fromEnv !== undefined && fromEnv !== '') {
     try {
       return JSON.parse(fromEnv) as Record<string, unknown>;
-    } catch {
-      console.warn('[vite] FIREBASE_WEBAPP_CONFIG is not valid JSON');
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `[vite] FIREBASE_WEBAPP_CONFIG is set but is not valid JSON (${reason}). Fix the value in App Hosting / Cloud Build; do not fall back to a local file when this variable is present.`,
+      );
     }
   }
   const localPath = path.resolve(__dirname, 'firebase-applet-config.json');
