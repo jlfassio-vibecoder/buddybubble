@@ -123,7 +123,8 @@ export default function App() {
           try {
             await setDoc(doc(db, 'channels', c.id), c);
           } catch (error) {
-            handleFirestoreError(error, OperationType.WRITE, `channels/${c.id}`);
+            // Seed is best-effort; do not throw (avoids uncaught rejections on snapshot). Deploy matching rules for seed IDs.
+            console.warn(`Failed to seed channel ${c.id}:`, error);
           }
         }
       });

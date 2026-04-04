@@ -49,6 +49,11 @@ service cloud.firestore {
              data.icon is string && data.icon.size() > 0;
     }
 
+    // Initial workspace channels (see src/constants.ts CHANNELS). Allows bootstrap without admin.
+    function isSeedChannelId(channelId) {
+      return channelId == '1' || channelId == '2' || channelId == '3' || channelId == '4' || channelId == '5';
+    }
+
     function isValidMessage(data) {
       return data.sender is string && data.sender.size() > 0 &&
              data.content is string && data.content.size() > 0 && data.content.size() < 5000 &&
@@ -84,7 +89,8 @@ service cloud.firestore {
 
     match /channels/{channelId} {
       allow read: if isAuthenticated();
-      allow create: if isAdmin() && isValidChannel(request.resource.data);
+      allow create: if isAdmin() && isValidChannel(request.resource.data)
+        || (isAuthenticated() && isValidChannel(request.resource.data) && isSeedChannelId(channelId));
       allow update: if isAdmin() && isValidChannel(request.resource.data);
       allow delete: if isAdmin();
     }
