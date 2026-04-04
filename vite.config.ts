@@ -12,10 +12,26 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * (gitignored) copied from `firebase-applet-config.example.json`.
  */
 function loadFirebaseOptions(): Record<string, unknown> {
+  const envKeyPresent = Object.prototype.hasOwnProperty.call(
+    process.env,
+    'FIREBASE_WEBAPP_CONFIG',
+  );
   const fromEnv = process.env.FIREBASE_WEBAPP_CONFIG;
-  if (fromEnv !== undefined && fromEnv !== '') {
+
+  if (envKeyPresent) {
+    if (fromEnv === undefined || fromEnv === '') {
+      throw new Error(
+        '[vite] FIREBASE_WEBAPP_CONFIG is set but empty. Provide valid JSON, or remove the variable to use firebase-applet-config.json locally. Do not fall back to a local file when this variable is present.',
+      );
+    }
+    const trimmed = fromEnv.trim();
+    if (trimmed === '') {
+      throw new Error(
+        '[vite] FIREBASE_WEBAPP_CONFIG is set but contains only whitespace. Do not fall back to a local file when this variable is present.',
+      );
+    }
     try {
-      return JSON.parse(fromEnv) as Record<string, unknown>;
+      return JSON.parse(trimmed) as Record<string, unknown>;
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       throw new Error(
