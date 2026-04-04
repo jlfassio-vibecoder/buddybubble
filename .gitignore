@@ -1,11 +1,15 @@
 node_modules/
 build/
 dist/
+.next/
 coverage/
 .DS_Store
 *.log
 .env*
 !.env.example
 
-# Firebase client config (contains API key); copy from firebase-applet-config.example.json
-firebase-applet-config.json
+# Supabase CLI local state
+supabase/.temp/
+
+# Local symlink to agent skills (see skills-lock.json); not portable
+skills/

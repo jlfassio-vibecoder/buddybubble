@@ -1,0 +1,9 @@
+.agents/
+.next/
+node_modules/
+dist/
+build/
+coverage/
+package-lock.json
+*.min.js
+supabase/.temp/
