@@ -3,8 +3,8 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signO
 import { getFirestore, collection, doc, setDoc, getDoc, getDocs, onSnapshot, query, where, orderBy, addDoc, updateDoc, deleteDoc, Timestamp, getDocFromServer, writeBatch } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 
-// Import the Firebase configuration
-import firebaseConfig from '../firebase-applet-config.json';
+// Config is injected at build time (see vite.config.ts): FIREBASE_WEBAPP_CONFIG on App Hosting, or local JSON.
+const firebaseConfig = __FIREBASE_OPTIONS__;
 
 // Initialize Firebase SDK
 const app = initializeApp(firebaseConfig);
