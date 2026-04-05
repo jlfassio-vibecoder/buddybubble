@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase-service-role';
 import { buildPromotionBatches } from '@/lib/scheduled-task-promotion';
+import { isMissingColumnSchemaCacheError } from '@/lib/supabase-schema-errors';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -74,7 +75,19 @@ export async function GET(request: Request) {
           .eq('status', 'scheduled')
           .eq('scheduled_on', b.localToday)
           .select('id');
-        if (!uErr && upd) updated += upd.length;
+        if (uErr) {
+          // Staged deploys: cron runs before migrations; avoid treating missing column as a hard failure loop.
+          if (isMissingColumnSchemaCacheError(uErr, 'scheduled_on')) {
+            return NextResponse.json({
+              ok: true,
+              tasksUpdated: updated,
+              skipped: true,
+              reason: 'scheduled_on_column_unavailable',
+            });
+          }
+          continue;
+        }
+        if (upd?.length) updated += upd.length;
       }
     }
 

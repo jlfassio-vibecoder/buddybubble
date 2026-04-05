@@ -132,7 +132,8 @@ Deno.serve(async (req) => {
 
   try {
     const ffmpeg = new FFmpeg();
-    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+    // Pin core assets to the same minor as `@ffmpeg/ffmpeg` (0.12.10) to avoid WASM/JS mismatches.
+    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm';
     await ffmpeg.load({
       coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
       wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),

@@ -342,7 +342,9 @@ export function KanbanBoard({
     return next;
   }, [columns, columnSlugs, priorityFilter, dateFilter, dateSortMode, tz]);
 
-  const dragSortDisabled = priorityFilter !== 'all' || dateFilter !== 'all';
+  // Disable manual reorder when column order is computed (date sort), so drag state matches visible order.
+  const dragSortDisabled =
+    priorityFilter !== 'all' || dateFilter !== 'all' || dateSortMode !== 'none';
 
   const toggleColumnCollapse = useCallback(
     (columnId: string) => {

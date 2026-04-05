@@ -456,10 +456,17 @@ export function TaskModal({
             (e.field === 'scheduled_on' || e.field === 'scheduled_time')
           ),
       );
+      // Cannot persist scheduled_on: only promote scheduled→today from a date already loaded from DB, not from unsaved UI input.
+      const statusWithoutSavedSchedule = promotedStatusForScheduledOnToday({
+        currentStatus: status,
+        scheduledOnYmd: orig?.scheduledOn ?? null,
+        calendarTimezone,
+        hasTodayBoardColumn,
+      });
       const updateNoSched = {
         title: title.trim(),
         description: description.trim() || null,
-        status: effectiveStatus,
+        status: statusWithoutSavedSchedule,
         priority,
         activity_log: activityWithoutSched as unknown as TaskRow['activity_log'],
       };
@@ -473,11 +480,11 @@ export function TaskModal({
           );
         }
         setActivityLog(asActivityLog(activityWithoutSched));
-        setStatus(effectiveStatus);
+        setStatus(statusWithoutSavedSchedule);
         originalRef.current = {
           title: title.trim(),
           description: description.trim(),
-          status: effectiveStatus,
+          status: statusWithoutSavedSchedule,
           priority: orig?.priority ?? priority,
           scheduledOn: orig?.scheduledOn ?? null,
           scheduledTime: orig?.scheduledTime ?? null,
@@ -583,7 +590,17 @@ export function TaskModal({
 
     if (cErr && isMissingColumnSchemaCacheError(cErr, 'scheduled_on')) {
       const { scheduled_on: _s, scheduled_time: _t, ...insertNoSched } = insertRow;
-      const retry = await supabase.from('tasks').insert(insertNoSched).select().maybeSingle();
+      const statusWithoutPersistedSchedule = promotedStatusForScheduledOnToday({
+        currentStatus: status,
+        scheduledOnYmd: null,
+        calendarTimezone,
+        hasTodayBoardColumn,
+      });
+      const retry = await supabase
+        .from('tasks')
+        .insert({ ...insertNoSched, status: statusWithoutPersistedSchedule })
+        .select()
+        .maybeSingle();
       data = retry.data;
       cErr = retry.error;
     }
@@ -613,7 +630,9 @@ export function TaskModal({
       setError(formatUserFacingError(cErr));
       return;
     }
-    setStatus(effectiveStatus);
+    const createdStatus =
+      data.status !== undefined && typeof data.status === 'string' ? data.status : effectiveStatus;
+    setStatus(createdStatus);
     onCreated?.(data.id as string);
   };
 

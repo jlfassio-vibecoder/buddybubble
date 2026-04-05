@@ -32,16 +32,12 @@ const ALLOWED_DOCUMENT = new Set([
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
 ]);
 
-/** Hidden file input `accept` list aligned with validation. */
+/** Hidden file input `accept` list aligned with `mimeAllowedForKind` (image/video sets + documents + text/*). */
 export const MESSAGE_ATTACHMENT_FILE_ACCEPT = [
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/webp',
-  'video/mp4',
-  'video/webm',
-  'video/quicktime',
+  ...ALLOWED_IMAGE,
+  ...ALLOWED_VIDEO,
   ...ALLOWED_DOCUMENT,
+  'text/*',
 ].join(',');
 
 function mimeAllowedForKind(kind: 'image' | 'video' | 'document', mime: string): boolean {

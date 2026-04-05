@@ -6,7 +6,8 @@ export default defineConfig({
     alias: { '@': path.resolve(__dirname, './src') },
   },
   test: {
-    environment: 'node',
+    // happy-dom provides File/Blob and other browser globals used by attachment tests (Node alone does not).
+    environment: 'happy-dom',
     include: ['src/**/*.test.ts'],
   },
 });

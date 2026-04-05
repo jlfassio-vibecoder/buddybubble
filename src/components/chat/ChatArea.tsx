@@ -575,6 +575,10 @@ export function ChatArea({
       }
       const raw = files ?? [];
       if (!content.trim() && raw.length === 0) return false;
+      if (!content.trim()) {
+        setAttachmentError('Message text is required.');
+        return false;
+      }
       const candidates = raw.filter((f) => classifyFileKind(f) !== 'unsupported');
       const validated = validateAttachmentFiles(candidates);
       if (!validated.ok) {
@@ -949,7 +953,7 @@ export function ChatArea({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if ((!input.trim() && pendingFiles.length === 0) || sendingAttachments) return;
+    if (!input.trim() || sendingAttachments) return;
     const text = input;
     const files = [...pendingFiles];
     const ok = await sendMessage(text, undefined, files);
@@ -1722,12 +1726,7 @@ export function ChatArea({
             />
             <button
               type="submit"
-              disabled={
-                (!input.trim() && pendingFiles.length === 0) ||
-                !canWrite ||
-                !canPostInComposer ||
-                sendingAttachments
-              }
+              disabled={!input.trim() || !canWrite || !canPostInComposer || sendingAttachments}
               className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
             >
               {sendingAttachments ? (

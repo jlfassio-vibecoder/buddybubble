@@ -191,7 +191,7 @@ export function ThreadPanel({
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
-                if ((!threadInput.trim() && pendingFiles.length === 0) || sending) return;
+                if (!threadInput.trim() || sending) return;
                 const text = threadInput;
                 const files = [...pendingFiles];
                 const ok = await onSendMessage(text, files);
@@ -225,12 +225,7 @@ export function ThreadPanel({
                 />
                 <button
                   type="submit"
-                  disabled={
-                    (!threadInput.trim() && pendingFiles.length === 0) ||
-                    !canWrite ||
-                    !activeThreadParent ||
-                    sending
-                  }
+                  disabled={!threadInput.trim() || !canWrite || !activeThreadParent || sending}
                   className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-30 transition-colors"
                 >
                   {sending ? (
