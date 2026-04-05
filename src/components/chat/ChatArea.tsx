@@ -1156,12 +1156,23 @@ export function ChatArea({
     <div className="relative flex h-full min-h-0 min-w-0 w-full flex-col bg-white">
       {/* Header */}
       <header className="h-16 border-b border-slate-200 flex items-center justify-between px-6 shrink-0">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <button
+            type="button"
+            onClick={onCollapse}
+            className="shrink-0 p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-indigo-600 transition-all"
+            title="Collapse Messages"
+            aria-label="Collapse Messages panel"
+          >
+            <PanelLeftClose className="w-5 h-5" aria-hidden />
+          </button>
           <Hash className="h-5 w-5 shrink-0 text-slate-900 opacity-70" aria-hidden />
-          <h2 className="font-bold text-slate-900">{activeBubble?.name ?? 'Chat'}</h2>
-          <Star className="w-4 h-4 text-slate-300 hover:text-yellow-400 cursor-pointer transition-colors" />
+          <h2 className="min-w-0 truncate font-bold text-slate-900">
+            {activeBubble?.name ?? 'Chat'}
+          </h2>
+          <Star className="w-4 h-4 shrink-0 text-slate-300 hover:text-yellow-400 cursor-pointer transition-colors" />
         </div>
-        <div className="flex items-center gap-4 text-slate-500">
+        <div className="flex shrink-0 items-center gap-4 text-slate-500">
           <Search
             className={cn(
               'w-5 h-5 cursor-pointer transition-colors',
@@ -1241,13 +1252,6 @@ export function ChatArea({
             </AnimatePresence>
           </div>
           <Info className="w-5 h-5 cursor-pointer hover:text-slate-900" />
-          <button
-            onClick={onCollapse}
-            className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-indigo-600 transition-all"
-            title="Collapse Chat"
-          >
-            <PanelLeftClose className="w-5 h-5" />
-          </button>
         </div>
       </header>
 

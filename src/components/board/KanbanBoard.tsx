@@ -185,6 +185,8 @@ type Props = {
   workspaceCategory?: WorkspaceCategory | null;
   /** Workspace IANA timezone for date filters and relative styling. */
   calendarTimezone?: string | null;
+  /** Collapse the board to a strip; parent ensures Messages stays open when needed. */
+  onCollapse?: () => void;
 };
 
 export function KanbanBoard({
@@ -194,6 +196,7 @@ export function KanbanBoard({
   onOpenCreateTask,
   workspaceCategory = null,
   calendarTimezone = null,
+  onCollapse,
 }: Props) {
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
   const columnDefs = useBoardColumnDefs(activeWorkspace?.id ?? null);
@@ -571,10 +574,11 @@ export function KanbanBoard({
   const boardReady = columnDefs !== null && columnSlugs.length > 0;
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col bg-muted/30">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-muted/30">
       <KanbanBoardHeader
         canWrite={canWrite}
         hasBubble={Boolean(bubbleId)}
+        onCollapse={onCollapse}
         cardDensity={cardDensity}
         onCardDensityChange={handleCardDensityChange}
         priorityFilter={priorityFilter}
