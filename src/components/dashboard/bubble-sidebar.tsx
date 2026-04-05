@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Hash } from 'lucide-react';
+import { Hash, Settings } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
 import type { BubbleRow } from '@/types/database';
 import { ALL_BUBBLES_BUBBLE_ID, ALL_BUBBLES_LABEL } from '@/lib/all-bubbles';
@@ -17,6 +17,8 @@ type Props = {
   onSelectBubble: (id: string) => void;
   onBubblesChange: (rows: BubbleRow[]) => void;
   canWrite: boolean;
+  isAdmin?: boolean;
+  onOpenWorkspaceSettings?: () => void;
 };
 
 export function BubbleSidebar({
@@ -26,6 +28,8 @@ export function BubbleSidebar({
   onSelectBubble,
   onBubblesChange,
   canWrite,
+  isAdmin = false,
+  onOpenWorkspaceSettings,
 }: Props) {
   const [name, setName] = useState('');
   const [adding, setAdding] = useState(false);
@@ -55,9 +59,22 @@ export function BubbleSidebar({
   return (
     <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-card">
       <div className="border-b border-border p-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Bubbles
-        </h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Bubbles
+          </h2>
+          {isAdmin && onOpenWorkspaceSettings ? (
+            <button
+              type="button"
+              onClick={onOpenWorkspaceSettings}
+              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label="Workspace settings"
+              title="Workspace settings"
+            >
+              <Settings className="size-4" />
+            </button>
+          ) : null}
+        </div>
         {canWrite && (
           <form onSubmit={addBubble} className="mt-2 flex gap-2">
             <Input

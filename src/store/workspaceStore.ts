@@ -11,6 +11,8 @@ export type WorkspaceRow = {
   role: 'admin' | 'member' | 'guest';
   /** Avatar in the far-left rail; optional until set in DB. */
   icon_url?: string | null;
+  /** IANA timezone; drives task "today" and scheduled automation. */
+  calendar_timezone?: string;
 };
 
 type WorkspaceStore = {
@@ -43,37 +45,65 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       return;
     }
 
-    const { data, error } = await supabase
+    // Two-step load avoids PostgREST embed quirks (nested `workspaces` occasionally null/array),
+    // which previously dropped BuddyBubbles from the rail when `flatMap` rejected the shape.
+    const { data: memberships, error: memError } = await supabase
       .from('workspace_members')
-      .select('role, workspaces(id, name, category_type, icon_url, created_at)')
+      .select('role, workspace_id')
       .eq('user_id', user.id);
 
-    if (error || !data) {
+    if (memError || !memberships?.length) {
       set({ loading: false, userWorkspaces: [] });
       return;
     }
 
-    const userWorkspaces: WorkspaceRow[] = data.flatMap((row) => {
-      const w = row.workspaces;
-      if (!w || Array.isArray(w)) return [];
-      const ws = w as {
+    const roleByWorkspace = new Map(
+      memberships.map((m) => [m.workspace_id, m.role as WorkspaceRow['role']]),
+    );
+    const workspaceIds = [...new Set(memberships.map((m) => m.workspace_id))];
+
+    // Use `*` so PostgREST only returns columns that exist on the server. Listing `calendar_timezone`
+    // explicitly 400s when the scheduled-dates migration is not applied yet (unknown column).
+    const { data: workspaceRows, error: wsError } = await supabase
+      .from('workspaces')
+      .select('*')
+      .in('id', workspaceIds);
+
+    if (wsError || !workspaceRows) {
+      set({ loading: false, userWorkspaces: [] });
+      return;
+    }
+
+    if (process.env.NODE_ENV === 'development' && workspaceRows.length < workspaceIds.length) {
+      console.warn(
+        '[workspaceStore] Fewer workspaces visible than memberships (check RLS or orphaned members):',
+        { membershipIds: workspaceIds.length, visible: workspaceRows.length },
+      );
+    }
+
+    const userWorkspaces: WorkspaceRow[] = workspaceRows.map((row) => {
+      const ws = row as {
         id: string;
         name: string;
         category_type: string;
         created_at: string;
         icon_url?: string | null;
+        calendar_timezone?: string | null;
       };
-      return [
-        {
-          id: ws.id,
-          name: ws.name,
-          category_type: ws.category_type as WorkspaceRow['category_type'],
-          created_at: ws.created_at,
-          icon_url: ws.icon_url ?? null,
-          role: row.role as WorkspaceRow['role'],
-        },
-      ];
+      return {
+        id: ws.id,
+        name: ws.name,
+        category_type: ws.category_type as WorkspaceRow['category_type'],
+        created_at: ws.created_at,
+        icon_url: ws.icon_url ?? null,
+        calendar_timezone: ws.calendar_timezone ?? 'UTC',
+        role: roleByWorkspace.get(ws.id) ?? 'member',
+      };
     });
+
+    userWorkspaces.sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+    );
 
     set({ userWorkspaces, loading: false });
   },
