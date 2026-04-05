@@ -17,15 +17,66 @@ import {
   asComments,
   asSubtasks,
 } from '@/types/task-modal';
+import {
+  TASK_PRIORITY_OPTIONS,
+  type TaskPriority,
+  normalizeTaskPriority,
+} from '@/lib/task-priority';
+import { taskDateFieldLabels } from '@/lib/task-date-labels';
+import type { WorkspaceCategory } from '@/types/database';
 import { buildTaskAttachmentObjectPath, TASK_ATTACHMENTS_BUCKET } from '@/lib/task-storage';
+import {
+  createSignedUrlForTaskAttachmentThumb,
+  isLikelyTaskAttachmentImageFileName,
+} from '@/lib/task-attachment-url';
 import { formatUserFacingError } from '@/lib/format-error';
+import { formatMessageTimestamp } from '@/lib/message-timestamp';
+import { isMissingColumnSchemaCacheError } from '@/lib/supabase-schema-errors';
+import { promotedStatusForScheduledOnToday } from '@/lib/workspace-calendar';
+import {
+  formatScheduledTimeDisplay,
+  scheduledTimeInputToPgValue,
+  scheduledTimeToInputValue,
+} from '@/lib/task-scheduled-time';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 
-type TabId = 'details' | 'comments' | 'subtasks' | 'activity';
+export type TaskModalTab = 'details' | 'comments' | 'subtasks' | 'activity';
+
+type TabId = TaskModalTab;
+
+/** Private bucket: must use signed URLs — raw `/storage/v1/object/...` 400s in the browser. */
+function TaskAttachmentImagePreview({ path }: { path: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const supabase = createClient();
+    void createSignedUrlForTaskAttachmentThumb(supabase, path).then((url) => {
+      if (!cancelled && url) setSrc(url);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [path]);
+  if (!src) {
+    return (
+      <div
+        className="h-10 w-10 shrink-0 animate-pulse rounded border border-slate-200 bg-slate-200/80"
+        aria-hidden
+      />
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt=""
+      className="h-10 w-10 shrink-0 rounded border border-slate-200 object-cover"
+    />
+  );
+}
 
 export type TaskModalProps = {
   open: boolean;
@@ -37,6 +88,14 @@ export type TaskModalProps = {
   canWrite: boolean;
   /** Called after a task is created so the parent can keep the modal in edit mode. */
   onCreated?: (newTaskId: string) => void;
+  /** When opening create mode, pre-select this Kanban column status if it exists on the board. */
+  initialCreateStatus?: string | null;
+  /** When opening an existing task, select this tab (ignored for create mode). */
+  initialTab?: TaskModalTab | null;
+  /** Drives Due by vs Scheduled on labels (`workspaces.category_type`). */
+  workspaceCategory?: WorkspaceCategory | null;
+  /** Workspace IANA timezone for scheduled-on vs calendar "today" (see `workspaces.calendar_timezone`). */
+  calendarTimezone?: string | null;
 };
 
 export function TaskModal({
@@ -47,6 +106,10 @@ export function TaskModal({
   workspaceId,
   canWrite,
   onCreated,
+  initialCreateStatus = null,
+  initialTab = null,
+  workspaceCategory = null,
+  calendarTimezone = null,
 }: TaskModalProps) {
   const [tab, setTab] = useState<TabId>('details');
   const [loading, setLoading] = useState(false);
@@ -56,6 +119,11 @@ export function TaskModal({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState<string>('todo');
+  const [priority, setPriority] = useState<TaskPriority>('medium');
+  /** YYYY-MM-DD for `<input type="date" />` or empty */
+  const [scheduledOn, setScheduledOn] = useState('');
+  /** `HH:mm` for `<input type="time" />` or empty (requires date) */
+  const [scheduledTime, setScheduledTime] = useState('');
 
   const [subtasks, setSubtasks] = useState<TaskSubtask[]>([]);
   const [comments, setComments] = useState<TaskComment[]>([]);
@@ -64,8 +132,16 @@ export function TaskModal({
 
   const [newComment, setNewComment] = useState('');
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
+  const [commentUserById, setCommentUserById] = useState<
+    Record<string, { displayName: string; avatarUrl: string | null }>
+  >({});
 
   const boardColumnDefs = useBoardColumnDefs(workspaceId);
+
+  const hasTodayBoardColumn = useMemo(
+    () => boardColumnDefs?.some((c) => c.id === 'today') ?? false,
+    [boardColumnDefs],
+  );
 
   const statusOptions = useMemo(() => {
     if (boardColumnDefs === null) {
@@ -83,7 +159,13 @@ export function TaskModal({
     title: string;
     description: string;
     status: string;
+    priority: TaskPriority;
+    scheduledOn: string | null;
+    /** Normalized `HH:mm` or null */
+    scheduledTime: string | null;
   } | null>(null);
+
+  const dateLabels = taskDateFieldLabels(workspaceCategory);
 
   const statusSelectOptions = useMemo(() => {
     if (status && !statusOptions.some((o) => o.value === status)) {
@@ -95,17 +177,26 @@ export function TaskModal({
   const applyRow = useCallback(
     (row: TaskRow) => {
       const nextStatus = row.status || defaultStatus;
+      const nextPriority = normalizeTaskPriority(row.priority);
       setTitle(row.title);
       setDescription(row.description ?? '');
       setStatus(nextStatus);
+      setPriority(nextPriority);
+      const sched = row.scheduled_on ? String(row.scheduled_on).slice(0, 10) : '';
+      setScheduledOn(sched);
+      setScheduledTime(scheduledTimeToInputValue((row as TaskRow).scheduled_time));
       setSubtasks(asSubtasks(row.subtasks));
       setComments(asComments(row.comments));
       setActivityLog(asActivityLog(row.activity_log));
       setAttachments(asAttachments(row.attachments));
+      const st = scheduledTimeToInputValue((row as TaskRow).scheduled_time);
       originalRef.current = {
         title: row.title,
         description: row.description ?? '',
         status: nextStatus,
+        priority: nextPriority,
+        scheduledOn: row.scheduled_on ? String(row.scheduled_on).slice(0, 10) : null,
+        scheduledTime: st || null,
       };
     },
     [defaultStatus],
@@ -134,10 +225,15 @@ export function TaskModal({
   useEffect(() => {
     if (!open) return;
     if (!taskId) {
+      setTab('details');
       setTitle('');
       setDescription('');
+      setPriority('medium');
+      setScheduledOn('');
+      setScheduledTime('');
       setSubtasks([]);
       setComments([]);
+      setCommentUserById({});
       setActivityLog([]);
       setAttachments([]);
       originalRef.current = null;
@@ -148,9 +244,50 @@ export function TaskModal({
   }, [open, taskId, loadTask]);
 
   useEffect(() => {
+    if (!taskId || comments.length === 0) {
+      setCommentUserById({});
+      return;
+    }
+    const ids = [...new Set(comments.map((c) => c.user_id))];
+    let cancelled = false;
+    const supabase = createClient();
+    void supabase
+      .from('users')
+      .select('id, full_name, email, avatar_url')
+      .in('id', ids)
+      .then(({ data }) => {
+        if (cancelled || !data) return;
+        const next: Record<string, { displayName: string; avatarUrl: string | null }> = {};
+        for (const row of data as {
+          id: string;
+          full_name: string | null;
+          email: string | null;
+          avatar_url: string | null;
+        }[]) {
+          const displayName =
+            (row.full_name && row.full_name.trim()) || row.email?.split('@')[0] || 'Member';
+          next[row.id] = { displayName, avatarUrl: row.avatar_url };
+        }
+        setCommentUserById(next);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [taskId, comments]);
+
+  useEffect(() => {
     if (!open || taskId) return;
-    setStatus(defaultStatus);
-  }, [open, taskId, defaultStatus]);
+    const fromBoard =
+      initialCreateStatus && statusOptions.some((o) => o.value === initialCreateStatus)
+        ? initialCreateStatus
+        : null;
+    setStatus(fromBoard ?? defaultStatus);
+  }, [open, taskId, defaultStatus, initialCreateStatus, statusOptions]);
+
+  useEffect(() => {
+    if (!open || !taskId) return;
+    setTab(initialTab ?? 'details');
+  }, [open, taskId, initialTab]);
 
   useEffect(() => {
     if (!open || !taskId) return;
@@ -188,6 +325,22 @@ export function TaskModal({
     const uid = user?.id ?? null;
 
     const orig = originalRef.current;
+    const scheduledOnValue = scheduledOn.trim() ? scheduledOn.trim().slice(0, 10) : null;
+    const newTimeHm = scheduledOnValue
+      ? scheduledTime.trim()
+        ? scheduledTime.trim().slice(0, 5)
+        : null
+      : null;
+    const scheduledTimePg = newTimeHm ? scheduledTimeInputToPgValue(newTimeHm) : null;
+    const schedChanged = orig != null && (scheduledOnValue ?? null) !== (orig.scheduledOn ?? null);
+    const schedTimeChanged = orig != null && (newTimeHm ?? null) !== (orig.scheduledTime ?? null);
+    const effectiveStatus = promotedStatusForScheduledOnToday({
+      currentStatus: status,
+      scheduledOnYmd: scheduledOnValue,
+      calendarTimezone,
+      hasTodayBoardColumn,
+    });
+
     let nextActivity = [...activityLog];
     if (orig) {
       if (title.trim() !== orig.title) {
@@ -206,25 +359,166 @@ export function TaskModal({
           to: description ?? '',
         });
       }
-      if (status !== orig.status) {
+      if (effectiveStatus !== orig.status) {
         nextActivity = appendActivityForFieldChange(nextActivity, {
           userId: uid,
           field: 'status',
           from: orig.status,
-          to: status,
+          to: effectiveStatus,
+        });
+      }
+      if (priority !== orig.priority) {
+        nextActivity = appendActivityForFieldChange(nextActivity, {
+          userId: uid,
+          field: 'priority',
+          from: orig.priority,
+          to: priority,
+        });
+      }
+      const nextSched = scheduledOnValue;
+      const prevSched = orig.scheduledOn;
+      if (nextSched !== prevSched) {
+        nextActivity = appendActivityForFieldChange(nextActivity, {
+          userId: uid,
+          field: 'scheduled_on',
+          from: prevSched ?? '',
+          to: nextSched ?? '',
+        });
+      }
+      const prevTimeHm = orig.scheduledTime ?? null;
+      if ((newTimeHm ?? null) !== (prevTimeHm ?? null)) {
+        nextActivity = appendActivityForFieldChange(nextActivity, {
+          userId: uid,
+          field: 'scheduled_time',
+          from: prevTimeHm ? (formatScheduledTimeDisplay(`${prevTimeHm}:00`) ?? prevTimeHm) : '',
+          to: newTimeHm
+            ? (formatScheduledTimeDisplay(scheduledTimeInputToPgValue(newTimeHm)) ?? newTimeHm)
+            : '',
         });
       }
     }
 
-    const { error: uErr } = await supabase
-      .from('tasks')
-      .update({
+    /** Only PATCH `scheduled_on` / `scheduled_time` when changed (400 if column missing). */
+
+    const updateWithPriority = {
+      title: title.trim(),
+      description: description.trim() || null,
+      status: effectiveStatus,
+      priority,
+      ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
+      ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
+      activity_log: nextActivity as unknown as TaskRow['activity_log'],
+    };
+
+    let { error: uErr } = await supabase.from('tasks').update(updateWithPriority).eq('id', taskId);
+
+    if (uErr && isMissingColumnSchemaCacheError(uErr, 'scheduled_time')) {
+      const activityWithoutTime = nextActivity.filter(
+        (e) => !(e.type === 'field_change' && e.field === 'scheduled_time'),
+      );
+      const updateNoTime = {
         title: title.trim(),
         description: description.trim() || null,
-        status,
-        activity_log: nextActivity as unknown as TaskRow['activity_log'],
-      })
-      .eq('id', taskId);
+        status: effectiveStatus,
+        priority,
+        ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
+        activity_log: activityWithoutTime as unknown as TaskRow['activity_log'],
+      };
+      uErr = (await supabase.from('tasks').update(updateNoTime).eq('id', taskId)).error;
+      if (!uErr) {
+        if (orig && schedTimeChanged) {
+          setScheduledTime(orig.scheduledTime ? `${orig.scheduledTime}` : '');
+          setError(
+            'Scheduled time is not saved yet: apply the scheduled-time migration on Supabase (tasks.scheduled_time), then try again.',
+          );
+        }
+        setActivityLog(asActivityLog(activityWithoutTime));
+        setStatus(effectiveStatus);
+        originalRef.current = {
+          title: title.trim(),
+          description: description.trim(),
+          status: effectiveStatus,
+          priority: orig?.priority ?? priority,
+          scheduledOn: orig?.scheduledOn ?? null,
+          scheduledTime: orig?.scheduledTime ?? null,
+        };
+        setSaving(false);
+        void loadTask(taskId);
+        return;
+      }
+    }
+
+    if (uErr && isMissingColumnSchemaCacheError(uErr, 'scheduled_on')) {
+      const activityWithoutSched = nextActivity.filter(
+        (e) =>
+          !(
+            e.type === 'field_change' &&
+            (e.field === 'scheduled_on' || e.field === 'scheduled_time')
+          ),
+      );
+      const updateNoSched = {
+        title: title.trim(),
+        description: description.trim() || null,
+        status: effectiveStatus,
+        priority,
+        activity_log: activityWithoutSched as unknown as TaskRow['activity_log'],
+      };
+      uErr = (await supabase.from('tasks').update(updateNoSched).eq('id', taskId)).error;
+      if (!uErr) {
+        if (orig && scheduledOnValue !== orig.scheduledOn) {
+          setScheduledOn(orig.scheduledOn ?? '');
+          setScheduledTime(orig.scheduledTime ? `${orig.scheduledTime}` : '');
+          setError(
+            'Scheduled date is not saved yet: apply the scheduled-dates migration on Supabase (tasks.scheduled_on), then try again.',
+          );
+        }
+        setActivityLog(asActivityLog(activityWithoutSched));
+        setStatus(effectiveStatus);
+        originalRef.current = {
+          title: title.trim(),
+          description: description.trim(),
+          status: effectiveStatus,
+          priority: orig?.priority ?? priority,
+          scheduledOn: orig?.scheduledOn ?? null,
+          scheduledTime: orig?.scheduledTime ?? null,
+        };
+        setSaving(false);
+        void loadTask(taskId);
+        return;
+      }
+    }
+
+    if (uErr && isMissingColumnSchemaCacheError(uErr, 'priority')) {
+      const activityWithoutPriority = nextActivity.filter(
+        (e) => !(e.type === 'field_change' && e.field === 'priority'),
+      );
+      const revertedPriority = orig?.priority ?? 'medium';
+      const updateWithoutPriority = {
+        title: title.trim(),
+        description: description.trim() || null,
+        status: effectiveStatus,
+        ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
+        ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
+        activity_log: activityWithoutPriority as unknown as TaskRow['activity_log'],
+      };
+      uErr = (await supabase.from('tasks').update(updateWithoutPriority).eq('id', taskId)).error;
+      if (!uErr) {
+        if (orig && priority !== orig.priority) setPriority(revertedPriority);
+        setActivityLog(asActivityLog(activityWithoutPriority));
+        setStatus(effectiveStatus);
+        originalRef.current = {
+          title: title.trim(),
+          description: description.trim(),
+          status: effectiveStatus,
+          priority: revertedPriority,
+          scheduledOn: scheduledOnValue,
+          scheduledTime: newTimeHm,
+        };
+        setSaving(false);
+        void loadTask(taskId);
+        return;
+      }
+    }
 
     setSaving(false);
     if (uErr) {
@@ -232,10 +526,14 @@ export function TaskModal({
       return;
     }
     setActivityLog(asActivityLog(nextActivity));
+    setStatus(effectiveStatus);
     originalRef.current = {
       title: title.trim(),
       description: description.trim(),
-      status,
+      status: effectiveStatus,
+      priority,
+      scheduledOn: scheduledOnValue,
+      scheduledTime: newTimeHm,
     };
     void loadTask(taskId);
   };
@@ -256,23 +554,66 @@ export function TaskModal({
         ? Number((existing[0] as { position: number }).position) + 1
         : 0;
 
-    const { data, error: cErr } = await supabase
+    const sched = scheduledOn.trim() ? scheduledOn.trim().slice(0, 10) : null;
+    const createTimeHm = sched && scheduledTime.trim() ? scheduledTime.trim().slice(0, 5) : null;
+    const scheduledTimeInsert = createTimeHm ? scheduledTimeInputToPgValue(createTimeHm) : null;
+    const effectiveStatus = promotedStatusForScheduledOnToday({
+      currentStatus: status,
+      scheduledOnYmd: sched,
+      calendarTimezone,
+      hasTodayBoardColumn,
+    });
+
+    const insertRow = {
+      bubble_id: bubbleId,
+      title: title.trim(),
+      description: description.trim() || null,
+      status: effectiveStatus,
+      priority,
+      position: maxPos,
+      scheduled_on: sched,
+      ...(sched ? { scheduled_time: scheduledTimeInsert } : {}),
+    };
+
+    let { data, error: cErr } = await supabase
       .from('tasks')
-      .insert({
-        bubble_id: bubbleId,
-        title: title.trim(),
-        description: description.trim() || null,
-        status,
-        position: maxPos,
-      })
+      .insert(insertRow)
       .select()
       .maybeSingle();
+
+    if (cErr && isMissingColumnSchemaCacheError(cErr, 'scheduled_on')) {
+      const { scheduled_on: _s, scheduled_time: _t, ...insertNoSched } = insertRow;
+      const retry = await supabase.from('tasks').insert(insertNoSched).select().maybeSingle();
+      data = retry.data;
+      cErr = retry.error;
+    }
+
+    if (cErr && isMissingColumnSchemaCacheError(cErr, 'scheduled_time')) {
+      const { scheduled_time: _st, ...insertNoTime } = insertRow as typeof insertRow & {
+        scheduled_time?: string | null;
+      };
+      const retry = await supabase.from('tasks').insert(insertNoTime).select().maybeSingle();
+      data = retry.data;
+      cErr = retry.error;
+    }
+
+    if (cErr && isMissingColumnSchemaCacheError(cErr, 'priority')) {
+      const { priority: _p, ...insertWithoutPriority } = insertRow;
+      const second = await supabase
+        .from('tasks')
+        .insert(insertWithoutPriority)
+        .select()
+        .maybeSingle();
+      data = second.data;
+      cErr = second.error;
+    }
 
     setSaving(false);
     if (cErr || !data) {
       setError(formatUserFacingError(cErr));
       return;
     }
+    setStatus(effectiveStatus);
     onCreated?.(data.id as string);
   };
 
@@ -414,13 +755,18 @@ export function TaskModal({
 
   const coreDirty = useMemo(() => {
     const o = originalRef.current;
+    const sched = scheduledOn.trim() ? scheduledOn.trim().slice(0, 10) : null;
+    const timeHm = sched ? (scheduledTime.trim() ? scheduledTime.trim().slice(0, 5) : null) : null;
     if (!o) return isCreateMode && title.trim().length > 0;
     return (
       title.trim() !== o.title ||
       (description ?? '').trim() !== (o.description ?? '').trim() ||
-      status !== o.status
+      status !== o.status ||
+      priority !== o.priority ||
+      sched !== (o.scheduledOn ?? null) ||
+      (timeHm ?? null) !== (o.scheduledTime ?? null)
     );
-  }, [title, description, status, isCreateMode]);
+  }, [title, description, status, priority, scheduledOn, scheduledTime, isCreateMode]);
 
   if (!open) return null;
 
@@ -521,6 +867,57 @@ export function TaskModal({
                       ))}
                     </select>
                   </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="task-priority">Priority</Label>
+                    <select
+                      id="task-priority"
+                      value={priority}
+                      onChange={(e) => setPriority(e.target.value as TaskPriority)}
+                      disabled={!canWrite}
+                      className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                    >
+                      {TASK_PRIORITY_OPTIONS.map((p) => (
+                        <option key={p.value} value={p.value}>
+                          {p.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex flex-row flex-wrap gap-3 items-end">
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <Label htmlFor="task-scheduled-on">{dateLabels.primary}</Label>
+                        <input
+                          id="task-scheduled-on"
+                          type="date"
+                          value={scheduledOn}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setScheduledOn(v);
+                            if (!v) setScheduledTime('');
+                          }}
+                          disabled={!canWrite}
+                          className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                        />
+                      </div>
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <Label htmlFor="task-scheduled-time">
+                          Time {!scheduledOn ? '(set a date first)' : '(optional)'}
+                        </Label>
+                        <input
+                          id="task-scheduled-time"
+                          type="time"
+                          value={scheduledTime}
+                          onChange={(e) => setScheduledTime(e.target.value)}
+                          disabled={!canWrite || !scheduledOn}
+                          className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                        />
+                      </div>
+                    </div>
+                    {dateLabels.helper ? (
+                      <p className="text-xs text-muted-foreground">{dateLabels.helper}</p>
+                    ) : null}
+                  </div>
 
                   <Separator className="my-2" />
 
@@ -548,13 +945,18 @@ export function TaskModal({
                           key={a.id}
                           className="flex items-center justify-between gap-2 rounded-md border border-slate-100 bg-slate-50 px-2 py-1 text-sm"
                         >
-                          <button
-                            type="button"
-                            className="min-w-0 flex-1 truncate text-left text-indigo-700 hover:underline"
-                            onClick={() => void downloadLink(a)}
-                          >
-                            {a.name}
-                          </button>
+                          <div className="flex min-w-0 flex-1 items-center gap-2">
+                            {isLikelyTaskAttachmentImageFileName(a.name) ? (
+                              <TaskAttachmentImagePreview path={a.path} />
+                            ) : null}
+                            <button
+                              type="button"
+                              className="min-w-0 flex-1 truncate text-left text-indigo-700 hover:underline"
+                              onClick={() => void downloadLink(a)}
+                            >
+                              {a.name}
+                            </button>
+                          </div>
                           {canWrite && !isCreateMode && (
                             <Button
                               type="button"
@@ -603,18 +1005,44 @@ export function TaskModal({
                     {comments.length === 0 && (
                       <p className="text-sm text-slate-500">No comments yet.</p>
                     )}
-                    <ul className="space-y-2">
-                      {comments.map((c) => (
-                        <li
-                          key={c.id}
-                          className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm"
-                        >
-                          <p className="whitespace-pre-wrap text-slate-800">{c.body}</p>
-                          <p className="mt-1 text-[10px] text-slate-400">
-                            {new Date(c.created_at).toLocaleString()}
-                          </p>
-                        </li>
-                      ))}
+                    <ul className="space-y-3">
+                      {comments.map((c) => {
+                        const author = commentUserById[c.user_id];
+                        const displayName = author?.displayName ?? 'Member';
+                        const avatarUrl = author?.avatarUrl ?? null;
+                        return (
+                          <li
+                            key={c.id}
+                            className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm"
+                          >
+                            <div className="flex gap-3">
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-100 bg-indigo-100 text-sm font-bold text-indigo-700">
+                                {avatarUrl ? (
+                                  <img
+                                    src={avatarUrl}
+                                    alt={displayName}
+                                    className="h-full w-full object-cover"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                ) : (
+                                  (displayName[0]?.toUpperCase() ?? '?')
+                                )}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-baseline gap-2">
+                                  <span className="font-bold text-slate-900">{displayName}</span>
+                                  <span className="text-xs text-slate-400">
+                                    {formatMessageTimestamp(c.created_at)}
+                                  </span>
+                                </div>
+                                <p className="mt-0.5 whitespace-pre-wrap text-slate-800">
+                                  {c.body}
+                                </p>
+                              </div>
+                            </div>
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
                   {canWrite && taskId && (
@@ -715,6 +1143,7 @@ function formatActivityLine(e: TaskActivityEntry): string {
     if (e.field === 'title') return `Title updated`;
     if (e.field === 'description') return `Description updated`;
     if (e.field === 'status') return `Status changed to "${e.to ?? ''}"`;
+    if (e.field === 'priority') return `Priority changed to "${e.to ?? ''}"`;
   }
   return e.message || 'Activity';
 }

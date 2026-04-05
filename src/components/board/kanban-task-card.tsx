@@ -1,0 +1,284 @@
+'use client';
+
+import type { KeyboardEvent, ReactNode } from 'react';
+import { format, parseISO } from 'date-fns';
+import {
+  Calendar,
+  ExternalLink,
+  GripVertical,
+  ListChecks,
+  MessageCircle,
+  User,
+} from 'lucide-react';
+import type { BubbleRow, TaskRow, WorkspaceCategory } from '@/types/database';
+import { normalizeTaskPriority, type TaskPriority } from '@/lib/task-priority';
+import { asComments, asSubtasks } from '@/types/task-modal';
+import type { TaskModalTab } from '@/components/modals/TaskModal';
+import type { KanbanCardDensity } from '@/components/board/kanban-density';
+import { Card, CardContent } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
+import { taskDateFieldLabels } from '@/lib/task-date-labels';
+import { scheduledOnRelativeToWorkspaceToday } from '@/lib/workspace-calendar';
+import { formatScheduledTimeDisplay } from '@/lib/task-scheduled-time';
+
+export type KanbanTaskCardProps = {
+  task: TaskRow;
+  canWrite: boolean;
+  bubbles: BubbleRow[];
+  onMoveToBubble: (taskId: string, targetBubbleId: string) => void;
+  onOpenTask?: (taskId: string, opts?: { tab?: TaskModalTab }) => void;
+  /** Controls how much information is shown on the card (board-level setting). */
+  density?: KanbanCardDensity;
+  /** Workspace template — drives date chip label (Due vs Scheduled). */
+  workspaceCategory?: WorkspaceCategory | null;
+  /** Workspace calendar timezone for overdue / today styling. */
+  calendarTimezone?: string | null;
+  className?: string;
+  /**
+   * Drag handle only — parent attaches `useSortable` listeners here via `ref` + spread props.
+   * Omit for read-only lists; pass a decorative node for DragOverlay parity.
+   */
+  dragHandle?: ReactNode;
+};
+
+function subtaskProgress(task: TaskRow): { done: number; total: number } | null {
+  const st = asSubtasks(task.subtasks);
+  if (st.length === 0) return null;
+  return { done: st.filter((s) => s.done).length, total: st.length };
+}
+
+function priorityChip(p: TaskPriority): { label: string; className: string } {
+  if (p === 'high') {
+    return {
+      label: 'High',
+      className: 'border-destructive/35 bg-destructive/10 text-destructive dark:text-destructive',
+    };
+  }
+  if (p === 'low') {
+    return {
+      label: 'Low',
+      className: 'border-border bg-muted/80 text-muted-foreground',
+    };
+  }
+  return {
+    label: 'Medium',
+    className: 'border-amber-500/35 bg-amber-500/12 text-amber-950 dark:text-amber-100',
+  };
+}
+
+export function KanbanTaskCard({
+  task,
+  canWrite,
+  bubbles,
+  onMoveToBubble,
+  onOpenTask,
+  density = 'full',
+  workspaceCategory = null,
+  calendarTimezone = null,
+  className,
+  dragHandle,
+}: KanbanTaskCardProps) {
+  const subtasks = subtaskProgress(task);
+  const pChip = priorityChip(normalizeTaskPriority(task.priority));
+  const ymd = task.scheduled_on ? String(task.scheduled_on).slice(0, 10) : null;
+  const dateRel = scheduledOnRelativeToWorkspaceToday(ymd, calendarTimezone ?? undefined);
+  const dateShort = taskDateFieldLabels(workspaceCategory).short;
+  let dateFormatted: string | null = null;
+  if (ymd) {
+    try {
+      dateFormatted = format(parseISO(`${ymd}T12:00:00`), 'MMM d');
+    } catch {
+      dateFormatted = ymd;
+    }
+  }
+  const timeLabel = formatScheduledTimeDisplay(task.scheduled_time);
+  const dateAndTimeLabel =
+    dateFormatted && timeLabel ? `${dateFormatted} · ${timeLabel}` : dateFormatted;
+  const dateChipClass =
+    dateRel === 'past'
+      ? 'border-destructive/40 bg-destructive/10 text-destructive dark:text-destructive'
+      : dateRel === 'today'
+        ? 'border-primary/45 bg-primary/10 text-primary'
+        : 'border-border bg-muted/60 text-muted-foreground';
+  const showDescription = density === 'full' || density === 'detailed';
+  const showBubble =
+    (density === 'full' || density === 'detailed') && canWrite && bubbles.length > 0;
+  const showDetailedMeta = density === 'detailed';
+  const commentCount = asComments(task.comments).length;
+
+  const openTask = onOpenTask ? () => onOpenTask(task.id) : undefined;
+
+  const handleOpenKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (!openTask) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      openTask();
+    }
+  };
+
+  const innerSpacing = density === 'summary' ? 'space-y-1' : 'space-y-2';
+
+  return (
+    <Card
+      className={cn(
+        'border-border/80 shadow-sm ring-1 ring-border/40 transition-shadow hover:shadow-md',
+        className,
+      )}
+      size="sm"
+    >
+      <CardContent
+        className={cn('text-sm', density === 'summary' ? 'space-y-1 p-2' : 'space-y-2 p-3')}
+      >
+        <div className="flex items-start gap-1.5">
+          {dragHandle ? (
+            <div className="shrink-0 pt-0.5 text-muted-foreground [&_button]:-m-0.5 [&_button]:rounded-md [&_button]:p-0.5 [&_button]:hover:bg-muted [&_button]:hover:text-foreground">
+              {dragHandle}
+            </div>
+          ) : null}
+
+          <div
+            className={cn(
+              'min-w-0 flex-1',
+              innerSpacing,
+              openTask &&
+                'cursor-pointer rounded-md outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            )}
+            role={openTask ? 'button' : undefined}
+            tabIndex={openTask ? 0 : undefined}
+            onClick={openTask}
+            onKeyDown={handleOpenKeyDown}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <p
+                className={cn(
+                  'font-semibold leading-snug text-foreground',
+                  density === 'summary' ? 'line-clamp-1 text-sm' : 'line-clamp-2',
+                )}
+              >
+                {task.title}
+              </p>
+              {density === 'summary' && (
+                <ExternalLink className="size-3.5 shrink-0 text-primary opacity-80" aria-hidden />
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span
+                title={pChip.label}
+                className={cn(
+                  'inline-flex rounded-md border px-1.5 py-0.5 font-medium leading-none',
+                  density === 'summary' ? 'text-[9px] uppercase tracking-wide' : 'text-[10px]',
+                  pChip.className,
+                )}
+              >
+                {density === 'summary' ? pChip.label.slice(0, 1) : pChip.label}
+              </span>
+              {ymd && dateAndTimeLabel ? (
+                density === 'summary' ? (
+                  <span
+                    title={`${dateShort}: ${dateAndTimeLabel}`}
+                    className={cn(
+                      'inline-flex items-center rounded-md border px-1 py-0.5',
+                      'text-[9px] font-medium leading-none',
+                      dateChipClass,
+                    )}
+                  >
+                    <Calendar className="size-3 shrink-0" aria-hidden />
+                  </span>
+                ) : (
+                  <span
+                    title={dateShort}
+                    className={cn(
+                      'inline-flex rounded-md border px-1.5 py-0.5 font-medium leading-none',
+                      density === 'detailed' ? 'text-[10px]' : 'text-[10px]',
+                      dateChipClass,
+                    )}
+                  >
+                    {dateAndTimeLabel}
+                  </span>
+                )
+              ) : null}
+            </div>
+
+            {showDescription && task.description ? (
+              <p className="text-xs leading-relaxed text-muted-foreground line-clamp-3">
+                {task.description}
+              </p>
+            ) : null}
+
+            {showDetailedMeta && (subtasks || task.assigned_to) ? (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                {subtasks ? (
+                  <span className="inline-flex items-center gap-1">
+                    <ListChecks className="size-3 shrink-0" aria-hidden />
+                    Subtasks {subtasks.done}/{subtasks.total}
+                  </span>
+                ) : null}
+                {task.assigned_to ? (
+                  <span className="inline-flex items-center gap-1">
+                    <User className="size-3 shrink-0" aria-hidden />
+                    Assigned
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
+          {onOpenTask ? (
+            <button
+              type="button"
+              className="relative mt-0.5 shrink-0 rounded-md p-1 text-muted-foreground outline-none ring-offset-background hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              aria-label="Open task comments"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenTask(task.id, { tab: 'comments' });
+              }}
+            >
+              <MessageCircle className="size-4" aria-hidden />
+              {commentCount > 0 ? (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium leading-none text-primary-foreground">
+                  {commentCount > 99 ? '99+' : commentCount}
+                </span>
+              ) : null}
+            </button>
+          ) : null}
+        </div>
+
+        {showBubble && (
+          <div
+            className="space-y-1 border-t border-border/60 pt-2"
+            data-kanban-no-open
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <label className="block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              Bubble
+            </label>
+            <select
+              value={task.bubble_id}
+              onChange={(e) => void onMoveToBubble(task.id, e.target.value)}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs"
+            >
+              {bubbles.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Decorative grip for drag overlay (no listeners). */
+export function KanbanTaskCardDragDecoration() {
+  return (
+    <span className="inline-flex text-muted-foreground/50" aria-hidden>
+      <GripVertical className="size-4" />
+    </span>
+  );
+}

@@ -20,6 +20,8 @@ export interface Database {
           email: string | null;
           full_name: string | null;
           avatar_url: string | null;
+          /** IANA timezone for the user (display and seeding new workspaces). */
+          timezone?: string | null;
           created_at: string;
         };
         Insert: {
@@ -27,6 +29,7 @@ export interface Database {
           email?: string | null;
           full_name?: string | null;
           avatar_url?: string | null;
+          timezone?: string;
           created_at?: string;
         };
         Update: Partial<Database['public']['Tables']['users']['Insert']>;
@@ -39,6 +42,8 @@ export interface Database {
           created_by: string;
           created_at: string;
           icon_url: string | null;
+          /** IANA timezone for workspace calendar "today" (task automation). */
+          calendar_timezone: string;
         };
         Insert: {
           id?: string;
@@ -47,6 +52,7 @@ export interface Database {
           created_by: string;
           created_at?: string;
           icon_url?: string | null;
+          calendar_timezone?: string;
         };
         Update: Partial<Database['public']['Tables']['workspaces']['Insert']>;
       };
@@ -107,6 +113,7 @@ export interface Database {
           content: string;
           parent_id: string | null;
           created_at: string;
+          attachments: Json;
         };
         Insert: {
           id?: string;
@@ -115,6 +122,7 @@ export interface Database {
           content?: string;
           parent_id?: string | null;
           created_at?: string;
+          attachments?: Json;
         };
         Update: Partial<Database['public']['Tables']['messages']['Insert']>;
       };
@@ -126,8 +134,13 @@ export interface Database {
           description: string | null;
           status: string;
           position: number;
+          priority: string;
           assigned_to: string | null;
           created_at: string;
+          /** Calendar day in workspace timezone (YYYY-MM-DD). */
+          scheduled_on: string | null;
+          /** Local time on scheduled_on in workspace calendar_timezone; null = all-day. */
+          scheduled_time: string | null;
           subtasks: Json;
           comments: Json;
           activity_log: Json;
@@ -140,8 +153,11 @@ export interface Database {
           description?: string | null;
           status?: string;
           position?: number;
+          priority?: string;
           assigned_to?: string | null;
           created_at?: string;
+          scheduled_on?: string | null;
+          scheduled_time?: string | null;
           subtasks?: Json;
           comments?: Json;
           activity_log?: Json;

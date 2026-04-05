@@ -1,12 +1,14 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Camera, Save, User, Mail } from 'lucide-react';
+import { X, Camera, Save, User, Mail, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { createClient } from '@utils/supabase/client';
 import { useUserProfileStore, type UserProfileRow } from '@/store/userProfileStore';
 import { AVATARS_BUCKET, buildAvatarObjectPath } from '@/lib/avatar-storage';
 import { formatUserFacingError } from '@/lib/format-error';
+import { isMissingColumnSchemaCacheError } from '@/lib/supabase-schema-errors';
+import { COMMON_CALENDAR_TIMEZONES } from '@/lib/calendar-timezones';
 
 export type ProfileModalProps = {
   open: boolean;
@@ -19,6 +21,7 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
   const loadProfile = useUserProfileStore((s) => s.loadProfile);
 
   const [name, setName] = useState('');
+  const [timezone, setTimezone] = useState('UTC');
   const [avatarPreview, setAvatarPreview] = useState('');
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
@@ -35,6 +38,7 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
     if (!open) return;
     if (!profile) return;
     setName(profile.full_name?.trim() || '');
+    setTimezone(profile.timezone?.trim() || 'UTC');
     setAvatarPreview(profile.avatar_url ?? '');
     setPendingFile(null);
   }, [open, profile]);
@@ -84,15 +88,39 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
         nextAvatarUrl = pub.publicUrl;
       }
 
-      const { data: updated, error: updErr } = await supabase
+      const baseUpdate = {
+        full_name: name.trim(),
+        avatar_url: nextAvatarUrl,
+      };
+      let { data: updated, error: updErr } = await supabase
         .from('users')
         .update({
-          full_name: name.trim(),
-          avatar_url: nextAvatarUrl,
+          ...baseUpdate,
+          timezone: timezone.trim() || 'UTC',
         })
         .eq('id', user.id)
         .select('*')
         .single();
+
+      if (updErr && isMissingColumnSchemaCacheError(updErr, 'timezone')) {
+        const retry = await supabase
+          .from('users')
+          .update(baseUpdate)
+          .eq('id', user.id)
+          .select('*')
+          .single();
+        if (retry.error || !retry.data) {
+          setError(formatUserFacingError(retry.error ?? new Error('Update failed')));
+          setSaving(false);
+          return;
+        }
+        setProfile(retry.data as UserProfileRow);
+        setError(
+          'Timezone is not saved yet: apply the users timezone migration on Supabase (users.timezone), then try again.',
+        );
+        setSaving(false);
+        return;
+      }
 
       if (updErr || !updated) {
         setError(formatUserFacingError(updErr ?? new Error('Update failed')));
@@ -226,6 +254,38 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
                   </div>
                   <p className="text-[10px] text-slate-400 mt-1.5">
                     Email is managed by your sign-in provider.
+                  </p>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="profile-timezone"
+                    className="block text-sm font-semibold text-slate-700 mb-1.5"
+                  >
+                    Timezone
+                  </label>
+                  <div className="relative">
+                    <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                    <select
+                      id="profile-timezone"
+                      value={timezone}
+                      onChange={(e) => setTimezone(e.target.value)}
+                      disabled={saving}
+                      className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all appearance-none cursor-pointer disabled:opacity-50"
+                    >
+                      {!COMMON_CALENDAR_TIMEZONES.includes(
+                        timezone as (typeof COMMON_CALENDAR_TIMEZONES)[number],
+                      ) && <option value={timezone}>{timezone} (current)</option>}
+                      {COMMON_CALENDAR_TIMEZONES.map((tz) => (
+                        <option key={tz} value={tz}>
+                          {tz}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1.5">
+                    Used for your local date and time display; new workspaces may use this as their
+                    default calendar timezone.
                   </p>
                 </div>
               </div>

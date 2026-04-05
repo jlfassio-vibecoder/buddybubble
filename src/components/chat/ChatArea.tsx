@@ -19,9 +19,9 @@ import {
   CheckSquare,
   Loader2,
 } from 'lucide-react';
-import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
+import { formatMessageTimestamp } from '@/lib/message-timestamp';
 import { createClient } from '@utils/supabase/client';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useUserProfileStore } from '@/store/userProfileStore';
@@ -32,11 +32,33 @@ import {
   defaultBubbleIdForWrites,
 } from '@/lib/all-bubbles';
 import type { Database } from '@/types/database';
+import {
+  attachmentsToJson,
+  classifyFileKind,
+  inferMimeFromFileName,
+  parseMessageAttachments,
+  type MessageAttachment,
+} from '@/types/message-attachment';
+import {
+  buildMessageAttachmentObjectPath,
+  MESSAGE_ATTACHMENTS_BUCKET,
+  removeMessageAttachmentPrefix,
+} from '@/lib/message-storage';
+import {
+  MESSAGE_ATTACHMENT_FILE_ACCEPT,
+  validateAttachmentFiles,
+} from '@/lib/message-attachment-limits';
+import { captureVideoPoster, getVideoFileMetadata } from '@/lib/video-poster';
+import { renderPdfFirstPageToJpegBlob } from '@/lib/pdf-page-thumbnail';
+import { formatUserFacingError } from '@/lib/format-error';
 import { ThreadPanel } from './ThreadPanel';
+import { MessageAttachmentThumbnails } from './MessageAttachmentThumbnails';
+import { MessageMediaModal } from './MessageMediaModal';
+import type { TaskModalTab } from '@/components/modals/TaskModal';
 
 type UserRow = Database['public']['Tables']['users']['Row'];
 
-/** Legacy chat row shape used by the original ChatArea markup */
+/** Chat row shape used by ChatArea markup */
 export type ChatMessage = {
   id: string;
   sender: string;
@@ -44,7 +66,7 @@ export type ChatMessage = {
   content: string;
   timestamp: Date;
   department: string;
-  attachments?: { length: number }[];
+  attachments?: MessageAttachment[];
   uid: string;
   parentId?: string;
   threadCount?: number;
@@ -145,6 +167,7 @@ function searchJoinRowToChatMessage(
     uid: row.user_id,
     parentId: row.parent_id ?? undefined,
     threadCount: replyCounts.get(row.id) ?? 0,
+    attachments: parseMessageAttachments(row.attachments),
   };
 }
 
@@ -185,6 +208,7 @@ function rowToChatMessage(
     uid: row.user_id,
     parentId: row.parent_id ?? undefined,
     threadCount: replyCounts.get(row.id) ?? 0,
+    attachments: parseMessageAttachments(row.attachments),
   };
 }
 
@@ -193,7 +217,7 @@ export type ChatAreaProps = {
   bubbles: BubbleRow[];
   canWrite: boolean;
   onCollapse?: () => void;
-  onOpenTask?: (taskId: string) => void;
+  onOpenTask?: (taskId: string, opts?: { tab?: TaskModalTab }) => void;
 };
 
 export function ChatArea({
@@ -225,6 +249,13 @@ export function ChatArea({
   });
   const [searchResults, setSearchResults] = useState<ChatMessage[] | null>(null);
   const [isSearching, setIsSearching] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [sendingAttachments, setSendingAttachments] = useState(false);
+  const [mediaModal, setMediaModal] = useState<{
+    attachments: MessageAttachment[];
+    index: number;
+  } | null>(null);
 
   const [dbMessages, setDbMessages] = useState<MessageRow[]>([]);
   const [userById, setUserById] = useState<Record<string, UserRow>>({});
@@ -236,6 +267,7 @@ export function ChatArea({
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
 
   const bubbleName = activeBubble?.name ?? 'Bubble';
 
@@ -532,32 +564,295 @@ export function ChatArea({
   }, [workspaceId, bubbles]);
 
   const sendMessage = useCallback(
-    async (content: string, parentId?: string) => {
-      if (!canWrite || !content.trim()) return;
+    async (content: string, parentId?: string, files?: File[]): Promise<boolean> => {
+      if (!canWrite) {
+        setAttachmentError('You do not have permission to post in this workspace.');
+        return false;
+      }
+      if (!workspaceId) {
+        setAttachmentError('No workspace selected.');
+        return false;
+      }
+      const raw = files ?? [];
+      if (!content.trim() && raw.length === 0) return false;
+      const candidates = raw.filter((f) => classifyFileKind(f) !== 'unsupported');
+      const validated = validateAttachmentFiles(candidates);
+      if (!validated.ok) {
+        setAttachmentError(validated.message);
+        return false;
+      }
+      const accepted = validated.files;
+      setAttachmentError(null);
+
       let targetBubbleId: string | null = null;
       if (parentId) {
         const parentRow = dbMessages.find((m) => m.id === parentId);
         targetBubbleId = parentRow?.bubble_id ?? null;
       } else if (!activeBubble) {
-        return;
+        setAttachmentError('Select a bubble to post.');
+        return false;
       } else if (activeBubble.id === ALL_BUBBLES_BUBBLE_ID) {
         targetBubbleId = defaultBubbleIdForWrites(bubbles);
       } else {
         targetBubbleId = activeBubble.id;
       }
-      if (!targetBubbleId) return;
+      if (!targetBubbleId) {
+        setAttachmentError(
+          parentId
+            ? 'Could not find thread parent. Try closing and reopening the thread.'
+            : 'Add a bubble in this workspace before posting attachments.',
+        );
+        return false;
+      }
+
       const supabase = createClient();
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      if (!user) return;
-      const { error } = await supabase.from('messages').insert({
-        bubble_id: targetBubbleId,
-        user_id: user.id,
-        content: content.trim(),
-        parent_id: parentId ?? null,
-      });
-      if (!error) {
+      if (!user) {
+        setAttachmentError('You need to be signed in to send messages.');
+        return false;
+      }
+
+      setSendingAttachments(true);
+      try {
+        const { data: inserted, error: insErr } = await supabase
+          .from('messages')
+          .insert({
+            bubble_id: targetBubbleId,
+            user_id: user.id,
+            content: content.trim(),
+            parent_id: parentId ?? null,
+          })
+          .select('*')
+          .single();
+
+        if (insErr || !inserted?.id) {
+          console.error('[ChatArea] message insert', insErr);
+          setAttachmentError(
+            insErr ? formatUserFacingError(insErr) : 'Could not create message. Please try again.',
+          );
+          return false;
+        }
+
+        const messageId = inserted.id;
+        const row = inserted as MessageRow;
+        setDbMessages((prev) => {
+          if (prev.some((m) => m.id === row.id)) return prev;
+          return [...prev, row].sort(
+            (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+          );
+        });
+
+        const abortAttempt = async () => {
+          await removeMessageAttachmentPrefix(supabase, workspaceId, messageId);
+          await supabase.from('messages').delete().eq('id', messageId);
+        };
+
+        const meta: MessageAttachment[] = [];
+
+        for (const file of accepted) {
+          const k = classifyFileKind(file);
+          if (k === 'image' || k === 'document') {
+            const path = buildMessageAttachmentObjectPath(workspaceId, messageId, file.name);
+            const { error: upErr } = await supabase.storage
+              .from(MESSAGE_ATTACHMENTS_BUCKET)
+              .upload(path, file, { cacheControl: '3600', upsert: false });
+            if (upErr) {
+              console.error('[ChatArea] attachment upload', upErr);
+              setAttachmentError(formatUserFacingError(upErr));
+              await abortAttempt();
+              return false;
+            }
+            const mime =
+              file.type || inferMimeFromFileName(file.name) || 'application/octet-stream';
+            const isPdf = mime === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+            let pdfThumbPath: string | null = null;
+            let pdfW: number | null = null;
+            let pdfH: number | null = null;
+            if (k === 'document' && isPdf) {
+              try {
+                const pdfThumb = await renderPdfFirstPageToJpegBlob(file);
+                const thumbStorePath = buildMessageAttachmentObjectPath(
+                  workspaceId,
+                  messageId,
+                  'pdf-thumb.jpg',
+                );
+                const { error: upPdfThumb } = await supabase.storage
+                  .from(MESSAGE_ATTACHMENTS_BUCKET)
+                  .upload(thumbStorePath, pdfThumb.blob, {
+                    cacheControl: '3600',
+                    upsert: false,
+                    contentType: 'image/jpeg',
+                  });
+                if (!upPdfThumb) {
+                  pdfThumbPath = thumbStorePath;
+                  pdfW = pdfThumb.width;
+                  pdfH = pdfThumb.height;
+                } else {
+                  console.error('[ChatArea] pdf thumb upload', upPdfThumb);
+                }
+              } catch (e) {
+                console.error('[ChatArea] pdf thumb', e);
+              }
+            }
+            const docImage: MessageAttachment = {
+              id: crypto.randomUUID(),
+              kind: k,
+              path,
+              file_name: file.name,
+              mime_type: mime,
+              size_bytes: file.size,
+              uploaded_at: new Date().toISOString(),
+            };
+            if (pdfThumbPath) {
+              docImage.thumb_path = pdfThumbPath;
+              docImage.width = pdfW;
+              docImage.height = pdfH;
+            }
+            meta.push(docImage);
+          } else if (k === 'video') {
+            const path = buildMessageAttachmentObjectPath(workspaceId, messageId, file.name);
+            const thumbPath = buildMessageAttachmentObjectPath(
+              workspaceId,
+              messageId,
+              'poster.jpg',
+            );
+            const { error: upVid } = await supabase.storage
+              .from(MESSAGE_ATTACHMENTS_BUCKET)
+              .upload(path, file, { cacheControl: '3600', upsert: false });
+            if (upVid) {
+              console.error('[ChatArea] video upload', upVid);
+              setAttachmentError(formatUserFacingError(upVid));
+              await abortAttempt();
+              return false;
+            }
+
+            let vm: Awaited<ReturnType<typeof getVideoFileMetadata>>;
+            try {
+              vm = await getVideoFileMetadata(file);
+            } catch (e) {
+              console.error('[ChatArea] video metadata', e);
+              setAttachmentError(e instanceof Error ? e.message : 'Could not read video.');
+              await abortAttempt();
+              return false;
+            }
+
+            const useEdgePoster = process.env.NEXT_PUBLIC_MESSAGE_VIDEO_POSTER_EDGE === '1';
+            let thumb_path = thumbPath;
+            let width = vm.width;
+            let height = vm.height;
+            let duration_sec = vm.duration_sec;
+
+            if (useEdgePoster) {
+              const { data, error: fnErr } = await supabase.functions.invoke(
+                'generate-message-video-poster',
+                {
+                  body: {
+                    workspace_id: workspaceId,
+                    message_id: messageId,
+                    video_path: path,
+                    thumb_path: thumbPath,
+                  },
+                },
+              );
+              const edgePayload = data as { ok?: boolean } | null;
+              const edgeOk = !fnErr && edgePayload?.ok === true;
+
+              if (!edgeOk) {
+                let poster: Awaited<ReturnType<typeof captureVideoPoster>>;
+                try {
+                  poster = await captureVideoPoster(file);
+                } catch (e) {
+                  console.error('[ChatArea] video poster fallback', e);
+                  setAttachmentError(e instanceof Error ? e.message : 'Could not read video.');
+                  await abortAttempt();
+                  return false;
+                }
+                const { error: upPoster } = await supabase.storage
+                  .from(MESSAGE_ATTACHMENTS_BUCKET)
+                  .upload(thumbPath, poster.blob, {
+                    cacheControl: '3600',
+                    upsert: false,
+                    contentType: 'image/jpeg',
+                  });
+                if (upPoster) {
+                  console.error('[ChatArea] poster upload', upPoster);
+                  setAttachmentError(formatUserFacingError(upPoster));
+                  await abortAttempt();
+                  return false;
+                }
+                thumb_path = thumbPath;
+                width = poster.width;
+                height = poster.height;
+                duration_sec = poster.duration_sec;
+              }
+            } else {
+              let poster: Awaited<ReturnType<typeof captureVideoPoster>>;
+              try {
+                poster = await captureVideoPoster(file);
+              } catch (e) {
+                console.error('[ChatArea] video poster', e);
+                setAttachmentError(e instanceof Error ? e.message : 'Could not read video.');
+                await abortAttempt();
+                return false;
+              }
+              const { error: upPoster } = await supabase.storage
+                .from(MESSAGE_ATTACHMENTS_BUCKET)
+                .upload(thumbPath, poster.blob, {
+                  cacheControl: '3600',
+                  upsert: false,
+                  contentType: 'image/jpeg',
+                });
+              if (upPoster) {
+                console.error('[ChatArea] poster upload', upPoster);
+                setAttachmentError(formatUserFacingError(upPoster));
+                await abortAttempt();
+                return false;
+              }
+              thumb_path = thumbPath;
+              width = poster.width;
+              height = poster.height;
+              duration_sec = poster.duration_sec;
+            }
+
+            meta.push({
+              id: crypto.randomUUID(),
+              kind: 'video',
+              path,
+              thumb_path,
+              file_name: file.name,
+              mime_type: file.type || inferMimeFromFileName(file.name) || 'video/mp4',
+              size_bytes: file.size,
+              uploaded_at: new Date().toISOString(),
+              width,
+              height,
+              duration_sec,
+            });
+          }
+        }
+
+        if (meta.length > 0) {
+          const attachmentsJson = attachmentsToJson(meta);
+          const { error: updErr } = await supabase
+            .from('messages')
+            .update({ attachments: attachmentsJson })
+            .eq('id', messageId);
+          if (updErr) {
+            console.error('[ChatArea] message attachments update', updErr);
+            setAttachmentError(formatUserFacingError(updErr));
+            await abortAttempt();
+            return false;
+          }
+          setDbMessages((prev) => {
+            const idx = prev.findIndex((m) => m.id === messageId);
+            if (idx === -1) return prev;
+            const next = [...prev];
+            next[idx] = { ...next[idx], attachments: attachmentsJson as MessageRow['attachments'] };
+            return next;
+          });
+        }
+
         const { data: self } = await supabase
           .from('users')
           .select('id, full_name, avatar_url, email, created_at')
@@ -566,9 +861,12 @@ export function ChatArea({
         if (self) {
           setUserById((prev) => ({ ...prev, [self.id]: self as UserRow }));
         }
+        return true;
+      } finally {
+        setSendingAttachments(false);
       }
     },
-    [activeBubble, bubbles, canWrite, dbMessages],
+    [activeBubble, bubbles, canWrite, dbMessages, workspaceId],
   );
 
   const canPostInComposer =
@@ -640,13 +938,25 @@ export function ChatArea({
     inputRef.current?.focus();
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleAttachmentPick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const incoming = e.target.files;
+    const picked = incoming?.length ? Array.from(incoming) : [];
+    e.target.value = '';
+    if (picked.length === 0) return;
+    setAttachmentError(null);
+    setPendingFiles((prev) => [...prev, ...picked]);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (input.trim()) {
-      void sendMessage(input);
-      setInput('');
-      setShowMentions(false);
-    }
+    if ((!input.trim() && pendingFiles.length === 0) || sendingAttachments) return;
+    const text = input;
+    const files = [...pendingFiles];
+    const ok = await sendMessage(text, undefined, files);
+    if (!ok) return;
+    setInput('');
+    setPendingFiles([]);
+    setShowMentions(false);
   };
 
   const filteredMembers = teamMembersResolved.filter((member) =>
@@ -678,17 +988,6 @@ export function ChatArea({
         return;
       }
 
-      if (
-        parsed.hasAttachment &&
-        !parsed.cleanQuery &&
-        !parsed.fromOperator &&
-        !parsed.inOperator &&
-        !dateStr
-      ) {
-        setSearchResults([]);
-        return;
-      }
-
       setIsSearching(true);
       setSearchResults([]);
       try {
@@ -709,6 +1008,16 @@ export function ChatArea({
           q = q.eq('bubble_id', scopeIds[0]);
         } else {
           q = q.in('bubble_id', scopeIds);
+        }
+
+        const onlyAttachmentFilter =
+          parsed.hasAttachment &&
+          !parsed.cleanQuery &&
+          !parsed.fromOperator &&
+          !parsed.inOperator &&
+          !dateStr;
+        if (onlyAttachmentFilter) {
+          q = q.not('attachments', 'eq', '[]');
         }
 
         if (parsed.cleanQuery) {
@@ -907,7 +1216,7 @@ export function ChatArea({
                                 {n.content}
                               </p>
                               <p className="text-[10px] text-slate-400 mt-2">
-                                {format(n.timestamp, 'MMM d, h:mm a')}
+                                {formatMessageTimestamp(n.timestamp)}
                               </p>
                             </div>
                             {!n.read && (
@@ -1093,7 +1402,7 @@ export function ChatArea({
                               )}
                             </div>
                             <span className="text-[10px] text-slate-400">
-                              {format(msg.timestamp, 'MMM d, h:mm a')}
+                              {formatMessageTimestamp(msg.timestamp)}
                             </span>
                           </div>
                           <p className="text-xs text-slate-600 line-clamp-2">
@@ -1150,12 +1459,20 @@ export function ChatArea({
                       </span>
                     )}
                     <span className="text-xs text-slate-400">
-                      {format(msg.timestamp, 'h:mm a')}
+                      {formatMessageTimestamp(msg.timestamp)}
                     </span>
                   </div>
                   <div className="text-slate-700 leading-relaxed mt-0.5">
                     {renderMessageContent(msg.content)}
                   </div>
+                  {msg.attachments && msg.attachments.length > 0 && (
+                    <MessageAttachmentThumbnails
+                      attachments={msg.attachments}
+                      onOpenAttachment={(i) =>
+                        setMediaModal({ attachments: msg.attachments!, index: i })
+                      }
+                    />
+                  )}
 
                   {/* Thread Indicator */}
                   {msg.threadCount && msg.threadCount > 0 ? (
@@ -1194,11 +1511,13 @@ export function ChatArea({
           threadMessages={threadMessages}
           canWrite={canWrite}
           onClose={() => setActiveThreadParent(null)}
-          onSendMessage={(content) => {
-            if (!activeThreadParent) return;
-            void sendMessage(content, activeThreadParent.id);
+          onSendMessage={async (content, files) => {
+            if (!activeThreadParent) return false;
+            return sendMessage(content, activeThreadParent.id, files);
           }}
+          onOpenAttachment={(attachments, index) => setMediaModal({ attachments, index })}
           renderMessageContent={renderMessageContent}
+          sending={sendingAttachments}
         />
       </div>
 
@@ -1297,67 +1616,131 @@ export function ChatArea({
         )}
       </AnimatePresence>
 
+      <MessageMediaModal
+        open={mediaModal !== null}
+        onOpenChange={(open) => {
+          if (!open) setMediaModal(null);
+        }}
+        attachments={mediaModal?.attachments ?? []}
+        initialIndex={mediaModal?.index ?? 0}
+      />
+
       {/* Input */}
       <div className="p-6 pt-0">
-        <form onSubmit={handleSubmit} className="relative flex items-center">
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={handleInputChange}
-            onKeyDown={(e) => {
-              if (showMentions && filteredMembers.length > 0) {
-                if (e.key === 'ArrowDown') {
-                  e.preventDefault();
-                  setMentionIndex((prev) => (prev + 1) % filteredMembers.length);
-                } else if (e.key === 'ArrowUp') {
-                  e.preventDefault();
-                  setMentionIndex(
-                    (prev) => (prev - 1 + filteredMembers.length) % filteredMembers.length,
-                  );
-                } else if (e.key === 'Enter' || e.key === 'Tab') {
-                  e.preventDefault();
-                  insertMention(filteredMembers[mentionIndex].name);
-                } else if (e.key === 'Escape') {
-                  setShowMentions(false);
-                }
-              } else if (showTaskMentions) {
-                const filtered = allTasks.filter((t) =>
-                  t.title.toLowerCase().includes(taskMentionSearch.toLowerCase()),
-                );
-                if (filtered.length > 0) {
+        <input
+          ref={attachmentInputRef}
+          type="file"
+          className="hidden"
+          multiple
+          accept={MESSAGE_ATTACHMENT_FILE_ACCEPT}
+          onChange={handleAttachmentPick}
+        />
+        {attachmentError && (
+          <p className="mb-2 px-1 text-xs text-red-600" role="alert">
+            {attachmentError}
+          </p>
+        )}
+        {pendingFiles.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5 px-1">
+            {pendingFiles.map((f, i) => (
+              <span
+                key={`${f.name}-${i}`}
+                className="inline-flex max-w-[200px] items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] text-slate-700"
+              >
+                <span className="truncate">{f.name}</span>
+                <button
+                  type="button"
+                  className="shrink-0 rounded p-0.5 text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+                  onClick={() => setPendingFiles((p) => p.filter((_, j) => j !== i))}
+                  aria-label="Remove file"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <form onSubmit={handleSubmit} className="flex items-center gap-2">
+          <button
+            type="button"
+            className="shrink-0 rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-indigo-600 disabled:opacity-30"
+            disabled={!canWrite || !canPostInComposer || sendingAttachments}
+            title="Attach image, video, or document"
+            aria-label="Attach file"
+            onClick={() => attachmentInputRef.current?.click()}
+          >
+            <Paperclip className="h-5 w-5" />
+          </button>
+          <div className="relative min-w-0 flex-1">
+            <input
+              ref={inputRef}
+              type="text"
+              value={input}
+              onChange={handleInputChange}
+              onKeyDown={(e) => {
+                if (showMentions && filteredMembers.length > 0) {
                   if (e.key === 'ArrowDown') {
                     e.preventDefault();
-                    setTaskMentionIndex((prev) => (prev + 1) % filtered.length);
+                    setMentionIndex((prev) => (prev + 1) % filteredMembers.length);
                   } else if (e.key === 'ArrowUp') {
                     e.preventDefault();
-                    setTaskMentionIndex((prev) => (prev - 1 + filtered.length) % filtered.length);
+                    setMentionIndex(
+                      (prev) => (prev - 1 + filteredMembers.length) % filteredMembers.length,
+                    );
                   } else if (e.key === 'Enter' || e.key === 'Tab') {
                     e.preventDefault();
-                    if (filtered[taskMentionIndex]) {
-                      insertTaskMention(filtered[taskMentionIndex].title);
+                    insertMention(filteredMembers[mentionIndex].name);
+                  } else if (e.key === 'Escape') {
+                    setShowMentions(false);
+                  }
+                } else if (showTaskMentions) {
+                  const filtered = allTasks.filter((t) =>
+                    t.title.toLowerCase().includes(taskMentionSearch.toLowerCase()),
+                  );
+                  if (filtered.length > 0) {
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setTaskMentionIndex((prev) => (prev + 1) % filtered.length);
+                    } else if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setTaskMentionIndex((prev) => (prev - 1 + filtered.length) % filtered.length);
+                    } else if (e.key === 'Enter' || e.key === 'Tab') {
+                      e.preventDefault();
+                      if (filtered[taskMentionIndex]) {
+                        insertTaskMention(filtered[taskMentionIndex].title);
+                      }
                     }
                   }
+                  if (e.key === 'Escape') {
+                    setShowTaskMentions(false);
+                  }
                 }
-                if (e.key === 'Escape') {
-                  setShowTaskMentions(false);
-                }
+              }}
+              placeholder={activeBubble ? `Message #${activeBubble.name}` : 'Select a bubble…'}
+              disabled={!canWrite || !canPostInComposer || sendingAttachments}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 pr-12 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all disabled:opacity-50"
+            />
+            <button
+              type="submit"
+              disabled={
+                (!input.trim() && pendingFiles.length === 0) ||
+                !canWrite ||
+                !canPostInComposer ||
+                sendingAttachments
               }
-            }}
-            placeholder={activeBubble ? `Message #${activeBubble.name}` : 'Select a bubble…'}
-            disabled={!canWrite || !canPostInComposer}
-            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 pr-12 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all disabled:opacity-50"
-          />
-          <button
-            type="submit"
-            disabled={!input.trim() || !canWrite || !canPostInComposer}
-            className="absolute right-2 p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-          >
-            <Send className="w-5 h-5" />
-          </button>
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+            >
+              {sendingAttachments ? (
+                <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+              ) : (
+                <Send className="w-5 h-5" />
+              )}
+            </button>
+          </div>
         </form>
         <p className="text-[10px] text-slate-400 mt-2 px-1">
-          <b>Return</b> to send • <b>Shift + Return</b> for new line • <b>@</b> to mention
+          <b>Return</b> to send (after attaching, pick files then send) • <b>Shift + Return</b> for
+          new line • <b>@</b> to mention
           {false && (
             <span className="ml-2 text-indigo-500 font-bold">• Broadcast to all bubbles</span>
           )}

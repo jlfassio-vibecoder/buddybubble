@@ -6,6 +6,7 @@ import {
   DragOverlay,
   PointerSensor,
   closestCorners,
+  defaultDropAnimation,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
@@ -23,11 +24,42 @@ import { CSS } from '@dnd-kit/utilities';
 import { createClient } from '@utils/supabase/client';
 import { useBoardColumnDefs } from '@/hooks/use-board-columns';
 import { useWorkspaceStore } from '@/store/workspaceStore';
-import { ALL_BUBBLES_BUBBLE_ID, defaultBubbleIdForWrites } from '@/lib/all-bubbles';
+import { ALL_BUBBLES_BUBBLE_ID } from '@/lib/all-bubbles';
+import {
+  PRIORITY_FILTER_STORAGE_KEY,
+  compareTasksByPriorityThenTitle,
+  compareTasksByTitle,
+  parsePriorityFilter,
+  taskMatchesPriorityFilter,
+  type PriorityFilter,
+} from '@/lib/task-priority';
+import {
+  DATE_FILTER_STORAGE_KEY,
+  DATE_SORT_STORAGE_KEY,
+  parseDateFilter,
+  parseDateSortMode,
+  sortTasksByScheduledOn,
+  taskMatchesDateFilter,
+  type DateFilter,
+  type DateSortMode,
+} from '@/lib/task-date-filter';
+import { scheduledOnRelativeToWorkspaceToday } from '@/lib/workspace-calendar';
+import type { WorkspaceCategory } from '@/types/database';
 import type { BubbleRow, TaskRow } from '@/types/database';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import { KanbanBoardHeader } from '@/components/board/kanban-board-header';
+import { KanbanColumnHeader } from '@/components/board/kanban-column-header';
+import { KanbanColumnAdd } from '@/components/board/kanban-column-add';
+import {
+  KANBAN_CARD_DENSITY_STORAGE_KEY,
+  parseKanbanCardDensity,
+  type KanbanCardDensity,
+} from '@/components/board/kanban-density';
+import { KanbanTaskCard, KanbanTaskCardDragDecoration } from '@/components/board/kanban-task-card';
+import type { TaskModalTab } from '@/components/modals/TaskModal';
+import { GripVertical } from 'lucide-react';
+import { motion } from 'motion/react';
+
+const KANBAN_COLLAPSED_COLUMNS_KEY_PREFIX = 'buddybubble.kanbanCollapsedColumns:';
 
 function makeEmptyColumns(slugs: string[]): Record<string, TaskRow[]> {
   const m: Record<string, TaskRow[]> = {};
@@ -46,6 +78,32 @@ function groupTasksToColumns(tasks: TaskRow[], slugs: string[]): Record<string, 
     map[slug].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
   }
   return map;
+}
+
+/** Same rule as cron / TaskModal save: scheduled + date is workspace "today" → column `today`. */
+function tasksWithScheduledPromotedToTodayForGrouping(
+  tasks: TaskRow[],
+  columnSlugs: string[],
+  calendarTimezone: string | null | undefined,
+): TaskRow[] {
+  if (
+    !columnSlugs.includes('today') ||
+    !columnSlugs.includes('scheduled') ||
+    calendarTimezone == null ||
+    String(calendarTimezone).trim() === ''
+  ) {
+    return tasks;
+  }
+  return tasks.map((t) => {
+    if (
+      t.status === 'scheduled' &&
+      t.scheduled_on &&
+      scheduledOnRelativeToWorkspaceToday(t.scheduled_on, calendarTimezone) === 'today'
+    ) {
+      return { ...t, status: 'today' };
+    }
+    return t;
+  });
 }
 
 function alignStatuses(
@@ -120,11 +178,23 @@ type Props = {
   canWrite: boolean;
   /** Bubbles in this BuddyBubble for moving a task to another Bubble (dropdown on each card). */
   bubbles: BubbleRow[];
-  onOpenTask?: (taskId: string) => void;
-  onOpenCreateTask?: () => void;
+  onOpenTask?: (taskId: string, opts?: { tab?: TaskModalTab }) => void;
+  /** Opens create flow; pass `status` to pre-select the column in the full editor. */
+  onOpenCreateTask?: (opts?: { status: string }) => void;
+  /** From active workspace — date labels and overdue styling on cards. */
+  workspaceCategory?: WorkspaceCategory | null;
+  /** Workspace IANA timezone for date filters and relative styling. */
+  calendarTimezone?: string | null;
 };
 
-export function KanbanBoard({ canWrite, bubbles, onOpenTask, onOpenCreateTask }: Props) {
+export function KanbanBoard({
+  canWrite,
+  bubbles,
+  onOpenTask,
+  onOpenCreateTask,
+  workspaceCategory = null,
+  calendarTimezone = null,
+}: Props) {
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
   const columnDefs = useBoardColumnDefs(activeWorkspace?.id ?? null);
   const columnSlugs = useMemo(() => (columnDefs ?? []).map((c) => c.id), [columnDefs]);
@@ -134,14 +204,15 @@ export function KanbanBoard({ canWrite, bubbles, onOpenTask, onOpenCreateTask }:
 
   const [columns, setColumns] = useState<Record<string, TaskRow[]>>({});
   const [activeTask, setActiveTask] = useState<TaskRow | null>(null);
-  const [title, setTitle] = useState('');
-  const [adding, setAdding] = useState(false);
+  const [cardDensity, setCardDensity] = useState<KanbanCardDensity>('full');
+  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
+  const [dateFilter, setDateFilter] = useState<DateFilter>('all');
+  const [dateSortMode, setDateSortMode] = useState<DateSortMode>('none');
+  const [collapsedColumnIds, setCollapsedColumnIds] = useState<Set<string>>(() => new Set());
   const draggingRef = useRef(false);
   const columnsSnapshotRef = useRef<Record<string, TaskRow[]> | null>(null);
   const columnsRef = useRef(columns);
   columnsRef.current = columns;
-
-  const firstColumnSlug = columnSlugs[0] ?? 'todo';
 
   const loadTasks = useCallback(async () => {
     if (!bubbleId || columnSlugs.length === 0) {
@@ -163,12 +234,133 @@ export function KanbanBoard({ canWrite, bubbles, onOpenTask, onOpenCreateTask }:
     }
     const { data } = await query;
     if (draggingRef.current) return;
-    setColumns(groupTasksToColumns((data ?? []) as TaskRow[], columnSlugs));
-  }, [bubbleId, bubbles, columnSlugs]);
+    const rows = (data ?? []) as TaskRow[];
+
+    const tz = calendarTimezone?.trim() || null;
+    const canPromote =
+      columnSlugs.includes('today') && columnSlugs.includes('scheduled') && tz != null && tz !== '';
+
+    let toGroup = rows;
+    if (canPromote) {
+      const promoteIds = rows
+        .filter(
+          (t) =>
+            t.status === 'scheduled' &&
+            t.scheduled_on &&
+            scheduledOnRelativeToWorkspaceToday(t.scheduled_on, tz) === 'today',
+        )
+        .map((t) => t.id);
+
+      if (promoteIds.length > 0) {
+        if (canWrite) {
+          const { error } = await supabase
+            .from('tasks')
+            .update({ status: 'today' })
+            .in('id', promoteIds);
+          if (!error) {
+            const idSet = new Set(promoteIds);
+            toGroup = rows.map((t) => (idSet.has(t.id) ? { ...t, status: 'today' as const } : t));
+          } else {
+            console.error('[KanbanBoard] scheduled→today promotion on load failed', error);
+            toGroup = tasksWithScheduledPromotedToTodayForGrouping(rows, columnSlugs, tz);
+          }
+        } else {
+          toGroup = tasksWithScheduledPromotedToTodayForGrouping(rows, columnSlugs, tz);
+        }
+      }
+    }
+
+    setColumns(groupTasksToColumns(toGroup, columnSlugs));
+  }, [bubbleId, bubbles, columnSlugs, calendarTimezone, canWrite]);
 
   useEffect(() => {
     void loadTasks();
   }, [loadTasks]);
+
+  useEffect(() => {
+    setCardDensity(parseKanbanCardDensity(localStorage.getItem(KANBAN_CARD_DENSITY_STORAGE_KEY)));
+    setPriorityFilter(parsePriorityFilter(localStorage.getItem(PRIORITY_FILTER_STORAGE_KEY)));
+    setDateFilter(parseDateFilter(localStorage.getItem(DATE_FILTER_STORAGE_KEY)));
+    setDateSortMode(parseDateSortMode(localStorage.getItem(DATE_SORT_STORAGE_KEY)));
+  }, []);
+
+  const workspaceId = activeWorkspace?.id ?? null;
+
+  useEffect(() => {
+    if (!workspaceId || typeof window === 'undefined') {
+      setCollapsedColumnIds(new Set());
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(`${KANBAN_COLLAPSED_COLUMNS_KEY_PREFIX}${workspaceId}`);
+      const arr = raw ? (JSON.parse(raw) as unknown) : [];
+      setCollapsedColumnIds(
+        new Set(Array.isArray(arr) ? arr.filter((x) => typeof x === 'string') : []),
+      );
+    } catch {
+      setCollapsedColumnIds(new Set());
+    }
+  }, [workspaceId]);
+
+  const handleCardDensityChange = useCallback((d: KanbanCardDensity) => {
+    setCardDensity(d);
+    localStorage.setItem(KANBAN_CARD_DENSITY_STORAGE_KEY, d);
+  }, []);
+
+  const handlePriorityFilterChange = useCallback((f: PriorityFilter) => {
+    setPriorityFilter(f);
+    localStorage.setItem(PRIORITY_FILTER_STORAGE_KEY, f);
+  }, []);
+
+  const handleDateFilterChange = useCallback((f: DateFilter) => {
+    setDateFilter(f);
+    localStorage.setItem(DATE_FILTER_STORAGE_KEY, f);
+  }, []);
+
+  const handleDateSortModeChange = useCallback((m: DateSortMode) => {
+    setDateSortMode(m);
+    localStorage.setItem(DATE_SORT_STORAGE_KEY, m);
+  }, []);
+
+  const tz = calendarTimezone?.trim() || activeWorkspace?.calendar_timezone || 'UTC';
+
+  const visibleColumns = useMemo(() => {
+    const next: Record<string, TaskRow[]> = {};
+    for (const s of columnSlugs) {
+      let list = [...(columns[s] ?? [])];
+      if (priorityFilter !== 'all') {
+        list = list.filter((t) => taskMatchesPriorityFilter(t, priorityFilter));
+      }
+      if (dateFilter !== 'all') {
+        list = list.filter((t) => taskMatchesDateFilter(t, dateFilter, tz));
+      }
+      if (dateSortMode !== 'none') {
+        list = sortTasksByScheduledOn(list, dateSortMode);
+      }
+      next[s] = list;
+    }
+    return next;
+  }, [columns, columnSlugs, priorityFilter, dateFilter, dateSortMode, tz]);
+
+  const dragSortDisabled = priorityFilter !== 'all' || dateFilter !== 'all';
+
+  const toggleColumnCollapse = useCallback(
+    (columnId: string) => {
+      setCollapsedColumnIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(columnId)) next.delete(columnId);
+        else next.add(columnId);
+        if (workspaceId && typeof window !== 'undefined') {
+          localStorage.setItem(
+            `${KANBAN_COLLAPSED_COLUMNS_KEY_PREFIX}${workspaceId}`,
+            JSON.stringify([...next]),
+          );
+        }
+        return next;
+      });
+    },
+    [workspaceId],
+  );
 
   useEffect(() => {
     if (!bubbleId) return;
@@ -242,6 +434,24 @@ export function KanbanBoard({ canWrite, bubbles, onOpenTask, onOpenCreateTask }:
       void loadTasks();
     },
     [bubbleId, canWrite, columnSlugs, loadTasks],
+  );
+
+  const sortColumnBy = useCallback(
+    (columnId: string, mode: 'priority' | 'title') => {
+      if (!canWrite) return;
+      setColumns((prev) => {
+        const list = [...(prev[columnId] ?? [])];
+        if (list.length < 2) return prev;
+        const sorted =
+          mode === 'priority'
+            ? [...list].sort(compareTasksByPriorityThenTitle)
+            : [...list].sort(compareTasksByTitle);
+        const next = { ...prev, [columnId]: sorted };
+        void persistColumns(next);
+        return next;
+      });
+    },
+    [canWrite, persistColumns],
   );
 
   const handleDragStart = useCallback(
@@ -335,28 +545,6 @@ export function KanbanBoard({ canWrite, bubbles, onOpenTask, onOpenCreateTask }:
     columnsSnapshotRef.current = null;
   }, []);
 
-  async function addTask(e: React.FormEvent) {
-    e.preventDefault();
-    const targetBubbleId =
-      bubbleId === ALL_BUBBLES_BUBBLE_ID ? defaultBubbleIdForWrites(bubbles) : bubbleId;
-    if (!targetBubbleId || !title.trim() || !canWrite) return;
-    setAdding(true);
-    const supabase = createClient();
-    const flat = columnSlugs.flatMap((s) => columnsRef.current[s] ?? []);
-    const maxPos = flat.length > 0 ? Math.max(...flat.map((t) => t.position ?? 0)) + 1 : 0;
-    const { error } = await supabase.from('tasks').insert({
-      bubble_id: targetBubbleId,
-      title: title.trim(),
-      status: firstColumnSlug,
-      position: maxPos,
-    });
-    setAdding(false);
-    if (!error) {
-      setTitle('');
-      void loadTasks();
-    }
-  }
-
   async function moveTaskToBubble(taskId: string, targetBubbleId: string) {
     if (!canWrite || !bubbleId) return;
     if (bubbleId !== ALL_BUBBLES_BUBBLE_ID && targetBubbleId === bubbleId) return;
@@ -382,32 +570,19 @@ export function KanbanBoard({ canWrite, bubbles, onOpenTask, onOpenCreateTask }:
 
   return (
     <div className="flex min-w-0 flex-1 flex-col bg-muted/30">
-      <div className="flex items-start justify-between gap-2 border-b border-border bg-background px-4 py-3">
-        <div>
-          <h2 className="text-sm font-semibold">Tasks</h2>
-          <p className="text-xs text-muted-foreground">
-            Drag between columns for status. Use the card control to move a task to another bubble.
-          </p>
-        </div>
-        {canWrite && bubbleId && onOpenCreateTask && (
-          <Button type="button" variant="outline" size="sm" onClick={onOpenCreateTask}>
-            Full editor
-          </Button>
-        )}
-      </div>
-      {canWrite && bubbleId && (
-        <form onSubmit={addTask} className="flex gap-2 border-b border-border bg-background p-3">
-          <Input
-            placeholder="New task"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="h-9 text-sm"
-          />
-          <Button type="submit" size="sm" disabled={adding || !title.trim() || !boardReady}>
-            Add
-          </Button>
-        </form>
-      )}
+      <KanbanBoardHeader
+        canWrite={canWrite}
+        hasBubble={Boolean(bubbleId)}
+        cardDensity={cardDensity}
+        onCardDensityChange={handleCardDensityChange}
+        priorityFilter={priorityFilter}
+        onPriorityFilterChange={handlePriorityFilterChange}
+        dateFilter={dateFilter}
+        onDateFilterChange={handleDateFilterChange}
+        dateSortMode={dateSortMode}
+        onDateSortModeChange={handleDateSortModeChange}
+        onOpenFullEditor={onOpenCreateTask ? () => onOpenCreateTask() : undefined}
+      />
       {!bubbleId ? (
         <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
           Select a bubble to view tasks
@@ -425,36 +600,76 @@ export function KanbanBoard({ canWrite, bubbles, onOpenTask, onOpenCreateTask }:
           onDragEnd={handleDragEnd}
           onDragCancel={handleDragCancel}
         >
-          <div
-            className="grid min-h-0 flex-1 gap-2 p-3"
-            style={{
-              gridTemplateColumns: `repeat(${columnDefs!.length}, minmax(0, 1fr))`,
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain">
+              <div className="flex h-full min-h-0 gap-3 p-3">
+                {columnDefs!.map((col, columnIndex) => {
+                  const fullTaskCount = (columns[col.id] ?? []).length;
+                  const addNew =
+                    canWrite && onOpenCreateTask
+                      ? () => onOpenCreateTask({ status: col.id })
+                      : undefined;
+                  return (
+                    <motion.div
+                      key={col.id}
+                      className="flex h-full shrink-0"
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{
+                        type: 'spring',
+                        stiffness: 420,
+                        damping: 32,
+                        delay: Math.min(columnIndex * 0.04, 0.24),
+                      }}
+                    >
+                      <KanbanColumn
+                        column={col}
+                        tasks={visibleColumns[col.id] ?? []}
+                        fullTaskCount={fullTaskCount}
+                        collapsed={collapsedColumnIds.has(col.id)}
+                        canWrite={canWrite}
+                        dragDisabled={dragSortDisabled}
+                        bubbles={bubbles}
+                        boardReady={boardReady}
+                        cardDensity={cardDensity}
+                        workspaceCategory={workspaceCategory}
+                        calendarTimezone={tz}
+                        onMoveToBubble={moveTaskToBubble}
+                        onOpenTask={onOpenTask}
+                        onAddNew={addNew}
+                        onSortByPriority={
+                          canWrite ? () => sortColumnBy(col.id, 'priority') : undefined
+                        }
+                        onSortByTitle={canWrite ? () => sortColumnBy(col.id, 'title') : undefined}
+                        onToggleCollapse={() => toggleColumnCollapse(col.id)}
+                      />
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+          <DragOverlay
+            dropAnimation={{
+              ...defaultDropAnimation,
+              duration: 280,
+              easing: 'cubic-bezier(0.2, 0.82, 0.22, 1)',
             }}
           >
-            {columnDefs!.map((col) => (
-              <KanbanColumn
-                key={col.id}
-                column={col}
-                tasks={columns[col.id] ?? []}
-                canWrite={canWrite}
-                bubbles={bubbles}
-                onMoveToBubble={moveTaskToBubble}
-                onOpenTask={onOpenTask}
-              />
-            ))}
-          </div>
-          <DragOverlay>
             {activeTask ? (
-              <Card className="mb-2 w-60 cursor-grabbing opacity-90 shadow-lg">
-                <CardContent className="space-y-2 p-3 text-sm">
-                  <p className="font-medium">{activeTask.title}</p>
-                  {activeTask.description && (
-                    <p className="text-xs text-muted-foreground line-clamp-3">
-                      {activeTask.description}
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
+              <div className="w-64 cursor-grabbing opacity-95">
+                <KanbanTaskCard
+                  task={activeTask}
+                  canWrite={false}
+                  bubbles={[]}
+                  onMoveToBubble={() => {}}
+                  density={cardDensity}
+                  workspaceCategory={workspaceCategory}
+                  calendarTimezone={tz}
+                  className="pointer-events-none shadow-lg"
+                  dragHandle={<KanbanTaskCardDragDecoration />}
+                />
+              </div>
             ) : null}
           </DragOverlay>
         </DndContext>
@@ -466,45 +681,113 @@ export function KanbanBoard({ canWrite, bubbles, onOpenTask, onOpenCreateTask }:
 type ColumnProps = {
   column: { id: string; label: string };
   tasks: TaskRow[];
+  /** Tasks in this column before priority filter (for sort + menu). */
+  fullTaskCount: number;
+  collapsed: boolean;
   canWrite: boolean;
+  /** When true, cards are not draggable (e.g. priority filter is not "all"). */
+  dragDisabled: boolean;
+  boardReady: boolean;
   bubbles: BubbleRow[];
+  cardDensity: KanbanCardDensity;
+  workspaceCategory: WorkspaceCategory | null;
+  calendarTimezone: string;
   onMoveToBubble: (taskId: string, targetBubbleId: string) => void;
-  onOpenTask?: (taskId: string) => void;
+  onOpenTask?: (taskId: string, opts?: { tab?: TaskModalTab }) => void;
+  onAddNew?: () => void;
+  onSortByPriority?: () => void;
+  onSortByTitle?: () => void;
+  onToggleCollapse: () => void;
 };
 
 function KanbanColumn({
   column,
   tasks,
+  fullTaskCount,
+  collapsed,
   canWrite,
+  dragDisabled,
+  boardReady,
   bubbles,
+  cardDensity,
+  workspaceCategory,
+  calendarTimezone,
   onMoveToBubble,
   onOpenTask,
+  onAddNew,
+  onSortByPriority,
+  onSortByTitle,
+  onToggleCollapse,
 }: ColumnProps) {
   const { setNodeRef } = useDroppable({ id: column.id });
   const ids = useMemo(() => tasks.map((t) => t.id), [tasks]);
+  const addDisabled = !boardReady || !onAddNew;
 
   return (
     <div
       ref={setNodeRef}
-      className="flex min-h-[200px] flex-col rounded-lg border border-border bg-card p-2"
+      className={`flex w-72 shrink-0 flex-col rounded-xl border border-border/80 bg-card p-2 shadow-sm transition-[box-shadow] duration-200 ease-out hover:shadow-md ${
+        collapsed ? 'h-auto min-h-[4.5rem] self-start' : 'h-full min-h-[200px]'
+      }`}
     >
-      <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">{column.label}</h3>
-      <div className="min-h-0 max-h-[calc(100vh-220px)] overflow-y-auto pr-1">
-        <SortableContext items={ids} strategy={verticalListSortingStrategy}>
-          <div className="pr-3">
-            {tasks.map((task) => (
-              <SortableTaskCard
-                key={task.id}
-                task={task}
-                canWrite={canWrite}
-                bubbles={bubbles}
-                onMoveToBubble={onMoveToBubble}
-                onOpenTask={onOpenTask}
-              />
-            ))}
-          </div>
-        </SortableContext>
-      </div>
+      <KanbanColumnHeader
+        label={column.label}
+        count={tasks.length}
+        fullTaskCount={fullTaskCount}
+        collapsed={collapsed}
+        canAddTask={Boolean(onAddNew) && !addDisabled}
+        onAddTask={onAddNew}
+        onSortByPriority={onSortByPriority}
+        onSortByTitle={onSortByTitle}
+        onToggleCollapse={onToggleCollapse}
+      />
+      {!collapsed ? (
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-0.5">
+          <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+            <div className="pr-1.5">
+              {tasks.length === 0 ? (
+                onAddNew ? (
+                  <KanbanColumnAdd
+                    variant="empty"
+                    disabled={addDisabled}
+                    onAdd={onAddNew}
+                    className="mb-1"
+                  />
+                ) : (
+                  <p className="py-6 text-center text-xs text-muted-foreground">No tasks</p>
+                )
+              ) : (
+                <>
+                  {tasks.map((task) => (
+                    <SortableTaskCard
+                      key={task.id}
+                      task={task}
+                      canWrite={canWrite}
+                      dragDisabled={dragDisabled}
+                      bubbles={bubbles}
+                      cardDensity={cardDensity}
+                      workspaceCategory={workspaceCategory}
+                      calendarTimezone={calendarTimezone}
+                      onMoveToBubble={onMoveToBubble}
+                      onOpenTask={onOpenTask}
+                    />
+                  ))}
+                  {onAddNew ? (
+                    <KanbanColumnAdd
+                      variant="inline"
+                      disabled={addDisabled}
+                      onAdd={onAddNew}
+                      className="mb-1"
+                    />
+                  ) : null}
+                </>
+              )}
+            </div>
+          </SortableContext>
+        </div>
+      ) : (
+        <p className="px-1 pb-1 text-center text-[10px] text-muted-foreground">Column collapsed</p>
+      )}
     </div>
   );
 }
@@ -512,14 +795,42 @@ function KanbanColumn({
 type CardProps = {
   task: TaskRow;
   canWrite: boolean;
+  dragDisabled: boolean;
   bubbles: BubbleRow[];
+  cardDensity: KanbanCardDensity;
+  workspaceCategory: WorkspaceCategory | null;
+  calendarTimezone: string;
   onMoveToBubble: (taskId: string, targetBubbleId: string) => void;
-  onOpenTask?: (taskId: string) => void;
+  onOpenTask?: (taskId: string, opts?: { tab?: TaskModalTab }) => void;
 };
 
-function SortableTaskCard({ task, canWrite, bubbles, onMoveToBubble, onOpenTask }: CardProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+function SortableTaskCard({
+  task,
+  canWrite,
+  dragDisabled,
+  bubbles,
+  cardDensity,
+  workspaceCategory,
+  calendarTimezone,
+  onMoveToBubble,
+  onOpenTask,
+}: CardProps) {
+  const sortableDisabled = !canWrite || dragDisabled;
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
     id: task.id,
+    disabled: sortableDisabled,
+    transition: {
+      duration: 220,
+      easing: 'cubic-bezier(0.25, 1, 0.5, 1)',
+    },
   });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -527,50 +838,37 @@ function SortableTaskCard({ task, canWrite, bubbles, onMoveToBubble, onOpenTask 
     opacity: isDragging ? 0.4 : 1,
   };
 
+  const draggable = canWrite && !dragDisabled;
+  const showDecorativeGrip = !draggable && canWrite && dragDisabled;
+
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`mb-2 ${canWrite ? 'cursor-grab touch-none' : ''}`}
-      {...(canWrite ? { ...attributes, ...listeners } : {})}
-    >
-      <Card className="border-border">
-        <CardContent className="space-y-2 p-3 text-sm">
-          <p className="font-medium">{task.title}</p>
-          {task.description && (
-            <p className="text-xs text-muted-foreground line-clamp-3">{task.description}</p>
-          )}
-          {onOpenTask && (
+    <div ref={setNodeRef} style={style} className="mb-2">
+      <KanbanTaskCard
+        task={task}
+        canWrite={canWrite}
+        bubbles={bubbles}
+        density={cardDensity}
+        workspaceCategory={workspaceCategory}
+        calendarTimezone={calendarTimezone}
+        onMoveToBubble={onMoveToBubble}
+        onOpenTask={onOpenTask}
+        dragHandle={
+          draggable ? (
             <button
               type="button"
-              className="text-xs font-medium text-primary hover:underline"
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={() => onOpenTask(task.id)}
+              ref={setActivatorNodeRef}
+              className="cursor-grab touch-none active:cursor-grabbing"
+              aria-label="Drag to reorder task"
+              {...listeners}
+              {...attributes}
             >
-              Open details
+              <GripVertical className="size-4" />
             </button>
-          )}
-          {canWrite && bubbles.length > 0 && (
-            <div className="space-y-1">
-              <label className="block text-[10px] font-medium uppercase text-muted-foreground">
-                Bubble
-              </label>
-              <select
-                value={task.bubble_id}
-                onChange={(e) => void onMoveToBubble(task.id, e.target.value)}
-                onPointerDown={(e) => e.stopPropagation()}
-                className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs"
-              >
-                {bubbles.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+          ) : showDecorativeGrip ? (
+            <KanbanTaskCardDragDecoration />
+          ) : null
+        }
+      />
     </div>
   );
 }

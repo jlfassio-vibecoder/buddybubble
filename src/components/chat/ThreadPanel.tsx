@@ -2,9 +2,13 @@
 
 import { useState, useRef, useEffect, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MessageSquare, X, Send } from 'lucide-react';
-import { format } from 'date-fns';
+import { MessageSquare, X, Send, Paperclip, Loader2 } from 'lucide-react';
 import type { ChatMessage } from './ChatArea';
+import { formatMessageTimestamp } from '@/lib/message-timestamp';
+import { MessageAttachmentThumbnails } from './MessageAttachmentThumbnails';
+import type { MessageAttachment } from '@/types/message-attachment';
+import { cn } from '@/lib/utils';
+import { MESSAGE_ATTACHMENT_FILE_ACCEPT } from '@/lib/message-attachment-limits';
 
 export type ThreadPanelProps = {
   activeThreadParent: ChatMessage | null;
@@ -12,8 +16,11 @@ export type ThreadPanelProps = {
   canWrite: boolean;
   onClose: () => void;
   /** Submit a new reply in the current thread (parent id is handled by the caller). */
-  onSendMessage: (content: string) => void | Promise<void>;
+  onSendMessage: (content: string, files?: File[]) => Promise<boolean>;
+  onOpenAttachment: (attachments: MessageAttachment[], index: number) => void;
   renderMessageContent: (content: string) => ReactNode;
+  /** True while main chat is uploading attachments for a message */
+  sending?: boolean;
 };
 
 export function ThreadPanel({
@@ -22,16 +29,33 @@ export function ThreadPanel({
   canWrite,
   onClose,
   onSendMessage,
+  onOpenAttachment,
   renderMessageContent,
+  sending = false,
 }: ThreadPanelProps) {
   const [threadInput, setThreadInput] = useState('');
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const threadScrollRef = useRef<HTMLDivElement>(null);
+  const threadAttachmentInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (threadScrollRef.current) {
       threadScrollRef.current.scrollTop = threadScrollRef.current.scrollHeight;
     }
   }, [threadMessages]);
+
+  useEffect(() => {
+    setThreadInput('');
+    setPendingFiles([]);
+  }, [activeThreadParent?.id]);
+
+  const handlePick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const incoming = e.target.files;
+    const picked = incoming?.length ? Array.from(incoming) : [];
+    e.target.value = '';
+    if (picked.length === 0) return;
+    setPendingFiles((prev) => [...prev, ...picked]);
+  };
 
   return (
     <AnimatePresence>
@@ -72,18 +96,25 @@ export function ThreadPanel({
                     activeThreadParent.sender[0]
                   )}
                 </div>
-                <div>
+                <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-2">
                     <span className="text-sm font-bold text-slate-900">
                       {activeThreadParent.sender}
                     </span>
                     <span className="text-[10px] text-slate-400">
-                      {format(activeThreadParent.timestamp, 'h:mm a')}
+                      {formatMessageTimestamp(activeThreadParent.timestamp)}
                     </span>
                   </div>
                   <p className="text-sm text-slate-700 mt-1">
                     {renderMessageContent(activeThreadParent.content)}
                   </p>
+                  {activeThreadParent.attachments && activeThreadParent.attachments.length > 0 && (
+                    <MessageAttachmentThumbnails
+                      attachments={activeThreadParent.attachments}
+                      onOpenAttachment={(i) => onOpenAttachment(activeThreadParent.attachments!, i)}
+                      className="mt-2"
+                    />
+                  )}
                 </div>
               </div>
             </div>
@@ -104,16 +135,23 @@ export function ThreadPanel({
                       reply.sender[0]
                     )}
                   </div>
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-baseline gap-2">
                       <span className="text-sm font-bold text-slate-900">{reply.sender}</span>
                       <span className="text-[10px] text-slate-400">
-                        {format(reply.timestamp, 'h:mm a')}
+                        {formatMessageTimestamp(reply.timestamp)}
                       </span>
                     </div>
                     <p className="text-sm text-slate-700 mt-1">
                       {renderMessageContent(reply.content)}
                     </p>
+                    {reply.attachments && reply.attachments.length > 0 && (
+                      <MessageAttachmentThumbnails
+                        attachments={reply.attachments}
+                        onOpenAttachment={(i) => onOpenAttachment(reply.attachments!, i)}
+                        className="mt-2"
+                      />
+                    )}
                   </div>
                 </div>
               ))}
@@ -122,31 +160,86 @@ export function ThreadPanel({
 
           {/* Thread Input */}
           <div className="p-4 bg-white border-t border-slate-200">
+            <input
+              ref={threadAttachmentInputRef}
+              type="file"
+              className="hidden"
+              multiple
+              accept={MESSAGE_ATTACHMENT_FILE_ACCEPT}
+              onChange={handlePick}
+            />
+            {pendingFiles.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-1">
+                {pendingFiles.map((f, i) => (
+                  <span
+                    key={`${f.name}-${i}`}
+                    className="inline-flex max-w-[140px] items-center gap-1 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[9px] text-slate-700"
+                  >
+                    <span className="truncate">{f.name}</span>
+                    <button
+                      type="button"
+                      className="shrink-0 text-slate-500 hover:text-slate-800"
+                      onClick={() => setPendingFiles((p) => p.filter((_, j) => j !== i))}
+                      aria-label="Remove file"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
             <form
-              onSubmit={(e) => {
+              onSubmit={async (e) => {
                 e.preventDefault();
-                if (threadInput.trim()) {
-                  void onSendMessage(threadInput);
-                  setThreadInput('');
-                }
+                if ((!threadInput.trim() && pendingFiles.length === 0) || sending) return;
+                const text = threadInput;
+                const files = [...pendingFiles];
+                const ok = await onSendMessage(text, files);
+                if (!ok) return;
+                setThreadInput('');
+                setPendingFiles([]);
               }}
-              className="relative flex items-center"
+              className="flex items-center gap-1.5"
             >
-              <input
-                type="text"
-                value={threadInput}
-                onChange={(e) => setThreadInput(e.target.value)}
-                placeholder="Reply to thread..."
-                disabled={!canWrite || !activeThreadParent}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all disabled:opacity-50"
-              />
               <button
-                type="submit"
-                disabled={!threadInput.trim() || !canWrite || !activeThreadParent}
-                className="absolute right-1.5 p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-30 transition-colors"
+                type="button"
+                className="shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-indigo-600 disabled:opacity-30"
+                disabled={!canWrite || !activeThreadParent || sending}
+                aria-label="Attach file"
+                title="Attach image, video, or document"
+                onClick={() => threadAttachmentInputRef.current?.click()}
               >
-                <Send className="w-4 h-4" />
+                <Paperclip className="w-4 h-4" />
               </button>
+              <div className="relative min-w-0 flex-1">
+                <input
+                  type="text"
+                  value={threadInput}
+                  onChange={(e) => setThreadInput(e.target.value)}
+                  placeholder="Reply to thread..."
+                  disabled={!canWrite || !activeThreadParent || sending}
+                  className={cn(
+                    'w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 pr-10 text-sm',
+                    'focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all disabled:opacity-50',
+                  )}
+                />
+                <button
+                  type="submit"
+                  disabled={
+                    (!threadInput.trim() && pendingFiles.length === 0) ||
+                    !canWrite ||
+                    !activeThreadParent ||
+                    sending
+                  }
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-30 transition-colors"
+                >
+                  {sending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" aria-hidden />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
             </form>
           </div>
         </motion.div>

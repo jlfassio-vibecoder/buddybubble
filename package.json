@@ -11,6 +11,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run format:check && npm run lint && npm run build",
+    "test": "vitest run",
     "prepare": "husky"
   },
   "lint-staged": {
@@ -34,6 +35,7 @@
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "next": "^15.2.4",
+    "pdfjs-dist": "^4.10.38",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
@@ -53,6 +55,7 @@
     "lint-staged": "^16.4.0",
     "prettier": "^3.5.3",
     "tailwindcss": "^4.1.14",
-    "typescript": "~5.8.2"
+    "typescript": "~5.8.2",
+    "vitest": "^3.0.5"
   }
 }
