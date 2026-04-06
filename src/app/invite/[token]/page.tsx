@@ -30,11 +30,17 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
   });
 
   if (rpcError) {
+    console.error('[invite] get_invite_preview rpc failed', {
+      code: rpcError.code,
+      message: rpcError.message,
+    });
     return (
       <main className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-6">
         <div className="w-full max-w-md rounded-xl border border-border bg-card p-8 text-center shadow-sm">
           <h1 className="text-xl font-semibold text-foreground">Something went wrong</h1>
-          <p className="mt-2 text-sm text-muted-foreground">{rpcError.message}</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            We couldn&apos;t load this invitation right now. Try again in a moment or sign in below.
+          </p>
           <Link
             href={`/login?next=${encodeURIComponent('/onboarding')}&invite_token=${encodeURIComponent(token)}`}
             className="mt-6 inline-block text-sm font-medium text-primary underline underline-offset-4"

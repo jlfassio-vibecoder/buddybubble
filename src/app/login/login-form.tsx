@@ -7,12 +7,13 @@ import { createClient } from '@utils/supabase/client';
 import { Button } from '@/components/ui/button';
 import { authCallbackAbsoluteUrl } from '@/lib/auth-callback-url';
 import { formatUserFacingError } from '@/lib/format-error';
+import { safeNextPath } from '@/lib/safe-next-path';
 import { persistInviteHandoffToken } from '@/app/(dashboard)/onboarding/actions';
 
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get('next') ?? '/app';
+  const next = safeNextPath(searchParams.get('next')) ?? '/app';
   const inviteToken = searchParams.get('invite_token')?.trim() || null;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

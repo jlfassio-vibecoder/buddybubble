@@ -38,17 +38,21 @@ export async function bulkApproveJoinRequests(
     return { approved: 0, errors: ['No requests selected.'] };
   }
 
+  // Bounded parallelism: faster than strict sequential RPCs without opening dozens of concurrent requests.
+  const concurrency = 8;
   let approved = 0;
   const errors: string[] = [];
-
-  for (const id of unique) {
-    const { error } = await supabase.rpc('approve_invitation_join_request', {
-      p_join_request_id: id,
-    });
-    if (error) {
-      errors.push(error.message);
-    } else {
-      approved += 1;
+  for (let i = 0; i < unique.length; i += concurrency) {
+    const slice = unique.slice(i, i + concurrency);
+    const batch = await Promise.all(
+      slice.map((id) => supabase.rpc('approve_invitation_join_request', { p_join_request_id: id })),
+    );
+    for (const { error } of batch) {
+      if (error) {
+        errors.push(error.message);
+      } else {
+        approved += 1;
+      }
     }
   }
 

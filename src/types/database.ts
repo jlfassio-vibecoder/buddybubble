@@ -63,7 +63,7 @@ export interface Database {
           workspace_id: string;
           user_id: string;
           role: MemberRole;
-          created_at?: string;
+          created_at: string;
         };
         Insert: {
           workspace_id: string;

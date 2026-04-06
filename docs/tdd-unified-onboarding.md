@@ -62,7 +62,7 @@ This document defines the **unified architecture** (front door, middleware, fork
    - **`SameSite=Lax`** — **not `Strict`**. After “Sign in with Google,” the browser returns from `accounts.google.com` via a top-level **GET**; `Lax` allows the cookie to be sent on that navigation. **`Strict` would often drop the cookie** and strand the user in the Host flow with no invite context.
    - **`Secure`** — `true` in production (HTTPS).
    - **`Path`** — `/` (or at least `/onboarding`, `/login`, `/app`, `/invite` as needed so post-auth routes see it).
-   - **`Max-Age` / `Expires`** — **short TTL, e.g. 15 minutes**; enough to complete OAuth + magic link, not a long-lived session secret.
+   - **`Max-Age` / `Expires`** — **24 hours** in current implementation (covers slow magic-link flows); invite **authorization** remains bounded by **`invitations.expires_at`** and **`max_uses`** in **`accept_invitation`**, not by this cookie alone.
 
 3. **If valid invite context exists** → **Workflow B (Invitee)** steps (after auth).
 4. **If no invite context** → **Workflow A (Host)**.
@@ -232,7 +232,7 @@ Use a dedicated table (name TBD; e.g. **`public.invitation_join_requests`**) or 
 ## 11. Implementation phases (for Cursor / eng)
 
 1. **`/app` onboarding controller + membership timestamp** — Migration: **`workspace_members.created_at`**. Update **`app/page.tsx`**: count **0** → **`/onboarding`**; **>0** → read **`bb_last_workspace`**, validate against memberships, else **`ORDER BY created_at DESC`** (§8). Middleware stays **auth-only** (§4.2).
-2. **`/onboarding` + Host fork** — Workflow A UI + Server Actions; integrate seeding; pre-auth invite cookie **`SameSite=Lax`**, **~15 min** TTL (§4.2).
+2. **`/onboarding` + Host fork** — Workflow A UI + Server Actions; integrate seeding; pre-auth invite cookie **`SameSite=Lax`**, **24h** TTL (§4.2).
 3. **Schema + RLS + RPC** — `invitations`, **`invitation_join_requests`** (or equivalent), indexes, admin policies, **`accept_invitation`** with **already-member** short-circuit (§6–§9).
 4. **`/invite/[token]`** — public page + cookie handoff to auth; post-login consume / pending enqueue.
 5. **Waiting room v1** — Host dashboard: pending list, per-row approve/reject, **select all + bulk approve** (§10).
@@ -250,7 +250,7 @@ Use a dedicated table (name TBD; e.g. **`public.invitation_join_requests`**) or 
 **Invitee / invites v1**
 
 - **`accept_invitation`**: user **already** in `workspace_members` for the invite’s workspace gets **success + `workspace_id`** without consuming the invite (§6).
-- Pre-auth invite cookie survives **OAuth** return: **`SameSite=Lax`**, short (**e.g. 15 min**) TTL (§4.2).
+- Pre-auth invite cookie survives **OAuth** return: **`SameSite=Lax`**, **24h** TTL (§4.2); server-side invite rules still apply.
 - **Approval waiting room** is implemented: pending queue, Host approve/reject, **select all + bulk approve** for large groups (§10).
 
 ---

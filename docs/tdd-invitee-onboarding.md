@@ -6,7 +6,7 @@ This document specifies the **invitee** path: someone who receives an invite lin
 
 1. **Trust before auth** — On `/invite/[token]`, show a **rich preview** (host name, workspace name, category/theme) so the screen does not feel like a generic phishing login.
 2. **Zero-trust data access** — Do **not** expose `workspaces` or `users` to anonymous clients via normal RLS `select`. Use a **narrow `SECURITY DEFINER` RPC** that validates the token and returns only public-safe fields.
-3. **OAuth-safe handoff** — Persist the raw invite token in **`bb_invite_token`** (`HttpOnly`, `SameSite=Lax`, **15-minute** TTL) so it survives OAuth redirects (see `src/lib/invite-cookies.ts` and `middleware.ts`).
+3. **OAuth-safe handoff** — Persist the raw invite token in **`bb_invite_token`** (`HttpOnly`, `SameSite=Lax`, **24-hour** TTL) so slow email confirmation and OAuth round-trips do not strand users; **`invitations`** still enforce `expires_at` / `max_uses` in RPCs (see `src/lib/invite-cookies.ts` and `middleware.ts`).
 4. **Post-auth routing** — After sign-in, invitees should land on **`/onboarding`** (not `/app` by default) so **`consumeInviteOnboarding`** can run `accept_invitation` using the cookie.
 5. **Waiting room UX** — If `accept_invitation` returns `pending`, redirect to **`/onboarding?invite=pending`** and show a clear **“Waiting for host approval”** state with optional **“Start your own BuddyBubble”** escape hatch.
 
