@@ -24,6 +24,7 @@ type WorkspaceStore = {
   syncActiveFromRoute: (workspaceId: string) => Promise<void>;
   setActiveWorkspaceId: (id: string) => void;
   setActiveBubble: (bubble: BubbleRow | null) => void;
+  reset: () => void;
 };
 
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
@@ -31,6 +32,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   activeBubble: null,
   userWorkspaces: [],
   loading: false,
+
+  reset: () =>
+    set({
+      activeWorkspace: null,
+      activeBubble: null,
+      userWorkspaces: [],
+      loading: false,
+    }),
 
   setActiveBubble: (bubble) => set({ activeBubble: bubble }),
 

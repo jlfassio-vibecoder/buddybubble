@@ -1,10 +1,14 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Camera, Save, User, Mail, Globe } from 'lucide-react';
+import { X, Camera, Save, User, Mail, Globe, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { createClient } from '@utils/supabase/client';
+import { clearSessionHandoffCookies } from '@/app/auth/logout-actions';
+import { clearInviteHandoffSessionStorage } from '@/lib/invite-handoff-storage';
+import { clearLastWorkspaceCookieClient } from '@/lib/workspace-cookies';
 import { useUserProfileStore, type UserProfileRow } from '@/store/userProfileStore';
+import { useWorkspaceStore } from '@/store/workspaceStore';
 import { AVATARS_BUCKET, buildAvatarObjectPath } from '@/lib/avatar-storage';
 import { formatUserFacingError } from '@/lib/format-error';
 import { isMissingColumnSchemaCacheError } from '@/lib/supabase-schema-errors';
@@ -19,12 +23,15 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
   const profile = useUserProfileStore((s) => s.profile);
   const setProfile = useUserProfileStore((s) => s.setProfile);
   const loadProfile = useUserProfileStore((s) => s.loadProfile);
+  const resetProfile = useUserProfileStore((s) => s.reset);
+  const resetWorkspaces = useWorkspaceStore((s) => s.reset);
 
   const [name, setName] = useState('');
   const [timezone, setTimezone] = useState('UTC');
   const [avatarPreview, setAvatarPreview] = useState('');
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -137,7 +144,36 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
     }
   };
 
+  const handleLogout = async () => {
+    if (typeof window !== 'undefined' && !window.confirm('Log out of BuddyBubble?')) {
+      return;
+    }
+    setError(null);
+    setLoggingOut(true);
+    try {
+      await clearSessionHandoffCookies();
+      clearLastWorkspaceCookieClient();
+      clearInviteHandoffSessionStorage();
+      resetProfile();
+      resetWorkspaces();
+      const supabase = createClient();
+      const { error: signOutErr } = await supabase.auth.signOut();
+      if (signOutErr) {
+        setError(formatUserFacingError(signOutErr));
+        setLoggingOut(false);
+        return;
+      }
+      onOpenChange(false);
+      // Full navigation drops RSC cache and client state more reliably than client routing alone.
+      window.location.assign('/login');
+    } catch (err) {
+      setError(formatUserFacingError(err));
+      setLoggingOut(false);
+    }
+  };
+
   const displayName = name || 'Member';
+  const busy = saving || loggingOut;
 
   return (
     <AnimatePresence>
@@ -202,7 +238,8 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="absolute bottom-0 right-0 p-2 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-all transform hover:scale-110"
+                    disabled={busy}
+                    className="absolute bottom-0 right-0 p-2 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-all transform hover:scale-110 disabled:opacity-50 disabled:pointer-events-none"
                   >
                     <Camera className="w-4 h-4" />
                   </button>
@@ -233,7 +270,7 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
                       onChange={(e) => setName(e.target.value)}
                       className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
                       placeholder="John Doe"
-                      disabled={saving}
+                      disabled={busy}
                     />
                   </div>
                 </div>
@@ -270,7 +307,7 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
                       id="profile-timezone"
                       value={timezone}
                       onChange={(e) => setTimezone(e.target.value)}
-                      disabled={saving}
+                      disabled={busy}
                       className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all appearance-none cursor-pointer disabled:opacity-50"
                     >
                       {!COMMON_CALENDAR_TIMEZONES.includes(
@@ -294,18 +331,30 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
                 <button
                   type="button"
                   onClick={() => onOpenChange(false)}
-                  disabled={saving}
+                  disabled={busy}
                   className="flex-1 px-4 py-2.5 border border-slate-200 text-slate-600 font-semibold rounded-xl hover:bg-slate-50 transition-colors disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={saving || !profile}
+                  disabled={busy || !profile}
                   className="flex-1 px-4 py-2.5 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20 disabled:opacity-50"
                 >
                   <Save className="w-4 h-4" />
                   {saving ? 'Saving…' : 'Save Changes'}
+                </button>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => void handleLogout()}
+                  disabled={busy}
+                  className="w-full px-4 py-2.5 border border-red-200 text-red-700 font-semibold rounded-xl hover:bg-red-50 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <LogOut className="w-4 h-4" />
+                  {loggingOut ? 'Logging out…' : 'Log out'}
                 </button>
               </div>
             </form>

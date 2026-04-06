@@ -8,11 +8,13 @@ type UserProfileState = {
   profile: UserProfileRow | null;
   setProfile: (profile: UserProfileRow | null) => void;
   loadProfile: () => Promise<void>;
+  reset: () => void;
 };
 
 export const useUserProfileStore = create<UserProfileState>((set) => ({
   profile: null,
   setProfile: (profile) => set({ profile }),
+  reset: () => set({ profile: null }),
   loadProfile: async () => {
     const supabase = createClient();
     const {

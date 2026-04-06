@@ -17,5 +17,23 @@ export function lastWorkspaceCookieOptions() {
 export function setLastWorkspaceCookieClient(workspaceId: string): void {
   if (typeof document === 'undefined') return;
   const value = encodeURIComponent(workspaceId);
-  document.cookie = `${BB_LAST_WORKSPACE_COOKIE}=${value}; Path=/; SameSite=Lax; Max-Age=${BB_LAST_WORKSPACE_MAX_AGE_SEC}`;
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  document.cookie = `${BB_LAST_WORKSPACE_COOKIE}=${value}; Path=/; SameSite=Lax; Max-Age=${BB_LAST_WORKSPACE_MAX_AGE_SEC}${secure}`;
+}
+
+/** Server Action / client: clear last-workspace hint on logout. */
+export function clearedLastWorkspaceCookieOptions() {
+  return {
+    path: '/' as const,
+    sameSite: 'lax' as const,
+    maxAge: 0,
+    secure: process.env.NODE_ENV === 'production',
+  };
+}
+
+/** Client-only: remove last-workspace cookie (pairs with server `clearSessionHandoffCookies`). */
+export function clearLastWorkspaceCookieClient(): void {
+  if (typeof document === 'undefined') return;
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  document.cookie = `${BB_LAST_WORKSPACE_COOKIE}=; Path=/; SameSite=Lax; Max-Age=0${secure}`;
 }
