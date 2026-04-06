@@ -151,11 +151,6 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
     setError(null);
     setLoggingOut(true);
     try {
-      await clearSessionHandoffCookies();
-      clearLastWorkspaceCookieClient();
-      clearInviteHandoffSessionStorage();
-      resetProfile();
-      resetWorkspaces();
       const supabase = createClient();
       const { error: signOutErr } = await supabase.auth.signOut();
       if (signOutErr) {
@@ -163,7 +158,18 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
         setLoggingOut(false);
         return;
       }
+
+      try {
+        await clearSessionHandoffCookies();
+      } catch {
+        // Session is already cleared; HttpOnly cookie wipe is best-effort.
+      }
+      clearLastWorkspaceCookieClient();
+      clearInviteHandoffSessionStorage();
+      resetProfile();
+      resetWorkspaces();
       onOpenChange(false);
+      setLoggingOut(false);
       // Full navigation drops RSC cache and client state more reliably than client routing alone.
       window.location.assign('/login');
     } catch (err) {
