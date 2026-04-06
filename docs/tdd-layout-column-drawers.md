@@ -10,7 +10,7 @@ We need each column to **collapse toward the left edge** into a **narrow strip**
 
 1. **Workspace rail (phase 1)**
    - **Expanded**: current behavior (72px rail: workspace icons, create, profile).
-   - **Collapsed**: minimal strip (~32px) with **uppercase vertical label “Workspace”** (reading direction aligned with the SESSION reference: bottom-to-top) and **chevron pointing right** to expand.
+   - **Collapsed**: minimal strip (`w-8` / 32px via `COLLAPSED_COLUMN_WIDTH_CLASS`) with **uppercase vertical label “Workspace”** (reading direction aligned with the SESSION reference: bottom-to-top) and **`ChevronRight`** beside the label to suggest expanding the panel to the right.
    - **Persistence**: remember open/closed per **workspace** (same idea as chat split in `WorkspaceMainSplit`).
 
 2. **Bubble sidebar (phase 2)**
@@ -27,12 +27,12 @@ We need each column to **collapse toward the left edge** into a **narrow strip**
 
 ## 4. UX and accessibility
 
-| Concern         | Approach                                                                                                                                                                                                                                          |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Discoverability | **Workspace rail**: collapse (chevron left) in the **footer** above create/profile. **Bubble sidebar**: collapse in the **header** row (chevron left before the “Bubbles” title).                                                                 |
-| Collapsed strip | Shared **`CollapsedColumnStrip`**: chevron and vertical label share one **centered column**, anchored to the **bottom** of the strip so adjacent collapsed columns align. Entire strip is one expand **`<button>`** with `aria-expanded="false"`. |
-| Keyboard        | Buttons are focusable; no new global shortcuts in v1.                                                                                                                                                                                             |
-| Label           | Visible text **Workspace** (styled uppercase to match reference density).                                                                                                                                                                         |
+| Concern         | Approach                                                                                                                                                                                                                                                                                                               |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Discoverability | **Workspace rail**: collapse (chevron left) in the **footer** above create/profile. **Bubble sidebar**: collapse in the **header** row (chevron left before the “Bubbles” title).                                                                                                                                      |
+| Collapsed strip | Shared **`CollapsedColumnStrip`**: **`ChevronRight`** above the vertical label in one **centered column**, **bottom-anchored** within each strip (`justify-end`) so stacked segments (triple stack) align along the bottom of each flex slice. Entire strip is one expand **`<button>`** with `aria-expanded="false"`. |
+| Keyboard        | Buttons are focusable; no new global shortcuts in v1.                                                                                                                                                                                                                                                                  |
+| Label           | Visible text **Workspace** (styled uppercase to match reference density).                                                                                                                                                                                                                                              |
 
 ## 5. Persistence
 

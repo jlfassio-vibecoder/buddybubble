@@ -15,6 +15,7 @@ import { TaskModal, type TaskModalTab } from '@/components/modals/TaskModal';
 import { WorkspaceSettingsModal } from '@/components/modals/WorkspaceSettingsModal';
 import { ProfileModal } from '@/components/modals/ProfileModal';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { useUserProfileStore } from '@/store/userProfileStore';
 import { asComments } from '@/types/task-modal';
 import {
@@ -23,7 +24,10 @@ import {
   kanbanCollapsedStorageKey,
   workspaceRailCollapsedStorageKey,
 } from '@/lib/layout-collapse-keys';
-import { CollapsedColumnStrip } from '@/components/layout/collapsed-column-strip';
+import {
+  COLLAPSED_COLUMN_WIDTH_CLASS,
+  CollapsedColumnStrip,
+} from '@/components/layout/collapsed-column-strip';
 
 type Props = {
   workspaceId: string;
@@ -289,7 +293,12 @@ export function DashboardShell({ workspaceId, initialRole, children }: Props) {
   return (
     <div className="flex h-screen min-h-0 overflow-hidden bg-background">
       {tripleStack ? (
-        <div className="flex h-full min-h-0 w-8 shrink-0 flex-col overflow-hidden border-r border-zinc-800">
+        <div
+          className={cn(
+            'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-zinc-800',
+            COLLAPSED_COLUMN_WIDTH_CLASS,
+          )}
+        >
           {chatCollapsed ? (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-zinc-800 bg-black">
               <CollapsedColumnStrip
@@ -315,7 +324,12 @@ export function DashboardShell({ workspaceId, initialRole, children }: Props) {
           <WorkspaceRail {...workspaceRailProps} collapsedStackSlot="bottom" />
         </div>
       ) : railsCollapsed ? (
-        <div className="flex h-full min-h-0 w-8 shrink-0 flex-col overflow-hidden border-r border-zinc-800">
+        <div
+          className={cn(
+            'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-zinc-800',
+            COLLAPSED_COLUMN_WIDTH_CLASS,
+          )}
+        >
           <BubbleSidebar {...bubbleSidebarProps} collapsedStackSlot="top" />
           <WorkspaceRail {...workspaceRailProps} collapsedStackSlot="bottom" />
         </div>
