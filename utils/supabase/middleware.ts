@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import type { CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { safeNextPath } from '@/lib/safe-next-path';
 import { getSupabasePublishableKey, getSupabaseUrl } from './env';
 function copyCookies(from: NextResponse, to: NextResponse) {
   from.cookies.getAll().forEach((c) => {
@@ -9,7 +10,7 @@ function copyCookies(from: NextResponse, to: NextResponse) {
 }
 
 /**
- * Refreshes the Supabase session and enforces `/app` auth + `/login` redirects.
+ * Refreshes the Supabase session and enforces `/app` + `/onboarding` auth + `/login` redirects.
  */
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -44,7 +45,9 @@ export async function updateSession(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
 
-  if (pathname.startsWith('/app') && !user) {
+  const requiresAuth = pathname.startsWith('/app') || pathname.startsWith('/onboarding');
+
+  if (requiresAuth && !user) {
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('next', `${pathname}${request.nextUrl.search}`);
     const redirectResponse = NextResponse.redirect(loginUrl);
@@ -53,7 +56,10 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (pathname === '/login' && user) {
-    const target = new URL('/app', request.url);
+    const nextParam = request.nextUrl.searchParams.get('next');
+    const safe = safeNextPath(nextParam);
+    const targetPath = safe ?? '/app';
+    const target = new URL(targetPath, request.url);
     const redirectResponse = NextResponse.redirect(target);
     copyCookies(supabaseResponse, redirectResponse);
     return redirectResponse;

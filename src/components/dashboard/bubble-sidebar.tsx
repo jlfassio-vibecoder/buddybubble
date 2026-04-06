@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronLeft, Hash, Settings } from 'lucide-react';
+import Link from 'next/link';
+import { ChevronLeft, Hash, Settings, UserPlus } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
 import type { BubbleRow } from '@/types/database';
 import { ALL_BUBBLES_BUBBLE_ID, ALL_BUBBLES_LABEL } from '@/lib/all-bubbles';
@@ -26,6 +27,8 @@ type Props = {
   onBubblesChange: (rows: BubbleRow[]) => void;
   canWrite: boolean;
   isAdmin?: boolean;
+  /** Pending invitation_join_requests count; drives UserPlus badge and default invites tab. */
+  pendingJoinRequestCount?: number;
   onOpenWorkspaceSettings?: () => void;
 };
 
@@ -40,6 +43,7 @@ export function BubbleSidebar({
   onBubblesChange,
   canWrite,
   isAdmin = false,
+  pendingJoinRequestCount = 0,
   onOpenWorkspaceSettings,
 }: Props) {
   const [name, setName] = useState('');
@@ -112,16 +116,45 @@ export function BubbleSidebar({
                 <h2 className="truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Bubbles
                 </h2>
-                {isAdmin && onOpenWorkspaceSettings ? (
-                  <button
-                    type="button"
-                    onClick={onOpenWorkspaceSettings}
-                    className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                    aria-label="Workspace settings"
-                    title="Workspace settings"
-                  >
-                    <Settings className="size-4" />
-                  </button>
+                {isAdmin ? (
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <Link
+                      href={
+                        pendingJoinRequestCount > 0
+                          ? `/app/${workspaceId}/invites?tab=pending`
+                          : `/app/${workspaceId}/invites`
+                      }
+                      className="relative rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      aria-label={
+                        pendingJoinRequestCount > 0
+                          ? `Invite people — ${pendingJoinRequestCount} pending join request${pendingJoinRequestCount === 1 ? '' : 's'}`
+                          : 'Invite people to this workspace'
+                      }
+                      title={
+                        pendingJoinRequestCount > 0
+                          ? `Invite & approvals (${pendingJoinRequestCount} pending)`
+                          : 'Invite people'
+                      }
+                    >
+                      <UserPlus className="size-4" strokeWidth={2.25} aria-hidden />
+                      {pendingJoinRequestCount > 0 ? (
+                        <span className="absolute -right-1 -top-1 flex min-h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full border-2 border-card bg-destructive px-1 text-[9px] font-bold leading-none text-destructive-foreground">
+                          {pendingJoinRequestCount > 99 ? '99+' : pendingJoinRequestCount}
+                        </span>
+                      ) : null}
+                    </Link>
+                    {onOpenWorkspaceSettings ? (
+                      <button
+                        type="button"
+                        onClick={onOpenWorkspaceSettings}
+                        className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        aria-label="Workspace settings"
+                        title="Workspace settings"
+                      >
+                        <Settings className="size-4" />
+                      </button>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
             </div>

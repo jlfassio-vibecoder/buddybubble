@@ -1,10 +1,7 @@
-import dynamic from 'next/dynamic';
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { BB_LAST_WORKSPACE_COOKIE } from '@/lib/workspace-cookies';
 import { createClient } from '@utils/supabase/server';
-
-const NoWorkspaces = dynamic(() => import('./no-workspaces'), {
-  ssr: true,
-});
 
 export default async function AppHomePage() {
   const supabase = await createClient();
@@ -15,22 +12,23 @@ export default async function AppHomePage() {
     redirect('/login');
   }
 
-  const { data: members } = await supabase
+  const { data: members, error } = await supabase
     .from('workspace_members')
-    .select('workspace_id, role, workspaces(id, name, category_type, created_at)')
-    .eq('user_id', user.id);
+    .select('workspace_id, created_at')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false });
 
-  const first = members?.[0];
-  const ws = first?.workspaces;
-  if (
-    ws &&
-    typeof ws === 'object' &&
-    !Array.isArray(ws) &&
-    'id' in ws &&
-    typeof (ws as { id: unknown }).id === 'string'
-  ) {
-    redirect(`/app/${(ws as { id: string }).id}`);
+  if (error || !members?.length) {
+    redirect('/onboarding');
   }
 
-  return <NoWorkspaces />;
+  const cookieStore = await cookies();
+  const cookieWorkspaceId = cookieStore.get(BB_LAST_WORKSPACE_COOKIE)?.value;
+  const allowed = new Set(members.map((m) => m.workspace_id));
+
+  if (cookieWorkspaceId && allowed.has(cookieWorkspaceId)) {
+    redirect(`/app/${cookieWorkspaceId}`);
+  }
+
+  redirect(`/app/${members[0].workspace_id}`);
 }

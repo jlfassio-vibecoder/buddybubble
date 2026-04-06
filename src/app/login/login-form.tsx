@@ -5,19 +5,25 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@utils/supabase/client';
 import { Button } from '@/components/ui/button';
+import { authCallbackAbsoluteUrl } from '@/lib/auth-callback-url';
 import { formatUserFacingError } from '@/lib/format-error';
+import { persistInviteHandoffToken } from '@/app/(dashboard)/onboarding/actions';
 
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get('next') ?? '/app';
+  const inviteToken = searchParams.get('invite_token')?.trim() || null;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const redirectTo = `${typeof window !== 'undefined' ? window.location.origin : ''}/auth/callback?next=${encodeURIComponent(next)}`;
+  const redirectTo =
+    typeof window !== 'undefined'
+      ? authCallbackAbsoluteUrl(window.location.origin, next, inviteToken)
+      : '';
 
   async function signInEmail(e: React.FormEvent) {
     e.preventDefault();
@@ -33,6 +39,13 @@ export function LoginForm() {
     if (err) {
       setError(formatUserFacingError(err));
       return;
+    }
+    if (inviteToken) {
+      const handoff = await persistInviteHandoffToken(inviteToken);
+      if ('error' in handoff) {
+        setError(handoff.error);
+        return;
+      }
     }
     router.push(next);
     router.refresh();
@@ -67,6 +80,13 @@ export function LoginForm() {
       return;
     }
     if (data.session) {
+      if (inviteToken) {
+        const handoff = await persistInviteHandoffToken(inviteToken);
+        if ('error' in handoff) {
+          setError(handoff.error);
+          return;
+        }
+      }
       router.push(next);
       router.refresh();
       return;

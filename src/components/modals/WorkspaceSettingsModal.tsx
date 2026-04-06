@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { X } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -16,6 +17,8 @@ export type WorkspaceSettingsModalProps = {
   onOpenChange: (open: boolean) => void;
   workspaceId: string;
   onSaved?: () => void;
+  /** When true, show link to pending join requests (waiting room). */
+  isAdmin?: boolean;
 };
 
 export function WorkspaceSettingsModal({
@@ -23,6 +26,7 @@ export function WorkspaceSettingsModal({
   onOpenChange,
   workspaceId,
   onSaved,
+  isAdmin = false,
 }: WorkspaceSettingsModalProps) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -96,6 +100,17 @@ export function WorkspaceSettingsModal({
           <div>
             <h2 className="text-lg font-bold text-slate-900">Workspace settings</h2>
             <p className="text-xs text-slate-500">Calendar timezone for tasks and automation.</p>
+            {isAdmin ? (
+              <p className="mt-2 text-xs">
+                <Link
+                  href={`/app/${workspaceId}/invites?tab=pending`}
+                  className="font-medium text-primary underline underline-offset-4 hover:text-primary/80"
+                  onClick={() => onOpenChange(false)}
+                >
+                  Pending join requests
+                </Link>
+              </p>
+            ) : null}
           </div>
           <button
             type="button"

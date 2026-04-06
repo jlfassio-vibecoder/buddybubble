@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import { fetchPendingJoinRequestCountAndPreview } from '@/lib/workspace-join-requests';
 import { createClient } from '@utils/supabase/server';
 import { DashboardShell } from '@/components/dashboard/dashboard-shell';
 
@@ -32,8 +33,23 @@ export default async function WorkspaceLayout({
 
   const role = row.role as 'admin' | 'member' | 'guest';
 
+  let initialPendingJoinRequestCount = 0;
+  let initialJoinRequestPreview: Awaited<
+    ReturnType<typeof fetchPendingJoinRequestCountAndPreview>
+  >['preview'] = [];
+  if (role === 'admin') {
+    const jr = await fetchPendingJoinRequestCountAndPreview(supabase, workspace_id);
+    initialPendingJoinRequestCount = jr.count;
+    initialJoinRequestPreview = jr.preview;
+  }
+
   return (
-    <DashboardShell workspaceId={workspace_id} initialRole={role}>
+    <DashboardShell
+      workspaceId={workspace_id}
+      initialRole={role}
+      initialPendingJoinRequestCount={initialPendingJoinRequestCount}
+      initialJoinRequestPreview={initialJoinRequestPreview}
+    >
       {children}
     </DashboardShell>
   );
