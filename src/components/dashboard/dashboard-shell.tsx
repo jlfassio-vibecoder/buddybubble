@@ -16,6 +16,8 @@ import { WorkspaceSettingsModal } from '@/components/modals/WorkspaceSettingsMod
 import { ProfileModal } from '@/components/modals/ProfileModal';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { fetchPendingJoinRequestCountAndPreview } from '@/lib/workspace-join-requests';
+import type { JoinRequestPreviewItem } from '@/lib/workspace-join-requests';
 import { useUserProfileStore } from '@/store/userProfileStore';
 import { asComments } from '@/types/task-modal';
 import {
@@ -32,16 +34,30 @@ import {
 type Props = {
   workspaceId: string;
   initialRole: 'admin' | 'member' | 'guest';
+  initialPendingJoinRequestCount?: number;
+  initialJoinRequestPreview?: JoinRequestPreviewItem[];
   children: React.ReactNode;
 };
 
-export function DashboardShell({ workspaceId, initialRole, children }: Props) {
+export function DashboardShell({
+  workspaceId,
+  initialRole,
+  initialPendingJoinRequestCount = 0,
+  initialJoinRequestPreview = [],
+  children,
+}: Props) {
   const loadUserWorkspaces = useWorkspaceStore((s) => s.loadUserWorkspaces);
   const syncActiveFromRoute = useWorkspaceStore((s) => s.syncActiveFromRoute);
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
   const setActiveBubble = useWorkspaceStore((s) => s.setActiveBubble);
   const loadProfile = useUserProfileStore((s) => s.loadProfile);
   const profile = useUserProfileStore((s) => s.profile);
+  const [pendingJoinRequestCount, setPendingJoinRequestCount] = useState(
+    initialPendingJoinRequestCount,
+  );
+  const [joinRequestBellPreview, setJoinRequestBellPreview] =
+    useState<JoinRequestPreviewItem[]>(initialJoinRequestPreview);
+
   const [bubbles, setBubbles] = useState<BubbleRow[]>([]);
   const [selectedBubbleId, setSelectedBubbleId] = useState<string | null>(ALL_BUBBLES_BUBBLE_ID);
   const [taskModalOpen, setTaskModalOpen] = useState(false);
@@ -257,6 +273,38 @@ export function DashboardShell({ workspaceId, initialRole, children }: Props) {
   }, [workspaceId]);
 
   useEffect(() => {
+    setPendingJoinRequestCount(initialPendingJoinRequestCount);
+    setJoinRequestBellPreview(initialJoinRequestPreview);
+  }, [workspaceId, initialPendingJoinRequestCount, initialJoinRequestPreview]);
+
+  useEffect(() => {
+    if (initialRole !== 'admin') return;
+    const supabase = createClient();
+    const refreshJoinRequests = () => {
+      void fetchPendingJoinRequestCountAndPreview(supabase, workspaceId).then((r) => {
+        setPendingJoinRequestCount(r.count);
+        setJoinRequestBellPreview(r.preview);
+      });
+    };
+    const channel = supabase
+      .channel(`invitation_join_requests:${workspaceId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'invitation_join_requests',
+          filter: `workspace_id=eq.${workspaceId}`,
+        },
+        refreshJoinRequests,
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [workspaceId, initialRole]);
+
+  useEffect(() => {
     if (selectedBubbleId === ALL_BUBBLES_BUBBLE_ID) {
       setActiveBubble(makeAllBubblesBubbleRow(workspaceId));
       return;
@@ -287,6 +335,7 @@ export function DashboardShell({ workspaceId, initialRole, children }: Props) {
     onBubblesChange: setBubbles,
     canWrite,
     isAdmin: initialRole === 'admin',
+    pendingJoinRequestCount: initialRole === 'admin' ? pendingJoinRequestCount : 0,
     onOpenWorkspaceSettings: () => setWorkspaceSettingsOpen(true),
   };
 
@@ -351,6 +400,7 @@ export function DashboardShell({ workspaceId, initialRole, children }: Props) {
             canWrite={canWrite}
             onOpenTask={openTaskModal}
             onCollapse={onCollapse}
+            joinRequestBellPreview={initialRole === 'admin' ? joinRequestBellPreview : undefined}
           />
         )}
         board={
@@ -384,6 +434,7 @@ export function DashboardShell({ workspaceId, initialRole, children }: Props) {
         open={workspaceSettingsOpen}
         onOpenChange={setWorkspaceSettingsOpen}
         workspaceId={workspaceId}
+        isAdmin={initialRole === 'admin'}
         onSaved={() => {
           void loadUserWorkspaces().then(() => syncActiveFromRoute(workspaceId));
         }}

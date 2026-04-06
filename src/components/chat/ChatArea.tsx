@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Send,
   Hash,
@@ -51,6 +52,7 @@ import {
 import { captureVideoPoster, getVideoFileMetadata } from '@/lib/video-poster';
 import { renderPdfFirstPageToJpegBlob } from '@/lib/pdf-page-thumbnail';
 import { formatUserFacingError } from '@/lib/format-error';
+import type { JoinRequestPreviewItem } from '@/lib/workspace-join-requests';
 import { ThreadPanel } from './ThreadPanel';
 import { MessageAttachmentThumbnails } from './MessageAttachmentThumbnails';
 import { MessageMediaModal } from './MessageMediaModal';
@@ -91,10 +93,11 @@ type NotificationStub = {
   userId: string;
   title: string;
   content: string;
-  type: 'thread_reply' | 'task_assigned' | 'mention';
+  type: 'thread_reply' | 'task_assigned' | 'mention' | 'join_request';
   relatedId: string;
   read: boolean;
   timestamp: Date;
+  actionHref?: string;
 };
 
 function buildReplyCounts(rows: MessageRow[]): Map<string, number> {
@@ -218,6 +221,8 @@ export type ChatAreaProps = {
   canWrite: boolean;
   onCollapse?: () => void;
   onOpenTask?: (taskId: string, opts?: { tab?: TaskModalTab }) => void;
+  /** Workspace admins: pending join requests surfaced in the header bell (collapsed-sidebar fallback). */
+  joinRequestBellPreview?: JoinRequestPreviewItem[];
 };
 
 export function ChatArea({
@@ -225,9 +230,12 @@ export function ChatArea({
   canWrite,
   onCollapse = () => {},
   onOpenTask = () => {},
+  joinRequestBellPreview = [],
 }: ChatAreaProps) {
+  const router = useRouter();
   const activeBubble = useWorkspaceStore((s) => s.activeBubble);
   const workspaceId = useWorkspaceStore((s) => s.activeWorkspace?.id) ?? null;
+  const workspaceName = useWorkspaceStore((s) => s.activeWorkspace?.name);
   const myProfile = useUserProfileStore((s) => s.profile);
 
   const [input, setInput] = useState('');
@@ -262,7 +270,28 @@ export function ChatArea({
   const [teamMembers, setTeamMembers] = useState<UserProfile[]>([]);
   const [allTasks, setAllTasks] = useState<TaskPickerRow[]>([]);
 
-  const notifications: NotificationStub[] = [];
+  const joinRequestNotifications: NotificationStub[] = useMemo(() => {
+    if (!workspaceId || joinRequestBellPreview.length === 0) return [];
+    const name = workspaceName?.trim() || 'this BuddyBubble';
+    const href = `/app/${workspaceId}/invites?tab=pending`;
+    return joinRequestBellPreview.map((p) => ({
+      id: `jr:${p.id}`,
+      userId: '',
+      title: 'Someone wants to join',
+      content: `${p.requesterLabel} requested to join ${name}. Review on People & invites.`,
+      type: 'join_request' as const,
+      relatedId: p.id,
+      read: false,
+      timestamp: new Date(p.createdAt),
+      actionHref: href,
+    }));
+  }, [workspaceId, workspaceName, joinRequestBellPreview]);
+
+  const stubNotifications: NotificationStub[] = [];
+  const notifications = useMemo(
+    () => [...joinRequestNotifications, ...stubNotifications],
+    [joinRequestNotifications],
+  );
   const onMarkNotificationRead = (_id: string) => {};
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1216,6 +1245,11 @@ export function ChatArea({
                             !n.read && 'bg-indigo-50/30',
                           )}
                           onClick={() => {
+                            if (n.type === 'join_request' && n.actionHref) {
+                              router.push(n.actionHref);
+                              setIsNotificationsOpen(false);
+                              return;
+                            }
                             onMarkNotificationRead(n.id);
                             if (n.type === 'thread_reply') {
                               const parent = allMessages.find((m) => m.id === n.relatedId);

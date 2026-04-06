@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ChevronLeft, Plus } from 'lucide-react';
+import { setLastWorkspaceCookieClient } from '@/lib/workspace-cookies';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore, type WorkspaceRow } from '@/store/workspaceStore';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -105,7 +106,10 @@ export function WorkspaceRail({
                         href={href}
                         title={w.name}
                         aria-current={active ? 'page' : undefined}
-                        onClick={() => setActiveWorkspaceId(w.id)}
+                        onClick={() => {
+                          setLastWorkspaceCookieClient(w.id);
+                          setActiveWorkspaceId(w.id);
+                        }}
                         className={cn(
                           'relative z-0 flex h-12 w-12 items-center justify-center overflow-hidden rounded-[14px] text-sm font-semibold transition-all',
                           'ring-2 ring-inset',

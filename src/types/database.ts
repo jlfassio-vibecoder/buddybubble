@@ -8,6 +8,8 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 /** Template for a new BuddyBubble (`workspaces.category_type`). */
 export type WorkspaceCategory = 'business' | 'kids' | 'class' | 'community';
 export type MemberRole = 'admin' | 'member' | 'guest';
+export type InviteType = 'qr' | 'link' | 'email' | 'sms';
+export type InvitationJoinRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
 /** Built-in Kanban slugs; `tasks.status` may also use workspace-specific slugs from `board_columns`. */
 export type TaskStatus = 'todo' | 'in_progress' | 'done';
 
@@ -61,13 +63,67 @@ export interface Database {
           workspace_id: string;
           user_id: string;
           role: MemberRole;
+          created_at: string;
         };
         Insert: {
           workspace_id: string;
           user_id: string;
           role: MemberRole;
+          created_at?: string;
         };
         Update: Partial<Database['public']['Tables']['workspace_members']['Insert']>;
+      };
+      invitations: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          created_by: string;
+          token: string;
+          invite_type: InviteType;
+          target_identity: string | null;
+          label: string | null;
+          max_uses: number;
+          uses_count: number;
+          expires_at: string;
+          revoked_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          created_by: string;
+          token: string;
+          invite_type: InviteType;
+          target_identity?: string | null;
+          label?: string | null;
+          max_uses?: number;
+          uses_count?: number;
+          expires_at: string;
+          revoked_at?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['invitations']['Insert']>;
+      };
+      invitation_join_requests: {
+        Row: {
+          id: string;
+          invitation_id: string;
+          workspace_id: string;
+          user_id: string;
+          status: InvitationJoinRequestStatus;
+          created_at: string;
+          resolved_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          invitation_id: string;
+          workspace_id: string;
+          user_id: string;
+          status: InvitationJoinRequestStatus;
+          created_at?: string;
+          resolved_at?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['invitation_join_requests']['Insert']>;
       };
       bubbles: {
         Row: {
@@ -164,6 +220,28 @@ export interface Database {
           attachments?: Json;
         };
         Update: Partial<Database['public']['Tables']['tasks']['Insert']>;
+      };
+    };
+    Functions: {
+      accept_invitation: {
+        Args: { p_token: string };
+        Returns: Json;
+      };
+      approve_invitation_join_request: {
+        Args: { p_join_request_id: string };
+        Returns: Json;
+      };
+      peek_invitation: {
+        Args: { p_token: string };
+        Returns: Json;
+      };
+      get_invite_preview: {
+        Args: { p_token: string };
+        Returns: Json;
+      };
+      reject_invitation_join_request: {
+        Args: { p_join_request_id: string };
+        Returns: Json;
       };
     };
   };
