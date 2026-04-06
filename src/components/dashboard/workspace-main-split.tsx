@@ -1,8 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { PanelLeftOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+  COLLAPSED_COLUMN_WIDTH_CLASS,
+  CollapsedColumnStrip,
+} from '@/components/layout/collapsed-column-strip';
 
 const MIN_CHAT_PX = 280;
 const MIN_KANBAN_PX = 280;
@@ -12,12 +15,13 @@ function storageWidthKey(workspaceId: string) {
   return `buddybubble.chatWidth.${workspaceId}`;
 }
 
-function storageCollapsedKey(workspaceId: string) {
-  return `buddybubble.chatCollapsed.${workspaceId}`;
-}
-
 type Props = {
   workspaceId: string;
+  chatCollapsed: boolean;
+  onChatCollapsedChange: (collapsed: boolean) => void;
+  kanbanCollapsed: boolean;
+  /** When the shell renders the Messages strip in the left stack, hide the duplicate strip here. */
+  omitCollapsedMessagesStrip?: boolean;
   /** Chat panel; receives onCollapse for the header control (e.g. ChatArea). */
   renderChat: (helpers: { onCollapse: () => void }) => React.ReactNode;
   board: React.ReactNode;
@@ -25,18 +29,26 @@ type Props = {
 
 /**
  * Resizable split between chat and Kanban; chat can be fully collapsed to emphasize the board.
- * Width and collapsed state persist per workspace in localStorage.
+ * Chat width persists per workspace in localStorage; collapsed state is controlled by the parent.
+ *
+ * When Kanban is collapsed: only Messages (chat) is shown in this area — no Kanban strip here
+ * (the strip may appear in the shell rail). User opens Kanban again by collapsing Messages.
  */
-export function WorkspaceMainSplit({ workspaceId, renderChat, board }: Props) {
+export function WorkspaceMainSplit({
+  workspaceId,
+  chatCollapsed,
+  onChatCollapsedChange,
+  kanbanCollapsed,
+  omitCollapsedMessagesStrip = false,
+  renderChat,
+  board,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [chatCollapsed, setChatCollapsed] = useState(false);
   const [chatWidth, setChatWidth] = useState(DEFAULT_CHAT_PX);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
     try {
-      const c = localStorage.getItem(storageCollapsedKey(workspaceId));
-      if (c === '1') setChatCollapsed(true);
       const w = localStorage.getItem(storageWidthKey(workspaceId));
       if (w) {
         const n = Number.parseInt(w, 10);
@@ -51,23 +63,19 @@ export function WorkspaceMainSplit({ workspaceId, renderChat, board }: Props) {
   useEffect(() => {
     if (!hydrated) return;
     try {
-      localStorage.setItem(storageCollapsedKey(workspaceId), chatCollapsed ? '1' : '0');
-    } catch {
-      /* ignore */
-    }
-  }, [workspaceId, chatCollapsed, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
       localStorage.setItem(storageWidthKey(workspaceId), String(chatWidth));
     } catch {
       /* ignore */
     }
   }, [workspaceId, chatWidth, hydrated]);
 
-  const collapseChat = useCallback(() => setChatCollapsed(true), []);
-  const expandChat = useCallback(() => setChatCollapsed(false), []);
+  const collapseChat = useCallback(() => onChatCollapsedChange(true), [onChatCollapsedChange]);
+  const expandChat = useCallback(() => onChatCollapsedChange(false), [onChatCollapsedChange]);
+
+  /** Kanban is hidden: Messages fills the main split (no strip beside chat here). */
+  const messagesOnlyMain = !chatCollapsed && kanbanCollapsed;
+  /** Both panels visible: resizable split. */
+  const splitChatAndBoard = !chatCollapsed && !kanbanCollapsed;
 
   useEffect(() => {
     const clamp = () => {
@@ -111,20 +119,25 @@ export function WorkspaceMainSplit({ workspaceId, renderChat, board }: Props) {
     [chatWidth],
   );
 
+  const showMessagesStrip = chatCollapsed && !omitCollapsedMessagesStrip;
+
   return (
     <div ref={containerRef} className="flex min-h-0 min-w-0 flex-1">
       <div
         className={cn(
           'flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-border bg-white',
           chatCollapsed && 'pointer-events-none w-0 min-w-0 flex-[0_0_0] border-transparent',
+          messagesOnlyMain && 'min-w-0 flex-1',
         )}
-        style={chatCollapsed ? undefined : { flex: `0 0 ${chatWidth}px` }}
+        style={
+          chatCollapsed ? undefined : messagesOnlyMain ? undefined : { flex: `0 0 ${chatWidth}px` }
+        }
         aria-hidden={chatCollapsed}
       >
         {renderChat({ onCollapse: collapseChat })}
       </div>
 
-      {!chatCollapsed && (
+      {splitChatAndBoard && (
         <div
           role="separator"
           aria-orientation="vertical"
@@ -136,19 +149,24 @@ export function WorkspaceMainSplit({ workspaceId, renderChat, board }: Props) {
         </div>
       )}
 
-      {chatCollapsed && (
-        <button
-          type="button"
-          onClick={expandChat}
-          title="Show chat"
-          aria-label="Show chat panel"
-          className="flex h-full w-10 shrink-0 flex-col items-center border-r border-border bg-muted/20 py-3 text-muted-foreground transition-colors hover:bg-indigo-50 hover:text-indigo-700"
+      {showMessagesStrip && (
+        <div
+          className={cn(
+            'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-zinc-800 bg-black',
+            COLLAPSED_COLUMN_WIDTH_CLASS,
+          )}
         >
-          <PanelLeftOpen className="h-5 w-5" />
-        </button>
+          <CollapsedColumnStrip
+            title="Messages"
+            expandTitle="Expand Messages"
+            expandAriaLabel="Expand Messages panel"
+            onExpand={expandChat}
+            variant="black"
+          />
+        </div>
       )}
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">{board}</div>
+      {!kanbanCollapsed && <div className="flex min-h-0 min-w-0 flex-1 flex-col">{board}</div>}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { Tooltip } from '@base-ui/react/tooltip';
-import { Info, Maximize2, Shrink, Square } from 'lucide-react';
+import { Info, Maximize2, PanelLeftClose, Shrink, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { KanbanCardDensity } from '@/components/board/kanban-density';
@@ -44,6 +44,8 @@ const KANBAN_BOARD_HELP =
 export type KanbanBoardHeaderProps = {
   canWrite: boolean;
   hasBubble: boolean;
+  /** Collapse the board to a strip (opens Messages if needed). */
+  onCollapse?: () => void;
   onOpenFullEditor?: () => void;
   cardDensity: KanbanCardDensity;
   onCardDensityChange: (density: KanbanCardDensity) => void;
@@ -58,6 +60,7 @@ export type KanbanBoardHeaderProps = {
 export function KanbanBoardHeader({
   canWrite,
   hasBubble,
+  onCollapse,
   onOpenFullEditor,
   cardDensity,
   onCardDensityChange,
@@ -72,10 +75,21 @@ export function KanbanBoardHeader({
     'inline-flex max-w-full flex-wrap rounded-lg border border-border bg-muted/50 p-0.5';
 
   return (
-    <div className="border-b border-border bg-background px-4 py-3">
+    <div className="shrink-0 border-b border-border bg-background px-4 py-3">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between lg:gap-4">
         <div className="min-w-0 shrink-0 lg:max-w-[min(100%,28rem)]">
           <div className="flex items-center gap-1.5">
+            {onCollapse ? (
+              <button
+                type="button"
+                onClick={onCollapse}
+                className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                title="Collapse Kanban"
+                aria-label="Collapse Kanban panel"
+              >
+                <PanelLeftClose className="size-5" strokeWidth={2} aria-hidden />
+              </button>
+            ) : null}
             <h2 className="text-base font-semibold tracking-tight text-foreground">Kanban Board</h2>
             <Tooltip.Provider delay={200}>
               <Tooltip.Root>

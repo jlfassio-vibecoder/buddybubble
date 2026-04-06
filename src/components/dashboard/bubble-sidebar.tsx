@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Hash, Settings } from 'lucide-react';
+import { ChevronLeft, Hash, Settings } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
 import type { BubbleRow } from '@/types/database';
 import { ALL_BUBBLES_BUBBLE_ID, ALL_BUBBLES_LABEL } from '@/lib/all-bubbles';
@@ -9,9 +9,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
+import {
+  COLLAPSED_COLUMN_WIDTH_CLASS,
+  CollapsedColumnStrip,
+} from '@/components/layout/collapsed-column-strip';
 
 type Props = {
   workspaceId: string;
+  collapsed: boolean;
+  onCollapsedChange: (collapsed: boolean) => void;
+  /** In a vertical stack: top = two-strip layout; middle = three-strip (Messages above). */
+  collapsedStackSlot?: 'top' | 'middle';
   bubbles: BubbleRow[];
   selectedBubbleId: string | null;
   onSelectBubble: (id: string) => void;
@@ -23,6 +31,9 @@ type Props = {
 
 export function BubbleSidebar({
   workspaceId,
+  collapsed,
+  onCollapsedChange,
+  collapsedStackSlot,
   bubbles,
   selectedBubbleId,
   onSelectBubble,
@@ -33,6 +44,13 @@ export function BubbleSidebar({
 }: Props) {
   const [name, setName] = useState('');
   const [adding, setAdding] = useState(false);
+
+  const collapse = () => onCollapsedChange(true);
+  const expand = () => onCollapsedChange(false);
+
+  const isStackedInColumn =
+    collapsed && (collapsedStackSlot === 'top' || collapsedStackSlot === 'middle');
+  const isCollapsedStrip = collapsed && collapsedStackSlot === undefined;
 
   async function addBubble(e: React.FormEvent) {
     e.preventDefault();
@@ -57,75 +75,111 @@ export function BubbleSidebar({
   }
 
   return (
-    <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-card">
-      <div className="border-b border-border p-3">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Bubbles
-          </h2>
-          {isAdmin && onOpenWorkspaceSettings ? (
-            <button
-              type="button"
-              onClick={onOpenWorkspaceSettings}
-              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-              aria-label="Workspace settings"
-              title="Workspace settings"
-            >
-              <Settings className="size-4" />
-            </button>
-          ) : null}
-        </div>
-        {canWrite && (
-          <form onSubmit={addBubble} className="mt-2 flex gap-2">
-            <Input
-              placeholder="New bubble"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="h-8 text-sm"
-            />
-            <Button type="submit" size="sm" disabled={adding || !name.trim()}>
-              Add
-            </Button>
-          </form>
-        )}
-      </div>
-      <ScrollArea className="flex-1">
-        <ul className="p-2">
-          <li key={ALL_BUBBLES_BUBBLE_ID}>
-            <button
-              type="button"
-              onClick={() => onSelectBubble(ALL_BUBBLES_BUBBLE_ID)}
-              className={cn(
-                'mb-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-medium transition-colors',
-                selectedBubbleId === ALL_BUBBLES_BUBBLE_ID
-                  ? 'bg-accent text-accent-foreground'
-                  : 'hover:bg-muted',
-              )}
-            >
-              <Hash className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
-              {ALL_BUBBLES_LABEL}
-            </button>
-          </li>
-          {bubbles.map((b) => (
-            <li key={b.id}>
+    <aside
+      className={cn(
+        'flex min-h-0 flex-col overflow-hidden transition-[width] duration-200 ease-out',
+        !collapsed && 'h-full w-56 shrink-0 border-r border-border bg-card',
+        isCollapsedStrip &&
+          cn('h-full shrink-0 border-r border-border bg-card', COLLAPSED_COLUMN_WIDTH_CLASS),
+        isStackedInColumn && 'min-h-0 flex-1 w-full border-0 border-b border-zinc-800 bg-white',
+      )}
+      aria-label="Bubbles"
+    >
+      {collapsed ? (
+        <CollapsedColumnStrip
+          title="Bubbles"
+          expandTitle="Expand Bubbles sidebar"
+          expandAriaLabel="Expand Bubbles sidebar"
+          onExpand={expand}
+          variant={
+            collapsedStackSlot === 'top' || collapsedStackSlot === 'middle' ? 'white' : 'card'
+          }
+        />
+      ) : (
+        <>
+          <div className="border-b border-border p-3">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => onSelectBubble(b.id)}
-                className={cn(
-                  'mb-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-medium transition-colors',
-                  selectedBubbleId === b.id ? 'bg-accent text-accent-foreground' : 'hover:bg-muted',
-                )}
+                title="Collapse Bubbles sidebar"
+                aria-label="Collapse Bubbles sidebar"
+                onClick={collapse}
+                className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
               >
-                <Hash className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
-                {b.name}
+                <ChevronLeft className="size-4" strokeWidth={2.25} aria-hidden />
               </button>
-            </li>
-          ))}
-          {bubbles.length === 0 && (
-            <li className="px-2 py-4 text-sm text-muted-foreground">No bubbles yet.</li>
-          )}
-        </ul>
-      </ScrollArea>
+              <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                <h2 className="truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Bubbles
+                </h2>
+                {isAdmin && onOpenWorkspaceSettings ? (
+                  <button
+                    type="button"
+                    onClick={onOpenWorkspaceSettings}
+                    className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    aria-label="Workspace settings"
+                    title="Workspace settings"
+                  >
+                    <Settings className="size-4" />
+                  </button>
+                ) : null}
+              </div>
+            </div>
+            {canWrite && (
+              <form onSubmit={addBubble} className="mt-2 flex gap-2">
+                <Input
+                  placeholder="New bubble"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="h-8 text-sm"
+                />
+                <Button type="submit" size="sm" disabled={adding || !name.trim()}>
+                  Add
+                </Button>
+              </form>
+            )}
+          </div>
+          <ScrollArea className="min-h-0 flex-1 overflow-hidden">
+            <ul className="p-2">
+              <li key={ALL_BUBBLES_BUBBLE_ID}>
+                <button
+                  type="button"
+                  onClick={() => onSelectBubble(ALL_BUBBLES_BUBBLE_ID)}
+                  className={cn(
+                    'mb-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-medium transition-colors',
+                    selectedBubbleId === ALL_BUBBLES_BUBBLE_ID
+                      ? 'bg-accent text-accent-foreground'
+                      : 'hover:bg-muted',
+                  )}
+                >
+                  <Hash className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
+                  {ALL_BUBBLES_LABEL}
+                </button>
+              </li>
+              {bubbles.map((b) => (
+                <li key={b.id}>
+                  <button
+                    type="button"
+                    onClick={() => onSelectBubble(b.id)}
+                    className={cn(
+                      'mb-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-medium transition-colors',
+                      selectedBubbleId === b.id
+                        ? 'bg-accent text-accent-foreground'
+                        : 'hover:bg-muted',
+                    )}
+                  >
+                    <Hash className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
+                    {b.name}
+                  </button>
+                </li>
+              ))}
+              {bubbles.length === 0 && (
+                <li className="px-2 py-4 text-sm text-muted-foreground">No bubbles yet.</li>
+              )}
+            </ul>
+          </ScrollArea>
+        </>
+      )}
     </aside>
   );
 }

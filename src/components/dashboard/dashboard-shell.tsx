@@ -15,8 +15,19 @@ import { TaskModal, type TaskModalTab } from '@/components/modals/TaskModal';
 import { WorkspaceSettingsModal } from '@/components/modals/WorkspaceSettingsModal';
 import { ProfileModal } from '@/components/modals/ProfileModal';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { useUserProfileStore } from '@/store/userProfileStore';
 import { asComments } from '@/types/task-modal';
+import {
+  bubbleSidebarCollapsedStorageKey,
+  chatCollapsedStorageKey,
+  kanbanCollapsedStorageKey,
+  workspaceRailCollapsedStorageKey,
+} from '@/lib/layout-collapse-keys';
+import {
+  COLLAPSED_COLUMN_WIDTH_CLASS,
+  CollapsedColumnStrip,
+} from '@/components/layout/collapsed-column-strip';
 
 type Props = {
   workspaceId: string;
@@ -40,6 +51,22 @@ export function DashboardShell({ workspaceId, initialRole, children }: Props) {
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false);
   const [commentAlert, setCommentAlert] = useState<{ taskId: string; title: string } | null>(null);
+  const [workspaceRailCollapsed, setWorkspaceRailCollapsed] = useState(false);
+  const [bubbleSidebarCollapsed, setBubbleSidebarCollapsed] = useState(false);
+  const [chatCollapsed, setChatCollapsedState] = useState(false);
+  const [kanbanCollapsed, setKanbanCollapsedState] = useState(false);
+  const [layoutHydrated, setLayoutHydrated] = useState(false);
+
+  /** At least one of Messages or Kanban must stay expanded (not both strips-only). */
+  const setChatCollapsed = useCallback((v: boolean) => {
+    if (v) setKanbanCollapsedState(false);
+    setChatCollapsedState(v);
+  }, []);
+
+  const setKanbanCollapsed = useCallback((v: boolean) => {
+    if (v) setChatCollapsedState(false);
+    setKanbanCollapsedState(v);
+  }, []);
 
   const workspaceCategoryForUi =
     activeWorkspace?.id === workspaceId ? (activeWorkspace.category_type ?? null) : null;
@@ -151,6 +178,66 @@ export function DashboardShell({ workspaceId, initialRole, children }: Props) {
   }, [workspaceId, loadUserWorkspaces, syncActiveFromRoute, loadProfile]);
 
   useEffect(() => {
+    try {
+      const w = localStorage.getItem(workspaceRailCollapsedStorageKey(workspaceId));
+      const b = localStorage.getItem(bubbleSidebarCollapsedStorageKey(workspaceId));
+      const c = localStorage.getItem(chatCollapsedStorageKey(workspaceId));
+      let k = localStorage.getItem(kanbanCollapsedStorageKey(workspaceId)) === '1';
+      const chatOn = c === '1';
+      if (chatOn && k) k = false;
+      setWorkspaceRailCollapsed(w === '1');
+      setBubbleSidebarCollapsed(b === '1');
+      setChatCollapsedState(chatOn);
+      setKanbanCollapsedState(k);
+    } catch {
+      /* ignore */
+    }
+    setLayoutHydrated(true);
+  }, [workspaceId]);
+
+  useEffect(() => {
+    if (!layoutHydrated) return;
+    try {
+      localStorage.setItem(
+        workspaceRailCollapsedStorageKey(workspaceId),
+        workspaceRailCollapsed ? '1' : '0',
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [workspaceId, workspaceRailCollapsed, layoutHydrated]);
+
+  useEffect(() => {
+    if (!layoutHydrated) return;
+    try {
+      localStorage.setItem(
+        bubbleSidebarCollapsedStorageKey(workspaceId),
+        bubbleSidebarCollapsed ? '1' : '0',
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [workspaceId, bubbleSidebarCollapsed, layoutHydrated]);
+
+  useEffect(() => {
+    if (!layoutHydrated) return;
+    try {
+      localStorage.setItem(chatCollapsedStorageKey(workspaceId), chatCollapsed ? '1' : '0');
+    } catch {
+      /* ignore */
+    }
+  }, [workspaceId, chatCollapsed, layoutHydrated]);
+
+  useEffect(() => {
+    if (!layoutHydrated) return;
+    try {
+      localStorage.setItem(kanbanCollapsedStorageKey(workspaceId), kanbanCollapsed ? '1' : '0');
+    } catch {
+      /* ignore */
+    }
+  }, [workspaceId, kanbanCollapsed, layoutHydrated]);
+
+  useEffect(() => {
     const supabase = createClient();
     async function load() {
       const { data } = await supabase
@@ -178,25 +265,86 @@ export function DashboardShell({ workspaceId, initialRole, children }: Props) {
     setActiveBubble(b);
   }, [bubbles, selectedBubbleId, setActiveBubble, workspaceId]);
 
+  const railsCollapsed = workspaceRailCollapsed && bubbleSidebarCollapsed;
+  /** Left stack shows a main strip (Messages or Kanban) + Bubbles + Workspace. */
+  const tripleStack = railsCollapsed && (chatCollapsed || kanbanCollapsed);
+
+  const workspaceRailProps = {
+    collapsed: workspaceRailCollapsed,
+    onCollapsedChange: setWorkspaceRailCollapsed,
+    onOpenProfile: () => setProfileModalOpen(true),
+    profileAvatarUrl: profile?.avatar_url,
+    profileName: profile?.full_name ?? profile?.email,
+  };
+
+  const bubbleSidebarProps = {
+    workspaceId,
+    collapsed: bubbleSidebarCollapsed,
+    onCollapsedChange: setBubbleSidebarCollapsed,
+    bubbles,
+    selectedBubbleId,
+    onSelectBubble: setSelectedBubbleId,
+    onBubblesChange: setBubbles,
+    canWrite,
+    isAdmin: initialRole === 'admin',
+    onOpenWorkspaceSettings: () => setWorkspaceSettingsOpen(true),
+  };
+
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      <WorkspaceRail
-        onOpenProfile={() => setProfileModalOpen(true)}
-        profileAvatarUrl={profile?.avatar_url}
-        profileName={profile?.full_name ?? profile?.email}
-      />
-      <BubbleSidebar
-        workspaceId={workspaceId}
-        bubbles={bubbles}
-        selectedBubbleId={selectedBubbleId}
-        onSelectBubble={setSelectedBubbleId}
-        onBubblesChange={setBubbles}
-        canWrite={canWrite}
-        isAdmin={initialRole === 'admin'}
-        onOpenWorkspaceSettings={() => setWorkspaceSettingsOpen(true)}
-      />
+    <div className="flex h-screen min-h-0 overflow-hidden bg-background">
+      {tripleStack ? (
+        <div
+          className={cn(
+            'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-zinc-800',
+            COLLAPSED_COLUMN_WIDTH_CLASS,
+          )}
+        >
+          {chatCollapsed ? (
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-zinc-800 bg-black">
+              <CollapsedColumnStrip
+                title="Messages"
+                expandTitle="Expand Messages"
+                expandAriaLabel="Expand Messages panel"
+                onExpand={() => setChatCollapsed(false)}
+                variant="black"
+              />
+            </div>
+          ) : (
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-zinc-800 bg-white">
+              <CollapsedColumnStrip
+                title="Kanban"
+                expandTitle="Expand Kanban"
+                expandAriaLabel="Expand Kanban panel"
+                onExpand={() => setKanbanCollapsed(false)}
+                variant="white"
+              />
+            </div>
+          )}
+          <BubbleSidebar {...bubbleSidebarProps} collapsedStackSlot="middle" />
+          <WorkspaceRail {...workspaceRailProps} collapsedStackSlot="bottom" />
+        </div>
+      ) : railsCollapsed ? (
+        <div
+          className={cn(
+            'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-zinc-800',
+            COLLAPSED_COLUMN_WIDTH_CLASS,
+          )}
+        >
+          <BubbleSidebar {...bubbleSidebarProps} collapsedStackSlot="top" />
+          <WorkspaceRail {...workspaceRailProps} collapsedStackSlot="bottom" />
+        </div>
+      ) : (
+        <>
+          <WorkspaceRail {...workspaceRailProps} />
+          <BubbleSidebar {...bubbleSidebarProps} />
+        </>
+      )}
       <WorkspaceMainSplit
         workspaceId={workspaceId}
+        chatCollapsed={chatCollapsed}
+        onChatCollapsedChange={setChatCollapsed}
+        kanbanCollapsed={kanbanCollapsed}
+        omitCollapsedMessagesStrip={tripleStack && chatCollapsed}
         renderChat={({ onCollapse }) => (
           <ChatArea
             bubbles={bubbles}
@@ -213,6 +361,7 @@ export function DashboardShell({ workspaceId, initialRole, children }: Props) {
             onOpenCreateTask={openCreateTaskModal}
             workspaceCategory={workspaceCategoryForUi}
             calendarTimezone={workspaceCalendarTz}
+            onCollapse={() => setKanbanCollapsed(true)}
           />
         }
       />
