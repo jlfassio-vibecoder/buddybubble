@@ -48,7 +48,7 @@ flowchart LR
     Mode[next-themes resolved theme]
   end
   subgraph engine [Theme engine]
-    Registry[THEME_REGISTRY HSL rows]
+    Registry[THEME_REGISTRY CSS vars]
     Merge[merge category plus mode plus Kanban accents]
   end
   subgraph apply [Application]
@@ -66,27 +66,27 @@ flowchart LR
 
 - **Category:** From **`workspace.category_type`** (dashboard) or RPC preview (invite page).
 - **Light/dark:** From **`next-themes`** (class + `localStorage` + script to reduce hydration flash).
-- **Engine:** Pure merge: `(category, resolvedMode) => CSS variables` in **shadcn HSL token format** (space-separated components, no `hsl()` wrapper — matches existing globals pattern).
+- **Engine:** Pure merge: `(category, resolvedMode) => CSS variables` as **full CSS color values** (see §6) assignable to shadcn semantic variable names.
 - **Application:** `ThemeScope` injects variables on **`DashboardShell`** wrapper and on **`/invite/[token]`** layout/card scope (Phase 1).
 
 ## 6. Shadcn integration strategy (locked)
 
-**Overwrite shadcn’s semantic HSL variables** — do **not** introduce parallel trees like `--app-bg` / `--text-main` for the main app or manually retheme every component.
+**Overwrite shadcn’s semantic CSS variables** — do **not** introduce parallel trees like `--app-bg` / `--text-main` for the main app or manually retheme every component.
 
-1. Refactor the mock’s `THEMES` data so each resolved row maps to **globals’ variable names**: e.g. `--background`, `--foreground`, `--card`, `--card-foreground`, `--primary`, `--primary-foreground`, `--border`, `--muted`, `--muted-foreground`, `--accent`, `--accent-foreground`, sidebar-related tokens if present in [`globals.css`](../src/app/globals.css), etc.
-2. Values MUST be **HSL components** as shadcn expects (e.g. `'25 100% 4%'` for background, `'24 93% 53%'` for primary — examples only; final numbers come from design pass / conversion from mock hex).
-3. Apply via **inline `style`** on `ThemeScope` (or equivalent wrapper), e.g. `<div style={{ ['--background' as string]: '25 100% 4%', ['--primary' as string]: '24 93% 53%' }}>`. Components using **`bg-background`**, **`text-primary`**, etc. **inherit the theme with zero rewrites**.
+1. Map each category × mode row to **the same variable names** used in [`globals.css`](../src/app/globals.css) / Tailwind theme (`--background`, `--foreground`, `--card`, `--primary`, sidebar tokens, etc.).
+2. Values MUST be **complete CSS color values** usable in `style={{ ['--background']: '…' }}` (e.g. `hsl(222 47% 11%)`, `oklch(0.145 0 0)`, or `rgba(...)`). The **defaults** in `globals.css` `:root` / `.dark` are currently **`oklch(...)`** (shadcn/Tailwind v4). The **live `THEME_REGISTRY`** rows are authored as **`hsl(...)`** today; new tokens should stay consistent with whatever the consuming CSS and registry already use—**not** as bare “space-separated components” unless the project moves back to that shadcn variant.
+3. Apply via **inline `style`** on `ThemeScope` (or equivalent wrapper). Components using **`bg-background`**, **`text-primary`**, etc. **inherit the theme with zero rewrites**.
 
-**Kanban semantic badges (exception):** shadcn has no 1:1 for yellow/red/orange/blue/green warning-info-task states. **Retain the mock’s `--accent-yellow`**, `--accent-red`, etc., including **dark-mode alpha backgrounds** / light-mode solid fills, **only** where Kanban (and similar) badges need them. The registry merge function adds these alongside the shadcn variables.
+**Kanban semantic badges (exception):** shadcn has no 1:1 for yellow/red/orange/blue/green warning-info-task states. **Retain the mock’s `--accent-yellow`**, `--accent-red`, etc., including **dark-mode alpha backgrounds** / light-mode solid fills, **only** where Kanban (and similar) badges need them. The merge step adds these alongside the shadcn variables; use the same “full CSS value” rule as core tokens.
 
 ## 7. Persistence and separation of concerns (locked)
 
-| Concern              | Mechanism                                                                                                                |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| **Light / dark**     | **`next-themes`**, user-global, device/browser (`localStorage` + anti-FOUC script).                                      |
-| **Category palette** | **Strictly derived** from `workspace.category_type` (or invite preview `category_type`). Not a separate user preference. |
+| Concern              | Mechanism                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Light / dark**     | **`next-themes`**, user-global, device/browser (`localStorage` + anti-FOUC script).                                                                                                                                                                                                                                                                                                                                        |
+| **Category palette** | **Primary source:** `workspace.category_type` (dashboard) or invite preview `category_type` (`/invite/[token]`). **Optional client override:** `bb_category_theme_override` in `localStorage` (`auto` or a fixed `WorkspaceCategory`) via Profile → appearance; when not `auto`, that category wins for `ThemeScope` + Kanban title mapping. Invite pages have no workspace yet, so they **only** use RPC `category_type`. |
 
-**Merge rule:** `next-themes` answers “render light or dark”; the workspace (or invite) answers “which of the four category rows”; the theme engine **merges** both into one variable map.
+**Merge rule:** `next-themes` answers “render light or dark”; **effective category** answers “which of the four category rows” (workspace/invite row, unless the user chose a preview override); the theme engine **merges** both into one variable map.
 
 ## 8. Invite preview unification (locked, Phase 1)
 
@@ -117,33 +117,33 @@ Production should **not** rely on unconditional `transition-colors duration-300`
 
 ## 12. Testing strategy
 
-- **Unit:** `mergeWorkspaceTheme(category, resolvedMode)` returns expected **shadcn** keys + HSL strings + Kanban `--accent-*` where applicable.
+- **Unit:** `getThemeVariables(category, isDark)` (see [`merge.ts`](../src/lib/theme-engine/merge.ts)) — unknown category fallback, light vs dark maps, presence of Kanban `--accent-*` keys. **`resolveEffectiveCategory`** ([`use-theme-override.ts`](../src/hooks/use-theme-override.ts)) — auto vs explicit override vs invalid workspace category. **`formatLoginAuthError`** — anonymous-auth message mapping + passthrough.
 - **Manual / visual:** Four categories × light/dark on dashboard; same on invite preview for each category.
 - **Motion:** Verify reduced-motion disables long color transitions.
 
 ## 13. File / module sketch
 
-- `src/lib/theme-engine/registry.ts` — category rows in **HSL** (shadcn-shaped).
-- `src/lib/theme-engine/merge.ts` — merges category + mode + accent badge variables.
+- `src/lib/theme-engine/registry.ts` — per-category chrome + light/dark maps (**full CSS color strings**, currently `hsl(...)` in code).
+- `src/lib/theme-engine/merge.ts` — merges category + light/dark mode (`isDark`) + accent badge variables.
 - `src/components/theme/ThemeScope.tsx` — applies `style={vars}`; children = dashboard or invite subtree.
 - **`next-themes`**: `ThemeProvider` at app root (or layout); toggle in profile/settings later if not in mock location.
 
 ## 14. Resolved decisions (formerly open questions)
 
-| Topic                        | Resolution                                                                                                                |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Shadcn vs parallel variables | **Overwrite shadcn semantic HSL variables** via scoped inline style; no app-wide `--app-bg` parallel tree.                |
-| Light/dark scope             | **User-global** via **`next-themes`**.                                                                                    |
-| Category source              | **Database / RPC** only (`category_type`); not user-picked palette storage.                                               |
-| Invite preview               | **Unify in Phase 1** with same engine as dashboard.                                                                       |
-| Kanban title vs chrome       | [`kanban-board-title.ts`](../src/lib/kanban-board-title.ts) remains copy-only; chrome comes from shared shadcn variables. |
-| Reduced motion               | **Tailwind / global CSS** — `motion-reduce:transition-none` (or equivalent) on theme transitions.                         |
+| Topic                        | Resolution                                                                                                                           |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Shadcn vs parallel variables | **Overwrite shadcn semantic variables** via scoped inline style; no app-wide `--app-bg` parallel tree.                               |
+| Light/dark scope             | **User-global** via **`next-themes`**.                                                                                               |
+| Category source              | **Database / RPC** (`category_type`) as default; **optional** client-only palette preview via `bb_category_theme_override` (see §7). |
+| Invite preview               | **Unify in Phase 1** with same engine as dashboard.                                                                                  |
+| Kanban title vs chrome       | [`kanban-board-title.ts`](../src/lib/kanban-board-title.ts) remains copy-only; chrome comes from shared shadcn variables.            |
+| Reduced motion               | **Tailwind / global CSS** — `motion-reduce:transition-none` (or equivalent) on theme transitions.                                    |
 
 ---
 
 ## 15. Execution directives
 
-1. **Shadcn mapping:** Refactor the mock’s `THEMES` constant into **HSL space values** formatted for shadcn (e.g. `222.2 84% 4.9%` style components without wrapping `hsl()`). `ThemeScope` injects these as inline `style` variables (`--background`, `--card`, `--primary`, etc.) on the **`DashboardShell`** wrapper (and invite scope in Phase 1).
+1. **Shadcn mapping:** Keep registry values as **full CSS colors** matching the project’s chosen convention (`hsl(...)` in `THEME_REGISTRY` today; globals defaults may stay `oklch(...)` until a single format is design-locked). `ThemeScope` injects overrides as inline `style` on the **`DashboardShell`** wrapper (and invite scope in Phase 1).
 2. **State management:** Use **`next-themes`** for resolved light/dark. Use **active workspace** (or invite preview) for **`activeTheme`** (`business` | `kids` | `community` | `class`).
 3. **Accent badges:** Retain the mock’s **`--accent-*`** dynamic opacity / light-vs-dark fill logic **specifically for Kanban badges** (and similar semantic states), since shadcn does not provide a direct equivalent for those warning/info/destructive/success task affordances.
 
