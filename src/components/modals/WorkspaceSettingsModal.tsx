@@ -95,11 +95,13 @@ export function WorkspaceSettingsModal({
         aria-label="Close"
         onClick={() => onOpenChange(false)}
       />
-      <div className="relative z-10 w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+      <div className="relative z-10 w-full max-w-md rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-2xl">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h2 className="text-lg font-bold text-slate-900">Workspace settings</h2>
-            <p className="text-xs text-slate-500">Calendar timezone for tasks and automation.</p>
+            <h2 className="text-lg font-bold text-foreground">Workspace settings</h2>
+            <p className="text-xs text-muted-foreground">
+              Calendar timezone for tasks and automation.
+            </p>
             {isAdmin ? (
               <p className="mt-2 text-xs">
                 <Link
@@ -115,7 +117,7 @@ export function WorkspaceSettingsModal({
           <button
             type="button"
             onClick={() => onOpenChange(false)}
-            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+            className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
             aria-label="Close"
           >
             <X className="h-5 w-5" />
@@ -123,11 +125,11 @@ export function WorkspaceSettingsModal({
         </div>
 
         {loading ? (
-          <p className="mt-4 text-sm text-slate-500">Loading…</p>
+          <p className="mt-4 text-sm text-muted-foreground">Loading…</p>
         ) : (
           <div className="mt-4 space-y-4">
             {error ? (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+              <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                 {error}
               </div>
             ) : null}
@@ -148,7 +150,7 @@ export function WorkspaceSettingsModal({
                   </option>
                 ))}
               </select>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-muted-foreground">
                 Changing this affects when tasks move to the Today column and how due dates compare
                 to &ldquo;today&rdquo; for this workspace.
               </p>

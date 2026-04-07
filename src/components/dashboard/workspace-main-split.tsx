@@ -125,7 +125,7 @@ export function WorkspaceMainSplit({
     <div ref={containerRef} className="flex min-h-0 min-w-0 flex-1">
       <div
         className={cn(
-          'flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-border bg-white',
+          'flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-border bg-background',
           chatCollapsed && 'pointer-events-none w-0 min-w-0 flex-[0_0_0] border-transparent',
           messagesOnlyMain && 'min-w-0 flex-1',
         )}
@@ -142,17 +142,17 @@ export function WorkspaceMainSplit({
           role="separator"
           aria-orientation="vertical"
           aria-label="Resize chat panel"
-          className="group relative w-2 shrink-0 cursor-col-resize border-r border-border bg-muted/30 hover:bg-indigo-100/40"
+          className="group relative w-2 shrink-0 cursor-col-resize border-r border-border bg-muted/30 hover:bg-primary/15"
           onPointerDown={handleResizePointerDown}
         >
-          <span className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border group-hover:bg-indigo-300" />
+          <span className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border group-hover:bg-primary/50" />
         </div>
       )}
 
       {showMessagesStrip && (
         <div
           className={cn(
-            'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-zinc-800 bg-black',
+            'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-border bg-black',
             COLLAPSED_COLUMN_WIDTH_CLASS,
           )}
         >

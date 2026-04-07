@@ -89,7 +89,7 @@ export function CreateWorkspaceModal({ open, onOpenChange }: CreateWorkspaceModa
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md gap-0 p-0 sm:max-w-md" aria-describedby="create-ws-desc">
         <form onSubmit={handleSubmit} className="flex flex-col">
-          <DialogHeader className="space-y-1 border-b border-slate-100 px-6 py-5 text-left">
+          <DialogHeader className="space-y-1 border-b border-border px-6 py-5 text-left">
             <DialogTitle>Create BuddyBubble</DialogTitle>
             <DialogDescription id="create-ws-desc">
               Name your BuddyBubble and pick a category template. We seed starter Bubbles and a
@@ -100,7 +100,7 @@ export function CreateWorkspaceModal({ open, onOpenChange }: CreateWorkspaceModa
           <div className="space-y-5 px-6 py-5">
             {error && (
               <p
-                className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700"
+                className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
                 role="alert"
               >
                 {error}
@@ -137,8 +137,8 @@ export function CreateWorkspaceModal({ open, onOpenChange }: CreateWorkspaceModa
                       className={cn(
                         'flex cursor-pointer items-start gap-3 rounded-xl border px-3 py-3 transition-colors',
                         selected
-                          ? 'border-indigo-500 bg-indigo-50/80 ring-1 ring-indigo-500/20'
-                          : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/80',
+                          ? 'border-primary bg-primary/10 ring-1 ring-primary/20'
+                          : 'border-border hover:border-input hover:bg-muted/80',
                         pending && 'pointer-events-none opacity-60',
                       )}
                     >
@@ -150,20 +150,13 @@ export function CreateWorkspaceModal({ open, onOpenChange }: CreateWorkspaceModa
                       <Icon
                         className={cn(
                           'mt-0.5 h-5 w-5 shrink-0',
-                          selected ? 'text-indigo-600' : 'text-slate-500',
+                          selected ? 'text-primary' : 'text-muted-foreground',
                         )}
                         aria-hidden
                       />
                       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                        <span
-                          className={cn(
-                            'text-sm font-semibold',
-                            selected ? 'text-indigo-900' : 'text-slate-900',
-                          )}
-                        >
-                          {opt.label}
-                        </span>
-                        <span className="text-xs text-slate-500">{opt.hint}</span>
+                        <span className="text-sm font-semibold text-foreground">{opt.label}</span>
+                        <span className="text-xs text-muted-foreground">{opt.hint}</span>
                       </span>
                     </label>
                   );
@@ -172,7 +165,7 @@ export function CreateWorkspaceModal({ open, onOpenChange }: CreateWorkspaceModa
             </div>
           </div>
 
-          <DialogFooter className="border-t border-slate-100 bg-slate-50/80 px-6 py-4 sm:justify-end">
+          <DialogFooter className="border-t border-border bg-muted/50 px-6 py-4 sm:justify-end">
             <Button
               type="button"
               variant="outline"

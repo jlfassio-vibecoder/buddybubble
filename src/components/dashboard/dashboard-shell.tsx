@@ -30,6 +30,8 @@ import {
   COLLAPSED_COLUMN_WIDTH_CLASS,
   CollapsedColumnStrip,
 } from '@/components/layout/collapsed-column-strip';
+import { ThemeScope } from '@/components/theme/ThemeScope';
+import { resolveEffectiveCategory, useThemeOverride } from '@/hooks/use-theme-override';
 
 type Props = {
   workspaceId: string;
@@ -84,8 +86,14 @@ export function DashboardShell({
     setKanbanCollapsedState(v);
   }, []);
 
+  const { categoryOverride } = useThemeOverride();
+
   const workspaceCategoryForUi =
     activeWorkspace?.id === workspaceId ? (activeWorkspace.category_type ?? null) : null;
+  const effectiveKanbanCategory =
+    workspaceCategoryForUi != null
+      ? resolveEffectiveCategory(categoryOverride, workspaceCategoryForUi)
+      : null;
   const workspaceCalendarTz =
     activeWorkspace?.id === workspaceId ? (activeWorkspace.calendar_timezone ?? null) : null;
 
@@ -339,135 +347,143 @@ export function DashboardShell({
     onOpenWorkspaceSettings: () => setWorkspaceSettingsOpen(true),
   };
 
+  const themeCategoryBase =
+    activeWorkspace?.id === workspaceId
+      ? (activeWorkspace.category_type ?? 'business')
+      : 'business';
+  const effectiveThemeCategory = resolveEffectiveCategory(categoryOverride, themeCategoryBase);
+
   return (
-    <div className="flex h-screen min-h-0 overflow-hidden bg-background">
-      {tripleStack ? (
-        <div
-          className={cn(
-            'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-zinc-800',
-            COLLAPSED_COLUMN_WIDTH_CLASS,
-          )}
-        >
-          {chatCollapsed ? (
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-zinc-800 bg-black">
-              <CollapsedColumnStrip
-                title="Messages"
-                expandTitle="Expand Messages"
-                expandAriaLabel="Expand Messages panel"
-                onExpand={() => setChatCollapsed(false)}
-                variant="black"
-              />
-            </div>
-          ) : (
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-zinc-800 bg-white">
-              <CollapsedColumnStrip
-                title="Kanban"
-                expandTitle="Expand Kanban"
-                expandAriaLabel="Expand Kanban panel"
-                onExpand={() => setKanbanCollapsed(false)}
-                variant="white"
-              />
-            </div>
-          )}
-          <BubbleSidebar {...bubbleSidebarProps} collapsedStackSlot="middle" />
-          <WorkspaceRail {...workspaceRailProps} collapsedStackSlot="bottom" />
-        </div>
-      ) : railsCollapsed ? (
-        <div
-          className={cn(
-            'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-zinc-800',
-            COLLAPSED_COLUMN_WIDTH_CLASS,
-          )}
-        >
-          <BubbleSidebar {...bubbleSidebarProps} collapsedStackSlot="top" />
-          <WorkspaceRail {...workspaceRailProps} collapsedStackSlot="bottom" />
-        </div>
-      ) : (
-        <>
-          <WorkspaceRail {...workspaceRailProps} />
-          <BubbleSidebar {...bubbleSidebarProps} />
-        </>
-      )}
-      <WorkspaceMainSplit
-        workspaceId={workspaceId}
-        chatCollapsed={chatCollapsed}
-        onChatCollapsedChange={setChatCollapsed}
-        kanbanCollapsed={kanbanCollapsed}
-        omitCollapsedMessagesStrip={tripleStack && chatCollapsed}
-        renderChat={({ onCollapse }) => (
-          <ChatArea
-            bubbles={bubbles}
-            canWrite={canWrite}
-            onOpenTask={openTaskModal}
-            onCollapse={onCollapse}
-            joinRequestBellPreview={initialRole === 'admin' ? joinRequestBellPreview : undefined}
-          />
+    <ThemeScope category={effectiveThemeCategory}>
+      <div className="flex h-screen min-h-0 overflow-hidden bg-background">
+        {tripleStack ? (
+          <div
+            className={cn(
+              'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-border',
+              COLLAPSED_COLUMN_WIDTH_CLASS,
+            )}
+          >
+            {chatCollapsed ? (
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-border bg-black">
+                <CollapsedColumnStrip
+                  title="Messages"
+                  expandTitle="Expand Messages"
+                  expandAriaLabel="Expand Messages panel"
+                  onExpand={() => setChatCollapsed(false)}
+                  variant="black"
+                />
+              </div>
+            ) : (
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-border bg-background">
+                <CollapsedColumnStrip
+                  title="Kanban"
+                  expandTitle="Expand Kanban"
+                  expandAriaLabel="Expand Kanban panel"
+                  onExpand={() => setKanbanCollapsed(false)}
+                  variant="card"
+                />
+              </div>
+            )}
+            <BubbleSidebar {...bubbleSidebarProps} collapsedStackSlot="middle" />
+            <WorkspaceRail {...workspaceRailProps} collapsedStackSlot="bottom" />
+          </div>
+        ) : railsCollapsed ? (
+          <div
+            className={cn(
+              'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-border',
+              COLLAPSED_COLUMN_WIDTH_CLASS,
+            )}
+          >
+            <BubbleSidebar {...bubbleSidebarProps} collapsedStackSlot="top" />
+            <WorkspaceRail {...workspaceRailProps} collapsedStackSlot="bottom" />
+          </div>
+        ) : (
+          <>
+            <WorkspaceRail {...workspaceRailProps} />
+            <BubbleSidebar {...bubbleSidebarProps} />
+          </>
         )}
-        board={
-          <KanbanBoard
-            canWrite={canWrite}
-            bubbles={bubbles}
-            onOpenTask={openTaskModal}
-            onOpenCreateTask={openCreateTaskModal}
-            workspaceCategory={workspaceCategoryForUi}
-            calendarTimezone={workspaceCalendarTz}
-            onCollapse={() => setKanbanCollapsed(true)}
-          />
-        }
-      />
-      <TaskModal
-        open={taskModalOpen}
-        onOpenChange={onTaskModalOpenChange}
-        taskId={taskModalTaskId}
-        bubbleId={
-          selectedBubbleId === ALL_BUBBLES_BUBBLE_ID ? (bubbles[0]?.id ?? null) : selectedBubbleId
-        }
-        workspaceId={workspaceId}
-        canWrite={canWrite}
-        onCreated={(id) => setTaskModalTaskId(id)}
-        initialCreateStatus={taskModalInitialStatus}
-        initialTab={taskModalInitialTab}
-        workspaceCategory={workspaceCategoryForUi}
-        calendarTimezone={workspaceCalendarTz}
-      />
-      <WorkspaceSettingsModal
-        open={workspaceSettingsOpen}
-        onOpenChange={setWorkspaceSettingsOpen}
-        workspaceId={workspaceId}
-        isAdmin={initialRole === 'admin'}
-        onSaved={() => {
-          void loadUserWorkspaces().then(() => syncActiveFromRoute(workspaceId));
-        }}
-      />
-      <ProfileModal open={profileModalOpen} onOpenChange={setProfileModalOpen} />
-      {commentAlert ? (
-        <div
-          className="pointer-events-auto fixed bottom-6 left-1/2 z-50 flex max-w-md -translate-x-1/2 items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-lg"
-          role="status"
-        >
-          <p className="min-w-0 flex-1 text-sm text-foreground">
-            Someone commented on &ldquo;{commentAlert.title}&rdquo;
-          </p>
-          <Button
-            size="sm"
-            onClick={() => {
-              openTaskModal(commentAlert.taskId, { tab: 'comments' });
-              setCommentAlert(null);
-            }}
+        <WorkspaceMainSplit
+          workspaceId={workspaceId}
+          chatCollapsed={chatCollapsed}
+          onChatCollapsedChange={setChatCollapsed}
+          kanbanCollapsed={kanbanCollapsed}
+          omitCollapsedMessagesStrip={tripleStack && chatCollapsed}
+          renderChat={({ onCollapse }) => (
+            <ChatArea
+              bubbles={bubbles}
+              canWrite={canWrite}
+              onOpenTask={openTaskModal}
+              onCollapse={onCollapse}
+              joinRequestBellPreview={initialRole === 'admin' ? joinRequestBellPreview : undefined}
+            />
+          )}
+          board={
+            <KanbanBoard
+              canWrite={canWrite}
+              bubbles={bubbles}
+              onOpenTask={openTaskModal}
+              onOpenCreateTask={openCreateTaskModal}
+              workspaceCategory={effectiveKanbanCategory}
+              calendarTimezone={workspaceCalendarTz}
+              onCollapse={() => setKanbanCollapsed(true)}
+            />
+          }
+        />
+        <TaskModal
+          open={taskModalOpen}
+          onOpenChange={onTaskModalOpenChange}
+          taskId={taskModalTaskId}
+          bubbleId={
+            selectedBubbleId === ALL_BUBBLES_BUBBLE_ID ? (bubbles[0]?.id ?? null) : selectedBubbleId
+          }
+          workspaceId={workspaceId}
+          canWrite={canWrite}
+          onCreated={(id) => setTaskModalTaskId(id)}
+          initialCreateStatus={taskModalInitialStatus}
+          initialTab={taskModalInitialTab}
+          workspaceCategory={effectiveKanbanCategory}
+          calendarTimezone={workspaceCalendarTz}
+        />
+        <WorkspaceSettingsModal
+          open={workspaceSettingsOpen}
+          onOpenChange={setWorkspaceSettingsOpen}
+          workspaceId={workspaceId}
+          isAdmin={initialRole === 'admin'}
+          onSaved={() => {
+            void loadUserWorkspaces().then(() => syncActiveFromRoute(workspaceId));
+          }}
+        />
+        <ProfileModal open={profileModalOpen} onOpenChange={setProfileModalOpen} />
+        {commentAlert ? (
+          <div
+            className="pointer-events-auto fixed bottom-6 left-1/2 z-50 flex max-w-md -translate-x-1/2 items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-lg"
+            role="status"
           >
-            Open
-          </Button>
-          <button
-            type="button"
-            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-            aria-label="Dismiss"
-            onClick={() => setCommentAlert(null)}
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-      ) : null}
-      {children}
-    </div>
+            <p className="min-w-0 flex-1 text-sm text-foreground">
+              Someone commented on &ldquo;{commentAlert.title}&rdquo;
+            </p>
+            <Button
+              size="sm"
+              onClick={() => {
+                openTaskModal(commentAlert.taskId, { tab: 'comments' });
+                setCommentAlert(null);
+              }}
+            >
+              Open
+            </Button>
+            <button
+              type="button"
+              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label="Dismiss"
+              onClick={() => setCommentAlert(null)}
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+        ) : null}
+        {children}
+      </div>
+    </ThemeScope>
   );
 }

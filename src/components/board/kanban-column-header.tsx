@@ -49,7 +49,7 @@ export function KanbanColumnHeader({
       <div className="flex min-w-0 items-center gap-2">
         <h3 className="truncate text-sm font-semibold capitalize text-foreground">{label}</h3>
         <span
-          className="inline-flex min-h-[1.25rem] min-w-[1.25rem] shrink-0 items-center justify-center rounded-full bg-amber-100 px-1.5 text-[11px] font-semibold tabular-nums text-amber-900 dark:bg-amber-950/80 dark:text-amber-100"
+          className="inline-flex min-h-[1.25rem] min-w-[1.25rem] shrink-0 items-center justify-center rounded-full border border-[color:color-mix(in_srgb,var(--accent-yellow)_35%,transparent)] bg-[var(--accent-yellow-bg)] px-1.5 text-[11px] font-semibold tabular-nums text-[var(--accent-yellow-text)]"
           aria-label={`${count} tasks`}
         >
           {count}

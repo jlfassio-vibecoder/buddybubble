@@ -1134,7 +1134,7 @@ export function ChatArea({
               return (
                 <span
                   key={`mention-${i}`}
-                  className="text-indigo-600 font-bold bg-indigo-50 px-1 rounded border border-indigo-100"
+                  className="text-primary font-bold bg-primary/10 px-1 rounded border border-primary/20"
                 >
                   {subPart}
                 </span>
@@ -1166,7 +1166,7 @@ export function ChatArea({
                   key={`task-${i}`}
                   type="button"
                   onClick={() => onOpenTask(task.id)}
-                  className="text-emerald-600 font-bold bg-emerald-50 px-1 rounded border border-emerald-100 cursor-pointer hover:bg-emerald-100 transition-colors"
+                  className="cursor-pointer rounded border border-[color:color-mix(in_srgb,var(--accent-green)_38%,transparent)] bg-[var(--accent-green-bg)] px-1 font-bold text-[var(--accent-green-text)] transition-colors hover:opacity-90"
                   title={`View Task: ${task.title}`}
                 >
                   {subPart}
@@ -1182,30 +1182,30 @@ export function ChatArea({
     return parts;
   };
   return (
-    <div className="relative flex h-full min-h-0 min-w-0 w-full flex-col bg-white">
+    <div className="relative flex h-full min-h-0 min-w-0 w-full flex-col bg-background">
       {/* Header */}
-      <header className="h-16 border-b border-slate-200 flex items-center justify-between px-6 shrink-0">
+      <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-background px-6">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <button
             type="button"
             onClick={onCollapse}
-            className="shrink-0 p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-indigo-600 transition-all"
+            className="shrink-0 p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-primary transition-all"
             title="Collapse Messages"
             aria-label="Collapse Messages panel"
           >
             <PanelLeftClose className="w-5 h-5" aria-hidden />
           </button>
-          <Hash className="h-5 w-5 shrink-0 text-slate-900 opacity-70" aria-hidden />
-          <h2 className="min-w-0 truncate font-bold text-slate-900">
+          <Hash className="h-5 w-5 shrink-0 text-foreground opacity-70" aria-hidden />
+          <h2 className="min-w-0 truncate font-bold text-foreground">
             {activeBubble?.name ?? 'Chat'}
           </h2>
-          <Star className="w-4 h-4 shrink-0 text-slate-300 hover:text-yellow-400 cursor-pointer transition-colors" />
+          <Star className="w-4 h-4 shrink-0 text-muted-foreground/55 hover:text-yellow-400 cursor-pointer transition-colors" />
         </div>
-        <div className="flex shrink-0 items-center gap-4 text-slate-500">
+        <div className="flex shrink-0 items-center gap-4 text-muted-foreground">
           <Search
             className={cn(
               'w-5 h-5 cursor-pointer transition-colors',
-              isSearchOpen ? 'text-indigo-600' : 'hover:text-slate-900',
+              isSearchOpen ? 'text-primary' : 'hover:text-foreground',
             )}
             onClick={() => setIsSearchOpen(!isSearchOpen)}
           />
@@ -1213,12 +1213,12 @@ export function ChatArea({
             <Bell
               className={cn(
                 'w-5 h-5 cursor-pointer transition-colors',
-                isNotificationsOpen ? 'text-indigo-600' : 'hover:text-slate-900',
+                isNotificationsOpen ? 'text-primary' : 'hover:text-foreground',
               )}
               onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
             />
             {notifications.some((n) => !n.read) && (
-              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 border-2 border-white rounded-full" />
+              <span className="absolute -right-1 -top-1 size-2.5 rounded-full border-2 border-background bg-destructive" />
             )}
 
             <AnimatePresence>
@@ -1227,11 +1227,11 @@ export function ChatArea({
                   initial={{ opacity: 0, y: 10, scale: 0.95 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                  className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden z-50"
+                  className="absolute right-0 z-50 mt-2 w-80 overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl"
                 >
-                  <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-                    <h3 className="font-bold text-slate-900 text-sm">Notifications</h3>
-                    <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                  <div className="p-4 border-b border-border flex items-center justify-between bg-muted/70">
+                    <h3 className="font-bold text-foreground text-sm">Notifications</h3>
+                    <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
                       {notifications.filter((n) => !n.read).length} New
                     </span>
                   </div>
@@ -1241,8 +1241,8 @@ export function ChatArea({
                         <div
                           key={n.id}
                           className={cn(
-                            'p-4 border-b border-slate-50 last:border-0 transition-colors cursor-pointer hover:bg-slate-50',
-                            !n.read && 'bg-indigo-50/30',
+                            'p-4 border-b border-border last:border-0 transition-colors cursor-pointer hover:bg-muted/70',
+                            !n.read && 'bg-primary/10',
                           )}
                           onClick={() => {
                             if (n.type === 'join_request' && n.actionHref) {
@@ -1260,24 +1260,24 @@ export function ChatArea({
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1">
-                              <p className="text-xs font-bold text-slate-900 mb-1">{n.title}</p>
-                              <p className="text-[11px] text-slate-600 leading-relaxed">
+                              <p className="text-xs font-bold text-foreground mb-1">{n.title}</p>
+                              <p className="text-[11px] text-muted-foreground leading-relaxed">
                                 {n.content}
                               </p>
-                              <p className="text-[10px] text-slate-400 mt-2">
+                              <p className="text-[10px] text-muted-foreground mt-2">
                                 {formatMessageTimestamp(n.timestamp)}
                               </p>
                             </div>
                             {!n.read && (
-                              <div className="w-2 h-2 bg-indigo-600 rounded-full mt-1 shrink-0" />
+                              <div className="mt-1 size-2 shrink-0 rounded-full bg-primary" />
                             )}
                           </div>
                         </div>
                       ))
                     ) : (
                       <div className="p-8 text-center">
-                        <Bell className="w-8 h-8 text-slate-200 mx-auto mb-2" />
-                        <p className="text-sm text-slate-400">No notifications yet.</p>
+                        <Bell className="w-8 h-8 text-muted-foreground/35 mx-auto mb-2" />
+                        <p className="text-sm text-muted-foreground">No notifications yet.</p>
                       </div>
                     )}
                   </div>
@@ -1285,7 +1285,7 @@ export function ChatArea({
               )}
             </AnimatePresence>
           </div>
-          <Info className="w-5 h-5 cursor-pointer hover:text-slate-900" />
+          <Info className="w-5 h-5 cursor-pointer hover:text-foreground" />
         </div>
       </header>
 
@@ -1296,11 +1296,11 @@ export function ChatArea({
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="bg-slate-50 border-b border-slate-200 overflow-hidden shrink-0"
+            className="bg-muted/70 border-b border-border overflow-hidden shrink-0"
           >
             <div className="p-4 space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
                   <Search className="w-4 h-4" />
                   Search Messages
                 </h3>
@@ -1312,7 +1312,7 @@ export function ChatArea({
                     setSearchDate('');
                     setSearchResults(null);
                   }}
-                  className="p-1 hover:bg-slate-200 rounded-full text-slate-400 transition-colors"
+                  className="p-1 hover:bg-muted rounded-full text-muted-foreground transition-colors"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1320,7 +1320,7 @@ export function ChatArea({
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <input
                     type="text"
                     value={searchQuery}
@@ -1332,11 +1332,11 @@ export function ChatArea({
                       }
                     }}
                     placeholder="Search or use operators (from:, in:, has:attachment)..."
-                    className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                    className="w-full rounded-lg border border-input bg-background py-2 pl-9 pr-4 text-sm text-foreground transition-all focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
                   />
                 </div>
                 <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <input
                     type="text"
                     value={searchSender}
@@ -1345,11 +1345,11 @@ export function ChatArea({
                       if (e.key === 'Enter') void performSearch();
                     }}
                     placeholder="Sender..."
-                    className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                    className="w-full rounded-lg border border-input bg-background py-2 pl-9 pr-4 text-sm text-foreground transition-all focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
                   />
                 </div>
                 <div className="relative">
-                  <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <input
                     type="date"
                     value={searchDate}
@@ -1357,7 +1357,7 @@ export function ChatArea({
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') void performSearch();
                     }}
-                    className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                    className="w-full rounded-lg border border-input bg-background py-2 pl-9 pr-4 text-sm text-foreground transition-all focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
                   />
                 </div>
               </div>
@@ -1365,7 +1365,7 @@ export function ChatArea({
               {/* Recent Searches */}
               {!searchQuery && !searchSender && !searchDate && recentSearches.length > 0 && (
                 <div className="space-y-2">
-                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
                     <Clock className="w-3 h-3" />
                     Recent Searches
                   </h4>
@@ -1377,11 +1377,11 @@ export function ChatArea({
                           setSearchQuery(s);
                           void performSearch({ query: s });
                         }}
-                        className="px-3 py-1 bg-white border border-slate-200 rounded-full text-xs text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-2"
+                        className="flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/70"
                       >
                         {s}
                         <X
-                          className="w-3 h-3 text-slate-300 hover:text-red-500"
+                          className="h-3 w-3 text-muted-foreground/55 hover:text-destructive"
                           onClick={(e) => {
                             e.stopPropagation();
                             setRecentSearches((prev) => prev.filter((item) => item !== s));
@@ -1395,15 +1395,12 @@ export function ChatArea({
 
               {/* Search Results */}
               {(searchQuery || searchSender || searchDate) && searchResults !== null && (
-                <div className="mt-4 bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-                  <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                <div className="mt-4 overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm">
+                  <div className="px-4 py-2 bg-muted/70 border-b border-border flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                       {isSearching ? (
                         <>
-                          <Loader2
-                            className="w-3.5 h-3.5 animate-spin text-indigo-500"
-                            aria-hidden
-                          />
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" aria-hidden />
                           Searching…
                         </>
                       ) : (
@@ -1411,22 +1408,22 @@ export function ChatArea({
                       )}
                     </span>
                     <div className="flex gap-2">
-                      <span className="text-[10px] text-slate-400 italic">
+                      <span className="text-[10px] text-muted-foreground italic">
                         Tip: use from:user or in:bubble
                       </span>
                     </div>
                   </div>
                   <div className="max-h-64 overflow-y-auto custom-scrollbar">
                     {isSearching ? (
-                      <div className="p-8 flex flex-col items-center justify-center gap-2 text-slate-400">
-                        <Loader2 className="w-8 h-8 animate-spin text-indigo-400" aria-hidden />
+                      <div className="p-8 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                        <Loader2 className="w-8 h-8 animate-spin text-primary/80" aria-hidden />
                         <p className="text-sm">Searching messages…</p>
                       </div>
                     ) : searchResults.length > 0 ? (
                       searchResults.map((msg) => (
                         <div
                           key={msg.id}
-                          className="p-3 hover:bg-slate-50 border-b border-slate-50 last:border-0 transition-colors cursor-pointer"
+                          className="p-3 hover:bg-muted/70 border-b border-border last:border-0 transition-colors cursor-pointer"
                           onClick={() => {
                             // In a real app, we'd scroll to this message
                             // For now, just close search
@@ -1435,27 +1432,31 @@ export function ChatArea({
                         >
                           <div className="flex items-center justify-between mb-1">
                             <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-slate-900">{msg.sender}</span>
-                              <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded font-medium">
+                              <span className="text-xs font-bold text-foreground">
+                                {msg.sender}
+                              </span>
+                              <span className="text-[10px] px-1.5 py-0.5 bg-muted text-muted-foreground rounded font-medium">
                                 #{msg.department}
                               </span>
                               {msg.attachments && msg.attachments.length > 0 && (
-                                <Paperclip className="w-3 h-3 text-indigo-400" />
+                                <Paperclip className="w-3 h-3 text-primary/80" />
                               )}
                             </div>
-                            <span className="text-[10px] text-slate-400">
+                            <span className="text-[10px] text-muted-foreground">
                               {formatMessageTimestamp(msg.timestamp)}
                             </span>
                           </div>
-                          <p className="text-xs text-slate-600 line-clamp-2">
+                          <p className="text-xs text-muted-foreground line-clamp-2">
                             {renderMessageContent(msg.content)}
                           </p>
                         </div>
                       ))
                     ) : (
                       <div className="p-8 text-center">
-                        <MessageSquare className="w-8 h-8 text-slate-200 mx-auto mb-2" />
-                        <p className="text-sm text-slate-400">No messages match your search.</p>
+                        <MessageSquare className="w-8 h-8 text-muted-foreground/35 mx-auto mb-2" />
+                        <p className="text-sm text-muted-foreground">
+                          No messages match your search.
+                        </p>
                       </div>
                     )}
                   </div>
@@ -1477,10 +1478,10 @@ export function ChatArea({
                 animate={{ opacity: 1, y: 0 }}
                 className={cn(
                   'flex gap-4 group relative',
-                  activeThreadParent?.id === msg.id && 'bg-indigo-50/50 -mx-6 px-6 py-2',
+                  activeThreadParent?.id === msg.id && 'bg-primary/15 -mx-6 px-6 py-2',
                 )}
               >
-                <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold shrink-0 overflow-hidden border border-slate-100">
+                <div className="w-10 h-10 rounded-lg bg-primary/15 flex items-center justify-center text-primary font-bold shrink-0 overflow-hidden border border-border">
                   {msg.senderAvatar ? (
                     <img
                       src={msg.senderAvatar}
@@ -1494,17 +1495,17 @@ export function ChatArea({
                 </div>
                 <div className="flex-1">
                   <div className="flex items-baseline gap-2">
-                    <span className="font-bold text-slate-900">{msg.sender}</span>
+                    <span className="font-bold text-foreground">{msg.sender}</span>
                     {msg.department === ALL_BUBBLES_LABEL && (
-                      <span className="text-[10px] px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded-full font-bold border border-indigo-100">
+                      <span className="text-[10px] px-1.5 py-0.5 bg-primary/10 text-primary rounded-full font-bold border border-primary/20">
                         {ALL_BUBBLES_LABEL}
                       </span>
                     )}
-                    <span className="text-xs text-slate-400">
+                    <span className="text-xs text-muted-foreground">
                       {formatMessageTimestamp(msg.timestamp)}
                     </span>
                   </div>
-                  <div className="text-slate-700 leading-relaxed mt-0.5">
+                  <div className="text-foreground leading-relaxed mt-0.5">
                     {renderMessageContent(msg.content)}
                   </div>
                   {msg.attachments && msg.attachments.length > 0 && (
@@ -1520,14 +1521,14 @@ export function ChatArea({
                   {msg.threadCount && msg.threadCount > 0 ? (
                     <button
                       onClick={() => handleOpenThread(msg)}
-                      className="mt-2 flex items-center gap-2 text-[10px] font-bold text-indigo-600 hover:text-indigo-700 transition-colors bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100"
+                      className="mt-2 flex items-center gap-2 text-[10px] font-bold text-primary hover:text-primary transition-colors bg-primary/10 px-2 py-1 rounded-md border border-primary/20"
                     >
                       <MessageSquare className="w-3 h-3" />
                       {msg.threadCount} {msg.threadCount === 1 ? 'reply' : 'replies'}
                       {notifications.some(
                         (n) => n.type === 'thread_reply' && n.relatedId === msg.id && !n.read,
                       ) && (
-                        <span className="px-1 py-0.5 bg-red-500 text-white text-[7px] rounded-full uppercase tracking-tighter animate-pulse">
+                        <span className="animate-pulse rounded-full bg-destructive px-1 py-0.5 text-[7px] font-medium uppercase tracking-tighter text-destructive-foreground">
                           New
                         </span>
                       )}
@@ -1535,7 +1536,7 @@ export function ChatArea({
                   ) : (
                     <button
                       onClick={() => handleOpenThread(msg)}
-                      className="mt-1 opacity-0 group-hover:opacity-100 flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-indigo-600 transition-all"
+                      className="mt-1 opacity-0 group-hover:opacity-100 flex items-center gap-1 text-[10px] font-bold text-muted-foreground hover:text-primary transition-all"
                     >
                       <MessageSquare className="w-3 h-3" />
                       Reply in thread
@@ -1570,11 +1571,11 @@ export function ChatArea({
             initial={{ opacity: 0, y: 10, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.95 }}
-            className="absolute bottom-24 left-6 w-64 bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden z-50"
+            className="absolute bottom-24 left-6 z-50 w-64 overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-2xl"
           >
-            <div className="p-2 bg-slate-50 border-b border-slate-100 flex items-center gap-2">
-              <AtSign className="w-3 h-3 text-indigo-600" />
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+            <div className="p-2 bg-muted/70 border-b border-border flex items-center gap-2">
+              <AtSign className="w-3 h-3 text-primary" />
+              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
                 Mention Team Member
               </span>
             </div>
@@ -1586,16 +1587,16 @@ export function ChatArea({
                   className={cn(
                     'w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors',
                     idx === mentionIndex
-                      ? 'bg-indigo-50 text-indigo-700'
-                      : 'hover:bg-slate-50 text-slate-700',
+                      ? 'bg-primary/10 text-primary'
+                      : 'hover:bg-muted/70 text-foreground',
                   )}
                 >
-                  <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center text-[10px] font-bold text-indigo-700">
+                  <div className="w-7 h-7 rounded-full bg-primary/15 flex items-center justify-center text-[10px] font-bold text-primary">
                     {member.name[0]}
                   </div>
                   <div className="flex flex-col">
                     <span className="text-sm font-semibold">{member.name}</span>
-                    <span className="text-[10px] text-slate-400">{member.email}</span>
+                    <span className="text-[10px] text-muted-foreground">{member.email}</span>
                   </div>
                 </button>
               ))}
@@ -1608,11 +1609,11 @@ export function ChatArea({
             initial={{ opacity: 0, y: 10, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.95 }}
-            className="absolute bottom-24 left-6 w-80 bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden z-50"
+            className="absolute bottom-24 left-6 z-50 w-80 overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-2xl"
           >
-            <div className="p-2 bg-slate-50 border-b border-slate-100 flex items-center gap-2">
-              <Hash className="w-3 h-3 text-emerald-600" />
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+            <div className="p-2 bg-muted/70 border-b border-border flex items-center gap-2">
+              <Hash className="h-3 w-3 text-[var(--accent-green-text)]" />
+              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
                 Link Task / Feature
               </span>
             </div>
@@ -1621,7 +1622,7 @@ export function ChatArea({
                 t.title.toLowerCase().includes(taskMentionSearch.toLowerCase()),
               ).length === 0 ? (
                 <div className="p-4 text-center">
-                  <p className="text-xs text-slate-400">No tasks found</p>
+                  <p className="text-xs text-muted-foreground">No tasks found</p>
                 </div>
               ) : (
                 allTasks
@@ -1633,11 +1634,11 @@ export function ChatArea({
                       className={cn(
                         'w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors',
                         idx === taskMentionIndex
-                          ? 'bg-emerald-50 text-emerald-700'
-                          : 'hover:bg-slate-50 text-slate-700',
+                          ? 'bg-[var(--accent-green-bg)] text-[var(--accent-green-text)]'
+                          : 'text-foreground hover:bg-muted/70',
                       )}
                     >
-                      <div className="w-7 h-7 rounded bg-emerald-100 flex items-center justify-center text-emerald-600 text-[10px] font-bold shrink-0">
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-[color:color-mix(in_srgb,var(--accent-green)_22%,transparent)] text-[10px] font-bold text-[var(--accent-green-text)]">
                         {task.type === 'request' ? (
                           <Zap className="w-3 h-3" />
                         ) : task.type === 'idea' ? (
@@ -1648,7 +1649,9 @@ export function ChatArea({
                       </div>
                       <div className="flex flex-col min-w-0">
                         <span className="text-sm font-semibold truncate">{task.title}</span>
-                        <span className="text-[10px] text-slate-400 truncate">{task.status}</span>
+                        <span className="text-[10px] text-muted-foreground truncate">
+                          {task.status}
+                        </span>
                       </div>
                     </button>
                   ))
@@ -1678,7 +1681,7 @@ export function ChatArea({
           onChange={handleAttachmentPick}
         />
         {attachmentError && (
-          <p className="mb-2 px-1 text-xs text-red-600" role="alert">
+          <p className="mb-2 px-1 text-xs text-destructive" role="alert">
             {attachmentError}
           </p>
         )}
@@ -1687,12 +1690,12 @@ export function ChatArea({
             {pendingFiles.map((f, i) => (
               <span
                 key={`${f.name}-${i}`}
-                className="inline-flex max-w-[200px] items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] text-slate-700"
+                className="inline-flex max-w-[200px] items-center gap-1 rounded-md border border-border bg-muted/70 px-2 py-1 text-[10px] text-foreground"
               >
                 <span className="truncate">{f.name}</span>
                 <button
                   type="button"
-                  className="shrink-0 rounded p-0.5 text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+                  className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
                   onClick={() => setPendingFiles((p) => p.filter((_, j) => j !== i))}
                   aria-label="Remove file"
                 >
@@ -1705,7 +1708,7 @@ export function ChatArea({
         <form onSubmit={handleSubmit} className="flex items-center gap-2">
           <button
             type="button"
-            className="shrink-0 rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-indigo-600 disabled:opacity-30"
+            className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-primary disabled:opacity-30"
             disabled={!canWrite || !canPostInComposer || sendingAttachments}
             title="Attach image, video, or document"
             aria-label="Attach file"
@@ -1760,12 +1763,12 @@ export function ChatArea({
               }}
               placeholder={activeBubble ? `Message #${activeBubble.name}` : 'Select a bubble…'}
               disabled={!canWrite || !canPostInComposer || sendingAttachments}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 pr-12 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all disabled:opacity-50"
+              className="w-full rounded-xl border border-input bg-background px-4 py-3 pr-12 text-foreground transition-all placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-50"
             />
             <button
               type="submit"
               disabled={!input.trim() || !canWrite || !canPostInComposer || sendingAttachments}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-primary hover:bg-primary/10 rounded-lg disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
             >
               {sendingAttachments ? (
                 <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
@@ -1775,12 +1778,9 @@ export function ChatArea({
             </button>
           </div>
         </form>
-        <p className="text-[10px] text-slate-400 mt-2 px-1">
+        <p className="mt-2 px-1 text-[10px] text-muted-foreground">
           <b>Return</b> to send (after attaching, pick files then send) • <b>Shift + Return</b> for
           new line • <b>@</b> to mention
-          {false && (
-            <span className="ml-2 text-indigo-500 font-bold">• Broadcast to all bubbles</span>
-          )}
         </p>
       </div>
     </div>

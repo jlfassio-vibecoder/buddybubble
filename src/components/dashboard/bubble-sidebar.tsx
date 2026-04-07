@@ -81,11 +81,15 @@ export function BubbleSidebar({
   return (
     <aside
       className={cn(
-        'flex min-h-0 flex-col overflow-hidden transition-[width] duration-200 ease-out',
-        !collapsed && 'h-full w-56 shrink-0 border-r border-border bg-card',
+        'flex min-h-0 flex-col overflow-hidden transition-[width] duration-200 ease-out motion-reduce:transition-none',
+        !collapsed &&
+          'h-full w-56 shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground',
         isCollapsedStrip &&
-          cn('h-full shrink-0 border-r border-border bg-card', COLLAPSED_COLUMN_WIDTH_CLASS),
-        isStackedInColumn && 'min-h-0 flex-1 w-full border-0 border-b border-zinc-800 bg-white',
+          cn(
+            'h-full shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground',
+            COLLAPSED_COLUMN_WIDTH_CLASS,
+          ),
+        isStackedInColumn && 'min-h-0 flex-1 w-full border-0 border-b border-border bg-card',
       )}
       aria-label="Bubbles"
     >
@@ -95,25 +99,23 @@ export function BubbleSidebar({
           expandTitle="Expand Bubbles sidebar"
           expandAriaLabel="Expand Bubbles sidebar"
           onExpand={expand}
-          variant={
-            collapsedStackSlot === 'top' || collapsedStackSlot === 'middle' ? 'white' : 'card'
-          }
+          variant={isStackedInColumn ? 'card' : 'sidebar'}
         />
       ) : (
         <>
-          <div className="border-b border-border p-3">
+          <div className="border-b border-sidebar-border p-3">
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 title="Collapse Bubbles sidebar"
                 aria-label="Collapse Bubbles sidebar"
                 onClick={collapse}
-                className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                className="shrink-0 rounded-md p-1 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
               >
                 <ChevronLeft className="size-4" strokeWidth={2.25} aria-hidden />
               </button>
               <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
-                <h2 className="truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <h2 className="truncate text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/70">
                   Bubbles
                 </h2>
                 {isAdmin ? (
@@ -124,7 +126,7 @@ export function BubbleSidebar({
                           ? `/app/${workspaceId}/invites?tab=pending`
                           : `/app/${workspaceId}/invites`
                       }
-                      className="relative rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      className="relative rounded-md p-1 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                       aria-label={
                         pendingJoinRequestCount > 0
                           ? `Invite people — ${pendingJoinRequestCount} pending join request${pendingJoinRequestCount === 1 ? '' : 's'}`
@@ -138,7 +140,7 @@ export function BubbleSidebar({
                     >
                       <UserPlus className="size-4" strokeWidth={2.25} aria-hidden />
                       {pendingJoinRequestCount > 0 ? (
-                        <span className="absolute -right-1 -top-1 flex min-h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full border-2 border-card bg-destructive px-1 text-[9px] font-bold leading-none text-destructive-foreground">
+                        <span className="absolute -right-1 -top-1 flex min-h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full border-2 border-sidebar bg-destructive px-1 text-[9px] font-bold leading-none text-destructive-foreground">
                           {pendingJoinRequestCount > 99 ? '99+' : pendingJoinRequestCount}
                         </span>
                       ) : null}
@@ -147,7 +149,7 @@ export function BubbleSidebar({
                       <button
                         type="button"
                         onClick={onOpenWorkspaceSettings}
-                        className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        className="rounded-md p-1 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                         aria-label="Workspace settings"
                         title="Workspace settings"
                       >
@@ -181,8 +183,8 @@ export function BubbleSidebar({
                   className={cn(
                     'mb-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-medium transition-colors',
                     selectedBubbleId === ALL_BUBBLES_BUBBLE_ID
-                      ? 'bg-accent text-accent-foreground'
-                      : 'hover:bg-muted',
+                      ? 'bg-[color:var(--sidebar-active)] text-[var(--primary-foreground)]'
+                      : 'text-sidebar-foreground hover:bg-[color:var(--sidebar-hover)]',
                   )}
                 >
                   <Hash className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
@@ -197,8 +199,8 @@ export function BubbleSidebar({
                     className={cn(
                       'mb-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-medium transition-colors',
                       selectedBubbleId === b.id
-                        ? 'bg-accent text-accent-foreground'
-                        : 'hover:bg-muted',
+                        ? 'bg-[color:var(--sidebar-active)] text-[var(--primary-foreground)]'
+                        : 'text-sidebar-foreground hover:bg-[color:var(--sidebar-hover)]',
                     )}
                   >
                     <Hash className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
@@ -207,7 +209,7 @@ export function BubbleSidebar({
                 </li>
               ))}
               {bubbles.length === 0 && (
-                <li className="px-2 py-4 text-sm text-muted-foreground">No bubbles yet.</li>
+                <li className="px-2 py-4 text-sm text-sidebar-foreground/70">No bubbles yet.</li>
               )}
             </ul>
           </ScrollArea>

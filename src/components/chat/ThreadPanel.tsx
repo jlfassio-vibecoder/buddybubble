@@ -65,16 +65,16 @@ export function ThreadPanel({
           animate={{ x: 0 }}
           exit={{ x: '100%' }}
           transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-          className="w-80 border-l border-slate-200 bg-slate-50 flex flex-col shadow-2xl z-10"
+          className="z-10 flex w-80 flex-col border-l border-border bg-background shadow-2xl"
         >
-          <div className="h-16 border-b border-slate-200 flex items-center justify-between px-4 bg-white shrink-0">
+          <div className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-background px-4">
             <div className="flex items-center gap-2">
-              <MessageSquare className="w-4 h-4 text-indigo-600" />
-              <h3 className="font-bold text-slate-900 text-sm">Thread</h3>
+              <MessageSquare className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-bold text-foreground">Thread</h3>
             </div>
             <button
               onClick={onClose}
-              className="p-1.5 hover:bg-slate-100 rounded-full text-slate-400 transition-colors"
+              className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <X className="w-4 h-4" />
             </button>
@@ -82,9 +82,9 @@ export function ThreadPanel({
 
           <div className="flex-1 overflow-y-auto p-4 custom-scrollbar" ref={threadScrollRef}>
             {/* Parent Message */}
-            <div className="mb-6 pb-6 border-b border-slate-200">
-              <div className="flex gap-3 mb-2">
-                <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold shrink-0 overflow-hidden border border-slate-100">
+            <div className="mb-6 border-b border-border pb-6">
+              <div className="mb-2 flex gap-3">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-primary/15 text-sm font-bold text-primary">
                   {activeThreadParent.senderAvatar ? (
                     <img
                       src={activeThreadParent.senderAvatar}
@@ -98,14 +98,14 @@ export function ThreadPanel({
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-2">
-                    <span className="text-sm font-bold text-slate-900">
+                    <span className="text-sm font-bold text-foreground">
                       {activeThreadParent.sender}
                     </span>
-                    <span className="text-[10px] text-slate-400">
+                    <span className="text-[10px] text-muted-foreground">
                       {formatMessageTimestamp(activeThreadParent.timestamp)}
                     </span>
                   </div>
-                  <p className="text-sm text-slate-700 mt-1">
+                  <p className="mt-1 text-sm text-foreground">
                     {renderMessageContent(activeThreadParent.content)}
                   </p>
                   {activeThreadParent.attachments && activeThreadParent.attachments.length > 0 && (
@@ -123,7 +123,7 @@ export function ThreadPanel({
             <div className="space-y-6">
               {threadMessages.map((reply) => (
                 <div key={reply.id} className="flex gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold shrink-0 overflow-hidden border border-slate-100">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-primary/15 text-sm font-bold text-primary">
                     {reply.senderAvatar ? (
                       <img
                         src={reply.senderAvatar}
@@ -137,12 +137,12 @@ export function ThreadPanel({
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline gap-2">
-                      <span className="text-sm font-bold text-slate-900">{reply.sender}</span>
-                      <span className="text-[10px] text-slate-400">
+                      <span className="text-sm font-bold text-foreground">{reply.sender}</span>
+                      <span className="text-[10px] text-muted-foreground">
                         {formatMessageTimestamp(reply.timestamp)}
                       </span>
                     </div>
-                    <p className="text-sm text-slate-700 mt-1">
+                    <p className="mt-1 text-sm text-foreground">
                       {renderMessageContent(reply.content)}
                     </p>
                     {reply.attachments && reply.attachments.length > 0 && (
@@ -159,7 +159,7 @@ export function ThreadPanel({
           </div>
 
           {/* Thread Input */}
-          <div className="p-4 bg-white border-t border-slate-200">
+          <div className="border-t border-border bg-background p-4">
             <input
               ref={threadAttachmentInputRef}
               type="file"
@@ -173,12 +173,12 @@ export function ThreadPanel({
                 {pendingFiles.map((f, i) => (
                   <span
                     key={`${f.name}-${i}`}
-                    className="inline-flex max-w-[140px] items-center gap-1 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[9px] text-slate-700"
+                    className="inline-flex max-w-[140px] items-center gap-1 rounded border border-border bg-muted/70 px-1.5 py-0.5 text-[9px] text-foreground"
                   >
                     <span className="truncate">{f.name}</span>
                     <button
                       type="button"
-                      className="shrink-0 text-slate-500 hover:text-slate-800"
+                      className="shrink-0 text-muted-foreground hover:text-foreground"
                       onClick={() => setPendingFiles((p) => p.filter((_, j) => j !== i))}
                       aria-label="Remove file"
                     >
@@ -203,7 +203,7 @@ export function ThreadPanel({
             >
               <button
                 type="button"
-                className="shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-indigo-600 disabled:opacity-30"
+                className="shrink-0 rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-primary disabled:opacity-30"
                 disabled={!canWrite || !activeThreadParent || sending}
                 aria-label="Attach file"
                 title="Attach image, video, or document"
@@ -219,14 +219,14 @@ export function ThreadPanel({
                   placeholder="Reply to thread..."
                   disabled={!canWrite || !activeThreadParent || sending}
                   className={cn(
-                    'w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 pr-10 text-sm',
-                    'focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all disabled:opacity-50',
+                    'w-full rounded-xl border border-input bg-background px-3 py-2 pr-10 text-sm text-foreground placeholder:text-muted-foreground',
+                    'transition-all focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-50',
                   )}
                 />
                 <button
                   type="submit"
                   disabled={!threadInput.trim() || !canWrite || !activeThreadParent || sending}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-30 transition-colors"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-primary transition-colors hover:bg-primary/10 disabled:opacity-30"
                 >
                   {sending ? (
                     <Loader2 className="w-4 h-4 animate-spin" aria-hidden />
