@@ -27,15 +27,15 @@ type Props = {
 function categoryRing(category: WorkspaceRow['category_type']): string {
   switch (category) {
     case 'business':
-      return 'ring-indigo-400/45';
+      return 'ring-[color:var(--sidebar-active)]/50';
     case 'kids':
-      return 'ring-pink-400/45';
+      return 'ring-[color:var(--sidebar-active)]/55';
     case 'class':
-      return 'ring-amber-400/45';
+      return 'ring-[color:var(--sidebar-active)]/50';
     case 'community':
-      return 'ring-emerald-400/45';
+      return 'ring-[color:var(--sidebar-active)]/50';
     default:
-      return 'ring-zinc-500/35';
+      return 'ring-white/30';
   }
 }
 
@@ -70,10 +70,10 @@ export function WorkspaceRail({
     <>
       <aside
         className={cn(
-          'flex min-h-0 flex-col overflow-hidden bg-zinc-950 transition-[width] duration-200 ease-out',
-          !collapsed && 'h-full w-[72px] shrink-0 border-r border-zinc-800 py-2',
+          'flex min-h-0 flex-col overflow-hidden bg-[var(--rail-bg)] transition-[width] duration-200 ease-out motion-reduce:transition-none',
+          !collapsed && 'h-full w-[72px] shrink-0 border-r border-white/15 py-2',
           isCollapsedStrip &&
-            cn('h-full shrink-0 border-r border-zinc-800 py-2', COLLAPSED_COLUMN_WIDTH_CLASS),
+            cn('h-full shrink-0 border-r border-white/15 py-2', COLLAPSED_COLUMN_WIDTH_CLASS),
           isStackedBottom && 'min-h-0 flex-1 w-full border-0 py-2',
         )}
         aria-label="BuddyBubbles"
@@ -115,8 +115,8 @@ export function WorkspaceRail({
                           'ring-2 ring-inset',
                           categoryRing(w.category_type),
                           active
-                            ? 'rounded-[14px] bg-zinc-700 text-white'
-                            : 'bg-zinc-800 text-zinc-100 hover:rounded-[14px] hover:bg-emerald-600',
+                            ? 'rounded-[14px] bg-[color:var(--sidebar-active)] text-[var(--primary-foreground)]'
+                            : 'bg-white/15 text-[color:var(--sidebar-text)] hover:rounded-[14px] hover:bg-[color:var(--sidebar-hover)] hover:text-white',
                         )}
                       >
                         {w.icon_url ? (
@@ -136,13 +136,13 @@ export function WorkspaceRail({
               </nav>
             </ScrollArea>
 
-            <div className="mt-auto flex shrink-0 flex-col items-center gap-2 border-t border-zinc-800/80 px-2 pt-2">
+            <div className="mt-auto flex shrink-0 flex-col items-center gap-2 border-t border-white/15 px-2 pt-2">
               <button
                 type="button"
                 title="Collapse Workspace rail"
                 aria-label="Collapse Workspace rail"
                 onClick={collapse}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-white/55 transition-colors hover:bg-white/15 hover:text-white motion-reduce:transition-none"
               >
                 <ChevronLeft className="size-4" strokeWidth={2.25} aria-hidden />
               </button>
@@ -151,7 +151,7 @@ export function WorkspaceRail({
                 title="Create a BuddyBubble"
                 aria-label="Create a BuddyBubble"
                 onClick={() => setCreateOpen(true)}
-                className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-zinc-900 text-zinc-500 ring-2 ring-inset ring-zinc-700/80 transition-colors hover:bg-emerald-600 hover:text-white hover:ring-emerald-500/60"
+                className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-white/10 text-white/55 ring-2 ring-inset ring-white/20 transition-colors hover:bg-[color:var(--sidebar-active)] hover:text-[var(--primary-foreground)] hover:ring-[color:var(--sidebar-active)]/50 motion-reduce:transition-none"
               >
                 <Plus className="h-6 w-6" strokeWidth={2.25} />
               </button>
@@ -161,7 +161,7 @@ export function WorkspaceRail({
                   title="Profile"
                   aria-label="Open profile"
                   onClick={onOpenProfile}
-                  className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-[14px] bg-zinc-900 ring-2 ring-inset ring-zinc-700/80 transition-colors hover:ring-zinc-500"
+                  className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-[14px] bg-white/10 ring-2 ring-inset ring-white/20 transition-colors hover:ring-white/40 motion-reduce:transition-none"
                 >
                   {profileAvatarUrl ? (
                     <img
@@ -171,7 +171,7 @@ export function WorkspaceRail({
                       referrerPolicy="no-referrer"
                     />
                   ) : (
-                    <span className="text-[11px] font-semibold text-zinc-300">
+                    <span className="text-[11px] font-semibold text-[color:var(--sidebar-text)]">
                       {profileInitial}
                     </span>
                   )}

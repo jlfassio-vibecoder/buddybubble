@@ -1,12 +1,15 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Camera, Save, User, Mail, Globe } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { X, Camera, Save, User, Mail, Globe, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { createClient } from '@utils/supabase/client';
 import { useUserProfileStore, type UserProfileRow } from '@/store/userProfileStore';
 import { AVATARS_BUCKET, buildAvatarObjectPath } from '@/lib/avatar-storage';
 import { formatUserFacingError } from '@/lib/format-error';
+import { ThemeToggle } from '@/components/theme/theme-toggle';
+import { CategoryThemeSelect } from '@/components/theme/category-theme-select';
 import { isMissingColumnSchemaCacheError } from '@/lib/supabase-schema-errors';
 import { COMMON_CALENDAR_TIMEZONES } from '@/lib/calendar-timezones';
 
@@ -16,6 +19,7 @@ export type ProfileModalProps = {
 };
 
 export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
+  const router = useRouter();
   const profile = useUserProfileStore((s) => s.profile);
   const setProfile = useUserProfileStore((s) => s.setProfile);
   const loadProfile = useUserProfileStore((s) => s.loadProfile);
@@ -25,12 +29,14 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
   const [avatarPreview, setAvatarPreview] = useState('');
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
     setError(null);
+    setSigningOut(false);
     void loadProfile();
   }, [open, loadProfile]);
 
@@ -137,6 +143,27 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
     }
   };
 
+  async function handleSignOut() {
+    setError(null);
+    setSigningOut(true);
+    try {
+      const supabase = createClient();
+      const { error: outErr } = await supabase.auth.signOut();
+      if (outErr) {
+        setError(formatUserFacingError(outErr));
+        setSigningOut(false);
+        return;
+      }
+      setProfile(null);
+      onOpenChange(false);
+      router.push('/login');
+      router.refresh();
+    } catch (err) {
+      setError(formatUserFacingError(err));
+      setSigningOut(false);
+    }
+  }
+
   const displayName = name || 'Member';
 
   return (
@@ -148,21 +175,21 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={() => onOpenChange(false)}
-            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
           />
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+            className="relative flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl"
             onClick={(ev) => ev.stopPropagation()}
           >
-            <div className="flex items-center justify-between p-6 border-b border-slate-100 shrink-0">
-              <h3 className="text-xl font-bold text-slate-900">Edit Profile</h3>
+            <div className="flex shrink-0 items-center justify-between border-b border-border p-6">
+              <h3 className="text-xl font-bold text-foreground">Edit Profile</h3>
               <button
                 type="button"
                 onClick={() => onOpenChange(false)}
-                className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400 hover:text-slate-600"
+                className="rounded-full p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -173,7 +200,7 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
               className="p-6 space-y-6 overflow-y-auto max-h-[80vh] custom-scrollbar"
             >
               {error && (
-                <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                   {error}
                 </p>
               )}
@@ -181,7 +208,7 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
               {/* Avatar Section — same structure as Firebase version */}
               <div className="flex flex-col items-center gap-4">
                 <div className="relative group">
-                  <div className="w-24 h-24 rounded-full bg-slate-100 border-4 border-white shadow-lg overflow-hidden flex items-center justify-center">
+                  <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border-4 border-background bg-muted shadow-lg">
                     {avatarPreview ? (
                       <img
                         src={avatarPreview}
@@ -190,7 +217,7 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
                         referrerPolicy="no-referrer"
                       />
                     ) : (
-                      <span className="text-2xl font-bold text-slate-400">
+                      <span className="text-2xl font-bold text-muted-foreground">
                         {displayName
                           .split(' ')
                           .map((n) => n[0])
@@ -202,7 +229,7 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="absolute bottom-0 right-0 p-2 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-all transform hover:scale-110"
+                    className="absolute bottom-0 right-0 transform rounded-full bg-primary p-2 text-primary-foreground shadow-lg transition-all hover:scale-110 hover:bg-primary/90"
                   >
                     <Camera className="w-4 h-4" />
                   </button>
@@ -214,24 +241,24 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
                     className="hidden"
                   />
                 </div>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-muted-foreground">
                   Click the camera icon to change your avatar
                 </p>
               </div>
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                  <label className="mb-1.5 block text-sm font-semibold text-foreground">
                     Full Name
                   </label>
                   <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <input
                       type="text"
                       required
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                      className="w-full rounded-lg border border-input bg-background py-2 pl-10 pr-4 text-foreground transition-all placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
                       placeholder="John Doe"
                       disabled={saving}
                     />
@@ -239,20 +266,20 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                  <label className="mb-1.5 block text-sm font-semibold text-foreground">
                     Email Address
                   </label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <input
                       type="email"
                       value={profile?.email ?? ''}
                       readOnly
-                      className="w-full pl-10 pr-4 py-2 bg-slate-100 border border-slate-200 rounded-lg text-slate-600 cursor-not-allowed focus:outline-none"
+                      className="w-full cursor-not-allowed rounded-lg border border-input bg-muted/60 py-2 pl-10 pr-4 text-muted-foreground focus:outline-none"
                       placeholder="you@example.com"
                     />
                   </div>
-                  <p className="text-[10px] text-slate-400 mt-1.5">
+                  <p className="mt-1.5 text-[10px] text-muted-foreground">
                     Email is managed by your sign-in provider.
                   </p>
                 </div>
@@ -260,18 +287,18 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
                 <div>
                   <label
                     htmlFor="profile-timezone"
-                    className="block text-sm font-semibold text-slate-700 mb-1.5"
+                    className="mb-1.5 block text-sm font-semibold text-foreground"
                   >
                     Timezone
                   </label>
                   <div className="relative">
-                    <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                    <Globe className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <select
                       id="profile-timezone"
                       value={timezone}
                       onChange={(e) => setTimezone(e.target.value)}
                       disabled={saving}
-                      className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all appearance-none cursor-pointer disabled:opacity-50"
+                      className="w-full cursor-pointer appearance-none rounded-lg border border-input bg-background py-2 pl-10 pr-4 text-foreground transition-all focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-50"
                     >
                       {!COMMON_CALENDAR_TIMEZONES.includes(
                         timezone as (typeof COMMON_CALENDAR_TIMEZONES)[number],
@@ -283,10 +310,24 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
                       ))}
                     </select>
                   </div>
-                  <p className="text-[10px] text-slate-400 mt-1.5">
+                  <p className="mt-1.5 text-[10px] text-muted-foreground">
                     Used for your local date and time display; new workspaces may use this as their
                     default calendar timezone.
                   </p>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-sm font-semibold text-foreground">
+                    Appearance
+                  </label>
+                  <ThemeToggle />
+                  <p className="mt-1.5 text-[10px] text-muted-foreground">
+                    Light, dark, or follow your device. Category theme controls BuddyBubble palettes
+                    and accents; choose a preset or match each workspace.
+                  </p>
+                  <div className="mt-4 space-y-2">
+                    <CategoryThemeSelect />
+                  </div>
                 </div>
               </div>
 
@@ -294,18 +335,30 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
                 <button
                   type="button"
                   onClick={() => onOpenChange(false)}
-                  disabled={saving}
-                  className="flex-1 px-4 py-2.5 border border-slate-200 text-slate-600 font-semibold rounded-xl hover:bg-slate-50 transition-colors disabled:opacity-50"
+                  disabled={saving || signingOut}
+                  className="flex-1 rounded-xl border border-border px-4 py-2.5 font-semibold text-foreground transition-colors hover:bg-muted disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={saving || !profile}
-                  className="flex-1 px-4 py-2.5 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20 disabled:opacity-50"
+                  disabled={saving || signingOut || !profile}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 font-semibold text-primary-foreground shadow-lg transition-colors hover:bg-primary/90 disabled:opacity-50"
                 >
                   <Save className="w-4 h-4" />
                   {saving ? 'Saving…' : 'Save Changes'}
+                </button>
+              </div>
+
+              <div className="border-t border-border pt-4">
+                <button
+                  type="button"
+                  onClick={() => void handleSignOut()}
+                  disabled={saving || signingOut}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-destructive/30 px-4 py-2.5 font-semibold text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
+                >
+                  <LogOut className="w-4 h-4 shrink-0" aria-hidden />
+                  {signingOut ? 'Signing out…' : 'Sign out'}
                 </button>
               </div>
             </form>

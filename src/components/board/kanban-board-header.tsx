@@ -7,6 +7,8 @@ import { cn } from '@/lib/utils';
 import type { KanbanCardDensity } from '@/components/board/kanban-density';
 import type { PriorityFilter } from '@/lib/task-priority';
 import type { DateFilter, DateSortMode } from '@/lib/task-date-filter';
+import { kanbanBoardTitleForCategory } from '@/lib/kanban-board-title';
+import type { WorkspaceCategory } from '@/types/database';
 
 const DENSITY_OPTIONS: {
   value: KanbanCardDensity;
@@ -42,6 +44,8 @@ const KANBAN_BOARD_HELP =
   'Drag cards between columns to update status. Open a card for the full editor, comments, and attachments.';
 
 export type KanbanBoardHeaderProps = {
+  workspaceName?: string | null;
+  categoryType?: WorkspaceCategory | null;
   canWrite: boolean;
   hasBubble: boolean;
   /** Collapse the board to a strip (opens Messages if needed). */
@@ -58,6 +62,8 @@ export type KanbanBoardHeaderProps = {
 };
 
 export function KanbanBoardHeader({
+  workspaceName = null,
+  categoryType = null,
   canWrite,
   hasBubble,
   onCollapse,
@@ -71,6 +77,10 @@ export function KanbanBoardHeader({
   dateSortMode,
   onDateSortModeChange,
 }: KanbanBoardHeaderProps) {
+  const boardTitle = kanbanBoardTitleForCategory(categoryType);
+  const nameLine = workspaceName?.trim() ?? '';
+  const headingAriaLabel = [nameLine, boardTitle].filter(Boolean).join('. ') || boardTitle;
+
   const pillGroupClass =
     'inline-flex max-w-full flex-wrap rounded-lg border border-border bg-muted/50 p-0.5';
 
@@ -78,6 +88,9 @@ export function KanbanBoardHeader({
     <div className="shrink-0 border-b border-border bg-background px-4 py-3">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between lg:gap-4">
         <div className="min-w-0 shrink-0 lg:max-w-[min(100%,28rem)]">
+          {nameLine ? (
+            <p className="mb-0.5 truncate text-xs font-medium text-muted-foreground">{nameLine}</p>
+          ) : null}
           <div className="flex items-center gap-1.5">
             {onCollapse ? (
               <button
@@ -90,7 +103,12 @@ export function KanbanBoardHeader({
                 <PanelLeftClose className="size-5" strokeWidth={2} aria-hidden />
               </button>
             ) : null}
-            <h2 className="text-base font-semibold tracking-tight text-foreground">Kanban Board</h2>
+            <h2
+              className="min-w-0 truncate text-base font-semibold tracking-tight text-foreground"
+              aria-label={headingAriaLabel}
+            >
+              {boardTitle}
+            </h2>
             <Tooltip.Provider delay={200}>
               <Tooltip.Root>
                 <Tooltip.Trigger

@@ -576,6 +576,8 @@ export function KanbanBoard({
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-muted/30">
       <KanbanBoardHeader
+        workspaceName={activeWorkspace?.name ?? null}
+        categoryType={workspaceCategory ?? activeWorkspace?.category_type ?? null}
         canWrite={canWrite}
         hasBubble={Boolean(bubbleId)}
         onCollapse={onCollapse}

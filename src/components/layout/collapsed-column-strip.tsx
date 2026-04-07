@@ -22,7 +22,7 @@ export function CollapsedColumnStrip({
   expandTitle: string;
   expandAriaLabel: string;
   onExpand: () => void;
-  variant?: 'zinc' | 'card' | 'white' | 'black';
+  variant?: 'zinc' | 'card' | 'sidebar' | 'black';
 }) {
   return (
     <button
@@ -34,8 +34,10 @@ export function CollapsedColumnStrip({
       className={cn(
         'flex min-h-0 w-full flex-1 flex-col justify-end overflow-y-auto overflow-x-hidden p-0',
         variant === 'zinc' && 'text-zinc-100 hover:bg-zinc-900/50',
-        variant === 'card' && 'text-foreground hover:bg-muted/80',
-        variant === 'white' && 'text-zinc-900 hover:bg-zinc-100/90',
+        variant === 'card' && 'text-card-foreground hover:bg-muted/80',
+        /** Collapsed strip on `bg-sidebar` (Bubbles rail). */
+        variant === 'sidebar' &&
+          'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
         variant === 'black' && 'text-zinc-100 hover:bg-white/10',
       )}
     >

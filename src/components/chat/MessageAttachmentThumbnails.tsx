@@ -81,7 +81,7 @@ export function MessageAttachmentThumbnails({ attachments, onOpenAttachment, cla
           key={att.id}
           type="button"
           onClick={() => onOpenAttachment(idx)}
-          className="group relative h-20 w-28 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+          className="group relative h-20 w-28 shrink-0 overflow-hidden rounded-lg border border-border bg-muted focus:outline-none focus:ring-2 focus:ring-ring/40"
           aria-label={thumbLabel(att)}
         >
           {att.kind === 'image' && (
@@ -97,7 +97,7 @@ export function MessageAttachmentThumbnails({ attachments, onOpenAttachment, cla
                 />
               ) : (
                 <div className="flex h-full w-full items-center justify-center">
-                  <Loader2 className="h-6 w-6 animate-spin text-slate-400" aria-hidden />
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-hidden />
                 </div>
               )}
             </>
@@ -127,9 +127,9 @@ export function MessageAttachmentThumbnails({ attachments, onOpenAttachment, cla
                   ) : null}
                 </>
               ) : (
-                <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-slate-200">
-                  <Film className="h-6 w-6 text-slate-500" />
-                  <span className="max-w-full truncate px-1 text-[9px] text-slate-600">
+                <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-muted">
+                  <Film className="h-6 w-6 text-muted-foreground" />
+                  <span className="max-w-full truncate px-1 text-[9px] text-muted-foreground">
                     {att.file_name}
                   </span>
                 </div>
@@ -149,8 +149,8 @@ export function MessageAttachmentThumbnails({ attachments, onOpenAttachment, cla
                 />
               ) : (
                 <div className="flex h-full w-full flex-col items-center justify-center gap-1 px-1">
-                  <FileText className="h-7 w-7 text-indigo-500" />
-                  <span className="max-w-full truncate text-[9px] font-medium text-slate-700">
+                  <FileText className="h-7 w-7 text-primary" />
+                  <span className="max-w-full truncate text-[9px] font-medium text-foreground">
                     {att.file_name}
                   </span>
                 </div>

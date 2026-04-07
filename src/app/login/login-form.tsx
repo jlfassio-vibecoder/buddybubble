@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { createClient } from '@utils/supabase/client';
 import { Button } from '@/components/ui/button';
 import { authCallbackAbsoluteUrl } from '@/lib/auth-callback-url';
-import { formatUserFacingError } from '@/lib/format-error';
+import { formatLoginAuthError } from '@/lib/format-error';
 import { safeNextPath } from '@/lib/safe-next-path';
 import { persistInviteHandoffToken } from '@/app/(dashboard)/onboarding/actions';
 
@@ -38,7 +38,7 @@ export function LoginForm() {
     });
     setLoading(false);
     if (err) {
-      setError(formatUserFacingError(err));
+      setError(formatLoginAuthError(err, 'sign-in'));
       return;
     }
     if (inviteToken) {
@@ -62,7 +62,7 @@ export function LoginForm() {
       options: { redirectTo },
     });
     setLoading(false);
-    if (err) setError(formatUserFacingError(err));
+    if (err) setError(formatLoginAuthError(err, 'sign-in'));
   }
 
   async function signUp() {
@@ -77,7 +77,7 @@ export function LoginForm() {
     });
     setLoading(false);
     if (err) {
-      setError(formatUserFacingError(err));
+      setError(formatLoginAuthError(err, 'sign-up'));
       return;
     }
     if (data.session) {

@@ -1,0 +1,451 @@
+import React, { useState } from 'react';
+import { 
+  Hash, Bell, Search, Info, PanelLeftClose, Plus, 
+  Send, Calendar, User, MessageSquare, GripVertical, 
+  Settings, CheckSquare, AlertTriangle, MoreHorizontal,
+  Palette, Moon, Sun
+} from 'lucide-react';
+
+// --- THEME ENGINE ---
+// Each theme now defines specific Light and Dark structural colors for the main app areas
+const THEMES = {
+  business: {
+    id: 'business',
+    name: 'Business (Default)',
+    tokens: {
+      '--rail-bg': '#0f172a', '--sidebar-bg': '#1e293b', '--sidebar-text': '#cbd5e1', 
+      '--sidebar-active': '#4f46e5', '--sidebar-hover': '#334155', 
+      '--primary': '#4f46e5', '--primary-hover': '#4338ca', '--primary-light': '#e0e7ff',
+    },
+    light: {
+      '--app-bg': '#f8fafc', '--panel-bg': '#ffffff', '--border': '#e2e8f0', 
+      '--text-main': '#0f172a', '--text-muted': '#64748b', '--btn-bg': '#f1f5f9'
+    },
+    dark: {
+      '--app-bg': '#020617', '--panel-bg': '#0f172a', '--border': '#1e293b', 
+      '--text-main': '#f8fafc', '--text-muted': '#94a3b8', '--btn-bg': '#1e293b'
+    }
+  },
+  kids: {
+    id: 'kids',
+    name: 'Kids & Family',
+    tokens: {
+      '--rail-bg': '#4c1d95', '--sidebar-bg': '#5b21b6', '--sidebar-text': '#ddd6fe', 
+      '--sidebar-active': '#f59e0b', '--sidebar-hover': '#7c3aed', 
+      '--primary': '#f59e0b', '--primary-hover': '#d97706', '--primary-light': '#fef3c7',
+    },
+    light: {
+      '--app-bg': '#fffbeb', '--panel-bg': '#ffffff', '--border': '#fde68a', 
+      '--text-main': '#4c1d95', '--text-muted': '#7c3aed', '--btn-bg': '#fef3c7'
+    },
+    dark: {
+      '--app-bg': '#2e1065', '--panel-bg': '#4c1d95', '--border': '#5b21b6', 
+      '--text-main': '#fffbeb', '--text-muted': '#ddd6fe', '--btn-bg': '#5b21b6'
+    }
+  },
+  community: {
+    id: 'community',
+    name: 'Community',
+    tokens: {
+      '--rail-bg': '#0d0500', '--sidebar-bg': '#431407', '--sidebar-text': '#fed7aa', 
+      '--sidebar-active': '#f97316', '--sidebar-hover': '#7c2d12', 
+      '--primary': '#ea580c', '--primary-hover': '#c2410c', '--primary-light': '#ffedd5',
+    },
+    light: {
+      '--app-bg': '#fffaf5', '--panel-bg': '#ffffff', '--border': '#ffedd5', 
+      '--text-main': '#431407', '--text-muted': '#9a3412', '--btn-bg': '#ffedd5'
+    },
+    dark: {
+      '--app-bg': '#0d0500', '--panel-bg': '#2a0d04', '--border': '#431407', 
+      '--text-main': '#ffedd5', '--text-muted': '#fdba74', '--btn-bg': '#431407'
+    }
+  },
+  class: {
+    id: 'class',
+    name: 'Class Cohort',
+    tokens: {
+      '--rail-bg': '#172554', '--sidebar-bg': '#1e3a8a', '--sidebar-text': '#bfdbfe', 
+      '--sidebar-active': '#e11d48', '--sidebar-hover': '#1d4ed8', 
+      '--primary': '#e11d48', '--primary-hover': '#be123c', '--primary-light': '#ffe4e6',
+    },
+    light: {
+      '--app-bg': '#f8fafc', '--panel-bg': '#ffffff', '--border': '#e0e7ff', 
+      '--text-main': '#172554', '--text-muted': '#3b82f6', '--btn-bg': '#eff6ff'
+    },
+    dark: {
+      '--app-bg': '#020617', '--panel-bg': '#172554', '--border': '#1e3a8a', 
+      '--text-main': '#eff6ff', '--text-muted': '#93c5fd', '--btn-bg': '#1e3a8a'
+    }
+  }
+};
+
+export default function App() {
+  const [activeTheme, setActiveTheme] = useState(THEMES.business);
+  const [isDark, setIsDark] = useState(true);
+
+  // Dynamically calculate our active color tokens based on Theme + Mode
+  const activeTokens = {
+    ...activeTheme.tokens,
+    ...(isDark ? activeTheme.dark : activeTheme.light),
+    // Dynamic Accent Badges (Opacity drops in dark mode so they aren't blinding)
+    '--accent-yellow': '#facc15',
+    '--accent-yellow-bg': isDark ? 'rgba(250, 204, 21, 0.15)' : '#fef9c3',
+    '--accent-yellow-text': isDark ? '#fef08a' : '#854d0e',
+    '--accent-red': '#ef4444',
+    '--accent-red-bg': isDark ? 'rgba(239, 68, 68, 0.15)' : '#fee2e2',
+    '--accent-red-text': isDark ? '#fca5a5' : '#991b1b',
+    '--accent-orange': '#f97316',
+    '--accent-orange-bg': isDark ? 'rgba(249, 115, 22, 0.15)' : '#ffedd5',
+    '--accent-orange-text': isDark ? '#fdba74' : '#9a3412',
+    '--accent-blue': '#3b82f6',
+    '--accent-blue-bg': isDark ? 'rgba(59, 130, 246, 0.15)' : '#dbeafe',
+    '--accent-blue-text': isDark ? '#93c5fd' : '#1e40af',
+    '--accent-green': '#10b981',
+    '--accent-green-bg': isDark ? 'rgba(16, 185, 129, 0.15)' : '#d1fae5',
+    '--accent-green-text': isDark ? '#6ee7b7' : '#065f46',
+  };
+
+  return (
+    <div 
+      className="flex h-screen w-full font-sans overflow-hidden transition-colors duration-300"
+      style={activeTokens}
+    >
+      {/* Inject custom classes that map to our dynamic CSS variables */}
+      <style>{`
+        .themed-app { background-color: var(--app-bg); transition: background-color 0.3s ease; }
+        .themed-panel { background-color: var(--panel-bg); transition: background-color 0.3s ease; }
+        .themed-border { border-color: var(--border); transition: border-color 0.3s ease; }
+        .themed-text { color: var(--text-main); transition: color 0.3s ease; }
+        .themed-text-muted { color: var(--text-muted); transition: color 0.3s ease; }
+        .themed-btn-bg { background-color: var(--btn-bg); transition: background-color 0.3s ease; }
+        .hover\\:themed-text:hover { color: var(--text-main); }
+      `}</style>
+
+      {/* 1. GLOBAL RAIL (Workspace Switcher) */}
+      <div className="w-14 shrink-0 flex flex-col items-center py-4 gap-4 z-20" style={{ backgroundColor: 'var(--rail-bg)' }}>
+        <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-white font-bold cursor-pointer hover:bg-white/20 transition-all border-2 border-[var(--primary)]">
+          BB
+        </div>
+        <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/50 font-bold cursor-pointer hover:bg-white/20 transition-all">
+          SC
+        </div>
+        <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/50 font-bold cursor-pointer hover:bg-white/20 transition-all">
+          <Plus className="w-5 h-5" />
+        </div>
+      </div>
+
+      {/* 2. SIDEBAR */}
+      <div className="w-60 flex flex-col shrink-0 z-10 border-r border-black/10" style={{ backgroundColor: 'var(--sidebar-bg)' }}>
+        <div className="h-16 px-4 flex items-center font-bold text-white tracking-wide text-lg">
+          BuddyBubble
+        </div>
+        
+        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
+          <div>
+            <div className="text-[10px] font-bold tracking-widest uppercase mb-2 px-2" style={{ color: 'var(--sidebar-text)', opacity: 0.7 }}>
+              Channels
+            </div>
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-white font-medium" style={{ backgroundColor: 'var(--sidebar-active)' }}>
+                <Hash className="w-4 h-4 opacity-70" />
+                All Channels
+              </div>
+              {['Sales & Marketing', 'Dev Ops', 'Success Managers', 'Features Request', 'Ideas'].map((channel) => (
+                <div key={channel} className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors font-medium" style={{ color: 'var(--sidebar-text)' }}>
+                  <Hash className="w-4 h-4 opacity-50" />
+                  {channel}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* THEME SWITCHER UI */}
+        <div className="px-4 pb-4 pt-2 mt-auto">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-[10px] font-bold tracking-widest uppercase flex items-center gap-1.5" style={{ color: 'var(--sidebar-text)', opacity: 0.7 }}>
+              <Palette className="w-3 h-3" /> Theme
+            </div>
+            <button 
+              onClick={() => setIsDark(!isDark)}
+              className="text-[10px] font-bold tracking-widest uppercase flex items-center gap-1 hover:text-white transition-colors"
+              style={{ color: 'var(--sidebar-text)' }}
+            >
+              {isDark ? <Sun className="w-3 h-3" /> : <Moon className="w-3 h-3" />}
+              {isDark ? 'LIGHT' : 'DARK'}
+            </button>
+          </div>
+          
+          <div className="flex flex-wrap gap-1.5">
+            {Object.values(THEMES).map(theme => (
+              <button
+                key={theme.id}
+                onClick={() => setActiveTheme(theme)}
+                className={`px-2.5 py-1 text-[10px] font-bold rounded transition-all border ${
+                  activeTheme.id === theme.id 
+                    ? 'bg-white text-slate-900 border-white shadow-sm' 
+                    : 'bg-transparent text-white/50 border-white/10 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                {theme.name.split(' ')[0]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* User Profile Area */}
+        <div className="h-16 border-t border-white/10 px-4 flex items-center gap-3 cursor-pointer hover:bg-white/5 transition-colors">
+          <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white font-bold text-sm">
+            J
+          </div>
+          <div>
+            <div className="text-sm font-bold text-white flex items-center gap-2">
+              Justin <div className="w-2 h-2 rounded-full bg-green-500" />
+            </div>
+            <div className="text-[10px]" style={{ color: 'var(--sidebar-text)' }}>MEMBER</div>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. MIDDLE PANE (Chat) */}
+      <div className="w-[25%] min-w-[300px] shrink-0 flex flex-col themed-panel border-r themed-border z-0">
+        <header className="h-16 border-b themed-border flex items-center justify-between px-6 shrink-0 themed-panel">
+          <div className="flex items-center gap-2">
+            <Hash className="h-5 w-5 themed-text-muted" />
+            <h2 className="font-bold themed-text">All Channels</h2>
+          </div>
+          <div className="flex items-center gap-4">
+            <Search className="w-5 h-5 cursor-pointer themed-text-muted hover:themed-text transition-colors" />
+            <Bell className="w-5 h-5 cursor-pointer themed-text-muted hover:themed-text transition-colors" />
+            <Info className="w-5 h-5 cursor-pointer themed-text-muted hover:themed-text transition-colors" />
+          </div>
+        </header>
+
+        <div className="flex-1 p-6 themed-app">
+          {/* Chat feed placeholder */}
+        </div>
+
+        {/* Chat Input */}
+        <div className="p-6 themed-panel border-t themed-border">
+          <div className="relative flex items-center">
+            <input
+              type="text"
+              placeholder="Message in All Channels..."
+              className="w-full themed-btn-bg border themed-border rounded-xl px-4 py-3 pr-12 themed-text focus:outline-none focus:border-[var(--primary)] transition-colors"
+            />
+            <button className="absolute right-2 p-2 rounded-lg opacity-50 hover:opacity-100 transition-opacity" style={{ color: 'var(--primary)' }}>
+              <Send className="w-5 h-5" />
+            </button>
+          </div>
+          <p className="text-[10px] themed-text-muted mt-2 px-1">
+            <b>Return</b> to send • <b>Shift + Return</b> for new line • <b>@</b> to mention • <span className="font-bold" style={{ color: 'var(--primary)' }}>Broadcast to all channels</span>
+          </p>
+        </div>
+      </div>
+
+      {/* 4. RIGHT PANE (Kanban Board) */}
+      <div className="flex-1 flex flex-col themed-app z-0 min-w-0">
+        <header className="h-16 px-6 flex items-center justify-between shrink-0 themed-panel border-b themed-border">
+          <h2 className="font-bold themed-text text-lg">Kanban Board</h2>
+          <div className="flex items-center gap-4">
+            <div className="flex themed-btn-bg p-1 rounded-lg">
+              <button className="px-4 py-1 text-xs font-bold rounded-md text-white shadow-sm transition-colors" style={{ backgroundColor: 'var(--primary)' }}>All</button>
+              <button className="px-4 py-1 text-xs font-medium rounded-md themed-text-muted hover:themed-text transition-colors">High</button>
+              <button className="px-4 py-1 text-xs font-medium rounded-md themed-text-muted hover:themed-text transition-colors">Medium</button>
+              <button className="px-4 py-1 text-xs font-medium rounded-md themed-text-muted hover:themed-text transition-colors">Low</button>
+            </div>
+            <div className="flex themed-panel border themed-border p-1 rounded-lg">
+              <button className="px-3 py-1 text-xs font-medium themed-text-muted hover:themed-text rounded transition-colors">Summary</button>
+              <button className="px-3 py-1 text-xs font-medium themed-text themed-btn-bg rounded shadow-sm transition-colors">Full</button>
+            </div>
+          </div>
+        </header>
+
+        <div className="flex-1 overflow-x-auto p-6 flex gap-6">
+          
+          {/* COLUMN: TODO */}
+          <div className="w-80 shrink-0 flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold themed-text">Todo</h3>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: 'var(--accent-yellow-bg)', color: 'var(--accent-yellow-text)' }}>2</span>
+              </div>
+              <MoreHorizontal className="w-4 h-4 themed-text-muted" />
+            </div>
+
+            <div className="space-y-3">
+              {/* FIRST TASK CARD */}
+              <div className="themed-panel rounded-xl shadow-sm border themed-border p-4 relative overflow-hidden group cursor-pointer hover:shadow-md transition-all">
+                <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ backgroundColor: 'var(--accent-yellow)' }} />
+                
+                <div className="flex items-center gap-2 mb-3 ml-2">
+                  <GripVertical className="w-4 h-4 themed-text-muted opacity-50 cursor-grab hover:opacity-100 transition-colors shrink-0" />
+                  
+                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wide" style={{ backgroundColor: 'var(--accent-yellow-bg)', color: 'var(--accent-yellow-text)' }}>
+                    Todo
+                  </span>
+                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wide flex items-center gap-1" style={{ backgroundColor: 'var(--accent-orange-bg)', color: 'var(--accent-orange-text)' }}>
+                    <AlertTriangle className="w-3 h-3" /> Medium
+                  </span>
+                  <span className="themed-btn-bg themed-text-muted text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wide flex items-center gap-1 border themed-border">
+                    <CheckSquare className="w-3 h-3" /> Task
+                  </span>
+                </div>
+
+                <div className="ml-2">
+                  <h4 className="font-bold themed-text text-[15px] leading-tight mb-2">
+                    Fix Japanese Walking Interval Timer
+                  </h4>
+                  <p className="text-sm themed-text-muted line-clamp-1 mb-3">
+                    This is for another app but will eventually be inte
+                  </p>
+
+                  <div className="flex gap-2 mb-4">
+                    <span className="themed-btn-bg themed-text-muted text-[10px] font-bold px-2 py-1 rounded border themed-border">
+                      FIX
+                    </span>
+                  </div>
+                </div>
+
+                <div className="h-px themed-btn-bg w-full mb-3 ml-2" />
+
+                <div className="flex items-center justify-between ml-2">
+                  <div className="flex items-center gap-1.5 themed-text-muted text-xs font-medium">
+                    <Calendar className="w-3.5 h-3.5" />
+                    Apr 5
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs themed-text-muted font-medium">Justin</span>
+                    <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-[10px] font-bold">
+                      J
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECOND TASK CARD (Red Accent) */}
+              <div className="themed-panel rounded-xl shadow-sm border themed-border p-4 relative overflow-hidden group cursor-pointer hover:shadow-md transition-all">
+                <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ backgroundColor: 'var(--accent-red)' }} />
+                
+                <div className="flex items-center gap-2 mb-3 ml-2">
+                  <GripVertical className="w-4 h-4 themed-text-muted opacity-50 cursor-grab hover:opacity-100 transition-colors shrink-0" />
+                  
+                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wide" style={{ backgroundColor: 'var(--accent-yellow-bg)', color: 'var(--accent-yellow-text)' }}>
+                    Todo
+                  </span>
+                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wide flex items-center gap-1" style={{ backgroundColor: 'var(--accent-red-bg)', color: 'var(--accent-red-text)' }}>
+                    <AlertTriangle className="w-3 h-3" /> High
+                  </span>
+                  <span className="themed-btn-bg themed-text-muted text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wide flex items-center gap-1 border themed-border">
+                    <AlertTriangle className="w-3 h-3" /> Bug
+                  </span>
+                </div>
+
+                <div className="ml-2">
+                  <h4 className="font-bold themed-text text-[15px] leading-tight mb-2">
+                    Fix chat unread badge syncing
+                  </h4>
+                  <p className="text-sm themed-text-muted line-clamp-1 mb-3">
+                    Unread count doesn't reset when switching workspaces.
+                  </p>
+
+                  <div className="flex gap-2 mb-4">
+                    <span className="themed-btn-bg themed-text-muted text-[10px] font-bold px-2 py-1 rounded border themed-border">
+                      URGENT
+                    </span>
+                  </div>
+                </div>
+
+                <div className="h-px themed-btn-bg w-full mb-3 ml-2" />
+
+                <div className="flex items-center justify-between ml-2">
+                  <div className="flex items-center gap-1.5 themed-text-muted text-xs font-medium">
+                    <Calendar className="w-3.5 h-3.5" />
+                    Apr 6
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs themed-text-muted font-medium">Sarah</span>
+                    <div className="w-6 h-6 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center text-[10px] font-bold">
+                      S
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <button className="w-full py-2.5 border-2 border-dashed themed-border rounded-xl themed-text-muted text-sm font-bold flex items-center justify-center gap-2 hover:border-[var(--primary)] hover:themed-text transition-colors">
+                <Plus className="w-4 h-4" /> Add New
+              </button>
+            </div>
+          </div>
+
+          {/* COLUMN: IN PROGRESS */}
+          <div className="w-80 shrink-0 flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold themed-text">In Progress</h3>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: 'var(--accent-orange-bg)', color: 'var(--accent-orange-text)' }}>1</span>
+              </div>
+              <MoreHorizontal className="w-4 h-4 themed-text-muted" />
+            </div>
+            
+            <div className="space-y-3">
+              {/* THIRD TASK CARD (Blue Accent) */}
+              <div className="themed-panel rounded-xl shadow-sm border themed-border p-4 relative overflow-hidden group cursor-pointer hover:shadow-md transition-all">
+                <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ backgroundColor: 'var(--accent-blue)' }} />
+                
+                <div className="flex items-center gap-2 mb-3 ml-2">
+                  <GripVertical className="w-4 h-4 themed-text-muted opacity-50 cursor-grab hover:opacity-100 transition-colors shrink-0" />
+                  
+                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wide" style={{ backgroundColor: 'var(--accent-blue-bg)', color: 'var(--accent-blue-text)' }}>
+                    In Progress
+                  </span>
+                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wide flex items-center gap-1" style={{ backgroundColor: 'var(--accent-green-bg)', color: 'var(--accent-green-text)' }}>
+                    <CheckSquare className="w-3 h-3" /> Low
+                  </span>
+                  <span className="themed-btn-bg themed-text-muted text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wide flex items-center gap-1 border themed-border">
+                    <CheckSquare className="w-3 h-3" /> Feature
+                  </span>
+                </div>
+
+                <div className="ml-2">
+                  <h4 className="font-bold themed-text text-[15px] leading-tight mb-2">
+                    Implement Global Workspace Switcher
+                  </h4>
+                  <p className="text-sm themed-text-muted line-clamp-1 mb-3">
+                    Build the left rail to navigate between isolated tenants.
+                  </p>
+
+                  <div className="flex gap-2 mb-4">
+                    <span className="themed-btn-bg themed-text-muted text-[10px] font-bold px-2 py-1 rounded border themed-border">
+                      UI/UX
+                    </span>
+                  </div>
+                </div>
+
+                <div className="h-px themed-btn-bg w-full mb-3 ml-2" />
+
+                <div className="flex items-center justify-between ml-2">
+                  <div className="flex items-center gap-1.5 themed-text-muted text-xs font-medium">
+                    <Calendar className="w-3.5 h-3.5" />
+                    Apr 8
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs themed-text-muted font-medium">Justin</span>
+                    <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-[10px] font-bold">
+                      J
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+               <button className="w-full py-2.5 border-2 border-dashed themed-border rounded-xl themed-text-muted text-sm font-bold flex items-center justify-center gap-2 hover:border-[var(--primary)] hover:themed-text transition-colors">
+                <Plus className="w-4 h-4" /> Add New
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+}

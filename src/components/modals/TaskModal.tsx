@@ -64,7 +64,7 @@ function TaskAttachmentImagePreview({ path }: { path: string }) {
   if (!src) {
     return (
       <div
-        className="h-10 w-10 shrink-0 animate-pulse rounded border border-slate-200 bg-slate-200/80"
+        className="h-10 w-10 shrink-0 animate-pulse rounded border border-border bg-muted"
         aria-hidden
       />
     );
@@ -73,7 +73,7 @@ function TaskAttachmentImagePreview({ path }: { path: string }) {
     <img
       src={src}
       alt=""
-      className="h-10 w-10 shrink-0 rounded border border-slate-200 object-cover"
+      className="h-10 w-10 shrink-0 rounded border border-border object-cover"
     />
   );
 }
@@ -795,7 +795,7 @@ export function TaskModal({
       type="button"
       onClick={() => setTab(id)}
       className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
-        tab === id ? 'bg-indigo-100 text-indigo-800' : 'text-slate-600 hover:bg-slate-100'
+        tab === id ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-muted'
       }`}
     >
       {label}
@@ -810,27 +810,27 @@ export function TaskModal({
         aria-label="Close"
         onClick={() => onOpenChange(false)}
       />
-      <div className="relative z-10 flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-        <div className="flex items-start justify-between border-b border-slate-200 px-6 py-4">
+      <div className="relative z-10 flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl">
+        <div className="flex items-start justify-between border-b border-border px-6 py-4">
           <div>
-            <h2 className="text-lg font-bold text-slate-900">
+            <h2 className="text-lg font-bold text-foreground">
               {isCreateMode ? 'New task' : 'Task'}
             </h2>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               {isCreateMode ? 'Create a task for this bubble' : 'View and edit task details'}
             </p>
           </div>
           <button
             type="button"
             onClick={() => onOpenChange(false)}
-            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+            className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
             aria-label="Close dialog"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="flex flex-wrap gap-2 border-b border-slate-100 px-6 py-2">
+        <div className="flex flex-wrap gap-2 border-b border-border px-6 py-2">
           {tabBtn('details', 'Details')}
           {tabBtn('comments', 'Comments')}
           {tabBtn('subtasks', 'Subtasks')}
@@ -839,12 +839,14 @@ export function TaskModal({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
           {error && (
-            <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+            <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {error}
             </div>
           )}
 
-          {loading && taskId ? <p className="text-sm text-slate-500">Loading task…</p> : null}
+          {loading && taskId ? (
+            <p className="text-sm text-muted-foreground">Loading task…</p>
+          ) : null}
 
           {!loading || !taskId ? (
             <>
@@ -945,7 +947,7 @@ export function TaskModal({
                     {!isCreateMode && taskId && canWrite && (
                       <input
                         type="file"
-                        className="block w-full text-xs text-slate-600 file:mr-2 file:rounded-md file:border file:border-slate-200 file:bg-white file:px-2 file:py-1"
+                        className="block w-full text-xs text-muted-foreground file:mr-2 file:rounded-md file:border file:border-input file:bg-background file:px-2 file:py-1"
                         onChange={(e) => {
                           const f = e.target.files?.[0];
                           e.target.value = '';
@@ -954,7 +956,7 @@ export function TaskModal({
                       />
                     )}
                     {isCreateMode && (
-                      <p className="text-xs text-slate-500">
+                      <p className="text-xs text-muted-foreground">
                         Save the task first, then you can upload files.
                       </p>
                     )}
@@ -962,7 +964,7 @@ export function TaskModal({
                       {attachments.map((a) => (
                         <li
                           key={a.id}
-                          className="flex items-center justify-between gap-2 rounded-md border border-slate-100 bg-slate-50 px-2 py-1 text-sm"
+                          className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/50 px-2 py-1 text-sm"
                         >
                           <div className="flex min-w-0 flex-1 items-center gap-2">
                             {isLikelyTaskAttachmentImageFileName(a.name) ? (
@@ -970,7 +972,7 @@ export function TaskModal({
                             ) : null}
                             <button
                               type="button"
-                              className="min-w-0 flex-1 truncate text-left text-indigo-700 hover:underline"
+                              className="min-w-0 flex-1 truncate text-left text-primary hover:underline"
                               onClick={() => void downloadLink(a)}
                             >
                               {a.name}
@@ -981,7 +983,7 @@ export function TaskModal({
                               type="button"
                               variant="ghost"
                               size="sm"
-                              className="h-7 text-red-600"
+                              className="h-7 text-destructive hover:text-destructive"
                               onClick={() => void removeAttachment(a)}
                             >
                               Remove
@@ -1022,7 +1024,7 @@ export function TaskModal({
                 <div className="space-y-4">
                   <div className="space-y-2">
                     {comments.length === 0 && (
-                      <p className="text-sm text-slate-500">No comments yet.</p>
+                      <p className="text-sm text-muted-foreground">No comments yet.</p>
                     )}
                     <ul className="space-y-3">
                       {comments.map((c) => {
@@ -1032,10 +1034,10 @@ export function TaskModal({
                         return (
                           <li
                             key={c.id}
-                            className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm"
+                            className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm"
                           >
                             <div className="flex gap-3">
-                              <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-100 bg-indigo-100 text-sm font-bold text-indigo-700">
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-primary/15 text-sm font-bold text-primary">
                                 {avatarUrl ? (
                                   <img
                                     src={avatarUrl}
@@ -1049,12 +1051,12 @@ export function TaskModal({
                               </div>
                               <div className="min-w-0 flex-1">
                                 <div className="flex flex-wrap items-baseline gap-2">
-                                  <span className="font-bold text-slate-900">{displayName}</span>
-                                  <span className="text-xs text-slate-400">
+                                  <span className="font-bold text-foreground">{displayName}</span>
+                                  <span className="text-xs text-muted-foreground">
                                     {formatMessageTimestamp(c.created_at)}
                                   </span>
                                 </div>
-                                <p className="mt-0.5 whitespace-pre-wrap text-slate-800">
+                                <p className="mt-0.5 whitespace-pre-wrap text-foreground">
                                   {c.body}
                                 </p>
                               </div>
@@ -1084,7 +1086,9 @@ export function TaskModal({
                     </div>
                   )}
                   {isCreateMode && (
-                    <p className="text-xs text-slate-500">Create the task to add comments.</p>
+                    <p className="text-xs text-muted-foreground">
+                      Create the task to add comments.
+                    </p>
                   )}
                 </div>
               )}
@@ -1099,9 +1103,13 @@ export function TaskModal({
                           checked={s.done}
                           onChange={() => void toggleSubtask(s.id)}
                           disabled={!canWrite || !taskId}
-                          className="rounded border-slate-300"
+                          className="rounded border-input"
                         />
-                        <span className={s.done ? 'text-slate-400 line-through' : 'text-slate-800'}>
+                        <span
+                          className={
+                            s.done ? 'text-muted-foreground line-through' : 'text-foreground'
+                          }
+                        >
                           {s.title}
                         </span>
                       </li>
@@ -1126,7 +1134,9 @@ export function TaskModal({
                     </div>
                   )}
                   {isCreateMode && (
-                    <p className="text-xs text-slate-500">Create the task to add subtasks.</p>
+                    <p className="text-xs text-muted-foreground">
+                      Create the task to add subtasks.
+                    </p>
                   )}
                 </div>
               )}
@@ -1134,15 +1144,15 @@ export function TaskModal({
               {tab === 'activity' && (
                 <ul className="space-y-2">
                   {activityLog.length === 0 && (
-                    <p className="text-sm text-slate-500">No activity yet.</p>
+                    <p className="text-sm text-muted-foreground">No activity yet.</p>
                   )}
                   {activityLog.map((e) => (
                     <li
                       key={e.id}
-                      className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-800"
+                      className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm text-foreground"
                     >
                       <p>{formatActivityLine(e)}</p>
-                      <p className="mt-1 text-[10px] text-slate-400">
+                      <p className="mt-1 text-[10px] text-muted-foreground">
                         {new Date(e.at).toLocaleString()}
                       </p>
                     </li>

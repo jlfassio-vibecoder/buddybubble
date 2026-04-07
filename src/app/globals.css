@@ -87,6 +87,12 @@
   html {
     @apply font-sans;
   }
+
+  @media (prefers-reduced-motion: reduce) {
+    .theme-transition-colors {
+      transition: none !important;
+    }
+  }
 }
 
 @theme inline {

@@ -27,7 +27,7 @@ This document specifies the **invitee** path: someone who receives an invite lin
 - **Server Component** calls `get_invite_preview` via the Supabase server client.
 - **Invalid token:** polite error copy + link home (see `invitePreviewUserMessage` in `src/lib/invite-preview-parse.ts`).
 - **Valid token:**
-  - **Theme:** `category_type` drives page background + card chrome (`src/lib/invite-preview-theme.ts`) and CSS variables `--invite-accent` / `--invite-accent-soft` on the card wrapper.
+  - **Theme:** The page is wrapped in **`InviteThemeWrapper`** → **`ThemeScope`**, using the same multi-theme engine as the dashboard (`src/lib/theme-engine/*`, `src/components/theme/ThemeScope.tsx`). Root **`AppThemeProvider`** (`src/components/theme/app-theme-provider.tsx`) supplies `next-themes`. `category_type` from **`get_invite_preview`** selects the palette; semantic classes (`bg-background`, `bg-card`, `text-foreground`) and **`var(--invite-accent)`** on the host name come from the registry.
   - **Copy:** “**{host_name}** invited you to join **{workspace_name}**” plus a short line about approval vs instant join when `requires_approval`.
   - **Auth (unauthenticated):** `InvitePreviewAuth` — Google OAuth and “Sign in with email” → **`/login?next=/onboarding`** (both use **`/auth/callback?next=/onboarding`** for OAuth).
   - **Authenticated:** existing `InviteJoinForm` to run `accept_invitation` via server action.

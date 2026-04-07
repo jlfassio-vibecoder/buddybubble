@@ -48,21 +48,31 @@ function subtaskProgress(task: TaskRow): { done: number; total: number } | null 
 }
 
 function priorityChip(p: TaskPriority): { label: string; className: string } {
+  const base = 'border border-border/40 bg-clip-padding';
   if (p === 'high') {
     return {
       label: 'High',
-      className: 'border-destructive/35 bg-destructive/10 text-destructive dark:text-destructive',
+      className: cn(
+        base,
+        'border-[color:color-mix(in_srgb,var(--accent-red)_38%,transparent)] bg-[var(--accent-red-bg)] text-[var(--accent-red-text)]',
+      ),
     };
   }
   if (p === 'low') {
     return {
       label: 'Low',
-      className: 'border-border bg-muted/80 text-muted-foreground',
+      className: cn(
+        base,
+        'border-[color:color-mix(in_srgb,var(--accent-green)_38%,transparent)] bg-[var(--accent-green-bg)] text-[var(--accent-green-text)]',
+      ),
     };
   }
   return {
     label: 'Medium',
-    className: 'border-amber-500/35 bg-amber-500/12 text-amber-950 dark:text-amber-100',
+    className: cn(
+      base,
+      'border-[color:color-mix(in_srgb,var(--accent-orange)_38%,transparent)] bg-[var(--accent-orange-bg)] text-[var(--accent-orange-text)]',
+    ),
   };
 }
 
@@ -96,10 +106,10 @@ export function KanbanTaskCard({
     dateFormatted && timeLabel ? `${dateFormatted} · ${timeLabel}` : dateFormatted;
   const dateChipClass =
     dateRel === 'past'
-      ? 'border-destructive/40 bg-destructive/10 text-destructive dark:text-destructive'
+      ? 'border-[color:color-mix(in_srgb,var(--accent-red)_40%,transparent)] bg-[var(--accent-red-bg)] text-[var(--accent-red-text)]'
       : dateRel === 'today'
-        ? 'border-primary/45 bg-primary/10 text-primary'
-        : 'border-border bg-muted/60 text-muted-foreground';
+        ? 'border-[color:color-mix(in_srgb,var(--accent-yellow)_40%,transparent)] bg-[var(--accent-yellow-bg)] text-[var(--accent-yellow-text)]'
+        : 'border-[color:color-mix(in_srgb,var(--accent-blue)_35%,transparent)] bg-[var(--accent-blue-bg)] text-[var(--accent-blue-text)]';
   const showDescription = density === 'full' || density === 'detailed';
   const showBubble =
     (density === 'full' || density === 'detailed') && canWrite && bubbles.length > 0;
