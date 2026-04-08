@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import {
   eachDayOfInterval,
@@ -115,6 +116,21 @@ export function CalendarMonthGrid({
   const expVisual = getItemTypeVisual('experience');
   const ExpIcon = expVisual.Icon;
 
+  /** One pass over `calendarTasks` — avoid O(days × tasks) by filtering inside `cells.map`. */
+  const experiencesByStartYmd = useMemo(() => {
+    const m = new Map<string, TaskRow[]>();
+    for (const t of calendarTasks) {
+      if (t.archived_at) continue;
+      if (normalizeItemType(t.item_type) !== 'experience') continue;
+      if (!t.scheduled_on) continue;
+      const key = String(t.scheduled_on).slice(0, 10);
+      const list = m.get(key) ?? [];
+      list.push(t);
+      m.set(key, list);
+    }
+    return m;
+  }, [calendarTasks]);
+
   const monthStart = startOfMonth(activeViewDate);
   const monthEnd = endOfMonth(activeViewDate);
   const gridStart = startOfWeek(monthStart, CALENDAR_WEEK_OPTIONS);
@@ -170,13 +186,7 @@ export function CalendarMonthGrid({
             const dayTasks = (tasksByYmd.get(ymd) ?? []).filter(
               (t) => normalizeItemType(t.item_type) !== 'experience',
             );
-            const experiencesStartingHere = calendarTasks.filter(
-              (t) =>
-                !t.archived_at &&
-                normalizeItemType(t.item_type) === 'experience' &&
-                t.scheduled_on &&
-                String(t.scheduled_on).slice(0, 10) === ymd,
-            );
+            const experiencesStartingHere = experiencesByStartYmd.get(ymd) ?? [];
             const isToday = ymd === todayYmd;
             const isSelected = ymd === activeWorkspaceYmd;
 

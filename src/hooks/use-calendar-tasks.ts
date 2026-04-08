@@ -93,9 +93,14 @@ export function useCalendarTasks(params: UseCalendarTasksParams): {
 
       const { data: spanCandidates, error: spanErr } = spanQuery;
       if (spanErr) {
-        // Missing `item_type` in schema cache is expected during staged deploys; probe matches TaskModal/cron pattern.
-        void isMissingColumnSchemaCacheError(spanErr, 'item_type');
-        spanRows = [];
+        if (isMissingColumnSchemaCacheError(spanErr, 'item_type')) {
+          // Staged deploys: migration may lag code; omit experiences until column exists.
+          spanRows = [];
+        } else {
+          console.error('[useCalendarTasks] experience span query failed', spanErr.message);
+          setError(spanErr.message);
+          spanRows = [];
+        }
       } else if (spanCandidates) {
         spanRows = (spanCandidates as TaskRow[]).filter((t) =>
           experienceOverlapsYmdRange(t, rangeStart, rangeEnd),
