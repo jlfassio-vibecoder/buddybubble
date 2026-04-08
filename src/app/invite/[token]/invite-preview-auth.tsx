@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '@utils/supabase/client';
 import { Button, buttonVariants } from '@/components/ui/button';
+import { getAuthAppOrigin } from '@/lib/auth-app-origin';
 import { authCallbackAbsoluteUrl } from '@/lib/auth-callback-url';
 import { BB_INVITE_HANDOFF_SESSION_KEY } from '@/lib/invite-handoff-storage';
 import { cn } from '@/lib/utils';
@@ -29,8 +30,7 @@ export function InvitePreviewAuth({ token }: { token: string }) {
     setError(null);
     setLoading(true);
     const supabase = createClient();
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const redirectTo = authCallbackAbsoluteUrl(origin, POST_AUTH_PATH, token);
+    const redirectTo = authCallbackAbsoluteUrl(getAuthAppOrigin(), POST_AUTH_PATH, token);
     const { error: err } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo },

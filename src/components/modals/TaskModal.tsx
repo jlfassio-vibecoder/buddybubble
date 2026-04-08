@@ -1,9 +1,15 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { Globe, Lock, X } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
-import { normalizeItemType, type ItemType, type Json, type TaskRow } from '@/types/database';
+import {
+  normalizeItemType,
+  type ItemType,
+  type Json,
+  type TaskRow,
+  type TaskVisibility,
+} from '@/types/database';
 import { useBoardColumnDefs } from '@/hooks/use-board-columns';
 import {
   type TaskActivityEntry,
@@ -57,6 +63,10 @@ import { indefiniteArticleForUiNoun, itemTypeUiNoun } from '@/lib/item-type-styl
 export type TaskModalTab = 'details' | 'comments' | 'subtasks' | 'activity';
 
 type TabId = TaskModalTab;
+
+function normalizeTaskVisibility(value: unknown): TaskVisibility {
+  return value === 'public' ? 'public' : 'private';
+}
 
 /** Private bucket: must use signed URLs — raw `/storage/v1/object/...` 400s in the browser. */
 function TaskAttachmentImagePreview({ path }: { path: string }) {
@@ -139,6 +149,7 @@ export function TaskModal({
   /** `HH:mm` for `<input type="time" />` or empty (requires date) */
   const [scheduledTime, setScheduledTime] = useState('');
   const [itemType, setItemType] = useState<ItemType>('task');
+  const [visibility, setVisibility] = useState<TaskVisibility>('private');
   const [metadata, setMetadata] = useState<Json>({});
   const [eventLocation, setEventLocation] = useState('');
   const [eventUrl, setEventUrl] = useState('');
@@ -193,6 +204,7 @@ export function TaskModal({
     itemType: ItemType;
     /** Stable string for dirty checks */
     metadataJson: string;
+    visibility: TaskVisibility;
   } | null>(null);
 
   const dateLabels = taskDateFieldLabels(workspaceCategory);
@@ -253,6 +265,8 @@ export function TaskModal({
       setComments(asComments(row.comments));
       setActivityLog(asActivityLog(row.activity_log));
       setAttachments(asAttachments(row.attachments));
+      const vis = normalizeTaskVisibility((row as TaskRow).visibility);
+      setVisibility(vis);
       const st = scheduledTimeToInputValue((row as TaskRow).scheduled_time);
       originalRef.current = {
         title: row.title,
@@ -263,6 +277,7 @@ export function TaskModal({
         scheduledTime: st || null,
         itemType: nextItemType,
         metadataJson: JSON.stringify(buildTaskMetadataPayload(nextItemType, mf, nextMeta)),
+        visibility: vis,
       };
     },
     [defaultStatus],
@@ -309,6 +324,7 @@ export function TaskModal({
       setCommentUserById({});
       setActivityLog([]);
       setAttachments([]);
+      setVisibility('private');
       originalRef.current = null;
       setError(null);
       return;
@@ -484,6 +500,14 @@ export function TaskModal({
           to: priority,
         });
       }
+      if (visibility !== orig.visibility) {
+        nextActivity = appendActivityForFieldChange(nextActivity, {
+          userId: uid,
+          field: 'visibility',
+          from: orig.visibility,
+          to: visibility,
+        });
+      }
       const nextSched = scheduledOnValue;
       const prevSched = orig.scheduledOn;
       if (nextSched !== prevSched) {
@@ -514,6 +538,7 @@ export function TaskModal({
       description: description.trim() || null,
       status: effectiveStatus,
       priority,
+      visibility,
       ...typeMetaPatch,
       ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
       ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
@@ -531,6 +556,7 @@ export function TaskModal({
         description: description.trim() || null,
         status: effectiveStatus,
         priority,
+        visibility,
         ...typeMetaPatch,
         ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
         activity_log: activityWithoutTime as unknown as TaskRow['activity_log'],
@@ -554,6 +580,7 @@ export function TaskModal({
           scheduledTime: orig?.scheduledTime ?? null,
           itemType,
           metadataJson: JSON.stringify(metadataForSave),
+          visibility: orig?.visibility ?? visibility,
         };
         setSaving(false);
         void loadTask(taskId);
@@ -581,6 +608,7 @@ export function TaskModal({
         description: description.trim() || null,
         status: statusWithoutSavedSchedule,
         priority,
+        visibility,
         ...typeMetaPatch,
         activity_log: activityWithoutSched as unknown as TaskRow['activity_log'],
       };
@@ -604,6 +632,7 @@ export function TaskModal({
           scheduledTime: orig?.scheduledTime ?? null,
           itemType,
           metadataJson: JSON.stringify(metadataForSave),
+          visibility: orig?.visibility ?? visibility,
         };
         setSaving(false);
         void loadTask(taskId);
@@ -620,6 +649,7 @@ export function TaskModal({
         title: title.trim(),
         description: description.trim() || null,
         status: effectiveStatus,
+        visibility,
         ...typeMetaPatch,
         ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
         ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
@@ -639,8 +669,48 @@ export function TaskModal({
           scheduledTime: newTimeHm,
           itemType,
           metadataJson: JSON.stringify(metadataForSave),
+          visibility: orig?.visibility ?? visibility,
         };
         setSaving(false);
+        void loadTask(taskId);
+        return;
+      }
+    }
+
+    if (uErr && isMissingColumnSchemaCacheError(uErr, 'visibility')) {
+      const activityWithoutVisibility = nextActivity.filter(
+        (e) => !(e.type === 'field_change' && e.field === 'visibility'),
+      );
+      const updateWithoutVisibility = {
+        title: title.trim(),
+        description: description.trim() || null,
+        status: effectiveStatus,
+        priority,
+        ...typeMetaPatch,
+        ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
+        ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
+        activity_log: activityWithoutVisibility as unknown as TaskRow['activity_log'],
+      };
+      uErr = (await supabase.from('tasks').update(updateWithoutVisibility).eq('id', taskId)).error;
+      if (!uErr) {
+        if (orig && visibility !== orig.visibility) setVisibility(orig.visibility);
+        setActivityLog(asActivityLog(activityWithoutVisibility));
+        setStatus(effectiveStatus);
+        originalRef.current = {
+          title: title.trim(),
+          description: description.trim(),
+          status: effectiveStatus,
+          priority,
+          scheduledOn: scheduledOnValue,
+          scheduledTime: newTimeHm,
+          itemType,
+          metadataJson: JSON.stringify(metadataForSave),
+          visibility: orig?.visibility ?? 'private',
+        };
+        setSaving(false);
+        setError(
+          'Visibility is not saved yet: apply the public-portals migration on Supabase (tasks.visibility), then try again.',
+        );
         void loadTask(taskId);
         return;
       }
@@ -662,6 +732,7 @@ export function TaskModal({
       scheduledTime: newTimeHm,
       itemType,
       metadataJson: JSON.stringify(metadataForSave),
+      visibility,
     };
     void loadTask(taskId);
   };
@@ -709,6 +780,7 @@ export function TaskModal({
       scheduled_on: sched,
       item_type: itemType,
       metadata: metadataForSave as TaskRow['metadata'],
+      visibility,
       ...(sched ? { scheduled_time: scheduledTimeInsert } : {}),
     };
 
@@ -749,6 +821,17 @@ export function TaskModal({
       const second = await supabase
         .from('tasks')
         .insert(insertWithoutPriority)
+        .select()
+        .maybeSingle();
+      data = second.data;
+      cErr = second.error;
+    }
+
+    if (cErr && isMissingColumnSchemaCacheError(cErr, 'visibility')) {
+      const { visibility: _v, ...insertWithoutVisibility } = insertRow;
+      const second = await supabase
+        .from('tasks')
+        .insert(insertWithoutVisibility)
         .select()
         .maybeSingle();
       data = second.data;
@@ -908,7 +991,13 @@ export function TaskModal({
     const timeHm = sched ? (scheduledTime.trim() ? scheduledTime.trim().slice(0, 5) : null) : null;
     const metaJson = JSON.stringify(metadataForSave);
     if (!o) {
-      return isCreateMode && (title.trim().length > 0 || itemType !== 'task' || metaJson !== '{}');
+      return (
+        isCreateMode &&
+        (title.trim().length > 0 ||
+          itemType !== 'task' ||
+          metaJson !== '{}' ||
+          visibility !== 'private')
+      );
     }
     return (
       title.trim() !== o.title ||
@@ -918,7 +1007,8 @@ export function TaskModal({
       sched !== (o.scheduledOn ?? null) ||
       (timeHm ?? null) !== (o.scheduledTime ?? null) ||
       itemType !== o.itemType ||
-      metaJson !== o.metadataJson
+      metaJson !== o.metadataJson ||
+      visibility !== o.visibility
     );
   }, [
     title,
@@ -930,6 +1020,7 @@ export function TaskModal({
     isCreateMode,
     itemType,
     metadataForSave,
+    visibility,
   ]);
 
   if (!open) return null;
@@ -974,6 +1065,41 @@ export function TaskModal({
         <div className="border-b border-border px-6 py-3">
           <p className="mb-2 text-xs font-medium text-muted-foreground">Type</p>
           <ItemTypeSelector value={itemType} onChange={setItemType} disabled={!canWrite} />
+        </div>
+
+        <div className="border-b border-border px-6 py-3">
+          <p className="mb-2 text-xs font-medium text-muted-foreground">Visibility</p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={!canWrite}
+              onClick={() => setVisibility('private')}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                visibility === 'private'
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
+              }`}
+            >
+              <Lock className="size-4 shrink-0" aria-hidden />
+              Private
+            </button>
+            <button
+              type="button"
+              disabled={!canWrite}
+              onClick={() => setVisibility('public')}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                visibility === 'public'
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
+              }`}
+            >
+              <Globe className="size-4 shrink-0" aria-hidden />
+              Public
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Public cards appear on your Astro storefront.
+          </p>
         </div>
 
         <div className="flex flex-wrap gap-2 border-b border-border px-6 py-2">

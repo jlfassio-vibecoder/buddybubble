@@ -16,6 +16,9 @@ export type TaskStatus = 'todo' | 'in_progress' | 'done';
 /** Polymorphic kind for `public.tasks` (single-table Kanban + calendar). */
 export type ItemType = 'task' | 'event' | 'experience' | 'idea' | 'memory';
 
+/** Storefront visibility for `public.tasks.visibility`. */
+export type TaskVisibility = 'private' | 'public';
+
 const ITEM_TYPE_SET = new Set<string>(['task', 'event', 'experience', 'idea', 'memory']);
 
 /** Safe default when `item_type` is missing (stale client) or invalid. */
@@ -59,6 +62,14 @@ export interface Database {
           icon_url: string | null;
           /** IANA timezone for workspace calendar "today" (task automation). */
           calendar_timezone: string;
+          /** Public storefront path segment; unique when non-null. */
+          public_slug: string | null;
+          /** Custom hostname for storefront; unique when non-null. */
+          custom_domain: string | null;
+          /** When true, anon may SELECT this workspace and eligible tasks (RLS). */
+          is_public: boolean;
+          /** Public branding JSON (logo, hero, colors, etc.). */
+          public_branding: Json;
         };
         Insert: {
           id?: string;
@@ -68,6 +79,10 @@ export interface Database {
           created_at?: string;
           icon_url?: string | null;
           calendar_timezone?: string;
+          public_slug?: string | null;
+          custom_domain?: string | null;
+          is_public?: boolean;
+          public_branding?: Json;
         };
         Update: Partial<Database['public']['Tables']['workspaces']['Insert']>;
       };
@@ -218,6 +233,8 @@ export interface Database {
           attachments: Json;
           item_type: string;
           metadata: Json;
+          /** Members-only vs public storefront (when workspace is_public). */
+          visibility: TaskVisibility;
         };
         Insert: {
           id?: string;
@@ -238,8 +255,30 @@ export interface Database {
           attachments?: Json;
           item_type?: string;
           metadata?: Json;
+          visibility?: TaskVisibility;
         };
         Update: Partial<Database['public']['Tables']['tasks']['Insert']>;
+      };
+      storefront_sandbox_messages: {
+        Row: {
+          id: string;
+          created_at: string;
+          channel_key: string;
+          author_kind: string;
+          guest_session_id: string | null;
+          display_name: string | null;
+          body: string;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          channel_key: string;
+          author_kind: string;
+          guest_session_id?: string | null;
+          display_name?: string | null;
+          body: string;
+        };
+        Update: Partial<Database['public']['Tables']['storefront_sandbox_messages']['Insert']>;
       };
     };
     Functions: {
@@ -270,3 +309,5 @@ export interface Database {
 export type BubbleRow = Database['public']['Tables']['bubbles']['Row'];
 export type MessageRow = Database['public']['Tables']['messages']['Row'];
 export type TaskRow = Database['public']['Tables']['tasks']['Row'];
+export type StorefrontSandboxMessageRow =
+  Database['public']['Tables']['storefront_sandbox_messages']['Row'];

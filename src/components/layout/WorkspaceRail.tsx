@@ -22,6 +22,8 @@ type Props = {
   onOpenProfile?: () => void;
   profileAvatarUrl?: string | null;
   profileName?: string | null;
+  /** Marketing iframe: hide workspace switcher, create workspace, and profile. */
+  embedMode?: boolean;
 };
 
 function categoryRing(category: WorkspaceRow['category_type']): string {
@@ -46,6 +48,7 @@ export function WorkspaceRail({
   onOpenProfile,
   profileAvatarUrl,
   profileName,
+  embedMode = false,
 }: Props) {
   const pathname = usePathname();
   const userWorkspaces = useWorkspaceStore((s) => s.userWorkspaces);
@@ -89,53 +92,60 @@ export function WorkspaceRail({
           />
         ) : (
           <>
-            <ScrollArea className="min-h-0 flex-1 overflow-hidden">
-              <nav className="flex flex-col items-center gap-2 px-2" aria-label="BuddyBubble list">
-                {userWorkspaces.map((w) => {
-                  const href = `/app/${w.id}`;
-                  const active = pathname === href || pathname.startsWith(`${href}/`);
-                  const label = w.name.trim().slice(0, 1).toUpperCase() || '?';
-                  return (
-                    <div key={w.id} className="relative flex w-full justify-center py-0.5">
-                      {active && (
-                        <span
-                          className="absolute left-0 top-1/2 z-10 h-10 w-[5px] -translate-y-1/2 rounded-r-full bg-white shadow-[2px_0_12px_rgba(255,255,255,0.12)]"
-                          aria-hidden
-                        />
-                      )}
-                      <Link
-                        href={href}
-                        title={w.name}
-                        aria-current={active ? 'page' : undefined}
-                        onClick={() => {
-                          setLastWorkspaceCookieClient(w.id);
-                          setActiveWorkspaceId(w.id);
-                        }}
-                        className={cn(
-                          'relative z-0 flex h-12 w-12 items-center justify-center overflow-hidden rounded-[14px] text-sm font-semibold transition-all',
-                          'ring-2 ring-inset',
-                          categoryRing(w.category_type),
-                          active
-                            ? 'rounded-[14px] bg-[color:var(--sidebar-active)] text-[var(--primary-foreground)]'
-                            : 'bg-white/15 text-[color:var(--sidebar-text)] hover:rounded-[14px] hover:bg-[color:var(--sidebar-hover)] hover:text-white',
-                        )}
-                      >
-                        {w.icon_url ? (
-                          <img
-                            src={w.icon_url}
-                            alt=""
-                            className="h-full w-full object-cover"
-                            referrerPolicy="no-referrer"
+            {embedMode ? (
+              <div className="min-h-0 flex-1" aria-hidden />
+            ) : (
+              <ScrollArea className="min-h-0 flex-1 overflow-hidden">
+                <nav
+                  className="flex flex-col items-center gap-2 px-2"
+                  aria-label="BuddyBubble list"
+                >
+                  {userWorkspaces.map((w) => {
+                    const href = `/app/${w.id}`;
+                    const active = pathname === href || pathname.startsWith(`${href}/`);
+                    const label = w.name.trim().slice(0, 1).toUpperCase() || '?';
+                    return (
+                      <div key={w.id} className="relative flex w-full justify-center py-0.5">
+                        {active && (
+                          <span
+                            className="absolute left-0 top-1/2 z-10 h-10 w-[5px] -translate-y-1/2 rounded-r-full bg-white shadow-[2px_0_12px_rgba(255,255,255,0.12)]"
+                            aria-hidden
                           />
-                        ) : (
-                          label
                         )}
-                      </Link>
-                    </div>
-                  );
-                })}
-              </nav>
-            </ScrollArea>
+                        <Link
+                          href={href}
+                          title={w.name}
+                          aria-current={active ? 'page' : undefined}
+                          onClick={() => {
+                            setLastWorkspaceCookieClient(w.id);
+                            setActiveWorkspaceId(w.id);
+                          }}
+                          className={cn(
+                            'relative z-0 flex h-12 w-12 items-center justify-center overflow-hidden rounded-[14px] text-sm font-semibold transition-all',
+                            'ring-2 ring-inset',
+                            categoryRing(w.category_type),
+                            active
+                              ? 'rounded-[14px] bg-[color:var(--sidebar-active)] text-[var(--primary-foreground)]'
+                              : 'bg-white/15 text-[color:var(--sidebar-text)] hover:rounded-[14px] hover:bg-[color:var(--sidebar-hover)] hover:text-white',
+                          )}
+                        >
+                          {w.icon_url ? (
+                            <img
+                              src={w.icon_url}
+                              alt=""
+                              className="h-full w-full object-cover"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            label
+                          )}
+                        </Link>
+                      </div>
+                    );
+                  })}
+                </nav>
+              </ScrollArea>
+            )}
 
             <div className="mt-auto flex shrink-0 flex-col items-center gap-2 border-t border-white/15 px-2 pt-2">
               <button
@@ -147,43 +157,47 @@ export function WorkspaceRail({
               >
                 <PanelLeftClose className="h-5 w-5" strokeWidth={2} aria-hidden />
               </button>
-              <button
-                type="button"
-                title="Create a BuddyBubble"
-                aria-label="Create a BuddyBubble"
-                onClick={() => setCreateOpen(true)}
-                className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-white/10 text-white/55 ring-2 ring-inset ring-white/20 transition-colors hover:bg-[color:var(--sidebar-active)] hover:text-[var(--primary-foreground)] hover:ring-[color:var(--sidebar-active)]/50 motion-reduce:transition-none"
-              >
-                <Plus className="h-6 w-6" strokeWidth={2.25} />
-              </button>
-              {onOpenProfile && (
-                <button
-                  type="button"
-                  title="Profile"
-                  aria-label="Open profile"
-                  onClick={onOpenProfile}
-                  className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-[14px] bg-white/10 ring-2 ring-inset ring-white/20 transition-colors hover:ring-white/40 motion-reduce:transition-none"
-                >
-                  {profileAvatarUrl ? (
-                    <img
-                      src={profileAvatarUrl}
-                      alt=""
-                      className="h-full w-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <span className="text-[11px] font-semibold text-[color:var(--sidebar-text)]">
-                      {profileInitial}
-                    </span>
-                  )}
-                </button>
-              )}
+              {!embedMode ? (
+                <>
+                  <button
+                    type="button"
+                    title="Create a BuddyBubble"
+                    aria-label="Create a BuddyBubble"
+                    onClick={() => setCreateOpen(true)}
+                    className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-white/10 text-white/55 ring-2 ring-inset ring-white/20 transition-colors hover:bg-[color:var(--sidebar-active)] hover:text-[var(--primary-foreground)] hover:ring-[color:var(--sidebar-active)]/50 motion-reduce:transition-none"
+                  >
+                    <Plus className="h-6 w-6" strokeWidth={2.25} />
+                  </button>
+                  {onOpenProfile ? (
+                    <button
+                      type="button"
+                      title="Profile"
+                      aria-label="Open profile"
+                      onClick={onOpenProfile}
+                      className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-[14px] bg-white/10 ring-2 ring-inset ring-white/20 transition-colors hover:ring-white/40 motion-reduce:transition-none"
+                    >
+                      {profileAvatarUrl ? (
+                        <img
+                          src={profileAvatarUrl}
+                          alt=""
+                          className="h-full w-full object-cover"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <span className="text-[11px] font-semibold text-[color:var(--sidebar-text)]">
+                          {profileInitial}
+                        </span>
+                      )}
+                    </button>
+                  ) : null}
+                </>
+              ) : null}
             </div>
           </>
         )}
       </aside>
 
-      <CreateWorkspaceModal open={createOpen} onOpenChange={setCreateOpen} />
+      {!embedMode ? <CreateWorkspaceModal open={createOpen} onOpenChange={setCreateOpen} /> : null}
     </>
   );
 }

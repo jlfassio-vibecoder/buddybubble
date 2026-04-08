@@ -23,19 +23,26 @@ From the repo root:
 npm run check
 ```
 
-This runs, in order: **Prettier check** → **TypeScript (`tsc`)** → **Next.js production build**.
+This runs, in order: **Prettier check** → **TypeScript (`tsc`)** → **Next.js production build** → **Astro check** (`apps/storefront`, `astro check`).
 
-If `check` passes, you are in good shape for formatting, TS compliance, and a production build. Fix failures in order (formatting first, then types, then build).
+If `check` passes, you are in good shape for formatting, TS compliance, both production builds, and Astro diagnostics. Fix failures in order (formatting first, then types, then Next build, then storefront).
+
+To run only the marketing storefront type/Astro diagnostics:
+
+```bash
+npm run check:storefront
+```
 
 ---
 
 ## Step-by-step (same checks as the hook + build)
 
-| Step | Command                | What it catches                                                                             |
-| ---- | ---------------------- | ------------------------------------------------------------------------------------------- |
-| 1    | `npm run format:check` | Files that are not formatted with **Prettier** (per `.prettierrc.json`).                    |
-| 2    | `npm run lint`         | **TypeScript** errors and type mismatches (`tsc --noEmit`).                                 |
-| 3    | `npm run build`        | Next.js compile errors, App Router issues, and other problems only visible in a full build. |
+| Step | Command                    | What it catches                                                                             |
+| ---- | -------------------------- | ------------------------------------------------------------------------------------------- |
+| 1    | `npm run format:check`     | Files that are not formatted with **Prettier** (per `.prettierrc.json`).                    |
+| 2    | `npm run lint`             | **TypeScript** errors and type mismatches (`tsc --noEmit`).                                 |
+| 3    | `npm run build`            | Next.js compile errors, App Router issues, and other problems only visible in a full build. |
+| 4    | `npm run check:storefront` | **Astro** diagnostics for `apps/storefront` (`astro check`).                                |
 
 ### Auto-fix formatting (whole repo)
 

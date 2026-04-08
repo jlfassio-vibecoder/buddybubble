@@ -1,0 +1,134 @@
+---
+import {
+  MapPin,
+  Sparkles,
+  Camera,
+  Lightbulb,
+  SquareCheck,
+} from '@lucide/astro';
+import { getPublicCardVisual } from '../lib/item-styles';
+
+export type StorefrontCard = {
+  id: string;
+  title: string;
+  description: string | null;
+  item_type: string;
+  metadata: unknown;
+  scheduled_on?: string | null;
+  created_at?: string;
+};
+
+interface Props {
+  card: StorefrontCard;
+}
+
+const { card } = Astro.props;
+
+const v = getPublicCardVisual(card.item_type);
+const t = (card.item_type || 'task').toLowerCase();
+
+const Icon =
+  t === 'event'
+    ? MapPin
+    : t === 'experience'
+      ? Sparkles
+      : t === 'memory'
+        ? Camera
+        : t === 'idea'
+          ? Lightbulb
+          : SquareCheck;
+
+/** Safe metadata lines for polymorphic types */
+function metadataBlocks(itemType: string, meta: unknown): { label: string; value: string }[] {
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return [];
+  const m = meta as Record<string, unknown>;
+  const str = (k: string) => (typeof m[k] === 'string' ? (m[k] as string).trim() : '');
+  const it = itemType.toLowerCase();
+
+  if (it === 'event') {
+    const out: { label: string; value: string }[] = [];
+    const loc = str('location');
+    const url = str('url');
+    if (loc) out.push({ label: 'Location', value: loc });
+    if (url) out.push({ label: 'Link', value: url });
+    return out;
+  }
+
+  if (it === 'experience') {
+    const season = str('season');
+    const horizon = str('horizon');
+    const end = str('end_date');
+    const parts: string[] = [];
+    if (season) parts.push(season);
+    if (horizon) parts.push(horizon);
+    if (end) parts.push(`Ends ${end.slice(0, 10)}`);
+    if (parts.length === 0) return [];
+    return [{ label: 'Season / horizon', value: parts.join(' · ') }];
+  }
+
+  if (it === 'memory') {
+    const caption = str('caption');
+    if (!caption) return [];
+    return [{ label: 'Caption', value: caption }];
+  }
+
+  return [];
+}
+
+const blocks = metadataBlocks(card.item_type, card.metadata);
+const scheduled =
+  card.scheduled_on && String(card.scheduled_on).trim()
+    ? String(card.scheduled_on).slice(0, 10)
+    : null;
+---
+
+<div
+  class:list={[
+    'break-inside-avoid mb-6 rounded-2xl border-2 p-5 shadow-sm',
+    v.bg,
+    v.border,
+  ]}
+>
+  <div class="mb-3 flex flex-wrap items-center gap-2">
+    <span
+      class:list={['inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold', v.chip]}
+    >
+      <Icon class="size-3.5 shrink-0 opacity-90" aria-hidden="true" />
+      {v.label}
+    </span>
+    {
+      scheduled ? (
+        <span class="text-xs text-zinc-500">Scheduled · {scheduled}</span>
+      ) : null
+    }
+  </div>
+
+  <h3 class="text-lg font-semibold leading-snug tracking-tight text-zinc-900">{card.title}</h3>
+
+  {
+    card.description?.trim() ? (
+      <p class="mt-2 text-sm leading-relaxed text-zinc-700">{card.description}</p>
+    ) : null
+  }
+
+  {
+    blocks.length > 0 ? (
+      <dl class="mt-4 space-y-2 border-t border-zinc-200/80 pt-4 text-sm text-zinc-700">
+        {blocks.map((row) => (
+          <div class="flex flex-col gap-0.5 sm:flex-row sm:gap-2">
+            <dt class="shrink-0 font-medium text-zinc-500">{row.label}</dt>
+            <dd class="min-w-0 break-words">
+              {row.label === 'Link' ? (
+                <a href={row.value} class="font-medium text-indigo-600 underline decoration-indigo-300 underline-offset-2 hover:text-indigo-700">
+                  {row.value}
+                </a>
+              ) : (
+                row.value
+              )}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    ) : null
+  }
+</div>

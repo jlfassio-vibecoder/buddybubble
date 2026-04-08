@@ -1,0 +1,193 @@
+---
+import '../styles/global.css';
+import PublicCard from '../components/PublicCard.astro';
+import { normalizeCrmOrigin } from '../lib/crm-origin';
+import { createStorefrontClient } from '../lib/supabase';
+
+type PublicBranding = {
+  hero_url?: string;
+  description?: string;
+  primary_color?: string;
+  logo_url?: string;
+};
+
+function parseBranding(raw: unknown): PublicBranding {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const o = raw as Record<string, unknown>;
+  const str = (k: string) => (typeof o[k] === 'string' ? (o[k] as string) : undefined);
+  return {
+    hero_url: str('hero_url'),
+    description: str('description'),
+    primary_color: str('primary_color'),
+    logo_url: str('logo_url'),
+  };
+}
+
+const slug = Astro.params.slug?.trim();
+if (!slug) {
+  return new Response(null, { status: 404, statusText: 'Not found' });
+}
+
+const supabase = createStorefrontClient();
+
+const { data: workspace, error: wsErr } = await supabase
+  .from('workspaces')
+  .select('*')
+  .eq('public_slug', slug)
+  .eq('is_public', true)
+  .maybeSingle();
+
+if (wsErr || !workspace) {
+  return new Response(null, { status: 404, statusText: 'Not found' });
+}
+
+const ws = workspace as {
+  id: string;
+  name: string;
+  public_branding: unknown;
+};
+
+const branding = parseBranding(ws.public_branding);
+const accent = branding.primary_color?.trim() || '#2563eb';
+
+/** Public cards for this workspace via tasks → bubbles (inner) → workspace */
+const { data: tasksJoined, error: tasksErr } = await supabase
+  .from('tasks')
+  .select(
+    `
+    id,
+    title,
+    description,
+    item_type,
+    metadata,
+    scheduled_on,
+    created_at,
+    bubbles!inner (
+      workspace_id
+    )
+  `,
+  )
+  .eq('visibility', 'public')
+  .eq('bubbles.workspace_id', ws.id)
+  .order('created_at', { ascending: false });
+
+let publicCards =
+  (tasksJoined as
+    | {
+        id: string;
+        title: string;
+        description: string | null;
+        item_type: string;
+        metadata: unknown;
+        scheduled_on: string | null;
+        created_at: string;
+      }[]
+    | null) ?? [];
+
+if (tasksErr) {
+  const { data: bubbles } = await supabase.from('bubbles').select('id').eq('workspace_id', ws.id);
+  const bubbleIds = bubbles?.map((b) => (b as { id: string }).id) ?? [];
+  if (bubbleIds.length === 0) {
+    publicCards = [];
+  } else {
+    const { data: fallbackTasks } = await supabase
+      .from('tasks')
+      .select('id, title, description, item_type, metadata, scheduled_on, created_at')
+      .eq('visibility', 'public')
+      .in('bubble_id', bubbleIds)
+      .order('created_at', { ascending: false });
+    publicCards = (fallbackTasks as typeof publicCards) ?? [];
+  }
+}
+
+const crmLoginBase = `${normalizeCrmOrigin(import.meta.env.PUBLIC_APP_ORIGIN)}/login`;
+const joinHref = `${crmLoginBase}?next=${encodeURIComponent(`/app/${ws.id}`)}`;
+
+const pageTitle = `${ws.name} · BuddyBubble`;
+const heroImage = branding.hero_url?.trim() ?? '';
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="generator" content={Astro.generator} />
+    <title>{pageTitle}</title>
+  </head>
+  <body class="min-h-screen bg-zinc-100 text-zinc-900 antialiased">
+    <header class="relative overflow-hidden border-b border-black/10">
+      {
+        heroImage ? (
+          <div
+            class="absolute inset-0 bg-cover bg-center"
+            style={`background-image: url(${JSON.stringify(heroImage)})`}
+          />
+        ) : null
+      }
+      <div
+        class:list={[
+          'absolute inset-0',
+          heroImage ? 'bg-gradient-to-b from-black/60 via-black/45 to-black/70' : 'bg-zinc-900',
+        ]}
+      />
+      <div class="relative mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-6 px-4 py-8 sm:px-6 lg:py-10">
+        <div class="flex min-w-0 items-center gap-4">
+          {
+            branding.logo_url ? (
+              <img
+                src={branding.logo_url}
+                alt=""
+                class="h-12 w-12 shrink-0 rounded-xl border border-white/20 bg-white/10 object-cover shadow-md"
+                loading="lazy"
+              />
+            ) : null
+          }
+          <div class="min-w-0">
+            <p class="text-xs font-medium uppercase tracking-wider text-white/70">BuddyBubble community</p>
+            <h1 class="truncate text-2xl font-bold tracking-tight text-white drop-shadow sm:text-3xl">
+              {ws.name}
+            </h1>
+          </div>
+        </div>
+        <a
+          href={joinHref}
+          class="inline-flex shrink-0 items-center justify-center rounded-xl px-6 py-3 text-base font-semibold text-white shadow-lg ring-2 ring-white/25 transition hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+          style={`background-color: ${accent}`}
+        >
+          Join community
+        </a>
+      </div>
+    </header>
+
+    <section class="border-b border-zinc-200 bg-white">
+      <div class="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+        <p class="max-w-3xl text-lg leading-relaxed text-zinc-800">
+          {
+            branding.description?.trim()
+              ? branding.description
+              : `Welcome to ${ws.name}. Browse public cards below.`
+          }
+        </p>
+      </div>
+    </section>
+
+    <main class="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+      <div class="mb-8 flex flex-wrap items-end justify-between gap-4">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-zinc-500">Public cards</h2>
+      </div>
+      {
+        publicCards.length === 0 ? (
+          <p class="rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-12 text-center text-sm text-zinc-600 shadow-sm">
+            No public cards yet. Check back soon.
+          </p>
+        ) : (
+          <div class="columns-1 gap-6 sm:columns-2 lg:columns-3">
+            {publicCards.map((card) => (
+              <PublicCard card={card} />
+            ))}
+          </div>
+        )
+      }
+    </main>
+  </body>
+</html>

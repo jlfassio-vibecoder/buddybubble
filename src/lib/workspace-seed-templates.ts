@@ -41,10 +41,10 @@ export const WORKSPACE_SEED_BY_CATEGORY: Record<
   },
   business: {
     bubbles: [
+      { name: 'Dev Ops' },
+      { name: 'Customer Success' },
       { name: 'General' },
       { name: 'Announcements' },
-      { name: 'Projects' },
-      { name: 'Team' },
     ],
     columns: [
       { name: 'Todo', slug: 'todo', position: 0 },
