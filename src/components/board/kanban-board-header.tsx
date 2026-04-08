@@ -1,6 +1,6 @@
 'use client';
 
-import { Maximize2, Shrink, Square } from 'lucide-react';
+import { Circle, Maximize2, Shrink, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { KanbanCardDensity } from '@/components/board/kanban-density';
@@ -14,6 +14,8 @@ const DENSITY_OPTIONS: {
   label: string;
   Icon: typeof Shrink;
 }[] = [
+  /** Calendar month cells use `micro`; users may persist it from there — keep in sync with toolbar. */
+  { value: 'micro', label: 'Micro', Icon: Circle },
   { value: 'summary', label: 'Summary', Icon: Shrink },
   { value: 'full', label: 'Full', Icon: Square },
   { value: 'detailed', label: 'Detailed', Icon: Maximize2 },

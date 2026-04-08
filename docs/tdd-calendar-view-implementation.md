@@ -10,7 +10,7 @@ Instead of introducing a complex, disconnected "Events" system, the Calendar Vie
 
 1. **One Entity, Two Views:** The Calendar does not invent new data types; it queries the existing `tasks` table and lays items out in time using **`scheduled_on`** (calendar day, `YYYY-MM-DD` in the workspace’s `calendar_timezone`) and optional **`scheduled_time`** (local time on that day; `null` means all-day). This matches what `TaskModal` and `KanbanBoard` already persist.
 2. **Component Reuse:** The Calendar should render the same **`KanbanTaskCard`** (`src/components/board/kanban-task-card.tsx`) the board already uses, so Theme Engine tokens and card behavior stay consistent.
-3. **Multi-Rail Architecture Integration:** The calendar lives as a **main-stage column** between **Messages** and **Kanban** (`Workspace` → `Bubbles` → `Messages` → **Calendar** → `Kanban`). **Phase 1 (done):** `CalendarRail` is wired in `workspace-main-split.tsx` with collapse state in `dashboard-shell.tsx`; left rails (**WorkspaceRail**, **BubbleSidebar**) are unchanged. Further polish (resize between Calendar/Kanban, full “focused” behavior) is later work—see **`docs/tdd-layout-column-drawers.md`** for collapse persistence patterns.
+3. **Multi-Rail Architecture Integration:** The calendar is implemented as **`CalendarRail` beside Kanban** in the main stage (shared chrome row, embedded via `calendarSlot` in `KanbanBoard`), not as a separate column between **Messages** and **Kanban**. **Phase 1 (done):** `workspace-main-split.tsx` passes the rail into the board; `dashboard-shell.tsx` owns collapse and strip state. When Kanban is expanded, Calendar appears as the adjacent rail; when Kanban is collapsed, Calendar can occupy more of the stage. Left rails (**WorkspaceRail**, **BubbleSidebar**) are unchanged. Further polish (manual resize between Calendar/Kanban, full “focused” behavior) is later work—see **`docs/tdd-layout-column-drawers.md`** for collapse persistence patterns.
 4. **Fluid Layout States:** Support a thin collapsed strip, a side-by-side split view (Calendar + Kanban), and a full-screen view (when other panels are collapsed).
 5. **Interactive UI:** Support drag-and-drop to reschedule dates, including dragging tasks directly from an open Kanban rail onto the adjacent Calendar rail.
 6. **Clutter Management (Archive):** Allow users to permanently "Archive" and "Recover" tasks to manage clutter across all views, while keeping completed (but unarchived) tasks visible for context.
@@ -28,7 +28,7 @@ Instead of introducing a complex, disconnected "Events" system, the Calendar Vie
 - **Task scope matches Kanban:** `tasks` rows are keyed by **`bubble_id`**, not `workspace_id`. Loading should mirror `KanbanBoard` (`src/components/board/KanbanBoard.tsx`): active bubble vs “All bubbles” via `ALL_BUBBLES_BUBBLE_ID` and `.in('bubble_id', bubbleIds)`.
 - **Drag-and-drop:** Kanban already uses **`@dnd-kit`**; cross-rail calendar drops will likely require a **shared `DndContext`** (or equivalent) scoped in `dashboard-shell.tsx` with collision/drop targets on calendar day cells—not a second isolated DnD island.
 - **`date-fns`:** Already a dependency (`package.json`); safe to use for calendar grid math (cards already use it for date formatting).
-- **`archived_at`:** **Shipped in Phase 1:** migration `supabase/migrations/20260423120000_tasks_archived_at.sql`, `TaskRow.archived_at` in `src/types/database.ts`, and active-list queries use **`.is('archived_at', null)`** where appropriate (`KanbanBoard`, chat task picker, scheduled-tasks cron). UI to set/recover archived tasks is **not** done yet (see §6).
+- **`archived_at`:** **Shipped in Phase 1:** migration `supabase/migrations/20260423120000_tasks_archived_at.sql`, `TaskRow.archived_at` in `src/types/database.ts`. Server routes and some queries use **`.is('archived_at', null)`** where safe; **Kanban** and **`use-calendar-tasks`** filter archived rows in JS after `select('*')` so a missing column during staged deploys does not zero out lists. **Archive** from **`TaskModal`** sets `archived_at`; **recover** UI is not done yet (see §5–§6).
 
 ## 3. Data Model (Zero New Tables)
 
@@ -36,7 +36,7 @@ We will **not** create a new `events` table. The Calendar View relies entirely o
 
 ### 3.1 Schema Update: Archiving
 
-**Status: implemented.** `public.tasks.archived_at` is a nullable `timestamptz` (migration **`20260423120000_tasks_archived_at.sql`**). It soft-hides tasks from active Kanban/chat lists until a recover/archive UI exists.
+**Status: implemented.** `public.tasks.archived_at` is a nullable `timestamptz` (migration **`20260423120000_tasks_archived_at.sql`**). It soft-hides tasks from active Kanban/chat/calendar lists; users can **archive** from **`TaskModal`**; a dedicated **recover** flow is still to be specified.
 
 ### 3.2 The Read Strategy
 
@@ -49,9 +49,9 @@ _Optional agenda detail:_ **`scheduled_time`** already supports a specific time 
 
 ## 4. UI / Architecture
 
-### 4.1 Navigation & Placement (The 4th Rail)
+### 4.1 Navigation & Placement (Calendar beside Kanban)
 
-The calendar column sits between **Messages** (`ChatArea`) and **Kanban** (`KanbanBoard`) inside **`WorkspaceMainSplit`**. **`CalendarRail`** (`src/components/dashboard/calendar-rail.tsx`) is the Phase 1 shell: collapsed strip (Lucide `Calendar` + label, `w-8`) or expanded placeholder (“Calendar Expanded View”). Collapse is persisted per workspace via **`calendarCollapsedStorageKey`** in **`src/lib/layout-collapse-keys.ts`** (`CALENDAR_COLLAPSED_KEY` prefix + `.{workspaceId}`), hydrated in **`dashboard-shell.tsx`** alongside chat/Kanban. Chat ↔ board resize clamps account for calendar width (strip vs expanded min).
+**`CalendarRail`** (`src/components/dashboard/calendar-rail.tsx`) is rendered **next to the Kanban board** inside the main stage (`WorkspaceMainSplit` passes it as `calendarSlot` into **`KanbanBoard`**). It is not a separate flex column between **Messages** and **Kanban**. Collapsed strip (Lucide `Calendar` + label) vs expanded split is persisted per workspace via **`calendarCollapsedStorageKey`** in **`src/lib/layout-collapse-keys.ts`**, hydrated in **`dashboard-shell.tsx`** alongside chat/Kanban. Chat ↔ board resize clamps account for calendar width (strip vs expanded min).
 
 Target **UX** states (split and full-screen behavior are partially aspirational until later phases):
 
@@ -87,11 +87,11 @@ Reusing **`KanbanTaskCard`** keeps Theme Engine behavior (structural colors, Sha
 
 ## 6. Implementation Phases (For Cursor)
 
-1. **Database Update — done:** Migration **`20260423120000_tasks_archived_at.sql`**; **`src/types/database.ts`** includes **`archived_at`**. **Reads:** **`KanbanBoard.loadTasks`** (and promotion / max-position when moving bubbles), **`ChatArea`** task-mention list, and **`src/app/api/cron/scheduled-tasks/route.ts`** filter **`archived_at IS NULL`**. RLS unchanged (archiving is app-layer until product specifies policy).
-2. **UI Shell — Calendar column — done (placeholder):** **`dashboard-shell`**: `calendarCollapsed` + persistence; **`workspace-main-split`**: **`CalendarRail`** between chat and board; **`layout-collapse-keys`**: **`calendarCollapsedStorageKey`**. Messages/Kanban “at least one panel open” invariant is unchanged; **`setCalendarCollapsed`** includes a defensive guard if chat and Kanban were ever both collapsed.
+1. **Database Update — done:** Migration **`20260423120000_tasks_archived_at.sql`**; **`src/types/database.ts`** includes **`archived_at`**. **Reads:** **`KanbanBoard.loadTasks`** filters archived in JS; **`ChatArea`** and cron use null checks where appropriate. RLS unchanged (archiving is app-layer until product specifies policy).
+2. **UI Shell — Calendar beside board — done:** **`dashboard-shell`**: `calendarCollapsed` + persistence; **`workspace-main-split`**: embeds **`CalendarRail`** via **`KanbanBoard`** `calendarSlot`; **`layout-collapse-keys`**: **`calendarCollapsedStorageKey`**. Messages/Kanban “at least one panel open” invariant is unchanged; **`setCalendarCollapsed`** includes a defensive guard if chat and Kanban were ever both collapsed.
 3. **Data layer:** Shared hook or module that loads tasks for `[rangeStart, rangeEnd]` on **`scheduled_on`**, same **`bubble_id`** scope as `KanbanBoard`, `archived_at` null. Reuse **`createClient()`** patterns from the board.
 4. **Calendar UI:** New presentational module(s) under e.g. `src/components/calendar/` (name TBD): month `grid-cols-7`, scrollable week ribbon, `date-fns` for month boundaries; style with existing tokens (`border-border`, `bg-card`, etc.).
-5. **Card & modal behavior:** Adjust **`KanbanTaskCard`** (density and/or completed styling). Add Archive to **`src/components/modals/TaskModal.tsx`** and a recovery surface. **`KanbanBoard`** already omits archived tasks in **`loadTasks`**.
+5. **Card & modal behavior:** Adjust **`KanbanTaskCard`** (density and/or completed styling). **Archive** in **`TaskModal`** is done; a **recovery** surface remains. **`KanbanBoard`** omits archived tasks in **`loadTasks`** (client-side filter).
 6. **Rendering:** Map fetched rows into week + month regions using **`KanbanTaskCard`**; pass **`calendarTimezone`** from the shell (already wired into `KanbanBoard` as `workspaceCalendarTz`).
 7. **Cross-rail DnD:** Integrate with existing **`@dnd-kit`** usage in **`src/components/board/KanbanBoard.tsx`**—likely lift or bridge `DndContext` so calendar cells are valid drop targets and updates run through the same Supabase update helpers.
 

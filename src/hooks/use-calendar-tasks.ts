@@ -77,6 +77,8 @@ export function useCalendarTasks(params: UseCalendarTasksParams): {
         return;
       }
       const rows = (data ?? []) as TaskRow[];
+      // Filter archived in JS (not `.is('archived_at', null)`): matches KanbanBoard.loadTasks — avoids empty
+      // results if PostgREST/schema lags migration during staged deploys; negligible vs range-scoped rows.
       setTasks(sortCalendarTasks(rows.filter((t) => !t.archived_at)));
       setLoading(false);
     }
