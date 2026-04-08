@@ -75,6 +75,7 @@ export async function GET(request: Request) {
           .eq('status', 'scheduled')
           .eq('scheduled_on', b.localToday)
           .is('archived_at', null)
+          .in('item_type', ['task', 'event'])
           .select('id');
         if (uErr) {
           // Staged deploys: cron runs before migrations; avoid treating missing column as a hard failure loop.

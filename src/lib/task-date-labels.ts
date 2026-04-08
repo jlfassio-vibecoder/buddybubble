@@ -13,12 +13,12 @@ const BY_CATEGORY: Record<WorkspaceCategory, TaskDateFieldLabels> = {
   kids: {
     primary: 'Scheduled on',
     short: 'Scheduled',
-    helper: 'Tasks show in Today on that calendar day (workspace time).',
+    helper: 'Cards show in Today on that calendar day (workspace time).',
   },
   community: {
     primary: 'Scheduled for',
     short: 'Event date',
-    helper: 'Tasks show in Today on that calendar day (workspace time).',
+    helper: 'Cards show in Today on that calendar day (workspace time).',
   },
   business: {
     primary: 'Due by',

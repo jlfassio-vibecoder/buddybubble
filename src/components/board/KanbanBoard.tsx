@@ -209,7 +209,7 @@ function alignStatuses(
 ): Record<string, TaskRow[]> {
   const next = makeEmptyColumns(slugs);
   for (const s of slugs) {
-    next[s] = cols[s].map((t) => ({ ...t, status: s }));
+    next[s] = (cols[s] ?? []).map((t) => ({ ...t, status: s }));
   }
   return next;
 }
@@ -221,7 +221,8 @@ function findContainerForId(
 ): string | undefined {
   if (slugs.includes(id)) return id;
   for (const s of slugs) {
-    if (cols[s].some((t) => t.id === id)) return s;
+    const list = cols[s];
+    if (list?.some((t) => t.id === id)) return s;
   }
   return undefined;
 }
@@ -239,8 +240,8 @@ function moveBetweenContainers(
   const overContainer = findContainerForId(overId, prev, slugs);
   if (!activeContainer || !overContainer || activeContainer === overContainer) return prev;
 
-  const activeItems = prev[activeContainer];
-  const overItems = prev[overContainer];
+  const activeItems = prev[activeContainer] ?? [];
+  const overItems = prev[overContainer] ?? [];
   const activeIndex = activeItems.findIndex((t) => t.id === activeId);
   if (activeIndex < 0) return prev;
 
@@ -260,14 +261,12 @@ function moveBetweenContainers(
   }
 
   const moved: TaskRow = { ...task, status: overContainer };
+  const fromList = prev[activeContainer] ?? [];
+  const toList = prev[overContainer] ?? [];
   return {
     ...prev,
-    [activeContainer]: prev[activeContainer].filter((t) => t.id !== activeId),
-    [overContainer]: [
-      ...prev[overContainer].slice(0, newIndex),
-      moved,
-      ...prev[overContainer].slice(newIndex),
-    ],
+    [activeContainer]: fromList.filter((t) => t.id !== activeId),
+    [overContainer]: [...toList.slice(0, newIndex), moved, ...toList.slice(newIndex)],
   };
 }
 
@@ -465,7 +464,10 @@ export function KanbanBoard({
     } else {
       query = query.eq('bubble_id', bubbleId);
     }
-    const { data } = await query;
+    const { data, error: loadErr } = await query;
+    if (loadErr) {
+      console.error('[KanbanBoard] load tasks failed', supabaseClientErrorMessage(loadErr));
+    }
     if (draggingRef.current) return;
     const rows = ((data ?? []) as TaskRow[]).filter((t) => !t.archived_at);
 
@@ -595,11 +597,19 @@ export function KanbanBoard({
         list = list.filter((t) => taskMatchesPriorityFilter(t, priorityFilter));
       }
       if (dateFilter !== 'all') {
-        /** Future-dated work lives in `scheduled`; "Due ≤7d" should not hide the whole pipeline. */
-        const skipDateFilter = dateFilter === 'due_soon' && s === 'scheduled';
-        if (!skipDateFilter) {
-          list = list.filter((t) => taskMatchesDateFilter(t, dateFilter, tz));
-        }
+        list = list.filter((t) => {
+          /** Future-dated work lives in `scheduled`; "Due ≤7d" should not hide the whole pipeline. */
+          if (dateFilter === 'due_soon' && s === 'scheduled') return true;
+          /**
+           * Overdue / due-soon only apply to rows with a calendar day; items without `scheduled_on`
+           * do not pass these filters.
+           */
+          if (dateFilter === 'overdue' || dateFilter === 'due_soon') {
+            const hasYmd = Boolean(t.scheduled_on && String(t.scheduled_on).trim());
+            if (!hasYmd) return false;
+          }
+          return taskMatchesDateFilter(t, dateFilter, tz);
+        });
       }
       if (dateSortMode !== 'none') {
         list = sortTasksByScheduledOn(list, dateSortMode);
@@ -738,7 +748,7 @@ export function KanbanBoard({
       columnsSnapshotRef.current = columnsRef.current;
       const id = String(event.active.id);
       const col = findContainerForId(id, columnsRef.current, columnSlugs);
-      const task = col ? columnsRef.current[col].find((t) => t.id === id) : undefined;
+      const task = col ? (columnsRef.current[col] ?? []).find((t) => t.id === id) : undefined;
       setActiveTask(task ?? null);
     },
     [columnSlugs],
@@ -835,7 +845,7 @@ export function KanbanBoard({
       let next = current;
 
       if (activeContainer === overContainer) {
-        const items = [...current[activeContainer]];
+        const items = [...(current[activeContainer] ?? [])];
         const activeIndex = items.findIndex((t) => t.id === activeId);
         let overIndex = items.findIndex((t) => t.id === overId);
         if (columnSlugs.includes(overId)) {
@@ -885,7 +895,8 @@ export function KanbanBoard({
     if (!error) void loadTasks();
   }
 
-  const boardReady = columnDefs !== null && columnSlugs.length > 0;
+  /** Require at least one column slug — `[]` is not a valid loaded board. */
+  const boardReady = (columnDefs?.length ?? 0) > 0 && columnSlugs.length > 0;
 
   const calendarRailProps = isValidElement(calendarMerged)
     ? (calendarMerged.props as Partial<CalendarRailProps>)
@@ -1028,7 +1039,7 @@ export function KanbanBoard({
                 calendarChromeProps={calendarChromeBarProps}
                 kanbanBody={
                   <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
-                    Select a bubble to view tasks
+                    Select a bubble to view cards
                   </div>
                 }
                 calendarBody={calendarMerged}
@@ -1039,7 +1050,7 @@ export function KanbanBoard({
                 <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
                   <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
                     <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
-                      Select a bubble to view tasks
+                      Select a bubble to view cards
                     </div>
                   </div>
                   {calendarMerged}
@@ -1052,7 +1063,7 @@ export function KanbanBoard({
             <KanbanBoardHeader {...headerToolbarProps} />
             {kanbanChromeOnlyRow}
             <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
-              Select a bubble to view tasks
+              Select a bubble to view cards
             </div>
           </div>
         )
@@ -1239,7 +1250,7 @@ function KanbanColumn({
                     className="mb-1"
                   />
                 ) : (
-                  <p className="py-6 text-center text-xs text-muted-foreground">No tasks</p>
+                  <p className="py-6 text-center text-xs text-muted-foreground">No cards here</p>
                 )
               ) : (
                 <>
@@ -1347,7 +1358,7 @@ function SortableTaskCard({
               type="button"
               ref={setActivatorNodeRef}
               className="cursor-grab touch-none active:cursor-grabbing"
-              aria-label="Drag to reorder task"
+              aria-label="Drag to reorder card"
               {...listeners}
               {...attributes}
             >

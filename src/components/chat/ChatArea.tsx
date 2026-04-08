@@ -1184,7 +1184,7 @@ export function ChatArea({
                   type="button"
                   onClick={() => onOpenTask(task.id)}
                   className="cursor-pointer rounded border border-[color:color-mix(in_srgb,var(--accent-green)_38%,transparent)] bg-[var(--accent-green-bg)] px-1 font-bold text-[var(--accent-green-text)] transition-colors hover:opacity-90"
-                  title={`View Task: ${task.title}`}
+                  title={`View card: ${task.title}`}
                 >
                   {subPart}
                 </button>
@@ -1631,7 +1631,7 @@ export function ChatArea({
             <div className="p-2 bg-muted/70 border-b border-border flex items-center gap-2">
               <Hash className="h-3 w-3 text-[var(--accent-green-text)]" />
               <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                Link Task / Feature
+                Link card / Feature
               </span>
             </div>
             <div className="max-h-48 overflow-y-auto custom-scrollbar">
@@ -1639,7 +1639,7 @@ export function ChatArea({
                 t.title.toLowerCase().includes(taskMentionSearch.toLowerCase()),
               ).length === 0 ? (
                 <div className="p-4 text-center">
-                  <p className="text-xs text-muted-foreground">No tasks found</p>
+                  <p className="text-xs text-muted-foreground">No cards found</p>
                 </div>
               ) : (
                 allTasks

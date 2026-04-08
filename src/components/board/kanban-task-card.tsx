@@ -10,7 +10,13 @@ import {
   MessageCircle,
   User,
 } from 'lucide-react';
-import type { BubbleRow, TaskRow, WorkspaceCategory } from '@/types/database';
+import {
+  normalizeItemType,
+  type BubbleRow,
+  type TaskRow,
+  type WorkspaceCategory,
+} from '@/types/database';
+import { getItemTypeVisual } from '@/lib/item-type-styles';
 import { normalizeTaskPriority, type TaskPriority } from '@/lib/task-priority';
 import { asComments, asSubtasks } from '@/types/task-modal';
 import type { TaskModalTab } from '@/components/modals/TaskModal';
@@ -92,6 +98,9 @@ export function KanbanTaskCard({
   dragHandle,
 }: KanbanTaskCardProps) {
   const subtasks = subtaskProgress(task);
+  const itemKind = normalizeItemType(task.item_type);
+  const typeVisual = getItemTypeVisual(itemKind);
+  const TypeIcon = typeVisual.Icon;
   const pChip = priorityChip(normalizeTaskPriority(task.priority));
   const ymd = task.scheduled_on ? String(task.scheduled_on).slice(0, 10) : null;
   const dateRel = scheduledOnRelativeToWorkspaceToday(ymd, calendarTimezone ?? undefined);
@@ -133,7 +142,9 @@ export function KanbanTaskCard({
     return (
       <Card
         className={cn(
-          'border-border/80 border-l-2 border-l-primary/55 bg-primary/[0.06] shadow-sm ring-1 ring-border/40 transition-shadow hover:shadow-md',
+          'border-border/80 border-l-2 shadow-sm ring-1 ring-border/40 transition-shadow hover:shadow-md',
+          typeVisual.leftBar,
+          typeVisual.surface,
           isCompleted && 'opacity-[0.68]',
           className,
         )}
@@ -157,14 +168,17 @@ export function KanbanTaskCard({
               onClick={openTask}
               onKeyDown={handleOpenKeyDown}
             >
-              <p
-                className={cn(
-                  'truncate text-xs font-semibold leading-tight text-foreground',
-                  isCompleted && 'line-through decoration-muted-foreground/80',
-                )}
-              >
-                {task.title}
-              </p>
+              <div className="flex min-w-0 items-center gap-1">
+                <TypeIcon className={cn('size-3 shrink-0', typeVisual.iconText)} aria-hidden />
+                <p
+                  className={cn(
+                    'min-w-0 flex-1 truncate text-xs font-semibold leading-tight text-foreground',
+                    isCompleted && 'line-through decoration-muted-foreground/80',
+                  )}
+                >
+                  {task.title}
+                </p>
+              </div>
             </div>
           </div>
         </CardContent>
@@ -177,7 +191,9 @@ export function KanbanTaskCard({
   return (
     <Card
       className={cn(
-        'border-border/80 shadow-sm ring-1 ring-border/40 transition-shadow hover:shadow-md',
+        'border-border/80 border-l-2 shadow-sm ring-1 ring-border/40 transition-shadow hover:shadow-md',
+        typeVisual.leftBar,
+        typeVisual.surface,
         isCompleted && 'opacity-[0.68]',
         className,
       )}
@@ -221,6 +237,25 @@ export function KanbanTaskCard({
             </div>
 
             <div className="flex flex-wrap items-center gap-1.5">
+              <span
+                title={typeVisual.label}
+                className={cn(
+                  'inline-flex items-center gap-0.5 rounded-md border px-1.5 py-0.5 font-medium leading-none',
+                  density === 'summary'
+                    ? 'px-1 py-0.5 text-[9px] uppercase tracking-wide'
+                    : 'text-[10px]',
+                  typeVisual.typeChip,
+                )}
+              >
+                <TypeIcon
+                  className={cn(
+                    'shrink-0 text-current',
+                    density === 'summary' ? 'size-2.5' : 'size-3',
+                  )}
+                  aria-hidden
+                />
+                {density !== 'summary' ? <span>{typeVisual.label}</span> : null}
+              </span>
               <span
                 title={pChip.label}
                 className={cn(
@@ -286,7 +321,7 @@ export function KanbanTaskCard({
             <button
               type="button"
               className="relative mt-0.5 shrink-0 rounded-md p-1 text-muted-foreground outline-none ring-offset-background hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              aria-label="Open task comments"
+              aria-label="Open card comments"
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();

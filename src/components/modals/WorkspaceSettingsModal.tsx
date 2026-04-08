@@ -100,7 +100,7 @@ export function WorkspaceSettingsModal({
           <div>
             <h2 className="text-lg font-bold text-foreground">Workspace settings</h2>
             <p className="text-xs text-muted-foreground">
-              Calendar timezone for tasks and automation.
+              Calendar timezone for cards and automation.
             </p>
             {isAdmin ? (
               <p className="mt-2 text-xs">
@@ -151,7 +151,7 @@ export function WorkspaceSettingsModal({
                 ))}
               </select>
               <p className="text-xs text-muted-foreground">
-                Changing this affects when tasks move to the Today column and how due dates compare
+                Changing this affects when cards move to the Today column and how due dates compare
                 to &ldquo;today&rdquo; for this workspace.
               </p>
             </div>

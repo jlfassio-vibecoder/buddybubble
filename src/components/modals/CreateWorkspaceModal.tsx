@@ -93,7 +93,7 @@ export function CreateWorkspaceModal({ open, onOpenChange }: CreateWorkspaceModa
             <DialogTitle>Create BuddyBubble</DialogTitle>
             <DialogDescription id="create-ws-desc">
               Name your BuddyBubble and pick a category template. We seed starter Bubbles and a
-              matching task board for that template before you land in the app.
+              matching board for that template before you land in the app.
             </DialogDescription>
           </DialogHeader>
 

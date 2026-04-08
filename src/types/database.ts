@@ -13,6 +13,19 @@ export type InvitationJoinRequestStatus = 'pending' | 'approved' | 'rejected' | 
 /** Built-in Kanban slugs; `tasks.status` may also use workspace-specific slugs from `board_columns`. */
 export type TaskStatus = 'todo' | 'in_progress' | 'done';
 
+/** Polymorphic kind for `public.tasks` (single-table Kanban + calendar). */
+export type ItemType = 'task' | 'event' | 'experience' | 'idea' | 'memory';
+
+const ITEM_TYPE_SET = new Set<string>(['task', 'event', 'experience', 'idea', 'memory']);
+
+/** Safe default when `item_type` is missing (stale client) or invalid. */
+export function normalizeItemType(value: unknown): ItemType {
+  if (typeof value === 'string' && ITEM_TYPE_SET.has(value)) {
+    return value as ItemType;
+  }
+  return 'task';
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -203,6 +216,8 @@ export interface Database {
           comments: Json;
           activity_log: Json;
           attachments: Json;
+          item_type: string;
+          metadata: Json;
         };
         Insert: {
           id?: string;
@@ -221,6 +236,8 @@ export interface Database {
           comments?: Json;
           activity_log?: Json;
           attachments?: Json;
+          item_type?: string;
+          metadata?: Json;
         };
         Update: Partial<Database['public']['Tables']['tasks']['Insert']>;
       };
