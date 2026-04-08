@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { X } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
 import type { BubbleRow, TaskRow } from '@/types/database';
@@ -50,6 +51,9 @@ export function DashboardShell({
   initialJoinRequestPreview = [],
   children,
 }: Props) {
+  const searchParams = useSearchParams();
+  const embedMode = searchParams.get('embed') === 'true';
+
   const loadUserWorkspaces = useWorkspaceStore((s) => s.loadUserWorkspaces);
   const syncActiveFromRoute = useWorkspaceStore((s) => s.syncActiveFromRoute);
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
@@ -396,9 +400,10 @@ export function DashboardShell({
   const workspaceRailProps = {
     collapsed: workspaceRailCollapsed,
     onCollapsedChange: setWorkspaceRailCollapsed,
-    onOpenProfile: () => setProfileModalOpen(true),
+    onOpenProfile: embedMode ? undefined : () => setProfileModalOpen(true),
     profileAvatarUrl: profile?.avatar_url,
     profileName: profile?.full_name ?? profile?.email,
+    embedMode,
   };
 
   const bubbleSidebarProps = {
@@ -412,7 +417,7 @@ export function DashboardShell({
     canWrite,
     isAdmin: initialRole === 'admin',
     pendingJoinRequestCount: initialRole === 'admin' ? pendingJoinRequestCount : 0,
-    onOpenWorkspaceSettings: () => setWorkspaceSettingsOpen(true),
+    onOpenWorkspaceSettings: embedMode ? undefined : () => setWorkspaceSettingsOpen(true),
   };
 
   const themeCategoryBase =

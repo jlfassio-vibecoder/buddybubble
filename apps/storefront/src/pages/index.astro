@@ -1,0 +1,193 @@
+---
+import '../styles/global.css';
+import StorefrontHeroLogin from '../components/StorefrontHeroLogin.jsx';
+import { normalizeCrmOrigin } from '../lib/crm-origin';
+import { Globe, Lock, Sparkles } from '@lucide/astro';
+
+const appOrigin = normalizeCrmOrigin(import.meta.env.PUBLIC_APP_ORIGIN);
+const appLoginHref = `${appOrigin}/login`;
+const demoWorkspace = import.meta.env.PUBLIC_DEMO_WORKSPACE_ID?.trim();
+const demoIframeSrc = demoWorkspace
+  ? `${appOrigin}/demo?embed=true&workspace=${encodeURIComponent(demoWorkspace)}`
+  : `${appOrigin}/demo?embed=true`;
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" href="/favicon.ico" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="generator" content={Astro.generator} />
+    <title>BuddyBubble | Your Organizational Ecosystem</title>
+    <meta
+      name="description"
+      content="BuddyBubble helps schools, churches, and families share a public digital front door and keep private coordination organized in one place."
+    />
+    <!-- Live demo: PUBLIC_APP_ORIGIN + optional PUBLIC_DEMO_WORKSPACE_ID → /demo?workspace=… on the CRM. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&display=swap"
+      rel="stylesheet"
+    />
+    <style is:global>
+      .font-display {
+        font-family: 'Fraunces', Georgia, 'Times New Roman', serif;
+      }
+    </style>
+  </head>
+  <body class="relative isolate min-h-screen overflow-x-hidden bg-amber-50 text-amber-950 antialiased">
+    <header class="sticky top-0 z-40 border-b border-amber-200/90 bg-white/85 backdrop-blur-md">
+      <div class="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
+        <a href="/" class="inline-flex items-center gap-2.5">
+          <span class="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-amber-950 text-sm font-bold text-white">
+            B
+          </span>
+          <span class="text-base font-semibold tracking-tight text-amber-950">BuddyBubble</span>
+        </a>
+        <div class="flex items-center gap-2 sm:gap-3">
+          <a
+            href={appLoginHref}
+            class="rounded-lg px-3 py-2 text-sm font-medium text-amber-800 transition hover:bg-amber-100 hover:text-amber-950"
+          >
+            Sign In
+          </a>
+          <a
+            href={appLoginHref}
+            class="rounded-lg border border-amber-200 bg-white px-3.5 py-2 text-sm font-semibold text-amber-950 shadow-sm transition hover:bg-amber-100"
+          >
+            Create a Bubble
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20 lg:py-28">
+        <div class="grid items-start gap-12 lg:grid-cols-2 lg:items-center lg:gap-14">
+          <div class="text-left">
+            <p
+              class="inline-flex items-center rounded-full border border-amber-200 bg-amber-100 px-3.5 py-1 text-xs font-semibold uppercase tracking-wide text-amber-800"
+            >
+              Community Engagement Forum
+            </p>
+            <h1
+              class="font-display mt-6 max-w-xl text-balance text-5xl font-medium tracking-tight text-amber-950 lg:text-6xl"
+            >
+              Your Organizational Ecosystem.
+            </h1>
+            <p class="mt-6 max-w-xl text-pretty text-lg leading-relaxed text-amber-900 sm:text-xl">
+              Give your school, church, or family a beautiful public digital front door and a powerful
+              private ecosystem to organize events, experiences, ideas and memories.
+            </p>
+            <div class="mt-10">
+              <a
+                href={appLoginHref}
+                class="inline-flex items-center justify-center rounded-xl bg-amber-500 px-6 py-3.5 text-base font-semibold text-white shadow-lg shadow-amber-200 transition hover:bg-amber-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600"
+              >
+                Start your BuddyBubble for free
+              </a>
+            </div>
+          </div>
+          <div class="lg:justify-self-end lg:w-full lg:max-w-md">
+            <StorefrontHeroLogin client:load appOrigin={appOrigin} appLoginHref={appLoginHref} />
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="w-full border-y border-amber-200 bg-amber-100/70 py-6"
+        aria-label="Who BuddyBubble is for"
+      >
+        <p class="text-center text-xs font-semibold uppercase tracking-widest text-amber-800">
+          For PTAs · Youth Groups · Local Businesses · Neighborhoods
+        </p>
+      </section>
+
+      <section
+        class="w-full border-t border-amber-200 bg-amber-50/90 py-12 sm:py-16 md:py-20"
+        aria-label="Live product demo"
+      >
+        <div class="mx-auto w-full max-w-7xl px-4 sm:px-6">
+          <div
+            class="flex w-full flex-col overflow-hidden rounded-3xl border border-amber-200/50 shadow-2xl aspect-video"
+          >
+            <div class="flex min-h-0 flex-1 flex-col bg-amber-50">
+              <div
+                class="z-50 flex h-10 shrink-0 items-center gap-2 border-b border-amber-200 bg-amber-100/80 px-4 backdrop-blur-md"
+                aria-hidden="true"
+              >
+                <div class="h-2.5 w-2.5 rounded-full bg-amber-300"></div>
+                <div class="h-2.5 w-2.5 rounded-full bg-amber-300"></div>
+                <div class="h-2.5 w-2.5 rounded-full bg-amber-300"></div>
+              </div>
+              <div class="relative min-h-0 flex-1">
+                <iframe
+                  src={demoIframeSrc}
+                  title="BuddyBubble live demo"
+                  class="absolute inset-0 h-full w-full border-0"
+                  allow="clipboard-write"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
+        <div class="grid grid-cols-1 gap-6 md:grid-cols-3">
+          <article
+            class="rounded-2xl border border-amber-200 bg-amber-50/50 p-8 shadow-sm shadow-amber-100 md:col-span-2"
+          >
+            <div class="inline-flex rounded-xl bg-amber-100 p-3">
+              <Globe class="h-6 w-6 text-amber-600" />
+            </div>
+            <h2 class="font-display mt-5 text-xl font-medium text-amber-950">
+              Your Digital Front Porch
+            </h2>
+            <p class="mt-2 text-sm leading-relaxed text-amber-900">
+              Share upcoming gatherings, announcements, and local events on a beautiful, easy-to-find
+              public page using your own web address.
+            </p>
+          </article>
+
+          <article class="rounded-2xl border border-amber-200 bg-white p-8 shadow-sm shadow-amber-100">
+            <div class="inline-flex rounded-xl bg-amber-100 p-3">
+              <Lock class="h-6 w-6 text-amber-600" />
+            </div>
+            <h2 class="font-display mt-5 text-xl font-medium text-amber-950">Your Private Bubble</h2>
+            <p class="mt-2 text-sm leading-relaxed text-amber-900">
+              Plan with the people you actually work alongside—volunteers, staff, parents, or your
+              core team. Use a simple board and calendar to see what's coming up and who's handling
+              what. Only invited members can see it.
+            </p>
+          </article>
+
+          <article class="rounded-2xl border border-amber-200 bg-white p-8 shadow-sm shadow-amber-100">
+            <div class="inline-flex rounded-xl bg-amber-100 p-3">
+              <Sparkles class="h-6 w-6 text-amber-600" />
+            </div>
+            <h2 class="font-display mt-5 text-xl font-medium text-amber-950">
+              More Than Just Chores
+            </h2>
+            <p class="mt-2 text-sm leading-relaxed text-amber-900">
+              Go beyond standard to-do lists. Log your group's favorite memories, map out future
+              experiences, and brainstorm big ideas together in one shared space.
+            </p>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer class="border-t border-amber-200">
+      <div class="mx-auto flex w-full max-w-6xl flex-col items-start justify-between gap-3 px-4 py-6 text-sm text-amber-800 sm:flex-row sm:items-center sm:px-6">
+        <p>&copy; {new Date().getFullYear()} BuddyBubble. All rights reserved.</p>
+        <div class="flex items-center gap-4">
+          <a href="#" class="transition hover:text-amber-950">Privacy Policy</a>
+          <a href="#" class="transition hover:text-amber-950">Terms of Service</a>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

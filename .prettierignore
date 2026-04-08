@@ -7,3 +7,7 @@ coverage/
 package-lock.json
 *.min.js
 supabase/.temp/
+
+# Astro storefront — generated / local build output (not source)
+apps/storefront/.astro/
+apps/storefront/.vercel/

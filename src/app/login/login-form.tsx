@@ -5,12 +5,30 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@utils/supabase/client';
 import { Button } from '@/components/ui/button';
+import { getAuthAppOrigin } from '@/lib/auth-app-origin';
 import { authCallbackAbsoluteUrl } from '@/lib/auth-callback-url';
 import { formatLoginAuthError } from '@/lib/format-error';
 import { safeNextPath } from '@/lib/safe-next-path';
 import { persistInviteHandoffToken } from '@/app/(dashboard)/onboarding/actions';
+import { cn } from '@/lib/utils';
 
-export function LoginForm() {
+const inputClass =
+  'w-full rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-sm text-amber-950 outline-none transition placeholder:text-amber-400/80 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/25';
+
+const primaryBtnClass =
+  'h-11 w-full rounded-xl border-0 bg-amber-500 text-base font-semibold text-white shadow-lg shadow-amber-200/80 hover:bg-amber-600 focus-visible:ring-amber-500/40';
+
+const outlineBtnClass =
+  'h-11 w-full rounded-xl border-amber-200 bg-white text-amber-950 hover:bg-amber-50 hover:text-amber-950';
+
+const secondaryBtnClass =
+  'h-11 w-full rounded-xl border-amber-200/80 bg-amber-100/90 text-amber-950 hover:bg-amber-100';
+
+type LoginFormProps = {
+  titleFontClassName: string;
+};
+
+export function LoginForm({ titleFontClassName }: LoginFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = safeNextPath(searchParams.get('next')) ?? '/app';
@@ -23,7 +41,7 @@ export function LoginForm() {
 
   const redirectTo =
     typeof window !== 'undefined'
-      ? authCallbackAbsoluteUrl(window.location.origin, next, inviteToken)
+      ? authCallbackAbsoluteUrl(getAuthAppOrigin(), next, inviteToken)
       : '';
 
   async function signInEmail(e: React.FormEvent) {
@@ -98,88 +116,125 @@ export function LoginForm() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-6">
-      <div className="w-full max-w-sm space-y-6 rounded-xl border border-border bg-card p-8 shadow-sm">
-        <div className="text-center">
-          <h1 className="text-xl font-semibold text-foreground">BuddyBubble</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Sign in to continue</p>
+    <main className="min-h-screen bg-amber-50 text-amber-950 antialiased">
+      <div className="mx-auto flex min-h-screen max-w-6xl flex-col justify-center px-4 py-12 sm:px-6 lg:py-16">
+        <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
+          <div className="text-left">
+            <p className="inline-flex items-center rounded-full border border-amber-200 bg-amber-100 px-3.5 py-1 text-xs font-semibold uppercase tracking-wide text-amber-800">
+              Community Engagement Forum
+            </p>
+            <h1
+              className={cn(
+                titleFontClassName,
+                'mt-6 max-w-xl text-balance text-4xl font-medium tracking-tight text-amber-950 sm:text-5xl lg:text-6xl',
+              )}
+            >
+              Sign in to BuddyBubble
+            </h1>
+            <p className="mt-6 max-w-lg text-pretty text-lg leading-relaxed text-amber-900 sm:text-xl">
+              Access your workspaces, channels, and boards—the same warm, local-first experience as
+              our public site, now for members.
+            </p>
+          </div>
+
+          <div className="w-full lg:justify-self-end">
+            <div className="mx-auto w-full max-w-md rounded-2xl border border-amber-200/90 bg-white p-8 shadow-xl shadow-amber-950/[0.06] lg:mx-0 lg:max-w-none">
+              <div className="mb-6 border-b border-amber-100 pb-6">
+                <h2 className="text-lg font-semibold text-amber-950">Member sign-in</h2>
+                <p className="mt-1 text-sm text-amber-800/90">Email and password or Google</p>
+              </div>
+
+              {searchParams.get('error') && (
+                <p className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                  Authentication failed. Try again.
+                </p>
+              )}
+
+              {error && (
+                <p className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                  {error}
+                </p>
+              )}
+
+              {info && (
+                <p className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                  {info}
+                </p>
+              )}
+
+              <form onSubmit={signInEmail} className="space-y-4">
+                <div>
+                  <label
+                    htmlFor="email"
+                    className="mb-1.5 block text-sm font-medium text-amber-900"
+                  >
+                    Email
+                  </label>
+                  <input
+                    id="email"
+                    type="email"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="password"
+                    className="mb-1.5 block text-sm font-medium text-amber-900"
+                  >
+                    Password
+                  </label>
+                  <input
+                    id="password"
+                    type="password"
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    className={inputClass}
+                  />
+                </div>
+                <Button type="submit" className={primaryBtnClass} disabled={loading}>
+                  {loading ? 'Signing in…' : 'Sign in'}
+                </Button>
+              </form>
+
+              <div className="mt-4 space-y-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={outlineBtnClass}
+                  onClick={() => void signUp()}
+                  disabled={loading}
+                >
+                  Create account
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className={secondaryBtnClass}
+                  onClick={() => void signInGoogle()}
+                  disabled={loading}
+                >
+                  Continue with Google
+                </Button>
+              </div>
+
+              <p className="mt-8 text-center text-sm text-amber-800/90">
+                <Link
+                  href="/"
+                  className="font-medium text-amber-900 underline decoration-amber-300 underline-offset-4 transition hover:text-amber-950 hover:decoration-amber-500"
+                >
+                  Back to home
+                </Link>
+              </p>
+            </div>
+          </div>
         </div>
-
-        {searchParams.get('error') && (
-          <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            Authentication failed. Try again.
-          </p>
-        )}
-
-        {error && (
-          <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
-        )}
-
-        {info && (
-          <p className="rounded-md bg-emerald-500/10 px-3 py-2 text-sm text-emerald-800 dark:text-emerald-200">
-            {info}
-          </p>
-        )}
-
-        <form onSubmit={signInEmail} className="space-y-4">
-          <div>
-            <label htmlFor="email" className="mb-1 block text-sm font-medium">
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label htmlFor="password" className="mb-1 block text-sm font-medium">
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            />
-          </div>
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? 'Signing in…' : 'Sign in'}
-          </Button>
-        </form>
-
-        <Button
-          type="button"
-          variant="outline"
-          className="w-full"
-          onClick={() => void signUp()}
-          disabled={loading}
-        >
-          Create account
-        </Button>
-
-        <Button
-          type="button"
-          variant="secondary"
-          className="w-full"
-          onClick={() => void signInGoogle()}
-          disabled={loading}
-        >
-          Continue with Google
-        </Button>
-
-        <p className="text-center text-sm text-muted-foreground">
-          <Link href="/" className="underline underline-offset-4 hover:text-foreground">
-            Back to home
-          </Link>
-        </p>
       </div>
     </main>
   );

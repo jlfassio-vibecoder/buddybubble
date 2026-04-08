@@ -55,7 +55,14 @@ export function appendActivityForFieldChange(
   prev: TaskActivityEntry[],
   opts: {
     userId: string | null;
-    field: 'title' | 'description' | 'status' | 'priority' | 'scheduled_on' | 'scheduled_time';
+    field:
+      | 'title'
+      | 'description'
+      | 'status'
+      | 'priority'
+      | 'scheduled_on'
+      | 'scheduled_time'
+      | 'visibility';
     from: string;
     to: string;
   },
@@ -72,9 +79,11 @@ export function appendActivityForFieldChange(
             ? `Changed status`
             : opts.field === 'priority'
               ? `Changed priority`
-              : opts.field === 'scheduled_time'
-                ? `Changed scheduled time`
-                : `Changed scheduled date`,
+              : opts.field === 'visibility'
+                ? `Changed visibility`
+                : opts.field === 'scheduled_time'
+                  ? `Changed scheduled time`
+                  : `Changed scheduled date`,
     at: new Date().toISOString(),
     user_id: opts.userId,
     field: opts.field,
