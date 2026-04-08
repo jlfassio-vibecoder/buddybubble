@@ -1,3 +1,5 @@
+import type { ItemType } from '@/types/database';
+
 /**
  * Workspace-local calendar helpers for scheduled tasks (IANA timezone from `workspaces.calendar_timezone`).
  */
@@ -70,9 +72,16 @@ export function alignStatusWithFutureSchedule(params: {
   scheduledOnYmd: string | null;
   calendarTimezone: string | null | undefined;
   hasScheduledBoardColumn: boolean;
+  /**
+   * Experiences and ideas keep their backlog column even with a future span start / horizon date
+   * (e.g. Ideas/Wishlist on kids template).
+   */
+  itemType?: ItemType | null;
   now?: Date;
 }): string {
-  const { status, scheduledOnYmd, calendarTimezone, hasScheduledBoardColumn, now } = params;
+  const { status, scheduledOnYmd, calendarTimezone, hasScheduledBoardColumn, itemType, now } =
+    params;
+  if (itemType === 'experience' || itemType === 'idea') return status;
   if (!hasScheduledBoardColumn || !scheduledOnYmd?.trim()) return status;
   if (scheduledOnRelativeToWorkspaceToday(scheduledOnYmd, calendarTimezone, now) !== 'future') {
     return status;

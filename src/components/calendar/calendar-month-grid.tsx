@@ -9,9 +9,15 @@ import {
   startOfMonth,
   startOfWeek,
 } from 'date-fns';
-import type { BubbleRow, TaskRow, WorkspaceCategory } from '@/types/database';
+import {
+  normalizeItemType,
+  type BubbleRow,
+  type TaskRow,
+  type WorkspaceCategory,
+} from '@/types/database';
 import type { TaskModalTab } from '@/components/modals/TaskModal';
 import { KanbanTaskCard } from '@/components/board/kanban-task-card';
+import { getItemTypeVisual } from '@/lib/item-type-styles';
 import { Button } from '@/components/ui/button';
 import { CALENDAR_WEEK_OPTIONS } from '@/lib/calendar-view-range';
 import { calendarDayDropId } from '@/lib/calendar-dnd';
@@ -75,6 +81,8 @@ export type CalendarMonthGridProps = {
   onNextMonth: () => void;
   onSelectYmd: (ymd: string) => void;
   tasksByYmd: Map<string, TaskRow[]>;
+  /** Full calendar task list for experience start-day badges. */
+  calendarTasks: TaskRow[];
   bubbles: BubbleRow[];
   canWrite: boolean;
   onMoveToBubble: (taskId: string, targetBubbleId: string) => void;
@@ -91,6 +99,7 @@ export function CalendarMonthGrid({
   onNextMonth,
   onSelectYmd,
   tasksByYmd,
+  calendarTasks,
   bubbles,
   canWrite,
   onMoveToBubble,
@@ -103,6 +112,8 @@ export function CalendarMonthGrid({
   const tz = calendarTimezone?.trim() || 'UTC';
   const activeWorkspaceYmd = getCalendarDateInTimeZone(tz, activeViewDate);
   const visibleMonthKey = activeWorkspaceYmd.slice(0, 7);
+  const expVisual = getItemTypeVisual('experience');
+  const ExpIcon = expVisual.Icon;
 
   const monthStart = startOfMonth(activeViewDate);
   const monthEnd = endOfMonth(activeViewDate);
@@ -156,7 +167,16 @@ export function CalendarMonthGrid({
           {cells.map((day) => {
             const ymd = getCalendarDateInTimeZone(tz, day);
             const inMonth = ymd.slice(0, 7) === visibleMonthKey;
-            const dayTasks = tasksByYmd.get(ymd) ?? [];
+            const dayTasks = (tasksByYmd.get(ymd) ?? []).filter(
+              (t) => normalizeItemType(t.item_type) !== 'experience',
+            );
+            const experiencesStartingHere = calendarTasks.filter(
+              (t) =>
+                !t.archived_at &&
+                normalizeItemType(t.item_type) === 'experience' &&
+                t.scheduled_on &&
+                String(t.scheduled_on).slice(0, 10) === ymd,
+            );
             const isToday = ymd === todayYmd;
             const isSelected = ymd === activeWorkspaceYmd;
 
@@ -180,6 +200,30 @@ export function CalendarMonthGrid({
                 }
                 childrenBody={
                   <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
+                    {experiencesStartingHere.map((task) => (
+                      <div
+                        key={`exp-${task.id}`}
+                        role="presentation"
+                        onClick={(e) => e.stopPropagation()}
+                        className="min-w-0"
+                      >
+                        <button
+                          type="button"
+                          disabled={!onOpenTask}
+                          onClick={() => onOpenTask?.(task.id)}
+                          className={cn(
+                            'flex w-full min-w-0 items-center justify-center gap-1 rounded-full border px-2 py-0.5 text-center text-[10px] font-semibold leading-tight transition-opacity',
+                            expVisual.typeChip,
+                            onOpenTask && 'hover:opacity-90',
+                            !onOpenTask && 'cursor-default opacity-90',
+                          )}
+                          title={task.title}
+                        >
+                          <ExpIcon className="size-2.5 shrink-0 text-current" aria-hidden />
+                          <span className="truncate">Experience</span>
+                        </button>
+                      </div>
+                    ))}
                     {dayTasks.map((task) => (
                       <div
                         key={task.id}

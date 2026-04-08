@@ -66,6 +66,8 @@ function taskStub(partial: Partial<TaskRow> & { id: string }): TaskRow {
     comments: [],
     activity_log: [],
     attachments: [],
+    item_type: 'task',
+    metadata: {},
     ...partial,
   } as TaskRow;
 }

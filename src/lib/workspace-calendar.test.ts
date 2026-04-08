@@ -113,4 +113,27 @@ describe('alignStatusWithFutureSchedule', () => {
       }),
     ).toBe('planning');
   });
+
+  it('does not move experience or idea to scheduled for a future date', () => {
+    expect(
+      alignStatusWithFutureSchedule({
+        status: 'ideas_wishlist',
+        scheduledOnYmd: '2026-07-04',
+        calendarTimezone: 'UTC',
+        hasScheduledBoardColumn: true,
+        itemType: 'experience',
+        now,
+      }),
+    ).toBe('ideas_wishlist');
+    expect(
+      alignStatusWithFutureSchedule({
+        status: 'planning',
+        scheduledOnYmd: '2026-07-04',
+        calendarTimezone: 'UTC',
+        hasScheduledBoardColumn: true,
+        itemType: 'idea',
+        now,
+      }),
+    ).toBe('planning');
+  });
 });

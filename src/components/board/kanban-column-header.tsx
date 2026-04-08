@@ -50,7 +50,7 @@ export function KanbanColumnHeader({
         <h3 className="truncate text-sm font-semibold capitalize text-foreground">{label}</h3>
         <span
           className="inline-flex min-h-[1.25rem] min-w-[1.25rem] shrink-0 items-center justify-center rounded-full border border-[color:color-mix(in_srgb,var(--accent-yellow)_35%,transparent)] bg-[var(--accent-yellow-bg)] px-1.5 text-[11px] font-semibold tabular-nums text-[var(--accent-yellow-text)]"
-          aria-label={`${count} tasks`}
+          aria-label={`${count} cards`}
         >
           {count}
         </span>
@@ -77,7 +77,7 @@ export function KanbanColumnHeader({
               {onAddTask ? (
                 <Menu.Item className={menuItemClass} disabled={!canAddTask} onClick={onAddTask}>
                   <Plus className="size-3.5 shrink-0 opacity-80" aria-hidden />
-                  Add task
+                  Add card
                 </Menu.Item>
               ) : null}
               {onSortByPriority ? (

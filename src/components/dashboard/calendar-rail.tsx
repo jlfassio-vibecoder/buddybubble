@@ -465,6 +465,7 @@ export function CalendarRail({
                 onNextMonth={handleNextMonth}
                 onSelectYmd={handleSelectYmdFromMonthGrid}
                 tasksByYmd={tasksByYmd}
+                calendarTasks={tasks}
                 bubbles={bubbles}
                 canWrite={canWrite}
                 onMoveToBubble={noopMoveToBubble}

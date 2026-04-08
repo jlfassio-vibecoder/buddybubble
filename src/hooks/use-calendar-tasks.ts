@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@utils/supabase/client';
 import type { TaskRow } from '@/types/database';
 import { compareScheduledTime } from '@/lib/task-scheduled-time';
+import { experienceOverlapsYmdRange } from '@/lib/experience-calendar';
+import { isMissingColumnSchemaCacheError } from '@/lib/supabase-schema-errors';
 
 export type UseCalendarTasksParams = {
   /**
@@ -59,7 +61,7 @@ export function useCalendarTasks(params: UseCalendarTasksParams): {
 
     async function run() {
       const supabase = createClient();
-      const { data, error: qErr } = await supabase
+      const { data: inRange, error: qErr } = await supabase
         .from('tasks')
         .select('*')
         .in('bubble_id', bubbleIds)
@@ -76,10 +78,41 @@ export function useCalendarTasks(params: UseCalendarTasksParams): {
         setLoading(false);
         return;
       }
-      const rows = (data ?? []) as TaskRow[];
-      // Filter archived in JS (not `.is('archived_at', null)`): matches KanbanBoard.loadTasks — avoids empty
-      // results if PostgREST/schema lags migration during staged deploys; negligible vs range-scoped rows.
-      setTasks(sortCalendarTasks(rows.filter((t) => !t.archived_at)));
+
+      let spanRows: TaskRow[] = [];
+      const spanQuery = await supabase
+        .from('tasks')
+        .select('*')
+        .in('bubble_id', bubbleIds)
+        .eq('item_type', 'experience')
+        .lte('scheduled_on', rangeEnd)
+        .order('scheduled_on', { ascending: true })
+        .order('position', { ascending: true });
+
+      if (cancelled) return;
+
+      const { data: spanCandidates, error: spanErr } = spanQuery;
+      if (spanErr) {
+        // Missing `item_type` in schema cache is expected during staged deploys; probe matches TaskModal/cron pattern.
+        void isMissingColumnSchemaCacheError(spanErr, 'item_type');
+        spanRows = [];
+      } else if (spanCandidates) {
+        spanRows = (spanCandidates as TaskRow[]).filter((t) =>
+          experienceOverlapsYmdRange(t, rangeStart, rangeEnd),
+        );
+      }
+
+      const rows1 = (inRange ?? []) as TaskRow[];
+
+      const byId = new Map<string, TaskRow>();
+      for (const t of rows1) {
+        if (!t.archived_at) byId.set(t.id, t);
+      }
+      for (const t of spanRows) {
+        if (!t.archived_at) byId.set(t.id, t);
+      }
+
+      setTasks(sortCalendarTasks([...byId.values()]));
       setLoading(false);
     }
 

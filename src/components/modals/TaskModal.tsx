@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
-import type { TaskRow } from '@/types/database';
+import { normalizeItemType, type ItemType, type Json, type TaskRow } from '@/types/database';
 import { useBoardColumnDefs } from '@/hooks/use-board-columns';
 import {
   type TaskActivityEntry,
@@ -31,6 +31,11 @@ import {
 } from '@/lib/task-attachment-url';
 import { formatUserFacingError } from '@/lib/format-error';
 import { formatMessageTimestamp } from '@/lib/message-timestamp';
+import {
+  buildTaskMetadataPayload,
+  metadataFieldsFromParsed,
+  parseTaskMetadata,
+} from '@/lib/item-metadata';
 import { isMissingColumnSchemaCacheError } from '@/lib/supabase-schema-errors';
 import {
   alignStatusWithFutureSchedule,
@@ -46,6 +51,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
+import { ItemTypeSelector } from '@/components/board/item-type-selector';
+import { indefiniteArticleForUiNoun, itemTypeUiNoun } from '@/lib/item-type-styles';
 
 export type TaskModalTab = 'details' | 'comments' | 'subtasks' | 'activity';
 
@@ -131,6 +138,14 @@ export function TaskModal({
   const [scheduledOn, setScheduledOn] = useState('');
   /** `HH:mm` for `<input type="time" />` or empty (requires date) */
   const [scheduledTime, setScheduledTime] = useState('');
+  const [itemType, setItemType] = useState<ItemType>('task');
+  const [metadata, setMetadata] = useState<Json>({});
+  const [eventLocation, setEventLocation] = useState('');
+  const [eventUrl, setEventUrl] = useState('');
+  const [experienceSeason, setExperienceSeason] = useState('');
+  /** YYYY-MM-DD experience span end (`metadata.end_date`). */
+  const [experienceEndDate, setExperienceEndDate] = useState('');
+  const [memoryCaption, setMemoryCaption] = useState('');
 
   const [subtasks, setSubtasks] = useState<TaskSubtask[]>([]);
   const [comments, setComments] = useState<TaskComment[]>([]);
@@ -175,9 +190,36 @@ export function TaskModal({
     scheduledOn: string | null;
     /** Normalized `HH:mm` or null */
     scheduledTime: string | null;
+    itemType: ItemType;
+    /** Stable string for dirty checks */
+    metadataJson: string;
   } | null>(null);
 
   const dateLabels = taskDateFieldLabels(workspaceCategory);
+
+  const metadataForSave = useMemo(
+    () =>
+      buildTaskMetadataPayload(
+        itemType,
+        {
+          eventLocation,
+          eventUrl,
+          experienceSeason,
+          experienceEndDate,
+          memoryCaption,
+        },
+        metadata,
+      ),
+    [
+      itemType,
+      eventLocation,
+      eventUrl,
+      experienceSeason,
+      experienceEndDate,
+      memoryCaption,
+      metadata,
+    ],
+  );
 
   const statusSelectOptions = useMemo(() => {
     if (status && !statusOptions.some((o) => o.value === status)) {
@@ -197,6 +239,16 @@ export function TaskModal({
       const sched = row.scheduled_on ? String(row.scheduled_on).slice(0, 10) : '';
       setScheduledOn(sched);
       setScheduledTime(scheduledTimeToInputValue((row as TaskRow).scheduled_time));
+      const nextItemType = normalizeItemType((row as TaskRow).item_type);
+      const nextMeta = parseTaskMetadata((row as TaskRow).metadata);
+      setItemType(nextItemType);
+      setMetadata(nextMeta);
+      const mf = metadataFieldsFromParsed(nextMeta);
+      setEventLocation(mf.eventLocation);
+      setEventUrl(mf.eventUrl);
+      setExperienceSeason(mf.experienceSeason);
+      setExperienceEndDate(mf.experienceEndDate);
+      setMemoryCaption(mf.memoryCaption);
       setSubtasks(asSubtasks(row.subtasks));
       setComments(asComments(row.comments));
       setActivityLog(asActivityLog(row.activity_log));
@@ -209,6 +261,8 @@ export function TaskModal({
         priority: nextPriority,
         scheduledOn: row.scheduled_on ? String(row.scheduled_on).slice(0, 10) : null,
         scheduledTime: st || null,
+        itemType: nextItemType,
+        metadataJson: JSON.stringify(buildTaskMetadataPayload(nextItemType, mf, nextMeta)),
       };
     },
     [defaultStatus],
@@ -226,7 +280,7 @@ export function TaskModal({
         .maybeSingle();
       setLoading(false);
       if (qErr || !data) {
-        setError(qErr?.message ?? 'Task not found');
+        setError(qErr?.message ?? 'Card not found');
         return;
       }
       applyRow(data as TaskRow);
@@ -243,6 +297,13 @@ export function TaskModal({
       setPriority('medium');
       setScheduledOn('');
       setScheduledTime('');
+      setItemType('task');
+      setMetadata({});
+      setEventLocation('');
+      setEventUrl('');
+      setExperienceSeason('');
+      setExperienceEndDate('');
+      setMemoryCaption('');
       setSubtasks([]);
       setComments([]);
       setCommentUserById({});
@@ -289,12 +350,13 @@ export function TaskModal({
 
   useEffect(() => {
     if (!open || taskId) return;
-    const fromBoard =
-      initialCreateStatus && statusOptions.some((o) => o.value === initialCreateStatus)
-        ? initialCreateStatus
-        : null;
-    setStatus(fromBoard ?? defaultStatus);
-  }, [open, taskId, defaultStatus, initialCreateStatus, statusOptions]);
+    const fromColumn = initialCreateStatus?.trim() || null;
+    if (fromColumn) {
+      setStatus(fromColumn);
+      return;
+    }
+    setStatus(defaultStatus);
+  }, [open, taskId, defaultStatus, initialCreateStatus]);
 
   useEffect(() => {
     if (!open || !taskId) return;
@@ -325,6 +387,11 @@ export function TaskModal({
   }, [open, taskId, loadTask]);
 
   const isCreateMode = open && !taskId && !!bubbleId;
+  const typeNoun = itemTypeUiNoun(itemType);
+  const modalTitle = isCreateMode ? `New ${typeNoun}` : `Edit ${typeNoun}`;
+  const modalSubtitle = isCreateMode
+    ? `Create ${indefiniteArticleForUiNoun(typeNoun)} ${typeNoun} for this bubble`
+    : `View and edit ${typeNoun} details`;
 
   const archiveTask = useCallback(async () => {
     if (!taskId || !canWrite || archiving) return;
@@ -375,7 +442,13 @@ export function TaskModal({
       scheduledOnYmd: scheduledOnValue,
       calendarTimezone,
       hasScheduledBoardColumn,
+      itemType,
     });
+
+    const typeMetaPatch = {
+      item_type: itemType,
+      metadata: metadataForSave as TaskRow['metadata'],
+    };
 
     let nextActivity = [...activityLog];
     if (orig) {
@@ -441,6 +514,7 @@ export function TaskModal({
       description: description.trim() || null,
       status: effectiveStatus,
       priority,
+      ...typeMetaPatch,
       ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
       ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
       activity_log: nextActivity as unknown as TaskRow['activity_log'],
@@ -457,6 +531,7 @@ export function TaskModal({
         description: description.trim() || null,
         status: effectiveStatus,
         priority,
+        ...typeMetaPatch,
         ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
         activity_log: activityWithoutTime as unknown as TaskRow['activity_log'],
       };
@@ -477,6 +552,8 @@ export function TaskModal({
           priority: orig?.priority ?? priority,
           scheduledOn: orig?.scheduledOn ?? null,
           scheduledTime: orig?.scheduledTime ?? null,
+          itemType,
+          metadataJson: JSON.stringify(metadataForSave),
         };
         setSaving(false);
         void loadTask(taskId);
@@ -504,6 +581,7 @@ export function TaskModal({
         description: description.trim() || null,
         status: statusWithoutSavedSchedule,
         priority,
+        ...typeMetaPatch,
         activity_log: activityWithoutSched as unknown as TaskRow['activity_log'],
       };
       uErr = (await supabase.from('tasks').update(updateNoSched).eq('id', taskId)).error;
@@ -524,6 +602,8 @@ export function TaskModal({
           priority: orig?.priority ?? priority,
           scheduledOn: orig?.scheduledOn ?? null,
           scheduledTime: orig?.scheduledTime ?? null,
+          itemType,
+          metadataJson: JSON.stringify(metadataForSave),
         };
         setSaving(false);
         void loadTask(taskId);
@@ -540,6 +620,7 @@ export function TaskModal({
         title: title.trim(),
         description: description.trim() || null,
         status: effectiveStatus,
+        ...typeMetaPatch,
         ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
         ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
         activity_log: activityWithoutPriority as unknown as TaskRow['activity_log'],
@@ -556,6 +637,8 @@ export function TaskModal({
           priority: revertedPriority,
           scheduledOn: scheduledOnValue,
           scheduledTime: newTimeHm,
+          itemType,
+          metadataJson: JSON.stringify(metadataForSave),
         };
         setSaving(false);
         void loadTask(taskId);
@@ -577,6 +660,8 @@ export function TaskModal({
       priority,
       scheduledOn: scheduledOnValue,
       scheduledTime: newTimeHm,
+      itemType,
+      metadataJson: JSON.stringify(metadataForSave),
     };
     void loadTask(taskId);
   };
@@ -611,6 +696,7 @@ export function TaskModal({
       scheduledOnYmd: sched,
       calendarTimezone,
       hasScheduledBoardColumn,
+      itemType,
     });
 
     const insertRow = {
@@ -621,6 +707,8 @@ export function TaskModal({
       priority,
       position: maxPos,
       scheduled_on: sched,
+      item_type: itemType,
+      metadata: metadataForSave as TaskRow['metadata'],
       ...(sched ? { scheduled_time: scheduledTimeInsert } : {}),
     };
 
@@ -818,16 +906,31 @@ export function TaskModal({
     const o = originalRef.current;
     const sched = scheduledOn.trim() ? scheduledOn.trim().slice(0, 10) : null;
     const timeHm = sched ? (scheduledTime.trim() ? scheduledTime.trim().slice(0, 5) : null) : null;
-    if (!o) return isCreateMode && title.trim().length > 0;
+    const metaJson = JSON.stringify(metadataForSave);
+    if (!o) {
+      return isCreateMode && (title.trim().length > 0 || itemType !== 'task' || metaJson !== '{}');
+    }
     return (
       title.trim() !== o.title ||
       (description ?? '').trim() !== (o.description ?? '').trim() ||
       status !== o.status ||
       priority !== o.priority ||
       sched !== (o.scheduledOn ?? null) ||
-      (timeHm ?? null) !== (o.scheduledTime ?? null)
+      (timeHm ?? null) !== (o.scheduledTime ?? null) ||
+      itemType !== o.itemType ||
+      metaJson !== o.metadataJson
     );
-  }, [title, description, status, priority, scheduledOn, scheduledTime, isCreateMode]);
+  }, [
+    title,
+    description,
+    status,
+    priority,
+    scheduledOn,
+    scheduledTime,
+    isCreateMode,
+    itemType,
+    metadataForSave,
+  ]);
 
   if (!open) return null;
 
@@ -855,12 +958,8 @@ export function TaskModal({
       <div className="relative z-10 flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl">
         <div className="flex items-start justify-between border-b border-border px-6 py-4">
           <div>
-            <h2 className="text-lg font-bold text-foreground">
-              {isCreateMode ? 'New task' : 'Task'}
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              {isCreateMode ? 'Create a task for this bubble' : 'View and edit task details'}
-            </p>
+            <h2 className="text-lg font-bold text-foreground">{modalTitle}</h2>
+            <p className="text-xs text-muted-foreground">{modalSubtitle}</p>
           </div>
           <button
             type="button"
@@ -870,6 +969,11 @@ export function TaskModal({
           >
             <X className="h-5 w-5" />
           </button>
+        </div>
+
+        <div className="border-b border-border px-6 py-3">
+          <p className="mb-2 text-xs font-medium text-muted-foreground">Type</p>
+          <ItemTypeSelector value={itemType} onChange={setItemType} disabled={!canWrite} />
         </div>
 
         <div className="flex flex-wrap gap-2 border-b border-border px-6 py-2">
@@ -887,7 +991,7 @@ export function TaskModal({
           )}
 
           {loading && taskId ? (
-            <p className="text-sm text-muted-foreground">Loading task…</p>
+            <p className="text-sm text-muted-foreground">Loading {typeNoun}…</p>
           ) : null}
 
           {!loading || !taskId ? (
@@ -914,6 +1018,101 @@ export function TaskModal({
                       rows={5}
                     />
                   </div>
+
+                  {itemType === 'event' && (
+                    <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+                      <p className="text-xs font-medium text-muted-foreground">Event details</p>
+                      <div className="space-y-2">
+                        <Label htmlFor="task-event-location">Location</Label>
+                        <Input
+                          id="task-event-location"
+                          value={eventLocation}
+                          onChange={(e) => setEventLocation(e.target.value)}
+                          disabled={!canWrite}
+                          placeholder="e.g. Central Park"
+                          className="h-9"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="task-event-url">Meeting link</Label>
+                        <Input
+                          id="task-event-url"
+                          type="url"
+                          value={eventUrl}
+                          onChange={(e) => setEventUrl(e.target.value)}
+                          disabled={!canWrite}
+                          placeholder="https://…"
+                          className="h-9"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {itemType === 'experience' && (
+                    <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+                      <p className="text-xs font-medium text-muted-foreground">Experience span</p>
+                      <div className="space-y-2">
+                        <Label htmlFor="task-experience-horizon">Season / label (optional)</Label>
+                        <Input
+                          id="task-experience-horizon"
+                          value={experienceSeason}
+                          onChange={(e) => setExperienceSeason(e.target.value)}
+                          disabled={!canWrite}
+                          placeholder="e.g. Summer 2026"
+                          className="h-9"
+                        />
+                      </div>
+                      <div className="flex flex-row flex-wrap gap-3">
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <Label htmlFor="task-experience-start">Start date</Label>
+                          <input
+                            id="task-experience-start"
+                            type="date"
+                            value={scheduledOn}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setScheduledOn(v);
+                              if (!v) setScheduledTime('');
+                            }}
+                            disabled={!canWrite}
+                            className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                          />
+                        </div>
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <Label htmlFor="task-experience-end">End date</Label>
+                          <input
+                            id="task-experience-end"
+                            type="date"
+                            value={experienceEndDate}
+                            onChange={(e) => setExperienceEndDate(e.target.value)}
+                            disabled={!canWrite}
+                            className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                          />
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Experiences appear as themed pills on their start date in the Month view.
+                      </p>
+                    </div>
+                  )}
+
+                  {itemType === 'memory' && (
+                    <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3">
+                      <Label htmlFor="task-memory-caption">Caption / reflection</Label>
+                      <Textarea
+                        id="task-memory-caption"
+                        value={memoryCaption}
+                        onChange={(e) => setMemoryCaption(e.target.value)}
+                        disabled={!canWrite}
+                        rows={3}
+                        placeholder="What made this moment special?"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Photos and files go in Attachments below after you save.
+                      </p>
+                    </div>
+                  )}
+
                   <div className="space-y-2">
                     <Label htmlFor="task-status">Status</Label>
                     <select
@@ -946,41 +1145,43 @@ export function TaskModal({
                       ))}
                     </select>
                   </div>
-                  <div className="space-y-2">
-                    <div className="flex flex-row flex-wrap gap-3 items-end">
-                      <div className="min-w-0 flex-1 space-y-2">
-                        <Label htmlFor="task-scheduled-on">{dateLabels.primary}</Label>
-                        <input
-                          id="task-scheduled-on"
-                          type="date"
-                          value={scheduledOn}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            setScheduledOn(v);
-                            if (!v) setScheduledTime('');
-                          }}
-                          disabled={!canWrite}
-                          className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
-                        />
+                  {itemType !== 'experience' && (
+                    <div className="space-y-2">
+                      <div className="flex flex-row flex-wrap gap-3 items-end">
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <Label htmlFor="task-scheduled-on">{dateLabels.primary}</Label>
+                          <input
+                            id="task-scheduled-on"
+                            type="date"
+                            value={scheduledOn}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setScheduledOn(v);
+                              if (!v) setScheduledTime('');
+                            }}
+                            disabled={!canWrite}
+                            className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                          />
+                        </div>
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <Label htmlFor="task-scheduled-time">
+                            Time {!scheduledOn ? '(set a date first)' : '(optional)'}
+                          </Label>
+                          <input
+                            id="task-scheduled-time"
+                            type="time"
+                            value={scheduledTime}
+                            onChange={(e) => setScheduledTime(e.target.value)}
+                            disabled={!canWrite || !scheduledOn}
+                            className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                          />
+                        </div>
                       </div>
-                      <div className="min-w-0 flex-1 space-y-2">
-                        <Label htmlFor="task-scheduled-time">
-                          Time {!scheduledOn ? '(set a date first)' : '(optional)'}
-                        </Label>
-                        <input
-                          id="task-scheduled-time"
-                          type="time"
-                          value={scheduledTime}
-                          onChange={(e) => setScheduledTime(e.target.value)}
-                          disabled={!canWrite || !scheduledOn}
-                          className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
-                        />
-                      </div>
+                      {dateLabels.helper ? (
+                        <p className="text-xs text-muted-foreground">{dateLabels.helper}</p>
+                      ) : null}
                     </div>
-                    {dateLabels.helper ? (
-                      <p className="text-xs text-muted-foreground">{dateLabels.helper}</p>
-                    ) : null}
-                  </div>
+                  )}
 
                   <Separator className="my-2" />
 
@@ -999,7 +1200,7 @@ export function TaskModal({
                     )}
                     {isCreateMode && (
                       <p className="text-xs text-muted-foreground">
-                        Save the task first, then you can upload files.
+                        Save the {typeNoun} first, then you can upload files.
                       </p>
                     )}
                     <ul className="space-y-1">
@@ -1045,7 +1246,7 @@ export function TaskModal({
                           disabled={saving || !title.trim()}
                           onClick={() => void createTask()}
                         >
-                          {saving ? 'Creating…' : 'Create task'}
+                          {saving ? 'Creating…' : `Create ${typeNoun}`}
                         </Button>
                       ) : (
                         <Button
@@ -1054,7 +1255,7 @@ export function TaskModal({
                           disabled={saving || !coreDirty}
                           onClick={() => void saveCoreFields()}
                         >
-                          {saving ? 'Saving…' : 'Save changes'}
+                          {saving ? 'Saving…' : `Save ${typeNoun}`}
                         </Button>
                       )}
                     </div>
@@ -1064,10 +1265,12 @@ export function TaskModal({
                     <>
                       <Separator className="my-4" />
                       <div className="rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-3">
-                        <p className="mb-2 text-xs font-medium text-destructive">Archive task</p>
+                        <p className="mb-2 text-xs font-medium text-destructive">
+                          Archive {typeNoun}
+                        </p>
                         <p className="mb-3 text-xs text-muted-foreground">
-                          Hides this task from the board and calendar. Recovery from archive is not
-                          available in this version yet.
+                          Hides this {typeNoun} from the board and calendar. Recovery from archive
+                          is not available in this version yet.
                         </p>
                         <Button
                           type="button"
@@ -1077,7 +1280,7 @@ export function TaskModal({
                           disabled={archiving || saving || loading}
                           onClick={() => void archiveTask()}
                         >
-                          {archiving ? 'Archiving…' : 'Archive task'}
+                          {archiving ? 'Archiving…' : `Archive ${typeNoun}`}
                         </Button>
                       </div>
                     </>
@@ -1152,7 +1355,7 @@ export function TaskModal({
                   )}
                   {isCreateMode && (
                     <p className="text-xs text-muted-foreground">
-                      Create the task to add comments.
+                      Create the {typeNoun} to add comments.
                     </p>
                   )}
                 </div>
@@ -1200,7 +1403,7 @@ export function TaskModal({
                   )}
                   {isCreateMode && (
                     <p className="text-xs text-muted-foreground">
-                      Create the task to add subtasks.
+                      Create the {typeNoun} to add subtasks.
                     </p>
                   )}
                 </div>

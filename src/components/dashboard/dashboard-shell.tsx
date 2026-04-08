@@ -522,7 +522,10 @@ export function DashboardShell({
           }
           workspaceId={workspaceId}
           canWrite={canWrite}
-          onCreated={(id) => setTaskModalTaskId(id)}
+          onCreated={(id) => {
+            setTaskModalTaskId(id);
+            bumpTaskViews();
+          }}
           initialCreateStatus={taskModalInitialStatus}
           initialTab={taskModalInitialTab}
           workspaceCategory={effectiveKanbanCategory}
