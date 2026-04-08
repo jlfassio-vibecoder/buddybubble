@@ -1,6 +1,16 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  cloneElement,
+  isValidElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -43,6 +53,8 @@ import {
   type DateFilter,
   type DateSortMode,
 } from '@/lib/task-date-filter';
+import { parseCalendarDayDropId } from '@/lib/calendar-dnd';
+import { taskColumnIsCompletionStatus } from '@/lib/kanban-column-semantic';
 import { scheduledOnRelativeToWorkspaceToday } from '@/lib/workspace-calendar';
 import type { WorkspaceCategory } from '@/types/database';
 import type { BubbleRow, TaskRow } from '@/types/database';
@@ -55,11 +67,96 @@ import {
   type KanbanCardDensity,
 } from '@/components/board/kanban-density';
 import { KanbanTaskCard, KanbanTaskCardDragDecoration } from '@/components/board/kanban-task-card';
+import {
+  CalendarRailChromeBar,
+  type CalendarRailChromeBarProps,
+  type CalendarRailProps,
+} from '@/components/dashboard/calendar-rail';
+import {
+  KanbanBoardChromeBar,
+  type KanbanBoardChromeBarProps,
+} from '@/components/board/kanban-board-chrome-bar';
+import type { CalendarRibbonMode } from '@/components/calendar/calendar-week-ribbon';
+import {
+  COLLAPSED_COLUMN_WIDTH_CLASS,
+  CollapsedColumnStrip,
+} from '@/components/layout/collapsed-column-strip';
 import type { TaskModalTab } from '@/components/modals/TaskModal';
-import { GripVertical } from 'lucide-react';
+import { kanbanBoardStripStorageKey } from '@/lib/layout-collapse-keys';
+import {
+  KANBAN_BOARD_SEGMENT_STORAGE_KEY_PREFIX,
+  parseKanbanBoardSegment,
+  segmentNarrowColumnIds,
+  segmentPastUsesOverdueFallback,
+  type KanbanBoardSegment,
+} from '@/lib/kanban-board-segment';
+import { supabaseClientErrorMessage } from '@/lib/supabase-client-error';
+import { cn } from '@/lib/utils';
+import { GripVertical, Minimize2 } from 'lucide-react';
 import { motion } from 'motion/react';
 
 const KANBAN_COLLAPSED_COLUMNS_KEY_PREFIX = 'buddybubble.kanbanCollapsedColumns:';
+
+/**
+ * One grid: row 1 = per-rail chrome, row 2 = rail bodies. Shared column template keeps each
+ * chrome bar exactly above its rail (same width as `CalendarRail` / Kanban column stack).
+ */
+function SplitKanbanCalendarStage({
+  boardStripCollapsed,
+  kanbanChromeProps,
+  calendarChromeProps,
+  kanbanBody,
+  calendarBody,
+}: {
+  boardStripCollapsed: boolean;
+  kanbanChromeProps: KanbanBoardChromeBarProps;
+  calendarChromeProps: CalendarRailChromeBarProps;
+  kanbanBody: ReactNode;
+  calendarBody: ReactNode;
+}) {
+  /** Strip-only Kanban: fixed-width column + calendar fills remaining width (avoid 50/50 grid). */
+  if (boardStripCollapsed) {
+    return (
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="flex shrink-0 flex-row items-stretch border-b border-border bg-background">
+          <div
+            className={cn(
+              'shrink-0 border-r border-border bg-background',
+              COLLAPSED_COLUMN_WIDTH_CLASS,
+            )}
+            aria-hidden
+          />
+          <div className="min-h-0 min-w-0 flex-1 border-l border-border bg-background">
+            <CalendarRailChromeBar {...calendarChromeProps} />
+          </div>
+        </div>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
+          <div className="flex min-h-0 shrink-0 flex-col overflow-hidden">{kanbanBody}</div>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{calendarBody}</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        'grid min-h-0 min-w-0 flex-1',
+        'grid-rows-[auto_minmax(0,1fr)]',
+        'grid-cols-[minmax(0,1fr)_minmax(16rem,50%)]',
+      )}
+    >
+      <div className="min-h-0 min-w-0 border-b border-border bg-background">
+        <KanbanBoardChromeBar {...kanbanChromeProps} />
+      </div>
+      <div className="min-h-0 min-w-0 border-b border-l border-border bg-background">
+        <CalendarRailChromeBar {...calendarChromeProps} />
+      </div>
+      <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">{kanbanBody}</div>
+      <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">{calendarBody}</div>
+    </div>
+  );
+}
 
 function makeEmptyColumns(slugs: string[]): Record<string, TaskRow[]> {
   const m: Record<string, TaskRow[]> = {};
@@ -185,8 +282,33 @@ type Props = {
   workspaceCategory?: WorkspaceCategory | null;
   /** Workspace IANA timezone for date filters and relative styling. */
   calendarTimezone?: string | null;
-  /** Collapse the board to a strip; parent ensures Messages stays open when needed. */
-  onCollapse?: () => void;
+  /**
+   * Retract the board from the workspace (Messages + Calendar stage only).
+   * Shown as a control on the Kanban strip; same outcome as the previous header collapse.
+   */
+  onRetractKanbanPanel?: () => void;
+  /** Calendar column rendered inside the same `DndContext` as the board (cross-rail scheduling). */
+  calendarSlot?: ReactElement;
+  /**
+   * Bump (e.g. archive in `TaskModal`) so the board refetches.
+   * `WorkspaceMainSplit` also passes this when cloning the board alongside `calendarSlot`.
+   */
+  taskViewsNonce?: number;
+  /**
+   * `DashboardShell` increments when the calendar strip is collapsed so board columns expand
+   * (user is not left with filters-only and no columns).
+   */
+  boardStripExpandNonce?: number;
+  /**
+   * Shell-derived: `kanbanCollapsed ? false : calendarCollapsed`. Passed so `cloneElement` always
+   * sets `isCollapsed` (embedded rail cannot stay strip-only when user then closes Kanban).
+   */
+  calendarStripCollapsed?: boolean;
+  /**
+   * When the user collapses the board to the left strip (`KanbanBoardChromeBar`), expand the
+   * calendar rail — otherwise calendar strip + board strip yields an empty middle.
+   */
+  onExpandCalendarWhenKanbanStripCollapse?: () => void;
 };
 
 export function KanbanBoard({
@@ -196,9 +318,117 @@ export function KanbanBoard({
   onOpenCreateTask,
   workspaceCategory = null,
   calendarTimezone = null,
-  onCollapse,
+  onRetractKanbanPanel,
+  calendarSlot,
+  taskViewsNonce = 0,
+  boardStripExpandNonce = 0,
+  calendarStripCollapsed,
+  onExpandCalendarWhenKanbanStripCollapse,
 }: Props) {
+  const [calendarDropNonce, setCalendarDropNonce] = useState(0);
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
+  const workspaceId = activeWorkspace?.id ?? null;
+
+  const [boardStripCollapsed, setBoardStripCollapsed] = useState(false);
+  const [boardStripHydrated, setBoardStripHydrated] = useState(false);
+  const [boardSegment, setBoardSegment] = useState<KanbanBoardSegment>('planning');
+  const [calendarRibbonMode, setCalendarRibbonMode] = useState<CalendarRibbonMode>('7');
+  const [calendarFetchState, setCalendarFetchState] = useState<{
+    loading: boolean;
+    error: string | null;
+  }>({ loading: false, error: null });
+
+  const onCalendarFetchState = useCallback((s: { loading: boolean; error: string | null }) => {
+    setCalendarFetchState(s);
+  }, []);
+
+  useEffect(() => {
+    if (!workspaceId) {
+      setBoardStripHydrated(true);
+      return;
+    }
+    try {
+      setBoardStripCollapsed(localStorage.getItem(kanbanBoardStripStorageKey(workspaceId)) === '1');
+    } catch {
+      /* ignore */
+    }
+    setBoardStripHydrated(true);
+  }, [workspaceId]);
+
+  useEffect(() => {
+    if (!boardStripHydrated || !workspaceId) return;
+    try {
+      localStorage.setItem(
+        kanbanBoardStripStorageKey(workspaceId),
+        boardStripCollapsed ? '1' : '0',
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [workspaceId, boardStripCollapsed, boardStripHydrated]);
+
+  useEffect(() => {
+    if (boardStripExpandNonce <= 0) return;
+    setBoardStripCollapsed(false);
+    if (!workspaceId) return;
+    try {
+      localStorage.setItem(kanbanBoardStripStorageKey(workspaceId), '0');
+    } catch {
+      /* ignore */
+    }
+  }, [boardStripExpandNonce, workspaceId]);
+
+  useEffect(() => {
+    if (!workspaceId) return;
+    try {
+      setBoardSegment(
+        parseKanbanBoardSegment(
+          localStorage.getItem(`${KANBAN_BOARD_SEGMENT_STORAGE_KEY_PREFIX}${workspaceId}`),
+        ),
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [workspaceId]);
+
+  useEffect(() => {
+    if (!workspaceId) return;
+    try {
+      localStorage.setItem(
+        `${KANBAN_BOARD_SEGMENT_STORAGE_KEY_PREFIX}${workspaceId}`,
+        boardSegment,
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [workspaceId, boardSegment]);
+
+  const calendarMerged = useMemo(() => {
+    if (!calendarSlot || !isValidElement(calendarSlot)) return calendarSlot;
+    const slotCollapsed =
+      typeof calendarStripCollapsed === 'boolean'
+        ? calendarStripCollapsed
+        : Boolean((calendarSlot.props as Partial<CalendarRailProps>).isCollapsed);
+    return cloneElement(calendarSlot, {
+      isCollapsed: slotCollapsed,
+      reloadNonce: taskViewsNonce + calendarDropNonce,
+      mainStage: boardStripCollapsed,
+      /** Grid column already caps width; `max-w-[50%]` on the rail would halve the cell. */
+      fillHostColumn: !slotCollapsed,
+      omitChrome: true,
+      ribbonMode: calendarRibbonMode,
+      onRibbonModeChange: setCalendarRibbonMode,
+      onFetchState: onCalendarFetchState,
+    } as Partial<CalendarRailProps>);
+  }, [
+    boardStripCollapsed,
+    calendarRibbonMode,
+    calendarSlot,
+    calendarStripCollapsed,
+    onCalendarFetchState,
+    taskViewsNonce,
+    calendarDropNonce,
+  ]);
   const columnDefs = useBoardColumnDefs(activeWorkspace?.id ?? null);
   const columnSlugs = useMemo(() => (columnDefs ?? []).map((c) => c.id), [columnDefs]);
 
@@ -237,7 +467,7 @@ export function KanbanBoard({
     }
     const { data } = await query;
     if (draggingRef.current) return;
-    const rows = (data ?? []) as TaskRow[];
+    const rows = ((data ?? []) as TaskRow[]).filter((t) => !t.archived_at);
 
     const tz = calendarTimezone?.trim() || null;
     const canPromote =
@@ -264,7 +494,10 @@ export function KanbanBoard({
             const idSet = new Set(promoteIds);
             toGroup = rows.map((t) => (idSet.has(t.id) ? { ...t, status: 'today' as const } : t));
           } else {
-            console.error('[KanbanBoard] scheduled→today promotion on load failed', error);
+            console.error(
+              '[KanbanBoard] scheduled→today promotion on load failed',
+              supabaseClientErrorMessage(error),
+            );
             toGroup = tasksWithScheduledPromotedToTodayForGrouping(rows, columnSlugs, tz);
           }
         } else {
@@ -278,7 +511,7 @@ export function KanbanBoard({
 
   useEffect(() => {
     void loadTasks();
-  }, [loadTasks]);
+  }, [loadTasks, taskViewsNonce]);
 
   useEffect(() => {
     setCardDensity(parseKanbanCardDensity(localStorage.getItem(KANBAN_CARD_DENSITY_STORAGE_KEY)));
@@ -286,8 +519,6 @@ export function KanbanBoard({
     setDateFilter(parseDateFilter(localStorage.getItem(DATE_FILTER_STORAGE_KEY)));
     setDateSortMode(parseDateSortMode(localStorage.getItem(DATE_SORT_STORAGE_KEY)));
   }, []);
-
-  const workspaceId = activeWorkspace?.id ?? null;
 
   useEffect(() => {
     if (!workspaceId || typeof window === 'undefined') {
@@ -325,17 +556,50 @@ export function KanbanBoard({
     localStorage.setItem(DATE_SORT_STORAGE_KEY, m);
   }, []);
 
+  const handleBoardSegmentChange = useCallback((segment: KanbanBoardSegment) => {
+    setBoardSegment(segment);
+  }, []);
+
+  const handleToggleBoardStrip = useCallback(() => {
+    setBoardStripCollapsed((prev) => {
+      const next = !prev;
+      if (next) onExpandCalendarWhenKanbanStripCollapse?.();
+      return next;
+    });
+  }, [onExpandCalendarWhenKanbanStripCollapse]);
+
   const tz = calendarTimezone?.trim() || activeWorkspace?.calendar_timezone || 'UTC';
+
+  const narrowColumnIds = useMemo(() => {
+    if (!columnDefs?.length) return null;
+    return segmentNarrowColumnIds(boardSegment, columnDefs);
+  }, [boardSegment, columnDefs]);
+
+  const segmentPastOverdue = useMemo(() => {
+    if (!columnDefs?.length) return false;
+    return segmentPastUsesOverdueFallback(boardSegment, columnDefs);
+  }, [boardSegment, columnDefs]);
 
   const visibleColumns = useMemo(() => {
     const next: Record<string, TaskRow[]> = {};
     for (const s of columnSlugs) {
+      if (narrowColumnIds && !narrowColumnIds.includes(s)) {
+        next[s] = [];
+        continue;
+      }
       let list = [...(columns[s] ?? [])];
+      if (segmentPastOverdue) {
+        list = list.filter((t) => taskMatchesDateFilter(t, 'overdue', tz));
+      }
       if (priorityFilter !== 'all') {
         list = list.filter((t) => taskMatchesPriorityFilter(t, priorityFilter));
       }
       if (dateFilter !== 'all') {
-        list = list.filter((t) => taskMatchesDateFilter(t, dateFilter, tz));
+        /** Future-dated work lives in `scheduled`; "Due ≤7d" should not hide the whole pipeline. */
+        const skipDateFilter = dateFilter === 'due_soon' && s === 'scheduled';
+        if (!skipDateFilter) {
+          list = list.filter((t) => taskMatchesDateFilter(t, dateFilter, tz));
+        }
       }
       if (dateSortMode !== 'none') {
         list = sortTasksByScheduledOn(list, dateSortMode);
@@ -343,7 +607,16 @@ export function KanbanBoard({
       next[s] = list;
     }
     return next;
-  }, [columns, columnSlugs, priorityFilter, dateFilter, dateSortMode, tz]);
+  }, [
+    columns,
+    columnSlugs,
+    narrowColumnIds,
+    segmentPastOverdue,
+    priorityFilter,
+    dateFilter,
+    dateSortMode,
+    tz,
+  ]);
 
   // Disable manual reorder when column order is computed (date sort), so drag state matches visible order.
   const dragSortDisabled =
@@ -432,7 +705,7 @@ export function KanbanBoard({
       );
       const failed = results.find((r) => r.error);
       if (failed?.error) {
-        console.error('[KanbanBoard] task update failed', failed.error);
+        console.error('[KanbanBoard] task update failed', supabaseClientErrorMessage(failed.error));
         void loadTasks();
         return;
       }
@@ -501,6 +774,48 @@ export function KanbanBoard({
       const activeId = String(active.id);
       const overId = String(over.id);
 
+      const calendarYmd = parseCalendarDayDropId(overId);
+      if (calendarYmd) {
+        const snap = columnsSnapshotRef.current;
+        if (snap) setColumns(snap);
+        columnsSnapshotRef.current = null;
+        draggingRef.current = false;
+        if (canWrite) {
+          const supabase = createClient();
+          const cols = snap ?? columnsRef.current;
+          const moved = columnSlugs
+            .flatMap((slug) => cols[slug] ?? [])
+            .find((t) => t.id === activeId);
+          const calendarUpdate: { scheduled_on: string; status?: string } = {
+            scheduled_on: calendarYmd,
+          };
+          if (
+            columnSlugs.includes('scheduled') &&
+            moved &&
+            moved.status !== 'done' &&
+            moved.status !== 'completed'
+          ) {
+            calendarUpdate.status = 'scheduled';
+          }
+          void supabase
+            .from('tasks')
+            .update(calendarUpdate)
+            .eq('id', activeId)
+            .then(({ error }) => {
+              if (!error) {
+                void loadTasks();
+                setCalendarDropNonce((n) => n + 1);
+              } else {
+                console.error(
+                  '[KanbanBoard] calendar drop update failed',
+                  supabaseClientErrorMessage(error),
+                );
+              }
+            });
+        }
+        return;
+      }
+
       let current = columnsRef.current;
 
       let activeContainer = findContainerForId(activeId, current, columnSlugs);
@@ -540,7 +855,7 @@ export function KanbanBoard({
       columnsSnapshotRef.current = null;
       draggingRef.current = false;
     },
-    [columnSlugs, persistColumns],
+    [canWrite, columnSlugs, loadTasks, persistColumns],
   );
 
   const handleDragCancel = useCallback(() => {
@@ -556,14 +871,13 @@ export function KanbanBoard({
     const supabase = createClient();
     const { data: existing } = await supabase
       .from('tasks')
-      .select('position')
+      .select('position, archived_at')
       .eq('bubble_id', targetBubbleId)
       .order('position', { ascending: false })
-      .limit(1);
-    const maxPos =
-      existing && existing.length > 0
-        ? Number((existing[0] as { position: number }).position) + 1
-        : 0;
+      .limit(40);
+    const posRows = (existing ?? []) as { position: number; archived_at?: string | null }[];
+    const topActive = posRows.find((r) => !r.archived_at);
+    const maxPos = topActive != null ? Number(topActive.position) + 1 : 0;
     const { error } = await supabase
       .from('tasks')
       .update({ bubble_id: targetBubbleId, position: maxPos })
@@ -573,32 +887,214 @@ export function KanbanBoard({
 
   const boardReady = columnDefs !== null && columnSlugs.length > 0;
 
+  const calendarRailProps = isValidElement(calendarMerged)
+    ? (calendarMerged.props as Partial<CalendarRailProps>)
+    : null;
+  const calendarExpandedBesideBoard = Boolean(calendarRailProps && !calendarRailProps.isCollapsed);
+  const onCalendarCollapse = calendarRailProps?.onCollapse ?? (() => {});
+
+  const kanbanChromeProps = {
+    workspaceName: activeWorkspace?.name ?? null,
+    categoryType: workspaceCategory ?? activeWorkspace?.category_type ?? null,
+    hasBubble: Boolean(bubbleId),
+    boardStripCollapsed,
+    onToggleBoardStrip: bubbleId && boardReady ? handleToggleBoardStrip : undefined,
+    boardSegment,
+    onBoardSegmentChange: handleBoardSegmentChange,
+  };
+
+  const headerToolbarProps = {
+    categoryType: workspaceCategory ?? activeWorkspace?.category_type ?? null,
+    canWrite,
+    hasBubble: Boolean(bubbleId),
+    cardDensity,
+    onCardDensityChange: handleCardDensityChange,
+    priorityFilter,
+    onPriorityFilterChange: handlePriorityFilterChange,
+    dateFilter,
+    onDateFilterChange: handleDateFilterChange,
+    dateSortMode,
+    onDateSortModeChange: handleDateSortModeChange,
+    onOpenFullEditor: onOpenCreateTask ? () => onOpenCreateTask() : undefined,
+  };
+
+  const showSplitChrome = isValidElement(calendarMerged) && calendarExpandedBesideBoard;
+  const kanbanChromeOnlyRow = (
+    <div className="shrink-0 border-b border-border bg-background">
+      <KanbanBoardChromeBar {...kanbanChromeProps} />
+    </div>
+  );
+  const calendarChromeBarProps: CalendarRailChromeBarProps = {
+    loading: calendarFetchState.loading,
+    error: calendarFetchState.error,
+    ribbonMode: calendarRibbonMode,
+    onRibbonModeChange: setCalendarRibbonMode,
+    onCollapse: onCalendarCollapse,
+    showRibbonToggles: Boolean(bubbleId && bubbles.length > 0),
+  };
+
+  function renderKanbanColumnsStageBody(): ReactNode {
+    return boardStripCollapsed ? (
+      <div
+        className={cn(
+          'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-border bg-muted/30',
+          COLLAPSED_COLUMN_WIDTH_CLASS,
+        )}
+      >
+        {onRetractKanbanPanel ? (
+          <button
+            type="button"
+            onClick={onRetractKanbanPanel}
+            className="flex h-8 shrink-0 items-center justify-center border-b border-border text-muted-foreground hover:bg-muted/80 hover:text-foreground"
+            title="Hide board — show Messages and Calendar"
+            aria-label="Hide Kanban board and show Messages with Calendar"
+          >
+            <Minimize2 className="size-3.5" strokeWidth={2.25} aria-hidden />
+          </button>
+        ) : null}
+        <div className="flex min-h-0 flex-1 flex-col">
+          <CollapsedColumnStrip
+            title="Kanban"
+            expandTitle="Expand Kanban board"
+            expandAriaLabel="Expand Kanban board columns"
+            onExpand={() => setBoardStripCollapsed(false)}
+            edge="left"
+            variant="card"
+          />
+        </div>
+      </div>
+    ) : (
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain">
+          <div className="flex h-full min-h-0 gap-3 p-3">
+            {columnDefs!.map((col, columnIndex) => {
+              const fullTaskCount = (columns[col.id] ?? []).length;
+              const addNew =
+                canWrite && onOpenCreateTask
+                  ? () => onOpenCreateTask({ status: col.id })
+                  : undefined;
+              return (
+                <motion.div
+                  key={col.id}
+                  className="flex h-full shrink-0"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{
+                    type: 'spring',
+                    stiffness: 420,
+                    damping: 32,
+                    delay: Math.min(columnIndex * 0.04, 0.24),
+                  }}
+                >
+                  <KanbanColumn
+                    column={col}
+                    tasks={visibleColumns[col.id] ?? []}
+                    fullTaskCount={fullTaskCount}
+                    collapsed={collapsedColumnIds.has(col.id)}
+                    canWrite={canWrite}
+                    dragDisabled={dragSortDisabled}
+                    bubbles={bubbles}
+                    boardReady={boardReady}
+                    boardColumnDefs={columnDefs}
+                    cardDensity={cardDensity}
+                    workspaceCategory={workspaceCategory}
+                    calendarTimezone={tz}
+                    onMoveToBubble={moveTaskToBubble}
+                    onOpenTask={onOpenTask}
+                    onAddNew={addNew}
+                    onSortByPriority={canWrite ? () => sortColumnBy(col.id, 'priority') : undefined}
+                    onSortByTitle={canWrite ? () => sortColumnBy(col.id, 'title') : undefined}
+                    onToggleCollapse={() => toggleColumnCollapse(col.id)}
+                  />
+                </motion.div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-muted/30">
-      <KanbanBoardHeader
-        workspaceName={activeWorkspace?.name ?? null}
-        categoryType={workspaceCategory ?? activeWorkspace?.category_type ?? null}
-        canWrite={canWrite}
-        hasBubble={Boolean(bubbleId)}
-        onCollapse={onCollapse}
-        cardDensity={cardDensity}
-        onCardDensityChange={handleCardDensityChange}
-        priorityFilter={priorityFilter}
-        onPriorityFilterChange={handlePriorityFilterChange}
-        dateFilter={dateFilter}
-        onDateFilterChange={handleDateFilterChange}
-        dateSortMode={dateSortMode}
-        onDateSortModeChange={handleDateSortModeChange}
-        onOpenFullEditor={onOpenCreateTask ? () => onOpenCreateTask() : undefined}
-      />
       {!bubbleId ? (
-        <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
-          Select a bubble to view tasks
-        </div>
+        isValidElement(calendarMerged) ? (
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            <KanbanBoardHeader {...headerToolbarProps} />
+            {showSplitChrome ? (
+              <SplitKanbanCalendarStage
+                boardStripCollapsed={boardStripCollapsed}
+                kanbanChromeProps={kanbanChromeProps}
+                calendarChromeProps={calendarChromeBarProps}
+                kanbanBody={
+                  <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
+                    Select a bubble to view tasks
+                  </div>
+                }
+                calendarBody={calendarMerged}
+              />
+            ) : (
+              <>
+                {kanbanChromeOnlyRow}
+                <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
+                  <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                    <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
+                      Select a bubble to view tasks
+                    </div>
+                  </div>
+                  {calendarMerged}
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            <KanbanBoardHeader {...headerToolbarProps} />
+            {kanbanChromeOnlyRow}
+            <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
+              Select a bubble to view tasks
+            </div>
+          </div>
+        )
       ) : !boardReady ? (
-        <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
-          Loading board…
-        </div>
+        isValidElement(calendarMerged) ? (
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            <KanbanBoardHeader {...headerToolbarProps} />
+            {showSplitChrome ? (
+              <SplitKanbanCalendarStage
+                boardStripCollapsed={boardStripCollapsed}
+                kanbanChromeProps={kanbanChromeProps}
+                calendarChromeProps={calendarChromeBarProps}
+                kanbanBody={
+                  <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
+                    Loading board…
+                  </div>
+                }
+                calendarBody={calendarMerged}
+              />
+            ) : (
+              <>
+                {kanbanChromeOnlyRow}
+                <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
+                  <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                    <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
+                      Loading board…
+                    </div>
+                  </div>
+                  {calendarMerged}
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            <KanbanBoardHeader {...headerToolbarProps} />
+            {kanbanChromeOnlyRow}
+            <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
+              Loading board…
+            </div>
+          </div>
+        )
       ) : (
         <DndContext
           sensors={sensors}
@@ -609,53 +1105,31 @@ export function KanbanBoard({
           onDragCancel={handleDragCancel}
         >
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-            <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain">
-              <div className="flex h-full min-h-0 gap-3 p-3">
-                {columnDefs!.map((col, columnIndex) => {
-                  const fullTaskCount = (columns[col.id] ?? []).length;
-                  const addNew =
-                    canWrite && onOpenCreateTask
-                      ? () => onOpenCreateTask({ status: col.id })
-                      : undefined;
-                  return (
-                    <motion.div
-                      key={col.id}
-                      className="flex h-full shrink-0"
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{
-                        type: 'spring',
-                        stiffness: 420,
-                        damping: 32,
-                        delay: Math.min(columnIndex * 0.04, 0.24),
-                      }}
-                    >
-                      <KanbanColumn
-                        column={col}
-                        tasks={visibleColumns[col.id] ?? []}
-                        fullTaskCount={fullTaskCount}
-                        collapsed={collapsedColumnIds.has(col.id)}
-                        canWrite={canWrite}
-                        dragDisabled={dragSortDisabled}
-                        bubbles={bubbles}
-                        boardReady={boardReady}
-                        cardDensity={cardDensity}
-                        workspaceCategory={workspaceCategory}
-                        calendarTimezone={tz}
-                        onMoveToBubble={moveTaskToBubble}
-                        onOpenTask={onOpenTask}
-                        onAddNew={addNew}
-                        onSortByPriority={
-                          canWrite ? () => sortColumnBy(col.id, 'priority') : undefined
-                        }
-                        onSortByTitle={canWrite ? () => sortColumnBy(col.id, 'title') : undefined}
-                        onToggleCollapse={() => toggleColumnCollapse(col.id)}
-                      />
-                    </motion.div>
-                  );
-                })}
-              </div>
-            </div>
+            <KanbanBoardHeader {...headerToolbarProps} />
+            {showSplitChrome ? (
+              <SplitKanbanCalendarStage
+                boardStripCollapsed={boardStripCollapsed}
+                kanbanChromeProps={kanbanChromeProps}
+                calendarChromeProps={calendarChromeBarProps}
+                kanbanBody={renderKanbanColumnsStageBody()}
+                calendarBody={calendarMerged}
+              />
+            ) : (
+              <>
+                {kanbanChromeOnlyRow}
+                <div
+                  className={cn(
+                    'flex min-h-0 min-w-0 flex-1 overflow-hidden',
+                    isValidElement(calendarMerged) ? 'flex-row' : 'flex-col',
+                  )}
+                >
+                  <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                    {renderKanbanColumnsStageBody()}
+                  </div>
+                  {calendarMerged}
+                </div>
+              </>
+            )}
           </div>
           <DragOverlay
             dropAnimation={{
@@ -674,6 +1148,7 @@ export function KanbanBoard({
                   density={cardDensity}
                   workspaceCategory={workspaceCategory}
                   calendarTimezone={tz}
+                  isCompleted={taskColumnIsCompletionStatus(activeTask.status, columnDefs)}
                   className="pointer-events-none shadow-lg"
                   dragHandle={<KanbanTaskCardDragDecoration />}
                 />
@@ -697,6 +1172,7 @@ type ColumnProps = {
   dragDisabled: boolean;
   boardReady: boolean;
   bubbles: BubbleRow[];
+  boardColumnDefs: { id: string; label: string }[] | null;
   cardDensity: KanbanCardDensity;
   workspaceCategory: WorkspaceCategory | null;
   calendarTimezone: string;
@@ -717,6 +1193,7 @@ function KanbanColumn({
   dragDisabled,
   boardReady,
   bubbles,
+  boardColumnDefs,
   cardDensity,
   workspaceCategory,
   calendarTimezone,
@@ -773,6 +1250,7 @@ function KanbanColumn({
                       canWrite={canWrite}
                       dragDisabled={dragDisabled}
                       bubbles={bubbles}
+                      boardColumnDefs={boardColumnDefs}
                       cardDensity={cardDensity}
                       workspaceCategory={workspaceCategory}
                       calendarTimezone={calendarTimezone}
@@ -805,6 +1283,7 @@ type CardProps = {
   canWrite: boolean;
   dragDisabled: boolean;
   bubbles: BubbleRow[];
+  boardColumnDefs: { id: string; label: string }[] | null;
   cardDensity: KanbanCardDensity;
   workspaceCategory: WorkspaceCategory | null;
   calendarTimezone: string;
@@ -817,6 +1296,7 @@ function SortableTaskCard({
   canWrite,
   dragDisabled,
   bubbles,
+  boardColumnDefs,
   cardDensity,
   workspaceCategory,
   calendarTimezone,
@@ -860,6 +1340,7 @@ function SortableTaskCard({
         calendarTimezone={calendarTimezone}
         onMoveToBubble={onMoveToBubble}
         onOpenTask={onOpenTask}
+        isCompleted={taskColumnIsCompletionStatus(task.status, boardColumnDefs)}
         dragHandle={
           draggable ? (
             <button

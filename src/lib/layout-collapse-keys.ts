@@ -13,3 +13,12 @@ export function chatCollapsedStorageKey(workspaceId: string) {
 export function kanbanCollapsedStorageKey(workspaceId: string) {
   return `buddybubble.kanbanCollapsed.${workspaceId}`;
 }
+
+/** Board columns collapsed to a left strip; calendar keeps the rest. */
+export function kanbanBoardStripStorageKey(workspaceId: string) {
+  return `buddybubble.kanbanBoardStrip.${workspaceId}`;
+}
+
+export function calendarCollapsedStorageKey(workspaceId: string) {
+  return `buddybubble.calendarCollapsed.${workspaceId}`;
+}

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { ChevronLeft, Hash, Settings, UserPlus } from 'lucide-react';
+import { Hash, PanelLeftClose, Settings, UserPlus } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
 import type { BubbleRow } from '@/types/database';
 import { ALL_BUBBLES_BUBBLE_ID, ALL_BUBBLES_LABEL } from '@/lib/all-bubbles';
@@ -99,6 +99,7 @@ export function BubbleSidebar({
           expandTitle="Expand Bubbles sidebar"
           expandAriaLabel="Expand Bubbles sidebar"
           onExpand={expand}
+          edge="left"
           variant={isStackedInColumn ? 'card' : 'sidebar'}
         />
       ) : (
@@ -112,7 +113,7 @@ export function BubbleSidebar({
                 onClick={collapse}
                 className="shrink-0 rounded-md p-1 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
               >
-                <ChevronLeft className="size-4" strokeWidth={2.25} aria-hidden />
+                <PanelLeftClose className="h-5 w-5" strokeWidth={2} aria-hidden />
               </button>
               <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
                 <h2 className="truncate text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/70">

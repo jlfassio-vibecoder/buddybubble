@@ -1,15 +1,21 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { cloneElement, isValidElement, useCallback, useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import {
   COLLAPSED_COLUMN_WIDTH_CLASS,
   CollapsedColumnStrip,
 } from '@/components/layout/collapsed-column-strip';
+import { KanbanBoard } from '@/components/board/KanbanBoard';
+import type { CalendarRailProps } from '@/components/dashboard/calendar-rail';
 
 const MIN_CHAT_PX = 280;
 const MIN_KANBAN_PX = 280;
 const DEFAULT_CHAT_PX = 440;
+/** Room for calendar strip (`w-8`) vs expanded rail (`min-w-[16rem]` on `CalendarRail`). */
+function calendarSideReservePx(calendarCollapsed: boolean): number {
+  return calendarCollapsed ? 32 : 256;
+}
 
 function storageWidthKey(workspaceId: string) {
   return `buddybubble.chatWidth.${workspaceId}`;
@@ -20,28 +26,36 @@ type Props = {
   chatCollapsed: boolean;
   onChatCollapsedChange: (collapsed: boolean) => void;
   kanbanCollapsed: boolean;
+  calendarCollapsed: boolean;
   /** When the shell renders the Messages strip in the left stack, hide the duplicate strip here. */
   omitCollapsedMessagesStrip?: boolean;
   /** Chat panel; receives onCollapse for the header control (e.g. ChatArea). */
   renderChat: (helpers: { onCollapse: () => void }) => React.ReactNode;
-  board: React.ReactNode;
+  /** Pre-built `CalendarRail` element; merged into `KanbanBoard` as `calendarSlot` when the board is visible. */
+  calendarRail: React.ReactElement;
+  board: React.ReactElement<React.ComponentProps<typeof KanbanBoard>>;
+  /** Bumped after archive (etc.) so board + calendar lists refetch. */
+  taskViewsNonce: number;
 };
 
 /**
- * Resizable split between chat and Kanban; chat can be fully collapsed to emphasize the board.
- * Chat width persists per workspace in localStorage; collapsed state is controlled by the parent.
+ * Resizable split: Messages | Kanban (calendar on the right of the board, same DnD context).
+ * Chat width persists per workspace in localStorage; collapse flags are controlled by the parent.
  *
- * When Kanban is collapsed: only Messages (chat) is shown in this area — no Kanban strip here
- * (the strip may appear in the shell rail). User opens Kanban again by collapsing Messages.
+ * When Kanban is collapsed: Messages and Calendar **split the main stage** (`flex-1` each). User
+ * opens Kanban again by collapsing Messages (shell invariant).
  */
 export function WorkspaceMainSplit({
   workspaceId,
   chatCollapsed,
   onChatCollapsedChange,
   kanbanCollapsed,
+  calendarCollapsed,
   omitCollapsedMessagesStrip = false,
   renderChat,
+  calendarRail,
   board,
+  taskViewsNonce,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [chatWidth, setChatWidth] = useState(DEFAULT_CHAT_PX);
@@ -81,13 +95,14 @@ export function WorkspaceMainSplit({
     const clamp = () => {
       const total = containerRef.current?.clientWidth ?? 0;
       if (total <= 0) return;
-      const maxW = Math.max(MIN_CHAT_PX, total - MIN_KANBAN_PX);
+      const reserve = kanbanCollapsed ? 0 : calendarSideReservePx(calendarCollapsed);
+      const maxW = Math.max(MIN_CHAT_PX, total - MIN_KANBAN_PX - reserve);
       setChatWidth((w) => Math.min(w, maxW));
     };
     window.addEventListener('resize', clamp);
     clamp();
     return () => window.removeEventListener('resize', clamp);
-  }, []);
+  }, [calendarCollapsed, kanbanCollapsed]);
 
   const handleResizePointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -97,7 +112,8 @@ export function WorkspaceMainSplit({
 
       const onMove = (ev: PointerEvent) => {
         const total = containerRef.current?.clientWidth ?? 0;
-        const maxW = Math.max(MIN_CHAT_PX, total - MIN_KANBAN_PX);
+        const reserve = kanbanCollapsed ? 0 : calendarSideReservePx(calendarCollapsed);
+        const maxW = Math.max(MIN_CHAT_PX, total - MIN_KANBAN_PX - reserve);
         const delta = ev.clientX - startX;
         setChatWidth(Math.min(maxW, Math.max(MIN_CHAT_PX, startW + delta)));
       };
@@ -116,7 +132,7 @@ export function WorkspaceMainSplit({
       window.addEventListener('pointerup', onUp);
       window.addEventListener('pointercancel', onUp);
     },
-    [chatWidth],
+    [calendarCollapsed, chatWidth, kanbanCollapsed],
   );
 
   const showMessagesStrip = chatCollapsed && !omitCollapsedMessagesStrip;
@@ -161,12 +177,24 @@ export function WorkspaceMainSplit({
             expandTitle="Expand Messages"
             expandAriaLabel="Expand Messages panel"
             onExpand={expandChat}
+            edge="left"
             variant="black"
           />
         </div>
       )}
 
-      {!kanbanCollapsed && <div className="flex min-h-0 min-w-0 flex-1 flex-col">{board}</div>}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-row">
+        {!kanbanCollapsed
+          ? isValidElement(board)
+            ? cloneElement(board, {
+                calendarSlot: calendarRail,
+                taskViewsNonce,
+              } as Partial<React.ComponentProps<typeof KanbanBoard>>)
+            : board
+          : isValidElement(calendarRail)
+            ? cloneElement(calendarRail, { mainStage: true } as Partial<CalendarRailProps>)
+            : calendarRail}
+      </div>
     </div>
   );
 }

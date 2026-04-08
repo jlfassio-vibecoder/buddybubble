@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
 import type { BubbleRow, TaskRow } from '@/types/database';
@@ -10,6 +10,7 @@ import { WorkspaceRail } from '@/components/layout/WorkspaceRail';
 import { BubbleSidebar } from './bubble-sidebar';
 import { ChatArea } from '@/components/chat/ChatArea';
 import { KanbanBoard } from '@/components/board/KanbanBoard';
+import { CalendarRail } from '@/components/dashboard/calendar-rail';
 import { WorkspaceMainSplit } from '@/components/dashboard/workspace-main-split';
 import { TaskModal, type TaskModalTab } from '@/components/modals/TaskModal';
 import { WorkspaceSettingsModal } from '@/components/modals/WorkspaceSettingsModal';
@@ -22,6 +23,7 @@ import { useUserProfileStore } from '@/store/userProfileStore';
 import { asComments } from '@/types/task-modal';
 import {
   bubbleSidebarCollapsedStorageKey,
+  calendarCollapsedStorageKey,
   chatCollapsedStorageKey,
   kanbanCollapsedStorageKey,
   workspaceRailCollapsedStorageKey,
@@ -73,7 +75,13 @@ export function DashboardShell({
   const [bubbleSidebarCollapsed, setBubbleSidebarCollapsed] = useState(false);
   const [chatCollapsed, setChatCollapsedState] = useState(false);
   const [kanbanCollapsed, setKanbanCollapsedState] = useState(false);
+  const [calendarCollapsed, setCalendarCollapsedState] = useState(false);
+  const [taskViewsNonce, setTaskViewsNonce] = useState(0);
   const [layoutHydrated, setLayoutHydrated] = useState(false);
+  /** Bumped when the calendar is collapsed so `KanbanBoard` expands its column strip (avoid empty stage). */
+  const [boardStripExpandNonce, setBoardStripExpandNonce] = useState(0);
+
+  const bumpTaskViews = useCallback(() => setTaskViewsNonce((n) => n + 1), []);
 
   /** At least one of Messages or Kanban must stay expanded (not both strips-only). */
   const setChatCollapsed = useCallback((v: boolean) => {
@@ -81,9 +89,25 @@ export function DashboardShell({
     setChatCollapsedState(v);
   }, []);
 
+  /** Hiding Kanban (Messages + Calendar stage): keep Calendar expanded so the stage is never blank. */
   const setKanbanCollapsed = useCallback((v: boolean) => {
-    if (v) setChatCollapsedState(false);
+    if (v) {
+      setChatCollapsedState(false);
+      setCalendarCollapsedState(false);
+    }
     setKanbanCollapsedState(v);
+  }, []);
+
+  /**
+   * Collapsing the calendar strip: show the Kanban panel and expand board columns so the user
+   * never lands on an empty main area (toolbar-only).
+   */
+  const setCalendarCollapsed = useCallback((v: boolean) => {
+    if (v) {
+      setKanbanCollapsedState(false);
+      setBoardStripExpandNonce((n) => n + 1);
+    }
+    setCalendarCollapsedState(v);
   }, []);
 
   const { categoryOverride } = useThemeOverride();
@@ -96,6 +120,12 @@ export function DashboardShell({
       : null;
   const workspaceCalendarTz =
     activeWorkspace?.id === workspaceId ? (activeWorkspace.calendar_timezone ?? null) : null;
+
+  /**
+   * Hard invariant (render): if the Kanban panel is hidden, the calendar cannot be strip-collapsed.
+   * Derived so UI cannot desync from batched state or missed updates.
+   */
+  const calendarRailIsCollapsed = kanbanCollapsed ? false : calendarCollapsed;
 
   const taskCommentCountsRef = useRef<Map<string, number>>(new Map());
   const taskModalForToastRef = useRef<{ open: boolean; taskId: string | null }>({
@@ -117,6 +147,27 @@ export function DashboardShell({
     setTaskModalTaskId(null);
     setTaskModalOpen(true);
   }, []);
+
+  const calendarContext = useMemo(
+    () => ({
+      workspaceId,
+      bubbles,
+      activeBubbleId: selectedBubbleId,
+      canWrite,
+      calendarTimezone: workspaceCalendarTz,
+      workspaceCategory: effectiveKanbanCategory,
+      onOpenTask: openTaskModal,
+    }),
+    [
+      workspaceId,
+      bubbles,
+      selectedBubbleId,
+      canWrite,
+      workspaceCalendarTz,
+      effectiveKanbanCategory,
+      openTaskModal,
+    ],
+  );
 
   const onTaskModalOpenChange = useCallback((open: boolean) => {
     setTaskModalOpen(open);
@@ -202,6 +253,10 @@ export function DashboardShell({
   }, [workspaceId, loadUserWorkspaces, syncActiveFromRoute, loadProfile]);
 
   useEffect(() => {
+    setBoardStripExpandNonce(0);
+  }, [workspaceId]);
+
+  useEffect(() => {
     try {
       const w = localStorage.getItem(workspaceRailCollapsedStorageKey(workspaceId));
       const b = localStorage.getItem(bubbleSidebarCollapsedStorageKey(workspaceId));
@@ -209,10 +264,14 @@ export function DashboardShell({
       let k = localStorage.getItem(kanbanCollapsedStorageKey(workspaceId)) === '1';
       const chatOn = c === '1';
       if (chatOn && k) k = false;
+      let cal = localStorage.getItem(calendarCollapsedStorageKey(workspaceId)) === '1';
+      /** Kanban hidden + calendar strip = blank main stage; open calendar. */
+      if (k && cal) cal = false;
       setWorkspaceRailCollapsed(w === '1');
       setBubbleSidebarCollapsed(b === '1');
       setChatCollapsedState(chatOn);
       setKanbanCollapsedState(k);
+      setCalendarCollapsedState(cal);
     } catch {
       /* ignore */
     }
@@ -260,6 +319,15 @@ export function DashboardShell({
       /* ignore */
     }
   }, [workspaceId, kanbanCollapsed, layoutHydrated]);
+
+  useEffect(() => {
+    if (!layoutHydrated) return;
+    try {
+      localStorage.setItem(calendarCollapsedStorageKey(workspaceId), calendarCollapsed ? '1' : '0');
+    } catch {
+      /* ignore */
+    }
+  }, [workspaceId, calendarCollapsed, layoutHydrated]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -370,6 +438,7 @@ export function DashboardShell({
                   expandTitle="Expand Messages"
                   expandAriaLabel="Expand Messages panel"
                   onExpand={() => setChatCollapsed(false)}
+                  edge="left"
                   variant="black"
                 />
               </div>
@@ -380,6 +449,7 @@ export function DashboardShell({
                   expandTitle="Expand Kanban"
                   expandAriaLabel="Expand Kanban panel"
                   onExpand={() => setKanbanCollapsed(false)}
+                  edge="left"
                   variant="card"
                 />
               </div>
@@ -408,7 +478,17 @@ export function DashboardShell({
           chatCollapsed={chatCollapsed}
           onChatCollapsedChange={setChatCollapsed}
           kanbanCollapsed={kanbanCollapsed}
+          calendarCollapsed={calendarRailIsCollapsed}
           omitCollapsedMessagesStrip={tripleStack && chatCollapsed}
+          taskViewsNonce={taskViewsNonce}
+          calendarRail={
+            <CalendarRail
+              isCollapsed={calendarRailIsCollapsed}
+              onExpand={() => setCalendarCollapsed(false)}
+              onCollapse={() => setCalendarCollapsed(true)}
+              {...calendarContext}
+            />
+          }
           renderChat={({ onCollapse }) => (
             <ChatArea
               bubbles={bubbles}
@@ -426,7 +506,10 @@ export function DashboardShell({
               onOpenCreateTask={openCreateTaskModal}
               workspaceCategory={effectiveKanbanCategory}
               calendarTimezone={workspaceCalendarTz}
-              onCollapse={() => setKanbanCollapsed(true)}
+              boardStripExpandNonce={boardStripExpandNonce}
+              calendarStripCollapsed={calendarRailIsCollapsed}
+              onExpandCalendarWhenKanbanStripCollapse={() => setCalendarCollapsed(false)}
+              onRetractKanbanPanel={() => setKanbanCollapsed(true)}
             />
           }
         />
@@ -444,6 +527,7 @@ export function DashboardShell({
           initialTab={taskModalInitialTab}
           workspaceCategory={effectiveKanbanCategory}
           calendarTimezone={workspaceCalendarTz}
+          onTaskArchived={bumpTaskViews}
         />
         <WorkspaceSettingsModal
           open={workspaceSettingsOpen}

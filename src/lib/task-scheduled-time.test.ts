@@ -61,6 +61,7 @@ function taskStub(partial: Partial<TaskRow> & { id: string }): TaskRow {
     created_at: new Date().toISOString(),
     scheduled_on: null,
     scheduled_time: null,
+    archived_at: null,
     subtasks: [],
     comments: [],
     activity_log: [],

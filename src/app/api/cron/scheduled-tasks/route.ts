@@ -74,6 +74,7 @@ export async function GET(request: Request) {
           .in('bubble_id', part)
           .eq('status', 'scheduled')
           .eq('scheduled_on', b.localToday)
+          .is('archived_at', null)
           .select('id');
         if (uErr) {
           // Staged deploys: cron runs before migrations; avoid treating missing column as a hard failure loop.
