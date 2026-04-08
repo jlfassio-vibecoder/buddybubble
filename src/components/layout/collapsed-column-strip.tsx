@@ -1,29 +1,34 @@
 'use client';
 
-import { ChevronRight } from 'lucide-react';
+import { PanelLeftOpen, PanelRightOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-/** Shared width for any collapsed left column (workspace rail, bubble sidebar, …). */
+/** Shared width for any collapsed column strip (left or right edge). */
 export const COLLAPSED_COLUMN_WIDTH_CLASS = 'w-8';
 
+export type CollapsedColumnStripEdge = 'left' | 'right';
+
 /**
- * Expand control for a collapsed column: chevron and vertical label share one centered column axis.
- * The block is bottom-anchored (`justify-end`) within the strip so when strips stack vertically,
- * controls align along the bottom of each flex segment per the layout TDD.
+ * Expand control for a collapsed column strip: panel “open” icon + vertical label on one axis.
+ * Bottom-anchored (`justify-end`) so stacked strips align per layout TDD.
  */
 export function CollapsedColumnStrip({
   title,
   expandTitle,
   expandAriaLabel,
   onExpand,
+  edge,
   variant = 'zinc',
 }: {
   title: string;
   expandTitle: string;
   expandAriaLabel: string;
   onExpand: () => void;
+  edge: CollapsedColumnStripEdge;
   variant?: 'zinc' | 'card' | 'sidebar' | 'black';
 }) {
+  const ExpandIcon = edge === 'left' ? PanelLeftOpen : PanelRightOpen;
+
   return (
     <button
       type="button"
@@ -41,9 +46,8 @@ export function CollapsedColumnStrip({
         variant === 'black' && 'text-zinc-100 hover:bg-white/10',
       )}
     >
-      {/* Chevron above the vertical label; outer flex justify-end anchors this block to the strip bottom. */}
       <span className="flex min-h-0 shrink-0 flex-col items-center gap-3 px-0 pb-4 pt-2">
-        <ChevronRight className="size-4 shrink-0" strokeWidth={2.25} aria-hidden />
+        <ExpandIcon className="h-5 w-5 shrink-0" strokeWidth={2} aria-hidden />
         <span
           className={cn(
             'select-none text-center text-[10px] font-semibold uppercase tracking-[0.14em]',

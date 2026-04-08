@@ -1,7 +1,6 @@
 'use client';
 
-import { Tooltip } from '@base-ui/react/tooltip';
-import { Info, Maximize2, PanelLeftClose, Shrink, Square } from 'lucide-react';
+import { Maximize2, Shrink, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { KanbanCardDensity } from '@/components/board/kanban-density';
@@ -40,16 +39,10 @@ const DATE_SORT_OPTIONS: { value: DateSortMode; label: string }[] = [
   { value: 'desc', label: 'Date ↓' },
 ];
 
-const KANBAN_BOARD_HELP =
-  'Drag cards between columns to update status. Open a card for the full editor, comments, and attachments.';
-
 export type KanbanBoardHeaderProps = {
-  workspaceName?: string | null;
   categoryType?: WorkspaceCategory | null;
   canWrite: boolean;
   hasBubble: boolean;
-  /** Collapse the board to a strip (opens Messages if needed). */
-  onCollapse?: () => void;
   onOpenFullEditor?: () => void;
   cardDensity: KanbanCardDensity;
   onCardDensityChange: (density: KanbanCardDensity) => void;
@@ -61,12 +54,11 @@ export type KanbanBoardHeaderProps = {
   onDateSortModeChange: (mode: DateSortMode) => void;
 };
 
+/** Filter / density toolbar only (chrome row is `KanbanBoardChromeBar` beside `CalendarRailChromeBar`). */
 export function KanbanBoardHeader({
-  workspaceName = null,
   categoryType = null,
   canWrite,
   hasBubble,
-  onCollapse,
   onOpenFullEditor,
   cardDensity,
   onCardDensityChange,
@@ -78,189 +70,135 @@ export function KanbanBoardHeader({
   onDateSortModeChange,
 }: KanbanBoardHeaderProps) {
   const boardTitle = kanbanBoardTitleForCategory(categoryType);
-  const nameLine = workspaceName?.trim() ?? '';
-  const headingAriaLabel = [nameLine, boardTitle].filter(Boolean).join('. ') || boardTitle;
 
   const pillGroupClass =
     'inline-flex max-w-full flex-wrap rounded-lg border border-border bg-muted/50 p-0.5';
 
   return (
-    <div className="shrink-0 border-b border-border bg-background px-4 py-3">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between lg:gap-4">
-        <div className="min-w-0 shrink-0 lg:max-w-[min(100%,28rem)]">
-          {nameLine ? (
-            <p className="mb-0.5 truncate text-xs font-medium text-muted-foreground">{nameLine}</p>
-          ) : null}
-          <div className="flex items-center gap-1.5">
-            {onCollapse ? (
-              <button
-                type="button"
-                onClick={onCollapse}
-                className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                title="Collapse Kanban"
-                aria-label="Collapse Kanban panel"
-              >
-                <PanelLeftClose className="size-5" strokeWidth={2} aria-hidden />
-              </button>
-            ) : null}
-            <h2
-              className="min-w-0 truncate text-base font-semibold tracking-tight text-foreground"
-              aria-label={headingAriaLabel}
+    <div
+      className={cn(
+        'flex min-w-0 shrink-0 flex-col gap-2 border-b border-border bg-background px-2 py-2',
+        'lg:flex-row lg:flex-wrap lg:items-center lg:gap-x-2 lg:gap-y-2',
+      )}
+      role="toolbar"
+      aria-label="Board filters and view options"
+    >
+      <p className="w-full shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:w-auto">
+        {boardTitle}
+      </p>
+      <div className={pillGroupClass} role="group" aria-label="Filter by scheduled or due date">
+        {DATE_FILTER_OPTIONS.map(({ value, label }) => {
+          const active = dateFilter === value;
+          return (
+            <button
+              key={value}
+              type="button"
+              onClick={() => onDateFilterChange(value)}
+              className={cn(
+                'rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
+                active
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+              )}
+              aria-pressed={active}
             >
-              {boardTitle}
-            </h2>
-            <Tooltip.Provider delay={200}>
-              <Tooltip.Root>
-                <Tooltip.Trigger
-                  type="button"
-                  className={cn(
-                    'inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground',
-                    'outline-none transition-colors hover:bg-muted hover:text-foreground',
-                    'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-                  )}
-                  aria-label={KANBAN_BOARD_HELP}
-                >
-                  <Info className="size-4" aria-hidden />
-                </Tooltip.Trigger>
-                <Tooltip.Portal>
-                  <Tooltip.Positioner side="bottom" sideOffset={6} align="start">
-                    <Tooltip.Popup
-                      className={cn(
-                        'z-[200] max-w-xs rounded-md border border-border bg-popover px-3 py-2 text-xs leading-snug text-popover-foreground shadow-md',
-                      )}
-                    >
-                      {KANBAN_BOARD_HELP}
-                    </Tooltip.Popup>
-                  </Tooltip.Positioner>
-                </Tooltip.Portal>
-              </Tooltip.Root>
-            </Tooltip.Provider>
-          </div>
-        </div>
+              {label}
+            </button>
+          );
+        })}
+      </div>
 
+      <div
+        className={pillGroupClass}
+        role="group"
+        aria-label="Sort by scheduled date within columns"
+      >
+        {DATE_SORT_OPTIONS.map(({ value, label }) => {
+          const active = dateSortMode === value;
+          return (
+            <button
+              key={value}
+              type="button"
+              onClick={() => onDateSortModeChange(value)}
+              className={cn(
+                'rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
+                active
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+              )}
+              aria-pressed={active}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className={pillGroupClass} role="group" aria-label="Filter by priority">
+        {PRIORITY_FILTER_OPTIONS.map(({ value, label }) => {
+          const active = priorityFilter === value;
+          return (
+            <button
+              key={value}
+              type="button"
+              onClick={() => onPriorityFilterChange(value)}
+              className={cn(
+                'rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
+                active
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+              )}
+              aria-pressed={active}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div
+        className={cn(
+          'flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center',
+          'lg:inline-flex lg:max-w-full lg:flex-row lg:gap-2',
+        )}
+      >
         <div
-          className={cn(
-            'flex min-w-0 flex-1 flex-col gap-2',
-            'lg:flex-row lg:flex-wrap lg:items-center lg:justify-end lg:gap-x-2 lg:gap-y-2',
-          )}
-          role="toolbar"
-          aria-label="Board filters and view options"
+          className="inline-flex max-w-full flex-wrap rounded-lg border border-border bg-muted/50 p-0.5"
+          role="group"
+          aria-label="Card detail level"
         >
-          <div className={pillGroupClass} role="group" aria-label="Filter by scheduled or due date">
-            {DATE_FILTER_OPTIONS.map(({ value, label }) => {
-              const active = dateFilter === value;
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => onDateFilterChange(value)}
-                  className={cn(
-                    'rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
-                    active
-                      ? 'bg-primary text-primary-foreground shadow-sm'
-                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                  )}
-                  aria-pressed={active}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-
-          <div
-            className={pillGroupClass}
-            role="group"
-            aria-label="Sort by scheduled date within columns"
-          >
-            {DATE_SORT_OPTIONS.map(({ value, label }) => {
-              const active = dateSortMode === value;
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => onDateSortModeChange(value)}
-                  className={cn(
-                    'rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
-                    active
-                      ? 'bg-primary text-primary-foreground shadow-sm'
-                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                  )}
-                  aria-pressed={active}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className={pillGroupClass} role="group" aria-label="Filter by priority">
-            {PRIORITY_FILTER_OPTIONS.map(({ value, label }) => {
-              const active = priorityFilter === value;
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => onPriorityFilterChange(value)}
-                  className={cn(
-                    'rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
-                    active
-                      ? 'bg-primary text-primary-foreground shadow-sm'
-                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                  )}
-                  aria-pressed={active}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-
-          <div
-            className={cn(
-              'flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center',
-              'lg:inline-flex lg:max-w-full lg:flex-row lg:gap-2',
-            )}
-          >
-            <div
-              className="inline-flex max-w-full flex-wrap rounded-lg border border-border bg-muted/50 p-0.5"
-              role="group"
-              aria-label="Card detail level"
-            >
-              {DENSITY_OPTIONS.map(({ value, label, Icon }) => {
-                const active = cardDensity === value;
-                return (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => onCardDensityChange(value)}
-                    className={cn(
-                      'inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
-                      active
-                        ? 'bg-primary text-primary-foreground shadow-sm'
-                        : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                    )}
-                    aria-pressed={active}
-                  >
-                    <Icon className="size-3.5 shrink-0 opacity-90" aria-hidden />
-                    <span>{label}</span>
-                  </button>
-                );
-              })}
-            </div>
-            {canWrite && hasBubble && onOpenFullEditor && (
-              <Button
+          {DENSITY_OPTIONS.map(({ value, label, Icon }) => {
+            const active = cardDensity === value;
+            return (
+              <button
+                key={value}
                 type="button"
-                variant="outline"
-                size="sm"
-                className="w-full shrink-0 sm:w-auto"
-                onClick={onOpenFullEditor}
+                onClick={() => onCardDensityChange(value)}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
+                  active
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                )}
+                aria-pressed={active}
               >
-                Full editor
-              </Button>
-            )}
-          </div>
+                <Icon className="size-3.5 shrink-0 opacity-90" aria-hidden />
+                <span>{label}</span>
+              </button>
+            );
+          })}
         </div>
+        {canWrite && hasBubble && onOpenFullEditor && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full shrink-0 sm:w-auto"
+            onClick={onOpenFullEditor}
+          >
+            Full editor
+          </Button>
+        )}
       </div>
     </div>
   );

@@ -3,7 +3,7 @@
 import { useCallback, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ChevronLeft, Plus } from 'lucide-react';
+import { PanelLeftClose, Plus } from 'lucide-react';
 import { setLastWorkspaceCookieClient } from '@/lib/workspace-cookies';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore, type WorkspaceRow } from '@/store/workspaceStore';
@@ -84,6 +84,7 @@ export function WorkspaceRail({
             expandTitle="Expand Workspace rail"
             expandAriaLabel="Expand Workspace rail"
             onExpand={expand}
+            edge="left"
             variant="zinc"
           />
         ) : (
@@ -144,7 +145,7 @@ export function WorkspaceRail({
                 onClick={collapse}
                 className="flex h-8 w-8 items-center justify-center rounded-lg text-white/55 transition-colors hover:bg-white/15 hover:text-white motion-reduce:transition-none"
               >
-                <ChevronLeft className="size-4" strokeWidth={2.25} aria-hidden />
+                <PanelLeftClose className="h-5 w-5" strokeWidth={2} aria-hidden />
               </button>
               <button
                 type="button"

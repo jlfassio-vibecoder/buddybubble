@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  alignStatusWithFutureSchedule,
   getCalendarDateInTimeZone,
   promotedStatusForScheduledOnToday,
   scheduledOnRelativeToWorkspaceToday,
@@ -65,5 +66,51 @@ describe('promotedStatusForScheduledOnToday', () => {
         now,
       }),
     ).toBe('scheduled');
+  });
+});
+
+describe('alignStatusWithFutureSchedule', () => {
+  const now = new Date('2026-04-07T12:00:00.000Z');
+
+  it('moves planning/todo/today → scheduled for a future date when board has scheduled column', () => {
+    expect(
+      alignStatusWithFutureSchedule({
+        status: 'planning',
+        scheduledOnYmd: '2026-07-04',
+        calendarTimezone: 'UTC',
+        hasScheduledBoardColumn: true,
+        now,
+      }),
+    ).toBe('scheduled');
+    expect(
+      alignStatusWithFutureSchedule({
+        status: 'today',
+        scheduledOnYmd: '2026-07-04',
+        calendarTimezone: 'UTC',
+        hasScheduledBoardColumn: true,
+        now,
+      }),
+    ).toBe('scheduled');
+  });
+
+  it('no-ops without scheduled column or non-future date', () => {
+    expect(
+      alignStatusWithFutureSchedule({
+        status: 'planning',
+        scheduledOnYmd: '2026-07-04',
+        calendarTimezone: 'UTC',
+        hasScheduledBoardColumn: false,
+        now,
+      }),
+    ).toBe('planning');
+    expect(
+      alignStatusWithFutureSchedule({
+        status: 'planning',
+        scheduledOnYmd: '2026-04-07',
+        calendarTimezone: 'UTC',
+        hasScheduledBoardColumn: true,
+        now,
+      }),
+    ).toBe('planning');
   });
 });

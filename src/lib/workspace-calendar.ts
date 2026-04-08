@@ -59,3 +59,27 @@ export function promotedStatusForScheduledOnToday(params: {
   }
   return 'today';
 }
+
+/**
+ * Kanban columns are keyed by `status`; the calendar keys by `scheduled_on`. When a future date is
+ * set while the task is still in a backlog/today lane, move it to `scheduled` so the Scheduled
+ * column matches the calendar (if the board defines that column).
+ */
+export function alignStatusWithFutureSchedule(params: {
+  status: string;
+  scheduledOnYmd: string | null;
+  calendarTimezone: string | null | undefined;
+  hasScheduledBoardColumn: boolean;
+  now?: Date;
+}): string {
+  const { status, scheduledOnYmd, calendarTimezone, hasScheduledBoardColumn, now } = params;
+  if (!hasScheduledBoardColumn || !scheduledOnYmd?.trim()) return status;
+  if (scheduledOnRelativeToWorkspaceToday(scheduledOnYmd, calendarTimezone, now) !== 'future') {
+    return status;
+  }
+  if (status === 'done' || status === 'completed' || status === 'scheduled') return status;
+  if (status === 'planning' || status === 'todo' || status === 'today') {
+    return 'scheduled';
+  }
+  return status;
+}

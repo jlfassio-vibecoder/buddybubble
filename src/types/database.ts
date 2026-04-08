@@ -197,6 +197,8 @@ export interface Database {
           scheduled_on: string | null;
           /** Local time on scheduled_on in workspace calendar_timezone; null = all-day. */
           scheduled_time: string | null;
+          /** When set, task is archived and hidden from active Kanban/calendar lists. */
+          archived_at: string | null;
           subtasks: Json;
           comments: Json;
           activity_log: Json;
@@ -214,6 +216,7 @@ export interface Database {
           created_at?: string;
           scheduled_on?: string | null;
           scheduled_time?: string | null;
+          archived_at?: string | null;
           subtasks?: Json;
           comments?: Json;
           activity_log?: Json;

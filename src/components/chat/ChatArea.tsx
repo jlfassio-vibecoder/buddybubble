@@ -21,6 +21,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { supabaseClientErrorMessage } from '@/lib/supabase-client-error';
 import { cn } from '@/lib/utils';
 import { formatMessageTimestamp } from '@/lib/message-timestamp';
 import { createClient } from '@utils/supabase/client';
@@ -570,11 +571,12 @@ export function ChatArea({
         .from('tasks')
         .select('*')
         .in('bubble_id', bubbleIds)
+        .is('archived_at', null)
         .order('bubble_id', { ascending: true })
         .order('position', { ascending: true });
       if (cancelled) return;
       if (error) {
-        console.error('[ChatArea] load tasks for / mentions', error);
+        console.error('[ChatArea] load tasks for / mentions', supabaseClientErrorMessage(error));
         setAllTasks([]);
         return;
       }
@@ -661,7 +663,10 @@ export function ChatArea({
           .single();
 
         if (insErr || !inserted?.id) {
-          console.error('[ChatArea] message insert', insErr);
+          console.error(
+            '[ChatArea] message insert',
+            insErr ? supabaseClientErrorMessage(insErr) : 'insert returned no row',
+          );
           setAttachmentError(
             insErr ? formatUserFacingError(insErr) : 'Could not create message. Please try again.',
           );
@@ -692,7 +697,7 @@ export function ChatArea({
               .from(MESSAGE_ATTACHMENTS_BUCKET)
               .upload(path, file, { cacheControl: '3600', upsert: false });
             if (upErr) {
-              console.error('[ChatArea] attachment upload', upErr);
+              console.error('[ChatArea] attachment upload', supabaseClientErrorMessage(upErr));
               setAttachmentError(formatUserFacingError(upErr));
               await abortAttempt();
               return false;
@@ -723,10 +728,13 @@ export function ChatArea({
                   pdfW = pdfThumb.width;
                   pdfH = pdfThumb.height;
                 } else {
-                  console.error('[ChatArea] pdf thumb upload', upPdfThumb);
+                  console.error(
+                    '[ChatArea] pdf thumb upload',
+                    supabaseClientErrorMessage(upPdfThumb),
+                  );
                 }
               } catch (e) {
-                console.error('[ChatArea] pdf thumb', e);
+                console.error('[ChatArea] pdf thumb', supabaseClientErrorMessage(e));
               }
             }
             const docImage: MessageAttachment = {
@@ -755,7 +763,7 @@ export function ChatArea({
               .from(MESSAGE_ATTACHMENTS_BUCKET)
               .upload(path, file, { cacheControl: '3600', upsert: false });
             if (upVid) {
-              console.error('[ChatArea] video upload', upVid);
+              console.error('[ChatArea] video upload', supabaseClientErrorMessage(upVid));
               setAttachmentError(formatUserFacingError(upVid));
               await abortAttempt();
               return false;
@@ -765,7 +773,7 @@ export function ChatArea({
             try {
               vm = await getVideoFileMetadata(file);
             } catch (e) {
-              console.error('[ChatArea] video metadata', e);
+              console.error('[ChatArea] video metadata', supabaseClientErrorMessage(e));
               setAttachmentError(e instanceof Error ? e.message : 'Could not read video.');
               await abortAttempt();
               return false;
@@ -793,11 +801,17 @@ export function ChatArea({
               const edgeOk = !fnErr && edgePayload?.ok === true;
 
               if (!edgeOk) {
+                console.error(
+                  '[ChatArea] generate-message-video-poster: fallback to client poster',
+                  fnErr
+                    ? supabaseClientErrorMessage(fnErr)
+                    : 'invoke returned no error but response was not ok',
+                );
                 let poster: Awaited<ReturnType<typeof captureVideoPoster>>;
                 try {
                   poster = await captureVideoPoster(file);
                 } catch (e) {
-                  console.error('[ChatArea] video poster fallback', e);
+                  console.error('[ChatArea] video poster fallback', supabaseClientErrorMessage(e));
                   setAttachmentError(e instanceof Error ? e.message : 'Could not read video.');
                   await abortAttempt();
                   return false;
@@ -810,7 +824,7 @@ export function ChatArea({
                     contentType: 'image/jpeg',
                   });
                 if (upPoster) {
-                  console.error('[ChatArea] poster upload', upPoster);
+                  console.error('[ChatArea] poster upload', supabaseClientErrorMessage(upPoster));
                   setAttachmentError(formatUserFacingError(upPoster));
                   await abortAttempt();
                   return false;
@@ -825,7 +839,7 @@ export function ChatArea({
               try {
                 poster = await captureVideoPoster(file);
               } catch (e) {
-                console.error('[ChatArea] video poster', e);
+                console.error('[ChatArea] video poster', supabaseClientErrorMessage(e));
                 setAttachmentError(e instanceof Error ? e.message : 'Could not read video.');
                 await abortAttempt();
                 return false;
@@ -838,7 +852,7 @@ export function ChatArea({
                   contentType: 'image/jpeg',
                 });
               if (upPoster) {
-                console.error('[ChatArea] poster upload', upPoster);
+                console.error('[ChatArea] poster upload', supabaseClientErrorMessage(upPoster));
                 setAttachmentError(formatUserFacingError(upPoster));
                 await abortAttempt();
                 return false;
@@ -872,7 +886,10 @@ export function ChatArea({
             .update({ attachments: attachmentsJson })
             .eq('id', messageId);
           if (updErr) {
-            console.error('[ChatArea] message attachments update', updErr);
+            console.error(
+              '[ChatArea] message attachments update',
+              supabaseClientErrorMessage(updErr),
+            );
             setAttachmentError(formatUserFacingError(updErr));
             await abortAttempt();
             return false;
@@ -1071,7 +1088,7 @@ export function ChatArea({
         const { data, error } = await q;
 
         if (error) {
-          console.error('[ChatArea] message search', error);
+          console.error('[ChatArea] message search', supabaseClientErrorMessage(error));
           setSearchResults([]);
           return;
         }
@@ -1193,7 +1210,7 @@ export function ChatArea({
             title="Collapse Messages"
             aria-label="Collapse Messages panel"
           >
-            <PanelLeftClose className="w-5 h-5" aria-hidden />
+            <PanelLeftClose className="h-5 w-5" strokeWidth={2} aria-hidden />
           </button>
           <Hash className="h-5 w-5 shrink-0 text-foreground opacity-70" aria-hidden />
           <h2 className="min-w-0 truncate font-bold text-foreground">

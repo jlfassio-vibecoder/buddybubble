@@ -33,6 +33,8 @@ export type KanbanTaskCardProps = {
   workspaceCategory?: WorkspaceCategory | null;
   /** Workspace calendar timezone for overdue / today styling. */
   calendarTimezone?: string | null;
+  /** Done / complete column — calendar & board apply muted + struck title. */
+  isCompleted?: boolean;
   className?: string;
   /**
    * Drag handle only — parent attaches `useSortable` listeners here via `ref` + spread props.
@@ -85,6 +87,7 @@ export function KanbanTaskCard({
   density = 'full',
   workspaceCategory = null,
   calendarTimezone = null,
+  isCompleted = false,
   className,
   dragHandle,
 }: KanbanTaskCardProps) {
@@ -126,12 +129,56 @@ export function KanbanTaskCard({
     }
   };
 
+  if (density === 'micro') {
+    return (
+      <Card
+        className={cn(
+          'border-border/80 border-l-2 border-l-primary/55 bg-primary/[0.06] shadow-sm ring-1 ring-border/40 transition-shadow hover:shadow-md',
+          isCompleted && 'opacity-[0.68]',
+          className,
+        )}
+        size="sm"
+      >
+        <CardContent className="p-1 px-2">
+          <div className="flex min-h-0 items-center gap-1">
+            {dragHandle ? (
+              <div className="shrink-0 text-muted-foreground [&_button]:-m-0.5 [&_button]:rounded-md [&_button]:p-0.5 [&_button]:hover:bg-muted [&_button]:hover:text-foreground">
+                {dragHandle}
+              </div>
+            ) : null}
+            <div
+              className={cn(
+                'min-w-0 flex-1',
+                openTask &&
+                  'cursor-pointer rounded-md outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+              )}
+              role={openTask ? 'button' : undefined}
+              tabIndex={openTask ? 0 : undefined}
+              onClick={openTask}
+              onKeyDown={handleOpenKeyDown}
+            >
+              <p
+                className={cn(
+                  'truncate text-xs font-semibold leading-tight text-foreground',
+                  isCompleted && 'line-through decoration-muted-foreground/80',
+                )}
+              >
+                {task.title}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   const innerSpacing = density === 'summary' ? 'space-y-1' : 'space-y-2';
 
   return (
     <Card
       className={cn(
         'border-border/80 shadow-sm ring-1 ring-border/40 transition-shadow hover:shadow-md',
+        isCompleted && 'opacity-[0.68]',
         className,
       )}
       size="sm"
@@ -163,6 +210,7 @@ export function KanbanTaskCard({
                 className={cn(
                   'font-semibold leading-snug text-foreground',
                   density === 'summary' ? 'line-clamp-1 text-sm' : 'line-clamp-2',
+                  isCompleted && 'line-through decoration-muted-foreground/80',
                 )}
               >
                 {task.title}

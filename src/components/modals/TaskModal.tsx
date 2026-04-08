@@ -32,7 +32,10 @@ import {
 import { formatUserFacingError } from '@/lib/format-error';
 import { formatMessageTimestamp } from '@/lib/message-timestamp';
 import { isMissingColumnSchemaCacheError } from '@/lib/supabase-schema-errors';
-import { promotedStatusForScheduledOnToday } from '@/lib/workspace-calendar';
+import {
+  alignStatusWithFutureSchedule,
+  promotedStatusForScheduledOnToday,
+} from '@/lib/workspace-calendar';
 import {
   formatScheduledTimeDisplay,
   scheduledTimeInputToPgValue,
@@ -96,6 +99,8 @@ export type TaskModalProps = {
   workspaceCategory?: WorkspaceCategory | null;
   /** Workspace IANA timezone for scheduled-on vs calendar "today" (see `workspaces.calendar_timezone`). */
   calendarTimezone?: string | null;
+  /** After a successful archive (existing task only); parent should refresh board/calendar lists. */
+  onTaskArchived?: () => void;
 };
 
 export function TaskModal({
@@ -110,10 +115,12 @@ export function TaskModal({
   initialTab = null,
   workspaceCategory = null,
   calendarTimezone = null,
+  onTaskArchived,
 }: TaskModalProps) {
   const [tab, setTab] = useState<TabId>('details');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [title, setTitle] = useState('');
@@ -140,6 +147,11 @@ export function TaskModal({
 
   const hasTodayBoardColumn = useMemo(
     () => boardColumnDefs?.some((c) => c.id === 'today') ?? false,
+    [boardColumnDefs],
+  );
+
+  const hasScheduledBoardColumn = useMemo(
+    () => boardColumnDefs?.some((c) => c.id === 'scheduled') ?? false,
     [boardColumnDefs],
   );
 
@@ -314,6 +326,24 @@ export function TaskModal({
 
   const isCreateMode = open && !taskId && !!bubbleId;
 
+  const archiveTask = useCallback(async () => {
+    if (!taskId || !canWrite || archiving) return;
+    setArchiving(true);
+    setError(null);
+    const supabase = createClient();
+    const { error: uErr } = await supabase
+      .from('tasks')
+      .update({ archived_at: new Date().toISOString() })
+      .eq('id', taskId);
+    setArchiving(false);
+    if (uErr) {
+      setError(uErr.message);
+      return;
+    }
+    onOpenChange(false);
+    onTaskArchived?.();
+  }, [archiving, canWrite, onOpenChange, onTaskArchived, taskId]);
+
   const saveCoreFields = async () => {
     if (!canWrite || !taskId) return;
     setSaving(true);
@@ -334,11 +364,17 @@ export function TaskModal({
     const scheduledTimePg = newTimeHm ? scheduledTimeInputToPgValue(newTimeHm) : null;
     const schedChanged = orig != null && (scheduledOnValue ?? null) !== (orig.scheduledOn ?? null);
     const schedTimeChanged = orig != null && (newTimeHm ?? null) !== (orig.scheduledTime ?? null);
-    const effectiveStatus = promotedStatusForScheduledOnToday({
+    let effectiveStatus = promotedStatusForScheduledOnToday({
       currentStatus: status,
       scheduledOnYmd: scheduledOnValue,
       calendarTimezone,
       hasTodayBoardColumn,
+    });
+    effectiveStatus = alignStatusWithFutureSchedule({
+      status: effectiveStatus,
+      scheduledOnYmd: scheduledOnValue,
+      calendarTimezone,
+      hasScheduledBoardColumn,
     });
 
     let nextActivity = [...activityLog];
@@ -564,11 +600,17 @@ export function TaskModal({
     const sched = scheduledOn.trim() ? scheduledOn.trim().slice(0, 10) : null;
     const createTimeHm = sched && scheduledTime.trim() ? scheduledTime.trim().slice(0, 5) : null;
     const scheduledTimeInsert = createTimeHm ? scheduledTimeInputToPgValue(createTimeHm) : null;
-    const effectiveStatus = promotedStatusForScheduledOnToday({
+    let effectiveStatus = promotedStatusForScheduledOnToday({
       currentStatus: status,
       scheduledOnYmd: sched,
       calendarTimezone,
       hasTodayBoardColumn,
+    });
+    effectiveStatus = alignStatusWithFutureSchedule({
+      status: effectiveStatus,
+      scheduledOnYmd: sched,
+      calendarTimezone,
+      hasScheduledBoardColumn,
     });
 
     const insertRow = {
@@ -1017,6 +1059,29 @@ export function TaskModal({
                       )}
                     </div>
                   )}
+
+                  {!isCreateMode && taskId && canWrite ? (
+                    <>
+                      <Separator className="my-4" />
+                      <div className="rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-3">
+                        <p className="mb-2 text-xs font-medium text-destructive">Archive task</p>
+                        <p className="mb-3 text-xs text-muted-foreground">
+                          Hides this task from the board and calendar. Recovery from archive is not
+                          available in this version yet.
+                        </p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          disabled={archiving || saving || loading}
+                          onClick={() => void archiveTask()}
+                        >
+                          {archiving ? 'Archiving…' : 'Archive task'}
+                        </Button>
+                      </div>
+                    </>
+                  ) : null}
                 </div>
               )}
 
