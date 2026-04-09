@@ -29,7 +29,7 @@ export function MobileTabBar({ onOpenNavigation }: Props) {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-[90] flex h-16 items-stretch border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden"
+      className="fixed bottom-0 left-0 right-0 z-[90] flex h-[calc(4rem+env(safe-area-inset-bottom,0px))] items-stretch border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden"
       aria-label="Primary workspace views"
     >
       <button

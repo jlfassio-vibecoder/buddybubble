@@ -5,6 +5,7 @@ import {
   isValidElement,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -335,7 +336,9 @@ export function KanbanBoard({
 
   const [boardStripCollapsed, setBoardStripCollapsed] = useState(false);
   const boardStripCollapsedRef = useRef(boardStripCollapsed);
-  boardStripCollapsedRef.current = boardStripCollapsed;
+  useLayoutEffect(() => {
+    boardStripCollapsedRef.current = boardStripCollapsed;
+  }, [boardStripCollapsed]);
   const [boardStripHydrated, setBoardStripHydrated] = useState(false);
   const [boardSegment, setBoardSegment] = useState<KanbanBoardSegment>('planning');
   const [calendarRibbonMode, setCalendarRibbonMode] = useState<CalendarRibbonMode>('7');

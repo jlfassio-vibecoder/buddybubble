@@ -361,6 +361,8 @@ export function DashboardShell({
     if (tab === 'chat') {
       setChatCollapsedState(false);
       setKanbanCollapsedState(true);
+      // Persist calendar as expanded while Kanban is hidden (matches hydrate guard: k && cal → cal false).
+      setCalendarCollapsedState(false);
     } else if (tab === 'board') {
       setChatCollapsedState(true);
       setKanbanCollapsedState(false);
@@ -524,7 +526,8 @@ export function DashboardShell({
         case 'chat':
           setChatCollapsedState(false);
           setKanbanCollapsedState(true);
-          setCalendarCollapsedState(true);
+          // Persist calendar as expanded while Kanban is hidden so reopening board does not restore a collapsed rail.
+          setCalendarCollapsedState(false);
           break;
         case 'board':
           setChatCollapsedState(true);
@@ -561,7 +564,7 @@ export function DashboardShell({
           </MobileSidebarSheet>
         ) : null}
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pb-16 md:pb-0">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-0">
           {!embedMode ? (
             <div className="max-md:hidden flex h-11 shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-4">
               <span
