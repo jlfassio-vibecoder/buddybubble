@@ -76,7 +76,7 @@ Run **`npm run verify:storefront`** (or at least **`astro build`**) before pushi
 
 ### Vercel (storefront project)
 
-The storefront **`vercel.json`** sets **`ignoreCommand`** to `bash apps/storefront/vercel-ignore-storefront.sh`. That script compares the current commit to the previous deployment commit; if **no diff** under **`apps/storefront/`**, the deployment is **skipped** (no `astro build` on Vercel). If the storefront **did** change, Vercel runs a normal Astro build. Ensure the Vercel project **Root Directory** is **`apps/storefront`** (or adjust paths in the script if your setup differs).
+The storefront **`vercel.json`** sets **`ignoreCommand`** to `bash vercel-ignore-storefront.sh` (run from **Root Directory** **`apps/storefront`**). The script runs `git diff … -- .` against the previous deployment commit; if **nothing changed** in that directory, the deployment is **skipped** (no `astro build` on Vercel). If the storefront **did** change, Vercel runs a normal Astro build.
 
 ### Auto-fix formatting (whole repo)
 
