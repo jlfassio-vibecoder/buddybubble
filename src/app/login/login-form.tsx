@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@utils/supabase/client';
@@ -8,9 +8,23 @@ import { Button } from '@/components/ui/button';
 import { getAuthAppOrigin } from '@/lib/auth-app-origin';
 import { authCallbackAbsoluteUrl } from '@/lib/auth-callback-url';
 import { formatLoginAuthError } from '@/lib/format-error';
+import { BB_INVITE_HANDOFF_SESSION_KEY } from '@/lib/invite-handoff-storage';
 import { safeNextPath } from '@/lib/safe-next-path';
 import { persistInviteHandoffToken } from '@/app/(dashboard)/onboarding/actions';
 import { cn } from '@/lib/utils';
+
+/** Prefer `/onboarding` when an invite handoff is waiting (sessionStorage or query). */
+function resolvePostLoginPath(next: string, inviteFromQuery?: string | null): string {
+  try {
+    if (sessionStorage.getItem(BB_INVITE_HANDOFF_SESSION_KEY)?.trim()) {
+      return '/onboarding';
+    }
+  } catch {
+    /* private mode / quota */
+  }
+  if (inviteFromQuery?.trim()) return '/onboarding';
+  return next;
+}
 
 const inputClass =
   'w-full rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-sm text-amber-950 outline-none transition placeholder:text-amber-400/80 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/25';
@@ -38,6 +52,34 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [suppressServerAuthError, setSuppressServerAuthError] = useState(false);
+
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!window.location.hash.includes('access_token')) return;
+
+    setSuppressServerAuthError(true);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!window.location.hash.includes('access_token')) return;
+
+    const supabase = createClient();
+    void supabase.auth.getSession();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event !== 'SIGNED_IN' || !session) return;
+      const path = resolvePostLoginPath(next, inviteToken);
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+      router.replace(path);
+      router.refresh();
+    });
+
+    return () => subscription.unsubscribe();
+  }, [router, next, inviteToken]);
 
   const redirectTo =
     typeof window !== 'undefined'
@@ -59,6 +101,7 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
       setError(formatLoginAuthError(err, 'sign-in'));
       return;
     }
+    const destination = resolvePostLoginPath(next, inviteToken);
     if (inviteToken) {
       const handoff = await persistInviteHandoffToken(inviteToken);
       if ('error' in handoff) {
@@ -66,7 +109,7 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
         return;
       }
     }
-    router.push(next);
+    router.push(destination);
     router.refresh();
   }
 
@@ -99,6 +142,7 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
       return;
     }
     if (data.session) {
+      const destination = resolvePostLoginPath(next, inviteToken);
       if (inviteToken) {
         const handoff = await persistInviteHandoffToken(inviteToken);
         if ('error' in handoff) {
@@ -106,7 +150,7 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
           return;
         }
       }
-      router.push(next);
+      router.push(destination);
       router.refresh();
       return;
     }
@@ -144,11 +188,12 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
                 <p className="mt-1 text-sm text-amber-800/90">Email and password or Google</p>
               </div>
 
-              {searchParams.get('error') && (
-                <p className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-                  Authentication failed. Try again.
-                </p>
-              )}
+              {searchParams.get('error') &&
+                !(suppressServerAuthError && searchParams.get('error') === 'auth') && (
+                  <p className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                    Authentication failed. Try again.
+                  </p>
+                )}
 
               {error && (
                 <p className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">

@@ -17,6 +17,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check:storefront": "npm run astro:check -w storefront",
+    "build:storefront": "npm run build -w storefront",
+    "verify:storefront": "npm run check:storefront && npm run build:storefront",
     "check": "npm run format:check && npm run lint && npm run build && npm run check:storefront",
     "test": "vitest run",
     "prepare": "node -e \"if (process.env.CI || process.env.VERCEL) process.exit(0); require('child_process').execSync('npx husky', { stdio: 'inherit', shell: true })\""
