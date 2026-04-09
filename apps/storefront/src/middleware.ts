@@ -1,5 +1,6 @@
 import { defineMiddleware } from 'astro:middleware';
 import { createClient } from '@supabase/supabase-js';
+import { getPublicEnv } from './lib/public-env';
 
 /** Hostnames where we use normal path routing (no custom_domain → slug rewrite). */
 function shouldSkipCustomDomainLookup(hostname: string): boolean {
@@ -19,8 +20,8 @@ function customDomainLookupVariants(hostname: string): string[] {
 }
 
 async function resolvePublicSlugForHost(hostname: string): Promise<string | null> {
-  const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL?.trim();
-  const anonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY?.trim();
+  const supabaseUrl = getPublicEnv('PUBLIC_SUPABASE_URL');
+  const anonKey = getPublicEnv('PUBLIC_SUPABASE_ANON_KEY');
   if (!supabaseUrl || !anonKey) return null;
 
   const variants = customDomainLookupVariants(hostname);

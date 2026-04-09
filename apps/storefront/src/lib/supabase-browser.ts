@@ -26,11 +26,19 @@ function isStorefrontSupabasePlaceholder(
   return false;
 }
 
+export type StorefrontBrowserClientOptions = {
+  /** From Astro SSR (process.env + import.meta); preferred in production. */
+  url?: string;
+  anonKey?: string;
+};
+
 /** Browser Supabase client for the marketing site (anon key + RLS). Returns null if env is missing or placeholder. */
-export function createStorefrontBrowserClient(): SupabaseClient | null {
-  const url = import.meta.env.PUBLIC_SUPABASE_URL;
-  const anonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
-  if (!url?.trim() || !anonKey?.trim()) {
+export function createStorefrontBrowserClient(
+  opts?: StorefrontBrowserClientOptions,
+): SupabaseClient | null {
+  const url = (opts?.url ?? import.meta.env.PUBLIC_SUPABASE_URL)?.trim();
+  const anonKey = (opts?.anonKey ?? import.meta.env.PUBLIC_SUPABASE_ANON_KEY)?.trim();
+  if (!url || !anonKey) {
     return null;
   }
   if (isStorefrontSupabasePlaceholder(url, anonKey)) {

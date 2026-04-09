@@ -1,12 +1,18 @@
 ---
 import '../styles/global.css';
 import StorefrontHeroLogin from '../components/StorefrontHeroLogin.jsx';
-import { normalizeCrmOrigin } from '../lib/crm-origin';
+import { resolveCrmOriginForStorefront } from '../lib/crm-origin';
+import { getPublicEnv } from '../lib/public-env';
 import { Globe, Lock, Sparkles } from '@lucide/astro';
 
-const appOrigin = normalizeCrmOrigin(import.meta.env.PUBLIC_APP_ORIGIN);
+const appOrigin = resolveCrmOriginForStorefront(
+  getPublicEnv('PUBLIC_APP_ORIGIN'),
+  Astro.url.hostname,
+);
 const appLoginHref = `${appOrigin}/login`;
-const demoWorkspace = import.meta.env.PUBLIC_DEMO_WORKSPACE_ID?.trim();
+const demoWorkspace = getPublicEnv('PUBLIC_DEMO_WORKSPACE_ID');
+const supabaseUrl = getPublicEnv('PUBLIC_SUPABASE_URL');
+const supabaseAnonKey = getPublicEnv('PUBLIC_SUPABASE_ANON_KEY');
 const demoIframeSrc = demoWorkspace
   ? `${appOrigin}/demo?embed=true&workspace=${encodeURIComponent(demoWorkspace)}`
   : `${appOrigin}/demo?embed=true`;
@@ -91,7 +97,13 @@ const demoIframeSrc = demoWorkspace
             </div>
           </div>
           <div class="lg:justify-self-end lg:w-full lg:max-w-md">
-            <StorefrontHeroLogin client:load appOrigin={appOrigin} appLoginHref={appLoginHref} />
+            <StorefrontHeroLogin
+              client:load
+              appOrigin={appOrigin}
+              appLoginHref={appLoginHref}
+              supabaseUrl={supabaseUrl}
+              supabaseAnonKey={supabaseAnonKey}
+            />
           </div>
         </div>
       </section>
