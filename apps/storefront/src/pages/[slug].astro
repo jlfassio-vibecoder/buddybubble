@@ -1,7 +1,8 @@
 ---
 import '../styles/global.css';
 import PublicCard from '../components/PublicCard.astro';
-import { normalizeCrmOrigin } from '../lib/crm-origin';
+import { resolveCrmOriginForStorefront } from '../lib/crm-origin';
+import { getPublicEnv } from '../lib/public-env';
 import { createStorefrontClient } from '../lib/supabase';
 
 type PublicBranding = {
@@ -100,7 +101,7 @@ if (tasksErr) {
   }
 }
 
-const crmLoginBase = `${normalizeCrmOrigin(import.meta.env.PUBLIC_APP_ORIGIN)}/login`;
+const crmLoginBase = `${resolveCrmOriginForStorefront(getPublicEnv('PUBLIC_APP_ORIGIN'), Astro.url.hostname)}/login`;
 const joinHref = `${crmLoginBase}?next=${encodeURIComponent(`/app/${ws.id}`)}`;
 
 const pageTitle = `${ws.name} · BuddyBubble`;
