@@ -36,6 +36,7 @@ import { createClient } from '@utils/supabase/client';
 import { useBoardColumnDefs } from '@/hooks/use-board-columns';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { ALL_BUBBLES_BUBBLE_ID } from '@/lib/all-bubbles';
+import { ArchiveSheet } from '@/components/board/archive-sheet';
 import {
   PRIORITY_FILTER_STORAGE_KEY,
   compareTasksByPriorityThenTitle,
@@ -331,6 +332,7 @@ export function KanbanBoard({
   buddyBubbleTitle,
 }: Props) {
   const [calendarDropNonce, setCalendarDropNonce] = useState(0);
+  const [isArchiveOpen, setIsArchiveOpen] = useState(false);
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
   const workspaceId = activeWorkspace?.id ?? null;
 
@@ -937,6 +939,8 @@ export function KanbanBoard({
     dateSortMode,
     onDateSortModeChange: handleDateSortModeChange,
     onOpenFullEditor: onOpenCreateTask ? () => onOpenCreateTask() : undefined,
+    onOpenArchive:
+      bubbleId && bubbleId !== ALL_BUBBLES_BUBBLE_ID ? () => setIsArchiveOpen(true) : undefined,
   };
 
   const showSplitChrome = isValidElement(calendarMerged) && calendarExpandedBesideBoard;
@@ -1184,6 +1188,15 @@ export function KanbanBoard({
           </DragOverlay>
         </DndContext>
       )}
+      {bubbleId && bubbleId !== ALL_BUBBLES_BUBBLE_ID ? (
+        <ArchiveSheet
+          isOpen={isArchiveOpen}
+          onOpenChange={setIsArchiveOpen}
+          bubbleId={bubbleId}
+          canWrite={canWrite}
+          onActionComplete={() => void loadTasks()}
+        />
+      ) : null}
     </div>
   );
 }
