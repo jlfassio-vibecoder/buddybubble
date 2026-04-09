@@ -29,6 +29,10 @@ type Props = {
   calendarCollapsed: boolean;
   /** When the shell renders the Messages strip in the left stack, hide the duplicate strip here. */
   omitCollapsedMessagesStrip?: boolean;
+  /** Mobile board tab: Kanban only, no calendar rail beside the board. */
+  hideCalendarSlot?: boolean;
+  /** Mobile chat tab (`?tab=chat`): hide Kanban/calendar stage so Messages fills the width. */
+  hideMainStageBelowMd?: boolean;
   /** Chat panel; receives onCollapse for the header control (e.g. ChatArea). */
   renderChat: (helpers: { onCollapse: () => void }) => React.ReactNode;
   /** Pre-built `CalendarRail` element; merged into `KanbanBoard` as `calendarSlot` when the board is visible. */
@@ -52,6 +56,8 @@ export function WorkspaceMainSplit({
   kanbanCollapsed,
   calendarCollapsed,
   omitCollapsedMessagesStrip = false,
+  hideCalendarSlot = false,
+  hideMainStageBelowMd = false,
   renderChat,
   calendarRail,
   board,
@@ -144,6 +150,7 @@ export function WorkspaceMainSplit({
           'flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-border bg-background',
           chatCollapsed && 'pointer-events-none w-0 min-w-0 flex-[0_0_0] border-transparent',
           messagesOnlyMain && 'min-w-0 flex-1',
+          hideMainStageBelowMd && 'max-md:w-full max-md:min-w-0 max-md:flex-1',
         )}
         style={
           chatCollapsed ? undefined : messagesOnlyMain ? undefined : { flex: `0 0 ${chatWidth}px` }
@@ -183,11 +190,16 @@ export function WorkspaceMainSplit({
         </div>
       )}
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-row">
+      <div
+        className={cn(
+          'flex min-h-0 min-w-0 flex-1 flex-row',
+          hideMainStageBelowMd && 'max-md:hidden',
+        )}
+      >
         {!kanbanCollapsed
           ? isValidElement(board)
             ? cloneElement(board, {
-                calendarSlot: calendarRail,
+                calendarSlot: hideCalendarSlot ? undefined : calendarRail,
                 taskViewsNonce,
               } as Partial<React.ComponentProps<typeof KanbanBoard>>)
             : board

@@ -94,6 +94,8 @@ export type CalendarRailChromeBarProps = {
   onCollapse: () => void;
   /** Same as showing 1D/3D/7D toggles in `CalendarRail`. */
   showRibbonToggles: boolean;
+  /** Shown before the "Calendar" label (split header + collapsed strip). */
+  buddyBubbleTitle?: string;
 };
 
 /** Top chrome row (matches Kanban split header when embedded beside the board). */
@@ -104,10 +106,24 @@ export function CalendarRailChromeBar({
   onRibbonModeChange,
   onCollapse,
   showRibbonToggles,
+  buddyBubbleTitle,
 }: CalendarRailChromeBarProps) {
   return (
     <div className="flex min-h-0 w-full min-w-0 items-center gap-2 bg-background px-2 py-2">
-      <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+      {buddyBubbleTitle ? (
+        <span
+          className="min-w-0 max-w-[min(40%,12rem)] shrink truncate text-xs font-semibold text-foreground"
+          title={buddyBubbleTitle}
+        >
+          {buddyBubbleTitle}
+        </span>
+      ) : null}
+      {buddyBubbleTitle ? (
+        <span className="shrink-0 text-muted-foreground/50" aria-hidden>
+          ·
+        </span>
+      ) : null}
+      <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         Calendar
       </span>
       {loading ? <span className="text-[10px] text-muted-foreground">Loading…</span> : null}
@@ -152,7 +168,7 @@ export function CalendarRailChromeBar({
         type="button"
         onClick={onCollapse}
         className={cn(
-          'shrink-0 rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground',
+          'max-md:hidden shrink-0 rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground',
           showRibbonToggles ? '' : 'ml-auto',
         )}
         title="Collapse Calendar"
@@ -187,6 +203,7 @@ export type CalendarRailProps = {
   onRibbonModeChange?: (mode: CalendarRibbonMode) => void;
   /** Loading / error for an external chrome bar. */
   onFetchState?: (state: { loading: boolean; error: string | null }) => void;
+  buddyBubbleTitle?: string;
 } & CalendarRailContextProps;
 
 export type { CalendarRibbonMode };
@@ -209,6 +226,7 @@ export function CalendarRail({
   ribbonMode: ribbonModeProp,
   onRibbonModeChange: onRibbonModeChangeProp,
   onFetchState,
+  buddyBubbleTitle,
 }: CalendarRailProps) {
   const boardColumnDefs = useBoardColumnDefs(workspaceId);
 
@@ -359,7 +377,7 @@ export function CalendarRail({
     return (
       <div
         className={cn(
-          'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-l border-border bg-muted/30',
+          'max-md:hidden flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-l border-border bg-muted/30',
           COLLAPSED_COLUMN_WIDTH_CLASS,
         )}
       >
@@ -374,6 +392,17 @@ export function CalendarRail({
           <span className="flex min-h-0 shrink-0 flex-col items-center gap-3 px-0 pb-4 pt-2">
             <PanelRightOpen className="h-5 w-5 shrink-0" strokeWidth={2} aria-hidden />
             <Calendar className="size-4 shrink-0" strokeWidth={2} aria-hidden />
+            {buddyBubbleTitle ? (
+              <span
+                className={cn(
+                  'line-clamp-4 max-h-24 min-h-0 max-w-[2.75rem] select-none break-all text-center text-[9px] font-semibold uppercase leading-tight tracking-[0.1em] text-muted-foreground',
+                  '[text-orientation:mixed] [writing-mode:vertical-rl] rotate-180',
+                )}
+                title={buddyBubbleTitle}
+              >
+                {buddyBubbleTitle}
+              </span>
+            ) : null}
             <span
               className={cn(
                 'select-none text-center text-[10px] font-semibold uppercase tracking-[0.14em]',
@@ -408,6 +437,7 @@ export function CalendarRail({
             onRibbonModeChange={setRibbonMode}
             onCollapse={onCollapse}
             showRibbonToggles={Boolean(activeBubbleId && bubbles.length > 0)}
+            buddyBubbleTitle={buddyBubbleTitle}
           />
         </div>
       )}

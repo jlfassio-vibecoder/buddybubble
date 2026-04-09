@@ -121,7 +121,7 @@ function SplitKanbanCalendarStage({
         <div className="flex shrink-0 flex-row items-stretch border-b border-border bg-background">
           <div
             className={cn(
-              'shrink-0 border-r border-border bg-background',
+              'max-md:hidden shrink-0 border-r border-border bg-background',
               COLLAPSED_COLUMN_WIDTH_CLASS,
             )}
             aria-hidden
@@ -131,7 +131,9 @@ function SplitKanbanCalendarStage({
           </div>
         </div>
         <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
-          <div className="flex min-h-0 shrink-0 flex-col overflow-hidden">{kanbanBody}</div>
+          <div className="max-md:hidden flex min-h-0 shrink-0 flex-col overflow-hidden">
+            {kanbanBody}
+          </div>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{calendarBody}</div>
         </div>
       </div>
@@ -308,6 +310,8 @@ type Props = {
    * calendar rail — otherwise calendar strip + board strip yields an empty middle.
    */
   onExpandCalendarWhenKanbanStripCollapse?: () => void;
+  /** Split calendar chrome: label before "Calendar". */
+  buddyBubbleTitle?: string;
 };
 
 export function KanbanBoard({
@@ -323,12 +327,15 @@ export function KanbanBoard({
   boardStripExpandNonce = 0,
   calendarStripCollapsed,
   onExpandCalendarWhenKanbanStripCollapse,
+  buddyBubbleTitle,
 }: Props) {
   const [calendarDropNonce, setCalendarDropNonce] = useState(0);
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
   const workspaceId = activeWorkspace?.id ?? null;
 
   const [boardStripCollapsed, setBoardStripCollapsed] = useState(false);
+  const boardStripCollapsedRef = useRef(boardStripCollapsed);
+  boardStripCollapsedRef.current = boardStripCollapsed;
   const [boardStripHydrated, setBoardStripHydrated] = useState(false);
   const [boardSegment, setBoardSegment] = useState<KanbanBoardSegment>('planning');
   const [calendarRibbonMode, setCalendarRibbonMode] = useState<CalendarRibbonMode>('7');
@@ -563,11 +570,11 @@ export function KanbanBoard({
   }, []);
 
   const handleToggleBoardStrip = useCallback(() => {
-    setBoardStripCollapsed((prev) => {
-      const next = !prev;
-      if (next) onExpandCalendarWhenKanbanStripCollapse?.();
-      return next;
-    });
+    const next = !boardStripCollapsedRef.current;
+    if (next) {
+      onExpandCalendarWhenKanbanStripCollapse?.();
+    }
+    setBoardStripCollapsed(next);
   }, [onExpandCalendarWhenKanbanStripCollapse]);
 
   const tz = calendarTimezone?.trim() || activeWorkspace?.calendar_timezone || 'UTC';
@@ -942,13 +949,14 @@ export function KanbanBoard({
     onRibbonModeChange: setCalendarRibbonMode,
     onCollapse: onCalendarCollapse,
     showRibbonToggles: Boolean(bubbleId && bubbles.length > 0),
+    buddyBubbleTitle,
   };
 
   function renderKanbanColumnsStageBody(): ReactNode {
     return boardStripCollapsed ? (
       <div
         className={cn(
-          'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-border bg-muted/30',
+          'max-md:hidden flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-border bg-muted/30',
           COLLAPSED_COLUMN_WIDTH_CLASS,
         )}
       >
@@ -976,7 +984,12 @@ export function KanbanBoard({
       </div>
     ) : (
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain">
+        <div
+          className={cn(
+            'min-h-0 flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain',
+            'max-md:snap-x max-md:snap-mandatory max-md:[scrollbar-width:none] max-md:[&::-webkit-scrollbar]:hidden',
+          )}
+        >
           <div className="flex h-full min-h-0 gap-3 p-3">
             {columnDefs!.map((col, columnIndex) => {
               const fullTaskCount = (columns[col.id] ?? []).length;
@@ -987,7 +1000,7 @@ export function KanbanBoard({
               return (
                 <motion.div
                   key={col.id}
-                  className="flex h-full shrink-0"
+                  className="flex h-full w-[85vw] shrink-0 snap-center md:w-auto md:snap-none"
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{
@@ -1222,9 +1235,10 @@ function KanbanColumn({
   return (
     <div
       ref={setNodeRef}
-      className={`flex w-72 shrink-0 flex-col rounded-xl border border-border/80 bg-card p-2 shadow-sm transition-[box-shadow] duration-200 ease-out hover:shadow-md ${
-        collapsed ? 'h-auto min-h-[4.5rem] self-start' : 'h-full min-h-[200px]'
-      }`}
+      className={cn(
+        'flex w-full min-w-0 shrink-0 flex-col rounded-xl border border-border/80 bg-card p-2 shadow-sm transition-[box-shadow] duration-200 ease-out hover:shadow-md md:w-72',
+        collapsed ? 'h-auto min-h-[4.5rem] self-start' : 'h-full min-h-[200px]',
+      )}
     >
       <KanbanColumnHeader
         label={column.label}

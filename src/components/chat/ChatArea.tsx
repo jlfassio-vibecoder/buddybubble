@@ -224,6 +224,8 @@ export type ChatAreaProps = {
   onOpenTask?: (taskId: string, opts?: { tab?: TaskModalTab }) => void;
   /** Workspace admins: pending join requests surfaced in the header bell (collapsed-sidebar fallback). */
   joinRequestBellPreview?: JoinRequestPreviewItem[];
+  /** Centered above the channel row — workspace (BuddyBubble) name, same as Bubbles rail. */
+  workspaceTitle?: string;
 };
 
 export function ChatArea({
@@ -232,6 +234,7 @@ export function ChatArea({
   onCollapse = () => {},
   onOpenTask = () => {},
   joinRequestBellPreview = [],
+  workspaceTitle,
 }: ChatAreaProps) {
   const router = useRouter();
   const activeBubble = useWorkspaceStore((s) => s.activeBubble);
@@ -1201,108 +1204,120 @@ export function ChatArea({
   return (
     <div className="relative flex h-full min-h-0 min-w-0 w-full flex-col bg-background">
       {/* Header */}
-      <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-background px-6">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <button
-            type="button"
-            onClick={onCollapse}
-            className="shrink-0 p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-primary transition-all"
-            title="Collapse Messages"
-            aria-label="Collapse Messages panel"
-          >
-            <PanelLeftClose className="h-5 w-5" strokeWidth={2} aria-hidden />
-          </button>
-          <Hash className="h-5 w-5 shrink-0 text-foreground opacity-70" aria-hidden />
-          <h2 className="min-w-0 truncate font-bold text-foreground">
-            {activeBubble?.name ?? 'Chat'}
-          </h2>
-          <Star className="w-4 h-4 shrink-0 text-muted-foreground/55 hover:text-yellow-400 cursor-pointer transition-colors" />
-        </div>
-        <div className="flex shrink-0 items-center gap-4 text-muted-foreground">
-          <Search
-            className={cn(
-              'w-5 h-5 cursor-pointer transition-colors',
-              isSearchOpen ? 'text-primary' : 'hover:text-foreground',
-            )}
-            onClick={() => setIsSearchOpen(!isSearchOpen)}
-          />
-          <div className="relative">
-            <Bell
+      <header className="flex shrink-0 flex-col border-b border-border bg-background">
+        {workspaceTitle ? (
+          <div className="flex h-9 min-h-9 shrink-0 items-center justify-center border-b border-border/70 px-6">
+            <span
+              className="truncate text-center text-xs font-semibold text-muted-foreground"
+              title={workspaceTitle}
+            >
+              {workspaceTitle}
+            </span>
+          </div>
+        ) : null}
+        <div className="flex h-16 shrink-0 items-center justify-between px-6">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <button
+              type="button"
+              onClick={onCollapse}
+              className="max-md:hidden shrink-0 rounded-lg p-1.5 text-muted-foreground transition-all hover:bg-muted hover:text-primary"
+              title="Collapse Messages"
+              aria-label="Collapse Messages panel"
+            >
+              <PanelLeftClose className="h-5 w-5" strokeWidth={2} aria-hidden />
+            </button>
+            <Hash className="h-5 w-5 shrink-0 text-foreground opacity-70" aria-hidden />
+            <h2 className="min-w-0 truncate font-bold text-foreground">
+              {activeBubble?.name ?? 'Chat'}
+            </h2>
+            <Star className="w-4 h-4 shrink-0 text-muted-foreground/55 hover:text-yellow-400 cursor-pointer transition-colors" />
+          </div>
+          <div className="flex shrink-0 items-center gap-4 text-muted-foreground">
+            <Search
               className={cn(
                 'w-5 h-5 cursor-pointer transition-colors',
-                isNotificationsOpen ? 'text-primary' : 'hover:text-foreground',
+                isSearchOpen ? 'text-primary' : 'hover:text-foreground',
               )}
-              onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+              onClick={() => setIsSearchOpen(!isSearchOpen)}
             />
-            {notifications.some((n) => !n.read) && (
-              <span className="absolute -right-1 -top-1 size-2.5 rounded-full border-2 border-background bg-destructive" />
-            )}
-
-            <AnimatePresence>
-              {isNotificationsOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                  className="absolute right-0 z-50 mt-2 w-80 overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl"
-                >
-                  <div className="p-4 border-b border-border flex items-center justify-between bg-muted/70">
-                    <h3 className="font-bold text-foreground text-sm">Notifications</h3>
-                    <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
-                      {notifications.filter((n) => !n.read).length} New
-                    </span>
-                  </div>
-                  <div className="max-h-96 overflow-y-auto custom-scrollbar">
-                    {notifications.length > 0 ? (
-                      notifications.map((n) => (
-                        <div
-                          key={n.id}
-                          className={cn(
-                            'p-4 border-b border-border last:border-0 transition-colors cursor-pointer hover:bg-muted/70',
-                            !n.read && 'bg-primary/10',
-                          )}
-                          onClick={() => {
-                            if (n.type === 'join_request' && n.actionHref) {
-                              router.push(n.actionHref);
-                              setIsNotificationsOpen(false);
-                              return;
-                            }
-                            onMarkNotificationRead(n.id);
-                            if (n.type === 'thread_reply') {
-                              const parent = allMessages.find((m) => m.id === n.relatedId);
-                              if (parent) setActiveThreadParent(parent);
-                            }
-                            setIsNotificationsOpen(false);
-                          }}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex-1">
-                              <p className="text-xs font-bold text-foreground mb-1">{n.title}</p>
-                              <p className="text-[11px] text-muted-foreground leading-relaxed">
-                                {n.content}
-                              </p>
-                              <p className="text-[10px] text-muted-foreground mt-2">
-                                {formatMessageTimestamp(n.timestamp)}
-                              </p>
-                            </div>
-                            {!n.read && (
-                              <div className="mt-1 size-2 shrink-0 rounded-full bg-primary" />
-                            )}
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="p-8 text-center">
-                        <Bell className="w-8 h-8 text-muted-foreground/35 mx-auto mb-2" />
-                        <p className="text-sm text-muted-foreground">No notifications yet.</p>
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
+            <div className="relative">
+              <Bell
+                className={cn(
+                  'w-5 h-5 cursor-pointer transition-colors',
+                  isNotificationsOpen ? 'text-primary' : 'hover:text-foreground',
+                )}
+                onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+              />
+              {notifications.some((n) => !n.read) && (
+                <span className="absolute -right-1 -top-1 size-2.5 rounded-full border-2 border-background bg-destructive" />
               )}
-            </AnimatePresence>
+
+              <AnimatePresence>
+                {isNotificationsOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className="absolute right-0 z-50 mt-2 w-80 overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl"
+                  >
+                    <div className="p-4 border-b border-border flex items-center justify-between bg-muted/70">
+                      <h3 className="font-bold text-foreground text-sm">Notifications</h3>
+                      <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                        {notifications.filter((n) => !n.read).length} New
+                      </span>
+                    </div>
+                    <div className="max-h-96 overflow-y-auto custom-scrollbar">
+                      {notifications.length > 0 ? (
+                        notifications.map((n) => (
+                          <div
+                            key={n.id}
+                            className={cn(
+                              'p-4 border-b border-border last:border-0 transition-colors cursor-pointer hover:bg-muted/70',
+                              !n.read && 'bg-primary/10',
+                            )}
+                            onClick={() => {
+                              if (n.type === 'join_request' && n.actionHref) {
+                                router.push(n.actionHref);
+                                setIsNotificationsOpen(false);
+                                return;
+                              }
+                              onMarkNotificationRead(n.id);
+                              if (n.type === 'thread_reply') {
+                                const parent = allMessages.find((m) => m.id === n.relatedId);
+                                if (parent) setActiveThreadParent(parent);
+                              }
+                              setIsNotificationsOpen(false);
+                            }}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1">
+                                <p className="text-xs font-bold text-foreground mb-1">{n.title}</p>
+                                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                                  {n.content}
+                                </p>
+                                <p className="text-[10px] text-muted-foreground mt-2">
+                                  {formatMessageTimestamp(n.timestamp)}
+                                </p>
+                              </div>
+                              {!n.read && (
+                                <div className="mt-1 size-2 shrink-0 rounded-full bg-primary" />
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="p-8 text-center">
+                          <Bell className="w-8 h-8 text-muted-foreground/35 mx-auto mb-2" />
+                          <p className="text-sm text-muted-foreground">No notifications yet.</p>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+            <Info className="w-5 h-5 cursor-pointer hover:text-foreground" />
           </div>
-          <Info className="w-5 h-5 cursor-pointer hover:text-foreground" />
         </div>
       </header>
 

@@ -30,6 +30,10 @@ type Props = {
   /** Pending invitation_join_requests count; drives UserPlus badge and default invites tab. */
   pendingJoinRequestCount?: number;
   onOpenWorkspaceSettings?: () => void;
+  /** e.g. mobile sheet: hide header collapse control. */
+  hideSidebarCollapseButton?: boolean;
+  /** Centered above the "Bubbles" heading — current BuddyBubble (workspace) name, not channel. */
+  workspaceTitle?: string;
 };
 
 export function BubbleSidebar({
@@ -45,6 +49,8 @@ export function BubbleSidebar({
   isAdmin = false,
   pendingJoinRequestCount = 0,
   onOpenWorkspaceSettings,
+  hideSidebarCollapseButton = false,
+  workspaceTitle,
 }: Props) {
   const [name, setName] = useState('');
   const [adding, setAdding] = useState(false);
@@ -105,16 +111,26 @@ export function BubbleSidebar({
       ) : (
         <>
           <div className="border-b border-sidebar-border p-3">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                title="Collapse Bubbles sidebar"
-                aria-label="Collapse Bubbles sidebar"
-                onClick={collapse}
-                className="shrink-0 rounded-md p-1 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            {workspaceTitle ? (
+              <p
+                className="mb-2 truncate px-1 text-center text-xs font-semibold text-sidebar-foreground"
+                title={workspaceTitle}
               >
-                <PanelLeftClose className="h-5 w-5" strokeWidth={2} aria-hidden />
-              </button>
+                {workspaceTitle}
+              </p>
+            ) : null}
+            <div className="flex items-center gap-2">
+              {hideSidebarCollapseButton ? null : (
+                <button
+                  type="button"
+                  title="Collapse Bubbles sidebar"
+                  aria-label="Collapse Bubbles sidebar"
+                  onClick={collapse}
+                  className="shrink-0 rounded-md p-1 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                >
+                  <PanelLeftClose className="h-5 w-5" strokeWidth={2} aria-hidden />
+                </button>
+              )}
               <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
                 <h2 className="truncate text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/70">
                   Bubbles

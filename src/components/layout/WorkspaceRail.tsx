@@ -24,6 +24,8 @@ type Props = {
   profileName?: string | null;
   /** Marketing iframe: hide workspace switcher, create workspace, and profile. */
   embedMode?: boolean;
+  /** e.g. mobile sheet: hide collapse control (drawer closes via overlay). */
+  hideRailCollapseButton?: boolean;
 };
 
 function categoryRing(category: WorkspaceRow['category_type']): string {
@@ -49,6 +51,7 @@ export function WorkspaceRail({
   profileAvatarUrl,
   profileName,
   embedMode = false,
+  hideRailCollapseButton = false,
 }: Props) {
   const pathname = usePathname();
   const userWorkspaces = useWorkspaceStore((s) => s.userWorkspaces);
@@ -148,15 +151,17 @@ export function WorkspaceRail({
             )}
 
             <div className="mt-auto flex shrink-0 flex-col items-center gap-2 border-t border-white/15 px-2 pt-2">
-              <button
-                type="button"
-                title="Collapse Workspace rail"
-                aria-label="Collapse Workspace rail"
-                onClick={collapse}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-white/55 transition-colors hover:bg-white/15 hover:text-white motion-reduce:transition-none"
-              >
-                <PanelLeftClose className="h-5 w-5" strokeWidth={2} aria-hidden />
-              </button>
+              {hideRailCollapseButton ? null : (
+                <button
+                  type="button"
+                  title="Collapse Workspace rail"
+                  aria-label="Collapse Workspace rail"
+                  onClick={collapse}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-white/55 transition-colors hover:bg-white/15 hover:text-white motion-reduce:transition-none"
+                >
+                  <PanelLeftClose className="h-5 w-5" strokeWidth={2} aria-hidden />
+                </button>
+              )}
               {!embedMode ? (
                 <>
                   <button
