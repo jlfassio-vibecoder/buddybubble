@@ -1,11 +1,16 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { X } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
 import type { BubbleRow, TaskRow } from '@/types/database';
-import { ALL_BUBBLES_BUBBLE_ID, makeAllBubblesBubbleRow } from '@/lib/all-bubbles';
+import {
+  ALL_BUBBLES_BUBBLE_ID,
+  makeAllBubblesBubbleRow,
+  resolveBuddyBubbleDisplayTitle,
+} from '@/lib/all-bubbles';
+import { normalizeMobileTab } from '@/lib/mobile-crm-tab';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { WorkspaceRail } from '@/components/layout/WorkspaceRail';
 import { BubbleSidebar } from './bubble-sidebar';
@@ -35,6 +40,14 @@ import {
 } from '@/components/layout/collapsed-column-strip';
 import { ThemeScope } from '@/components/theme/ThemeScope';
 import { resolveEffectiveCategory, useThemeOverride } from '@/hooks/use-theme-override';
+import { useIsNarrowBelowMd } from '@/hooks/use-is-narrow-below-md';
+import { MobileHeader } from '@/components/layout/MobileHeader';
+import { MobileSidebarSheet } from '@/components/layout/MobileSidebarSheet';
+import { MobileTabBar } from '@/components/layout/MobileTabBar';
+import {
+  DesktopViewSwitcher,
+  type DesktopFocusMode,
+} from '@/components/layout/desktop-view-switcher';
 
 type Props = {
   workspaceId: string;
@@ -51,8 +64,14 @@ export function DashboardShell({
   initialJoinRequestPreview = [],
   children,
 }: Props) {
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const embedMode = searchParams.get('embed') === 'true';
+  const narrowViewport = useIsNarrowBelowMd();
+  const layoutMobile = !embedMode && narrowViewport;
+  const mobileTab = normalizeMobileTab(searchParams.get('tab'));
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const loadUserWorkspaces = useWorkspaceStore((s) => s.loadUserWorkspaces);
   const syncActiveFromRoute = useWorkspaceStore((s) => s.syncActiveFromRoute);
@@ -333,6 +352,27 @@ export function DashboardShell({
     }
   }, [workspaceId, calendarCollapsed, layoutHydrated]);
 
+  /** Mobile `?tab=`: single-pane chat / board / calendar (desktop ignores for layout). */
+  useEffect(() => {
+    if (!layoutHydrated || embedMode) return;
+    const mq = window.matchMedia('(max-width: 767.98px)');
+    if (!mq.matches) return;
+    const tab = normalizeMobileTab(searchParams.get('tab'));
+    if (tab === 'chat') {
+      setChatCollapsedState(false);
+      setKanbanCollapsedState(true);
+      // Persist calendar as expanded while Kanban is hidden (matches hydrate guard: k && cal → cal false).
+      setCalendarCollapsedState(false);
+    } else if (tab === 'board') {
+      setChatCollapsedState(true);
+      setKanbanCollapsedState(false);
+    } else {
+      setChatCollapsedState(true);
+      setKanbanCollapsedState(true);
+      setCalendarCollapsedState(false);
+    }
+  }, [layoutHydrated, embedMode, searchParams]);
+
   useEffect(() => {
     const supabase = createClient();
     async function load() {
@@ -406,19 +446,63 @@ export function DashboardShell({
     embedMode,
   };
 
+  const onSelectBubble = useCallback(
+    (id: string) => {
+      setSelectedBubbleId(id);
+      setMobileNavOpen(false);
+      if (embedMode) return;
+      const mq = window.matchMedia('(max-width: 767.98px)');
+      if (mq.matches) {
+        const q = new URLSearchParams(searchParams.toString());
+        q.set('tab', 'chat');
+        router.replace(`${pathname}?${q.toString()}`, { scroll: false });
+      }
+    },
+    [embedMode, pathname, router, searchParams],
+  );
+
+  const buddyBubbleTitle = useMemo(
+    () => resolveBuddyBubbleDisplayTitle(selectedBubbleId, bubbles, activeWorkspace?.name ?? null),
+    [selectedBubbleId, bubbles, activeWorkspace?.name],
+  );
+
+  const workspaceTitle = useMemo(() => {
+    if (activeWorkspace?.id !== workspaceId) return 'BuddyBubble';
+    const n = activeWorkspace?.name?.trim();
+    return n || 'BuddyBubble';
+  }, [activeWorkspace?.id, activeWorkspace?.name, workspaceId]);
+
   const bubbleSidebarProps = {
     workspaceId,
     collapsed: bubbleSidebarCollapsed,
     onCollapsedChange: setBubbleSidebarCollapsed,
     bubbles,
     selectedBubbleId,
-    onSelectBubble: setSelectedBubbleId,
+    onSelectBubble,
     onBubblesChange: setBubbles,
     canWrite,
     isAdmin: initialRole === 'admin',
     pendingJoinRequestCount: initialRole === 'admin' ? pendingJoinRequestCount : 0,
     onOpenWorkspaceSettings: embedMode ? undefined : () => setWorkspaceSettingsOpen(true),
+    workspaceTitle,
   };
+
+  const drawerRailProps = {
+    ...workspaceRailProps,
+    collapsed: false,
+    onCollapsedChange: () => {},
+    hideRailCollapseButton: true,
+  };
+
+  const drawerBubbleProps = {
+    ...bubbleSidebarProps,
+    collapsed: false,
+    onCollapsedChange: () => {},
+    hideSidebarCollapseButton: true,
+  };
+
+  const omitMobileNonChatStrip = layoutMobile && mobileTab !== 'chat';
+  const hideCalendarForMobileBoard = layoutMobile && mobileTab === 'board';
 
   const themeCategoryBase =
     activeWorkspace?.id === workspaceId
@@ -426,98 +510,183 @@ export function DashboardShell({
       : 'business';
   const effectiveThemeCategory = resolveEffectiveCategory(categoryOverride, themeCategoryBase);
 
+  const desktopFocusModeActive = useMemo((): DesktopFocusMode | null => {
+    if (layoutMobile || embedMode) return null;
+    if (!chatCollapsed && kanbanCollapsed) return 'chat';
+    if (chatCollapsed && kanbanCollapsed) return 'calendar';
+    if (chatCollapsed && !kanbanCollapsed && calendarCollapsed) return 'board';
+    if (!chatCollapsed && !kanbanCollapsed && calendarCollapsed) return 'split';
+    return null;
+  }, [layoutMobile, embedMode, chatCollapsed, kanbanCollapsed, calendarCollapsed]);
+
+  const applyDesktopFocusMode = useCallback(
+    (mode: DesktopFocusMode) => {
+      if (!layoutHydrated || embedMode) return;
+      switch (mode) {
+        case 'chat':
+          setChatCollapsedState(false);
+          setKanbanCollapsedState(true);
+          // Persist calendar as expanded while Kanban is hidden so reopening board does not restore a collapsed rail.
+          setCalendarCollapsedState(false);
+          break;
+        case 'board':
+          setChatCollapsedState(true);
+          setKanbanCollapsedState(false);
+          setCalendarCollapsedState(true);
+          setBoardStripExpandNonce((n) => n + 1);
+          break;
+        case 'calendar':
+          setChatCollapsedState(true);
+          setKanbanCollapsedState(true);
+          setCalendarCollapsedState(false);
+          break;
+        case 'split':
+          setChatCollapsedState(false);
+          setKanbanCollapsedState(false);
+          setCalendarCollapsedState(true);
+          setBoardStripExpandNonce((n) => n + 1);
+          break;
+        default:
+          break;
+      }
+    },
+    [embedMode, layoutHydrated],
+  );
+
   return (
     <ThemeScope category={effectiveThemeCategory}>
-      <div className="flex h-screen min-h-0 overflow-hidden bg-background">
-        {tripleStack ? (
-          <div
-            className={cn(
-              'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-border',
-              COLLAPSED_COLUMN_WIDTH_CLASS,
-            )}
-          >
-            {chatCollapsed ? (
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-border bg-black">
-                <CollapsedColumnStrip
-                  title="Messages"
-                  expandTitle="Expand Messages"
-                  expandAriaLabel="Expand Messages panel"
-                  onExpand={() => setChatCollapsed(false)}
-                  edge="left"
-                  variant="black"
+      <div className="flex h-screen min-h-0 flex-col bg-background md:flex-row md:overflow-hidden">
+        {layoutMobile ? <MobileHeader title={buddyBubbleTitle} /> : null}
+        {layoutMobile ? (
+          <MobileSidebarSheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+            <WorkspaceRail {...drawerRailProps} />
+            <BubbleSidebar {...drawerBubbleProps} />
+          </MobileSidebarSheet>
+        ) : null}
+
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-0">
+          {!embedMode ? (
+            <div className="max-md:hidden flex h-11 shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-4">
+              <span
+                className="min-w-0 truncate text-sm font-semibold text-foreground"
+                title={`${buddyBubbleTitle} - ${workspaceTitle}`}
+              >
+                {buddyBubbleTitle}
+                <span className="font-normal text-muted-foreground"> - </span>
+                {workspaceTitle}
+              </span>
+              <DesktopViewSwitcher
+                activeMode={desktopFocusModeActive}
+                onChange={applyDesktopFocusMode}
+                disabled={!layoutHydrated}
+              />
+            </div>
+          ) : null}
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:min-h-0 md:flex-row">
+            <div className="hidden h-full min-h-0 shrink-0 md:flex md:flex-row">
+              {tripleStack ? (
+                <div
+                  className={cn(
+                    'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-border',
+                    COLLAPSED_COLUMN_WIDTH_CLASS,
+                  )}
+                >
+                  {chatCollapsed ? (
+                    <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-border bg-black">
+                      <CollapsedColumnStrip
+                        title="Messages"
+                        expandTitle="Expand Messages"
+                        expandAriaLabel="Expand Messages panel"
+                        onExpand={() => setChatCollapsed(false)}
+                        edge="left"
+                        variant="black"
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-border bg-background">
+                      <CollapsedColumnStrip
+                        title="Kanban"
+                        expandTitle="Expand Kanban"
+                        expandAriaLabel="Expand Kanban panel"
+                        onExpand={() => setKanbanCollapsed(false)}
+                        edge="left"
+                        variant="card"
+                      />
+                    </div>
+                  )}
+                  <BubbleSidebar {...bubbleSidebarProps} collapsedStackSlot="middle" />
+                  <WorkspaceRail {...workspaceRailProps} collapsedStackSlot="bottom" />
+                </div>
+              ) : railsCollapsed ? (
+                <div
+                  className={cn(
+                    'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-border',
+                    COLLAPSED_COLUMN_WIDTH_CLASS,
+                  )}
+                >
+                  <BubbleSidebar {...bubbleSidebarProps} collapsedStackSlot="top" />
+                  <WorkspaceRail {...workspaceRailProps} collapsedStackSlot="bottom" />
+                </div>
+              ) : (
+                <>
+                  <WorkspaceRail {...workspaceRailProps} />
+                  <BubbleSidebar {...bubbleSidebarProps} />
+                </>
+              )}
+            </div>
+
+            <WorkspaceMainSplit
+              workspaceId={workspaceId}
+              chatCollapsed={chatCollapsed}
+              onChatCollapsedChange={setChatCollapsed}
+              kanbanCollapsed={kanbanCollapsed}
+              calendarCollapsed={calendarRailIsCollapsed}
+              omitCollapsedMessagesStrip={(tripleStack && chatCollapsed) || omitMobileNonChatStrip}
+              hideCalendarSlot={hideCalendarForMobileBoard}
+              hideMainStageBelowMd={layoutMobile && mobileTab === 'chat'}
+              taskViewsNonce={taskViewsNonce}
+              calendarRail={
+                <CalendarRail
+                  isCollapsed={calendarRailIsCollapsed}
+                  onExpand={() => setCalendarCollapsed(false)}
+                  onCollapse={() => setCalendarCollapsed(true)}
+                  buddyBubbleTitle={buddyBubbleTitle}
+                  {...calendarContext}
                 />
-              </div>
-            ) : (
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-border bg-background">
-                <CollapsedColumnStrip
-                  title="Kanban"
-                  expandTitle="Expand Kanban"
-                  expandAriaLabel="Expand Kanban panel"
-                  onExpand={() => setKanbanCollapsed(false)}
-                  edge="left"
-                  variant="card"
+              }
+              renderChat={({ onCollapse }) => (
+                <ChatArea
+                  bubbles={bubbles}
+                  canWrite={canWrite}
+                  onOpenTask={openTaskModal}
+                  onCollapse={onCollapse}
+                  workspaceTitle={workspaceTitle}
+                  joinRequestBellPreview={
+                    initialRole === 'admin' ? joinRequestBellPreview : undefined
+                  }
                 />
-              </div>
-            )}
-            <BubbleSidebar {...bubbleSidebarProps} collapsedStackSlot="middle" />
-            <WorkspaceRail {...workspaceRailProps} collapsedStackSlot="bottom" />
+              )}
+              board={
+                <KanbanBoard
+                  canWrite={canWrite}
+                  bubbles={bubbles}
+                  onOpenTask={openTaskModal}
+                  onOpenCreateTask={openCreateTaskModal}
+                  workspaceCategory={effectiveKanbanCategory}
+                  calendarTimezone={workspaceCalendarTz}
+                  boardStripExpandNonce={boardStripExpandNonce}
+                  calendarStripCollapsed={calendarRailIsCollapsed}
+                  onExpandCalendarWhenKanbanStripCollapse={() => setCalendarCollapsed(false)}
+                  onRetractKanbanPanel={() => setKanbanCollapsed(true)}
+                  buddyBubbleTitle={buddyBubbleTitle}
+                />
+              }
+            />
           </div>
-        ) : railsCollapsed ? (
-          <div
-            className={cn(
-              'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-border',
-              COLLAPSED_COLUMN_WIDTH_CLASS,
-            )}
-          >
-            <BubbleSidebar {...bubbleSidebarProps} collapsedStackSlot="top" />
-            <WorkspaceRail {...workspaceRailProps} collapsedStackSlot="bottom" />
-          </div>
-        ) : (
-          <>
-            <WorkspaceRail {...workspaceRailProps} />
-            <BubbleSidebar {...bubbleSidebarProps} />
-          </>
-        )}
-        <WorkspaceMainSplit
-          workspaceId={workspaceId}
-          chatCollapsed={chatCollapsed}
-          onChatCollapsedChange={setChatCollapsed}
-          kanbanCollapsed={kanbanCollapsed}
-          calendarCollapsed={calendarRailIsCollapsed}
-          omitCollapsedMessagesStrip={tripleStack && chatCollapsed}
-          taskViewsNonce={taskViewsNonce}
-          calendarRail={
-            <CalendarRail
-              isCollapsed={calendarRailIsCollapsed}
-              onExpand={() => setCalendarCollapsed(false)}
-              onCollapse={() => setCalendarCollapsed(true)}
-              {...calendarContext}
-            />
-          }
-          renderChat={({ onCollapse }) => (
-            <ChatArea
-              bubbles={bubbles}
-              canWrite={canWrite}
-              onOpenTask={openTaskModal}
-              onCollapse={onCollapse}
-              joinRequestBellPreview={initialRole === 'admin' ? joinRequestBellPreview : undefined}
-            />
-          )}
-          board={
-            <KanbanBoard
-              canWrite={canWrite}
-              bubbles={bubbles}
-              onOpenTask={openTaskModal}
-              onOpenCreateTask={openCreateTaskModal}
-              workspaceCategory={effectiveKanbanCategory}
-              calendarTimezone={workspaceCalendarTz}
-              boardStripExpandNonce={boardStripExpandNonce}
-              calendarStripCollapsed={calendarRailIsCollapsed}
-              onExpandCalendarWhenKanbanStripCollapse={() => setCalendarCollapsed(false)}
-              onRetractKanbanPanel={() => setKanbanCollapsed(true)}
-            />
-          }
-        />
+        </div>
+
+        {layoutMobile ? <MobileTabBar onOpenNavigation={() => setMobileNavOpen(true)} /> : null}
+
         <TaskModal
           open={taskModalOpen}
           onOpenChange={onTaskModalOpenChange}
@@ -549,7 +718,7 @@ export function DashboardShell({
         <ProfileModal open={profileModalOpen} onOpenChange={setProfileModalOpen} />
         {commentAlert ? (
           <div
-            className="pointer-events-auto fixed bottom-6 left-1/2 z-50 flex max-w-md -translate-x-1/2 items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-lg"
+            className="pointer-events-auto fixed bottom-20 left-1/2 z-[100] flex max-w-md -translate-x-1/2 items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-lg md:bottom-6"
             role="status"
           >
             <p className="min-w-0 flex-1 text-sm text-foreground">

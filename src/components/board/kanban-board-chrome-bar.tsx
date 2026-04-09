@@ -53,7 +53,7 @@ export function KanbanBoardChromeBar({
         <button
           type="button"
           onClick={onToggleBoardStrip}
-          className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="max-md:hidden shrink-0 rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
           title={boardStripCollapsed ? 'Expand Kanban columns' : 'Collapse Kanban to left strip'}
           aria-label={
             boardStripCollapsed ? 'Expand Kanban board columns' : 'Collapse Kanban to left strip'
