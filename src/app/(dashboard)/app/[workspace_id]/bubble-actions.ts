@@ -66,7 +66,7 @@ export async function updateBubbleAction(input: {
 
   if (error) return { error: error.message };
 
-  revalidatePath(`/app/${input.workspaceId}`);
+  revalidatePath(`/app/${check.workspaceId}`);
   return { ok: true };
 }
 
@@ -133,11 +133,11 @@ export async function addBubbleMemberAction(input: {
   const check = await requireBubbleAdmin(supabase, input.bubbleId, user.id);
   if (!check.ok) return { error: check.error };
 
-  // Verify target is a workspace member
+  // Verify target is a workspace member (use verified workspaceId from bubble lookup)
   const { data: wsMember } = await supabase
     .from('workspace_members')
     .select('role')
-    .eq('workspace_id', input.workspaceId)
+    .eq('workspace_id', check.workspaceId)
     .eq('user_id', input.userId)
     .maybeSingle();
 
@@ -154,7 +154,7 @@ export async function addBubbleMemberAction(input: {
 
   if (error) return { error: error.message };
 
-  revalidatePath(`/app/${input.workspaceId}`);
+  revalidatePath(`/app/${check.workspaceId}`);
   return { ok: true };
 }
 
@@ -181,7 +181,7 @@ export async function updateBubbleMemberRoleAction(input: {
 
   if (error) return { error: error.message };
 
-  revalidatePath(`/app/${input.workspaceId}`);
+  revalidatePath(`/app/${check.workspaceId}`);
   return { ok: true };
 }
 
@@ -207,7 +207,7 @@ export async function removeBubbleMemberAction(input: {
 
   if (error) return { error: error.message };
 
-  revalidatePath(`/app/${input.workspaceId}`);
+  revalidatePath(`/app/${check.workspaceId}`);
   return { ok: true };
 }
 
@@ -243,7 +243,7 @@ export async function listWorkspaceMembersForBubbleAction(
   const { data, error } = await supabase
     .from('workspace_members')
     .select('user_id, users(full_name, email)')
-    .eq('workspace_id', workspaceId);
+    .eq('workspace_id', check.workspaceId);
 
   if (error) return { error: error.message };
 

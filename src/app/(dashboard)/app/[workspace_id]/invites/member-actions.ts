@@ -42,7 +42,7 @@ export async function listWorkspaceMembersAction(
 
   const callerRole = await getCallerRole(supabase, workspaceId, user.id);
   if (!callerRole || (callerRole !== 'admin' && callerRole !== 'owner')) {
-    return { error: 'Only admins can view the member list.' };
+    return { error: 'Only admins and owners can view the member list.' };
   }
 
   const { data, error } = await supabase
@@ -85,7 +85,7 @@ export async function updateMemberRoleAction(input: {
 
   const callerRole = await getCallerRole(supabase, input.workspaceId, user.id);
   if (!callerRole || (callerRole !== 'admin' && callerRole !== 'owner')) {
-    return { error: 'Only admins can change member roles.' };
+    return { error: 'Only admins and owners can change member roles.' };
   }
 
   // Only owners can promote someone to owner or demote an existing owner
@@ -131,7 +131,7 @@ export async function removeMemberAction(input: {
 
   const callerRole = await getCallerRole(supabase, input.workspaceId, user.id);
   if (!callerRole || (callerRole !== 'admin' && callerRole !== 'owner')) {
-    return { error: 'Only admins can remove members.' };
+    return { error: 'Only admins and owners can remove members.' };
   }
 
   // Prevent removing the last owner
