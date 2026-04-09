@@ -22,7 +22,8 @@ async function requireWorkspaceAdmin(
     .eq('workspace_id', workspaceId)
     .eq('user_id', userId)
     .maybeSingle();
-  return (data as { role?: string } | null)?.role === 'admin';
+  const role = (data as { role?: string } | null)?.role;
+  return role === 'admin' || role === 'owner';
 }
 
 function expiresAtFromHours(hours: number): string {
@@ -36,6 +37,7 @@ export async function createInviteAction(input: {
   maxUses: number;
   expiresInHours: number;
   label: string;
+  role?: 'admin' | 'member' | 'guest';
 }): Promise<ActionResult<{ inviteUrl: string; token: string; id: string }>> {
   const supabase = await createClient();
   const {
@@ -63,6 +65,7 @@ export async function createInviteAction(input: {
       label,
       max_uses: maxUses,
       expires_at,
+      role: input.role ?? 'member',
     })
     .select('id')
     .single();
@@ -115,6 +118,7 @@ export async function createEmailInviteAction(input: {
   expiresInHours: number;
   label: string;
   workspaceName?: string;
+  role?: 'admin' | 'member' | 'guest';
 }): Promise<ActionResult> {
   const supabase = await createClient();
   const {
@@ -145,6 +149,7 @@ export async function createEmailInviteAction(input: {
     label,
     max_uses: maxUses,
     expires_at,
+    role: input.role ?? 'member',
   });
 
   if (insErr) {
@@ -177,6 +182,7 @@ export async function createSmsInviteAction(input: {
   expiresInHours: number;
   label: string;
   workspaceName?: string;
+  role?: 'admin' | 'member' | 'guest';
 }): Promise<ActionResult> {
   const supabase = await createClient();
   const {
@@ -207,6 +213,7 @@ export async function createSmsInviteAction(input: {
     label,
     max_uses: maxUses,
     expires_at,
+    role: input.role ?? 'member',
   });
 
   if (insErr) {

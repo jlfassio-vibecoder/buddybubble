@@ -48,10 +48,12 @@ import {
   DesktopViewSwitcher,
   type DesktopFocusMode,
 } from '@/components/layout/desktop-view-switcher';
+import type { MemberRole } from '@/types/database';
+import { usePermissions } from '@/hooks/use-permissions';
 
 type Props = {
   workspaceId: string;
-  initialRole: 'admin' | 'member' | 'guest';
+  initialRole: MemberRole;
   initialPendingJoinRequestCount?: number;
   initialJoinRequestPreview?: JoinRequestPreviewItem[];
   children: React.ReactNode;
@@ -156,7 +158,7 @@ export function DashboardShell({
     taskId: null,
   });
 
-  const canWrite = initialRole !== 'guest';
+  const { canWrite, isAdmin } = usePermissions(initialRole);
 
   const openTaskModal = useCallback((id: string, opts?: { tab?: TaskModalTab }) => {
     setTaskModalTaskId(id);
@@ -398,7 +400,7 @@ export function DashboardShell({
   }, [workspaceId, initialPendingJoinRequestCount, initialJoinRequestPreview]);
 
   useEffect(() => {
-    if (initialRole !== 'admin') return;
+    if (!isAdmin) return;
     const supabase = createClient();
     const refreshJoinRequests = () => {
       void fetchPendingJoinRequestCountAndPreview(supabase, workspaceId).then((r) => {
@@ -422,7 +424,7 @@ export function DashboardShell({
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [workspaceId, initialRole]);
+  }, [workspaceId, isAdmin]);
 
   useEffect(() => {
     if (selectedBubbleId === ALL_BUBBLES_BUBBLE_ID) {
@@ -481,8 +483,8 @@ export function DashboardShell({
     onSelectBubble,
     onBubblesChange: setBubbles,
     canWrite,
-    isAdmin: initialRole === 'admin',
-    pendingJoinRequestCount: initialRole === 'admin' ? pendingJoinRequestCount : 0,
+    isAdmin: isAdmin,
+    pendingJoinRequestCount: isAdmin ? pendingJoinRequestCount : 0,
     onOpenWorkspaceSettings: embedMode ? undefined : () => setWorkspaceSettingsOpen(true),
     workspaceTitle,
   };
@@ -662,7 +664,7 @@ export function DashboardShell({
                   onCollapse={onCollapse}
                   workspaceTitle={workspaceTitle}
                   joinRequestBellPreview={
-                    initialRole === 'admin' ? joinRequestBellPreview : undefined
+                    isAdmin ? joinRequestBellPreview : undefined
                   }
                 />
               )}
@@ -710,7 +712,7 @@ export function DashboardShell({
           open={workspaceSettingsOpen}
           onOpenChange={setWorkspaceSettingsOpen}
           workspaceId={workspaceId}
-          isAdmin={initialRole === 'admin'}
+          isAdmin={isAdmin}
           onSaved={() => {
             void loadUserWorkspaces().then(() => syncActiveFromRoute(workspaceId));
           }}

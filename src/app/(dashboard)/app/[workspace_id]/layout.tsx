@@ -31,13 +31,13 @@ export default async function WorkspaceLayout({
     redirect('/app');
   }
 
-  const role = row.role as 'admin' | 'member' | 'guest';
+  const role = row.role as 'owner' | 'admin' | 'member' | 'guest';
 
   let initialPendingJoinRequestCount = 0;
   let initialJoinRequestPreview: Awaited<
     ReturnType<typeof fetchPendingJoinRequestCountAndPreview>
   >['preview'] = [];
-  if (role === 'admin') {
+  if (role === 'admin' || role === 'owner') {
     const jr = await fetchPendingJoinRequestCountAndPreview(supabase, workspace_id);
     initialPendingJoinRequestCount = jr.count;
     initialJoinRequestPreview = jr.preview;
