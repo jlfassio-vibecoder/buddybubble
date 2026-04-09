@@ -19,7 +19,7 @@
     "check:storefront": "npm run astro:check -w storefront",
     "check": "npm run format:check && npm run lint && npm run build && npm run check:storefront",
     "test": "vitest run",
-    "prepare": "node -e \"if (process.env.CI || process.env.VERCEL) process.exit(0); require('child_process').execSync('husky', { stdio: 'inherit' })\""
+    "prepare": "node -e \"if (process.env.CI || process.env.VERCEL) process.exit(0); require('child_process').execSync('npx husky', { stdio: 'inherit', shell: true })\""
   },
   "lint-staged": {
     "**/*.{ts,tsx,js,jsx,mjs,cjs,json,css,md,mdx,yml,yaml}": "prettier --write"
