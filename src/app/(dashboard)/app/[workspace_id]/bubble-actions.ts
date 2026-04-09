@@ -100,7 +100,7 @@ export async function listBubbleMembersAction(
   if (error) return { error: error.message };
 
   const members: BubbleMemberWithProfile[] = (
-    (data ?? []) as Array<{
+    (data ?? []) as unknown as Array<{
       id: string;
       user_id: string;
       role: BubbleMemberRole;
@@ -248,7 +248,7 @@ export async function listWorkspaceMembersForBubbleAction(
   if (error) return { error: error.message };
 
   const members: WorkspaceMemberOption[] = (
-    (data ?? []) as Array<{
+    (data ?? []) as unknown as Array<{
       user_id: string;
       users: { full_name: string | null; email: string | null } | null;
     }>

@@ -54,7 +54,7 @@ export async function listWorkspaceMembersAction(
   if (error) return { error: error.message };
 
   const members: WorkspaceMemberWithProfile[] = (
-    (data ?? []) as Array<{
+    (data ?? []) as unknown as Array<{
       user_id: string;
       role: MemberRole;
       created_at: string;
