@@ -1,4 +1,5 @@
 {
   "framework": "astro",
-  "outputDirectory": "dist"
+  "outputDirectory": "dist",
+  "ignoreCommand": "bash apps/storefront/vercel-ignore-storefront.sh"
 }

@@ -85,3 +85,25 @@ export async function consumeInviteOnboarding(): Promise<{ error: string } | voi
 
   return { error: 'Something went wrong with this invite. Try again.' };
 }
+
+/**
+ * Client-triggered safety net: if cookies/session now show membership but the page was rendered
+ * before `accept_invitation` completed, send the user to `/app` (same as app home resolution).
+ */
+export async function redirectIfHasWorkspaceMembership(): Promise<void> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const { data: members, error } = await supabase
+    .from('workspace_members')
+    .select('workspace_id')
+    .eq('user_id', user.id)
+    .limit(1);
+
+  if (!error && members && members.length > 0) {
+    redirect('/app');
+  }
+}

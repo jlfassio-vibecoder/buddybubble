@@ -7,11 +7,11 @@ Run these before every commit (or open a PR) to avoid shipping TypeScript errors
 On every `git commit`, **Husky** runs:
 
 1. **lint-staged** — formats staged files with **Prettier** (writes fixes and re-stages them).
-2. **`npm run lint`** — full-project **TypeScript** check (`tsc --noEmit`).
+2. **`npm run lint`** — full-project **TypeScript** check (`tsc --noEmit`) for the **Next.js** app at the repo root.
 
 If either step fails, the commit is aborted. Fix the reported issues and commit again.
 
-**Not run in the hook:** `next build` (too slow for every commit). Use `npm run check` or CI before merging / releasing.
+**Not run in the hook:** `next build`, **Astro** `astro check`, or **`astro build`** (too slow or not wired into Husky). Use `npm run check` or CI before merging / releasing.
 
 ---
 
@@ -23,26 +23,60 @@ From the repo root:
 npm run check
 ```
 
-This runs, in order: **Prettier check** → **TypeScript (`tsc`)** → **Next.js production build** → **Astro check** (`apps/storefront`, `astro check`).
+This runs, in order: **Prettier check** → **TypeScript (`tsc`)** → **Next.js production build** → **Astro diagnostics** for `apps/storefront` (`astro check` via `npm run check:storefront`).
 
-If `check` passes, you are in good shape for formatting, TS compliance, both production builds, and Astro diagnostics. Fix failures in order (formatting first, then types, then Next build, then storefront).
+If `check` passes, you are in good shape for formatting, TS on the CRM, the Next production build, and Astro/static analysis on the storefront. Fix failures in order (formatting first, then types, then Next build, then storefront).
 
-To run only the marketing storefront type/Astro diagnostics:
+**Note:** `npm run check` does **not** run **`astro build`**. The full Astro compile is intentionally **local** when you touch the storefront (see below). On **Vercel**, the storefront project uses an **ignored build step** so **`astro build` is skipped** when no files under `apps/storefront/` changed—CRM-only pushes do not rebuild the marketing site.
+
+### Before you push (if `apps/storefront/` changed)
+
+Run a full Astro verification (diagnostics + production build) from the repo root:
+
+```bash
+npm run verify:storefront
+```
+
+This runs **`astro check`** then **`astro build`** for `apps/storefront`. Use it after editing storefront pages, config, or dependencies so broken builds are caught **before** git, without relying on a Vercel build on every push.
+
+### Storefront-only (Astro)
 
 ```bash
 npm run check:storefront
 ```
 
+Equivalent from `apps/storefront`:
+
+```bash
+cd apps/storefront && npm run astro:check
+```
+
 ---
 
-## Step-by-step (same checks as the hook + build)
+## Step-by-step (same checks as the hook + build + Astro)
 
-| Step | Command                    | What it catches                                                                             |
-| ---- | -------------------------- | ------------------------------------------------------------------------------------------- |
-| 1    | `npm run format:check`     | Files that are not formatted with **Prettier** (per `.prettierrc.json`).                    |
-| 2    | `npm run lint`             | **TypeScript** errors and type mismatches (`tsc --noEmit`).                                 |
-| 3    | `npm run build`            | Next.js compile errors, App Router issues, and other problems only visible in a full build. |
-| 4    | `npm run check:storefront` | **Astro** diagnostics for `apps/storefront` (`astro check`).                                |
+| Step | Command                    | What it catches                                                                                          |
+| ---- | -------------------------- | -------------------------------------------------------------------------------------------------------- |
+| 1    | `npm run format:check`     | Files that are not formatted with **Prettier** (per `.prettierrc.json`).                                 |
+| 2    | `npm run lint`             | **TypeScript** errors and type mismatches in the Next.js app (`tsc --noEmit`).                           |
+| 3    | `npm run build`            | Next.js compile errors, App Router issues, and other problems only visible in a full CRM build.          |
+| 4    | `npm run check:storefront` | **Astro** diagnostics for `apps/storefront`: `astro check` (`.astro` files, frontmatter, TS in scripts). |
+
+### Storefront (Astro)
+
+| Goal                             | Command (repo root)             | Command (`apps/storefront`)            | What it does                                                                                                                                      |
+| -------------------------------- | ------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Type + Astro diagnostics         | `npm run check:storefront`      | `npm run astro:check`                  | Runs **`astro check`** (`@astrojs/check`): Astro component issues, AOT hints, and TypeScript inside `.astro` / project `tsconfig` for storefront. |
+| Verify before push (recommended) | `npm run verify:storefront`     | `npm run astro:check && npm run build` | **`astro check`** + **`astro build`** when you changed the storefront.                                                                            |
+| Production build (marketing)     | `npm run build:storefront`      | `npm run build`                        | **`astro build`** only — bundling, adapter (e.g. Vercel), imports not caught by `astro check` alone.                                              |
+| Local dev                        | —                               | `npm run dev`                          | **`astro dev`** — smoke-test pages you changed (port is Astro’s default unless configured).                                                       |
+| Preview production output        | `npm run preview -w storefront` | `npm run preview`                      | Serves the last **`astro build`** output locally.                                                                                                 |
+
+Run **`npm run verify:storefront`** (or at least **`astro build`**) before pushing whenever **`apps/storefront/`** was part of your work—especially **`astro.config.*`**, adapters, or env-driven URLs.
+
+### Vercel (storefront project)
+
+The storefront **`vercel.json`** sets **`ignoreCommand`** to `bash apps/storefront/vercel-ignore-storefront.sh`. That script compares the current commit to the previous deployment commit; if **no diff** under **`apps/storefront/`**, the deployment is **skipped** (no `astro build` on Vercel). If the storefront **did** change, Vercel runs a normal Astro build. Ensure the Vercel project **Root Directory** is **`apps/storefront`** (or adjust paths in the script if your setup differs).
 
 ### Auto-fix formatting (whole repo)
 
@@ -58,7 +92,9 @@ Then re-run `npm run format:check`.
 
 ## Optional: stricter local workflow
 
-- Run `npm run dev` and smoke-test the flows you touched (auth, workspace, dashboard).
+- Run `npm run dev` and smoke-test the CRM flows you touched (auth, workspace, dashboard).
+- Run `npm run dev` from **`apps/storefront`** (or your usual storefront command) and smoke-test marketing pages you touched.
+- If those files are in **`apps/storefront/`**, run **`npm run verify:storefront`** before **`git push`**.
 - After pulling or rebasing, run `npm run check` again before pushing.
 
 ---
