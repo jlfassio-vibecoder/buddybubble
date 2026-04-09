@@ -21,3 +21,27 @@ export function normalizeCrmOrigin(raw: string | undefined): string {
     return s.replace(/\/$/, '');
   }
 }
+
+/**
+ * When the storefront is served on a real host (not localhost), never use a CRM origin that
+ * points at localhost — iframe demo and post-login handoff would target the visitor's machine.
+ * Local dev with storefront on localhost still respects PUBLIC_APP_ORIGIN=http://localhost:3000.
+ */
+export function resolveCrmOriginForStorefront(
+  raw: string | undefined,
+  storefrontHostname: string,
+): string {
+  const o = normalizeCrmOrigin(raw);
+  const isLocalStorefront = /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(storefrontHostname.trim());
+  if (isLocalStorefront) return o;
+  try {
+    const u = new URL(o);
+    const host = u.hostname.toLowerCase();
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return 'https://app.buddybubble.app';
+    }
+  } catch {
+    /* keep o */
+  }
+  return o;
+}

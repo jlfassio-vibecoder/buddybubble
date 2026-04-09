@@ -15,10 +15,18 @@ const mutedBtnClass =
   'inline-flex h-11 w-full items-center justify-center rounded-xl border border-amber-200/80 bg-amber-100/90 text-base font-semibold text-amber-950 transition hover:bg-amber-100 disabled:pointer-events-none disabled:opacity-60';
 
 /**
- * @param {{ appOrigin: string; appLoginHref: string }} props
+ * @param {{ appOrigin: string; appLoginHref: string; supabaseUrl?: string; supabaseAnonKey?: string }} props
  */
-export default function StorefrontHeroLogin({ appOrigin, appLoginHref }) {
-  const supabase = useMemo(() => createStorefrontBrowserClient(), []);
+export default function StorefrontHeroLogin({
+  appOrigin,
+  appLoginHref,
+  supabaseUrl,
+  supabaseAnonKey,
+}) {
+  const supabase = useMemo(
+    () => createStorefrontBrowserClient({ url: supabaseUrl, anonKey: supabaseAnonKey }),
+    [supabaseUrl, supabaseAnonKey],
+  );
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(/** @type {string | null} */ (null));
@@ -97,9 +105,11 @@ export default function StorefrontHeroLogin({ appOrigin, appLoginHref }) {
         <p className="mt-2 text-sm leading-relaxed text-amber-800">
           Add real{' '}
           <code className="rounded bg-amber-100 px-1 py-0.5 text-xs">PUBLIC_SUPABASE_URL</code> and{' '}
-          <code className="rounded bg-amber-100 px-1 py-0.5 text-xs">PUBLIC_SUPABASE_ANON_KEY</code>{' '}
-          in <code className="rounded bg-amber-100 px-1 py-0.5 text-xs">apps/storefront/.env</code>{' '}
-          to use the embedded form here, or continue on the app.
+          <code className="rounded bg-amber-100 px-1 py-0.5 text-xs">PUBLIC_SUPABASE_ANON_KEY</code>
+          . Locally use{' '}
+          <code className="rounded bg-amber-100 px-1 py-0.5 text-xs">apps/storefront/.env</code>; in
+          production set the same names in your host (e.g. Vercel → Environment Variables —
+          available at build and runtime). Then continue on the app below if you prefer.
         </p>
         <button type="button" className={`${primaryBtnClass} mt-6`} onClick={goAppLogin}>
           Open sign in
