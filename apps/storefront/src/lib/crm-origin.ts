@@ -10,8 +10,9 @@ export function normalizeCrmOrigin(raw: string | undefined): string {
   if (!s) return fallback;
   s = s.replace(/\/$/, '');
   if (!/^https?:\/\//i.test(s)) {
+    // Match IPv6 loopback with or without brackets (URL later normalizes hostname to ::1).
     const isLocal =
-      /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(s) || /^localhost:\d+$/i.test(s);
+      /^(localhost|127\.0\.0\.1|\[::1\]|::1)(:\d+)?$/i.test(s) || /^localhost:\d+$/i.test(s);
     s = `${isLocal ? 'http' : 'https'}://${s}`;
   }
   try {
@@ -32,12 +33,15 @@ export function resolveCrmOriginForStorefront(
   storefrontHostname: string,
 ): string {
   const o = normalizeCrmOrigin(raw);
-  const isLocalStorefront = /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(storefrontHostname.trim());
+  // WHATWG URL.hostname is ::1 for IPv6 loopback, not [::1]; keep bracket form for odd proxies.
+  const isLocalStorefront = /^(localhost|127\.0\.0\.1|::1|\[::1\])$/i.test(
+    storefrontHostname.trim(),
+  );
   if (isLocalStorefront) return o;
   try {
     const u = new URL(o);
     const host = u.hostname.toLowerCase();
-    if (host === 'localhost' || host === '127.0.0.1') {
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
       return 'https://app.buddybubble.app';
     }
   } catch {
