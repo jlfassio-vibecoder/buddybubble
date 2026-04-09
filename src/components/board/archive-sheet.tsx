@@ -8,6 +8,7 @@ import {
 } from '@/app/(dashboard)/app/[workspace_id]/tasks-actions';
 import { ArchivedTaskItem } from '@/components/board/archived-task-item';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
+import { formatUserFacingError } from '@/lib/format-error';
 import type { TaskRow } from '@/types/database';
 
 export type ArchiveSheetProps = {
@@ -38,16 +39,28 @@ export function ArchiveSheet({
     setError(null);
     setActionError(null);
 
-    void getArchivedTasksAction(bubbleId).then((res) => {
-      if (cancelled) return;
-      setLoading(false);
-      if (res.ok) {
-        setTasks(res.tasks);
-      } else {
-        setError(res.error);
+    const loadArchivedTasks = async () => {
+      try {
+        const res = await getArchivedTasksAction(bubbleId);
+        if (cancelled) return;
+        if (res.ok) {
+          setTasks(res.tasks);
+        } else {
+          setError(res.error);
+          setTasks([]);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setError(formatUserFacingError(err));
         setTasks([]);
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
-    });
+    };
+
+    void loadArchivedTasks();
 
     return () => {
       cancelled = true;

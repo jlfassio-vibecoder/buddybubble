@@ -51,7 +51,11 @@ export async function restoreTaskAction(taskId: string): Promise<TaskMutationRes
     return { ok: false, error: 'You must be signed in.' };
   }
 
-  const { error } = await supabase.from('tasks').update({ archived_at: null }).eq('id', id);
+  const { error } = await supabase
+    .from('tasks')
+    .update({ archived_at: null })
+    .eq('id', id)
+    .not('archived_at', 'is', null);
 
   if (error) {
     return { ok: false, error: formatUserFacingError(error) };
@@ -73,7 +77,11 @@ export async function hardDeleteTaskAction(taskId: string): Promise<TaskMutation
     return { ok: false, error: 'You must be signed in.' };
   }
 
-  const { error } = await supabase.from('tasks').delete().eq('id', id);
+  const { error } = await supabase
+    .from('tasks')
+    .delete()
+    .eq('id', id)
+    .not('archived_at', 'is', null);
 
   if (error) {
     return { ok: false, error: formatUserFacingError(error) };
