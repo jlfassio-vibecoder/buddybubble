@@ -1038,8 +1038,9 @@ export function TaskModal({
     </button>
   );
 
+  /* Task modal must sit above MobileTabBar (z-90) and drawer sheets (z-110–120) or actions are obscured on phones. */
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
       <button
         type="button"
         className="absolute inset-0 bg-black/40"
@@ -1109,7 +1110,7 @@ export function TaskModal({
           {tabBtn('activity', 'Activity')}
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
           {error && (
             <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {error}

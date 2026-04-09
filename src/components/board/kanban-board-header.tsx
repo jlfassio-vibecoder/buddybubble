@@ -1,6 +1,6 @@
 'use client';
 
-import { Circle, Maximize2, Shrink, Square } from 'lucide-react';
+import { Archive, Circle, Maximize2, Shrink, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { KanbanCardDensity } from '@/components/board/kanban-density';
@@ -46,6 +46,7 @@ export type KanbanBoardHeaderProps = {
   canWrite: boolean;
   hasBubble: boolean;
   onOpenFullEditor?: () => void;
+  onOpenArchive?: () => void;
   cardDensity: KanbanCardDensity;
   onCardDensityChange: (density: KanbanCardDensity) => void;
   priorityFilter: PriorityFilter;
@@ -62,6 +63,7 @@ export function KanbanBoardHeader({
   canWrite,
   hasBubble,
   onOpenFullEditor,
+  onOpenArchive,
   cardDensity,
   onCardDensityChange,
   priorityFilter,
@@ -190,17 +192,32 @@ export function KanbanBoardHeader({
             );
           })}
         </div>
-        {canWrite && hasBubble && onOpenFullEditor && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="w-full shrink-0 sm:w-auto"
-            onClick={onOpenFullEditor}
-          >
-            Full editor
-          </Button>
-        )}
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+          {onOpenArchive && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full shrink-0 sm:w-auto"
+              onClick={onOpenArchive}
+              aria-label="View Archive"
+            >
+              <Archive className="mr-2 size-4" aria-hidden />
+              Archive
+            </Button>
+          )}
+          {canWrite && hasBubble && onOpenFullEditor && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full shrink-0 sm:w-auto"
+              onClick={onOpenFullEditor}
+            >
+              Full editor
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );
