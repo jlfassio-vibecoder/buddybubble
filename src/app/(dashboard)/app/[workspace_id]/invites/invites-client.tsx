@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { InviteQrDisplay } from './invite-qr-display';
 import { PendingJoinRequestsSection } from './pending-join-requests-section';
+import { MembersSection } from './members-section';
 import {
   createEmailInviteAction,
   createInviteAction,
@@ -15,6 +16,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { formatUserFacingError } from '@/lib/format-error';
 import type { WaitingRoomRow } from '@/lib/waiting-room-rows';
+import type { MemberRole } from '@/types/database';
 
 export type InviteListItem = {
   id: string;
@@ -36,11 +38,19 @@ const EXPIRY_OPTIONS = [
   { label: '7 days', hours: 24 * 7 },
 ] as const;
 
+const INVITE_ROLE_OPTIONS: Array<{ value: Exclude<MemberRole, 'owner'>; label: string; desc: string }> = [
+  { value: 'admin', label: 'Admin', desc: 'Manage workspace, members & bubbles' },
+  { value: 'member', label: 'Member', desc: 'Write access to all public bubbles' },
+  { value: 'guest', label: 'Guest', desc: 'Explicit-access only (assigned bubbles/cards)' },
+];
+
 type Props = {
   workspaceId: string;
   workspaceName: string;
   initialInvites: InviteListItem[];
   initialWaitingRows: WaitingRoomRow[];
+  currentUserId: string;
+  callerRole: 'owner' | 'admin';
 };
 
 export function InvitesClient({
@@ -48,6 +58,8 @@ export function InvitesClient({
   workspaceName,
   initialInvites,
   initialWaitingRows,
+  currentUserId,
+  callerRole,
 }: Props) {
   const router = useRouter();
   const pathname = usePathname();
@@ -56,8 +68,8 @@ export function InvitesClient({
 
   const [invites, setInvites] = useState(initialInvites);
   const [waitingRows, setWaitingRows] = useState(initialWaitingRows);
-  const [segment, setSegment] = useState<'pending' | 'invites'>(() =>
-    tabParam === 'pending' ? 'pending' : 'invites',
+  const [segment, setSegment] = useState<'pending' | 'invites' | 'members'>(() =>
+    tabParam === 'pending' ? 'pending' : tabParam === 'members' ? 'members' : 'invites',
   );
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
@@ -67,6 +79,7 @@ export function InvitesClient({
   const [linkMaxUses, setLinkMaxUses] = useState('1');
   const [linkExpiryHours, setLinkExpiryHours] = useState(24);
   const [linkMode, setLinkMode] = useState<'link' | 'qr'>('link');
+  const [linkRole, setLinkRole] = useState<Exclude<MemberRole, 'owner'>>('member');
   const [lastCreatedUrl, setLastCreatedUrl] = useState<string | null>(null);
   const [lastCreatedMode, setLastCreatedMode] = useState<'link' | 'qr' | null>(null);
 
@@ -74,11 +87,13 @@ export function InvitesClient({
   const [emailLabel, setEmailLabel] = useState('');
   const [emailMaxUses, setEmailMaxUses] = useState('1');
   const [emailExpiryHours, setEmailExpiryHours] = useState(24 * 7);
+  const [emailRole, setEmailRole] = useState<Exclude<MemberRole, 'owner'>>('member');
 
   const [smsPhone, setSmsPhone] = useState('');
   const [smsLabel, setSmsLabel] = useState('');
   const [smsMaxUses, setSmsMaxUses] = useState('1');
   const [smsExpiryHours, setSmsExpiryHours] = useState(24 * 7);
+  const [smsRole, setSmsRole] = useState<Exclude<MemberRole, 'owner'>>('member');
 
   useEffect(() => {
     setInvites(initialInvites);
@@ -91,6 +106,7 @@ export function InvitesClient({
   useEffect(() => {
     if (tabParam === 'pending') setSegment('pending');
     if (tabParam === 'invites') setSegment('invites');
+    if (tabParam === 'members') setSegment('members');
   }, [tabParam]);
 
   useEffect(() => {
@@ -112,6 +128,11 @@ export function InvitesClient({
     router.replace(`${pathname}?tab=invites`, { scroll: false });
   };
 
+  const goMembers = () => {
+    setSegment('members');
+    router.replace(`${pathname}?tab=members`, { scroll: false });
+  };
+
   const now = Date.now();
 
   const submitLinkOrQr = () => {
@@ -125,6 +146,7 @@ export function InvitesClient({
         maxUses,
         expiresInHours: linkExpiryHours,
         label: linkLabel,
+        role: linkRole,
       });
       if ('error' in r && r.error) {
         setError(r.error);
@@ -150,6 +172,7 @@ export function InvitesClient({
         expiresInHours: emailExpiryHours,
         label: emailLabel,
         workspaceName,
+        role: emailRole,
       });
       if ('error' in r && r.error) {
         setError(r.error);
@@ -172,6 +195,7 @@ export function InvitesClient({
         expiresInHours: smsExpiryHours,
         label: smsLabel,
         workspaceName,
+        role: smsRole,
       });
       if ('error' in r && r.error) {
         setError(r.error);
@@ -227,8 +251,21 @@ export function InvitesClient({
 
       <div className="min-h-0 flex-1 overflow-auto p-4">
         <div className="mx-auto max-w-3xl space-y-8 pb-12">
-          {showPendingTab ? (
-            <div className="flex flex-wrap gap-1 rounded-lg border border-border bg-muted/30 p-1">
+          {/* Tab bar — always visible */}
+          <div className="flex flex-wrap gap-1 rounded-lg border border-border bg-muted/30 p-1">
+            <button
+              type="button"
+              onClick={goMembers}
+              className={cn(
+                'rounded-md px-3 py-1.5 text-xs font-semibold transition-colors',
+                segment === 'members'
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              Members
+            </button>
+            {showPendingTab ? (
               <button
                 type="button"
                 onClick={goPending}
@@ -241,19 +278,35 @@ export function InvitesClient({
               >
                 Pending approvals ({pendingCount})
               </button>
-              <button
-                type="button"
-                onClick={goInvites}
-                className={cn(
-                  'rounded-md px-3 py-1.5 text-xs font-semibold transition-colors',
-                  segment === 'invites'
-                    ? 'bg-card text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                Create invites
-              </button>
-            </div>
+            ) : null}
+            <button
+              type="button"
+              onClick={goInvites}
+              className={cn(
+                'rounded-md px-3 py-1.5 text-xs font-semibold transition-colors',
+                segment === 'invites'
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              Create invites
+            </button>
+          </div>
+
+          {segment === 'members' ? (
+            <section className="rounded-xl border border-border bg-card p-6 shadow-sm">
+              <h2 className="text-base font-semibold">Members</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Manage roles and access for everyone in {workspaceName}.
+              </p>
+              <div className="mt-4">
+                <MembersSection
+                  workspaceId={workspaceId}
+                  currentUserId={currentUserId}
+                  callerRole={callerRole}
+                />
+              </div>
+            </section>
           ) : null}
 
           {showPendingTab && segment === 'pending' ? (
@@ -330,7 +383,21 @@ export function InvitesClient({
                       className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     />
                   </div>
-                  <div className="sm:col-span-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium">Invite as</label>
+                    <select
+                      value={linkRole}
+                      onChange={(e) => setLinkRole(e.target.value as Exclude<MemberRole, 'owner'>)}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      {INVITE_ROLE_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value} title={o.desc}>
+                          {o.label} — {o.desc}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
                     <label className="mb-1 block text-sm font-medium">Expires after</label>
                     <select
                       value={linkExpiryHours}
@@ -407,7 +474,21 @@ export function InvitesClient({
                       className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     />
                   </div>
-                  <div className="sm:col-span-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium">Invite as</label>
+                    <select
+                      value={emailRole}
+                      onChange={(e) => setEmailRole(e.target.value as Exclude<MemberRole, 'owner'>)}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      {INVITE_ROLE_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label} — {o.desc}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
                     <label className="mb-1 block text-sm font-medium">Expires after</label>
                     <select
                       value={emailExpiryHours}
@@ -467,7 +548,21 @@ export function InvitesClient({
                       className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     />
                   </div>
-                  <div className="sm:col-span-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium">Invite as</label>
+                    <select
+                      value={smsRole}
+                      onChange={(e) => setSmsRole(e.target.value as Exclude<MemberRole, 'owner'>)}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      {INVITE_ROLE_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label} — {o.desc}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
                     <label className="mb-1 block text-sm font-medium">Expires after</label>
                     <select
                       value={smsExpiryHours}

@@ -30,7 +30,7 @@ export default async function InvitesPage({
   if (!role) {
     redirect('/app');
   }
-  if (role !== 'admin') {
+  if (role !== 'admin' && role !== 'owner') {
     redirect(`/app/${workspace_id}`);
   }
 
@@ -124,6 +124,8 @@ export default async function InvitesPage({
         workspaceName={workspaceName}
         initialInvites={initialInvites}
         initialWaitingRows={initialWaitingRows}
+        currentUserId={user.id}
+        callerRole={role as 'owner' | 'admin'}
       />
     </Suspense>
   );

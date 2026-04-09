@@ -7,7 +7,8 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 
 /** Template for a new BuddyBubble (`workspaces.category_type`). */
 export type WorkspaceCategory = 'business' | 'kids' | 'class' | 'community';
-export type MemberRole = 'admin' | 'member' | 'guest';
+export type MemberRole = 'owner' | 'admin' | 'member' | 'guest';
+export type BubbleMemberRole = 'editor' | 'viewer';
 export type InviteType = 'qr' | 'link' | 'email' | 'sms';
 export type InvitationJoinRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
 /** Built-in Kanban slugs; `tasks.status` may also use workspace-specific slugs from `board_columns`. */
@@ -115,6 +116,8 @@ export interface Database {
           expires_at: string;
           revoked_at: string | null;
           created_at: string;
+          /** Role granted to the invitee on join. Cannot be 'owner'. */
+          role: Exclude<MemberRole, 'owner'>;
         };
         Insert: {
           id?: string;
@@ -129,6 +132,7 @@ export interface Database {
           expires_at: string;
           revoked_at?: string | null;
           created_at?: string;
+          role?: Exclude<MemberRole, 'owner'>;
         };
         Update: Partial<Database['public']['Tables']['invitations']['Insert']>;
       };
@@ -159,6 +163,8 @@ export interface Database {
           workspace_id: string;
           name: string;
           icon: string | null;
+          /** When true, only owners/admins and explicit bubble_members can see this bubble. */
+          is_private: boolean;
           created_at: string;
         };
         Insert: {
@@ -166,9 +172,28 @@ export interface Database {
           workspace_id: string;
           name: string;
           icon?: string | null;
+          is_private?: boolean;
           created_at?: string;
         };
         Update: Partial<Database['public']['Tables']['bubbles']['Insert']>;
+      };
+      bubble_members: {
+        Row: {
+          id: string;
+          bubble_id: string;
+          user_id: string;
+          /** editor: can create/edit tasks + message. viewer: read tasks + message. */
+          role: BubbleMemberRole;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          bubble_id: string;
+          user_id: string;
+          role?: BubbleMemberRole;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['bubble_members']['Insert']>;
       };
       board_columns: {
         Row: {
@@ -307,6 +332,7 @@ export interface Database {
 }
 
 export type BubbleRow = Database['public']['Tables']['bubbles']['Row'];
+export type BubbleMemberRow = Database['public']['Tables']['bubble_members']['Row'];
 export type MessageRow = Database['public']['Tables']['messages']['Row'];
 export type TaskRow = Database['public']['Tables']['tasks']['Row'];
 export type StorefrontSandboxMessageRow =
