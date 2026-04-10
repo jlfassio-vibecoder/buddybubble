@@ -348,6 +348,10 @@ export async function revokeBubbleAccessAction(input: {
   const check = await requireBubbleAdmin(supabase, input.bubbleId, user.id);
   if (!check.ok) return { error: check.error };
 
+  if (input.workspaceId !== check.workspaceId) {
+    return { error: 'Bubble does not belong to this workspace.' };
+  }
+
   const { error } = await supabase
     .from('bubble_members')
     .delete()

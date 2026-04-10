@@ -35,6 +35,14 @@ const ROLE_DESCRIPTIONS: Record<MemberRole, string> = {
   guest: 'Explicit-access only (assigned bubbles/cards)',
 };
 
+/** Stable order for role `<select>` options when unioning assignable roles with the row’s current role. */
+const ROLE_SELECT_ORDER: MemberRole[] = ['owner', 'admin', 'member', 'guest'];
+
+function roleSelectOptions(assignable: MemberRole[], current: MemberRole): MemberRole[] {
+  const combined = assignable.includes(current) ? assignable : [...assignable, current];
+  return ROLE_SELECT_ORDER.filter((r) => combined.includes(r));
+}
+
 type Props = {
   workspaceId: string;
   currentUserId: string;
@@ -55,16 +63,11 @@ function effectiveAccessLabel(
 
 function bubbleAccessSummary(
   workspaceRole: MemberRole,
-  userId: string,
   bubbles: WorkspaceBubbleSummary[],
-  memberships: WorkspaceBubbleMembership[],
+  membershipMap: Map<string, BubbleMemberRole>,
 ): string {
   if (canManageWorkspace(workspaceRole)) return 'All bubbles';
   if (bubbles.length === 0) return '—';
-
-  const membershipMap = new Map(
-    memberships.filter((m) => m.user_id === userId).map((m) => [m.bubble_id, m.role]),
-  );
 
   let writeCount = 0;
   let viewCount = 0;
@@ -201,6 +204,19 @@ export function MembersSection({ workspaceId, currentUserId, callerRole }: Props
   const assignableRoles: MemberRole[] =
     callerRole === 'owner' ? ['owner', 'admin', 'member', 'guest'] : ['admin', 'member', 'guest'];
 
+  const bubbleMembershipByUser = useMemo(() => {
+    const outer = new Map<string, Map<string, BubbleMemberRole>>();
+    for (const row of memberships) {
+      let inner = outer.get(row.user_id);
+      if (!inner) {
+        inner = new Map();
+        outer.set(row.user_id, inner);
+      }
+      inner.set(row.bubble_id, row.role);
+    }
+    return outer;
+  }, [memberships]);
+
   if (loading) {
     return <p className="text-sm text-muted-foreground">Loading members…</p>;
   }
@@ -244,8 +260,11 @@ export function MembersSection({ workspaceId, currentUserId, callerRole }: Props
               const isLastOwner =
                 m.role === 'owner' && members.filter((x) => x.role === 'owner').length === 1;
               const isExpanded = expandedUserId === m.user_id;
-              const summary = bubbleAccessSummary(m.role, m.user_id, bubbles, memberships);
+              const userBubbleGrants =
+                bubbleMembershipByUser.get(m.user_id) ?? new Map<string, BubbleMemberRole>();
+              const summary = bubbleAccessSummary(m.role, bubbles, userBubbleGrants);
               const isTargetAdmin = canManageWorkspace(m.role);
+              const rowRoleOptions = roleSelectOptions(assignableRoles, m.role);
 
               return (
                 <Fragment key={m.user_id}>
@@ -327,7 +346,7 @@ export function MembersSection({ workspaceId, currentUserId, callerRole }: Props
                               : ROLE_DESCRIPTIONS[m.role]
                           }
                         >
-                          {assignableRoles.map((r) => (
+                          {rowRoleOptions.map((r) => (
                             <option key={r} value={r}>
                               {ROLE_LABELS[r]}
                             </option>
@@ -387,11 +406,7 @@ export function MembersSection({ workspaceId, currentUserId, callerRole }: Props
                               </thead>
                               <tbody>
                                 {bubbles.map((bubble) => {
-                                  const explicitRole =
-                                    memberships.find(
-                                      (mb) =>
-                                        mb.user_id === m.user_id && mb.bubble_id === bubble.id,
-                                    )?.role ?? null;
+                                  const explicitRole = userBubbleGrants.get(bubble.id) ?? null;
                                   const effective = effectiveAccessLabel(
                                     m.role,
                                     explicitRole,
