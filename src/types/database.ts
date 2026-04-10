@@ -41,6 +41,10 @@ export interface Database {
           avatar_url: string | null;
           /** IANA timezone for the user (display and seeding new workspaces). */
           timezone?: string | null;
+          /** Optional self-description shown to workspace peers. */
+          bio: string | null;
+          /** Family/children names for Kids and Community workspace caregivers. Shape: string[]. */
+          children_names: string[];
           created_at: string;
         };
         Insert: {
@@ -49,6 +53,8 @@ export interface Database {
           full_name?: string | null;
           avatar_url?: string | null;
           timezone?: string;
+          bio?: string | null;
+          children_names?: string[];
           created_at?: string;
         };
         Update: Partial<Database['public']['Tables']['users']['Insert']>;

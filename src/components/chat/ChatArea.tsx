@@ -61,6 +61,25 @@ import type { TaskModalTab } from '@/components/modals/TaskModal';
 
 type UserRow = Database['public']['Tables']['users']['Row'];
 
+/** Subset of `users` loaded in chat queries/joins — avoids requiring `bio` / `children_names` on partial selects. */
+type ChatUserSnapshot = Pick<UserRow, 'id' | 'full_name' | 'avatar_url' | 'email' | 'created_at'>;
+
+function toChatUserSnapshot(u: {
+  id: string;
+  full_name: string | null;
+  avatar_url: string | null;
+  email: string | null;
+  created_at: string;
+}): ChatUserSnapshot {
+  return {
+    id: u.id,
+    full_name: u.full_name,
+    avatar_url: u.avatar_url,
+    email: u.email,
+    created_at: u.created_at,
+  };
+}
+
 /** Chat row shape used by ChatArea markup */
 export type ChatMessage = {
   id: string;
@@ -196,7 +215,7 @@ function lastTaskMentionSlashIndex(s: string): number {
 
 function rowToChatMessage(
   row: MessageRow,
-  user: UserRow | undefined,
+  user: ChatUserSnapshot | undefined,
   bubbleName: string,
   replyCounts: Map<string, number>,
 ): ChatMessage {
@@ -271,7 +290,7 @@ export function ChatArea({
   } | null>(null);
 
   const [dbMessages, setDbMessages] = useState<MessageRow[]>([]);
-  const [userById, setUserById] = useState<Record<string, UserRow>>({});
+  const [userById, setUserById] = useState<Record<string, ChatUserSnapshot>>({});
   const [teamMembers, setTeamMembers] = useState<UserProfile[]>([]);
   const [allTasks, setAllTasks] = useState<TaskPickerRow[]>([]);
 
@@ -335,10 +354,8 @@ export function ChatArea({
   const allMessages = useMemo(() => {
     return dbMessages.map((row) => {
       const base = userById[row.user_id];
-      const user: UserRow | undefined =
-        myProfile && row.user_id === myProfile.id
-          ? ({ ...base, ...myProfile, id: myProfile.id } as UserRow)
-          : base;
+      const user: ChatUserSnapshot | undefined =
+        myProfile && row.user_id === myProfile.id ? toChatUserSnapshot(myProfile) : base;
       return rowToChatMessage(row, user, bubbleNameById[row.bubble_id] ?? bubbleName, replyCounts);
     });
   }, [dbMessages, userById, myProfile, bubbleNameById, bubbleName, replyCounts]);
@@ -399,7 +416,7 @@ export function ChatArea({
       setUserById((prev) => {
         const next = { ...prev };
         for (const u of users ?? []) {
-          next[u.id] = u as UserRow;
+          next[u.id] = toChatUserSnapshot(u);
         }
         return next;
       });
@@ -439,7 +456,7 @@ export function ChatArea({
           .eq('id', row.user_id)
           .maybeSingle();
         if (u) {
-          setUserById((prev) => ({ ...prev, [u.id]: u as UserRow }));
+          setUserById((prev) => ({ ...prev, [u.id]: toChatUserSnapshot(u) }));
         }
       })();
     };
@@ -539,9 +556,9 @@ export function ChatArea({
         .eq('workspace_id', workspaceId);
       if (cancelled) return;
       const members: UserProfile[] = [];
-      const fromRows: Record<string, UserRow> = {};
+      const fromRows: Record<string, ChatUserSnapshot> = {};
       for (const row of data ?? []) {
-        const u = (row as { users?: UserRow | UserRow[] | null }).users;
+        const u = (row as { users?: ChatUserSnapshot | ChatUserSnapshot[] | null }).users;
         const usr = Array.isArray(u) ? u[0] : u;
         if (!usr?.id) continue;
         members.push({
@@ -550,7 +567,7 @@ export function ChatArea({
           email: usr.email ?? '',
           avatar: usr.avatar_url ?? undefined,
         });
-        fromRows[usr.id] = usr;
+        fromRows[usr.id] = toChatUserSnapshot(usr);
       }
       setTeamMembers(members);
       setUserById((prev) => ({ ...prev, ...fromRows }));
@@ -913,7 +930,7 @@ export function ChatArea({
           .eq('id', user.id)
           .maybeSingle();
         if (self) {
-          setUserById((prev) => ({ ...prev, [self.id]: self as UserRow }));
+          setUserById((prev) => ({ ...prev, [self.id]: toChatUserSnapshot(self) }));
         }
         return true;
       } finally {

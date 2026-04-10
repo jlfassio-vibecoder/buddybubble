@@ -2,11 +2,27 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, X, Camera, Save, User, Mail, Globe, LogOut, Shield } from 'lucide-react';
+import {
+  Check,
+  X,
+  Camera,
+  Save,
+  User,
+  Mail,
+  Globe,
+  LogOut,
+  Shield,
+  Plus,
+  Trash2,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { createClient } from '@utils/supabase/client';
 import { useUserProfileStore, type UserProfileRow } from '@/store/userProfileStore';
-import { AVATARS_BUCKET, buildAvatarObjectPath } from '@/lib/avatar-storage';
+import {
+  AVATARS_BUCKET,
+  buildAvatarObjectPath,
+  extractAvatarObjectPath,
+} from '@/lib/avatar-storage';
 import { formatUserFacingError } from '@/lib/format-error';
 import { ThemeToggle } from '@/components/theme/theme-toggle';
 import { CategoryThemeSelect } from '@/components/theme/category-theme-select';
@@ -15,6 +31,7 @@ import { COMMON_CALENDAR_TIMEZONES } from '@/lib/calendar-timezones';
 import { resolvePermissions } from '@/lib/permissions';
 import { ALL_BUBBLES_LABEL } from '@/lib/all-bubbles';
 import type { MemberRole, BubbleMemberRole } from '@/types/database';
+import { setPasswordAction } from '@/app/(dashboard)/profile-actions';
 
 /** When set (e.g. from workspace dashboard), shows role and effective capabilities for the current channel. */
 export type ProfilePermissionsContext = {
@@ -29,6 +46,8 @@ export type ProfileModalProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   permissionsContext?: ProfilePermissionsContext;
+  /** Show the Family members section (Kids / Community workspace). */
+  showFamilyNames?: boolean;
 };
 
 function workspaceRoleLabel(role: MemberRole): string {
@@ -71,14 +90,24 @@ function PermissionRow({ label, enabled }: { label: string; enabled: boolean }) 
   );
 }
 
-export function ProfileModal({ open, onOpenChange, permissionsContext }: ProfileModalProps) {
+export function ProfileModal({
+  open,
+  onOpenChange,
+  permissionsContext,
+  showFamilyNames = false,
+}: ProfileModalProps) {
   const router = useRouter();
   const profile = useUserProfileStore((s) => s.profile);
   const setProfile = useUserProfileStore((s) => s.setProfile);
   const loadProfile = useUserProfileStore((s) => s.loadProfile);
 
   const [name, setName] = useState('');
+  const [bio, setBio] = useState('');
+  const [childrenNames, setChildrenNames] = useState<string[]>([]);
+  const [newChildName, setNewChildName] = useState('');
   const [timezone, setTimezone] = useState('UTC');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [avatarPreview, setAvatarPreview] = useState('');
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
@@ -90,6 +119,8 @@ export function ProfileModal({ open, onOpenChange, permissionsContext }: Profile
     if (!open) return;
     setError(null);
     setSigningOut(false);
+    setPassword('');
+    setConfirmPassword('');
     void loadProfile();
   }, [open, loadProfile]);
 
@@ -97,10 +128,24 @@ export function ProfileModal({ open, onOpenChange, permissionsContext }: Profile
     if (!open) return;
     if (!profile) return;
     setName(profile.full_name?.trim() || '');
+    setBio(profile.bio?.trim() ?? '');
+    setChildrenNames(profile.children_names ?? []);
+    setNewChildName('');
     setTimezone(profile.timezone?.trim() || 'UTC');
     setAvatarPreview(profile.avatar_url ?? '');
     setPendingFile(null);
   }, [open, profile]);
+
+  const addChild = () => {
+    const n = newChildName.trim();
+    if (!n || n.length > 64 || childrenNames.length >= 8) return;
+    setChildrenNames((prev) => [...prev, n]);
+    setNewChildName('');
+  };
+
+  const removeChild = (idx: number) => {
+    setChildrenNames((prev) => prev.filter((_, i) => i !== idx));
+  };
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -116,6 +161,16 @@ export function ProfileModal({ open, onOpenChange, permissionsContext }: Profile
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const pwTrimmed = password.trim();
+    const confirmTrimmed = confirmPassword.trim();
+    if (password.trim() !== '' && pwTrimmed.length < 8) {
+      setError('Password must be at least 8 characters.');
+      return;
+    }
+    if (password.trim() !== '' && pwTrimmed !== confirmTrimmed) {
+      setError('Passwords do not match.');
+      return;
+    }
     setError(null);
     const supabase = createClient();
     const {
@@ -150,6 +205,8 @@ export function ProfileModal({ open, onOpenChange, permissionsContext }: Profile
       const baseUpdate = {
         full_name: name.trim(),
         avatar_url: nextAvatarUrl,
+        bio: bio.trim() || null,
+        children_names: childrenNames.map((n) => n.trim()).filter(Boolean),
       };
       let { data: updated, error: updErr } = await supabase
         .from('users')
@@ -174,6 +231,13 @@ export function ProfileModal({ open, onOpenChange, permissionsContext }: Profile
           return;
         }
         setProfile(retry.data as UserProfileRow);
+        if (pendingFile && profile?.avatar_url && nextAvatarUrl) {
+          const oldPath = extractAvatarObjectPath(profile.avatar_url);
+          const newPath = extractAvatarObjectPath(nextAvatarUrl);
+          if (oldPath && newPath && oldPath !== newPath) {
+            void supabase.storage.from(AVATARS_BUCKET).remove([oldPath]);
+          }
+        }
         setError(
           'Timezone is not saved yet: apply the users timezone migration on Supabase (users.timezone), then try again.',
         );
@@ -188,6 +252,25 @@ export function ProfileModal({ open, onOpenChange, permissionsContext }: Profile
       }
 
       setProfile(updated as UserProfileRow);
+      if (pendingFile && profile?.avatar_url && nextAvatarUrl) {
+        const oldPath = extractAvatarObjectPath(profile.avatar_url);
+        const newPath = extractAvatarObjectPath(nextAvatarUrl);
+        if (oldPath && newPath && oldPath !== newPath) {
+          void supabase.storage.from(AVATARS_BUCKET).remove([oldPath]);
+        }
+      }
+
+      if (pwTrimmed) {
+        const pwResult = await setPasswordAction(pwTrimmed);
+        if ('error' in pwResult) {
+          setError(
+            `Your profile was saved, but your password could not be updated: ${pwResult.error}`,
+          );
+          setSaving(false);
+          return;
+        }
+      }
+
       setSaving(false);
       onOpenChange(false);
     } catch (err) {
@@ -319,11 +402,32 @@ export function ProfileModal({ open, onOpenChange, permissionsContext }: Profile
                       required
                       value={name}
                       onChange={(e) => setName(e.target.value)}
+                      maxLength={120}
                       className="w-full rounded-lg border border-input bg-background py-2 pl-10 pr-4 text-foreground transition-all placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
                       placeholder="John Doe"
                       disabled={saving}
                     />
                   </div>
+                </div>
+
+                {/* Bio */}
+                <div>
+                  <label className="mb-1.5 block text-sm font-semibold text-foreground">
+                    Bio{' '}
+                    <span className="text-xs font-normal text-muted-foreground">(optional)</span>
+                  </label>
+                  <textarea
+                    value={bio}
+                    onChange={(e) => setBio(e.target.value)}
+                    rows={3}
+                    maxLength={500}
+                    disabled={saving}
+                    className="w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-50"
+                    placeholder="A short intro shown to your workspace…"
+                  />
+                  <p className="mt-0.5 text-right text-xs text-muted-foreground">
+                    {bio.length}/500
+                  </p>
                 </div>
 
                 <div>
@@ -448,6 +552,99 @@ export function ProfileModal({ open, onOpenChange, permissionsContext }: Profile
                     Used for your local date and time display; new workspaces may use this as their
                     default calendar timezone.
                   </p>
+                </div>
+
+                {/* Family members — Kids / Community workspaces */}
+                {showFamilyNames ? (
+                  <div>
+                    <label className="mb-1.5 block text-sm font-semibold text-foreground">
+                      Family members{' '}
+                      <span className="text-xs font-normal text-muted-foreground">(optional)</span>
+                    </label>
+                    <p className="mb-2 text-xs text-muted-foreground">
+                      Children or family member names visible to workspace members. Max 8 names.
+                    </p>
+                    <div className="space-y-2">
+                      {childrenNames.map((n, i) => (
+                        <div key={i} className="flex items-center gap-2">
+                          <span className="flex-1 rounded-md border border-input bg-muted/40 px-3 py-1.5 text-sm">
+                            {n}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeChild(i)}
+                            disabled={saving}
+                            className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                            aria-label={`Remove ${n}`}
+                          >
+                            <Trash2 className="size-4" />
+                          </button>
+                        </div>
+                      ))}
+                      {childrenNames.length < 8 ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={newChildName}
+                            onChange={(e) => setNewChildName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                addChild();
+                              }
+                            }}
+                            maxLength={64}
+                            disabled={saving}
+                            className="flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-50"
+                            placeholder="Add a name…"
+                          />
+                          <button
+                            type="button"
+                            onClick={addChild}
+                            disabled={!newChildName.trim() || saving}
+                            className="rounded-md bg-primary p-1.5 text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                            aria-label="Add family member"
+                          >
+                            <Plus className="size-4" />
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* Password */}
+                <div>
+                  <label className="mb-1.5 block text-sm font-semibold text-foreground">
+                    Password{' '}
+                    <span className="text-xs font-normal text-muted-foreground">(optional)</span>
+                  </label>
+                  <p className="mb-2 text-xs text-muted-foreground">
+                    Set or update your password for this account. Leave blank to keep your current
+                    sign-in method.
+                  </p>
+                  <div className="space-y-2">
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      disabled={saving}
+                      autoComplete="new-password"
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-50"
+                      placeholder="New password (min 8 characters)"
+                    />
+                    {password ? (
+                      <input
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        disabled={saving}
+                        autoComplete="new-password"
+                        className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-50"
+                        placeholder="Confirm password"
+                      />
+                    ) : null}
+                  </div>
                 </div>
 
                 <div>

@@ -23,6 +23,7 @@ import { WorkspaceSettingsModal } from '@/components/modals/WorkspaceSettingsMod
 import { PeopleInvitesModal } from '@/components/modals/PeopleInvitesModal';
 import { CreateWorkspaceModal } from '@/components/modals/CreateWorkspaceModal';
 import { ProfileModal, type ProfilePermissionsContext } from '@/components/modals/ProfileModal';
+import { ProfileCompletionModal } from '@/components/modals/ProfileCompletionModal';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { fetchPendingJoinRequestCountAndPreview } from '@/lib/workspace-join-requests';
@@ -101,6 +102,7 @@ export function DashboardShell({
   const [taskModalInitialStatus, setTaskModalInitialStatus] = useState<string | null>(null);
   const [taskModalInitialTab, setTaskModalInitialTab] = useState<TaskModalTab | null>(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [profileComplete, setProfileComplete] = useState(false);
   const [peopleInvitesOpen, setPeopleInvitesOpen] = useState(false);
   const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false);
   const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false);
@@ -157,6 +159,8 @@ export function DashboardShell({
 
   const workspaceCategoryForUi =
     activeWorkspace?.id === workspaceId ? (activeWorkspace.category_type ?? null) : null;
+  const showFamilyNames =
+    workspaceCategoryForUi === 'kids' || workspaceCategoryForUi === 'community';
   const effectiveKanbanCategory =
     workspaceCategoryForUi != null
       ? resolveEffectiveCategory(categoryOverride, workspaceCategoryForUi)
@@ -348,6 +352,11 @@ export function DashboardShell({
     void syncActiveFromRoute(workspaceId);
     void loadProfile();
   }, [workspaceId, loadUserWorkspaces, syncActiveFromRoute, loadProfile]);
+
+  useEffect(() => {
+    if (profile === null) return;
+    setProfileComplete(!!profile.full_name?.trim());
+  }, [profile]);
 
   useEffect(() => {
     setBoardStripExpandNonce(0);
@@ -827,7 +836,15 @@ export function DashboardShell({
           open={profileModalOpen}
           onOpenChange={setProfileModalOpen}
           permissionsContext={profilePermissionsContext}
+          showFamilyNames={showFamilyNames}
         />
+        {!profileComplete && profile !== null ? (
+          <ProfileCompletionModal
+            profile={profile}
+            showFamilyNames={showFamilyNames}
+            onComplete={() => void loadProfile()}
+          />
+        ) : null}
         <PeopleInvitesModal
           open={peopleInvitesOpen}
           onOpenChange={setPeopleInvitesOpen}
