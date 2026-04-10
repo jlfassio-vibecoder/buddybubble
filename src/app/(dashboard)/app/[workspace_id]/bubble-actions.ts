@@ -4,9 +4,39 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@utils/supabase/server';
 import type { BubbleMemberRole } from '@/types/database';
 
+export type WorkspaceBubbleSummary = {
+  id: string;
+  name: string;
+  is_private: boolean;
+};
+
+export type WorkspaceBubbleMembership = {
+  bubble_id: string;
+  user_id: string;
+  role: BubbleMemberRole;
+};
+
 export type ActionResult<T extends Record<string, unknown> = Record<never, never>> =
   | { error: string }
   | ({ ok: true } & T);
+
+async function requireWorkspaceAdmin(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  workspaceId: string,
+  userId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { data } = await supabase
+    .from('workspace_members')
+    .select('role')
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', userId)
+    .maybeSingle();
+  const role = (data as { role?: string } | null)?.role;
+  if (role !== 'owner' && role !== 'admin') {
+    return { ok: false, error: 'Only workspace admins and owners can manage access.' };
+  }
+  return { ok: true };
+}
 
 async function requireBubbleAdmin(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -129,6 +159,10 @@ export async function addBubbleMemberAction(input: {
 
   const check = await requireBubbleAdmin(supabase, input.bubbleId, user.id);
   if (!check.ok) return { error: check.error };
+
+  if (input.workspaceId !== check.workspaceId) {
+    return { error: 'Bubble does not belong to this workspace.' };
+  }
 
   // Verify target is a workspace member (use verified workspaceId from bubble lookup)
   const { data: wsMember } = await supabase
@@ -258,4 +292,78 @@ export async function listWorkspaceMembersForBubbleAction(
     }));
 
   return { ok: true, members };
+}
+
+// ---------------------------------------------------------------------------
+// Workspace-wide bubble access — for the permissions dashboard
+// ---------------------------------------------------------------------------
+
+export async function listWorkspaceBubbleAccessAction(
+  workspaceId: string,
+): Promise<
+  ActionResult<{ bubbles: WorkspaceBubbleSummary[]; memberships: WorkspaceBubbleMembership[] }>
+> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: 'Not signed in.' };
+
+  const auth = await requireWorkspaceAdmin(supabase, workspaceId, user.id);
+  if (!auth.ok) return { error: auth.error };
+
+  const { data: bubbleRows, error: bubbleError } = await supabase
+    .from('bubbles')
+    .select('id, name, is_private')
+    .eq('workspace_id', workspaceId)
+    .order('name', { ascending: true });
+
+  if (bubbleError) return { error: bubbleError.message };
+
+  const bubbles = (bubbleRows ?? []) as WorkspaceBubbleSummary[];
+
+  if (bubbles.length === 0) return { ok: true, bubbles: [], memberships: [] };
+
+  const bubbleIds = bubbles.map((b) => b.id);
+
+  const { data: membershipRows, error: membershipError } = await supabase
+    .from('bubble_members')
+    .select('bubble_id, user_id, role')
+    .in('bubble_id', bubbleIds);
+
+  if (membershipError) return { error: membershipError.message };
+
+  const memberships = (membershipRows ?? []) as WorkspaceBubbleMembership[];
+
+  return { ok: true, bubbles, memberships };
+}
+
+export async function revokeBubbleAccessAction(input: {
+  workspaceId: string;
+  bubbleId: string;
+  userId: string;
+}): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: 'Not signed in.' };
+
+  const check = await requireBubbleAdmin(supabase, input.bubbleId, user.id);
+  if (!check.ok) return { error: check.error };
+
+  if (input.workspaceId !== check.workspaceId) {
+    return { error: 'Bubble does not belong to this workspace.' };
+  }
+
+  const { error } = await supabase
+    .from('bubble_members')
+    .delete()
+    .eq('bubble_id', input.bubbleId)
+    .eq('user_id', input.userId);
+
+  if (error) return { error: error.message };
+
+  revalidatePath(`/app/${check.workspaceId}`);
+  return { ok: true };
 }

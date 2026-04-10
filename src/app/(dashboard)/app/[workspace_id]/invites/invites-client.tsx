@@ -298,7 +298,7 @@ export function InvitesClient({
                   : 'text-muted-foreground hover:text-foreground',
               )}
             >
-              Members
+              Members & access
             </button>
             {showPendingTab ? (
               <button
@@ -330,9 +330,9 @@ export function InvitesClient({
 
           {segment === 'members' ? (
             <section className="rounded-xl border border-border bg-card p-6 shadow-sm">
-              <h2 className="text-base font-semibold">Members</h2>
+              <h2 className="text-base font-semibold">Members & access</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Manage roles and access for everyone in {workspaceName}.
+                Manage workspace roles and per-bubble access for everyone in {workspaceName}.
               </p>
               <div className="mt-4">
                 <MembersSection
