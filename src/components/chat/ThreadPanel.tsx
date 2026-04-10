@@ -13,7 +13,7 @@ import { MESSAGE_ATTACHMENT_FILE_ACCEPT } from '@/lib/message-attachment-limits'
 export type ThreadPanelProps = {
   activeThreadParent: ChatMessage | null;
   threadMessages: ChatMessage[];
-  canWrite: boolean;
+  canPostMessages: boolean;
   onClose: () => void;
   /** Submit a new reply in the current thread (parent id is handled by the caller). */
   onSendMessage: (content: string, files?: File[]) => Promise<boolean>;
@@ -26,7 +26,7 @@ export type ThreadPanelProps = {
 export function ThreadPanel({
   activeThreadParent,
   threadMessages,
-  canWrite,
+  canPostMessages,
   onClose,
   onSendMessage,
   onOpenAttachment,
@@ -204,7 +204,7 @@ export function ThreadPanel({
               <button
                 type="button"
                 className="shrink-0 rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-primary disabled:opacity-30"
-                disabled={!canWrite || !activeThreadParent || sending}
+                disabled={!canPostMessages || !activeThreadParent || sending}
                 aria-label="Attach file"
                 title="Attach image, video, or document"
                 onClick={() => threadAttachmentInputRef.current?.click()}
@@ -217,7 +217,7 @@ export function ThreadPanel({
                   value={threadInput}
                   onChange={(e) => setThreadInput(e.target.value)}
                   placeholder="Reply to thread..."
-                  disabled={!canWrite || !activeThreadParent || sending}
+                  disabled={!canPostMessages || !activeThreadParent || sending}
                   className={cn(
                     'w-full rounded-xl border border-input bg-background px-3 py-2 pr-10 text-sm text-foreground placeholder:text-muted-foreground',
                     'transition-all focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-50',
@@ -225,7 +225,9 @@ export function ThreadPanel({
                 />
                 <button
                   type="submit"
-                  disabled={!threadInput.trim() || !canWrite || !activeThreadParent || sending}
+                  disabled={
+                    !threadInput.trim() || !canPostMessages || !activeThreadParent || sending
+                  }
                   className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-primary transition-colors hover:bg-primary/10 disabled:opacity-30"
                 >
                   {sending ? (

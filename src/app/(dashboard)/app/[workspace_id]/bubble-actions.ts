@@ -59,10 +59,7 @@ export async function updateBubbleAction(input: {
 
   if (Object.keys(updates).length === 0) return { ok: true };
 
-  const { error } = await supabase
-    .from('bubbles')
-    .update(updates)
-    .eq('id', input.bubbleId);
+  const { error } = await supabase.from('bubbles').update(updates).eq('id', input.bubbleId);
 
   if (error) return { error: error.message };
 

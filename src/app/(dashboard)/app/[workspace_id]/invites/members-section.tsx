@@ -89,9 +89,7 @@ export function MembersSection({ workspaceId, currentUserId, callerRole }: Props
 
   // Roles the caller can assign — owners can assign any role; admins cannot set owner
   const assignableRoles: MemberRole[] =
-    callerRole === 'owner'
-      ? ['owner', 'admin', 'member', 'guest']
-      : ['admin', 'member', 'guest'];
+    callerRole === 'owner' ? ['owner', 'admin', 'member', 'guest'] : ['admin', 'member', 'guest'];
 
   if (loading) {
     return <p className="text-sm text-muted-foreground">Loading members…</p>;
@@ -124,8 +122,7 @@ export function MembersSection({ workspaceId, currentUserId, callerRole }: Props
               const isSelf = m.user_id === currentUserId;
               const displayName = m.full_name?.trim() || m.email || 'Unknown';
               const isLastOwner =
-                m.role === 'owner' &&
-                members.filter((x) => x.role === 'owner').length === 1;
+                m.role === 'owner' && members.filter((x) => x.role === 'owner').length === 1;
 
               return (
                 <tr key={m.user_id} className="border-b border-border last:border-0">
@@ -164,14 +161,14 @@ export function MembersSection({ workspaceId, currentUserId, callerRole }: Props
                           pending ||
                           isLastOwner ||
                           // admins cannot touch other admins/owners
-                          (callerRole === 'admin' && (m.role === 'owner' || m.role === 'admin') && !isSelf)
+                          (callerRole === 'admin' &&
+                            (m.role === 'owner' || m.role === 'admin') &&
+                            !isSelf)
                         }
                         onChange={(e) => changeRole(m.user_id, e.target.value as MemberRole)}
                         className="rounded-md border border-input bg-background px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-50"
                         title={
-                          isLastOwner
-                            ? 'Cannot change role: last owner'
-                            : ROLE_DESCRIPTIONS[m.role]
+                          isLastOwner ? 'Cannot change role: last owner' : ROLE_DESCRIPTIONS[m.role]
                         }
                       >
                         {assignableRoles.map((r) => (
@@ -192,7 +189,13 @@ export function MembersSection({ workspaceId, currentUserId, callerRole }: Props
                       variant="ghost"
                       className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                       disabled={pending || isSelf || isLastOwner}
-                      title={isSelf ? 'Cannot remove yourself' : isLastOwner ? 'Cannot remove last owner' : `Remove ${displayName}`}
+                      title={
+                        isSelf
+                          ? 'Cannot remove yourself'
+                          : isLastOwner
+                            ? 'Cannot remove last owner'
+                            : `Remove ${displayName}`
+                      }
                       onClick={() => removeMember(m.user_id)}
                     >
                       <UserX className="size-4" />

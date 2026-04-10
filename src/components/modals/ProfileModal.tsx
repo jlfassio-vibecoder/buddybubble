@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { X, Camera, Save, User, Mail, Globe, LogOut } from 'lucide-react';
+import { Check, X, Camera, Save, User, Mail, Globe, LogOut, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { createClient } from '@utils/supabase/client';
 import { useUserProfileStore, type UserProfileRow } from '@/store/userProfileStore';
@@ -12,13 +12,66 @@ import { ThemeToggle } from '@/components/theme/theme-toggle';
 import { CategoryThemeSelect } from '@/components/theme/category-theme-select';
 import { isMissingColumnSchemaCacheError } from '@/lib/supabase-schema-errors';
 import { COMMON_CALENDAR_TIMEZONES } from '@/lib/calendar-timezones';
+import { resolvePermissions } from '@/lib/permissions';
+import { ALL_BUBBLES_LABEL } from '@/lib/all-bubbles';
+import type { MemberRole, BubbleMemberRole } from '@/types/database';
+
+/** When set (e.g. from workspace dashboard), shows role and effective capabilities for the current channel. */
+export type ProfilePermissionsContext = {
+  workspaceName: string;
+  workspaceRole: MemberRole;
+  selectedBubbleLabel: string;
+  bubbleMemberRole: BubbleMemberRole | null;
+  selectedBubbleIsPrivate: boolean;
+};
 
 export type ProfileModalProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  permissionsContext?: ProfilePermissionsContext;
 };
 
-export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
+function workspaceRoleLabel(role: MemberRole): string {
+  switch (role) {
+    case 'owner':
+      return 'Owner';
+    case 'admin':
+      return 'Admin';
+    case 'member':
+      return 'Member';
+    case 'guest':
+      return 'Guest';
+    default:
+      return role;
+  }
+}
+
+function bubbleMemberLabel(role: BubbleMemberRole): string {
+  return role === 'editor' ? 'Editor' : 'Viewer';
+}
+
+function PermissionRow({ label, enabled }: { label: string; enabled: boolean }) {
+  return (
+    <li className="flex items-start gap-2">
+      {enabled ? (
+        <Check
+          className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-500"
+          aria-hidden
+        />
+      ) : (
+        <span
+          className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-border text-[10px] font-bold text-muted-foreground"
+          aria-hidden
+        >
+          —
+        </span>
+      )}
+      <span className={enabled ? 'text-foreground' : 'text-muted-foreground'}>{label}</span>
+    </li>
+  );
+}
+
+export function ProfileModal({ open, onOpenChange, permissionsContext }: ProfileModalProps) {
   const router = useRouter();
   const profile = useUserProfileStore((s) => s.profile);
   const setProfile = useUserProfileStore((s) => s.setProfile);
@@ -166,6 +219,14 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
 
   const displayName = name || 'Member';
 
+  const permissionFlags = permissionsContext
+    ? resolvePermissions(
+        permissionsContext.workspaceRole,
+        permissionsContext.bubbleMemberRole,
+        permissionsContext.selectedBubbleIsPrivate,
+      )
+    : null;
+
   return (
     <AnimatePresence>
       {open && (
@@ -283,6 +344,79 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
                     Email is managed by your sign-in provider.
                   </p>
                 </div>
+
+                {permissionsContext && permissionFlags ? (
+                  <div className="rounded-xl border border-border bg-muted/40 p-4">
+                    <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+                      <Shield className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+                      Access in this workspace
+                    </div>
+                    <dl className="space-y-2 text-sm">
+                      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                        <dt className="text-muted-foreground">Workspace</dt>
+                        <dd className="min-w-0 text-right font-medium text-foreground">
+                          {permissionsContext.workspaceName}
+                        </dd>
+                      </div>
+                      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                        <dt className="text-muted-foreground">Workspace role</dt>
+                        <dd className="text-right font-medium text-foreground">
+                          {workspaceRoleLabel(permissionsContext.workspaceRole)}
+                        </dd>
+                      </div>
+                      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                        <dt className="text-muted-foreground">Channel</dt>
+                        <dd className="min-w-0 max-w-[12rem] truncate text-right font-medium text-foreground">
+                          {permissionsContext.selectedBubbleLabel}
+                        </dd>
+                      </div>
+                      {permissionsContext.bubbleMemberRole ? (
+                        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                          <dt className="text-muted-foreground">Channel membership</dt>
+                          <dd className="text-right font-medium text-foreground">
+                            {bubbleMemberLabel(permissionsContext.bubbleMemberRole)}
+                          </dd>
+                        </div>
+                      ) : null}
+                      {permissionsContext.selectedBubbleIsPrivate ? (
+                        <p className="text-xs text-muted-foreground">
+                          This channel is private; explicit membership can limit tasks and posts.
+                        </p>
+                      ) : null}
+                    </dl>
+                    {permissionsContext.selectedBubbleLabel === ALL_BUBBLES_LABEL ? (
+                      <p className="mt-2 border-t border-border pt-2 text-xs text-muted-foreground">
+                        In &ldquo;All Bubbles&rdquo;, the list below follows general rules; opening
+                        a single channel may apply stricter membership.
+                      </p>
+                    ) : null}
+                    <ul
+                      className="mt-3 space-y-2 border-t border-border pt-3"
+                      aria-label="Capabilities"
+                    >
+                      <PermissionRow
+                        label="View and post messages in this channel"
+                        enabled={permissionFlags.canPostMessages}
+                      />
+                      <PermissionRow
+                        label="Create and edit tasks in this channel"
+                        enabled={permissionFlags.canWriteTasks}
+                      />
+                      <PermissionRow
+                        label="Create new channels in this workspace"
+                        enabled={permissionFlags.canCreateWorkspaceBubble}
+                      />
+                      <PermissionRow
+                        label="Manage workspace (settings, invites, members)"
+                        enabled={permissionFlags.isAdmin}
+                      />
+                      <PermissionRow
+                        label="Full workspace ownership (delete, transfer)"
+                        enabled={permissionFlags.isOwner}
+                      />
+                    </ul>
+                  </div>
+                ) : null}
 
                 <div>
                   <label

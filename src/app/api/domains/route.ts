@@ -51,7 +51,7 @@ async function assertWorkspaceAdmin(
     console.error('[api/domains] assertWorkspaceAdmin workspace_members query', error);
     return { ok: false, status: 500, message: 'Internal server error' };
   }
-  if (!data || data.role !== 'admin') {
+  if (!data || (data.role !== 'admin' && data.role !== 'owner')) {
     return { ok: false, status: 403, message: 'Forbidden' };
   }
   return { ok: true };

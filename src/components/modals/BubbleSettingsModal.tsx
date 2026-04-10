@@ -159,7 +159,10 @@ export function BubbleSettingsModal({
         aria-label="Close"
         onClick={() => onOpenChange(false)}
       />
-      <div className="relative z-10 w-full max-w-lg overflow-y-auto rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-2xl" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
+      <div
+        className="relative z-10 w-full max-w-lg overflow-y-auto rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-2xl"
+        style={{ maxHeight: 'calc(100vh - 2rem)' }}
+      >
         <div className="flex items-start justify-between gap-2">
           <div>
             <h2 className="text-lg font-bold text-foreground">Bubble settings</h2>
@@ -221,12 +224,7 @@ export function BubbleSettingsModal({
             </div>
           </div>
 
-          <Button
-            type="button"
-            size="sm"
-            disabled={saving || !dirty}
-            onClick={() => void save()}
-          >
+          <Button type="button" size="sm" disabled={saving || !dirty} onClick={() => void save()}>
             {saving ? 'Saving…' : 'Save changes'}
           </Button>
 

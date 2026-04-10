@@ -38,7 +38,11 @@ const EXPIRY_OPTIONS = [
   { label: '7 days', hours: 24 * 7 },
 ] as const;
 
-const INVITE_ROLE_OPTIONS: Array<{ value: Exclude<MemberRole, 'owner'>; label: string; desc: string }> = [
+const INVITE_ROLE_OPTIONS: Array<{
+  value: Exclude<MemberRole, 'owner'>;
+  label: string;
+  desc: string;
+}> = [
   { value: 'admin', label: 'Admin', desc: 'Manage workspace, members & bubbles' },
   { value: 'member', label: 'Member', desc: 'Write access to all public bubbles' },
   { value: 'guest', label: 'Guest', desc: 'Explicit-access only (assigned bubbles/cards)' },
@@ -51,6 +55,12 @@ type Props = {
   initialWaitingRows: WaitingRoomRow[];
   currentUserId: string;
   callerRole: 'owner' | 'admin';
+  /** Render inside a dialog / sheet — no full-screen fixed layer; tab changes do not touch the route. */
+  embedded?: boolean;
+  /** When `embedded`, initial tab (URL `tab` is ignored). */
+  initialSegment?: 'pending' | 'invites' | 'members';
+  /** When `embedded`, header action to dismiss the shell. */
+  onRequestClose?: () => void;
 };
 
 export function InvitesClient({
@@ -60,6 +70,9 @@ export function InvitesClient({
   initialWaitingRows,
   currentUserId,
   callerRole,
+  embedded = false,
+  initialSegment,
+  onRequestClose,
 }: Props) {
   const router = useRouter();
   const pathname = usePathname();
@@ -68,9 +81,14 @@ export function InvitesClient({
 
   const [invites, setInvites] = useState(initialInvites);
   const [waitingRows, setWaitingRows] = useState(initialWaitingRows);
-  const [segment, setSegment] = useState<'pending' | 'invites' | 'members'>(() =>
-    tabParam === 'pending' ? 'pending' : tabParam === 'members' ? 'members' : 'invites',
-  );
+  const [segment, setSegment] = useState<'pending' | 'invites' | 'members'>(() => {
+    if (embedded) {
+      if (initialSegment) return initialSegment;
+      return 'invites';
+    }
+    if (initialSegment) return initialSegment;
+    return tabParam === 'pending' ? 'pending' : tabParam === 'members' ? 'members' : 'invites';
+  });
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -104,10 +122,11 @@ export function InvitesClient({
   }, [initialWaitingRows]);
 
   useEffect(() => {
+    if (embedded) return;
     if (tabParam === 'pending') setSegment('pending');
     if (tabParam === 'invites') setSegment('invites');
     if (tabParam === 'members') setSegment('members');
-  }, [tabParam]);
+  }, [tabParam, embedded]);
 
   useEffect(() => {
     if (segment === 'pending' && waitingRows.length === 0) {
@@ -120,17 +139,23 @@ export function InvitesClient({
 
   const goPending = () => {
     setSegment('pending');
-    router.replace(`${pathname}?tab=pending`, { scroll: false });
+    if (!embedded) {
+      router.replace(`${pathname}?tab=pending`, { scroll: false });
+    }
   };
 
   const goInvites = () => {
     setSegment('invites');
-    router.replace(`${pathname}?tab=invites`, { scroll: false });
+    if (!embedded) {
+      router.replace(`${pathname}?tab=invites`, { scroll: false });
+    }
   };
 
   const goMembers = () => {
     setSegment('members');
-    router.replace(`${pathname}?tab=members`, { scroll: false });
+    if (!embedded) {
+      router.replace(`${pathname}?tab=members`, { scroll: false });
+    }
   };
 
   const now = Date.now();
@@ -231,8 +256,12 @@ export function InvitesClient({
     });
   };
 
+  const rootClass = embedded
+    ? 'flex min-h-0 flex-1 flex-col overflow-hidden bg-background'
+    : 'fixed inset-0 z-[100] flex flex-col overflow-hidden bg-background';
+
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col overflow-hidden bg-slate-50">
+    <div className={rootClass}>
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-4 border-b border-border bg-card px-4 py-3 shadow-sm">
         <div className="min-w-0">
           <h1 className="truncate text-lg font-semibold text-foreground">People & invites</h1>
@@ -241,12 +270,18 @@ export function InvitesClient({
             {workspaceName}.
           </p>
         </div>
-        <Link
-          href={`/app/${workspaceId}`}
-          className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-        >
-          Back to workspace
-        </Link>
+        {embedded ? (
+          <Button type="button" variant="outline" size="sm" onClick={onRequestClose}>
+            Close
+          </Button>
+        ) : (
+          <Link
+            href={`/app/${workspaceId}`}
+            className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+          >
+            Back to workspace
+          </Link>
+        )}
       </header>
 
       <div className="min-h-0 flex-1 overflow-auto p-4">

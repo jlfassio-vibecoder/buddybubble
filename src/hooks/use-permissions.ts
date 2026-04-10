@@ -9,6 +9,7 @@ import { resolvePermissions, type PermissionFlags } from '@/lib/permissions';
  * Usage:
  *   const perms = usePermissions(role);
  *   const perms = usePermissions(role, bubbleMemberRole, bubble.is_private);
+ * Exposes canWriteTasks, canPostMessages, canCreateWorkspaceBubble (see PermissionFlags).
  */
 export function usePermissions(
   workspaceRole: MemberRole,

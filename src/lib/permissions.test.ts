@@ -7,9 +7,18 @@ import {
   canPromoteToOwner,
   canWriteBubble,
   canViewBubble,
+  parseMemberRole,
   resolvePermissions,
 } from './permissions';
 import type { MemberRole, BubbleMemberRole } from '@/types/database';
+
+describe('parseMemberRole', () => {
+  it('normalizes casing and maps unknown to member', () => {
+    expect(parseMemberRole('Admin')).toBe('admin');
+    expect(parseMemberRole('OWNER')).toBe('owner');
+    expect(parseMemberRole('nope')).toBe('member');
+  });
+});
 
 // ---------------------------------------------------------------------------
 // atLeast
@@ -195,7 +204,10 @@ describe('canViewBubble', () => {
 describe('resolvePermissions', () => {
   it('owner on a private bubble with no explicit membership', () => {
     const flags = resolvePermissions('owner', null, true);
-    expect(flags.canWrite).toBe(true);
+    expect(flags.canWriteTasks).toBe(true);
+    expect(flags.canWrite).toBe(flags.canWriteTasks);
+    expect(flags.canPostMessages).toBe(true);
+    expect(flags.canCreateWorkspaceBubble).toBe(true);
     expect(flags.canView).toBe(true);
     expect(flags.isAdmin).toBe(true);
     expect(flags.isOwner).toBe(true);
@@ -205,7 +217,10 @@ describe('resolvePermissions', () => {
 
   it('guest with viewer bubble role on a private bubble', () => {
     const flags = resolvePermissions('guest', 'viewer', true);
+    expect(flags.canWriteTasks).toBe(false);
     expect(flags.canWrite).toBe(false);
+    expect(flags.canPostMessages).toBe(true);
+    expect(flags.canCreateWorkspaceBubble).toBe(false);
     expect(flags.canView).toBe(true);
     expect(flags.isAdmin).toBe(false);
     expect(flags.isOwner).toBe(false);
@@ -215,9 +230,19 @@ describe('resolvePermissions', () => {
 
   it('member on a public bubble (default args)', () => {
     const flags = resolvePermissions('member');
+    expect(flags.canWriteTasks).toBe(true);
+    expect(flags.canPostMessages).toBe(true);
+    expect(flags.canCreateWorkspaceBubble).toBe(true);
     expect(flags.canWrite).toBe(true);
     expect(flags.canView).toBe(true);
     expect(flags.isAdmin).toBe(false);
     expect(flags.isOwner).toBe(false);
+  });
+
+  it('guest editor can write tasks but cannot create workspace bubbles', () => {
+    const flags = resolvePermissions('guest', 'editor', true);
+    expect(flags.canWriteTasks).toBe(true);
+    expect(flags.canCreateWorkspaceBubble).toBe(false);
+    expect(flags.canPostMessages).toBe(true);
   });
 });
