@@ -12,6 +12,8 @@ export function kanbanBoardTitleForCategory(
       return 'Cohort Board';
     case 'community':
       return 'Community Board';
+    case 'fitness':
+      return 'Training Board';
     default:
       return 'Kanban Board';
   }

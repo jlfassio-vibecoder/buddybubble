@@ -30,6 +30,11 @@ const BY_CATEGORY: Record<WorkspaceCategory, TaskDateFieldLabels> = {
     short: 'Due',
     helper: 'Used for planning and sorting.',
   },
+  fitness: {
+    primary: 'Scheduled for',
+    short: 'Session',
+    helper: 'Cards show in Today on that calendar day (workspace time).',
+  },
 };
 
 export function taskDateFieldLabels(

@@ -53,6 +53,20 @@ export const WORKSPACE_SEED_BY_CATEGORY: Record<
       { name: 'Done', slug: 'done', position: 3 },
     ],
   },
+  fitness: {
+    bubbles: [
+      { name: 'Programs' },
+      { name: 'Workouts' },
+      { name: 'Classes' },
+      { name: 'Trainer' },
+    ],
+    columns: [
+      { name: 'Planned', slug: 'planned', position: 0 },
+      { name: 'Scheduled', slug: 'scheduled', position: 1 },
+      { name: 'Today', slug: 'today', position: 2 },
+      { name: 'Completed', slug: 'completed', position: 3 },
+    ],
+  },
   class: {
     bubbles: [
       { name: 'Announcements' },

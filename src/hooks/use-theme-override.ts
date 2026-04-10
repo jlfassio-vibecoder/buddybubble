@@ -11,7 +11,12 @@ export type CategoryThemeOverride = 'auto' | WorkspaceCategory;
 
 function isCategoryThemeOverride(val: string): val is CategoryThemeOverride {
   return (
-    val === 'auto' || val === 'business' || val === 'kids' || val === 'class' || val === 'community'
+    val === 'auto' ||
+    val === 'business' ||
+    val === 'kids' ||
+    val === 'class' ||
+    val === 'community' ||
+    val === 'fitness'
   );
 }
 
@@ -35,7 +40,7 @@ export function resolveEffectiveCategory(
 ): WorkspaceCategory {
   if (override !== 'auto') return override;
   const c = String(workspaceCategory ?? 'business').toLowerCase();
-  if (c === 'business' || c === 'kids' || c === 'class' || c === 'community') {
+  if (c === 'business' || c === 'kids' || c === 'class' || c === 'community' || c === 'fitness') {
     return c;
   }
   return 'business';
