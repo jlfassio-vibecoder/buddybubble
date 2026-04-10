@@ -41,6 +41,7 @@ import {
   buildTaskMetadataPayload,
   metadataFieldsFromParsed,
   parseTaskMetadata,
+  type WorkoutExercise,
 } from '@/lib/item-metadata';
 import { isMissingColumnSchemaCacheError } from '@/lib/supabase-schema-errors';
 import {
@@ -185,7 +186,7 @@ export function TaskModal({
   const [memoryCaption, setMemoryCaption] = useState('');
   const [workoutType, setWorkoutType] = useState('');
   const [workoutDurationMin, setWorkoutDurationMin] = useState('');
-  const [workoutExercises, setWorkoutExercises] = useState<import('@/lib/item-metadata').WorkoutExercise[]>([]);
+  const [workoutExercises, setWorkoutExercises] = useState<WorkoutExercise[]>([]);
   /** Tracks the name input for the "add exercise" inline form. */
   const [newExerciseName, setNewExerciseName] = useState('');
 
@@ -1321,6 +1322,7 @@ export function TaskModal({
                                 className="flex items-center gap-2 rounded-md border border-border/60 bg-background px-3 py-2 text-sm"
                               >
                                 <span className="min-w-0 flex-1 font-medium">{ex.name}</span>
+                                {/* Copilot suggestion ignored: keep a simple kg suffix until fitness profile unit_system is available in this modal. */}
                                 <span className="shrink-0 text-xs text-muted-foreground">
                                   {[
                                     ex.sets != null && `${ex.sets}×`,
@@ -1342,7 +1344,9 @@ export function TaskModal({
                                     className="shrink-0 text-muted-foreground transition-colors hover:text-destructive"
                                     aria-label={`Remove exercise: ${ex.name}`}
                                   >
-                                    <span aria-hidden className="text-xs leading-none">✕</span>
+                                    <span aria-hidden className="text-xs leading-none">
+                                      ✕
+                                    </span>
                                   </button>
                                 )}
                               </li>

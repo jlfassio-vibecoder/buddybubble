@@ -30,6 +30,7 @@ export function useWorkoutTemplates(workspaceId: string | null): {
 
     const supabase = createClient();
 
+    // Copilot suggestion ignored: keep two simple queries; merging into one join is not worth the extra SQL surface here.
     const { data: bubbles } = await supabase
       .from('bubbles')
       .select('id')
