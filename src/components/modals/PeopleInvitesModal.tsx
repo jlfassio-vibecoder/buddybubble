@@ -154,6 +154,7 @@ export function PeopleInvitesModal({
                   initialWaitingRows={boot.initialWaitingRows}
                   currentUserId={boot.currentUserId}
                   callerRole={boot.callerRole}
+                  showFamilyNames={themeCategory === 'kids' || themeCategory === 'community'}
                   embedded
                   initialSegment={initialSegment}
                   onRequestClose={() => onOpenChange(false)}

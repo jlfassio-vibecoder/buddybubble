@@ -20,6 +20,7 @@ import {
   type WorkspaceBubbleSummary,
   type WorkspaceBubbleMembership,
 } from '../bubble-actions';
+import { MemberProfileModal } from '@/components/modals/MemberProfileModal';
 
 const ROLE_LABELS: Record<MemberRole, string> = {
   owner: 'Owner',
@@ -47,6 +48,8 @@ type Props = {
   workspaceId: string;
   currentUserId: string;
   callerRole: MemberRole;
+  /** Show family/children names in member profile modal for Kids / Community workspaces. */
+  showFamilyNames: boolean;
 };
 
 function effectiveAccessLabel(
@@ -85,8 +88,11 @@ function bubbleAccessSummary(
   return parts.join(' · ');
 }
 
-export function MembersSection({ workspaceId, currentUserId, callerRole }: Props) {
+export function MembersSection({ workspaceId, currentUserId, callerRole, showFamilyNames }: Props) {
   const [members, setMembers] = useState<WorkspaceMemberWithProfile[]>([]);
+  const [profileModalMember, setProfileModalMember] = useState<WorkspaceMemberWithProfile | null>(
+    null,
+  );
   const [bubbles, setBubbles] = useState<WorkspaceBubbleSummary[]>([]);
   const [memberships, setMemberships] = useState<WorkspaceBubbleMembership[]>([]);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
@@ -290,7 +296,12 @@ export function MembersSection({ workspaceId, currentUserId, callerRole }: Props
                             <ChevronRight className="size-4" aria-hidden />
                           )}
                         </button>
-                        <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          className="flex min-w-0 flex-1 items-center gap-3 rounded-md text-left outline-none ring-offset-background hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring"
+                          onClick={() => setProfileModalMember(m)}
+                          title="View member profile and notes"
+                        >
                           {m.avatar_url ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
@@ -322,7 +333,7 @@ export function MembersSection({ workspaceId, currentUserId, callerRole }: Props
                               <p className="truncate text-xs text-muted-foreground">{m.email}</p>
                             ) : null}
                           </div>
-                        </div>
+                        </button>
                       </div>
                     </td>
 
@@ -506,6 +517,16 @@ export function MembersSection({ workspaceId, currentUserId, callerRole }: Props
           </tbody>
         </table>
       </div>
+
+      <MemberProfileModal
+        workspaceId={workspaceId}
+        member={profileModalMember}
+        open={profileModalMember !== null}
+        onOpenChange={(o) => {
+          if (!o) setProfileModalMember(null);
+        }}
+        showFamilyNames={showFamilyNames}
+      />
     </div>
   );
 }

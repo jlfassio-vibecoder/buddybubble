@@ -17,9 +17,7 @@ export type ProfileUpdateInput = {
  * Validate and persist profile text fields (full_name, bio, children_names, avatar_url).
  * Avatar upload is handled client-side (File object); pass the resulting public URL here.
  */
-export async function updateMyProfileAction(
-  input: ProfileUpdateInput,
-): Promise<ActionResult> {
+export async function updateMyProfileAction(input: ProfileUpdateInput): Promise<ActionResult> {
   const fullName = input.fullName.trim();
   if (!fullName) return { error: 'Display name is required.' };
   if (fullName.length > 120) return { error: 'Display name must be 120 characters or fewer.' };
@@ -27,9 +25,7 @@ export async function updateMyProfileAction(
   const bio = input.bio?.trim() ?? null;
   if (bio && bio.length > 500) return { error: 'Bio must be 500 characters or fewer.' };
 
-  const childrenNames = (input.childrenNames ?? [])
-    .map((n) => n.trim())
-    .filter(Boolean);
+  const childrenNames = (input.childrenNames ?? []).map((n) => n.trim()).filter(Boolean);
   if (childrenNames.length > 8) return { error: 'Maximum 8 family members allowed.' };
   if (childrenNames.some((n) => n.length > 64)) {
     return { error: 'Each family member name must be 64 characters or fewer.' };
