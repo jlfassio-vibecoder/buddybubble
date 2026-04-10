@@ -36,11 +36,13 @@ export default async function InvitesPage({
 
   const { data: ws } = await supabase
     .from('workspaces')
-    .select('name')
+    .select('name, category_type')
     .eq('id', workspace_id)
     .maybeSingle();
 
   const workspaceName = (ws as { name?: string } | null)?.name?.trim() || 'this workspace';
+  const categoryType = (ws as { category_type?: string } | null)?.category_type;
+  const showFamilyNames = categoryType === 'kids' || categoryType === 'community';
 
   const { data: rows, error } = await supabase
     .from('invitations')
@@ -126,6 +128,7 @@ export default async function InvitesPage({
         initialWaitingRows={initialWaitingRows}
         currentUserId={user.id}
         callerRole={role as 'owner' | 'admin'}
+        showFamilyNames={showFamilyNames}
       />
     </Suspense>
   );

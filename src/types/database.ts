@@ -108,6 +108,23 @@ export interface Database {
         };
         Update: Partial<Database['public']['Tables']['workspace_members']['Insert']>;
       };
+      workspace_member_notes: {
+        Row: {
+          workspace_id: string;
+          subject_user_id: string;
+          body: string | null;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: {
+          workspace_id: string;
+          subject_user_id: string;
+          body?: string | null;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['workspace_member_notes']['Insert']>;
+      };
       invitations: {
         Row: {
           id: string;

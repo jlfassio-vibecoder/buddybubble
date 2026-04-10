@@ -55,6 +55,8 @@ type Props = {
   initialWaitingRows: WaitingRoomRow[];
   currentUserId: string;
   callerRole: 'owner' | 'admin';
+  /** Show family names in member profile modal (Kids / Community workspaces). */
+  showFamilyNames?: boolean;
   /** Render inside a dialog / sheet — no full-screen fixed layer; tab changes do not touch the route. */
   embedded?: boolean;
   /** When `embedded`, initial tab (URL `tab` is ignored). */
@@ -70,6 +72,7 @@ export function InvitesClient({
   initialWaitingRows,
   currentUserId,
   callerRole,
+  showFamilyNames = false,
   embedded = false,
   initialSegment,
   onRequestClose,
@@ -339,6 +342,7 @@ export function InvitesClient({
                   workspaceId={workspaceId}
                   currentUserId={currentUserId}
                   callerRole={callerRole}
+                  showFamilyNames={showFamilyNames}
                 />
               </div>
             </section>
