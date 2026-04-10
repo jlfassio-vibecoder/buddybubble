@@ -5,18 +5,22 @@ import { createClient } from '@utils/supabase/server';
 import type { MemberRole } from '@/types/database';
 import type { ActionResult } from './member-actions';
 
-async function getCallerRole(
+// Copilot suggestion ignored: Exporting getCallerRole from member-actions would require changing its signature and every caller; local helper with explicit query-error handling keeps the blast radius minimal.
+
+async function getCallerWorkspaceRole(
   supabase: Awaited<ReturnType<typeof createClient>>,
   workspaceId: string,
   callerId: string,
-): Promise<MemberRole | null> {
-  const { data } = await supabase
+): Promise<{ role: MemberRole | null; queryError: string | null }> {
+  const { data, error } = await supabase
     .from('workspace_members')
     .select('role')
     .eq('workspace_id', workspaceId)
     .eq('user_id', callerId)
     .maybeSingle();
-  return (data as { role?: MemberRole } | null)?.role ?? null;
+  if (error) return { role: null, queryError: error.message };
+  const role = (data as { role?: MemberRole } | null)?.role ?? null;
+  return { role, queryError: null };
 }
 
 function isWorkspaceAdmin(role: MemberRole | null): boolean {
@@ -51,7 +55,12 @@ export async function getWorkspaceMemberProfileForAdminAction(input: {
   } = await supabase.auth.getUser();
   if (!user) return { error: 'Not signed in.' };
 
-  const callerRole = await getCallerRole(supabase, input.workspaceId, user.id);
+  const { role: callerRole, queryError: callerRoleErr } = await getCallerWorkspaceRole(
+    supabase,
+    input.workspaceId,
+    user.id,
+  );
+  if (callerRoleErr) return { error: callerRoleErr };
   if (!isWorkspaceAdmin(callerRole)) {
     return { error: 'Only workspace owners and admins can view member profiles.' };
   }
@@ -91,12 +100,14 @@ export async function getWorkspaceMemberProfileForAdminAction(input: {
     timezone: string | null;
   };
 
-  const { data: noteRow } = await supabase
+  const { data: noteRow, error: noteErr } = await supabase
     .from('workspace_member_notes')
     .select('body, updated_at')
     .eq('workspace_id', input.workspaceId)
     .eq('subject_user_id', input.subjectUserId)
     .maybeSingle();
+
+  if (noteErr) return { error: noteErr.message };
 
   const note = noteRow as { body: string | null; updated_at: string } | null;
 
@@ -130,18 +141,24 @@ export async function upsertWorkspaceMemberNoteAction(input: {
   } = await supabase.auth.getUser();
   if (!user) return { error: 'Not signed in.' };
 
-  const callerRole = await getCallerRole(supabase, input.workspaceId, user.id);
+  const { role: callerRole, queryError: callerRoleErr } = await getCallerWorkspaceRole(
+    supabase,
+    input.workspaceId,
+    user.id,
+  );
+  if (callerRoleErr) return { error: callerRoleErr };
   if (!isWorkspaceAdmin(callerRole)) {
     return { error: 'Only workspace owners and admins can edit member notes.' };
   }
 
-  const { data: membership } = await supabase
+  const { data: membership, error: membershipErr } = await supabase
     .from('workspace_members')
     .select('user_id')
     .eq('workspace_id', input.workspaceId)
     .eq('user_id', input.subjectUserId)
     .maybeSingle();
 
+  if (membershipErr) return { error: membershipErr.message };
   if (!membership) {
     return { error: 'That user is not a member of this workspace.' };
   }
@@ -156,8 +173,6 @@ export async function upsertWorkspaceMemberNoteAction(input: {
       workspace_id: input.workspaceId,
       subject_user_id: input.subjectUserId,
       body: trimmed.length > 0 ? trimmed : null,
-      updated_at: new Date().toISOString(),
-      updated_by: user.id,
     },
     { onConflict: 'workspace_id,subject_user_id' },
   );

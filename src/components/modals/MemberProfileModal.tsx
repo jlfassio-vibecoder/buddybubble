@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, useTransition } from 'react';
+import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -50,15 +50,25 @@ export function MemberProfileModal({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  /** Ignore late responses when the modal switches member or closes (avoids stale profile state). */
+  const profileSubjectIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    profileSubjectIdRef.current = member?.user_id ?? null;
+  }, [member]);
 
   const load = useCallback(async () => {
     if (!member) return;
+    const subjectUserId = member.user_id;
     setLoading(true);
     setLoadError(null);
     const result = await getWorkspaceMemberProfileForAdminAction({
       workspaceId,
-      subjectUserId: member.user_id,
+      subjectUserId,
     });
+    if (profileSubjectIdRef.current !== subjectUserId) {
+      setLoading(false);
+      return;
+    }
     setLoading(false);
     if ('error' in result) {
       setLoadError(result.error);
