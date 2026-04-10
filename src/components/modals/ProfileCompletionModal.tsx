@@ -11,10 +11,7 @@ import {
   extractAvatarObjectPath,
 } from '@/lib/avatar-storage';
 import { formatUserFacingError } from '@/lib/format-error';
-import {
-  updateMyProfileAction,
-  setPasswordAction,
-} from '@/app/(dashboard)/profile-actions';
+import { updateMyProfileAction, setPasswordAction } from '@/app/(dashboard)/profile-actions';
 
 type Props = {
   profile: UserProfileRow;
@@ -81,10 +78,24 @@ export function ProfileCompletionModal({ profile, showFamilyNames, onComplete }:
 
   const handleSave = () => {
     const trimmedName = name.trim();
-    if (!trimmedName) { setError('Please enter your display name to continue.'); return; }
-    if (trimmedName.length > 120) { setError('Display name must be 120 characters or fewer.'); return; }
-    if (password && password.length < 8) { setError('Password must be at least 8 characters.'); return; }
-    if (password && password !== confirmPassword) { setError('Passwords do not match.'); return; }
+    const pwTrimmed = password.trim();
+    const confirmTrimmed = confirmPassword.trim();
+    if (!trimmedName) {
+      setError('Please enter your display name to continue.');
+      return;
+    }
+    if (trimmedName.length > 120) {
+      setError('Display name must be 120 characters or fewer.');
+      return;
+    }
+    if (password.trim() !== '' && pwTrimmed.length < 8) {
+      setError('Password must be at least 8 characters.');
+      return;
+    }
+    if (password.trim() !== '' && pwTrimmed !== confirmTrimmed) {
+      setError('Passwords do not match.');
+      return;
+    }
 
     setError(null);
     startTransition(async () => {
@@ -92,15 +103,14 @@ export function ProfileCompletionModal({ profile, showFamilyNames, onComplete }:
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      if (!user) { setError('Not signed in.'); return; }
+      if (!user) {
+        setError('Not signed in.');
+        return;
+      }
 
       // 1. Upload avatar (client-side — File not serialisable to server action)
       let nextAvatarUrl: string | null = profile.avatar_url ?? null;
       if (pendingFile) {
-        if (profile.avatar_url) {
-          const oldPath = extractAvatarObjectPath(profile.avatar_url);
-          if (oldPath) void supabase.storage.from(AVATARS_BUCKET).remove([oldPath]);
-        }
         const path = buildAvatarObjectPath(user.id, pendingFile);
         const { error: upErr } = await supabase.storage
           .from(AVATARS_BUCKET)
@@ -109,36 +119,55 @@ export function ProfileCompletionModal({ profile, showFamilyNames, onComplete }:
             contentType: pendingFile.type || 'image/jpeg',
             upsert: false,
           });
-        if (upErr) { setError(formatUserFacingError(upErr)); return; }
+        if (upErr) {
+          setError(formatUserFacingError(upErr));
+          return;
+        }
         const { data: pub } = supabase.storage.from(AVATARS_BUCKET).getPublicUrl(path);
         nextAvatarUrl = pub.publicUrl;
       }
 
-      // 2. Persist text fields via server action (Zod-validated server-side)
+      const normalizedChildren = childrenNames.map((n) => n.trim()).filter(Boolean);
+
+      // 2. Persist text fields via server action (validated in updateMyProfileAction)
       const result = await updateMyProfileAction({
         fullName: trimmedName,
         bio: bio.trim() || null,
-        childrenNames: childrenNames.filter(Boolean),
+        childrenNames: normalizedChildren,
         avatarUrl: nextAvatarUrl,
       });
-      if ('error' in result) { setError(result.error); return; }
-
-      // 3. Set password if the user provided one
-      if (password) {
-        const pwResult = await setPasswordAction(password);
-        if ('error' in pwResult) { setError(pwResult.error); return; }
+      if ('error' in result) {
+        setError(result.error);
+        return;
       }
 
-      // Optimistically update store so the gate unmounts before parent refetches
-      setStoreProfile({
+      if (pendingFile && profile.avatar_url && nextAvatarUrl) {
+        const oldPath = extractAvatarObjectPath(profile.avatar_url);
+        const newPath = extractAvatarObjectPath(nextAvatarUrl);
+        if (oldPath && newPath && oldPath !== newPath) {
+          void supabase.storage.from(AVATARS_BUCKET).remove([oldPath]);
+        }
+      }
+
+      const savedProfile: UserProfileRow = {
         ...profile,
         full_name: trimmedName,
         bio: bio.trim() || null,
-        children_names: childrenNames,
+        children_names: normalizedChildren,
         avatar_url: nextAvatarUrl,
-      });
-
+      };
+      setStoreProfile(savedProfile);
       onComplete();
+
+      // 3. Password after profile is saved and store refreshed — completion UI may unmount here
+      if (pwTrimmed) {
+        const pwResult = await setPasswordAction(pwTrimmed);
+        if ('error' in pwResult) {
+          alert(
+            `Your profile was saved. We couldn't update your password: ${pwResult.error} You can set a password later from your profile.`,
+          );
+        }
+      }
     });
   };
 
@@ -212,7 +241,10 @@ export function ProfileCompletionModal({ profile, showFamilyNames, onComplete }:
             {/* Display name — required */}
             <div>
               <label className="mb-1.5 block text-sm font-semibold text-foreground">
-                Display name <span className="text-destructive" aria-hidden>*</span>
+                Display name{' '}
+                <span className="text-destructive" aria-hidden>
+                  *
+                </span>
               </label>
               <div className="relative">
                 <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -236,8 +268,7 @@ export function ProfileCompletionModal({ profile, showFamilyNames, onComplete }:
             {/* Bio — optional */}
             <div>
               <label className="mb-1.5 block text-sm font-semibold text-foreground">
-                Bio{' '}
-                <span className="text-xs font-normal text-muted-foreground">(optional)</span>
+                Bio <span className="text-xs font-normal text-muted-foreground">(optional)</span>
               </label>
               <textarea
                 value={bio}

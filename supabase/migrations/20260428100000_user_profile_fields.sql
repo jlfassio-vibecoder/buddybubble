@@ -18,7 +18,8 @@ comment on column public.users.children_names is
   'Account-level family/children names for Kids and Community workspace caregivers. '
   'Shape: string[]. Validated in application layer (max 8 names, 64 chars each).';
 
--- GIN index enables future jsonb_array_elements_text queries (e.g. find all
--- caregivers of a child named "Alex"). Low cost at current table sizes.
+-- GIN index supports jsonb containment / key-exists style queries on this array
+-- (e.g. children_names @> '["Alex"]'::jsonb). It does not speed up
+-- jsonb_array_elements_text() set-returning scans. Low cost at current table sizes.
 create index if not exists users_children_names_gin
   on public.users using gin (children_names);

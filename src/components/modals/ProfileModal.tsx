@@ -2,7 +2,19 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, X, Camera, Save, User, Mail, Globe, LogOut, Shield, Plus, Trash2 } from 'lucide-react';
+import {
+  Check,
+  X,
+  Camera,
+  Save,
+  User,
+  Mail,
+  Globe,
+  LogOut,
+  Shield,
+  Plus,
+  Trash2,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { createClient } from '@utils/supabase/client';
 import { useUserProfileStore, type UserProfileRow } from '@/store/userProfileStore';
@@ -149,11 +161,13 @@ export function ProfileModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password && password.length < 8) {
+    const pwTrimmed = password.trim();
+    const confirmTrimmed = confirmPassword.trim();
+    if (password.trim() !== '' && pwTrimmed.length < 8) {
       setError('Password must be at least 8 characters.');
       return;
     }
-    if (password && password !== confirmPassword) {
+    if (password.trim() !== '' && pwTrimmed !== confirmTrimmed) {
       setError('Passwords do not match.');
       return;
     }
@@ -171,11 +185,6 @@ export function ProfileModal({
     try {
       let nextAvatarUrl: string | null = profile?.avatar_url ?? null;
       if (pendingFile) {
-        // Delete old avatar before uploading replacement
-        if (profile?.avatar_url) {
-          const oldPath = extractAvatarObjectPath(profile.avatar_url);
-          if (oldPath) void supabase.storage.from(AVATARS_BUCKET).remove([oldPath]);
-        }
         const path = buildAvatarObjectPath(user.id, pendingFile);
         const { error: upErr } = await supabase.storage
           .from(AVATARS_BUCKET)
@@ -197,7 +206,7 @@ export function ProfileModal({
         full_name: name.trim(),
         avatar_url: nextAvatarUrl,
         bio: bio.trim() || null,
-        children_names: childrenNames.filter(Boolean),
+        children_names: childrenNames.map((n) => n.trim()).filter(Boolean),
       };
       let { data: updated, error: updErr } = await supabase
         .from('users')
@@ -222,6 +231,13 @@ export function ProfileModal({
           return;
         }
         setProfile(retry.data as UserProfileRow);
+        if (pendingFile && profile?.avatar_url && nextAvatarUrl) {
+          const oldPath = extractAvatarObjectPath(profile.avatar_url);
+          const newPath = extractAvatarObjectPath(nextAvatarUrl);
+          if (oldPath && newPath && oldPath !== newPath) {
+            void supabase.storage.from(AVATARS_BUCKET).remove([oldPath]);
+          }
+        }
         setError(
           'Timezone is not saved yet: apply the users timezone migration on Supabase (users.timezone), then try again.',
         );
@@ -235,17 +251,26 @@ export function ProfileModal({
         return;
       }
 
-      // Set password if provided
-      if (password) {
-        const pwResult = await setPasswordAction(password);
+      setProfile(updated as UserProfileRow);
+      if (pendingFile && profile?.avatar_url && nextAvatarUrl) {
+        const oldPath = extractAvatarObjectPath(profile.avatar_url);
+        const newPath = extractAvatarObjectPath(nextAvatarUrl);
+        if (oldPath && newPath && oldPath !== newPath) {
+          void supabase.storage.from(AVATARS_BUCKET).remove([oldPath]);
+        }
+      }
+
+      if (pwTrimmed) {
+        const pwResult = await setPasswordAction(pwTrimmed);
         if ('error' in pwResult) {
-          setError(pwResult.error);
+          setError(
+            `Your profile was saved, but your password could not be updated: ${pwResult.error}`,
+          );
           setSaving(false);
           return;
         }
       }
 
-      setProfile(updated as UserProfileRow);
       setSaving(false);
       onOpenChange(false);
     } catch (err) {
@@ -400,7 +425,9 @@ export function ProfileModal({
                     className="w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-50"
                     placeholder="A short intro shown to your workspace…"
                   />
-                  <p className="mt-0.5 text-right text-xs text-muted-foreground">{bio.length}/500</p>
+                  <p className="mt-0.5 text-right text-xs text-muted-foreground">
+                    {bio.length}/500
+                  </p>
                 </div>
 
                 <div>
