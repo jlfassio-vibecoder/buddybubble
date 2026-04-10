@@ -1,8 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import Link from 'next/link';
-import { Hash, Lock, PanelLeftClose, Settings, Settings2, UserPlus } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Hash, Lock, PanelLeftClose, Settings, Settings2 } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
 import type { BubbleRow } from '@/types/database';
 import { ALL_BUBBLES_BUBBLE_ID, ALL_BUBBLES_LABEL } from '@/lib/all-bubbles';
@@ -15,6 +14,8 @@ import {
   CollapsedColumnStrip,
 } from '@/components/layout/collapsed-column-strip';
 import { BubbleSettingsModal } from '@/components/modals/BubbleSettingsModal';
+import { usePresenceStore, type UserPresence } from '@/store/presenceStore';
+import { useUserProfileStore } from '@/store/userProfileStore';
 
 type Props = {
   workspaceId: string;
@@ -26,10 +27,10 @@ type Props = {
   selectedBubbleId: string | null;
   onSelectBubble: (id: string) => void;
   onBubblesChange: (rows: BubbleRow[]) => void;
-  canWrite: boolean;
+  /** Matches `bubbles_insert` / workspace members — not bubble_editor alone. */
+  canCreateWorkspaceBubble: boolean;
+  /** Owner/admin — per-bubble settings (matches invites page policy). */
   isAdmin?: boolean;
-  /** Pending invitation_join_requests count; drives UserPlus badge and default invites tab. */
-  pendingJoinRequestCount?: number;
   onOpenWorkspaceSettings?: () => void;
   /** e.g. mobile sheet: hide header collapse control. */
   hideSidebarCollapseButton?: boolean;
@@ -46,9 +47,8 @@ export function BubbleSidebar({
   selectedBubbleId,
   onSelectBubble,
   onBubblesChange,
-  canWrite,
+  canCreateWorkspaceBubble,
   isAdmin = false,
-  pendingJoinRequestCount = 0,
   onOpenWorkspaceSettings,
   hideSidebarCollapseButton = false,
   workspaceTitle,
@@ -56,6 +56,20 @@ export function BubbleSidebar({
   const [name, setName] = useState('');
   const [adding, setAdding] = useState(false);
   const [bubbleSettingsId, setBubbleSettingsId] = useState<string | null>(null);
+
+  const myId = useUserProfileStore((s) => s.profile?.id);
+  const presenceUsers = usePresenceStore((s) => s.users);
+  const peersByBubbleId = useMemo(() => {
+    const m = new Map<string, UserPresence[]>();
+    for (const u of presenceUsers.values()) {
+      if (u.user_id === myId) continue;
+      if (u.focus_type !== 'bubble' || !u.focus_id) continue;
+      const list = m.get(u.focus_id) ?? [];
+      list.push(u);
+      m.set(u.focus_id, list);
+    }
+    return m;
+  }, [presenceUsers, myId]);
 
   const activeBubbleForSettings = bubbles.find((b) => b.id === bubbleSettingsId) ?? null;
 
@@ -68,7 +82,7 @@ export function BubbleSidebar({
 
   async function addBubble(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim() || !canWrite) return;
+    if (!name.trim() || !canCreateWorkspaceBubble) return;
     setAdding(true);
     const supabase = createClient();
     const { data, error } = await supabase
@@ -92,7 +106,8 @@ export function BubbleSidebar({
     <>
       <aside
         className={cn(
-          'flex min-h-0 flex-col overflow-hidden transition-[width] duration-200 ease-out motion-reduce:transition-none',
+          /* Do not use overflow-hidden here — it clips the header workspace-settings control on the right. */
+          'flex min-h-0 flex-col transition-[width] duration-200 ease-out motion-reduce:transition-none',
           !collapsed &&
             'h-full w-56 shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground',
           isCollapsedStrip &&
@@ -136,53 +151,26 @@ export function BubbleSidebar({
                     <PanelLeftClose className="h-5 w-5" strokeWidth={2} aria-hidden />
                   </button>
                 )}
-                <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
-                  <h2 className="truncate text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/70">
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <h2 className="min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/70">
                     Bubbles
                   </h2>
-                  {isAdmin ? (
-                    <div className="flex shrink-0 items-center gap-0.5">
-                      <Link
-                        href={
-                          pendingJoinRequestCount > 0
-                            ? `/app/${workspaceId}/invites?tab=pending`
-                            : `/app/${workspaceId}/invites`
-                        }
-                        className="relative rounded-md p-1 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                        aria-label={
-                          pendingJoinRequestCount > 0
-                            ? `Invite people — ${pendingJoinRequestCount} pending join request${pendingJoinRequestCount === 1 ? '' : 's'}`
-                            : 'Invite people to this workspace'
-                        }
-                        title={
-                          pendingJoinRequestCount > 0
-                            ? `Invite & approvals (${pendingJoinRequestCount} pending)`
-                            : 'Invite people'
-                        }
+                  {onOpenWorkspaceSettings && canCreateWorkspaceBubble ? (
+                    <div className="relative z-10 flex shrink-0 items-center gap-0.5">
+                      <button
+                        type="button"
+                        onClick={onOpenWorkspaceSettings}
+                        className="rounded-md p-1 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                        aria-label="Workspace settings"
+                        title="Workspace settings"
                       >
-                        <UserPlus className="size-4" strokeWidth={2.25} aria-hidden />
-                        {pendingJoinRequestCount > 0 ? (
-                          <span className="absolute -right-1 -top-1 flex min-h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full border-2 border-sidebar bg-destructive px-1 text-[9px] font-bold leading-none text-destructive-foreground">
-                            {pendingJoinRequestCount > 99 ? '99+' : pendingJoinRequestCount}
-                          </span>
-                        ) : null}
-                      </Link>
-                      {onOpenWorkspaceSettings ? (
-                        <button
-                          type="button"
-                          onClick={onOpenWorkspaceSettings}
-                          className="rounded-md p-1 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                          aria-label="Workspace settings"
-                          title="Workspace settings"
-                        >
-                          <Settings className="size-4" />
-                        </button>
-                      ) : null}
+                        <Settings className="size-4" />
+                      </button>
                     </div>
                   ) : null}
                 </div>
               </div>
-              {canWrite && (
+              {canCreateWorkspaceBubble && (
                 <form onSubmit={addBubble} className="mt-2 flex gap-2">
                   <Input
                     placeholder="New bubble"
@@ -213,48 +201,70 @@ export function BubbleSidebar({
                     {ALL_BUBBLES_LABEL}
                   </button>
                 </li>
-                {bubbles.map((b) => (
-                  <li key={b.id} className="group relative mb-1">
-                    <button
-                      type="button"
-                      onClick={() => onSelectBubble(b.id)}
-                      className={cn(
-                        'flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-medium transition-colors',
-                        selectedBubbleId === b.id
-                          ? 'bg-[color:var(--sidebar-active)] text-[var(--primary-foreground)]'
-                          : 'text-sidebar-foreground hover:bg-[color:var(--sidebar-hover)]',
-                        // leave room for the settings button on the right when admin
-                        isAdmin && 'pr-8',
-                      )}
-                    >
-                      {b.is_private ? (
-                        <Lock className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
-                      ) : (
-                        <Hash className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
-                      )}
-                      <span className="min-w-0 truncate">{b.name}</span>
-                    </button>
-                    {isAdmin ? (
+                {bubbles.map((b) => {
+                  const bubblePeers = peersByBubbleId.get(b.id) ?? [];
+                  return (
+                    <li key={b.id} className="group relative mb-1">
                       <button
                         type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setBubbleSettingsId(b.id);
-                        }}
+                        onClick={() => onSelectBubble(b.id)}
                         className={cn(
-                          'absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100',
+                          'flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-medium transition-colors',
                           selectedBubbleId === b.id
-                            ? 'text-[var(--primary-foreground)]/70 hover:text-[var(--primary-foreground)]'
-                            : 'text-sidebar-foreground/50 hover:text-sidebar-foreground',
+                            ? 'bg-[color:var(--sidebar-active)] text-[var(--primary-foreground)]'
+                            : 'text-sidebar-foreground hover:bg-[color:var(--sidebar-hover)]',
+                          // leave room for the settings button on the right when admin
+                          isAdmin && 'pr-8',
                         )}
-                        aria-label={`Settings for ${b.name}`}
-                        title={`Settings for ${b.name}`}
                       >
-                        <Settings2 className="size-3.5" />
+                        {b.is_private ? (
+                          <Lock className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
+                        ) : (
+                          <Hash className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
+                        )}
+                        <span className="min-w-0 flex-1 truncate">{b.name}</span>
+                        {bubblePeers.length > 0 ? (
+                          <span
+                            className="flex shrink-0 items-center gap-0.5"
+                            title={bubblePeers.map((p) => p.name).join(', ')}
+                          >
+                            {bubblePeers.slice(0, 3).map((p) => (
+                              <span
+                                key={p.user_id}
+                                className="size-2 shrink-0 rounded-full ring-1 ring-background"
+                                style={{ backgroundColor: p.color }}
+                              />
+                            ))}
+                            {bubblePeers.length > 3 ? (
+                              <span className="text-[9px] font-medium text-sidebar-foreground/80">
+                                +{bubblePeers.length - 3}
+                              </span>
+                            ) : null}
+                          </span>
+                        ) : null}
                       </button>
-                    ) : null}
-                  </li>
-                ))}
+                      {isAdmin ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setBubbleSettingsId(b.id);
+                          }}
+                          className={cn(
+                            'absolute right-1 top-1/2 z-20 -translate-y-1/2 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100',
+                            selectedBubbleId === b.id
+                              ? 'text-[var(--primary-foreground)]/70 hover:text-[var(--primary-foreground)]'
+                              : 'text-sidebar-foreground/50 hover:text-sidebar-foreground',
+                          )}
+                          aria-label={`Settings for ${b.name}`}
+                          title={`Settings for ${b.name}`}
+                        >
+                          <Settings2 className="size-3.5" />
+                        </button>
+                      ) : null}
+                    </li>
+                  );
+                })}
                 {bubbles.length === 0 && (
                   <li className="px-2 py-4 text-sm text-sidebar-foreground/70">No bubbles yet.</li>
                 )}

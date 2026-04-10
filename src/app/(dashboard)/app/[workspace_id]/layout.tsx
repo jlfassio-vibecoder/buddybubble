@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { fetchPendingJoinRequestCountAndPreview } from '@/lib/workspace-join-requests';
+import { parseMemberRole } from '@/lib/permissions';
 import { createClient } from '@utils/supabase/server';
 import { DashboardShell } from '@/components/dashboard/dashboard-shell';
 
@@ -31,7 +32,7 @@ export default async function WorkspaceLayout({
     redirect('/app');
   }
 
-  const role = row.role as 'owner' | 'admin' | 'member' | 'guest';
+  const role = parseMemberRole(row.role);
 
   let initialPendingJoinRequestCount = 0;
   let initialJoinRequestPreview: Awaited<

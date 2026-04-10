@@ -219,7 +219,8 @@ function rowToChatMessage(
 export type ChatAreaProps = {
   /** Bubbles in the active BuddyBubble (used for aggregate "All Bubbles" view and per-message labels). */
   bubbles: BubbleRow[];
-  canWrite: boolean;
+  /** Matches `messages_insert` / `can_view_bubble` — not the same as task write. */
+  canPostMessages: boolean;
   onCollapse?: () => void;
   onOpenTask?: (taskId: string, opts?: { tab?: TaskModalTab }) => void;
   /** Workspace admins: pending join requests surfaced in the header bell (collapsed-sidebar fallback). */
@@ -230,7 +231,7 @@ export type ChatAreaProps = {
 
 export function ChatArea({
   bubbles,
-  canWrite,
+  canPostMessages,
   onCollapse = () => {},
   onOpenTask = () => {},
   joinRequestBellPreview = [],
@@ -599,8 +600,8 @@ export function ChatArea({
 
   const sendMessage = useCallback(
     async (content: string, parentId?: string, files?: File[]): Promise<boolean> => {
-      if (!canWrite) {
-        setAttachmentError('You do not have permission to post in this workspace.');
+      if (!canPostMessages) {
+        setAttachmentError('You do not have permission to post messages in this channel.');
         return false;
       }
       if (!workspaceId) {
@@ -919,7 +920,7 @@ export function ChatArea({
         setSendingAttachments(false);
       }
     },
-    [activeBubble, bubbles, canWrite, dbMessages, workspaceId],
+    [activeBubble, bubbles, canPostMessages, dbMessages, workspaceId],
   );
 
   const canPostInComposer =
@@ -1584,7 +1585,7 @@ export function ChatArea({
         <ThreadPanel
           activeThreadParent={activeThreadParent}
           threadMessages={threadMessages}
-          canWrite={canWrite}
+          canPostMessages={canPostMessages}
           onClose={() => setActiveThreadParent(null)}
           onSendMessage={async (content, files) => {
             if (!activeThreadParent) return false;
@@ -1741,7 +1742,7 @@ export function ChatArea({
           <button
             type="button"
             className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-primary disabled:opacity-30"
-            disabled={!canWrite || !canPostInComposer || sendingAttachments}
+            disabled={!canPostMessages || !canPostInComposer || sendingAttachments}
             title="Attach image, video, or document"
             aria-label="Attach file"
             onClick={() => attachmentInputRef.current?.click()}
@@ -1794,12 +1795,14 @@ export function ChatArea({
                 }
               }}
               placeholder={activeBubble ? `Message #${activeBubble.name}` : 'Select a bubble…'}
-              disabled={!canWrite || !canPostInComposer || sendingAttachments}
+              disabled={!canPostMessages || !canPostInComposer || sendingAttachments}
               className="w-full rounded-xl border border-input bg-background px-4 py-3 pr-12 text-foreground transition-all placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-50"
             />
             <button
               type="submit"
-              disabled={!input.trim() || !canWrite || !canPostInComposer || sendingAttachments}
+              disabled={
+                !input.trim() || !canPostMessages || !canPostInComposer || sendingAttachments
+              }
               className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-primary hover:bg-primary/10 rounded-lg disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
             >
               {sendingAttachments ? (

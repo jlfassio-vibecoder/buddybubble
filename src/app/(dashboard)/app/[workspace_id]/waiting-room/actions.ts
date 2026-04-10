@@ -27,8 +27,8 @@ export async function bulkApproveJoinRequests(
     .maybeSingle();
 
   const role = (mem as { role?: string } | null)?.role;
-  if (role !== 'admin') {
-    return { approved: 0, errors: ['Only workspace admins can approve join requests.'] };
+  if (role !== 'admin' && role !== 'owner') {
+    return { approved: 0, errors: ['Only workspace admins and owners can approve join requests.'] };
   }
 
   const unique = [

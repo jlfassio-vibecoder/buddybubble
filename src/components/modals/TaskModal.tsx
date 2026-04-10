@@ -59,6 +59,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { ItemTypeSelector } from '@/components/board/item-type-selector';
 import { indefiniteArticleForUiNoun, itemTypeUiNoun } from '@/lib/item-type-styles';
+import { ALL_BUBBLES_BUBBLE_ID } from '@/lib/all-bubbles';
+import { usePresenceStore } from '@/store/presenceStore';
+import { useWorkspaceStore } from '@/store/workspaceStore';
 
 export type TaskModalTab = 'details' | 'comments' | 'subtasks' | 'activity';
 
@@ -134,6 +137,29 @@ export function TaskModal({
   calendarTimezone = null,
   onTaskArchived,
 }: TaskModalProps) {
+  const updateFocus = usePresenceStore((s) => s.updateFocus);
+  const activeBubble = useWorkspaceStore((s) => s.activeBubble);
+
+  useEffect(() => {
+    if (!open) {
+      if (activeBubble?.id && activeBubble.id !== ALL_BUBBLES_BUBBLE_ID) {
+        void updateFocus({ focus_type: 'bubble', focus_id: activeBubble.id });
+      } else {
+        void updateFocus({ focus_type: 'workspace', focus_id: null });
+      }
+      return;
+    }
+    if (taskId) {
+      void updateFocus({ focus_type: 'task', focus_id: taskId });
+      return;
+    }
+    if (activeBubble?.id && activeBubble.id !== ALL_BUBBLES_BUBBLE_ID) {
+      void updateFocus({ focus_type: 'bubble', focus_id: activeBubble.id });
+    } else {
+      void updateFocus({ focus_type: 'workspace', focus_id: null });
+    }
+  }, [open, taskId, activeBubble?.id, updateFocus]);
+
   const [tab, setTab] = useState<TabId>('details');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);

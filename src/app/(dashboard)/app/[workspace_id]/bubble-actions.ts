@@ -89,10 +89,7 @@ export async function updateBubbleAction(input: {
 
   if (Object.keys(updates).length === 0) return { ok: true };
 
-  const { error } = await supabase
-    .from('bubbles')
-    .update(updates)
-    .eq('id', input.bubbleId);
+  const { error } = await supabase.from('bubbles').update(updates).eq('id', input.bubbleId);
 
   if (error) return { error: error.message };
 
@@ -299,7 +296,9 @@ export async function listWorkspaceMembersForBubbleAction(
 
 export async function listWorkspaceBubbleAccessAction(
   workspaceId: string,
-): Promise<ActionResult<{ bubbles: WorkspaceBubbleSummary[]; memberships: WorkspaceBubbleMembership[] }>> {
+): Promise<
+  ActionResult<{ bubbles: WorkspaceBubbleSummary[]; memberships: WorkspaceBubbleMembership[] }>
+> {
   const supabase = await createClient();
   const {
     data: { user },

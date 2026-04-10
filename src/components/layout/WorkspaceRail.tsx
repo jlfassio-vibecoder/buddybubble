@@ -1,14 +1,13 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { PanelLeftClose, Plus } from 'lucide-react';
+import { PanelLeftClose, Plus, UserPlus } from 'lucide-react';
 import { setLastWorkspaceCookieClient } from '@/lib/workspace-cookies';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore, type WorkspaceRow } from '@/store/workspaceStore';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { CreateWorkspaceModal } from '@/components/modals/CreateWorkspaceModal';
 import {
   COLLAPSED_COLUMN_WIDTH_CLASS,
   CollapsedColumnStrip,
@@ -26,6 +25,14 @@ type Props = {
   embedMode?: boolean;
   /** e.g. mobile sheet: hide collapse control (drawer closes via overlay). */
   hideRailCollapseButton?: boolean;
+  /** Current route workspace — drives `/app/{id}/invites` link in the rail footer. */
+  workspaceId?: string;
+  /** Pending join requests badge (only non-zero for admins in `DashboardShell`). */
+  pendingJoinRequestCount?: number;
+  /** Opens People & invites in a modal (e.g. `DashboardShell`); falls back to `/invites` link when omitted. */
+  onOpenPeopleInvites?: () => void;
+  /** Opens Create BuddyBubble (e.g. `DashboardShell`); required for the + control when not in embed mode. */
+  onOpenCreateWorkspace?: () => void;
 };
 
 function categoryRing(category: WorkspaceRow['category_type']): string {
@@ -52,11 +59,14 @@ export function WorkspaceRail({
   profileName,
   embedMode = false,
   hideRailCollapseButton = false,
+  workspaceId,
+  pendingJoinRequestCount = 0,
+  onOpenPeopleInvites,
+  onOpenCreateWorkspace,
 }: Props) {
   const pathname = usePathname();
   const userWorkspaces = useWorkspaceStore((s) => s.userWorkspaces);
   const setActiveWorkspaceId = useWorkspaceStore((s) => s.setActiveWorkspaceId);
-  const [createOpen, setCreateOpen] = useState(false);
 
   const expand = useCallback(() => onCollapsedChange(false), [onCollapsedChange]);
   const collapse = useCallback(() => onCollapsedChange(true), [onCollapsedChange]);
@@ -76,7 +86,8 @@ export function WorkspaceRail({
     <>
       <aside
         className={cn(
-          'flex min-h-0 flex-col overflow-hidden bg-[var(--rail-bg)] transition-[width] duration-200 ease-out motion-reduce:transition-none',
+          /* Avoid overflow-hidden on the column — it can clip the footer invite/create/profile stack. */
+          'flex min-h-0 flex-col bg-[var(--rail-bg)] transition-[width] duration-200 ease-out motion-reduce:transition-none',
           !collapsed && 'h-full w-[72px] shrink-0 border-r border-white/15 py-2',
           isCollapsedStrip &&
             cn('h-full shrink-0 border-r border-white/15 py-2', COLLAPSED_COLUMN_WIDTH_CLASS),
@@ -164,11 +175,65 @@ export function WorkspaceRail({
               )}
               {!embedMode ? (
                 <>
+                  {workspaceId ? (
+                    <div className="flex w-full flex-col items-center gap-1 border-b border-white/10 pb-2">
+                      {onOpenPeopleInvites ? (
+                        <button
+                          type="button"
+                          onClick={onOpenPeopleInvites}
+                          className="relative flex h-12 w-12 items-center justify-center rounded-[14px] bg-white/10 text-white/55 ring-2 ring-inset ring-white/20 transition-colors hover:bg-[color:var(--sidebar-active)] hover:text-[var(--primary-foreground)] hover:ring-[color:var(--sidebar-active)]/50 motion-reduce:transition-none"
+                          aria-label={
+                            pendingJoinRequestCount > 0
+                              ? `Invite people — ${pendingJoinRequestCount} pending join request${pendingJoinRequestCount === 1 ? '' : 's'}`
+                              : 'Invite people to this workspace'
+                          }
+                          title={
+                            pendingJoinRequestCount > 0
+                              ? `Invite & approvals (${pendingJoinRequestCount} pending)`
+                              : 'Invite people'
+                          }
+                        >
+                          <UserPlus className="h-6 w-6" strokeWidth={2.25} aria-hidden />
+                          {pendingJoinRequestCount > 0 ? (
+                            <span className="absolute -right-0.5 -top-0.5 flex min-h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full border-2 border-[color:var(--rail-bg)] bg-destructive px-1 text-[9px] font-bold leading-none text-destructive-foreground">
+                              {pendingJoinRequestCount > 99 ? '99+' : pendingJoinRequestCount}
+                            </span>
+                          ) : null}
+                        </button>
+                      ) : (
+                        <Link
+                          href={
+                            pendingJoinRequestCount > 0
+                              ? `/app/${workspaceId}/invites?tab=pending`
+                              : `/app/${workspaceId}/invites`
+                          }
+                          className="relative flex h-12 w-12 items-center justify-center rounded-[14px] bg-white/10 text-white/55 ring-2 ring-inset ring-white/20 transition-colors hover:bg-[color:var(--sidebar-active)] hover:text-[var(--primary-foreground)] hover:ring-[color:var(--sidebar-active)]/50 motion-reduce:transition-none"
+                          aria-label={
+                            pendingJoinRequestCount > 0
+                              ? `Invite people — ${pendingJoinRequestCount} pending join request${pendingJoinRequestCount === 1 ? '' : 's'}`
+                              : 'Invite people to this workspace'
+                          }
+                          title={
+                            pendingJoinRequestCount > 0
+                              ? `Invite & approvals (${pendingJoinRequestCount} pending)`
+                              : 'Invite people'
+                          }
+                        >
+                          <UserPlus className="h-6 w-6" strokeWidth={2.25} aria-hidden />
+                          {pendingJoinRequestCount > 0 ? (
+                            <span className="absolute -right-0.5 -top-0.5 flex min-h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full border-2 border-[color:var(--rail-bg)] bg-destructive px-1 text-[9px] font-bold leading-none text-destructive-foreground">
+                              {pendingJoinRequestCount > 99 ? '99+' : pendingJoinRequestCount}
+                            </span>
+                          ) : null}
+                        </Link>
+                      )}
+                    </div>
+                  ) : null}
                   <button
                     type="button"
                     title="Create a BuddyBubble"
                     aria-label="Create a BuddyBubble"
-                    onClick={() => setCreateOpen(true)}
+                    onClick={() => onOpenCreateWorkspace?.()}
                     className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-white/10 text-white/55 ring-2 ring-inset ring-white/20 transition-colors hover:bg-[color:var(--sidebar-active)] hover:text-[var(--primary-foreground)] hover:ring-[color:var(--sidebar-active)]/50 motion-reduce:transition-none"
                   >
                     <Plus className="h-6 w-6" strokeWidth={2.25} />
@@ -201,8 +266,6 @@ export function WorkspaceRail({
           </>
         )}
       </aside>
-
-      {!embedMode ? <CreateWorkspaceModal open={createOpen} onOpenChange={setCreateOpen} /> : null}
     </>
   );
 }

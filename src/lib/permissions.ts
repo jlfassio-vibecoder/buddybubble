@@ -9,6 +9,15 @@
 
 import type { MemberRole, BubbleMemberRole } from '@/types/database';
 
+/** Normalize DB / API role strings for permission checks (case-insensitive). */
+export function parseMemberRole(raw: string | null | undefined): MemberRole {
+  const r = String(raw ?? '')
+    .trim()
+    .toLowerCase();
+  if (r === 'owner' || r === 'admin' || r === 'member' || r === 'guest') return r;
+  return 'member';
+}
+
 /** Numeric rank: higher = more capability. */
 const ROLE_RANK: Record<MemberRole, number> = {
   owner: 4,
@@ -91,7 +100,19 @@ export function canViewBubble(
 // ---------------------------------------------------------------------------
 
 export interface PermissionFlags {
-  /** Can create/edit/delete tasks in the current bubble. */
+  /** Can create/edit/delete tasks in the current bubble (matches `can_write_bubble` RLS). */
+  canWriteTasks: boolean;
+  /**
+   * Can post in chat for the current bubble (matches `messages_insert` / `can_view_bubble` RLS).
+   * Differs from task write: viewers may message but not edit tasks.
+   */
+  canPostMessages: boolean;
+  /**
+   * Can create new workspace channels/bubbles (matches `bubbles_insert` / `can_write_workspace` RLS).
+   * Workspace-level only — not granted by bubble_editor alone.
+   */
+  canCreateWorkspaceBubble: boolean;
+  /** Same as `canWriteTasks` (legacy name). */
   canWrite: boolean;
   /** Can view the current bubble (tasks + messages). */
   canView: boolean;
@@ -110,9 +131,14 @@ export function resolvePermissions(
   bubbleMemberRole: BubbleMemberRole | null = null,
   isBubblePrivate: boolean = false,
 ): PermissionFlags {
+  const canWriteTasks = canWriteBubble(workspaceRole, bubbleMemberRole, isBubblePrivate);
+  const canViewBubbleFlag = canViewBubble(workspaceRole, bubbleMemberRole, isBubblePrivate);
   return {
-    canWrite: canWriteBubble(workspaceRole, bubbleMemberRole, isBubblePrivate),
-    canView: canViewBubble(workspaceRole, bubbleMemberRole, isBubblePrivate),
+    canWriteTasks,
+    canPostMessages: canViewBubbleFlag,
+    canCreateWorkspaceBubble: canWriteWorkspace(workspaceRole),
+    canWrite: canWriteTasks,
+    canView: canViewBubbleFlag,
     isAdmin: canManageWorkspace(workspaceRole),
     isOwner: workspaceRole === 'owner',
     canManageMembers: canManageWorkspace(workspaceRole),

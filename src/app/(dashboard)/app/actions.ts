@@ -60,7 +60,7 @@ async function createWorkspaceCore(name: string, categoryType: string): Promise<
   const { error: memError } = await supabase.from('workspace_members').insert({
     workspace_id: workspaceId,
     user_id: user.id,
-    role: 'admin',
+    role: 'owner',
   });
 
   if (memError) {

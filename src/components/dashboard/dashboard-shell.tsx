@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { X } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
-import type { BubbleRow, TaskRow } from '@/types/database';
+import type { BubbleMemberRole, BubbleRow, TaskRow } from '@/types/database';
 import {
   ALL_BUBBLES_BUBBLE_ID,
   makeAllBubblesBubbleRow,
@@ -20,7 +20,9 @@ import { CalendarRail } from '@/components/dashboard/calendar-rail';
 import { WorkspaceMainSplit } from '@/components/dashboard/workspace-main-split';
 import { TaskModal, type TaskModalTab } from '@/components/modals/TaskModal';
 import { WorkspaceSettingsModal } from '@/components/modals/WorkspaceSettingsModal';
-import { ProfileModal } from '@/components/modals/ProfileModal';
+import { PeopleInvitesModal } from '@/components/modals/PeopleInvitesModal';
+import { CreateWorkspaceModal } from '@/components/modals/CreateWorkspaceModal';
+import { ProfileModal, type ProfilePermissionsContext } from '@/components/modals/ProfileModal';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { fetchPendingJoinRequestCountAndPreview } from '@/lib/workspace-join-requests';
@@ -49,7 +51,10 @@ import {
   type DesktopFocusMode,
 } from '@/components/layout/desktop-view-switcher';
 import type { MemberRole } from '@/types/database';
+import { parseMemberRole } from '@/lib/permissions';
 import { usePermissions } from '@/hooks/use-permissions';
+import { useUpdatePresence } from '@/hooks/use-update-presence';
+import { ActiveUsersStack } from '@/components/presence/ActiveUsersStack';
 
 type Props = {
   workspaceId: string;
@@ -88,12 +93,16 @@ export function DashboardShell({
     useState<JoinRequestPreviewItem[]>(initialJoinRequestPreview);
 
   const [bubbles, setBubbles] = useState<BubbleRow[]>([]);
+  /** Current user's explicit bubble_members.role for the selected bubble (null if none or aggregate view). */
+  const [myBubbleRole, setMyBubbleRole] = useState<BubbleMemberRole | null>(null);
   const [selectedBubbleId, setSelectedBubbleId] = useState<string | null>(ALL_BUBBLES_BUBBLE_ID);
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [taskModalTaskId, setTaskModalTaskId] = useState<string | null>(null);
   const [taskModalInitialStatus, setTaskModalInitialStatus] = useState<string | null>(null);
   const [taskModalInitialTab, setTaskModalInitialTab] = useState<TaskModalTab | null>(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [peopleInvitesOpen, setPeopleInvitesOpen] = useState(false);
+  const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false);
   const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false);
   const [commentAlert, setCommentAlert] = useState<{ taskId: string; title: string } | null>(null);
   const [workspaceRailCollapsed, setWorkspaceRailCollapsed] = useState(false);
@@ -107,6 +116,15 @@ export function DashboardShell({
   const [boardStripExpandNonce, setBoardStripExpandNonce] = useState(0);
 
   const bumpTaskViews = useCallback(() => setTaskViewsNonce((n) => n + 1), []);
+
+  const openPeopleInvites = useCallback(() => {
+    setPeopleInvitesOpen(true);
+    if (layoutMobile) setMobileNavOpen(false);
+  }, [layoutMobile]);
+
+  const openCreateWorkspace = useCallback(() => {
+    setCreateWorkspaceOpen(true);
+  }, []);
 
   /** At least one of Messages or Kanban must stay expanded (not both strips-only). */
   const setChatCollapsed = useCallback((v: boolean) => {
@@ -158,7 +176,61 @@ export function DashboardShell({
     taskId: null,
   });
 
-  const { canWrite, isAdmin } = usePermissions(initialRole);
+  const activeBubbleIsPrivate = useMemo(() => {
+    if (selectedBubbleId === ALL_BUBBLES_BUBBLE_ID) return false;
+    return bubbles.find((b) => b.id === selectedBubbleId)?.is_private ?? false;
+  }, [bubbles, selectedBubbleId]);
+
+  /**
+   * Prefer the role from the client workspace store (fresh `workspace_members` read) over the
+   * layout SSR prop so owner/admin UI (e.g. invite) matches the DB when the server prop is stale.
+   */
+  const effectiveWorkspaceRole = useMemo((): MemberRole => {
+    if (activeWorkspace?.id === workspaceId) {
+      return parseMemberRole(String(activeWorkspace.role));
+    }
+    return initialRole;
+  }, [activeWorkspace, workspaceId, initialRole]);
+
+  useEffect(() => {
+    const uid = profile?.id;
+    if (!uid) {
+      setMyBubbleRole(null);
+      return;
+    }
+    if (selectedBubbleId === ALL_BUBBLES_BUBBLE_ID || selectedBubbleId === null) {
+      setMyBubbleRole(null);
+      return;
+    }
+    const supabase = createClient();
+    let cancelled = false;
+    void supabase
+      .from('bubble_members')
+      .select('role')
+      .eq('bubble_id', selectedBubbleId)
+      .eq('user_id', uid)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          setMyBubbleRole(null);
+          return;
+        }
+        const r = (data as { role?: string } | null)?.role;
+        setMyBubbleRole(r === 'editor' || r === 'viewer' ? r : null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceId, profile?.id, selectedBubbleId, bubbles]);
+
+  const { canWriteTasks, canPostMessages, canCreateWorkspaceBubble, isAdmin } = usePermissions(
+    effectiveWorkspaceRole,
+    myBubbleRole,
+    activeBubbleIsPrivate,
+  );
+
+  useUpdatePresence({ embedMode, workspaceId });
 
   const openTaskModal = useCallback((id: string, opts?: { tab?: TaskModalTab }) => {
     setTaskModalTaskId(id);
@@ -178,7 +250,7 @@ export function DashboardShell({
       workspaceId,
       bubbles,
       activeBubbleId: selectedBubbleId,
-      canWrite,
+      canWrite: canWriteTasks,
       calendarTimezone: workspaceCalendarTz,
       workspaceCategory: effectiveKanbanCategory,
       onOpenTask: openTaskModal,
@@ -187,7 +259,7 @@ export function DashboardShell({
       workspaceId,
       bubbles,
       selectedBubbleId,
-      canWrite,
+      canWriteTasks,
       workspaceCalendarTz,
       effectiveKanbanCategory,
       openTaskModal,
@@ -446,6 +518,11 @@ export function DashboardShell({
     profileAvatarUrl: profile?.avatar_url,
     profileName: profile?.full_name ?? profile?.email,
     embedMode,
+    workspaceId,
+    /** Badge only for admins; link is shown for all members (invites page enforces admin/owner). */
+    pendingJoinRequestCount: isAdmin ? pendingJoinRequestCount : 0,
+    onOpenPeopleInvites: embedMode ? undefined : openPeopleInvites,
+    onOpenCreateWorkspace: embedMode ? undefined : openCreateWorkspace,
   };
 
   const onSelectBubble = useCallback(
@@ -474,6 +551,30 @@ export function DashboardShell({
     return n || 'BuddyBubble';
   }, [activeWorkspace?.id, activeWorkspace?.name, workspaceId]);
 
+  const profilePermissionsContext = useMemo((): ProfilePermissionsContext | undefined => {
+    if (embedMode) return undefined;
+    return {
+      workspaceName: workspaceTitle,
+      workspaceRole: effectiveWorkspaceRole,
+      selectedBubbleLabel: resolveBuddyBubbleDisplayTitle(
+        selectedBubbleId,
+        bubbles,
+        activeWorkspace?.name ?? null,
+      ),
+      bubbleMemberRole: myBubbleRole,
+      selectedBubbleIsPrivate: activeBubbleIsPrivate,
+    };
+  }, [
+    embedMode,
+    workspaceTitle,
+    effectiveWorkspaceRole,
+    selectedBubbleId,
+    bubbles,
+    activeWorkspace?.name,
+    myBubbleRole,
+    activeBubbleIsPrivate,
+  ]);
+
   const bubbleSidebarProps = {
     workspaceId,
     collapsed: bubbleSidebarCollapsed,
@@ -482,9 +583,8 @@ export function DashboardShell({
     selectedBubbleId,
     onSelectBubble,
     onBubblesChange: setBubbles,
-    canWrite,
+    canCreateWorkspaceBubble,
     isAdmin: isAdmin,
-    pendingJoinRequestCount: isAdmin ? pendingJoinRequestCount : 0,
     onOpenWorkspaceSettings: embedMode ? undefined : () => setWorkspaceSettingsOpen(true),
     workspaceTitle,
   };
@@ -558,7 +658,12 @@ export function DashboardShell({
   return (
     <ThemeScope category={effectiveThemeCategory}>
       <div className="flex h-screen min-h-0 flex-col bg-background md:flex-row md:overflow-hidden">
-        {layoutMobile ? <MobileHeader title={buddyBubbleTitle} /> : null}
+        {layoutMobile ? (
+          <MobileHeader
+            title={buddyBubbleTitle}
+            trailing={embedMode ? null : <ActiveUsersStack localUserId={profile?.id} />}
+          />
+        ) : null}
         {layoutMobile ? (
           <MobileSidebarSheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
             <WorkspaceRail {...drawerRailProps} />
@@ -577,11 +682,14 @@ export function DashboardShell({
                 <span className="font-normal text-muted-foreground"> - </span>
                 {workspaceTitle}
               </span>
-              <DesktopViewSwitcher
-                activeMode={desktopFocusModeActive}
-                onChange={applyDesktopFocusMode}
-                disabled={!layoutHydrated}
-              />
+              <div className="flex min-w-0 shrink-0 items-center gap-2">
+                {embedMode ? null : <ActiveUsersStack localUserId={profile?.id} />}
+                <DesktopViewSwitcher
+                  activeMode={desktopFocusModeActive}
+                  onChange={applyDesktopFocusMode}
+                  disabled={!layoutHydrated}
+                />
+              </div>
             </div>
           ) : null}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:min-h-0 md:flex-row">
@@ -659,18 +767,16 @@ export function DashboardShell({
               renderChat={({ onCollapse }) => (
                 <ChatArea
                   bubbles={bubbles}
-                  canWrite={canWrite}
+                  canPostMessages={canPostMessages}
                   onOpenTask={openTaskModal}
                   onCollapse={onCollapse}
                   workspaceTitle={workspaceTitle}
-                  joinRequestBellPreview={
-                    isAdmin ? joinRequestBellPreview : undefined
-                  }
+                  joinRequestBellPreview={isAdmin ? joinRequestBellPreview : undefined}
                 />
               )}
               board={
                 <KanbanBoard
-                  canWrite={canWrite}
+                  canWrite={canWriteTasks}
                   bubbles={bubbles}
                   onOpenTask={openTaskModal}
                   onOpenCreateTask={openCreateTaskModal}
@@ -697,7 +803,7 @@ export function DashboardShell({
             selectedBubbleId === ALL_BUBBLES_BUBBLE_ID ? (bubbles[0]?.id ?? null) : selectedBubbleId
           }
           workspaceId={workspaceId}
-          canWrite={canWrite}
+          canWrite={canWriteTasks}
           onCreated={(id) => {
             setTaskModalTaskId(id);
             bumpTaskViews();
@@ -717,7 +823,22 @@ export function DashboardShell({
             void loadUserWorkspaces().then(() => syncActiveFromRoute(workspaceId));
           }}
         />
-        <ProfileModal open={profileModalOpen} onOpenChange={setProfileModalOpen} />
+        <ProfileModal
+          open={profileModalOpen}
+          onOpenChange={setProfileModalOpen}
+          permissionsContext={profilePermissionsContext}
+        />
+        <PeopleInvitesModal
+          open={peopleInvitesOpen}
+          onOpenChange={setPeopleInvitesOpen}
+          workspaceId={workspaceId}
+          themeCategory={effectiveThemeCategory}
+          preferPendingTab={pendingJoinRequestCount > 0}
+          onRequestCreateOwnWorkspace={embedMode ? undefined : openCreateWorkspace}
+        />
+        {!embedMode ? (
+          <CreateWorkspaceModal open={createWorkspaceOpen} onOpenChange={setCreateWorkspaceOpen} />
+        ) : null}
         {commentAlert ? (
           <div
             className="pointer-events-auto fixed bottom-20 left-1/2 z-[100] flex max-w-md -translate-x-1/2 items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-lg md:bottom-6"
