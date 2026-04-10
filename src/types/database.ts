@@ -6,7 +6,7 @@
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
 /** Template for a new BuddyBubble (`workspaces.category_type`). */
-export type WorkspaceCategory = 'business' | 'kids' | 'class' | 'community';
+export type WorkspaceCategory = 'business' | 'kids' | 'class' | 'community' | 'fitness';
 export type MemberRole = 'owner' | 'admin' | 'member' | 'guest';
 export type BubbleMemberRole = 'editor' | 'viewer';
 export type InviteType = 'qr' | 'link' | 'email' | 'sms';

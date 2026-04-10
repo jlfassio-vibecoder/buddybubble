@@ -6,7 +6,7 @@ import type { BubbleRow } from '@/types/database';
 export type WorkspaceRow = {
   id: string;
   name: string;
-  category_type: 'business' | 'kids' | 'class' | 'community';
+  category_type: 'business' | 'kids' | 'class' | 'community' | 'fitness';
   created_at: string;
   role: 'admin' | 'member' | 'guest';
   /** Avatar in the far-left rail; optional until set in DB. */

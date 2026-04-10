@@ -7,7 +7,7 @@ import { createClient } from '@utils/supabase/server';
 
 export type CreateWorkspaceState = { error?: string } | null;
 
-const VALID_CATEGORIES = ['business', 'kids', 'class', 'community'] as const;
+const VALID_CATEGORIES = ['business', 'kids', 'class', 'community', 'fitness'] as const;
 type ValidCategory = (typeof VALID_CATEGORIES)[number];
 
 type CoreOk = { workspaceId: string };

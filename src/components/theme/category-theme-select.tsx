@@ -10,6 +10,7 @@ const OPTIONS: { value: CategoryThemeOverride; label: string }[] = [
   { value: 'kids', label: 'Kids & Family' },
   { value: 'community', label: 'Community' },
   { value: 'class', label: 'Class Cohort' },
+  { value: 'fitness', label: 'Fitness' },
 ];
 
 type Props = {

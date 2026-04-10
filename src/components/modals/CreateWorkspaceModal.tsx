@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Building2, GraduationCap, Heart, Users } from 'lucide-react';
+import { Building2, Dumbbell, GraduationCap, Heart, Users } from 'lucide-react';
 import { createWorkspaceFromModal } from '@/app/(dashboard)/app/actions';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { formatUserFacingError } from '@/lib/format-error';
@@ -31,6 +31,7 @@ const CATEGORY_OPTIONS: {
   { value: 'kids', label: 'Kids', hint: 'Family & children', icon: Heart },
   { value: 'class', label: 'Class', hint: 'Courses & learning', icon: GraduationCap },
   { value: 'community', label: 'Community', hint: 'Clubs & neighbors', icon: Users },
+  { value: 'fitness', label: 'Fitness', hint: 'Workouts & wellness', icon: Dumbbell },
 ];
 
 export type CreateWorkspaceModalProps = {
