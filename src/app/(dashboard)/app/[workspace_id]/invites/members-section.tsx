@@ -100,14 +100,22 @@ export function MembersSection({ workspaceId, currentUserId, callerRole }: Props
       listWorkspaceBubbleAccessAction(workspaceId),
     ]);
     setLoading(false);
-    if ('error' in membersResult) { setError(membersResult.error); return; }
-    if ('error' in accessResult) { setError(accessResult.error); return; }
+    if ('error' in membersResult) {
+      setError(membersResult.error);
+      return;
+    }
+    if ('error' in accessResult) {
+      setError(accessResult.error);
+      return;
+    }
     setMembers(membersResult.members);
     setBubbles(accessResult.bubbles);
     setMemberships(accessResult.memberships);
   }, [workspaceId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   // Owners pinned to top; within each tier order is preserved from server (created_at asc)
   const sortedMembers = useMemo(
@@ -123,8 +131,12 @@ export function MembersSection({ workspaceId, currentUserId, callerRole }: Props
     setMessage(null);
     startTransition(async () => {
       const result = await updateMemberRoleAction({ workspaceId, targetUserId: userId, newRole });
-      if ('error' in result) { setError(result.error); }
-      else { setMessage('Role updated.'); await load(); }
+      if ('error' in result) {
+        setError(result.error);
+      } else {
+        setMessage('Role updated.');
+        await load();
+      }
     });
   };
 
@@ -133,8 +145,12 @@ export function MembersSection({ workspaceId, currentUserId, callerRole }: Props
     setMessage(null);
     startTransition(async () => {
       const result = await removeMemberAction({ workspaceId, targetUserId: userId });
-      if ('error' in result) { setError(result.error); }
-      else { setMessage('Member removed.'); await load(); }
+      if ('error' in result) {
+        setError(result.error);
+      } else {
+        setMessage('Member removed.');
+        await load();
+      }
     });
   };
 
@@ -155,7 +171,10 @@ export function MembersSection({ workspaceId, currentUserId, callerRole }: Props
         userId: targetUserId,
         role,
       });
-      if ('error' in result) { setError(result.error); await load(); }
+      if ('error' in result) {
+        setError(result.error);
+        await load();
+      }
     });
   };
 
@@ -172,14 +191,15 @@ export function MembersSection({ workspaceId, currentUserId, callerRole }: Props
         bubbleId,
         userId: targetUserId,
       });
-      if ('error' in result) { setError(result.error); await load(); }
+      if ('error' in result) {
+        setError(result.error);
+        await load();
+      }
     });
   };
 
   const assignableRoles: MemberRole[] =
-    callerRole === 'owner'
-      ? ['owner', 'admin', 'member', 'guest']
-      : ['admin', 'member', 'guest'];
+    callerRole === 'owner' ? ['owner', 'admin', 'member', 'guest'] : ['admin', 'member', 'guest'];
 
   if (loading) {
     return <p className="text-sm text-muted-foreground">Loading members…</p>;
@@ -190,9 +210,8 @@ export function MembersSection({ workspaceId, currentUserId, callerRole }: Props
       {/* Inline help */}
       <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
         <strong className="font-medium text-foreground">Member</strong> — default write access to
-        all non-private bubbles.{' '}
-        <strong className="font-medium text-foreground">Guest</strong> — no bubble access unless
-        explicitly granted below.{' '}
+        all non-private bubbles. <strong className="font-medium text-foreground">Guest</strong> — no
+        bubble access unless explicitly granted below.{' '}
         <strong className="font-medium text-foreground">Owner / Admin</strong> — full access to all
         bubbles via workspace role. Expand a row to view and manage per-bubble access.
       </div>
@@ -232,10 +251,7 @@ export function MembersSection({ workspaceId, currentUserId, callerRole }: Props
                 <Fragment key={m.user_id}>
                   {/* Main member row */}
                   <tr
-                    className={cn(
-                      'border-b border-border',
-                      isExpanded && 'border-b-0 bg-muted/10',
-                    )}
+                    className={cn('border-b border-border', isExpanded && 'border-b-0 bg-muted/10')}
                   >
                     {/* Member cell with expand toggle */}
                     <td className="px-4 py-3">
@@ -244,7 +260,9 @@ export function MembersSection({ workspaceId, currentUserId, callerRole }: Props
                           type="button"
                           onClick={() => setExpandedUserId(isExpanded ? null : m.user_id)}
                           className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground"
-                          aria-label={isExpanded ? 'Collapse bubble access' : 'Expand bubble access'}
+                          aria-label={
+                            isExpanded ? 'Collapse bubble access' : 'Expand bubble access'
+                          }
                           title={isExpanded ? 'Hide bubble access' : 'Show bubble access'}
                         >
                           {isExpanded ? (
