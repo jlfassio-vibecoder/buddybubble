@@ -1,12 +1,12 @@
 import { create } from 'zustand';
 import { createClient } from '@utils/supabase/client';
-import type { BubbleRow } from '@/types/database';
+import type { BubbleRow, WorkspaceCategory } from '@/types/database';
 
 /** One BuddyBubble the user belongs to (stored in `workspaces`). */
 export type WorkspaceRow = {
   id: string;
   name: string;
-  category_type: 'business' | 'kids' | 'class' | 'community' | 'fitness';
+  category_type: WorkspaceCategory;
   created_at: string;
   role: 'admin' | 'member' | 'guest';
   /** Avatar in the far-left rail; optional until set in DB. */

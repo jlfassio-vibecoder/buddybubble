@@ -8,8 +8,8 @@ function normalizeCategory(
   category: WorkspaceCategory | string | null | undefined,
 ): WorkspaceCategory {
   const c = String(category ?? '').toLowerCase();
-  if (c === 'business' || c === 'kids' || c === 'class' || c === 'community' || c === 'fitness') {
-    return c;
+  if (c in THEME_REGISTRY) {
+    return c as WorkspaceCategory;
   }
   return DEFAULT_CATEGORY;
 }
