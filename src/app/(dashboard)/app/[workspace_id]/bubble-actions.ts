@@ -160,6 +160,10 @@ export async function addBubbleMemberAction(input: {
   const check = await requireBubbleAdmin(supabase, input.bubbleId, user.id);
   if (!check.ok) return { error: check.error };
 
+  if (input.workspaceId !== check.workspaceId) {
+    return { error: 'Bubble does not belong to this workspace.' };
+  }
+
   // Verify target is a workspace member (use verified workspaceId from bubble lookup)
   const { data: wsMember } = await supabase
     .from('workspace_members')
