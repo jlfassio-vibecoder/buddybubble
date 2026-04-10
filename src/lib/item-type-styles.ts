@@ -1,5 +1,13 @@
 import type { LucideIcon } from 'lucide-react';
-import { Camera, CheckSquare, Lightbulb, MapPin, Sparkles } from 'lucide-react';
+import {
+  Camera,
+  CheckSquare,
+  ClipboardList,
+  Dumbbell,
+  Lightbulb,
+  MapPin,
+  Sparkles,
+} from 'lucide-react';
 import type { ItemType } from '@/types/database';
 
 /** Presentation config for `tasks.item_type` (Kanban, calendar micro cells, modal). */
@@ -17,7 +25,15 @@ export type ItemTypeVisual = {
   typeChip: string;
 };
 
-export const ITEM_TYPES_ORDER: ItemType[] = ['task', 'event', 'experience', 'idea', 'memory'];
+export const ITEM_TYPES_ORDER: ItemType[] = [
+  'task',
+  'event',
+  'experience',
+  'idea',
+  'memory',
+  'workout',
+  'workout_log',
+];
 
 export const ITEM_TYPE_VISUAL: Record<ItemType, ItemTypeVisual> = {
   task: {
@@ -65,6 +81,24 @@ export const ITEM_TYPE_VISUAL: Record<ItemType, ItemTypeVisual> = {
     typeChip:
       'border-rose-200/90 bg-rose-100 text-rose-800 dark:border-rose-800/50 dark:bg-rose-950/70 dark:text-rose-200',
   },
+  workout: {
+    Icon: Dumbbell,
+    label: 'Workout',
+    leftBar: 'border-l-emerald-500 dark:border-l-emerald-400',
+    surface: 'bg-emerald-500/[0.07] dark:bg-emerald-500/[0.12]',
+    iconText: 'text-emerald-600 dark:text-emerald-400',
+    typeChip:
+      'border-emerald-200/90 bg-emerald-100 text-emerald-900 dark:border-emerald-800/50 dark:bg-emerald-950/70 dark:text-emerald-200',
+  },
+  workout_log: {
+    Icon: ClipboardList,
+    label: 'Workout log',
+    leftBar: 'border-l-teal-500 dark:border-l-teal-400',
+    surface: 'bg-teal-500/[0.07] dark:bg-teal-500/[0.12]',
+    iconText: 'text-teal-600 dark:text-teal-400',
+    typeChip:
+      'border-teal-200/90 bg-teal-100 text-teal-900 dark:border-teal-800/50 dark:bg-teal-950/70 dark:text-teal-200',
+  },
 };
 
 export function getItemTypeVisual(type: ItemType): ItemTypeVisual {
@@ -78,6 +112,8 @@ export const ITEM_TYPE_UI_NOUN: Record<ItemType, string> = {
   experience: 'experience',
   idea: 'idea',
   memory: 'memory',
+  workout: 'workout',
+  workout_log: 'workout log',
 };
 
 export function itemTypeUiNoun(type: ItemType): string {

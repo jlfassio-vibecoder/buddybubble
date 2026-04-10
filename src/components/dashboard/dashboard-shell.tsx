@@ -24,6 +24,7 @@ import { PeopleInvitesModal } from '@/components/modals/PeopleInvitesModal';
 import { CreateWorkspaceModal } from '@/components/modals/CreateWorkspaceModal';
 import { ProfileModal, type ProfilePermissionsContext } from '@/components/modals/ProfileModal';
 import { ProfileCompletionModal } from '@/components/modals/ProfileCompletionModal';
+import { FitnessProfileSheet } from '@/components/fitness/FitnessProfileSheet';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { fetchPendingJoinRequestCountAndPreview } from '@/lib/workspace-join-requests';
@@ -106,6 +107,7 @@ export function DashboardShell({
   const [peopleInvitesOpen, setPeopleInvitesOpen] = useState(false);
   const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false);
   const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false);
+  const [fitnessProfileOpen, setFitnessProfileOpen] = useState(false);
   const [commentAlert, setCommentAlert] = useState<{ taskId: string; title: string } | null>(null);
   const [workspaceRailCollapsed, setWorkspaceRailCollapsed] = useState(false);
   const [bubbleSidebarCollapsed, setBubbleSidebarCollapsed] = useState(false);
@@ -532,6 +534,10 @@ export function DashboardShell({
     pendingJoinRequestCount: isAdmin ? pendingJoinRequestCount : 0,
     onOpenPeopleInvites: embedMode ? undefined : openPeopleInvites,
     onOpenCreateWorkspace: embedMode ? undefined : openCreateWorkspace,
+    onOpenFitnessProfile:
+      !embedMode && workspaceCategoryForUi === 'fitness'
+        ? () => setFitnessProfileOpen(true)
+        : undefined,
   };
 
   const onSelectBubble = useCallback(
@@ -855,6 +861,13 @@ export function DashboardShell({
         />
         {!embedMode ? (
           <CreateWorkspaceModal open={createWorkspaceOpen} onOpenChange={setCreateWorkspaceOpen} />
+        ) : null}
+        {workspaceCategoryForUi === 'fitness' ? (
+          <FitnessProfileSheet
+            open={fitnessProfileOpen}
+            onOpenChange={setFitnessProfileOpen}
+            workspaceId={workspaceId}
+          />
         ) : null}
         {commentAlert ? (
           <div

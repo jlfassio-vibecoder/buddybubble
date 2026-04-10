@@ -3,7 +3,7 @@
 import { useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { PanelLeftClose, Plus, UserPlus } from 'lucide-react';
+import { Dumbbell, PanelLeftClose, Plus, UserPlus } from 'lucide-react';
 import { setLastWorkspaceCookieClient } from '@/lib/workspace-cookies';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore, type WorkspaceRow } from '@/store/workspaceStore';
@@ -33,6 +33,8 @@ type Props = {
   onOpenPeopleInvites?: () => void;
   /** Opens Create BuddyBubble (e.g. `DashboardShell`); required for the + control when not in embed mode. */
   onOpenCreateWorkspace?: () => void;
+  /** Opens Fitness Profile sheet; only rendered when provided (fitness workspaces). */
+  onOpenFitnessProfile?: () => void;
 };
 
 function categoryRing(category: WorkspaceRow['category_type']): string {
@@ -44,6 +46,8 @@ function categoryRing(category: WorkspaceRow['category_type']): string {
     case 'class':
       return 'ring-[color:var(--sidebar-active)]/50';
     case 'community':
+      return 'ring-[color:var(--sidebar-active)]/50';
+    case 'fitness':
       return 'ring-[color:var(--sidebar-active)]/50';
     default:
       return 'ring-white/30';
@@ -63,6 +67,7 @@ export function WorkspaceRail({
   pendingJoinRequestCount = 0,
   onOpenPeopleInvites,
   onOpenCreateWorkspace,
+  onOpenFitnessProfile,
 }: Props) {
   const pathname = usePathname();
   const userWorkspaces = useWorkspaceStore((s) => s.userWorkspaces);
@@ -238,6 +243,17 @@ export function WorkspaceRail({
                   >
                     <Plus className="h-6 w-6" strokeWidth={2.25} />
                   </button>
+                  {onOpenFitnessProfile ? (
+                    <button
+                      type="button"
+                      title="Fitness Profile"
+                      aria-label="Open fitness profile"
+                      onClick={onOpenFitnessProfile}
+                      className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-white/10 text-white/55 ring-2 ring-inset ring-white/20 transition-colors hover:bg-[color:var(--sidebar-active)] hover:text-[var(--primary-foreground)] hover:ring-[color:var(--sidebar-active)]/50 motion-reduce:transition-none"
+                    >
+                      <Dumbbell className="h-6 w-6" strokeWidth={2.25} aria-hidden />
+                    </button>
+                  ) : null}
                   {onOpenProfile ? (
                     <button
                       type="button"

@@ -15,12 +15,15 @@ export type InvitationJoinRequestStatus = 'pending' | 'approved' | 'rejected' | 
 export type TaskStatus = 'todo' | 'in_progress' | 'done';
 
 /** Polymorphic kind for `public.tasks` (single-table Kanban + calendar). */
-export type ItemType = 'task' | 'event' | 'experience' | 'idea' | 'memory';
+export type ItemType = 'task' | 'event' | 'experience' | 'idea' | 'memory' | 'workout' | 'workout_log';
 
 /** Storefront visibility for `public.tasks.visibility`. */
 export type TaskVisibility = 'private' | 'public';
 
-const ITEM_TYPE_SET = new Set<string>(['task', 'event', 'experience', 'idea', 'memory']);
+/** Fitness unit preference. */
+export type UnitSystem = 'metric' | 'imperial';
+
+const ITEM_TYPE_SET = new Set<string>(['task', 'event', 'experience', 'idea', 'memory', 'workout', 'workout_log']);
 
 /** Safe default when `item_type` is missing (stale client) or invalid. */
 export function normalizeItemType(value: unknown): ItemType {
@@ -307,6 +310,31 @@ export interface Database {
         };
         Update: Partial<Database['public']['Tables']['tasks']['Insert']>;
       };
+      fitness_profiles: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          user_id: string;
+          goals: string[];
+          equipment: string[];
+          unit_system: UnitSystem;
+          biometrics: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          user_id: string;
+          goals?: string[];
+          equipment?: string[];
+          unit_system?: UnitSystem;
+          biometrics?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['fitness_profiles']['Insert']>;
+      };
       storefront_sandbox_messages: {
         Row: {
           id: string;
@@ -354,6 +382,7 @@ export interface Database {
   };
 }
 
+export type FitnessProfileRow = Database['public']['Tables']['fitness_profiles']['Row'];
 export type BubbleRow = Database['public']['Tables']['bubbles']['Row'];
 export type BubbleMemberRow = Database['public']['Tables']['bubble_members']['Row'];
 export type MessageRow = Database['public']['Tables']['messages']['Row'];

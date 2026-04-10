@@ -41,6 +41,7 @@ import {
   buildTaskMetadataPayload,
   metadataFieldsFromParsed,
   parseTaskMetadata,
+  type WorkoutExercise,
 } from '@/lib/item-metadata';
 import { isMissingColumnSchemaCacheError } from '@/lib/supabase-schema-errors';
 import {
@@ -183,6 +184,11 @@ export function TaskModal({
   /** YYYY-MM-DD experience span end (`metadata.end_date`). */
   const [experienceEndDate, setExperienceEndDate] = useState('');
   const [memoryCaption, setMemoryCaption] = useState('');
+  const [workoutType, setWorkoutType] = useState('');
+  const [workoutDurationMin, setWorkoutDurationMin] = useState('');
+  const [workoutExercises, setWorkoutExercises] = useState<WorkoutExercise[]>([]);
+  /** Tracks the name input for the "add exercise" inline form. */
+  const [newExerciseName, setNewExerciseName] = useState('');
 
   const [subtasks, setSubtasks] = useState<TaskSubtask[]>([]);
   const [comments, setComments] = useState<TaskComment[]>([]);
@@ -245,6 +251,9 @@ export function TaskModal({
           experienceSeason,
           experienceEndDate,
           memoryCaption,
+          workoutType,
+          workoutDurationMin,
+          workoutExercises,
         },
         metadata,
       ),
@@ -255,6 +264,9 @@ export function TaskModal({
       experienceSeason,
       experienceEndDate,
       memoryCaption,
+      workoutType,
+      workoutDurationMin,
+      workoutExercises,
       metadata,
     ],
   );
@@ -287,6 +299,10 @@ export function TaskModal({
       setExperienceSeason(mf.experienceSeason);
       setExperienceEndDate(mf.experienceEndDate);
       setMemoryCaption(mf.memoryCaption);
+      setWorkoutType(mf.workoutType);
+      setWorkoutDurationMin(mf.workoutDurationMin);
+      setWorkoutExercises(mf.workoutExercises);
+      setNewExerciseName('');
       setSubtasks(asSubtasks(row.subtasks));
       setComments(asComments(row.comments));
       setActivityLog(asActivityLog(row.activity_log));
@@ -1263,6 +1279,98 @@ export function TaskModal({
                       <p className="text-xs text-muted-foreground">
                         Photos and files go in Attachments below after you save.
                       </p>
+                    </div>
+                  )}
+
+                  {(itemType === 'workout' || itemType === 'workout_log') && (
+                    <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        {itemType === 'workout_log' ? 'Workout log' : 'Workout details'}
+                      </p>
+                      <div className="flex gap-3">
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <Label htmlFor="task-workout-type">Type</Label>
+                          <Input
+                            id="task-workout-type"
+                            value={workoutType}
+                            onChange={(e) => setWorkoutType(e.target.value)}
+                            disabled={!canWrite}
+                            placeholder="e.g. Strength, Cardio, Yoga"
+                            className="h-9"
+                          />
+                        </div>
+                        <div className="w-28 space-y-2">
+                          <Label htmlFor="task-workout-duration">Duration (min)</Label>
+                          <Input
+                            id="task-workout-duration"
+                            type="number"
+                            min={0}
+                            value={workoutDurationMin}
+                            onChange={(e) => setWorkoutDurationMin(e.target.value)}
+                            disabled={!canWrite}
+                            className="h-9"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Exercises</Label>
+                        {workoutExercises.length > 0 && (
+                          <ul className="space-y-1.5">
+                            {workoutExercises.map((ex, idx) => (
+                              <li
+                                key={idx}
+                                className="flex items-center gap-2 rounded-md border border-border/60 bg-background px-3 py-2 text-sm"
+                              >
+                                <span className="min-w-0 flex-1 font-medium">{ex.name}</span>
+                                {/* Copilot suggestion ignored: keep a simple kg suffix until fitness profile unit_system is available in this modal. */}
+                                <span className="shrink-0 text-xs text-muted-foreground">
+                                  {[
+                                    ex.sets != null && `${ex.sets}×`,
+                                    ex.reps != null && `${ex.reps} reps`,
+                                    ex.weight != null && `${ex.weight} kg`,
+                                    ex.duration_min != null && `${ex.duration_min} min`,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(' ')}
+                                </span>
+                                {canWrite && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setWorkoutExercises((prev) =>
+                                        prev.filter((_, i) => i !== idx),
+                                      )
+                                    }
+                                    className="shrink-0 text-muted-foreground transition-colors hover:text-destructive"
+                                    aria-label={`Remove exercise: ${ex.name}`}
+                                  >
+                                    <span aria-hidden className="text-xs leading-none">
+                                      ✕
+                                    </span>
+                                  </button>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        {canWrite && (
+                          <Input
+                            value={newExerciseName}
+                            onChange={(e) => setNewExerciseName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                const t = newExerciseName.trim();
+                                if (!t) return;
+                                setWorkoutExercises((prev) => [...prev, { name: t }]);
+                                setNewExerciseName('');
+                              }
+                            }}
+                            placeholder="Exercise name (Enter to add)"
+                            className="h-9"
+                          />
+                        )}
+                      </div>
                     </div>
                   )}
 
