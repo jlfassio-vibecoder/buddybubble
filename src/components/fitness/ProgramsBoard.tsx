@@ -5,7 +5,7 @@ import { ListChecks, Play, Trophy } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { metadataFieldsFromParsed } from '@/lib/item-metadata';
+import { metadataFieldsFromParsed, parseTaskMetadata } from '@/lib/item-metadata';
 import { PROGRAM_TEMPLATES, type ProgramTemplate } from '@/lib/fitness/program-templates';
 import { formatUserFacingError } from '@/lib/format-error';
 import type { Json } from '@/types/database';
@@ -34,8 +34,7 @@ function DifficultyBadge({ difficulty }: { difficulty: ProgramTemplate['difficul
           'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-200',
         difficulty === 'intermediate' &&
           'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300',
-        difficulty === 'advanced' &&
-          'bg-red-100 text-red-800 dark:bg-red-950/70 dark:text-red-200',
+        difficulty === 'advanced' && 'bg-red-100 text-red-800 dark:bg-red-950/70 dark:text-red-200',
       )}
     >
       {difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}
@@ -58,20 +57,22 @@ function ProgramCard({ task, onView, onBegin, onAdvanceWeek, advancing }: Progra
   const dw = parseInt(fields.programDurationWeeks, 10) || 0;
   const cw = fields.programCurrentWeek;
   const progress = dw > 0 ? Math.min(1, cw / dw) : 0;
-  const isFinished = dw > 0 && cw >= dw;
+  /** Finished when DB says completed or week count reached — avoids Begin/Advance when metadata lags. */
+  const isFinished = task.status === 'completed' || (dw > 0 && cw >= dw);
+  /** Active: week started, or legacy `in_progress` from before we aligned to fitness column slugs. */
+  const isActiveProgram = !isFinished && (cw > 0 || task.status === 'in_progress');
 
-  const statusLabel =
-    task.status === 'completed'
-      ? 'Completed'
-      : task.status === 'in_progress'
-        ? 'In Progress'
-        : task.status === 'planned'
-          ? 'Planned'
-          : task.status === 'scheduled'
-            ? 'Scheduled'
-            : task.status === 'today'
-              ? 'Today'
-              : (task.status ?? 'Planned');
+  const statusLabel = isFinished
+    ? 'Completed'
+    : isActiveProgram
+      ? 'In Progress'
+      : task.status === 'planned'
+        ? 'Planned'
+        : task.status === 'scheduled'
+          ? 'Scheduled'
+          : task.status === 'today'
+            ? 'Today'
+            : (task.status ?? 'Planned');
 
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-sm">
@@ -80,9 +81,9 @@ function ProgramCard({ task, onView, onBegin, onAdvanceWeek, advancing }: Progra
         <span
           className={cn(
             'shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold',
-            task.status === 'completed'
+            isFinished
               ? 'bg-primary/15 text-primary'
-              : task.status === 'in_progress'
+              : isActiveProgram
                 ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/70 dark:text-blue-200'
                 : 'bg-muted text-muted-foreground',
           )}
@@ -91,16 +92,12 @@ function ProgramCard({ task, onView, onBegin, onAdvanceWeek, advancing }: Progra
         </span>
       </div>
 
-      {fields.programGoal && (
-        <p className="text-xs text-muted-foreground">{fields.programGoal}</p>
-      )}
+      {fields.programGoal && <p className="text-xs text-muted-foreground">{fields.programGoal}</p>}
 
       {dw > 0 && (
         <div className="space-y-1">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>
-              {cw > 0 ? `Week ${cw} of ${dw}` : `${dw} weeks`}
-            </span>
+            <span>{cw > 0 ? `Week ${cw} of ${dw}` : `${dw} weeks`}</span>
             {cw > 0 && <span>{Math.round(progress * 100)}%</span>}
           </div>
           {cw > 0 && (
@@ -294,10 +291,14 @@ export function ProgramsBoard({
       if (!canWrite) return;
       setAdvancingId(task.id);
       const supabase = createClient();
-      const newMetadata = { ...(task.metadata as Record<string, unknown>), current_week: 1 };
+      const newMetadata = {
+        ...(parseTaskMetadata(task.metadata) as Record<string, unknown>),
+        current_week: 1,
+      };
       const { error: updateErr } = await supabase
         .from('tasks')
-        .update({ metadata: newMetadata, status: 'in_progress' })
+        // Fitness workspaces use planned | scheduled | today | completed (no in_progress column).
+        .update({ metadata: newMetadata, status: 'scheduled' })
         .eq('id', task.id);
       setAdvancingId(null);
       if (updateErr) {
@@ -318,12 +319,15 @@ export function ProgramsBoard({
       const newWeek = fields.programCurrentWeek + 1;
       const isComplete = dw > 0 && newWeek >= dw;
       const supabase = createClient();
-      const newMetadata = { ...(task.metadata as Record<string, unknown>), current_week: newWeek };
+      const newMetadata = {
+        ...(parseTaskMetadata(task.metadata) as Record<string, unknown>),
+        current_week: newWeek,
+      };
       const { error: updateErr } = await supabase
         .from('tasks')
         .update({
           metadata: newMetadata,
-          ...(isComplete ? { status: 'completed' } : {}),
+          status: isComplete ? 'completed' : 'scheduled',
         })
         .eq('id', task.id);
       setAdvancingId(null);
