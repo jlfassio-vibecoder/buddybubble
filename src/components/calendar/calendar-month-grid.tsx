@@ -92,6 +92,12 @@ export type CalendarMonthGridProps = {
   calendarTimezone: string | null;
   boardColumnDefs: BoardColumnDefLite[] | null;
   todayYmd: string;
+  /**
+   * Per-day workout volume indicators. Keys are YMD strings (YYYY-MM-DD),
+   * values are the number of completed workout sessions on that day.
+   * When provided, a row of colored dots is shown under the date number.
+   */
+  dayAnnotations?: Map<string, number>;
 };
 
 export function CalendarMonthGrid({
@@ -109,6 +115,7 @@ export function CalendarMonthGrid({
   calendarTimezone,
   boardColumnDefs,
   todayYmd,
+  dayAnnotations,
 }: CalendarMonthGridProps) {
   const tz = calendarTimezone?.trim() || 'UTC';
   const activeWorkspaceYmd = getCalendarDateInTimeZone(tz, activeViewDate);
@@ -199,14 +206,29 @@ export function CalendarMonthGrid({
                 isSelected={isSelected}
                 onSelectYmd={onSelectYmd}
                 childrenHeader={
-                  <span
-                    className={cn(
-                      'mb-0.5 px-0.5 text-left text-[11px] font-semibold tabular-nums text-foreground',
-                      isToday && 'text-primary',
-                    )}
-                  >
-                    {Number(ymd.slice(8, 10))}
-                  </span>
+                  <>
+                    <span
+                      className={cn(
+                        'mb-0.5 px-0.5 text-left text-[11px] font-semibold tabular-nums text-foreground',
+                        isToday && 'text-primary',
+                      )}
+                    >
+                      {Number(ymd.slice(8, 10))}
+                    </span>
+                    {dayAnnotations && (dayAnnotations.get(ymd) ?? 0) > 0 ? (
+                      <div className="flex gap-px px-0.5 pb-0.5" aria-hidden>
+                        {Array.from(
+                          { length: Math.min(dayAnnotations.get(ymd)!, 5) },
+                          (_, i) => (
+                            <span
+                              key={i}
+                              className="inline-block size-1.5 rounded-full bg-primary/70"
+                            />
+                          ),
+                        )}
+                      </div>
+                    ) : null}
+                  </>
                 }
                 childrenBody={
                   <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">

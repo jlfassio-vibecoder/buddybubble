@@ -59,6 +59,7 @@ export const WORKSPACE_SEED_BY_CATEGORY: Record<
       { name: 'Workouts' },
       { name: 'Classes' },
       { name: 'Trainer' },
+      { name: 'Analytics' },
     ],
     columns: [
       { name: 'Planned', slug: 'planned', position: 0 },

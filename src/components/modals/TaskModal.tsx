@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Globe, Lock, X } from 'lucide-react';
+import { ChevronDown, Globe, Lock, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { createClient } from '@utils/supabase/client';
 import {
   normalizeItemType,
@@ -9,6 +10,7 @@ import {
   type Json,
   type TaskRow,
   type TaskVisibility,
+  type UnitSystem,
 } from '@/types/database';
 import { useBoardColumnDefs } from '@/hooks/use-board-columns';
 import {
@@ -43,6 +45,7 @@ import {
   parseTaskMetadata,
   type WorkoutExercise,
 } from '@/lib/item-metadata';
+import { useWorkoutTemplates, type WorkoutTemplate } from '@/hooks/use-workout-templates';
 import { isMissingColumnSchemaCacheError } from '@/lib/supabase-schema-errors';
 import {
   alignStatusWithFutureSchedule,
@@ -60,6 +63,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { ItemTypeSelector } from '@/components/board/item-type-selector';
 import { indefiniteArticleForUiNoun, itemTypeUiNoun } from '@/lib/item-type-styles';
+import { cn } from '@/lib/utils';
 import { ALL_BUBBLES_BUBBLE_ID } from '@/lib/all-bubbles';
 import { usePresenceStore } from '@/store/presenceStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
@@ -189,6 +193,15 @@ export function TaskModal({
   const [workoutExercises, setWorkoutExercises] = useState<WorkoutExercise[]>([]);
   /** Tracks the name input for the "add exercise" inline form. */
   const [newExerciseName, setNewExerciseName] = useState('');
+  /** Optional metric fields for the exercise being composed. */
+  const [newExSets, setNewExSets] = useState('');
+  const [newExReps, setNewExReps] = useState('');
+  const [newExWeight, setNewExWeight] = useState('');
+  const [newExDuration, setNewExDuration] = useState('');
+  /** Unit system from the user's fitness profile; drives weight labels. */
+  const [workoutUnitSystem, setWorkoutUnitSystem] = useState<UnitSystem>('metric');
+  /** Whether the template picker is expanded (create mode only). */
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
 
   const [subtasks, setSubtasks] = useState<TaskSubtask[]>([]);
   const [comments, setComments] = useState<TaskComment[]>([]);
@@ -202,6 +215,35 @@ export function TaskModal({
   >({});
 
   const boardColumnDefs = useBoardColumnDefs(workspaceId);
+
+  // Load workout templates when the user is composing a workout (create mode).
+  const isWorkoutItemType = itemType === 'workout' || itemType === 'workout_log';
+  const { templates: workoutTemplates } = useWorkoutTemplates(
+    isWorkoutItemType && !taskId ? workspaceId : null,
+  );
+
+  // Fetch the user's unit system from their fitness profile so weight labels are accurate.
+  useEffect(() => {
+    if (!open || !isWorkoutItemType) return;
+    let cancelled = false;
+    const supabase = createClient();
+    void supabase.auth.getUser().then(({ data }) => {
+      if (cancelled || !data.user) return;
+      void supabase
+        .from('fitness_profiles')
+        .select('unit_system')
+        .eq('workspace_id', workspaceId)
+        .eq('user_id', data.user.id)
+        .maybeSingle()
+        .then(({ data: fp }) => {
+          if (cancelled) return;
+          setWorkoutUnitSystem((fp?.unit_system as UnitSystem | null) ?? 'metric');
+        });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isWorkoutItemType, workspaceId]);
 
   const hasTodayBoardColumn = useMemo(
     () => boardColumnDefs?.some((c) => c.id === 'today') ?? false,
@@ -240,6 +282,33 @@ export function TaskModal({
   } | null>(null);
 
   const dateLabels = taskDateFieldLabels(workspaceCategory);
+
+  const applyWorkoutTemplate = useCallback(
+    (tpl: WorkoutTemplate) => {
+      const fields = metadataFieldsFromParsed(tpl.metadata);
+      if (!title.trim()) setTitle(tpl.title);
+      if (fields.workoutType) setWorkoutType(fields.workoutType);
+      if (fields.workoutDurationMin) setWorkoutDurationMin(fields.workoutDurationMin);
+      if (fields.workoutExercises.length) setWorkoutExercises(fields.workoutExercises);
+      setTemplatePickerOpen(false);
+    },
+    [title],
+  );
+
+  const commitExercise = useCallback(() => {
+    const name = newExerciseName.trim();
+    if (!name) return;
+    const sets = newExSets.trim() ? Number(newExSets) : undefined;
+    const reps = newExReps.trim() ? Number(newExReps) : undefined;
+    const weight = newExWeight.trim() ? Number(newExWeight) : undefined;
+    const duration = newExDuration.trim() ? Number(newExDuration) : undefined;
+    setWorkoutExercises((prev) => [...prev, { name, sets, reps, weight, duration_min: duration }]);
+    setNewExerciseName('');
+    setNewExSets('');
+    setNewExReps('');
+    setNewExWeight('');
+    setNewExDuration('');
+  }, [newExerciseName, newExSets, newExReps, newExWeight, newExDuration]);
 
   const metadataForSave = useMemo(
     () =>
@@ -361,6 +430,16 @@ export function TaskModal({
       setExperienceSeason('');
       setExperienceEndDate('');
       setMemoryCaption('');
+      setWorkoutType('');
+      setWorkoutDurationMin('');
+      setWorkoutExercises([]);
+      setNewExerciseName('');
+      setNewExSets('');
+      setNewExReps('');
+      setNewExWeight('');
+      setNewExDuration('');
+      setWorkoutUnitSystem('metric');
+      setTemplatePickerOpen(false);
       setSubtasks([]);
       setComments([]);
       setCommentUserById({});
@@ -888,6 +967,11 @@ export function TaskModal({
     const createdStatus =
       data.status !== undefined && typeof data.status === 'string' ? data.status : effectiveStatus;
     setStatus(createdStatus);
+    if (itemType === 'workout') {
+      toast.success('Workout created');
+    } else if (itemType === 'workout_log') {
+      toast.success('Workout log created');
+    }
     onCreated?.(data.id as string);
   };
 
@@ -1284,9 +1368,57 @@ export function TaskModal({
 
                   {(itemType === 'workout' || itemType === 'workout_log') && (
                     <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
-                      <p className="text-xs font-medium text-muted-foreground">
-                        {itemType === 'workout_log' ? 'Workout log' : 'Workout details'}
-                      </p>
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          {itemType === 'workout_log' ? 'Workout log' : 'Workout details'}
+                        </p>
+                        {/* Template picker — only in create mode when templates exist */}
+                        {!taskId && workoutTemplates.length > 0 && canWrite && (
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={() => setTemplatePickerOpen((v) => !v)}
+                              className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+                            >
+                              Use template
+                              <ChevronDown
+                                className={cn(
+                                  'h-3 w-3 shrink-0 transition-transform',
+                                  templatePickerOpen && 'rotate-180',
+                                )}
+                              />
+                            </button>
+                            {templatePickerOpen && (
+                              <div className="absolute right-0 top-full z-10 mt-1 w-56 overflow-hidden rounded-lg border border-border bg-popover shadow-md">
+                                <ul className="max-h-48 overflow-y-auto py-1">
+                                  {workoutTemplates.map((tpl) => {
+                                    const tplFields = metadataFieldsFromParsed(tpl.metadata);
+                                    return (
+                                      <li key={tpl.id}>
+                                        <button
+                                          type="button"
+                                          onClick={() => applyWorkoutTemplate(tpl)}
+                                          className="w-full px-3 py-1.5 text-left text-xs hover:bg-muted"
+                                        >
+                                          <span className="block font-medium">{tpl.title}</span>
+                                          {tplFields.workoutType && (
+                                            <span className="text-muted-foreground">
+                                              {tplFields.workoutType}
+                                              {tplFields.workoutDurationMin
+                                                ? ` · ${tplFields.workoutDurationMin} min`
+                                                : ''}
+                                            </span>
+                                          )}
+                                        </button>
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                       <div className="flex gap-3">
                         <div className="min-w-0 flex-1 space-y-2">
                           <Label htmlFor="task-workout-type">Type</Label>
@@ -1322,12 +1454,12 @@ export function TaskModal({
                                 className="flex items-center gap-2 rounded-md border border-border/60 bg-background px-3 py-2 text-sm"
                               >
                                 <span className="min-w-0 flex-1 font-medium">{ex.name}</span>
-                                {/* Copilot suggestion ignored: keep a simple kg suffix until fitness profile unit_system is available in this modal. */}
                                 <span className="shrink-0 text-xs text-muted-foreground">
                                   {[
                                     ex.sets != null && `${ex.sets}×`,
                                     ex.reps != null && `${ex.reps} reps`,
-                                    ex.weight != null && `${ex.weight} kg`,
+                                    ex.weight != null &&
+                                      `${ex.weight} ${workoutUnitSystem === 'imperial' ? 'lbs' : 'kg'}`,
                                     ex.duration_min != null && `${ex.duration_min} min`,
                                   ]
                                     .filter(Boolean)
@@ -1344,9 +1476,7 @@ export function TaskModal({
                                     className="shrink-0 text-muted-foreground transition-colors hover:text-destructive"
                                     aria-label={`Remove exercise: ${ex.name}`}
                                   >
-                                    <span aria-hidden className="text-xs leading-none">
-                                      ✕
-                                    </span>
+                                    <X className="h-3 w-3" />
                                   </button>
                                 )}
                               </li>
@@ -1354,21 +1484,79 @@ export function TaskModal({
                           </ul>
                         )}
                         {canWrite && (
-                          <Input
-                            value={newExerciseName}
-                            onChange={(e) => setNewExerciseName(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                const t = newExerciseName.trim();
-                                if (!t) return;
-                                setWorkoutExercises((prev) => [...prev, { name: t }]);
-                                setNewExerciseName('');
-                              }
-                            }}
-                            placeholder="Exercise name (Enter to add)"
-                            className="h-9"
-                          />
+                          <div className="space-y-2">
+                            <Input
+                              value={newExerciseName}
+                              onChange={(e) => setNewExerciseName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  commitExercise();
+                                }
+                              }}
+                              placeholder="Exercise name"
+                              className="h-9"
+                            />
+                            {newExerciseName.trim() && (
+                              <div className="grid grid-cols-4 gap-2">
+                                <div className="space-y-1">
+                                  <label className="text-[10px] text-muted-foreground">Sets</label>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    value={newExSets}
+                                    onChange={(e) => setNewExSets(e.target.value)}
+                                    placeholder="—"
+                                    className="h-8 text-xs"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[10px] text-muted-foreground">Reps</label>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    value={newExReps}
+                                    onChange={(e) => setNewExReps(e.target.value)}
+                                    placeholder="—"
+                                    className="h-8 text-xs"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[10px] text-muted-foreground">
+                                    {workoutUnitSystem === 'imperial' ? 'lbs' : 'kg'}
+                                  </label>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    value={newExWeight}
+                                    onChange={(e) => setNewExWeight(e.target.value)}
+                                    placeholder="—"
+                                    className="h-8 text-xs"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[10px] text-muted-foreground">Min</label>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    value={newExDuration}
+                                    onChange={(e) => setNewExDuration(e.target.value)}
+                                    placeholder="—"
+                                    className="h-8 text-xs"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                            {newExerciseName.trim() && (
+                              <button
+                                type="button"
+                                onClick={commitExercise}
+                                className="text-xs text-primary hover:underline"
+                              >
+                                + Add exercise
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>

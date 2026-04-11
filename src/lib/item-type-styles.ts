@@ -84,20 +84,22 @@ export const ITEM_TYPE_VISUAL: Record<ItemType, ItemTypeVisual> = {
   workout: {
     Icon: Dumbbell,
     label: 'Workout',
-    leftBar: 'border-l-emerald-500 dark:border-l-emerald-400',
-    surface: 'bg-emerald-500/[0.07] dark:bg-emerald-500/[0.12]',
-    iconText: 'text-emerald-600 dark:text-emerald-400',
+    /** Citron-orange accent — warm complement to Ferrari-style red primary. */
+    leftBar: 'border-l-orange-500 dark:border-l-orange-400',
+    surface: 'bg-orange-500/[0.08] dark:bg-orange-500/[0.13]',
+    iconText: 'text-orange-600 dark:text-orange-400',
     typeChip:
-      'border-emerald-200/90 bg-emerald-100 text-emerald-900 dark:border-emerald-800/50 dark:bg-emerald-950/70 dark:text-emerald-200',
+      'border-orange-200/90 bg-orange-100 text-orange-950 dark:border-orange-800/55 dark:bg-orange-950/65 dark:text-orange-100',
   },
   workout_log: {
     Icon: ClipboardList,
     label: 'Workout log',
-    leftBar: 'border-l-teal-500 dark:border-l-teal-400',
-    surface: 'bg-teal-500/[0.07] dark:bg-teal-500/[0.12]',
-    iconText: 'text-teal-600 dark:text-teal-400',
+    /** Slightly more amber/yellow than `workout` for distinction, same citron family. */
+    leftBar: 'border-l-amber-500 dark:border-l-amber-400',
+    surface: 'bg-amber-500/[0.08] dark:bg-amber-500/[0.13]',
+    iconText: 'text-amber-700 dark:text-amber-400',
     typeChip:
-      'border-teal-200/90 bg-teal-100 text-teal-900 dark:border-teal-800/50 dark:bg-teal-950/70 dark:text-teal-200',
+      'border-amber-200/90 bg-amber-100 text-amber-950 dark:border-amber-800/55 dark:bg-amber-950/65 dark:text-amber-100',
   },
 };
 

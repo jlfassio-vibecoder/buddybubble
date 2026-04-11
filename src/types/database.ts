@@ -23,6 +23,12 @@ export type TaskVisibility = 'private' | 'public';
 /** Fitness unit preference. */
 export type UnitSystem = 'metric' | 'imperial';
 
+/** Status of a class instance. */
+export type ClassInstanceStatus = 'available' | 'cancelled' | 'completed';
+
+/** Status of a user's enrollment in a class instance. */
+export type ClassEnrollmentStatus = 'enrolled' | 'waitlisted' | 'cancelled' | 'completed';
+
 const ITEM_TYPE_SET = new Set<string>(['task', 'event', 'experience', 'idea', 'memory', 'workout', 'workout_log']);
 
 /** Safe default when `item_type` is missing (stale client) or invalid. */
@@ -335,6 +341,79 @@ export interface Database {
         };
         Update: Partial<Database['public']['Tables']['fitness_profiles']['Insert']>;
       };
+      class_offerings: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          name: string;
+          description: string | null;
+          duration_min: number;
+          location: string | null;
+          metadata: Json;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          name: string;
+          description?: string | null;
+          duration_min?: number;
+          location?: string | null;
+          metadata?: Json;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['class_offerings']['Insert']>;
+      };
+      class_instances: {
+        Row: {
+          id: string;
+          offering_id: string;
+          workspace_id: string;
+          scheduled_at: string;
+          capacity: number | null;
+          status: ClassInstanceStatus;
+          instructor_notes: string | null;
+          metadata: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          offering_id: string;
+          workspace_id: string;
+          scheduled_at: string;
+          capacity?: number | null;
+          status?: ClassInstanceStatus;
+          instructor_notes?: string | null;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['class_instances']['Insert']>;
+      };
+      class_enrollments: {
+        Row: {
+          id: string;
+          instance_id: string;
+          workspace_id: string;
+          user_id: string;
+          status: ClassEnrollmentStatus;
+          enrolled_at: string;
+        };
+        Insert: {
+          id?: string;
+          instance_id: string;
+          workspace_id: string;
+          user_id: string;
+          status?: ClassEnrollmentStatus;
+          enrolled_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['class_enrollments']['Insert']>;
+      };
       storefront_sandbox_messages: {
         Row: {
           id: string;
@@ -383,6 +462,9 @@ export interface Database {
 }
 
 export type FitnessProfileRow = Database['public']['Tables']['fitness_profiles']['Row'];
+export type ClassOfferingRow = Database['public']['Tables']['class_offerings']['Row'];
+export type ClassInstanceRow = Database['public']['Tables']['class_instances']['Row'];
+export type ClassEnrollmentRow = Database['public']['Tables']['class_enrollments']['Row'];
 export type BubbleRow = Database['public']['Tables']['bubbles']['Row'];
 export type BubbleMemberRow = Database['public']['Tables']['bubble_members']['Row'];
 export type MessageRow = Database['public']['Tables']['messages']['Row'];
