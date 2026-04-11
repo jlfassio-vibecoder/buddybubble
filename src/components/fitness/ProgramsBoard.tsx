@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { metadataFieldsFromParsed } from '@/lib/item-metadata';
 import { PROGRAM_TEMPLATES, type ProgramTemplate } from '@/lib/fitness/program-templates';
+import { formatUserFacingError } from '@/lib/format-error';
 import type { Json } from '@/types/database';
 
 // ── Day label helpers ─────────────────────────────────────────────────────────
@@ -172,6 +173,8 @@ function TemplateCard({ template, onStart, starting }: TemplateCardProps) {
 
 type Props = {
   workspaceId: string;
+  /** The currently selected bubble ID, used to scope the programs query. */
+  selectedBubbleId: string;
   /** Injected by WorkspaceMainSplit via cloneElement — rendered alongside the board. */
   calendarSlot?: ReactNode;
   /** Bumped when tasks change; triggers a re-fetch. */
@@ -181,14 +184,14 @@ type Props = {
 };
 
 export function ProgramsBoard({
-  workspaceId,
+  workspaceId: _workspaceId,
+  selectedBubbleId,
   calendarSlot,
   taskViewsNonce,
   onOpenTask,
   canWrite,
 }: Props) {
   const [programs, setPrograms] = useState<ProgramTask[]>([]);
-  const [programsBubbleId, setProgramsBubbleId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [startingId, setStartingId] = useState<string | null>(null);
@@ -198,43 +201,22 @@ export function ProgramsBoard({
     setError(null);
     const supabase = createClient();
 
-    const { data: bubbles, error: bubblesErr } = await supabase
-      .from('bubbles')
-      .select('id, name')
-      .eq('workspace_id', workspaceId);
-
-    if (bubblesErr) {
-      setError(bubblesErr.message);
-      setLoading(false);
-      return;
-    }
-
-    const pb = (bubbles ?? []).find((b) => (b as { id: string; name: string }).name === 'Programs');
-    const bubbleId = (pb as { id: string } | undefined)?.id ?? null;
-    setProgramsBubbleId(bubbleId);
-
-    if (!bubbleId) {
-      setPrograms([]);
-      setLoading(false);
-      return;
-    }
-
     const { data, error: tasksErr } = await supabase
       .from('tasks')
       .select('id, title, status, metadata')
-      .eq('bubble_id', bubbleId)
+      .eq('bubble_id', selectedBubbleId)
       .eq('item_type', 'program')
       .is('archived_at', null)
       .order('created_at', { ascending: false })
       .limit(50);
 
     if (tasksErr) {
-      setError(tasksErr.message);
+      setError(formatUserFacingError(tasksErr));
     } else {
       setPrograms((data ?? []) as ProgramTask[]);
     }
     setLoading(false);
-  }, [workspaceId]);
+  }, [selectedBubbleId]);
 
   useEffect(() => {
     void load();
@@ -242,13 +224,13 @@ export function ProgramsBoard({
 
   const handleStartTemplate = useCallback(
     async (tpl: ProgramTemplate) => {
-      if (!programsBubbleId || !canWrite) return;
+      if (!canWrite) return;
       setStartingId(tpl.id);
       const supabase = createClient();
       const { data, error: insertErr } = await supabase
         .from('tasks')
         .insert({
-          bubble_id: programsBubbleId,
+          bubble_id: selectedBubbleId,
           title: tpl.title,
           item_type: 'program',
           status: 'planned',
@@ -265,14 +247,14 @@ export function ProgramsBoard({
       setStartingId(null);
 
       if (insertErr || !data) {
-        setError(insertErr?.message ?? 'Failed to create program');
+        setError(insertErr ? formatUserFacingError(insertErr) : 'Failed to create program');
         return;
       }
 
       await load();
       onOpenTask?.((data as { id: string }).id);
     },
-    [programsBubbleId, canWrite, load, onOpenTask],
+    [selectedBubbleId, canWrite, load, onOpenTask],
   );
 
   return (

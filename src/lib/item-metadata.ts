@@ -82,13 +82,29 @@ function asWorkoutExercises(value: unknown): WorkoutExercise[] {
 
 function asProgramSchedule(value: unknown): ProgramWeek[] {
   if (!Array.isArray(value)) return [];
-  return value.filter(
-    (w): w is ProgramWeek =>
-      typeof w === 'object' &&
-      w !== null &&
-      typeof (w as ProgramWeek).week === 'number' &&
-      Array.isArray((w as ProgramWeek).days),
-  );
+  return value.flatMap((w): ProgramWeek[] => {
+    if (typeof w !== 'object' || w === null) return [];
+    const week = (w as { week?: unknown }).week;
+    const days = (w as { days?: unknown }).days;
+    if (!Number.isFinite(week) || !Array.isArray(days)) return [];
+    const cleanedDays = days.flatMap((d): ProgramDay[] => {
+      if (typeof d !== 'object' || d === null) return [];
+      const day = (d as { day?: unknown }).day;
+      const name = (d as { name?: unknown }).name;
+      if (!Number.isFinite(day) || (day as number) < 1 || (day as number) > 7 || typeof name !== 'string') return [];
+      const workoutType = (d as { workout_type?: unknown }).workout_type;
+      const durationMin = (d as { duration_min?: unknown }).duration_min;
+      return [
+        {
+          day: day as number,
+          name,
+          ...(typeof workoutType === 'string' ? { workout_type: workoutType } : {}),
+          ...(Number.isFinite(durationMin) ? { duration_min: durationMin as number } : {}),
+        },
+      ];
+    });
+    return [{ week: week as number, days: cleanedDays }];
+  });
 }
 
 /** Read string inputs from saved metadata (for TaskModal local state). */

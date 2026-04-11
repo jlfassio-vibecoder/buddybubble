@@ -822,6 +822,7 @@ export function DashboardShell({
                 ) : isProgramsBubble ? (
                   <ProgramsBoard
                     workspaceId={workspaceId}
+                    selectedBubbleId={selectedBubbleId!}
                     canWrite={canWriteTasks}
                     onOpenTask={openTaskModal}
                   />
