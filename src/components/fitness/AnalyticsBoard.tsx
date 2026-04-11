@@ -1,15 +1,18 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { startOfWeek } from 'date-fns';
 import { Activity, Calendar, Flame, Timer } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
+import { CALENDAR_WEEK_OPTIONS } from '@/lib/calendar-view-range';
+import { formatUserFacingError } from '@/lib/format-error';
 import type { Json } from '@/types/database';
 
 type WorkoutTask = {
   id: string;
   title: string;
   status: string | null;
-  updated_at: string;
+  created_at: string;
   metadata: Json;
 };
 
@@ -39,7 +42,8 @@ function StatCard({ icon, label, value, sub }: StatCardProps) {
   );
 }
 
-const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+/** Monday-first labels, aligned with `CALENDAR_WEEK_OPTIONS` / calendar views. */
+const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 type Props = {
   workspaceId: string;
@@ -52,17 +56,28 @@ type Props = {
 export function AnalyticsBoard({ workspaceId, calendarSlot, taskViewsNonce }: Props) {
   const [tasks, setTasks] = useState<WorkoutTask[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       setLoading(true);
+      setLoadError(null);
       const supabase = createClient();
 
-      const { data: bubbles } = await supabase
+      const { data: bubbles, error: bubblesErr } = await supabase
         .from('bubbles')
         .select('id')
         .eq('workspace_id', workspaceId);
+
+      if (bubblesErr) {
+        if (!cancelled) {
+          setTasks([]);
+          setLoadError(formatUserFacingError(bubblesErr));
+          setLoading(false);
+        }
+        return;
+      }
 
       if (!bubbles?.length) {
         if (!cancelled) {
@@ -74,17 +89,22 @@ export function AnalyticsBoard({ workspaceId, calendarSlot, taskViewsNonce }: Pr
 
       const bubbleIds = bubbles.map((b) => b.id as string);
 
-      const { data } = await supabase
+      const { data, error: tasksErr } = await supabase
         .from('tasks')
-        .select('id, title, status, updated_at, metadata')
+        .select('id, title, status, created_at, metadata')
         .in('bubble_id', bubbleIds)
         .in('item_type', ['workout', 'workout_log'])
         .is('archived_at', null)
-        .order('updated_at', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(200);
 
       if (!cancelled) {
-        setTasks((data ?? []) as WorkoutTask[]);
+        if (tasksErr) {
+          setTasks([]);
+          setLoadError(formatUserFacingError(tasksErr));
+        } else {
+          setTasks((data ?? []) as WorkoutTask[]);
+        }
         setLoading(false);
       }
     }
@@ -100,16 +120,15 @@ export function AnalyticsBoard({ workspaceId, calendarSlot, taskViewsNonce }: Pr
     useMemo(() => {
       const now = new Date();
 
-      const weekStart = new Date(now);
-      weekStart.setDate(now.getDate() - now.getDay());
+      const weekStart = startOfWeek(now, CALENDAR_WEEK_OPTIONS);
       weekStart.setHours(0, 0, 0, 0);
 
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-      const completedDaySet = new Set(completed.map((t) => dayKey(new Date(t.updated_at))));
+      const completedDaySet = new Set(completed.map((t) => dayKey(new Date(t.created_at))));
 
-      const thisWeek = completed.filter((t) => new Date(t.updated_at) >= weekStart);
-      const thisMonth = completed.filter((t) => new Date(t.updated_at) >= monthStart);
+      const thisWeek = completed.filter((t) => new Date(t.created_at) >= weekStart);
+      const thisMonth = completed.filter((t) => new Date(t.created_at) >= monthStart);
 
       const minOf = (arr: WorkoutTask[]) =>
         arr.reduce((sum, t) => sum + ((t.metadata as WorkoutMeta)?.duration_min ?? 0), 0);
@@ -123,12 +142,12 @@ export function AnalyticsBoard({ workspaceId, calendarSlot, taskViewsNonce }: Pr
         check.setDate(check.getDate() - 1);
       }
 
-      // Per-day counts for this week (Sun–Sat)
+      // Per-day counts for this ISO week (Mon–Sun)
       const weekDayCounts = Array.from({ length: 7 }, (_, i) => {
         const day = new Date(weekStart);
         day.setDate(weekStart.getDate() + i);
         const key = dayKey(day);
-        return completed.filter((t) => dayKey(new Date(t.updated_at)) === key).length;
+        return completed.filter((t) => dayKey(new Date(t.created_at)) === key).length;
       });
 
       return {
@@ -144,13 +163,25 @@ export function AnalyticsBoard({ workspaceId, calendarSlot, taskViewsNonce }: Pr
   const maxDayCount = Math.max(1, ...weekDayCounts);
   const recentSessions = completed.slice(0, 5);
 
-  const formatMinutes = (m: number) =>
-    m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
+  const formatMinutes = (m: number) => (m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`);
 
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
         Loading analytics…
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
+        <p className="text-sm font-medium text-destructive" role="alert">
+          {loadError}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Check your connection and try refreshing the page.
+        </p>
       </div>
     );
   }

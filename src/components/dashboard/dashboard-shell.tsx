@@ -172,6 +172,7 @@ export function DashboardShell({
   const workspaceCalendarTz =
     activeWorkspace?.id === workspaceId ? (activeWorkspace.calendar_timezone ?? null) : null;
 
+  // Copilot suggestion ignored: storing analytics bubble id in a ref does not fix rename; a stable channel key would need schema (e.g. bubble slug) — V1 matches seed name "Analytics".
   /** True when the selected bubble is the Analytics bubble in a fitness workspace. */
   const isAnalyticsBubble =
     workspaceCategoryForUi === 'fitness' &&
