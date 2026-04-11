@@ -5,6 +5,7 @@ import {
   ClipboardList,
   Dumbbell,
   Lightbulb,
+  ListChecks,
   MapPin,
   Sparkles,
 } from 'lucide-react';
@@ -33,6 +34,7 @@ export const ITEM_TYPES_ORDER: ItemType[] = [
   'memory',
   'workout',
   'workout_log',
+  'program',
 ];
 
 export const ITEM_TYPE_VISUAL: Record<ItemType, ItemTypeVisual> = {
@@ -101,6 +103,15 @@ export const ITEM_TYPE_VISUAL: Record<ItemType, ItemTypeVisual> = {
     typeChip:
       'border-amber-200/90 bg-amber-100 text-amber-950 dark:border-amber-800/55 dark:bg-amber-950/65 dark:text-amber-100',
   },
+  program: {
+    Icon: ListChecks,
+    label: 'Program',
+    leftBar: 'border-l-violet-500 dark:border-l-violet-400',
+    surface: 'bg-violet-500/[0.07] dark:bg-violet-500/[0.12]',
+    iconText: 'text-violet-600 dark:text-violet-400',
+    typeChip:
+      'border-violet-200/90 bg-violet-100 text-violet-900 dark:border-violet-800/50 dark:bg-violet-950/70 dark:text-violet-200',
+  },
 };
 
 export function getItemTypeVisual(type: ItemType): ItemTypeVisual {
@@ -116,6 +127,7 @@ export const ITEM_TYPE_UI_NOUN: Record<ItemType, string> = {
   memory: 'memory',
   workout: 'workout',
   workout_log: 'workout log',
+  program: 'program',
 };
 
 export function itemTypeUiNoun(type: ItemType): string {

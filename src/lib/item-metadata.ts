@@ -11,6 +11,23 @@ export type WorkoutExercise = {
   duration_min?: number;
 };
 
+/** Single day within a program week. */
+export type ProgramDay = {
+  /** 1–7, where 1 = Monday. */
+  day: number;
+  name: string;
+  workout_type?: string;
+  duration_min?: number;
+};
+
+/** One week's schedule within a fitness program. A single-entry schedule array
+ *  is treated as a repeating template for all `duration_weeks`. */
+export type ProgramWeek = {
+  /** 1-indexed week number. */
+  week: number;
+  days: ProgramDay[];
+};
+
 /** Normalize DB `metadata` jsonb for form state (object only; otherwise {}). */
 export function parseTaskMetadata(value: unknown): Json {
   if (value == null) return {};
@@ -27,6 +44,10 @@ const MANAGED_METADATA_KEYS = [
   'workout_type',
   'duration_min',
   'exercises',
+  'goal',
+  'duration_weeks',
+  'current_week',
+  'schedule',
 ] as const;
 
 export type TaskMetadataFormFields = {
@@ -42,6 +63,14 @@ export type TaskMetadataFormFields = {
   workoutDurationMin: string;
   /** Ordered list of exercises with sets/reps/weight/duration. */
   workoutExercises: WorkoutExercise[];
+  /** Program: stated goal (e.g. "Build lean muscle"). */
+  programGoal: string;
+  /** Program: total length as a string for number input. */
+  programDurationWeeks: string;
+  /** Program: which week the user is currently on (0 = not started). */
+  programCurrentWeek: number;
+  /** Program: weekly workout schedule. */
+  programSchedule: ProgramWeek[];
 };
 
 function asWorkoutExercises(value: unknown): WorkoutExercise[] {
@@ -49,6 +78,33 @@ function asWorkoutExercises(value: unknown): WorkoutExercise[] {
   return value.filter(
     (x): x is WorkoutExercise => typeof x === 'object' && x !== null && typeof x.name === 'string',
   );
+}
+
+function asProgramSchedule(value: unknown): ProgramWeek[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((w): ProgramWeek[] => {
+    if (typeof w !== 'object' || w === null) return [];
+    const week = (w as { week?: unknown }).week;
+    const days = (w as { days?: unknown }).days;
+    if (!Number.isFinite(week) || !Array.isArray(days)) return [];
+    const cleanedDays = days.flatMap((d): ProgramDay[] => {
+      if (typeof d !== 'object' || d === null) return [];
+      const day = (d as { day?: unknown }).day;
+      const name = (d as { name?: unknown }).name;
+      if (!Number.isFinite(day) || (day as number) < 1 || (day as number) > 7 || typeof name !== 'string') return [];
+      const workoutType = (d as { workout_type?: unknown }).workout_type;
+      const durationMin = (d as { duration_min?: unknown }).duration_min;
+      return [
+        {
+          day: day as number,
+          name,
+          ...(typeof workoutType === 'string' ? { workout_type: workoutType } : {}),
+          ...(Number.isFinite(durationMin) ? { duration_min: durationMin as number } : {}),
+        },
+      ];
+    });
+    return [{ week: week as number, days: cleanedDays }];
+  });
 }
 
 /** Read string inputs from saved metadata (for TaskModal local state). */
@@ -65,6 +121,10 @@ export function metadataFieldsFromParsed(meta: unknown): TaskMetadataFormFields 
     workoutType: str(o.workout_type),
     workoutDurationMin: o.duration_min != null ? String(o.duration_min) : '',
     workoutExercises: asWorkoutExercises(o.exercises),
+    programGoal: str(o.goal),
+    programDurationWeeks: o.duration_weeks != null ? String(o.duration_weeks) : '',
+    programCurrentWeek: typeof o.current_week === 'number' ? o.current_week : 0,
+    programSchedule: asProgramSchedule(o.schedule),
   };
 }
 
@@ -100,6 +160,14 @@ export function buildTaskMetadataPayload(
       const mins = parseInt(fields.workoutDurationMin, 10);
       if (!isNaN(mins) && mins > 0) o.duration_min = mins;
       if (fields.workoutExercises.length > 0) o.exercises = fields.workoutExercises;
+      break;
+    }
+    case 'program': {
+      if (t(fields.programGoal)) o.goal = t(fields.programGoal);
+      const dw = parseInt(fields.programDurationWeeks, 10);
+      if (!isNaN(dw) && dw > 0) o.duration_weeks = dw;
+      if (fields.programCurrentWeek > 0) o.current_week = fields.programCurrentWeek;
+      if (fields.programSchedule.length > 0) o.schedule = fields.programSchedule;
       break;
     }
     default:

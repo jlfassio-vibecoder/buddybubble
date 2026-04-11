@@ -15,7 +15,7 @@ export type InvitationJoinRequestStatus = 'pending' | 'approved' | 'rejected' | 
 export type TaskStatus = 'todo' | 'in_progress' | 'done';
 
 /** Polymorphic kind for `public.tasks` (single-table Kanban + calendar). */
-export type ItemType = 'task' | 'event' | 'experience' | 'idea' | 'memory' | 'workout' | 'workout_log';
+export type ItemType = 'task' | 'event' | 'experience' | 'idea' | 'memory' | 'workout' | 'workout_log' | 'program';
 
 /** Storefront visibility for `public.tasks.visibility`. */
 export type TaskVisibility = 'private' | 'public';
@@ -29,7 +29,7 @@ export type ClassInstanceStatus = 'available' | 'cancelled' | 'completed';
 /** Status of a user's enrollment in a class instance. */
 export type ClassEnrollmentStatus = 'enrolled' | 'waitlisted' | 'cancelled' | 'completed';
 
-const ITEM_TYPE_SET = new Set<string>(['task', 'event', 'experience', 'idea', 'memory', 'workout', 'workout_log']);
+const ITEM_TYPE_SET = new Set<string>(['task', 'event', 'experience', 'idea', 'memory', 'workout', 'workout_log', 'program']);
 
 /** Safe default when `item_type` is missing (stale client) or invalid. */
 export function normalizeItemType(value: unknown): ItemType {

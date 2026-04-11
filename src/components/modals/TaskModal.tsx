@@ -43,6 +43,7 @@ import {
   buildTaskMetadataPayload,
   metadataFieldsFromParsed,
   parseTaskMetadata,
+  type ProgramWeek,
   type WorkoutExercise,
 } from '@/lib/item-metadata';
 import { useWorkoutTemplates, type WorkoutTemplate } from '@/hooks/use-workout-templates';
@@ -203,6 +204,12 @@ export function TaskModal({
   /** Whether the template picker is expanded (create mode only). */
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
 
+  /** Program-specific fields. */
+  const [programGoal, setProgramGoal] = useState('');
+  const [programDurationWeeks, setProgramDurationWeeks] = useState('');
+  const [programCurrentWeek, setProgramCurrentWeek] = useState(0);
+  const [programSchedule, setProgramSchedule] = useState<ProgramWeek[]>([]);
+
   const [subtasks, setSubtasks] = useState<TaskSubtask[]>([]);
   const [comments, setComments] = useState<TaskComment[]>([]);
   const [activityLog, setActivityLog] = useState<TaskActivityEntry[]>([]);
@@ -323,6 +330,10 @@ export function TaskModal({
           workoutType,
           workoutDurationMin,
           workoutExercises,
+          programGoal,
+          programDurationWeeks,
+          programCurrentWeek,
+          programSchedule,
         },
         metadata,
       ),
@@ -336,6 +347,10 @@ export function TaskModal({
       workoutType,
       workoutDurationMin,
       workoutExercises,
+      programGoal,
+      programDurationWeeks,
+      programCurrentWeek,
+      programSchedule,
       metadata,
     ],
   );
@@ -372,6 +387,10 @@ export function TaskModal({
       setWorkoutDurationMin(mf.workoutDurationMin);
       setWorkoutExercises(mf.workoutExercises);
       setNewExerciseName('');
+      setProgramGoal(mf.programGoal);
+      setProgramDurationWeeks(mf.programDurationWeeks);
+      setProgramCurrentWeek(mf.programCurrentWeek);
+      setProgramSchedule(mf.programSchedule);
       setSubtasks(asSubtasks(row.subtasks));
       setComments(asComments(row.comments));
       setActivityLog(asActivityLog(row.activity_log));
@@ -440,6 +459,10 @@ export function TaskModal({
       setNewExDuration('');
       setWorkoutUnitSystem('metric');
       setTemplatePickerOpen(false);
+      setProgramGoal('');
+      setProgramDurationWeeks('');
+      setProgramCurrentWeek(0);
+      setProgramSchedule([]);
       setSubtasks([]);
       setComments([]);
       setCommentUserById({});
@@ -1559,6 +1582,66 @@ export function TaskModal({
                           </div>
                         )}
                       </div>
+                    </div>
+                  )}
+
+                  {itemType === 'program' && (
+                    <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+                      <p className="text-xs font-medium text-muted-foreground">Program details</p>
+
+                      {/* Goal */}
+                      <div className="space-y-2">
+                        <Label htmlFor="task-program-goal">Goal</Label>
+                        <Input
+                          id="task-program-goal"
+                          value={programGoal}
+                          onChange={(e) => setProgramGoal(e.target.value)}
+                          disabled={!canWrite}
+                          placeholder="e.g. Build lean muscle, Run a 5K"
+                          className="h-9"
+                        />
+                      </div>
+
+                      {/* Duration */}
+                      <div className="w-36 space-y-2">
+                        <Label htmlFor="task-program-duration">Duration (weeks)</Label>
+                        <Input
+                          id="task-program-duration"
+                          type="number"
+                          min={1}
+                          value={programDurationWeeks}
+                          onChange={(e) => setProgramDurationWeeks(e.target.value)}
+                          disabled={!canWrite}
+                          className="h-9"
+                        />
+                      </div>
+
+                      {/* Progress (read-only) */}
+                      {programCurrentWeek > 0 && programDurationWeeks && (
+                        <p className="text-xs text-muted-foreground">
+                          Progress: Week {programCurrentWeek} of {programDurationWeeks}
+                        </p>
+                      )}
+
+                      {/* Weekly schedule summary */}
+                      {programSchedule.length > 0 && programSchedule[0].days.length > 0 && (
+                        <div className="space-y-1">
+                          <p className="text-xs font-medium text-muted-foreground">
+                            Weekly schedule
+                          </p>
+                          {programSchedule[0].days.map((d) => (
+                            <p key={d.day} className="text-xs text-foreground">
+                              <span className="font-medium">
+                                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d.day - 1]}
+                              </span>
+                              {' — '}
+                              {d.name}
+                              {d.workout_type ? ` (${d.workout_type})` : ''}
+                              {d.duration_min ? ` · ${d.duration_min} min` : ''}
+                            </p>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
 
