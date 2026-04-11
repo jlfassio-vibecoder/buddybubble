@@ -3,7 +3,7 @@
 import { addMonths, parseISO, startOfMonth, subMonths } from 'date-fns';
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Calendar, GripHorizontal, PanelRightClose, PanelRightOpen } from 'lucide-react';
-import type { BubbleRow, TaskRow, WorkspaceCategory } from '@/types/database';
+import { normalizeItemType, type BubbleRow, type TaskRow, type WorkspaceCategory } from '@/types/database';
 import type { TaskModalTab } from '@/components/modals/TaskModal';
 import { ALL_BUBBLES_BUBBLE_ID } from '@/lib/all-bubbles';
 import { getCalendarDateInTimeZone } from '@/lib/workspace-calendar';
@@ -271,6 +271,25 @@ export function CalendarRail({
 
   const tasksByYmd = useMemo(() => tasksByScheduledYmd(tasks), [tasks]);
 
+  /**
+   * Per-day workout session counts for the volume overlay on the month grid.
+   * Only computed for fitness workspaces; undefined otherwise (no dots rendered).
+   */
+  const dayAnnotations = useMemo((): Map<string, number> | undefined => {
+    if (workspaceCategory !== 'fitness') return undefined;
+    const m = new Map<string, number>();
+    for (const t of tasks) {
+      if (t.archived_at) continue;
+      if (t.status !== 'completed') continue;
+      const type = normalizeItemType(t.item_type);
+      if (type !== 'workout' && type !== 'workout_log') continue;
+      if (!t.scheduled_on) continue;
+      const key = String(t.scheduled_on).slice(0, 10);
+      m.set(key, (m.get(key) ?? 0) + 1);
+    }
+    return m;
+  }, [tasks, workspaceCategory]);
+
   /** Tick so "today" updates when the tab stays open across days or after backgrounding. */
   const [todayTick, bumpToday] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
@@ -504,6 +523,7 @@ export function CalendarRail({
                 calendarTimezone={calendarTimezone}
                 boardColumnDefs={boardColumnDefs}
                 todayYmd={todayYmd}
+                dayAnnotations={dayAnnotations}
               />
             </div>
           </div>

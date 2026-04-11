@@ -25,6 +25,7 @@ import { CreateWorkspaceModal } from '@/components/modals/CreateWorkspaceModal';
 import { ProfileModal, type ProfilePermissionsContext } from '@/components/modals/ProfileModal';
 import { ProfileCompletionModal } from '@/components/modals/ProfileCompletionModal';
 import { AnalyticsBoard } from '@/components/fitness/AnalyticsBoard';
+import { ClassesBoard } from '@/components/fitness/ClassesBoard';
 import { FitnessProfileSheet } from '@/components/fitness/FitnessProfileSheet';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -176,6 +177,12 @@ export function DashboardShell({
     workspaceCategoryForUi === 'fitness' &&
     selectedBubbleId !== ALL_BUBBLES_BUBBLE_ID &&
     bubbles.find((b) => b.id === selectedBubbleId)?.name === 'Analytics';
+
+  /** True when the selected bubble is the Classes bubble in a fitness workspace. */
+  const isClassesBubble =
+    workspaceCategoryForUi === 'fitness' &&
+    selectedBubbleId !== ALL_BUBBLES_BUBBLE_ID &&
+    bubbles.find((b) => b.id === selectedBubbleId)?.name === 'Classes';
 
   /**
    * Hard invariant (render): if the Kanban panel is hidden, the calendar cannot be strip-collapsed.
@@ -799,6 +806,8 @@ export function DashboardShell({
               board={
                 isAnalyticsBubble ? (
                   <AnalyticsBoard workspaceId={workspaceId} />
+                ) : isClassesBubble ? (
+                  <ClassesBoard workspaceId={workspaceId} />
                 ) : (
                   <KanbanBoard
                     canWrite={canWriteTasks}
