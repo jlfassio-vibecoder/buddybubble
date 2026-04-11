@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Globe, Lock, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { createClient } from '@utils/supabase/client';
 import {
   normalizeItemType,
@@ -44,10 +45,7 @@ import {
   parseTaskMetadata,
   type WorkoutExercise,
 } from '@/lib/item-metadata';
-import {
-  useWorkoutTemplates,
-  type WorkoutTemplate,
-} from '@/hooks/use-workout-templates';
+import { useWorkoutTemplates, type WorkoutTemplate } from '@/hooks/use-workout-templates';
 import { isMissingColumnSchemaCacheError } from '@/lib/supabase-schema-errors';
 import {
   alignStatusWithFutureSchedule,
@@ -969,6 +967,11 @@ export function TaskModal({
     const createdStatus =
       data.status !== undefined && typeof data.status === 'string' ? data.status : effectiveStatus;
     setStatus(createdStatus);
+    if (itemType === 'workout') {
+      toast.success('Workout created');
+    } else if (itemType === 'workout_log') {
+      toast.success('Workout log created');
+    }
     onCreated?.(data.id as string);
   };
 

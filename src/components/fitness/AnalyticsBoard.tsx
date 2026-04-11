@@ -14,10 +14,27 @@ type WorkoutTask = {
   title: string;
   status: string | null;
   created_at: string;
+  /** Calendar date of the workout; analytics bucket by this (aligned with calendar / `scheduled_on`). */
+  scheduled_on: string | null;
   metadata: Json;
 };
 
 type WorkoutMeta = { workout_type?: string; duration_min?: number };
+
+/**
+ * Workspace calendar day (YYYY-MM-DD) for when the workout belongs — matches calendar month dots
+ * (`scheduled_on` date string) with fallback to `created_at` when unset.
+ */
+function workoutOccurrenceYmd(t: WorkoutTask, timeZone: string): string {
+  const raw = t.scheduled_on?.trim();
+  if (raw) {
+    const s = String(raw);
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    const ms = Date.parse(s);
+    if (!Number.isNaN(ms)) return getCalendarDateInTimeZone(timeZone, new Date(ms));
+  }
+  return getCalendarDateInTimeZone(timeZone, new Date(t.created_at));
+}
 
 /** Previous calendar day as YYYY-MM-DD in `timeZone`, for streak walks. */
 function calendarPrevYmd(timeZone: string, ymd: string): string {
@@ -50,7 +67,7 @@ const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 type Props = {
   workspaceId: string;
-  /** Workspace IANA timezone for bucketing `created_at` (same as calendar / scheduled_on). */
+  /** Workspace IANA timezone for bucketing (same as calendar rail). */
   calendarTimezone?: string | null;
   /** Injected by WorkspaceMainSplit via cloneElement — rendered alongside the board. */
   calendarSlot?: React.ReactNode;
@@ -101,7 +118,7 @@ export function AnalyticsBoard({
 
       const { data, error: tasksErr } = await supabase
         .from('tasks')
-        .select('id, title, status, created_at, metadata')
+        .select('id, title, status, created_at, scheduled_on, metadata')
         .in('bubble_id', bubbleIds)
         .in('item_type', ['workout', 'workout_log'])
         .is('archived_at', null)
@@ -143,7 +160,8 @@ export function AnalyticsBoard({
       );
       const weekYmdSet = new Set(weekYmds);
 
-      const taskYmd = (t: WorkoutTask) => getCalendarDateInTimeZone(tz, new Date(t.created_at));
+      /** Same semantics as calendar-rail `dayAnnotations`: prefer `scheduled_on` (workout day), else log time. */
+      const taskYmd = (t: WorkoutTask) => workoutOccurrenceYmd(t, tz);
 
       const completedDaySet = new Set(completed.map((t) => taskYmd(t)));
 
@@ -176,7 +194,18 @@ export function AnalyticsBoard({
     }, [completed, calendarTimezone]);
 
   const maxDayCount = Math.max(1, ...weekDayCounts);
-  const recentSessions = completed.slice(0, 5);
+
+  const recentSessions = useMemo(() => {
+    const tz = calendarTimezone?.trim() || 'UTC';
+    return [...completed]
+      .sort((a, b) => {
+        const yA = workoutOccurrenceYmd(a, tz);
+        const yB = workoutOccurrenceYmd(b, tz);
+        if (yA !== yB) return yB.localeCompare(yA);
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      })
+      .slice(0, 5);
+  }, [completed, calendarTimezone]);
 
   const formatMinutes = (m: number) => (m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`);
 
