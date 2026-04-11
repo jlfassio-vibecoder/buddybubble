@@ -361,6 +361,10 @@ export function TaskModal({
       setExperienceSeason('');
       setExperienceEndDate('');
       setMemoryCaption('');
+      setWorkoutType('');
+      setWorkoutDurationMin('');
+      setWorkoutExercises([]);
+      setNewExerciseName('');
       setSubtasks([]);
       setComments([]);
       setCommentUserById({});
