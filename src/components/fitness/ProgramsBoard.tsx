@@ -48,24 +48,30 @@ function DifficultyBadge({ difficulty }: { difficulty: ProgramTemplate['difficul
 type ProgramCardProps = {
   task: ProgramTask;
   onView: (id: string) => void | undefined;
+  onBegin?: (task: ProgramTask) => Promise<void>;
+  onAdvanceWeek?: (task: ProgramTask) => Promise<void>;
+  advancing?: boolean;
 };
 
-function ProgramCard({ task, onView }: ProgramCardProps) {
+function ProgramCard({ task, onView, onBegin, onAdvanceWeek, advancing }: ProgramCardProps) {
   const fields = metadataFieldsFromParsed(task.metadata);
   const dw = parseInt(fields.programDurationWeeks, 10) || 0;
   const cw = fields.programCurrentWeek;
   const progress = dw > 0 ? Math.min(1, cw / dw) : 0;
+  const isFinished = dw > 0 && cw >= dw;
 
   const statusLabel =
     task.status === 'completed'
       ? 'Completed'
-      : task.status === 'planned'
-        ? 'Planned'
-        : task.status === 'scheduled'
-          ? 'Scheduled'
-          : task.status === 'today'
-            ? 'Today'
-            : (task.status ?? 'Planned');
+      : task.status === 'in_progress'
+        ? 'In Progress'
+        : task.status === 'planned'
+          ? 'Planned'
+          : task.status === 'scheduled'
+            ? 'Scheduled'
+            : task.status === 'today'
+              ? 'Today'
+              : (task.status ?? 'Planned');
 
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-sm">
@@ -76,7 +82,9 @@ function ProgramCard({ task, onView }: ProgramCardProps) {
             'shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold',
             task.status === 'completed'
               ? 'bg-primary/15 text-primary'
-              : 'bg-muted text-muted-foreground',
+              : task.status === 'in_progress'
+                ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/70 dark:text-blue-200'
+                : 'bg-muted text-muted-foreground',
           )}
         >
           {statusLabel}
@@ -106,14 +114,37 @@ function ProgramCard({ task, onView }: ProgramCardProps) {
         </div>
       )}
 
-      <Button
-        size="sm"
-        variant="outline"
-        className="mt-auto h-7 text-xs"
-        onClick={() => onView(task.id)}
-      >
-        View program
-      </Button>
+      <div className="mt-auto flex gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 flex-1 text-xs"
+          onClick={() => onView(task.id)}
+        >
+          View
+        </Button>
+        {!isFinished && cw === 0 && onBegin && (
+          <Button
+            size="sm"
+            className="h-7 flex-1 text-xs"
+            disabled={advancing}
+            onClick={() => void onBegin(task)}
+          >
+            {advancing ? 'Starting…' : 'Begin'}
+          </Button>
+        )}
+        {!isFinished && cw > 0 && onAdvanceWeek && (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-7 flex-1 text-xs"
+            disabled={advancing}
+            onClick={() => void onAdvanceWeek(task)}
+          >
+            {advancing ? 'Saving…' : `Complete wk ${cw}`}
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
@@ -195,6 +226,7 @@ export function ProgramsBoard({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [startingId, setStartingId] = useState<string | null>(null);
+  const [advancingId, setAdvancingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -257,6 +289,53 @@ export function ProgramsBoard({
     [selectedBubbleId, canWrite, load, onOpenTask],
   );
 
+  const handleBeginProgram = useCallback(
+    async (task: ProgramTask) => {
+      if (!canWrite) return;
+      setAdvancingId(task.id);
+      const supabase = createClient();
+      const newMetadata = { ...(task.metadata as Record<string, unknown>), current_week: 1 };
+      const { error: updateErr } = await supabase
+        .from('tasks')
+        .update({ metadata: newMetadata, status: 'in_progress' })
+        .eq('id', task.id);
+      setAdvancingId(null);
+      if (updateErr) {
+        setError(formatUserFacingError(updateErr));
+        return;
+      }
+      await load();
+    },
+    [canWrite, load],
+  );
+
+  const handleAdvanceWeek = useCallback(
+    async (task: ProgramTask) => {
+      if (!canWrite) return;
+      setAdvancingId(task.id);
+      const fields = metadataFieldsFromParsed(task.metadata);
+      const dw = parseInt(fields.programDurationWeeks, 10) || 0;
+      const newWeek = fields.programCurrentWeek + 1;
+      const isComplete = dw > 0 && newWeek >= dw;
+      const supabase = createClient();
+      const newMetadata = { ...(task.metadata as Record<string, unknown>), current_week: newWeek };
+      const { error: updateErr } = await supabase
+        .from('tasks')
+        .update({
+          metadata: newMetadata,
+          ...(isComplete ? { status: 'completed' } : {}),
+        })
+        .eq('id', task.id);
+      setAdvancingId(null);
+      if (updateErr) {
+        setError(formatUserFacingError(updateErr));
+        return;
+      }
+      await load();
+    },
+    [canWrite, load],
+  );
+
   return (
     <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
       <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-6">
@@ -297,7 +376,14 @@ export function ProgramsBoard({
               ) : (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {programs.map((p) => (
-                    <ProgramCard key={p.id} task={p} onView={(id) => onOpenTask?.(id)} />
+                    <ProgramCard
+                      key={p.id}
+                      task={p}
+                      onView={(id) => onOpenTask?.(id)}
+                      onBegin={canWrite ? handleBeginProgram : undefined}
+                      onAdvanceWeek={canWrite ? handleAdvanceWeek : undefined}
+                      advancing={advancingId === p.id}
+                    />
                   ))}
                 </div>
               )}
