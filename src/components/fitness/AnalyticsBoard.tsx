@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { startOfWeek } from 'date-fns';
+import { eachDayOfInterval, endOfWeek, parseISO, startOfWeek, subDays } from 'date-fns';
 import { Activity, Calendar, Flame, Timer } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
 import { CALENDAR_WEEK_OPTIONS } from '@/lib/calendar-view-range';
 import { formatUserFacingError } from '@/lib/format-error';
+import { getCalendarDateInTimeZone } from '@/lib/workspace-calendar';
 import type { Json } from '@/types/database';
 
 type WorkoutTask = {
@@ -18,8 +19,10 @@ type WorkoutTask = {
 
 type WorkoutMeta = { workout_type?: string; duration_min?: number };
 
-function dayKey(d: Date): string {
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+/** Previous calendar day as YYYY-MM-DD in `timeZone`, for streak walks. */
+function calendarPrevYmd(timeZone: string, ymd: string): string {
+  const d = subDays(parseISO(`${ymd}T12:00:00`), 1);
+  return getCalendarDateInTimeZone(timeZone, d);
 }
 
 type StatCardProps = {
@@ -47,13 +50,20 @@ const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 type Props = {
   workspaceId: string;
+  /** Workspace IANA timezone for bucketing `created_at` (same as calendar / scheduled_on). */
+  calendarTimezone?: string | null;
   /** Injected by WorkspaceMainSplit via cloneElement — rendered alongside the board. */
   calendarSlot?: React.ReactNode;
   /** Bumped when tasks change so analytics re-fetches. */
   taskViewsNonce?: number;
 };
 
-export function AnalyticsBoard({ workspaceId, calendarSlot, taskViewsNonce }: Props) {
+export function AnalyticsBoard({
+  workspaceId,
+  calendarTimezone,
+  calendarSlot,
+  taskViewsNonce,
+}: Props) {
   const [tasks, setTasks] = useState<WorkoutTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -119,36 +129,41 @@ export function AnalyticsBoard({ workspaceId, calendarSlot, taskViewsNonce }: Pr
   const { sessionsThisWeek, sessionsThisMonth, weekMinutes, totalMinutes, streak, weekDayCounts } =
     useMemo(() => {
       const now = new Date();
+      const tz = calendarTimezone?.trim() || 'UTC';
 
-      const weekStart = startOfWeek(now, CALENDAR_WEEK_OPTIONS);
-      weekStart.setHours(0, 0, 0, 0);
+      const todayYmd = getCalendarDateInTimeZone(tz, now);
+      const monthPrefix = todayYmd.slice(0, 7);
 
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      // Align week boundaries with calendar rail: anchor on workspace "today", then Mon–Sun in local date-fns, map each day to workspace YMD.
+      const anchor = parseISO(`${todayYmd}T12:00:00`);
+      const weekStartDate = startOfWeek(anchor, CALENDAR_WEEK_OPTIONS);
+      const weekEndDate = endOfWeek(anchor, CALENDAR_WEEK_OPTIONS);
+      const weekYmds = eachDayOfInterval({ start: weekStartDate, end: weekEndDate }).map((d) =>
+        getCalendarDateInTimeZone(tz, d),
+      );
+      const weekYmdSet = new Set(weekYmds);
 
-      const completedDaySet = new Set(completed.map((t) => dayKey(new Date(t.created_at))));
+      const taskYmd = (t: WorkoutTask) => getCalendarDateInTimeZone(tz, new Date(t.created_at));
 
-      const thisWeek = completed.filter((t) => new Date(t.created_at) >= weekStart);
-      const thisMonth = completed.filter((t) => new Date(t.created_at) >= monthStart);
+      const completedDaySet = new Set(completed.map((t) => taskYmd(t)));
+
+      const thisWeek = completed.filter((t) => weekYmdSet.has(taskYmd(t)));
+      const thisMonth = completed.filter((t) => taskYmd(t).startsWith(monthPrefix));
 
       const minOf = (arr: WorkoutTask[]) =>
         arr.reduce((sum, t) => sum + ((t.metadata as WorkoutMeta)?.duration_min ?? 0), 0);
 
-      // Streak: consecutive days with at least one completed workout, ending today
+      // Streak: consecutive workspace calendar days with at least one completed workout, ending on workspace today
       let streak = 0;
-      const check = new Date(now);
-      check.setHours(0, 0, 0, 0);
-      while (completedDaySet.has(dayKey(check))) {
+      let checkYmd = todayYmd;
+      while (completedDaySet.has(checkYmd)) {
         streak++;
-        check.setDate(check.getDate() - 1);
+        checkYmd = calendarPrevYmd(tz, checkYmd);
       }
 
-      // Per-day counts for this ISO week (Mon–Sun)
-      const weekDayCounts = Array.from({ length: 7 }, (_, i) => {
-        const day = new Date(weekStart);
-        day.setDate(weekStart.getDate() + i);
-        const key = dayKey(day);
-        return completed.filter((t) => dayKey(new Date(t.created_at)) === key).length;
-      });
+      const weekDayCounts = weekYmds.map(
+        (ymd) => completed.filter((t) => taskYmd(t) === ymd).length,
+      );
 
       return {
         sessionsThisWeek: thisWeek.length,
@@ -158,7 +173,7 @@ export function AnalyticsBoard({ workspaceId, calendarSlot, taskViewsNonce }: Pr
         streak,
         weekDayCounts,
       };
-    }, [completed]);
+    }, [completed, calendarTimezone]);
 
   const maxDayCount = Math.max(1, ...weekDayCounts);
   const recentSessions = completed.slice(0, 5);

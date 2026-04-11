@@ -806,7 +806,10 @@ export function DashboardShell({
               )}
               board={
                 isAnalyticsBubble ? (
-                  <AnalyticsBoard workspaceId={workspaceId} />
+                  <AnalyticsBoard
+                    workspaceId={workspaceId}
+                    calendarTimezone={workspaceCalendarTz}
+                  />
                 ) : isClassesBubble ? (
                   <ClassesBoard workspaceId={workspaceId} />
                 ) : (
