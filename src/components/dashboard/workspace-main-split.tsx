@@ -6,7 +6,6 @@ import {
   COLLAPSED_COLUMN_WIDTH_CLASS,
   CollapsedColumnStrip,
 } from '@/components/layout/collapsed-column-strip';
-import { KanbanBoard } from '@/components/board/KanbanBoard';
 import type { CalendarRailProps } from '@/components/dashboard/calendar-rail';
 
 const MIN_CHAT_PX = 280;
@@ -37,7 +36,12 @@ type Props = {
   renderChat: (helpers: { onCollapse: () => void }) => React.ReactNode;
   /** Pre-built `CalendarRail` element; merged into `KanbanBoard` as `calendarSlot` when the board is visible. */
   calendarRail: React.ReactElement;
-  board: React.ReactElement<React.ComponentProps<typeof KanbanBoard>>;
+  /**
+   * The main board element rendered in the stage. Normally `<KanbanBoard>` but may be swapped for
+   * a category-specific board (e.g. `<AnalyticsBoard>`). WorkspaceMainSplit injects `calendarSlot`
+   * and `taskViewsNonce` via `cloneElement`, so the board must accept those as optional props.
+   */
+  board: React.ReactElement<{ calendarSlot?: React.ReactNode; taskViewsNonce?: number }>;
   /** Bumped after archive (etc.) so board + calendar lists refetch. */
   taskViewsNonce: number;
 };
@@ -201,7 +205,7 @@ export function WorkspaceMainSplit({
             ? cloneElement(board, {
                 calendarSlot: hideCalendarSlot ? undefined : calendarRail,
                 taskViewsNonce,
-              } as Partial<React.ComponentProps<typeof KanbanBoard>>)
+              })
             : board
           : isValidElement(calendarRail)
             ? cloneElement(calendarRail, { mainStage: true } as Partial<CalendarRailProps>)

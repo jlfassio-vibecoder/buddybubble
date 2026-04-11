@@ -24,6 +24,7 @@ import { PeopleInvitesModal } from '@/components/modals/PeopleInvitesModal';
 import { CreateWorkspaceModal } from '@/components/modals/CreateWorkspaceModal';
 import { ProfileModal, type ProfilePermissionsContext } from '@/components/modals/ProfileModal';
 import { ProfileCompletionModal } from '@/components/modals/ProfileCompletionModal';
+import { AnalyticsBoard } from '@/components/fitness/AnalyticsBoard';
 import { FitnessProfileSheet } from '@/components/fitness/FitnessProfileSheet';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -169,6 +170,12 @@ export function DashboardShell({
       : null;
   const workspaceCalendarTz =
     activeWorkspace?.id === workspaceId ? (activeWorkspace.calendar_timezone ?? null) : null;
+
+  /** True when the selected bubble is the Analytics bubble in a fitness workspace. */
+  const isAnalyticsBubble =
+    workspaceCategoryForUi === 'fitness' &&
+    selectedBubbleId !== ALL_BUBBLES_BUBBLE_ID &&
+    bubbles.find((b) => b.id === selectedBubbleId)?.name === 'Analytics';
 
   /**
    * Hard invariant (render): if the Kanban panel is hidden, the calendar cannot be strip-collapsed.
@@ -790,19 +797,23 @@ export function DashboardShell({
                 />
               )}
               board={
-                <KanbanBoard
-                  canWrite={canWriteTasks}
-                  bubbles={bubbles}
-                  onOpenTask={openTaskModal}
-                  onOpenCreateTask={openCreateTaskModal}
-                  workspaceCategory={effectiveKanbanCategory}
-                  calendarTimezone={workspaceCalendarTz}
-                  boardStripExpandNonce={boardStripExpandNonce}
-                  calendarStripCollapsed={calendarRailIsCollapsed}
-                  onExpandCalendarWhenKanbanStripCollapse={() => setCalendarCollapsed(false)}
-                  onRetractKanbanPanel={() => setKanbanCollapsed(true)}
-                  buddyBubbleTitle={buddyBubbleTitle}
-                />
+                isAnalyticsBubble ? (
+                  <AnalyticsBoard workspaceId={workspaceId} />
+                ) : (
+                  <KanbanBoard
+                    canWrite={canWriteTasks}
+                    bubbles={bubbles}
+                    onOpenTask={openTaskModal}
+                    onOpenCreateTask={openCreateTaskModal}
+                    workspaceCategory={effectiveKanbanCategory}
+                    calendarTimezone={workspaceCalendarTz}
+                    boardStripExpandNonce={boardStripExpandNonce}
+                    calendarStripCollapsed={calendarRailIsCollapsed}
+                    onExpandCalendarWhenKanbanStripCollapse={() => setCalendarCollapsed(false)}
+                    onRetractKanbanPanel={() => setKanbanCollapsed(true)}
+                    buddyBubbleTitle={buddyBubbleTitle}
+                  />
+                )
               }
             />
           </div>
