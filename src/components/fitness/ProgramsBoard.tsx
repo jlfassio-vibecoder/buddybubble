@@ -5,7 +5,7 @@ import { ListChecks, Play, Trophy } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { metadataFieldsFromParsed } from '@/lib/item-metadata';
+import { metadataFieldsFromParsed, parseTaskMetadata } from '@/lib/item-metadata';
 import { PROGRAM_TEMPLATES, type ProgramTemplate } from '@/lib/fitness/program-templates';
 import { formatUserFacingError } from '@/lib/format-error';
 import type { Json } from '@/types/database';
@@ -34,8 +34,7 @@ function DifficultyBadge({ difficulty }: { difficulty: ProgramTemplate['difficul
           'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-200',
         difficulty === 'intermediate' &&
           'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300',
-        difficulty === 'advanced' &&
-          'bg-red-100 text-red-800 dark:bg-red-950/70 dark:text-red-200',
+        difficulty === 'advanced' && 'bg-red-100 text-red-800 dark:bg-red-950/70 dark:text-red-200',
       )}
     >
       {difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}
@@ -48,17 +47,25 @@ function DifficultyBadge({ difficulty }: { difficulty: ProgramTemplate['difficul
 type ProgramCardProps = {
   task: ProgramTask;
   onView: (id: string) => void | undefined;
+  onBegin?: (task: ProgramTask) => Promise<void>;
+  onAdvanceWeek?: (task: ProgramTask) => Promise<void>;
+  advancing?: boolean;
 };
 
-function ProgramCard({ task, onView }: ProgramCardProps) {
+function ProgramCard({ task, onView, onBegin, onAdvanceWeek, advancing }: ProgramCardProps) {
   const fields = metadataFieldsFromParsed(task.metadata);
   const dw = parseInt(fields.programDurationWeeks, 10) || 0;
   const cw = fields.programCurrentWeek;
   const progress = dw > 0 ? Math.min(1, cw / dw) : 0;
+  /** Finished when DB says completed or week count reached — avoids Begin/Advance when metadata lags. */
+  const isFinished = task.status === 'completed' || (dw > 0 && cw >= dw);
+  /** Active: week started, or legacy `in_progress` from before we aligned to fitness column slugs. */
+  const isActiveProgram = !isFinished && (cw > 0 || task.status === 'in_progress');
 
-  const statusLabel =
-    task.status === 'completed'
-      ? 'Completed'
+  const statusLabel = isFinished
+    ? 'Completed'
+    : isActiveProgram
+      ? 'In Progress'
       : task.status === 'planned'
         ? 'Planned'
         : task.status === 'scheduled'
@@ -74,25 +81,23 @@ function ProgramCard({ task, onView }: ProgramCardProps) {
         <span
           className={cn(
             'shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold',
-            task.status === 'completed'
+            isFinished
               ? 'bg-primary/15 text-primary'
-              : 'bg-muted text-muted-foreground',
+              : isActiveProgram
+                ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/70 dark:text-blue-200'
+                : 'bg-muted text-muted-foreground',
           )}
         >
           {statusLabel}
         </span>
       </div>
 
-      {fields.programGoal && (
-        <p className="text-xs text-muted-foreground">{fields.programGoal}</p>
-      )}
+      {fields.programGoal && <p className="text-xs text-muted-foreground">{fields.programGoal}</p>}
 
       {dw > 0 && (
         <div className="space-y-1">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>
-              {cw > 0 ? `Week ${cw} of ${dw}` : `${dw} weeks`}
-            </span>
+            <span>{cw > 0 ? `Week ${cw} of ${dw}` : `${dw} weeks`}</span>
             {cw > 0 && <span>{Math.round(progress * 100)}%</span>}
           </div>
           {cw > 0 && (
@@ -106,14 +111,37 @@ function ProgramCard({ task, onView }: ProgramCardProps) {
         </div>
       )}
 
-      <Button
-        size="sm"
-        variant="outline"
-        className="mt-auto h-7 text-xs"
-        onClick={() => onView(task.id)}
-      >
-        View program
-      </Button>
+      <div className="mt-auto flex gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 flex-1 text-xs"
+          onClick={() => onView(task.id)}
+        >
+          View
+        </Button>
+        {!isFinished && cw === 0 && onBegin && (
+          <Button
+            size="sm"
+            className="h-7 flex-1 text-xs"
+            disabled={advancing}
+            onClick={() => void onBegin(task)}
+          >
+            {advancing ? 'Starting…' : 'Begin'}
+          </Button>
+        )}
+        {!isFinished && cw > 0 && onAdvanceWeek && (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-7 flex-1 text-xs"
+            disabled={advancing}
+            onClick={() => void onAdvanceWeek(task)}
+          >
+            {advancing ? 'Saving…' : `Complete wk ${cw}`}
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
@@ -195,6 +223,7 @@ export function ProgramsBoard({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [startingId, setStartingId] = useState<string | null>(null);
+  const [advancingId, setAdvancingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -257,6 +286,60 @@ export function ProgramsBoard({
     [selectedBubbleId, canWrite, load, onOpenTask],
   );
 
+  const handleBeginProgram = useCallback(
+    async (task: ProgramTask) => {
+      if (!canWrite) return;
+      setAdvancingId(task.id);
+      const supabase = createClient();
+      const newMetadata = {
+        ...(parseTaskMetadata(task.metadata) as Record<string, unknown>),
+        current_week: 1,
+      };
+      const { error: updateErr } = await supabase
+        .from('tasks')
+        // Fitness workspaces use planned | scheduled | today | completed (no in_progress column).
+        .update({ metadata: newMetadata, status: 'scheduled' })
+        .eq('id', task.id);
+      setAdvancingId(null);
+      if (updateErr) {
+        setError(formatUserFacingError(updateErr));
+        return;
+      }
+      await load();
+    },
+    [canWrite, load],
+  );
+
+  const handleAdvanceWeek = useCallback(
+    async (task: ProgramTask) => {
+      if (!canWrite) return;
+      setAdvancingId(task.id);
+      const fields = metadataFieldsFromParsed(task.metadata);
+      const dw = parseInt(fields.programDurationWeeks, 10) || 0;
+      const newWeek = fields.programCurrentWeek + 1;
+      const isComplete = dw > 0 && newWeek >= dw;
+      const supabase = createClient();
+      const newMetadata = {
+        ...(parseTaskMetadata(task.metadata) as Record<string, unknown>),
+        current_week: newWeek,
+      };
+      const { error: updateErr } = await supabase
+        .from('tasks')
+        .update({
+          metadata: newMetadata,
+          status: isComplete ? 'completed' : 'scheduled',
+        })
+        .eq('id', task.id);
+      setAdvancingId(null);
+      if (updateErr) {
+        setError(formatUserFacingError(updateErr));
+        return;
+      }
+      await load();
+    },
+    [canWrite, load],
+  );
+
   return (
     <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
       <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-6">
@@ -297,7 +380,14 @@ export function ProgramsBoard({
               ) : (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {programs.map((p) => (
-                    <ProgramCard key={p.id} task={p} onView={(id) => onOpenTask?.(id)} />
+                    <ProgramCard
+                      key={p.id}
+                      task={p}
+                      onView={(id) => onOpenTask?.(id)}
+                      onBegin={canWrite ? handleBeginProgram : undefined}
+                      onAdvanceWeek={canWrite ? handleAdvanceWeek : undefined}
+                      advancing={advancingId === p.id}
+                    />
                   ))}
                 </div>
               )}
