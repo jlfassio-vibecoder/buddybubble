@@ -20,7 +20,7 @@
  *   leadId?: string;        // pass back on repeat visits to avoid duplicates
  * }
  *
- * Response: { leadId: string }
+ * Response: { leadId: string | null } — null when the workspace does not track leads (non–business/fitness).
  */
 
 import { NextResponse } from 'next/server';
@@ -28,6 +28,16 @@ import { createClient } from '@utils/supabase/server';
 import { createServiceRoleClient } from '@/lib/supabase-service-role';
 
 const VALID_SOURCES = new Set(['qr', 'link', 'email', 'sms', 'direct']);
+
+function normalizeUtmParams(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === 'string') out[k] = v;
+    else if (v != null) out[k] = String(v);
+  }
+  return out;
+}
 
 type TrackBody = {
   workspaceId?: string;
@@ -54,18 +64,11 @@ export async function POST(req: Request) {
     }
 
     const source =
-      typeof body.source === 'string' && VALID_SOURCES.has(body.source)
-        ? body.source
-        : 'direct';
+      typeof body.source === 'string' && VALID_SOURCES.has(body.source) ? body.source : 'direct';
 
-    const inviteToken =
-      typeof body.inviteToken === 'string' ? body.inviteToken.trim() || null : null;
-    const email =
-      typeof body.email === 'string' ? body.email.trim().toLowerCase() || null : null;
-    const utmParams =
-      body.utmParams && typeof body.utmParams === 'object' ? body.utmParams : {};
-    const existingLeadId =
-      typeof body.leadId === 'string' ? body.leadId.trim() || null : null;
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() || null : null;
+    const utmParams = normalizeUtmParams(body.utmParams);
+    const existingLeadId = typeof body.leadId === 'string' ? body.leadId.trim() || null : null;
 
     // ── Get authenticated user if present (optional) ─────────────────────────
     // We use createClient() which reads the session cookie; it returns null
@@ -93,6 +96,32 @@ export async function POST(req: Request) {
     if (!['business', 'fitness'].includes(workspace.category_type)) {
       // Not an error — just nothing to track for free workspace types.
       return NextResponse.json({ leadId: null });
+    }
+
+    const inviteToken = typeof body.inviteToken === 'string' ? body.inviteToken.trim() : '';
+    if (!inviteToken) {
+      return NextResponse.json({ error: 'inviteToken is required' }, { status: 400 });
+    }
+
+    const { data: invitation } = await db
+      .from('invitations')
+      .select('workspace_id, revoked_at, expires_at, max_uses, uses_count')
+      .eq('token', inviteToken)
+      .eq('workspace_id', workspaceId)
+      .maybeSingle();
+
+    if (!invitation) {
+      return NextResponse.json({ error: 'Invite not found' }, { status: 404 });
+    }
+    if (invitation.revoked_at != null) {
+      return NextResponse.json({ error: 'Invite is no longer valid' }, { status: 400 });
+    }
+    const expired = new Date(invitation.expires_at).getTime() <= Date.now();
+    if (expired) {
+      return NextResponse.json({ error: 'Invite has expired' }, { status: 400 });
+    }
+    if (invitation.uses_count >= invitation.max_uses) {
+      return NextResponse.json({ error: 'Invite has no remaining uses' }, { status: 400 });
     }
 
     // ── Upsert lead ──────────────────────────────────────────────────────────

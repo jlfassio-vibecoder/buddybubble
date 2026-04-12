@@ -16,6 +16,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@utils/supabase/server';
 import { createServiceRoleClient } from '@/lib/supabase-service-role';
+import { getCanonicalOrigin } from '@/lib/app-url';
 import { getStripe } from '@/lib/stripe';
 
 export async function GET(req: Request) {
@@ -70,13 +71,7 @@ export async function GET(req: Request) {
     }
 
     // ── Build return URL ────────────────────────────────────────────────────
-    const siteUrl =
-      process.env.SITE_URL ??
-      process.env.APP_ORIGIN ??
-      process.env.APP_URL ??
-      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
-
-    const returnUrl = `${siteUrl}/app/${workspaceId}/settings/subscription`;
+    const returnUrl = `${getCanonicalOrigin()}/app/${workspaceId}/settings/subscription`;
 
     // ── Create portal session ───────────────────────────────────────────────
     const stripe = getStripe();

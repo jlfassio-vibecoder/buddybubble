@@ -481,7 +481,7 @@ export interface Database {
           invite_token: string | null;
           source: LeadSource | null;
           email: string | null;
-          utm_params: Record<string, string>;
+          utm_params: Json;
           first_seen_at: string;
           last_seen_at: string;
           /** Set when the lead starts a trial — null means unconverted. */
@@ -496,7 +496,7 @@ export interface Database {
           invite_token?: string | null;
           source?: LeadSource | null;
           email?: string | null;
-          utm_params?: Record<string, string>;
+          utm_params?: Json;
           first_seen_at?: string;
           last_seen_at?: string;
           converted_at?: string | null;

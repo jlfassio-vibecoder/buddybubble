@@ -2,7 +2,8 @@
 -- link but have not yet created an account or started a trial.
 --
 -- Rows are created server-side (service role) via POST /api/leads/track.
--- No direct anon write access — the API route validates the token first.
+-- No direct anon write access — the route checks the invite against public.invitations
+-- (workspace match, not revoked/expired/depleted) before insert/update.
 
 CREATE TABLE public.leads (
   id            uuid        PRIMARY KEY DEFAULT gen_random_uuid(),

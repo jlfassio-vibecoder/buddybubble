@@ -57,7 +57,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Workspace not found' }, { status: 404 });
     }
     if (membership.role !== 'owner') {
-      return NextResponse.json({ error: 'Only the workspace owner can start a trial' }, { status: 403 });
+      return NextResponse.json(
+        { error: 'Only the workspace owner can start a trial' },
+        { status: 403 },
+      );
     }
 
     // ── Check workspace requires subscription ───────────────────────────────
@@ -72,7 +75,10 @@ export async function POST(req: Request) {
     }
 
     if (!['business', 'fitness'].includes(workspace.category_type)) {
-      return NextResponse.json({ error: 'This workspace type does not require a subscription' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'This workspace type does not require a subscription' },
+        { status: 400 },
+      );
     }
 
     // ── Check for existing active subscription ──────────────────────────────
@@ -128,15 +134,36 @@ export async function POST(req: Request) {
 
       stripeCustomerId = customer.id;
 
-      // Persist to stripe_customers (upsert — safe if a race created it)
-      await serviceSupabase.from('stripe_customers').upsert(
-        {
-          user_id: user.id,
-          stripe_customer_id: stripeCustomerId,
-          has_had_trial: false,
-        },
-        { onConflict: 'user_id' },
-      );
+      // Insert-only: concurrent requests must not overwrite an existing stripe_customer_id.
+      const { error: insertErr } = await serviceSupabase.from('stripe_customers').insert({
+        user_id: user.id,
+        stripe_customer_id: stripeCustomerId,
+        has_had_trial: false,
+      });
+
+      if (insertErr) {
+        const code = (insertErr as { code?: string }).code;
+        if (code === '23505') {
+          const { data: existing } = await serviceSupabase
+            .from('stripe_customers')
+            .select('stripe_customer_id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+          if (existing?.stripe_customer_id) {
+            try {
+              await stripe.customers.del(customer.id);
+            } catch {
+              /* best-effort cleanup of duplicate Stripe customer */
+            }
+            stripeCustomerId = existing.stripe_customer_id;
+          } else {
+            return NextResponse.json({ error: 'Failed to save billing account' }, { status: 500 });
+          }
+        } else {
+          console.error('[setup-intent] stripe_customers insert failed:', insertErr);
+          return NextResponse.json({ error: 'Failed to save billing account' }, { status: 500 });
+        }
+      }
     }
 
     // ── Create SetupIntent ──────────────────────────────────────────────────
@@ -148,6 +175,14 @@ export async function POST(req: Request) {
         supabase_user_id: user.id,
       },
     });
+
+    if (!setupIntent.client_secret) {
+      console.error('[setup-intent] SetupIntent missing client_secret', setupIntent.id);
+      return NextResponse.json(
+        { error: 'Could not start payment setup — try again shortly.' },
+        { status: 500 },
+      );
+    }
 
     return NextResponse.json({
       clientSecret: setupIntent.client_secret,

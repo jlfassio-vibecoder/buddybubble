@@ -111,107 +111,121 @@ export async function POST(req: Request) {
       );
     }
 
-    // ── Get Stripe customer (must exist from setup-intent step) ─────────────
-    const { data: stripeCustomerRow } = await serviceSupabase
+    // ── Claim one-time trial atomically (must exist from setup-intent step) ─
+    const { data: claimed } = await serviceSupabase
       .from('stripe_customers')
-      .select('stripe_customer_id, has_had_trial')
+      .update({ has_had_trial: true })
       .eq('user_id', user.id)
+      .eq('has_had_trial', false)
+      .select('stripe_customer_id')
       .maybeSingle();
 
-    if (!stripeCustomerRow?.stripe_customer_id) {
-      return NextResponse.json(
-        { error: 'No Stripe customer found. Please start from the payment setup step.' },
-        { status: 400 },
-      );
-    }
-
-    if (stripeCustomerRow.has_had_trial) {
+    if (!claimed?.stripe_customer_id) {
+      const { data: check } = await serviceSupabase
+        .from('stripe_customers')
+        .select('stripe_customer_id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (!check?.stripe_customer_id) {
+        return NextResponse.json(
+          { error: 'No Stripe customer found. Please start from the payment setup step.' },
+          { status: 400 },
+        );
+      }
       return NextResponse.json(
         { error: 'You have already used your free trial.' },
         { status: 403 },
       );
     }
 
-    const stripeCustomerId = stripeCustomerRow.stripe_customer_id;
+    const stripeCustomerId = claimed.stripe_customer_id;
     const stripe = getStripe();
 
-    // ── Attach payment method and set as default ────────────────────────────
-    await stripe.paymentMethods.attach(paymentMethodId, { customer: stripeCustomerId });
-    await stripe.customers.update(stripeCustomerId, {
-      invoice_settings: { default_payment_method: paymentMethodId },
-    });
+    let subscriptionCreated = false;
 
-    // ── Create subscription with trial ──────────────────────────────────────
-    const subscription = await stripe.subscriptions.create({
-      customer: stripeCustomerId,
-      items: [{ price: plan.defaultPriceId }],
-      trial_period_days: TRIAL_PERIOD_DAYS,
-      default_payment_method: paymentMethodId,
-      metadata: {
-        workspace_id: workspaceId,
-        supabase_user_id: user.id,
-        plan_key: planKey,
-      },
-      // Send trial ending reminder via webhook (fires when ≤3 days remain)
-      trial_settings: {
-        end_behavior: { missing_payment_method: 'cancel' },
-      },
-    });
+    try {
+      // ── Attach payment method and set as default ────────────────────────────
+      await stripe.paymentMethods.attach(paymentMethodId, { customer: stripeCustomerId });
+      await stripe.customers.update(stripeCustomerId, {
+        invoice_settings: { default_payment_method: paymentMethodId },
+      });
 
-    const trialEnd = subscription.trial_end
-      ? new Date(subscription.trial_end * 1000).toISOString()
-      : null;
+      // ── Create subscription with trial ──────────────────────────────────────
+      const subscription = await stripe.subscriptions.create({
+        customer: stripeCustomerId,
+        items: [{ price: plan.defaultPriceId }],
+        trial_period_days: TRIAL_PERIOD_DAYS,
+        default_payment_method: paymentMethodId,
+        metadata: {
+          workspace_id: workspaceId,
+          supabase_user_id: user.id,
+          plan_key: planKey,
+        },
+        // Send trial ending reminder via webhook (fires when ≤3 days remain)
+        trial_settings: {
+          end_behavior: { missing_payment_method: 'cancel' },
+        },
+      });
 
-    const trialStart = subscription.start_date
-      ? new Date(subscription.start_date * 1000).toISOString()
-      : new Date().toISOString();
+      subscriptionCreated = true;
 
-    const { start: periodStart, end: periodEnd } = subscriptionPeriodIso(subscription);
+      const trialEnd = subscription.trial_end
+        ? new Date(subscription.trial_end * 1000).toISOString()
+        : null;
 
-    // ── Upsert workspace_subscriptions ──────────────────────────────────────
-    const { error: subError } = await serviceSupabase.from('workspace_subscriptions').upsert(
-      {
-        workspace_id: workspaceId,
-        owner_user_id: user.id,
-        stripe_customer_id: stripeCustomerId,
-        stripe_subscription_id: subscription.id,
-        stripe_price_id: plan.defaultPriceId,
-        stripe_product_id: plan.productId,
+      const trialStart = subscription.start_date
+        ? new Date(subscription.start_date * 1000).toISOString()
+        : new Date().toISOString();
+
+      const { start: periodStart, end: periodEnd } = subscriptionPeriodIso(subscription);
+
+      // ── Upsert workspace_subscriptions ──────────────────────────────────────
+      const { error: subError } = await serviceSupabase.from('workspace_subscriptions').upsert(
+        {
+          workspace_id: workspaceId,
+          owner_user_id: user.id,
+          stripe_customer_id: stripeCustomerId,
+          stripe_subscription_id: subscription.id,
+          stripe_price_id: plan.defaultPriceId,
+          stripe_product_id: plan.productId,
+          status: 'trialing',
+          trial_start: trialStart,
+          trial_end: trialEnd,
+          current_period_start: periodStart,
+          current_period_end: periodEnd,
+          cancel_at_period_end: false,
+        },
+        { onConflict: 'workspace_id' },
+      );
+
+      if (subError) {
+        console.error('[create-trial] workspace_subscriptions upsert failed:', subError);
+        // Non-fatal — webhook will sync on next event, but log it
+      }
+
+      // ── Convert lead record if present ──────────────────────────────────────
+      await serviceSupabase
+        .from('leads')
+        .update({ converted_at: new Date().toISOString(), user_id: user.id })
+        .eq('workspace_id', workspaceId)
+        .is('converted_at', null)
+        .not('user_id', 'is', null) // only if we already linked this user
+        .eq('user_id', user.id);
+
+      return NextResponse.json({
+        subscriptionId: subscription.id,
         status: 'trialing',
-        trial_start: trialStart,
-        trial_end: trialEnd,
-        current_period_start: periodStart,
-        current_period_end: periodEnd,
-        cancel_at_period_end: false,
-      },
-      { onConflict: 'workspace_id' },
-    );
-
-    if (subError) {
-      console.error('[create-trial] workspace_subscriptions upsert failed:', subError);
-      // Non-fatal — webhook will sync on next event, but log it
+        trialEnd,
+      });
+    } catch (inner) {
+      if (!subscriptionCreated) {
+        await serviceSupabase
+          .from('stripe_customers')
+          .update({ has_had_trial: false })
+          .eq('user_id', user.id);
+      }
+      throw inner;
     }
-
-    // ── Mark trial used ─────────────────────────────────────────────────────
-    await serviceSupabase
-      .from('stripe_customers')
-      .update({ has_had_trial: true })
-      .eq('user_id', user.id);
-
-    // ── Convert lead record if present ──────────────────────────────────────
-    await serviceSupabase
-      .from('leads')
-      .update({ converted_at: new Date().toISOString(), user_id: user.id })
-      .eq('workspace_id', workspaceId)
-      .is('converted_at', null)
-      .not('user_id', 'is', null) // only if we already linked this user
-      .eq('user_id', user.id);
-
-    return NextResponse.json({
-      subscriptionId: subscription.id,
-      status: 'trialing',
-      trialEnd,
-    });
   } catch (e) {
     console.error('[create-trial]', e);
     const msg = e instanceof Error ? e.message : 'Internal error';

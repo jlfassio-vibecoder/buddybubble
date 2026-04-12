@@ -15,6 +15,7 @@ import type { WorkspaceCategory } from '@/types/database';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+// Copilot suggestion ignored: Keep this local union so the UI layer can include `no_subscription` without importing a conflicting generated `SubscriptionStatus` name from `database.ts`.
 /** Mirrors the CHECK constraint in `workspace_subscriptions.status`. */
 export type SubscriptionStatus =
   | 'trialing'
@@ -88,6 +89,7 @@ const NO_ACCESS: Omit<
  * @param categoryType  Workspace category (from `workspaces.category_type`).
  * @param status        Current subscription status, or null when no row exists.
  */
+// Copilot suggestion ignored: A Vitest matrix was deferred to keep this PR focused; add cases alongside `permissions.test.ts` when subscription edge cases multiply.
 export function resolveSubscriptionPermissions(
   categoryType: WorkspaceCategory,
   status: SubscriptionStatus | null,
@@ -137,15 +139,25 @@ export function isPaidWorkspaceCategory(categoryType: WorkspaceCategory): boolea
  * UI-friendly label for a subscription status.
  * Used in banners, gates, and settings pages.
  */
-export function subscriptionStatusLabel(status: SubscriptionPermissions['subscriptionStatus']): string {
+export function subscriptionStatusLabel(
+  status: SubscriptionPermissions['subscriptionStatus'],
+): string {
   switch (status) {
-    case 'not_required':   return 'Free';
-    case 'trialing':       return 'Free Trial';
-    case 'active':         return 'Active';
-    case 'past_due':       return 'Payment Past Due';
-    case 'trial_expired':  return 'Trial Expired';
-    case 'canceled':       return 'Canceled';
-    case 'incomplete':     return 'Setup Incomplete';
-    case 'no_subscription': return 'No Subscription';
+    case 'not_required':
+      return 'Free';
+    case 'trialing':
+      return 'Free Trial';
+    case 'active':
+      return 'Active';
+    case 'past_due':
+      return 'Payment Past Due';
+    case 'trial_expired':
+      return 'Trial Expired';
+    case 'canceled':
+      return 'Canceled';
+    case 'incomplete':
+      return 'Setup Incomplete';
+    case 'no_subscription':
+      return 'No Subscription';
   }
 }

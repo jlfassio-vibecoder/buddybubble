@@ -56,9 +56,9 @@ export async function POST(req: Request) {
     return new Response(`Webhook signature error: ${String(err)}`, { status: 400 });
   }
 
-  const db = createServiceRoleClient();
-
   try {
+    const db = createServiceRoleClient();
+
     switch (event.type) {
       // ── Subscription created (backup path) ────────────────────────────────
       case 'customer.subscription.created': {
@@ -170,6 +170,43 @@ export async function POST(req: Request) {
   return NextResponse.json({ received: true });
 }
 
+async function sendResendEmail(body: {
+  from: string;
+  to: string;
+  subject: string;
+  html: string;
+  logContext: string;
+}) {
+  const resendKey = process.env.RESEND_API_KEY;
+  if (!resendKey) return;
+
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${resendKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: body.from,
+        to: body.to,
+        subject: body.subject,
+        html: body.html,
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      console.error(`[webhook] Resend failed (${body.logContext}): ${res.status} ${text}`);
+      return;
+    }
+
+    console.log(`[webhook] email sent (${body.logContext}) to ${body.to}`);
+  } catch (e) {
+    console.error(`[webhook] Resend request failed (${body.logContext}):`, e);
+  }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function handleSubscriptionUpsert(
@@ -237,36 +274,23 @@ async function handleTrialWillEnd(
     ? trialEnd.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     : 'soon';
 
-  // Send reminder email via Resend
-  const resendKey = process.env.RESEND_API_KEY;
-  const fromAddress = process.env.RESEND_FROM ?? 'BuddyBubble <noreply@buddybubble.com>';
-
-  if (!resendKey) {
+  if (!process.env.RESEND_API_KEY) {
     console.warn('[webhook] RESEND_API_KEY not set — skipping trial reminder email');
     return;
   }
 
-  try {
-    await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${resendKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: fromAddress,
-        to: profile.email,
-        subject: 'Your BuddyBubble trial ends soon',
-        html: buildTrialReminderEmail({
-          name: profile.full_name ?? 'there',
-          trialEndFormatted,
-        }),
-      }),
-    });
-    console.log(`[webhook] trial reminder email sent to ${profile.email}`);
-  } catch (err) {
-    console.error('[webhook] Failed to send trial reminder email:', err);
-  }
+  const fromAddress = process.env.RESEND_FROM ?? 'BuddyBubble <noreply@buddybubble.com>';
+
+  await sendResendEmail({
+    from: fromAddress,
+    to: profile.email,
+    subject: 'Your BuddyBubble trial ends soon',
+    html: buildTrialReminderEmail({
+      name: profile.full_name ?? 'there',
+      trialEndFormatted,
+    }),
+    logContext: 'trial_will_end',
+  });
 }
 
 async function handlePaymentFailed(
@@ -291,27 +315,17 @@ async function handlePaymentFailed(
 
   if (!profile?.email) return;
 
-  const resendKey = process.env.RESEND_API_KEY;
-  const fromAddress = process.env.RESEND_FROM ?? 'BuddyBubble <noreply@buddybubble.com>';
-  if (!resendKey) return;
+  if (!process.env.RESEND_API_KEY) return;
 
-  try {
-    await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${resendKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: fromAddress,
-        to: profile.email,
-        subject: 'Action required: BuddyBubble payment failed',
-        html: buildPaymentFailedEmail({ name: profile.full_name ?? 'there' }),
-      }),
-    });
-  } catch (err) {
-    console.error('[webhook] Failed to send payment failed email:', err);
-  }
+  const fromAddress = process.env.RESEND_FROM ?? 'BuddyBubble <noreply@buddybubble.com>';
+
+  await sendResendEmail({
+    from: fromAddress,
+    to: profile.email,
+    subject: 'Action required: BuddyBubble payment failed',
+    html: buildPaymentFailedEmail({ name: profile.full_name ?? 'there' }),
+    logContext: 'invoice.payment_failed',
+  });
 }
 
 // ── Email templates (plain HTML — swap for React Email components in Phase 3) ─
