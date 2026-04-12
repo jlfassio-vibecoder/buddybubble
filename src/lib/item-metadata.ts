@@ -5,6 +5,16 @@ import type { ItemType, Json } from '@/types/database';
  * `program_session_key`, `linked_program_task_id` on workout tasks — preserved via merge on save.
  */
 
+/** Recorded data for one set logged during a live workout session. */
+export type SetLogEntry = {
+  set: number;
+  weight?: number;
+  reps?: number;
+  /** Rate of perceived exertion, 1–10. */
+  rpe?: number;
+  done: boolean;
+};
+
 /** Single exercise entry stored in `tasks.metadata.exercises`. */
 export type WorkoutExercise = {
   name: string;
@@ -24,6 +34,10 @@ export type WorkoutExercise = {
   rounds?: number;
   /** Short coach note from AI chain. */
   coach_notes?: string;
+  /** Instructions shown in the player's detailed view. */
+  notes?: string;
+  /** Per-set performance data recorded by the workout player (workout_log only). */
+  set_logs?: SetLogEntry[];
 };
 
 /** Single day within a program week. */

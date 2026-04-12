@@ -75,6 +75,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { ItemTypeSelector } from '@/components/board/item-type-selector';
+import { WorkoutPlayerTriggers } from '@/components/fitness/WorkoutPlayer';
 import { indefiniteArticleForUiNoun, itemTypeUiNoun } from '@/lib/item-type-styles';
 import { cn } from '@/lib/utils';
 import { ALL_BUBBLES_BUBBLE_ID } from '@/lib/all-bubbles';
@@ -1375,16 +1376,6 @@ export function TaskModal({
             <div>
               <h2 className="text-lg font-bold text-foreground">{modalTitle}</h2>
               <p className="text-xs text-muted-foreground">{modalSubtitle}</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => onOpenChange(false)}
-              className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
-              aria-label="Close dialog"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
 
           <div className="border-b border-border px-6 py-3">
             <p className="mb-2 text-xs font-medium text-muted-foreground">Type</p>
@@ -1438,6 +1429,17 @@ export function TaskModal({
             <p className="mt-2 text-xs text-muted-foreground">
               Public cards appear on your Astro storefront.
             </p>
+            {(itemType === 'workout' || itemType === 'workout_log') &&
+              workoutExercises.length > 0 && (
+                <div className="mt-3 space-y-1.5">
+                  <p className="text-xs font-medium text-muted-foreground">Workout player</p>
+                  <WorkoutPlayerTriggers
+                    workoutTitle={title}
+                    exercises={workoutExercises}
+                    bubbleId={bubbleId ?? ''}
+                  />
+                </div>
+              )}
           </div>
 
           <div className="flex flex-wrap gap-2 border-b border-border px-6 py-2">

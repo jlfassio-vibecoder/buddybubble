@@ -582,22 +582,25 @@ export function ProgramsBoard({
             )}
           >
             <div className="flex h-full min-h-0 gap-3 p-3">
-              {/* 1 — Templates */}
+              {/* 1 — Programs (in progress) */}
               <div className="flex h-full w-[85vw] shrink-0 snap-center flex-col md:w-auto md:min-w-[min(85vw,20rem)] md:max-w-[22rem] md:snap-none">
-                <BoardColumnHeader title="Program templates" count={PROGRAM_TEMPLATES.length} />
+                <BoardColumnHeader title="Programs" count={inProgress.length} />
                 <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden pr-0.5">
-                  {PROGRAM_TEMPLATES.map((tpl) => (
-                    <TemplateCard
-                      key={tpl.id}
-                      template={tpl}
-                      onStart={handleStartTemplate}
-                      starting={startingId === tpl.id}
-                    />
-                  ))}
-                  {!canWrite && (
-                    <p className="text-xs text-muted-foreground">
-                      You need editor access to start a program.
+                  {inProgress.length === 0 ? (
+                    <p className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+                      Nothing in progress yet.
                     </p>
+                  ) : (
+                    inProgress.map((p) => (
+                      <ProgramCard
+                        key={p.id}
+                        task={p}
+                        onView={(id) => onOpenTask?.(id)}
+                        onBegin={canWrite ? handleBeginProgram : undefined}
+                        onAdvanceWeek={canWrite ? handleAdvanceWeek : undefined}
+                        advancing={advancingId === p.id}
+                      />
+                    ))
                   )}
                 </div>
               </div>
@@ -625,46 +628,7 @@ export function ProgramsBoard({
                 </div>
               </div>
 
-              {/* 3 — In progress (+ completed) */}
-              <div className="flex h-full w-[85vw] shrink-0 snap-center flex-col md:w-auto md:min-w-[min(85vw,20rem)] md:max-w-[22rem] md:snap-none">
-                <BoardColumnHeader title="In progress" count={inProgress.length} />
-                <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden pr-0.5">
-                  {inProgress.length === 0 ? (
-                    <p className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
-                      Nothing in progress yet.
-                    </p>
-                  ) : (
-                    inProgress.map((p) => (
-                      <ProgramCard
-                        key={p.id}
-                        task={p}
-                        onView={(id) => onOpenTask?.(id)}
-                        onBegin={canWrite ? handleBeginProgram : undefined}
-                        onAdvanceWeek={canWrite ? handleAdvanceWeek : undefined}
-                        advancing={advancingId === p.id}
-                      />
-                    ))
-                  )}
-
-                  {completed.length > 0 && (
-                    <>
-                      <h4 className="pt-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                        Completed
-                      </h4>
-                      {completed.map((p) => (
-                        <ProgramCard
-                          key={p.id}
-                          task={p}
-                          onView={(id) => onOpenTask?.(id)}
-                          advancing={false}
-                        />
-                      ))}
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* 4 — This week: plan + workouts on the board */}
+              {/* 3 — This week: plan + workouts on the board */}
               <div className="flex h-full w-[85vw] shrink-0 snap-center flex-col md:w-auto md:min-w-[min(85vw,20rem)] md:max-w-[22rem] md:snap-none">
                 <BoardColumnHeader
                   title="This week"
@@ -776,6 +740,47 @@ export function ProgramsBoard({
                       </ul>
                     )}
                   </div>
+                </div>
+              </div>
+
+              {/* 4 — History (completed) */}
+              <div className="flex h-full w-[85vw] shrink-0 snap-center flex-col md:w-auto md:min-w-[min(85vw,20rem)] md:max-w-[22rem] md:snap-none">
+                <BoardColumnHeader title="History" count={completed.length} />
+                <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden pr-0.5">
+                  {completed.length === 0 ? (
+                    <p className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+                      No completed programs yet.
+                    </p>
+                  ) : (
+                    completed.map((p) => (
+                      <ProgramCard
+                        key={p.id}
+                        task={p}
+                        onView={(id) => onOpenTask?.(id)}
+                        advancing={false}
+                      />
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* 5 — Templates */}
+              <div className="flex h-full w-[85vw] shrink-0 snap-center flex-col md:w-auto md:min-w-[min(85vw,20rem)] md:max-w-[22rem] md:snap-none">
+                <BoardColumnHeader title="Program templates" count={PROGRAM_TEMPLATES.length} />
+                <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden pr-0.5">
+                  {PROGRAM_TEMPLATES.map((tpl) => (
+                    <TemplateCard
+                      key={tpl.id}
+                      template={tpl}
+                      onStart={handleStartTemplate}
+                      starting={startingId === tpl.id}
+                    />
+                  ))}
+                  {!canWrite && (
+                    <p className="text-xs text-muted-foreground">
+                      You need editor access to start a program.
+                    </p>
+                  )}
                 </div>
               </div>
             </div>

@@ -27,6 +27,8 @@ import { ProfileCompletionModal } from '@/components/modals/ProfileCompletionMod
 import { AnalyticsBoard } from '@/components/fitness/AnalyticsBoard';
 import { ClassesBoard } from '@/components/fitness/ClassesBoard';
 import { ProgramsBoard } from '@/components/fitness/ProgramsBoard';
+import { WorkoutPlayer } from '@/components/fitness/WorkoutPlayer';
+import { metadataFieldsFromParsed } from '@/lib/item-metadata';
 import { FitnessProfileSheet } from '@/components/fitness/FitnessProfileSheet';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -120,6 +122,7 @@ export function DashboardShell({
   const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false);
   const [fitnessProfileOpen, setFitnessProfileOpen] = useState(false);
   const [commentAlert, setCommentAlert] = useState<{ taskId: string; title: string } | null>(null);
+  const [workoutPlayerTask, setWorkoutPlayerTask] = useState<TaskRow | null>(null);
   const [workspaceRailCollapsed, setWorkspaceRailCollapsed] = useState(false);
   const [bubbleSidebarCollapsed, setBubbleSidebarCollapsed] = useState(false);
   const [chatCollapsed, setChatCollapsedState] = useState(false);
@@ -311,6 +314,10 @@ export function DashboardShell({
     if (taskModalCreateBubbleId) return taskModalCreateBubbleId;
     return defaultTaskModalBubbleId;
   }, [taskModalTaskId, taskModalCreateBubbleId, defaultTaskModalBubbleId]);
+
+  const handleStartWorkout = useCallback((task: TaskRow) => {
+    setWorkoutPlayerTask(task);
+  }, []);
 
   const calendarContext = useMemo(
     () => ({
@@ -880,6 +887,7 @@ export function DashboardShell({
                     bubbles={bubbles}
                     onOpenTask={openTaskModal}
                     onOpenCreateTask={openCreateTaskModal}
+                    onStartWorkout={handleStartWorkout}
                     workspaceCategory={effectiveKanbanCategory}
                     calendarTimezone={workspaceCalendarTz}
                     boardStripExpandNonce={boardStripExpandNonce}
@@ -916,6 +924,16 @@ export function DashboardShell({
           calendarTimezone={workspaceCalendarTz}
           onTaskArchived={bumpTaskViews}
         />
+        {workoutPlayerTask && (
+          <WorkoutPlayer
+            open
+            onClose={() => setWorkoutPlayerTask(null)}
+            workoutTitle={workoutPlayerTask.title}
+            exercises={metadataFieldsFromParsed(workoutPlayerTask.metadata).workoutExercises}
+            bubbleId={workoutPlayerTask.bubble_id}
+            onComplete={bumpTaskViews}
+          />
+        )}
         <WorkspaceSettingsModal
           open={workspaceSettingsOpen}
           onOpenChange={setWorkspaceSettingsOpen}

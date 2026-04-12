@@ -314,6 +314,8 @@ type Props = {
   onExpandCalendarWhenKanbanStripCollapse?: () => void;
   /** Split calendar chrome: label before "Calendar". */
   buddyBubbleTitle?: string;
+  /** Opens the Workout Player for a workout / workout_log card (fitness workspaces). */
+  onStartWorkout?: (task: TaskRow) => void;
 };
 
 export function KanbanBoard({
@@ -330,6 +332,7 @@ export function KanbanBoard({
   calendarStripCollapsed,
   onExpandCalendarWhenKanbanStripCollapse,
   buddyBubbleTitle,
+  onStartWorkout,
 }: Props) {
   const [calendarDropNonce, setCalendarDropNonce] = useState(0);
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
@@ -1032,6 +1035,7 @@ export function KanbanBoard({
                     calendarTimezone={tz}
                     onMoveToBubble={moveTaskToBubble}
                     onOpenTask={onOpenTask}
+                    onStartWorkout={onStartWorkout}
                     onAddNew={addNew}
                     onSortByPriority={canWrite ? () => sortColumnBy(col.id, 'priority') : undefined}
                     onSortByTitle={canWrite ? () => sortColumnBy(col.id, 'title') : undefined}
@@ -1218,6 +1222,7 @@ type ColumnProps = {
   calendarTimezone: string;
   onMoveToBubble: (taskId: string, targetBubbleId: string) => void;
   onOpenTask?: (taskId: string, opts?: { tab?: TaskModalTab }) => void;
+  onStartWorkout?: (task: TaskRow) => void;
   onAddNew?: () => void;
   onSortByPriority?: () => void;
   onSortByTitle?: () => void;
@@ -1239,6 +1244,7 @@ function KanbanColumn({
   calendarTimezone,
   onMoveToBubble,
   onOpenTask,
+  onStartWorkout,
   onAddNew,
   onSortByPriority,
   onSortByTitle,
@@ -1297,6 +1303,7 @@ function KanbanColumn({
                       calendarTimezone={calendarTimezone}
                       onMoveToBubble={onMoveToBubble}
                       onOpenTask={onOpenTask}
+                      onStartWorkout={onStartWorkout}
                     />
                   ))}
                   {onAddNew ? (
@@ -1330,6 +1337,7 @@ type CardProps = {
   calendarTimezone: string;
   onMoveToBubble: (taskId: string, targetBubbleId: string) => void;
   onOpenTask?: (taskId: string, opts?: { tab?: TaskModalTab }) => void;
+  onStartWorkout?: (task: TaskRow) => void;
 };
 
 function SortableTaskCard({
@@ -1343,6 +1351,7 @@ function SortableTaskCard({
   calendarTimezone,
   onMoveToBubble,
   onOpenTask,
+  onStartWorkout,
 }: CardProps) {
   const sortableDisabled = !canWrite || dragDisabled;
   const {
@@ -1381,6 +1390,7 @@ function SortableTaskCard({
         calendarTimezone={calendarTimezone}
         onMoveToBubble={onMoveToBubble}
         onOpenTask={onOpenTask}
+        onStartWorkout={onStartWorkout}
         isCompleted={taskColumnIsCompletionStatus(task.status, boardColumnDefs)}
         dragHandle={
           draggable ? (
