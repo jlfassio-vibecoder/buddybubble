@@ -7,7 +7,7 @@ import type {
   PersonalizeProgramSession,
 } from '@/lib/workout-factory/types/personalize-program';
 import { callVertexAI, getVertexAICredentials } from '@/lib/workout-factory/vertex-ai-client';
-import { parseRepsFieldToScalar } from '@/lib/workout-factory/parse-reps-scalar';
+import { normalizeRepsForStorage } from '@/lib/workout-factory/parse-reps-scalar';
 
 export type {
   PersonalizeProgramResult,
@@ -37,12 +37,12 @@ function asExerciseArray(raw: unknown): WorkoutExercise[] {
     const name = typeof o.name === 'string' ? o.name.trim() : '';
     if (!name) continue;
     const sets = typeof o.sets === 'number' ? o.sets : undefined;
-    const repsN = parseRepsFieldToScalar(o.reps);
+    const repsNorm = normalizeRepsForStorage(o.reps);
     const coach_notes = typeof o.coach_notes === 'string' ? o.coach_notes : undefined;
     out.push({
       name,
       ...(sets != null ? { sets } : {}),
-      ...(repsN != null ? { reps: repsN } : {}),
+      ...(repsNorm !== undefined ? { reps: repsNorm } : {}),
       ...(coach_notes ? { coach_notes } : {}),
     });
   }

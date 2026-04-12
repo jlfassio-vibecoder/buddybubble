@@ -87,8 +87,52 @@ export function alignStatusWithFutureSchedule(params: {
     return status;
   }
   if (status === 'done' || status === 'completed' || status === 'scheduled') return status;
-  if (status === 'planning' || status === 'todo' || status === 'today') {
+  if (
+    status === 'planning' ||
+    status === 'todo' ||
+    status === 'today' ||
+    (itemType === 'program' && status === 'planned')
+  ) {
     return 'scheduled';
   }
   return status;
+}
+
+/**
+ * Same pipeline as TaskModal `saveCoreFields`: today promotion, then future-date alignment for Kanban columns.
+ */
+export function resolveTaskStatusForScheduleFields(params: {
+  currentStatus: string;
+  scheduledOnYmd: string | null;
+  calendarTimezone: string | null | undefined;
+  hasTodayBoardColumn: boolean;
+  hasScheduledBoardColumn: boolean;
+  itemType?: ItemType | null;
+  now?: Date;
+}): string {
+  const {
+    currentStatus,
+    scheduledOnYmd,
+    calendarTimezone,
+    hasTodayBoardColumn,
+    hasScheduledBoardColumn,
+    itemType,
+    now,
+  } = params;
+  let effectiveStatus = promotedStatusForScheduledOnToday({
+    currentStatus,
+    scheduledOnYmd,
+    calendarTimezone,
+    hasTodayBoardColumn,
+    now,
+  });
+  effectiveStatus = alignStatusWithFutureSchedule({
+    status: effectiveStatus,
+    scheduledOnYmd,
+    calendarTimezone,
+    hasScheduledBoardColumn,
+    itemType,
+    now,
+  });
+  return effectiveStatus;
 }

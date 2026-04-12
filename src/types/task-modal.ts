@@ -62,7 +62,8 @@ export function appendActivityForFieldChange(
       | 'priority'
       | 'scheduled_on'
       | 'scheduled_time'
-      | 'visibility';
+      | 'visibility'
+      | 'assigned_to';
     from: string;
     to: string;
   },
@@ -81,9 +82,11 @@ export function appendActivityForFieldChange(
               ? `Changed priority`
               : opts.field === 'visibility'
                 ? `Changed visibility`
-                : opts.field === 'scheduled_time'
-                  ? `Changed scheduled time`
-                  : `Changed scheduled date`,
+                : opts.field === 'assigned_to'
+                  ? `Changed assignee`
+                  : opts.field === 'scheduled_time'
+                    ? `Changed scheduled time`
+                    : `Changed scheduled date`,
     at: new Date().toISOString(),
     user_id: opts.userId,
     field: opts.field,

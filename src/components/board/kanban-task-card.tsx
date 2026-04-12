@@ -8,6 +8,7 @@ import {
   GripVertical,
   ListChecks,
   MessageCircle,
+  Play,
   User,
 } from 'lucide-react';
 import {
@@ -35,6 +36,8 @@ export type KanbanTaskCardProps = {
   bubbles: BubbleRow[];
   onMoveToBubble: (taskId: string, targetBubbleId: string) => void;
   onOpenTask?: (taskId: string, opts?: { tab?: TaskModalTab }) => void;
+  /** Opens the Workout Player directly for workout / workout_log cards. */
+  onStartWorkout?: (task: TaskRow) => void;
   /** Controls how much information is shown on the card (board-level setting). */
   density?: KanbanCardDensity;
   /** Workspace template — drives date chip label (Due vs Scheduled). */
@@ -92,6 +95,7 @@ export function KanbanTaskCard({
   bubbles,
   onMoveToBubble,
   onOpenTask,
+  onStartWorkout,
   density = 'full',
   workspaceCategory = null,
   calendarTimezone = null,
@@ -355,25 +359,43 @@ export function KanbanTaskCard({
               ) : null}
             </div>
 
-            {onOpenTask ? (
-              <button
-                type="button"
-                className="relative mt-0.5 shrink-0 rounded-md p-1 text-muted-foreground outline-none ring-offset-background hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                aria-label="Open card comments"
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpenTask(task.id, { tab: 'comments' });
-                }}
-              >
-                <MessageCircle className="size-4" aria-hidden />
-                {commentCount > 0 ? (
-                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium leading-none text-primary-foreground">
-                    {commentCount > 99 ? '99+' : commentCount}
-                  </span>
-                ) : null}
-              </button>
-            ) : null}
+            <div className="flex shrink-0 items-start gap-0.5">
+              {onStartWorkout &&
+              (task.item_type === 'workout' || task.item_type === 'workout_log') ? (
+                <button
+                  type="button"
+                  className="mt-0.5 rounded-md p-1 text-muted-foreground outline-none ring-offset-background hover:bg-muted hover:text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  aria-label="Start workout"
+                  title="Start workout"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onStartWorkout(task);
+                  }}
+                >
+                  <Play className="size-4" aria-hidden />
+                </button>
+              ) : null}
+              {onOpenTask ? (
+                <button
+                  type="button"
+                  className="relative mt-0.5 rounded-md p-1 text-muted-foreground outline-none ring-offset-background hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  aria-label="Open card comments"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenTask(task.id, { tab: 'comments' });
+                  }}
+                >
+                  <MessageCircle className="size-4" aria-hidden />
+                  {commentCount > 0 ? (
+                    <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium leading-none text-primary-foreground">
+                      {commentCount > 99 ? '99+' : commentCount}
+                    </span>
+                  ) : null}
+                </button>
+              ) : null}
+            </div>
           </div>
 
           {showBubble && (

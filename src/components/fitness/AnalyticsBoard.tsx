@@ -7,6 +7,7 @@ import { createClient } from '@utils/supabase/client';
 import { CALENDAR_WEEK_OPTIONS } from '@/lib/calendar-view-range';
 import { formatUserFacingError } from '@/lib/format-error';
 import { getCalendarDateInTimeZone } from '@/lib/workspace-calendar';
+import { Label } from '@/components/ui/label';
 import type { Json } from '@/types/database';
 
 type WorkoutTask = {
@@ -17,9 +18,13 @@ type WorkoutTask = {
   /** Calendar date of the workout; analytics bucket by this (aligned with calendar / `scheduled_on`). */
   scheduled_on: string | null;
   metadata: Json;
+  program_id?: string | null;
+  assigned_to?: string | null;
 };
 
 type WorkoutMeta = { workout_type?: string; duration_min?: number };
+
+type ProgramOption = { id: string; title: string };
 
 /**
  * Workspace calendar day (YYYY-MM-DD) for when the workout belongs — matches calendar month dots
@@ -65,6 +70,10 @@ function StatCard({ icon, label, value, sub }: StatCardProps) {
 /** Monday-first labels, aligned with `CALENDAR_WEEK_OPTIONS` / calendar views. */
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+function isCompletedWorkoutStatus(status: string | null): boolean {
+  return status === 'done' || status === 'completed';
+}
+
 type Props = {
   workspaceId: string;
   /** Workspace IANA timezone for bucketing (same as calendar rail). */
@@ -81,67 +90,152 @@ export function AnalyticsBoard({
   calendarSlot,
   taskViewsNonce,
 }: Props) {
+  const [authReady, setAuthReady] = useState(false);
+  const [viewerUserId, setViewerUserId] = useState<string | null>(null);
+  const [programOptions, setProgramOptions] = useState<ProgramOption[]>([]);
+  const [selectedProgramId, setSelectedProgramId] = useState<string | null>(null);
   const [tasks, setTasks] = useState<WorkoutTask[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [programListLoading, setProgramListLoading] = useState(true);
+  const [workoutsLoading, setWorkoutsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setLoadError(null);
-      const supabase = createClient();
+    const supabase = createClient();
+    void supabase.auth.getUser().then(({ data }) => {
+      if (!cancelled) {
+        setViewerUserId(data.user?.id ?? null);
+        setAuthReady(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function loadPrograms() {
+      if (!workspaceId || !viewerUserId) {
+        if (!cancelled) {
+          setProgramOptions([]);
+          setProgramListLoading(false);
+        }
+        return;
+      }
+      if (!cancelled) setProgramListLoading(true);
+      const supabase = createClient();
       const { data: bubbles, error: bubblesErr } = await supabase
         .from('bubbles')
         .select('id')
         .eq('workspace_id', workspaceId);
+      if (cancelled) return;
+      if (bubblesErr || !bubbles?.length) {
+        setProgramOptions([]);
+        setLoadError(bubblesErr ? formatUserFacingError(bubblesErr) : null);
+        setProgramListLoading(false);
+        return;
+      }
+      const bubbleIds = bubbles.map((b) => b.id as string);
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('id, title, created_at')
+        .in('bubble_id', bubbleIds)
+        .eq('item_type', 'program')
+        .eq('assigned_to', viewerUserId)
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (cancelled) return;
+      if (error) {
+        setProgramOptions([]);
+        setLoadError(formatUserFacingError(error));
+        setProgramListLoading(false);
+        return;
+      }
+      setProgramOptions(
+        (data ?? []).map((r) => ({
+          id: (r as { id: string }).id,
+          title: (r as { title: string }).title,
+        })),
+      );
+      setLoadError(null);
+      setProgramListLoading(false);
+    }
+    void loadPrograms();
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceId, viewerUserId, taskViewsNonce]);
 
+  useEffect(() => {
+    if (programOptions.length === 0) {
+      setSelectedProgramId(null);
+      return;
+    }
+    setSelectedProgramId((prev) =>
+      prev && programOptions.some((p) => p.id === prev) ? prev : programOptions[0].id,
+    );
+  }, [programOptions]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadWorkouts() {
+      if (!workspaceId || !viewerUserId || !selectedProgramId) {
+        if (!cancelled) {
+          setTasks([]);
+          setWorkoutsLoading(false);
+        }
+        return;
+      }
+      setWorkoutsLoading(true);
+      const supabase = createClient();
+      const { data: bubbles, error: bubblesErr } = await supabase
+        .from('bubbles')
+        .select('id')
+        .eq('workspace_id', workspaceId);
       if (bubblesErr) {
         if (!cancelled) {
           setTasks([]);
           setLoadError(formatUserFacingError(bubblesErr));
-          setLoading(false);
+          setWorkoutsLoading(false);
         }
         return;
       }
-
       if (!bubbles?.length) {
         if (!cancelled) {
           setTasks([]);
-          setLoading(false);
+          setWorkoutsLoading(false);
         }
         return;
       }
-
       const bubbleIds = bubbles.map((b) => b.id as string);
-
       const { data, error: tasksErr } = await supabase
         .from('tasks')
-        .select('id, title, status, created_at, scheduled_on, metadata')
+        .select('id, title, status, created_at, scheduled_on, metadata, program_id, assigned_to')
         .in('bubble_id', bubbleIds)
         .in('item_type', ['workout', 'workout_log'])
-        .is('archived_at', null)
+        .eq('program_id', selectedProgramId)
+        .eq('assigned_to', viewerUserId)
         .order('created_at', { ascending: false })
-        .limit(200);
-
+        .limit(500);
       if (!cancelled) {
         if (tasksErr) {
           setTasks([]);
           setLoadError(formatUserFacingError(tasksErr));
         } else {
           setTasks((data ?? []) as WorkoutTask[]);
+          setLoadError(null);
         }
-        setLoading(false);
+        setWorkoutsLoading(false);
       }
     }
-    void load();
+    void loadWorkouts();
     return () => {
       cancelled = true;
     };
-  }, [workspaceId, taskViewsNonce]);
+  }, [workspaceId, viewerUserId, selectedProgramId, taskViewsNonce]);
 
-  const completed = useMemo(() => tasks.filter((t) => t.status === 'completed'), [tasks]);
+  const completed = useMemo(() => tasks.filter((t) => isCompletedWorkoutStatus(t.status)), [tasks]);
 
   const { sessionsThisWeek, sessionsThisMonth, weekMinutes, totalMinutes, streak, weekDayCounts } =
     useMemo(() => {
@@ -151,7 +245,6 @@ export function AnalyticsBoard({
       const todayYmd = getCalendarDateInTimeZone(tz, now);
       const monthPrefix = todayYmd.slice(0, 7);
 
-      // Align week boundaries with calendar rail: anchor on workspace "today", then Mon–Sun in local date-fns, map each day to workspace YMD.
       const anchor = parseISO(`${todayYmd}T12:00:00`);
       const weekStartDate = startOfWeek(anchor, CALENDAR_WEEK_OPTIONS);
       const weekEndDate = endOfWeek(anchor, CALENDAR_WEEK_OPTIONS);
@@ -160,7 +253,6 @@ export function AnalyticsBoard({
       );
       const weekYmdSet = new Set(weekYmds);
 
-      /** Same semantics as calendar-rail `dayAnnotations`: prefer `scheduled_on` (workout day), else log time. */
       const taskYmd = (t: WorkoutTask) => workoutOccurrenceYmd(t, tz);
 
       const completedDaySet = new Set(completed.map((t) => taskYmd(t)));
@@ -171,7 +263,6 @@ export function AnalyticsBoard({
       const minOf = (arr: WorkoutTask[]) =>
         arr.reduce((sum, t) => sum + ((t.metadata as WorkoutMeta)?.duration_min ?? 0), 0);
 
-      // Streak: consecutive workspace calendar days with at least one completed workout, ending on workspace today
       let streak = 0;
       let checkYmd = todayYmd;
       while (completedDaySet.has(checkYmd)) {
@@ -209,7 +300,7 @@ export function AnalyticsBoard({
 
   const formatMinutes = (m: number) => (m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`);
 
-  if (loading) {
+  if (!authReady) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
         Loading analytics…
@@ -217,7 +308,23 @@ export function AnalyticsBoard({
     );
   }
 
-  if (loadError) {
+  if (!viewerUserId) {
+    return (
+      <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+        Sign in to view analytics.
+      </div>
+    );
+  }
+
+  if (programListLoading) {
+    return (
+      <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+        Loading analytics…
+      </div>
+    );
+  }
+
+  if (loadError && programOptions.length === 0 && !programListLoading) {
     return (
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
         <p className="text-sm font-medium text-destructive" role="alert">
@@ -230,16 +337,60 @@ export function AnalyticsBoard({
     );
   }
 
+  if (programOptions.length === 0) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-6">
+          <div className="flex items-center gap-2">
+            <Activity className="h-5 w-5 text-primary" aria-hidden />
+            <h2 className="text-lg font-semibold text-foreground">Fitness Analytics</h2>
+          </div>
+          <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+            No programs assigned to you in this workspace. Assign yourself on a program card, or
+            start one from the Programs board.
+          </p>
+        </div>
+        {calendarSlot ?? null}
+      </div>
+    );
+  }
+
+  if (workoutsLoading || !selectedProgramId) {
+    return (
+      <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+        Loading analytics…
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
-      {/* Main analytics panel */}
       <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-6">
-        <div className="flex items-center gap-2">
-          <Activity className="h-5 w-5 text-primary" aria-hidden />
-          <h2 className="text-lg font-semibold text-foreground">Fitness Analytics</h2>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex items-center gap-2">
+            <Activity className="h-5 w-5 text-primary" aria-hidden />
+            <h2 className="text-lg font-semibold text-foreground">Fitness Analytics</h2>
+          </div>
+          <div className="min-w-0 space-y-1.5 sm:max-w-xs sm:shrink-0">
+            <Label htmlFor="analytics-program">Program</Label>
+            <select
+              id="analytics-program"
+              className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+              value={selectedProgramId}
+              onChange={(e) => setSelectedProgramId(e.target.value || null)}
+            >
+              {programOptions.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.title}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-muted-foreground">
+              Metrics are for workouts linked to this program and assigned to you.
+            </p>
+          </div>
         </div>
 
-        {/* Stat cards */}
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <StatCard
             icon={<Calendar className="h-4 w-4" />}
@@ -267,7 +418,6 @@ export function AnalyticsBoard({
           />
         </div>
 
-        {/* Weekly bar chart */}
         <div className="rounded-xl border border-border bg-card p-4">
           <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Sessions this week
@@ -287,7 +437,6 @@ export function AnalyticsBoard({
           </div>
         </div>
 
-        {/* Recent sessions */}
         {recentSessions.length > 0 ? (
           <div className="rounded-xl border border-border bg-card p-4">
             <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -316,13 +465,12 @@ export function AnalyticsBoard({
           </div>
         ) : (
           <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-            No completed workouts yet. Mark workouts as Completed on your board to see analytics
-            here.
+            No completed workouts yet for this program. Mark workouts as Done or Completed on your
+            board to see analytics here.
           </div>
         )}
       </div>
 
-      {/* Calendar slot injected by WorkspaceMainSplit */}
       {calendarSlot ?? null}
     </div>
   );

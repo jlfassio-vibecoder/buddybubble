@@ -22,3 +22,23 @@ export function kanbanBoardStripStorageKey(workspaceId: string) {
 export function calendarCollapsedStorageKey(workspaceId: string) {
   return `buddybubble.calendarCollapsed.${workspaceId}`;
 }
+
+/** Per-workspace Kanban column strips (`buddybubble.kanbanCollapsedColumns:${workspaceId}` JSON array of column ids). */
+export function kanbanBoardCollapsedColumnsStorageKey(workspaceId: string) {
+  return `buddybubble.kanbanCollapsedColumns:${workspaceId}`;
+}
+
+/** Kanban board filter toolbar (date / sort / priority / density) vertically collapsed — `1` / `0`. */
+export function kanbanBoardFiltersToolbarCollapsedStorageKey(workspaceId: string) {
+  return `buddybubble.kanbanBoardFiltersToolbarCollapsed.${workspaceId}`;
+}
+
+/** Per-bubble Programs board column strips. */
+export function programsBoardCollapsedColumnsStorageKey(workspaceId: string, bubbleId: string) {
+  return `buddybubble.programsBoardCollapsedColumns:${workspaceId}:${bubbleId}`;
+}
+
+/** Per-bubble dismissed static template ids (JSON array) — hides cards in the Templates column only. */
+export function programsBoardDismissedTemplateIdsStorageKey(workspaceId: string, bubbleId: string) {
+  return `buddybubble.programsBoardDismissedTemplates:${workspaceId}:${bubbleId}`;
+}
