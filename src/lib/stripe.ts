@@ -18,7 +18,7 @@ export function getStripe(): Stripe {
   if (!_stripe) {
     const key = process.env.STRIPE_SECRET_KEY;
     if (!key) throw new Error('Missing STRIPE_SECRET_KEY environment variable');
-    _stripe = new Stripe(key, { apiVersion: '2025-04-30.basil' });
+    _stripe = new Stripe(key, { apiVersion: '2026-03-25.dahlia' });
   }
   return _stripe;
 }
@@ -116,13 +116,54 @@ export function mapStripeStatusToInternal(
  * Look up a plan by its Stripe price ID.
  * Returns undefined if the price isn't in our catalog (e.g. grandfathered prices).
  */
-export function getPlanByPriceId(priceId: string): (typeof STRIPE_PLANS)[StripePlanKey] | undefined {
-  return Object.values(STRIPE_PLANS).find(p => p.defaultPriceId === priceId);
+export function getPlanByPriceId(
+  priceId: string,
+): (typeof STRIPE_PLANS)[StripePlanKey] | undefined {
+  return Object.values(STRIPE_PLANS).find((p) => p.defaultPriceId === priceId);
 }
 
 /**
  * Look up a plan by its Stripe product ID.
  */
-export function getPlanByProductId(productId: string): (typeof STRIPE_PLANS)[StripePlanKey] | undefined {
-  return Object.values(STRIPE_PLANS).find(p => p.productId === productId);
+export function getPlanByProductId(
+  productId: string,
+): (typeof STRIPE_PLANS)[StripePlanKey] | undefined {
+  return Object.values(STRIPE_PLANS).find((p) => p.productId === productId);
+}
+
+/**
+ * Billing period bounds for current Stripe API versions: they live on the first
+ * subscription item, not on the subscription root.
+ */
+export function subscriptionPeriodIso(sub: Stripe.Subscription): {
+  start: string | null;
+  end: string | null;
+} {
+  const item = sub.items?.data?.[0];
+  if (!item) return { start: null, end: null };
+  return {
+    start:
+      item.current_period_start != null
+        ? new Date(item.current_period_start * 1000).toISOString()
+        : null,
+    end:
+      item.current_period_end != null
+        ? new Date(item.current_period_end * 1000).toISOString()
+        : null,
+  };
+}
+
+/**
+ * Subscription id for subscription invoices. Current API shapes expose the id on
+ * `parent.subscription_details`; older payloads may expose `subscription`.
+ */
+export function invoiceSubscriptionId(invoice: Stripe.Invoice): string | null {
+  if (invoice.parent?.type === 'subscription_details' && invoice.parent.subscription_details) {
+    const sub = invoice.parent.subscription_details.subscription;
+    return typeof sub === 'string' ? sub : sub.id;
+  }
+  const legacy = (invoice as Stripe.Invoice & { subscription?: string | Stripe.Subscription })
+    .subscription;
+  if (!legacy) return null;
+  return typeof legacy === 'string' ? legacy : legacy.id;
 }

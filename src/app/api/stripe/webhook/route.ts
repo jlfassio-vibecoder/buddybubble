@@ -22,7 +22,12 @@
 
 import { NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase-service-role';
-import { getStripe, mapStripeStatusToInternal } from '@/lib/stripe';
+import {
+  getStripe,
+  invoiceSubscriptionId,
+  mapStripeStatusToInternal,
+  subscriptionPeriodIso,
+} from '@/lib/stripe';
 import type Stripe from 'stripe';
 
 // Prevent Next.js from parsing the body — Stripe needs the raw bytes to verify the signature.
@@ -111,7 +116,8 @@ export async function POST(req: Request) {
       // ── Invoice paid (first charge after trial converts to active) ─────────
       case 'invoice.payment_succeeded': {
         const invoice = event.data.object as Stripe.Invoice;
-        if (!invoice.subscription) break;
+        const invoiceSubId = invoiceSubscriptionId(invoice);
+        if (!invoiceSubId) break;
 
         // Only act on the first real charge (billing_reason = 'subscription_cycle'
         // or 'subscription_create' when there's no trial; after trial it's 'subscription_cycle')
@@ -119,13 +125,14 @@ export async function POST(req: Request) {
           invoice.billing_reason === 'subscription_cycle' ||
           invoice.billing_reason === 'subscription_create'
         ) {
-          const sub = await stripe.subscriptions.retrieve(invoice.subscription as string);
+          const sub = await stripe.subscriptions.retrieve(invoiceSubId);
+          const { start: periodStart, end: periodEnd } = subscriptionPeriodIso(sub);
           await db
             .from('workspace_subscriptions')
             .update({
               status: 'active',
-              current_period_start: new Date(sub.current_period_start * 1000).toISOString(),
-              current_period_end: new Date(sub.current_period_end * 1000).toISOString(),
+              ...(periodStart != null && { current_period_start: periodStart }),
+              ...(periodEnd != null && { current_period_end: periodEnd }),
             })
             .eq('stripe_subscription_id', sub.id);
 
@@ -137,15 +144,16 @@ export async function POST(req: Request) {
       // ── Invoice payment failed ─────────────────────────────────────────────
       case 'invoice.payment_failed': {
         const invoice = event.data.object as Stripe.Invoice;
-        if (!invoice.subscription) break;
+        const invoiceSubId = invoiceSubscriptionId(invoice);
+        if (!invoiceSubId) break;
 
         await db
           .from('workspace_subscriptions')
           .update({ status: 'past_due' })
-          .eq('stripe_subscription_id', invoice.subscription as string);
+          .eq('stripe_subscription_id', invoiceSubId);
 
         await handlePaymentFailed(db, invoice);
-        console.log(`[webhook] invoice.payment_failed → past_due (sub: ${invoice.subscription})`);
+        console.log(`[webhook] invoice.payment_failed → past_due (sub: ${invoiceSubId})`);
         break;
       }
 
@@ -181,9 +189,10 @@ async function handleSubscriptionUpsert(
   const productId =
     typeof sub.items.data[0]?.price?.product === 'string'
       ? sub.items.data[0].price.product
-      : (sub.items.data[0]?.price?.product as Stripe.Product | null)?.id ?? null;
+      : ((sub.items.data[0]?.price?.product as Stripe.Product | null)?.id ?? null);
 
   const internalStatus = mapStripeStatusToInternal(sub.status, wasTrialing);
+  const { start: periodStart, end: periodEnd } = subscriptionPeriodIso(sub);
 
   await db.from('workspace_subscriptions').upsert(
     {
@@ -196,8 +205,8 @@ async function handleSubscriptionUpsert(
       status: internalStatus,
       trial_start: sub.trial_start ? new Date(sub.trial_start * 1000).toISOString() : null,
       trial_end: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
-      current_period_start: new Date(sub.current_period_start * 1000).toISOString(),
-      current_period_end: new Date(sub.current_period_end * 1000).toISOString(),
+      current_period_start: periodStart,
+      current_period_end: periodEnd,
       cancel_at_period_end: sub.cancel_at_period_end,
     },
     { onConflict: 'workspace_id' },
@@ -264,7 +273,8 @@ async function handlePaymentFailed(
   db: ReturnType<typeof createServiceRoleClient>,
   invoice: Stripe.Invoice,
 ) {
-  const subId = invoice.subscription as string;
+  const subId = invoiceSubscriptionId(invoice);
+  if (!subId) return;
   const { data: subRecord } = await db
     .from('workspace_subscriptions')
     .select('owner_user_id')

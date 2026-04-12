@@ -23,7 +23,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@utils/supabase/server';
 import { createServiceRoleClient } from '@/lib/supabase-service-role';
-import { getStripe, STRIPE_PLANS, TRIAL_PERIOD_DAYS } from '@/lib/stripe';
+import { getStripe, STRIPE_PLANS, subscriptionPeriodIso, TRIAL_PERIOD_DAYS } from '@/lib/stripe';
 import type { StripePlanKey } from '@/lib/stripe';
 
 const VALID_PLAN_KEYS = new Set<string>(Object.keys(STRIPE_PLANS));
@@ -51,7 +51,8 @@ export async function POST(req: Request) {
 
     const workspaceId = typeof body.workspaceId === 'string' ? body.workspaceId.trim() : '';
     const planKey = typeof body.planKey === 'string' ? body.planKey.trim() : '';
-    const paymentMethodId = typeof body.paymentMethodId === 'string' ? body.paymentMethodId.trim() : '';
+    const paymentMethodId =
+      typeof body.paymentMethodId === 'string' ? body.paymentMethodId.trim() : '';
 
     if (!workspaceId || !planKey || !paymentMethodId) {
       return NextResponse.json(
@@ -75,7 +76,10 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (!membership || membership.role !== 'owner') {
-      return NextResponse.json({ error: 'Only the workspace owner can start a trial' }, { status: 403 });
+      return NextResponse.json(
+        { error: 'Only the workspace owner can start a trial' },
+        { status: 403 },
+      );
     }
 
     // ── Check workspace category ────────────────────────────────────────────
@@ -86,7 +90,10 @@ export async function POST(req: Request) {
       .single();
 
     if (!workspace || !['business', 'fitness'].includes(workspace.category_type)) {
-      return NextResponse.json({ error: 'Workspace type does not require a subscription' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Workspace type does not require a subscription' },
+        { status: 400 },
+      );
     }
 
     // ── Check no active subscription already exists ─────────────────────────
@@ -159,34 +166,26 @@ export async function POST(req: Request) {
       ? new Date(subscription.start_date * 1000).toISOString()
       : new Date().toISOString();
 
-    const periodStart = subscription.current_period_start
-      ? new Date(subscription.current_period_start * 1000).toISOString()
-      : null;
-
-    const periodEnd = subscription.current_period_end
-      ? new Date(subscription.current_period_end * 1000).toISOString()
-      : null;
+    const { start: periodStart, end: periodEnd } = subscriptionPeriodIso(subscription);
 
     // ── Upsert workspace_subscriptions ──────────────────────────────────────
-    const { error: subError } = await serviceSupabase
-      .from('workspace_subscriptions')
-      .upsert(
-        {
-          workspace_id: workspaceId,
-          owner_user_id: user.id,
-          stripe_customer_id: stripeCustomerId,
-          stripe_subscription_id: subscription.id,
-          stripe_price_id: plan.defaultPriceId,
-          stripe_product_id: plan.productId,
-          status: 'trialing',
-          trial_start: trialStart,
-          trial_end: trialEnd,
-          current_period_start: periodStart,
-          current_period_end: periodEnd,
-          cancel_at_period_end: false,
-        },
-        { onConflict: 'workspace_id' },
-      );
+    const { error: subError } = await serviceSupabase.from('workspace_subscriptions').upsert(
+      {
+        workspace_id: workspaceId,
+        owner_user_id: user.id,
+        stripe_customer_id: stripeCustomerId,
+        stripe_subscription_id: subscription.id,
+        stripe_price_id: plan.defaultPriceId,
+        stripe_product_id: plan.productId,
+        status: 'trialing',
+        trial_start: trialStart,
+        trial_end: trialEnd,
+        current_period_start: periodStart,
+        current_period_end: periodEnd,
+        cancel_at_period_end: false,
+      },
+      { onConflict: 'workspace_id' },
+    );
 
     if (subError) {
       console.error('[create-trial] workspace_subscriptions upsert failed:', subError);
