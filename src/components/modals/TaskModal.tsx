@@ -579,16 +579,6 @@ export function TaskModal({
     }
     setAiProgramPersonalizing(true);
     try {
-      const data = await postPersonalizeProgram({
-        workspace_id: workspaceId,
-        program: {
-          base_title: baseTitle,
-          goal: programGoal.trim(),
-          duration_weeks: durationWeeks,
-          schedule: programSchedule,
-        },
-      });
-      const nextTitle = `${baseTitle} - ${data.title_suffix}`;
       const supabase = createClient();
       const {
         data: { user: authUser },
@@ -602,6 +592,17 @@ export function TaskModal({
         toast.error('You already have an active program. Please complete or pause it first.');
         return;
       }
+
+      const data = await postPersonalizeProgram({
+        workspace_id: workspaceId,
+        program: {
+          base_title: baseTitle,
+          goal: programGoal.trim(),
+          duration_weeks: durationWeeks,
+          schedule: programSchedule,
+        },
+      });
+      const nextTitle = `${baseTitle} - ${data.title_suffix}`;
       const { slug: statusSlug, usedFallback } = await resolveThirdKanbanStatusSlug(
         supabase,
         workspaceId,
@@ -1653,6 +1654,7 @@ export function TaskModal({
                     workoutTitle={title}
                     exercises={workoutExercises}
                     bubbleId={bubbleId ?? ''}
+                    sourceTaskId={taskId}
                   />
                 </div>
               )}

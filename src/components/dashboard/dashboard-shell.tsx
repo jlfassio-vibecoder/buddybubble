@@ -931,6 +931,7 @@ export function DashboardShell({
             workoutTitle={workoutPlayerTask.title}
             exercises={metadataFieldsFromParsed(workoutPlayerTask.metadata).workoutExercises}
             bubbleId={workoutPlayerTask.bubble_id}
+            sourceTaskId={workoutPlayerTask.id}
             onComplete={bumpTaskViews}
           />
         )}

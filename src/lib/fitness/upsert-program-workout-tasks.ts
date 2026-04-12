@@ -81,17 +81,31 @@ export async function upsertProgramWorkoutTasks(params: {
       ? ((programRow as { assigned_to: string | null }).assigned_to ?? null)
       : null;
 
-  const { data: existingRows, error: fetchErr } = await supabase
+  const { data: programWorkoutRows, error: fetchErr } = await supabase
     .from('tasks')
     .select('id,metadata,position,program_id,program_session_key')
     .eq('bubble_id', workoutsBubbleId)
-    .eq('item_type', 'workout');
+    .eq('item_type', 'workout')
+    .eq('program_id', programTaskId);
 
   if (fetchErr) {
     return { error: fetchErr.message };
   }
 
-  const existing = (existingRows ?? []) as {
+  const { data: maxPosRow, error: maxPosErr } = await supabase
+    .from('tasks')
+    .select('position')
+    .eq('bubble_id', workoutsBubbleId)
+    .eq('item_type', 'workout')
+    .order('position', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (maxPosErr) {
+    return { error: maxPosErr.message };
+  }
+
+  const existing = (programWorkoutRows ?? []) as {
     id: string;
     metadata: unknown;
     position: number;
@@ -102,7 +116,10 @@ export async function upsertProgramWorkoutTasks(params: {
   const linked = (key: string) =>
     existing.find((row) => row.program_id === programTaskId && row.program_session_key === key);
 
-  let maxPos = existing.reduce((acc, r) => Math.max(acc, Number(r.position) || 0), -1);
+  let maxPos =
+    maxPosRow == null
+      ? -1
+      : Math.max(-1, Number((maxPosRow as { position: unknown }).position) || 0);
 
   for (const session of sessions) {
     const exercises: WorkoutExercise[] = session.exercises ?? [];

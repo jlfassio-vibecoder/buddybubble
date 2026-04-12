@@ -17,7 +17,9 @@ import { createClient } from '@utils/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
+import { formatUserFacingError } from '@/lib/format-error';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 import type { WorkoutExercise } from '@/lib/item-metadata';
 import type { UnitSystem } from '@/types/database';
 import { useUserProfileStore } from '@/store/userProfileStore';
@@ -39,6 +41,8 @@ export type WorkoutPlayerProps = {
   workoutTitle: string;
   exercises: WorkoutExercise[];
   bubbleId: string;
+  /** Source workout / workout_log task id — used to copy program linkage and scheduling onto the log row. */
+  sourceTaskId?: string | null;
   onComplete?: () => void;
 };
 
@@ -54,7 +58,7 @@ function makeSets(ex: WorkoutExercise): SetDraft[] {
   const count = Math.max(1, ex.sets ?? 3);
   return Array.from({ length: count }, () => ({
     weight: ex.weight != null ? String(ex.weight) : '',
-    reps: ex.reps != null ? String(ex.reps) : '',
+    reps: typeof ex.reps === 'number' ? String(ex.reps) : '',
     rpe: ex.rpe != null ? String(ex.rpe) : '',
     done: false,
   }));
@@ -352,6 +356,7 @@ export function WorkoutPlayer({
   workoutTitle,
   exercises,
   bubbleId,
+  sourceTaskId,
   onComplete,
 }: WorkoutPlayerProps) {
   const [logs, setLogs] = useState<SetDraft[][]>([]);
@@ -425,7 +430,7 @@ export function WorkoutPlayer({
             ...next[exIdx],
             {
               weight: ex?.weight != null ? String(ex.weight) : '',
-              reps: ex?.reps != null ? String(ex.reps) : '',
+              reps: typeof ex?.reps === 'number' ? String(ex.reps) : '',
               rpe: '',
               done: false,
             },
@@ -460,21 +465,66 @@ export function WorkoutPlayer({
     });
 
     const durationMins = Math.round(elapsed / 60);
-    await supabase.from('tasks').insert({
+
+    let sourceRow: {
+      program_id: string | null;
+      program_session_key: string | null;
+      assigned_to: string | null;
+      scheduled_on: string | null;
+      scheduled_time: string | null;
+      visibility: string | null;
+    } | null = null;
+
+    if (sourceTaskId) {
+      const { data: fetched, error: sourceTaskError } = await supabase
+        .from('tasks')
+        .select(
+          'program_id, program_session_key, assigned_to, scheduled_on, scheduled_time, visibility',
+        )
+        .eq('id', sourceTaskId)
+        .maybeSingle();
+
+      if (sourceTaskError) {
+        console.error('Failed to load source task for workout log', sourceTaskError);
+        toast.error(formatUserFacingError(sourceTaskError));
+        setSaving(false);
+        return;
+      }
+      if (fetched) sourceRow = fetched;
+    }
+
+    const workoutLogTask = {
       bubble_id: bubbleId,
       title: `${workoutTitle} — Log`,
-      item_type: 'workout_log',
-      status: 'completed',
+      item_type: 'workout_log' as const,
+      status: 'completed' as const,
+      ...(sourceRow?.program_id != null ? { program_id: sourceRow.program_id } : {}),
+      ...(sourceRow?.program_session_key != null
+        ? { program_session_key: sourceRow.program_session_key }
+        : {}),
+      ...(sourceRow?.assigned_to != null ? { assigned_to: sourceRow.assigned_to } : {}),
+      ...(sourceRow?.scheduled_on != null ? { scheduled_on: sourceRow.scheduled_on } : {}),
+      ...(sourceRow?.scheduled_time != null ? { scheduled_time: sourceRow.scheduled_time } : {}),
+      ...(sourceRow?.visibility != null ? { visibility: sourceRow.visibility } : {}),
       metadata: {
         ...(durationMins > 0 ? { duration_min: durationMins } : {}),
         exercises: exercisePayload,
       },
-    });
+    };
+
+    const { error: insertError } = await supabase.from('tasks').insert(workoutLogTask);
+
+    if (insertError) {
+      console.error('Failed to create workout log', insertError);
+      toast.error(formatUserFacingError(insertError));
+      setSaving(false);
+      return;
+    }
 
     setSaving(false);
     onComplete?.();
     onClose();
-  }, [exercises, logs, elapsed, bubbleId, workoutTitle, onComplete, onClose]);
+  }, [exercises, logs, elapsed, bubbleId, workoutTitle, sourceTaskId, onComplete, onClose]);
 
   const unit = unitSystem === 'imperial' ? 'lbs' : 'kg';
 
@@ -563,6 +613,7 @@ type WorkoutPlayerTriggersProps = {
   workoutTitle: string;
   exercises: WorkoutExercise[];
   bubbleId: string;
+  sourceTaskId?: string | null;
   onComplete?: () => void;
 };
 
@@ -570,6 +621,7 @@ export function WorkoutPlayerTriggers({
   workoutTitle,
   exercises,
   bubbleId,
+  sourceTaskId,
   onComplete,
 }: WorkoutPlayerTriggersProps) {
   const [mode, setMode] = useState<'desktop' | 'mobile' | null>(null);
@@ -605,6 +657,7 @@ export function WorkoutPlayerTriggers({
           workoutTitle={workoutTitle}
           exercises={exercises}
           bubbleId={bubbleId}
+          sourceTaskId={sourceTaskId}
           onComplete={() => {
             setMode(null);
             onComplete?.();
