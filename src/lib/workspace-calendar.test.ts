@@ -114,6 +114,31 @@ describe('alignStatusWithFutureSchedule', () => {
     ).toBe('planning');
   });
 
+  it('moves program planned → scheduled for a future date', () => {
+    expect(
+      alignStatusWithFutureSchedule({
+        status: 'planned',
+        scheduledOnYmd: '2026-07-04',
+        calendarTimezone: 'UTC',
+        hasScheduledBoardColumn: true,
+        itemType: 'program',
+        now,
+      }),
+    ).toBe('scheduled');
+  });
+
+  it('does not move planned without program item type for a future date', () => {
+    expect(
+      alignStatusWithFutureSchedule({
+        status: 'planned',
+        scheduledOnYmd: '2026-07-04',
+        calendarTimezone: 'UTC',
+        hasScheduledBoardColumn: true,
+        now,
+      }),
+    ).toBe('planned');
+  });
+
   it('does not move experience or idea to scheduled for a future date', () => {
     expect(
       alignStatusWithFutureSchedule({

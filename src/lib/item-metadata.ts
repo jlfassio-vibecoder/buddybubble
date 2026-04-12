@@ -1,8 +1,10 @@
 import type { ItemType, Json } from '@/types/database';
+import { normalizeRepsForStorage } from '@/lib/workout-factory/parse-reps-scalar';
 
 /**
- * Optional task metadata (not in MANAGED_METADATA_KEYS) used by program personalization:
- * `program_session_key`, `linked_program_task_id` on workout tasks — preserved via merge on save.
+ * Program ↔ workout linkage uses top-level `tasks.program_id` and `tasks.program_session_key`,
+ * not JSON metadata. Legacy `linked_program_task_id` / `program_session_key` keys in metadata
+ * are stripped when saving workout metadata from the task modal.
  */
 
 /** Recorded data for one set logged during a live workout session. */
@@ -19,7 +21,8 @@ export type SetLogEntry = {
 export type WorkoutExercise = {
   name: string;
   sets?: number;
-  reps?: number;
+  /** Scalar count (number) or range/text (string), e.g. `"8-10"`. */
+  reps?: number | string;
   /** Weight in the user's unit_system (kg or lbs). */
   weight?: number;
   /** Duration in minutes for cardio/timed exercises. */
@@ -108,9 +111,19 @@ export type TaskMetadataFormFields = {
 
 function asWorkoutExercises(value: unknown): WorkoutExercise[] {
   if (!Array.isArray(value)) return [];
-  return value.filter(
-    (x): x is WorkoutExercise => typeof x === 'object' && x !== null && typeof x.name === 'string',
-  );
+  const out: WorkoutExercise[] = [];
+  for (const x of value) {
+    if (typeof x !== 'object' || x === null) continue;
+    const raw = x as WorkoutExercise;
+    const name = typeof raw.name === 'string' ? raw.name.trim() : '';
+    if (!name) continue;
+    const r = normalizeRepsForStorage(raw.reps);
+    const merged: WorkoutExercise = { ...raw, name };
+    if (r === undefined) delete merged.reps;
+    else merged.reps = r;
+    out.push(merged);
+  }
+  return out;
 }
 
 /** Normalize stored `schedule` JSON into `ProgramWeek[]` (for API + forms). */
@@ -197,6 +210,8 @@ export function buildTaskMetadataPayload(
       break;
     case 'workout':
     case 'workout_log': {
+      delete o.linked_program_task_id;
+      delete o.program_session_key;
       if (t(fields.workoutType)) o.workout_type = t(fields.workoutType);
       const mins = parseInt(fields.workoutDurationMin, 10);
       if (!isNaN(mins) && mins > 0) o.duration_min = mins;

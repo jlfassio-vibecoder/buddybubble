@@ -210,7 +210,12 @@ type PlayerBodyProps = {
   saving: boolean;
   unit: string;
   onToggleView: () => void;
-  onSetChange: (exIdx: number, setIdx: number, field: 'weight' | 'reps' | 'rpe', value: string) => void;
+  onSetChange: (
+    exIdx: number,
+    setIdx: number,
+    field: 'weight' | 'reps' | 'rpe',
+    value: string,
+  ) => void;
   onToggleDone: (exIdx: number, setIdx: number) => void;
   onAddSet: (exIdx: number) => void;
   onFinish: () => void;
@@ -278,9 +283,7 @@ function PlayerBody({
             ) : (
               <List className="h-3.5 w-3.5" />
             )}
-            <span className="hidden sm:inline">
-              {view === 'simple' ? 'Detailed' : 'Simple'}
-            </span>
+            <span className="hidden sm:inline">{view === 'simple' ? 'Detailed' : 'Simple'}</span>
           </button>
 
           {/* Close */}
@@ -495,7 +498,12 @@ export function WorkoutPlayer({
 
   if (mode === 'desktop') {
     return (
-      <DialogPrimitive.Root open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogPrimitive.Root
+        open={open}
+        onOpenChange={(o) => {
+          if (!o) onClose();
+        }}
+      >
         <DialogPrimitive.Portal>
           <DialogPrimitive.Overlay className="fixed inset-0 z-[155] bg-black/60 backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
           <DialogPrimitive.Content
@@ -520,7 +528,12 @@ export function WorkoutPlayer({
   // ── Mobile: bottom sheet ──────────────────────────────────────────────────
 
   return (
-    <DialogPrimitive.Root open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+    <DialogPrimitive.Root
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+    >
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-[155] bg-black/60 backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
         <DialogPrimitive.Content
