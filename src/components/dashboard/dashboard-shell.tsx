@@ -62,6 +62,11 @@ import { parseMemberRole } from '@/lib/permissions';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useUpdatePresence } from '@/hooks/use-update-presence';
 import { ActiveUsersStack } from '@/components/presence/ActiveUsersStack';
+import { useSubscriptionStore } from '@/store/subscriptionStore';
+import { TrialBanner } from '@/components/subscription/trial-banner';
+import { ExpiredGate } from '@/components/subscription/expired-gate';
+import { StartTrialModal } from '@/components/subscription/start-trial-modal';
+import { PremiumGate } from '@/components/subscription/premium-gate';
 
 type Props = {
   workspaceId: string;
@@ -263,13 +268,18 @@ export function DashboardShell({
     };
   }, [workspaceId, profile?.id, selectedBubbleId, bubbles]);
 
-  const { canWriteTasks, canPostMessages, canCreateWorkspaceBubble, isAdmin } = usePermissions(
+  const { canWriteTasks, canPostMessages, canCreateWorkspaceBubble, isAdmin, isOwner } = usePermissions(
     effectiveWorkspaceRole,
     myBubbleRole,
     activeBubbleIsPrivate,
   );
 
   useUpdatePresence({ embedMode, workspaceId });
+
+  const initSubscription = useSubscriptionStore((s) => s.initSubscription);
+  useEffect(() => {
+    void initSubscription(workspaceId);
+  }, [workspaceId, initSubscription]);
 
   const openTaskModal = useCallback((id: string, opts?: { tab?: TaskModalTab }) => {
     setTaskModalInitialCreateItemType(null);
@@ -779,6 +789,8 @@ export function DashboardShell({
               </div>
             </div>
           ) : null}
+          {!embedMode && <TrialBanner />}
+          {!embedMode && <ExpiredGate />}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:min-h-0 md:flex-row">
             <div className="hidden h-full min-h-0 shrink-0 md:flex md:flex-row">
               {tripleStack ? (
@@ -863,10 +875,12 @@ export function DashboardShell({
               )}
               board={
                 isAnalyticsBubble ? (
-                  <AnalyticsBoard
-                    workspaceId={workspaceId}
-                    calendarTimezone={workspaceCalendarTz}
-                  />
+                  <PremiumGate feature="analytics" className="flex-1 min-h-0">
+                    <AnalyticsBoard
+                      workspaceId={workspaceId}
+                      calendarTimezone={workspaceCalendarTz}
+                    />
+                  </PremiumGate>
                 ) : isClassesBubble ? (
                   <ClassesBoard workspaceId={workspaceId} />
                 ) : isProgramsBubble ? (
@@ -940,6 +954,7 @@ export function DashboardShell({
           onOpenChange={setWorkspaceSettingsOpen}
           workspaceId={workspaceId}
           isAdmin={isAdmin}
+          isOwner={isOwner}
           onSaved={() => {
             void loadUserWorkspaces().then(() => syncActiveFromRoute(workspaceId));
           }}
@@ -973,6 +988,12 @@ export function DashboardShell({
             open={fitnessProfileOpen}
             onOpenChange={setFitnessProfileOpen}
             workspaceId={workspaceId}
+          />
+        ) : null}
+        {(workspaceCategoryForUi === 'fitness' || workspaceCategoryForUi === 'business') ? (
+          <StartTrialModal
+            workspaceId={workspaceId}
+            categoryType={workspaceCategoryForUi}
           />
         ) : null}
         {commentAlert ? (

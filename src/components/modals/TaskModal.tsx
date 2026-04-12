@@ -86,6 +86,7 @@ import { cn } from '@/lib/utils';
 import { ALL_BUBBLES_BUBBLE_ID } from '@/lib/all-bubbles';
 import { usePresenceStore } from '@/store/presenceStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
+import { PremiumGate } from '@/components/subscription/premium-gate';
 
 export type TaskModalTab = 'details' | 'comments' | 'subtasks' | 'activity';
 
@@ -1805,17 +1806,19 @@ export function TaskModal({
                           </p>
                           <div className="flex shrink-0 items-center gap-1.5">
                             {canWrite && (
-                              <Button
-                                type="button"
-                                variant="secondary"
-                                size="sm"
-                                className="h-7 gap-1 px-2 text-xs"
-                                disabled={aiWorkoutGenerating}
-                                onClick={() => void handleAiGenerateWorkout()}
-                              >
-                                <Sparkles className="h-3 w-3" aria-hidden />
-                                {aiWorkoutGenerating ? 'Generating…' : 'AI workout'}
-                              </Button>
+                              <PremiumGate feature="ai" inline>
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="sm"
+                                  className="h-7 gap-1 px-2 text-xs"
+                                  disabled={aiWorkoutGenerating}
+                                  onClick={() => void handleAiGenerateWorkout()}
+                                >
+                                  <Sparkles className="h-3 w-3" aria-hidden />
+                                  {aiWorkoutGenerating ? 'Generating…' : 'AI workout'}
+                                </Button>
+                              </PremiumGate>
                             )}
                             {/* Template picker — only in create mode when templates exist */}
                             {!taskId && workoutTemplates.length > 0 && canWrite && (
