@@ -1,5 +1,7 @@
 export type InvitePreviewOk = {
   valid: true;
+  /** Present for valid invites so `/api/leads/track` can attribute visits (business/fitness). */
+  workspace_id: string;
   workspace_name: string;
   category_type: string;
   host_name: string;
@@ -21,6 +23,7 @@ export function parseInvitePreviewRpc(raw: unknown): InvitePreviewPayload {
   if (o.valid === true) {
     return {
       valid: true,
+      workspace_id: String(o.workspace_id ?? ''),
       workspace_name: String(o.workspace_name ?? ''),
       category_type: String(o.category_type ?? 'business'),
       host_name: String(o.host_name ?? 'Host'),

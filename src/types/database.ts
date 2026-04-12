@@ -37,6 +37,21 @@ export type ClassInstanceStatus = 'available' | 'cancelled' | 'completed';
 /** Status of a user's enrollment in a class instance. */
 export type ClassEnrollmentStatus = 'enrolled' | 'waitlisted' | 'cancelled' | 'completed';
 
+/** Source channel that brought a lead to a workspace. */
+export type LeadSource = 'qr' | 'link' | 'email' | 'sms' | 'direct';
+
+/**
+ * Subscription lifecycle for business/fitness workspaces.
+ * Mirrors the CHECK constraint on `workspace_subscriptions.status`.
+ */
+export type SubscriptionStatus =
+  | 'trialing'
+  | 'active'
+  | 'past_due'
+  | 'trial_expired'
+  | 'canceled'
+  | 'incomplete';
+
 const ITEM_TYPE_SET = new Set<string>([
   'task',
   'event',
@@ -458,6 +473,93 @@ export interface Database {
         };
         Update: Partial<Database['public']['Tables']['storefront_sandbox_messages']['Insert']>;
       };
+      /** Anonymous/semi-anonymous visitors who arrived via an invite link. */
+      leads: {
+        Row: {
+          id: string;
+          workspace_id: string | null;
+          invite_token: string | null;
+          source: LeadSource | null;
+          email: string | null;
+          utm_params: Json;
+          first_seen_at: string;
+          last_seen_at: string;
+          /** Set when the lead starts a trial — null means unconverted. */
+          converted_at: string | null;
+          /** Linked once the visitor authenticates. */
+          user_id: string | null;
+          metadata: Json;
+        };
+        Insert: {
+          id?: string;
+          workspace_id?: string | null;
+          invite_token?: string | null;
+          source?: LeadSource | null;
+          email?: string | null;
+          utm_params?: Json;
+          first_seen_at?: string;
+          last_seen_at?: string;
+          converted_at?: string | null;
+          user_id?: string | null;
+          metadata?: Json;
+        };
+        Update: Partial<Database['public']['Tables']['leads']['Insert']>;
+      };
+      /** Maps one Stripe Customer per auth user. Enforces one-trial-per-person. */
+      stripe_customers: {
+        Row: {
+          user_id: string;
+          stripe_customer_id: string;
+          /** True once a trial has ever been started on any workspace. */
+          has_had_trial: boolean;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          stripe_customer_id: string;
+          has_had_trial?: boolean;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['stripe_customers']['Insert']>;
+      };
+      /** Stripe subscription state for business/fitness workspaces. */
+      workspace_subscriptions: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          owner_user_id: string;
+          stripe_customer_id: string | null;
+          stripe_subscription_id: string | null;
+          stripe_price_id: string | null;
+          stripe_product_id: string | null;
+          status: SubscriptionStatus;
+          trial_start: string | null;
+          trial_end: string | null;
+          current_period_start: string | null;
+          current_period_end: string | null;
+          cancel_at_period_end: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          owner_user_id: string;
+          stripe_customer_id?: string | null;
+          stripe_subscription_id?: string | null;
+          stripe_price_id?: string | null;
+          stripe_product_id?: string | null;
+          status?: SubscriptionStatus;
+          trial_start?: string | null;
+          trial_end?: string | null;
+          current_period_start?: string | null;
+          current_period_end?: string | null;
+          cancel_at_period_end?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['workspace_subscriptions']['Insert']>;
+      };
     };
     Functions: {
       accept_invitation: {
@@ -480,6 +582,15 @@ export interface Database {
         Args: { p_join_request_id: string };
         Returns: Json;
       };
+      get_workspace_subscription_status: {
+        Args: { p_workspace_id: string };
+        /** Returns SubscriptionStatus or 'no_subscription'. */
+        Returns: string;
+      };
+      workspace_requires_subscription: {
+        Args: { p_workspace_id: string };
+        Returns: boolean;
+      };
     };
   };
 }
@@ -494,3 +605,7 @@ export type MessageRow = Database['public']['Tables']['messages']['Row'];
 export type TaskRow = Database['public']['Tables']['tasks']['Row'];
 export type StorefrontSandboxMessageRow =
   Database['public']['Tables']['storefront_sandbox_messages']['Row'];
+export type LeadRow = Database['public']['Tables']['leads']['Row'];
+export type StripeCustomerRow = Database['public']['Tables']['stripe_customers']['Row'];
+export type WorkspaceSubscriptionRow =
+  Database['public']['Tables']['workspace_subscriptions']['Row'];
