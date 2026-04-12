@@ -316,6 +316,10 @@ export interface Database {
           scheduled_time: string | null;
           /** When set, task is archived and hidden from active Kanban/calendar lists. */
           archived_at: string | null;
+          /** Parent program task id when this row belongs to a program (workout / workout_log). */
+          program_id: string | null;
+          /** Session key within the program (idempotent upserts). */
+          program_session_key: string | null;
           subtasks: Json;
           comments: Json;
           activity_log: Json;
@@ -338,6 +342,8 @@ export interface Database {
           scheduled_on?: string | null;
           scheduled_time?: string | null;
           archived_at?: string | null;
+          program_id?: string | null;
+          program_session_key?: string | null;
           subtasks?: Json;
           comments?: Json;
           activity_log?: Json;

@@ -1,6 +1,6 @@
 'use client';
 
-import { Archive, Circle, Maximize2, Shrink, Square } from 'lucide-react';
+import { Archive, ChevronDown, ChevronUp, Circle, Maximize2, Shrink, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { KanbanCardDensity } from '@/components/board/kanban-density';
@@ -55,6 +55,9 @@ export type KanbanBoardHeaderProps = {
   onDateFilterChange: (filter: DateFilter) => void;
   dateSortMode: DateSortMode;
   onDateSortModeChange: (mode: DateSortMode) => void;
+  /** When set, the filter rows can collapse to a single bar; persist state in the parent. */
+  filtersCollapsed?: boolean;
+  onToggleFiltersCollapsed?: () => void;
 };
 
 /** Filter / density toolbar only (chrome row is `KanbanBoardChromeBar` beside `CalendarRailChromeBar`). */
@@ -72,24 +75,20 @@ export function KanbanBoardHeader({
   onDateFilterChange,
   dateSortMode,
   onDateSortModeChange,
+  filtersCollapsed = false,
+  onToggleFiltersCollapsed,
 }: KanbanBoardHeaderProps) {
   const boardTitle = kanbanBoardTitleForCategory(categoryType);
+  const collapseEnabled = Boolean(onToggleFiltersCollapsed);
 
   const pillGroupClass =
     'inline-flex max-w-full flex-wrap rounded-lg border border-border bg-muted/50 p-0.5';
 
-  return (
-    <div
-      className={cn(
-        'flex min-w-0 shrink-0 flex-col gap-2 border-b border-border bg-background px-2 py-2',
-        'lg:flex-row lg:flex-wrap lg:items-center lg:gap-x-2 lg:gap-y-2',
-      )}
-      role="toolbar"
-      aria-label="Board filters and view options"
-    >
-      <p className="w-full shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:w-auto">
-        {boardTitle}
-      </p>
+  const titleClass =
+    'shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground';
+
+  const filtersBody = (
+    <>
       <div className={pillGroupClass} role="group" aria-label="Filter by scheduled or due date">
         {DATE_FILTER_OPTIONS.map(({ value, label }) => {
           const active = dateFilter === value;
@@ -219,6 +218,73 @@ export function KanbanBoardHeader({
           )}
         </div>
       </div>
+    </>
+  );
+
+  if (collapseEnabled && filtersCollapsed) {
+    return (
+      <div className="flex min-w-0 shrink-0 items-center justify-between gap-2 border-b border-border bg-background px-2 py-1.5">
+        <p className={titleClass}>{boardTitle}</p>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 shrink-0 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+          onClick={onToggleFiltersCollapsed}
+          aria-expanded={false}
+          aria-label="Show board filters"
+        >
+          <ChevronDown className="size-4 shrink-0" aria-hidden />
+          <span className="hidden sm:inline">Filters</span>
+        </Button>
+      </div>
+    );
+  }
+
+  if (collapseEnabled && !filtersCollapsed) {
+    return (
+      <div
+        className="flex min-w-0 shrink-0 flex-col border-b border-border bg-background"
+        role="toolbar"
+        aria-label="Board filters and view options"
+      >
+        <div className="flex items-center justify-between gap-2 border-b border-border/60 px-2 py-1.5">
+          <p className={cn(titleClass, 'min-w-0')}>{boardTitle}</p>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 shrink-0 px-2 text-muted-foreground hover:text-foreground"
+            onClick={onToggleFiltersCollapsed}
+            aria-expanded
+            aria-label="Hide board filters"
+          >
+            <ChevronUp className="size-4 shrink-0" aria-hidden />
+          </Button>
+        </div>
+        <div
+          className={cn(
+            'flex min-w-0 flex-col gap-2 px-2 py-2',
+            'lg:flex-row lg:flex-wrap lg:items-center lg:gap-x-2 lg:gap-y-2',
+          )}
+        >
+          {filtersBody}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        'flex min-w-0 shrink-0 flex-col gap-2 border-b border-border bg-background px-2 py-2',
+        'lg:flex-row lg:flex-wrap lg:items-center lg:gap-x-2 lg:gap-y-2',
+      )}
+      role="toolbar"
+      aria-label="Board filters and view options"
+    >
+      <p className={cn('w-full shrink-0', titleClass, 'lg:w-auto')}>{boardTitle}</p>
+      {filtersBody}
     </div>
   );
 }

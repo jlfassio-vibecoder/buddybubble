@@ -55,10 +55,14 @@ import {
   postPersonalizeProgram,
   WORKOUT_FACTORY_CHAIN_MESSAGES,
 } from '@/lib/workout-factory/api-client';
+import { archiveDuplicateProgramsFromSameTemplate } from '@/lib/fitness/archive-duplicate-template-programs';
+import { archiveOpenChildWorkoutsForProgram } from '@/lib/fitness/archive-program-child-workouts';
+import { hasOtherActiveProgramForUserInWorkspace } from '@/lib/fitness/active-program-for-user';
 import {
   resolveThirdKanbanStatusSlug,
   upsertProgramWorkoutTasks,
 } from '@/lib/fitness/upsert-program-workout-tasks';
+import { syncProgramLinkedWorkoutSchedules } from '@/lib/fitness/sync-program-workout-schedules';
 import { isMissingColumnSchemaCacheError } from '@/lib/supabase-schema-errors';
 import {
   alignStatusWithFutureSchedule,
@@ -75,7 +79,9 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { ItemTypeSelector } from '@/components/board/item-type-selector';
+import { WorkoutPlayerTriggers } from '@/components/fitness/WorkoutPlayer';
 import { indefiniteArticleForUiNoun, itemTypeUiNoun } from '@/lib/item-type-styles';
+import { taskColumnIsCompletionStatus } from '@/lib/kanban-column-semantic';
 import { cn } from '@/lib/utils';
 import { ALL_BUBBLES_BUBBLE_ID } from '@/lib/all-bubbles';
 import { usePresenceStore } from '@/store/presenceStore';
@@ -203,6 +209,11 @@ export function TaskModal({
   const [scheduledTime, setScheduledTime] = useState('');
   const [itemType, setItemType] = useState<ItemType>('task');
   const [visibility, setVisibility] = useState<TaskVisibility>('private');
+  /** Workspace member user id, or null = unassigned */
+  const [assignedTo, setAssignedTo] = useState<string | null>(null);
+  const [workspaceMembersForAssign, setWorkspaceMembersForAssign] = useState<
+    { user_id: string; label: string }[]
+  >([]);
   const [metadata, setMetadata] = useState<Json>({});
   const [eventLocation, setEventLocation] = useState('');
   const [eventUrl, setEventUrl] = useState('');
@@ -305,9 +316,44 @@ export function TaskModal({
     /** Stable string for dirty checks */
     metadataJson: string;
     visibility: TaskVisibility;
+    assignedTo: string | null;
   } | null>(null);
 
   const dateLabels = taskDateFieldLabels(workspaceCategory);
+
+  useEffect(() => {
+    if (!open || !workspaceId) {
+      setWorkspaceMembersForAssign([]);
+      return;
+    }
+    let cancelled = false;
+    async function loadAssignees() {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from('workspace_members')
+        .select('user_id, users ( full_name, email )')
+        .eq('workspace_id', workspaceId);
+      if (cancelled || !data) return;
+      const opts: { user_id: string; label: string }[] = [];
+      for (const row of data as unknown as Array<{
+        user_id: string;
+        users:
+          | { full_name: string | null; email: string | null }
+          | { full_name: string | null; email: string | null }[]
+          | null;
+      }>) {
+        const u = Array.isArray(row.users) ? row.users[0] : row.users;
+        const label = (u?.full_name && u.full_name.trim()) || u?.email?.split('@')[0] || 'Member';
+        opts.push({ user_id: row.user_id, label });
+      }
+      opts.sort((a, b) => a.label.localeCompare(b.label));
+      setWorkspaceMembersForAssign(opts);
+    }
+    void loadAssignees();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, workspaceId]);
 
   const applyWorkoutTemplate = useCallback(
     (tpl: WorkoutTemplate) => {
@@ -332,87 +378,6 @@ export function TaskModal({
     }, 15000);
     return () => window.clearInterval(id);
   }, [aiWorkoutGenerating]);
-
-  const handlePersonalizeProgram = useCallback(async () => {
-    if (!canWrite || !workspaceId || itemType !== 'program' || !taskId) return;
-    const baseTitle = programSourceTitle.trim() || title.trim();
-    if (!baseTitle) {
-      toast.error('Add a title before personalizing.');
-      return;
-    }
-    const dw = parseInt(programDurationWeeks, 10);
-    const durationWeeks = !Number.isNaN(dw) && dw > 0 ? dw : 0;
-    if (durationWeeks < 1) {
-      toast.error('Set a valid duration (weeks) before personalizing.');
-      return;
-    }
-    setAiProgramPersonalizing(true);
-    try {
-      const data = await postPersonalizeProgram({
-        workspace_id: workspaceId,
-        program: {
-          base_title: baseTitle,
-          goal: programGoal.trim(),
-          duration_weeks: durationWeeks,
-          schedule: programSchedule,
-        },
-      });
-      const nextTitle = `${baseTitle} - ${data.title_suffix}`;
-      setTitle(nextTitle);
-      setDescription(data.description);
-      setProgramSourceTitle(baseTitle);
-      setMetadata((prev) => {
-        const o = parseTaskMetadata(prev) as Record<string, unknown>;
-        return {
-          ...o,
-          ai_program_personalization: {
-            generated_at: data.generated_at,
-            model: data.model_used,
-          },
-        } as Json;
-      });
-      const supabase = createClient();
-      const { slug: statusSlug, usedFallback } = await resolveThirdKanbanStatusSlug(
-        supabase,
-        workspaceId,
-        defaultStatus,
-      );
-      if (usedFallback) {
-        toast.warning(
-          'This board has fewer than three columns; linked workouts were placed in the first column instead.',
-        );
-      }
-      const up = await upsertProgramWorkoutTasks({
-        supabase,
-        workspaceId,
-        programTaskId: taskId,
-        sessions: data.sessions,
-        statusSlug,
-        visibility,
-      });
-      if (up.error) {
-        toast.error(up.error);
-        return;
-      }
-      toast.success('Program personalized — save this card to keep program changes.');
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Personalization failed');
-    } finally {
-      setAiProgramPersonalizing(false);
-    }
-  }, [
-    canWrite,
-    workspaceId,
-    itemType,
-    taskId,
-    programSourceTitle,
-    title,
-    programGoal,
-    programDurationWeeks,
-    programSchedule,
-    defaultStatus,
-    visibility,
-  ]);
 
   const handleAiGenerateWorkout = useCallback(async () => {
     if (!canWrite || !workspaceId || !isWorkoutItemType) return;
@@ -560,6 +525,8 @@ export function TaskModal({
       setAttachments(asAttachments(row.attachments));
       const vis = normalizeTaskVisibility((row as TaskRow).visibility);
       setVisibility(vis);
+      const assignee = (row as TaskRow).assigned_to ?? null;
+      setAssignedTo(assignee);
       const st = scheduledTimeToInputValue((row as TaskRow).scheduled_time);
       originalRef.current = {
         title: row.title,
@@ -571,6 +538,7 @@ export function TaskModal({
         itemType: nextItemType,
         metadataJson: JSON.stringify(buildTaskMetadataPayload(nextItemType, mf, nextMeta)),
         visibility: vis,
+        assignedTo: assignee,
       };
     },
     [defaultStatus],
@@ -595,6 +563,204 @@ export function TaskModal({
     },
     [applyRow],
   );
+
+  const handlePersonalizeProgram = useCallback(async () => {
+    if (!canWrite || !workspaceId || itemType !== 'program' || !taskId) return;
+    const baseTitle = programSourceTitle.trim() || title.trim();
+    if (!baseTitle) {
+      toast.error('Add a title before personalizing.');
+      return;
+    }
+    const dw = parseInt(programDurationWeeks, 10);
+    const durationWeeks = !Number.isNaN(dw) && dw > 0 ? dw : 0;
+    if (durationWeeks < 1) {
+      toast.error('Set a valid duration (weeks) before personalizing.');
+      return;
+    }
+    setAiProgramPersonalizing(true);
+    try {
+      const supabase = createClient();
+      const {
+        data: { user: authUser },
+      } = await supabase.auth.getUser();
+      const uid = authUser?.id ?? null;
+      if (!uid) {
+        toast.error('Sign in to personalize.');
+        return;
+      }
+      if (await hasOtherActiveProgramForUserInWorkspace(supabase, workspaceId, uid, taskId)) {
+        toast.error('You already have an active program. Please complete or pause it first.');
+        return;
+      }
+
+      const data = await postPersonalizeProgram({
+        workspace_id: workspaceId,
+        program: {
+          base_title: baseTitle,
+          goal: programGoal.trim(),
+          duration_weeks: durationWeeks,
+          schedule: programSchedule,
+        },
+      });
+      const nextTitle = `${baseTitle} - ${data.title_suffix}`;
+      const { slug: statusSlug, usedFallback } = await resolveThirdKanbanStatusSlug(
+        supabase,
+        workspaceId,
+        defaultStatus,
+      );
+      if (usedFallback) {
+        toast.warning(
+          'This board has fewer than three columns; linked workouts were placed in the first column instead.',
+        );
+      }
+      const up = await upsertProgramWorkoutTasks({
+        supabase,
+        workspaceId,
+        programTaskId: taskId,
+        sessions: data.sessions,
+        statusSlug,
+        visibility,
+      });
+      if (up.error) {
+        toast.error(up.error);
+        return;
+      }
+
+      const metaPayload = buildTaskMetadataPayload(
+        'program',
+        {
+          eventLocation,
+          eventUrl,
+          experienceSeason,
+          experienceEndDate,
+          memoryCaption,
+          workoutType,
+          workoutDurationMin,
+          workoutExercises,
+          programGoal,
+          programDurationWeeks,
+          programCurrentWeek,
+          programSchedule,
+          programSourceTitle: baseTitle,
+        },
+        {
+          ...(parseTaskMetadata(metadata) as Record<string, unknown>),
+          ai_program_personalization: {
+            generated_at: new Date().toISOString(),
+            model: data.model_used,
+          },
+        },
+      );
+
+      const orig = originalRef.current;
+      let nextActivity = [...activityLog];
+      const nextDesc = (data.description ?? '').trim();
+      if (orig) {
+        if (nextTitle !== orig.title) {
+          nextActivity = appendActivityForFieldChange(nextActivity, {
+            userId: uid,
+            field: 'title',
+            from: orig.title,
+            to: nextTitle,
+          });
+        }
+        if (nextDesc !== (orig.description ?? '').trim()) {
+          nextActivity = appendActivityForFieldChange(nextActivity, {
+            userId: uid,
+            field: 'description',
+            from: orig.description ?? '',
+            to: nextDesc,
+          });
+        }
+      }
+
+      const { data: taskRow, error: rowErr } = await supabase
+        .from('tasks')
+        .select('bubble_id')
+        .eq('id', taskId)
+        .maybeSingle();
+
+      if (rowErr || !taskRow) {
+        toast.error(rowErr?.message ?? 'Could not load task.');
+        return;
+      }
+
+      const { error: updErr } = await supabase
+        .from('tasks')
+        .update({
+          title: nextTitle,
+          description: nextDesc || null,
+          metadata: metaPayload,
+          activity_log: nextActivity as unknown as TaskRow['activity_log'],
+        })
+        .eq('id', taskId);
+
+      if (updErr) {
+        toast.error(formatUserFacingError(updErr));
+        return;
+      }
+
+      const syncSched = await syncProgramLinkedWorkoutSchedules({
+        supabase,
+        programTaskId: taskId,
+        calendarTimezone,
+        hasTodayBoardColumn,
+        hasScheduledBoardColumn,
+      });
+      if (syncSched.error) {
+        toast.error(syncSched.error);
+        return;
+      }
+
+      const srcId = (metaPayload as Record<string, unknown>).source_template_id;
+      if (typeof srcId === 'string' && taskRow.bubble_id) {
+        const { error: archErr } = await archiveDuplicateProgramsFromSameTemplate({
+          supabase,
+          bubbleId: taskRow.bubble_id as string,
+          keepProgramTaskId: taskId,
+          sourceTemplateId: srcId,
+        });
+        if (archErr) {
+          toast.error(archErr);
+        }
+      }
+
+      setActivityLog(asActivityLog(nextActivity));
+      void loadTask(taskId);
+      toast.success('Program personalized.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Personalization failed');
+    } finally {
+      setAiProgramPersonalizing(false);
+    }
+  }, [
+    canWrite,
+    workspaceId,
+    itemType,
+    taskId,
+    programSourceTitle,
+    title,
+    programGoal,
+    programDurationWeeks,
+    programSchedule,
+    defaultStatus,
+    visibility,
+    eventLocation,
+    eventUrl,
+    experienceSeason,
+    experienceEndDate,
+    memoryCaption,
+    workoutType,
+    workoutDurationMin,
+    workoutExercises,
+    programCurrentWeek,
+    metadata,
+    activityLog,
+    loadTask,
+    calendarTimezone,
+    hasTodayBoardColumn,
+    hasScheduledBoardColumn,
+  ]);
 
   useEffect(() => {
     if (!open) return;
@@ -635,6 +801,7 @@ export function TaskModal({
       setActivityLog([]);
       setAttachments([]);
       setVisibility('private');
+      setAssignedTo(null);
       originalRef.current = null;
       setError(null);
       return;
@@ -740,9 +907,15 @@ export function TaskModal({
       setError(uErr.message);
       return;
     }
+    if (itemType === 'program') {
+      const { error: childErr } = await archiveOpenChildWorkoutsForProgram(supabase, taskId);
+      if (childErr) {
+        toast.error(childErr);
+      }
+    }
     onOpenChange(false);
     onTaskArchived?.();
-  }, [archiving, canWrite, onOpenChange, onTaskArchived, taskId]);
+  }, [archiving, canWrite, itemType, onOpenChange, onTaskArchived, taskId]);
 
   const saveCoreFields = async () => {
     if (!canWrite || !taskId) return;
@@ -846,6 +1019,16 @@ export function TaskModal({
             : '',
         });
       }
+      const nextAssign = assignedTo ?? null;
+      const prevAssign = orig.assignedTo ?? null;
+      if (nextAssign !== prevAssign) {
+        nextActivity = appendActivityForFieldChange(nextActivity, {
+          userId: uid,
+          field: 'assigned_to',
+          from: prevAssign ?? '',
+          to: nextAssign ?? '',
+        });
+      }
     }
 
     /** Only PATCH `scheduled_on` / `scheduled_time` when changed (400 if column missing). */
@@ -856,6 +1039,7 @@ export function TaskModal({
       status: effectiveStatus,
       priority,
       visibility,
+      assigned_to: assignedTo,
       ...typeMetaPatch,
       ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
       ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
@@ -874,6 +1058,7 @@ export function TaskModal({
         status: effectiveStatus,
         priority,
         visibility,
+        assigned_to: assignedTo,
         ...typeMetaPatch,
         ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
         activity_log: activityWithoutTime as unknown as TaskRow['activity_log'],
@@ -898,6 +1083,7 @@ export function TaskModal({
           itemType,
           metadataJson: JSON.stringify(metadataForSave),
           visibility: orig?.visibility ?? visibility,
+          assignedTo: orig?.assignedTo ?? assignedTo,
         };
         setSaving(false);
         void loadTask(taskId);
@@ -926,6 +1112,7 @@ export function TaskModal({
         status: statusWithoutSavedSchedule,
         priority,
         visibility,
+        assigned_to: assignedTo,
         ...typeMetaPatch,
         activity_log: activityWithoutSched as unknown as TaskRow['activity_log'],
       };
@@ -950,6 +1137,7 @@ export function TaskModal({
           itemType,
           metadataJson: JSON.stringify(metadataForSave),
           visibility: orig?.visibility ?? visibility,
+          assignedTo: orig?.assignedTo ?? assignedTo,
         };
         setSaving(false);
         void loadTask(taskId);
@@ -967,6 +1155,7 @@ export function TaskModal({
         description: description.trim() || null,
         status: effectiveStatus,
         visibility,
+        assigned_to: assignedTo,
         ...typeMetaPatch,
         ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
         ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
@@ -987,6 +1176,7 @@ export function TaskModal({
           itemType,
           metadataJson: JSON.stringify(metadataForSave),
           visibility: orig?.visibility ?? visibility,
+          assignedTo: orig?.assignedTo ?? assignedTo,
         };
         setSaving(false);
         void loadTask(taskId);
@@ -1003,6 +1193,7 @@ export function TaskModal({
         description: description.trim() || null,
         status: effectiveStatus,
         priority,
+        assigned_to: assignedTo,
         ...typeMetaPatch,
         ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
         ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
@@ -1023,6 +1214,7 @@ export function TaskModal({
           itemType,
           metadataJson: JSON.stringify(metadataForSave),
           visibility: orig?.visibility ?? 'private',
+          assignedTo: orig?.assignedTo ?? assignedTo,
         };
         setSaving(false);
         setError(
@@ -1038,6 +1230,17 @@ export function TaskModal({
       setError(formatUserFacingError(uErr));
       return;
     }
+    if (
+      itemType === 'program' &&
+      orig &&
+      !taskColumnIsCompletionStatus(orig.status ?? '', boardColumnDefs) &&
+      taskColumnIsCompletionStatus(effectiveStatus, boardColumnDefs)
+    ) {
+      const { error: childErr } = await archiveOpenChildWorkoutsForProgram(supabase, taskId);
+      if (childErr) {
+        toast.error(childErr);
+      }
+    }
     setActivityLog(asActivityLog(nextActivity));
     setStatus(effectiveStatus);
     originalRef.current = {
@@ -1050,6 +1253,7 @@ export function TaskModal({
       itemType,
       metadataJson: JSON.stringify(metadataForSave),
       visibility,
+      assignedTo,
     };
     void loadTask(taskId);
   };
@@ -1098,6 +1302,7 @@ export function TaskModal({
       item_type: itemType,
       metadata: metadataForSave as TaskRow['metadata'],
       visibility,
+      assigned_to: assignedTo,
       ...(sched ? { scheduled_time: scheduledTimeInsert } : {}),
     };
 
@@ -1318,7 +1523,8 @@ export function TaskModal({
         (title.trim().length > 0 ||
           itemType !== 'task' ||
           metaJson !== '{}' ||
-          visibility !== 'private')
+          visibility !== 'private' ||
+          assignedTo != null)
       );
     }
     return (
@@ -1330,7 +1536,8 @@ export function TaskModal({
       (timeHm ?? null) !== (o.scheduledTime ?? null) ||
       itemType !== o.itemType ||
       metaJson !== o.metadataJson ||
-      visibility !== o.visibility
+      visibility !== o.visibility ||
+      (assignedTo ?? null) !== (o.assignedTo ?? null)
     );
   }, [
     title,
@@ -1343,6 +1550,7 @@ export function TaskModal({
     itemType,
     metadataForSave,
     visibility,
+    assignedTo,
   ]);
 
   if (!open) return null;
@@ -1378,11 +1586,11 @@ export function TaskModal({
             </div>
             <button
               type="button"
+              className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              aria-label="Close"
               onClick={() => onOpenChange(false)}
-              className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
-              aria-label="Close dialog"
             >
-              <X className="h-5 w-5" />
+              <X className="h-5 w-5" aria-hidden />
             </button>
           </div>
 
@@ -1438,6 +1646,18 @@ export function TaskModal({
             <p className="mt-2 text-xs text-muted-foreground">
               Public cards appear on your Astro storefront.
             </p>
+            {(itemType === 'workout' || itemType === 'workout_log') &&
+              workoutExercises.length > 0 && (
+                <div className="mt-3 space-y-1.5">
+                  <p className="text-xs font-medium text-muted-foreground">Workout player</p>
+                  <WorkoutPlayerTriggers
+                    workoutTitle={title}
+                    exercises={workoutExercises}
+                    bubbleId={bubbleId ?? ''}
+                    sourceTaskId={taskId}
+                  />
+                </div>
+              )}
           </div>
 
           <div className="flex flex-wrap gap-2 border-b border-border px-6 py-2">
@@ -1794,6 +2014,28 @@ export function TaskModal({
                         ))}
                       </select>
                     </div>
+                    {workspaceId ? (
+                      <div className="space-y-2">
+                        <Label htmlFor="task-assigned-to">Assigned to</Label>
+                        <select
+                          id="task-assigned-to"
+                          value={assignedTo ?? ''}
+                          onChange={(e) => setAssignedTo(e.target.value ? e.target.value : null)}
+                          disabled={!canWrite}
+                          className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                        >
+                          <option value="">Unassigned</option>
+                          {workspaceMembersForAssign.map((m) => (
+                            <option key={m.user_id} value={m.user_id}>
+                              {m.label}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-muted-foreground">
+                          Owner or member responsible for this card (including programs).
+                        </p>
+                      </div>
+                    ) : null}
                     {itemType !== 'experience' && (
                       <div className="space-y-2">
                         <div className="flex flex-row flex-wrap gap-3 items-end">

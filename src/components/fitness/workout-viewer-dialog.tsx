@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { WorkoutExercisesEditor } from '@/components/fitness/workout-exercises-editor';
+import { formatRepsDisplay } from '@/lib/workout-factory/parse-reps-scalar';
 
 export type WorkoutViewerApplyPayload = {
   title: string;
@@ -27,7 +28,7 @@ type ViewMode = 'view' | 'edit';
 function ExerciseDetail({ ex }: { ex: Exercise }) {
   const bits = [
     typeof ex.sets === 'number' && ex.sets > 0 && `${ex.sets} sets`,
-    ex.reps && `reps ${ex.reps}`,
+    ex.reps && `reps ${formatRepsDisplay(ex.reps)}`,
     ex.rpe != null && `RPE ${ex.rpe}`,
     ex.restSeconds != null && ex.restSeconds > 0 && `rest ${ex.restSeconds}s`,
     ex.workSeconds != null && ex.workSeconds > 0 && `work ${ex.workSeconds}s`,
@@ -150,13 +151,13 @@ function FlatExercisesReadView({ exercises }: { exercises: WorkoutExercise[] }) 
           <span className="font-medium">{ex.name}</span>
           {[
             ex.sets != null && `${ex.sets}×`,
-            ex.reps != null && `${ex.reps} reps`,
+            ex.reps != null && `${formatRepsDisplay(ex.reps)} reps`,
             ex.coach_notes && ex.coach_notes,
           ].filter(Boolean).length > 0 && (
             <span className="mt-0.5 block text-xs text-muted-foreground">
               {[
                 ex.sets != null && `${ex.sets}×`,
-                ex.reps != null && `${ex.reps} reps`,
+                ex.reps != null && `${formatRepsDisplay(ex.reps)} reps`,
                 ex.coach_notes,
               ]
                 .filter(Boolean)

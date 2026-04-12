@@ -84,7 +84,11 @@ import {
   CollapsedColumnStrip,
 } from '@/components/layout/collapsed-column-strip';
 import type { TaskModalTab } from '@/components/modals/TaskModal';
-import { kanbanBoardStripStorageKey } from '@/lib/layout-collapse-keys';
+import {
+  kanbanBoardCollapsedColumnsStorageKey,
+  kanbanBoardFiltersToolbarCollapsedStorageKey,
+  kanbanBoardStripStorageKey,
+} from '@/lib/layout-collapse-keys';
 import {
   KANBAN_BOARD_SEGMENT_STORAGE_KEY_PREFIX,
   parseKanbanBoardSegment,
@@ -97,7 +101,25 @@ import { cn } from '@/lib/utils';
 import { GripVertical, Minimize2 } from 'lucide-react';
 import { motion } from 'motion/react';
 
-const KANBAN_COLLAPSED_COLUMNS_KEY_PREFIX = 'buddybubble.kanbanCollapsedColumns:';
+function loadKanbanCollapsedColumnIds(workspaceId: string | null): Set<string> {
+  if (!workspaceId || typeof window === 'undefined') return new Set();
+  try {
+    const raw = localStorage.getItem(kanbanBoardCollapsedColumnsStorageKey(workspaceId));
+    const arr = raw ? (JSON.parse(raw) as unknown) : [];
+    return new Set(Array.isArray(arr) ? arr.filter((x): x is string => typeof x === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function loadKanbanFiltersToolbarCollapsed(workspaceId: string | null): boolean {
+  if (!workspaceId || typeof window === 'undefined') return false;
+  try {
+    return localStorage.getItem(kanbanBoardFiltersToolbarCollapsedStorageKey(workspaceId)) === '1';
+  } catch {
+    return false;
+  }
+}
 
 /**
  * One grid: row 1 = per-rail chrome, row 2 = rail bodies. Shared column template keeps each
@@ -314,6 +336,8 @@ type Props = {
   onExpandCalendarWhenKanbanStripCollapse?: () => void;
   /** Split calendar chrome: label before "Calendar". */
   buddyBubbleTitle?: string;
+  /** Opens the Workout Player for a workout / workout_log card (fitness workspaces). */
+  onStartWorkout?: (task: TaskRow) => void;
 };
 
 export function KanbanBoard({
@@ -330,6 +354,7 @@ export function KanbanBoard({
   calendarStripCollapsed,
   onExpandCalendarWhenKanbanStripCollapse,
   buddyBubbleTitle,
+  onStartWorkout,
 }: Props) {
   const [calendarDropNonce, setCalendarDropNonce] = useState(0);
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
@@ -452,7 +477,20 @@ export function KanbanBoard({
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
   const [dateSortMode, setDateSortMode] = useState<DateSortMode>('none');
-  const [collapsedColumnIds, setCollapsedColumnIds] = useState<Set<string>>(() => new Set());
+  const [collapsedColumnIds, setCollapsedColumnIds] = useState<Set<string>>(() =>
+    loadKanbanCollapsedColumnIds(
+      typeof window !== 'undefined'
+        ? (useWorkspaceStore.getState().activeWorkspace?.id ?? null)
+        : null,
+    ),
+  );
+  const [filtersToolbarCollapsed, setFiltersToolbarCollapsed] = useState(() =>
+    loadKanbanFiltersToolbarCollapsed(
+      typeof window !== 'undefined'
+        ? (useWorkspaceStore.getState().activeWorkspace?.id ?? null)
+        : null,
+    ),
+  );
   const draggingRef = useRef(false);
   const columnsSnapshotRef = useRef<Record<string, TaskRow[]> | null>(null);
   const columnsRef = useRef(columns);
@@ -535,19 +573,28 @@ export function KanbanBoard({
   }, []);
 
   useEffect(() => {
-    if (!workspaceId || typeof window === 'undefined') {
-      setCollapsedColumnIds(new Set());
-      return;
-    }
-    try {
-      const raw = localStorage.getItem(`${KANBAN_COLLAPSED_COLUMNS_KEY_PREFIX}${workspaceId}`);
-      const arr = raw ? (JSON.parse(raw) as unknown) : [];
-      setCollapsedColumnIds(
-        new Set(Array.isArray(arr) ? arr.filter((x) => typeof x === 'string') : []),
-      );
-    } catch {
-      setCollapsedColumnIds(new Set());
-    }
+    setCollapsedColumnIds(loadKanbanCollapsedColumnIds(workspaceId));
+  }, [workspaceId]);
+
+  useEffect(() => {
+    setFiltersToolbarCollapsed(loadKanbanFiltersToolbarCollapsed(workspaceId));
+  }, [workspaceId]);
+
+  const toggleFiltersToolbarCollapsed = useCallback(() => {
+    setFiltersToolbarCollapsed((prev) => {
+      const next = !prev;
+      if (workspaceId && typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(
+            kanbanBoardFiltersToolbarCollapsedStorageKey(workspaceId),
+            next ? '1' : '0',
+          );
+        } catch {
+          /* ignore quota */
+        }
+      }
+      return next;
+    });
   }, [workspaceId]);
 
   const handleCardDensityChange = useCallback((d: KanbanCardDensity) => {
@@ -651,10 +698,14 @@ export function KanbanBoard({
         if (next.has(columnId)) next.delete(columnId);
         else next.add(columnId);
         if (workspaceId && typeof window !== 'undefined') {
-          localStorage.setItem(
-            `${KANBAN_COLLAPSED_COLUMNS_KEY_PREFIX}${workspaceId}`,
-            JSON.stringify([...next]),
-          );
+          try {
+            localStorage.setItem(
+              kanbanBoardCollapsedColumnsStorageKey(workspaceId),
+              JSON.stringify([...next]),
+            );
+          } catch {
+            /* ignore quota */
+          }
         }
         return next;
       });
@@ -941,6 +992,8 @@ export function KanbanBoard({
     onOpenFullEditor: onOpenCreateTask ? () => onOpenCreateTask() : undefined,
     onOpenArchive:
       bubbleId && bubbleId !== ALL_BUBBLES_BUBBLE_ID ? () => setIsArchiveOpen(true) : undefined,
+    filtersCollapsed: filtersToolbarCollapsed,
+    onToggleFiltersCollapsed: toggleFiltersToolbarCollapsed,
   };
 
   const showSplitChrome = isValidElement(calendarMerged) && calendarExpandedBesideBoard;
@@ -1032,6 +1085,7 @@ export function KanbanBoard({
                     calendarTimezone={tz}
                     onMoveToBubble={moveTaskToBubble}
                     onOpenTask={onOpenTask}
+                    onStartWorkout={onStartWorkout}
                     onAddNew={addNew}
                     onSortByPriority={canWrite ? () => sortColumnBy(col.id, 'priority') : undefined}
                     onSortByTitle={canWrite ? () => sortColumnBy(col.id, 'title') : undefined}
@@ -1218,6 +1272,7 @@ type ColumnProps = {
   calendarTimezone: string;
   onMoveToBubble: (taskId: string, targetBubbleId: string) => void;
   onOpenTask?: (taskId: string, opts?: { tab?: TaskModalTab }) => void;
+  onStartWorkout?: (task: TaskRow) => void;
   onAddNew?: () => void;
   onSortByPriority?: () => void;
   onSortByTitle?: () => void;
@@ -1239,6 +1294,7 @@ function KanbanColumn({
   calendarTimezone,
   onMoveToBubble,
   onOpenTask,
+  onStartWorkout,
   onAddNew,
   onSortByPriority,
   onSortByTitle,
@@ -1252,68 +1308,82 @@ function KanbanColumn({
     <div
       ref={setNodeRef}
       className={cn(
-        'flex w-full min-w-0 shrink-0 flex-col rounded-xl border border-border/80 bg-card p-2 shadow-sm transition-[box-shadow] duration-200 ease-out hover:shadow-md md:w-72',
-        collapsed ? 'h-auto min-h-[4.5rem] self-start' : 'h-full min-h-[200px]',
+        'flex min-w-0 shrink-0 flex-col rounded-xl border border-border/80 bg-card shadow-sm transition-[width,box-shadow] duration-200 ease-out motion-reduce:transition-none hover:shadow-md',
+        collapsed
+          ? cn(COLLAPSED_COLUMN_WIDTH_CLASS, 'h-full min-h-[200px] overflow-hidden p-0')
+          : 'h-full min-h-[200px] w-full p-2 md:w-72',
       )}
     >
-      <KanbanColumnHeader
-        label={column.label}
-        count={tasks.length}
-        fullTaskCount={fullTaskCount}
-        collapsed={collapsed}
-        canAddTask={Boolean(onAddNew) && !addDisabled}
-        onAddTask={onAddNew}
-        onSortByPriority={onSortByPriority}
-        onSortByTitle={onSortByTitle}
-        onToggleCollapse={onToggleCollapse}
-      />
-      {!collapsed ? (
-        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-0.5">
-          <SortableContext items={ids} strategy={verticalListSortingStrategy}>
-            <div className="pr-1.5">
-              {tasks.length === 0 ? (
-                onAddNew ? (
-                  <KanbanColumnAdd
-                    variant="empty"
-                    disabled={addDisabled}
-                    onAdd={onAddNew}
-                    className="mb-1"
-                  />
-                ) : (
-                  <p className="py-6 text-center text-xs text-muted-foreground">No cards here</p>
-                )
-              ) : (
-                <>
-                  {tasks.map((task) => (
-                    <SortableTaskCard
-                      key={task.id}
-                      task={task}
-                      canWrite={canWrite}
-                      dragDisabled={dragDisabled}
-                      bubbles={bubbles}
-                      boardColumnDefs={boardColumnDefs}
-                      cardDensity={cardDensity}
-                      workspaceCategory={workspaceCategory}
-                      calendarTimezone={calendarTimezone}
-                      onMoveToBubble={onMoveToBubble}
-                      onOpenTask={onOpenTask}
-                    />
-                  ))}
-                  {onAddNew ? (
+      {collapsed ? (
+        <CollapsedColumnStrip
+          title={column.label}
+          expandTitle={`Expand column ${column.label}`}
+          expandAriaLabel={`Expand column ${column.label}`}
+          onExpand={onToggleCollapse}
+          edge="left"
+          variant="card"
+          verticalAlign="top"
+          count={tasks.length}
+        />
+      ) : (
+        <>
+          <KanbanColumnHeader
+            label={column.label}
+            count={tasks.length}
+            fullTaskCount={fullTaskCount}
+            collapsed={collapsed}
+            canAddTask={Boolean(onAddNew) && !addDisabled}
+            onAddTask={onAddNew}
+            onSortByPriority={onSortByPriority}
+            onSortByTitle={onSortByTitle}
+            onToggleCollapse={onToggleCollapse}
+          />
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-0.5">
+            <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+              <div className="pr-1.5">
+                {tasks.length === 0 ? (
+                  onAddNew ? (
                     <KanbanColumnAdd
-                      variant="inline"
+                      variant="empty"
                       disabled={addDisabled}
                       onAdd={onAddNew}
                       className="mb-1"
                     />
-                  ) : null}
-                </>
-              )}
-            </div>
-          </SortableContext>
-        </div>
-      ) : (
-        <p className="px-1 pb-1 text-center text-[10px] text-muted-foreground">Column collapsed</p>
+                  ) : (
+                    <p className="py-6 text-center text-xs text-muted-foreground">No cards here</p>
+                  )
+                ) : (
+                  <>
+                    {tasks.map((task) => (
+                      <SortableTaskCard
+                        key={task.id}
+                        task={task}
+                        canWrite={canWrite}
+                        dragDisabled={dragDisabled}
+                        bubbles={bubbles}
+                        boardColumnDefs={boardColumnDefs}
+                        cardDensity={cardDensity}
+                        workspaceCategory={workspaceCategory}
+                        calendarTimezone={calendarTimezone}
+                        onMoveToBubble={onMoveToBubble}
+                        onOpenTask={onOpenTask}
+                        onStartWorkout={onStartWorkout}
+                      />
+                    ))}
+                    {onAddNew ? (
+                      <KanbanColumnAdd
+                        variant="inline"
+                        disabled={addDisabled}
+                        onAdd={onAddNew}
+                        className="mb-1"
+                      />
+                    ) : null}
+                  </>
+                )}
+              </div>
+            </SortableContext>
+          </div>
+        </>
       )}
     </div>
   );
@@ -1330,6 +1400,7 @@ type CardProps = {
   calendarTimezone: string;
   onMoveToBubble: (taskId: string, targetBubbleId: string) => void;
   onOpenTask?: (taskId: string, opts?: { tab?: TaskModalTab }) => void;
+  onStartWorkout?: (task: TaskRow) => void;
 };
 
 function SortableTaskCard({
@@ -1343,6 +1414,7 @@ function SortableTaskCard({
   calendarTimezone,
   onMoveToBubble,
   onOpenTask,
+  onStartWorkout,
 }: CardProps) {
   const sortableDisabled = !canWrite || dragDisabled;
   const {
@@ -1381,6 +1453,7 @@ function SortableTaskCard({
         calendarTimezone={calendarTimezone}
         onMoveToBubble={onMoveToBubble}
         onOpenTask={onOpenTask}
+        onStartWorkout={onStartWorkout}
         isCompleted={taskColumnIsCompletionStatus(task.status, boardColumnDefs)}
         dragHandle={
           draggable ? (

@@ -46,7 +46,8 @@ function readMeta(metadata: unknown): TaskMeta {
 }
 
 /**
- * Creates or updates `workout` tasks in the Workouts bubble, linked to a program task by metadata.
+ * Creates or updates `workout` tasks in the Workouts bubble, linked via `program_id` +
+ * `program_session_key` on the task row (not JSON metadata).
  */
 export async function upsertProgramWorkoutTasks(params: {
   supabase: SupabaseClient;
@@ -64,33 +65,61 @@ export async function upsertProgramWorkoutTasks(params: {
     return { error: 'No “Workouts” bubble found in this workspace.' };
   }
 
-  const { data: existingRows, error: fetchErr } = await supabase
+  const { data: programRow, error: programErr } = await supabase
     .from('tasks')
-    .select('id,metadata,position')
+    .select('assigned_to')
+    .eq('id', programTaskId)
+    .eq('item_type', 'program')
+    .maybeSingle();
+
+  if (programErr) {
+    return { error: programErr.message };
+  }
+
+  const programAssignedTo =
+    programRow && typeof (programRow as { assigned_to?: string | null }).assigned_to !== 'undefined'
+      ? ((programRow as { assigned_to: string | null }).assigned_to ?? null)
+      : null;
+
+  const { data: programWorkoutRows, error: fetchErr } = await supabase
+    .from('tasks')
+    .select('id,metadata,position,program_id,program_session_key')
     .eq('bubble_id', workoutsBubbleId)
-    .eq('item_type', 'workout');
+    .eq('item_type', 'workout')
+    .eq('program_id', programTaskId);
 
   if (fetchErr) {
     return { error: fetchErr.message };
   }
 
-  const existing = (existingRows ?? []) as {
+  const { data: maxPosRow, error: maxPosErr } = await supabase
+    .from('tasks')
+    .select('position')
+    .eq('bubble_id', workoutsBubbleId)
+    .eq('item_type', 'workout')
+    .order('position', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (maxPosErr) {
+    return { error: maxPosErr.message };
+  }
+
+  const existing = (programWorkoutRows ?? []) as {
     id: string;
     metadata: unknown;
     position: number;
+    program_id: string | null;
+    program_session_key: string | null;
   }[];
 
   const linked = (key: string) =>
-    existing.find((row) => {
-      const m = readMeta(row.metadata);
-      return (
-        m.linked_program_task_id === programTaskId &&
-        typeof m.program_session_key === 'string' &&
-        m.program_session_key === key
-      );
-    });
+    existing.find((row) => row.program_id === programTaskId && row.program_session_key === key);
 
-  let maxPos = existing.reduce((acc, r) => Math.max(acc, Number(r.position) || 0), -1);
+  let maxPos =
+    maxPosRow == null
+      ? -1
+      : Math.max(-1, Number((maxPosRow as { position: unknown }).position) || 0);
 
   for (const session of sessions) {
     const exercises: WorkoutExercise[] = session.exercises ?? [];
@@ -99,11 +128,12 @@ export async function upsertProgramWorkoutTasks(params: {
     const row = linked(session.key);
     if (row) {
       const prev = readMeta(row.metadata);
+      const cleaned = { ...prev };
+      delete cleaned.linked_program_task_id;
+      delete cleaned.program_session_key;
       const meta = {
-        ...prev,
+        ...cleaned,
         exercises,
-        linked_program_task_id: programTaskId,
-        program_session_key: session.key,
         workout_type: workoutType,
       } as Json;
       const { error: uErr } = await supabase
@@ -113,6 +143,9 @@ export async function upsertProgramWorkoutTasks(params: {
           description: session.description.trim() || null,
           status: statusSlug,
           metadata: meta,
+          program_id: programTaskId,
+          program_session_key: session.key,
+          assigned_to: programAssignedTo,
         })
         .eq('id', row.id);
       if (uErr) return { error: uErr.message };
@@ -120,8 +153,6 @@ export async function upsertProgramWorkoutTasks(params: {
       maxPos += 1;
       const meta: Json = {
         exercises,
-        linked_program_task_id: programTaskId,
-        program_session_key: session.key,
         workout_type: workoutType,
       } as Json;
       const { error: iErr } = await supabase.from('tasks').insert({
@@ -133,6 +164,9 @@ export async function upsertProgramWorkoutTasks(params: {
         priority: 'medium',
         item_type: 'workout',
         metadata: meta,
+        program_id: programTaskId,
+        program_session_key: session.key,
+        assigned_to: programAssignedTo,
         visibility,
         subtasks: [],
         comments: [],
