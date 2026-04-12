@@ -1,5 +1,10 @@
 import type { ItemType, Json } from '@/types/database';
 
+/**
+ * Optional task metadata (not in MANAGED_METADATA_KEYS) used by program personalization:
+ * `program_session_key`, `linked_program_task_id` on workout tasks — preserved via merge on save.
+ */
+
 /** Single exercise entry stored in `tasks.metadata.exercises`. */
 export type WorkoutExercise = {
   name: string;
@@ -9,6 +14,16 @@ export type WorkoutExercise = {
   weight?: number;
   /** Duration in minutes for cardio/timed exercises. */
   duration_min?: number;
+  /** RPE (1–10), when prescribed. */
+  rpe?: number;
+  /** Interval / HIIT: work interval seconds (Interval Timers timer schema). */
+  work_seconds?: number;
+  /** Rest between efforts or stations (seconds). */
+  rest_seconds?: number;
+  /** Interval rounds (e.g. Tabata, AMRAP stations). */
+  rounds?: number;
+  /** Short coach note from AI chain. */
+  coach_notes?: string;
 };
 
 /** Single day within a program week. */
@@ -48,6 +63,8 @@ const MANAGED_METADATA_KEYS = [
   'duration_weeks',
   'current_week',
   'schedule',
+  /** Pre-suffix template title for AI-personalized programs (avoids nested "A - B - C"). */
+  'program_source_title',
 ] as const;
 
 export type TaskMetadataFormFields = {
@@ -71,6 +88,8 @@ export type TaskMetadataFormFields = {
   programCurrentWeek: number;
   /** Program: weekly workout schedule. */
   programSchedule: ProgramWeek[];
+  /** Program: original template title before AI suffix (metadata `program_source_title`). */
+  programSourceTitle: string;
 };
 
 function asWorkoutExercises(value: unknown): WorkoutExercise[] {
@@ -80,7 +99,8 @@ function asWorkoutExercises(value: unknown): WorkoutExercise[] {
   );
 }
 
-function asProgramSchedule(value: unknown): ProgramWeek[] {
+/** Normalize stored `schedule` JSON into `ProgramWeek[]` (for API + forms). */
+export function asProgramSchedule(value: unknown): ProgramWeek[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((w): ProgramWeek[] => {
     if (typeof w !== 'object' || w === null) return [];
@@ -91,7 +111,13 @@ function asProgramSchedule(value: unknown): ProgramWeek[] {
       if (typeof d !== 'object' || d === null) return [];
       const day = (d as { day?: unknown }).day;
       const name = (d as { name?: unknown }).name;
-      if (!Number.isFinite(day) || (day as number) < 1 || (day as number) > 7 || typeof name !== 'string') return [];
+      if (
+        !Number.isFinite(day) ||
+        (day as number) < 1 ||
+        (day as number) > 7 ||
+        typeof name !== 'string'
+      )
+        return [];
       const workoutType = (d as { workout_type?: unknown }).workout_type;
       const durationMin = (d as { duration_min?: unknown }).duration_min;
       return [
@@ -125,6 +151,7 @@ export function metadataFieldsFromParsed(meta: unknown): TaskMetadataFormFields 
     programDurationWeeks: o.duration_weeks != null ? String(o.duration_weeks) : '',
     programCurrentWeek: typeof o.current_week === 'number' ? o.current_week : 0,
     programSchedule: asProgramSchedule(o.schedule),
+    programSourceTitle: str(o.program_source_title),
   };
 }
 
@@ -168,6 +195,7 @@ export function buildTaskMetadataPayload(
       if (!isNaN(dw) && dw > 0) o.duration_weeks = dw;
       if (fields.programCurrentWeek > 0) o.current_week = fields.programCurrentWeek;
       if (fields.programSchedule.length > 0) o.schedule = fields.programSchedule;
+      if (t(fields.programSourceTitle)) o.program_source_title = t(fields.programSourceTitle);
       break;
     }
     default:

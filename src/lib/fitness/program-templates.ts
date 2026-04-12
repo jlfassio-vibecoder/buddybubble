@@ -18,7 +18,8 @@ export const PROGRAM_TEMPLATES: ProgramTemplate[] = [
     id: 'beginner-strength',
     title: 'Beginner Strength',
     goal: 'Build foundational strength',
-    description: 'Full-body lifts three times a week. Perfect for those new to resistance training.',
+    description:
+      'Full-body lifts three times a week. Perfect for those new to resistance training.',
     duration_weeks: 8,
     difficulty: 'beginner',
     schedule: [
@@ -119,7 +120,12 @@ export const PROGRAM_TEMPLATES: ProgramTemplate[] = [
       {
         week: 1,
         days: [
-          { day: 1, name: 'Push (Chest / Shoulders / Triceps)', workout_type: 'Strength', duration_min: 60 },
+          {
+            day: 1,
+            name: 'Push (Chest / Shoulders / Triceps)',
+            workout_type: 'Strength',
+            duration_min: 60,
+          },
           { day: 2, name: 'Pull (Back / Biceps)', workout_type: 'Strength', duration_min: 60 },
           { day: 3, name: 'Legs', workout_type: 'Strength', duration_min: 65 },
           { day: 4, name: 'Push (Variation)', workout_type: 'Strength', duration_min: 60 },
@@ -134,7 +140,7 @@ export const PROGRAM_TEMPLATES: ProgramTemplate[] = [
     title: '5/3/1 Powerlifting',
     goal: 'Peak strength on squat, bench, deadlift, and press',
     description:
-      'Jim Wendler\'s proven four-day program built around progressive overload of the four main barbell lifts.',
+      "Jim Wendler's proven four-day program built around progressive overload of the four main barbell lifts.",
     duration_weeks: 12,
     difficulty: 'advanced',
     schedule: [

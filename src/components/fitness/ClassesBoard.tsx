@@ -5,10 +5,7 @@ import { CalendarDays, CheckCircle2, Clock, History, MapPin, Users } from 'lucid
 import { createClient } from '@utils/supabase/client';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import {
-  DEFAULT_CLASS_PROVIDER,
-  type ClassInstance,
-} from '@/lib/fitness/class-providers';
+import { DEFAULT_CLASS_PROVIDER, type ClassInstance } from '@/lib/fitness/class-providers';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -72,10 +69,7 @@ const COLUMNS: ColumnDef[] = [
 
 // ── Bucketing ────────────────────────────────────────────────────────────────
 
-function bucketInstance(
-  inst: ClassInstance,
-  today: string,
-): ColumnDef['id'] {
+function bucketInstance(inst: ClassInstance, today: string): ColumnDef['id'] {
   const instDate = localYmd(inst.scheduled_at);
   const isPast = instDate < today || inst.status === 'completed' || inst.status === 'cancelled';
 
@@ -100,8 +94,7 @@ function ClassCard({ instance, onEnroll, onUnenroll, enrolling }: ClassCardProps
   const { offering } = instance;
   const enrolled = instance.my_enrollment_status === 'enrolled';
   const waitlisted = instance.my_enrollment_status === 'waitlisted';
-  const isFull =
-    instance.capacity !== null && instance.enrollment_count >= instance.capacity;
+  const isFull = instance.capacity !== null && instance.enrollment_count >= instance.capacity;
   const isPast =
     localYmd(instance.scheduled_at) < todayYmd() ||
     instance.status === 'completed' ||
@@ -235,9 +228,7 @@ export function ClassesBoard({ workspaceId, calendarSlot, taskViewsNonce }: Prop
   const today = todayYmd();
 
   const columns = useMemo(() => {
-    const buckets = new Map<ColumnDef['id'], ClassInstance[]>(
-      COLUMNS.map((c) => [c.id, []]),
-    );
+    const buckets = new Map<ColumnDef['id'], ClassInstance[]>(COLUMNS.map((c) => [c.id, []]));
     for (const inst of instances) {
       buckets.get(bucketInstance(inst, today))!.push(inst);
     }
@@ -302,10 +293,7 @@ export function ClassesBoard({ workspaceId, calendarSlot, taskViewsNonce }: Prop
                   {/* Column header */}
                   <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
                     <span
-                      className={cn(
-                        'text-muted-foreground',
-                        col.id === 'today' && 'text-primary',
-                      )}
+                      className={cn('text-muted-foreground', col.id === 'today' && 'text-primary')}
                     >
                       {col.icon}
                     </span>

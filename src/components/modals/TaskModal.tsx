@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Globe, Lock, X } from 'lucide-react';
+import { ChevronDown, Globe, ListTree, Lock, Sparkles, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { createClient } from '@utils/supabase/client';
 import {
@@ -12,6 +12,9 @@ import {
   type TaskVisibility,
   type UnitSystem,
 } from '@/types/database';
+import type { WorkoutSetTemplate } from '@/lib/workout-factory/types/workout-contract';
+import { WorkoutExercisesEditor } from '@/components/fitness/workout-exercises-editor';
+import { WorkoutViewerDialog } from '@/components/fitness/workout-viewer-dialog';
 import { useBoardColumnDefs } from '@/hooks/use-board-columns';
 import {
   type TaskActivityEntry,
@@ -47,6 +50,15 @@ import {
   type WorkoutExercise,
 } from '@/lib/item-metadata';
 import { useWorkoutTemplates, type WorkoutTemplate } from '@/hooks/use-workout-templates';
+import {
+  postGenerateWorkoutChain,
+  postPersonalizeProgram,
+  WORKOUT_FACTORY_CHAIN_MESSAGES,
+} from '@/lib/workout-factory/api-client';
+import {
+  resolveThirdKanbanStatusSlug,
+  upsertProgramWorkoutTasks,
+} from '@/lib/fitness/upsert-program-workout-tasks';
 import { isMissingColumnSchemaCacheError } from '@/lib/supabase-schema-errors';
 import {
   alignStatusWithFutureSchedule,
@@ -119,6 +131,12 @@ export type TaskModalProps = {
   onCreated?: (newTaskId: string) => void;
   /** When opening create mode, pre-select this Kanban column status if it exists on the board. */
   initialCreateStatus?: string | null;
+  /** When opening create mode, pre-select item type (e.g. `workout` from Programs “This week” plan). */
+  initialCreateItemType?: ItemType | null;
+  /** When opening create mode, pre-fill title. */
+  initialCreateTitle?: string | null;
+  /** When opening create mode as a workout, pre-fill duration (minutes) string. */
+  initialCreateWorkoutDurationMin?: string | null;
   /** When opening an existing task, select this tab (ignored for create mode). */
   initialTab?: TaskModalTab | null;
   /** Drives Due by vs Scheduled on labels (`workspaces.category_type`). */
@@ -138,6 +156,9 @@ export function TaskModal({
   canWrite,
   onCreated,
   initialCreateStatus = null,
+  initialCreateItemType = null,
+  initialCreateTitle = null,
+  initialCreateWorkoutDurationMin = null,
   initialTab = null,
   workspaceCategory = null,
   calendarTimezone = null,
@@ -192,23 +213,21 @@ export function TaskModal({
   const [workoutType, setWorkoutType] = useState('');
   const [workoutDurationMin, setWorkoutDurationMin] = useState('');
   const [workoutExercises, setWorkoutExercises] = useState<WorkoutExercise[]>([]);
-  /** Tracks the name input for the "add exercise" inline form. */
-  const [newExerciseName, setNewExerciseName] = useState('');
-  /** Optional metric fields for the exercise being composed. */
-  const [newExSets, setNewExSets] = useState('');
-  const [newExReps, setNewExReps] = useState('');
-  const [newExWeight, setNewExWeight] = useState('');
-  const [newExDuration, setNewExDuration] = useState('');
+  const [workoutViewerOpen, setWorkoutViewerOpen] = useState(false);
   /** Unit system from the user's fitness profile; drives weight labels. */
   const [workoutUnitSystem, setWorkoutUnitSystem] = useState<UnitSystem>('metric');
   /** Whether the template picker is expanded (create mode only). */
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const [aiWorkoutGenerating, setAiWorkoutGenerating] = useState(false);
+  const [aiProgramPersonalizing, setAiProgramPersonalizing] = useState(false);
+  const [aiWorkoutProgressIdx, setAiWorkoutProgressIdx] = useState(0);
 
   /** Program-specific fields. */
   const [programGoal, setProgramGoal] = useState('');
   const [programDurationWeeks, setProgramDurationWeeks] = useState('');
   const [programCurrentWeek, setProgramCurrentWeek] = useState(0);
   const [programSchedule, setProgramSchedule] = useState<ProgramWeek[]>([]);
+  const [programSourceTitle, setProgramSourceTitle] = useState('');
 
   const [subtasks, setSubtasks] = useState<TaskSubtask[]>([]);
   const [comments, setComments] = useState<TaskComment[]>([]);
@@ -302,20 +321,162 @@ export function TaskModal({
     [title],
   );
 
-  const commitExercise = useCallback(() => {
-    const name = newExerciseName.trim();
-    if (!name) return;
-    const sets = newExSets.trim() ? Number(newExSets) : undefined;
-    const reps = newExReps.trim() ? Number(newExReps) : undefined;
-    const weight = newExWeight.trim() ? Number(newExWeight) : undefined;
-    const duration = newExDuration.trim() ? Number(newExDuration) : undefined;
-    setWorkoutExercises((prev) => [...prev, { name, sets, reps, weight, duration_min: duration }]);
-    setNewExerciseName('');
-    setNewExSets('');
-    setNewExReps('');
-    setNewExWeight('');
-    setNewExDuration('');
-  }, [newExerciseName, newExSets, newExReps, newExWeight, newExDuration]);
+  useEffect(() => {
+    if (!aiWorkoutGenerating) {
+      setAiWorkoutProgressIdx(0);
+      return;
+    }
+    setAiWorkoutProgressIdx(0);
+    const id = window.setInterval(() => {
+      setAiWorkoutProgressIdx((i) => Math.min(i + 1, WORKOUT_FACTORY_CHAIN_MESSAGES.length - 1));
+    }, 15000);
+    return () => window.clearInterval(id);
+  }, [aiWorkoutGenerating]);
+
+  const handlePersonalizeProgram = useCallback(async () => {
+    if (!canWrite || !workspaceId || itemType !== 'program' || !taskId) return;
+    const baseTitle = programSourceTitle.trim() || title.trim();
+    if (!baseTitle) {
+      toast.error('Add a title before personalizing.');
+      return;
+    }
+    const dw = parseInt(programDurationWeeks, 10);
+    const durationWeeks = !Number.isNaN(dw) && dw > 0 ? dw : 0;
+    if (durationWeeks < 1) {
+      toast.error('Set a valid duration (weeks) before personalizing.');
+      return;
+    }
+    setAiProgramPersonalizing(true);
+    try {
+      const data = await postPersonalizeProgram({
+        workspace_id: workspaceId,
+        program: {
+          base_title: baseTitle,
+          goal: programGoal.trim(),
+          duration_weeks: durationWeeks,
+          schedule: programSchedule,
+        },
+      });
+      const nextTitle = `${baseTitle} - ${data.title_suffix}`;
+      setTitle(nextTitle);
+      setDescription(data.description);
+      setProgramSourceTitle(baseTitle);
+      setMetadata((prev) => {
+        const o = parseTaskMetadata(prev) as Record<string, unknown>;
+        return {
+          ...o,
+          ai_program_personalization: {
+            generated_at: data.generated_at,
+            model: data.model_used,
+          },
+        } as Json;
+      });
+      const supabase = createClient();
+      const { slug: statusSlug, usedFallback } = await resolveThirdKanbanStatusSlug(
+        supabase,
+        workspaceId,
+        defaultStatus,
+      );
+      if (usedFallback) {
+        toast.warning(
+          'This board has fewer than three columns; linked workouts were placed in the first column instead.',
+        );
+      }
+      const up = await upsertProgramWorkoutTasks({
+        supabase,
+        workspaceId,
+        programTaskId: taskId,
+        sessions: data.sessions,
+        statusSlug,
+        visibility,
+      });
+      if (up.error) {
+        toast.error(up.error);
+        return;
+      }
+      toast.success('Program personalized — save this card to keep program changes.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Personalization failed');
+    } finally {
+      setAiProgramPersonalizing(false);
+    }
+  }, [
+    canWrite,
+    workspaceId,
+    itemType,
+    taskId,
+    programSourceTitle,
+    title,
+    programGoal,
+    programDurationWeeks,
+    programSchedule,
+    defaultStatus,
+    visibility,
+  ]);
+
+  const handleAiGenerateWorkout = useCallback(async () => {
+    if (!canWrite || !workspaceId || !isWorkoutItemType) return;
+    setAiWorkoutGenerating(true);
+    try {
+      const duration = parseInt(workoutDurationMin, 10);
+      const data = await postGenerateWorkoutChain({
+        workspace_id: workspaceId,
+        daily_checkin: null,
+        persona: {
+          title: title.trim() || undefined,
+          sessionDurationMinutes: !Number.isNaN(duration) && duration > 0 ? duration : 45,
+        },
+      });
+      setTitle((t) => (t.trim() ? t : data.suggestedTitle || t));
+      setDescription((d) => (d.trim() ? d : data.suggestedDescription || d));
+      setWorkoutExercises(data.taskExercises);
+      setWorkoutType((wt) => (wt.trim() ? wt : 'Generated'));
+      setMetadata((prev) => {
+        const o = parseTaskMetadata(prev) as Record<string, unknown>;
+        return {
+          ...o,
+          ai_workout_factory: {
+            generated_at: data.chain_metadata.generated_at,
+            model: data.chain_metadata.model_used,
+            workout_set: data.workoutSet,
+            chain_metadata: data.chain_metadata,
+          },
+        } as unknown as Json;
+      });
+      toast.success('Workout generated — review exercises and save.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Generation failed');
+    } finally {
+      setAiWorkoutGenerating(false);
+    }
+  }, [canWrite, workspaceId, isWorkoutItemType, workoutDurationMin, title]);
+
+  const viewerWorkoutSet = useMemo((): WorkoutSetTemplate | null => {
+    const o = parseTaskMetadata(metadata) as Record<string, unknown>;
+    const ai = o.ai_workout_factory;
+    if (!ai || typeof ai !== 'object') return null;
+    const ws = (ai as { workout_set?: unknown }).workout_set;
+    if (!ws || typeof ws !== 'object') return null;
+    return ws as WorkoutSetTemplate;
+  }, [metadata]);
+
+  const hasWorkoutViewerContent =
+    isWorkoutItemType && (workoutExercises.length > 0 || viewerWorkoutSet != null);
+
+  const handleWorkoutViewerApply = useCallback(
+    (payload: { title: string; description: string; exercises: WorkoutExercise[] }) => {
+      setTitle(payload.title);
+      setDescription(payload.description);
+      setWorkoutExercises(payload.exercises);
+      setMetadata((prev) => {
+        const o = parseTaskMetadata(prev) as Record<string, unknown>;
+        const next = { ...o };
+        delete next.ai_workout_factory;
+        return next as Json;
+      });
+    },
+    [],
+  );
 
   const metadataForSave = useMemo(
     () =>
@@ -334,6 +495,7 @@ export function TaskModal({
           programDurationWeeks,
           programCurrentWeek,
           programSchedule,
+          programSourceTitle,
         },
         metadata,
       ),
@@ -351,6 +513,7 @@ export function TaskModal({
       programDurationWeeks,
       programCurrentWeek,
       programSchedule,
+      programSourceTitle,
       metadata,
     ],
   );
@@ -386,11 +549,11 @@ export function TaskModal({
       setWorkoutType(mf.workoutType);
       setWorkoutDurationMin(mf.workoutDurationMin);
       setWorkoutExercises(mf.workoutExercises);
-      setNewExerciseName('');
       setProgramGoal(mf.programGoal);
       setProgramDurationWeeks(mf.programDurationWeeks);
       setProgramCurrentWeek(mf.programCurrentWeek);
       setProgramSchedule(mf.programSchedule);
+      setProgramSourceTitle(mf.programSourceTitle);
       setSubtasks(asSubtasks(row.subtasks));
       setComments(asComments(row.comments));
       setActivityLog(asActivityLog(row.activity_log));
@@ -437,12 +600,13 @@ export function TaskModal({
     if (!open) return;
     if (!taskId) {
       setTab('details');
-      setTitle('');
+      const nextItemType = initialCreateItemType ?? 'task';
+      setTitle(initialCreateTitle ?? '');
       setDescription('');
       setPriority('medium');
       setScheduledOn('');
       setScheduledTime('');
-      setItemType('task');
+      setItemType(nextItemType);
       setMetadata({});
       setEventLocation('');
       setEventUrl('');
@@ -450,19 +614,21 @@ export function TaskModal({
       setExperienceEndDate('');
       setMemoryCaption('');
       setWorkoutType('');
-      setWorkoutDurationMin('');
+      setWorkoutDurationMin(
+        (nextItemType === 'workout' || nextItemType === 'workout_log') &&
+          initialCreateWorkoutDurationMin != null &&
+          initialCreateWorkoutDurationMin !== ''
+          ? initialCreateWorkoutDurationMin
+          : '',
+      );
       setWorkoutExercises([]);
-      setNewExerciseName('');
-      setNewExSets('');
-      setNewExReps('');
-      setNewExWeight('');
-      setNewExDuration('');
       setWorkoutUnitSystem('metric');
       setTemplatePickerOpen(false);
       setProgramGoal('');
       setProgramDurationWeeks('');
       setProgramCurrentWeek(0);
       setProgramSchedule([]);
+      setProgramSourceTitle('');
       setSubtasks([]);
       setComments([]);
       setCommentUserById({});
@@ -474,7 +640,14 @@ export function TaskModal({
       return;
     }
     void loadTask(taskId);
-  }, [open, taskId, loadTask]);
+  }, [
+    open,
+    taskId,
+    loadTask,
+    initialCreateItemType,
+    initialCreateTitle,
+    initialCreateWorkoutDurationMin,
+  ]);
 
   useEffect(() => {
     if (!taskId || comments.length === 0) {
@@ -1189,781 +1362,737 @@ export function TaskModal({
 
   /* Task modal must sit above MobileTabBar (z-90) and drawer sheets (z-110–120) or actions are obscured on phones. */
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
-      <button
-        type="button"
-        className="absolute inset-0 bg-black/40"
-        aria-label="Close"
-        onClick={() => onOpenChange(false)}
-      />
-      <div className="relative z-10 flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl">
-        <div className="flex items-start justify-between border-b border-border px-6 py-4">
-          <div>
-            <h2 className="text-lg font-bold text-foreground">{modalTitle}</h2>
-            <p className="text-xs text-muted-foreground">{modalSubtitle}</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => onOpenChange(false)}
-            className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
-            aria-label="Close dialog"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <div className="border-b border-border px-6 py-3">
-          <p className="mb-2 text-xs font-medium text-muted-foreground">Type</p>
-          <ItemTypeSelector value={itemType} onChange={setItemType} disabled={!canWrite} />
-        </div>
-
-        <div className="border-b border-border px-6 py-3">
-          <p className="mb-2 text-xs font-medium text-muted-foreground">Visibility</p>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              disabled={!canWrite}
-              onClick={() => setVisibility('private')}
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                visibility === 'private'
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
-              }`}
-            >
-              <Lock className="size-4 shrink-0" aria-hidden />
-              Private
-            </button>
-            <button
-              type="button"
-              disabled={!canWrite}
-              onClick={() => setVisibility('public')}
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                visibility === 'public'
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
-              }`}
-            >
-              <Globe className="size-4 shrink-0" aria-hidden />
-              Public
-            </button>
-          </div>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Public cards appear on your Astro storefront.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap gap-2 border-b border-border px-6 py-2">
-          {tabBtn('details', 'Details')}
-          {tabBtn('comments', 'Comments')}
-          {tabBtn('subtasks', 'Subtasks')}
-          {tabBtn('activity', 'Activity')}
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
-          {error && (
-            <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {error}
+    <>
+      <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+        <button
+          type="button"
+          className="absolute inset-0 bg-black/40"
+          aria-label="Close"
+          onClick={() => onOpenChange(false)}
+        />
+        <div className="relative z-10 flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl">
+          <div className="flex items-start justify-between border-b border-border px-6 py-4">
+            <div>
+              <h2 className="text-lg font-bold text-foreground">{modalTitle}</h2>
+              <p className="text-xs text-muted-foreground">{modalSubtitle}</p>
             </div>
-          )}
+            <button
+              type="button"
+              onClick={() => onOpenChange(false)}
+              className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label="Close dialog"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
 
-          {loading && taskId ? (
-            <p className="text-sm text-muted-foreground">Loading {typeNoun}…</p>
-          ) : null}
+          <div className="border-b border-border px-6 py-3">
+            <p className="mb-2 text-xs font-medium text-muted-foreground">Type</p>
+            <ItemTypeSelector value={itemType} onChange={setItemType} disabled={!canWrite} />
+          </div>
 
-          {!loading || !taskId ? (
-            <>
-              {tab === 'details' && (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="task-title">Title</Label>
-                    <Input
-                      id="task-title"
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      disabled={!canWrite}
-                      className="h-9"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="task-desc">Description</Label>
-                    <Textarea
-                      id="task-desc"
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                      disabled={!canWrite}
-                      rows={5}
-                    />
-                  </div>
+          <div className="border-b border-border px-6 py-3">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-medium text-muted-foreground">Visibility</p>
+              {hasWorkoutViewerContent ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-xs"
+                  onClick={() => setWorkoutViewerOpen(true)}
+                >
+                  <ListTree className="h-3 w-3 shrink-0" aria-hidden />
+                  Workout viewer
+                </Button>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={!canWrite}
+                onClick={() => setVisibility('private')}
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                  visibility === 'private'
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
+                }`}
+              >
+                <Lock className="size-4 shrink-0" aria-hidden />
+                Private
+              </button>
+              <button
+                type="button"
+                disabled={!canWrite}
+                onClick={() => setVisibility('public')}
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                  visibility === 'public'
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
+                }`}
+              >
+                <Globe className="size-4 shrink-0" aria-hidden />
+                Public
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Public cards appear on your Astro storefront.
+            </p>
+          </div>
 
-                  {itemType === 'event' && (
-                    <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
-                      <p className="text-xs font-medium text-muted-foreground">Event details</p>
-                      <div className="space-y-2">
-                        <Label htmlFor="task-event-location">Location</Label>
-                        <Input
-                          id="task-event-location"
-                          value={eventLocation}
-                          onChange={(e) => setEventLocation(e.target.value)}
-                          disabled={!canWrite}
-                          placeholder="e.g. Central Park"
-                          className="h-9"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="task-event-url">Meeting link</Label>
-                        <Input
-                          id="task-event-url"
-                          type="url"
-                          value={eventUrl}
-                          onChange={(e) => setEventUrl(e.target.value)}
-                          disabled={!canWrite}
-                          placeholder="https://…"
-                          className="h-9"
-                        />
-                      </div>
-                    </div>
-                  )}
+          <div className="flex flex-wrap gap-2 border-b border-border px-6 py-2">
+            {tabBtn('details', 'Details')}
+            {tabBtn('comments', 'Comments')}
+            {tabBtn('subtasks', 'Subtasks')}
+            {tabBtn('activity', 'Activity')}
+          </div>
 
-                  {itemType === 'experience' && (
-                    <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
-                      <p className="text-xs font-medium text-muted-foreground">Experience span</p>
-                      <div className="space-y-2">
-                        <Label htmlFor="task-experience-horizon">Season / label (optional)</Label>
-                        <Input
-                          id="task-experience-horizon"
-                          value={experienceSeason}
-                          onChange={(e) => setExperienceSeason(e.target.value)}
-                          disabled={!canWrite}
-                          placeholder="e.g. Summer 2026"
-                          className="h-9"
-                        />
-                      </div>
-                      <div className="flex flex-row flex-wrap gap-3">
-                        <div className="min-w-0 flex-1 space-y-2">
-                          <Label htmlFor="task-experience-start">Start date</Label>
-                          <input
-                            id="task-experience-start"
-                            type="date"
-                            value={scheduledOn}
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              setScheduledOn(v);
-                              if (!v) setScheduledTime('');
-                            }}
-                            disabled={!canWrite}
-                            className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
-                          />
-                        </div>
-                        <div className="min-w-0 flex-1 space-y-2">
-                          <Label htmlFor="task-experience-end">End date</Label>
-                          <input
-                            id="task-experience-end"
-                            type="date"
-                            value={experienceEndDate}
-                            onChange={(e) => setExperienceEndDate(e.target.value)}
-                            disabled={!canWrite}
-                            className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
-                          />
-                        </div>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Experiences appear as themed pills on their start date in the Month view.
-                      </p>
-                    </div>
-                  )}
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
+            {error && (
+              <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {error}
+              </div>
+            )}
 
-                  {itemType === 'memory' && (
-                    <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3">
-                      <Label htmlFor="task-memory-caption">Caption / reflection</Label>
-                      <Textarea
-                        id="task-memory-caption"
-                        value={memoryCaption}
-                        onChange={(e) => setMemoryCaption(e.target.value)}
+            {loading && taskId ? (
+              <p className="text-sm text-muted-foreground">Loading {typeNoun}…</p>
+            ) : null}
+
+            {!loading || !taskId ? (
+              <>
+                {tab === 'details' && (
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="task-title">Title</Label>
+                      <Input
+                        id="task-title"
+                        value={title}
+                        onChange={(e) => setTitle(e.target.value)}
                         disabled={!canWrite}
-                        rows={3}
-                        placeholder="What made this moment special?"
+                        className="h-9"
                       />
-                      <p className="text-xs text-muted-foreground">
-                        Photos and files go in Attachments below after you save.
-                      </p>
                     </div>
-                  )}
+                    <div className="space-y-2">
+                      <Label htmlFor="task-desc">Description</Label>
+                      <Textarea
+                        id="task-desc"
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        disabled={!canWrite}
+                        rows={5}
+                      />
+                    </div>
 
-                  {(itemType === 'workout' || itemType === 'workout_log') && (
-                    <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs font-medium text-muted-foreground">
-                          {itemType === 'workout_log' ? 'Workout log' : 'Workout details'}
+                    {itemType === 'event' && (
+                      <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+                        <p className="text-xs font-medium text-muted-foreground">Event details</p>
+                        <div className="space-y-2">
+                          <Label htmlFor="task-event-location">Location</Label>
+                          <Input
+                            id="task-event-location"
+                            value={eventLocation}
+                            onChange={(e) => setEventLocation(e.target.value)}
+                            disabled={!canWrite}
+                            placeholder="e.g. Central Park"
+                            className="h-9"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="task-event-url">Meeting link</Label>
+                          <Input
+                            id="task-event-url"
+                            type="url"
+                            value={eventUrl}
+                            onChange={(e) => setEventUrl(e.target.value)}
+                            disabled={!canWrite}
+                            placeholder="https://…"
+                            className="h-9"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {itemType === 'experience' && (
+                      <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+                        <p className="text-xs font-medium text-muted-foreground">Experience span</p>
+                        <div className="space-y-2">
+                          <Label htmlFor="task-experience-horizon">Season / label (optional)</Label>
+                          <Input
+                            id="task-experience-horizon"
+                            value={experienceSeason}
+                            onChange={(e) => setExperienceSeason(e.target.value)}
+                            disabled={!canWrite}
+                            placeholder="e.g. Summer 2026"
+                            className="h-9"
+                          />
+                        </div>
+                        <div className="flex flex-row flex-wrap gap-3">
+                          <div className="min-w-0 flex-1 space-y-2">
+                            <Label htmlFor="task-experience-start">Start date</Label>
+                            <input
+                              id="task-experience-start"
+                              type="date"
+                              value={scheduledOn}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setScheduledOn(v);
+                                if (!v) setScheduledTime('');
+                              }}
+                              disabled={!canWrite}
+                              className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                            />
+                          </div>
+                          <div className="min-w-0 flex-1 space-y-2">
+                            <Label htmlFor="task-experience-end">End date</Label>
+                            <input
+                              id="task-experience-end"
+                              type="date"
+                              value={experienceEndDate}
+                              onChange={(e) => setExperienceEndDate(e.target.value)}
+                              disabled={!canWrite}
+                              className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                            />
+                          </div>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Experiences appear as themed pills on their start date in the Month view.
                         </p>
-                        {/* Template picker — only in create mode when templates exist */}
-                        {!taskId && workoutTemplates.length > 0 && canWrite && (
-                          <div className="relative">
-                            <button
-                              type="button"
-                              onClick={() => setTemplatePickerOpen((v) => !v)}
-                              className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
-                            >
-                              Use template
-                              <ChevronDown
-                                className={cn(
-                                  'h-3 w-3 shrink-0 transition-transform',
-                                  templatePickerOpen && 'rotate-180',
+                      </div>
+                    )}
+
+                    {itemType === 'memory' && (
+                      <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3">
+                        <Label htmlFor="task-memory-caption">Caption / reflection</Label>
+                        <Textarea
+                          id="task-memory-caption"
+                          value={memoryCaption}
+                          onChange={(e) => setMemoryCaption(e.target.value)}
+                          disabled={!canWrite}
+                          rows={3}
+                          placeholder="What made this moment special?"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Photos and files go in Attachments below after you save.
+                        </p>
+                      </div>
+                    )}
+
+                    {(itemType === 'workout' || itemType === 'workout_log') && (
+                      <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs font-medium text-muted-foreground">
+                            {itemType === 'workout_log' ? 'Workout log' : 'Workout details'}
+                          </p>
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            {canWrite && (
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                className="h-7 gap-1 px-2 text-xs"
+                                disabled={aiWorkoutGenerating}
+                                onClick={() => void handleAiGenerateWorkout()}
+                              >
+                                <Sparkles className="h-3 w-3" aria-hidden />
+                                {aiWorkoutGenerating ? 'Generating…' : 'AI workout'}
+                              </Button>
+                            )}
+                            {/* Template picker — only in create mode when templates exist */}
+                            {!taskId && workoutTemplates.length > 0 && canWrite && (
+                              <div className="relative">
+                                <button
+                                  type="button"
+                                  onClick={() => setTemplatePickerOpen((v) => !v)}
+                                  className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+                                >
+                                  Use template
+                                  <ChevronDown
+                                    className={cn(
+                                      'h-3 w-3 shrink-0 transition-transform',
+                                      templatePickerOpen && 'rotate-180',
+                                    )}
+                                  />
+                                </button>
+                                {templatePickerOpen && (
+                                  <div className="absolute right-0 top-full z-10 mt-1 w-56 overflow-hidden rounded-lg border border-border bg-popover shadow-md">
+                                    <ul className="max-h-48 overflow-y-auto py-1">
+                                      {workoutTemplates.map((tpl) => {
+                                        const tplFields = metadataFieldsFromParsed(tpl.metadata);
+                                        return (
+                                          <li key={tpl.id}>
+                                            <button
+                                              type="button"
+                                              onClick={() => applyWorkoutTemplate(tpl)}
+                                              className="w-full px-3 py-1.5 text-left text-xs hover:bg-muted"
+                                            >
+                                              <span className="block font-medium">{tpl.title}</span>
+                                              {tplFields.workoutType && (
+                                                <span className="text-muted-foreground">
+                                                  {tplFields.workoutType}
+                                                  {tplFields.workoutDurationMin
+                                                    ? ` · ${tplFields.workoutDurationMin} min`
+                                                    : ''}
+                                                </span>
+                                              )}
+                                            </button>
+                                          </li>
+                                        );
+                                      })}
+                                    </ul>
+                                  </div>
                                 )}
-                              />
-                            </button>
-                            {templatePickerOpen && (
-                              <div className="absolute right-0 top-full z-10 mt-1 w-56 overflow-hidden rounded-lg border border-border bg-popover shadow-md">
-                                <ul className="max-h-48 overflow-y-auto py-1">
-                                  {workoutTemplates.map((tpl) => {
-                                    const tplFields = metadataFieldsFromParsed(tpl.metadata);
-                                    return (
-                                      <li key={tpl.id}>
-                                        <button
-                                          type="button"
-                                          onClick={() => applyWorkoutTemplate(tpl)}
-                                          className="w-full px-3 py-1.5 text-left text-xs hover:bg-muted"
-                                        >
-                                          <span className="block font-medium">{tpl.title}</span>
-                                          {tplFields.workoutType && (
-                                            <span className="text-muted-foreground">
-                                              {tplFields.workoutType}
-                                              {tplFields.workoutDurationMin
-                                                ? ` · ${tplFields.workoutDurationMin} min`
-                                                : ''}
-                                            </span>
-                                          )}
-                                        </button>
-                                      </li>
-                                    );
-                                  })}
-                                </ul>
                               </div>
                             )}
                           </div>
-                        )}
-                      </div>
-                      <div className="flex gap-3">
-                        <div className="min-w-0 flex-1 space-y-2">
-                          <Label htmlFor="task-workout-type">Type</Label>
-                          <Input
-                            id="task-workout-type"
-                            value={workoutType}
-                            onChange={(e) => setWorkoutType(e.target.value)}
-                            disabled={!canWrite}
-                            placeholder="e.g. Strength, Cardio, Yoga"
-                            className="h-9"
-                          />
                         </div>
-                        <div className="w-28 space-y-2">
-                          <Label htmlFor="task-workout-duration">Duration (min)</Label>
-                          <Input
-                            id="task-workout-duration"
-                            type="number"
-                            min={0}
-                            value={workoutDurationMin}
-                            onChange={(e) => setWorkoutDurationMin(e.target.value)}
-                            disabled={!canWrite}
-                            className="h-9"
-                          />
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Exercises</Label>
-                        {workoutExercises.length > 0 && (
-                          <ul className="space-y-1.5">
-                            {workoutExercises.map((ex, idx) => (
-                              <li
-                                key={idx}
-                                className="flex items-center gap-2 rounded-md border border-border/60 bg-background px-3 py-2 text-sm"
-                              >
-                                <span className="min-w-0 flex-1 font-medium">{ex.name}</span>
-                                <span className="shrink-0 text-xs text-muted-foreground">
-                                  {[
-                                    ex.sets != null && `${ex.sets}×`,
-                                    ex.reps != null && `${ex.reps} reps`,
-                                    ex.weight != null &&
-                                      `${ex.weight} ${workoutUnitSystem === 'imperial' ? 'lbs' : 'kg'}`,
-                                    ex.duration_min != null && `${ex.duration_min} min`,
-                                  ]
-                                    .filter(Boolean)
-                                    .join(' ')}
-                                </span>
-                                {canWrite && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setWorkoutExercises((prev) =>
-                                        prev.filter((_, i) => i !== idx),
-                                      )
-                                    }
-                                    className="shrink-0 text-muted-foreground transition-colors hover:text-destructive"
-                                    aria-label={`Remove exercise: ${ex.name}`}
-                                  >
-                                    <X className="h-3 w-3" />
-                                  </button>
-                                )}
-                              </li>
-                            ))}
-                          </ul>
+                        {aiWorkoutGenerating && (
+                          <p className="text-xs text-muted-foreground">
+                            {WORKOUT_FACTORY_CHAIN_MESSAGES[aiWorkoutProgressIdx]}
+                          </p>
                         )}
-                        {canWrite && (
-                          <div className="space-y-2">
+                        <div className="flex gap-3">
+                          <div className="min-w-0 flex-1 space-y-2">
+                            <Label htmlFor="task-workout-type">Type</Label>
                             <Input
-                              value={newExerciseName}
-                              onChange={(e) => setNewExerciseName(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  commitExercise();
-                                }
-                              }}
-                              placeholder="Exercise name"
+                              id="task-workout-type"
+                              value={workoutType}
+                              onChange={(e) => setWorkoutType(e.target.value)}
+                              disabled={!canWrite}
+                              placeholder="e.g. Strength, Cardio, Yoga"
                               className="h-9"
                             />
-                            {newExerciseName.trim() && (
-                              <div className="grid grid-cols-4 gap-2">
-                                <div className="space-y-1">
-                                  <label className="text-[10px] text-muted-foreground">Sets</label>
-                                  <Input
-                                    type="number"
-                                    min={0}
-                                    value={newExSets}
-                                    onChange={(e) => setNewExSets(e.target.value)}
-                                    placeholder="—"
-                                    className="h-8 text-xs"
-                                  />
-                                </div>
-                                <div className="space-y-1">
-                                  <label className="text-[10px] text-muted-foreground">Reps</label>
-                                  <Input
-                                    type="number"
-                                    min={0}
-                                    value={newExReps}
-                                    onChange={(e) => setNewExReps(e.target.value)}
-                                    placeholder="—"
-                                    className="h-8 text-xs"
-                                  />
-                                </div>
-                                <div className="space-y-1">
-                                  <label className="text-[10px] text-muted-foreground">
-                                    {workoutUnitSystem === 'imperial' ? 'lbs' : 'kg'}
-                                  </label>
-                                  <Input
-                                    type="number"
-                                    min={0}
-                                    value={newExWeight}
-                                    onChange={(e) => setNewExWeight(e.target.value)}
-                                    placeholder="—"
-                                    className="h-8 text-xs"
-                                  />
-                                </div>
-                                <div className="space-y-1">
-                                  <label className="text-[10px] text-muted-foreground">Min</label>
-                                  <Input
-                                    type="number"
-                                    min={0}
-                                    value={newExDuration}
-                                    onChange={(e) => setNewExDuration(e.target.value)}
-                                    placeholder="—"
-                                    className="h-8 text-xs"
-                                  />
-                                </div>
-                              </div>
-                            )}
-                            {newExerciseName.trim() && (
-                              <button
-                                type="button"
-                                onClick={commitExercise}
-                                className="text-xs text-primary hover:underline"
-                              >
-                                + Add exercise
-                              </button>
-                            )}
+                          </div>
+                          <div className="w-28 space-y-2">
+                            <Label htmlFor="task-workout-duration">Duration (min)</Label>
+                            <Input
+                              id="task-workout-duration"
+                              type="number"
+                              min={0}
+                              value={workoutDurationMin}
+                              onChange={(e) => setWorkoutDurationMin(e.target.value)}
+                              disabled={!canWrite}
+                              className="h-9"
+                            />
+                          </div>
+                        </div>
+                        <WorkoutExercisesEditor
+                          exercises={workoutExercises}
+                          onChange={setWorkoutExercises}
+                          canWrite={canWrite}
+                          workoutUnitSystem={workoutUnitSystem}
+                          idPrefix="task-ex"
+                        />
+                      </div>
+                    )}
+
+                    {itemType === 'program' && (
+                      <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs font-medium text-muted-foreground">
+                            Program details
+                          </p>
+                          {canWrite && workspaceId && taskId ? (
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              className="h-7 gap-1 px-2 text-xs"
+                              disabled={aiProgramPersonalizing}
+                              onClick={() => void handlePersonalizeProgram()}
+                            >
+                              <Sparkles className="h-3 w-3" aria-hidden />
+                              {aiProgramPersonalizing ? 'Personalizing…' : 'Personalize with AI'}
+                            </Button>
+                          ) : null}
+                        </div>
+
+                        {/* Goal */}
+                        <div className="space-y-2">
+                          <Label htmlFor="task-program-goal">Goal</Label>
+                          <Input
+                            id="task-program-goal"
+                            value={programGoal}
+                            onChange={(e) => setProgramGoal(e.target.value)}
+                            disabled={!canWrite}
+                            placeholder="e.g. Build lean muscle, Run a 5K"
+                            className="h-9"
+                          />
+                        </div>
+
+                        {/* Duration */}
+                        <div className="w-36 space-y-2">
+                          <Label htmlFor="task-program-duration">Duration (weeks)</Label>
+                          <Input
+                            id="task-program-duration"
+                            type="number"
+                            min={1}
+                            value={programDurationWeeks}
+                            onChange={(e) => setProgramDurationWeeks(e.target.value)}
+                            disabled={!canWrite}
+                            className="h-9"
+                          />
+                        </div>
+
+                        {/* Progress (read-only) */}
+                        {programCurrentWeek > 0 && programDurationWeeks && (
+                          <p className="text-xs text-muted-foreground">
+                            Progress: Week {programCurrentWeek} of {programDurationWeeks}
+                          </p>
+                        )}
+
+                        {/* Weekly schedule summary */}
+                        {programSchedule.length > 0 && programSchedule[0].days.length > 0 && (
+                          <div className="space-y-1">
+                            <p className="text-xs font-medium text-muted-foreground">
+                              Weekly schedule
+                            </p>
+                            {programSchedule[0].days.map((d) => (
+                              <p key={d.day} className="text-xs text-foreground">
+                                <span className="font-medium">
+                                  {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d.day - 1]}
+                                </span>
+                                {' — '}
+                                {d.name}
+                                {d.workout_type ? ` (${d.workout_type})` : ''}
+                                {d.duration_min ? ` · ${d.duration_min} min` : ''}
+                              </p>
+                            ))}
                           </div>
                         )}
                       </div>
+                    )}
+
+                    <div className="space-y-2">
+                      <Label htmlFor="task-status">Status</Label>
+                      <select
+                        id="task-status"
+                        value={status}
+                        onChange={(e) => setStatus(e.target.value)}
+                        disabled={!canWrite}
+                        className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                      >
+                        {statusSelectOptions.map((s) => (
+                          <option key={s.value} value={s.value}>
+                            {s.label}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                  )}
-
-                  {itemType === 'program' && (
-                    <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
-                      <p className="text-xs font-medium text-muted-foreground">Program details</p>
-
-                      {/* Goal */}
+                    <div className="space-y-2">
+                      <Label htmlFor="task-priority">Priority</Label>
+                      <select
+                        id="task-priority"
+                        value={priority}
+                        onChange={(e) => setPriority(e.target.value as TaskPriority)}
+                        disabled={!canWrite}
+                        className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                      >
+                        {TASK_PRIORITY_OPTIONS.map((p) => (
+                          <option key={p.value} value={p.value}>
+                            {p.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {itemType !== 'experience' && (
                       <div className="space-y-2">
-                        <Label htmlFor="task-program-goal">Goal</Label>
-                        <Input
-                          id="task-program-goal"
-                          value={programGoal}
-                          onChange={(e) => setProgramGoal(e.target.value)}
-                          disabled={!canWrite}
-                          placeholder="e.g. Build lean muscle, Run a 5K"
-                          className="h-9"
-                        />
+                        <div className="flex flex-row flex-wrap gap-3 items-end">
+                          <div className="min-w-0 flex-1 space-y-2">
+                            <Label htmlFor="task-scheduled-on">{dateLabels.primary}</Label>
+                            <input
+                              id="task-scheduled-on"
+                              type="date"
+                              value={scheduledOn}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setScheduledOn(v);
+                                if (!v) setScheduledTime('');
+                              }}
+                              disabled={!canWrite}
+                              className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                            />
+                          </div>
+                          <div className="min-w-0 flex-1 space-y-2">
+                            <Label htmlFor="task-scheduled-time">
+                              Time {!scheduledOn ? '(set a date first)' : '(optional)'}
+                            </Label>
+                            <input
+                              id="task-scheduled-time"
+                              type="time"
+                              value={scheduledTime}
+                              onChange={(e) => setScheduledTime(e.target.value)}
+                              disabled={!canWrite || !scheduledOn}
+                              className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                            />
+                          </div>
+                        </div>
+                        {dateLabels.helper ? (
+                          <p className="text-xs text-muted-foreground">{dateLabels.helper}</p>
+                        ) : null}
                       </div>
+                    )}
 
-                      {/* Duration */}
-                      <div className="w-36 space-y-2">
-                        <Label htmlFor="task-program-duration">Duration (weeks)</Label>
-                        <Input
-                          id="task-program-duration"
-                          type="number"
-                          min={1}
-                          value={programDurationWeeks}
-                          onChange={(e) => setProgramDurationWeeks(e.target.value)}
-                          disabled={!canWrite}
-                          className="h-9"
+                    <Separator className="my-2" />
+
+                    <div className="space-y-2">
+                      <Label>Attachments</Label>
+                      {!isCreateMode && taskId && canWrite && (
+                        <input
+                          type="file"
+                          className="block w-full text-xs text-muted-foreground file:mr-2 file:rounded-md file:border file:border-input file:bg-background file:px-2 file:py-1"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            e.target.value = '';
+                            if (f) void uploadAttachment(f);
+                          }}
                         />
-                      </div>
-
-                      {/* Progress (read-only) */}
-                      {programCurrentWeek > 0 && programDurationWeeks && (
+                      )}
+                      {isCreateMode && (
                         <p className="text-xs text-muted-foreground">
-                          Progress: Week {programCurrentWeek} of {programDurationWeeks}
+                          Save the {typeNoun} first, then you can upload files.
                         </p>
                       )}
-
-                      {/* Weekly schedule summary */}
-                      {programSchedule.length > 0 && programSchedule[0].days.length > 0 && (
-                        <div className="space-y-1">
-                          <p className="text-xs font-medium text-muted-foreground">
-                            Weekly schedule
-                          </p>
-                          {programSchedule[0].days.map((d) => (
-                            <p key={d.day} className="text-xs text-foreground">
-                              <span className="font-medium">
-                                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d.day - 1]}
-                              </span>
-                              {' — '}
-                              {d.name}
-                              {d.workout_type ? ` (${d.workout_type})` : ''}
-                              {d.duration_min ? ` · ${d.duration_min} min` : ''}
-                            </p>
-                          ))}
-                        </div>
-                      )}
+                      <ul className="space-y-1">
+                        {attachments.map((a) => (
+                          <li
+                            key={a.id}
+                            className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/50 px-2 py-1 text-sm"
+                          >
+                            <div className="flex min-w-0 flex-1 items-center gap-2">
+                              {isLikelyTaskAttachmentImageFileName(a.name) ? (
+                                <TaskAttachmentImagePreview path={a.path} />
+                              ) : null}
+                              <button
+                                type="button"
+                                className="min-w-0 flex-1 truncate text-left text-primary hover:underline"
+                                onClick={() => void downloadLink(a)}
+                              >
+                                {a.name}
+                              </button>
+                            </div>
+                            {canWrite && !isCreateMode && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-destructive hover:text-destructive"
+                                onClick={() => void removeAttachment(a)}
+                              >
+                                Remove
+                              </Button>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
                     </div>
-                  )}
 
-                  <div className="space-y-2">
-                    <Label htmlFor="task-status">Status</Label>
-                    <select
-                      id="task-status"
-                      value={status}
-                      onChange={(e) => setStatus(e.target.value)}
-                      disabled={!canWrite}
-                      className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
-                    >
-                      {statusSelectOptions.map((s) => (
-                        <option key={s.value} value={s.value}>
-                          {s.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="task-priority">Priority</Label>
-                    <select
-                      id="task-priority"
-                      value={priority}
-                      onChange={(e) => setPriority(e.target.value as TaskPriority)}
-                      disabled={!canWrite}
-                      className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
-                    >
-                      {TASK_PRIORITY_OPTIONS.map((p) => (
-                        <option key={p.value} value={p.value}>
-                          {p.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  {itemType !== 'experience' && (
-                    <div className="space-y-2">
-                      <div className="flex flex-row flex-wrap gap-3 items-end">
-                        <div className="min-w-0 flex-1 space-y-2">
-                          <Label htmlFor="task-scheduled-on">{dateLabels.primary}</Label>
-                          <input
-                            id="task-scheduled-on"
-                            type="date"
-                            value={scheduledOn}
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              setScheduledOn(v);
-                              if (!v) setScheduledTime('');
-                            }}
-                            disabled={!canWrite}
-                            className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
-                          />
-                        </div>
-                        <div className="min-w-0 flex-1 space-y-2">
-                          <Label htmlFor="task-scheduled-time">
-                            Time {!scheduledOn ? '(set a date first)' : '(optional)'}
-                          </Label>
-                          <input
-                            id="task-scheduled-time"
-                            type="time"
-                            value={scheduledTime}
-                            onChange={(e) => setScheduledTime(e.target.value)}
-                            disabled={!canWrite || !scheduledOn}
-                            className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
-                          />
-                        </div>
+                    {canWrite && (
+                      <div className="flex flex-wrap gap-2 pt-2">
+                        {isCreateMode ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={saving || !title.trim()}
+                            onClick={() => void createTask()}
+                          >
+                            {saving ? 'Creating…' : `Create ${typeNoun}`}
+                          </Button>
+                        ) : (
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={saving || !coreDirty}
+                            onClick={() => void saveCoreFields()}
+                          >
+                            {saving ? 'Saving…' : `Save ${typeNoun}`}
+                          </Button>
+                        )}
                       </div>
-                      {dateLabels.helper ? (
-                        <p className="text-xs text-muted-foreground">{dateLabels.helper}</p>
-                      ) : null}
+                    )}
+
+                    {!isCreateMode && taskId && canWrite ? (
+                      <>
+                        <Separator className="my-4" />
+                        <div className="rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-3">
+                          <p className="mb-2 text-xs font-medium text-destructive">
+                            Archive {typeNoun}
+                          </p>
+                          <p className="mb-3 text-xs text-muted-foreground">
+                            Hides this {typeNoun} from the board and calendar. Recovery from archive
+                            is not available in this version yet.
+                          </p>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            disabled={archiving || saving || loading}
+                            onClick={() => void archiveTask()}
+                          >
+                            {archiving ? 'Archiving…' : `Archive ${typeNoun}`}
+                          </Button>
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                )}
+
+                {tab === 'comments' && (
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      {comments.length === 0 && (
+                        <p className="text-sm text-muted-foreground">No comments yet.</p>
+                      )}
+                      <ul className="space-y-3">
+                        {comments.map((c) => {
+                          const author = commentUserById[c.user_id];
+                          const displayName = author?.displayName ?? 'Member';
+                          const avatarUrl = author?.avatarUrl ?? null;
+                          return (
+                            <li
+                              key={c.id}
+                              className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm"
+                            >
+                              <div className="flex gap-3">
+                                <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-primary/15 text-sm font-bold text-primary">
+                                  {avatarUrl ? (
+                                    <img
+                                      src={avatarUrl}
+                                      alt={displayName}
+                                      className="h-full w-full object-cover"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                  ) : (
+                                    (displayName[0]?.toUpperCase() ?? '?')
+                                  )}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-baseline gap-2">
+                                    <span className="font-bold text-foreground">{displayName}</span>
+                                    <span className="text-xs text-muted-foreground">
+                                      {formatMessageTimestamp(c.created_at)}
+                                    </span>
+                                  </div>
+                                  <p className="mt-0.5 whitespace-pre-wrap text-foreground">
+                                    {c.body}
+                                  </p>
+                                </div>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
                     </div>
-                  )}
-
-                  <Separator className="my-2" />
-
-                  <div className="space-y-2">
-                    <Label>Attachments</Label>
-                    {!isCreateMode && taskId && canWrite && (
-                      <input
-                        type="file"
-                        className="block w-full text-xs text-muted-foreground file:mr-2 file:rounded-md file:border file:border-input file:bg-background file:px-2 file:py-1"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          e.target.value = '';
-                          if (f) void uploadAttachment(f);
-                        }}
-                      />
+                    {canWrite && taskId && (
+                      <div className="space-y-2">
+                        <Label htmlFor="new-comment">Add comment</Label>
+                        <Textarea
+                          id="new-comment"
+                          value={newComment}
+                          onChange={(e) => setNewComment(e.target.value)}
+                          rows={3}
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={!newComment.trim()}
+                          onClick={() => void addComment()}
+                        >
+                          Post comment
+                        </Button>
+                      </div>
                     )}
                     {isCreateMode && (
                       <p className="text-xs text-muted-foreground">
-                        Save the {typeNoun} first, then you can upload files.
+                        Create the {typeNoun} to add comments.
                       </p>
                     )}
-                    <ul className="space-y-1">
-                      {attachments.map((a) => (
-                        <li
-                          key={a.id}
-                          className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/50 px-2 py-1 text-sm"
-                        >
-                          <div className="flex min-w-0 flex-1 items-center gap-2">
-                            {isLikelyTaskAttachmentImageFileName(a.name) ? (
-                              <TaskAttachmentImagePreview path={a.path} />
-                            ) : null}
-                            <button
-                              type="button"
-                              className="min-w-0 flex-1 truncate text-left text-primary hover:underline"
-                              onClick={() => void downloadLink(a)}
-                            >
-                              {a.name}
-                            </button>
-                          </div>
-                          {canWrite && !isCreateMode && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 text-destructive hover:text-destructive"
-                              onClick={() => void removeAttachment(a)}
-                            >
-                              Remove
-                            </Button>
-                          )}
+                  </div>
+                )}
+
+                {tab === 'subtasks' && (
+                  <div className="space-y-4">
+                    <ul className="space-y-2">
+                      {subtasks.map((s) => (
+                        <li key={s.id} className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={s.done}
+                            onChange={() => void toggleSubtask(s.id)}
+                            disabled={!canWrite || !taskId}
+                            className="rounded border-input"
+                          />
+                          <span
+                            className={
+                              s.done ? 'text-muted-foreground line-through' : 'text-foreground'
+                            }
+                          >
+                            {s.title}
+                          </span>
                         </li>
                       ))}
                     </ul>
-                  </div>
-
-                  {canWrite && (
-                    <div className="flex flex-wrap gap-2 pt-2">
-                      {isCreateMode ? (
+                    {canWrite && taskId && (
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="New subtask"
+                          value={newSubtaskTitle}
+                          onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                          className="h-9"
+                        />
                         <Button
                           type="button"
                           size="sm"
-                          disabled={saving || !title.trim()}
-                          onClick={() => void createTask()}
+                          onClick={() => void addSubtask()}
+                          disabled={!newSubtaskTitle.trim()}
                         >
-                          {saving ? 'Creating…' : `Create ${typeNoun}`}
-                        </Button>
-                      ) : (
-                        <Button
-                          type="button"
-                          size="sm"
-                          disabled={saving || !coreDirty}
-                          onClick={() => void saveCoreFields()}
-                        >
-                          {saving ? 'Saving…' : `Save ${typeNoun}`}
-                        </Button>
-                      )}
-                    </div>
-                  )}
-
-                  {!isCreateMode && taskId && canWrite ? (
-                    <>
-                      <Separator className="my-4" />
-                      <div className="rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-3">
-                        <p className="mb-2 text-xs font-medium text-destructive">
-                          Archive {typeNoun}
-                        </p>
-                        <p className="mb-3 text-xs text-muted-foreground">
-                          Hides this {typeNoun} from the board and calendar. Recovery from archive
-                          is not available in this version yet.
-                        </p>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                          disabled={archiving || saving || loading}
-                          onClick={() => void archiveTask()}
-                        >
-                          {archiving ? 'Archiving…' : `Archive ${typeNoun}`}
+                          Add
                         </Button>
                       </div>
-                    </>
-                  ) : null}
-                </div>
-              )}
-
-              {tab === 'comments' && (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    {comments.length === 0 && (
-                      <p className="text-sm text-muted-foreground">No comments yet.</p>
                     )}
-                    <ul className="space-y-3">
-                      {comments.map((c) => {
-                        const author = commentUserById[c.user_id];
-                        const displayName = author?.displayName ?? 'Member';
-                        const avatarUrl = author?.avatarUrl ?? null;
-                        return (
-                          <li
-                            key={c.id}
-                            className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm"
-                          >
-                            <div className="flex gap-3">
-                              <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-primary/15 text-sm font-bold text-primary">
-                                {avatarUrl ? (
-                                  <img
-                                    src={avatarUrl}
-                                    alt={displayName}
-                                    className="h-full w-full object-cover"
-                                    referrerPolicy="no-referrer"
-                                  />
-                                ) : (
-                                  (displayName[0]?.toUpperCase() ?? '?')
-                                )}
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <div className="flex flex-wrap items-baseline gap-2">
-                                  <span className="font-bold text-foreground">{displayName}</span>
-                                  <span className="text-xs text-muted-foreground">
-                                    {formatMessageTimestamp(c.created_at)}
-                                  </span>
-                                </div>
-                                <p className="mt-0.5 whitespace-pre-wrap text-foreground">
-                                  {c.body}
-                                </p>
-                              </div>
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
+                    {isCreateMode && (
+                      <p className="text-xs text-muted-foreground">
+                        Create the {typeNoun} to add subtasks.
+                      </p>
+                    )}
                   </div>
-                  {canWrite && taskId && (
-                    <div className="space-y-2">
-                      <Label htmlFor="new-comment">Add comment</Label>
-                      <Textarea
-                        id="new-comment"
-                        value={newComment}
-                        onChange={(e) => setNewComment(e.target.value)}
-                        rows={3}
-                      />
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={!newComment.trim()}
-                        onClick={() => void addComment()}
-                      >
-                        Post comment
-                      </Button>
-                    </div>
-                  )}
-                  {isCreateMode && (
-                    <p className="text-xs text-muted-foreground">
-                      Create the {typeNoun} to add comments.
-                    </p>
-                  )}
-                </div>
-              )}
+                )}
 
-              {tab === 'subtasks' && (
-                <div className="space-y-4">
+                {tab === 'activity' && (
                   <ul className="space-y-2">
-                    {subtasks.map((s) => (
-                      <li key={s.id} className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={s.done}
-                          onChange={() => void toggleSubtask(s.id)}
-                          disabled={!canWrite || !taskId}
-                          className="rounded border-input"
-                        />
-                        <span
-                          className={
-                            s.done ? 'text-muted-foreground line-through' : 'text-foreground'
-                          }
-                        >
-                          {s.title}
-                        </span>
+                    {activityLog.length === 0 && (
+                      <p className="text-sm text-muted-foreground">No activity yet.</p>
+                    )}
+                    {activityLog.map((e) => (
+                      <li
+                        key={e.id}
+                        className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm text-foreground"
+                      >
+                        <p>{formatActivityLine(e)}</p>
+                        <p className="mt-1 text-[10px] text-muted-foreground">
+                          {new Date(e.at).toLocaleString()}
+                        </p>
                       </li>
                     ))}
                   </ul>
-                  {canWrite && taskId && (
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder="New subtask"
-                        value={newSubtaskTitle}
-                        onChange={(e) => setNewSubtaskTitle(e.target.value)}
-                        className="h-9"
-                      />
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() => void addSubtask()}
-                        disabled={!newSubtaskTitle.trim()}
-                      >
-                        Add
-                      </Button>
-                    </div>
-                  )}
-                  {isCreateMode && (
-                    <p className="text-xs text-muted-foreground">
-                      Create the {typeNoun} to add subtasks.
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {tab === 'activity' && (
-                <ul className="space-y-2">
-                  {activityLog.length === 0 && (
-                    <p className="text-sm text-muted-foreground">No activity yet.</p>
-                  )}
-                  {activityLog.map((e) => (
-                    <li
-                      key={e.id}
-                      className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm text-foreground"
-                    >
-                      <p>{formatActivityLine(e)}</p>
-                      <p className="mt-1 text-[10px] text-muted-foreground">
-                        {new Date(e.at).toLocaleString()}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </>
-          ) : null}
+                )}
+              </>
+            ) : null}
+          </div>
         </div>
       </div>
-    </div>
+      <WorkoutViewerDialog
+        open={workoutViewerOpen}
+        onOpenChange={setWorkoutViewerOpen}
+        workoutSet={viewerWorkoutSet}
+        exercises={workoutExercises}
+        title={title}
+        description={description}
+        canWrite={canWrite}
+        workoutUnitSystem={workoutUnitSystem}
+        onApply={handleWorkoutViewerApply}
+      />
+    </>
   );
 }
 
