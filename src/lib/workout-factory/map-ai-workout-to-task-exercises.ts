@@ -7,18 +7,13 @@ import type { WorkoutInSet } from '@/lib/workout-factory/types/ai-workout';
 import type { Exercise } from '@/lib/workout-factory/types/ai-program';
 import { getExercisesFromWorkout } from '@/lib/workout-factory/program-schedule-utils';
 import type { ProgramWorkout } from '@/lib/workout-factory/program-schedule-utils';
-
-function parseRepsToNumber(reps: string | undefined): number | undefined {
-  if (reps == null || reps === '') return undefined;
-  const n = parseFloat(String(reps).replace(/[^\d.]/g, ''));
-  return Number.isFinite(n) ? n : undefined;
-}
+import { parseRepsStringToScalar } from '@/lib/workout-factory/parse-reps-scalar';
 
 function mapExercise(ex: Exercise): WorkoutExercise {
   const name = ex.exerciseName?.trim() || 'Exercise';
   const base: WorkoutExercise = { name };
   if (typeof ex.sets === 'number' && ex.sets > 0) base.sets = ex.sets;
-  const repsN = parseRepsToNumber(ex.reps);
+  const repsN = parseRepsStringToScalar(ex.reps ?? '');
   if (repsN != null) base.reps = repsN;
   if (typeof ex.rpe === 'number') base.rpe = ex.rpe;
   if (typeof ex.restSeconds === 'number' && ex.restSeconds > 0) {

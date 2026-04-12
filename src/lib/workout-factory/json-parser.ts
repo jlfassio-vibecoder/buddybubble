@@ -240,8 +240,7 @@ export function parseJSONWithRepair(text: string): ParseResult {
       error instanceof Error ? error : new Error(String(error)),
     );
 
-    // Log detailed error information
-    const errorInfo = {
+    const errorInfoDev = {
       originalLength,
       cleanedLength: cleaned.length,
       errorPosition: errorContext.position,
@@ -253,8 +252,18 @@ export function parseJSONWithRepair(text: string): ParseResult {
           ? cleaned.substring(0, 2000) + `\n... (truncated, total length: ${cleaned.length})`
           : cleaned,
     };
+    const errorInfoProd = {
+      originalLength,
+      cleanedLength: cleaned.length,
+      errorPosition: errorContext.position,
+      structureInfo: errorContext.structureInfo,
+    };
 
-    console.error('[json-parser] All parsing attempts failed:', errorInfo);
+    if (process.env.NODE_ENV === 'development') {
+      console.error('[json-parser] All parsing attempts failed:', errorInfoDev);
+    } else {
+      console.error('[json-parser] All parsing attempts failed:', errorInfoProd);
+    }
 
     // Throw detailed error
     throw new Error(

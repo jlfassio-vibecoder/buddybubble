@@ -272,6 +272,7 @@ export interface WarmupBlock {
  * Single exercise (sets, reps, RPE per exercise).
  * Used within an ExerciseBlock.
  */
+// Copilot suggestion ignored: splitting strength vs timer exercises into a union would ripple through many generators and UI surfaces; optional timer fields are handled at map/validation sites instead.
 export interface Exercise {
   order: number;
   exerciseName: string;

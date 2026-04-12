@@ -9,6 +9,10 @@ import type {
   BlockOptions,
   HiitOptions,
   HiitCircuitStructure,
+  HiitProtocolFormat,
+  HiitPrimaryGoal,
+  HiitSessionDurationTier,
+  HiitWorkRestRatio,
   AmrapDensityOptions,
   TabataBalancedOptions,
   TabataBalancedPairingPattern,
@@ -181,18 +185,122 @@ export async function prepareWorkoutChainRequest(
     sessionDurationTier: 'standard_interval',
     primaryGoal: 'fat_oxidation',
   };
-  const hiitOptions: HiitOptions | undefined = hiitMode
-    ? persona.hiitOptions && typeof persona.hiitOptions === 'object'
-      ? {
-          protocolFormat: persona.hiitOptions.protocolFormat ?? defaultHiitOptions.protocolFormat,
-          workRestRatio: persona.hiitOptions.workRestRatio,
-          circuitStructure: persona.hiitOptions.circuitStructure ?? defaultHiitCircuitStructure,
-          sessionDurationTier:
-            persona.hiitOptions.sessionDurationTier ?? defaultHiitOptions.sessionDurationTier,
-          primaryGoal: persona.hiitOptions.primaryGoal ?? defaultHiitOptions.primaryGoal,
-        }
-      : defaultHiitOptions
-    : undefined;
+
+  const hiitProtocolFormats: readonly HiitProtocolFormat[] = [
+    'standard_ratio',
+    'tabata',
+    'emom',
+    'amrap',
+    'ladder',
+    'chipper',
+  ];
+  const hiitWorkRestRatios: readonly HiitWorkRestRatio[] = ['1:1', '2:1', '1:2', '1:3'];
+  const hiitSessionDurationTiers: readonly HiitSessionDurationTier[] = [
+    'micro_dose',
+    'standard_interval',
+    'high_volume',
+  ];
+  const hiitPrimaryGoals: readonly HiitPrimaryGoal[] = [
+    'vo2_max',
+    'lactate_tolerance',
+    'explosive_power',
+    'fat_oxidation',
+  ];
+
+  let hiitOptions: HiitOptions | undefined;
+  if (hiitMode) {
+    const rawHiit = persona.hiitOptions;
+    if (!rawHiit || typeof rawHiit !== 'object') {
+      hiitOptions = defaultHiitOptions;
+    } else {
+      const protocolFormat = rawHiit.protocolFormat ?? defaultHiitOptions.protocolFormat;
+      if (!hiitProtocolFormats.includes(protocolFormat)) {
+        return {
+          ok: false,
+          response: new Response(
+            JSON.stringify({ error: 'hiitOptions.protocolFormat is invalid' }),
+            {
+              status: 400,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          ),
+        };
+      }
+      const workRestRatio: HiitWorkRestRatio =
+        rawHiit.workRestRatio ?? defaultHiitOptions.workRestRatio ?? '1:1';
+      if (!hiitWorkRestRatios.includes(workRestRatio)) {
+        return {
+          ok: false,
+          response: new Response(
+            JSON.stringify({ error: 'hiitOptions.workRestRatio is invalid' }),
+            {
+              status: 400,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          ),
+        };
+      }
+      const sessionDurationTier =
+        rawHiit.sessionDurationTier ?? defaultHiitOptions.sessionDurationTier;
+      if (!hiitSessionDurationTiers.includes(sessionDurationTier)) {
+        return {
+          ok: false,
+          response: new Response(
+            JSON.stringify({ error: 'hiitOptions.sessionDurationTier is invalid' }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } },
+          ),
+        };
+      }
+      const primaryGoal = rawHiit.primaryGoal ?? defaultHiitOptions.primaryGoal;
+      if (!hiitPrimaryGoals.includes(primaryGoal)) {
+        return {
+          ok: false,
+          response: new Response(JSON.stringify({ error: 'hiitOptions.primaryGoal is invalid' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        };
+      }
+      const rawCircuit = rawHiit.circuitStructure;
+      if (rawCircuit !== undefined && (!rawCircuit || typeof rawCircuit !== 'object')) {
+        return {
+          ok: false,
+          response: new Response(
+            JSON.stringify({ error: 'hiitOptions.circuitStructure must be an object' }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } },
+          ),
+        };
+      }
+      const mergedCircuitStructure: HiitCircuitStructure = {
+        ...defaultHiitCircuitStructure,
+        ...(rawCircuit ?? {}),
+      };
+      if (
+        typeof mergedCircuitStructure.includeWarmup !== 'boolean' ||
+        typeof mergedCircuitStructure.circuit1 !== 'boolean' ||
+        typeof mergedCircuitStructure.circuit2 !== 'boolean' ||
+        typeof mergedCircuitStructure.circuit3 !== 'boolean' ||
+        typeof mergedCircuitStructure.includeCooldown !== 'boolean'
+      ) {
+        return {
+          ok: false,
+          response: new Response(
+            JSON.stringify({
+              error: 'hiitOptions.circuitStructure flags must be boolean values',
+            }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } },
+          ),
+        };
+      }
+      hiitOptions = {
+        protocolFormat,
+        workRestRatio,
+        circuitStructure: mergedCircuitStructure,
+        sessionDurationTier,
+        primaryGoal,
+      };
+    }
+  }
 
   let amrapDensityOptions: AmrapDensityOptions | undefined;
   if (amrapDensityMode) {

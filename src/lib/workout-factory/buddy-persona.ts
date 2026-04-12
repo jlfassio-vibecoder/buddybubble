@@ -39,12 +39,17 @@ function parseBiometrics(raw: unknown): BuddyBiometrics {
   };
 }
 
+/** `UserDemographics.weight` is consumed in prompts as pounds (see architect prompts). */
+function kgToLbs(kg: number): number {
+  return Math.round(kg * 2.2046226218);
+}
+
 function demographicsFromProfile(profile: FitnessProfileRow | null): UserDemographics {
   const b = parseBiometrics(profile?.biometrics);
   return {
     ageRange: b.age_range ?? '30-39',
     sex: b.sex ?? 'any',
-    weight: typeof b.weight_kg === 'number' && b.weight_kg > 0 ? b.weight_kg : 75,
+    weight: typeof b.weight_kg === 'number' && b.weight_kg > 0 ? kgToLbs(b.weight_kg) : kgToLbs(75),
     experienceLevel: b.experience ?? 'intermediate',
   };
 }

@@ -7,6 +7,7 @@ import type {
   PersonalizeProgramSession,
 } from '@/lib/workout-factory/types/personalize-program';
 import { callVertexAI, getVertexAICredentials } from '@/lib/workout-factory/vertex-ai-client';
+import { parseRepsFieldToScalar } from '@/lib/workout-factory/parse-reps-scalar';
 
 export type {
   PersonalizeProgramResult,
@@ -27,13 +28,6 @@ function uniqueSessionKeys(schedule: ProgramWeek[]): string[] {
   return keys;
 }
 
-function parseRepsField(reps: unknown): number | undefined {
-  if (reps == null || reps === '') return undefined;
-  if (typeof reps === 'number' && Number.isFinite(reps)) return reps;
-  const n = parseFloat(String(reps).replace(/[^\d.]/g, ''));
-  return Number.isFinite(n) ? n : undefined;
-}
-
 function asExerciseArray(raw: unknown): WorkoutExercise[] {
   if (!Array.isArray(raw)) return [];
   const out: WorkoutExercise[] = [];
@@ -43,7 +37,7 @@ function asExerciseArray(raw: unknown): WorkoutExercise[] {
     const name = typeof o.name === 'string' ? o.name.trim() : '';
     if (!name) continue;
     const sets = typeof o.sets === 'number' ? o.sets : undefined;
-    const repsN = parseRepsField(o.reps);
+    const repsN = parseRepsFieldToScalar(o.reps);
     const coach_notes = typeof o.coach_notes === 'string' ? o.coach_notes : undefined;
     out.push({
       name,

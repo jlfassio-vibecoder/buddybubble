@@ -310,7 +310,12 @@ export function validateWorkoutArchitectOutput(
   ) {
     return { valid: false, error: 'split.days_per_week must be between 1 and 7' };
   }
-  const minSplitDuration = hiitMode || amrapDensityMode || tabataBalancedMode ? 4 : 10;
+  const minSplitDuration =
+    tabataBalancedMode && tabataBalancedOptions
+      ? tabataBalancedSessionMinutes(tabataBalancedOptions.roundCount)
+      : hiitMode || amrapDensityMode || tabataBalancedMode
+        ? 4
+        : 10;
   if (
     typeof split.session_duration_minutes !== 'number' ||
     split.session_duration_minutes < minSplitDuration
