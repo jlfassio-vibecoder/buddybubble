@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { X } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
-import type { BubbleMemberRole, BubbleRow, TaskRow } from '@/types/database';
+import type { BubbleMemberRole, BubbleRow, ItemType, TaskRow } from '@/types/database';
 import {
   ALL_BUBBLES_BUBBLE_ID,
   makeAllBubblesBubbleRow,
@@ -105,6 +105,14 @@ export function DashboardShell({
   const [taskModalTaskId, setTaskModalTaskId] = useState<string | null>(null);
   const [taskModalInitialStatus, setTaskModalInitialStatus] = useState<string | null>(null);
   const [taskModalInitialTab, setTaskModalInitialTab] = useState<TaskModalTab | null>(null);
+  const [taskModalInitialCreateItemType, setTaskModalInitialCreateItemType] =
+    useState<ItemType | null>(null);
+  const [taskModalInitialCreateTitle, setTaskModalInitialCreateTitle] = useState<string | null>(
+    null,
+  );
+  const [taskModalInitialCreateWorkoutDurationMin, setTaskModalInitialCreateWorkoutDurationMin] =
+    useState<string | null>(null);
+  const [taskModalCreateBubbleId, setTaskModalCreateBubbleId] = useState<string | null>(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [profileComplete, setProfileComplete] = useState(false);
   const [peopleInvitesOpen, setPeopleInvitesOpen] = useState(false);
@@ -261,17 +269,48 @@ export function DashboardShell({
   useUpdatePresence({ embedMode, workspaceId });
 
   const openTaskModal = useCallback((id: string, opts?: { tab?: TaskModalTab }) => {
+    setTaskModalInitialCreateItemType(null);
+    setTaskModalInitialCreateTitle(null);
+    setTaskModalInitialCreateWorkoutDurationMin(null);
+    setTaskModalCreateBubbleId(null);
     setTaskModalTaskId(id);
     setTaskModalInitialTab(opts?.tab ?? null);
     setTaskModalOpen(true);
   }, []);
 
-  const openCreateTaskModal = useCallback((opts?: { status?: string }) => {
-    setTaskModalInitialStatus(opts?.status ?? null);
-    setTaskModalInitialTab(null);
-    setTaskModalTaskId(null);
-    setTaskModalOpen(true);
-  }, []);
+  const openCreateTaskModal = useCallback(
+    (opts?: {
+      status?: string;
+      itemType?: ItemType;
+      title?: string;
+      workoutDurationMin?: string | null;
+      bubbleId?: string | null;
+    }) => {
+      setTaskModalInitialStatus(opts?.status ?? null);
+      setTaskModalInitialTab(null);
+      setTaskModalTaskId(null);
+      setTaskModalInitialCreateItemType(opts?.itemType ?? null);
+      setTaskModalInitialCreateTitle(opts?.title ?? null);
+      setTaskModalInitialCreateWorkoutDurationMin(
+        opts?.workoutDurationMin !== undefined ? opts.workoutDurationMin : null,
+      );
+      setTaskModalCreateBubbleId(opts?.bubbleId ?? null);
+      setTaskModalOpen(true);
+    },
+    [],
+  );
+
+  const defaultTaskModalBubbleId = useMemo(
+    () =>
+      selectedBubbleId === ALL_BUBBLES_BUBBLE_ID ? (bubbles[0]?.id ?? null) : selectedBubbleId,
+    [selectedBubbleId, bubbles],
+  );
+
+  const resolvedTaskModalBubbleId = useMemo(() => {
+    if (taskModalTaskId) return defaultTaskModalBubbleId;
+    if (taskModalCreateBubbleId) return taskModalCreateBubbleId;
+    return defaultTaskModalBubbleId;
+  }, [taskModalTaskId, taskModalCreateBubbleId, defaultTaskModalBubbleId]);
 
   const calendarContext = useMemo(
     () => ({
@@ -300,6 +339,10 @@ export function DashboardShell({
       setTaskModalTaskId(null);
       setTaskModalInitialStatus(null);
       setTaskModalInitialTab(null);
+      setTaskModalInitialCreateItemType(null);
+      setTaskModalInitialCreateTitle(null);
+      setTaskModalInitialCreateWorkoutDurationMin(null);
+      setTaskModalCreateBubbleId(null);
     }
   }, []);
 
@@ -823,8 +866,13 @@ export function DashboardShell({
                   <ProgramsBoard
                     workspaceId={workspaceId}
                     selectedBubbleId={selectedBubbleId!}
+                    bubbles={bubbles}
+                    workspaceCategory={effectiveKanbanCategory}
+                    calendarTimezone={workspaceCalendarTz}
+                    taskViewsNonce={taskViewsNonce}
                     canWrite={canWriteTasks}
                     onOpenTask={openTaskModal}
+                    onOpenCreateTask={openCreateTaskModal}
                   />
                 ) : (
                   <KanbanBoard
@@ -852,9 +900,7 @@ export function DashboardShell({
           open={taskModalOpen}
           onOpenChange={onTaskModalOpenChange}
           taskId={taskModalTaskId}
-          bubbleId={
-            selectedBubbleId === ALL_BUBBLES_BUBBLE_ID ? (bubbles[0]?.id ?? null) : selectedBubbleId
-          }
+          bubbleId={resolvedTaskModalBubbleId}
           workspaceId={workspaceId}
           canWrite={canWriteTasks}
           onCreated={(id) => {
@@ -862,6 +908,9 @@ export function DashboardShell({
             bumpTaskViews();
           }}
           initialCreateStatus={taskModalInitialStatus}
+          initialCreateItemType={taskModalInitialCreateItemType}
+          initialCreateTitle={taskModalInitialCreateTitle}
+          initialCreateWorkoutDurationMin={taskModalInitialCreateWorkoutDurationMin}
           initialTab={taskModalInitialTab}
           workspaceCategory={effectiveKanbanCategory}
           calendarTimezone={workspaceCalendarTz}

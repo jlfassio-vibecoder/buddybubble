@@ -105,10 +105,7 @@ export class ManualClassProvider implements FitnessClassProvider {
 
     // Build lookup maps.
     const countByInstance = new Map<string, number>();
-    const myEnrollmentByInstance = new Map<
-      string,
-      { status: ClassEnrollmentStatus; id: string }
-    >();
+    const myEnrollmentByInstance = new Map<string, { status: ClassEnrollmentStatus; id: string }>();
     for (const e of allEnrollments ?? []) {
       const iid = e.instance_id as string;
       countByInstance.set(iid, (countByInstance.get(iid) ?? 0) + 1);
@@ -152,10 +149,7 @@ export class ManualClassProvider implements FitnessClassProvider {
 
   async unenroll(enrollmentId: string): Promise<void> {
     const supabase = createClient();
-    const { error } = await supabase
-      .from('class_enrollments')
-      .delete()
-      .eq('id', enrollmentId);
+    const { error } = await supabase.from('class_enrollments').delete().eq('id', enrollmentId);
     if (error) throw new Error(error.message);
   }
 }

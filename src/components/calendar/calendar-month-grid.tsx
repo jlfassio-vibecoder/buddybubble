@@ -217,15 +217,12 @@ export function CalendarMonthGrid({
                     </span>
                     {dayAnnotations && (dayAnnotations.get(ymd) ?? 0) > 0 ? (
                       <div className="flex gap-px px-0.5 pb-0.5" aria-hidden>
-                        {Array.from(
-                          { length: Math.min(dayAnnotations.get(ymd)!, 5) },
-                          (_, i) => (
-                            <span
-                              key={i}
-                              className="inline-block size-1.5 rounded-full bg-primary/70"
-                            />
-                          ),
-                        )}
+                        {Array.from({ length: Math.min(dayAnnotations.get(ymd)!, 5) }, (_, i) => (
+                          <span
+                            key={i}
+                            className="inline-block size-1.5 rounded-full bg-primary/70"
+                          />
+                        ))}
                       </div>
                     ) : null}
                   </>

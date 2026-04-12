@@ -3,7 +3,12 @@
 import { addMonths, parseISO, startOfMonth, subMonths } from 'date-fns';
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Calendar, GripHorizontal, PanelRightClose, PanelRightOpen } from 'lucide-react';
-import { normalizeItemType, type BubbleRow, type TaskRow, type WorkspaceCategory } from '@/types/database';
+import {
+  normalizeItemType,
+  type BubbleRow,
+  type TaskRow,
+  type WorkspaceCategory,
+} from '@/types/database';
 import type { TaskModalTab } from '@/components/modals/TaskModal';
 import { ALL_BUBBLES_BUBBLE_ID } from '@/lib/all-bubbles';
 import { getCalendarDateInTimeZone } from '@/lib/workspace-calendar';
