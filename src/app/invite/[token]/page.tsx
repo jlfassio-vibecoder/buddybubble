@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { createClient } from '@utils/supabase/server';
 import { InviteJoinForm } from './invite-join-form';
+import { LeadVisitTracker } from './lead-visit-tracker';
 import { InvitePreviewAuth } from './invite-preview-auth';
 import { InviteThemeWrapper } from './invite-theme-wrapper';
 import { invitePreviewUserMessage, parseInvitePreviewRpc } from '@/lib/invite-preview-parse';
@@ -71,12 +72,18 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
   }
 
   const preview = parsed;
+  const trackLeads =
+    preview.workspace_id.length > 0 &&
+    (preview.category_type === 'business' || preview.category_type === 'fitness');
   const cardShell = cn(
     'rounded-2xl border-2 border-border bg-card p-8 text-card-foreground shadow-lg backdrop-blur-[1px]',
   );
 
   return (
     <InviteThemeWrapper categoryType={preview.category_type}>
+      {trackLeads ? (
+        <LeadVisitTracker workspaceId={preview.workspace_id} inviteToken={token} />
+      ) : null}
       <main className="flex min-h-screen flex-col items-center justify-center bg-background p-6">
         <div className="w-full max-w-md space-y-6">
           <div className={cardShell}>
