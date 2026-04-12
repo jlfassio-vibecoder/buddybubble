@@ -810,8 +810,8 @@ export function ProgramsBoard({
   const activePlanDays = useMemo(() => {
     if (!programForThisWeek) return [];
     const { fields, cw } = programTaskDerived(programForThisWeek);
-    const weekIndex = Math.max(1, cw);
-    return getProgramDaysForWeek(fields.programSchedule, weekIndex);
+    if (cw < 1) return [];
+    return getProgramDaysForWeek(fields.programSchedule, cw);
   }, [programForThisWeek]);
 
   /** Prefer the seeded “Workouts” BuddyBubble for new workout templates; else current bubble. */
@@ -1059,7 +1059,7 @@ export function ProgramsBoard({
       collapsed
         ? cn(COLLAPSED_COLUMN_WIDTH_CLASS, 'h-full min-h-[200px] overflow-hidden p-0')
         : cn(
-            'h-full min-h-[200px] w-full w-[85vw] snap-center p-2 md:w-auto md:min-w-[min(85vw,20rem)] md:max-w-[22rem] md:snap-none',
+            'h-full min-h-[200px] w-[85vw] snap-center p-2 md:w-auto md:min-w-[min(85vw,20rem)] md:max-w-[22rem] md:snap-none',
           ),
     );
   };
