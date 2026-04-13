@@ -10,7 +10,7 @@
  * Features:
  * - Session ID: UUID in sessionStorage, rotates on 30 min inactivity
  * - Batches events for 2 s then flushes
- * - Always flushes on visibilitychange → 'hidden' (tab close / navigate away)
+ * - Flushes on visibilitychange → 'hidden' using sendBeacon when possible (tab close)
  * - Fire-and-forget: errors are swallowed; analytics must never affect the user
  */
 
@@ -75,17 +75,39 @@ function cancelFlush() {
   }
 }
 
-async function flush() {
+function batchJson(batch: QueuedEvent[]): string {
+  return JSON.stringify({
+    events: batch.map((ev) => {
+      const { _ts, ...rest } = ev;
+      return rest;
+    }),
+  });
+}
+
+/** Chromium caps keepalive request bodies (~64KiB); WebKit often throws TypeError "network error" on keepalive. */
+const KEEPALIVE_MAX_BYTES = 60_000;
+
+async function flush(options?: { unload?: boolean }) {
   if (queue.length === 0) return;
   const batch = queue.splice(0, queue.length);
+  const body = batchJson(batch);
 
   try {
+    if (options?.unload && typeof navigator !== 'undefined' && navigator.sendBeacon) {
+      const blob = new Blob([body], { type: 'application/json' });
+      if (navigator.sendBeacon('/api/analytics/event', blob)) {
+        return;
+      }
+    }
+
+    const useKeepalive =
+      Boolean(options?.unload) && body.length > 0 && body.length < KEEPALIVE_MAX_BYTES;
+
     await fetch('/api/analytics/event', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      // Use keepalive so the request survives page navigation / tab close
-      keepalive: true,
-      body: JSON.stringify({ events: batch }),
+      ...(useKeepalive ? { keepalive: true } : {}),
+      body,
     });
   } catch {
     // Silently swallow — analytics must never break the app
@@ -98,7 +120,7 @@ function attachVisibilityListener() {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       cancelFlush();
-      void flush();
+      void flush({ unload: true });
     }
   });
 }

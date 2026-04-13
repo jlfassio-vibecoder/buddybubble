@@ -7,6 +7,7 @@ import {
   clearedInviteTokenCookieOptions,
   inviteTokenCookieOptions,
 } from '@/lib/invite-cookies';
+import { insertInviteJourneyByToken } from '@/lib/analytics/invite-journey-server';
 import { mapInviteRpcError } from '@/lib/invite-rpc-errors';
 import { BB_LAST_WORKSPACE_COOKIE, lastWorkspaceCookieOptions } from '@/lib/workspace-cookies';
 import { createClient } from '@utils/supabase/server';
@@ -43,6 +44,7 @@ export async function persistInviteHandoffToken(
 
   const cookieStore = await cookies();
   cookieStore.set(BB_INVITE_TOKEN_COOKIE, t, inviteTokenCookieOptions());
+  await insertInviteJourneyByToken(t, 'invite_handoff_cookie_saved', {}, { userId: user.id });
   return { ok: true };
 }
 
@@ -58,10 +60,26 @@ export async function consumeInviteOnboarding(): Promise<{ error: string } | voi
   }
 
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  await insertInviteJourneyByToken(
+    token,
+    'onboarding_consume_started',
+    {},
+    { userId: user?.id ?? null },
+  );
+
   const { data, error } = await supabase.rpc('accept_invitation', { p_token: token });
 
   if (error) {
     await clearInviteCookie();
+    await insertInviteJourneyByToken(
+      token,
+      'onboarding_consume_failed',
+      { reason: 'rpc_error' },
+      { userId: user?.id ?? null },
+    );
     return { error: mapInviteRpcError(error.message) };
   }
 
@@ -73,16 +91,40 @@ export async function consumeInviteOnboarding(): Promise<{ error: string } | voi
   if (outcome === 'joined' || outcome === 'already_member') {
     const ws = payload.workspace_id;
     if (!ws) {
+      await insertInviteJourneyByToken(
+        token,
+        'onboarding_consume_failed',
+        { reason: 'missing_workspace_id' },
+        { userId: user?.id ?? null },
+      );
       return { error: 'Could not resolve workspace.' };
     }
+    await insertInviteJourneyByToken(
+      token,
+      'onboarding_consume_joined_workspace',
+      { outcome },
+      { userId: user?.id ?? null },
+    );
     cookieStore.set(BB_LAST_WORKSPACE_COOKIE, encodeURIComponent(ws), lastWorkspaceCookieOptions());
     redirect(`/app/${ws}`);
   }
 
   if (outcome === 'pending') {
+    await insertInviteJourneyByToken(
+      token,
+      'onboarding_consume_pending_approval',
+      {},
+      { userId: user?.id ?? null },
+    );
     redirect('/onboarding?invite=pending');
   }
 
+  await insertInviteJourneyByToken(
+    token,
+    'onboarding_consume_failed',
+    { reason: 'unexpected_outcome' },
+    { userId: user?.id ?? null },
+  );
   return { error: 'Something went wrong with this invite. Try again.' };
 }
 

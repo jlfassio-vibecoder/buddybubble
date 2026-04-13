@@ -3,7 +3,9 @@ import { createClient } from '@utils/supabase/server';
 import { InviteJoinForm } from './invite-join-form';
 import { LeadVisitTracker } from './lead-visit-tracker';
 import { InvitePreviewAuth } from './invite-preview-auth';
+import { InviteQrInstantAuth } from './invite-qr-instant-auth';
 import { InviteThemeWrapper } from './invite-theme-wrapper';
+import { insertInviteJourneyByToken } from '@/lib/analytics/invite-journey-server';
 import { invitePreviewUserMessage, parseInvitePreviewRpc } from '@/lib/invite-preview-parse';
 import { cn } from '@/lib/utils';
 
@@ -31,6 +33,9 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
       code: rpcError.code,
       message: rpcError.message,
     });
+    await insertInviteJourneyByToken(token, 'invite_preview_rpc_error', {
+      rpc_code: rpcError.code ?? 'unknown',
+    });
     return (
       <main className="flex min-h-screen flex-col items-center justify-center bg-background p-6">
         <div className="w-full max-w-md rounded-xl border border-border bg-card p-8 text-center text-card-foreground shadow-sm">
@@ -51,6 +56,9 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
 
   const parsed = parseInvitePreviewRpc(previewRaw);
   if (!parsed.valid) {
+    await insertInviteJourneyByToken(token, 'invite_preview_invalid', {
+      error: parsed.error,
+    });
     const invalidMsg = invitePreviewUserMessage(parsed.error);
     return (
       <main className="flex min-h-screen flex-col items-center justify-center bg-background p-6">
@@ -72,9 +80,17 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
   }
 
   const preview = parsed;
+  await insertInviteJourneyByToken(token, 'invite_landing_shown', {
+    signed_in: Boolean(user),
+    requires_approval: preview.requires_approval,
+    invite_type: preview.invite_type,
+    max_uses: preview.max_uses,
+  });
   const trackLeads =
     preview.workspace_id.length > 0 &&
     (preview.category_type === 'business' || preview.category_type === 'fitness');
+  /** Same URL for Link vs QR in the dashboard — only `invite_type` differs; both get the guest instant path. */
+  const showInstantGuestInvite = preview.invite_type === 'qr' || preview.invite_type === 'link';
   const cardShell = cn(
     'rounded-2xl border-2 border-border bg-card p-8 text-card-foreground shadow-lg backdrop-blur-[1px]',
   );
@@ -97,9 +113,17 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
                 <span className="text-foreground">{preview.workspace_name || 'a workspace'}</span>
               </h1>
               <p className="mt-3 text-sm text-muted-foreground">
-                {preview.requires_approval
-                  ? 'After you sign in, a host will approve your request before you can enter.'
-                  : 'Sign in once to accept and open this BuddyBubble.'}
+                {showInstantGuestInvite
+                  ? preview.requires_approval
+                    ? preview.invite_type === 'qr'
+                      ? 'This QR invite is for in-person sharing. Continue as a guest to request access, or sign in with Google or email below.'
+                      : 'This invite needs host approval. Continue as a guest to request access, or sign in with Google or email below.'
+                    : preview.invite_type === 'qr'
+                      ? 'Built for when you are together in person: join as a guest in one tap, or use Google or email below if you prefer.'
+                      : 'Join as a guest in one tap (no email for this step), or sign in with Google or email below if you prefer.'
+                  : preview.requires_approval
+                    ? 'After you sign in, a host will approve your request before you can enter.'
+                    : 'Sign in once to accept and open this BuddyBubble.'}
               </p>
             </div>
 
@@ -120,7 +144,23 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
                 </p>
               </div>
             ) : (
-              <div className="mt-8">
+              <div className="mt-8 space-y-6">
+                {showInstantGuestInvite ? (
+                  <div className="space-y-3">
+                    <InviteQrInstantAuth
+                      token={token}
+                      requiresApproval={preview.requires_approval}
+                    />
+                    <div className="relative py-1">
+                      <div className="absolute inset-0 flex items-center" aria-hidden>
+                        <span className="w-full border-t border-border" />
+                      </div>
+                      <div className="relative flex justify-center text-xs uppercase tracking-wide">
+                        <span className="bg-card px-2 text-muted-foreground">Or</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
                 <InvitePreviewAuth token={token} />
               </div>
             )}
