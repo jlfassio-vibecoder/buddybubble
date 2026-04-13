@@ -130,6 +130,7 @@ export function ProfileCompletionModal({
       setError('Display name must be 120 characters or fewer.');
       return;
     }
+    // Copilot suggestion ignored: this modal is for anonymous recovery; requiring a password is intentional until OAuth-only completion is a separate flow.
     if (!pwTrimmed) {
       setError(
         'Please choose a password so you can sign in again on another device or after this session ends.',

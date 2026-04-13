@@ -7,6 +7,8 @@ alter table public.workspace_members
 comment on column public.workspace_members.show_email_to_workspace_members is
   'When false, hide this member''s email from other workspace peers (chat, non-admin surfaces). Owners/admins may still see email in admin tools.';
 
+-- Copilot suggestion ignored: UI-level masking only until a follow-up tightens peer SELECT on public.users (e.g. view/RPC); see users_select_workspace_peers policy.
+
 -- Invitee updates own flag without broader workspace_members UPDATE rights.
 create or replace function public.set_workspace_member_show_email(
   p_workspace_id uuid,

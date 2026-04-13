@@ -151,6 +151,7 @@ export default async function WorkspaceAnalyticsPage({
   let inPersonLeadRows: LeadCaptureDisplayRow[] = [];
   let onlineLeadRows: LeadCaptureDisplayRow[] = [];
   if (isGrowthLeadWorkspace) {
+    // Copilot suggestion ignored: LIMIT without matching SQL aggregates would undercount segment cards relative to the summary total; add a capped query when totals move server-side.
     const { data: rawLeads } = await db
       .from('leads')
       .select(

@@ -554,6 +554,7 @@ export function ChatArea({
         data: { user: authUser },
       } = await supabase.auth.getUser();
       const myId = authUser?.id ?? null;
+      // Copilot suggestion ignored: omitting email from this select needs a redacted profile view/RPC; peers may still read users under existing RLS until then.
       const { data } = await supabase
         .from('workspace_members')
         .select(
@@ -567,11 +568,12 @@ export function ChatArea({
         const u = (row as { users?: ChatUserSnapshot | ChatUserSnapshot[] | null }).users;
         const usr = Array.isArray(u) ? u[0] : u;
         if (!usr?.id) continue;
+        // Auth not resolved yet: do not treat peers as opted-in; hide their emails.
         const showPeerEmail =
-          !myId ||
-          usr.id === myId ||
-          (row as { show_email_to_workspace_members?: boolean }).show_email_to_workspace_members ===
-            true;
+          myId != null &&
+          (usr.id === myId ||
+            (row as { show_email_to_workspace_members?: boolean })
+              .show_email_to_workspace_members === true);
         const displayEmail = showPeerEmail ? (usr.email ?? '') : '';
         const displayName =
           usr.full_name?.trim() ||

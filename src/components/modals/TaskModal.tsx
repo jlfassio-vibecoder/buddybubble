@@ -349,8 +349,9 @@ export function TaskModal({
           | null;
       }>) {
         const u = Array.isArray(row.users) ? row.users[0] : row.users;
+        // Auth not resolved yet: do not treat peers as opted-in; hide their emails.
         const showPeerEmail =
-          !myId || row.user_id === myId || row.show_email_to_workspace_members === true;
+          myId != null && (row.user_id === myId || row.show_email_to_workspace_members === true);
         const label =
           (u?.full_name && u.full_name.trim()) ||
           (showPeerEmail ? u?.email?.split('@')[0] : undefined)?.trim() ||
