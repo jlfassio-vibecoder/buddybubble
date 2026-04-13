@@ -14,7 +14,8 @@
  */
 
 import { create } from 'zustand';
-import type { SubscriptionStatus } from '@/lib/subscription-permissions';
+import { isPaidWorkspaceCategory, type SubscriptionStatus } from '@/lib/subscription-permissions';
+import type { WorkspaceCategory } from '@/types/database';
 import { createClient } from '@utils/supabase/client';
 
 // The store also needs to represent "free workspace — no subscription required"
@@ -54,7 +55,14 @@ export const useSubscriptionStore = create<SubscriptionStore>((set, get) => ({
   trialModalOpen: false,
 
   initSubscription: async (workspaceId: string) => {
-    set({ workspaceId, loading: true });
+    set({
+      workspaceId,
+      loading: true,
+      status: null,
+      trialEnd: null,
+      cancelAtPeriodEnd: false,
+      trialAvailable: null,
+    });
 
     try {
       const supabase = createClient();
@@ -79,11 +87,23 @@ export const useSubscriptionStore = create<SubscriptionStore>((set, get) => ({
           : Promise.resolve({ data: null }),
       ]);
 
-      const categoryType = (wsResult.data as { category_type?: string } | null)?.category_type;
-      const isPaidWorkspace = categoryType === 'business' || categoryType === 'fitness';
+      const categoryType = (wsResult.data as { category_type?: string } | null)?.category_type as
+        | WorkspaceCategory
+        | undefined;
 
-      if (!isPaidWorkspace) {
+      if (categoryType !== undefined && !isPaidWorkspaceCategory(categoryType)) {
         set({ status: 'not_required', trialAvailable: null, loading: false });
+        return;
+      }
+
+      if (!categoryType || !isPaidWorkspaceCategory(categoryType)) {
+        set({
+          status: 'no_subscription',
+          trialEnd: null,
+          cancelAtPeriodEnd: false,
+          trialAvailable: null,
+          loading: false,
+        });
         return;
       }
 
@@ -109,7 +129,13 @@ export const useSubscriptionStore = create<SubscriptionStore>((set, get) => ({
         loading: false,
       });
     } catch {
-      set({ loading: false });
+      set({
+        loading: false,
+        status: null,
+        trialEnd: null,
+        cancelAtPeriodEnd: false,
+        trialAvailable: null,
+      });
     }
   },
 

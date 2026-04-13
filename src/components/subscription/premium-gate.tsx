@@ -21,6 +21,8 @@
 import { Lock } from 'lucide-react';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
+import { usePermissions } from '@/hooks/use-permissions';
+import { parseMemberRole } from '@/lib/permissions';
 import {
   resolveSubscriptionPermissions,
   shouldSubscribeWithoutTrial,
@@ -28,6 +30,7 @@ import {
 import { cn } from '@/lib/utils';
 import { track } from '@/lib/analytics/client';
 import type { WorkspaceCategory } from '@/types/database';
+import type { MemberRole } from '@/types/database';
 import type { SubscriptionStatus } from '@/lib/subscription-permissions';
 
 // ── Feature keys ──────────────────────────────────────────────────────────────
@@ -69,6 +72,11 @@ export function PremiumGate({ feature, children, className, inline = false }: Pr
   const openTrialModal = useSubscriptionStore((s) => s.openTrialModal);
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
 
+  const role = parseMemberRole(
+    String((activeWorkspace as { role?: string } | null)?.role ?? 'member'),
+  ) as MemberRole;
+  const { isOwner } = usePermissions(role);
+
   // Not yet loaded or workspace type is free — pass through
   if (status === null || status === 'not_required') {
     return <>{children}</>;
@@ -100,11 +108,42 @@ export function PremiumGate({ feature, children, className, inline = false }: Pr
   // ── Locked ────────────────────────────────────────────────────────────────
 
   function handleUnlock() {
+    if (!isOwner) return;
     track('feature_gate_hit', {
       workspace_id: activeWorkspace?.id,
       metadata: { feature_name: feature, user_status: status },
     });
     openTrialModal();
+  }
+
+  if (!isOwner) {
+    if (inline) {
+      return (
+        <span
+          className={cn(
+            'inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground',
+            className,
+          )}
+          title="Only the workspace owner can manage billing."
+        >
+          <Lock className="h-3 w-3" aria-hidden />
+          Owner only
+        </span>
+      );
+    }
+    return (
+      <div className={cn('relative', className)}>
+        <div className="pointer-events-none select-none opacity-35" aria-hidden>
+          {children}
+        </div>
+        <div className="absolute inset-0 flex items-center justify-center px-2 text-center">
+          <div className="flex items-center gap-1.5 rounded-full bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-sm ring-1 ring-border">
+            <Lock className="h-3 w-3 shrink-0" aria-hidden />
+            Ask the workspace owner to subscribe
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (inline) {

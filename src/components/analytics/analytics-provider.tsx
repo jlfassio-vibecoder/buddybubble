@@ -24,9 +24,13 @@ export function AnalyticsProvider({ workspaceId, userId, children }: Props) {
   const pathname = usePathname();
   const sessionFiredRef = useRef(false);
 
-  // Fire session_start once per browser session
   useEffect(() => {
-    if (sessionFiredRef.current) return;
+    sessionFiredRef.current = false;
+  }, [workspaceId]);
+
+  // Fire session_start once per workspace session after we know the user id
+  useEffect(() => {
+    if (!workspaceId || !userId || sessionFiredRef.current) return;
     sessionFiredRef.current = true;
     track('session_start', { workspace_id: workspaceId, user_id: userId });
   }, [workspaceId, userId]);

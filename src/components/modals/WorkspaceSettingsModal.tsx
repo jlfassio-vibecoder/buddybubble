@@ -372,7 +372,7 @@ export function WorkspaceSettingsModal({
                         </div>
                         {['trialing', 'active', 'past_due'].includes(subscriptionStatus) ? (
                           <a
-                            href={`/api/stripe/portal?workspaceId=${workspaceId}`}
+                            href={`/api/stripe/portal?workspaceId=${encodeURIComponent(workspaceId)}`}
                             className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
                             onClick={() => onOpenChange(false)}
                           >

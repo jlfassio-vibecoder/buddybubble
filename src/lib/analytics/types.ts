@@ -17,25 +17,21 @@ export type FunnelEventType =
   | 'subscription_canceled'
   | 'subscription_restarted';
 
-export type GateEventType =
-  | 'feature_gate_hit'
-  | 'premium_feature_used';
+export type GateEventType = 'feature_gate_hit' | 'premium_feature_used';
 
-export type NavigationEventType =
-  | 'page_view'
-  | 'session_start';
+export type NavigationEventType = 'page_view' | 'session_start';
 
 export type EventType = FunnelEventType | GateEventType | NavigationEventType;
 
-// ── Feature name values ───────────────────────────────────────────────────────
+// ── Feature name values (must match PremiumGate / dashboards) ─────────────────
 
 export type FeatureName =
-  | 'ai_generation'
+  | 'ai'
   | 'analytics'
+  | 'export'
+  | 'record_data'
   | 'custom_branding'
-  | 'export_data'
-  | 'create_workspace'
-  | 'record_data';
+  | 'create_workspace';
 
 // ── Metadata shapes per event ─────────────────────────────────────────────────
 

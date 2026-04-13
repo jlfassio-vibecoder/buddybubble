@@ -122,6 +122,10 @@ export function StartTrialModal({ workspaceId, categoryType }: Props) {
       (typeof document !== 'undefined' && document.documentElement.classList.contains('dark'));
     return getStripeBillingElementsAppearance(isDark);
   }, [resolvedTheme]);
+
+  const stripePublishableConfigured = Boolean(
+    typeof process !== 'undefined' && process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.trim(),
+  );
   /** Paid subscribe flow: no additional trial (trial ended on workspace and/or already used account trial). */
   const subscribeWithoutTrial = shouldSubscribeWithoutTrial(trialAvailable, subscriptionStatus);
   const trialExpiredWorkspace = subscriptionStatus === 'trial_expired';
@@ -198,6 +202,12 @@ export function StartTrialModal({ workspaceId, categoryType }: Props) {
 
   const handleContinueToCard = useCallback(async () => {
     if (!selectedPlan) return;
+    if (!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.trim()) {
+      setIntentError(
+        'Payment form cannot load because Stripe is not configured for this environment.',
+      );
+      return;
+    }
     setLoadingIntent(true);
     setIntentError(null);
 
@@ -303,6 +313,7 @@ export function StartTrialModal({ workspaceId, categoryType }: Props) {
             <PlanStep
               availablePlans={availablePlans}
               selectedPlan={selectedPlan}
+              stripeConfigured={stripePublishableConfigured}
               onSelectPlan={(k) => {
                 setSelectedPlan(k);
                 if (billingAttemptId) {
@@ -362,6 +373,7 @@ export function StartTrialModal({ workspaceId, categoryType }: Props) {
 function PlanStep({
   availablePlans,
   selectedPlan,
+  stripeConfigured,
   onSelectPlan,
   onContinue,
   loading,
@@ -370,6 +382,7 @@ function PlanStep({
 }: {
   availablePlans: StripePlanKey[];
   selectedPlan: StripePlanKey | null;
+  stripeConfigured: boolean;
   onSelectPlan: (k: StripePlanKey) => void;
   onContinue: () => void;
   loading: boolean;
@@ -381,12 +394,15 @@ function PlanStep({
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain px-6 py-5">
-        {error && (
+        {(error || !stripeConfigured) && (
           <p
             className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
             role="alert"
           >
-            {error}
+            {error ??
+              (!stripeConfigured
+                ? 'Payment setup is unavailable — Stripe is not configured for this environment.'
+                : null)}
           </p>
         )}
 
@@ -489,7 +505,11 @@ function PlanStep({
         <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
           Cancel
         </Button>
-        <Button type="button" onClick={onContinue} disabled={!selectedPlan || loading}>
+        <Button
+          type="button"
+          onClick={onContinue}
+          disabled={!selectedPlan || loading || !stripeConfigured}
+        >
           {loading ? 'Setting up…' : 'Continue to payment'}
         </Button>
       </div>
@@ -609,50 +629,75 @@ function CardStep({
       return;
     }
 
-    // 4. Create the Stripe subscription (3-day trial)
-    const res = await fetch('/api/stripe/create-trial', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        workspaceId,
-        planKey,
-        paymentMethodId,
-        ...(billingAttemptId ? { billingAttemptId } : {}),
-      }),
-    });
+    // 4–5. Create subscription + refresh store (never leave loading stuck on network/parse errors)
+    try {
+      const res = await fetch('/api/stripe/create-trial', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspaceId,
+          planKey,
+          paymentMethodId,
+          ...(billingAttemptId ? { billingAttemptId } : {}),
+        }),
+      });
 
-    const data = (await res.json()) as {
-      subscriptionId?: string;
-      status?: string;
-      trialEnd?: string;
-      error?: string;
-    };
+      let data: {
+        subscriptionId?: string;
+        status?: string;
+        trialEnd?: string;
+        error?: string;
+      };
+      try {
+        data = (await res.json()) as typeof data;
+      } catch {
+        setError('Could not read the server response. Please try again.');
+        void postClientBillingEvents(workspaceId, billingAttemptId, clientSessionId, [
+          {
+            eventKey: BILLING_FUNNEL_EVENT_KEYS.CLIENT_SETUP_FAILED,
+            payload: { phase: 'create_subscription', code: 'invalid_json' },
+          },
+        ]);
+        return;
+      }
 
-    if (!res.ok || !data.subscriptionId) {
+      if (!res.ok || !data.subscriptionId) {
+        setError(
+          data.error ??
+            (subscribeWithoutTrial
+              ? 'Failed to subscribe. Please try again.'
+              : 'Failed to start trial. Please try again.'),
+        );
+        void postClientBillingEvents(workspaceId, billingAttemptId, clientSessionId, [
+          {
+            eventKey: BILLING_FUNNEL_EVENT_KEYS.CLIENT_SETUP_FAILED,
+            payload: {
+              phase: 'create_subscription',
+              http_status: res.status,
+              message: (data.error ?? 'unknown').slice(0, 200),
+            },
+          },
+        ]);
+        return;
+      }
+
+      await refreshSubscription();
+      onSuccess();
+    } catch {
       setError(
-        data.error ??
-          (subscribeWithoutTrial
-            ? 'Failed to subscribe. Please try again.'
-            : 'Failed to start trial. Please try again.'),
+        subscribeWithoutTrial
+          ? 'Network error while subscribing. Check your connection and try again.'
+          : 'Network error while starting trial. Check your connection and try again.',
       );
       void postClientBillingEvents(workspaceId, billingAttemptId, clientSessionId, [
         {
           eventKey: BILLING_FUNNEL_EVENT_KEYS.CLIENT_SETUP_FAILED,
-          payload: {
-            phase: 'create_subscription',
-            http_status: res.status,
-            message: (data.error ?? 'unknown').slice(0, 200),
-          },
+          payload: { phase: 'create_subscription', code: 'network' },
         },
       ]);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    // 5. Sync subscription store so banners + gates update immediately
-    await refreshSubscription();
-    onSuccess();
-    setLoading(false);
   };
 
   return (

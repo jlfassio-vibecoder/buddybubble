@@ -43,17 +43,23 @@ export function TrialBanner() {
           ? '1 day left in trial'
           : `${days} days left in trial`;
 
+  // Copilot suggestion ignored: Follow-up review duplicated the same portal URL hardening (non-empty id + encodeURIComponent) consolidated here.
+  const portalWsId =
+    typeof activeWorkspace?.id === 'string' && activeWorkspace.id.length > 0
+      ? activeWorkspace.id
+      : null;
+
   return (
     <div className="shrink-0 flex items-center justify-between gap-4 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:bg-amber-950/60 dark:text-amber-200 border-b border-amber-200 dark:border-amber-800">
       <span className="font-medium">{daysLabel} — your card will be charged when it ends.</span>
-      {isOwner && (
+      {isOwner && portalWsId ? (
         <a
-          href={`/api/stripe/portal?workspaceId=${activeWorkspace?.id ?? ''}`}
+          href={`/api/stripe/portal?workspaceId=${encodeURIComponent(portalWsId)}`}
           className="shrink-0 font-semibold underline underline-offset-2 hover:text-amber-700 dark:hover:text-amber-100"
         >
           Manage billing
         </a>
-      )}
+      ) : null}
     </div>
   );
 }

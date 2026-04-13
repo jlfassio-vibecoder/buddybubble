@@ -120,10 +120,16 @@ export async function POST(req: Request) {
             metadata: { days_into_trial: daysIntoTrial },
           });
         } else if (wasActive) {
+          const startSec = sub.start_date ?? sub.created ?? null;
+          const endSec = sub.canceled_at ?? Math.floor(Date.now() / 1000);
+          let monthsActive = 0;
+          if (startSec != null && endSec >= startSec) {
+            monthsActive = Math.max(0, Math.floor((endSec - startSec) / (30 * 24 * 60 * 60)));
+          }
           void trackServerEvent('subscription_canceled', {
             workspaceId,
             userId,
-            metadata: { months_active: 0 },
+            metadata: { months_active: monthsActive },
           });
         }
 
@@ -173,7 +179,8 @@ export async function POST(req: Request) {
             const wsId = (subRow as { workspace_id?: string } | null)?.workspace_id ?? null;
             const ownerId = (subRow as { owner_user_id?: string } | null)?.owner_user_id ?? null;
             const trialStart = (subRow as { trial_start?: string | null } | null)?.trial_start;
-            const priceId = (subRow as { stripe_price_id?: string | null } | null)?.stripe_price_id ?? '';
+            const priceId =
+              (subRow as { stripe_price_id?: string | null } | null)?.stripe_price_id ?? '';
             const trialDays = trialStart
               ? Math.floor((Date.now() - new Date(trialStart).getTime()) / 86_400_000)
               : 0;

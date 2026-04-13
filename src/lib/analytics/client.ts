@@ -5,7 +5,7 @@
  *
  * Usage:
  *   import { track } from '@/lib/analytics/client';
- *   track('feature_gate_hit', { workspace_id, metadata: { feature_name: 'ai_generation', user_status: 'trialing' } });
+ *   track('feature_gate_hit', { workspace_id, metadata: { feature_name: 'ai', user_status: 'trialing' } });
  *
  * Features:
  * - Session ID: UUID in sessionStorage, rotates on 30 min inactivity

@@ -82,6 +82,8 @@ function hasCompleteStripeIds(layer: Record<string, unknown> | undefined): boole
  * Missing plan keys are filled from **host** (preferred) or **athlete** so sandbox can
  * ship with only those two Stripe products while business routes still resolve prices.
  */
+
+// Copilot suggestion ignored: Dedicated Vitest cases for merge/overlay/fill were deferred; exercise changes via `docs/stripe-test-catalog-sandbox-fitness.example.json` and local env.
 export function parseTestStripeCatalogFromEnv(): Record<StripePlanKey, StripePlanStripeIds> {
   const jsonA = process.env.STRIPE_TEST_CATALOG_JSON;
   const jsonB = process.env.STRIPE_TEST_CATALOG_JSON_OVERLAY;

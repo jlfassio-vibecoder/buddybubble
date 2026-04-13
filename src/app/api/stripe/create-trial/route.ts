@@ -276,11 +276,13 @@ export async function POST(req: Request) {
         .not('user_id', 'is', null)
         .eq('user_id', user.id);
 
-      void trackServerEvent('trial_started', {
-        workspaceId,
-        userId: user.id,
-        metadata: { plan: planKey },
-      });
+      if (useTrial) {
+        void trackServerEvent('trial_started', {
+          workspaceId,
+          userId: user.id,
+          metadata: { plan: planKey },
+        });
+      }
 
       await insertBillingFunnelEvent({
         source: 'server',

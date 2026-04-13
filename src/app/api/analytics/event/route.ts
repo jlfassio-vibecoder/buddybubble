@@ -1,21 +1,20 @@
 /**
  * POST /api/analytics/event
  *
- * Edge-runtime event ingest endpoint. Accepts a batch of analytics events
- * from the browser client and writes them to `analytics_events`.
- *
- * Edge runtime avoids cold-start latency on every page view event.
- * Writes use the Supabase service role key — no direct anon table access.
+ * Accepts a batch of analytics events from the authenticated browser client and
+ * writes them to `analytics_events` using the service role. Inserts use the
+ * signed-in user id from the session (client-supplied `user_id` is ignored).
  *
  * Body: { events: AnalyticsEventPayload[] }
  * Response: { ok: true } | { error: string }
  */
 
-export const runtime = 'edge';
-
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@utils/supabase/server';
+import { createServiceRoleClient } from '@/lib/supabase-service-role';
 import type { AnalyticsEventPayload, EventType } from '@/lib/analytics/types';
+
+const MAX_BATCH = 50;
 
 const VALID_EVENT_TYPES = new Set<EventType>([
   'lead_captured',
@@ -32,16 +31,17 @@ const VALID_EVENT_TYPES = new Set<EventType>([
   'session_start',
 ]);
 
-function getDb() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error('Missing Supabase env vars');
-  return createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-}
-
 export async function POST(req: Request) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+  }
+
   let body: { events?: unknown[] };
   try {
     body = (await req.json()) as { events?: unknown[] };
@@ -54,9 +54,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  // Validate and normalize each event
+  const capped = rawEvents.slice(0, MAX_BATCH);
   const rows: Record<string, unknown>[] = [];
-  for (const raw of rawEvents) {
+  for (const raw of capped) {
     if (!raw || typeof raw !== 'object') continue;
     const e = raw as Partial<AnalyticsEventPayload>;
     if (!e.event_type || !VALID_EVENT_TYPES.has(e.event_type as EventType)) continue;
@@ -64,7 +64,7 @@ export async function POST(req: Request) {
     rows.push({
       event_type: e.event_type,
       workspace_id: typeof e.workspace_id === 'string' ? e.workspace_id : null,
-      user_id: typeof e.user_id === 'string' ? e.user_id : null,
+      user_id: user.id,
       lead_id: typeof e.lead_id === 'string' ? e.lead_id : null,
       session_id: typeof e.session_id === 'string' ? e.session_id : null,
       path: typeof e.path === 'string' ? e.path : null,
@@ -76,12 +76,40 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
+  const workspaceIds = [
+    ...new Set(
+      rows
+        .map((r) => r.workspace_id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0),
+    ),
+  ];
+
+  let allowedWorkspaces = new Set<string>();
+  if (workspaceIds.length > 0) {
+    const { data: members } = await supabase
+      .from('workspace_members')
+      .select('workspace_id')
+      .eq('user_id', user.id)
+      .in('workspace_id', workspaceIds);
+
+    allowedWorkspaces = new Set(
+      (members ?? []).map((m) => m.workspace_id as string).filter(Boolean),
+    );
+  }
+
+  const sanitized = rows.filter(
+    (r) => !r.workspace_id || allowedWorkspaces.has(String(r.workspace_id)),
+  );
+
+  if (sanitized.length === 0) {
+    return NextResponse.json({ ok: true });
+  }
+
   try {
-    const db = getDb();
-    const { error } = await db.from('analytics_events').insert(rows);
+    const db = createServiceRoleClient();
+    const { error } = await db.from('analytics_events').insert(sanitized);
     if (error) {
       console.error('[analytics/event] insert failed:', error.message);
-      // Return 200 anyway — client should not retry analytics failures
     }
   } catch (err) {
     console.error('[analytics/event] unexpected error:', err);

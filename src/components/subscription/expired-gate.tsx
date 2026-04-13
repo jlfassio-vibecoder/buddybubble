@@ -82,6 +82,12 @@ export function ExpiredGate() {
 
   const config = getGateConfig(status);
 
+  // Copilot suggestion ignored: Follow-up review duplicated the same portal URL hardening (non-empty id + encodeURIComponent) consolidated here.
+  const portalWsId =
+    typeof activeWorkspace?.id === 'string' && activeWorkspace.id.length > 0
+      ? activeWorkspace.id
+      : null;
+
   const wrapperClass =
     config.variant === 'red'
       ? 'bg-red-50 border-red-200 text-red-900 dark:bg-red-950/50 dark:border-red-800 dark:text-red-200'
@@ -95,14 +101,14 @@ export function ExpiredGate() {
 
       {isOwner ? (
         <div className="flex shrink-0 items-center gap-3">
-          {config.showPortal && (
+          {config.showPortal && portalWsId ? (
             <a
-              href={`/api/stripe/portal?workspaceId=${activeWorkspace?.id ?? ''}`}
+              href={`/api/stripe/portal?workspaceId=${encodeURIComponent(portalWsId)}`}
               className="font-semibold underline underline-offset-2"
             >
               Update payment
             </a>
-          )}
+          ) : null}
           {config.showSubscribe && (
             <button
               type="button"

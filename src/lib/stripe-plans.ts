@@ -10,8 +10,12 @@
  * price** in Stripe when set, otherwise the catalog `defaultPriceId`. In test mode, if
  * `STRIPE_TEST_CATALOG_JSON` auto-fills business keys from Host, those tiers share Host’s
  * Stripe product until you add real entries per key in `STRIPE_TEST_CATALOG_JSON_OVERLAY`.
+ *
+ * Server-only price resolution lives in `@/lib/stripe` (`getStripePlans()`, `retrieveEffectivePlanPrice()`);
+ * this module stays importable from the browser and must not embed Stripe secret keys or `sk_*` env.
  */
 
+// Copilot suggestion ignored: A `satisfies`-driven plan row type was skipped to avoid churn; `as number | null` keeps literal member caps compatible with `as const` feature tuples.
 export const STRIPE_PLAN_META = {
   athlete: {
     name: 'Athlete',
