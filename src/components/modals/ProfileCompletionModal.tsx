@@ -215,7 +215,11 @@ export function ProfileCompletionModal({
     });
   };
 
-  const passwordReady = password.trim().length >= 8 && password.trim() === confirmPassword.trim();
+  const pwTrimmedForUi = password.trim();
+  const confirmTrimmedForUi = confirmPassword.trim();
+  /** Password step complete: min length + match (confirm field only appears once user starts typing a password). */
+  const passwordReady = pwTrimmedForUi.length >= 8 && pwTrimmedForUi === confirmTrimmedForUi;
+  const showConfirmPassword = pwTrimmedForUi.length > 0;
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
@@ -443,21 +447,27 @@ export function ProfileCompletionModal({
                 <input
                   type="password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setPassword(v);
+                    if (!v.trim()) setConfirmPassword('');
+                  }}
                   disabled={pending}
                   autoComplete="new-password"
                   className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-50"
                   placeholder="Password (min 8 characters)"
                 />
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  disabled={pending}
-                  autoComplete="new-password"
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-50"
-                  placeholder="Confirm password"
-                />
+                {showConfirmPassword ? (
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    disabled={pending}
+                    autoComplete="new-password"
+                    className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-50"
+                    placeholder="Confirm password"
+                  />
+                ) : null}
               </div>
             </div>
           </div>
