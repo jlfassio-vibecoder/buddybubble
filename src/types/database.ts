@@ -87,6 +87,8 @@ export interface Database {
           /** Family/children names for Kids and Community workspace caregivers. Shape: string[]. */
           children_names: string[];
           created_at: string;
+          /** When true, the user can access founder-only routes (/admin/*). */
+          is_admin: boolean;
         };
         Insert: {
           id: string;
@@ -97,6 +99,7 @@ export interface Database {
           bio?: string | null;
           children_names?: string[];
           created_at?: string;
+          is_admin?: boolean;
         };
         Update: Partial<Database['public']['Tables']['users']['Insert']>;
       };
@@ -560,6 +563,31 @@ export interface Database {
         };
         Update: Partial<Database['public']['Tables']['workspace_subscriptions']['Insert']>;
       };
+      analytics_events: {
+        Row: {
+          id: string;
+          event_type: string;
+          workspace_id: string | null;
+          user_id: string | null;
+          lead_id: string | null;
+          session_id: string | null;
+          path: string | null;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          event_type: string;
+          workspace_id?: string | null;
+          user_id?: string | null;
+          lead_id?: string | null;
+          session_id?: string | null;
+          path?: string | null;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['analytics_events']['Insert']>;
+      };
     };
     Functions: {
       accept_invitation: {
@@ -609,3 +637,4 @@ export type LeadRow = Database['public']['Tables']['leads']['Row'];
 export type StripeCustomerRow = Database['public']['Tables']['stripe_customers']['Row'];
 export type WorkspaceSubscriptionRow =
   Database['public']['Tables']['workspace_subscriptions']['Row'];
+export type AnalyticsEventRow = Database['public']['Tables']['analytics_events']['Row'];

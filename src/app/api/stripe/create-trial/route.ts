@@ -25,6 +25,7 @@ import { createClient } from '@utils/supabase/server';
 import { createServiceRoleClient } from '@/lib/supabase-service-role';
 import { getStripe, STRIPE_PLANS, subscriptionPeriodIso, TRIAL_PERIOD_DAYS } from '@/lib/stripe';
 import type { StripePlanKey } from '@/lib/stripe';
+import { trackServerEvent } from '@/lib/analytics/server';
 
 const VALID_PLAN_KEYS = new Set<string>(Object.keys(STRIPE_PLANS));
 
@@ -211,6 +212,12 @@ export async function POST(req: Request) {
         .is('converted_at', null)
         .not('user_id', 'is', null) // only if we already linked this user
         .eq('user_id', user.id);
+
+      void trackServerEvent('trial_started', {
+        workspaceId,
+        userId: user.id,
+        metadata: { plan: planKey },
+      });
 
       return NextResponse.json({
         subscriptionId: subscription.id,

@@ -28,6 +28,7 @@ import {
   mapStripeStatusToInternal,
   subscriptionPeriodIso,
 } from '@/lib/stripe';
+import { trackServerEvent } from '@/lib/analytics/server';
 import type Stripe from 'stripe';
 
 // Prevent Next.js from parsing the body — Stripe needs the raw bytes to verify the signature.
@@ -87,11 +88,12 @@ export async function POST(req: Request) {
         const sub = event.data.object as Stripe.Subscription;
         const { data: existing } = await db
           .from('workspace_subscriptions')
-          .select('status')
+          .select('status, owner_user_id, workspace_id')
           .eq('stripe_subscription_id', sub.id)
           .maybeSingle();
 
         const wasTrialing = existing?.status === 'trialing';
+        const wasActive = existing?.status === 'active';
         const finalStatus = wasTrialing ? 'trial_expired' : 'canceled';
 
         await db
@@ -101,6 +103,28 @@ export async function POST(req: Request) {
             cancel_at_period_end: false,
           })
           .eq('stripe_subscription_id', sub.id);
+
+        const workspaceId = (existing as { workspace_id?: string } | null)?.workspace_id ?? null;
+        const userId = (existing as { owner_user_id?: string } | null)?.owner_user_id ?? null;
+
+        if (wasTrialing) {
+          // Calculate days_into_trial
+          const trialStartMs = sub.trial_start ? sub.trial_start * 1000 : null;
+          const daysIntoTrial = trialStartMs
+            ? Math.floor((Date.now() - trialStartMs) / 86_400_000)
+            : 0;
+          void trackServerEvent('trial_canceled', {
+            workspaceId,
+            userId,
+            metadata: { days_into_trial: daysIntoTrial },
+          });
+        } else if (wasActive) {
+          void trackServerEvent('subscription_canceled', {
+            workspaceId,
+            userId,
+            metadata: { months_active: 0 },
+          });
+        }
 
         console.log(`[webhook] subscription.deleted → ${finalStatus} (sub: ${sub.id})`);
         break;
@@ -137,6 +161,27 @@ export async function POST(req: Request) {
             .eq('stripe_subscription_id', sub.id);
 
           console.log(`[webhook] invoice.payment_succeeded → active (sub: ${sub.id})`);
+
+          // trial_converted — first successful charge after a trial
+          if (invoice.billing_reason === 'subscription_cycle') {
+            const { data: subRow } = await db
+              .from('workspace_subscriptions')
+              .select('workspace_id, owner_user_id, trial_start, stripe_price_id')
+              .eq('stripe_subscription_id', sub.id)
+              .maybeSingle();
+            const wsId = (subRow as { workspace_id?: string } | null)?.workspace_id ?? null;
+            const ownerId = (subRow as { owner_user_id?: string } | null)?.owner_user_id ?? null;
+            const trialStart = (subRow as { trial_start?: string | null } | null)?.trial_start;
+            const priceId = (subRow as { stripe_price_id?: string | null } | null)?.stripe_price_id ?? '';
+            const trialDays = trialStart
+              ? Math.floor((Date.now() - new Date(trialStart).getTime()) / 86_400_000)
+              : 0;
+            void trackServerEvent('trial_converted', {
+              workspaceId: wsId,
+              userId: ownerId,
+              metadata: { plan: priceId, trial_duration_days: trialDays },
+            });
+          }
         }
         break;
       }

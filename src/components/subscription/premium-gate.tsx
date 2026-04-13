@@ -23,6 +23,7 @@ import { useSubscriptionStore } from '@/store/subscriptionStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { resolveSubscriptionPermissions } from '@/lib/subscription-permissions';
 import { cn } from '@/lib/utils';
+import { track } from '@/lib/analytics/client';
 import type { WorkspaceCategory } from '@/types/database';
 import type { SubscriptionStatus } from '@/lib/subscription-permissions';
 
@@ -86,11 +87,19 @@ export function PremiumGate({ feature, children, className, inline = false }: Pr
 
   // ── Locked ────────────────────────────────────────────────────────────────
 
+  function handleUnlock() {
+    track('feature_gate_hit', {
+      workspace_id: activeWorkspace?.id,
+      metadata: { feature_name: feature, user_status: status },
+    });
+    openTrialModal();
+  }
+
   if (inline) {
     return (
       <button
         type="button"
-        onClick={openTrialModal}
+        onClick={handleUnlock}
         title={`${FEATURE_LABELS[feature]} requires a subscription`}
         className={cn(
           'inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium',
@@ -110,12 +119,12 @@ export function PremiumGate({ feature, children, className, inline = false }: Pr
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
-        openTrialModal();
+        handleUnlock();
       }}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          openTrialModal();
+          handleUnlock();
         }
       }}
       role="button"

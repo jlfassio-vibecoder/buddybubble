@@ -67,6 +67,7 @@ import { TrialBanner } from '@/components/subscription/trial-banner';
 import { ExpiredGate } from '@/components/subscription/expired-gate';
 import { StartTrialModal } from '@/components/subscription/start-trial-modal';
 import { PremiumGate } from '@/components/subscription/premium-gate';
+import { AnalyticsProvider } from '@/components/analytics/analytics-provider';
 
 type Props = {
   workspaceId: string;
@@ -753,6 +754,7 @@ export function DashboardShell({
   );
 
   return (
+    <AnalyticsProvider workspaceId={workspaceId} userId={profile?.id}>
     <ThemeScope category={effectiveThemeCategory}>
       <div className="flex h-screen min-h-0 flex-col bg-background md:flex-row md:overflow-hidden">
         {layoutMobile ? (
@@ -1026,5 +1028,6 @@ export function DashboardShell({
         {children}
       </div>
     </ThemeScope>
+    </AnalyticsProvider>
   );
 }
