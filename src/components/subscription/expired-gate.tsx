@@ -12,6 +12,7 @@
  * Rendered once by DashboardShell below the TrialBanner.
  */
 
+import { shouldSubscribeWithoutTrial } from '@/lib/subscription-permissions';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -65,6 +66,7 @@ function getGateConfig(status: string): {
 
 export function ExpiredGate() {
   const status = useSubscriptionStore((s) => s.status);
+  const trialAvailable = useSubscriptionStore((s) => s.trialAvailable);
   const openTrialModal = useSubscriptionStore((s) => s.openTrialModal);
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
 
@@ -75,6 +77,8 @@ export function ExpiredGate() {
 
   const gatedStatuses = ['past_due', 'trial_expired', 'canceled', 'no_subscription', 'incomplete'];
   if (!status || !gatedStatuses.includes(status)) return null;
+
+  const subscribeCta = shouldSubscribeWithoutTrial(trialAvailable, status);
 
   const config = getGateConfig(status);
 
@@ -105,7 +109,7 @@ export function ExpiredGate() {
               onClick={openTrialModal}
               className="font-semibold underline underline-offset-2"
             >
-              Start trial
+              {subscribeCta ? 'Subscribe' : 'Start trial'}
             </button>
           )}
         </div>

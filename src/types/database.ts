@@ -508,6 +508,38 @@ export interface Database {
         };
         Update: Partial<Database['public']['Tables']['leads']['Insert']>;
       };
+      /** Checkout funnel + billing diagnostics; written from Next API (service role). */
+      billing_funnel_events: {
+        Row: {
+          id: string;
+          created_at: string;
+          billing_attempt_id: string | null;
+          workspace_id: string | null;
+          user_id: string | null;
+          environment: string;
+          stripe_mode: string;
+          source: string;
+          event_key: string;
+          payload: Json;
+          client_session_id: string | null;
+          stripe_event_id: string | null;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          billing_attempt_id?: string | null;
+          workspace_id?: string | null;
+          user_id?: string | null;
+          environment: string;
+          stripe_mode: string;
+          source: string;
+          event_key: string;
+          payload?: Json;
+          client_session_id?: string | null;
+          stripe_event_id?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['billing_funnel_events']['Insert']>;
+      };
       /** Maps one Stripe Customer per auth user. Enforces one-trial-per-person. */
       stripe_customers: {
         Row: {

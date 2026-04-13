@@ -27,12 +27,19 @@ interface SubscriptionStore {
   trialEnd: string | null;
   cancelAtPeriodEnd: boolean;
   loading: boolean;
+  /**
+   * false = user already consumed their one free trial (subscribe without trial only).
+   * null when subscription not applicable or not loaded.
+   */
+  trialAvailable: boolean | null;
   /** Controls the StartTrialModal open state */
   trialModalOpen: boolean;
 
   initSubscription: (workspaceId: string) => Promise<void>;
   refreshSubscription: () => Promise<void>;
   setStatus: (status: StoreStatus) => void;
+  /** Sync after /api/stripe/setup-intent if needed (source of truth matches DB). */
+  setTrialAvailable: (trialAvailable: boolean | null) => void;
   openTrialModal: () => void;
   closeTrialModal: () => void;
 }
@@ -43,6 +50,7 @@ export const useSubscriptionStore = create<SubscriptionStore>((set, get) => ({
   trialEnd: null,
   cancelAtPeriodEnd: false,
   loading: false,
+  trialAvailable: null,
   trialModalOpen: false,
 
   initSubscription: async (workspaceId: string) => {
@@ -50,29 +58,37 @@ export const useSubscriptionStore = create<SubscriptionStore>((set, get) => ({
 
     try {
       const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-      // Parallel: fetch workspace category + subscription row
-      const [wsResult, subResult] = await Promise.all([
-        supabase
-          .from('workspaces')
-          .select('category_type')
-          .eq('id', workspaceId)
-          .maybeSingle(),
+      // Parallel: workspace category, subscription row, one-trial flag
+      const [wsResult, subResult, customerResult] = await Promise.all([
+        supabase.from('workspaces').select('category_type').eq('id', workspaceId).maybeSingle(),
         supabase
           .from('workspace_subscriptions')
           .select('status, trial_end, cancel_at_period_end')
           .eq('workspace_id', workspaceId)
           .maybeSingle(),
+        user
+          ? supabase
+              .from('stripe_customers')
+              .select('has_had_trial')
+              .eq('user_id', user.id)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
       ]);
 
       const categoryType = (wsResult.data as { category_type?: string } | null)?.category_type;
-      const isPaidWorkspace =
-        categoryType === 'business' || categoryType === 'fitness';
+      const isPaidWorkspace = categoryType === 'business' || categoryType === 'fitness';
 
       if (!isPaidWorkspace) {
-        set({ status: 'not_required', loading: false });
+        set({ status: 'not_required', trialAvailable: null, loading: false });
         return;
       }
+
+      const stripeRow = customerResult.data as { has_had_trial?: boolean } | null;
+      const trialAvailable = user == null ? null : !stripeRow?.has_had_trial;
 
       const sub = subResult.data as {
         status?: string;
@@ -81,7 +97,7 @@ export const useSubscriptionStore = create<SubscriptionStore>((set, get) => ({
       } | null;
 
       if (!sub) {
-        set({ status: 'no_subscription', loading: false });
+        set({ status: 'no_subscription', trialAvailable, loading: false });
         return;
       }
 
@@ -89,6 +105,7 @@ export const useSubscriptionStore = create<SubscriptionStore>((set, get) => ({
         status: (sub.status ?? 'no_subscription') as StoreStatus,
         trialEnd: sub.trial_end ?? null,
         cancelAtPeriodEnd: sub.cancel_at_period_end ?? false,
+        trialAvailable,
         loading: false,
       });
     } catch {
@@ -105,6 +122,7 @@ export const useSubscriptionStore = create<SubscriptionStore>((set, get) => ({
   },
 
   setStatus: (status) => set({ status }),
+  setTrialAvailable: (trialAvailable) => set({ trialAvailable }),
   openTrialModal: () => set({ trialModalOpen: true }),
   closeTrialModal: () => set({ trialModalOpen: false }),
 }));

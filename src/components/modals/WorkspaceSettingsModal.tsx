@@ -11,6 +11,7 @@ import { Separator } from '@/components/ui/separator';
 import { formatUserFacingError } from '@/lib/format-error';
 import { isMissingColumnSchemaCacheError } from '@/lib/supabase-schema-errors';
 import { COMMON_CALENDAR_TIMEZONES } from '@/lib/calendar-timezones';
+import { shouldSubscribeWithoutTrial } from '@/lib/subscription-permissions';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
 
 export { COMMON_CALENDAR_TIMEZONES };
@@ -35,6 +36,8 @@ export function WorkspaceSettingsModal({
   isOwner = false,
 }: WorkspaceSettingsModalProps) {
   const subscriptionStatus = useSubscriptionStore((s) => s.status);
+  const trialAvailable = useSubscriptionStore((s) => s.trialAvailable);
+  const subscribeCta = shouldSubscribeWithoutTrial(trialAvailable, subscriptionStatus);
   const openTrialModal = useSubscriptionStore((s) => s.openTrialModal);
 
   const [loading, setLoading] = useState(false);
@@ -344,51 +347,53 @@ export function WorkspaceSettingsModal({
                   </div>
                 </div>
 
-                {isOwner && subscriptionStatus !== null && subscriptionStatus !== 'not_required' && (
-                  <>
-                    <Separator />
-                    <div className="space-y-3">
-                      <div>
-                        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
-                          <CreditCard className="h-4 w-4 text-muted-foreground" aria-hidden />
-                          Subscription
-                        </h3>
-                        <p className="text-xs text-muted-foreground">
-                          {subscriptionStatus === 'trialing'
-                            ? 'Your free trial is active.'
-                            : subscriptionStatus === 'active'
-                              ? 'Your subscription is active.'
-                              : subscriptionStatus === 'past_due'
-                                ? 'Payment failed — update your payment method.'
-                                : subscriptionStatus === 'no_subscription'
-                                  ? 'No active subscription.'
-                                  : 'Your subscription has ended.'}
-                        </p>
+                {isOwner &&
+                  subscriptionStatus !== null &&
+                  subscriptionStatus !== 'not_required' && (
+                    <>
+                      <Separator />
+                      <div className="space-y-3">
+                        <div>
+                          <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                            <CreditCard className="h-4 w-4 text-muted-foreground" aria-hidden />
+                            Subscription
+                          </h3>
+                          <p className="text-xs text-muted-foreground">
+                            {subscriptionStatus === 'trialing'
+                              ? 'Your free trial is active.'
+                              : subscriptionStatus === 'active'
+                                ? 'Your subscription is active.'
+                                : subscriptionStatus === 'past_due'
+                                  ? 'Payment failed — update your payment method.'
+                                  : subscriptionStatus === 'no_subscription'
+                                    ? 'No active subscription.'
+                                    : 'Your subscription has ended.'}
+                          </p>
+                        </div>
+                        {['trialing', 'active', 'past_due'].includes(subscriptionStatus) ? (
+                          <a
+                            href={`/api/stripe/portal?workspaceId=${workspaceId}`}
+                            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
+                            onClick={() => onOpenChange(false)}
+                          >
+                            Manage billing
+                          </a>
+                        ) : (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="default"
+                            onClick={() => {
+                              onOpenChange(false);
+                              openTrialModal();
+                            }}
+                          >
+                            {subscribeCta ? 'Subscribe' : 'Start free trial'}
+                          </Button>
+                        )}
                       </div>
-                      {['trialing', 'active', 'past_due'].includes(subscriptionStatus) ? (
-                        <a
-                          href={`/api/stripe/portal?workspaceId=${workspaceId}`}
-                          className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
-                          onClick={() => onOpenChange(false)}
-                        >
-                          Manage billing
-                        </a>
-                      ) : (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="default"
-                          onClick={() => {
-                            onOpenChange(false);
-                            openTrialModal();
-                          }}
-                        >
-                          Start free trial
-                        </Button>
-                      )}
-                    </div>
-                  </>
-                )}
+                    </>
+                  )}
 
                 <Button
                   type="button"

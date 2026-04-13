@@ -29,6 +29,7 @@ import {
   subscriptionPeriodIso,
 } from '@/lib/stripe';
 import { trackServerEvent } from '@/lib/analytics/server';
+import { BILLING_FUNNEL_EVENT_KEYS, insertBillingFunnelEvent } from '@/lib/billing-funnel-events';
 import type Stripe from 'stripe';
 
 // Prevent Next.js from parsing the body — Stripe needs the raw bytes to verify the signature.
@@ -183,6 +184,27 @@ export async function POST(req: Request) {
             });
           }
         }
+
+        try {
+          const subF = await stripe.subscriptions.retrieve(invoiceSubId);
+          const ws = subF.metadata?.workspace_id;
+          const uid = subF.metadata?.supabase_user_id;
+          if (ws && uid) {
+            await insertBillingFunnelEvent({
+              source: 'server',
+              eventKey: BILLING_FUNNEL_EVENT_KEYS.WEBHOOK_INVOICE_PAYMENT_SUCCEEDED,
+              stripeEventId: event.id,
+              workspaceId: ws,
+              userId: uid,
+              payload: {
+                billing_reason: invoice.billing_reason ?? null,
+                subscription_id_suffix: invoiceSubId.slice(-8),
+              },
+            });
+          }
+        } catch {
+          /* ignore funnel insert */
+        }
         break;
       }
 
@@ -199,6 +221,27 @@ export async function POST(req: Request) {
 
         await handlePaymentFailed(db, invoice);
         console.log(`[webhook] invoice.payment_failed → past_due (sub: ${invoiceSubId})`);
+
+        try {
+          const sub = await stripe.subscriptions.retrieve(invoiceSubId);
+          const ws = sub.metadata?.workspace_id;
+          const uid = sub.metadata?.supabase_user_id;
+          if (ws && uid) {
+            await insertBillingFunnelEvent({
+              source: 'server',
+              eventKey: BILLING_FUNNEL_EVENT_KEYS.WEBHOOK_INVOICE_PAYMENT_FAILED,
+              stripeEventId: event.id,
+              workspaceId: ws,
+              userId: uid,
+              payload: {
+                attempt_count: invoice.attempt_count ?? null,
+                subscription_id_suffix: invoiceSubId.slice(-8),
+              },
+            });
+          }
+        } catch {
+          /* ignore funnel insert */
+        }
         break;
       }
 
@@ -246,7 +289,7 @@ async function sendResendEmail(body: {
       return;
     }
 
-    console.log(`[webhook] email sent (${body.logContext}) to ${body.to}`);
+    console.log(`[webhook] email sent (${body.logContext})`);
   } catch (e) {
     console.error(`[webhook] Resend request failed (${body.logContext}):`, e);
   }

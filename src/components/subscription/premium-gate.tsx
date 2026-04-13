@@ -21,7 +21,10 @@
 import { Lock } from 'lucide-react';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
-import { resolveSubscriptionPermissions } from '@/lib/subscription-permissions';
+import {
+  resolveSubscriptionPermissions,
+  shouldSubscribeWithoutTrial,
+} from '@/lib/subscription-permissions';
 import { cn } from '@/lib/utils';
 import { track } from '@/lib/analytics/client';
 import type { WorkspaceCategory } from '@/types/database';
@@ -62,6 +65,7 @@ type Props = {
 
 export function PremiumGate({ feature, children, className, inline = false }: Props) {
   const status = useSubscriptionStore((s) => s.status);
+  const trialAvailable = useSubscriptionStore((s) => s.trialAvailable);
   const openTrialModal = useSubscriptionStore((s) => s.openTrialModal);
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
 
@@ -74,14 +78,22 @@ export function PremiumGate({ feature, children, className, inline = false }: Pr
   const subStatus = status === 'no_subscription' ? null : (status as SubscriptionStatus);
   const perms = resolveSubscriptionPermissions(categoryType, subStatus);
 
+  const subscribeCta = shouldSubscribeWithoutTrial(trialAvailable, status);
+
   const allowed =
-    feature === 'ai' ? perms.canUseAI
-    : feature === 'analytics' ? perms.canViewAnalytics
-    : feature === 'export' ? perms.canExportData
-    : feature === 'record_data' ? perms.canRecordNewData
-    : feature === 'custom_branding' ? perms.canCustomizeBranding
-    : feature === 'create_workspace' ? perms.canCreatePaidWorkspace
-    : false;
+    feature === 'ai'
+      ? perms.canUseAI
+      : feature === 'analytics'
+        ? perms.canViewAnalytics
+        : feature === 'export'
+          ? perms.canExportData
+          : feature === 'record_data'
+            ? perms.canRecordNewData
+            : feature === 'custom_branding'
+              ? perms.canCustomizeBranding
+              : feature === 'create_workspace'
+                ? perms.canCreatePaidWorkspace
+                : false;
 
   if (allowed) return <>{children}</>;
 
@@ -108,7 +120,7 @@ export function PremiumGate({ feature, children, className, inline = false }: Pr
         )}
       >
         <Lock className="h-3 w-3" aria-hidden />
-        Unlock
+        {subscribeCta ? 'Subscribe' : 'Unlock'}
       </button>
     );
   }
@@ -140,7 +152,7 @@ export function PremiumGate({ feature, children, className, inline = false }: Pr
       <div className="absolute inset-0 flex cursor-pointer items-center justify-center">
         <div className="flex items-center gap-1.5 rounded-full bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-sm ring-1 ring-border">
           <Lock className="h-3 w-3 shrink-0" aria-hidden />
-          Unlock with trial
+          {subscribeCta ? 'Subscribe' : 'Unlock with trial'}
         </div>
       </div>
     </div>

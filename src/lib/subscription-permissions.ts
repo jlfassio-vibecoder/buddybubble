@@ -15,7 +15,6 @@ import type { WorkspaceCategory } from '@/types/database';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-// Copilot suggestion ignored: Keep this local union so the UI layer can include `no_subscription` without importing a conflicting generated `SubscriptionStatus` name from `database.ts`.
 /** Mirrors the CHECK constraint in `workspace_subscriptions.status`. */
 export type SubscriptionStatus =
   | 'trialing'
@@ -160,4 +159,16 @@ export function subscriptionStatusLabel(
     case 'no_subscription':
       return 'No Subscription';
   }
+}
+
+/**
+ * Billing UI: use paid subscribe copy (no free trial) when the user has already
+ * used their account trial elsewhere, or when this workspace’s trial has ended.
+ */
+export function shouldSubscribeWithoutTrial(
+  trialAvailable: boolean | null,
+  workspaceStatus: SubscriptionStatus | 'not_required' | null,
+): boolean {
+  if (workspaceStatus === 'trial_expired') return true;
+  return trialAvailable === false;
 }

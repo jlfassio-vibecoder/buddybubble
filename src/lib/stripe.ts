@@ -1,20 +1,40 @@
 /**
  * Stripe server-side client and plan catalog.
  *
- * All plan/product constants live here so every API route and the
- * webhook handler reference the same source of truth.
+ * Plan rows merge browser-safe metadata from `stripe-plans.ts` with mode-specific
+ * product/price IDs (live: `stripe-plan-ids-live.ts`, test: STRIPE_TEST_CATALOG_JSON).
  *
  * IMPORTANT: import this file only in server-side code (API routes,
  * server actions, webhook handler). Never import in Client Components.
  */
 
 import Stripe from 'stripe';
+import { STRIPE_PLAN_META, type StripePlanKey } from '@/lib/stripe-plans';
+import { STRIPE_PLAN_IDS_LIVE } from '@/lib/stripe-plan-ids-live';
+import { parseTestStripeCatalogFromEnv } from '@/lib/stripe-test-catalog';
+import { assertStripeEnvironment, stripeRuntimeMode } from '@/lib/stripe-runtime';
+
+// Re-export for server routes that only need types / helpers from shared modules
+export type { StripePlanKey } from '@/lib/stripe-plans';
+export { TRIAL_PERIOD_DAYS } from '@/lib/stripe-plans';
+
+export type StripePlanRow = (typeof STRIPE_PLAN_META)[StripePlanKey] & {
+  productId: string;
+  defaultPriceId: string;
+};
+
+export type StripePlansMap = Record<StripePlanKey, StripePlanRow>;
 
 // ── Singleton client ──────────────────────────────────────────────────────────
 
 let _stripe: Stripe | null = null;
+let _stripeEnvChecked = false;
 
 export function getStripe(): Stripe {
+  if (!_stripeEnvChecked) {
+    assertStripeEnvironment();
+    _stripeEnvChecked = true;
+  }
   if (!_stripe) {
     const key = process.env.STRIPE_SECRET_KEY;
     if (!key) throw new Error('Missing STRIPE_SECRET_KEY environment variable');
@@ -23,59 +43,76 @@ export function getStripe(): Stripe {
   return _stripe;
 }
 
-// ── Plan catalog ──────────────────────────────────────────────────────────────
-// Each entry maps a human-readable plan key → Stripe product + default price.
-// Add annual / additional prices here when needed.
+// ── Plan catalog (test vs live) ───────────────────────────────────────────────
 
-export const STRIPE_PLANS = {
-  athlete: {
-    productId: 'prod_UDhTcM2fPV6Q5a',
-    defaultPriceId: 'price_1TFG4fLa1RgN4xxgYyHMfH7V',
-    name: 'Athlete',
-    description: 'Solo personal performance tracking with AI HIIT workouts.',
-    maxMembers: 1,
-  },
-  host: {
-    productId: 'prod_UE6nvKBLLeH6k6',
-    defaultPriceId: 'price_1TFeZnLa1RgN4xxgA6CaoIsb',
-    name: 'Host',
-    description: 'Community host — all Athlete features + up to 5 members.',
-    maxMembers: 5,
-  },
-  pro: {
-    productId: 'prod_UE6qKGg6mDMj9B',
-    defaultPriceId: 'price_1TFecfLa1RgN4xxgcX0y92bk',
-    name: 'Pro',
-    description: 'Coaching business — AI programming + 360° health insights for 30+ clients.',
-    maxMembers: 30,
-  },
-  studio: {
-    productId: 'prod_UE6sc9yLpUp0Me',
-    defaultPriceId: 'price_1TFeeYLa1RgN4xxgjYY0MmVN',
-    name: 'Studio',
-    description: 'Boutique studio — multi-trainer management + location analytics.',
-    maxMembers: null, // unlimited
-  },
-  coach_pro: {
-    productId: 'prod_UE6uvLSsz3mxKo',
-    defaultPriceId: 'price_1TFeh5La1RgN4xxg0hdVWysF',
-    name: 'Coach Pro',
-    description: 'Large coaching operation — 200+ clients, full analytics suite.',
-    maxMembers: 200,
-  },
-  studio_pro: {
-    productId: 'prod_UEPent0XbfaD7J',
-    defaultPriceId: 'price_1TFwp8La1RgN4xxgSQ0n1DaM',
-    name: 'Studio Pro',
-    description: 'Multi-studio enterprise — unlimited engagement tools.',
-    maxMembers: null, // unlimited
-  },
-} as const;
+let _stripePlansCache: StripePlansMap | null = null;
 
-export type StripePlanKey = keyof typeof STRIPE_PLANS;
+function buildStripePlansMap(): StripePlansMap {
+  const mode = stripeRuntimeMode();
+  const ids = mode === 'live' ? STRIPE_PLAN_IDS_LIVE : parseTestStripeCatalogFromEnv();
+  const keys = Object.keys(STRIPE_PLAN_META) as StripePlanKey[];
+  const out = {} as StripePlansMap;
+  for (const key of keys) {
+    const meta = STRIPE_PLAN_META[key];
+    const id = ids[key];
+    out[key] = {
+      ...meta,
+      productId: id.productId,
+      defaultPriceId: id.defaultPriceId,
+    };
+  }
+  return out;
+}
 
-/** 3-day reverse trial: card required upfront, auto-charges on day 4 unless cancelled. */
-export const TRIAL_PERIOD_DAYS = 3;
+/** Full plan catalog for the current Stripe key mode (cached per process). */
+export function getStripePlans(): StripePlansMap {
+  if (!_stripePlansCache) {
+    _stripePlansCache = buildStripePlansMap();
+  }
+  return _stripePlansCache;
+}
+
+/**
+ * Recurring price used for display + new subscriptions: Stripe Product **default price**
+ * when it is an active recurring price; otherwise the catalog `defaultPriceId`.
+ * Keeps amounts aligned with Dashboard when the default price is updated there.
+ */
+export async function retrieveEffectivePlanPrice(
+  stripe: Stripe,
+  productId: string,
+  catalogDefaultPriceId: string,
+): Promise<Stripe.Price> {
+  try {
+    const product = await stripe.products.retrieve(productId, {
+      expand: ['default_price'],
+    });
+    const dp = product.default_price;
+    if (typeof dp === 'object' && dp !== null && !('deleted' in dp && dp.deleted)) {
+      const price = dp as Stripe.Price;
+      if (price.active && price.recurring) {
+        if (price.id !== catalogDefaultPriceId) {
+          console.warn(
+            '[stripe] Product default price differs from catalog defaultPriceId; using Dashboard default.',
+            { productId, productDefaultPriceId: price.id, catalogDefaultPriceId },
+          );
+        }
+        return price;
+      }
+    }
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.warn(
+      '[stripe] retrieveEffectivePlanPrice: product retrieve failed, using catalog id:',
+      {
+        productId,
+        catalogDefaultPriceId,
+        message,
+      },
+    );
+  }
+
+  return stripe.prices.retrieve(catalogDefaultPriceId);
+}
 
 // ── Status mapping ────────────────────────────────────────────────────────────
 
@@ -116,19 +153,15 @@ export function mapStripeStatusToInternal(
  * Look up a plan by its Stripe price ID.
  * Returns undefined if the price isn't in our catalog (e.g. grandfathered prices).
  */
-export function getPlanByPriceId(
-  priceId: string,
-): (typeof STRIPE_PLANS)[StripePlanKey] | undefined {
-  return Object.values(STRIPE_PLANS).find((p) => p.defaultPriceId === priceId);
+export function getPlanByPriceId(priceId: string): StripePlanRow | undefined {
+  return Object.values(getStripePlans()).find((p) => p.defaultPriceId === priceId);
 }
 
 /**
  * Look up a plan by its Stripe product ID.
  */
-export function getPlanByProductId(
-  productId: string,
-): (typeof STRIPE_PLANS)[StripePlanKey] | undefined {
-  return Object.values(STRIPE_PLANS).find((p) => p.productId === productId);
+export function getPlanByProductId(productId: string): StripePlanRow | undefined {
+  return Object.values(getStripePlans()).find((p) => p.productId === productId);
 }
 
 /**
@@ -166,4 +199,17 @@ export function invoiceSubscriptionId(invoice: Stripe.Invoice): string | null {
     .subscription;
   if (!legacy) return null;
   return typeof legacy === 'string' ? legacy : legacy.id;
+}
+
+/**
+ * Stale `stripe_customers.stripe_customer_id` values (wrong Stripe account, deleted
+ * customer, or dev placeholders) return this from the Stripe API.
+ */
+export function isStripeResourceMissingError(e: unknown): boolean {
+  return (
+    typeof e === 'object' &&
+    e !== null &&
+    'code' in e &&
+    (e as { code?: string }).code === 'resource_missing'
+  );
 }

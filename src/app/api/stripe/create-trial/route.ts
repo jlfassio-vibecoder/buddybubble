@@ -1,33 +1,45 @@
 /**
  * POST /api/stripe/create-trial
  *
- * Step 2 of the trial start flow (called after the SetupIntent is confirmed).
+ * Step 2 of the billing flow (called after the SetupIntent is confirmed).
  *
- * 1. Attaches the confirmed payment method to the Stripe customer.
- * 2. Sets it as the customer's default payment method.
- * 3. Creates a Stripe Subscription with a 3-day trial.
- *    The card is NOT charged until the trial ends — unless the user cancels.
- * 4. Inserts a `workspace_subscriptions` row with status = 'trialing'.
- * 5. Marks `stripe_customers.has_had_trial = true` (prevents future free trials).
- * 6. If a lead record exists for this user + workspace, stamps `converted_at`.
+ * **First-time subscribers (has_had_trial = false):**
+ * 1. Atomically sets has_had_trial = true.
+ * 2. Attaches payment method, creates a Stripe Subscription with a 3-day trial.
+ * 3. Upserts workspace_subscriptions as trialing.
+ *
+ * **Returning subscribers (has_had_trial = true — trial already used):**
+ * 1. No second trial; creates a paid subscription immediately (no trial_period_days).
+ * 2. Upserts workspace_subscriptions from Stripe status (usually active).
  *
  * Body: {
  *   workspaceId: string;
- *   planKey: StripePlanKey;       // e.g. 'athlete' | 'host' | 'pro' | ...
- *   paymentMethodId: string;      // pm_xxx returned by Stripe Elements
+ *   planKey: StripePlanKey;
+ *   paymentMethodId: string;
+ *   billingAttemptId?: string;
  * }
  *
- * Response: { subscriptionId: string; status: string; trialEnd: string }
+ * Response: { subscriptionId, status, trialEnd?, subscribeWithoutTrial: boolean }
  */
 
 import { NextResponse } from 'next/server';
+import type Stripe from 'stripe';
 import { createClient } from '@utils/supabase/server';
 import { createServiceRoleClient } from '@/lib/supabase-service-role';
-import { getStripe, STRIPE_PLANS, subscriptionPeriodIso, TRIAL_PERIOD_DAYS } from '@/lib/stripe';
+import {
+  getStripe,
+  getStripePlans,
+  retrieveEffectivePlanPrice,
+  subscriptionPeriodIso,
+  TRIAL_PERIOD_DAYS,
+  mapStripeStatusToInternal,
+} from '@/lib/stripe';
 import type { StripePlanKey } from '@/lib/stripe';
 import { trackServerEvent } from '@/lib/analytics/server';
+import { STRIPE_PLAN_KEYS } from '@/lib/stripe-plans';
+import { BILLING_FUNNEL_EVENT_KEYS, insertBillingFunnelEvent } from '@/lib/billing-funnel-events';
 
-const VALID_PLAN_KEYS = new Set<string>(Object.keys(STRIPE_PLANS));
+const VALID_PLAN_KEYS = new Set<string>(STRIPE_PLAN_KEYS);
 
 export async function POST(req: Request) {
   try {
@@ -43,7 +55,12 @@ export async function POST(req: Request) {
     }
 
     // ── Input ───────────────────────────────────────────────────────────────
-    let body: { workspaceId?: string; planKey?: string; paymentMethodId?: string };
+    let body: {
+      workspaceId?: string;
+      planKey?: string;
+      paymentMethodId?: string;
+      billingAttemptId?: string;
+    };
     try {
       body = (await req.json()) as typeof body;
     } catch {
@@ -54,6 +71,8 @@ export async function POST(req: Request) {
     const planKey = typeof body.planKey === 'string' ? body.planKey.trim() : '';
     const paymentMethodId =
       typeof body.paymentMethodId === 'string' ? body.paymentMethodId.trim() : '';
+    const billingAttemptId =
+      typeof body.billingAttemptId === 'string' ? body.billingAttemptId.trim() : null;
 
     if (!workspaceId || !planKey || !paymentMethodId) {
       return NextResponse.json(
@@ -66,7 +85,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `Invalid planKey: ${planKey}` }, { status: 400 });
     }
 
-    const plan = STRIPE_PLANS[planKey as StripePlanKey];
+    const plan = getStripePlans()[planKey as StripePlanKey];
 
     // ── Verify workspace owner ──────────────────────────────────────────────
     const { data: membership } = await supabase
@@ -78,7 +97,7 @@ export async function POST(req: Request) {
 
     if (!membership || membership.role !== 'owner') {
       return NextResponse.json(
-        { error: 'Only the workspace owner can start a trial' },
+        { error: 'Only the workspace owner can subscribe' },
         { status: 403 },
       );
     }
@@ -112,37 +131,66 @@ export async function POST(req: Request) {
       );
     }
 
-    // ── Claim one-time trial atomically (must exist from setup-intent step) ─
-    const { data: claimed } = await serviceSupabase
+    // ── Trial vs pay-now: one trial per user; pay-now if trial already used ─
+    const { data: customerRow } = await serviceSupabase
       .from('stripe_customers')
-      .update({ has_had_trial: true })
+      .select('stripe_customer_id, has_had_trial')
       .eq('user_id', user.id)
-      .eq('has_had_trial', false)
-      .select('stripe_customer_id')
       .maybeSingle();
 
-    if (!claimed?.stripe_customer_id) {
-      const { data: check } = await serviceSupabase
-        .from('stripe_customers')
-        .select('stripe_customer_id')
-        .eq('user_id', user.id)
-        .maybeSingle();
-      if (!check?.stripe_customer_id) {
-        return NextResponse.json(
-          { error: 'No Stripe customer found. Please start from the payment setup step.' },
-          { status: 400 },
-        );
-      }
+    if (!customerRow?.stripe_customer_id) {
       return NextResponse.json(
-        { error: 'You have already used your free trial.' },
-        { status: 403 },
+        { error: 'No Stripe customer found. Please start from the payment setup step.' },
+        { status: 400 },
       );
     }
 
-    const stripeCustomerId = claimed.stripe_customer_id;
+    let useTrial = !customerRow.has_had_trial;
+    let stripeCustomerId = customerRow.stripe_customer_id;
+
+    if (useTrial) {
+      const { data: claimed } = await serviceSupabase
+        .from('stripe_customers')
+        .update({ has_had_trial: true })
+        .eq('user_id', user.id)
+        .eq('has_had_trial', false)
+        .select('stripe_customer_id')
+        .maybeSingle();
+
+      if (!claimed?.stripe_customer_id) {
+        const { data: r2 } = await serviceSupabase
+          .from('stripe_customers')
+          .select('stripe_customer_id, has_had_trial')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (r2?.stripe_customer_id && r2.has_had_trial) {
+          useTrial = false;
+          stripeCustomerId = r2.stripe_customer_id;
+        } else {
+          return NextResponse.json(
+            { error: 'Could not verify billing account. Please try again.' },
+            { status: 409 },
+          );
+        }
+      } else {
+        stripeCustomerId = claimed.stripe_customer_id;
+      }
+    }
+
+    const subscribeWithoutTrial = !useTrial;
     const stripe = getStripe();
 
     let subscriptionCreated = false;
+
+    await insertBillingFunnelEvent({
+      source: 'server',
+      eventKey: BILLING_FUNNEL_EVENT_KEYS.SUBSCRIPTION_CREATE_STARTED,
+      workspaceId,
+      userId: user.id,
+      billingAttemptId,
+      payload: { plan_key: planKey, subscribe_without_trial: subscribeWithoutTrial },
+    });
 
     try {
       // ── Attach payment method and set as default ────────────────────────────
@@ -151,32 +199,48 @@ export async function POST(req: Request) {
         invoice_settings: { default_payment_method: paymentMethodId },
       });
 
-      // ── Create subscription with trial ──────────────────────────────────────
-      const subscription = await stripe.subscriptions.create({
+      const effectivePrice = await retrieveEffectivePlanPrice(
+        stripe,
+        plan.productId,
+        plan.defaultPriceId,
+      );
+
+      const subscriptionParams: Stripe.SubscriptionCreateParams = {
         customer: stripeCustomerId,
-        items: [{ price: plan.defaultPriceId }],
-        trial_period_days: TRIAL_PERIOD_DAYS,
+        items: [{ price: effectivePrice.id }],
         default_payment_method: paymentMethodId,
         metadata: {
           workspace_id: workspaceId,
           supabase_user_id: user.id,
           plan_key: planKey,
         },
-        // Send trial ending reminder via webhook (fires when ≤3 days remain)
-        trial_settings: {
+      };
+
+      if (useTrial) {
+        subscriptionParams.trial_period_days = TRIAL_PERIOD_DAYS;
+        subscriptionParams.trial_settings = {
           end_behavior: { missing_payment_method: 'cancel' },
-        },
-      });
+        };
+      }
+
+      const subscription = await stripe.subscriptions.create(subscriptionParams);
 
       subscriptionCreated = true;
 
-      const trialEnd = subscription.trial_end
-        ? new Date(subscription.trial_end * 1000).toISOString()
-        : null;
+      const internalStatus = mapStripeStatusToInternal(subscription.status, false);
 
-      const trialStart = subscription.start_date
-        ? new Date(subscription.start_date * 1000).toISOString()
-        : new Date().toISOString();
+      const trialEnd =
+        useTrial && subscription.trial_end
+          ? new Date(subscription.trial_end * 1000).toISOString()
+          : null;
+
+      const trialStart = useTrial
+        ? subscription.trial_start != null
+          ? new Date(subscription.trial_start * 1000).toISOString()
+          : subscription.start_date != null
+            ? new Date(subscription.start_date * 1000).toISOString()
+            : new Date().toISOString()
+        : null;
 
       const { start: periodStart, end: periodEnd } = subscriptionPeriodIso(subscription);
 
@@ -187,9 +251,9 @@ export async function POST(req: Request) {
           owner_user_id: user.id,
           stripe_customer_id: stripeCustomerId,
           stripe_subscription_id: subscription.id,
-          stripe_price_id: plan.defaultPriceId,
+          stripe_price_id: effectivePrice.id,
           stripe_product_id: plan.productId,
-          status: 'trialing',
+          status: internalStatus,
           trial_start: trialStart,
           trial_end: trialEnd,
           current_period_start: periodStart,
@@ -201,7 +265,6 @@ export async function POST(req: Request) {
 
       if (subError) {
         console.error('[create-trial] workspace_subscriptions upsert failed:', subError);
-        // Non-fatal — webhook will sync on next event, but log it
       }
 
       // ── Convert lead record if present ──────────────────────────────────────
@@ -210,7 +273,7 @@ export async function POST(req: Request) {
         .update({ converted_at: new Date().toISOString(), user_id: user.id })
         .eq('workspace_id', workspaceId)
         .is('converted_at', null)
-        .not('user_id', 'is', null) // only if we already linked this user
+        .not('user_id', 'is', null)
         .eq('user_id', user.id);
 
       void trackServerEvent('trial_started', {
@@ -219,18 +282,64 @@ export async function POST(req: Request) {
         metadata: { plan: planKey },
       });
 
+      await insertBillingFunnelEvent({
+        source: 'server',
+        eventKey: BILLING_FUNNEL_EVENT_KEYS.SUBSCRIPTION_SUCCEEDED,
+        workspaceId,
+        userId: user.id,
+        billingAttemptId,
+        payload: {
+          plan_key: planKey,
+          internal_status: internalStatus,
+          subscribe_without_trial: subscribeWithoutTrial,
+          subscription_id_suffix: subscription.id.slice(-8),
+        },
+      });
+
       return NextResponse.json({
         subscriptionId: subscription.id,
-        status: 'trialing',
+        status: internalStatus,
         trialEnd,
+        subscribeWithoutTrial,
       });
     } catch (inner) {
-      if (!subscriptionCreated) {
+      if (!subscriptionCreated && useTrial) {
         await serviceSupabase
           .from('stripe_customers')
           .update({ has_had_trial: false })
           .eq('user_id', user.id);
       }
+
+      const errMsg =
+        inner instanceof Error
+          ? inner.message.slice(0, 500)
+          : typeof inner === 'object' &&
+              inner !== null &&
+              'message' in inner &&
+              typeof (inner as { message?: unknown }).message === 'string'
+            ? String((inner as { message: string }).message).slice(0, 500)
+            : 'unknown_error';
+      const errCode =
+        typeof inner === 'object' &&
+        inner !== null &&
+        'code' in inner &&
+        typeof (inner as { code?: unknown }).code === 'string'
+          ? (inner as { code: string }).code
+          : undefined;
+
+      await insertBillingFunnelEvent({
+        source: 'server',
+        eventKey: BILLING_FUNNEL_EVENT_KEYS.SUBSCRIPTION_FAILED,
+        workspaceId,
+        userId: user.id,
+        billingAttemptId,
+        payload: {
+          plan_key: planKey,
+          message: errMsg,
+          ...(errCode ? { code: errCode } : {}),
+        },
+      });
+
       throw inner;
     }
   } catch (e) {

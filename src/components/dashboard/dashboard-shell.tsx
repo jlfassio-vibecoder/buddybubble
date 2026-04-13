@@ -269,11 +269,8 @@ export function DashboardShell({
     };
   }, [workspaceId, profile?.id, selectedBubbleId, bubbles]);
 
-  const { canWriteTasks, canPostMessages, canCreateWorkspaceBubble, isAdmin, isOwner } = usePermissions(
-    effectiveWorkspaceRole,
-    myBubbleRole,
-    activeBubbleIsPrivate,
-  );
+  const { canWriteTasks, canPostMessages, canCreateWorkspaceBubble, isAdmin, isOwner } =
+    usePermissions(effectiveWorkspaceRole, myBubbleRole, activeBubbleIsPrivate);
 
   useUpdatePresence({ embedMode, workspaceId });
 
@@ -992,11 +989,8 @@ export function DashboardShell({
             workspaceId={workspaceId}
           />
         ) : null}
-        {(workspaceCategoryForUi === 'fitness' || workspaceCategoryForUi === 'business') ? (
-          <StartTrialModal
-            workspaceId={workspaceId}
-            categoryType={workspaceCategoryForUi}
-          />
+        {workspaceCategoryForUi === 'fitness' || workspaceCategoryForUi === 'business' ? (
+          <StartTrialModal workspaceId={workspaceId} categoryType={workspaceCategoryForUi} />
         ) : null}
         {commentAlert ? (
           <div

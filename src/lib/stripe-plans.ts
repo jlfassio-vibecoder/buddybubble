@@ -1,59 +1,97 @@
 /**
- * Browser-safe Stripe plan catalog.
+ * Browser-safe Stripe plan metadata (names, copy, member limits).
  *
- * This file contains ONLY plain data — no Node.js SDK imports.
- * Import from here in Client Components and shared utilities.
+ * Stripe product/price IDs are **not** here — they differ between test and live mode
+ * and are resolved server-side in `@/lib/stripe` via `getStripePlans()`.
  *
- * Server-side API routes should import from `@/lib/stripe` which
- * re-exports everything here alongside the Stripe Node SDK singleton.
+ * **listPriceLabel:** Shown in the subscribe plan picker. Keep aligned with each product’s
+ * default recurring price in Stripe (USD/mo). New subscriptions and plan-pricing use
+ * `retrieveEffectivePlanPrice()` in `@/lib/stripe`: the Product’s active recurring **default
+ * price** in Stripe when set, otherwise the catalog `defaultPriceId`. In test mode, if
+ * `STRIPE_TEST_CATALOG_JSON` auto-fills business keys from Host, those tiers share Host’s
+ * Stripe product until you add real entries per key in `STRIPE_TEST_CATALOG_JSON_OVERLAY`.
  */
 
-export const STRIPE_PLANS = {
+export const STRIPE_PLAN_META = {
   athlete: {
-    productId: 'prod_UDhTcM2fPV6Q5a',
-    defaultPriceId: 'price_1TFG4fLa1RgN4xxgYyHMfH7V',
     name: 'Athlete',
     description: 'Solo personal performance tracking with AI HIIT workouts.',
     maxMembers: 1 as number | null,
+    listPriceLabel: '$9.99/mo',
+    features: [
+      'Personal AI HIIT and workout generation',
+      'Task and calendar views for your own training',
+      'Mobile-friendly workspace access',
+    ] as const,
   },
   host: {
-    productId: 'prod_UE6nvKBLLeH6k6',
-    defaultPriceId: 'price_1TFeZnLa1RgN4xxgA6CaoIsb',
     name: 'Host',
     description: 'Community host — all Athlete features + up to 5 members.',
     maxMembers: 5 as number | null,
+    listPriceLabel: '$24.99/mo',
+    features: [
+      'Everything in Athlete',
+      'Invite and manage up to 5 members',
+      'Shared bubbles, messaging, and programs',
+      'Owner tools for community hosting',
+    ] as const,
   },
   pro: {
-    productId: 'prod_UE6qKGg6mDMj9B',
-    defaultPriceId: 'price_1TFecfLa1RgN4xxgcX0y92bk',
     name: 'Pro',
     description: 'Coaching business — AI programming + 360° health insights for 30+ clients.',
     maxMembers: 30 as number | null,
+    listPriceLabel: '$49.99/mo',
+    features: [
+      'AI programming and health-oriented insights',
+      'Client management for growing coaching practices',
+      'Analytics and reporting for your pipeline',
+      'Branded experience for clients (where enabled)',
+    ] as const,
   },
   studio: {
-    productId: 'prod_UE6sc9yLpUp0Me',
-    defaultPriceId: 'price_1TFeeYLa1RgN4xxgjYY0MmVN',
     name: 'Studio',
     description: 'Boutique studio — multi-trainer management + location analytics.',
     maxMembers: null as number | null,
+    listPriceLabel: '$199.99/mo',
+    features: [
+      'Multi-trainer roles and scheduling',
+      'Location- and class-oriented analytics',
+      'Studio-wide programs and member journeys',
+      'Priority feature access for boutique operators',
+    ] as const,
   },
   coach_pro: {
-    productId: 'prod_UE6uvLSsz3mxKo',
-    defaultPriceId: 'price_1TFeh5La1RgN4xxg0hdVWysF',
     name: 'Coach Pro',
     description: 'Large coaching operation — 200+ clients, full analytics suite.',
     maxMembers: 200 as number | null,
+    listPriceLabel: '$199.99/mo',
+    features: [
+      'High member caps for large coaching teams',
+      'Full analytics and export-oriented workflows',
+      'Advanced AI and automation where available',
+      'Operational tooling for multi-coach orgs',
+    ] as const,
   },
   studio_pro: {
-    productId: 'prod_UEPent0XbfaD7J',
-    defaultPriceId: 'price_1TFwp8La1RgN4xxgSQ0n1DaM',
     name: 'Studio Pro',
     description: 'Multi-studio enterprise — unlimited engagement tools.',
     maxMembers: null as number | null,
+    listPriceLabel: '$299.99/mo',
+    features: [
+      'Multi-location and enterprise-ready limits',
+      'Advanced engagement and retention tooling',
+      'Dedicated analytics across studios',
+      'White-glove configuration options (where offered)',
+    ] as const,
   },
 } as const;
 
-export type StripePlanKey = keyof typeof STRIPE_PLANS;
+export type StripePlanKey = keyof typeof STRIPE_PLAN_META;
+
+export const STRIPE_PLAN_KEYS = Object.keys(STRIPE_PLAN_META) as StripePlanKey[];
+
+/** @deprecated Use STRIPE_PLAN_META — kept for gradual migration of imports */
+export const STRIPE_PLANS = STRIPE_PLAN_META;
 
 /** 3-day reverse trial: card required upfront, auto-charges on day 4 unless cancelled. */
 export const TRIAL_PERIOD_DAYS = 3;
