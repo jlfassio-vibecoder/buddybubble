@@ -58,7 +58,7 @@ export function checkServiceRoleKeyMatchesUrl(
     return {
       ok: false,
       message: `Project mismatch: NEXT_PUBLIC_SUPABASE_URL uses ref "${urlRef}" but the service_role key is for ref "${ref}".`,
-      hint: 'Use URL + keys from the same project. Dashboard → Settings → General: project ref must match everywhere.',
+      hint: 'Use URL + keys from the same Supabase project. If .env.local is already correct, an exported shell variable is usually overriding it: Next/dotenv does not replace keys already in process.env. Run `printenv SUPABASE_SERVICE_ROLE_KEY` in the same terminal as `npm run dev`; if it prints anything, `unset SUPABASE_SERVICE_ROLE_KEY` and remove it from ~/.zshrc (or Cursor env) so .env.local wins, then restart the dev server.',
     };
   }
 

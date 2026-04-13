@@ -28,6 +28,8 @@ import {
   mapStripeStatusToInternal,
   subscriptionPeriodIso,
 } from '@/lib/stripe';
+import { trackServerEvent } from '@/lib/analytics/server';
+import { BILLING_FUNNEL_EVENT_KEYS, insertBillingFunnelEvent } from '@/lib/billing-funnel-events';
 import type Stripe from 'stripe';
 
 // Prevent Next.js from parsing the body — Stripe needs the raw bytes to verify the signature.
@@ -87,11 +89,12 @@ export async function POST(req: Request) {
         const sub = event.data.object as Stripe.Subscription;
         const { data: existing } = await db
           .from('workspace_subscriptions')
-          .select('status')
+          .select('status, owner_user_id, workspace_id')
           .eq('stripe_subscription_id', sub.id)
           .maybeSingle();
 
         const wasTrialing = existing?.status === 'trialing';
+        const wasActive = existing?.status === 'active';
         const finalStatus = wasTrialing ? 'trial_expired' : 'canceled';
 
         await db
@@ -101,6 +104,34 @@ export async function POST(req: Request) {
             cancel_at_period_end: false,
           })
           .eq('stripe_subscription_id', sub.id);
+
+        const workspaceId = (existing as { workspace_id?: string } | null)?.workspace_id ?? null;
+        const userId = (existing as { owner_user_id?: string } | null)?.owner_user_id ?? null;
+
+        if (wasTrialing) {
+          // Calculate days_into_trial
+          const trialStartMs = sub.trial_start ? sub.trial_start * 1000 : null;
+          const daysIntoTrial = trialStartMs
+            ? Math.floor((Date.now() - trialStartMs) / 86_400_000)
+            : 0;
+          void trackServerEvent('trial_canceled', {
+            workspaceId,
+            userId,
+            metadata: { days_into_trial: daysIntoTrial },
+          });
+        } else if (wasActive) {
+          const startSec = sub.start_date ?? sub.created ?? null;
+          const endSec = sub.canceled_at ?? Math.floor(Date.now() / 1000);
+          let monthsActive = 0;
+          if (startSec != null && endSec >= startSec) {
+            monthsActive = Math.max(0, Math.floor((endSec - startSec) / (30 * 24 * 60 * 60)));
+          }
+          void trackServerEvent('subscription_canceled', {
+            workspaceId,
+            userId,
+            metadata: { months_active: monthsActive },
+          });
+        }
 
         console.log(`[webhook] subscription.deleted → ${finalStatus} (sub: ${sub.id})`);
         break;
@@ -137,6 +168,49 @@ export async function POST(req: Request) {
             .eq('stripe_subscription_id', sub.id);
 
           console.log(`[webhook] invoice.payment_succeeded → active (sub: ${sub.id})`);
+
+          // trial_converted — first successful charge after a trial
+          if (invoice.billing_reason === 'subscription_cycle') {
+            const { data: subRow } = await db
+              .from('workspace_subscriptions')
+              .select('workspace_id, owner_user_id, trial_start, stripe_price_id')
+              .eq('stripe_subscription_id', sub.id)
+              .maybeSingle();
+            const wsId = (subRow as { workspace_id?: string } | null)?.workspace_id ?? null;
+            const ownerId = (subRow as { owner_user_id?: string } | null)?.owner_user_id ?? null;
+            const trialStart = (subRow as { trial_start?: string | null } | null)?.trial_start;
+            const priceId =
+              (subRow as { stripe_price_id?: string | null } | null)?.stripe_price_id ?? '';
+            const trialDays = trialStart
+              ? Math.floor((Date.now() - new Date(trialStart).getTime()) / 86_400_000)
+              : 0;
+            void trackServerEvent('trial_converted', {
+              workspaceId: wsId,
+              userId: ownerId,
+              metadata: { plan: priceId, trial_duration_days: trialDays },
+            });
+          }
+        }
+
+        try {
+          const subF = await stripe.subscriptions.retrieve(invoiceSubId);
+          const ws = subF.metadata?.workspace_id;
+          const uid = subF.metadata?.supabase_user_id;
+          if (ws && uid) {
+            await insertBillingFunnelEvent({
+              source: 'server',
+              eventKey: BILLING_FUNNEL_EVENT_KEYS.WEBHOOK_INVOICE_PAYMENT_SUCCEEDED,
+              stripeEventId: event.id,
+              workspaceId: ws,
+              userId: uid,
+              payload: {
+                billing_reason: invoice.billing_reason ?? null,
+                subscription_id_suffix: invoiceSubId.slice(-8),
+              },
+            });
+          }
+        } catch {
+          /* ignore funnel insert */
         }
         break;
       }
@@ -154,6 +228,27 @@ export async function POST(req: Request) {
 
         await handlePaymentFailed(db, invoice);
         console.log(`[webhook] invoice.payment_failed → past_due (sub: ${invoiceSubId})`);
+
+        try {
+          const sub = await stripe.subscriptions.retrieve(invoiceSubId);
+          const ws = sub.metadata?.workspace_id;
+          const uid = sub.metadata?.supabase_user_id;
+          if (ws && uid) {
+            await insertBillingFunnelEvent({
+              source: 'server',
+              eventKey: BILLING_FUNNEL_EVENT_KEYS.WEBHOOK_INVOICE_PAYMENT_FAILED,
+              stripeEventId: event.id,
+              workspaceId: ws,
+              userId: uid,
+              payload: {
+                attempt_count: invoice.attempt_count ?? null,
+                subscription_id_suffix: invoiceSubId.slice(-8),
+              },
+            });
+          }
+        } catch {
+          /* ignore funnel insert */
+        }
         break;
       }
 
@@ -201,7 +296,7 @@ async function sendResendEmail(body: {
       return;
     }
 
-    console.log(`[webhook] email sent (${body.logContext}) to ${body.to}`);
+    console.log(`[webhook] email sent (${body.logContext})`);
   } catch (e) {
     console.error(`[webhook] Resend request failed (${body.logContext}):`, e);
   }
