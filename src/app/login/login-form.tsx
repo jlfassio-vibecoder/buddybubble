@@ -11,6 +11,7 @@ import { formatLoginAuthError } from '@/lib/format-error';
 import { BB_INVITE_HANDOFF_SESSION_KEY } from '@/lib/invite-handoff-storage';
 import { safeNextPath } from '@/lib/safe-next-path';
 import { persistInviteHandoffToken } from '@/app/(dashboard)/onboarding/actions';
+import { reportInviteJourneyClient } from '@/lib/analytics/invite-journey-client';
 import { cn } from '@/lib/utils';
 
 /** Prefer `/onboarding` when an invite handoff is waiting (sessionStorage or query). */
@@ -62,6 +63,13 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
   }, []);
 
   useEffect(() => {
+    if (!inviteToken?.trim()) return;
+    reportInviteJourneyClient(inviteToken, 'login_with_invite_token_opened', {
+      next_query: next,
+    });
+  }, [inviteToken, next]);
+
+  useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!window.location.hash.includes('access_token')) return;
 
@@ -73,6 +81,21 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
     } = supabase.auth.onAuthStateChange((event, session) => {
       if (event !== 'SIGNED_IN' || !session) return;
       const path = resolvePostLoginPath(next, inviteToken);
+      let handoffTok = inviteToken;
+      if (!handoffTok) {
+        try {
+          handoffTok = sessionStorage.getItem(BB_INVITE_HANDOFF_SESSION_KEY)?.trim() || null;
+        } catch {
+          handoffTok = null;
+        }
+      }
+      if (handoffTok) {
+        reportInviteJourneyClient(handoffTok, 'login_magic_link_session_resolved', {
+          resolved_path: path,
+          next_query: next,
+          had_invite_in_url: Boolean(inviteToken),
+        });
+      }
       window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
       router.replace(path);
       router.refresh();

@@ -1,6 +1,8 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { insertInviteJourneyByToken } from '@/lib/analytics/invite-journey-server';
 import { BB_INVITE_TOKEN_COOKIE } from '@/lib/invite-cookies';
+import { isPlausibleInviteTokenForCookie } from '@/lib/invite-token';
 import { createClient } from '@utils/supabase/server';
 import NoWorkspaces from '../app/no-workspaces';
 import { InviteHandoffRecovery } from './invite-handoff-recovery';
@@ -19,6 +21,14 @@ export default async function OnboardingPage({
   } = await supabase.auth.getUser();
   if (!user) {
     const onboardingNext = invite === 'pending' ? '/onboarding?invite=pending' : '/onboarding';
+    const cookieStore = await cookies();
+    const rawInvite = cookieStore.get(BB_INVITE_TOKEN_COOKIE)?.value?.trim() ?? '';
+    if (rawInvite && isPlausibleInviteTokenForCookie(rawInvite)) {
+      await insertInviteJourneyByToken(rawInvite, 'onboarding_no_user_redirect_login', {
+        redirect_target: '/login',
+        onboarding_next: onboardingNext,
+      });
+    }
     redirect(`/login?next=${encodeURIComponent(onboardingNext)}`);
   }
 

@@ -402,6 +402,14 @@ export function InvitesClient({
                     QR code
                   </Button>
                 </div>
+                {linkMode === 'qr' ? (
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    QR is best in person: your guest can tap{' '}
+                    <strong className="text-foreground">Join instantly as a guest</strong> on the
+                    invite page — no email round-trip. They can still use Google or email if they
+                    prefer.
+                  </p>
+                ) : null}
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   <div>
                     <label className="mb-1 block text-sm font-medium">Label (optional)</label>
