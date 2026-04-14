@@ -1249,7 +1249,6 @@ export function KanbanBoard({
                   isCompleted={taskColumnIsCompletionStatus(activeTask.status, columnDefs)}
                   className="pointer-events-none shadow-lg"
                   dragHandle={<KanbanTaskCardDragDecoration />}
-                  showKanbanCoverToggle
                 />
               </div>
             ) : null}
@@ -1475,6 +1474,7 @@ function SortableTaskCard({
         onStartWorkout={onStartWorkout}
         bubbleUp={bubbleUp}
         isCompleted={taskColumnIsCompletionStatus(task.status, boardColumnDefs)}
+        // Cover hide/show: main Kanban board only (calendar / ProgramsBoard omit this prop).
         showKanbanCoverToggle
         dragHandle={
           draggable ? (
