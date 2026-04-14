@@ -237,7 +237,7 @@ export function ProfileCompletionModal({
         <div className="shrink-0 border-b border-border p-6 pb-4">
           <h3 className="text-xl font-bold text-foreground">Welcome — set up your profile</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Your name is shown to everyone in workspaces you share. Add a photo and bio so people
+            Your name is shown to everyone in socialspaces you share. Add a photo and bio so people
             can recognise you.
           </p>
         </div>
@@ -312,7 +312,7 @@ export function ProfileCompletionModal({
                 />
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                Shown to members in workspaces you share.
+                Shown to members in socialspaces you share.
               </p>
             </div>
 
@@ -328,7 +328,7 @@ export function ProfileCompletionModal({
                 maxLength={500}
                 disabled={pending}
                 className="w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-50"
-                placeholder="A short intro shown to your workspace…"
+                placeholder="A short intro shown to your socialspace…"
               />
               <p className="mt-0.5 text-right text-xs text-muted-foreground">{bio.length}/500</p>
             </div>
@@ -365,7 +365,7 @@ export function ProfileCompletionModal({
                     </span>
                     <span className="mt-0.5 block text-xs text-muted-foreground">
                       Off by default — members won&apos;t see your address in chat or mentions
-                      unless you turn this on. Workspace owners and admins can still see it for
+                      unless you turn this on. Socialspace owners and admins can still see it for
                       support.
                     </span>
                   </span>
@@ -380,7 +380,7 @@ export function ProfileCompletionModal({
                   <span className="text-xs font-normal text-muted-foreground">(optional)</span>
                 </label>
                 <p className="mb-2 text-xs text-muted-foreground">
-                  Children or family member names visible to workspace members. Max 8 names.
+                  Children or family member names visible to socialspace members. Max 8 names.
                 </p>
                 <div className="space-y-2">
                   {childrenNames.map((n, i) => (

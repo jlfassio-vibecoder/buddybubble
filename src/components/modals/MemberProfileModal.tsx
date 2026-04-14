@@ -134,8 +134,8 @@ export function MemberProfileModal({
         <DialogHeader>
           <DialogTitle>Member profile</DialogTitle>
           <DialogDescription>
-            Information they added to their account, plus workspace notes visible only to owners and
-            admins.
+            Information they added to their account, plus socialspace notes visible only to owners
+            and admins.
           </DialogDescription>
         </DialogHeader>
 
@@ -168,7 +168,7 @@ export function MemberProfileModal({
                   </p>
                 ) : null}
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Workspace role:{' '}
+                  Socialspace role:{' '}
                   <span className="font-medium text-foreground">
                     {ROLE_LABELS[detail?.workspace_role ?? member.role]}
                   </span>
@@ -199,10 +199,10 @@ export function MemberProfileModal({
 
             <div>
               <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Workspace notes
+                Socialspace notes
               </label>
               <p className="mt-1 text-xs text-muted-foreground">
-                Visible only to workspace owners and admins. Not shown to this member.
+                Visible only to socialspace owners and admins. Not shown to this member.
               </p>
               <textarea
                 value={noteDraft}

@@ -50,7 +50,7 @@ export async function GET(req: Request) {
 
     if (!membership || membership.role !== 'owner') {
       return NextResponse.json(
-        { error: 'Only the workspace owner can access billing settings' },
+        { error: 'Only the socialspace owner can access billing settings' },
         { status: 403 },
       );
     }

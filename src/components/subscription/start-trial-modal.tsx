@@ -264,7 +264,7 @@ export function StartTrialModal({ workspaceId, categoryType }: Props) {
 
   const descText =
     step === 'success'
-      ? 'Your workspace now has full access to all premium features.'
+      ? 'Your socialspace now has full access to all premium features.'
       : step === 'card'
         ? subscribeWithoutTrial
           ? trialExpiredWorkspace
@@ -273,7 +273,7 @@ export function StartTrialModal({ workspaceId, categoryType }: Props) {
           : 'Your card will not be charged until the trial ends on day 4.'
         : subscribeWithoutTrial
           ? trialExpiredWorkspace
-            ? 'Your free trial for this workspace has ended. Choose a plan to restore full access. Billing starts today — there is no additional free trial.'
+            ? 'Your free trial for this socialspace has ended. Choose a plan to restore full access. Billing starts today — there is no additional free trial.'
             : 'Choose a plan. Your subscription starts today — you have already used your free trial.'
           : 'Choose a plan. Your card will be charged after the 3-day trial unless you cancel.';
 
@@ -724,7 +724,7 @@ function CardStep({
         <p className="text-xs leading-relaxed text-foreground/80">
           {subscribeWithoutTrial
             ? trialExpiredWorkspace
-              ? 'Completing payment reactivates your subscription for this workspace. You can manage billing anytime in settings.'
+              ? 'Completing payment reactivates your subscription for this socialspace. You can manage billing anytime in settings.'
               : 'You will be charged for your plan according to the billing cycle. You can cancel or update your plan from billing settings.'
             : 'Your card will not be charged until the 3-day trial ends. Cancel anytime before then from your billing settings.'}
         </p>
@@ -770,7 +770,7 @@ function SuccessStep({
           <p className="text-sm text-muted-foreground">
             {subscribeWithoutTrial
               ? trialExpiredWorkspace
-                ? 'Your subscription is active again. Premium features for this workspace are restored.'
+                ? 'Your subscription is active again. Premium features for this socialspace are restored.'
                 : 'Your subscription is active. Full access to AI generation, analytics, and all premium features is now available.'
               : 'Your 3-day free trial has started. Full access to AI generation, analytics, and all premium features is now active. We&apos;ll send you a reminder before the trial ends.'}
           </p>

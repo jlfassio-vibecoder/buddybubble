@@ -713,7 +713,7 @@ export function ChatArea({
         return false;
       }
       if (!workspaceId) {
-        setAttachmentError('No workspace selected.');
+        setAttachmentError('No socialspace selected.');
         return false;
       }
       const raw = files ?? [];
@@ -760,7 +760,7 @@ export function ChatArea({
         setAttachmentError(
           parentId
             ? 'Could not find thread parent. Try closing and reopening the thread.'
-            : 'Add a bubble in this workspace before posting attachments.',
+            : 'Add a bubble in this socialspace before posting attachments.',
         );
         return false;
       }
@@ -1088,7 +1088,7 @@ export function ChatArea({
       setAttachmentError(
         threadParentId
           ? 'Could not find thread parent. Try closing and reopening the thread.'
-          : 'Add a bubble in this workspace before posting.',
+          : 'Add a bubble in this socialspace before posting.',
       );
       return;
     }

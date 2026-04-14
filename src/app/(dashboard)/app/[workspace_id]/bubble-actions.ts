@@ -33,7 +33,7 @@ async function requireWorkspaceAdmin(
     .maybeSingle();
   const role = (data as { role?: string } | null)?.role;
   if (role !== 'owner' && role !== 'admin') {
-    return { ok: false, error: 'Only workspace admins and owners can manage access.' };
+    return { ok: false, error: 'Only socialspace admins and owners can manage access.' };
   }
   return { ok: true };
 }
@@ -62,7 +62,7 @@ async function requireBubbleAdmin(
 
   const role = (member as { role?: string } | null)?.role;
   if (role !== 'owner' && role !== 'admin') {
-    return { ok: false, error: 'Only workspace admins can manage bubble settings.' };
+    return { ok: false, error: 'Only socialspace admins can manage bubble settings.' };
   }
 
   return { ok: true, workspaceId: ws.workspace_id };
@@ -161,7 +161,7 @@ export async function addBubbleMemberAction(input: {
   if (!check.ok) return { error: check.error };
 
   if (input.workspaceId !== check.workspaceId) {
-    return { error: 'Bubble does not belong to this workspace.' };
+    return { error: 'Bubble does not belong to this socialspace.' };
   }
 
   // Verify target is a workspace member (use verified workspaceId from bubble lookup)
@@ -172,7 +172,7 @@ export async function addBubbleMemberAction(input: {
     .eq('user_id', input.userId)
     .maybeSingle();
 
-  if (!wsMember) return { error: 'User is not a member of this workspace.' };
+  if (!wsMember) return { error: 'User is not a member of this socialspace.' };
 
   const { error } = await supabase.from('bubble_members').upsert(
     {
@@ -353,7 +353,7 @@ export async function revokeBubbleAccessAction(input: {
   if (!check.ok) return { error: check.error };
 
   if (input.workspaceId !== check.workspaceId) {
-    return { error: 'Bubble does not belong to this workspace.' };
+    return { error: 'Bubble does not belong to this socialspace.' };
   }
 
   const { error } = await supabase

@@ -76,7 +76,7 @@ export async function POST(req: Request) {
       .single();
 
     if (wsError || !workspace) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Socialspace not found' }, { status: 404 });
     }
 
     const { data: subRow } = await supabase
@@ -94,7 +94,7 @@ export async function POST(req: Request) {
     if (!perms.canUseAI) {
       return NextResponse.json(
         {
-          error: 'AI generation requires an active subscription or trial for this workspace.',
+          error: 'AI generation requires an active subscription or trial for this socialspace.',
           code: 'AI_SUBSCRIPTION_REQUIRED',
         },
         { status: 403, headers: JSON_HEADERS },
@@ -119,7 +119,7 @@ export async function POST(req: Request) {
 
     if (bubbleError || !bubble || bubble.workspace_id !== workspaceId) {
       return NextResponse.json(
-        { error: 'Task does not belong to this workspace' },
+        { error: 'Task does not belong to this socialspace' },
         { status: 400 },
       );
     }

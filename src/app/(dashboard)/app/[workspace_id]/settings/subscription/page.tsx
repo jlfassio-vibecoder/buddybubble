@@ -55,7 +55,7 @@ export default async function WorkspaceSubscriptionPage({
     .eq('id', workspace_id)
     .maybeSingle();
 
-  const workspaceName = (ws as { name?: string } | null)?.name?.trim() || 'Workspace';
+  const workspaceName = (ws as { name?: string } | null)?.name?.trim() || 'Socialspace';
   const categoryType = (ws as { category_type?: string } | null)?.category_type ?? '';
   const requiresSubscription = categoryType === 'business' || categoryType === 'fitness';
 
@@ -105,7 +105,7 @@ export default async function WorkspaceSubscriptionPage({
             href={`/app/${workspace_id}`}
             className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
           >
-            ← Back to workspace
+            ← Back to socialspace
           </Link>
           <h1 className="mt-4 text-2xl font-semibold tracking-tight text-foreground">
             Subscription & billing
@@ -118,8 +118,8 @@ export default async function WorkspaceSubscriptionPage({
             <CardTitle>Plan status</CardTitle>
             <CardDescription>
               {requiresSubscription
-                ? 'Business and fitness workspaces use a paid plan after the trial.'
-                : 'This workspace type does not require a paid subscription.'}
+                ? 'Business and fitness socialspaces use a paid plan after the trial.'
+                : 'This socialspace type does not require a paid subscription.'}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
@@ -146,13 +146,13 @@ export default async function WorkspaceSubscriptionPage({
             ) : null}
             {!requiresSubscription ? (
               <p className="text-muted-foreground">
-                Community, kids, and class workspaces stay on the free tier.
+                Community, kids, and class socialspaces stay on the free tier.
               </p>
             ) : null}
             {requiresSubscription && !isOwner ? (
               <p className="text-muted-foreground">
-                Only the workspace owner can change payment methods or cancel billing. You still
-                have access according to the workspace&apos;s plan.
+                Only the socialspace owner can change payment methods or cancel billing. You still
+                have access according to the socialspace&apos;s plan.
               </p>
             ) : null}
           </CardContent>

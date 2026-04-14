@@ -65,7 +65,7 @@ export async function joinViaInviteAction(
         { reason: 'missing_workspace_id' },
         { userId: user?.id ?? null },
       );
-      return { error: 'Could not resolve workspace.' };
+      return { error: 'Could not resolve socialspace.' };
     }
     const isAnonymous = Boolean((user as { is_anonymous?: boolean } | null)?.is_anonymous);
     if (isAnonymous) {

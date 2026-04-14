@@ -55,7 +55,7 @@ export async function fetchInvitesBootstrapClient(
     .eq('id', workspaceId)
     .maybeSingle();
 
-  const workspaceName = (ws as { name?: string } | null)?.name?.trim() || 'this workspace';
+  const workspaceName = (ws as { name?: string } | null)?.name?.trim() || 'this socialspace';
 
   const { data: rows, error } = await supabase
     .from('invitations')

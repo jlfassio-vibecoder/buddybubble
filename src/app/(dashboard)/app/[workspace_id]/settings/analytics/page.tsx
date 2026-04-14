@@ -47,7 +47,7 @@ const GATE_FEATURE_LABELS: Record<string, string> = {
   export: 'Data export',
   record_data: 'Recording data',
   custom_branding: 'Custom branding',
-  create_workspace: 'Create workspace',
+  create_workspace: 'Create socialspace',
 };
 
 export default async function WorkspaceAnalyticsPage({
@@ -82,7 +82,7 @@ export default async function WorkspaceAnalyticsPage({
     .eq('id', workspace_id)
     .maybeSingle();
 
-  const workspaceName = (ws as { name?: string } | null)?.name?.trim() || 'Workspace';
+  const workspaceName = (ws as { name?: string } | null)?.name?.trim() || 'Socialspace';
   const categoryType = (ws as { category_type?: string } | null)?.category_type;
   const isGrowthLeadWorkspace = categoryType === 'business' || categoryType === 'fitness';
 
@@ -289,7 +289,7 @@ export default async function WorkspaceAnalyticsPage({
             href={`/app/${workspace_id}`}
             className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
           >
-            ← Back to workspace
+            ← Back to socialspace
           </Link>
           <h1 className="mt-4 text-2xl font-semibold tracking-tight text-foreground">Analytics</h1>
           <p className="mt-1 text-sm text-muted-foreground">{workspaceName} — last 30 days</p>
@@ -386,7 +386,7 @@ export default async function WorkspaceAnalyticsPage({
           <Card className="mb-6">
             <CardHeader>
               <CardTitle>Funnel events</CardTitle>
-              <CardDescription>Lifecycle events triggered in this workspace.</CardDescription>
+              <CardDescription>Lifecycle events triggered in this socialspace.</CardDescription>
             </CardHeader>
             <CardContent>
               <ul className="divide-y divide-border text-sm">
@@ -436,7 +436,7 @@ export default async function WorkspaceAnalyticsPage({
           <Card>
             <CardContent className="py-10 text-center text-sm text-muted-foreground">
               No analytics events recorded yet. Events will appear here as members use your
-              workspace.
+              socialspace.
             </CardContent>
           </Card>
         ) : null}

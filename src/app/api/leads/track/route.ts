@@ -96,7 +96,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (!workspace) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Socialspace not found' }, { status: 404 });
     }
 
     if (!['business', 'fitness'].includes(workspace.category_type)) {
