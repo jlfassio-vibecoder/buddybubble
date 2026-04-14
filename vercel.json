@@ -8,6 +8,10 @@
     {
       "path": "/api/cron/scheduled-tasks",
       "schedule": "5 * * * *"
+    },
+    {
+      "path": "/api/cron/expire-member-trials",
+      "schedule": "0 6 * * *"
     }
   ]
 }

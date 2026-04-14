@@ -39,6 +39,7 @@ import {
 import { hasOtherActiveProgramForUserInWorkspace } from '@/lib/fitness/active-program-for-user';
 import { syncProgramLinkedWorkoutSchedules } from '@/lib/fitness/sync-program-workout-schedules';
 import type { BubbleRow, ItemType, Json, TaskRow, WorkspaceCategory } from '@/types/database';
+import { useWorkspaceStore } from '@/store/workspaceStore';
 import {
   Dialog,
   DialogContent,
@@ -409,6 +410,10 @@ export function ProgramsBoard({
   onOpenCreateTask,
   canWrite,
 }: Props) {
+  const activeWorkspaceRole = useWorkspaceStore((s) => s.activeWorkspace?.role ?? null);
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspace?.id ?? null);
+  const guestProgramsBlocked = activeWorkspaceRole === 'guest' && activeWorkspaceId === workspaceId;
+
   const [programs, setPrograms] = useState<ProgramTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1065,6 +1070,14 @@ export function ProgramsBoard({
   };
 
   const thisWeekCount = activePlanDays.length + weekWorkouts.length;
+
+  if (guestProgramsBlocked) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground">
+        <p>Programs are not available for guest preview accounts.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-row overflow-hidden bg-muted/30">

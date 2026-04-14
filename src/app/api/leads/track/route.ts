@@ -26,12 +26,10 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@utils/supabase/server';
 import { createServiceRoleClient } from '@/lib/supabase-service-role';
-import {
-  trackWorkspaceLeadCaptured,
-  type LeadSource,
-} from '@/lib/lead-capture-analytics';
+import { trackWorkspaceLeadCaptured } from '@/lib/lead-capture-analytics';
+import type { InviteLeadSource } from '@/lib/leads-source';
 
-const VALID_SOURCES = new Set<LeadSource>(['qr', 'link', 'email', 'sms', 'direct']);
+const VALID_SOURCES = new Set<InviteLeadSource>(['qr', 'link', 'email', 'sms', 'direct']);
 
 function normalizeUtmParams(raw: unknown): Record<string, string> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
@@ -67,9 +65,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'workspaceId is required' }, { status: 400 });
     }
 
-    const source: LeadSource =
-      typeof body.source === 'string' && VALID_SOURCES.has(body.source as LeadSource)
-        ? (body.source as LeadSource)
+    const source: InviteLeadSource =
+      typeof body.source === 'string' && VALID_SOURCES.has(body.source as InviteLeadSource)
+        ? (body.source as InviteLeadSource)
         : 'direct';
 
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() || null : null;
@@ -184,7 +182,7 @@ async function insertNewLead(
   opts: {
     workspaceId: string;
     inviteToken: string | null;
-    source: LeadSource;
+    source: InviteLeadSource;
     email: string | null;
     utmParams: Record<string, string>;
     userId: string | null;

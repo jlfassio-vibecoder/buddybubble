@@ -7,13 +7,7 @@
  */
 
 import { createServiceRoleClient } from '@/lib/supabase-service-role';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 const WINDOW_DAYS = 30;
 
@@ -57,7 +51,7 @@ export default async function AdminGrowthPage() {
       db
         .from('analytics_events')
         .select('event_type')
-        .in('event_type', [...FUNNEL_EVENT_TYPES])
+        .in('event_type', [...FUNNEL_EVENT_TYPES] as string[])
         .gte('created_at', since),
       db
         .from('analytics_events')
@@ -102,8 +96,7 @@ export default async function AdminGrowthPage() {
   const signups = funnelCounts['signup_completed'] ?? 0;
   const trialsStarted = funnelCounts['trial_started'] ?? 0;
   const trialsConverted = funnelCounts['trial_converted'] ?? 0;
-  const conversionRate =
-    signups > 0 ? `${Math.round((trialsStarted / signups) * 100)}%` : '—';
+  const conversionRate = signups > 0 ? `${Math.round((trialsStarted / signups) * 100)}%` : '—';
   const trialConvertRate =
     trialsStarted > 0 ? `${Math.round((trialsConverted / trialsStarted) * 100)}%` : '—';
 

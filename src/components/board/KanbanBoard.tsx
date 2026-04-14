@@ -58,8 +58,9 @@ import {
 import { parseCalendarDayDropId } from '@/lib/calendar-dnd';
 import { taskColumnIsCompletionStatus } from '@/lib/kanban-column-semantic';
 import { scheduledOnRelativeToWorkspaceToday } from '@/lib/workspace-calendar';
-import type { WorkspaceCategory } from '@/types/database';
+import type { MemberRole, WorkspaceCategory } from '@/types/database';
 import type { BubbleRow, TaskRow } from '@/types/database';
+import { guestTaskAssignmentVisibilityOr, isGuestWorkspaceRole } from '@/lib/guest-task-query';
 import { KanbanBoardHeader } from '@/components/board/kanban-board-header';
 import { KanbanColumnHeader } from '@/components/board/kanban-column-header';
 import { KanbanColumnAdd } from '@/components/board/kanban-column-add';
@@ -338,6 +339,9 @@ type Props = {
   buddyBubbleTitle?: string;
   /** Opens the Workout Player for a workout / workout_log card (fitness workspaces). */
   onStartWorkout?: (task: TaskRow) => void;
+  /** When set with `guestTaskUserId`, task lists add an assigned-to / unassigned filter (guest isolation). */
+  workspaceMemberRole?: MemberRole | null;
+  guestTaskUserId?: string | null;
 };
 
 export function KanbanBoard({
@@ -355,6 +359,8 @@ export function KanbanBoard({
   onExpandCalendarWhenKanbanStripCollapse,
   buddyBubbleTitle,
   onStartWorkout,
+  workspaceMemberRole = null,
+  guestTaskUserId = null,
 }: Props) {
   const [calendarDropNonce, setCalendarDropNonce] = useState(0);
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
@@ -472,6 +478,9 @@ export function KanbanBoard({
   const bubbleId = activeBubble?.id ?? null;
 
   const [columns, setColumns] = useState<Record<string, TaskRow[]>>({});
+  /** True while a tasks query for the current bubble is in flight (for trial-bubble generating UI). */
+  const [tasksBoardLoading, setTasksBoardLoading] = useState(false);
+  const [trialGenerationWaitTimedOut, setTrialGenerationWaitTimedOut] = useState(false);
   const [activeTask, setActiveTask] = useState<TaskRow | null>(null);
   const [cardDensity, setCardDensity] = useState<KanbanCardDensity>('full');
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
@@ -497,69 +506,92 @@ export function KanbanBoard({
   columnsRef.current = columns;
 
   const loadTasks = useCallback(async () => {
-    if (!bubbleId || columnSlugs.length === 0) {
-      setColumns(makeEmptyColumns(columnSlugs.length ? columnSlugs : ['todo']));
-      return;
-    }
-    const supabase = createClient();
-    const isAll = bubbleId === ALL_BUBBLES_BUBBLE_ID;
-    const ids = bubbles.map((b) => b.id);
-    if (isAll && ids.length === 0) {
-      setColumns(makeEmptyColumns(columnSlugs));
-      return;
-    }
-    let query = supabase.from('tasks').select('*').order('position', { ascending: true });
-    if (isAll) {
-      query = query.in('bubble_id', ids);
-    } else {
-      query = query.eq('bubble_id', bubbleId);
-    }
-    const { data, error: loadErr } = await query;
-    if (loadErr) {
-      console.error('[KanbanBoard] load tasks failed', supabaseClientErrorMessage(loadErr));
-    }
-    if (draggingRef.current) return;
-    const rows = ((data ?? []) as TaskRow[]).filter((t) => !t.archived_at);
+    setTasksBoardLoading(true);
+    try {
+      if (!bubbleId || columnSlugs.length === 0) {
+        setColumns(makeEmptyColumns(columnSlugs.length ? columnSlugs : ['todo']));
+        return;
+      }
+      const supabase = createClient();
+      const isAll = bubbleId === ALL_BUBBLES_BUBBLE_ID;
+      const ids = bubbles.map((b) => b.id);
+      if (isAll && ids.length === 0) {
+        setColumns(makeEmptyColumns(columnSlugs));
+        return;
+      }
+      let query = supabase.from('tasks').select('*').order('position', { ascending: true });
+      if (isAll) {
+        query = query.in('bubble_id', ids);
+      } else {
+        query = query.eq('bubble_id', bubbleId);
+      }
+      if (
+        isGuestWorkspaceRole(workspaceMemberRole) &&
+        guestTaskUserId &&
+        guestTaskUserId.length > 0
+      ) {
+        query = query.or(guestTaskAssignmentVisibilityOr(guestTaskUserId));
+      }
+      const { data, error: loadErr } = await query;
+      if (loadErr) {
+        console.error('[KanbanBoard] load tasks failed', supabaseClientErrorMessage(loadErr));
+      }
+      if (draggingRef.current) return;
+      const rows = ((data ?? []) as TaskRow[]).filter((t) => !t.archived_at);
 
-    const tz = calendarTimezone?.trim() || null;
-    const canPromote =
-      columnSlugs.includes('today') && columnSlugs.includes('scheduled') && tz != null && tz !== '';
+      const tz = calendarTimezone?.trim() || null;
+      const canPromote =
+        columnSlugs.includes('today') &&
+        columnSlugs.includes('scheduled') &&
+        tz != null &&
+        tz !== '';
 
-    let toGroup = rows;
-    if (canPromote) {
-      const promoteIds = rows
-        .filter(
-          (t) =>
-            t.status === 'scheduled' &&
-            t.scheduled_on &&
-            scheduledOnRelativeToWorkspaceToday(t.scheduled_on, tz) === 'today',
-        )
-        .map((t) => t.id);
+      let toGroup = rows;
+      if (canPromote) {
+        const promoteIds = rows
+          .filter(
+            (t) =>
+              t.status === 'scheduled' &&
+              t.scheduled_on &&
+              scheduledOnRelativeToWorkspaceToday(t.scheduled_on, tz) === 'today',
+          )
+          .map((t) => t.id);
 
-      if (promoteIds.length > 0) {
-        if (canWrite) {
-          const { error } = await supabase
-            .from('tasks')
-            .update({ status: 'today' })
-            .in('id', promoteIds);
-          if (!error) {
-            const idSet = new Set(promoteIds);
-            toGroup = rows.map((t) => (idSet.has(t.id) ? { ...t, status: 'today' as const } : t));
+        if (promoteIds.length > 0) {
+          if (canWrite) {
+            const { error } = await supabase
+              .from('tasks')
+              .update({ status: 'today' })
+              .in('id', promoteIds);
+            if (!error) {
+              const idSet = new Set(promoteIds);
+              toGroup = rows.map((t) => (idSet.has(t.id) ? { ...t, status: 'today' as const } : t));
+            } else {
+              console.error(
+                '[KanbanBoard] scheduled→today promotion on load failed',
+                supabaseClientErrorMessage(error),
+              );
+              toGroup = tasksWithScheduledPromotedToTodayForGrouping(rows, columnSlugs, tz);
+            }
           } else {
-            console.error(
-              '[KanbanBoard] scheduled→today promotion on load failed',
-              supabaseClientErrorMessage(error),
-            );
             toGroup = tasksWithScheduledPromotedToTodayForGrouping(rows, columnSlugs, tz);
           }
-        } else {
-          toGroup = tasksWithScheduledPromotedToTodayForGrouping(rows, columnSlugs, tz);
         }
       }
-    }
 
-    setColumns(groupTasksToColumns(toGroup, columnSlugs));
-  }, [bubbleId, bubbles, columnSlugs, calendarTimezone, canWrite]);
+      setColumns(groupTasksToColumns(toGroup, columnSlugs));
+    } finally {
+      setTasksBoardLoading(false);
+    }
+  }, [
+    bubbleId,
+    bubbles,
+    columnSlugs,
+    calendarTimezone,
+    canWrite,
+    workspaceMemberRole,
+    guestTaskUserId,
+  ]);
 
   useEffect(() => {
     void loadTasks();
@@ -724,6 +756,10 @@ export function KanbanBoard({
       ? `tasks-board-all:${ids.slice().sort().join(',')}`
       : `tasks-board:${bubbleId}`;
     const channel = supabase.channel(channelName);
+    const trialBubbleInsertOnly =
+      !isAll &&
+      bubbleId !== ALL_BUBBLES_BUBBLE_ID &&
+      bubbles.some((b) => b.id === bubbleId && b.bubble_type === 'trial');
     if (isAll) {
       for (const bid of ids) {
         channel.on(
@@ -743,7 +779,7 @@ export function KanbanBoard({
       channel.on(
         'postgres_changes',
         {
-          event: '*',
+          event: trialBubbleInsertOnly ? 'INSERT' : '*',
           schema: 'public',
           table: 'tasks',
           filter: `bubble_id=eq.${bubbleId}`,
@@ -961,6 +997,34 @@ export function KanbanBoard({
   /** Require at least one column slug — `[]` is not a valid loaded board. */
   const boardReady = (columnDefs?.length ?? 0) > 0 && columnSlugs.length > 0;
 
+  const totalTasksInBoard = useMemo(() => {
+    let n = 0;
+    for (const s of columnSlugs) {
+      n += (columns[s] ?? []).length;
+    }
+    return n;
+  }, [columns, columnSlugs]);
+
+  const effectiveWorkspaceCategory = workspaceCategory ?? activeWorkspace?.category_type ?? null;
+
+  const showTrialWorkoutGenerating =
+    boardReady &&
+    Boolean(bubbleId && bubbleId !== ALL_BUBBLES_BUBBLE_ID) &&
+    activeBubble?.bubble_type === 'trial' &&
+    effectiveWorkspaceCategory === 'fitness' &&
+    !tasksBoardLoading &&
+    totalTasksInBoard === 0;
+
+  useEffect(() => {
+    if (!showTrialWorkoutGenerating) {
+      setTrialGenerationWaitTimedOut(false);
+      return;
+    }
+    setTrialGenerationWaitTimedOut(false);
+    const t = window.setTimeout(() => setTrialGenerationWaitTimedOut(true), 180_000);
+    return () => window.clearTimeout(t);
+  }, [showTrialWorkoutGenerating]);
+
   const calendarRailProps = isValidElement(calendarMerged)
     ? (calendarMerged.props as Partial<CalendarRailProps>)
     : null;
@@ -1050,7 +1114,28 @@ export function KanbanBoard({
             'max-md:snap-x max-md:snap-mandatory max-md:[scrollbar-width:none] max-md:[&::-webkit-scrollbar]:hidden',
           )}
         >
-          <div className="flex h-full min-h-0 gap-3 p-3">
+          <div className="relative flex h-full min-h-0 gap-3 p-3">
+            {showTrialWorkoutGenerating && !boardStripCollapsed ? (
+              <div
+                className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 rounded-lg bg-background/85 p-6 text-center backdrop-blur-sm"
+                role="status"
+                aria-live="polite"
+              >
+                <div className="flex w-full max-w-sm flex-col gap-2">
+                  <div className="h-3 w-[72%] animate-pulse rounded-md bg-muted" />
+                  <div className="h-3 w-full animate-pulse rounded-md bg-muted" />
+                  <div className="h-3 w-[83%] animate-pulse rounded-md bg-muted" />
+                </div>
+                <p className="text-sm font-medium text-foreground">
+                  Generating your custom workout…
+                </p>
+                {trialGenerationWaitTimedOut ? (
+                  <p className="max-w-sm text-xs text-muted-foreground">
+                    This is taking longer than expected. Try refreshing the page.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             {columnDefs!.map((col, columnIndex) => {
               const fullTaskCount = (columns[col.id] ?? []).length;
               const addNew =

@@ -25,6 +25,7 @@ import { supabaseClientErrorMessage } from '@/lib/supabase-client-error';
 import { cn } from '@/lib/utils';
 import { formatMessageTimestamp } from '@/lib/message-timestamp';
 import { createClient } from '@utils/supabase/client';
+import { guestTaskAssignmentVisibilityOr, isGuestWorkspaceRole } from '@/lib/guest-task-query';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useUserProfileStore } from '@/store/userProfileStore';
 import type { BubbleRow, MessageRow, TaskRow } from '@/types/database';
@@ -260,6 +261,7 @@ export function ChatArea({
   const activeBubble = useWorkspaceStore((s) => s.activeBubble);
   const workspaceId = useWorkspaceStore((s) => s.activeWorkspace?.id) ?? null;
   const workspaceName = useWorkspaceStore((s) => s.activeWorkspace?.name);
+  const workspaceRole = useWorkspaceStore((s) => s.activeWorkspace?.role ?? null);
   const myProfile = useUserProfileStore((s) => s.profile);
 
   const [input, setInput] = useState('');
@@ -588,13 +590,17 @@ export function ChatArea({
     let cancelled = false;
     async function loadTasksForMentions() {
       const supabase = createClient();
-      const { data, error } = await supabase
+      let taskQuery = supabase
         .from('tasks')
         .select('*')
         .in('bubble_id', bubbleIds)
         .is('archived_at', null)
         .order('bubble_id', { ascending: true })
         .order('position', { ascending: true });
+      if (isGuestWorkspaceRole(workspaceRole) && myProfile?.id) {
+        taskQuery = taskQuery.or(guestTaskAssignmentVisibilityOr(myProfile.id));
+      }
+      const { data, error } = await taskQuery;
       if (cancelled) return;
       if (error) {
         console.error('[ChatArea] load tasks for / mentions', supabaseClientErrorMessage(error));
@@ -613,7 +619,7 @@ export function ChatArea({
     return () => {
       cancelled = true;
     };
-  }, [workspaceId, bubbles]);
+  }, [workspaceId, bubbles, workspaceRole, myProfile?.id]);
 
   const sendMessage = useCallback(
     async (content: string, parentId?: string, files?: File[]): Promise<boolean> => {
