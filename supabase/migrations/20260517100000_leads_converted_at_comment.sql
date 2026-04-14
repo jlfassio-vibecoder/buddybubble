@@ -14,4 +14,4 @@ COMMENT ON COLUMN public.leads.converted_at IS
   'Set when the platform trial starts for the user who owns this workspace '
   '(BuddyBubble subscription via /api/stripe/create-trial). '
   'This is a PLATFORM signal, NOT a B2B2C "tenant won the invitee as a customer" signal. '
-  'See technical-design-dual-lead-capture-workflows-v1.md §6.3 for the forward path.';
+  'See docs/technical-design-dual-lead-capture-workflows-v1.md §6.3 for the forward path.';

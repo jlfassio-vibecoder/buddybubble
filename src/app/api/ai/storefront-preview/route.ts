@@ -70,8 +70,6 @@ export async function OPTIONS(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const cors = corsHeadersForRequest(req);
-
   let body: PreviewBody;
   try {
     body = (await req.json()) as PreviewBody;

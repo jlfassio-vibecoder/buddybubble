@@ -71,8 +71,8 @@ export function validateStorefrontPreviewPayload(
       : undefined;
 
   const me = o.main_exercises;
-  if (!Array.isArray(me) || me.length === 0 || me.length > MAX_EXERCISES) {
-    return { ok: false, error: 'main_exercises must be a non-empty array (max 8)' };
+  if (!Array.isArray(me) || me.length < 3 || me.length > MAX_EXERCISES) {
+    return { ok: false, error: 'main_exercises must be an array of 3–8 exercises' };
   }
 
   const main_exercises: StorefrontPreviewExercise[] = [];

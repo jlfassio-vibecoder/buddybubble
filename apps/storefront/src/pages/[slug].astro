@@ -53,6 +53,8 @@ const ws = workspace as {
 const previewEligible =
   ws.category_type === 'business' || ws.category_type === 'fitness';
 
+const turnstileSiteKey = getPublicEnv('PUBLIC_TURNSTILE_SITE_KEY');
+
 const branding = parseBranding(ws.public_branding);
 const accent = branding.primary_color?.trim() || '#2563eb';
 
@@ -163,6 +165,7 @@ const heroImage = branding.hero_url?.trim() ?? '';
                 publicSlug={slug}
                 accent={accent}
                 workspaceCategory={ws.category_type ?? undefined}
+                turnstileSiteKey={turnstileSiteKey}
               />
             ) : null
           }

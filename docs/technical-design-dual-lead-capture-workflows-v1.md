@@ -81,15 +81,15 @@ At step 2 they become a **platform** prospect/account owner in addition to any h
 
 ## 5. Current codebase (anchor points)
 
-| Concern                      | Location / behavior                                                                                                                                 |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Workspace lead rows          | `public.leads` — created by `/api/leads/track`; RLS: workspace owners/admins read                                                                   |
-| Acquisition segment          | `leads.metadata.acquisition_context`; `invitations.invite_type` is source of truth for in-person vs online; see `src/lib/lead-capture-analytics.ts` |
-| Workspace analytics UI       | `src/app/(dashboard)/app/[workspace_id]/settings/analytics/page.tsx` — growth workspaces: `leads` + segments + invite journey table                 |
-| Invite journey               | `analytics_events.event_type = 'invite_journey_step'`; writers across invite/login/onboarding                                                       |
-| `lead_captured` funnel event | Emitted on first insert from `/api/leads/track` (workspace-scoped metadata)                                                                         |
-| `converted_at` on `leads`    | Set in `/api/stripe/create-trial` when matching `user_id` + workspace — **platform trial/subscription context**, not B2B2C purchase                 |
-| Platform billing funnel      | `billing_funnel_events`; Stripe routes under `src/app/api/stripe/`                                                                                  |
+| Concern                      | Location / behavior                                                                                                                                                                                                                                                      |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Workspace lead rows          | `public.leads` — created by `/api/leads/track` and `/api/leads/storefront-trial`; RLS: workspace owners/admins read                                                                                                                                                      |
+| Acquisition segment          | `lead_captured` analytics event metadata (`workflow`, `acquisition_context`, `source`, UTM); `leads.utm_params` for UTM on the row; `invitations.invite_type` remains source of truth for in-person vs online for invite flows — see `src/lib/lead-capture-analytics.ts` |
+| Workspace analytics UI       | `src/app/(dashboard)/app/[workspace_id]/settings/analytics/page.tsx` — workspace funnel cards query `analytics_events` (e.g. `lead_captured`, invite journey, billing funnel types); segment cards / invite journey use `leads` + `invitations` where shown in that page |
+| Invite journey               | `analytics_events.event_type = 'invite_journey_step'`; writers across invite/login/onboarding                                                                                                                                                                            |
+| `lead_captured` funnel event | Emitted server-side on first insert from `/api/leads/track` and `/api/leads/storefront-trial` (workspace-scoped metadata)                                                                                                                                                |
+| `converted_at` on `leads`    | Set in `/api/stripe/create-trial` when matching `user_id` + workspace — **platform trial/subscription context**, not B2B2C purchase                                                                                                                                      |
+| Platform billing funnel      | `billing_funnel_events`; Stripe routes under `src/app/api/stripe/`                                                                                                                                                                                                       |
 
 ## 6. Proposed architecture
 

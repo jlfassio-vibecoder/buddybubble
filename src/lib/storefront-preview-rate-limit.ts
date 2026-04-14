@@ -33,9 +33,11 @@ function memoryIncr(ip: string, day: string): number {
   const key = `${ip}:${day}`;
   const n = (memoryCounts.get(key) ?? 0) + 1;
   memoryCounts.set(key, n);
+  /** After UTC day rollover all keys share the same `:day` suffix; evict oldest entries when over cap. */
   if (memoryCounts.size > 20_000) {
     for (const k of memoryCounts.keys()) {
-      if (!k.endsWith(`:${day}`)) memoryCounts.delete(k);
+      memoryCounts.delete(k);
+      if (memoryCounts.size <= 15_000) break;
     }
   }
   return n;
@@ -51,7 +53,7 @@ function hasKvEnv(): boolean {
 
 export type RateLimitResult =
   | { ok: true; count: number; backend: 'kv' | 'memory' }
-  | { ok: false; status: 429; message: string };
+  | { ok: false; status: 429 | 503; message: string };
 
 /**
  * Increments today's preview count for `clientIp` and returns whether under cap.
@@ -64,6 +66,7 @@ export async function enforceStorefrontPreviewRateLimit(
 
   if (hasKvEnv()) {
     try {
+      // Copilot suggestion ignored: migrating off @vercel/kv is deferred until we standardize on Upstash project-wide.
       const { kv } = await import('@vercel/kv');
       const count = await kv.incr(key);
       if (count === 1) {
@@ -75,7 +78,20 @@ export async function enforceStorefrontPreviewRateLimit(
       return { ok: true, count, backend: 'kv' };
     } catch (e) {
       console.error('[storefront-preview-rate-limit] KV error, falling back to memory:', e);
+      if (process.env.NODE_ENV === 'production') {
+        return {
+          ok: false,
+          status: 503,
+          message: 'Rate limit service unavailable',
+        };
+      }
     }
+  } else if (process.env.NODE_ENV === 'production') {
+    return {
+      ok: false,
+      status: 503,
+      message: 'Rate limit unavailable (configure KV_REST_API_URL + KV_REST_API_TOKEN)',
+    };
   }
 
   if (process.env.NODE_ENV === 'development') {

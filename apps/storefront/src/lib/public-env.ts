@@ -12,7 +12,8 @@ export type StorefrontPublicEnvKey =
   | 'PUBLIC_SUPABASE_URL'
   | 'PUBLIC_SUPABASE_ANON_KEY'
   | 'PUBLIC_APP_ORIGIN'
-  | 'PUBLIC_DEMO_WORKSPACE_ID';
+  | 'PUBLIC_DEMO_WORKSPACE_ID'
+  | 'PUBLIC_TURNSTILE_SITE_KEY';
 
 export function getPublicEnv(key: StorefrontPublicEnvKey): string | undefined {
   const fromMeta = (import.meta.env as Record<string, string | undefined>)[key];

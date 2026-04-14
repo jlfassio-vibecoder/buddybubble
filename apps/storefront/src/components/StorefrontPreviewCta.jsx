@@ -1,3 +1,4 @@
+import { Turnstile } from '@marsidev/react-turnstile';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 /** useLayoutEffect is a no-op on the server; avoids reading sessionStorage during the initial state initializer (hydration mismatch). */
@@ -205,9 +206,14 @@ const choiceBtnClass = (active) =>
   ].join(' ');
 
 /**
- * @param {{ publicSlug: string; accent: string; workspaceCategory?: string | null }} props
+ * @param {{ publicSlug: string; accent: string; workspaceCategory?: string | null; turnstileSiteKey?: string }} props
  */
-export default function StorefrontPreviewCta({ publicSlug, accent, workspaceCategory = null }) {
+export default function StorefrontPreviewCta({
+  publicSlug,
+  accent,
+  workspaceCategory = null,
+  turnstileSiteKey = '',
+}) {
   const slug = useMemo(() => (publicSlug || '').trim().toLowerCase(), [publicSlug]);
   const category = workspaceCategory === 'fitness' ? 'fitness' : 'business';
 
@@ -227,6 +233,7 @@ export default function StorefrontPreviewCta({ publicSlug, accent, workspaceCate
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(/** @type {string | null} */ (null));
+  const [turnstileToken, setTurnstileToken] = useState(/** @type {string | null} */ (null));
 
   useIsoLayoutEffect(() => {
     setSnap(readInitialWizard(publicSlug, workspaceCategory));
@@ -270,6 +277,7 @@ export default function StorefrontPreviewCta({ publicSlug, accent, workspaceCate
 
   const startWizard = useCallback(() => {
     setError(null);
+    setTurnstileToken(null);
     setSnap((prev) => ({ ...prev, phase: 'profile', profileStep: 0 }));
   }, []);
 
@@ -311,6 +319,7 @@ export default function StorefrontPreviewCta({ publicSlug, accent, workspaceCate
     if (!canAdvanceProfile) return;
     setSnap((prev) => {
       if (prev.profileStep >= steps.length - 1) {
+        setTurnstileToken(null);
         return { ...prev, phase: 'email' };
       }
       return { ...prev, profileStep: prev.profileStep + 1 };
@@ -360,6 +369,12 @@ export default function StorefrontPreviewCta({ publicSlug, accent, workspaceCate
         return;
       }
 
+      const siteKey = typeof turnstileSiteKey === 'string' ? turnstileSiteKey.trim() : '';
+      if (siteKey && !turnstileToken) {
+        setError('Please complete the security check.');
+        return;
+      }
+
       setBusy(true);
       try {
         const res = await fetch('/api/storefront-trial', {
@@ -371,6 +386,7 @@ export default function StorefrontPreviewCta({ publicSlug, accent, workspaceCate
             source: storefrontSourceFromWindowSearch(),
             utmParams: utmParamsFromWindowSearch(),
             profile: profilePayload,
+            ...(turnstileToken ? { turnstileToken } : {}),
           }),
         });
         const data = /** @type {{ error?: string; next?: string }} */ (
@@ -392,7 +408,7 @@ export default function StorefrontPreviewCta({ publicSlug, accent, workspaceCate
         setBusy(false);
       }
     },
-    [clearStorage, email, profileDraft, slug],
+    [clearStorage, email, profileDraft, slug, turnstileSiteKey, turnstileToken],
   );
 
   if (phase === 'idle') {
@@ -496,6 +512,16 @@ export default function StorefrontPreviewCta({ publicSlug, accent, workspaceCate
           {"We'll save your answers and start your 3-day preview in the app."}
         </p>
         <form onSubmit={onEmailSubmit} className="mt-4 flex flex-col gap-3">
+          {typeof turnstileSiteKey === 'string' && turnstileSiteKey.trim() ? (
+            <div className="flex justify-center">
+              <Turnstile
+                siteKey={turnstileSiteKey.trim()}
+                onSuccess={(token) => setTurnstileToken(token)}
+                onExpire={() => setTurnstileToken(null)}
+                onError={() => setTurnstileToken(null)}
+              />
+            </div>
+          ) : null}
           <label className="sr-only" htmlFor="storefront-preview-email">
             Email
           </label>
@@ -517,7 +543,12 @@ export default function StorefrontPreviewCta({ publicSlug, accent, workspaceCate
           ) : null}
           <button
             type="submit"
-            disabled={busy}
+            disabled={
+              busy ||
+              (typeof turnstileSiteKey === 'string' &&
+                turnstileSiteKey.trim().length > 0 &&
+                !turnstileToken)
+            }
             className="inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-lg ring-2 ring-white/20 transition hover:brightness-110 disabled:pointer-events-none disabled:opacity-60"
             style={{ backgroundColor: accent }}
           >

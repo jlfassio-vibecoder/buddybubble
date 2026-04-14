@@ -7,7 +7,15 @@
 
 import type { MemberRole } from '@/types/database';
 
-/** PostgREST `.or()` fragment: self-assigned OR unassigned (coach pool in shared trial bubble). */
+/**
+ * PostgREST `.or()` fragment: self-assigned OR unassigned (coach pool in shared trial bubble).
+ *
+ * **Composition:** Supabase/PostgREST ANDs this with filters applied earlier in the chain. The
+ * request looks like `bubble_id=eq.<id>&or=(assigned_to.eq.<uid>,assigned_to.is.null)` (or
+ * `bubble_id=in.(...)` for multi-bubble), i.e. `(bubble scope) AND (mine OR unassigned)` — not a
+ * top-level OR that drops bubble scope. Always apply `.eq('bubble_id', …)` / `.in('bubble_id', …)`
+ * (and other scoping filters) **before** `.or(guestTaskAssignmentVisibilityOr(...))`.
+ */
 export function guestTaskAssignmentVisibilityOr(userId: string): string {
   return `assigned_to.eq.${userId},assigned_to.is.null`;
 }

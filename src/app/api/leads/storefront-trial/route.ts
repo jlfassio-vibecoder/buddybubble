@@ -10,7 +10,9 @@
  */
 
 import { NextResponse } from 'next/server';
+import { getClientIpFromRequest } from '@/lib/client-ip';
 import { createServiceRoleClient } from '@/lib/supabase-service-role';
+import { isTurnstileSecretConfigured, verifyTurnstileToken } from '@/lib/turnstile-verify';
 import { trackWorkspaceLeadCaptured } from '@/lib/lead-capture-analytics';
 import { getCanonicalOrigin } from '@/lib/app-url';
 import { isStorefrontLeadSource, type StorefrontLeadSource } from '@/lib/leads-source';
@@ -148,7 +150,36 @@ export async function POST(req: Request) {
     }
 
     const utmParams = normalizeUtmParams(body.utmParams);
-    void body.turnstileToken;
+
+    let clientIp = getClientIpFromRequest(req);
+    if (!clientIp && process.env.NODE_ENV === 'development') {
+      clientIp = '127.0.0.1';
+    }
+
+    const turnstileToken =
+      typeof body.turnstileToken === 'string' ? body.turnstileToken.trim() : '';
+    const devTurnstileBypass =
+      process.env.NODE_ENV === 'development' &&
+      process.env.ALLOW_STOREFRONT_PREVIEW_WITHOUT_TURNSTILE === '1';
+
+    if (!devTurnstileBypass) {
+      if (!isTurnstileSecretConfigured()) {
+        return NextResponse.json(
+          { error: 'Trial intake is temporarily unavailable' },
+          { status: 503 },
+        );
+      }
+      if (!turnstileToken) {
+        return NextResponse.json({ error: 'turnstileToken is required' }, { status: 400 });
+      }
+      if (!clientIp) {
+        return NextResponse.json({ error: 'Could not verify client' }, { status: 403 });
+      }
+      const tv = await verifyTurnstileToken({ token: turnstileToken, remoteip: clientIp });
+      if (!tv.ok) {
+        return NextResponse.json({ error: tv.error }, { status: tv.status });
+      }
+    }
 
     const db = createServiceRoleClient();
 
@@ -187,6 +218,7 @@ export async function POST(req: Request) {
     if (existingProfile?.id) {
       userId = existingProfile.id as string;
     } else {
+      // Copilot suggestion ignored: auto-confirm keeps storefront trial → login redirect frictionless; verified-email / magic-link hardening is tracked separately (docs/tdd-lead-onboarding.md).
       const { data: created, error: authErr } = await db.auth.admin.createUser({
         email: emailRaw,
         email_confirm: true,
@@ -218,12 +250,14 @@ export async function POST(req: Request) {
 
     const { data: membership } = await db
       .from('workspace_members')
-      .select('role')
+      .select('role, trial_expires_at')
       .eq('workspace_id', workspaceId)
       .eq('user_id', userId)
       .maybeSingle();
 
     const existingRole = (membership as { role?: MemberRole } | null)?.role;
+    const existingTrialExpires = (membership as { trial_expires_at?: string | null } | null)
+      ?.trial_expires_at;
     if (existingRole && existingRole !== 'guest') {
       return NextResponse.json(
         { error: 'This account is already a member of this workspace.' },
@@ -231,7 +265,10 @@ export async function POST(req: Request) {
       );
     }
 
-    const trialEnd = trialExpiresIso();
+    const trialEnd =
+      typeof existingTrialExpires === 'string' && existingTrialExpires.trim() !== ''
+        ? existingTrialExpires
+        : trialExpiresIso();
     const { error: memErr } = await db.from('workspace_members').upsert(
       {
         workspace_id: workspaceId,

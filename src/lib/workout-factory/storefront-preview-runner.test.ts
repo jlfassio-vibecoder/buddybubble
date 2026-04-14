@@ -36,6 +36,21 @@ describe('validateStorefrontPreviewPayload', () => {
     expect(r.ok).toBe(false);
   });
 
+  it('rejects fewer than three exercises', () => {
+    const r = validateStorefrontPreviewPayload({
+      title: 'T',
+      day_label: 'D1',
+      estimated_minutes: 30,
+      summary: 'S'.repeat(50),
+      coach_tip: 'Tip',
+      main_exercises: [
+        { name: 'A', detail: '1' },
+        { name: 'B', detail: '2' },
+      ],
+    });
+    expect(r.ok).toBe(false);
+  });
+
   it('rejects too many exercises', () => {
     const main_exercises = Array.from({ length: 9 }, (_, i) => ({
       name: `E${i}`,
