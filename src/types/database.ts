@@ -292,6 +292,8 @@ export interface Database {
           parent_id: string | null;
           created_at: string;
           attachments: Json;
+          /** Optional Kanban card shown as an embed in chat (`20260518130000_messages_attached_task_id`). */
+          attached_task_id: string | null;
         };
         Insert: {
           id?: string;
@@ -301,8 +303,24 @@ export interface Database {
           parent_id?: string | null;
           created_at?: string;
           attachments?: Json;
+          attached_task_id?: string | null;
         };
         Update: Partial<Database['public']['Tables']['messages']['Insert']>;
+      };
+      task_bubble_ups: {
+        Row: {
+          id: string;
+          task_id: string;
+          user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          task_id: string;
+          user_id: string;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['task_bubble_ups']['Insert']>;
       };
       tasks: {
         Row: {
@@ -669,6 +687,11 @@ export type BubbleRow = Database['public']['Tables']['bubbles']['Row'];
 export type BubbleMemberRow = Database['public']['Tables']['bubble_members']['Row'];
 export type MessageRow = Database['public']['Tables']['messages']['Row'];
 export type TaskRow = Database['public']['Tables']['tasks']['Row'];
+
+/** Row shape when loading messages with a left-joined task embed (`tasks(*)` in ChatArea). */
+export type MessageRowWithEmbeddedTask = MessageRow & {
+  tasks: TaskRow | null;
+};
 export type StorefrontSandboxMessageRow =
   Database['public']['Tables']['storefront_sandbox_messages']['Row'];
 export type LeadRow = Database['public']['Tables']['leads']['Row'];

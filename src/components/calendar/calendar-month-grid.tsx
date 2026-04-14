@@ -17,6 +17,7 @@ import {
   type WorkspaceCategory,
 } from '@/types/database';
 import type { TaskModalTab } from '@/components/modals/TaskModal';
+import type { TaskBubbleUpControlProps } from '@/components/tasks/bubbly-button';
 import { KanbanTaskCard } from '@/components/board/kanban-task-card';
 import { getItemTypeVisual } from '@/lib/item-type-styles';
 import { Button } from '@/components/ui/button';
@@ -98,6 +99,7 @@ export type CalendarMonthGridProps = {
    * When provided, a row of colored dots is shown under the date number.
    */
   dayAnnotations?: Map<string, number>;
+  bubbleUpPropsFor?: (taskId: string) => TaskBubbleUpControlProps | undefined;
 };
 
 export function CalendarMonthGrid({
@@ -116,6 +118,7 @@ export function CalendarMonthGrid({
   boardColumnDefs,
   todayYmd,
   dayAnnotations,
+  bubbleUpPropsFor,
 }: CalendarMonthGridProps) {
   const tz = calendarTimezone?.trim() || 'UTC';
   const activeWorkspaceYmd = getCalendarDateInTimeZone(tz, activeViewDate);
@@ -271,6 +274,7 @@ export function CalendarMonthGrid({
                           calendarTimezone={calendarTimezone}
                           isCompleted={taskColumnIsCompletionStatus(task.status, boardColumnDefs)}
                           className="shadow-none"
+                          bubbleUp={bubbleUpPropsFor?.(task.id)}
                         />
                       </div>
                     ))}

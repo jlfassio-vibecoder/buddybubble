@@ -216,6 +216,8 @@ export function DashboardShell({
   const calendarRailIsCollapsed = kanbanCollapsed ? false : calendarCollapsed;
 
   const taskCommentCountsRef = useRef<Map<string, number>>(new Map());
+  /** When set, `TaskModal` `onCreated` also runs this (chat: post message with `attached_task_id`). */
+  const chatCardOnCreatedRef = useRef<((taskId: string) => void) | null>(null);
   const taskModalForToastRef = useRef<{ open: boolean; taskId: string | null }>({
     open: false,
     taskId: null,
@@ -280,6 +282,7 @@ export function DashboardShell({
   }, [workspaceId, initSubscription]);
 
   const openTaskModal = useCallback((id: string, opts?: { tab?: TaskModalTab }) => {
+    chatCardOnCreatedRef.current = null;
     setTaskModalInitialCreateItemType(null);
     setTaskModalInitialCreateTitle(null);
     setTaskModalInitialCreateWorkoutDurationMin(null);
@@ -296,7 +299,12 @@ export function DashboardShell({
       title?: string;
       workoutDurationMin?: string | null;
       bubbleId?: string | null;
+      /** When true, do not clear `chatCardOnCreatedRef` (caller just set it for chat compose). */
+      preserveChatCallback?: boolean;
     }) => {
+      if (!opts?.preserveChatCallback) {
+        chatCardOnCreatedRef.current = null;
+      }
       setTaskModalInitialStatus(opts?.status ?? null);
       setTaskModalInitialTab(null);
       setTaskModalTaskId(null);
@@ -309,6 +317,14 @@ export function DashboardShell({
       setTaskModalOpen(true);
     },
     [],
+  );
+
+  const openChatComposeForTask = useCallback(
+    (opts: { bubbleId: string | null; onTaskCreated: (taskId: string) => void }) => {
+      chatCardOnCreatedRef.current = opts.onTaskCreated;
+      openCreateTaskModal({ bubbleId: opts.bubbleId, preserveChatCallback: true });
+    },
+    [openCreateTaskModal],
   );
 
   const defaultTaskModalBubbleId = useMemo(
@@ -351,6 +367,7 @@ export function DashboardShell({
   const onTaskModalOpenChange = useCallback((open: boolean) => {
     setTaskModalOpen(open);
     if (!open) {
+      chatCardOnCreatedRef.current = null;
       setTaskModalTaskId(null);
       setTaskModalInitialStatus(null);
       setTaskModalInitialTab(null);
@@ -868,7 +885,9 @@ export function DashboardShell({
                   <ChatArea
                     bubbles={bubbles}
                     canPostMessages={canPostMessages}
+                    canWriteTasks={canWriteTasks}
                     onOpenTask={openTaskModal}
+                    onOpenCreateTaskForChat={openChatComposeForTask}
                     onCollapse={onCollapse}
                     workspaceTitle={workspaceTitle}
                     joinRequestBellPreview={isAdmin ? joinRequestBellPreview : undefined}
@@ -929,6 +948,9 @@ export function DashboardShell({
             onCreated={(id) => {
               setTaskModalTaskId(id);
               bumpTaskViews();
+              const postToChat = chatCardOnCreatedRef.current;
+              chatCardOnCreatedRef.current = null;
+              if (postToChat) postToChat(id);
             }}
             initialCreateStatus={taskModalInitialStatus}
             initialCreateItemType={taskModalInitialCreateItemType}

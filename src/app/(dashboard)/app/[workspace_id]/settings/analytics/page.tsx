@@ -2,12 +2,14 @@
  * Workspace Analytics — owner-only view.
  * Shows funnel event counts, feature gate hits, and page views for the last 30 days.
  */
+// Copilot suggestion ignored: PR descriptions are edited on GitHub, not in application source.
 
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@utils/supabase/server';
 import { createServiceRoleClient } from '@/lib/supabase-service-role';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { LeadCaptureSegmentCards } from '@/components/analytics/lead-capture-segment-cards';
 import { INVITE_JOURNEY_STEP_LABELS, type InviteJourneyStep } from '@/lib/analytics/invite-journey';
 import {
   formatUtmParams,
@@ -15,7 +17,6 @@ import {
   resolveLeadSegment,
   type LeadCaptureDisplayRow,
 } from '@/lib/lead-capture-analytics';
-import { LeadCaptureSegmentCards } from '@/components/analytics/lead-capture-segment-cards';
 import type { Json } from '@/types/database';
 
 type FunnelRow = { event_type: string; count: number };
