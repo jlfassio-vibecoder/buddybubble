@@ -2,12 +2,12 @@
  * GET /api/stripe/portal?workspaceId=<id>
  *
  * Creates a Stripe Customer Portal session and redirects the authenticated
- * workspace owner to it. The portal lets owners:
+ * socialspace owner to it. The portal lets owners:
  *   - View billing history and upcoming invoices
  *   - Update their payment method
  *   - Cancel or reactivate their subscription
  *
- * Only the workspace owner can access this — members do not have billing access.
+ * Only the socialspace owner can access this — members do not have billing access.
  *
  * Query params: workspaceId (required)
  * Redirects to: Stripe-hosted portal URL (one-time, expires in ~5 min)

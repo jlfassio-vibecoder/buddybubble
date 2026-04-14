@@ -62,7 +62,7 @@ async function requireBubbleAdmin(
 
   const role = (member as { role?: string } | null)?.role;
   if (role !== 'owner' && role !== 'admin') {
-    return { ok: false, error: 'Only socialspace admins can manage bubble settings.' };
+    return { ok: false, error: 'Only socialspace admins and owners can manage bubble settings.' };
   }
 
   return { ok: true, workspaceId: ws.workspace_id };
