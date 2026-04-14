@@ -126,6 +126,7 @@ export function CalendarWeekRibbon({
               calendarTimezone={calendarTimezone}
               isCompleted={taskColumnIsCompletionStatus(task.status, boardColumnDefs)}
               bubbleUp={bubbleUpPropsFor?.(task.id)}
+              showKanbanCoverToggle
             />
           ))}
         </div>
