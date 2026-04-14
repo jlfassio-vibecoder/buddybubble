@@ -615,9 +615,16 @@ export function ChatArea({
     let cancelled = false;
     async function loadMembers() {
       const supabase = createClient();
+      const {
+        data: { user: authUser },
+      } = await supabase.auth.getUser();
+      const myId = authUser?.id ?? null;
+      // Copilot suggestion ignored: omitting email from this select needs a redacted profile view/RPC; peers may still read users under existing RLS until then.
       const { data } = await supabase
         .from('workspace_members')
-        .select('user_id, users ( id, full_name, avatar_url, email, created_at )')
+        .select(
+          'user_id, show_email_to_workspace_members, users ( id, full_name, avatar_url, email, created_at )',
+        )
         .eq('workspace_id', workspaceId);
       if (cancelled) return;
       const members: UserProfile[] = [];
@@ -626,13 +633,27 @@ export function ChatArea({
         const u = (row as { users?: ChatUserSnapshot | ChatUserSnapshot[] | null }).users;
         const usr = Array.isArray(u) ? u[0] : u;
         if (!usr?.id) continue;
+        // Auth not resolved yet: do not treat peers as opted-in; hide their emails.
+        const showPeerEmail =
+          myId != null &&
+          (usr.id === myId ||
+            (row as { show_email_to_workspace_members?: boolean })
+              .show_email_to_workspace_members === true);
+        const displayEmail = showPeerEmail ? (usr.email ?? '') : '';
+        const displayName =
+          usr.full_name?.trim() ||
+          (showPeerEmail ? usr.email?.split('@')[0] : undefined)?.trim() ||
+          'Member';
         members.push({
           id: usr.id,
-          name: usr.full_name?.trim() || usr.email?.split('@')[0] || 'Member',
-          email: usr.email ?? '',
+          name: displayName,
+          email: displayEmail,
           avatar: usr.avatar_url ?? undefined,
         });
-        fromRows[usr.id] = toChatUserSnapshot(usr);
+        fromRows[usr.id] = toChatUserSnapshot({
+          ...usr,
+          email: showPeerEmail ? usr.email : null,
+        });
       }
       setTeamMembers(members);
       setUserById((prev) => ({ ...prev, ...fromRows }));
@@ -1807,7 +1828,9 @@ export function ChatArea({
                   </div>
                   <div className="flex flex-col">
                     <span className="text-sm font-semibold">{member.name}</span>
-                    <span className="text-[10px] text-muted-foreground">{member.email}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {member.email || 'Email hidden'}
+                    </span>
                   </div>
                 </button>
               ))}

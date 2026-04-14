@@ -45,6 +45,7 @@ export type WorkspaceMemberProfileForAdmin = {
   note_updated_at: string | null;
 };
 
+/** Email is always visible here: owners/admins need it for support regardless of peer privacy. */
 export async function getWorkspaceMemberProfileForAdminAction(input: {
   workspaceId: string;
   subjectUserId: string;

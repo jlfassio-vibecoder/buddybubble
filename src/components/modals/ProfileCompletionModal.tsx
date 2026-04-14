@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { motion } from 'motion/react';
 import { Camera, Plus, Save, Trash2, User } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
@@ -12,16 +12,24 @@ import {
 } from '@/lib/avatar-storage';
 import { formatUserFacingError } from '@/lib/format-error';
 import { updateMyProfileAction, setPasswordAction } from '@/app/(dashboard)/profile-actions';
+import { setWorkspaceMemberShowEmailAction } from '@/app/(dashboard)/workspace-member-email-actions';
 
 type Props = {
   profile: UserProfileRow;
   /** Show the Family members section (Kids / Community workspace). */
   showFamilyNames: boolean;
+  /** When set, member can choose whether peers see their email in this workspace. */
+  workspaceId?: string | null;
   /** Called after a successful save — parent should reload the profile store. */
   onComplete: () => void;
 };
 
-export function ProfileCompletionModal({ profile, showFamilyNames, onComplete }: Props) {
+export function ProfileCompletionModal({
+  profile,
+  showFamilyNames,
+  workspaceId,
+  onComplete,
+}: Props) {
   const setStoreProfile = useUserProfileStore((s) => s.setProfile);
 
   const [name, setName] = useState(profile.full_name?.trim() ?? '');
@@ -34,7 +42,41 @@ export function ProfileCompletionModal({ profile, showFamilyNames, onComplete }:
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [showEmailToPeers, setShowEmailToPeers] = useState(false);
+  const [emailVisibilityLoaded, setEmailVisibilityLoaded] = useState(!workspaceId);
+  const [emailVisibilityPending, setEmailVisibilityPending] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!workspaceId) {
+      setEmailVisibilityLoaded(true);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user || cancelled) return;
+      const { data, error } = await supabase
+        .from('workspace_members')
+        .select('show_email_to_workspace_members')
+        .eq('workspace_id', workspaceId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error || !data) {
+        setEmailVisibilityLoaded(true);
+        return;
+      }
+      setShowEmailToPeers(Boolean(data.show_email_to_workspace_members));
+      setEmailVisibilityLoaded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceId]);
 
   const displayInitials = name.trim()
     ? name
@@ -88,11 +130,18 @@ export function ProfileCompletionModal({ profile, showFamilyNames, onComplete }:
       setError('Display name must be 120 characters or fewer.');
       return;
     }
-    if (password.trim() !== '' && pwTrimmed.length < 8) {
+    // Copilot suggestion ignored: this modal is for anonymous recovery; requiring a password is intentional until OAuth-only completion is a separate flow.
+    if (!pwTrimmed) {
+      setError(
+        'Please choose a password so you can sign in again on another device or after this session ends.',
+      );
+      return;
+    }
+    if (pwTrimmed.length < 8) {
       setError('Password must be at least 8 characters.');
       return;
     }
-    if (password.trim() !== '' && pwTrimmed !== confirmTrimmed) {
+    if (pwTrimmed !== confirmTrimmed) {
       setError('Passwords do not match.');
       return;
     }
@@ -149,6 +198,12 @@ export function ProfileCompletionModal({ profile, showFamilyNames, onComplete }:
         }
       }
 
+      const pwResult = await setPasswordAction(pwTrimmed);
+      if ('error' in pwResult) {
+        setError(pwResult.error);
+        return;
+      }
+
       const savedProfile: UserProfileRow = {
         ...profile,
         full_name: trimmedName,
@@ -158,18 +213,14 @@ export function ProfileCompletionModal({ profile, showFamilyNames, onComplete }:
       };
       setStoreProfile(savedProfile);
       onComplete();
-
-      // 3. Password after profile is saved and store refreshed — completion UI may unmount here
-      if (pwTrimmed) {
-        const pwResult = await setPasswordAction(pwTrimmed);
-        if ('error' in pwResult) {
-          alert(
-            `Your profile was saved. We couldn't update your password: ${pwResult.error} You can set a password later from your profile.`,
-          );
-        }
-      }
     });
   };
+
+  const pwTrimmedForUi = password.trim();
+  const confirmTrimmedForUi = confirmPassword.trim();
+  /** Password step complete: min length + match (confirm field only appears once user starts typing a password). */
+  const passwordReady = pwTrimmedForUi.length >= 8 && pwTrimmedForUi === confirmTrimmedForUi;
+  const showConfirmPassword = pwTrimmedForUi.length > 0;
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
@@ -283,6 +334,45 @@ export function ProfileCompletionModal({ profile, showFamilyNames, onComplete }:
             </div>
 
             {/* Family members — Kids / Community workspaces */}
+            {workspaceId && emailVisibilityLoaded ? (
+              <div className="rounded-lg border border-border bg-muted/30 p-4">
+                <label className="flex cursor-pointer items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={showEmailToPeers}
+                    disabled={emailVisibilityPending}
+                    onChange={(e) => {
+                      const next = e.target.checked;
+                      setShowEmailToPeers(next);
+                      setEmailVisibilityPending(true);
+                      void (async () => {
+                        const res = await setWorkspaceMemberShowEmailAction({
+                          workspaceId,
+                          show: next,
+                        });
+                        setEmailVisibilityPending(false);
+                        if ('error' in res) {
+                          setShowEmailToPeers(!next);
+                          setError(res.error);
+                        }
+                      })();
+                    }}
+                    className="mt-1 size-4 shrink-0 rounded border-input"
+                  />
+                  <span>
+                    <span className="block text-sm font-semibold text-foreground">
+                      Show my email to others in this BuddyBubble
+                    </span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      Off by default — members won&apos;t see your address in chat or mentions
+                      unless you turn this on. Workspace owners and admins can still see it for
+                      support.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            ) : null}
+
             {showFamilyNames ? (
               <div>
                 <label className="mb-1.5 block text-sm font-semibold text-foreground">
@@ -341,27 +431,34 @@ export function ProfileCompletionModal({ profile, showFamilyNames, onComplete }:
               </div>
             ) : null}
 
-            {/* Password — optional, applies to this account across all workspaces */}
+            {/* Password — required: sign in again without relying on this browser session */}
             <div>
               <label className="mb-1.5 block text-sm font-semibold text-foreground">
                 Password{' '}
-                <span className="text-xs font-normal text-muted-foreground">(optional)</span>
+                <span className="text-destructive" aria-hidden>
+                  *
+                </span>
               </label>
               <p className="mb-2 text-xs text-muted-foreground">
-                Set or update your password for this account. Applies across all workspaces you
-                belong to on this platform. Leave blank to keep your current sign-in method.
+                Required so you can open BuddyBubble on another device or if this session ends (e.g.
+                after leaving anonymous guest sign-in). Applies to this account everywhere on this
+                platform.
               </p>
               <div className="space-y-2">
                 <input
                   type="password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setPassword(v);
+                    if (!v.trim()) setConfirmPassword('');
+                  }}
                   disabled={pending}
                   autoComplete="new-password"
                   className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-50"
-                  placeholder="New password (min 8 characters)"
+                  placeholder="Password (min 8 characters)"
                 />
-                {password ? (
+                {showConfirmPassword ? (
                   <input
                     type="password"
                     value={confirmPassword}
@@ -382,7 +479,7 @@ export function ProfileCompletionModal({ profile, showFamilyNames, onComplete }:
           <button
             type="button"
             onClick={handleSave}
-            disabled={pending || !name.trim()}
+            disabled={pending || !name.trim() || !passwordReady}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 font-semibold text-primary-foreground shadow-lg transition-colors hover:bg-primary/90 disabled:opacity-50"
           >
             <Save className="h-4 w-4" />

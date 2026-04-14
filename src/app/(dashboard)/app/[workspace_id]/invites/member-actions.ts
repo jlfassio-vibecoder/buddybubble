@@ -31,6 +31,10 @@ export type WorkspaceMemberWithProfile = {
   avatar_url: string | null;
 };
 
+/**
+ * Admin/owner roster: always returns real emails for moderation and support.
+ * Peer-facing UIs (e.g. chat) apply `show_email_to_workspace_members` separately.
+ */
 export async function listWorkspaceMembersAction(
   workspaceId: string,
 ): Promise<ActionResult<{ members: WorkspaceMemberWithProfile[] }>> {

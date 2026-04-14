@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import type { CookieOptions } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+import { insertInviteJourneyByToken } from '@/lib/analytics/invite-journey-server';
 import { BB_INVITE_TOKEN_COOKIE, inviteTokenCookieOptions } from '@/lib/invite-cookies';
 import { safeNextPath } from '@/lib/safe-next-path';
 import { getSupabasePublishableKey, getSupabaseUrl } from '@utils/supabase/env';
@@ -41,6 +42,9 @@ export async function GET(request: Request) {
     if (!error) {
       if (inviteHandoff) {
         cookieStore.set(BB_INVITE_TOKEN_COOKIE, inviteHandoff, inviteTokenCookieOptions());
+        await insertInviteJourneyByToken(inviteHandoff, 'auth_callback_invite_handoff_saved', {
+          next_path: next,
+        });
       }
       return NextResponse.redirect(`${origin}${next}`);
     }

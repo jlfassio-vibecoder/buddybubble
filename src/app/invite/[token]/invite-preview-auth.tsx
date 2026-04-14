@@ -8,6 +8,7 @@ import { getAuthAppOrigin } from '@/lib/auth-app-origin';
 import { authCallbackAbsoluteUrl } from '@/lib/auth-callback-url';
 import { BB_INVITE_HANDOFF_SESSION_KEY } from '@/lib/invite-handoff-storage';
 import { cn } from '@/lib/utils';
+import { reportInviteJourneyClient } from '@/lib/analytics/invite-journey-client';
 import { formatUserFacingError } from '@/lib/format-error';
 
 /** Post-auth: consume invite cookie on `/onboarding` (not `/app` — invitees may have no workspace yet). */
@@ -29,6 +30,7 @@ export function InvitePreviewAuth({ token }: { token: string }) {
   async function signInGoogle() {
     setError(null);
     setLoading(true);
+    reportInviteJourneyClient(token, 'invite_auth_google_clicked');
     const supabase = createClient();
     const redirectTo = authCallbackAbsoluteUrl(getAuthAppOrigin(), POST_AUTH_PATH, token);
     const { error: err } = await supabase.auth.signInWithOAuth({
@@ -55,6 +57,7 @@ export function InvitePreviewAuth({ token }: { token: string }) {
       <Link
         href={`/login?next=${encodeURIComponent(POST_AUTH_PATH)}&invite_token=${encodeURIComponent(token.trim())}`}
         className={cn(buttonVariants({ variant: 'outline' }), 'w-full')}
+        onClick={() => reportInviteJourneyClient(token, 'invite_auth_email_link_clicked')}
       >
         Sign in with email
       </Link>

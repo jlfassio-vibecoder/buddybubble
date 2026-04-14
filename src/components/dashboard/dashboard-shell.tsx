@@ -992,6 +992,7 @@ export function DashboardShell({
             <ProfileCompletionModal
               profile={profile}
               showFamilyNames={showFamilyNames}
+              workspaceId={workspaceId}
               onComplete={() => void loadProfile()}
             />
           ) : null}

@@ -5,6 +5,7 @@ import { inviteUrlForToken } from '@/lib/app-url';
 import { generateInviteToken } from '@/lib/invite-token';
 import { sendInviteEmail } from '@/lib/resend-invite';
 import { sendInviteSms } from '@/lib/twilio-sms';
+import { insertInviteJourneyByToken } from '@/lib/analytics/invite-journey-server';
 import { createClient } from '@utils/supabase/server';
 
 export type ActionResult<T extends Record<string, unknown> = Record<never, never>> =
@@ -78,6 +79,13 @@ export async function createInviteAction(input: {
   if (!row?.id) {
     return { error: 'Invite was not created.' };
   }
+
+  await insertInviteJourneyByToken(
+    token,
+    'invite_created',
+    { label: label ?? undefined },
+    { userId: user.id },
+  );
 
   revalidatePath(`/app/${input.workspaceId}/invites`);
   return { ok: true, inviteUrl: inviteUrlForToken(token), token, id: row.id };
@@ -156,6 +164,8 @@ export async function createEmailInviteAction(input: {
     return { error: insErr.message };
   }
 
+  await insertInviteJourneyByToken(token, 'invite_created', {}, { userId: user.id });
+
   const inviteUrl = inviteUrlForToken(token);
   const send = await sendInviteEmail({
     to: email,
@@ -219,6 +229,8 @@ export async function createSmsInviteAction(input: {
   if (insErr) {
     return { error: insErr.message };
   }
+
+  await insertInviteJourneyByToken(token, 'invite_created', {}, { userId: user.id });
 
   const inviteUrl = inviteUrlForToken(token);
   const body = input.workspaceName

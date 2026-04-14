@@ -20,6 +20,7 @@ type Props = {
 /**
  * Records anonymous invite visits for business/fitness lead analytics.
  * Idempotent per tab via localStorage lead id.
+ * The API tags each lead with in-person vs online from the invitation type (link/QR vs email/SMS).
  */
 export function LeadVisitTracker({ workspaceId, inviteToken }: Props) {
   const ran = useRef(false);

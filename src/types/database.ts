@@ -143,12 +143,14 @@ export interface Database {
           user_id: string;
           role: MemberRole;
           created_at: string;
+          show_email_to_workspace_members: boolean;
         };
         Insert: {
           workspace_id: string;
           user_id: string;
           role: MemberRole;
           created_at?: string;
+          show_email_to_workspace_members?: boolean;
         };
         Update: Partial<Database['public']['Tables']['workspace_members']['Insert']>;
       };
@@ -655,6 +657,10 @@ export interface Database {
       get_invite_preview: {
         Args: { p_token: string };
         Returns: Json;
+      };
+      set_workspace_member_show_email: {
+        Args: { p_workspace_id: string; p_show: boolean };
+        Returns: undefined;
       };
       reject_invitation_join_request: {
         Args: { p_join_request_id: string };
