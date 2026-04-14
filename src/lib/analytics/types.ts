@@ -1,3 +1,5 @@
+import type { LeadRowSource } from '@/lib/leads-source';
+
 /**
  * Growth Engine — shared event taxonomy.
  *
@@ -43,8 +45,16 @@ export type FeatureName =
 // ── Metadata shapes per event ─────────────────────────────────────────────────
 
 export interface LeadCapturedMeta {
-  source: string;
-  invite_token?: string;
+  /** Always 'workspace' — tenant-attributed visitor, not a platform prospect. */
+  workflow: 'workspace';
+  source: LeadRowSource;
+  invite_token?: string | null;
+  acquisition_context?: {
+    workflow: 'workspace';
+    source: LeadRowSource;
+    invite_token: string | null;
+    utm_params: Record<string, string>;
+  };
 }
 
 export interface AuthModalOpenedMeta {

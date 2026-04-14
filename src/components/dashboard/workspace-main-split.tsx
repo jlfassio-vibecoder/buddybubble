@@ -7,6 +7,7 @@ import {
   CollapsedColumnStrip,
 } from '@/components/layout/collapsed-column-strip';
 import type { CalendarRailProps } from '@/components/dashboard/calendar-rail';
+import { TrialPaywallGuard } from '@/components/subscription/trial-paywall-guard';
 
 const MIN_CHAT_PX = 280;
 const MIN_KANBAN_PX = 280;
@@ -44,6 +45,11 @@ type Props = {
   board: React.ReactElement<{ calendarSlot?: React.ReactNode; taskViewsNonce?: number }>;
   /** Bumped after archive (etc.) so board + calendar lists refetch. */
   taskViewsNonce: number;
+  /**
+   * Storefront guest member preview ended: blur Kanban + calendar stage (not chat).
+   * @see docs/tdd-lead-onboarding.md §7
+   */
+  boardSoftLocked?: boolean;
 };
 
 /**
@@ -66,6 +72,7 @@ export function WorkspaceMainSplit({
   calendarRail,
   board,
   taskViewsNonce,
+  boardSoftLocked = false,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [chatWidth, setChatWidth] = useState(DEFAULT_CHAT_PX);
@@ -200,16 +207,35 @@ export function WorkspaceMainSplit({
           hideMainStageBelowMd && 'max-md:hidden',
         )}
       >
-        {!kanbanCollapsed
-          ? isValidElement(board)
-            ? cloneElement(board, {
-                calendarSlot: hideCalendarSlot ? undefined : calendarRail,
-                taskViewsNonce,
-              })
-            : board
-          : isValidElement(calendarRail)
-            ? cloneElement(calendarRail, { mainStage: true } as Partial<CalendarRailProps>)
-            : calendarRail}
+        {!kanbanCollapsed ? (
+          boardSoftLocked ? (
+            <TrialPaywallGuard locked className="flex min-h-0 min-w-0 flex-1 flex-col">
+              {isValidElement(board)
+                ? cloneElement(board, {
+                    calendarSlot: hideCalendarSlot ? undefined : calendarRail,
+                    taskViewsNonce,
+                  })
+                : board}
+            </TrialPaywallGuard>
+          ) : isValidElement(board) ? (
+            cloneElement(board, {
+              calendarSlot: hideCalendarSlot ? undefined : calendarRail,
+              taskViewsNonce,
+            })
+          ) : (
+            board
+          )
+        ) : boardSoftLocked ? (
+          <TrialPaywallGuard locked className="flex min-h-0 min-w-0 flex-1 flex-col">
+            {isValidElement(calendarRail)
+              ? cloneElement(calendarRail, { mainStage: true } as Partial<CalendarRailProps>)
+              : calendarRail}
+          </TrialPaywallGuard>
+        ) : isValidElement(calendarRail) ? (
+          cloneElement(calendarRail, { mainStage: true } as Partial<CalendarRailProps>)
+        ) : (
+          calendarRail
+        )}
       </div>
     </div>
   );

@@ -6,6 +6,7 @@ import { Calendar, GripHorizontal, PanelRightClose, PanelRightOpen } from 'lucid
 import {
   normalizeItemType,
   type BubbleRow,
+  type MemberRole,
   type TaskRow,
   type WorkspaceCategory,
 } from '@/types/database';
@@ -90,6 +91,8 @@ export type CalendarRailContextProps = {
   calendarTimezone: string | null;
   workspaceCategory: WorkspaceCategory | null;
   onOpenTask?: (taskId: string, opts?: { tab?: TaskModalTab }) => void;
+  workspaceMemberRole?: MemberRole | null;
+  guestTaskUserId?: string | null;
 };
 
 export type CalendarRailChromeBarProps = {
@@ -225,6 +228,8 @@ export function CalendarRail({
   calendarTimezone,
   workspaceCategory,
   onOpenTask,
+  workspaceMemberRole = null,
+  guestTaskUserId = null,
   reloadNonce = 0,
   mainStage = false,
   fillHostColumn = false,
@@ -269,6 +274,8 @@ export function CalendarRail({
     rangeEnd,
     enabled: fetchEnabled,
     reloadNonce,
+    workspaceMemberRole,
+    guestTaskUserId,
   });
 
   useEffect(() => {

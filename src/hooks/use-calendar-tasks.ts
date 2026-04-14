@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@utils/supabase/client';
-import type { TaskRow } from '@/types/database';
+import type { MemberRole, TaskRow } from '@/types/database';
+import { guestTaskAssignmentVisibilityOr, isGuestWorkspaceRole } from '@/lib/guest-task-query';
 import { compareScheduledTime } from '@/lib/task-scheduled-time';
 import { experienceOverlapsYmdRange } from '@/lib/experience-calendar';
 import { isMissingColumnSchemaCacheError } from '@/lib/supabase-schema-errors';
@@ -17,8 +18,10 @@ export type UseCalendarTasksParams = {
   rangeStart: string;
   rangeEnd: string;
   enabled?: boolean;
-  /** Bump (e.g. after archive or cross-rail drop) to refetch without changing range. */
+  /** Bump (e.g. after archive or calendar drop) to refetch without changing range. */
   reloadNonce?: number;
+  workspaceMemberRole?: MemberRole | null;
+  guestTaskUserId?: string | null;
 };
 
 function ymd(task: TaskRow): string {
@@ -42,7 +45,15 @@ export function useCalendarTasks(params: UseCalendarTasksParams): {
   loading: boolean;
   error: string | null;
 } {
-  const { bubbleIds, rangeStart, rangeEnd, enabled = true, reloadNonce = 0 } = params;
+  const {
+    bubbleIds,
+    rangeStart,
+    rangeEnd,
+    enabled = true,
+    reloadNonce = 0,
+    workspaceMemberRole = null,
+    guestTaskUserId = null,
+  } = params;
   const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +72,7 @@ export function useCalendarTasks(params: UseCalendarTasksParams): {
 
     async function run() {
       const supabase = createClient();
-      const { data: inRange, error: qErr } = await supabase
+      let inRangeQuery = supabase
         .from('tasks')
         .select('*')
         .in('bubble_id', bubbleIds)
@@ -69,6 +80,14 @@ export function useCalendarTasks(params: UseCalendarTasksParams): {
         .lte('scheduled_on', rangeEnd)
         .order('scheduled_on', { ascending: true })
         .order('position', { ascending: true });
+      if (
+        isGuestWorkspaceRole(workspaceMemberRole) &&
+        guestTaskUserId &&
+        guestTaskUserId.length > 0
+      ) {
+        inRangeQuery = inRangeQuery.or(guestTaskAssignmentVisibilityOr(guestTaskUserId));
+      }
+      const { data: inRange, error: qErr } = await inRangeQuery;
 
       if (cancelled) return;
 
@@ -80,7 +99,7 @@ export function useCalendarTasks(params: UseCalendarTasksParams): {
       }
 
       let spanRows: TaskRow[] = [];
-      const spanQuery = await supabase
+      let spanBuilder = supabase
         .from('tasks')
         .select('*')
         .in('bubble_id', bubbleIds)
@@ -88,6 +107,14 @@ export function useCalendarTasks(params: UseCalendarTasksParams): {
         .lte('scheduled_on', rangeEnd)
         .order('scheduled_on', { ascending: true })
         .order('position', { ascending: true });
+      if (
+        isGuestWorkspaceRole(workspaceMemberRole) &&
+        guestTaskUserId &&
+        guestTaskUserId.length > 0
+      ) {
+        spanBuilder = spanBuilder.or(guestTaskAssignmentVisibilityOr(guestTaskUserId));
+      }
+      const spanQuery = await spanBuilder;
 
       if (cancelled) return;
 
@@ -126,7 +153,16 @@ export function useCalendarTasks(params: UseCalendarTasksParams): {
     return () => {
       cancelled = true;
     };
-  }, [params.workspaceId, bubbleIds, enabled, rangeEnd, rangeStart, reloadNonce]);
+  }, [
+    params.workspaceId,
+    bubbleIds,
+    enabled,
+    rangeEnd,
+    rangeStart,
+    reloadNonce,
+    workspaceMemberRole,
+    guestTaskUserId,
+  ]);
 
   return { tasks, loading, error };
 }

@@ -63,6 +63,10 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { useUpdatePresence } from '@/hooks/use-update-presence';
 import { ActiveUsersStack } from '@/components/presence/ActiveUsersStack';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
+import {
+  shouldBlockWorkoutForExpiredMemberPreview,
+  shouldSoftLockTrialSurfaces,
+} from '@/lib/member-trial-soft-lock';
 import { TrialBanner } from '@/components/subscription/trial-banner';
 import { ExpiredGate } from '@/components/subscription/expired-gate';
 import { StartTrialModal } from '@/components/subscription/start-trial-modal';
@@ -96,6 +100,7 @@ export function DashboardShell({
   const loadUserWorkspaces = useWorkspaceStore((s) => s.loadUserWorkspaces);
   const syncActiveFromRoute = useWorkspaceStore((s) => s.syncActiveFromRoute);
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
+  const storeActiveBubble = useWorkspaceStore((s) => s.activeBubble);
   const setActiveBubble = useWorkspaceStore((s) => s.setActiveBubble);
   const loadProfile = useUserProfileStore((s) => s.loadProfile);
   const profile = useUserProfileStore((s) => s.profile);
@@ -339,9 +344,18 @@ export function DashboardShell({
     return defaultTaskModalBubbleId;
   }, [taskModalTaskId, taskModalCreateBubbleId, defaultTaskModalBubbleId]);
 
-  const handleStartWorkout = useCallback((task: TaskRow) => {
-    setWorkoutPlayerTask(task);
-  }, []);
+  const openTrialModal = useSubscriptionStore((s) => s.openTrialModal);
+
+  const handleStartWorkout = useCallback(
+    (task: TaskRow) => {
+      if (shouldBlockWorkoutForExpiredMemberPreview(task.bubble_id, activeWorkspace, bubbles)) {
+        openTrialModal();
+        return;
+      }
+      setWorkoutPlayerTask(task);
+    },
+    [activeWorkspace, bubbles, openTrialModal],
+  );
 
   const calendarContext = useMemo(
     () => ({
@@ -352,6 +366,8 @@ export function DashboardShell({
       calendarTimezone: workspaceCalendarTz,
       workspaceCategory: effectiveKanbanCategory,
       onOpenTask: openTaskModal,
+      workspaceMemberRole: effectiveWorkspaceRole,
+      guestTaskUserId: profile?.id ?? null,
     }),
     [
       workspaceId,
@@ -361,6 +377,8 @@ export function DashboardShell({
       workspaceCalendarTz,
       effectiveKanbanCategory,
       openTaskModal,
+      effectiveWorkspaceRole,
+      profile?.id,
     ],
   );
 
@@ -451,6 +469,14 @@ export function DashboardShell({
     void syncActiveFromRoute(workspaceId);
     void loadProfile();
   }, [workspaceId, loadUserWorkspaces, syncActiveFromRoute, loadProfile]);
+
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'visible') void loadUserWorkspaces();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [loadUserWorkspaces]);
 
   useEffect(() => {
     if (profile === null) return;
@@ -555,6 +581,8 @@ export function DashboardShell({
     }
   }, [layoutHydrated, embedMode, searchParams]);
 
+  const bubbleQueryParam = searchParams.get('bubble');
+
   useEffect(() => {
     const supabase = createClient();
     async function load() {
@@ -566,13 +594,21 @@ export function DashboardShell({
       const rows = (data ?? []) as BubbleRow[];
       setBubbles(rows);
       setSelectedBubbleId((prev) => {
+        if (bubbleQueryParam && rows.some((b) => b.id === bubbleQueryParam)) {
+          return bubbleQueryParam;
+        }
+        if (effectiveWorkspaceRole === 'guest' && rows.length > 0) {
+          const trial = rows.find((b) => b.bubble_type === 'trial');
+          if (trial) return trial.id;
+          return rows[0].id;
+        }
         if (prev === ALL_BUBBLES_BUBBLE_ID) return ALL_BUBBLES_BUBBLE_ID;
         if (prev && rows.some((b) => b.id === prev)) return prev;
         return ALL_BUBBLES_BUBBLE_ID;
       });
     }
     void load();
-  }, [workspaceId]);
+  }, [workspaceId, effectiveWorkspaceRole, bubbleQueryParam]);
 
   useEffect(() => {
     setPendingJoinRequestCount(initialPendingJoinRequestCount);
@@ -662,6 +698,17 @@ export function DashboardShell({
     const n = activeWorkspace?.name?.trim();
     return n || 'BuddyBubble';
   }, [activeWorkspace?.id, activeWorkspace?.name, workspaceId]);
+
+  const trialSoftLockSurfaces = useMemo(
+    () =>
+      shouldSoftLockTrialSurfaces({
+        activeWorkspace,
+        activeBubble: storeActiveBubble,
+        selectedBubbleId,
+        bubbles,
+      }),
+    [activeWorkspace, storeActiveBubble, selectedBubbleId, bubbles],
+  );
 
   const profilePermissionsContext = useMemo((): ProfilePermissionsContext | undefined => {
     if (embedMode) return undefined;
@@ -872,6 +919,7 @@ export function DashboardShell({
                 hideCalendarSlot={hideCalendarForMobileBoard}
                 hideMainStageBelowMd={layoutMobile && mobileTab === 'chat'}
                 taskViewsNonce={taskViewsNonce}
+                boardSoftLocked={trialSoftLockSurfaces}
                 calendarRail={
                   <CalendarRail
                     isCollapsed={calendarRailIsCollapsed}
@@ -929,6 +977,8 @@ export function DashboardShell({
                       onExpandCalendarWhenKanbanStripCollapse={() => setCalendarCollapsed(false)}
                       onRetractKanbanPanel={() => setKanbanCollapsed(true)}
                       buddyBubbleTitle={buddyBubbleTitle}
+                      workspaceMemberRole={effectiveWorkspaceRole}
+                      guestTaskUserId={profile?.id ?? null}
                     />
                   )
                 }

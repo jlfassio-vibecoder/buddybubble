@@ -51,7 +51,7 @@ export default async function AdminGrowthPage() {
       db
         .from('analytics_events')
         .select('event_type')
-        .in('event_type', [...FUNNEL_EVENT_TYPES])
+        .in('event_type', [...FUNNEL_EVENT_TYPES] as string[])
         .gte('created_at', since),
       db
         .from('analytics_events')

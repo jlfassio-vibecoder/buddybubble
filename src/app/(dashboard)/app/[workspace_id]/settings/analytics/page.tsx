@@ -1,6 +1,9 @@
 /**
  * Workspace Analytics — owner-only view.
  * Shows funnel event counts, feature gate hits, and page views for the last 30 days.
+ *
+ * Two distinct sections keep workspace-growth events visually separated from
+ * platform-subscription events. See docs/technical-design-dual-lead-capture-workflows-v1.md.
  */
 // Copilot suggestion ignored: PR descriptions are edited on GitHub, not in application source.
 
@@ -30,16 +33,38 @@ type InviteJourneyRow = {
   detail_summary: string;
 };
 
-const FUNNEL_LABELS: Record<string, string> = {
-  lead_captured: 'Leads captured',
+const WORKSPACE_LEAD_EVENT_TYPES = [
+  'lead_captured',
+  'auth_modal_opened',
+  'signup_completed',
+] as const;
+
+const WORKSPACE_LEAD_LABELS: Record<string, string> = {
+  lead_captured: 'Invite leads',
   auth_modal_opened: 'Auth modal opens',
   signup_completed: 'Sign-ups',
-  trial_started: 'Trials started',
-  trial_converted: 'Trials converted',
-  trial_canceled: 'Trials canceled',
-  subscription_canceled: 'Subscriptions canceled',
-  subscription_restarted: 'Subscriptions restarted',
 };
+
+const PLATFORM_SUBSCRIPTION_EVENT_TYPES = [
+  'trial_started',
+  'trial_converted',
+  'trial_canceled',
+  'subscription_canceled',
+  'subscription_restarted',
+] as const;
+
+const PLATFORM_SUBSCRIPTION_LABELS: Record<string, string> = {
+  trial_started: 'Trial started',
+  trial_converted: 'Trial converted',
+  trial_canceled: 'Trial canceled',
+  subscription_canceled: 'Subscription canceled',
+  subscription_restarted: 'Subscription restarted',
+};
+
+const ALL_FUNNEL_TYPES = [
+  ...WORKSPACE_LEAD_EVENT_TYPES,
+  ...PLATFORM_SUBSCRIPTION_EVENT_TYPES,
+] as const;
 
 const GATE_FEATURE_LABELS: Record<string, string> = {
   ai: 'AI generation',
@@ -92,8 +117,8 @@ export default async function WorkspaceAnalyticsPage({
 
   /** For business/fitness, `leads` row count is source of truth for `lead_captured` — exclude duplicate event rows. */
   const funnelEventTypesForQuery: string[] = isGrowthLeadWorkspace
-    ? Object.keys(FUNNEL_LABELS).filter((k) => k !== 'lead_captured')
-    : Object.keys(FUNNEL_LABELS);
+    ? (ALL_FUNNEL_TYPES as readonly string[]).filter((k) => k !== 'lead_captured')
+    : [...ALL_FUNNEL_TYPES];
 
   const [
     { data: funnelRows },
@@ -244,9 +269,15 @@ export default async function WorkspaceAnalyticsPage({
     funnelCounts['lead_captured'] = inPersonLeadRows.length + onlineLeadRows.length;
   }
 
-  const funnel: FunnelRow[] = Object.keys(FUNNEL_LABELS)
-    .map((k) => ({ event_type: k, count: funnelCounts[k] ?? 0 }))
-    .filter((r) => r.count > 0);
+  const workspaceLeadFunnel: FunnelRow[] = WORKSPACE_LEAD_EVENT_TYPES.map((k) => ({
+    event_type: k,
+    count: funnelCounts[k] ?? 0,
+  })).filter((r) => r.count > 0);
+
+  const platformSubFunnel: FunnelRow[] = PLATFORM_SUBSCRIPTION_EVENT_TYPES.map((k) => ({
+    event_type: k,
+    count: funnelCounts[k] ?? 0,
+  })).filter((r) => r.count > 0);
 
   const inviteJourney: InviteJourneyRow[] = (inviteJourneyRows ?? []).map((row) => {
     const meta =
@@ -275,6 +306,14 @@ export default async function WorkspaceAnalyticsPage({
       detail_summary: detailParts.length ? detailParts.join(' · ') : '—',
     };
   });
+
+  const hasAnyData =
+    workspaceLeadFunnel.length > 0 ||
+    platformSubFunnel.length > 0 ||
+    gates.length > 0 ||
+    totalPageViews > 0 ||
+    inviteJourney.length > 0 ||
+    (isGrowthLeadWorkspace && (inPersonLeadRows.length > 0 || onlineLeadRows.length > 0));
 
   /** Growth workspaces: count rows in `leads` (same window as segment cards). Else: funnel `lead_captured` events. */
   const leadsCapturedDisplay = isGrowthLeadWorkspace
@@ -306,7 +345,7 @@ export default async function WorkspaceAnalyticsPage({
           <Card>
             <CardContent className="pt-6">
               <p className="text-3xl font-bold tabular-nums">{leadsCapturedDisplay}</p>
-              <p className="mt-1 text-sm text-muted-foreground">Leads captured</p>
+              <p className="mt-1 text-sm text-muted-foreground">Invite leads</p>
               {isGrowthLeadWorkspace ? (
                 <p className="mt-2 text-xs leading-snug text-muted-foreground">
                   Invite visits count as leads. Link and QR invites are recorded as in-person
@@ -320,7 +359,7 @@ export default async function WorkspaceAnalyticsPage({
               <p className="text-3xl font-bold tabular-nums">
                 {funnelCounts['trial_started'] ?? 0}
               </p>
-              <p className="mt-1 text-sm text-muted-foreground">Trials started</p>
+              <p className="mt-1 text-sm text-muted-foreground">Trial started</p>
             </CardContent>
           </Card>
         </div>
@@ -381,19 +420,43 @@ export default async function WorkspaceAnalyticsPage({
           </Card>
         ) : null}
 
-        {/* Funnel breakdown */}
-        {funnel.length > 0 ? (
+        {/* Workspace lead funnel */}
+        {workspaceLeadFunnel.length > 0 ? (
           <Card className="mb-6">
             <CardHeader>
-              <CardTitle>Funnel events</CardTitle>
-              <CardDescription>Lifecycle events triggered in this socialspace.</CardDescription>
+              <CardTitle>Workspace leads</CardTitle>
+              <CardDescription>
+                People who visited via your invite link, last 30 days.
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <ul className="divide-y divide-border text-sm">
-                {funnel.map((r) => (
+                {workspaceLeadFunnel.map((r) => (
                   <li key={r.event_type} className="flex items-center justify-between py-2">
                     <span className="text-muted-foreground">
-                      {FUNNEL_LABELS[r.event_type] ?? r.event_type}
+                      {WORKSPACE_LEAD_LABELS[r.event_type] ?? r.event_type}
+                    </span>
+                    <span className="font-medium tabular-nums">{r.count}</span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {/* Platform subscription events */}
+        {platformSubFunnel.length > 0 ? (
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>Your subscription</CardTitle>
+              <CardDescription>Your BuddyBubble account activity, last 30 days.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ul className="divide-y divide-border text-sm">
+                {platformSubFunnel.map((r) => (
+                  <li key={r.event_type} className="flex items-center justify-between py-2">
+                    <span className="text-muted-foreground">
+                      {PLATFORM_SUBSCRIPTION_LABELS[r.event_type] ?? r.event_type}
                     </span>
                     <span className="font-medium tabular-nums">{r.count}</span>
                   </li>
@@ -427,12 +490,7 @@ export default async function WorkspaceAnalyticsPage({
           </Card>
         ) : null}
 
-        {funnel.length === 0 &&
-        gates.length === 0 &&
-        totalPageViews === 0 &&
-        inviteJourney.length === 0 &&
-        (!isGrowthLeadWorkspace ||
-          (inPersonLeadRows.length === 0 && onlineLeadRows.length === 0)) ? (
+        {!hasAnyData ? (
           <Card>
             <CardContent className="py-10 text-center text-sm text-muted-foreground">
               No analytics events recorded yet. Events will appear here as members use your

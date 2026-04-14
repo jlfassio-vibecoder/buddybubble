@@ -30,10 +30,13 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@utils/supabase/server';
 import { createServiceRoleClient } from '@/lib/supabase-service-role';
-import { trackServerEvent } from '@/lib/analytics/server';
-import { acquisitionContextFromInviteType } from '@/lib/lead-capture-analytics';
+import {
+  acquisitionContextFromInviteType,
+  trackWorkspaceLeadCaptured,
+} from '@/lib/lead-capture-analytics';
+import type { InviteLeadSource } from '@/lib/leads-source';
 
-const VALID_SOURCES = new Set(['qr', 'link', 'email', 'sms', 'direct']);
+const VALID_SOURCES = new Set<InviteLeadSource>(['qr', 'link', 'email', 'sms', 'direct']);
 
 function normalizeUtmParams(raw: unknown): Record<string, string> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
@@ -69,8 +72,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'workspaceId is required' }, { status: 400 });
     }
 
-    const source =
-      typeof body.source === 'string' && VALID_SOURCES.has(body.source) ? body.source : 'direct';
+    const source: InviteLeadSource =
+      typeof body.source === 'string' && VALID_SOURCES.has(body.source as InviteLeadSource)
+        ? (body.source as InviteLeadSource)
+        : 'direct';
 
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() || null : null;
     const utmParams = normalizeUtmParams(body.utmParams);
@@ -210,7 +215,7 @@ async function insertNewLead(
   opts: {
     workspaceId: string;
     inviteToken: string | null;
-    source: string;
+    source: InviteLeadSource;
     email: string | null;
     utmParams: Record<string, string>;
     userId: string | null;
@@ -239,14 +244,13 @@ async function insertNewLead(
     return NextResponse.json({ error: 'Failed to record lead' }, { status: 500 });
   }
 
-  await trackServerEvent('lead_captured', {
+  void trackWorkspaceLeadCaptured({
     workspaceId: opts.workspaceId,
-    userId: opts.userId,
     leadId: lead.id,
-    metadata: {
-      acquisition_context: opts.acquisitionContext,
-      source: opts.source,
-    },
+    source: opts.source,
+    inviteToken: opts.inviteToken,
+    utmParams: opts.utmParams,
+    userId: opts.userId,
   });
 
   return NextResponse.json({ leadId: lead.id });

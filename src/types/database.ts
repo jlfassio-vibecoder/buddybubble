@@ -3,6 +3,18 @@
  * Regenerate with the Supabase CLI when the schema changes:
  * `supabase gen types typescript --linked > src/types/database.generated.ts`
  */
+import type {
+  BubbleType,
+  LeadRowSource,
+  WorkspaceMemberOnboardingStatus,
+} from '@/lib/leads-source';
+
+export type {
+  BubbleType,
+  LeadRowSource,
+  WorkspaceMemberOnboardingStatus,
+} from '@/lib/leads-source';
+
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
 /** Template for a new BuddyBubble (`workspaces.category_type`). */
@@ -36,9 +48,6 @@ export type ClassInstanceStatus = 'available' | 'cancelled' | 'completed';
 
 /** Status of a user's enrollment in a class instance. */
 export type ClassEnrollmentStatus = 'enrolled' | 'waitlisted' | 'cancelled' | 'completed';
-
-/** Source channel that brought a lead to a workspace. */
-export type LeadSource = 'qr' | 'link' | 'email' | 'sms' | 'direct';
 
 /**
  * Subscription lifecycle for business/fitness workspaces.
@@ -143,6 +152,8 @@ export interface Database {
           user_id: string;
           role: MemberRole;
           created_at: string;
+          trial_expires_at: string | null;
+          onboarding_status: WorkspaceMemberOnboardingStatus;
           show_email_to_workspace_members: boolean;
         };
         Insert: {
@@ -150,6 +161,8 @@ export interface Database {
           user_id: string;
           role: MemberRole;
           created_at?: string;
+          trial_expires_at?: string | null;
+          onboarding_status?: WorkspaceMemberOnboardingStatus;
           show_email_to_workspace_members?: boolean;
         };
         Update: Partial<Database['public']['Tables']['workspace_members']['Insert']>;
@@ -234,6 +247,7 @@ export interface Database {
           icon: string | null;
           /** When true, only owners/admins and explicit bubble_members can see this bubble. */
           is_private: boolean;
+          bubble_type: BubbleType;
           created_at: string;
         };
         Insert: {
@@ -242,6 +256,7 @@ export interface Database {
           name: string;
           icon?: string | null;
           is_private?: boolean;
+          bubble_type?: BubbleType;
           created_at?: string;
         };
         Update: Partial<Database['public']['Tables']['bubbles']['Insert']>;
@@ -502,7 +517,7 @@ export interface Database {
           id: string;
           workspace_id: string | null;
           invite_token: string | null;
-          source: LeadSource | null;
+          source: LeadRowSource | null;
           email: string | null;
           utm_params: Json;
           first_seen_at: string;
@@ -517,7 +532,7 @@ export interface Database {
           id?: string;
           workspace_id?: string | null;
           invite_token?: string | null;
-          source?: LeadSource | null;
+          source?: LeadRowSource | null;
           email?: string | null;
           utm_params?: Json;
           first_seen_at?: string;

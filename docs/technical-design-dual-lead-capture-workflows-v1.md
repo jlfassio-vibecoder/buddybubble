@@ -2,17 +2,17 @@
 
 ## 1. Problem
 
-BuddyBubble currently mixes **two different meanings of “lead”** in conversation and, in places, in product surfaces:
+BuddyBubble currently mixes **two different meanings of "lead"** in conversation and, in places, in product surfaces:
 
 1. **Platform lead** — A person or organization the **product owner** (BuddyBubble) wants to **sell a BuddyBubble account to** (B2B/B2C SaaS funnel: awareness → trial → paid subscription to the platform).
 
 2. **Workspace lead** — A person a **tenant account owner** (e.g. gym, studio, business) invites into **their** workspace bubble (B2B2C growth funnel: invite → visit → identity → membership → eventual payment _to the tenant_ or owner disposition).
 
-The **workspace** funnel is partially implemented: `public.leads`, `/api/leads/track`, invite journey analytics, and workspace-scoped analytics UI for business/fitness categories. The **platform** funnel uses separate mechanisms (`analytics_events`, `billing_funnel_events`, Stripe flows, auth) but is not named or bounded as a first-class “lead workflow” in documentation or UI copy.
+The **workspace** funnel is partially implemented: `public.leads`, `/api/leads/track`, invite journey analytics, and workspace-scoped analytics UI for business/fitness categories. The **platform** funnel uses separate mechanisms (`analytics_events`, `billing_funnel_events`, Stripe flows, auth) but is not named or bounded as a first-class "lead workflow" in documentation or UI copy.
 
 Without an explicit split:
 
-- Metrics and labels (“Leads captured”) can be misread as **platform** acquisition when they mean **workspace** invite traffic.
+- Metrics and labels ("Leads captured") can be misread as **platform** acquisition when they mean **workspace** invite traffic.
 - Future B2B2C payments (customer pays the business) must not overload **`leads.converted_at`**, which today is written from **platform** workspace billing (`/api/stripe/create-trial`).
 - Reused UI components (cards, tables, timelines) risk **semantic collision** unless scope is clear in code and copy.
 
@@ -50,7 +50,7 @@ Without an explicit split:
 | Monetization | Trial or paid subscription to **BuddyBubble** | `workspace_subscriptions`, Stripe (`/api/stripe/create-trial`, webhooks), `billing_funnel_events` |
 | Retention    | Usage, expansion                              | Product analytics, subscription state                                                             |
 
-**Success:** Paid (or agreed) **platform** subscription. Not the same as “joined someone’s workspace.”
+**Success:** Paid (or agreed) **platform** subscription. Not the same as "joined someone's workspace."
 
 ### 4.2 Workspace (tenant / bubble) lead workflow
 
@@ -65,31 +65,31 @@ Without an explicit split:
 | Invite issued | Owner creates link, QR, email, SMS               | `public.invitations`, invite journey (`invite_journey_step` on `analytics_events`) |
 | Touchpoint    | Invitee opens invite URL                         | `POST /api/leads/track` → `public.leads` (business/fitness only)                   |
 | Identity      | Sign-in or guest path                            | `leads.user_id` when linked; invite journey steps across login/onboarding          |
-| Membership    | Joined or pending approval                       | `accept_invitation` outcomes; may still be an “open” workspace lead                |
+| Membership    | Joined or pending approval                       | `accept_invitation` outcomes; may still be an "open" workspace lead                |
 | Exit          | **Future:** paid to tenant, or owner closed/lost | Not fully implemented; see §7                                                      |
 
-**Success (product intent):** Defined per tenant: e.g. **purchase**, **booked class**, or **owner-marked won** — not automatically “created BuddyBubble account.”
+**Success (product intent):** Defined per tenant: e.g. **purchase**, **booked class**, or **owner-marked won** — not automatically "created BuddyBubble account."
 
 ### 4.3 Bridge: same human, two workflows
 
 A person may:
 
-1. Enter as a **workspace lead** (invited to tenant A’s bubble).
-2. Later create **their own** BuddyBubble account (e.g. “Add bubble” / new workspace).
+1. Enter as a **workspace lead** (invited to tenant A's bubble).
+2. Later create **their own** BuddyBubble account (e.g. "Add bubble" / new workspace).
 
 At step 2 they become a **platform** prospect/account owner in addition to any historical **workspace** `leads` row. **Recommendation:** link by `user_id` for support and analytics; **do not** delete or merge workspace rows into platform tables.
 
 ## 5. Current codebase (anchor points)
 
-| Concern                      | Location / behavior                                                                                                                                 |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Workspace lead rows          | `public.leads` — created by `/api/leads/track`; RLS: workspace owners/admins read                                                                   |
-| Acquisition segment          | `leads.metadata.acquisition_context`; `invitations.invite_type` is source of truth for in-person vs online; see `src/lib/lead-capture-analytics.ts` |
-| Workspace analytics UI       | `src/app/(dashboard)/app/[workspace_id]/settings/analytics/page.tsx` — growth workspaces: `leads` + segments + invite journey table                 |
-| Invite journey               | `analytics_events.event_type = 'invite_journey_step'`; writers across invite/login/onboarding                                                       |
-| `lead_captured` funnel event | Emitted on first insert from `/api/leads/track` (workspace-scoped metadata)                                                                         |
-| `converted_at` on `leads`    | Set in `/api/stripe/create-trial` when matching `user_id` + workspace — **platform trial/subscription context**, not B2B2C purchase                 |
-| Platform billing funnel      | `billing_funnel_events`; Stripe routes under `src/app/api/stripe/`                                                                                  |
+| Concern                      | Location / behavior                                                                                                                                                                                                                                                      |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Workspace lead rows          | `public.leads` — created by `/api/leads/track` and `/api/leads/storefront-trial`; RLS: workspace owners/admins read                                                                                                                                                      |
+| Acquisition segment          | `lead_captured` analytics event metadata (`workflow`, `acquisition_context`, `source`, UTM); `leads.utm_params` for UTM on the row; `invitations.invite_type` remains source of truth for in-person vs online for invite flows — see `src/lib/lead-capture-analytics.ts` |
+| Workspace analytics UI       | `src/app/(dashboard)/app/[workspace_id]/settings/analytics/page.tsx` — workspace funnel cards query `analytics_events` (e.g. `lead_captured`, invite journey, billing funnel types); segment cards / invite journey use `leads` + `invitations` where shown in that page |
+| Invite journey               | `analytics_events.event_type = 'invite_journey_step'`; writers across invite/login/onboarding                                                                                                                                                                            |
+| `lead_captured` funnel event | Emitted server-side on first insert from `/api/leads/track` and `/api/leads/storefront-trial` (workspace-scoped metadata)                                                                                                                                                |
+| `converted_at` on `leads`    | Set in `/api/stripe/create-trial` when matching `user_id` + workspace — **platform trial/subscription context**, not B2B2C purchase                                                                                                                                      |
+| Platform billing funnel      | `billing_funnel_events`; Stripe routes under `src/app/api/stripe/`                                                                                                                                                                                                       |
 
 ## 6. Proposed architecture
 
@@ -97,10 +97,10 @@ At step 2 they become a **platform** prospect/account owner in addition to any h
 
 | Internal term  | User-facing (workspace)                         | User-facing (platform)                                                 |
 | -------------- | ----------------------------------------------- | ---------------------------------------------------------------------- |
-| Workspace lead | “Invite leads”, “Workspace leads”, “Your leads” | —                                                                      |
-| Platform lead  | —                                               | “Account”, “Subscription”, or “Get BuddyBubble” funnel (TBD marketing) |
+| Workspace lead | "Invite leads", "Workspace leads", "Your leads" | —                                                                      |
+| Platform lead  | —                                               | "Account", "Subscription", or "Get BuddyBubble" funnel (TBD marketing) |
 
-**Rule:** The string **“Leads captured”** on **workspace** analytics must continue to mean **invite-attributed `leads` rows** (or explicitly scoped “last 30 days”), never platform signup count without relabeling.
+**Rule:** The string **"Leads captured"** on **workspace** analytics must continue to mean **invite-attributed `leads` rows** (or explicitly scoped "last 30 days"), never platform signup count without relabeling.
 
 ### 6.2 Data model boundaries (v1)
 
@@ -122,15 +122,15 @@ At step 2 they become a **platform** prospect/account owner in addition to any h
 
 ### 6.3 `leads.converted_at` semantics (honest + forward path)
 
-**Today:** Set when platform flow completes **`/api/stripe/create-trial`** for that user and workspace (see `create-trial` route). That is **“platform monetization touched this user in this workspace context”**, not **“tenant won the end customer.”**
+**Today:** Set when platform flow completes **`/api/stripe/create-trial`** for that user and workspace (see `create-trial` route). That is **"platform monetization touched this user in this workspace context"**, not **"tenant won the end customer."**
 
 **Recommendation for future versions:**
 
-- Either **rename** in product copy to **“Trial started (lead updated)”** when surfaced to tenants, **or**
+- Either **rename** in product copy to **"Trial started (lead updated)"** when surfaced to tenants, **or**
 - Add **`workspace_lead_outcome`** / **`disposition`** / **`won_at`** for B2B2C and keep **`converted_at`** strictly platform-aligned, **or**
 - Introduce **`platform_converted_at`** vs **`tenant_converted_at`** in a migration (only after stakeholder sign-off).
 
-v1 TDD **does not** require a migration; it requires **documentation** so engineers do not use `converted_at` for B2B2C “paid the gym.”
+v1 TDD **does not** require a migration; it requires **documentation** so engineers do not use `converted_at` for B2B2C "paid the gym."
 
 ### 6.4 Events
 
@@ -162,17 +162,17 @@ Shared **presentation** components (metric cards, tables, date windows) are fine
 ## 8. Acceptance criteria (documentation)
 
 - [ ] Engineering onboarding links to this doc from a single index or README entry (optional follow-up).
-- [ ] New features that add “lead” states must state **which workflow** they belong to in the PR description.
-- [ ] Workspace-facing copy reviewed so **“lead”** does not imply **BuddyBubble is selling to that person** in the tenant context.
+- [ ] New features that add "lead" states must state **which workflow** they belong to in the PR description.
+- [ ] Workspace-facing copy reviewed so **"lead"** does not imply **BuddyBubble is selling to that person** in the tenant context.
 
 ## 9. Open questions
 
-1. **Marketing brand:** Public name for the platform funnel (“BuddyBubble account” vs “Start your bubble”) — product decision.
+1. **Marketing brand:** Public name for the platform funnel ("BuddyBubble account" vs "Start your bubble") — product decision.
 2. **Tenant-facing label for `converted_at`:** Show at all until semantics are split?
 3. **Privacy:** If platform analytics ever **correlate** workspace leads to new accounts, ensure **disclosure** and **retention** policy alignment.
 
 ---
 
 **Document version:** v1  
-**Last updated:** 2026-04-13  
+**Last updated:** 2026-04-14  
 **Related:** `docs/technical-design-stripe-dual-mode-and-billing-funnel-analytics-v1.md`, `supabase/migrations/20260505100000_leads.sql`, `src/app/api/leads/track/route.ts`, `src/app/api/stripe/create-trial/route.ts`

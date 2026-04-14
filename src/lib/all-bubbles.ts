@@ -12,6 +12,7 @@ export function makeAllBubblesBubbleRow(workspaceId: string): BubbleRow {
     name: ALL_BUBBLES_LABEL,
     icon: null,
     is_private: false,
+    bubble_type: 'standard',
     created_at: new Date(0).toISOString(),
   };
 }

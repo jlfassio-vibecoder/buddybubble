@@ -17,7 +17,9 @@ import type { AnalyticsEventPayload, EventType } from '@/lib/analytics/types';
 const MAX_BATCH = 50;
 
 const VALID_EVENT_TYPES = new Set<EventType>([
-  'lead_captured',
+  // 'lead_captured' is intentionally excluded: it is server-only, emitted by
+  // /api/leads/track (invite) and /api/leads/storefront-trial after server-side
+  // validation. Client-submitted lead_captured would bypass validation.
   'auth_modal_opened',
   'signup_completed',
   'trial_started',

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { createClient } from '@utils/supabase/client';
 import type { BubbleRow, WorkspaceCategory } from '@/types/database';
+import type { WorkspaceMemberOnboardingStatus } from '@/lib/leads-source';
 
 /** One BuddyBubble the user belongs to (stored in `workspaces`). */
 export type WorkspaceRow = {
@@ -13,6 +14,9 @@ export type WorkspaceRow = {
   icon_url?: string | null;
   /** IANA timezone; drives task "today" and scheduled automation. */
   calendar_timezone?: string;
+  /** Storefront member preview (see workspace_members). */
+  onboarding_status: WorkspaceMemberOnboardingStatus;
+  trial_expires_at: string | null;
 };
 
 type WorkspaceStore = {
@@ -49,7 +53,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // which previously dropped BuddyBubbles from the rail when `flatMap` rejected the shape.
     const { data: memberships, error: memError } = await supabase
       .from('workspace_members')
-      .select('role, workspace_id')
+      .select('role, workspace_id, onboarding_status, trial_expires_at')
       .eq('user_id', user.id);
 
     if (memError || !memberships?.length) {
@@ -57,9 +61,29 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       return;
     }
 
-    const roleByWorkspace = new Map(
-      memberships.map((m) => [m.workspace_id, m.role as WorkspaceRow['role']]),
-    );
+    const memberByWorkspace = new Map<
+      string,
+      {
+        role: WorkspaceRow['role'];
+        onboarding_status: WorkspaceMemberOnboardingStatus;
+        trial_expires_at: string | null;
+      }
+    >();
+    for (const m of memberships) {
+      const row = m as {
+        workspace_id: string;
+        role: string;
+        onboarding_status?: string | null;
+        trial_expires_at?: string | null;
+      };
+      const os = row.onboarding_status;
+      memberByWorkspace.set(row.workspace_id, {
+        role: row.role as WorkspaceRow['role'],
+        onboarding_status:
+          os === 'trial_active' || os === 'trial_expired' || os === 'completed' ? os : 'completed',
+        trial_expires_at: row.trial_expires_at ?? null,
+      });
+    }
     const workspaceIds = [...new Set(memberships.map((m) => m.workspace_id))];
 
     // Use `*` so PostgREST only returns columns that exist on the server. Listing `calendar_timezone`
@@ -90,6 +114,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         icon_url?: string | null;
         calendar_timezone?: string | null;
       };
+      const mem = memberByWorkspace.get(ws.id);
       return {
         id: ws.id,
         name: ws.name,
@@ -97,7 +122,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         created_at: ws.created_at,
         icon_url: ws.icon_url ?? null,
         calendar_timezone: ws.calendar_timezone ?? 'UTC',
-        role: roleByWorkspace.get(ws.id) ?? 'member',
+        role: mem?.role ?? 'member',
+        onboarding_status: mem?.onboarding_status ?? 'completed',
+        trial_expires_at: mem?.trial_expires_at ?? null,
       };
     });
 
