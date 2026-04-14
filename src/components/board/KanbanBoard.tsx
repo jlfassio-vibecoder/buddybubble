@@ -757,56 +757,6 @@ export function KanbanBoard({
     [workspaceId],
   );
 
-  useEffect(() => {
-    if (!bubbleId) return;
-    const isAll = bubbleId === ALL_BUBBLES_BUBBLE_ID;
-    const ids = bubbles.map((b) => b.id);
-    if (isAll && ids.length === 0) return;
-
-    const supabase = createClient();
-    const channelName = isAll
-      ? `tasks-board-all:${ids.slice().sort().join(',')}`
-      : `tasks-board:${bubbleId}`;
-    const channel = supabase.channel(channelName);
-    const trialBubbleInsertOnly =
-      !isAll &&
-      bubbleId !== ALL_BUBBLES_BUBBLE_ID &&
-      bubbles.some((b) => b.id === bubbleId && b.bubble_type === 'trial');
-    if (isAll) {
-      for (const bid of ids) {
-        channel.on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'tasks',
-            filter: `bubble_id=eq.${bid}`,
-          },
-          () => {
-            void loadTasks();
-          },
-        );
-      }
-    } else {
-      channel.on(
-        'postgres_changes',
-        {
-          event: trialBubbleInsertOnly ? 'INSERT' : '*',
-          schema: 'public',
-          table: 'tasks',
-          filter: `bubble_id=eq.${bubbleId}`,
-        },
-        () => {
-          void loadTasks();
-        },
-      );
-    }
-    channel.subscribe();
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [bubbleId, bubbles, loadTasks]);
-
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 8 },
@@ -1026,6 +976,58 @@ export function KanbanBoard({
     effectiveWorkspaceCategory === 'fitness' &&
     !tasksBoardLoading &&
     totalTasksInBoard === 0;
+
+  /** INSERT-only avoids noisy reloads while polling an empty trial board; widen to * once a task exists. */
+  useEffect(() => {
+    if (!bubbleId) return;
+    const isAll = bubbleId === ALL_BUBBLES_BUBBLE_ID;
+    const ids = bubbles.map((b) => b.id);
+    if (isAll && ids.length === 0) return;
+
+    const supabase = createClient();
+    const channelName = isAll
+      ? `tasks-board-all:${ids.slice().sort().join(',')}`
+      : `tasks-board:${bubbleId}`;
+    const channel = supabase.channel(channelName);
+    const trialBubbleInsertOnly =
+      !isAll &&
+      bubbleId !== ALL_BUBBLES_BUBBLE_ID &&
+      bubbles.some((b) => b.id === bubbleId && b.bubble_type === 'trial') &&
+      showTrialWorkoutGenerating;
+    if (isAll) {
+      for (const bid of ids) {
+        channel.on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'tasks',
+            filter: `bubble_id=eq.${bid}`,
+          },
+          () => {
+            void loadTasks();
+          },
+        );
+      }
+    } else {
+      channel.on(
+        'postgres_changes',
+        {
+          event: trialBubbleInsertOnly ? 'INSERT' : '*',
+          schema: 'public',
+          table: 'tasks',
+          filter: `bubble_id=eq.${bubbleId}`,
+        },
+        () => {
+          void loadTasks();
+        },
+      );
+    }
+    channel.subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [bubbleId, bubbles, loadTasks, showTrialWorkoutGenerating]);
 
   useEffect(() => {
     if (!showTrialWorkoutGenerating) {
