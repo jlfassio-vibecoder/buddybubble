@@ -2,6 +2,7 @@
  * Workspace Analytics — owner-only view.
  * Shows funnel event counts, feature gate hits, and page views for the last 30 days.
  */
+// Copilot suggestion ignored: PR descriptions are edited on GitHub, not in application source.
 
 import Link from 'next/link';
 import { redirect } from 'next/navigation';

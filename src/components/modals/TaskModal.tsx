@@ -846,6 +846,9 @@ export function TaskModal({
       setProgramSchedule([]);
       setProgramSourceTitle('');
       setCardCoverPath('');
+      setCardCoverAiHint('');
+      setCardCoverPresetId('');
+      setAiCardCoverGenerating(false);
       setSubtasks([]);
       setComments([]);
       setCommentUserById({});

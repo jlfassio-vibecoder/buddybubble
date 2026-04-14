@@ -774,6 +774,22 @@ export function ChatArea({
         return false;
       }
 
+      if (attachedTaskId) {
+        const { data: attachTask, error: attachErr } = await supabase
+          .from('tasks')
+          .select('bubble_id')
+          .eq('id', attachedTaskId)
+          .single();
+        if (attachErr || !attachTask) {
+          setAttachmentError('Could not verify the card for this message.');
+          return false;
+        }
+        if (attachTask.bubble_id !== targetBubbleId) {
+          setAttachmentError('That card belongs to a different bubble than this message.');
+          return false;
+        }
+      }
+
       setSendingAttachments(true);
       try {
         const { data: inserted, error: insErr } = await supabase

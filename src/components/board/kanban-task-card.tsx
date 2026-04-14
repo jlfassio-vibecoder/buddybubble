@@ -84,6 +84,15 @@ function persistKanbanCoverHidden(taskId: string, hidden: boolean) {
   }
 }
 
+function readKanbanCoverHiddenFromStorage(taskId: string, enabled: boolean): boolean {
+  if (!enabled || typeof window === 'undefined') return false;
+  try {
+    return localStorage.getItem(`${KANBAN_HIDE_COVER_KEY}.${taskId}`) === '1';
+  } catch {
+    return false;
+  }
+}
+
 function subtaskProgress(task: TaskRow): { done: number; total: number } | null {
   const st = asSubtasks(task.subtasks);
   if (st.length === 0) return null;
@@ -183,12 +192,9 @@ export function KanbanTaskCard({
   const hasPeerPresence = taskPresencePeers.length > 0;
 
   const kanbanCoverStoragePath = density === 'micro' ? null : taskCardCoverPath(task);
-  const { url: kanbanCoverUrl, loading: kanbanCoverLoading } =
-    useTaskCardCoverUrl(kanbanCoverStoragePath);
-  const kanbanCoverFailed =
-    Boolean(kanbanCoverStoragePath) && !kanbanCoverLoading && !kanbanCoverUrl;
-
-  const [hideCoverOnBoard, setHideCoverOnBoard] = useState(false);
+  const [hideCoverOnBoard, setHideCoverOnBoard] = useState(() =>
+    readKanbanCoverHiddenFromStorage(task.id, showKanbanCoverToggle),
+  );
   useEffect(() => {
     if (!showKanbanCoverToggle) {
       setHideCoverOnBoard(false);
@@ -200,6 +206,13 @@ export function KanbanTaskCard({
       setHideCoverOnBoard(false);
     }
   }, [showKanbanCoverToggle, task.id]);
+
+  const coverPathForSignedUrl =
+    showKanbanCoverToggle && hideCoverOnBoard ? null : kanbanCoverStoragePath;
+  const { url: kanbanCoverUrl, loading: kanbanCoverLoading } =
+    useTaskCardCoverUrl(coverPathForSignedUrl);
+  const kanbanCoverFailed =
+    Boolean(coverPathForSignedUrl) && !kanbanCoverLoading && !kanbanCoverUrl;
 
   const useCoverHero = Boolean(
     kanbanCoverStoragePath && !kanbanCoverFailed && !(showKanbanCoverToggle && hideCoverOnBoard),
