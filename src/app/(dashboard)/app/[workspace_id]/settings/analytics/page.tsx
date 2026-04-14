@@ -7,13 +7,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@utils/supabase/server';
 import { createServiceRoleClient } from '@/lib/supabase-service-role';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 type FunnelRow = { event_type: string; count: number };
 type GateRow = { feature_name: string; count: number };
@@ -132,9 +126,7 @@ export default async function WorkspaceAnalyticsPage({
             ← Back to workspace
           </Link>
           <h1 className="mt-4 text-2xl font-semibold tracking-tight text-foreground">Analytics</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {workspaceName} — last 30 days
-          </p>
+          <p className="mt-1 text-sm text-muted-foreground">{workspaceName} — last 30 days</p>
         </div>
 
         {/* Summary strip */}

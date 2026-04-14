@@ -4,6 +4,7 @@ import { useDroppable } from '@dnd-kit/core';
 import { addDays, eachDayOfInterval, endOfWeek, format, startOfWeek } from 'date-fns';
 import type { BubbleRow, TaskRow, WorkspaceCategory } from '@/types/database';
 import type { TaskModalTab } from '@/components/modals/TaskModal';
+import type { TaskBubbleUpControlProps } from '@/components/tasks/bubbly-button';
 import { KanbanTaskCard } from '@/components/board/kanban-task-card';
 import { CALENDAR_WEEK_OPTIONS } from '@/lib/calendar-view-range';
 import { calendarDayDropId } from '@/lib/calendar-dnd';
@@ -49,6 +50,7 @@ export type CalendarWeekRibbonProps = {
   boardColumnDefs: BoardColumnDefLite[] | null;
   /** Workspace-local today (YYYY-MM-DD). */
   todayYmd: string;
+  bubbleUpPropsFor?: (taskId: string) => TaskBubbleUpControlProps | undefined;
 };
 
 export function CalendarWeekRibbon({
@@ -63,6 +65,7 @@ export function CalendarWeekRibbon({
   calendarTimezone,
   boardColumnDefs,
   todayYmd,
+  bubbleUpPropsFor,
 }: CalendarWeekRibbonProps) {
   const tz = calendarTimezone?.trim() || 'UTC';
   const activeWorkspaceYmd = getCalendarDateInTimeZone(tz, activeViewDate);
@@ -122,6 +125,7 @@ export function CalendarWeekRibbon({
               workspaceCategory={workspaceCategory}
               calendarTimezone={calendarTimezone}
               isCompleted={taskColumnIsCompletionStatus(task.status, boardColumnDefs)}
+              bubbleUp={bubbleUpPropsFor?.(task.id)}
             />
           ))}
         </div>

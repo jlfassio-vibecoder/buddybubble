@@ -216,6 +216,8 @@ export function DashboardShell({
   const calendarRailIsCollapsed = kanbanCollapsed ? false : calendarCollapsed;
 
   const taskCommentCountsRef = useRef<Map<string, number>>(new Map());
+  /** When set, `TaskModal` `onCreated` also runs this (chat: post message with `attached_task_id`). */
+  const chatCardOnCreatedRef = useRef<((taskId: string) => void) | null>(null);
   const taskModalForToastRef = useRef<{ open: boolean; taskId: string | null }>({
     open: false,
     taskId: null,
@@ -280,6 +282,7 @@ export function DashboardShell({
   }, [workspaceId, initSubscription]);
 
   const openTaskModal = useCallback((id: string, opts?: { tab?: TaskModalTab }) => {
+    chatCardOnCreatedRef.current = null;
     setTaskModalInitialCreateItemType(null);
     setTaskModalInitialCreateTitle(null);
     setTaskModalInitialCreateWorkoutDurationMin(null);
@@ -296,7 +299,12 @@ export function DashboardShell({
       title?: string;
       workoutDurationMin?: string | null;
       bubbleId?: string | null;
+      /** When true, do not clear `chatCardOnCreatedRef` (caller just set it for chat compose). */
+      preserveChatCallback?: boolean;
     }) => {
+      if (!opts?.preserveChatCallback) {
+        chatCardOnCreatedRef.current = null;
+      }
       setTaskModalInitialStatus(opts?.status ?? null);
       setTaskModalInitialTab(null);
       setTaskModalTaskId(null);
@@ -309,6 +317,14 @@ export function DashboardShell({
       setTaskModalOpen(true);
     },
     [],
+  );
+
+  const openChatComposeForTask = useCallback(
+    (opts: { bubbleId: string | null; onTaskCreated: (taskId: string) => void }) => {
+      chatCardOnCreatedRef.current = opts.onTaskCreated;
+      openCreateTaskModal({ bubbleId: opts.bubbleId, preserveChatCallback: true });
+    },
+    [openCreateTaskModal],
   );
 
   const defaultTaskModalBubbleId = useMemo(
@@ -351,6 +367,7 @@ export function DashboardShell({
   const onTaskModalOpenChange = useCallback((open: boolean) => {
     setTaskModalOpen(open);
     if (!open) {
+      chatCardOnCreatedRef.current = null;
       setTaskModalTaskId(null);
       setTaskModalInitialStatus(null);
       setTaskModalInitialTab(null);
@@ -752,276 +769,286 @@ export function DashboardShell({
 
   return (
     <AnalyticsProvider workspaceId={workspaceId} userId={profile?.id}>
-    <ThemeScope category={effectiveThemeCategory}>
-      <div className="flex h-screen min-h-0 flex-col bg-background md:flex-row md:overflow-hidden">
-        {layoutMobile ? (
-          <MobileHeader
-            title={buddyBubbleTitle}
-            trailing={embedMode ? null : <ActiveUsersStack localUserId={profile?.id} />}
-          />
-        ) : null}
-        {layoutMobile ? (
-          <MobileSidebarSheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-            <WorkspaceRail {...drawerRailProps} />
-            <BubbleSidebar {...drawerBubbleProps} />
-          </MobileSidebarSheet>
-        ) : null}
+      <ThemeScope category={effectiveThemeCategory}>
+        <div className="flex h-screen min-h-0 flex-col bg-background md:flex-row md:overflow-hidden">
+          {layoutMobile ? (
+            <MobileHeader
+              title={buddyBubbleTitle}
+              trailing={embedMode ? null : <ActiveUsersStack localUserId={profile?.id} />}
+            />
+          ) : null}
+          {layoutMobile ? (
+            <MobileSidebarSheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+              <WorkspaceRail {...drawerRailProps} />
+              <BubbleSidebar {...drawerBubbleProps} />
+            </MobileSidebarSheet>
+          ) : null}
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-0">
-          {!embedMode ? (
-            <div className="max-md:hidden flex h-11 shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-4">
-              <span
-                className="min-w-0 truncate text-sm font-semibold text-foreground"
-                title={`${buddyBubbleTitle} - ${workspaceTitle}`}
-              >
-                {buddyBubbleTitle}
-                <span className="font-normal text-muted-foreground"> - </span>
-                {workspaceTitle}
-              </span>
-              <div className="flex min-w-0 shrink-0 items-center gap-2">
-                {embedMode ? null : <ActiveUsersStack localUserId={profile?.id} />}
-                <DesktopViewSwitcher
-                  activeMode={desktopFocusModeActive}
-                  onChange={applyDesktopFocusMode}
-                  disabled={!layoutHydrated}
-                />
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-0">
+            {!embedMode ? (
+              <div className="max-md:hidden flex h-11 shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-4">
+                <span
+                  className="min-w-0 truncate text-sm font-semibold text-foreground"
+                  title={`${buddyBubbleTitle} - ${workspaceTitle}`}
+                >
+                  {buddyBubbleTitle}
+                  <span className="font-normal text-muted-foreground"> - </span>
+                  {workspaceTitle}
+                </span>
+                <div className="flex min-w-0 shrink-0 items-center gap-2">
+                  {embedMode ? null : <ActiveUsersStack localUserId={profile?.id} />}
+                  <DesktopViewSwitcher
+                    activeMode={desktopFocusModeActive}
+                    onChange={applyDesktopFocusMode}
+                    disabled={!layoutHydrated}
+                  />
+                </div>
               </div>
+            ) : null}
+            {!embedMode && <TrialBanner />}
+            {!embedMode && <ExpiredGate />}
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:min-h-0 md:flex-row">
+              <div className="hidden h-full min-h-0 shrink-0 md:flex md:flex-row">
+                {tripleStack ? (
+                  <div
+                    className={cn(
+                      'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-border',
+                      COLLAPSED_COLUMN_WIDTH_CLASS,
+                    )}
+                  >
+                    {chatCollapsed ? (
+                      <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-border bg-black">
+                        <CollapsedColumnStrip
+                          title="Messages"
+                          expandTitle="Expand Messages"
+                          expandAriaLabel="Expand Messages panel"
+                          onExpand={() => setChatCollapsed(false)}
+                          edge="left"
+                          variant="black"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-border bg-background">
+                        <CollapsedColumnStrip
+                          title="Kanban"
+                          expandTitle="Expand Kanban"
+                          expandAriaLabel="Expand Kanban panel"
+                          onExpand={() => setKanbanCollapsed(false)}
+                          edge="left"
+                          variant="card"
+                        />
+                      </div>
+                    )}
+                    <BubbleSidebar {...bubbleSidebarProps} collapsedStackSlot="middle" />
+                    <WorkspaceRail {...workspaceRailProps} collapsedStackSlot="bottom" />
+                  </div>
+                ) : railsCollapsed ? (
+                  <div
+                    className={cn(
+                      'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-border',
+                      COLLAPSED_COLUMN_WIDTH_CLASS,
+                    )}
+                  >
+                    <BubbleSidebar {...bubbleSidebarProps} collapsedStackSlot="top" />
+                    <WorkspaceRail {...workspaceRailProps} collapsedStackSlot="bottom" />
+                  </div>
+                ) : (
+                  <>
+                    <WorkspaceRail {...workspaceRailProps} />
+                    <BubbleSidebar {...bubbleSidebarProps} />
+                  </>
+                )}
+              </div>
+
+              <WorkspaceMainSplit
+                workspaceId={workspaceId}
+                chatCollapsed={chatCollapsed}
+                onChatCollapsedChange={setChatCollapsed}
+                kanbanCollapsed={kanbanCollapsed}
+                calendarCollapsed={calendarRailIsCollapsed}
+                omitCollapsedMessagesStrip={
+                  (tripleStack && chatCollapsed) || omitMobileNonChatStrip
+                }
+                hideCalendarSlot={hideCalendarForMobileBoard}
+                hideMainStageBelowMd={layoutMobile && mobileTab === 'chat'}
+                taskViewsNonce={taskViewsNonce}
+                calendarRail={
+                  <CalendarRail
+                    isCollapsed={calendarRailIsCollapsed}
+                    onExpand={() => setCalendarCollapsed(false)}
+                    onCollapse={() => setCalendarCollapsed(true)}
+                    buddyBubbleTitle={buddyBubbleTitle}
+                    {...calendarContext}
+                  />
+                }
+                renderChat={({ onCollapse }) => (
+                  <ChatArea
+                    bubbles={bubbles}
+                    canPostMessages={canPostMessages}
+                    canWriteTasks={canWriteTasks}
+                    onOpenTask={openTaskModal}
+                    onOpenCreateTaskForChat={openChatComposeForTask}
+                    onCollapse={onCollapse}
+                    workspaceTitle={workspaceTitle}
+                    joinRequestBellPreview={isAdmin ? joinRequestBellPreview : undefined}
+                  />
+                )}
+                board={
+                  isAnalyticsBubble ? (
+                    <PremiumGate feature="analytics" className="flex-1 min-h-0">
+                      <AnalyticsBoard
+                        workspaceId={workspaceId}
+                        calendarTimezone={workspaceCalendarTz}
+                      />
+                    </PremiumGate>
+                  ) : isClassesBubble ? (
+                    <ClassesBoard workspaceId={workspaceId} />
+                  ) : isProgramsBubble ? (
+                    <ProgramsBoard
+                      workspaceId={workspaceId}
+                      selectedBubbleId={selectedBubbleId!}
+                      bubbles={bubbles}
+                      workspaceCategory={effectiveKanbanCategory}
+                      calendarTimezone={workspaceCalendarTz}
+                      taskViewsNonce={taskViewsNonce}
+                      canWrite={canWriteTasks}
+                      onOpenTask={openTaskModal}
+                      onOpenCreateTask={openCreateTaskModal}
+                    />
+                  ) : (
+                    <KanbanBoard
+                      canWrite={canWriteTasks}
+                      bubbles={bubbles}
+                      onOpenTask={openTaskModal}
+                      onOpenCreateTask={openCreateTaskModal}
+                      onStartWorkout={handleStartWorkout}
+                      workspaceCategory={effectiveKanbanCategory}
+                      calendarTimezone={workspaceCalendarTz}
+                      boardStripExpandNonce={boardStripExpandNonce}
+                      calendarStripCollapsed={calendarRailIsCollapsed}
+                      onExpandCalendarWhenKanbanStripCollapse={() => setCalendarCollapsed(false)}
+                      onRetractKanbanPanel={() => setKanbanCollapsed(true)}
+                      buddyBubbleTitle={buddyBubbleTitle}
+                    />
+                  )
+                }
+              />
+            </div>
+          </div>
+
+          {layoutMobile ? <MobileTabBar onOpenNavigation={() => setMobileNavOpen(true)} /> : null}
+
+          <TaskModal
+            open={taskModalOpen}
+            onOpenChange={onTaskModalOpenChange}
+            taskId={taskModalTaskId}
+            bubbleId={resolvedTaskModalBubbleId}
+            workspaceId={workspaceId}
+            canWrite={canWriteTasks}
+            onCreated={(id) => {
+              setTaskModalTaskId(id);
+              bumpTaskViews();
+              const postToChat = chatCardOnCreatedRef.current;
+              chatCardOnCreatedRef.current = null;
+              if (postToChat) postToChat(id);
+            }}
+            initialCreateStatus={taskModalInitialStatus}
+            initialCreateItemType={taskModalInitialCreateItemType}
+            initialCreateTitle={taskModalInitialCreateTitle}
+            initialCreateWorkoutDurationMin={taskModalInitialCreateWorkoutDurationMin}
+            initialTab={taskModalInitialTab}
+            workspaceCategory={effectiveKanbanCategory}
+            calendarTimezone={workspaceCalendarTz}
+            onTaskArchived={bumpTaskViews}
+          />
+          {workoutPlayerTask && (
+            <WorkoutPlayer
+              open
+              onClose={() => setWorkoutPlayerTask(null)}
+              workoutTitle={workoutPlayerTask.title}
+              exercises={metadataFieldsFromParsed(workoutPlayerTask.metadata).workoutExercises}
+              bubbleId={workoutPlayerTask.bubble_id}
+              sourceTaskId={workoutPlayerTask.id}
+              onComplete={bumpTaskViews}
+            />
+          )}
+          <WorkspaceSettingsModal
+            open={workspaceSettingsOpen}
+            onOpenChange={setWorkspaceSettingsOpen}
+            workspaceId={workspaceId}
+            isAdmin={isAdmin}
+            isOwner={isOwner}
+            onSaved={() => {
+              void loadUserWorkspaces().then(() => syncActiveFromRoute(workspaceId));
+            }}
+          />
+          <ProfileModal
+            open={profileModalOpen}
+            onOpenChange={setProfileModalOpen}
+            permissionsContext={profilePermissionsContext}
+            showFamilyNames={showFamilyNames}
+          />
+          {!profileComplete && profile !== null ? (
+            <ProfileCompletionModal
+              profile={profile}
+              showFamilyNames={showFamilyNames}
+              onComplete={() => void loadProfile()}
+            />
+          ) : null}
+          <PeopleInvitesModal
+            open={peopleInvitesOpen}
+            onOpenChange={setPeopleInvitesOpen}
+            workspaceId={workspaceId}
+            themeCategory={effectiveThemeCategory}
+            preferPendingTab={pendingJoinRequestCount > 0}
+            onRequestCreateOwnWorkspace={embedMode ? undefined : openCreateWorkspace}
+          />
+          {!embedMode ? (
+            <CreateWorkspaceModal
+              open={createWorkspaceOpen}
+              onOpenChange={setCreateWorkspaceOpen}
+            />
+          ) : null}
+          {workspaceCategoryForUi === 'fitness' ? (
+            <FitnessProfileSheet
+              open={fitnessProfileOpen}
+              onOpenChange={setFitnessProfileOpen}
+              workspaceId={workspaceId}
+            />
+          ) : null}
+          {workspaceCategoryForUi === 'fitness' || workspaceCategoryForUi === 'business' ? (
+            <StartTrialModal workspaceId={workspaceId} categoryType={workspaceCategoryForUi} />
+          ) : null}
+          {commentAlert ? (
+            <div
+              className="pointer-events-auto fixed bottom-20 left-1/2 z-[100] flex max-w-md -translate-x-1/2 items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-lg md:bottom-6"
+              role="status"
+            >
+              <p className="min-w-0 flex-1 text-sm text-foreground">
+                Someone commented on &ldquo;{commentAlert.title}&rdquo;
+              </p>
+              <Button
+                size="sm"
+                onClick={() => {
+                  openTaskModal(commentAlert.taskId, { tab: 'comments' });
+                  setCommentAlert(null);
+                }}
+              >
+                Open
+              </Button>
+              <button
+                type="button"
+                className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label="Dismiss"
+                onClick={() => setCommentAlert(null)}
+              >
+                <X className="size-4" />
+              </button>
             </div>
           ) : null}
-          {!embedMode && <TrialBanner />}
-          {!embedMode && <ExpiredGate />}
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:min-h-0 md:flex-row">
-            <div className="hidden h-full min-h-0 shrink-0 md:flex md:flex-row">
-              {tripleStack ? (
-                <div
-                  className={cn(
-                    'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-border',
-                    COLLAPSED_COLUMN_WIDTH_CLASS,
-                  )}
-                >
-                  {chatCollapsed ? (
-                    <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-border bg-black">
-                      <CollapsedColumnStrip
-                        title="Messages"
-                        expandTitle="Expand Messages"
-                        expandAriaLabel="Expand Messages panel"
-                        onExpand={() => setChatCollapsed(false)}
-                        edge="left"
-                        variant="black"
-                      />
-                    </div>
-                  ) : (
-                    <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-border bg-background">
-                      <CollapsedColumnStrip
-                        title="Kanban"
-                        expandTitle="Expand Kanban"
-                        expandAriaLabel="Expand Kanban panel"
-                        onExpand={() => setKanbanCollapsed(false)}
-                        edge="left"
-                        variant="card"
-                      />
-                    </div>
-                  )}
-                  <BubbleSidebar {...bubbleSidebarProps} collapsedStackSlot="middle" />
-                  <WorkspaceRail {...workspaceRailProps} collapsedStackSlot="bottom" />
-                </div>
-              ) : railsCollapsed ? (
-                <div
-                  className={cn(
-                    'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-border',
-                    COLLAPSED_COLUMN_WIDTH_CLASS,
-                  )}
-                >
-                  <BubbleSidebar {...bubbleSidebarProps} collapsedStackSlot="top" />
-                  <WorkspaceRail {...workspaceRailProps} collapsedStackSlot="bottom" />
-                </div>
-              ) : (
-                <>
-                  <WorkspaceRail {...workspaceRailProps} />
-                  <BubbleSidebar {...bubbleSidebarProps} />
-                </>
-              )}
-            </div>
-
-            <WorkspaceMainSplit
-              workspaceId={workspaceId}
-              chatCollapsed={chatCollapsed}
-              onChatCollapsedChange={setChatCollapsed}
-              kanbanCollapsed={kanbanCollapsed}
-              calendarCollapsed={calendarRailIsCollapsed}
-              omitCollapsedMessagesStrip={(tripleStack && chatCollapsed) || omitMobileNonChatStrip}
-              hideCalendarSlot={hideCalendarForMobileBoard}
-              hideMainStageBelowMd={layoutMobile && mobileTab === 'chat'}
-              taskViewsNonce={taskViewsNonce}
-              calendarRail={
-                <CalendarRail
-                  isCollapsed={calendarRailIsCollapsed}
-                  onExpand={() => setCalendarCollapsed(false)}
-                  onCollapse={() => setCalendarCollapsed(true)}
-                  buddyBubbleTitle={buddyBubbleTitle}
-                  {...calendarContext}
-                />
-              }
-              renderChat={({ onCollapse }) => (
-                <ChatArea
-                  bubbles={bubbles}
-                  canPostMessages={canPostMessages}
-                  onOpenTask={openTaskModal}
-                  onCollapse={onCollapse}
-                  workspaceTitle={workspaceTitle}
-                  joinRequestBellPreview={isAdmin ? joinRequestBellPreview : undefined}
-                />
-              )}
-              board={
-                isAnalyticsBubble ? (
-                  <PremiumGate feature="analytics" className="flex-1 min-h-0">
-                    <AnalyticsBoard
-                      workspaceId={workspaceId}
-                      calendarTimezone={workspaceCalendarTz}
-                    />
-                  </PremiumGate>
-                ) : isClassesBubble ? (
-                  <ClassesBoard workspaceId={workspaceId} />
-                ) : isProgramsBubble ? (
-                  <ProgramsBoard
-                    workspaceId={workspaceId}
-                    selectedBubbleId={selectedBubbleId!}
-                    bubbles={bubbles}
-                    workspaceCategory={effectiveKanbanCategory}
-                    calendarTimezone={workspaceCalendarTz}
-                    taskViewsNonce={taskViewsNonce}
-                    canWrite={canWriteTasks}
-                    onOpenTask={openTaskModal}
-                    onOpenCreateTask={openCreateTaskModal}
-                  />
-                ) : (
-                  <KanbanBoard
-                    canWrite={canWriteTasks}
-                    bubbles={bubbles}
-                    onOpenTask={openTaskModal}
-                    onOpenCreateTask={openCreateTaskModal}
-                    onStartWorkout={handleStartWorkout}
-                    workspaceCategory={effectiveKanbanCategory}
-                    calendarTimezone={workspaceCalendarTz}
-                    boardStripExpandNonce={boardStripExpandNonce}
-                    calendarStripCollapsed={calendarRailIsCollapsed}
-                    onExpandCalendarWhenKanbanStripCollapse={() => setCalendarCollapsed(false)}
-                    onRetractKanbanPanel={() => setKanbanCollapsed(true)}
-                    buddyBubbleTitle={buddyBubbleTitle}
-                  />
-                )
-              }
-            />
-          </div>
+          {children}
         </div>
-
-        {layoutMobile ? <MobileTabBar onOpenNavigation={() => setMobileNavOpen(true)} /> : null}
-
-        <TaskModal
-          open={taskModalOpen}
-          onOpenChange={onTaskModalOpenChange}
-          taskId={taskModalTaskId}
-          bubbleId={resolvedTaskModalBubbleId}
-          workspaceId={workspaceId}
-          canWrite={canWriteTasks}
-          onCreated={(id) => {
-            setTaskModalTaskId(id);
-            bumpTaskViews();
-          }}
-          initialCreateStatus={taskModalInitialStatus}
-          initialCreateItemType={taskModalInitialCreateItemType}
-          initialCreateTitle={taskModalInitialCreateTitle}
-          initialCreateWorkoutDurationMin={taskModalInitialCreateWorkoutDurationMin}
-          initialTab={taskModalInitialTab}
-          workspaceCategory={effectiveKanbanCategory}
-          calendarTimezone={workspaceCalendarTz}
-          onTaskArchived={bumpTaskViews}
-        />
-        {workoutPlayerTask && (
-          <WorkoutPlayer
-            open
-            onClose={() => setWorkoutPlayerTask(null)}
-            workoutTitle={workoutPlayerTask.title}
-            exercises={metadataFieldsFromParsed(workoutPlayerTask.metadata).workoutExercises}
-            bubbleId={workoutPlayerTask.bubble_id}
-            sourceTaskId={workoutPlayerTask.id}
-            onComplete={bumpTaskViews}
-          />
-        )}
-        <WorkspaceSettingsModal
-          open={workspaceSettingsOpen}
-          onOpenChange={setWorkspaceSettingsOpen}
-          workspaceId={workspaceId}
-          isAdmin={isAdmin}
-          isOwner={isOwner}
-          onSaved={() => {
-            void loadUserWorkspaces().then(() => syncActiveFromRoute(workspaceId));
-          }}
-        />
-        <ProfileModal
-          open={profileModalOpen}
-          onOpenChange={setProfileModalOpen}
-          permissionsContext={profilePermissionsContext}
-          showFamilyNames={showFamilyNames}
-        />
-        {!profileComplete && profile !== null ? (
-          <ProfileCompletionModal
-            profile={profile}
-            showFamilyNames={showFamilyNames}
-            onComplete={() => void loadProfile()}
-          />
-        ) : null}
-        <PeopleInvitesModal
-          open={peopleInvitesOpen}
-          onOpenChange={setPeopleInvitesOpen}
-          workspaceId={workspaceId}
-          themeCategory={effectiveThemeCategory}
-          preferPendingTab={pendingJoinRequestCount > 0}
-          onRequestCreateOwnWorkspace={embedMode ? undefined : openCreateWorkspace}
-        />
-        {!embedMode ? (
-          <CreateWorkspaceModal open={createWorkspaceOpen} onOpenChange={setCreateWorkspaceOpen} />
-        ) : null}
-        {workspaceCategoryForUi === 'fitness' ? (
-          <FitnessProfileSheet
-            open={fitnessProfileOpen}
-            onOpenChange={setFitnessProfileOpen}
-            workspaceId={workspaceId}
-          />
-        ) : null}
-        {workspaceCategoryForUi === 'fitness' || workspaceCategoryForUi === 'business' ? (
-          <StartTrialModal workspaceId={workspaceId} categoryType={workspaceCategoryForUi} />
-        ) : null}
-        {commentAlert ? (
-          <div
-            className="pointer-events-auto fixed bottom-20 left-1/2 z-[100] flex max-w-md -translate-x-1/2 items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-lg md:bottom-6"
-            role="status"
-          >
-            <p className="min-w-0 flex-1 text-sm text-foreground">
-              Someone commented on &ldquo;{commentAlert.title}&rdquo;
-            </p>
-            <Button
-              size="sm"
-              onClick={() => {
-                openTaskModal(commentAlert.taskId, { tab: 'comments' });
-                setCommentAlert(null);
-              }}
-            >
-              Open
-            </Button>
-            <button
-              type="button"
-              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-              aria-label="Dismiss"
-              onClick={() => setCommentAlert(null)}
-            >
-              <X className="size-4" />
-            </button>
-          </div>
-        ) : null}
-        {children}
-      </div>
-    </ThemeScope>
+      </ThemeScope>
     </AnalyticsProvider>
   );
 }

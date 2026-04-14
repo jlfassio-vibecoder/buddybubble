@@ -34,6 +34,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { createClient } from '@utils/supabase/client';
 import { useBoardColumnDefs } from '@/hooks/use-board-columns';
+import { useTaskBubbleUps } from '@/hooks/use-task-bubble-ups';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { ALL_BUBBLES_BUBBLE_ID } from '@/lib/all-bubbles';
 import { ArchiveSheet } from '@/components/board/archive-sheet';
@@ -84,6 +85,7 @@ import {
   CollapsedColumnStrip,
 } from '@/components/layout/collapsed-column-strip';
 import type { TaskModalTab } from '@/components/modals/TaskModal';
+import type { TaskBubbleUpControlProps } from '@/components/tasks/bubbly-button';
 import {
   kanbanBoardCollapsedColumnsStorageKey,
   kanbanBoardFiltersToolbarCollapsedStorageKey,
@@ -687,6 +689,16 @@ export function KanbanBoard({
     tz,
   ]);
 
+  const allBoardTaskIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const list of Object.values(columns)) {
+      for (const t of list) ids.push(t.id);
+    }
+    return ids;
+  }, [columns]);
+
+  const { bubbleUpPropsFor } = useTaskBubbleUps(allBoardTaskIds);
+
   // Disable manual reorder when column order is computed (date sort), so drag state matches visible order.
   const dragSortDisabled =
     priorityFilter !== 'all' || dateFilter !== 'all' || dateSortMode !== 'none';
@@ -1086,6 +1098,7 @@ export function KanbanBoard({
                     onMoveToBubble={moveTaskToBubble}
                     onOpenTask={onOpenTask}
                     onStartWorkout={onStartWorkout}
+                    bubbleUpPropsFor={bubbleUpPropsFor}
                     onAddNew={addNew}
                     onSortByPriority={canWrite ? () => sortColumnBy(col.id, 'priority') : undefined}
                     onSortByTitle={canWrite ? () => sortColumnBy(col.id, 'title') : undefined}
@@ -1236,6 +1249,7 @@ export function KanbanBoard({
                   isCompleted={taskColumnIsCompletionStatus(activeTask.status, columnDefs)}
                   className="pointer-events-none shadow-lg"
                   dragHandle={<KanbanTaskCardDragDecoration />}
+                  showKanbanCoverToggle
                 />
               </div>
             ) : null}
@@ -1273,6 +1287,7 @@ type ColumnProps = {
   onMoveToBubble: (taskId: string, targetBubbleId: string) => void;
   onOpenTask?: (taskId: string, opts?: { tab?: TaskModalTab }) => void;
   onStartWorkout?: (task: TaskRow) => void;
+  bubbleUpPropsFor: (taskId: string) => TaskBubbleUpControlProps | undefined;
   onAddNew?: () => void;
   onSortByPriority?: () => void;
   onSortByTitle?: () => void;
@@ -1295,6 +1310,7 @@ function KanbanColumn({
   onMoveToBubble,
   onOpenTask,
   onStartWorkout,
+  bubbleUpPropsFor,
   onAddNew,
   onSortByPriority,
   onSortByTitle,
@@ -1368,6 +1384,7 @@ function KanbanColumn({
                         onMoveToBubble={onMoveToBubble}
                         onOpenTask={onOpenTask}
                         onStartWorkout={onStartWorkout}
+                        bubbleUp={bubbleUpPropsFor(task.id)}
                       />
                     ))}
                     {onAddNew ? (
@@ -1401,6 +1418,7 @@ type CardProps = {
   onMoveToBubble: (taskId: string, targetBubbleId: string) => void;
   onOpenTask?: (taskId: string, opts?: { tab?: TaskModalTab }) => void;
   onStartWorkout?: (task: TaskRow) => void;
+  bubbleUp?: Omit<TaskBubbleUpControlProps, 'density'>;
 };
 
 function SortableTaskCard({
@@ -1415,6 +1433,7 @@ function SortableTaskCard({
   onMoveToBubble,
   onOpenTask,
   onStartWorkout,
+  bubbleUp,
 }: CardProps) {
   const sortableDisabled = !canWrite || dragDisabled;
   const {
@@ -1454,7 +1473,9 @@ function SortableTaskCard({
         onMoveToBubble={onMoveToBubble}
         onOpenTask={onOpenTask}
         onStartWorkout={onStartWorkout}
+        bubbleUp={bubbleUp}
         isCompleted={taskColumnIsCompletionStatus(task.status, boardColumnDefs)}
+        showKanbanCoverToggle
         dragHandle={
           draggable ? (
             <button
