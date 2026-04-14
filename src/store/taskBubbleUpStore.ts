@@ -121,6 +121,7 @@ function initRealtimeOnce() {
 
 function teardownRealtime() {
   if (!realtimeClient || !realtimeChannel) return;
+  void realtimeChannel.unsubscribe();
   void realtimeClient.removeChannel(realtimeChannel);
   realtimeChannel = null;
   realtimeClient = null;
