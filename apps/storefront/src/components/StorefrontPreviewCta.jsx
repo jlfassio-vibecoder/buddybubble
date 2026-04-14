@@ -234,6 +234,10 @@ export default function StorefrontPreviewCta({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(/** @type {string | null} */ (null));
   const [turnstileToken, setTurnstileToken] = useState(/** @type {string | null} */ (null));
+  /** Cloudflare widget error / expiry message; submit stays disabled until cleared and token is valid. */
+  const [turnstileWidgetError, setTurnstileWidgetError] = useState(
+    /** @type {string | null} */ (null),
+  );
 
   useIsoLayoutEffect(() => {
     setSnap(readInitialWizard(publicSlug, workspaceCategory));
@@ -278,6 +282,7 @@ export default function StorefrontPreviewCta({
   const startWizard = useCallback(() => {
     setError(null);
     setTurnstileToken(null);
+    setTurnstileWidgetError(null);
     setSnap((prev) => ({ ...prev, phase: 'profile', profileStep: 0 }));
   }, []);
 
@@ -317,14 +322,15 @@ export default function StorefrontPreviewCta({
 
   const goNextProfile = useCallback(() => {
     if (!canAdvanceProfile) return;
-    setSnap((prev) => {
-      if (prev.profileStep >= steps.length - 1) {
-        setTurnstileToken(null);
-        return { ...prev, phase: 'email' };
-      }
-      return { ...prev, profileStep: prev.profileStep + 1 };
-    });
-  }, [canAdvanceProfile, steps.length]);
+    const movingToEmail = profileStep >= steps.length - 1;
+    if (movingToEmail) {
+      setTurnstileToken(null);
+      setTurnstileWidgetError(null);
+      setSnap((prev) => ({ ...prev, phase: 'email' }));
+      return;
+    }
+    setSnap((prev) => ({ ...prev, profileStep: prev.profileStep + 1 }));
+  }, [canAdvanceProfile, profileStep, steps.length]);
 
   const goBackProfile = useCallback(() => {
     setSnap((prev) => {
@@ -370,8 +376,12 @@ export default function StorefrontPreviewCta({
       }
 
       const siteKey = typeof turnstileSiteKey === 'string' ? turnstileSiteKey.trim() : '';
-      if (siteKey && !turnstileToken) {
-        setError('Please complete the security check.');
+      if (siteKey && (!turnstileToken || turnstileWidgetError)) {
+        setError(
+          turnstileWidgetError
+            ? 'Fix the security check above, then try again.'
+            : 'Please complete the security check.',
+        );
         return;
       }
 
@@ -425,7 +435,15 @@ export default function StorefrontPreviewCta({
         setBusy(false);
       }
     },
-    [clearStorage, email, profileDraft, slug, turnstileSiteKey, turnstileToken],
+    [
+      clearStorage,
+      email,
+      profileDraft,
+      slug,
+      turnstileSiteKey,
+      turnstileToken,
+      turnstileWidgetError,
+    ],
   );
 
   if (phase === 'idle') {
@@ -541,13 +559,36 @@ export default function StorefrontPreviewCta({
         ) : null}
         <form onSubmit={onEmailSubmit} className="mt-4 flex flex-col gap-3">
           {typeof turnstileSiteKey === 'string' && turnstileSiteKey.trim() ? (
-            <div className="flex justify-center">
+            <div className="flex min-h-[72px] w-full max-w-[320px] flex-col items-center justify-center gap-2 self-center">
               <Turnstile
                 siteKey={turnstileSiteKey.trim()}
-                onSuccess={(token) => setTurnstileToken(token)}
-                onExpire={() => setTurnstileToken(null)}
-                onError={() => setTurnstileToken(null)}
+                options={{ appearance: 'always', size: 'normal', theme: 'auto' }}
+                onSuccess={(token) => {
+                  setTurnstileWidgetError(null);
+                  setTurnstileToken(token);
+                }}
+                onExpire={() => {
+                  setTurnstileToken(null);
+                  setTurnstileWidgetError(
+                    'Security check expired. It will refresh automatically, or reload the page.',
+                  );
+                }}
+                onError={(code) => {
+                  setTurnstileToken(null);
+                  setTurnstileWidgetError(
+                    `Turnstile could not run (code ${code ?? 'unknown'}). In Cloudflare → Turnstile → your widget: add this site’s exact hostname under Hostnames (include www vs apex), confirm the site key matches PUBLIC_TURNSTILE_SITE_KEY, then redeploy the storefront.`,
+                  );
+                }}
               />
+              {turnstileWidgetError ? (
+                <p className="text-center text-xs text-amber-100" role="alert">
+                  {turnstileWidgetError}
+                </p>
+              ) : (
+                <p className="text-center text-[0.65rem] text-white/50">
+                  Complete the check above to enable the submit button.
+                </p>
+              )}
             </div>
           ) : null}
           <label className="sr-only" htmlFor="storefront-preview-email">
@@ -576,7 +617,7 @@ export default function StorefrontPreviewCta({
               prodMissingSiteKey ||
               (typeof turnstileSiteKey === 'string' &&
                 turnstileSiteKey.trim().length > 0 &&
-                !turnstileToken)
+                (!turnstileToken || turnstileWidgetError))
             }
             className="inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-lg ring-2 ring-white/20 transition hover:brightness-110 disabled:pointer-events-none disabled:opacity-60"
             style={{ backgroundColor: accent }}
