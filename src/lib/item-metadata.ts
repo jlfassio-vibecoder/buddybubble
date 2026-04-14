@@ -82,6 +82,8 @@ const MANAGED_METADATA_KEYS = [
   'schedule',
   /** Pre-suffix template title for AI-personalized programs (avoids nested "A - B - C"). */
   'program_source_title',
+  /** Supabase Storage path in `task-attachments` for Kanban/chat card header image. */
+  'card_cover_path',
 ] as const;
 
 export type TaskMetadataFormFields = {
@@ -107,6 +109,8 @@ export type TaskMetadataFormFields = {
   programSchedule: ProgramWeek[];
   /** Program: original template title before AI suffix (metadata `program_source_title`). */
   programSourceTitle: string;
+  /** Storage path for optional card cover image (all item types). */
+  cardCoverPath: string;
 };
 
 function asWorkoutExercises(value: unknown): WorkoutExercise[] {
@@ -179,6 +183,7 @@ export function metadataFieldsFromParsed(meta: unknown): TaskMetadataFormFields 
     programCurrentWeek: typeof o.current_week === 'number' ? o.current_week : 0,
     programSchedule: asProgramSchedule(o.schedule),
     programSourceTitle: str(o.program_source_title),
+    cardCoverPath: str(o.card_cover_path),
   };
 }
 
@@ -230,5 +235,7 @@ export function buildTaskMetadataPayload(
     default:
       break;
   }
+  if (t(fields.cardCoverPath)) o.card_cover_path = t(fields.cardCoverPath);
+  else delete o.card_cover_path;
   return o as Json;
 }

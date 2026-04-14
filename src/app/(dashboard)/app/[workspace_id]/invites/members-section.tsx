@@ -31,7 +31,7 @@ const ROLE_LABELS: Record<MemberRole, string> = {
 
 const ROLE_DESCRIPTIONS: Record<MemberRole, string> = {
   owner: 'Full control, billing & deletion rights',
-  admin: 'Manage workspace, members & bubbles',
+  admin: 'Manage socialspace, members & bubbles',
   member: 'Write access to all public bubbles',
   guest: 'Explicit-access only (assigned bubbles/cards)',
 };
@@ -235,7 +235,7 @@ export function MembersSection({ workspaceId, currentUserId, callerRole, showFam
         all non-private bubbles. <strong className="font-medium text-foreground">Guest</strong> — no
         bubble access unless explicitly granted below.{' '}
         <strong className="font-medium text-foreground">Owner / Admin</strong> — full access to all
-        bubbles via workspace role. Expand a row to view and manage per-bubble access.
+        bubbles via socialspace role. Expand a row to view and manage per-bubble access.
       </div>
 
       {error ? (
@@ -404,7 +404,7 @@ export function MembersSection({ workspaceId, currentUserId, callerRole, showFam
                         <div className="overflow-hidden rounded-lg border border-border">
                           {bubbles.length === 0 ? (
                             <p className="px-4 py-3 text-sm text-muted-foreground">
-                              No bubbles in this workspace yet.
+                              No bubbles in this socialspace yet.
                             </p>
                           ) : (
                             <table className="w-full text-sm">
@@ -468,7 +468,7 @@ export function MembersSection({ workspaceId, currentUserId, callerRole, showFam
                                       <td className="px-4 py-2.5">
                                         {isTargetAdmin ? (
                                           <span className="text-xs text-muted-foreground">
-                                            Full access via workspace role
+                                            Full access via socialspace role
                                           </span>
                                         ) : (
                                           <select

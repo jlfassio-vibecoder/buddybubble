@@ -43,7 +43,7 @@ const INVITE_ROLE_OPTIONS: Array<{
   label: string;
   desc: string;
 }> = [
-  { value: 'admin', label: 'Admin', desc: 'Manage workspace, members & bubbles' },
+  { value: 'admin', label: 'Admin', desc: 'Manage socialspace, members & bubbles' },
   { value: 'member', label: 'Member', desc: 'Write access to all public bubbles' },
   { value: 'guest', label: 'Guest', desc: 'Explicit-access only (assigned bubbles/cards)' },
 ];
@@ -282,7 +282,7 @@ export function InvitesClient({
             href={`/app/${workspaceId}`}
             className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
           >
-            Back to workspace
+            Back to socialspace
           </Link>
         )}
       </header>
@@ -335,7 +335,7 @@ export function InvitesClient({
             <section className="rounded-xl border border-border bg-card p-6 shadow-sm">
               <h2 className="text-base font-semibold">Members & access</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Manage workspace roles and per-bubble access for everyone in {workspaceName}.
+                Manage socialspace roles and per-bubble access for everyone in {workspaceName}.
               </p>
               <div className="mt-4">
                 <MembersSection
@@ -402,6 +402,14 @@ export function InvitesClient({
                     QR code
                   </Button>
                 </div>
+                {linkMode === 'qr' ? (
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    QR is best in person: your guest can tap{' '}
+                    <strong className="text-foreground">Join instantly as a guest</strong> on the
+                    invite page — no email round-trip. They can still use Google or email if they
+                    prefer.
+                  </p>
+                ) : null}
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   <div>
                     <label className="mb-1 block text-sm font-medium">Label (optional)</label>
@@ -629,7 +637,7 @@ export function InvitesClient({
               <section className="rounded-xl border border-border bg-card p-6 shadow-sm">
                 <h2 className="text-base font-semibold">Active invites</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Non-revoked invites for this workspace.
+                  Non-revoked invites for this socialspace.
                 </p>
                 {invites.length === 0 ? (
                   <p className="mt-4 text-sm text-muted-foreground">None yet.</p>

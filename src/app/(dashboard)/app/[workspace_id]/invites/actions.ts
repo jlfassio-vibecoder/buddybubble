@@ -5,6 +5,7 @@ import { inviteUrlForToken } from '@/lib/app-url';
 import { generateInviteToken } from '@/lib/invite-token';
 import { sendInviteEmail } from '@/lib/resend-invite';
 import { sendInviteSms } from '@/lib/twilio-sms';
+import { insertInviteJourneyByToken } from '@/lib/analytics/invite-journey-server';
 import { createClient } from '@utils/supabase/server';
 
 export type ActionResult<T extends Record<string, unknown> = Record<never, never>> =
@@ -46,7 +47,7 @@ export async function createInviteAction(input: {
   if (!user) return { error: 'Not signed in.' };
 
   if (!(await requireWorkspaceAdmin(supabase, input.workspaceId, user.id))) {
-    return { error: 'Only workspace admins can create invites.' };
+    return { error: 'Only socialspace admins and owners can create invites.' };
   }
 
   const maxUses = Math.max(1, Math.floor(Number(input.maxUses)) || 1);
@@ -79,6 +80,13 @@ export async function createInviteAction(input: {
     return { error: 'Invite was not created.' };
   }
 
+  await insertInviteJourneyByToken(
+    token,
+    'invite_created',
+    { label: label ?? undefined },
+    { userId: user.id },
+  );
+
   revalidatePath(`/app/${input.workspaceId}/invites`);
   return { ok: true, inviteUrl: inviteUrlForToken(token), token, id: row.id };
 }
@@ -94,7 +102,7 @@ export async function revokeInviteAction(input: {
   if (!user) return { error: 'Not signed in.' };
 
   if (!(await requireWorkspaceAdmin(supabase, input.workspaceId, user.id))) {
-    return { error: 'Only workspace admins can revoke invites.' };
+    return { error: 'Only socialspace admins and owners can revoke invites.' };
   }
 
   const { error } = await supabase
@@ -127,7 +135,7 @@ export async function createEmailInviteAction(input: {
   if (!user) return { error: 'Not signed in.' };
 
   if (!(await requireWorkspaceAdmin(supabase, input.workspaceId, user.id))) {
-    return { error: 'Only workspace admins can create invites.' };
+    return { error: 'Only socialspace admins and owners can create invites.' };
   }
 
   const email = input.email.trim().toLowerCase();
@@ -155,6 +163,8 @@ export async function createEmailInviteAction(input: {
   if (insErr) {
     return { error: insErr.message };
   }
+
+  await insertInviteJourneyByToken(token, 'invite_created', {}, { userId: user.id });
 
   const inviteUrl = inviteUrlForToken(token);
   const send = await sendInviteEmail({
@@ -191,7 +201,7 @@ export async function createSmsInviteAction(input: {
   if (!user) return { error: 'Not signed in.' };
 
   if (!(await requireWorkspaceAdmin(supabase, input.workspaceId, user.id))) {
-    return { error: 'Only workspace admins can create invites.' };
+    return { error: 'Only socialspace admins and owners can create invites.' };
   }
 
   const target = normalizeE164ish(input.phone);
@@ -219,6 +229,8 @@ export async function createSmsInviteAction(input: {
   if (insErr) {
     return { error: insErr.message };
   }
+
+  await insertInviteJourneyByToken(token, 'invite_created', {}, { userId: user.id });
 
   const inviteUrl = inviteUrlForToken(token);
   const body = input.workspaceName

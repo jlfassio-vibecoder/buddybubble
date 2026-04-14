@@ -4,6 +4,10 @@
  * Records or refreshes an anonymous lead visit. Called client-side when a
  * visitor opens an invite link to a business/fitness workspace.
  *
+ * `metadata.acquisition_context`: `in_person` when the invite was created as a
+ * shareable link or QR (host and guest typically together); `online` for email/SMS
+ * invites (delivered remotely).
+ *
  * - On first visit: inserts a new `leads` row.
  * - On repeat visit (same fingerprint): updates `last_seen_at`.
  * - If the visitor is authenticated: links `leads.user_id` to their account.
@@ -26,7 +30,10 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@utils/supabase/server';
 import { createServiceRoleClient } from '@/lib/supabase-service-role';
-import { trackWorkspaceLeadCaptured } from '@/lib/lead-capture-analytics';
+import {
+  acquisitionContextFromInviteType,
+  trackWorkspaceLeadCaptured,
+} from '@/lib/lead-capture-analytics';
 import type { InviteLeadSource } from '@/lib/leads-source';
 
 const VALID_SOURCES = new Set<InviteLeadSource>(['qr', 'link', 'email', 'sms', 'direct']);
@@ -94,7 +101,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (!workspace) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Socialspace not found' }, { status: 404 });
     }
 
     if (!['business', 'fitness'].includes(workspace.category_type)) {
@@ -109,7 +116,7 @@ export async function POST(req: Request) {
 
     const { data: invitation } = await db
       .from('invitations')
-      .select('workspace_id, revoked_at, expires_at, max_uses, uses_count')
+      .select('workspace_id, revoked_at, expires_at, max_uses, uses_count, invite_type')
       .eq('token', inviteToken)
       .eq('workspace_id', workspaceId)
       .maybeSingle();
@@ -128,12 +135,36 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invite has no remaining uses' }, { status: 400 });
     }
 
+    const acquisitionContext = acquisitionContextFromInviteType(
+      (invitation as { invite_type?: string }).invite_type,
+    );
+
     // ── Upsert lead ──────────────────────────────────────────────────────────
     const now = new Date().toISOString();
 
     if (existingLeadId) {
       // Repeat visit — refresh last_seen_at and link user if they've signed in
-      const update: Record<string, unknown> = { last_seen_at: now };
+      const { data: leadRow } = await db
+        .from('leads')
+        .select('metadata')
+        .eq('id', existingLeadId)
+        .eq('workspace_id', workspaceId)
+        .maybeSingle();
+
+      const prevMeta =
+        leadRow?.metadata &&
+        typeof leadRow.metadata === 'object' &&
+        !Array.isArray(leadRow.metadata)
+          ? (leadRow.metadata as Record<string, unknown>)
+          : {};
+
+      const update: Record<string, unknown> = {
+        last_seen_at: now,
+        metadata: {
+          ...prevMeta,
+          acquisition_context: acquisitionContext,
+        },
+      };
       if (userId) update.user_id = userId;
 
       const { data: updated, error } = await db
@@ -154,6 +185,7 @@ export async function POST(req: Request) {
           utmParams,
           userId,
           now,
+          acquisitionContext,
         });
       }
 
@@ -169,6 +201,7 @@ export async function POST(req: Request) {
       utmParams,
       userId,
       now,
+      acquisitionContext,
     });
   } catch (e) {
     console.error('[leads/track]', e);
@@ -187,6 +220,7 @@ async function insertNewLead(
     utmParams: Record<string, string>;
     userId: string | null;
     now: string;
+    acquisitionContext: 'in_person' | 'online';
   },
 ) {
   const { data: lead, error } = await db
@@ -200,6 +234,7 @@ async function insertNewLead(
       first_seen_at: opts.now,
       last_seen_at: opts.now,
       user_id: opts.userId,
+      metadata: { acquisition_context: opts.acquisitionContext },
     })
     .select('id')
     .single();
@@ -209,13 +244,13 @@ async function insertNewLead(
     return NextResponse.json({ error: 'Failed to record lead' }, { status: 500 });
   }
 
-  // Emit workspace lead_captured analytics event (fire-and-forget).
   void trackWorkspaceLeadCaptured({
     workspaceId: opts.workspaceId,
     leadId: lead.id,
     source: opts.source,
     inviteToken: opts.inviteToken,
     utmParams: opts.utmParams,
+    userId: opts.userId,
   });
 
   return NextResponse.json({ leadId: lead.id });

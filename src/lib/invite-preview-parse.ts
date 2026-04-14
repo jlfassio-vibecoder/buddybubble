@@ -6,6 +6,9 @@ export type InvitePreviewOk = {
   category_type: string;
   host_name: string;
   requires_approval: boolean;
+  /** From `invitations.invite_type` (e.g. `qr`, `link`). Defaults to `link` if RPC predates column. */
+  invite_type: string;
+  max_uses: number;
 };
 
 export type InvitePreviewErr = {
@@ -21,6 +24,13 @@ export function parseInvitePreviewRpc(raw: unknown): InvitePreviewPayload {
   }
   const o = raw as Record<string, unknown>;
   if (o.valid === true) {
+    const maxUsesRaw = o.max_uses;
+    const maxUses =
+      typeof maxUsesRaw === 'number' && Number.isFinite(maxUsesRaw)
+        ? maxUsesRaw
+        : typeof maxUsesRaw === 'string'
+          ? parseInt(maxUsesRaw, 10) || 1
+          : 1;
     return {
       valid: true,
       workspace_id: String(o.workspace_id ?? ''),
@@ -28,6 +38,9 @@ export function parseInvitePreviewRpc(raw: unknown): InvitePreviewPayload {
       category_type: String(o.category_type ?? 'business'),
       host_name: String(o.host_name ?? 'Host'),
       requires_approval: Boolean(o.requires_approval),
+      invite_type:
+        typeof o.invite_type === 'string' && o.invite_type.trim() ? o.invite_type.trim() : 'link',
+      max_uses: maxUses,
     };
   }
   return { valid: false, error: String(o.error ?? 'unknown') };

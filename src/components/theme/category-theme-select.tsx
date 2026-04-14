@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { useThemeOverride, type CategoryThemeOverride } from '@/hooks/use-theme-override';
 
 const OPTIONS: { value: CategoryThemeOverride; label: string }[] = [
-  { value: 'auto', label: 'Match Workspace (Default)' },
+  { value: 'auto', label: 'Match Socialspace (Default)' },
   { value: 'business', label: 'Business' },
   { value: 'kids', label: 'Kids & Family' },
   { value: 'community', label: 'Community' },

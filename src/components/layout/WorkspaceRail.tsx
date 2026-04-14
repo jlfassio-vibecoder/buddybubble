@@ -102,9 +102,9 @@ export function WorkspaceRail({
       >
         {collapsed ? (
           <CollapsedColumnStrip
-            title="Workspace"
-            expandTitle="Expand Workspace rail"
-            expandAriaLabel="Expand Workspace rail"
+            title="Socialspace"
+            expandTitle="Expand Socialspace rail"
+            expandAriaLabel="Expand Socialspace rail"
             onExpand={expand}
             edge="left"
             variant="zinc"
@@ -170,8 +170,8 @@ export function WorkspaceRail({
               {hideRailCollapseButton ? null : (
                 <button
                   type="button"
-                  title="Collapse Workspace rail"
-                  aria-label="Collapse Workspace rail"
+                  title="Collapse Socialspace rail"
+                  aria-label="Collapse Socialspace rail"
                   onClick={collapse}
                   className="flex h-8 w-8 items-center justify-center rounded-lg text-white/55 transition-colors hover:bg-white/15 hover:text-white motion-reduce:transition-none"
                 >
@@ -190,7 +190,7 @@ export function WorkspaceRail({
                           aria-label={
                             pendingJoinRequestCount > 0
                               ? `Invite people — ${pendingJoinRequestCount} pending join request${pendingJoinRequestCount === 1 ? '' : 's'}`
-                              : 'Invite people to this workspace'
+                              : 'Invite people to this socialspace'
                           }
                           title={
                             pendingJoinRequestCount > 0
@@ -216,7 +216,7 @@ export function WorkspaceRail({
                           aria-label={
                             pendingJoinRequestCount > 0
                               ? `Invite people — ${pendingJoinRequestCount} pending join request${pendingJoinRequestCount === 1 ? '' : 's'}`
-                              : 'Invite people to this workspace'
+                              : 'Invite people to this socialspace'
                           }
                           title={
                             pendingJoinRequestCount > 0

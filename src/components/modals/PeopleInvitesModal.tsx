@@ -74,7 +74,7 @@ export function PeopleInvitesModal({
         return;
       }
       if (r.reason === 'not_signed_in' || r.reason === 'not_member') {
-        setLoadError('You do not have access to invites for this workspace.');
+        setLoadError('You do not have access to invites for this socialspace.');
         return;
       }
       setLoadError(r.message ?? 'Could not load invites.');

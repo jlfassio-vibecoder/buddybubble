@@ -423,7 +423,7 @@ export function ProfileModal({
                     maxLength={500}
                     disabled={saving}
                     className="w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-50"
-                    placeholder="A short intro shown to your workspace…"
+                    placeholder="A short intro shown to your socialspace…"
                   />
                   <p className="mt-0.5 text-right text-xs text-muted-foreground">
                     {bio.length}/500
@@ -453,17 +453,17 @@ export function ProfileModal({
                   <div className="rounded-xl border border-border bg-muted/40 p-4">
                     <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
                       <Shield className="h-4 w-4 shrink-0 text-primary" aria-hidden />
-                      Access in this workspace
+                      Access in this socialspace
                     </div>
                     <dl className="space-y-2 text-sm">
                       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                        <dt className="text-muted-foreground">Workspace</dt>
+                        <dt className="text-muted-foreground">Socialspace</dt>
                         <dd className="min-w-0 text-right font-medium text-foreground">
                           {permissionsContext.workspaceName}
                         </dd>
                       </div>
                       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                        <dt className="text-muted-foreground">Workspace role</dt>
+                        <dt className="text-muted-foreground">Socialspace role</dt>
                         <dd className="text-right font-medium text-foreground">
                           {workspaceRoleLabel(permissionsContext.workspaceRole)}
                         </dd>
@@ -507,15 +507,15 @@ export function ProfileModal({
                         enabled={permissionFlags.canWriteTasks}
                       />
                       <PermissionRow
-                        label="Create new channels in this workspace"
+                        label="Create new channels in this socialspace"
                         enabled={permissionFlags.canCreateWorkspaceBubble}
                       />
                       <PermissionRow
-                        label="Manage workspace (settings, invites, members)"
+                        label="Manage socialspace (settings, invites, members)"
                         enabled={permissionFlags.isAdmin}
                       />
                       <PermissionRow
-                        label="Full workspace ownership (delete, transfer)"
+                        label="Full socialspace ownership (delete, transfer)"
                         enabled={permissionFlags.isOwner}
                       />
                     </ul>
@@ -549,8 +549,8 @@ export function ProfileModal({
                     </select>
                   </div>
                   <p className="mt-1.5 text-[10px] text-muted-foreground">
-                    Used for your local date and time display; new workspaces may use this as their
-                    default calendar timezone.
+                    Used for your local date and time display; new socialspaces may use this as
+                    their default calendar timezone.
                   </p>
                 </div>
 
@@ -562,7 +562,7 @@ export function ProfileModal({
                       <span className="text-xs font-normal text-muted-foreground">(optional)</span>
                     </label>
                     <p className="mb-2 text-xs text-muted-foreground">
-                      Children or family member names visible to workspace members. Max 8 names.
+                      Children or family member names visible to socialspace members. Max 8 names.
                     </p>
                     <div className="space-y-2">
                       {childrenNames.map((n, i) => (
@@ -654,7 +654,7 @@ export function ProfileModal({
                   <ThemeToggle />
                   <p className="mt-1.5 text-[10px] text-muted-foreground">
                     Light, dark, or follow your device. Category theme controls BuddyBubble palettes
-                    and accents; choose a preset or match each workspace.
+                    and accents; choose a preset or match each socialspace.
                   </p>
                   <div className="mt-4 space-y-2">
                     <CategoryThemeSelect />

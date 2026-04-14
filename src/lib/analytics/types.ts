@@ -23,7 +23,14 @@ export type GateEventType = 'feature_gate_hit' | 'premium_feature_used';
 
 export type NavigationEventType = 'page_view' | 'session_start';
 
-export type EventType = FunnelEventType | GateEventType | NavigationEventType;
+/** Workspace-scoped invite / QR funnel (metadata.step = InviteJourneyStep). */
+export type InviteJourneyEventType = 'invite_journey_step';
+
+export type EventType =
+  | FunnelEventType
+  | GateEventType
+  | NavigationEventType
+  | InviteJourneyEventType;
 
 // ── Feature name values (must match PremiumGate / dashboards) ─────────────────
 

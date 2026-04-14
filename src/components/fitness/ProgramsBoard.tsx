@@ -27,6 +27,7 @@ import { KanbanTaskCard } from '@/components/board/kanban-task-card';
 import { ScheduleProgramStartDialog } from '@/components/fitness/ScheduleProgramStartDialog';
 import type { TaskModalTab } from '@/components/modals/TaskModal';
 import { useBoardColumnDefs } from '@/hooks/use-board-columns';
+import { useTaskBubbleUps } from '@/hooks/use-task-bubble-ups';
 import { formatScheduledTimeDisplay, scheduledTimeInputToPgValue } from '@/lib/task-scheduled-time';
 import { resolveTaskStatusForScheduleFields } from '@/lib/workspace-calendar';
 import { archiveOpenChildWorkoutsForProgram } from '@/lib/fitness/archive-program-child-workouts';
@@ -435,6 +436,8 @@ export function ProgramsBoard({
   >([]);
   const [weekWorkoutsLoading, setWeekWorkoutsLoading] = useState(false);
   const [weekWorkoutsError, setWeekWorkoutsError] = useState<string | null>(null);
+  const weekWorkoutIds = useMemo(() => weekWorkouts.map((t) => t.id), [weekWorkouts]);
+  const { bubbleUpPropsFor } = useTaskBubbleUps(weekWorkoutIds);
   const weekFetchGen = useRef(0);
   /** Auth user — drives “my” active program and This week scope. */
   const [viewerUserId, setViewerUserId] = useState<string | null>(null);
@@ -1337,6 +1340,7 @@ export function ProgramsBoard({
                                   workspaceCategory={workspaceCategory}
                                   calendarTimezone={calendarTimezone}
                                   isCompleted={taskColumnIsCompletionStatus(t.status ?? '', null)}
+                                  bubbleUp={bubbleUpPropsFor(t.id)}
                                 />
                               </li>
                             ))}

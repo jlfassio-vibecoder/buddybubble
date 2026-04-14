@@ -45,6 +45,7 @@ export type WorkspaceMemberProfileForAdmin = {
   note_updated_at: string | null;
 };
 
+/** Email is always visible here: owners/admins need it for support regardless of peer privacy. */
 export async function getWorkspaceMemberProfileForAdminAction(input: {
   workspaceId: string;
   subjectUserId: string;
@@ -62,7 +63,7 @@ export async function getWorkspaceMemberProfileForAdminAction(input: {
   );
   if (callerRoleErr) return { error: callerRoleErr };
   if (!isWorkspaceAdmin(callerRole)) {
-    return { error: 'Only workspace owners and admins can view member profiles.' };
+    return { error: 'Only socialspace owners and admins can view member profiles.' };
   }
 
   const { data: membership, error: memErr } = await supabase
@@ -74,7 +75,7 @@ export async function getWorkspaceMemberProfileForAdminAction(input: {
 
   if (memErr) return { error: memErr.message };
   if (!membership) {
-    return { error: 'That user is not a member of this workspace.' };
+    return { error: 'That user is not a member of this socialspace.' };
   }
 
   const wsRole = (membership as { role: MemberRole }).role;
@@ -148,7 +149,7 @@ export async function upsertWorkspaceMemberNoteAction(input: {
   );
   if (callerRoleErr) return { error: callerRoleErr };
   if (!isWorkspaceAdmin(callerRole)) {
-    return { error: 'Only workspace owners and admins can edit member notes.' };
+    return { error: 'Only socialspace owners and admins can edit member notes.' };
   }
 
   const { data: membership, error: membershipErr } = await supabase
@@ -160,7 +161,7 @@ export async function upsertWorkspaceMemberNoteAction(input: {
 
   if (membershipErr) return { error: membershipErr.message };
   if (!membership) {
-    return { error: 'That user is not a member of this workspace.' };
+    return { error: 'That user is not a member of this socialspace.' };
   }
 
   const trimmed = input.body.trim();

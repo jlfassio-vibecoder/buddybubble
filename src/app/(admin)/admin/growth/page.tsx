@@ -39,7 +39,7 @@ const GATE_FEATURE_LABELS: Record<string, string> = {
   export: 'Data export',
   record_data: 'Recording data',
   custom_branding: 'Custom branding',
-  create_workspace: 'Create workspace',
+  create_workspace: 'Create socialspace',
 };
 
 export default async function AdminGrowthPage() {

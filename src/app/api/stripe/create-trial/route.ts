@@ -97,7 +97,7 @@ export async function POST(req: Request) {
 
     if (!membership || membership.role !== 'owner') {
       return NextResponse.json(
-        { error: 'Only the workspace owner can subscribe' },
+        { error: 'Only the socialspace owner can subscribe' },
         { status: 403 },
       );
     }
@@ -111,7 +111,7 @@ export async function POST(req: Request) {
 
     if (!workspace || !['business', 'fitness'].includes(workspace.category_type)) {
       return NextResponse.json(
-        { error: 'Workspace type does not require a subscription' },
+        { error: 'Socialspace type does not require a subscription' },
         { status: 400 },
       );
     }
@@ -126,7 +126,7 @@ export async function POST(req: Request) {
 
     if (existingSub && ['trialing', 'active'].includes(existingSub.status)) {
       return NextResponse.json(
-        { error: 'Workspace already has an active subscription' },
+        { error: 'Socialspace already has an active subscription' },
         { status: 409 },
       );
     }

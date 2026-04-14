@@ -1,6 +1,13 @@
 'use client';
 
-import { useMemo, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
 import { format, parseISO } from 'date-fns';
 import {
   Calendar,
@@ -29,6 +36,8 @@ import { scheduledOnRelativeToWorkspaceToday } from '@/lib/workspace-calendar';
 import { formatScheduledTimeDisplay } from '@/lib/task-scheduled-time';
 import { usePresenceStore, type UserPresence } from '@/store/presenceStore';
 import { useUserProfileStore } from '@/store/userProfileStore';
+import { BubblyButton, type TaskBubbleUpControlProps } from '@/components/tasks/bubbly-button';
+import { taskCardCoverPath, useTaskCardCoverUrl } from '@/lib/task-card-cover';
 
 export type KanbanTaskCardProps = {
   task: TaskRow;
@@ -52,7 +61,37 @@ export type KanbanTaskCardProps = {
    * Omit for read-only lists; pass a decorative node for DragOverlay parity.
    */
   dragHandle?: ReactNode;
+  /** Bubble Up (Bubbly); parent loads counts via `useTaskBubbleUps`. */
+  bubbleUp?: Omit<TaskBubbleUpControlProps, 'density'>;
+  /**
+   * When true (main Kanban board only), users can hide the card cover image on the board
+   * while keeping title, pills, and description; preference is stored per task in `localStorage`.
+   */
+  showKanbanCoverToggle?: boolean;
 };
+
+const KANBAN_HIDE_COVER_KEY = 'bb.kanban.hideCardCover';
+
+function persistKanbanCoverHidden(taskId: string, hidden: boolean) {
+  try {
+    if (hidden) {
+      localStorage.setItem(`${KANBAN_HIDE_COVER_KEY}.${taskId}`, '1');
+    } else {
+      localStorage.removeItem(`${KANBAN_HIDE_COVER_KEY}.${taskId}`);
+    }
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+function readKanbanCoverHiddenFromStorage(taskId: string, enabled: boolean): boolean {
+  if (!enabled || typeof window === 'undefined') return false;
+  try {
+    return localStorage.getItem(`${KANBAN_HIDE_COVER_KEY}.${taskId}`) === '1';
+  } catch {
+    return false;
+  }
+}
 
 function subtaskProgress(task: TaskRow): { done: number; total: number } | null {
   const st = asSubtasks(task.subtasks);
@@ -102,6 +141,8 @@ export function KanbanTaskCard({
   isCompleted = false,
   className,
   dragHandle,
+  bubbleUp,
+  showKanbanCoverToggle = false,
 }: KanbanTaskCardProps) {
   const subtasks = subtaskProgress(task);
   const itemKind = normalizeItemType(task.item_type);
@@ -149,6 +190,33 @@ export function KanbanTaskCard({
 
   const primaryPeer = taskPresencePeers[0];
   const hasPeerPresence = taskPresencePeers.length > 0;
+
+  const kanbanCoverStoragePath = density === 'micro' ? null : taskCardCoverPath(task);
+  const [hideCoverOnBoard, setHideCoverOnBoard] = useState(() =>
+    readKanbanCoverHiddenFromStorage(task.id, showKanbanCoverToggle),
+  );
+  useEffect(() => {
+    if (!showKanbanCoverToggle) {
+      setHideCoverOnBoard(false);
+      return;
+    }
+    try {
+      setHideCoverOnBoard(localStorage.getItem(`${KANBAN_HIDE_COVER_KEY}.${task.id}`) === '1');
+    } catch {
+      setHideCoverOnBoard(false);
+    }
+  }, [showKanbanCoverToggle, task.id]);
+
+  const coverPathForSignedUrl =
+    showKanbanCoverToggle && hideCoverOnBoard ? null : kanbanCoverStoragePath;
+  const { url: kanbanCoverUrl, loading: kanbanCoverLoading } =
+    useTaskCardCoverUrl(coverPathForSignedUrl);
+  const kanbanCoverFailed =
+    Boolean(coverPathForSignedUrl) && !kanbanCoverLoading && !kanbanCoverUrl;
+
+  const useCoverHero = Boolean(
+    kanbanCoverStoragePath && !kanbanCoverFailed && !(showKanbanCoverToggle && hideCoverOnBoard),
+  );
   const peerBadgeLabel =
     hasPeerPresence && primaryPeer
       ? taskPresencePeers.length > 1
@@ -211,6 +279,42 @@ export function KanbanTaskCard({
                 </div>
               </div>
             </div>
+            {onOpenTask || bubbleUp ? (
+              <div
+                className="mt-1 border-t border-border/60 pt-1"
+                data-kanban-no-open
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <div className="flex flex-wrap gap-1" role="tablist" aria-label="Card sections">
+                  {onOpenTask
+                    ? (
+                        [
+                          ['details', 'Details'],
+                          ['comments', 'Comments'],
+                          ['subtasks', 'Subtasks'],
+                          ['activity', 'Activity'],
+                        ] as const
+                      ).map(([id, label]) => (
+                        <button
+                          key={id}
+                          type="button"
+                          role="tab"
+                          className="rounded-md px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenTask(task.id, { tab: id });
+                          }}
+                        >
+                          {label}
+                        </button>
+                      ))
+                    : null}
+                  {bubbleUp ? <BubblyButton {...bubbleUp} density="micro" tabStrip /> : null}
+                </div>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
         {hasPeerPresence && primaryPeer ? (
@@ -254,7 +358,7 @@ export function KanbanTaskCard({
             <div
               className={cn(
                 'min-w-0 flex-1',
-                innerSpacing,
+                !useCoverHero ? innerSpacing : 'space-y-0',
                 openTask &&
                   'cursor-pointer rounded-md outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
               )}
@@ -263,100 +367,279 @@ export function KanbanTaskCard({
               onClick={openTask}
               onKeyDown={handleOpenKeyDown}
             >
-              <div className="flex items-start justify-between gap-2">
-                <p
-                  className={cn(
-                    'font-semibold leading-snug text-foreground',
-                    density === 'summary' ? 'line-clamp-1 text-sm' : 'line-clamp-2',
-                    isCompleted && 'line-through decoration-muted-foreground/80',
-                  )}
-                >
-                  {task.title}
-                </p>
-                {density === 'summary' && (
-                  <ExternalLink className="size-3.5 shrink-0 text-primary opacity-80" aria-hidden />
-                )}
-              </div>
-
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span
-                  title={typeVisual.label}
-                  className={cn(
-                    'inline-flex items-center gap-0.5 rounded-md border px-1.5 py-0.5 font-medium leading-none',
-                    density === 'summary'
-                      ? 'px-1 py-0.5 text-[9px] uppercase tracking-wide'
-                      : 'text-[10px]',
-                    typeVisual.typeChip,
-                  )}
-                >
-                  <TypeIcon
-                    className={cn(
-                      'shrink-0 text-current',
-                      density === 'summary' ? 'size-2.5' : 'size-3',
-                    )}
-                    aria-hidden
-                  />
-                  {density !== 'summary' ? <span>{typeVisual.label}</span> : null}
-                </span>
-                <span
-                  title={pChip.label}
-                  className={cn(
-                    'inline-flex rounded-md border px-1.5 py-0.5 font-medium leading-none',
-                    density === 'summary' ? 'text-[9px] uppercase tracking-wide' : 'text-[10px]',
-                    pChip.className,
-                  )}
-                >
-                  {density === 'summary' ? pChip.label.slice(0, 1) : pChip.label}
-                </span>
-                {ymd && dateAndTimeLabel ? (
-                  density === 'summary' ? (
-                    <span
-                      title={`${dateShort}: ${dateAndTimeLabel}`}
+              {!useCoverHero ? (
+                <>
+                  <div className="flex items-start justify-between gap-2">
+                    <p
                       className={cn(
-                        'inline-flex items-center rounded-md border px-1 py-0.5',
-                        'text-[9px] font-medium leading-none',
-                        dateChipClass,
+                        'font-semibold leading-snug text-foreground',
+                        density === 'summary' ? 'line-clamp-1 text-sm' : 'line-clamp-2',
+                        isCompleted && 'line-through decoration-muted-foreground/80',
                       )}
                     >
-                      <Calendar className="size-3 shrink-0" aria-hidden />
-                    </span>
-                  ) : (
+                      {task.title}
+                    </p>
+                    {density === 'summary' && (
+                      <ExternalLink
+                        className="size-3.5 shrink-0 text-primary opacity-80"
+                        aria-hidden
+                      />
+                    )}
+                  </div>
+
+                  {showKanbanCoverToggle &&
+                  kanbanCoverStoragePath &&
+                  !kanbanCoverFailed &&
+                  hideCoverOnBoard ? (
+                    <div
+                      className="-mt-0.5"
+                      data-kanban-no-open
+                      onClick={(e) => e.stopPropagation()}
+                      onPointerDown={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        className="text-[9px] font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setHideCoverOnBoard(false);
+                          persistKanbanCoverHidden(task.id, false);
+                        }}
+                      >
+                        Show background image
+                      </button>
+                    </div>
+                  ) : null}
+
+                  <div className="flex flex-wrap items-center gap-1.5">
                     <span
-                      title={dateShort}
+                      title={typeVisual.label}
+                      className={cn(
+                        'inline-flex items-center gap-0.5 rounded-md border px-1.5 py-0.5 font-medium leading-none',
+                        density === 'summary'
+                          ? 'px-1 py-0.5 text-[9px] uppercase tracking-wide'
+                          : 'text-[10px]',
+                        typeVisual.typeChip,
+                      )}
+                    >
+                      <TypeIcon
+                        className={cn(
+                          'shrink-0 text-current',
+                          density === 'summary' ? 'size-2.5' : 'size-3',
+                        )}
+                        aria-hidden
+                      />
+                      {density !== 'summary' ? <span>{typeVisual.label}</span> : null}
+                    </span>
+                    <span
+                      title={pChip.label}
                       className={cn(
                         'inline-flex rounded-md border px-1.5 py-0.5 font-medium leading-none',
-                        density === 'detailed' ? 'text-[10px]' : 'text-[10px]',
-                        dateChipClass,
+                        density === 'summary'
+                          ? 'text-[9px] uppercase tracking-wide'
+                          : 'text-[10px]',
+                        pChip.className,
                       )}
                     >
-                      {dateAndTimeLabel}
+                      {density === 'summary' ? pChip.label.slice(0, 1) : pChip.label}
                     </span>
-                  )
-                ) : null}
-              </div>
+                    {ymd && dateAndTimeLabel ? (
+                      density === 'summary' ? (
+                        <span
+                          title={`${dateShort}: ${dateAndTimeLabel}`}
+                          className={cn(
+                            'inline-flex items-center rounded-md border px-1 py-0.5',
+                            'text-[9px] font-medium leading-none',
+                            dateChipClass,
+                          )}
+                        >
+                          <Calendar className="size-3 shrink-0" aria-hidden />
+                        </span>
+                      ) : (
+                        <span
+                          title={dateShort}
+                          className={cn(
+                            'inline-flex rounded-md border px-1.5 py-0.5 font-medium leading-none',
+                            density === 'detailed' ? 'text-[10px]' : 'text-[10px]',
+                            dateChipClass,
+                          )}
+                        >
+                          {dateAndTimeLabel}
+                        </span>
+                      )
+                    ) : null}
+                  </div>
 
-              {showDescription && task.description ? (
-                <p className="text-xs leading-relaxed text-muted-foreground line-clamp-3">
-                  {task.description}
-                </p>
-              ) : null}
+                  {showDescription && task.description ? (
+                    <p className="text-xs leading-relaxed text-muted-foreground line-clamp-3">
+                      {task.description}
+                    </p>
+                  ) : null}
 
-              {showDetailedMeta && (subtasks || task.assigned_to) ? (
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                  {subtasks ? (
-                    <span className="inline-flex items-center gap-1">
-                      <ListChecks className="size-3 shrink-0" aria-hidden />
-                      Subtasks {subtasks.done}/{subtasks.total}
-                    </span>
+                  {showDetailedMeta && (subtasks || task.assigned_to) ? (
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                      {subtasks ? (
+                        <span className="inline-flex items-center gap-1">
+                          <ListChecks className="size-3 shrink-0" aria-hidden />
+                          Subtasks {subtasks.done}/{subtasks.total}
+                        </span>
+                      ) : null}
+                      {task.assigned_to ? (
+                        <span className="inline-flex items-center gap-1">
+                          <User className="size-3 shrink-0" aria-hidden />
+                          Assigned
+                        </span>
+                      ) : null}
+                    </div>
                   ) : null}
-                  {task.assigned_to ? (
-                    <span className="inline-flex items-center gap-1">
-                      <User className="size-3 shrink-0" aria-hidden />
-                      Assigned
-                    </span>
+                </>
+              ) : (
+                <>
+                  <div className="relative overflow-hidden rounded-md">
+                    {kanbanCoverLoading && !kanbanCoverUrl ? (
+                      <div className="min-h-[88px] animate-pulse bg-muted" aria-hidden />
+                    ) : kanbanCoverUrl ? (
+                      <>
+                        <img
+                          src={kanbanCoverUrl}
+                          alt=""
+                          className="absolute inset-0 h-full min-h-[88px] w-full object-cover"
+                        />
+                        <div
+                          className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/50 via-black/42 to-black/68"
+                          aria-hidden
+                        />
+                      </>
+                    ) : null}
+                    <div
+                      className={cn(
+                        'relative z-10',
+                        density === 'summary' ? 'space-y-1 p-1.5' : 'space-y-2 p-2',
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <p
+                          className={cn(
+                            'font-semibold leading-snug text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.45)]',
+                            density === 'summary' ? 'line-clamp-1 text-sm' : 'line-clamp-2',
+                            isCompleted && 'line-through decoration-white/70',
+                          )}
+                        >
+                          {task.title}
+                        </p>
+                        {density === 'summary' && (
+                          <ExternalLink
+                            className="size-3.5 shrink-0 text-white opacity-90"
+                            aria-hidden
+                          />
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span
+                          title={typeVisual.label}
+                          className={cn(
+                            'inline-flex items-center gap-0.5 rounded-md border px-1.5 py-0.5 font-medium leading-none',
+                            density === 'summary'
+                              ? 'px-1 py-0.5 text-[9px] uppercase tracking-wide'
+                              : 'text-[10px]',
+                            'border-white/35 bg-black/25 text-white [&_svg]:text-white',
+                          )}
+                        >
+                          <TypeIcon
+                            className={cn(
+                              'shrink-0 text-current',
+                              density === 'summary' ? 'size-2.5' : 'size-3',
+                            )}
+                            aria-hidden
+                          />
+                          {density !== 'summary' ? <span>{typeVisual.label}</span> : null}
+                        </span>
+                        <span
+                          title={pChip.label}
+                          className={cn(
+                            'inline-flex rounded-md border px-1.5 py-0.5 font-medium leading-none',
+                            density === 'summary'
+                              ? 'text-[9px] uppercase tracking-wide'
+                              : 'text-[10px]',
+                            'border-white/30 bg-black/20 text-white',
+                          )}
+                        >
+                          {density === 'summary' ? pChip.label.slice(0, 1) : pChip.label}
+                        </span>
+                        {ymd && dateAndTimeLabel ? (
+                          density === 'summary' ? (
+                            <span
+                              title={`${dateShort}: ${dateAndTimeLabel}`}
+                              className={cn(
+                                'inline-flex items-center rounded-md border px-1 py-0.5',
+                                'text-[9px] font-medium leading-none',
+                                'border-white/28 bg-black/20 text-white',
+                              )}
+                            >
+                              <Calendar className="size-3 shrink-0" aria-hidden />
+                            </span>
+                          ) : (
+                            <span
+                              title={dateShort}
+                              className={cn(
+                                'inline-flex rounded-md border px-1.5 py-0.5 font-medium leading-none',
+                                'text-[10px]',
+                                'border-white/28 bg-black/20 text-white',
+                              )}
+                            >
+                              {dateAndTimeLabel}
+                            </span>
+                          )
+                        ) : null}
+                      </div>
+
+                      {showDescription && task.description ? (
+                        <p className="line-clamp-3 text-xs leading-relaxed text-white/90 [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]">
+                          {task.description}
+                        </p>
+                      ) : null}
+
+                      {showDetailedMeta && (subtasks || task.assigned_to) ? (
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-white/85">
+                          {subtasks ? (
+                            <span className="inline-flex items-center gap-1">
+                              <ListChecks className="size-3 shrink-0" aria-hidden />
+                              Subtasks {subtasks.done}/{subtasks.total}
+                            </span>
+                          ) : null}
+                          {task.assigned_to ? (
+                            <span className="inline-flex items-center gap-1">
+                              <User className="size-3 shrink-0" aria-hidden />
+                              Assigned
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                  {showKanbanCoverToggle && kanbanCoverUrl ? (
+                    <div
+                      className="mt-1"
+                      data-kanban-no-open
+                      onClick={(e) => e.stopPropagation()}
+                      onPointerDown={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        className="text-[9px] font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setHideCoverOnBoard(true);
+                          persistKanbanCoverHidden(task.id, true);
+                        }}
+                      >
+                        Hide image
+                      </button>
+                    </div>
                   ) : null}
-                </div>
-              ) : null}
+                </>
+              )}
             </div>
 
             <div className="flex shrink-0 items-start gap-0.5">
@@ -422,6 +705,43 @@ export function KanbanTaskCard({
               </select>
             </div>
           )}
+
+          {onOpenTask || bubbleUp ? (
+            <div
+              className="mt-2 border-t border-border/60 pt-2"
+              data-kanban-no-open
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <div className="flex flex-wrap gap-1" role="tablist" aria-label="Card sections">
+                {onOpenTask
+                  ? (
+                      [
+                        ['details', 'Details'] as const,
+                        ['comments', 'Comments'] as const,
+                        ['subtasks', 'Subtasks'] as const,
+                        ['activity', 'Activity'] as const,
+                      ] as const
+                    ).map(([id, label]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        role="tab"
+                        className="rounded-md px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenTask(task.id, { tab: id });
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))
+                  : null}
+                {bubbleUp ? <BubblyButton {...bubbleUp} density="default" tabStrip /> : null}
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
       {hasPeerPresence && primaryPeer ? (

@@ -3,7 +3,10 @@
 import { useState, useRef, useEffect, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MessageSquare, X, Send, Paperclip, Loader2 } from 'lucide-react';
+import type { TaskModalTab } from '@/components/modals/TaskModal';
+import type { TaskBubbleUpControlProps } from '@/components/tasks/bubbly-button';
 import type { ChatMessage } from './ChatArea';
+import { ChatFeedTaskCard } from './ChatFeedTaskCard';
 import { formatMessageTimestamp } from '@/lib/message-timestamp';
 import { MessageAttachmentThumbnails } from './MessageAttachmentThumbnails';
 import type { MessageAttachment } from '@/types/message-attachment';
@@ -18,6 +21,10 @@ export type ThreadPanelProps = {
   /** Submit a new reply in the current thread (parent id is handled by the caller). */
   onSendMessage: (content: string, files?: File[]) => Promise<boolean>;
   onOpenAttachment: (attachments: MessageAttachment[], index: number) => void;
+  /** Opens the task modal for an embedded Kanban card (chat feed cards). */
+  onOpenTask?: (taskId: string, opts?: { tab?: TaskModalTab }) => void;
+  /** Bubble Up summaries for embedded task ids (same hook as main `ChatArea`). */
+  bubbleUpPropsFor?: (taskId: string) => Omit<TaskBubbleUpControlProps, 'density'> | undefined;
   renderMessageContent: (content: string) => ReactNode;
   /** True while main chat is uploading attachments for a message */
   sending?: boolean;
@@ -30,6 +37,8 @@ export function ThreadPanel({
   onClose,
   onSendMessage,
   onOpenAttachment,
+  onOpenTask,
+  bubbleUpPropsFor,
   renderMessageContent,
   sending = false,
 }: ThreadPanelProps) {
@@ -108,6 +117,15 @@ export function ThreadPanel({
                   <p className="mt-1 text-sm text-foreground">
                     {renderMessageContent(activeThreadParent.content)}
                   </p>
+                  {activeThreadParent.attachedTask ? (
+                    <ChatFeedTaskCard
+                      task={activeThreadParent.attachedTask}
+                      onOpenTask={
+                        onOpenTask ? (taskId, opts) => onOpenTask(taskId, opts) : undefined
+                      }
+                      bubbleUp={bubbleUpPropsFor?.(activeThreadParent.attachedTask.id)}
+                    />
+                  ) : null}
                   {activeThreadParent.attachments && activeThreadParent.attachments.length > 0 && (
                     <MessageAttachmentThumbnails
                       attachments={activeThreadParent.attachments}
@@ -145,6 +163,15 @@ export function ThreadPanel({
                     <p className="mt-1 text-sm text-foreground">
                       {renderMessageContent(reply.content)}
                     </p>
+                    {reply.attachedTask ? (
+                      <ChatFeedTaskCard
+                        task={reply.attachedTask}
+                        onOpenTask={
+                          onOpenTask ? (taskId, opts) => onOpenTask(taskId, opts) : undefined
+                        }
+                        bubbleUp={bubbleUpPropsFor?.(reply.attachedTask.id)}
+                      />
+                    ) : null}
                     {reply.attachments && reply.attachments.length > 0 && (
                       <MessageAttachmentThumbnails
                         attachments={reply.attachments}

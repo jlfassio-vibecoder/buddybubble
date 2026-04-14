@@ -16,6 +16,7 @@ import { getCalendarDateInTimeZone } from '@/lib/workspace-calendar';
 import { calendarDataRangeYmd } from '@/lib/calendar-view-range';
 import { useBoardColumnDefs } from '@/hooks/use-board-columns';
 import { useCalendarTasks } from '@/hooks/use-calendar-tasks';
+import { useTaskBubbleUps } from '@/hooks/use-task-bubble-ups';
 import {
   CalendarWeekRibbon,
   type CalendarRibbonMode,
@@ -283,6 +284,9 @@ export function CalendarRail({
 
   const tasksByYmd = useMemo(() => tasksByScheduledYmd(tasks), [tasks]);
 
+  const calendarTaskIds = useMemo(() => tasks.map((t) => t.id), [tasks]);
+  const { bubbleUpPropsFor } = useTaskBubbleUps(calendarTaskIds);
+
   /**
    * Per-day workout session counts for the volume overlay on the month grid.
    * Only computed for fitness workspaces; undefined otherwise (no dots rendered).
@@ -496,6 +500,7 @@ export function CalendarRail({
                 calendarTimezone={calendarTimezone}
                 boardColumnDefs={boardColumnDefs}
                 todayYmd={todayYmd}
+                bubbleUpPropsFor={bubbleUpPropsFor}
               />
             </div>
           </div>
@@ -536,6 +541,7 @@ export function CalendarRail({
                 boardColumnDefs={boardColumnDefs}
                 todayYmd={todayYmd}
                 dayAnnotations={dayAnnotations}
+                bubbleUpPropsFor={bubbleUpPropsFor}
               />
             </div>
           </div>

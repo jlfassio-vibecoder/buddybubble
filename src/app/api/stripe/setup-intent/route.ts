@@ -64,11 +64,11 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (memberError || !membership) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Socialspace not found' }, { status: 404 });
     }
     if (membership.role !== 'owner') {
       return NextResponse.json(
-        { error: 'Only the workspace owner can manage billing' },
+        { error: 'Only the socialspace owner can manage billing' },
         { status: 403 },
       );
     }
@@ -83,12 +83,12 @@ export async function POST(req: Request) {
       .single();
 
     if (wsError || !workspace) {
-      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Socialspace not found' }, { status: 404 });
     }
 
     if (!['business', 'fitness'].includes(workspace.category_type)) {
       return NextResponse.json(
-        { error: 'This workspace type does not require a subscription' },
+        { error: 'This socialspace type does not require a subscription' },
         { status: 400 },
       );
     }
@@ -102,7 +102,7 @@ export async function POST(req: Request) {
 
     if (existingSub && ['trialing', 'active'].includes(existingSub.status)) {
       return NextResponse.json(
-        { error: 'This workspace already has an active subscription' },
+        { error: 'This socialspace already has an active subscription' },
         { status: 409 },
       );
     }

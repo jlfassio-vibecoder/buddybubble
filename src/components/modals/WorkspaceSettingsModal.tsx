@@ -71,7 +71,7 @@ export function WorkspaceSettingsModal({
       .maybeSingle();
     setLoading(false);
     if (qErr || !data) {
-      setError(qErr?.message ?? 'Could not load workspace');
+      setError(qErr?.message ?? 'Could not load socialspace');
       return;
     }
     const row = data as {
@@ -232,7 +232,7 @@ export function WorkspaceSettingsModal({
           <div className="relative z-10 w-full max-w-lg rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-2xl">
             <div className="flex items-start justify-between gap-2">
               <div>
-                <h2 className="text-lg font-bold text-foreground">Workspace settings</h2>
+                <h2 className="text-lg font-bold text-foreground">Socialspace settings</h2>
                 <p className="text-xs text-muted-foreground">
                   Calendar timezone for cards and automation.
                 </p>
@@ -286,7 +286,7 @@ export function WorkspaceSettingsModal({
                   </select>
                   <p className="text-xs text-muted-foreground">
                     Changing this affects when cards move to the Today column and how due dates
-                    compare to &ldquo;today&rdquo; for this workspace.
+                    compare to &ldquo;today&rdquo; for this socialspace.
                   </p>
                 </div>
 
