@@ -61,6 +61,7 @@ let loadGen = 0;
 let loadDebounce: ReturnType<typeof setTimeout> | null = null;
 /** Sync mirror of pending for async loaders (must not lag React state). */
 const pendingSync: Record<string, true> = {};
+let realtimeInit = false;
 
 function setPendingSync(taskId: string, on: boolean) {
   if (on) pendingSync[taskId] = true;
@@ -78,6 +79,42 @@ function initAuthOnce() {
   supabase.auth.onAuthStateChange((_e, session) => {
     useTaskBubbleUpStore.getState().setAuthUserId(session?.user?.id ?? null);
   });
+}
+
+function shouldRefreshFromRealtime(payload: {
+  new?: { task_id?: string | null } | null;
+  old?: { task_id?: string | null } | null;
+}): boolean {
+  const currentIds = new Set(
+    unionScopeIds(useTaskBubbleUpStore.getState().scopes).map((id) => normUuid(id)),
+  );
+  if (currentIds.size === 0) return false;
+  const nextTaskId = payload.new?.task_id ? normUuid(payload.new.task_id) : null;
+  const prevTaskId = payload.old?.task_id ? normUuid(payload.old.task_id) : null;
+  return Boolean(
+    (nextTaskId && currentIds.has(nextTaskId)) || (prevTaskId && currentIds.has(prevTaskId)),
+  );
+}
+
+function initRealtimeOnce() {
+  if (realtimeInit) return;
+  realtimeInit = true;
+  const supabase = createClient();
+  supabase
+    .channel('task-bubble-ups-store')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'task_bubble_ups' },
+      (payload: {
+        new?: { task_id?: string | null } | null;
+        old?: { task_id?: string | null } | null;
+      }) => {
+        if (shouldRefreshFromRealtime(payload)) {
+          scheduleLoadUnion();
+        }
+      },
+    )
+    .subscribe();
 }
 
 async function runLoadUnion() {
@@ -158,6 +195,7 @@ export const useTaskBubbleUpStore = create<TaskBubbleUpStoreState>((set) => ({
 
   registerScope: (scopeId, taskIds) => {
     initAuthOnce();
+    initRealtimeOnce();
     set((s) => ({
       scopes: { ...s.scopes, [scopeId]: taskIds },
     }));
