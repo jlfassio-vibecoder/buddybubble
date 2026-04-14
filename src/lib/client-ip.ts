@@ -15,6 +15,11 @@ export function getClientIpFromHeaders(headers: Headers): string | null {
     const first = trimIp(xff.split(',')[0] ?? '');
     if (first && first !== 'unknown') return first;
   }
+  const vff = headers.get('x-vercel-forwarded-for');
+  if (vff) {
+    const first = trimIp(vff.split(',')[0] ?? '');
+    if (first && first !== 'unknown') return first;
+  }
   const cf = headers.get('cf-connecting-ip');
   if (cf) {
     const t = trimIp(cf);

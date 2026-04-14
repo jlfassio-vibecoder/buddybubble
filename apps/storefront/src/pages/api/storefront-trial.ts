@@ -26,9 +26,24 @@ export const POST: APIRoute = async ({ request }) => {
 
   const crmOrigin = resolveCrmOriginForStorefront(getPublicEnv('PUBLIC_APP_ORIGIN'), hostHeader);
 
+  /** Forward visitor IP headers so the CRM Turnstile check sees the browser IP, not the proxy hop. */
+  const forwardClientIp: Record<string, string> = {};
+  for (const name of [
+    'x-forwarded-for',
+    'x-vercel-forwarded-for',
+    'cf-connecting-ip',
+    'x-real-ip',
+  ] as const) {
+    const v = request.headers.get(name);
+    if (v?.trim()) forwardClientIp[name] = v.trim();
+  }
+
   const upstream = await fetch(`${crmOrigin}/api/leads/storefront-trial`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...forwardClientIp,
+    },
     body: JSON.stringify(payload),
   });
 
