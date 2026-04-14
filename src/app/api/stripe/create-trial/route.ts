@@ -267,7 +267,11 @@ export async function POST(req: Request) {
         console.error('[create-trial] workspace_subscriptions upsert failed:', subError);
       }
 
-      // ── Convert lead record if present ──────────────────────────────────────
+      // ── Mark workspace lead as platform-converted ───────────────────────────
+      // Sets leads.converted_at to signal that this user started a BuddyBubble
+      // platform trial in this workspace. This is a PLATFORM conversion signal
+      // (owner subscribing to BuddyBubble), NOT a B2B2C "tenant won the invitee"
+      // signal. See docs/technical-design-dual-lead-capture-workflows-v1.md §6.3.
       await serviceSupabase
         .from('leads')
         .update({ converted_at: new Date().toISOString(), user_id: user.id })

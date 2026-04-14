@@ -26,8 +26,12 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@utils/supabase/server';
 import { createServiceRoleClient } from '@/lib/supabase-service-role';
+import {
+  trackWorkspaceLeadCaptured,
+  type LeadSource,
+} from '@/lib/lead-capture-analytics';
 
-const VALID_SOURCES = new Set(['qr', 'link', 'email', 'sms', 'direct']);
+const VALID_SOURCES = new Set<LeadSource>(['qr', 'link', 'email', 'sms', 'direct']);
 
 function normalizeUtmParams(raw: unknown): Record<string, string> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
@@ -63,8 +67,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'workspaceId is required' }, { status: 400 });
     }
 
-    const source =
-      typeof body.source === 'string' && VALID_SOURCES.has(body.source) ? body.source : 'direct';
+    const source: LeadSource =
+      typeof body.source === 'string' && VALID_SOURCES.has(body.source as LeadSource)
+        ? (body.source as LeadSource)
+        : 'direct';
 
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() || null : null;
     const utmParams = normalizeUtmParams(body.utmParams);
@@ -178,7 +184,7 @@ async function insertNewLead(
   opts: {
     workspaceId: string;
     inviteToken: string | null;
-    source: string;
+    source: LeadSource;
     email: string | null;
     utmParams: Record<string, string>;
     userId: string | null;
@@ -204,6 +210,15 @@ async function insertNewLead(
     console.error('[leads/track] insert failed:', error);
     return NextResponse.json({ error: 'Failed to record lead' }, { status: 500 });
   }
+
+  // Emit workspace lead_captured analytics event (fire-and-forget).
+  void trackWorkspaceLeadCaptured({
+    workspaceId: opts.workspaceId,
+    leadId: lead.id,
+    source: opts.source,
+    inviteToken: opts.inviteToken,
+    utmParams: opts.utmParams,
+  });
 
   return NextResponse.json({ leadId: lead.id });
 }
