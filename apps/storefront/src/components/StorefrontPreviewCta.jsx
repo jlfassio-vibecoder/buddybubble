@@ -393,7 +393,24 @@ export default function StorefrontPreviewCta({
           await res.json().catch(() => ({}))
         );
         if (!res.ok) {
-          setError(typeof data.error === 'string' ? data.error : 'Could not start preview.');
+          const raw = typeof data.error === 'string' ? data.error : '';
+          if (res.status === 503 && /temporarily unavailable/i.test(raw)) {
+            setError(
+              'Signup is unavailable: the app server needs TURNSTILE_SECRET_KEY (Cloudflare Turnstile secret) on the CRM Vercel project — then redeploy.',
+            );
+            return;
+          }
+          if (res.status === 400 && raw === 'turnstileToken is required') {
+            setError(
+              'Complete the security check above, or ask your admin to set PUBLIC_TURNSTILE_SITE_KEY on the storefront Vercel project and redeploy.',
+            );
+            return;
+          }
+          if (res.status === 403 && /verify client/i.test(raw)) {
+            setError('Could not verify your connection. Try again in a moment.');
+            return;
+          }
+          setError(raw || 'Could not start preview.');
           return;
         }
         if (typeof data.next === 'string' && data.next.length > 0) {
@@ -497,6 +514,9 @@ export default function StorefrontPreviewCta({
   }
 
   if (phase === 'email') {
+    const siteKeyOk = typeof turnstileSiteKey === 'string' && turnstileSiteKey.trim().length > 0;
+    const prodMissingSiteKey = import.meta.env.PROD && !siteKeyOk;
+
     return (
       <div className="w-full max-w-xl rounded-2xl border border-white/20 bg-black/35 p-4 shadow-xl backdrop-blur-md sm:max-w-md">
         <div className="mb-3 flex items-center justify-between gap-2">
@@ -511,6 +531,14 @@ export default function StorefrontPreviewCta({
         <p className="mt-1 text-xs text-white/70">
           {"We'll save your answers and start your 3-day preview in the app."}
         </p>
+        {prodMissingSiteKey ? (
+          <p className="mt-3 rounded-lg border border-amber-400/40 bg-amber-500/15 px-3 py-2 text-xs text-amber-100">
+            Storefront is missing{' '}
+            <span className="font-mono text-[0.7rem]">PUBLIC_TURNSTILE_SITE_KEY</span> in the
+            storefront Vercel project. Add your Turnstile <strong>site</strong> key, redeploy, then
+            reload this page.
+          </p>
+        ) : null}
         <form onSubmit={onEmailSubmit} className="mt-4 flex flex-col gap-3">
           {typeof turnstileSiteKey === 'string' && turnstileSiteKey.trim() ? (
             <div className="flex justify-center">
@@ -545,6 +573,7 @@ export default function StorefrontPreviewCta({
             type="submit"
             disabled={
               busy ||
+              prodMissingSiteKey ||
               (typeof turnstileSiteKey === 'string' &&
                 turnstileSiteKey.trim().length > 0 &&
                 !turnstileToken)
