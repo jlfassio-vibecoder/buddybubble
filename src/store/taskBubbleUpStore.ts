@@ -62,6 +62,8 @@ let loadDebounce: ReturnType<typeof setTimeout> | null = null;
 /** Sync mirror of pending for async loaders (must not lag React state). */
 const pendingSync: Record<string, true> = {};
 let realtimeInit = false;
+let realtimeClient: ReturnType<typeof createClient> | null = null;
+let realtimeChannel: ReturnType<ReturnType<typeof createClient>['channel']> | null = null;
 
 function setPendingSync(taskId: string, on: boolean) {
   if (on) pendingSync[taskId] = true;
@@ -99,8 +101,8 @@ function shouldRefreshFromRealtime(payload: {
 function initRealtimeOnce() {
   if (realtimeInit) return;
   realtimeInit = true;
-  const supabase = createClient();
-  supabase
+  realtimeClient = createClient();
+  realtimeChannel = realtimeClient
     .channel('task-bubble-ups-store')
     .on(
       'postgres_changes',
@@ -115,6 +117,14 @@ function initRealtimeOnce() {
       },
     )
     .subscribe();
+}
+
+function teardownRealtime() {
+  if (!realtimeClient || !realtimeChannel) return;
+  void realtimeClient.removeChannel(realtimeChannel);
+  realtimeChannel = null;
+  realtimeClient = null;
+  realtimeInit = false;
 }
 
 async function runLoadUnion() {
@@ -205,6 +215,9 @@ export const useTaskBubbleUpStore = create<TaskBubbleUpStoreState>((set) => ({
   unregisterScope: (scopeId) => {
     set((s) => {
       const { [scopeId]: _, ...rest } = s.scopes;
+      if (Object.keys(rest).length === 0) {
+        teardownRealtime();
+      }
       return { scopes: rest };
     });
     scheduleLoadUnion();
