@@ -55,7 +55,7 @@ export async function POST(req: Request) {
 
     if (!membership || membership.role !== 'owner') {
       return NextResponse.json(
-        { error: 'Only the workspace owner can record billing analytics' },
+        { error: 'Only the socialspace owner can record billing analytics' },
         { status: 403 },
       );
     }

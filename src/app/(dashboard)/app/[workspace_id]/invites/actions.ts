@@ -47,7 +47,7 @@ export async function createInviteAction(input: {
   if (!user) return { error: 'Not signed in.' };
 
   if (!(await requireWorkspaceAdmin(supabase, input.workspaceId, user.id))) {
-    return { error: 'Only workspace admins can create invites.' };
+    return { error: 'Only socialspace admins and owners can create invites.' };
   }
 
   const maxUses = Math.max(1, Math.floor(Number(input.maxUses)) || 1);
@@ -102,7 +102,7 @@ export async function revokeInviteAction(input: {
   if (!user) return { error: 'Not signed in.' };
 
   if (!(await requireWorkspaceAdmin(supabase, input.workspaceId, user.id))) {
-    return { error: 'Only workspace admins can revoke invites.' };
+    return { error: 'Only socialspace admins and owners can revoke invites.' };
   }
 
   const { error } = await supabase
@@ -135,7 +135,7 @@ export async function createEmailInviteAction(input: {
   if (!user) return { error: 'Not signed in.' };
 
   if (!(await requireWorkspaceAdmin(supabase, input.workspaceId, user.id))) {
-    return { error: 'Only workspace admins can create invites.' };
+    return { error: 'Only socialspace admins and owners can create invites.' };
   }
 
   const email = input.email.trim().toLowerCase();
@@ -201,7 +201,7 @@ export async function createSmsInviteAction(input: {
   if (!user) return { error: 'Not signed in.' };
 
   if (!(await requireWorkspaceAdmin(supabase, input.workspaceId, user.id))) {
-    return { error: 'Only workspace admins can create invites.' };
+    return { error: 'Only socialspace admins and owners can create invites.' };
   }
 
   const target = normalizeE164ish(input.phone);

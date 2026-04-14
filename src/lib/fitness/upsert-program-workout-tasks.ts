@@ -62,7 +62,7 @@ export async function upsertProgramWorkoutTasks(params: {
 
   const workoutsBubbleId = await resolveWorkoutsBubbleId(supabase, workspaceId);
   if (!workoutsBubbleId) {
-    return { error: 'No “Workouts” bubble found in this workspace.' };
+    return { error: 'No “Workouts” bubble found in this socialspace.' };
   }
 
   const { data: programRow, error: programErr } = await supabase

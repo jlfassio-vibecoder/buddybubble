@@ -40,7 +40,7 @@ export default async function InvitesPage({
     .eq('id', workspace_id)
     .maybeSingle();
 
-  const workspaceName = (ws as { name?: string } | null)?.name?.trim() || 'this workspace';
+  const workspaceName = (ws as { name?: string } | null)?.name?.trim() || 'this socialspace';
   const categoryType = (ws as { category_type?: string } | null)?.category_type;
   const showFamilyNames = categoryType === 'kids' || categoryType === 'community';
 

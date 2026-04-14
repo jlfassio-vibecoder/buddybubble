@@ -120,7 +120,7 @@ export function ExpiredGate() {
           )}
         </div>
       ) : (
-        <span className="shrink-0 text-xs">Contact your workspace owner to restore access.</span>
+        <span className="shrink-0 text-xs">Contact your socialspace owner to restore access.</span>
       )}
     </div>
   );

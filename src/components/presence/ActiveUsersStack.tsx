@@ -32,7 +32,7 @@ export function ActiveUsersStack({ localUserId, className }: Props) {
     <div
       className={cn('flex items-center', className)}
       role="group"
-      aria-label="Active workspace members"
+      aria-label="Active socialspace members"
     >
       <div className="flex -space-x-2">
         {visible.map((user) => (

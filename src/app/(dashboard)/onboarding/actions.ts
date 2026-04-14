@@ -97,7 +97,7 @@ export async function consumeInviteOnboarding(): Promise<{ error: string } | voi
         { reason: 'missing_workspace_id' },
         { userId: user?.id ?? null },
       );
-      return { error: 'Could not resolve workspace.' };
+      return { error: 'Could not resolve socialspace.' };
     }
     await insertInviteJourneyByToken(
       token,

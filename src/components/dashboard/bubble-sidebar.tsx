@@ -161,8 +161,8 @@ export function BubbleSidebar({
                         type="button"
                         onClick={onOpenWorkspaceSettings}
                         className="rounded-md p-1 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                        aria-label="Workspace settings"
-                        title="Workspace settings"
+                        aria-label="Socialspace settings"
+                        title="Socialspace settings"
                       >
                         <Settings className="size-4" />
                       </button>

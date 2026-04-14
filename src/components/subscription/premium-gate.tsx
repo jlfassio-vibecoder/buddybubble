@@ -49,7 +49,7 @@ const FEATURE_LABELS: Record<PremiumFeature, string> = {
   export: 'Data export',
   record_data: 'Recording data',
   custom_branding: 'Custom branding',
-  create_workspace: 'Creating workspaces',
+  create_workspace: 'Creating socialspaces',
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -124,7 +124,7 @@ export function PremiumGate({ feature, children, className, inline = false }: Pr
             'inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground',
             className,
           )}
-          title="Only the workspace owner can manage billing."
+          title="Only the socialspace owner can manage billing."
         >
           <Lock className="h-3 w-3" aria-hidden />
           Owner only
@@ -139,7 +139,7 @@ export function PremiumGate({ feature, children, className, inline = false }: Pr
         <div className="absolute inset-0 flex items-center justify-center px-2 text-center">
           <div className="flex items-center gap-1.5 rounded-full bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-sm ring-1 ring-border">
             <Lock className="h-3 w-3 shrink-0" aria-hidden />
-            Ask the workspace owner to subscribe
+            Ask the socialspace owner to subscribe
           </div>
         </div>
       </div>
