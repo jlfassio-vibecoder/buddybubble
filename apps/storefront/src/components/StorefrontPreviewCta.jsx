@@ -238,8 +238,6 @@ export default function StorefrontPreviewCta({
   const [turnstileWidgetError, setTurnstileWidgetError] = useState(
     /** @type {string | null} */ (null),
   );
-  /** After API emails the Supabase magic link (production); cleared when user dismisses. */
-  const [sentLoginLinkTo, setSentLoginLinkTo] = useState(/** @type {string | null} */ (null));
 
   useIsoLayoutEffect(() => {
     setSnap(readInitialWizard(publicSlug, workspaceCategory));
@@ -401,7 +399,7 @@ export default function StorefrontPreviewCta({
             ...(turnstileToken ? { turnstileToken } : {}),
           }),
         });
-        const data = /** @type {{ error?: string; next?: string; loginLinkSent?: boolean }} */ (
+        const data = /** @type {{ error?: string; next?: string }} */ (
           await res.json().catch(() => ({}))
         );
         if (!res.ok) {
@@ -410,10 +408,6 @@ export default function StorefrontPreviewCta({
             setError(
               'Signup is unavailable: the app server needs TURNSTILE_SECRET_KEY (Cloudflare Turnstile secret) on the CRM Vercel project — then redeploy.',
             );
-            return;
-          }
-          if (res.status === 503) {
-            setError(raw || 'Service temporarily unavailable. Try again in a moment.');
             return;
           }
           if (res.status === 400 && raw === 'turnstileToken is required') {
@@ -434,11 +428,6 @@ export default function StorefrontPreviewCta({
           window.location.assign(data.next);
           return;
         }
-        if (data.loginLinkSent === true) {
-          clearStorage();
-          setSentLoginLinkTo(trimmed);
-          return;
-        }
         setError('Unexpected response. Please try again.');
       } catch {
         setError('Network error. Please try again.');
@@ -456,38 +445,6 @@ export default function StorefrontPreviewCta({
       turnstileWidgetError,
     ],
   );
-
-  const dismissLoginLinkSent = useCallback(() => {
-    setSentLoginLinkTo(null);
-    setSnap((prev) => ({
-      ...prev,
-      phase: 'idle',
-      profileStep: 0,
-      profileDraft: {},
-      email: '',
-    }));
-  }, []);
-
-  if (sentLoginLinkTo) {
-    return (
-      <div className="w-full max-w-xl rounded-2xl border border-white/20 bg-black/35 p-4 shadow-xl backdrop-blur-md sm:max-w-md">
-        <h2 className="text-base font-semibold text-white">Check your email</h2>
-        <p className="mt-2 text-sm text-white/85">
-          We sent a sign-in link to{' '}
-          <span className="font-medium text-white">{sentLoginLinkTo}</span>. Open it on this device
-          to continue into your 3-day preview. The link expires after a short time.
-        </p>
-        <button
-          type="button"
-          onClick={dismissLoginLinkSent}
-          className="mt-4 inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold text-white ring-2 ring-white/20 transition hover:brightness-110"
-          style={{ backgroundColor: accent }}
-        >
-          OK
-        </button>
-      </div>
-    );
-  }
 
   if (phase === 'idle') {
     return (

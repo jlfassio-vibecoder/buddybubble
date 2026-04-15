@@ -1,8 +1,8 @@
 import { Resend } from 'resend';
 
 /**
- * Delivers the Supabase magic-link URL from `auth.admin.generateLink` — that API does not send mail;
- * we send it here so the link is not exposed in the storefront JSON response (production).
+ * Optional duplicate to the user’s inbox (same idea as emailing an invite link). The storefront
+ * always redirects via `next` in the API response; Resend is not required for sign-in to work.
  */
 export async function sendStorefrontTrialLoginEmail(opts: {
   to: string;
