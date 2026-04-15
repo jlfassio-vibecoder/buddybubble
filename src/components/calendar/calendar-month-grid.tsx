@@ -16,7 +16,7 @@ import {
   type TaskRow,
   type WorkspaceCategory,
 } from '@/types/database';
-import type { TaskModalTab } from '@/components/modals/TaskModal';
+import type { OpenTaskOptions } from '@/components/modals/TaskModal';
 import type { TaskBubbleUpControlProps } from '@/components/tasks/bubbly-button';
 import { KanbanTaskCard } from '@/components/board/kanban-task-card';
 import { getItemTypeVisual } from '@/lib/item-type-styles';
@@ -88,7 +88,7 @@ export type CalendarMonthGridProps = {
   bubbles: BubbleRow[];
   canWrite: boolean;
   onMoveToBubble: (taskId: string, targetBubbleId: string) => void;
-  onOpenTask?: (taskId: string, opts?: { tab?: TaskModalTab }) => void;
+  onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
   workspaceCategory: WorkspaceCategory | null;
   calendarTimezone: string | null;
   boardColumnDefs: BoardColumnDefLite[] | null;

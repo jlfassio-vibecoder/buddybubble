@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Dumbbell, Plus, Trash2 } from 'lucide-react';
+import { Dumbbell, Plus, Sparkles, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,7 +11,67 @@ import { cn } from '@/lib/utils';
 import { createClient } from '@utils/supabase/client';
 import type { Json, UnitSystem } from '@/types/database';
 
-type BiometricsRecord = { weight?: number; height?: number; age?: number };
+type BiometricsRecord = {
+  weight?: number;
+  height?: number;
+  weight_kg?: number;
+  height_cm?: number;
+  age?: number;
+};
+
+const LB_PER_KG = 2.2046226218;
+const CM_PER_IN = 2.54;
+
+function round1(n: number): number {
+  return Math.round(n * 10) / 10;
+}
+
+/** Strip keys we persist from controlled fields so extras merge does not resurrect stale values. */
+const MANAGED_BIOMETRIC_KEYS = ['weight', 'height', 'weight_kg', 'height_cm', 'age'] as const;
+
+function decodeWeightDisplay(bio: BiometricsRecord, unitSystem: UnitSystem): string {
+  const wkg =
+    typeof bio.weight_kg === 'number' && Number.isFinite(bio.weight_kg) && bio.weight_kg > 0
+      ? bio.weight_kg
+      : null;
+  if (wkg != null) {
+    return unitSystem === 'imperial' ? String(round1(wkg * LB_PER_KG)) : String(round1(wkg));
+  }
+  if (typeof bio.weight === 'number' && Number.isFinite(bio.weight) && bio.weight > 0) {
+    return String(bio.weight);
+  }
+  return '';
+}
+
+/**
+ * Canonical height is `height_cm`. Legacy `height` was ambiguous (cm vs in); storefront briefly
+ * wrote centimeters into `height` while the UI labeled it as inches.
+ */
+function decodeHeightDisplay(bio: BiometricsRecord, unitSystem: UnitSystem): string {
+  const hcm =
+    typeof bio.height_cm === 'number' && Number.isFinite(bio.height_cm) && bio.height_cm > 0
+      ? bio.height_cm
+      : null;
+  if (hcm != null) {
+    return unitSystem === 'imperial' ? String(round1(hcm / CM_PER_IN)) : String(round1(hcm));
+  }
+  if (typeof bio.height === 'number' && Number.isFinite(bio.height) && bio.height > 0) {
+    if (unitSystem === 'metric') {
+      return String(round1(bio.height));
+    }
+    const h = bio.height;
+    const hasKg =
+      typeof bio.weight_kg === 'number' && Number.isFinite(bio.weight_kg) && bio.weight_kg > 0;
+    if (h > 100 && hasKg) {
+      return String(round1(h / CM_PER_IN));
+    }
+    if (h >= 130) {
+      return String(round1(h / CM_PER_IN));
+    }
+    return String(round1(h));
+  }
+  return '';
+}
 
 type LocalProfile = {
   id: string | null;
@@ -51,14 +112,27 @@ export type FitnessProfileSheetProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   workspaceId: string;
+  /** Current board bubble (not “All”); required to attach a generated workout card. */
+  bubbleIdForTasks?: string | null;
+  /** Bump Kanban / task views after a workout card is inserted. */
+  onQuickWorkoutCreated?: () => void;
 };
 
-export function FitnessProfileSheet({ open, onOpenChange, workspaceId }: FitnessProfileSheetProps) {
+export function FitnessProfileSheet({
+  open,
+  onOpenChange,
+  workspaceId,
+  bubbleIdForTasks = null,
+  onQuickWorkoutCreated,
+}: FitnessProfileSheetProps) {
   const [profile, setProfile] = useState<LocalProfile>(EMPTY_PROFILE);
+  /** Other `biometrics` keys (sex, experience, …) merged on save — not edited in this sheet. */
+  const [bioExtras, setBioExtras] = useState<Record<string, unknown>>({});
   const [newGoal, setNewGoal] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [quickWorkoutBusy, setQuickWorkoutBusy] = useState(false);
 
   const loadProfile = useCallback(async () => {
     setLoading(true);
@@ -81,16 +155,23 @@ export function FitnessProfileSheet({ open, onOpenChange, workspaceId }: Fitness
 
     if (data) {
       const bio = (data.biometrics as BiometricsRecord) ?? {};
+      const unitSystem = (data.unit_system as UnitSystem) ?? 'metric';
+      const extras: Record<string, unknown> = { ...(data.biometrics as Record<string, unknown>) };
+      for (const k of MANAGED_BIOMETRIC_KEYS) {
+        delete extras[k];
+      }
+      setBioExtras(extras);
       setProfile({
         id: data.id as string,
         goals: (data.goals as string[]) ?? [],
         equipment: (data.equipment as string[]) ?? [],
-        unitSystem: (data.unit_system as UnitSystem) ?? 'metric',
-        weight: bio.weight != null ? String(bio.weight) : '',
-        height: bio.height != null ? String(bio.height) : '',
+        unitSystem,
+        weight: decodeWeightDisplay(bio, unitSystem),
+        height: decodeHeightDisplay(bio, unitSystem),
         age: bio.age != null ? String(bio.age) : '',
       });
     } else {
+      setBioExtras({});
       setProfile(EMPTY_PROFILE);
     }
     setLoading(false);
@@ -113,13 +194,28 @@ export function FitnessProfileSheet({ open, onOpenChange, workspaceId }: Fitness
       return;
     }
 
-    const biometrics: BiometricsRecord = {};
     const w = parseFloat(profile.weight);
     const h = parseFloat(profile.height);
     const a = parseInt(profile.age, 10);
-    if (!isNaN(w) && w > 0) biometrics.weight = w;
-    if (!isNaN(h) && h > 0) biometrics.height = h;
-    if (!isNaN(a) && a > 0) biometrics.age = a;
+
+    const biometrics: Record<string, unknown> = { ...bioExtras };
+    if (!isNaN(w) && w > 0) {
+      biometrics.weight_kg = profile.unitSystem === 'imperial' ? w / LB_PER_KG : w;
+    } else {
+      delete biometrics.weight_kg;
+    }
+    if (!isNaN(h) && h > 0) {
+      biometrics.height_cm = profile.unitSystem === 'imperial' ? h * CM_PER_IN : h;
+    } else {
+      delete biometrics.height_cm;
+    }
+    if (!isNaN(a) && a > 0) {
+      biometrics.age = a;
+    } else {
+      delete biometrics.age;
+    }
+    delete biometrics.weight;
+    delete biometrics.height;
 
     const payload = {
       workspace_id: workspaceId,
@@ -142,6 +238,39 @@ export function FitnessProfileSheet({ open, onOpenChange, workspaceId }: Fitness
     }
     setSaving(false);
     onOpenChange(false);
+  };
+
+  const handleQuickWorkout = async () => {
+    if (!bubbleIdForTasks?.trim()) {
+      toast.error('Select a bubble on the board (not “All”) before generating a workout.');
+      return;
+    }
+    setQuickWorkoutBusy(true);
+    try {
+      const res = await fetch('/api/ai/quick-workout-from-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspace_id: workspaceId,
+          bubble_id: bubbleIdForTasks.trim(),
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string; title?: string };
+      if (!res.ok) {
+        toast.error(typeof data.error === 'string' ? data.error : 'Could not generate workout.');
+        return;
+      }
+      toast.success(
+        typeof data.title === 'string' && data.title.trim()
+          ? `Added workout: ${data.title.trim()}`
+          : 'Workout card added to this bubble.',
+      );
+      onQuickWorkoutCreated?.();
+    } catch {
+      toast.error('Network error. Try again.');
+    } finally {
+      setQuickWorkoutBusy(false);
+    }
   };
 
   const addGoal = () => {
@@ -335,10 +464,37 @@ export function FitnessProfileSheet({ open, onOpenChange, workspaceId }: Fitness
                 ))}
               </div>
             </div>
+
+            {/* Quick workout (same single-call Vertex path as storefront preview / trial job) */}
+            <div className="space-y-2 rounded-lg border border-border bg-muted/20 p-4">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+                <p className="text-sm font-medium">Quick workout</p>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Generate one session card from this profile on the bubble you have open on the
+                board—no multi-step card builder.
+              </p>
+              {!bubbleIdForTasks?.trim() ? (
+                <p className="text-xs text-amber-700 dark:text-amber-500">
+                  Open a specific bubble on the Kanban board (not “All”) to enable this.
+                </p>
+              ) : null}
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="w-full"
+                disabled={quickWorkoutBusy || loading || saving || !bubbleIdForTasks?.trim()}
+                onClick={() => void handleQuickWorkout()}
+              >
+                {quickWorkoutBusy ? 'Generating…' : 'Generate workout on current bubble'}
+              </Button>
+            </div>
           </div>
         )}
 
-        <footer className="flex justify-end gap-2 border-t border-border px-6 py-4">
+        <footer className="flex flex-wrap justify-end gap-2 border-t border-border px-6 py-4">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancel
           </Button>

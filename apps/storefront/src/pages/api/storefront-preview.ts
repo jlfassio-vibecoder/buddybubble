@@ -4,6 +4,22 @@ import { getPublicEnv } from '../../lib/public-env';
 
 export const prerender = false;
 
+async function proxyToCrm(targetUrl: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(targetUrl, init);
+  } catch (firstErr) {
+    if (process.env.NODE_ENV !== 'development') throw firstErr;
+    // Local-only fallback: swap localhost <-> 127.0.0.1 for flaky DNS / bind mismatches.
+    let retryUrl = targetUrl;
+    if (targetUrl.includes('://localhost:'))
+      retryUrl = targetUrl.replace('://localhost:', '://127.0.0.1:');
+    else if (targetUrl.includes('://127.0.0.1:'))
+      retryUrl = targetUrl.replace('://127.0.0.1:', '://localhost:');
+    if (retryUrl === targetUrl) throw firstErr;
+    return await fetch(retryUrl, init);
+  }
+}
+
 /**
  * Proxies POST JSON to the CRM `POST /api/ai/storefront-preview` (Vertex outline + summary)
  * so the browser stays same-origin with the Astro storefront.
@@ -41,14 +57,24 @@ export const POST: APIRoute = async ({ request }) => {
     if (v?.trim()) forwardClientIp[name] = v.trim();
   }
 
-  const upstream = await fetch(`${crmOrigin}/api/ai/storefront-preview`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...forwardClientIp,
-    },
-    body: JSON.stringify(payload),
-  });
+  const target = `${crmOrigin}/api/ai/storefront-preview`;
+  let upstream: Response;
+  try {
+    upstream = await proxyToCrm(target, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...forwardClientIp,
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) {
+    console.error('[storefront-proxy] upstream fetch failed', target, e);
+    return new Response(JSON.stringify({ error: 'Could not reach app server', target }), {
+      status: 502,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
 
   const text = await upstream.text();
   return new Response(text, {

@@ -18,6 +18,12 @@ const MAX_EX_DETAIL = 240;
 /** User notes appended to Vertex prompt; keep bounded for latency/cost. */
 const MAX_STOREFRONT_WORKOUT_NOTES_IN_PROMPT = 1200;
 
+/**
+ * Vertex MaaS can exceed a tight window under load; keep under `maxDuration` on
+ * `POST /api/ai/storefront-preview` / `quick-workout-from-profile` plus slack for token fetch + JSON parse.
+ */
+const STOREFRONT_PREVIEW_VERTEX_TIMEOUT_MS = 75_000;
+
 export type StorefrontPreviewExercise = {
   name: string;
   detail: string;
@@ -205,7 +211,7 @@ export async function runStorefrontPreviewGeneration(
       region,
       temperature: 0.35,
       maxTokens: 1400,
-      timeoutMs: 14_000,
+      timeoutMs: STOREFRONT_PREVIEW_VERTEX_TIMEOUT_MS,
       logPrefix: '[storefront-preview]',
     });
   } catch (e) {

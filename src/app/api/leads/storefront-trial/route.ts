@@ -3,7 +3,7 @@
  *
  * Zero-trust storefront intake: resolves workspace by **public_slug** + **is_public**,
  * creates or links an auth user, upserts **guest** membership with trial window,
- * provisions a **private trial** bubble + **bubble_members** (guest viewer, coach editor),
+ * provisions a **private trial** bubble + **bubble_members** (guest editor, coach editor),
  * inserts **leads** (storefront source), emits **lead_captured** server-side only.
  *
  * @see docs/tdd-lead-onboarding.md §10
@@ -19,6 +19,12 @@ import { isStorefrontLeadSource, type StorefrontLeadSource } from '@/lib/leads-s
 import { mapStorefrontProfileToFitnessProfileUpsert } from '@/lib/storefront-trial-fitness-profile';
 import { scheduleStorefrontTrialWorkoutAfterResponse } from '@/lib/storefront-trial-job';
 import {
+  insertTrialWorkoutTaskFromPreview,
+  setBubbleWorkoutGenerationStatus,
+  trialBubbleNeedsStorefrontWorkout,
+} from '@/lib/storefront-trial-workout-task';
+import { validateStorefrontPreviewPayload } from '@/lib/workout-factory/storefront-preview-runner';
+import {
   createTrialBubbleAndMembers,
   findExistingStorefrontTrial,
   mergeLeadMetadataWithTrialBubble,
@@ -30,6 +36,7 @@ import type { Json, MemberRole } from '@/types/database';
 export const maxDuration = 300;
 
 const MAX_PROFILE_JSON_BYTES = 100_000;
+const MAX_CACHED_WORKOUT_JSON_BYTES = 100_000;
 
 function normalizeUtmParams(raw: unknown): Record<string, string> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
@@ -47,6 +54,8 @@ type TrialBody = {
   source?: string;
   utmParams?: Record<string, string>;
   profile?: unknown;
+  /** Validated storefront Vertex preview; when present and valid, intake inserts the workout task synchronously (BYOD). */
+  cachedWorkoutData?: unknown;
   turnstileToken?: string;
 };
 
@@ -58,6 +67,67 @@ function trialExpiresIso(): string {
 
 function trialDeepLinkPath(workspaceId: string, trialBubbleId: string): string {
   return `/app/${workspaceId}?bubble=${encodeURIComponent(trialBubbleId)}`;
+}
+
+function trimDisplayNameCandidate(raw: string): string {
+  const t = raw.trim();
+  if (!t) return '';
+  return t.length > 120 ? t.slice(0, 120) : t;
+}
+
+/**
+ * `handle_new_user` seeds `public.users.full_name` from auth `raw_user_meta_data` keys.
+ * Storefront-created accounts previously omitted metadata, leaving `full_name` empty locally and
+ * blocking the post-login dashboard until ProfileCompletionModal — production users often already
+ * have metadata from other flows.
+ */
+function deriveStorefrontTrialDisplayName(email: string, profile: unknown): string {
+  if (
+    profile !== undefined &&
+    profile !== null &&
+    typeof profile === 'object' &&
+    !Array.isArray(profile)
+  ) {
+    const o = profile as Record<string, unknown>;
+    const fromDisplay =
+      typeof o.display_name === 'string'
+        ? o.display_name
+        : typeof o.displayName === 'string'
+          ? o.displayName
+          : '';
+    const fromName = typeof o.name === 'string' ? o.name : '';
+    const fromFirst =
+      typeof o.first_name === 'string'
+        ? o.first_name
+        : typeof o.firstName === 'string'
+          ? o.firstName
+          : '';
+    const fromLast =
+      typeof o.last_name === 'string'
+        ? o.last_name
+        : typeof o.lastName === 'string'
+          ? o.lastName
+          : '';
+    const combined = [fromFirst, fromLast]
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .join(' ');
+    const cand = trimDisplayNameCandidate(fromDisplay || fromName || combined);
+    if (cand) return cand;
+  }
+  const local = email.includes('@') ? email.split('@')[0]! : email;
+  const fallback = trimDisplayNameCandidate(local.replace(/[.+_]/g, ' ')) || 'Member';
+  return fallback;
+}
+
+function requestOriginForAuth(req: Request): string {
+  if (process.env.NODE_ENV === 'development') {
+    const appUrl = process.env.APP_URL?.trim();
+    if (appUrl) return appUrl;
+    const u = new URL(req.url);
+    return `${u.protocol}//${u.host}`;
+  }
+  return getCanonicalOrigin();
 }
 
 /**
@@ -97,7 +167,32 @@ async function buildStorefrontTrialMagicLink(
     throw new Error('Could not create sign-in link');
   }
 
-  return actionLink;
+  return normalizeMagicLinkForDev(actionLink, redirectTo);
+}
+
+/**
+ * Supabase may fall back to project Site URL when redirectTo is not accepted.
+ * In local development we force the action link redirect target to local origin
+ * so Open App always returns to the local app flow.
+ */
+function normalizeMagicLinkForDev(actionLink: string, redirectTo: string): string {
+  if (process.env.NODE_ENV !== 'development') return actionLink;
+  const appUrl = process.env.APP_URL?.trim();
+  if (!appUrl) return actionLink;
+  try {
+    const wantedOrigin = new URL(appUrl).origin;
+    const desiredRedirectTo = new URL(redirectTo);
+    const wantedUrl = new URL(wantedOrigin);
+    desiredRedirectTo.protocol = wantedUrl.protocol;
+    desiredRedirectTo.host = wantedUrl.host;
+
+    const u = new URL(actionLink);
+    // Keep Supabase verify host intact; force only the post-verify handoff target.
+    u.searchParams.set('redirect_to', desiredRedirectTo.toString());
+    return u.toString();
+  } catch {
+    return actionLink;
+  }
 }
 
 /** Best-effort duplicate to inbox when Resend is configured; never blocks the redirect flow. */
@@ -140,24 +235,85 @@ async function upsertFitnessProfileFromStorefrontIfApplicable(
   }
 }
 
-async function trialBubbleNeedsStorefrontWorkout(
-  db: ReturnType<typeof createServiceRoleClient>,
-  trialBubbleId: string,
-  userId: string,
-): Promise<boolean> {
-  const { count, error } = await db
-    .from('tasks')
-    .select('id', { count: 'exact', head: true })
-    .eq('bubble_id', trialBubbleId)
-    .eq('item_type', 'workout')
-    .eq('assigned_to', userId)
-    .is('archived_at', null);
-
-  if (error) {
-    console.error('[leads/storefront-trial] workout task count', error.message || 'Unknown error');
-    return false;
+function normalizeCachedWorkoutForIntake(
+  raw: unknown,
+): { ok: true; data: unknown } | { ok: false; status: number; error: string } {
+  if (raw === undefined || raw === null) {
+    return { ok: true, data: undefined };
   }
-  return (count ?? 0) === 0;
+  let encoded = 0;
+  try {
+    encoded = new TextEncoder().encode(JSON.stringify(raw)).length;
+  } catch {
+    return { ok: false, status: 400, error: 'cachedWorkoutData must be JSON-serializable' };
+  }
+  if (encoded > MAX_CACHED_WORKOUT_JSON_BYTES) {
+    return { ok: false, status: 413, error: 'cachedWorkoutData payload too large' };
+  }
+  const v = validateStorefrontPreviewPayload(raw);
+  if (!v.ok) {
+    console.warn('[leads/storefront-trial] ignoring invalid cachedWorkoutData', v.error);
+    return { ok: true, data: undefined };
+  }
+  return { ok: true, data: raw };
+}
+
+async function provisionStorefrontTrialWorkout(
+  db: ReturnType<typeof createServiceRoleClient>,
+  opts: {
+    workspaceId: string;
+    userId: string;
+    trialBubbleId: string;
+    leadId: string;
+    categoryType: string;
+    cachedWorkoutData: unknown | undefined;
+  },
+): Promise<void> {
+  if (opts.categoryType !== 'fitness') {
+    return;
+  }
+
+  const needs = await trialBubbleNeedsStorefrontWorkout(db, opts.trialBubbleId, opts.userId);
+  if (!needs) {
+    await setBubbleWorkoutGenerationStatus(db, opts.trialBubbleId, 'completed');
+    return;
+  }
+
+  if (opts.cachedWorkoutData !== undefined && opts.cachedWorkoutData !== null) {
+    const v = validateStorefrontPreviewPayload(opts.cachedWorkoutData);
+    if (!v.ok) {
+      await setBubbleWorkoutGenerationStatus(db, opts.trialBubbleId, 'pending');
+      await scheduleStorefrontTrialWorkoutAfterResponse({
+        workspaceId: opts.workspaceId,
+        userId: opts.userId,
+        leadId: opts.leadId,
+        trialBubbleId: opts.trialBubbleId,
+      });
+      return;
+    }
+    const inserted = await insertTrialWorkoutTaskFromPreview(db, {
+      trialBubbleId: opts.trialBubbleId,
+      userId: opts.userId,
+      workspaceId: opts.workspaceId,
+      preview: v.preview,
+    });
+    if (!inserted) {
+      await setBubbleWorkoutGenerationStatus(db, opts.trialBubbleId, 'failed', {
+        error_message: 'Could not insert workout from cached preview',
+      });
+      return;
+    }
+    await setBubbleWorkoutGenerationStatus(db, opts.trialBubbleId, 'completed');
+    return;
+  }
+
+  await setBubbleWorkoutGenerationStatus(db, opts.trialBubbleId, 'pending');
+  await scheduleStorefrontTrialWorkoutAfterResponse({
+    workspaceId: opts.workspaceId,
+    userId: opts.userId,
+    leadId: opts.leadId,
+    trialBubbleId: opts.trialBubbleId,
+  });
 }
 
 export async function POST(req: Request) {
@@ -210,9 +366,11 @@ export async function POST(req: Request) {
 
     const turnstileToken =
       typeof body.turnstileToken === 'string' ? body.turnstileToken.trim() : '';
+    // Local dev defaults to bypass so lead capture works before Turnstile is fully wired.
+    // Set ALLOW_STOREFRONT_PREVIEW_WITHOUT_TURNSTILE=0 to force verification locally.
     const devTurnstileBypass =
       process.env.NODE_ENV === 'development' &&
-      process.env.ALLOW_STOREFRONT_PREVIEW_WITHOUT_TURNSTILE === '1';
+      process.env.ALLOW_STOREFRONT_PREVIEW_WITHOUT_TURNSTILE !== '0';
 
     if (!devTurnstileBypass) {
       if (!isTurnstileSecretConfigured()) {
@@ -232,6 +390,12 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: tv.error }, { status: tv.status });
       }
     }
+
+    const cachedNorm = normalizeCachedWorkoutForIntake(body.cachedWorkoutData);
+    if (!cachedNorm.ok) {
+      return NextResponse.json({ error: cachedNorm.error }, { status: cachedNorm.status });
+    }
+    const cachedWorkoutForIntake = cachedNorm.data;
 
     const db = createServiceRoleClient();
 
@@ -261,6 +425,8 @@ export async function POST(req: Request) {
       );
     }
 
+    const trialGuestDisplayName = deriveStorefrontTrialDisplayName(emailRaw, body.profile);
+
     let userId: string;
     const { data: existingProfile } = await db
       .from('users')
@@ -274,6 +440,7 @@ export async function POST(req: Request) {
       const { data: created, error: authErr } = await db.auth.admin.createUser({
         email: emailRaw,
         email_confirm: true,
+        user_metadata: { full_name: trialGuestDisplayName },
       });
       if (authErr || !created?.user?.id) {
         const msg = (authErr?.message ?? '').toLowerCase();
@@ -297,6 +464,28 @@ export async function POST(req: Request) {
         }
       } else {
         userId = created.user.id;
+      }
+    }
+
+    const { data: userRow } = await db
+      .from('users')
+      .select('full_name')
+      .eq('id', userId)
+      .maybeSingle();
+    const existingFullName =
+      typeof (userRow as { full_name?: string } | null)?.full_name === 'string'
+        ? (userRow as { full_name: string }).full_name.trim()
+        : '';
+    if (!existingFullName) {
+      const { error: nameErr } = await db
+        .from('users')
+        .update({ full_name: trialGuestDisplayName })
+        .eq('id', userId);
+      if (nameErr) {
+        console.error(
+          '[leads/storefront-trial] users full_name backfill',
+          nameErr.message || 'Unknown error',
+        );
       }
     }
 
@@ -339,7 +528,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Failed to save membership' }, { status: 500 });
     }
 
-    const origin = getCanonicalOrigin();
+    const origin = requestOriginForAuth(req);
     const now = new Date().toISOString();
 
     const existing = await findExistingStorefrontTrial(db, workspaceId, userId);
@@ -356,17 +545,14 @@ export async function POST(req: Request) {
         );
       }
 
-      if (
-        categoryType === 'fitness' &&
-        (await trialBubbleNeedsStorefrontWorkout(db, existing.trialBubbleId, userId))
-      ) {
-        scheduleStorefrontTrialWorkoutAfterResponse({
-          workspaceId,
-          userId,
-          leadId: existing.leadId,
-          trialBubbleId: existing.trialBubbleId,
-        });
-      }
+      await provisionStorefrontTrialWorkout(db, {
+        workspaceId,
+        userId,
+        trialBubbleId: existing.trialBubbleId,
+        leadId: existing.leadId,
+        categoryType,
+        cachedWorkoutData: cachedWorkoutForIntake,
+      });
 
       const next = await buildStorefrontTrialMagicLink(
         db,
@@ -457,14 +643,14 @@ export async function POST(req: Request) {
       );
     }
 
-    if (categoryType === 'fitness') {
-      scheduleStorefrontTrialWorkoutAfterResponse({
-        workspaceId,
-        userId,
-        leadId,
-        trialBubbleId,
-      });
-    }
+    await provisionStorefrontTrialWorkout(db, {
+      workspaceId,
+      userId,
+      trialBubbleId,
+      leadId,
+      categoryType,
+      cachedWorkoutData: cachedWorkoutForIntake,
+    });
 
     const next = await buildStorefrontTrialMagicLink(
       db,

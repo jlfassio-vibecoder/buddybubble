@@ -248,6 +248,7 @@ export interface Database {
           /** When true, only owners/admins and explicit bubble_members can see this bubble. */
           is_private: boolean;
           bubble_type: BubbleType;
+          metadata: Json;
           created_at: string;
         };
         Insert: {
@@ -257,6 +258,7 @@ export interface Database {
           icon?: string | null;
           is_private?: boolean;
           bubble_type?: BubbleType;
+          metadata?: Json;
           created_at?: string;
         };
         Update: Partial<Database['public']['Tables']['bubbles']['Insert']>;

@@ -1,4 +1,4 @@
-import type { BubbleRow } from '@/types/database';
+import type { BubbleRow, Json } from '@/types/database';
 
 /** Synthetic aggregate: all Bubbles in the current BuddyBubble (not a real DB row). */
 export const ALL_BUBBLES_BUBBLE_ID = 'all';
@@ -13,6 +13,7 @@ export function makeAllBubblesBubbleRow(workspaceId: string): BubbleRow {
     icon: null,
     is_private: false,
     bubble_type: 'standard',
+    metadata: {} as Json,
     created_at: new Date(0).toISOString(),
   };
 }

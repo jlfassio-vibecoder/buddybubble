@@ -18,7 +18,12 @@ import { ChatArea } from '@/components/chat/ChatArea';
 import { KanbanBoard } from '@/components/board/KanbanBoard';
 import { CalendarRail } from '@/components/dashboard/calendar-rail';
 import { WorkspaceMainSplit } from '@/components/dashboard/workspace-main-split';
-import { TaskModal, type TaskModalTab } from '@/components/modals/TaskModal';
+import {
+  TaskModal,
+  type OpenTaskOptions,
+  type TaskModalTab,
+  type TaskModalViewMode,
+} from '@/components/modals/TaskModal';
 import { WorkspaceSettingsModal } from '@/components/modals/WorkspaceSettingsModal';
 import { PeopleInvitesModal } from '@/components/modals/PeopleInvitesModal';
 import { CreateWorkspaceModal } from '@/components/modals/CreateWorkspaceModal';
@@ -118,6 +123,9 @@ export function DashboardShell({
   const [taskModalTaskId, setTaskModalTaskId] = useState<string | null>(null);
   const [taskModalInitialStatus, setTaskModalInitialStatus] = useState<string | null>(null);
   const [taskModalInitialTab, setTaskModalInitialTab] = useState<TaskModalTab | null>(null);
+  const [taskModalViewMode, setTaskModalViewMode] = useState<TaskModalViewMode>('full');
+  const [taskModalAutoEdit, setTaskModalAutoEdit] = useState(false);
+  const [taskModalOpenWorkoutViewer, setTaskModalOpenWorkoutViewer] = useState(false);
   const [taskModalInitialCreateItemType, setTaskModalInitialCreateItemType] =
     useState<ItemType | null>(null);
   const [taskModalInitialCreateTitle, setTaskModalInitialCreateTitle] = useState<string | null>(
@@ -286,14 +294,22 @@ export function DashboardShell({
     void initSubscription(workspaceId);
   }, [workspaceId, initSubscription]);
 
-  const openTaskModal = useCallback((id: string, opts?: { tab?: TaskModalTab }) => {
+  const openTaskModal = useCallback((id: string, opts?: OpenTaskOptions) => {
     chatCardOnCreatedRef.current = null;
     setTaskModalInitialCreateItemType(null);
     setTaskModalInitialCreateTitle(null);
     setTaskModalInitialCreateWorkoutDurationMin(null);
     setTaskModalCreateBubbleId(null);
     setTaskModalTaskId(id);
-    setTaskModalInitialTab(opts?.tab ?? null);
+    const vm = opts?.viewMode ?? 'full';
+    setTaskModalViewMode(vm);
+    setTaskModalAutoEdit(opts?.autoEdit ?? false);
+    setTaskModalOpenWorkoutViewer(opts?.openWorkoutViewer === true);
+    if (vm === 'comments-only' && opts?.tab == null) {
+      setTaskModalInitialTab('comments');
+    } else {
+      setTaskModalInitialTab(opts?.tab ?? null);
+    }
     setTaskModalOpen(true);
   }, []);
 
@@ -312,6 +328,9 @@ export function DashboardShell({
       }
       setTaskModalInitialStatus(opts?.status ?? null);
       setTaskModalInitialTab(null);
+      setTaskModalViewMode('full');
+      setTaskModalAutoEdit(false);
+      setTaskModalOpenWorkoutViewer(false);
       setTaskModalTaskId(null);
       setTaskModalInitialCreateItemType(opts?.itemType ?? null);
       setTaskModalInitialCreateTitle(opts?.title ?? null);
@@ -389,6 +408,9 @@ export function DashboardShell({
       setTaskModalTaskId(null);
       setTaskModalInitialStatus(null);
       setTaskModalInitialTab(null);
+      setTaskModalViewMode('full');
+      setTaskModalAutoEdit(false);
+      setTaskModalOpenWorkoutViewer(false);
       setTaskModalInitialCreateItemType(null);
       setTaskModalInitialCreateTitle(null);
       setTaskModalInitialCreateWorkoutDurationMin(null);
@@ -480,8 +502,14 @@ export function DashboardShell({
 
   useEffect(() => {
     if (profile === null) return;
-    setProfileComplete(!!profile.full_name?.trim());
-  }, [profile]);
+    const isTrialGuestInActiveWorkspace =
+      activeWorkspace?.id === workspaceId &&
+      activeWorkspace.role === 'guest' &&
+      activeWorkspace.onboarding_status === 'trial_active';
+    // Storefront trial guests should land directly in the trial experience;
+    // do not block with profile completion modal before the first workout appears.
+    setProfileComplete(isTrialGuestInActiveWorkspace || !!profile.full_name?.trim());
+  }, [profile, activeWorkspace, workspaceId]);
 
   useEffect(() => {
     setBoardStripExpandNonce(0);
@@ -609,6 +637,30 @@ export function DashboardShell({
     }
     void load();
   }, [workspaceId, effectiveWorkspaceRole, bubbleQueryParam]);
+
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`bubbles_metadata:${workspaceId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'bubbles',
+          filter: `workspace_id=eq.${workspaceId}`,
+        },
+        (payload) => {
+          const next = payload.new as BubbleRow | null;
+          if (!next?.id) return;
+          setBubbles((prev) => prev.map((b) => (b.id === next.id ? { ...b, ...next } : b)));
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [workspaceId]);
 
   useEffect(() => {
     setPendingJoinRequestCount(initialPendingJoinRequestCount);
@@ -1007,6 +1059,9 @@ export function DashboardShell({
             initialCreateTitle={taskModalInitialCreateTitle}
             initialCreateWorkoutDurationMin={taskModalInitialCreateWorkoutDurationMin}
             initialTab={taskModalInitialTab}
+            initialViewMode={taskModalViewMode}
+            initialAutoEdit={taskModalAutoEdit}
+            initialOpenWorkoutViewer={taskModalOpenWorkoutViewer}
             workspaceCategory={effectiveKanbanCategory}
             calendarTimezone={workspaceCalendarTz}
             onTaskArchived={bumpTaskViews}
@@ -1015,6 +1070,7 @@ export function DashboardShell({
             <WorkoutPlayer
               open
               onClose={() => setWorkoutPlayerTask(null)}
+              workspaceId={workspaceId}
               workoutTitle={workoutPlayerTask.title}
               exercises={metadataFieldsFromParsed(workoutPlayerTask.metadata).workoutExercises}
               bubbleId={workoutPlayerTask.bubble_id}
@@ -1065,6 +1121,12 @@ export function DashboardShell({
               open={fitnessProfileOpen}
               onOpenChange={setFitnessProfileOpen}
               workspaceId={workspaceId}
+              bubbleIdForTasks={
+                selectedBubbleId && selectedBubbleId !== ALL_BUBBLES_BUBBLE_ID
+                  ? selectedBubbleId
+                  : null
+              }
+              onQuickWorkoutCreated={bumpTaskViews}
             />
           ) : null}
           {workspaceCategoryForUi === 'fitness' || workspaceCategoryForUi === 'business' ? (
@@ -1081,7 +1143,10 @@ export function DashboardShell({
               <Button
                 size="sm"
                 onClick={() => {
-                  openTaskModal(commentAlert.taskId, { tab: 'comments' });
+                  openTaskModal(commentAlert.taskId, {
+                    tab: 'comments',
+                    viewMode: 'comments-only',
+                  });
                   setCommentAlert(null);
                 }}
               >

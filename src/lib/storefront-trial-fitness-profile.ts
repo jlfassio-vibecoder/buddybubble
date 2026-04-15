@@ -42,6 +42,34 @@ function ageToAgeRange(age: number): string {
   return '56+';
 }
 
+function parsePositiveFloat(v: unknown): number | null {
+  if (typeof v === 'number' && Number.isFinite(v) && v > 0) return v;
+  if (typeof v === 'string') {
+    const n = parseFloat(v.trim());
+    if (!Number.isNaN(n) && n > 0) return n;
+  }
+  return null;
+}
+
+function parsePositiveInt(v: unknown): number | null {
+  if (typeof v === 'number' && Number.isFinite(v)) {
+    const n = Math.floor(v);
+    return n > 0 ? n : null;
+  }
+  if (typeof v === 'string') {
+    const n = parseInt(v.trim(), 10);
+    if (!Number.isNaN(n) && n > 0) return n;
+  }
+  return null;
+}
+
+function trimStr(v: unknown): string {
+  return typeof v === 'string' ? v.trim() : '';
+}
+
+const MAX_STOREFRONT_GOAL_LINE = 400;
+const MAX_STOREFRONT_GOAL_LINES = 40;
+
 /**
  * @returns Insert/upsert fields for `fitness_profiles`, or `null` if `profile` is not a usable object.
  */
@@ -75,25 +103,61 @@ export function mapStorefrontProfileToFitnessProfileUpsert(profile: unknown): {
     goals = [o.primaryGoal.trim()];
   }
 
+  const extraGoalsRaw = trimStr(o.storefront_fitness_goals_text ?? o.storefrontFitnessGoalsText);
+  if (extraGoalsRaw) {
+    const lines = extraGoalsRaw
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => (s.length > MAX_STOREFRONT_GOAL_LINE ? s.slice(0, MAX_STOREFRONT_GOAL_LINE) : s))
+      .slice(0, MAX_STOREFRONT_GOAL_LINES);
+    const seen = new Set(goals.map((g) => g.toLowerCase()));
+    for (const line of lines) {
+      const k = line.toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      goals.push(line);
+    }
+  }
+
   let equipment = strArray(o.equipment);
   if (equipment.length === 0) equipment = strArray(o.equipment_available);
   if (equipment.length === 0) equipment = strArray(o.equipmentAvailable);
 
   const unit_system = pickUnitSystem(o.unit_system ?? o.unitSystem);
 
-  const wRaw = o.weight_kg ?? o.weightKg ?? o.weight;
-  if (typeof wRaw === 'number' && Number.isFinite(wRaw) && wRaw > 0) {
-    if (unit_system === 'imperial') {
-      bio.weight_kg = Math.round(wRaw / 2.2046226218);
-    } else {
-      bio.weight_kg = wRaw;
+  const sbw = parsePositiveFloat(o.storefront_bio_weight ?? o.storefrontBioWeight);
+  const sbh = parsePositiveFloat(o.storefront_bio_height ?? o.storefrontBioHeight);
+  const sba = parsePositiveInt(o.storefront_bio_age ?? o.storefrontBioAge);
+  const sbs = trimStr(o.storefront_bio_sex ?? o.storefrontBioSex);
+
+  if (sbw != null) {
+    bio.weight_kg =
+      unit_system === 'imperial' ? Math.round(sbw / 2.2046226218) : Math.round(sbw * 10) / 10;
+  } else {
+    const wRaw = o.weight_kg ?? o.weightKg ?? o.weight;
+    if (typeof wRaw === 'number' && Number.isFinite(wRaw) && wRaw > 0) {
+      if (unit_system === 'imperial') {
+        bio.weight_kg = Math.round(wRaw / 2.2046226218);
+      } else {
+        bio.weight_kg = wRaw;
+      }
     }
   }
 
-  if (typeof o.height_cm === 'number' && o.height_cm > 0) bio.height = o.height_cm;
-  else if (typeof o.heightCm === 'number' && o.heightCm > 0) bio.height = o.heightCm;
+  if (sbh != null) {
+    bio.height_cm =
+      unit_system === 'imperial' ? Math.round(sbh * 2.54 * 10) / 10 : Math.round(sbh * 10) / 10;
+  } else if (typeof o.height_cm === 'number' && o.height_cm > 0) {
+    bio.height_cm = o.height_cm;
+  } else if (typeof o.heightCm === 'number' && o.heightCm > 0) {
+    bio.height_cm = o.heightCm;
+  }
 
-  if (typeof o.age_range === 'string' && o.age_range.trim()) {
+  if (sba != null && sba >= 13 && sba < 120) {
+    bio.age = sba;
+    bio.age_range = ageToAgeRange(sba);
+  } else if (typeof o.age_range === 'string' && o.age_range.trim()) {
     bio.age_range = o.age_range.trim();
   } else if (typeof o.ageRange === 'string' && o.ageRange.trim()) {
     bio.age_range = o.ageRange.trim();
@@ -101,9 +165,13 @@ export function mapStorefrontProfileToFitnessProfileUpsert(profile: unknown): {
     bio.age_range = ageToAgeRange(Math.floor(o.age));
   }
 
-  const sexRaw = o.sex ?? o.gender;
-  if (typeof sexRaw === 'string' && sexRaw.trim())
-    bio.sex = sexRaw.trim().toLowerCase().slice(0, 32);
+  if (sbs) {
+    bio.sex = sbs.toLowerCase().slice(0, 32);
+  } else {
+    const sexRaw = o.sex ?? o.gender;
+    if (typeof sexRaw === 'string' && sexRaw.trim())
+      bio.sex = sexRaw.trim().toLowerCase().slice(0, 32);
+  }
 
   const exp = o.experience ?? o.experience_level ?? o.experienceLevel;
   if (exp === 'beginner' || exp === 'intermediate' || exp === 'advanced') {

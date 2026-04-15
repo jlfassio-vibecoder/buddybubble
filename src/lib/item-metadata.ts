@@ -1,4 +1,5 @@
 import type { ItemType, Json } from '@/types/database';
+import { hydrateWorkoutExerciseFromStorefrontCoachNotes } from '@/lib/workout-factory/storefront-preview-exercise-detail';
 import { normalizeRepsForStorage } from '@/lib/workout-factory/parse-reps-scalar';
 
 /**
@@ -39,6 +40,16 @@ export type WorkoutExercise = {
   coach_notes?: string;
   /** Instructions shown in the player's detailed view. */
   notes?: string;
+  /** Optional step-by-step or long-form instructions (detailed player; preferred over `notes` when both exist). */
+  instructions?: string;
+  /** Form / execution cues as a single string or bullet list. */
+  form_cues?: string | string[];
+  /** Singular alias some payloads use for one form cue line. */
+  form_cue?: string;
+  /** Short coaching tip for detailed view. */
+  tips?: string;
+  /** Optional catalog / CDN URL for exercise thumbnail (no user uploads). */
+  thumbnail_url?: string;
   /** Per-set performance data recorded by the workout player (workout_log only). */
   set_logs?: SetLogEntry[];
 };
@@ -125,7 +136,7 @@ function asWorkoutExercises(value: unknown): WorkoutExercise[] {
     const merged: WorkoutExercise = { ...raw, name };
     if (r === undefined) delete merged.reps;
     else merged.reps = r;
-    out.push(merged);
+    out.push(hydrateWorkoutExerciseFromStorefrontCoachNotes(merged));
   }
   return out;
 }

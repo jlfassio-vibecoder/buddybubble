@@ -135,8 +135,11 @@ export async function createTrialBubbleAndMembers(opts: {
 
   const trialBubbleId = bubble.id as string;
 
+  // Guest must be `editor` so `can_write_bubble` matches RLS: private bubbles only grant task write
+  // to workspace admins/members or explicit bubble editors — `viewer` left the UI read-only while
+  // assigned-to-self updates could still succeed, which broke trial UX (TaskModal, Kanban card).
   const { error: bmErr } = await db.from('bubble_members').insert([
-    { bubble_id: trialBubbleId, user_id: guestUserId, role: 'viewer' },
+    { bubble_id: trialBubbleId, user_id: guestUserId, role: 'editor' },
     { bubble_id: trialBubbleId, user_id: coachUserId, role: 'editor' },
   ]);
 
