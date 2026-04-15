@@ -74,12 +74,13 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
     if (!window.location.hash.includes('access_token')) return;
 
     const supabase = createClient();
-    void supabase.auth.getSession();
+    let finished = false;
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event !== 'SIGNED_IN' || !session) return;
+    const finishMagicLinkSession = (
+      session: NonNullable<Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session']>,
+    ) => {
+      if (finished) return;
+      finished = true;
       const path = resolvePostLoginPath(next, inviteToken);
       let handoffTok = inviteToken;
       if (!handoffTok) {
@@ -99,6 +100,19 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
       window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
       router.replace(path);
       router.refresh();
+    };
+
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) finishMagicLinkSession(session);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!session) return;
+      // Implicit hash flow: first load often emits INITIAL_SESSION, not SIGNED_IN.
+      if (event !== 'SIGNED_IN' && event !== 'INITIAL_SESSION') return;
+      finishMagicLinkSession(session);
     });
 
     return () => subscription.unsubscribe();

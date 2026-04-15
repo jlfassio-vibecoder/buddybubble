@@ -24,6 +24,7 @@ import {
   mergeLeadMetadataWithTrialBubble,
   resolveStorefrontCoachUserId,
 } from '@/lib/storefront-trial-isolation';
+import { sendStorefrontTrialLoginEmail } from '@/lib/storefront-trial-login-email';
 import type { Json, MemberRole } from '@/types/database';
 
 export const maxDuration = 300;
@@ -60,14 +61,14 @@ function trialDeepLinkPath(workspaceId: string, trialBubbleId: string): string {
 }
 
 /**
- * One-time Supabase magic link so the browser gets a real session after server-side user creation.
- * `redirectTo` must be allowlisted in Supabase → Authentication → URL Configuration.
+ * Builds a one-time Supabase verify URL (`action_link`). `generateLink` does **not** send email;
+ * we email that URL via {@link sendStorefrontTrialLoginEmail} in production.
  *
- * Use `/login?next=…` (not `/auth/callback`): email magic links often return tokens in the URL
- * **hash**, which never reaches a Route Handler; `/login` already applies the hash client-side
- * (`LoginForm`). `/auth/callback` only exchanges `?code=` (PKCE) and otherwise redirects to login.
+ * `redirectTo` must be allowlisted in Supabase → Authentication → URL Configuration.
+ * Use `/login?next=…` (not `/auth/callback`): magic links often return tokens in the URL **hash**,
+ * which never reaches a Route Handler; `LoginForm` applies the hash client-side.
  */
-async function storefrontTrialHandoffActionLink(
+async function buildStorefrontTrialMagicLink(
   db: ReturnType<typeof createServiceRoleClient>,
   origin: string,
   email: string,
@@ -95,6 +96,52 @@ async function storefrontTrialHandoffActionLink(
   }
 
   return actionLink;
+}
+
+type HandoffDelivery = { loginLinkSent: true } | { loginLinkSent: false; next: string };
+
+/**
+ * Production: email the magic link (never return it in JSON). Development: optional instant redirect
+ * when `STOREFRONT_TRIAL_DEV_RETURN_MAGIC_LINK=1` for local testing without Resend.
+ */
+async function deliverStorefrontTrialHandoff(
+  db: ReturnType<typeof createServiceRoleClient>,
+  origin: string,
+  email: string,
+  workspaceId: string,
+  trialBubbleId: string,
+): Promise<HandoffDelivery | { error: string; status: number }> {
+  const actionLink = await buildStorefrontTrialMagicLink(
+    db,
+    origin,
+    email,
+    workspaceId,
+    trialBubbleId,
+  );
+
+  const devReturnMagicLink =
+    process.env.NODE_ENV === 'development' &&
+    process.env.STOREFRONT_TRIAL_DEV_RETURN_MAGIC_LINK === '1';
+
+  if (devReturnMagicLink) {
+    return { loginLinkSent: false, next: actionLink };
+  }
+
+  const sent = await sendStorefrontTrialLoginEmail({
+    to: email,
+    magicLinkUrl: actionLink,
+  });
+
+  if (sent.error) {
+    console.error('[leads/storefront-trial] send login email', sent.error);
+    return {
+      error:
+        'Could not send sign-in email. Configure RESEND_API_KEY and RESEND_FROM on the app server, then try again.',
+      status: 503,
+    };
+  }
+
+  return { loginLinkSent: true };
 }
 
 async function upsertFitnessProfileFromStorefrontIfApplicable(
@@ -353,20 +400,24 @@ export async function POST(req: Request) {
         });
       }
 
-      const next = await storefrontTrialHandoffActionLink(
+      const handoff = await deliverStorefrontTrialHandoff(
         db,
         origin,
         emailRaw,
         workspaceId,
         existing.trialBubbleId,
       );
+      if ('error' in handoff) {
+        return NextResponse.json({ error: handoff.error }, { status: handoff.status });
+      }
       return NextResponse.json({
         ok: true,
         workspaceId,
         leadId: existing.leadId,
         userId,
         trialBubbleId: existing.trialBubbleId,
-        next,
+        loginLinkSent: handoff.loginLinkSent,
+        ...(handoff.loginLinkSent ? {} : { next: handoff.next }),
         idempotent: true,
       });
     }
@@ -450,13 +501,16 @@ export async function POST(req: Request) {
       });
     }
 
-    const next = await storefrontTrialHandoffActionLink(
+    const handoff = await deliverStorefrontTrialHandoff(
       db,
       origin,
       emailRaw,
       workspaceId,
       trialBubbleId,
     );
+    if ('error' in handoff) {
+      return NextResponse.json({ error: handoff.error }, { status: handoff.status });
+    }
 
     return NextResponse.json({
       ok: true,
@@ -464,7 +518,8 @@ export async function POST(req: Request) {
       leadId,
       userId,
       trialBubbleId,
-      next,
+      loginLinkSent: handoff.loginLinkSent,
+      ...(handoff.loginLinkSent ? {} : { next: handoff.next }),
     });
   } catch (e) {
     console.error('[leads/storefront-trial]', e instanceof Error ? e.message : 'Unknown error');
