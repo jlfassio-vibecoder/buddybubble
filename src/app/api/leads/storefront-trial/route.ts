@@ -67,8 +67,8 @@ function trialDeepLinkPath(workspaceId: string, trialBubbleId: string): string {
  * emailing it).
  *
  * `redirectTo` must be allowlisted in Supabase → Authentication → URL Configuration.
- * Use `/login?next=…` (not `/auth/callback`): magic links often return tokens in the URL **hash**,
- * which never reaches a Route Handler; `LoginForm` applies the hash client-side.
+ * Use `/auth/callback?next=…`: PKCE (`code`) and `token_hash`+`type` are handled server-side; implicit
+ * tokens in the URL hash are forwarded to `/login` by the callback route (fragment never hits the server).
  */
 async function buildStorefrontTrialMagicLink(
   db: ReturnType<typeof createServiceRoleClient>,
@@ -78,7 +78,7 @@ async function buildStorefrontTrialMagicLink(
   trialBubbleId: string,
 ): Promise<string> {
   const nextPath = trialDeepLinkPath(workspaceId, trialBubbleId);
-  const redirectTo = `${origin}/login?next=${encodeURIComponent(nextPath)}`;
+  const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(nextPath)}`;
 
   const { data, error } = await db.auth.admin.generateLink({
     type: 'magiclink',

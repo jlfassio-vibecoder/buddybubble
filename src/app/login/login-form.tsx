@@ -48,6 +48,7 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
   const searchParams = useSearchParams();
   const next = safeNextPath(searchParams.get('next')) ?? '/app';
   const inviteToken = searchParams.get('invite_token')?.trim() || null;
+  const pkceCode = searchParams.get('code')?.trim() || null;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +69,19 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
       next_query: next,
     });
   }, [inviteToken, next]);
+
+  /** PKCE: `?code=` may land on `/login` depending on Supabase / redirect configuration. */
+  useEffect(() => {
+    if (!pkceCode) return;
+    const supabase = createClient();
+    let finished = false;
+    void supabase.auth.exchangeCodeForSession(pkceCode).then(({ error }) => {
+      if (error || finished) return;
+      finished = true;
+      const path = resolvePostLoginPath(next, inviteToken);
+      window.location.assign(`${window.location.origin}${path}`);
+    });
+  }, [pkceCode, next, inviteToken]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -98,8 +112,7 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
         });
       }
       window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
-      router.replace(path);
-      router.refresh();
+      window.location.assign(`${window.location.origin}${path}`);
     };
 
     void supabase.auth.getSession().then(({ data: { session } }) => {
@@ -116,7 +129,7 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
     });
 
     return () => subscription.unsubscribe();
-  }, [router, next, inviteToken]);
+  }, [next, inviteToken]);
 
   const redirectTo =
     typeof window !== 'undefined'
