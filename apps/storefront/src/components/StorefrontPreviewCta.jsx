@@ -176,7 +176,7 @@ function readInitialWizard(publicSlug, workspaceCategory) {
     if (!raw) return empty;
     const parsed = JSON.parse(raw);
     if (parsed?.version !== STORAGE_VERSION || parsed?.storedSlug !== slug) return empty;
-    const phase =
+    let phase =
       parsed.phase === 'profile' ||
       parsed.phase === 'email' ||
       parsed.phase === 'workout_refine' ||
@@ -185,6 +185,10 @@ function readInitialWizard(publicSlug, workspaceCategory) {
         : 'idle';
     let profileStep = typeof parsed.profileStep === 'number' ? parsed.profileStep : 0;
     profileStep = Math.max(0, Math.min(profileStep, stepList.length - 1));
+    if (cat === 'fitness' && phase === 'email') {
+      phase = 'workout_refine';
+      profileStep = Math.max(0, stepList.length - 1);
+    }
     const profileDraft =
       parsed.profileDraft &&
       typeof parsed.profileDraft === 'object' &&

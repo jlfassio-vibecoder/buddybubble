@@ -15,6 +15,8 @@ const MAX_COACH_TIP = 400;
 const MAX_EXERCISES = 8;
 const MAX_EX_NAME = 80;
 const MAX_EX_DETAIL = 240;
+/** User notes appended to Vertex prompt; keep bounded for latency/cost. */
+const MAX_STOREFRONT_WORKOUT_NOTES_IN_PROMPT = 1200;
 
 export type StorefrontPreviewExercise = {
   name: string;
@@ -119,7 +121,11 @@ function appendSessionPreferencesFromRawProfile(profile: unknown): string {
       ? intensityRaw
       : '';
   const notesRaw = o.storefront_workout_notes ?? o.storefrontWorkoutNotes;
-  const notes = typeof notesRaw === 'string' ? notesRaw.trim() : '';
+  const notesTrimmed = typeof notesRaw === 'string' ? notesRaw.trim() : '';
+  const notes =
+    notesTrimmed.length > MAX_STOREFRONT_WORKOUT_NOTES_IN_PROMPT
+      ? notesTrimmed.slice(0, MAX_STOREFRONT_WORKOUT_NOTES_IN_PROMPT)
+      : notesTrimmed;
   const lines: string[] = [];
   if (intensity) {
     const label =
@@ -130,7 +136,7 @@ function appendSessionPreferencesFromRawProfile(profile: unknown): string {
           : 'about as planned';
     lines.push(`Athlete preferred session intensity: ${label}.`);
   }
-  if (notes) {
+  if (notes.length > 0) {
     lines.push(
       `Athlete’s additional notes (injuries, equipment, soreness, intensity, etc.): ${notes}`,
     );
@@ -148,7 +154,7 @@ function buildProfileContextBlock(profile: unknown): string {
       `Units: ${mapped.unit_system}`,
       `Biometrics / notes: ${JSON.stringify(mapped.biometrics)}`,
     ];
-    return parts.join('\n') + sessionExtra;
+    return parts.join('\n');
   }
   if (profile && typeof profile === 'object' && !Array.isArray(profile)) {
     return (

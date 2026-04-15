@@ -43,6 +43,12 @@ export function mapStorefrontProfileToFitnessProfileUpsert(profile: unknown): {
 
   const o = profile as Record<string, unknown>;
 
+  const bio: Record<string, unknown> = {};
+  const persistedBio = o.biometrics;
+  if (persistedBio !== null && typeof persistedBio === 'object' && !Array.isArray(persistedBio)) {
+    Object.assign(bio, persistedBio as Record<string, unknown>);
+  }
+
   let goals = strArray(o.goals);
   if (goals.length === 0 && typeof o.primary_goal === 'string' && o.primary_goal.trim()) {
     goals = [o.primary_goal.trim()];
@@ -56,8 +62,6 @@ export function mapStorefrontProfileToFitnessProfileUpsert(profile: unknown): {
   if (equipment.length === 0) equipment = strArray(o.equipmentAvailable);
 
   const unit_system = pickUnitSystem(o.unit_system ?? o.unitSystem);
-
-  const bio: Record<string, unknown> = {};
 
   const wRaw = o.weight_kg ?? o.weightKg ?? o.weight;
   if (typeof wRaw === 'number' && Number.isFinite(wRaw) && wRaw > 0) {
