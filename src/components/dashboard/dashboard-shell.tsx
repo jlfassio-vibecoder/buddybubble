@@ -1088,6 +1088,7 @@ export function DashboardShell({
             permissionsContext={profilePermissionsContext}
             showFamilyNames={showFamilyNames}
           />
+          {/* Modal requires `profile`; `isDashboardProfileComplete` treats null profile as gate-off while store loads */}
           {!profileComplete && profile !== null ? (
             <ProfileCompletionModal
               profile={profile}

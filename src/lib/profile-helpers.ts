@@ -18,7 +18,9 @@ export type ProfileCompletionGateWorkspace = {
  * {@link ProfileCompletionModal}.
  *
  * Rules (single source of truth — keep in sync with product policy):
- * 1. No profile row → incomplete.
+ * 1. **No profile row yet** (`null`, e.g. still loading from `loadProfile`) → treat as complete
+ *    for this gate so we never imply "show {@link ProfileCompletionModal}" without a row;
+ *    the shell still only mounts the modal when `profile !== null`.
  * 2. Storefront trial guests in the active route workspace bypass the gate so the trial
  *    surface loads immediately.
  * 3. Everyone else needs a non-empty display name and email on `public.users` (anonymous
@@ -29,7 +31,7 @@ export function isDashboardProfileComplete(
   activeWorkspace: ProfileCompletionGateWorkspace,
   currentWorkspaceId: string,
 ): boolean {
-  if (!profile) return false;
+  if (!profile) return true;
 
   const isTrialGuestInActiveWorkspace =
     activeWorkspace?.id === currentWorkspaceId &&
