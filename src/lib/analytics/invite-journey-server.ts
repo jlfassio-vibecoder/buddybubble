@@ -1,7 +1,7 @@
 import { createServiceRoleClient } from '@/lib/supabase-service-role';
 import type { InviteJourneyStep } from '@/lib/analytics/invite-journey';
 
-function sanitizeDetail(d: Record<string, unknown>): Record<string, unknown> {
+export function sanitizeInviteJourneyDetail(d: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(d)) {
     if (k.length > 64) continue;
@@ -52,7 +52,7 @@ export async function insertInviteJourneyByToken(
         step,
         invitation_id: invitationId,
         invite_channel: inviteChannel,
-        ...sanitizeDetail(detail),
+        ...sanitizeInviteJourneyDetail(detail),
       },
     });
     if (error) {
@@ -60,5 +60,49 @@ export async function insertInviteJourneyByToken(
     }
   } catch (e) {
     console.error('[invite-journey] insert exception:', e);
+  }
+}
+
+/**
+ * Post-invite funnel steps after the invite cookie is cleared: attributes by `workspace_id`
+ * and verifies the user is still a member (service role read) before insert.
+ * Best-effort; never throws.
+ */
+export async function insertInviteJourneyForWorkspaceMember(
+  workspaceId: string,
+  userId: string,
+  step: InviteJourneyStep,
+  detail: Record<string, unknown> = {},
+): Promise<void> {
+  const ws = workspaceId.trim();
+  const uid = userId.trim();
+  if (!ws || !uid) return;
+
+  try {
+    const db = createServiceRoleClient();
+    const { data: mem } = await db
+      .from('workspace_members')
+      .select('user_id')
+      .eq('workspace_id', ws)
+      .eq('user_id', uid)
+      .maybeSingle();
+    if (!mem) return;
+
+    const { error } = await db.from('analytics_events').insert({
+      event_type: 'invite_journey_step',
+      workspace_id: ws,
+      user_id: uid,
+      metadata: {
+        step,
+        invitation_id: null,
+        invite_channel: null,
+        ...sanitizeInviteJourneyDetail(detail),
+      },
+    });
+    if (error) {
+      console.error('[invite-journey] workspace-member insert failed:', error.message);
+    }
+  } catch (e) {
+    console.error('[invite-journey] workspace-member insert exception:', e);
   }
 }

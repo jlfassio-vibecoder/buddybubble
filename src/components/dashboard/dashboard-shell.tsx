@@ -68,6 +68,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { useUpdatePresence } from '@/hooks/use-update-presence';
 import { ActiveUsersStack } from '@/components/presence/ActiveUsersStack';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
+import { isDashboardProfileComplete } from '@/lib/profile-helpers';
 import {
   shouldBlockWorkoutForExpiredMemberPreview,
   shouldSoftLockTrialSurfaces,
@@ -501,14 +502,7 @@ export function DashboardShell({
   }, [loadUserWorkspaces]);
 
   useEffect(() => {
-    if (profile === null) return;
-    const isTrialGuestInActiveWorkspace =
-      activeWorkspace?.id === workspaceId &&
-      activeWorkspace.role === 'guest' &&
-      activeWorkspace.onboarding_status === 'trial_active';
-    // Storefront trial guests should land directly in the trial experience;
-    // do not block with profile completion modal before the first workout appears.
-    setProfileComplete(isTrialGuestInActiveWorkspace || !!profile.full_name?.trim());
+    setProfileComplete(isDashboardProfileComplete(profile, activeWorkspace, workspaceId));
   }, [profile, activeWorkspace, workspaceId]);
 
   useEffect(() => {
