@@ -7,7 +7,7 @@ import { createClient } from '@utils/supabase/client';
 import { Button } from '@/components/ui/button';
 import { getAuthAppOrigin } from '@/lib/auth-app-origin';
 import { authCallbackAbsoluteUrl } from '@/lib/auth-callback-url';
-import { formatLoginAuthError } from '@/lib/format-error';
+import { formatLoginAuthError, formatUserFacingError } from '@/lib/format-error';
 import { BB_INVITE_HANDOFF_SESSION_KEY } from '@/lib/invite-handoff-storage';
 import { safeNextPath } from '@/lib/safe-next-path';
 import { persistInviteHandoffToken } from '@/app/(dashboard)/onboarding/actions';
@@ -74,13 +74,40 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
   useEffect(() => {
     if (!pkceCode) return;
     const supabase = createClient();
-    let finished = false;
-    void supabase.auth.exchangeCodeForSession(pkceCode).then(({ error }) => {
-      if (error || finished) return;
-      finished = true;
-      const path = resolvePostLoginPath(next, inviteToken);
-      window.location.assign(`${window.location.origin}${path}`);
-    });
+    let done = false;
+
+    const stripCodeFromUrl = () => {
+      try {
+        const u = new URL(window.location.href);
+        u.searchParams.delete('code');
+        window.history.replaceState(null, '', `${u.pathname}${u.search}${u.hash}`);
+      } catch {
+        /* ignore */
+      }
+    };
+
+    void supabase.auth
+      .exchangeCodeForSession(pkceCode)
+      .then(({ error }) => {
+        if (done) return;
+        if (error) {
+          done = true;
+          setError(formatLoginAuthError(error, 'sign-in'));
+          stripCodeFromUrl();
+          return;
+        }
+        done = true;
+        const path = resolvePostLoginPath(next, inviteToken);
+        window.location.assign(`${window.location.origin}${path}`);
+      })
+      .catch((err) => {
+        if (done) return;
+        done = true;
+        setError(
+          formatUserFacingError(err) || 'Sign-in link expired or invalid. Request a new link.',
+        );
+        stripCodeFromUrl();
+      });
   }, [pkceCode, next, inviteToken]);
 
   useEffect(() => {
