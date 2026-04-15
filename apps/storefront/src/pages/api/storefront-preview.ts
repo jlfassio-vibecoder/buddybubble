@@ -26,6 +26,10 @@ export const POST: APIRoute = async ({ request }) => {
 
   const crmOrigin = resolveCrmOriginForStorefront(getPublicEnv('PUBLIC_APP_ORIGIN'), hostHeader);
 
+  // Copilot suggestion ignored: forwarding the same IP headers as `storefront-trial.ts`; on Vercel
+  // the edge sets these — we do not trust arbitrary client-spoofed IPs beyond the platform’s behavior.
+
+  /** Forward visitor IP headers so the CRM rate limit / Turnstile see the browser IP, not the proxy hop. */
   const forwardClientIp: Record<string, string> = {};
   for (const name of [
     'x-forwarded-for',

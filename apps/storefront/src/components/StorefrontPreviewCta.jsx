@@ -167,6 +167,8 @@ function readInitialWizard(publicSlug, workspaceCategory) {
     profileDraft: /** @type {Record<string, unknown>} */ ({}),
     email: '',
     fitnessAiPreview: /** @type {Record<string, unknown> | null} */ (null),
+    /** After first successful refine→email; avoids migrating legacy `email` drafts forever. */
+    hasCompletedWorkoutRefine: false,
   };
   if (!slug) return empty;
   try {
@@ -183,7 +185,8 @@ function readInitialWizard(publicSlug, workspaceCategory) {
         : 'idle';
     let profileStep = typeof parsed.profileStep === 'number' ? parsed.profileStep : 0;
     profileStep = Math.max(0, Math.min(profileStep, stepList.length - 1));
-    if (cat === 'fitness' && phase === 'email') {
+    const hasCompletedWorkoutRefine = parsed.hasCompletedWorkoutRefine === true;
+    if (cat === 'fitness' && phase === 'email' && !hasCompletedWorkoutRefine) {
       phase = 'workout_refine';
       profileStep = Math.max(0, stepList.length - 1);
     }
@@ -205,7 +208,7 @@ function readInitialWizard(publicSlug, workspaceCategory) {
     if (cat === 'fitness' && phase === 'email') {
       fitnessAiPreview = null;
     }
-    return { phase, profileStep, profileDraft, email, fitnessAiPreview };
+    return { phase, profileStep, profileDraft, email, fitnessAiPreview, hasCompletedWorkoutRefine };
   } catch {
     return empty;
   }
@@ -249,6 +252,7 @@ export default function StorefrontPreviewCta({
     profileDraft: /** @type {Record<string, unknown>} */ ({}),
     email: '',
     fitnessAiPreview: /** @type {Record<string, unknown> | null} */ (null),
+    hasCompletedWorkoutRefine: false,
   }));
   const { phase, profileStep, profileDraft, email, fitnessAiPreview } = snap;
 
@@ -291,6 +295,7 @@ export default function StorefrontPreviewCta({
           profileDraft: snap.profileDraft,
           emailDraft: snap.email,
           fitnessAiPreview: snap.fitnessAiPreview,
+          hasCompletedWorkoutRefine: snap.hasCompletedWorkoutRefine,
         }),
       );
     } catch {
@@ -318,12 +323,13 @@ export default function StorefrontPreviewCta({
       phase: 'profile',
       profileStep: 0,
       fitnessAiPreview: null,
+      hasCompletedWorkoutRefine: false,
     }));
   }, []);
 
   const closeToIdle = useCallback(() => {
     setError(null);
-    setSnap((prev) => ({ ...prev, phase: 'idle' }));
+    setSnap((prev) => ({ ...prev, phase: 'idle', hasCompletedWorkoutRefine: false }));
   }, []);
 
   const currentStepDef = steps[profileStep] ?? null;
@@ -478,6 +484,7 @@ export default function StorefrontPreviewCta({
             phase: 'workout_refine',
             profileDraft: nextDraft,
             fitnessAiPreview: null,
+            hasCompletedWorkoutRefine: false,
           };
         });
         return;
@@ -504,6 +511,7 @@ export default function StorefrontPreviewCta({
       ...prev,
       phase: category === 'fitness' ? 'workout_refine' : 'profile',
       profileStep: Math.max(0, steps.length - 1),
+      hasCompletedWorkoutRefine: category === 'fitness' ? false : prev.hasCompletedWorkoutRefine,
     }));
   }, [category, steps.length]);
 
@@ -516,13 +524,14 @@ export default function StorefrontPreviewCta({
       phase: 'profile',
       profileStep: Math.max(0, steps.length - 1),
       fitnessAiPreview: null,
+      hasCompletedWorkoutRefine: false,
     }));
   }, [steps.length]);
 
   const continueWorkoutRefineToEmail = useCallback(() => {
     setTurnstileToken(null);
     setTurnstileWidgetError(null);
-    setSnap((prev) => ({ ...prev, phase: 'email' }));
+    setSnap((prev) => ({ ...prev, phase: 'email', hasCompletedWorkoutRefine: true }));
   }, []);
 
   const onEmailSubmit = useCallback(

@@ -19,6 +19,19 @@ function pickUnitSystem(raw: unknown): UnitSystem {
   return 'metric';
 }
 
+/** Max chars for freeform storefront notes stored in `biometrics` (profile JSON cap is separate). */
+const MAX_STOREFRONT_WORKOUT_NOTES_STORED = 8000;
+
+/** Only merge `biometrics` when `profile` looks like a DB row — not a raw storefront draft (avoids client-injected biometrics). */
+function looksLikePersistedFitnessProfileRow(o: Record<string, unknown>): boolean {
+  return (
+    typeof o.workspace_id === 'string' &&
+    o.workspace_id.length > 0 &&
+    typeof o.user_id === 'string' &&
+    o.user_id.length > 0
+  );
+}
+
 /** Coerce age (years) into a coarse age_range label used by workout prompts. */
 function ageToAgeRange(age: number): string {
   if (age < 18) return '18-25';
@@ -45,7 +58,12 @@ export function mapStorefrontProfileToFitnessProfileUpsert(profile: unknown): {
 
   const bio: Record<string, unknown> = {};
   const persistedBio = o.biometrics;
-  if (persistedBio !== null && typeof persistedBio === 'object' && !Array.isArray(persistedBio)) {
+  if (
+    looksLikePersistedFitnessProfileRow(o) &&
+    persistedBio !== null &&
+    typeof persistedBio === 'object' &&
+    !Array.isArray(persistedBio)
+  ) {
     Object.assign(bio, persistedBio as Record<string, unknown>);
   }
 
@@ -102,7 +120,11 @@ export function mapStorefrontProfileToFitnessProfileUpsert(profile: unknown): {
 
   const workoutNotes = o.storefront_workout_notes ?? o.storefrontWorkoutNotes;
   if (typeof workoutNotes === 'string' && workoutNotes.trim()) {
-    bio.storefront_workout_notes = workoutNotes.trim();
+    const t = workoutNotes.trim();
+    bio.storefront_workout_notes =
+      t.length > MAX_STOREFRONT_WORKOUT_NOTES_STORED
+        ? t.slice(0, MAX_STOREFRONT_WORKOUT_NOTES_STORED)
+        : t;
   }
 
   return {
