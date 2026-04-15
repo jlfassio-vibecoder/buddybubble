@@ -1,9 +1,6 @@
 import { Turnstile } from '@marsidev/react-turnstile';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import {
-  getFitnessWorkoutTemplateCopy,
-  WORKOUT_REFINE_PROMPTS,
-} from '../lib/fitness-workout-template-copy.js';
+import { WORKOUT_REFINE_PROMPTS } from '../lib/fitness-workout-template-copy.js';
 
 /** useLayoutEffect is a no-op on the server; avoids reading sessionStorage during the initial state initializer (hydration mismatch). */
 const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
@@ -169,6 +166,7 @@ function readInitialWizard(publicSlug, workspaceCategory) {
     profileStep: 0,
     profileDraft: /** @type {Record<string, unknown>} */ ({}),
     email: '',
+    fitnessAiPreview: /** @type {Record<string, unknown> | null} */ (null),
   };
   if (!slug) return empty;
   try {
@@ -189,6 +187,14 @@ function readInitialWizard(publicSlug, workspaceCategory) {
       phase = 'workout_refine';
       profileStep = Math.max(0, stepList.length - 1);
     }
+    let fitnessAiPreview = null;
+    if (
+      parsed.fitnessAiPreview &&
+      typeof parsed.fitnessAiPreview === 'object' &&
+      !Array.isArray(parsed.fitnessAiPreview)
+    ) {
+      fitnessAiPreview = parsed.fitnessAiPreview;
+    }
     const profileDraft =
       parsed.profileDraft &&
       typeof parsed.profileDraft === 'object' &&
@@ -196,7 +202,10 @@ function readInitialWizard(publicSlug, workspaceCategory) {
         ? parsed.profileDraft
         : {};
     const email = typeof parsed.emailDraft === 'string' ? parsed.emailDraft : '';
-    return { phase, profileStep, profileDraft, email };
+    if (cat === 'fitness' && phase === 'email') {
+      fitnessAiPreview = null;
+    }
+    return { phase, profileStep, profileDraft, email, fitnessAiPreview };
   } catch {
     return empty;
   }
@@ -239,8 +248,15 @@ export default function StorefrontPreviewCta({
     profileStep: 0,
     profileDraft: /** @type {Record<string, unknown>} */ ({}),
     email: '',
+    fitnessAiPreview: /** @type {Record<string, unknown> | null} */ (null),
   }));
-  const { phase, profileStep, profileDraft, email } = snap;
+  const { phase, profileStep, profileDraft, email, fitnessAiPreview } = snap;
+
+  /** Vertex outline fetch (questionnaire only — refine fields applied server-side later). */
+  const [previewFetchStatus, setPreviewFetchStatus] = useState(
+    /** @type {'idle' | 'loading' | 'error' | 'ready'} */ ('idle'),
+  );
+  const [previewFetchError, setPreviewFetchError] = useState(/** @type {string | null} */ (null));
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(/** @type {string | null} */ (null));
@@ -274,6 +290,7 @@ export default function StorefrontPreviewCta({
           profileStep: snap.profileStep,
           profileDraft: snap.profileDraft,
           emailDraft: snap.email,
+          fitnessAiPreview: snap.fitnessAiPreview,
         }),
       );
     } catch {
@@ -331,10 +348,98 @@ export default function StorefrontPreviewCta({
     return typeof v === 'string' && v.trim().length > 0;
   }, [currentStepDef, profileDraft]);
 
-  const workoutTemplateCopy = useMemo(
-    () => getFitnessWorkoutTemplateCopy(profileDraft),
-    [profileDraft],
+  /** Questionnaire fields only — initial Vertex outline ignores refine step fields. */
+  const questionnaireForVertex = useMemo(
+    () => ({
+      primary_goal: profileDraft.primary_goal,
+      experience_level: profileDraft.experience_level,
+      equipment: profileDraft.equipment,
+      unit_system: profileDraft.unit_system,
+    }),
+    [
+      profileDraft.primary_goal,
+      profileDraft.experience_level,
+      profileDraft.equipment,
+      profileDraft.unit_system,
+    ],
   );
+
+  const outlineFetchInFlightRef = useRef(false);
+
+  const fetchFitnessOutline = useCallback(async () => {
+    if (outlineFetchInFlightRef.current) return;
+    outlineFetchInFlightRef.current = true;
+    setPreviewFetchError(null);
+    setPreviewFetchStatus('loading');
+    try {
+      const res = await fetch('/api/storefront-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          profile: questionnaireForVertex,
+          ...(turnstileToken ? { turnstileToken } : {}),
+        }),
+      });
+      const data = /** @type {{ error?: string; preview?: Record<string, unknown> }} */ (
+        await res.json().catch(() => ({}))
+      );
+      if (!res.ok) {
+        setPreviewFetchError(
+          typeof data.error === 'string' ? data.error : 'Could not generate your workout outline.',
+        );
+        setPreviewFetchStatus('error');
+        return;
+      }
+      const p = data.preview;
+      if (!p || typeof p !== 'object' || !Array.isArray(p.main_exercises)) {
+        setPreviewFetchError('Invalid outline response.');
+        setPreviewFetchStatus('error');
+        return;
+      }
+      setSnap((prev) => ({ ...prev, fitnessAiPreview: p }));
+      setPreviewFetchStatus('ready');
+    } catch {
+      setPreviewFetchError('Network error.');
+      setPreviewFetchStatus('error');
+    } finally {
+      outlineFetchInFlightRef.current = false;
+    }
+  }, [questionnaireForVertex, turnstileToken]);
+
+  useEffect(() => {
+    if (
+      phase === 'workout_refine' &&
+      fitnessAiPreview?.title &&
+      Array.isArray(fitnessAiPreview.main_exercises)
+    ) {
+      setPreviewFetchStatus('ready');
+    }
+  }, [phase, fitnessAiPreview]);
+
+  useEffect(() => {
+    if (phase !== 'workout_refine' || category !== 'fitness') {
+      return;
+    }
+    if (fitnessAiPreview?.title && Array.isArray(fitnessAiPreview.main_exercises)) {
+      return;
+    }
+    const siteKeyOk = typeof turnstileSiteKey === 'string' && turnstileSiteKey.trim().length > 0;
+    if (import.meta.env.PROD && !siteKeyOk) {
+      return;
+    }
+    if (siteKeyOk && !turnstileToken) {
+      return;
+    }
+    void fetchFitnessOutline();
+  }, [
+    phase,
+    category,
+    fitnessAiPreview,
+    turnstileToken,
+    turnstileSiteKey,
+    questionnaireForVertex,
+    fetchFitnessOutline,
+  ]);
 
   const setIntensityPreference = useCallback((value) => {
     setSnap((prev) => ({
@@ -355,11 +460,18 @@ export default function StorefrontPreviewCta({
     const movingToEmail = profileStep >= steps.length - 1;
     if (movingToEmail) {
       if (category === 'fitness') {
+        setPreviewFetchStatus('idle');
+        setPreviewFetchError(null);
         setSnap((prev) => {
           const d = prev.profileDraft;
           const nextDraft =
             typeof d.intensity_preference === 'string' ? d : { ...d, intensity_preference: 'same' };
-          return { ...prev, phase: 'workout_refine', profileDraft: nextDraft };
+          return {
+            ...prev,
+            phase: 'workout_refine',
+            profileDraft: nextDraft,
+            fitnessAiPreview: null,
+          };
         });
         return;
       }
@@ -389,10 +501,13 @@ export default function StorefrontPreviewCta({
   }, [category, steps.length]);
 
   const goBackFromWorkoutRefine = useCallback(() => {
+    setPreviewFetchStatus('idle');
+    setPreviewFetchError(null);
     setSnap((prev) => ({
       ...prev,
       phase: 'profile',
       profileStep: Math.max(0, steps.length - 1),
+      fitnessAiPreview: null,
     }));
   }, [steps.length]);
 
