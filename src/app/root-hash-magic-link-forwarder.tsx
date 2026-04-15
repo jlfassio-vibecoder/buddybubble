@@ -9,9 +9,11 @@ import { useEffect } from 'react';
 export function HashMagicLinkForwarder(): null {
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const hash = window.location.hash || '';
+    const { hash = '', origin, pathname, search, href } = window.location;
     if (!hash.includes('access_token=')) return;
-    const next = `${window.location.origin}/login${window.location.search}${hash}`;
+    if (pathname === '/login') return;
+    const next = `${origin}/login${search}${hash}`;
+    if (next === href) return;
     window.location.replace(next);
   }, []);
 

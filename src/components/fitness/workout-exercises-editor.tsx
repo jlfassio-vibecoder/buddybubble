@@ -96,6 +96,18 @@ function newSortableId(): string {
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function exerciseStableSig(ex: WorkoutExercise): string {
+  return JSON.stringify(ex);
+}
+
+function multisetEqualStrings(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sa = [...a].sort();
+  const sb = [...b].sort();
+  for (let i = 0; i < sa.length; i++) if (sa[i] !== sb[i]) return false;
+  return true;
+}
+
 /** Keeps inline edit index aligned with `arrayMove` on the exercise list. */
 function mapEditingIndexAfterReorder(
   editing: number | null,
@@ -401,17 +413,48 @@ export function WorkoutExercisesEditor({
   const [editRpe, setEditRpe] = useState('');
 
   const [sortIds, setSortIds] = useState<string[]>(() => exercises.map(() => newSortableId()));
+  const prevExercisesRef = useRef<WorkoutExercise[]>(exercises);
 
   useLayoutEffect(() => {
+    const prevEx = prevExercisesRef.current;
     setSortIds((prev) => {
       const n = exercises.length;
-      if (prev.length === n) return prev;
-      if (n > prev.length) {
-        return [...prev, ...Array.from({ length: n - prev.length }, () => newSortableId())];
+      if (n !== prev.length) {
+        if (n > prev.length) {
+          return [...prev, ...Array.from({ length: n - prev.length }, () => newSortableId())];
+        }
+        return prev.slice(0, n);
       }
-      return prev.slice(0, n);
+      if (prev.length !== n) {
+        return exercises.map(() => newSortableId());
+      }
+      const prevSigs = prevEx.map(exerciseStableSig);
+      const nextSigs = exercises.map(exerciseStableSig);
+      if (multisetEqualStrings(prevSigs, nextSigs)) {
+        const buckets = new Map<string, string[]>();
+        for (let i = 0; i < n; i++) {
+          const s = prevSigs[i]!;
+          const arr = buckets.get(s) ?? [];
+          arr.push(prev[i]!);
+          buckets.set(s, arr);
+        }
+        return exercises.map((ex) => {
+          const s = exerciseStableSig(ex);
+          const arr = buckets.get(s) ?? [];
+          const id = arr.shift();
+          if (!arr.length) buckets.delete(s);
+          else buckets.set(s, arr);
+          return id ?? newSortableId();
+        });
+      }
+      return exercises.map((ex, i) => {
+        const p = prevEx[i];
+        if (p && exerciseStableSig(p) === exerciseStableSig(ex)) return prev[i]!;
+        return newSortableId();
+      });
     });
-  }, [exercises.length]);
+    prevExercisesRef.current = exercises;
+  }, [exercises]);
 
   const dragSensors = useSensors(
     useSensor(PointerSensor, {

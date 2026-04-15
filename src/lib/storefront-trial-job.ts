@@ -52,12 +52,12 @@ async function insertFallbackTrialWorkoutTask(
     .order('position', { ascending: true })
     .limit(1);
 
+  let statusSlug = 'planned';
   if (error) {
     console.error('[storefront-trial-job] board_columns', error);
-    return false;
+  } else if (typeof data?.[0]?.slug === 'string' && data[0].slug.trim()) {
+    statusSlug = data[0].slug.trim();
   }
-  const statusSlug =
-    typeof data?.[0]?.slug === 'string' && data[0].slug.trim() ? data[0].slug.trim() : 'planned';
   const metadata: Json = {
     exercises: FALLBACK_EXERCISES,
     workout_type: 'strength',

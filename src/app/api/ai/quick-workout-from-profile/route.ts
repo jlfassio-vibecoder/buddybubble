@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@utils/supabase/server';
+import { canWriteBubble, parseMemberRole } from '@/lib/permissions';
 import { createServiceRoleClient } from '@/lib/supabase-service-role';
 import { insertWorkoutTaskFromStorefrontPreview } from '@/lib/storefront-trial-workout-task';
 import { runStorefrontPreviewGeneration } from '@/lib/workout-factory/storefront-preview-runner';
-import type { FitnessProfileRow } from '@/types/database';
+import type { BubbleMemberRole, FitnessProfileRow } from '@/types/database';
 
 export const maxDuration = 90;
 
@@ -57,7 +58,7 @@ export async function POST(req: Request) {
 
     const { data: membership, error: memErr } = await supabase
       .from('workspace_members')
-      .select('user_id')
+      .select('user_id, role')
       .eq('workspace_id', workspaceId)
       .eq('user_id', user.id)
       .maybeSingle();
@@ -84,7 +85,7 @@ export async function POST(req: Request) {
 
     const { data: bubble, error: bErr } = await supabase
       .from('bubbles')
-      .select('id, workspace_id')
+      .select('id, workspace_id, is_private')
       .eq('id', bubbleId)
       .maybeSingle();
 
@@ -100,13 +101,23 @@ export async function POST(req: Request) {
 
     const { data: bm, error: bmErr } = await supabase
       .from('bubble_members')
-      .select('user_id')
+      .select('user_id, role')
       .eq('bubble_id', bubbleId)
       .eq('user_id', user.id)
       .maybeSingle();
 
     if (bmErr || !bm) {
       return NextResponse.json({ error: 'Not a member of this bubble' }, { status: 403 });
+    }
+
+    const workspaceRole = parseMemberRole((membership as { role?: string | null }).role);
+    const bubbleMemberRole = (bm as { role: BubbleMemberRole }).role;
+    const bubblePrivate = Boolean((bubble as { is_private?: boolean }).is_private);
+    if (!canWriteBubble(workspaceRole, bubbleMemberRole, bubblePrivate)) {
+      return NextResponse.json(
+        { error: 'You do not have permission to create tasks in this bubble' },
+        { status: 403 },
+      );
     }
 
     if (rateLimitHit(user.id)) {
