@@ -55,9 +55,46 @@ function trialExpiresIso(): string {
   return d.toISOString();
 }
 
-function loginNextUrl(workspaceId: string, trialBubbleId: string): string {
-  const path = `/app/${workspaceId}?bubble=${encodeURIComponent(trialBubbleId)}`;
-  return `/login?next=${encodeURIComponent(path)}`;
+function trialDeepLinkPath(workspaceId: string, trialBubbleId: string): string {
+  return `/app/${workspaceId}?bubble=${encodeURIComponent(trialBubbleId)}`;
+}
+
+/**
+ * One-time Supabase magic link so the browser gets a real session after server-side user creation.
+ * `redirectTo` must be allowlisted in Supabase → Authentication → URL Configuration.
+ *
+ * Use `/login?next=…` (not `/auth/callback`): email magic links often return tokens in the URL
+ * **hash**, which never reaches a Route Handler; `/login` already applies the hash client-side
+ * (`LoginForm`). `/auth/callback` only exchanges `?code=` (PKCE) and otherwise redirects to login.
+ */
+async function storefrontTrialHandoffActionLink(
+  db: ReturnType<typeof createServiceRoleClient>,
+  origin: string,
+  email: string,
+  workspaceId: string,
+  trialBubbleId: string,
+): Promise<string> {
+  const nextPath = trialDeepLinkPath(workspaceId, trialBubbleId);
+  const redirectTo = `${origin}/login?next=${encodeURIComponent(nextPath)}`;
+
+  const { data, error } = await db.auth.admin.generateLink({
+    type: 'magiclink',
+    email,
+    options: { redirectTo },
+  });
+
+  if (error) {
+    console.error('[leads/storefront-trial] generateLink', error.message);
+    throw new Error('Could not create sign-in link');
+  }
+
+  const actionLink = data?.properties?.action_link;
+  if (typeof actionLink !== 'string' || !actionLink.startsWith('http')) {
+    console.error('[leads/storefront-trial] generateLink missing action_link');
+    throw new Error('Could not create sign-in link');
+  }
+
+  return actionLink;
 }
 
 async function upsertFitnessProfileFromStorefrontIfApplicable(
@@ -316,7 +353,13 @@ export async function POST(req: Request) {
         });
       }
 
-      const next = `${origin}${loginNextUrl(workspaceId, existing.trialBubbleId)}`;
+      const next = await storefrontTrialHandoffActionLink(
+        db,
+        origin,
+        emailRaw,
+        workspaceId,
+        existing.trialBubbleId,
+      );
       return NextResponse.json({
         ok: true,
         workspaceId,
@@ -407,7 +450,13 @@ export async function POST(req: Request) {
       });
     }
 
-    const next = `${origin}${loginNextUrl(workspaceId, trialBubbleId)}`;
+    const next = await storefrontTrialHandoffActionLink(
+      db,
+      origin,
+      emailRaw,
+      workspaceId,
+      trialBubbleId,
+    );
 
     return NextResponse.json({
       ok: true,
