@@ -7,7 +7,7 @@ import { createClient } from '@utils/supabase/client';
 import { Button } from '@/components/ui/button';
 import { getAuthAppOrigin } from '@/lib/auth-app-origin';
 import { authCallbackAbsoluteUrl } from '@/lib/auth-callback-url';
-import { formatLoginAuthError } from '@/lib/format-error';
+import { formatLoginAuthError, formatUserFacingError } from '@/lib/format-error';
 import { BB_INVITE_HANDOFF_SESSION_KEY } from '@/lib/invite-handoff-storage';
 import { safeNextPath } from '@/lib/safe-next-path';
 import { persistInviteHandoffToken } from '@/app/(dashboard)/onboarding/actions';
@@ -48,6 +48,7 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
   const searchParams = useSearchParams();
   const next = safeNextPath(searchParams.get('next')) ?? '/app';
   const inviteToken = searchParams.get('invite_token')?.trim() || null;
+  const pkceCode = searchParams.get('code')?.trim() || null;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +69,46 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
       next_query: next,
     });
   }, [inviteToken, next]);
+
+  /** PKCE: `?code=` may land on `/login` depending on Supabase / redirect configuration. */
+  useEffect(() => {
+    if (!pkceCode) return;
+    const supabase = createClient();
+    let done = false;
+
+    const stripCodeFromUrl = () => {
+      try {
+        const u = new URL(window.location.href);
+        u.searchParams.delete('code');
+        window.history.replaceState(null, '', `${u.pathname}${u.search}${u.hash}`);
+      } catch {
+        /* ignore */
+      }
+    };
+
+    void supabase.auth
+      .exchangeCodeForSession(pkceCode)
+      .then(({ error }) => {
+        if (done) return;
+        if (error) {
+          done = true;
+          setError(formatLoginAuthError(error, 'sign-in'));
+          stripCodeFromUrl();
+          return;
+        }
+        done = true;
+        const path = resolvePostLoginPath(next, inviteToken);
+        window.location.assign(`${window.location.origin}${path}`);
+      })
+      .catch((err) => {
+        if (done) return;
+        done = true;
+        setError(
+          formatUserFacingError(err) || 'Sign-in link expired or invalid. Request a new link.',
+        );
+        stripCodeFromUrl();
+      });
+  }, [pkceCode, next, inviteToken]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -98,8 +139,7 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
         });
       }
       window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
-      router.replace(path);
-      router.refresh();
+      window.location.assign(`${window.location.origin}${path}`);
     };
 
     void supabase.auth.getSession().then(({ data: { session } }) => {
@@ -116,7 +156,7 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
     });
 
     return () => subscription.unsubscribe();
-  }, [router, next, inviteToken]);
+  }, [next, inviteToken]);
 
   const redirectTo =
     typeof window !== 'undefined'
