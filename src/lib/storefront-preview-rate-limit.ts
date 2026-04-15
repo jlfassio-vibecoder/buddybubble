@@ -4,7 +4,8 @@
  * **Production:** Set `KV_REST_API_URL` + `KV_REST_API_TOKEN` (Vercel KV / Upstash-backed KV) so limits
  * are shared across all serverless instances.
  *
- * **Fallback:** In-process `Map` — only suitable for local dev; multiple instances do NOT share state.
+ * **Fallback:** In-process `Map` when KV is missing or errors — limits are not shared across
+ * serverless instances; configure KV for accurate production-wide caps.
  */
 
 const MAX_PER_DAY = 3;
@@ -78,20 +79,11 @@ export async function enforceStorefrontPreviewRateLimit(
       return { ok: true, count, backend: 'kv' };
     } catch (e) {
       console.error('[storefront-preview-rate-limit] KV error, falling back to memory:', e);
-      if (process.env.NODE_ENV === 'production') {
-        return {
-          ok: false,
-          status: 503,
-          message: 'Rate limit service unavailable',
-        };
-      }
     }
   } else if (process.env.NODE_ENV === 'production') {
-    return {
-      ok: false,
-      status: 503,
-      message: 'Rate limit unavailable (configure KV_REST_API_URL + KV_REST_API_TOKEN)',
-    };
+    console.warn(
+      '[storefront-preview-rate-limit] KV not configured; using in-memory daily cap (not shared across serverless instances). Set KV_REST_API_URL + KV_REST_API_TOKEN for production.',
+    );
   }
 
   if (process.env.NODE_ENV === 'development') {
