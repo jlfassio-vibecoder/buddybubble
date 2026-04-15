@@ -154,7 +154,7 @@ function buildProfileContextBlock(profile: unknown): string {
       `Units: ${mapped.unit_system}`,
       `Biometrics / notes: ${JSON.stringify(mapped.biometrics)}`,
     ];
-    return parts.join('\n');
+    return parts.join('\n') + sessionExtra;
   }
   if (profile && typeof profile === 'object' && !Array.isArray(profile)) {
     return (

@@ -186,12 +186,15 @@ function readInitialWizard(publicSlug, workspaceCategory) {
     let profileStep = typeof parsed.profileStep === 'number' ? parsed.profileStep : 0;
     profileStep = Math.max(0, Math.min(profileStep, stepList.length - 1));
     const hasCompletedWorkoutRefine = parsed.hasCompletedWorkoutRefine === true;
-    if (cat === 'fitness' && phase === 'email' && !hasCompletedWorkoutRefine) {
+    const migratedLegacyEmailToRefine =
+      cat === 'fitness' && phase === 'email' && !hasCompletedWorkoutRefine;
+    if (migratedLegacyEmailToRefine) {
       phase = 'workout_refine';
       profileStep = Math.max(0, stepList.length - 1);
     }
     let fitnessAiPreview = null;
     if (
+      !migratedLegacyEmailToRefine &&
       parsed.fitnessAiPreview &&
       typeof parsed.fitnessAiPreview === 'object' &&
       !Array.isArray(parsed.fitnessAiPreview)
