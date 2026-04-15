@@ -61,8 +61,10 @@ function trialDeepLinkPath(workspaceId: string, trialBubbleId: string): string {
 }
 
 /**
- * Builds a one-time Supabase verify URL (`action_link`). `generateLink` does **not** send email;
- * we email that URL via {@link sendStorefrontTrialLoginEmail} in production.
+ * Builds the one-time Supabase verify URL (`action_link`). Same idea as invite links: the URL is
+ * the handoff — we return it as `next` for an immediate browser redirect. `generateLink` does not
+ * send mail; optional duplicate email via Resend when configured (like copying an invite link vs
+ * emailing it).
  *
  * `redirectTo` must be allowlisted in Supabase → Authentication → URL Configuration.
  * Use `/login?next=…` (not `/auth/callback`): magic links often return tokens in the URL **hash**,
@@ -98,50 +100,16 @@ async function buildStorefrontTrialMagicLink(
   return actionLink;
 }
 
-type HandoffDelivery = { loginLinkSent: true } | { loginLinkSent: false; next: string };
-
-/**
- * Production: email the magic link (never return it in JSON). Development: optional instant redirect
- * when `STOREFRONT_TRIAL_DEV_RETURN_MAGIC_LINK=1` for local testing without Resend.
- */
-async function deliverStorefrontTrialHandoff(
-  db: ReturnType<typeof createServiceRoleClient>,
-  origin: string,
-  email: string,
-  workspaceId: string,
-  trialBubbleId: string,
-): Promise<HandoffDelivery | { error: string; status: number }> {
-  const actionLink = await buildStorefrontTrialMagicLink(
-    db,
-    origin,
-    email,
-    workspaceId,
-    trialBubbleId,
-  );
-
-  const devReturnMagicLink =
-    process.env.NODE_ENV === 'development' &&
-    process.env.STOREFRONT_TRIAL_DEV_RETURN_MAGIC_LINK === '1';
-
-  if (devReturnMagicLink) {
-    return { loginLinkSent: false, next: actionLink };
+/** Best-effort duplicate to inbox when Resend is configured; never blocks the redirect flow. */
+async function maybeEmailStorefrontTrialLoginDuplicate(
+  to: string,
+  magicLinkUrl: string,
+): Promise<void> {
+  if (!process.env.RESEND_API_KEY?.trim() || !process.env.RESEND_FROM?.trim()) return;
+  const r = await sendStorefrontTrialLoginEmail({ to, magicLinkUrl });
+  if (r.error) {
+    console.warn('[leads/storefront-trial] optional login email not sent:', r.error);
   }
-
-  const sent = await sendStorefrontTrialLoginEmail({
-    to: email,
-    magicLinkUrl: actionLink,
-  });
-
-  if (sent.error) {
-    console.error('[leads/storefront-trial] send login email', sent.error);
-    return {
-      error:
-        'Could not send sign-in email. Configure RESEND_API_KEY and RESEND_FROM on the app server, then try again.',
-      status: 503,
-    };
-  }
-
-  return { loginLinkSent: true };
 }
 
 async function upsertFitnessProfileFromStorefrontIfApplicable(
@@ -400,24 +368,21 @@ export async function POST(req: Request) {
         });
       }
 
-      const handoff = await deliverStorefrontTrialHandoff(
+      const next = await buildStorefrontTrialMagicLink(
         db,
         origin,
         emailRaw,
         workspaceId,
         existing.trialBubbleId,
       );
-      if ('error' in handoff) {
-        return NextResponse.json({ error: handoff.error }, { status: handoff.status });
-      }
+      void maybeEmailStorefrontTrialLoginDuplicate(emailRaw, next);
       return NextResponse.json({
         ok: true,
         workspaceId,
         leadId: existing.leadId,
         userId,
         trialBubbleId: existing.trialBubbleId,
-        loginLinkSent: handoff.loginLinkSent,
-        ...(handoff.loginLinkSent ? {} : { next: handoff.next }),
+        next,
         idempotent: true,
       });
     }
@@ -501,16 +466,14 @@ export async function POST(req: Request) {
       });
     }
 
-    const handoff = await deliverStorefrontTrialHandoff(
+    const next = await buildStorefrontTrialMagicLink(
       db,
       origin,
       emailRaw,
       workspaceId,
       trialBubbleId,
     );
-    if ('error' in handoff) {
-      return NextResponse.json({ error: handoff.error }, { status: handoff.status });
-    }
+    void maybeEmailStorefrontTrialLoginDuplicate(emailRaw, next);
 
     return NextResponse.json({
       ok: true,
@@ -518,8 +481,7 @@ export async function POST(req: Request) {
       leadId,
       userId,
       trialBubbleId,
-      loginLinkSent: handoff.loginLinkSent,
-      ...(handoff.loginLinkSent ? {} : { next: handoff.next }),
+      next,
     });
   } catch (e) {
     console.error('[leads/storefront-trial]', e instanceof Error ? e.message : 'Unknown error');
