@@ -183,7 +183,7 @@ export async function runStorefrontTrialWorkoutJob(
     );
   }
 
-  await insertTrialWorkoutTask(db, {
+  const fallbackOk = await insertTrialWorkoutTask(db, {
     trialBubbleId,
     userId,
     workspaceId,
@@ -192,6 +192,11 @@ export async function runStorefrontTrialWorkoutJob(
       'We added a starter workout you can edit. If AI was unavailable, replace these with your plan.',
     exercises: FALLBACK_EXERCISES,
   });
+  if (!fallbackOk) {
+    console.error(
+      '[storefront-trial-job] fallback trial workout insert failed after AI generation failure',
+    );
+  }
 }
 
 /** Schedule Vertex + task insert after the HTTP response (same invocation, extended `maxDuration`). */
