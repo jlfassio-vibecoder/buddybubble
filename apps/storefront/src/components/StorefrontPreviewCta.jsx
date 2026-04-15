@@ -311,7 +311,14 @@ export default function StorefrontPreviewCta({
     setError(null);
     setTurnstileToken(null);
     setTurnstileWidgetError(null);
-    setSnap((prev) => ({ ...prev, phase: 'profile', profileStep: 0 }));
+    setPreviewFetchStatus('idle');
+    setPreviewFetchError(null);
+    setSnap((prev) => ({
+      ...prev,
+      phase: 'profile',
+      profileStep: 0,
+      fitnessAiPreview: null,
+    }));
   }, []);
 
   const closeToIdle = useCallback(() => {
@@ -501,6 +508,7 @@ export default function StorefrontPreviewCta({
   }, [category, steps.length]);
 
   const goBackFromWorkoutRefine = useCallback(() => {
+    outlineFetchInFlightRef.current = false;
     setPreviewFetchStatus('idle');
     setPreviewFetchError(null);
     setSnap((prev) => ({
@@ -713,63 +721,169 @@ export default function StorefrontPreviewCta({
       typeof profileDraft.storefront_workout_notes === 'string'
         ? profileDraft.storefront_workout_notes
         : '';
-    const tc = workoutTemplateCopy;
+    const siteKeyOk = typeof turnstileSiteKey === 'string' && turnstileSiteKey.trim().length > 0;
+    const prodMissingSiteKey = import.meta.env.PROD && !siteKeyOk;
+    const p = fitnessAiPreview;
+    const outlineReady =
+      p &&
+      typeof p.title === 'string' &&
+      typeof p.summary === 'string' &&
+      Array.isArray(p.main_exercises);
+    const exercises = outlineReady
+      ? p.main_exercises.filter((ex) => ex && typeof ex === 'object')
+      : [];
 
     return (
       <div className="w-full max-w-xl rounded-2xl border border-white/20 bg-black/35 p-4 shadow-xl backdrop-blur-md sm:max-w-md">
         <div className="mb-3 flex items-center justify-between gap-2">
           <p className="text-xs font-medium uppercase tracking-wide text-white/60">
-            Your workout template
+            Your workout outline
           </p>
           <button type="button" onClick={closeToIdle} className={ghostBtnClass}>
             Close
           </button>
         </div>
-        <h2 className="text-base font-semibold text-white">{tc.headline}</h2>
-        <p className="mt-2 text-sm text-white/85">{tc.focusLine}</p>
-        {tc.equipmentLine ? <p className="mt-2 text-sm text-white/80">{tc.equipmentLine}</p> : null}
-        <p className="mt-4 text-xs font-medium uppercase tracking-wide text-white/50">
-          Session intensity
-        </p>
-        <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-          {[
-            { id: 'lighter', label: 'A bit easier' },
-            { id: 'same', label: 'About right' },
-            { id: 'harder', label: 'More challenging' },
-          ].map(({ id, label }) => {
-            const active = intensityValue === id;
-            return (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setIntensityPreference(id)}
-                className={choiceBtnClass(active)}
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
-        <p className="mt-4 text-xs font-medium uppercase tracking-wide text-white/50">
-          Anything we should account for?
-        </p>
-        <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-white/75">
-          {WORKOUT_REFINE_PROMPTS.map((line, i) => (
-            <li key={i}>{line}</li>
-          ))}
-        </ul>
-        <label className="sr-only" htmlFor="storefront-workout-notes">
-          Additional notes for your coach
-        </label>
-        <textarea
-          id="storefront-workout-notes"
-          name="storefront_workout_notes"
-          rows={4}
-          value={notesValue}
-          onChange={(ev) => setWorkoutNotes(ev.target.value)}
-          placeholder="Equipment limits, injuries, soreness, intensity preferences, or anything else…"
-          className={`${inputClass} mt-3 min-h-[96px] resize-y`}
-        />
+        {prodMissingSiteKey ? (
+          <p className="mt-2 rounded-lg border border-amber-400/40 bg-amber-500/15 px-3 py-2 text-xs text-amber-100">
+            AI preview needs{' '}
+            <span className="font-mono text-[0.7rem]">PUBLIC_TURNSTILE_SITE_KEY</span> on the
+            storefront project (same as email step).
+          </p>
+        ) : null}
+        {siteKeyOk ? (
+          <div className="mt-3 flex min-h-[72px] w-full max-w-[320px] flex-col items-center justify-center gap-2 self-center">
+            <Turnstile
+              siteKey={turnstileSiteKey.trim()}
+              options={{ appearance: 'always', size: 'normal', theme: 'auto' }}
+              onSuccess={(token) => {
+                setTurnstileWidgetError(null);
+                setTurnstileToken(token);
+              }}
+              onExpire={() => {
+                setTurnstileToken(null);
+                setTurnstileWidgetError(
+                  'Security check expired. It will refresh automatically, or reload the page.',
+                );
+              }}
+              onError={(code) => {
+                setTurnstileToken(null);
+                setTurnstileWidgetError(
+                  `Turnstile could not run (code ${code ?? 'unknown'}). Check hostnames in Cloudflare Turnstile for this site.`,
+                );
+              }}
+            />
+            {turnstileWidgetError ? (
+              <p className="text-center text-xs text-amber-100" role="alert">
+                {turnstileWidgetError}
+              </p>
+            ) : !turnstileToken ? (
+              <p className="text-center text-[0.65rem] text-white/50">
+                Complete the check so we can generate your outline.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {previewFetchStatus === 'loading' ? (
+          <p className="mt-4 text-sm text-white/85">Generating your personalized outline…</p>
+        ) : null}
+        {previewFetchError ? (
+          <div className="mt-4 space-y-2">
+            <p className="text-xs text-red-200" role="alert">
+              {previewFetchError}
+            </p>
+            <button
+              type="button"
+              onClick={() => void fetchFitnessOutline()}
+              className={ghostBtnClass}
+            >
+              Try again
+            </button>
+          </div>
+        ) : null}
+        {outlineReady ? (
+          <div className="mt-4 space-y-3 border-t border-white/15 pt-4">
+            <h2 className="text-base font-semibold text-white">{String(p.title)}</h2>
+            {typeof p.tagline === 'string' && p.tagline.trim() ? (
+              <p className="text-sm text-white/80">{p.tagline.trim()}</p>
+            ) : null}
+            <p className="text-xs text-white/60">
+              {typeof p.day_label === 'string' ? p.day_label : 'Session'}{' '}
+              {typeof p.estimated_minutes === 'number' ? ` · ~${p.estimated_minutes} min` : ''}
+            </p>
+            <p className="text-sm leading-relaxed text-white/90">{String(p.summary)}</p>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-white/50">Exercises</p>
+              <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm text-white/90">
+                {exercises.map((ex, i) => {
+                  const row = /** @type {Record<string, unknown>} */ (ex);
+                  const name = typeof row.name === 'string' ? row.name : 'Exercise';
+                  const detail = typeof row.detail === 'string' ? row.detail : '';
+                  return (
+                    <li key={i}>
+                      <span className="font-medium">{name}</span>
+                      {detail ? <span className="text-white/80"> — {detail}</span> : null}
+                    </li>
+                  );
+                })}
+              </ol>
+            </div>
+            {typeof p.coach_tip === 'string' && p.coach_tip.trim() ? (
+              <p className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-white/90">
+                <span className="font-medium text-white/70">Coach tip: </span>
+                {p.coach_tip.trim()}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {outlineReady ? (
+          <>
+            <p className="mt-6 text-xs font-medium uppercase tracking-wide text-white/50">
+              Adjust for this session
+            </p>
+            <p className="mt-4 text-xs font-medium uppercase tracking-wide text-white/50">
+              Session intensity
+            </p>
+            <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+              {[
+                { id: 'lighter', label: 'A bit easier' },
+                { id: 'same', label: 'About right' },
+                { id: 'harder', label: 'More challenging' },
+              ].map(({ id, label }) => {
+                const active = intensityValue === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setIntensityPreference(id)}
+                    className={choiceBtnClass(active)}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-4 text-xs font-medium uppercase tracking-wide text-white/50">
+              Anything we should account for?
+            </p>
+            <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-white/75">
+              {WORKOUT_REFINE_PROMPTS.map((line, i) => (
+                <li key={i}>{line}</li>
+              ))}
+            </ul>
+            <label className="sr-only" htmlFor="storefront-workout-notes">
+              Additional notes for your coach
+            </label>
+            <textarea
+              id="storefront-workout-notes"
+              name="storefront_workout_notes"
+              rows={4}
+              value={notesValue}
+              onChange={(ev) => setWorkoutNotes(ev.target.value)}
+              placeholder="Equipment limits, injuries, soreness, intensity preferences, or anything else…"
+              className={`${inputClass} mt-3 min-h-[96px] resize-y`}
+            />
+          </>
+        ) : null}
         <div className="mt-6 flex flex-wrap gap-2">
           <button type="button" onClick={goBackFromWorkoutRefine} className={ghostBtnClass}>
             Back
@@ -777,7 +891,8 @@ export default function StorefrontPreviewCta({
           <button
             type="button"
             onClick={continueWorkoutRefineToEmail}
-            className="ml-auto inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold text-white ring-2 ring-white/20 transition hover:brightness-110"
+            disabled={!outlineReady || previewFetchStatus === 'loading'}
+            className="ml-auto inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold text-white ring-2 ring-white/20 transition hover:brightness-110 disabled:pointer-events-none disabled:opacity-50"
             style={{ backgroundColor: accent }}
           >
             Continue to email
