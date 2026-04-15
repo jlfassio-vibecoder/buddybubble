@@ -1,5 +1,6 @@
 'use client';
 
+import { X } from 'lucide-react';
 import { useTaskCardCoverUrl } from '@/lib/task-card-cover';
 import { cn } from '@/lib/utils';
 
@@ -9,13 +10,21 @@ export type TaskModalHeroProps = {
   /** Supabase Storage path in `task-attachments`, or empty when no cover. */
   coverPath: string | null;
   className?: string;
+  /** Pinned top-right on the hero so the modal stays closable while the body scrolls. */
+  onClose?: () => void;
 };
 
 /**
  * Read-only preview hero for persisted tasks: full 16:9 frame, cover with `object-contain` (full aspect ratio),
  * title + description overlay. Editable fields live in Details below.
  */
-export function TaskModalHero({ title, description, coverPath, className }: TaskModalHeroProps) {
+export function TaskModalHero({
+  title,
+  description,
+  coverPath,
+  className,
+  onClose,
+}: TaskModalHeroProps) {
   const path = coverPath?.trim() || null;
   const { url, loading } = useTaskCardCoverUrl(path);
   const hasImage = Boolean(path);
@@ -31,6 +40,22 @@ export function TaskModalHero({ title, description, coverPath, className }: Task
           'aspect-video w-full',
         )}
       >
+        {onClose ? (
+          <button
+            type="button"
+            className={cn(
+              'absolute right-2 top-2 z-20 rounded-lg border p-2 shadow-sm transition-colors',
+              showOverlay
+                ? 'border-white/25 bg-black/45 text-white hover:bg-black/60'
+                : 'border-border/60 bg-card/95 text-muted-foreground hover:bg-muted hover:text-foreground',
+            )}
+            aria-label="Close"
+            onClick={onClose}
+          >
+            <X className="h-5 w-5" aria-hidden />
+          </button>
+        ) : null}
+
         {hasImage && loading && !url ? (
           <div className="absolute inset-0 animate-pulse bg-muted" aria-hidden />
         ) : null}

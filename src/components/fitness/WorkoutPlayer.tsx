@@ -1,11 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import {
   AlignLeft,
   Check,
   Dumbbell,
+  Info,
   List,
   Monitor,
   Plus,
@@ -36,8 +37,13 @@ type SetDraft = {
 export type WorkoutPlayerProps = {
   open: boolean;
   onClose: () => void;
-  /** 'desktop' renders a centered dialog; 'mobile' renders a bottom sheet. */
+  /**
+   * 'desktop' | 'mobile' forces that chrome. Omit to auto-pick from viewport when opened
+   * (`max-width: 768px` → mobile bottom sheet).
+   */
   mode?: 'desktop' | 'mobile';
+  /** Used to load `fitness_profiles.unit_system` for the active workspace (not cross-workspace). */
+  workspaceId: string;
   workoutTitle: string;
   exercises: WorkoutExercise[];
   bubbleId: string;
@@ -62,6 +68,26 @@ function makeSets(ex: WorkoutExercise): SetDraft[] {
     rpe: ex.rpe != null ? String(ex.rpe) : '',
     done: false,
   }));
+}
+
+function trimNonEmpty(s: string | undefined): string | null {
+  const t = typeof s === 'string' ? s.trim() : '';
+  return t.length > 0 ? t : null;
+}
+
+function formatFormCues(ex: WorkoutExercise): string | null {
+  const raw = ex.form_cues;
+  if (raw != null) {
+    if (Array.isArray(raw)) {
+      const parts = raw
+        .map((x) => (typeof x === 'string' ? x.trim() : ''))
+        .filter((x) => x.length > 0);
+      if (parts.length > 0) return parts.join('\n');
+    } else if (typeof raw === 'string' && raw.trim()) {
+      return raw.trim();
+    }
+  }
+  return trimNonEmpty(ex.form_cue);
 }
 
 // ── ExercisePanel ─────────────────────────────────────────────────────────────
@@ -106,11 +132,53 @@ function ExercisePanel({
           <h3 className="font-semibold leading-snug text-foreground">{exercise.name}</h3>
         </div>
         {targetLine && <p className="text-xs text-muted-foreground">{targetLine}</p>}
-        {view === 'detailed' && exercise.notes && (
-          <p className="mt-1.5 rounded-md bg-muted/60 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
-            {exercise.notes}
-          </p>
-        )}
+        {view === 'detailed' &&
+          (() => {
+            const instructionText =
+              trimNonEmpty(exercise.instructions) ?? trimNonEmpty(exercise.notes);
+            const formCuesTextRaw = formatFormCues(exercise);
+            const formCuesText =
+              formCuesTextRaw && formCuesTextRaw !== instructionText ? formCuesTextRaw : null;
+            const tipsT = trimNonEmpty(exercise.tips);
+            const coachT = trimNonEmpty(exercise.coach_notes);
+            const tipsParagraph = tipsT && tipsT !== instructionText ? tipsT : null;
+            const coachParagraph =
+              coachT && coachT !== instructionText && coachT !== tipsT ? coachT : null;
+            if (!instructionText && !formCuesText && !tipsParagraph && !coachParagraph) return null;
+            return (
+              <div className="mt-2 space-y-2 rounded-md border border-border/60 bg-muted/40 px-3 py-2.5">
+                <div className="flex gap-2">
+                  <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                  <div className="min-w-0 flex-1 space-y-2 text-xs leading-relaxed text-muted-foreground">
+                    {instructionText && (
+                      <div>
+                        <p className="font-medium text-foreground/80">Instructions</p>
+                        <p className="mt-0.5 whitespace-pre-wrap">{instructionText}</p>
+                      </div>
+                    )}
+                    {formCuesText && (
+                      <div>
+                        <p className="font-medium text-foreground/80">Form cues</p>
+                        <p className="mt-0.5 whitespace-pre-wrap">{formCuesText}</p>
+                      </div>
+                    )}
+                    {tipsParagraph && (
+                      <div>
+                        <p className="font-medium text-foreground/80">Tips</p>
+                        <p className="mt-0.5 whitespace-pre-wrap">{tipsParagraph}</p>
+                      </div>
+                    )}
+                    {coachParagraph && (
+                      <div>
+                        <p className="font-medium text-foreground/80">Coach notes</p>
+                        <p className="mt-0.5 whitespace-pre-wrap">{coachParagraph}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
       </div>
 
       {/* Column headers */}
@@ -224,6 +292,8 @@ type PlayerBodyProps = {
   onAddSet: (exIdx: number) => void;
   onFinish: () => void;
   onClose: () => void;
+  /** When true (mobile sheet), footer gets bottom safe-area padding. */
+  footerSafeArea?: boolean;
 };
 
 function PlayerBody({
@@ -240,6 +310,7 @@ function PlayerBody({
   onAddSet,
   onFinish,
   onClose,
+  footerSafeArea = false,
 }: PlayerBodyProps) {
   const doneCount = logs.reduce((acc, ex) => acc + ex.filter((s) => s.done).length, 0);
   const totalSets = logs.reduce((acc, ex) => acc + ex.length, 0);
@@ -302,7 +373,12 @@ function PlayerBody({
       </div>
 
       {/* Exercise panels */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-5">
+      <div
+        className={cn(
+          'min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-5',
+          footerSafeArea && 'pb-[max(0.5rem,env(safe-area-inset-bottom))]',
+        )}
+      >
         {exercises.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
             No exercises defined for this workout.
@@ -329,7 +405,12 @@ function PlayerBody({
       </div>
 
       {/* Footer */}
-      <div className="flex shrink-0 items-center justify-between border-t border-border px-4 py-3 sm:px-5">
+      <div
+        className={cn(
+          'flex shrink-0 items-center justify-between border-t border-border px-4 pt-3 sm:px-5',
+          footerSafeArea ? 'pb-[max(1rem,env(safe-area-inset-bottom))]' : 'pb-3 sm:pb-3',
+        )}
+      >
         <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>
           Cancel
         </Button>
@@ -352,7 +433,8 @@ function PlayerBody({
 export function WorkoutPlayer({
   open,
   onClose,
-  mode = 'desktop',
+  mode,
+  workspaceId,
   workoutTitle,
   exercises,
   bubbleId,
@@ -364,15 +446,27 @@ export function WorkoutPlayer({
   const [elapsed, setElapsed] = useState(0);
   const [saving, setSaving] = useState(false);
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('metric');
+  const [resolvedMode, setResolvedMode] = useState<'desktop' | 'mobile'>('desktop');
   const profileId = useUserProfileStore((s) => s.profile?.id);
 
-  // Load unit system from fitness profile
+  useLayoutEffect(() => {
+    if (mode === 'desktop' || mode === 'mobile') {
+      setResolvedMode(mode);
+      return;
+    }
+    if (!open || typeof window === 'undefined') return;
+    const mobile = window.matchMedia('(max-width: 768px)').matches;
+    setResolvedMode(mobile ? 'mobile' : 'desktop');
+  }, [open, mode]);
+
+  // Load unit system from fitness profile (scoped to active workspace)
   useEffect(() => {
-    if (!profileId) return;
+    if (!profileId || !workspaceId) return;
     const supabase = createClient();
     void supabase
       .from('fitness_profiles')
       .select('unit_system')
+      .eq('workspace_id', workspaceId)
       .eq('user_id', profileId)
       .maybeSingle()
       .then(({ data }) => {
@@ -380,7 +474,7 @@ export function WorkoutPlayer({
           setUnitSystem(data.unit_system as UnitSystem);
         }
       });
-  }, [profileId]);
+  }, [profileId, workspaceId]);
 
   // Reset when player opens
   useEffect(() => {
@@ -542,11 +636,12 @@ export function WorkoutPlayer({
     onAddSet: addSet,
     onFinish: () => void handleFinish(),
     onClose,
+    footerSafeArea: resolvedMode === 'mobile',
   };
 
   // ── Desktop: centered dialog ──────────────────────────────────────────────
 
-  if (mode === 'desktop') {
+  if (resolvedMode === 'desktop') {
     return (
       <DialogPrimitive.Root
         open={open}
@@ -613,6 +708,7 @@ type WorkoutPlayerTriggersProps = {
   workoutTitle: string;
   exercises: WorkoutExercise[];
   bubbleId: string;
+  workspaceId: string;
   sourceTaskId?: string | null;
   onComplete?: () => void;
 };
@@ -621,6 +717,7 @@ export function WorkoutPlayerTriggers({
   workoutTitle,
   exercises,
   bubbleId,
+  workspaceId,
   sourceTaskId,
   onComplete,
 }: WorkoutPlayerTriggersProps) {
@@ -654,6 +751,7 @@ export function WorkoutPlayerTriggers({
           open
           mode={mode}
           onClose={() => setMode(null)}
+          workspaceId={workspaceId}
           workoutTitle={workoutTitle}
           exercises={exercises}
           bubbleId={bubbleId}

@@ -14,7 +14,7 @@ import { enforceStorefrontPreviewRateLimit } from '@/lib/storefront-preview-rate
 import { isTurnstileSecretConfigured, verifyTurnstileToken } from '@/lib/turnstile-verify';
 import { runStorefrontPreviewGeneration } from '@/lib/workout-factory/storefront-preview-runner';
 
-export const maxDuration = 60;
+export const maxDuration = 90;
 
 const MAX_PROFILE_JSON_BYTES = 100_000;
 
@@ -101,9 +101,11 @@ export async function POST(req: Request) {
   }
 
   const turnstileToken = typeof body.turnstileToken === 'string' ? body.turnstileToken.trim() : '';
+  // Local dev defaults to bypass so storefront works without full Turnstile wiring.
+  // Set ALLOW_STOREFRONT_PREVIEW_WITHOUT_TURNSTILE=0 to force verification locally.
   const devBypass =
     process.env.NODE_ENV === 'development' &&
-    process.env.ALLOW_STOREFRONT_PREVIEW_WITHOUT_TURNSTILE === '1';
+    process.env.ALLOW_STOREFRONT_PREVIEW_WITHOUT_TURNSTILE !== '0';
 
   if (!devBypass) {
     if (!isTurnstileSecretConfigured()) {

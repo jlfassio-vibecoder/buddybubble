@@ -14,7 +14,9 @@ import {
   ExternalLink,
   GripVertical,
   ListChecks,
+  ListTree,
   MessageCircle,
+  Pencil,
   Play,
   User,
 } from 'lucide-react';
@@ -27,7 +29,8 @@ import {
 import { getItemTypeVisual } from '@/lib/item-type-styles';
 import { normalizeTaskPriority, type TaskPriority } from '@/lib/task-priority';
 import { asComments, asSubtasks } from '@/types/task-modal';
-import type { TaskModalTab } from '@/components/modals/TaskModal';
+import type { OpenTaskOptions, TaskModalTab } from '@/components/modals/TaskModal';
+import { metadataFieldsFromParsed, parseTaskMetadata } from '@/lib/item-metadata';
 import type { KanbanCardDensity } from '@/components/board/kanban-density';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -44,7 +47,7 @@ export type KanbanTaskCardProps = {
   canWrite: boolean;
   bubbles: BubbleRow[];
   onMoveToBubble: (taskId: string, targetBubbleId: string) => void;
-  onOpenTask?: (taskId: string, opts?: { tab?: TaskModalTab }) => void;
+  onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
   /** Opens the Workout Player directly for workout / workout_log cards. */
   onStartWorkout?: (task: TaskRow) => void;
   /** Controls how much information is shown on the card (board-level setting). */
@@ -128,6 +131,117 @@ function priorityChip(p: TaskPriority): { label: string; className: string } {
   };
 }
 
+function taskRowHasWorkoutViewerContent(task: TaskRow): boolean {
+  const kind = normalizeItemType(task.item_type);
+  if (kind !== 'workout' && kind !== 'workout_log') return false;
+  const meta = parseTaskMetadata(task.metadata);
+  if (metadataFieldsFromParsed(meta).workoutExercises.length > 0) return true;
+  const o = meta as Record<string, unknown>;
+  const ai = o.ai_workout_factory;
+  if (!ai || typeof ai !== 'object') return false;
+  const ws = (ai as { workout_set?: unknown }).workout_set;
+  return ws != null && typeof ws === 'object';
+}
+
+function KanbanCardQuickActions({
+  variant,
+  task,
+  commentCount,
+  onOpenTask,
+  onStartWorkout,
+}: {
+  variant: 'cover' | 'default';
+  task: TaskRow;
+  commentCount: number;
+  onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
+  onStartWorkout?: (task: TaskRow) => void;
+}) {
+  const cover = variant === 'cover';
+  const base =
+    'mt-0.5 rounded-md p-1 outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
+  const neutral = cover
+    ? 'text-white/85 hover:bg-white/15 hover:text-white'
+    : 'text-muted-foreground hover:bg-muted hover:text-foreground';
+  const play = cover
+    ? 'text-white/85 hover:bg-white/15 hover:text-white'
+    : 'text-muted-foreground hover:bg-muted hover:text-primary';
+  const showQuickView = Boolean(onOpenTask && taskRowHasWorkoutViewerContent(task));
+
+  return (
+    <div
+      className="flex shrink-0 items-start justify-end gap-0.5"
+      role="toolbar"
+      aria-label="Card quick actions"
+    >
+      {showQuickView ? (
+        <button
+          type="button"
+          className={cn(base, neutral)}
+          aria-label="Quick view workout"
+          title="Quick view"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenTask?.(task.id, { viewMode: 'full', openWorkoutViewer: true });
+          }}
+        >
+          <ListTree className="size-4" aria-hidden />
+        </button>
+      ) : null}
+      {onStartWorkout && (task.item_type === 'workout' || task.item_type === 'workout_log') ? (
+        <button
+          type="button"
+          className={cn(base, play)}
+          aria-label="Open workout player"
+          title="Workout player"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onStartWorkout(task);
+          }}
+        >
+          <Play className="size-4" aria-hidden />
+        </button>
+      ) : null}
+      {onOpenTask ? (
+        <>
+          <button
+            type="button"
+            className={cn(base, neutral)}
+            aria-label="Edit card"
+            title="Edit details"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenTask(task.id, { tab: 'details', viewMode: 'full', autoEdit: true });
+            }}
+          >
+            <Pencil className="size-4" aria-hidden />
+          </button>
+          <button
+            type="button"
+            className={cn(base, 'relative', neutral)}
+            aria-label="Open comments"
+            title="Comments"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenTask(task.id, { tab: 'comments', viewMode: 'comments-only' });
+            }}
+          >
+            <MessageCircle className="size-4" aria-hidden />
+            {commentCount > 0 ? (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium leading-none text-primary-foreground">
+                {commentCount > 99 ? '99+' : commentCount}
+              </span>
+            ) : null}
+          </button>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 export function KanbanTaskCard({
   task,
   canWrite,
@@ -175,7 +289,13 @@ export function KanbanTaskCard({
   const showDetailedMeta = density === 'detailed';
   const commentCount = asComments(task.comments).length;
 
-  const openTask = onOpenTask ? () => onOpenTask(task.id) : undefined;
+  const openTask = onOpenTask ? () => onOpenTask(task.id, { viewMode: 'full' }) : undefined;
+
+  const openTaskSection = (id: TaskModalTab) =>
+    onOpenTask?.(task.id, {
+      tab: id,
+      viewMode: id === 'comments' ? 'comments-only' : 'full',
+    });
 
   const presenceUsers = usePresenceStore((s) => s.users);
   const localUserId = useUserProfileStore((s) => s.profile?.id);
@@ -304,7 +424,7 @@ export function KanbanTaskCard({
                           onPointerDown={(e) => e.stopPropagation()}
                           onClick={(e) => {
                             e.stopPropagation();
-                            onOpenTask(task.id, { tab: id });
+                            openTaskSection(id);
                           }}
                         >
                           {label}
@@ -517,6 +637,13 @@ export function KanbanTaskCard({
                         density === 'summary' ? 'space-y-1 p-1.5' : 'space-y-2 p-2',
                       )}
                     >
+                      <KanbanCardQuickActions
+                        variant="cover"
+                        task={task}
+                        commentCount={commentCount}
+                        onOpenTask={onOpenTask}
+                        onStartWorkout={onStartWorkout}
+                      />
                       <div className="flex items-start justify-between gap-2">
                         <p
                           className={cn(
@@ -642,43 +769,15 @@ export function KanbanTaskCard({
               )}
             </div>
 
-            <div className="flex shrink-0 items-start gap-0.5">
-              {onStartWorkout &&
-              (task.item_type === 'workout' || task.item_type === 'workout_log') ? (
-                <button
-                  type="button"
-                  className="mt-0.5 rounded-md p-1 text-muted-foreground outline-none ring-offset-background hover:bg-muted hover:text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  aria-label="Start workout"
-                  title="Start workout"
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onStartWorkout(task);
-                  }}
-                >
-                  <Play className="size-4" aria-hidden />
-                </button>
-              ) : null}
-              {onOpenTask ? (
-                <button
-                  type="button"
-                  className="relative mt-0.5 rounded-md p-1 text-muted-foreground outline-none ring-offset-background hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  aria-label="Open card comments"
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenTask(task.id, { tab: 'comments' });
-                  }}
-                >
-                  <MessageCircle className="size-4" aria-hidden />
-                  {commentCount > 0 ? (
-                    <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium leading-none text-primary-foreground">
-                      {commentCount > 99 ? '99+' : commentCount}
-                    </span>
-                  ) : null}
-                </button>
-              ) : null}
-            </div>
+            {!useCoverHero ? (
+              <KanbanCardQuickActions
+                variant="default"
+                task={task}
+                commentCount={commentCount}
+                onOpenTask={onOpenTask}
+                onStartWorkout={onStartWorkout}
+              />
+            ) : null}
           </div>
 
           {showBubble && (
@@ -731,7 +830,7 @@ export function KanbanTaskCard({
                         onPointerDown={(e) => e.stopPropagation()}
                         onClick={(e) => {
                           e.stopPropagation();
-                          onOpenTask(task.id, { tab: id });
+                          openTaskSection(id);
                         }}
                       >
                         {label}

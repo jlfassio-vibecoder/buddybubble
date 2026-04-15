@@ -8,7 +8,7 @@
  * serverless instances; configure KV for accurate production-wide caps.
  */
 
-const MAX_PER_DAY = 3;
+const MAX_PER_DAY = 20;
 
 /** Lazy in-memory fallback (dev / no KV). */
 const memoryCounts = new Map<string, number>();

@@ -142,6 +142,28 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
       window.location.assign(`${window.location.origin}${path}`);
     };
 
+    const trySetSessionFromHash = async () => {
+      try {
+        const hash = window.location.hash.startsWith('#')
+          ? window.location.hash.slice(1)
+          : window.location.hash;
+        const params = new URLSearchParams(hash);
+        const accessToken = params.get('access_token')?.trim();
+        const refreshToken = params.get('refresh_token')?.trim();
+        if (!accessToken || !refreshToken) return;
+        const { data, error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+        if (!error && data.session) {
+          finishMagicLinkSession(data.session);
+        }
+      } catch {
+        // Fallback handlers below (getSession + auth state listener) still run.
+      }
+    };
+    void trySetSessionFromHash();
+
     void supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) finishMagicLinkSession(session);
     });

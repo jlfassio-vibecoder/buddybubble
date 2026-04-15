@@ -25,7 +25,7 @@ import {
 import { KanbanColumnHeader } from '@/components/board/kanban-column-header';
 import { KanbanTaskCard } from '@/components/board/kanban-task-card';
 import { ScheduleProgramStartDialog } from '@/components/fitness/ScheduleProgramStartDialog';
-import type { TaskModalTab } from '@/components/modals/TaskModal';
+import type { OpenTaskOptions } from '@/components/modals/TaskModal';
 import { useBoardColumnDefs } from '@/hooks/use-board-columns';
 import { useTaskBubbleUps } from '@/hooks/use-task-bubble-ups';
 import { formatScheduledTimeDisplay, scheduledTimeInputToPgValue } from '@/lib/task-scheduled-time';
@@ -386,7 +386,7 @@ type Props = {
   calendarSlot?: ReactNode;
   /** Bumped when tasks change; triggers a re-fetch. */
   taskViewsNonce?: number;
-  onOpenTask?: (taskId: string, opts?: { tab?: TaskModalTab }) => void;
+  onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
   /** Opens TaskModal in create mode (e.g. new workout template from “This week” plan). */
   onOpenCreateTask?: (opts?: {
     status?: string;

@@ -197,8 +197,16 @@ export async function POST(req: Request) {
       });
 
     if (upErr) {
-      console.error(`${logPrefix} storage upload:`, upErr);
-      return NextResponse.json({ error: 'Could not save cover image' }, { status: 500 });
+      console.error(`${logPrefix} storage upload:`, upErr.message || upErr);
+      return NextResponse.json(
+        {
+          error: 'Could not save cover image',
+          ...(process.env.NODE_ENV === 'development'
+            ? { detail: upErr.message || String(upErr) }
+            : {}),
+        },
+        { status: 500, headers: JSON_HEADERS },
+      );
     }
 
     const fields = metadataFieldsFromParsed(task.metadata);
@@ -243,6 +251,11 @@ export async function POST(req: Request) {
     });
   } catch (err) {
     console.error('[generate-card-cover] unexpected:', err);
-    return NextResponse.json({ error: 'Unexpected error' }, { status: 500 });
+    const detail =
+      process.env.NODE_ENV === 'development' && err instanceof Error ? err.message : undefined;
+    return NextResponse.json(
+      { error: 'Unexpected error', ...(detail ? { detail } : {}) },
+      { status: 500, headers: JSON_HEADERS },
+    );
   }
 }

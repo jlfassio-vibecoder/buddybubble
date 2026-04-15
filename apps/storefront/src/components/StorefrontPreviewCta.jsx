@@ -169,6 +169,8 @@ function readInitialWizard(publicSlug, workspaceCategory) {
     fitnessAiPreview: /** @type {Record<string, unknown> | null} */ (null),
     /** After first successful refine→email; avoids migrating legacy `email` drafts forever. */
     hasCompletedWorkoutRefine: false,
+    /** Fitness only: after outline + session tweaks, collect biometrics then freeform goals before email. */
+    fitnessRefineStage: /** @type {'preview' | 'biometrics' | 'goals'} */ ('preview'),
   };
   if (!slug) return empty;
   try {
@@ -211,7 +213,24 @@ function readInitialWizard(publicSlug, workspaceCategory) {
     if (cat === 'fitness' && phase === 'email') {
       fitnessAiPreview = null;
     }
-    return { phase, profileStep, profileDraft, email, fitnessAiPreview, hasCompletedWorkoutRefine };
+    let fitnessRefineStage =
+      parsed.fitnessRefineStage === 'biometrics' ||
+      parsed.fitnessRefineStage === 'goals' ||
+      parsed.fitnessRefineStage === 'preview'
+        ? parsed.fitnessRefineStage
+        : 'preview';
+    if (cat !== 'fitness' || phase !== 'workout_refine') {
+      fitnessRefineStage = 'preview';
+    }
+    return {
+      phase,
+      profileStep,
+      profileDraft,
+      email,
+      fitnessAiPreview,
+      hasCompletedWorkoutRefine,
+      fitnessRefineStage,
+    };
   } catch {
     return empty;
   }
@@ -256,8 +275,9 @@ export default function StorefrontPreviewCta({
     email: '',
     fitnessAiPreview: /** @type {Record<string, unknown> | null} */ (null),
     hasCompletedWorkoutRefine: false,
+    fitnessRefineStage: /** @type {'preview' | 'biometrics' | 'goals'} */ ('preview'),
   }));
-  const { phase, profileStep, profileDraft, email, fitnessAiPreview } = snap;
+  const { phase, profileStep, profileDraft, email, fitnessAiPreview, fitnessRefineStage } = snap;
 
   /** Vertex outline fetch (questionnaire only — refine fields applied server-side later). */
   const [previewFetchStatus, setPreviewFetchStatus] = useState(
@@ -299,6 +319,7 @@ export default function StorefrontPreviewCta({
           emailDraft: snap.email,
           fitnessAiPreview: snap.fitnessAiPreview,
           hasCompletedWorkoutRefine: snap.hasCompletedWorkoutRefine,
+          fitnessRefineStage: snap.fitnessRefineStage,
         }),
       );
     } catch {
@@ -327,12 +348,18 @@ export default function StorefrontPreviewCta({
       profileStep: 0,
       fitnessAiPreview: null,
       hasCompletedWorkoutRefine: false,
+      fitnessRefineStage: 'preview',
     }));
   }, []);
 
   const closeToIdle = useCallback(() => {
     setError(null);
-    setSnap((prev) => ({ ...prev, phase: 'idle', hasCompletedWorkoutRefine: false }));
+    setSnap((prev) => ({
+      ...prev,
+      phase: 'idle',
+      hasCompletedWorkoutRefine: false,
+      fitnessRefineStage: 'preview',
+    }));
   }, []);
 
   const currentStepDef = steps[profileStep] ?? null;
@@ -488,6 +515,7 @@ export default function StorefrontPreviewCta({
             profileDraft: nextDraft,
             fitnessAiPreview: null,
             hasCompletedWorkoutRefine: false,
+            fitnessRefineStage: 'preview',
           };
         });
         return;
@@ -515,6 +543,7 @@ export default function StorefrontPreviewCta({
       phase: category === 'fitness' ? 'workout_refine' : 'profile',
       profileStep: Math.max(0, steps.length - 1),
       hasCompletedWorkoutRefine: category === 'fitness' ? false : prev.hasCompletedWorkoutRefine,
+      fitnessRefineStage: category === 'fitness' ? 'goals' : prev.fitnessRefineStage,
     }));
   }, [category, steps.length]);
 
@@ -528,6 +557,7 @@ export default function StorefrontPreviewCta({
       profileStep: Math.max(0, steps.length - 1),
       fitnessAiPreview: null,
       hasCompletedWorkoutRefine: false,
+      fitnessRefineStage: 'preview',
     }));
   }, [steps.length]);
 
@@ -536,6 +566,41 @@ export default function StorefrontPreviewCta({
     setTurnstileWidgetError(null);
     setSnap((prev) => ({ ...prev, phase: 'email', hasCompletedWorkoutRefine: true }));
   }, []);
+
+  const advanceWorkoutRefinePreviewToBiometrics = useCallback(() => {
+    setSnap((prev) => ({ ...prev, fitnessRefineStage: 'biometrics' }));
+  }, []);
+
+  const goBackRefineBiometricsToPreview = useCallback(() => {
+    setSnap((prev) => ({ ...prev, fitnessRefineStage: 'preview' }));
+  }, []);
+
+  const advanceWorkoutRefineBiometricsToGoals = useCallback(() => {
+    setSnap((prev) => ({ ...prev, fitnessRefineStage: 'goals' }));
+  }, []);
+
+  const goBackRefineGoalsToBiometrics = useCallback(() => {
+    setSnap((prev) => ({ ...prev, fitnessRefineStage: 'biometrics' }));
+  }, []);
+
+  const canAdvanceBiometrics = useMemo(() => {
+    const w = parseFloat(String(profileDraft.storefront_bio_weight ?? '').trim());
+    const h = parseFloat(String(profileDraft.storefront_bio_height ?? '').trim());
+    const a = parseInt(String(profileDraft.storefront_bio_age ?? '').trim(), 10);
+    const sex =
+      typeof profileDraft.storefront_bio_sex === 'string'
+        ? profileDraft.storefront_bio_sex.trim()
+        : '';
+    return w > 0 && h > 0 && a >= 13 && a <= 120 && sex.length > 0;
+  }, [profileDraft]);
+
+  const canAdvanceGoals = useMemo(() => {
+    const t =
+      typeof profileDraft.storefront_fitness_goals_text === 'string'
+        ? profileDraft.storefront_fitness_goals_text
+        : '';
+    return t.split(/\r?\n/).some((line) => line.trim().length > 0);
+  }, [profileDraft]);
 
   const onEmailSubmit = useCallback(
     async (e) => {
@@ -573,6 +638,14 @@ export default function StorefrontPreviewCta({
         return;
       }
 
+      const hasOutlinePreview =
+        category === 'fitness' &&
+        fitnessAiPreview &&
+        typeof fitnessAiPreview === 'object' &&
+        typeof fitnessAiPreview.title === 'string' &&
+        fitnessAiPreview.title.trim().length > 0 &&
+        Array.isArray(fitnessAiPreview.main_exercises);
+
       setBusy(true);
       try {
         const res = await fetch('/api/storefront-trial', {
@@ -584,6 +657,7 @@ export default function StorefrontPreviewCta({
             source: storefrontSourceFromWindowSearch(),
             utmParams: utmParamsFromWindowSearch(),
             profile: profilePayload,
+            ...(hasOutlinePreview ? { cachedWorkoutData: fitnessAiPreview } : {}),
             ...(turnstileToken ? { turnstileToken } : {}),
           }),
         });
@@ -624,8 +698,10 @@ export default function StorefrontPreviewCta({
       }
     },
     [
+      category,
       clearStorage,
       email,
+      fitnessAiPreview,
       profileDraft,
       slug,
       turnstileSiteKey,
@@ -724,6 +800,178 @@ export default function StorefrontPreviewCta({
   }
 
   if (phase === 'workout_refine' && category === 'fitness') {
+    if (fitnessRefineStage === 'biometrics') {
+      const unitSys = profileDraft.unit_system === 'imperial' ? 'imperial' : 'metric';
+      const weightLabel = unitSys === 'metric' ? 'Weight (kg)' : 'Weight (lbs)';
+      const heightLabel = unitSys === 'metric' ? 'Height (cm)' : 'Height (in)';
+      const wVal =
+        typeof profileDraft.storefront_bio_weight === 'string'
+          ? profileDraft.storefront_bio_weight
+          : '';
+      const hVal =
+        typeof profileDraft.storefront_bio_height === 'string'
+          ? profileDraft.storefront_bio_height
+          : '';
+      const aVal =
+        typeof profileDraft.storefront_bio_age === 'string' ? profileDraft.storefront_bio_age : '';
+      const sexVal =
+        typeof profileDraft.storefront_bio_sex === 'string' ? profileDraft.storefront_bio_sex : '';
+
+      return (
+        <div className="w-full max-w-xl rounded-2xl border border-white/20 bg-black/35 p-4 shadow-xl backdrop-blur-md sm:max-w-md">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-white/60">Biometrics</p>
+            <button type="button" onClick={closeToIdle} className={ghostBtnClass}>
+              Close
+            </button>
+          </div>
+          <p className="text-sm leading-relaxed text-white/90">
+            {"Let's continue to personalize and perfect your workout…"}
+          </p>
+          <p className="mt-2 text-xs text-white/65">
+            Using your preferred units from earlier ({unitSys === 'metric' ? 'metric' : 'imperial'}
+            ).
+          </p>
+          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-white/70" htmlFor="sf-bio-weight">
+                {weightLabel}
+              </label>
+              <input
+                id="sf-bio-weight"
+                name="storefront_bio_weight"
+                type="number"
+                min={0}
+                step="0.1"
+                inputMode="decimal"
+                value={wVal}
+                onChange={(ev) => setFieldValue('storefront_bio_weight', ev.target.value)}
+                className={inputClass}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-white/70" htmlFor="sf-bio-height">
+                {heightLabel}
+              </label>
+              <input
+                id="sf-bio-height"
+                name="storefront_bio_height"
+                type="number"
+                min={0}
+                step="0.1"
+                inputMode="decimal"
+                value={hVal}
+                onChange={(ev) => setFieldValue('storefront_bio_height', ev.target.value)}
+                className={inputClass}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-white/70" htmlFor="sf-bio-age">
+                Age (years)
+              </label>
+              <input
+                id="sf-bio-age"
+                name="storefront_bio_age"
+                type="number"
+                min={13}
+                max={120}
+                step={1}
+                inputMode="numeric"
+                value={aVal}
+                onChange={(ev) => setFieldValue('storefront_bio_age', ev.target.value)}
+                className={inputClass}
+              />
+            </div>
+          </div>
+          <div className="mt-4 flex flex-col gap-1">
+            <label className="text-xs font-medium text-white/70" htmlFor="sf-bio-sex">
+              Sex (for coaching prompts)
+            </label>
+            <select
+              id="sf-bio-sex"
+              name="storefront_bio_sex"
+              value={sexVal}
+              onChange={(ev) => setFieldValue('storefront_bio_sex', ev.target.value)}
+              className={`${inputClass} cursor-pointer`}
+            >
+              <option value="">Select…</option>
+              <option value="female">Female</option>
+              <option value="male">Male</option>
+              <option value="other">Other</option>
+              <option value="prefer_not_to_say">Prefer not to say</option>
+            </select>
+          </div>
+          <div className="mt-6 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={goBackRefineBiometricsToPreview}
+              className={ghostBtnClass}
+            >
+              Back
+            </button>
+            <button
+              type="button"
+              onClick={advanceWorkoutRefineBiometricsToGoals}
+              disabled={!canAdvanceBiometrics}
+              className="ml-auto inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold text-white ring-2 ring-white/20 transition hover:brightness-110 disabled:pointer-events-none disabled:opacity-50"
+              style={{ backgroundColor: accent }}
+            >
+              Next: your goals
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (fitnessRefineStage === 'goals') {
+      const goalsValue =
+        typeof profileDraft.storefront_fitness_goals_text === 'string'
+          ? profileDraft.storefront_fitness_goals_text
+          : '';
+
+      return (
+        <div className="w-full max-w-xl rounded-2xl border border-white/20 bg-black/35 p-4 shadow-xl backdrop-blur-md sm:max-w-md">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-white/60">Goals</p>
+            <button type="button" onClick={closeToIdle} className={ghostBtnClass}>
+              Close
+            </button>
+          </div>
+          <h2 className="text-base font-semibold text-white">What are you training for?</h2>
+          <p className="mt-1 text-xs text-white/70">
+            Add one goal per line — same idea as the fitness profile in the app. We will merge these
+            with the goal you picked earlier.
+          </p>
+          <label className="sr-only" htmlFor="storefront-fitness-goals-text">
+            Your training goals
+          </label>
+          <textarea
+            id="storefront-fitness-goals-text"
+            name="storefront_fitness_goals_text"
+            rows={6}
+            value={goalsValue}
+            onChange={(ev) => setFieldValue('storefront_fitness_goals_text', ev.target.value)}
+            placeholder={'e.g.\nImprove squat depth\nTrain 3x per week for energy'}
+            className={`${inputClass} mt-4 min-h-[120px] resize-y`}
+          />
+          <div className="mt-6 flex flex-wrap gap-2">
+            <button type="button" onClick={goBackRefineGoalsToBiometrics} className={ghostBtnClass}>
+              Back
+            </button>
+            <button
+              type="button"
+              onClick={continueWorkoutRefineToEmail}
+              disabled={!canAdvanceGoals}
+              className="ml-auto inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold text-white ring-2 ring-white/20 transition hover:brightness-110 disabled:pointer-events-none disabled:opacity-50"
+              style={{ backgroundColor: accent }}
+            >
+              Continue to email
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     const intensityValue =
       profileDraft.intensity_preference === 'lighter' ||
       profileDraft.intensity_preference === 'harder'
@@ -902,12 +1150,12 @@ export default function StorefrontPreviewCta({
           </button>
           <button
             type="button"
-            onClick={continueWorkoutRefineToEmail}
+            onClick={advanceWorkoutRefinePreviewToBiometrics}
             disabled={!outlineReady || previewFetchStatus === 'loading'}
             className="ml-auto inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold text-white ring-2 ring-white/20 transition hover:brightness-110 disabled:pointer-events-none disabled:opacity-50"
             style={{ backgroundColor: accent }}
           >
-            Continue to email
+            {'Next: biometrics & goals'}
           </button>
         </div>
       </div>

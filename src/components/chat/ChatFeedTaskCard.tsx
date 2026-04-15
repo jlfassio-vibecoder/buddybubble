@@ -4,14 +4,14 @@ import type { LucideIcon } from 'lucide-react';
 import { normalizeItemType, type TaskRow } from '@/types/database';
 import { getItemTypeVisual, itemTypeUiNoun, type ItemTypeVisual } from '@/lib/item-type-styles';
 import { cn } from '@/lib/utils';
-import type { TaskModalTab } from '@/components/modals/TaskModal';
+import type { OpenTaskOptions, TaskModalTab } from '@/components/modals/TaskModal';
 import { BubblyButton, type TaskBubbleUpControlProps } from '@/components/tasks/bubbly-button';
 import { taskCardCoverPath, useTaskCardCoverUrl } from '@/lib/task-card-cover';
 
 export type ChatFeedTaskCardProps = {
   task: TaskRow | null;
   /** Opens TaskModal; optional `tab` matches the board card tab strip. */
-  onOpenTask?: (taskId: string, opts?: { tab?: TaskModalTab }) => void;
+  onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
   bubbleUp?: Omit<TaskBubbleUpControlProps, 'density'>;
 };
 

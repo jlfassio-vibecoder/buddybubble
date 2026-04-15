@@ -96,6 +96,17 @@ import { TaskModalHero } from '@/components/modals/task-modal-hero';
 
 export type TaskModalTab = 'details' | 'comments' | 'subtasks' | 'activity';
 
+export type TaskModalViewMode = 'full' | 'comments-only';
+
+export type OpenTaskOptions = {
+  tab?: TaskModalTab;
+  viewMode?: TaskModalViewMode;
+  /** When true (e.g. Kanban pencil), workout cards open the first exercise row in edit mode immediately. */
+  autoEdit?: boolean;
+  /** When true (e.g. Kanban quick view), open the workout viewer after the task loads. */
+  openWorkoutViewer?: boolean;
+};
+
 type TabId = TaskModalTab;
 
 function normalizeTaskVisibility(value: unknown): TaskVisibility {
@@ -172,6 +183,12 @@ export type TaskModalProps = {
   initialCreateWorkoutDurationMin?: string | null;
   /** When opening an existing task, select this tab (ignored for create mode). */
   initialTab?: TaskModalTab | null;
+  /** When opening an existing task, controls inspector chrome (`comments-only` hides type / visibility / workout strip). */
+  initialViewMode?: TaskModalViewMode;
+  /** When true, workout / workout_log opens the exercise editor on the first row (Kanban pencil shortcut). */
+  initialAutoEdit?: boolean;
+  /** When true, open WorkoutViewerDialog once the task has viewer content (Kanban quick view). */
+  initialOpenWorkoutViewer?: boolean;
   /** Drives Due by vs Scheduled on labels (`workspaces.category_type`). */
   workspaceCategory?: WorkspaceCategory | null;
   /** Workspace IANA timezone for scheduled-on vs calendar "today" (see `workspaces.calendar_timezone`). */
@@ -193,6 +210,9 @@ export function TaskModal({
   initialCreateTitle = null,
   initialCreateWorkoutDurationMin = null,
   initialTab = null,
+  initialViewMode = 'full',
+  initialAutoEdit = false,
+  initialOpenWorkoutViewer = false,
   workspaceCategory = null,
   calendarTimezone = null,
   onTaskArchived,
@@ -221,6 +241,7 @@ export function TaskModal({
   }, [open, taskId, activeBubble?.id, updateFocus]);
 
   const [tab, setTab] = useState<TabId>('details');
+  const [viewMode, setViewMode] = useState<TaskModalViewMode>('full');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [archiving, setArchiving] = useState(false);
@@ -252,6 +273,7 @@ export function TaskModal({
   const [workoutDurationMin, setWorkoutDurationMin] = useState('');
   const [workoutExercises, setWorkoutExercises] = useState<WorkoutExercise[]>([]);
   const [workoutViewerOpen, setWorkoutViewerOpen] = useState(false);
+  const workoutViewerAutoOpenedRef = useRef(false);
   /** Unit system from the user's fitness profile; drives weight labels. */
   const [workoutUnitSystem, setWorkoutUnitSystem] = useState<UnitSystem>('metric');
   /** Whether the template picker is expanded (create mode only). */
@@ -472,6 +494,20 @@ export function TaskModal({
 
   const hasWorkoutViewerContent =
     isWorkoutItemType && (workoutExercises.length > 0 || viewerWorkoutSet != null);
+
+  useEffect(() => {
+    if (!open) {
+      setWorkoutViewerOpen(false);
+      workoutViewerAutoOpenedRef.current = false;
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !taskId || !initialOpenWorkoutViewer || loading) return;
+    if (!hasWorkoutViewerContent || workoutViewerAutoOpenedRef.current) return;
+    workoutViewerAutoOpenedRef.current = true;
+    setWorkoutViewerOpen(true);
+  }, [open, taskId, loading, initialOpenWorkoutViewer, hasWorkoutViewerContent]);
 
   const handleWorkoutViewerApply = useCallback(
     (payload: { title: string; description: string; exercises: WorkoutExercise[] }) => {
@@ -913,9 +949,25 @@ export function TaskModal({
   }, [open, taskId, defaultStatus, initialCreateStatus]);
 
   useEffect(() => {
-    if (!open || !taskId) return;
-    setTab(initialTab ?? 'details');
-  }, [open, taskId, initialTab]);
+    if (!open) return;
+    if (!taskId) {
+      setViewMode('full');
+      setTab('details');
+      return;
+    }
+    const vm = initialViewMode ?? 'full';
+    setViewMode(vm);
+    if (vm === 'comments-only' && initialTab == null) {
+      setTab('comments');
+    } else {
+      setTab(initialTab ?? 'details');
+    }
+  }, [open, taskId, initialTab, initialViewMode]);
+
+  const selectTab = useCallback((id: TabId) => {
+    setTab(id);
+    setViewMode((prev) => (prev === 'comments-only' && id !== 'comments' ? 'full' : prev));
+  }, []);
 
   useEffect(() => {
     if (!open || !taskId) return;
@@ -946,10 +998,19 @@ export function TaskModal({
 
   const isCreateMode = open && !taskId && !!bubbleId;
   const typeNoun = itemTypeUiNoun(itemType);
-  const modalTitle = isCreateMode ? `New ${typeNoun}` : `Edit ${typeNoun}`;
+  const isExistingWorkoutCard = Boolean(
+    taskId && (itemType === 'workout' || itemType === 'workout_log'),
+  );
+  const modalTitle = isCreateMode
+    ? `New ${typeNoun}`
+    : isExistingWorkoutCard
+      ? 'Workout Card'
+      : `Edit ${typeNoun}`;
   const modalSubtitle = isCreateMode
     ? `Create ${indefiniteArticleForUiNoun(typeNoun)} ${typeNoun} for this bubble`
-    : `View and edit ${typeNoun} details`;
+    : isExistingWorkoutCard
+      ? ''
+      : `View and edit ${typeNoun} details`;
 
   const archiveTask = useCallback(async () => {
     if (!taskId || !canWrite || archiving) return;
@@ -1751,13 +1812,15 @@ export function TaskModal({
 
   if (!open) return null;
 
+  const showEditorChrome = !taskId || viewMode === 'full';
+
   const tabBtn = (id: TabId, label: string) => (
     <button
       key={id}
       type="button"
       role="tab"
       aria-selected={tab === id}
-      onClick={() => setTab(id)}
+      onClick={() => selectTab(id)}
       className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
         tab === id ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-muted'
       }`}
@@ -1782,6 +1845,7 @@ export function TaskModal({
               title={title}
               description={description ?? ''}
               coverPath={cardCoverPath.trim() || null}
+              onClose={() => onOpenChange(false)}
             />
           ) : null}
 
@@ -1790,83 +1854,98 @@ export function TaskModal({
               <div className="flex items-start justify-between border-b border-border px-6 py-4">
                 <div>
                   <h2 className="text-lg font-bold text-foreground">{modalTitle}</h2>
-                  <p className="text-xs text-muted-foreground">{modalSubtitle}</p>
-                </div>
-                <button
-                  type="button"
-                  className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  aria-label="Close"
-                  onClick={() => onOpenChange(false)}
-                >
-                  <X className="h-5 w-5" aria-hidden />
-                </button>
-              </div>
-
-              <div className="border-b border-border px-6 py-3">
-                <p className="mb-2 text-xs font-medium text-muted-foreground">Type</p>
-                <ItemTypeSelector value={itemType} onChange={setItemType} disabled={!canWrite} />
-              </div>
-
-              <div className="border-b border-border px-6 py-3">
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-xs font-medium text-muted-foreground">Visibility</p>
-                  {hasWorkoutViewerContent ? (
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      className="h-7 gap-1 px-2 text-xs"
-                      onClick={() => setWorkoutViewerOpen(true)}
-                    >
-                      <ListTree className="h-3 w-3 shrink-0" aria-hidden />
-                      Workout viewer
-                    </Button>
+                  {modalSubtitle ? (
+                    <p className="text-xs text-muted-foreground">{modalSubtitle}</p>
                   ) : null}
                 </div>
-                <div className="flex flex-wrap gap-2">
+                {!taskId ? (
                   <button
                     type="button"
-                    disabled={!canWrite}
-                    onClick={() => setVisibility('private')}
-                    className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                      visibility === 'private'
-                        ? 'border-primary bg-primary/10 text-primary'
-                        : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
-                    }`}
+                    className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    aria-label="Close"
+                    onClick={() => onOpenChange(false)}
                   >
-                    <Lock className="size-4 shrink-0" aria-hidden />
-                    Private
+                    <X className="h-5 w-5" aria-hidden />
                   </button>
-                  <button
-                    type="button"
-                    disabled={!canWrite}
-                    onClick={() => setVisibility('public')}
-                    className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                      visibility === 'public'
-                        ? 'border-primary bg-primary/10 text-primary'
-                        : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
-                    }`}
-                  >
-                    <Globe className="size-4 shrink-0" aria-hidden />
-                    Public
-                  </button>
-                </div>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Public cards appear on your Astro storefront.
-                </p>
-                {(itemType === 'workout' || itemType === 'workout_log') &&
-                  workoutExercises.length > 0 && (
-                    <div className="mt-3 space-y-1.5">
-                      <p className="text-xs font-medium text-muted-foreground">Workout player</p>
-                      <WorkoutPlayerTriggers
-                        workoutTitle={title}
-                        exercises={workoutExercises}
-                        bubbleId={bubbleId ?? ''}
-                        sourceTaskId={taskId}
-                      />
-                    </div>
-                  )}
+                ) : null}
               </div>
+
+              {showEditorChrome ? (
+                <>
+                  <div className="border-b border-border px-6 py-3">
+                    <p className="mb-2 text-xs font-medium text-muted-foreground">Type</p>
+                    <ItemTypeSelector
+                      value={itemType}
+                      onChange={setItemType}
+                      disabled={!canWrite}
+                    />
+                  </div>
+
+                  <div className="border-b border-border px-6 py-3">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs font-medium text-muted-foreground">Visibility</p>
+                      {hasWorkoutViewerContent ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="h-7 gap-1 px-2 text-xs"
+                          onClick={() => setWorkoutViewerOpen(true)}
+                        >
+                          <ListTree className="h-3 w-3 shrink-0" aria-hidden />
+                          Workout viewer
+                        </Button>
+                      ) : null}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={!canWrite}
+                        onClick={() => setVisibility('private')}
+                        className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                          visibility === 'private'
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
+                        }`}
+                      >
+                        <Lock className="size-4 shrink-0" aria-hidden />
+                        Private
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!canWrite}
+                        onClick={() => setVisibility('public')}
+                        className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                          visibility === 'public'
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
+                        }`}
+                      >
+                        <Globe className="size-4 shrink-0" aria-hidden />
+                        Public
+                      </button>
+                    </div>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Public cards appear on your Astro storefront.
+                    </p>
+                    {(itemType === 'workout' || itemType === 'workout_log') &&
+                      workoutExercises.length > 0 && (
+                        <div className="mt-3 space-y-1.5">
+                          <p className="text-xs font-medium text-muted-foreground">
+                            Workout player
+                          </p>
+                          <WorkoutPlayerTriggers
+                            workoutTitle={title}
+                            exercises={workoutExercises}
+                            bubbleId={bubbleId ?? ''}
+                            workspaceId={workspaceId}
+                            sourceTaskId={taskId}
+                          />
+                        </div>
+                      )}
+                  </div>
+                </>
+              ) : null}
 
               <div className="px-6 pt-4 pb-4">
                 {error && (
@@ -2228,11 +2307,15 @@ export function TaskModal({
                               </div>
                             </div>
                             <WorkoutExercisesEditor
+                              key={taskId ?? 'new-task'}
                               exercises={workoutExercises}
                               onChange={setWorkoutExercises}
                               canWrite={canWrite}
                               workoutUnitSystem={workoutUnitSystem}
                               idPrefix="task-ex"
+                              autoEditFirstRow={Boolean(
+                                initialAutoEdit && isWorkoutItemType && taskId && canWrite,
+                              )}
                             />
                           </div>
                         )}
@@ -2689,6 +2772,8 @@ export function TaskModal({
         canWrite={canWrite}
         workoutUnitSystem={workoutUnitSystem}
         onApply={handleWorkoutViewerApply}
+        cardCoverPath={cardCoverPath.trim() || null}
+        taskId={taskId}
       />
     </>
   );

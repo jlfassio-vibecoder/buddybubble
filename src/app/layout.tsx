@@ -4,6 +4,7 @@ import { Geist } from 'next/font/google';
 import { cn } from '@/lib/utils';
 import { AppToaster } from '@/components/app-toaster';
 import { AppThemeProvider } from '@/components/theme/app-theme-provider';
+import { HashMagicLinkForwarder } from './root-hash-magic-link-forwarder';
 
 const geist = Geist({ subsets: ['latin'], variable: '--font-sans' });
 
@@ -21,6 +22,7 @@ export default function RootLayout({
     <html lang="en" className={cn('font-sans', geist.variable)} suppressHydrationWarning>
       <body className="min-h-screen bg-background font-sans antialiased text-foreground">
         <AppThemeProvider>
+          <HashMagicLinkForwarder />
           {children}
           <AppToaster />
         </AppThemeProvider>

@@ -85,7 +85,7 @@ import {
   COLLAPSED_COLUMN_WIDTH_CLASS,
   CollapsedColumnStrip,
 } from '@/components/layout/collapsed-column-strip';
-import type { TaskModalTab } from '@/components/modals/TaskModal';
+import type { OpenTaskOptions } from '@/components/modals/TaskModal';
 import type { TaskBubbleUpControlProps } from '@/components/tasks/bubbly-button';
 import {
   kanbanBoardCollapsedColumnsStorageKey,
@@ -100,6 +100,7 @@ import {
   type KanbanBoardSegment,
 } from '@/lib/kanban-board-segment';
 import { supabaseClientErrorMessage } from '@/lib/supabase-client-error';
+import { parseWorkoutGenerationFromBubbleMetadata } from '@/lib/storefront-trial-workout-task';
 import { cn } from '@/lib/utils';
 import { GripVertical, Minimize2 } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -303,7 +304,7 @@ type Props = {
   canWrite: boolean;
   /** Bubbles in this BuddyBubble for moving a task to another Bubble (dropdown on each card). */
   bubbles: BubbleRow[];
-  onOpenTask?: (taskId: string, opts?: { tab?: TaskModalTab }) => void;
+  onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
   /** Opens create flow; pass `status` to pre-select the column in the full editor. */
   onOpenCreateTask?: (opts?: { status: string }) => void;
   /** From active workspace — date labels and overdue styling on cards. */
@@ -366,6 +367,7 @@ export function KanbanBoard({
 }: Props) {
   const [calendarDropNonce, setCalendarDropNonce] = useState(0);
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
+  const [trialWorkoutRetryBusy, setTrialWorkoutRetryBusy] = useState(false);
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
   const workspaceId = activeWorkspace?.id ?? null;
 
@@ -969,13 +971,46 @@ export function KanbanBoard({
 
   const effectiveWorkspaceCategory = workspaceCategory ?? activeWorkspace?.category_type ?? null;
 
-  const showTrialWorkoutGenerating =
+  const trialWorkoutGen = useMemo(
+    () => parseWorkoutGenerationFromBubbleMetadata(activeBubble?.metadata),
+    [activeBubble?.metadata],
+  );
+
+  const trialFitnessBoardContext =
     boardReady &&
     Boolean(bubbleId && bubbleId !== ALL_BUBBLES_BUBBLE_ID) &&
     activeBubble?.bubble_type === 'trial' &&
     effectiveWorkspaceCategory === 'fitness' &&
-    !tasksBoardLoading &&
-    totalTasksInBoard === 0;
+    !tasksBoardLoading;
+
+  const genStatus = trialWorkoutGen?.status;
+  const genTerminal =
+    genStatus === 'failed' || genStatus === 'completed' || genStatus === 'skipped';
+  const genInFlight = genStatus === 'pending' || genStatus === 'running';
+
+  /** Metadata drives the UI; empty metadata + empty board still shows progress (migration / Realtime gaps). */
+  const showTrialWorkoutGenerationPending =
+    trialFitnessBoardContext &&
+    genStatus !== 'failed' &&
+    (genInFlight || (!genTerminal && totalTasksInBoard === 0));
+
+  const showTrialWorkoutGenerationFailed =
+    trialFitnessBoardContext && trialWorkoutGen?.status === 'failed';
+
+  const showTrialWorkoutBoardOverlay =
+    showTrialWorkoutGenerationPending || showTrialWorkoutGenerationFailed;
+
+  /** Trial workout overlay only renders in the expanded board body; force-expand if persisted strip state hides it. */
+  useEffect(() => {
+    if (!boardStripHydrated || !workspaceId) return;
+    if (!showTrialWorkoutBoardOverlay || !boardStripCollapsed) return;
+    setBoardStripCollapsed(false);
+    try {
+      localStorage.setItem(kanbanBoardStripStorageKey(workspaceId), '0');
+    } catch {
+      /* ignore */
+    }
+  }, [boardStripHydrated, workspaceId, showTrialWorkoutBoardOverlay, boardStripCollapsed]);
 
   /** INSERT-only avoids noisy reloads while polling an empty trial board; widen to * once a task exists. */
   useEffect(() => {
@@ -993,7 +1028,7 @@ export function KanbanBoard({
       !isAll &&
       bubbleId !== ALL_BUBBLES_BUBBLE_ID &&
       bubbles.some((b) => b.id === bubbleId && b.bubble_type === 'trial') &&
-      showTrialWorkoutGenerating;
+      showTrialWorkoutGenerationPending;
     if (isAll) {
       for (const bid of ids) {
         channel.on(
@@ -1027,18 +1062,45 @@ export function KanbanBoard({
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [bubbleId, bubbles, loadTasks, showTrialWorkoutGenerating]);
+  }, [bubbleId, bubbles, loadTasks, showTrialWorkoutGenerationPending]);
 
   useEffect(() => {
-    if (!showTrialWorkoutGenerating) {
+    if (!showTrialWorkoutGenerationPending) {
       setTrialGenerationWaitTimedOut(false);
       return;
     }
     setTrialGenerationWaitTimedOut(false);
-    /** Trial workout job is a single fast Vertex call; if this fires, realtime/DB may be stuck. */
+    /** Async path may wait on Vertex + Realtime; nudge the user if nothing changes for a long time. */
     const t = window.setTimeout(() => setTrialGenerationWaitTimedOut(true), 90_000);
     return () => window.clearTimeout(t);
-  }, [showTrialWorkoutGenerating]);
+  }, [showTrialWorkoutGenerationPending]);
+
+  const retryStorefrontTrialWorkout = useCallback(async () => {
+    if (!workspaceId || !bubbleId || bubbleId === ALL_BUBBLES_BUBBLE_ID) return;
+    if (!isGuestWorkspaceRole(workspaceMemberRole)) return;
+    setTrialWorkoutRetryBusy(true);
+    try {
+      const res = await fetch('/api/ai/retry-storefront-trial-workout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspace_id: workspaceId, bubble_id: bubbleId }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        const msg =
+          typeof data.error === 'string'
+            ? data.error
+            : res.status === 429
+              ? 'Too many retries. Try again later.'
+              : 'Retry failed.';
+        console.error('[KanbanBoard] retry trial workout', msg);
+        return;
+      }
+      void loadTasks();
+    } finally {
+      setTrialWorkoutRetryBusy(false);
+    }
+  }, [workspaceId, bubbleId, workspaceMemberRole, loadTasks]);
 
   const calendarRailProps = isValidElement(calendarMerged)
     ? (calendarMerged.props as Partial<CalendarRailProps>)
@@ -1130,26 +1192,53 @@ export function KanbanBoard({
           )}
         >
           <div className="relative flex h-full min-h-0 gap-3 p-3">
-            {showTrialWorkoutGenerating && !boardStripCollapsed ? (
+            {showTrialWorkoutBoardOverlay && !boardStripCollapsed ? (
               <div
                 className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 rounded-lg bg-background/85 p-6 text-center backdrop-blur-sm"
                 role="status"
                 aria-live="polite"
               >
-                <div className="flex w-full max-w-sm flex-col gap-2">
-                  <div className="h-3 w-[72%] animate-pulse rounded-md bg-muted" />
-                  <div className="h-3 w-full animate-pulse rounded-md bg-muted" />
-                  <div className="h-3 w-[83%] animate-pulse rounded-md bg-muted" />
-                </div>
-                <p className="text-sm font-medium text-foreground">
-                  Generating your custom workout…
-                </p>
-                {trialGenerationWaitTimedOut ? (
-                  <p className="max-w-sm text-xs text-muted-foreground">
-                    Still waiting on your first card—try a refresh. If nothing appears, the
-                    workspace may still be finishing setup; try again in a minute or add a task from
-                    the board menu.
-                  </p>
+                {showTrialWorkoutGenerationPending ? (
+                  <>
+                    <div className="flex w-full max-w-sm flex-col gap-2">
+                      <div className="h-3 w-[72%] animate-pulse rounded-md bg-muted" />
+                      <div className="h-3 w-full animate-pulse rounded-md bg-muted" />
+                      <div className="h-3 w-[83%] animate-pulse rounded-md bg-muted" />
+                    </div>
+                    <p className="text-sm font-medium text-foreground">
+                      Generating your custom workout…
+                    </p>
+                    {trialGenerationWaitTimedOut ? (
+                      <p className="max-w-sm text-xs text-muted-foreground">
+                        This is taking longer than usual—try refreshing the page. You can also add a
+                        task from the board menu.
+                      </p>
+                    ) : null}
+                  </>
+                ) : null}
+                {showTrialWorkoutGenerationFailed ? (
+                  <div className="flex max-w-sm flex-col gap-3">
+                    <p className="text-sm font-medium text-foreground">Workout setup hit a snag</p>
+                    {trialWorkoutGen?.error_message ? (
+                      <p className="text-xs text-muted-foreground">
+                        {trialWorkoutGen.error_message}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        We could not finish generating your trial workout.
+                      </p>
+                    )}
+                    {isGuestWorkspaceRole(workspaceMemberRole) ? (
+                      <button
+                        type="button"
+                        onClick={() => void retryStorefrontTrialWorkout()}
+                        disabled={trialWorkoutRetryBusy}
+                        className="mx-auto rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:pointer-events-none disabled:opacity-50"
+                      >
+                        {trialWorkoutRetryBusy ? 'Retrying…' : 'Retry'}
+                      </button>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
             ) : null}
@@ -1374,7 +1463,7 @@ type ColumnProps = {
   workspaceCategory: WorkspaceCategory | null;
   calendarTimezone: string;
   onMoveToBubble: (taskId: string, targetBubbleId: string) => void;
-  onOpenTask?: (taskId: string, opts?: { tab?: TaskModalTab }) => void;
+  onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
   onStartWorkout?: (task: TaskRow) => void;
   bubbleUpPropsFor: (taskId: string) => TaskBubbleUpControlProps | undefined;
   onAddNew?: () => void;
@@ -1505,7 +1594,7 @@ type CardProps = {
   workspaceCategory: WorkspaceCategory | null;
   calendarTimezone: string;
   onMoveToBubble: (taskId: string, targetBubbleId: string) => void;
-  onOpenTask?: (taskId: string, opts?: { tab?: TaskModalTab }) => void;
+  onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
   onStartWorkout?: (task: TaskRow) => void;
   bubbleUp?: Omit<TaskBubbleUpControlProps, 'density'>;
 };

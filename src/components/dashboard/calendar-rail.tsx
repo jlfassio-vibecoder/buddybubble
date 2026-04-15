@@ -10,7 +10,7 @@ import {
   type TaskRow,
   type WorkspaceCategory,
 } from '@/types/database';
-import type { TaskModalTab } from '@/components/modals/TaskModal';
+import type { OpenTaskOptions } from '@/components/modals/TaskModal';
 import { ALL_BUBBLES_BUBBLE_ID } from '@/lib/all-bubbles';
 import { getCalendarDateInTimeZone } from '@/lib/workspace-calendar';
 import { calendarDataRangeYmd } from '@/lib/calendar-view-range';
@@ -90,7 +90,7 @@ export type CalendarRailContextProps = {
   canWrite: boolean;
   calendarTimezone: string | null;
   workspaceCategory: WorkspaceCategory | null;
-  onOpenTask?: (taskId: string, opts?: { tab?: TaskModalTab }) => void;
+  onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
   workspaceMemberRole?: MemberRole | null;
   guestTaskUserId?: string | null;
 };

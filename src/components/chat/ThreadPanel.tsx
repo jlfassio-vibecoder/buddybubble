@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MessageSquare, X, Send, Paperclip, Loader2 } from 'lucide-react';
-import type { TaskModalTab } from '@/components/modals/TaskModal';
+import type { OpenTaskOptions } from '@/components/modals/TaskModal';
 import type { TaskBubbleUpControlProps } from '@/components/tasks/bubbly-button';
 import type { ChatMessage } from './ChatArea';
 import { ChatFeedTaskCard } from './ChatFeedTaskCard';
@@ -22,7 +22,7 @@ export type ThreadPanelProps = {
   onSendMessage: (content: string, files?: File[]) => Promise<boolean>;
   onOpenAttachment: (attachments: MessageAttachment[], index: number) => void;
   /** Opens the task modal for an embedded Kanban card (chat feed cards). */
-  onOpenTask?: (taskId: string, opts?: { tab?: TaskModalTab }) => void;
+  onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
   /** Bubble Up summaries for embedded task ids (same hook as main `ChatArea`). */
   bubbleUpPropsFor?: (taskId: string) => Omit<TaskBubbleUpControlProps, 'density'> | undefined;
   renderMessageContent: (content: string) => ReactNode;
