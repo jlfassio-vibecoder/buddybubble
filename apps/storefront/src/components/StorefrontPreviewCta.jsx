@@ -1,5 +1,6 @@
 import { Turnstile } from '@marsidev/react-turnstile';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { WORKOUT_REFINE_PROMPTS } from '../lib/fitness-workout-template-copy.js';
 
 /** useLayoutEffect is a no-op on the server; avoids reading sessionStorage during the initial state initializer (hydration mismatch). */
 const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
@@ -161,10 +162,13 @@ function readInitialWizard(publicSlug, workspaceCategory) {
   const cat = workspaceCategory === 'fitness' ? 'fitness' : 'business';
   const stepList = cat === 'fitness' ? FITNESS_PROFILE_STEPS : BUSINESS_PROFILE_STEPS;
   const empty = {
-    phase: /** @type {'idle' | 'profile' | 'email'} */ ('idle'),
+    phase: /** @type {'idle' | 'profile' | 'workout_refine' | 'email'} */ ('idle'),
     profileStep: 0,
     profileDraft: /** @type {Record<string, unknown>} */ ({}),
     email: '',
+    fitnessAiPreview: /** @type {Record<string, unknown> | null} */ (null),
+    /** After first successful refine→email; avoids migrating legacy `email` drafts forever. */
+    hasCompletedWorkoutRefine: false,
   };
   if (!slug) return empty;
   try {
@@ -172,12 +176,31 @@ function readInitialWizard(publicSlug, workspaceCategory) {
     if (!raw) return empty;
     const parsed = JSON.parse(raw);
     if (parsed?.version !== STORAGE_VERSION || parsed?.storedSlug !== slug) return empty;
-    const phase =
-      parsed.phase === 'profile' || parsed.phase === 'email' || parsed.phase === 'idle'
+    let phase =
+      parsed.phase === 'profile' ||
+      parsed.phase === 'email' ||
+      parsed.phase === 'workout_refine' ||
+      parsed.phase === 'idle'
         ? parsed.phase
         : 'idle';
     let profileStep = typeof parsed.profileStep === 'number' ? parsed.profileStep : 0;
     profileStep = Math.max(0, Math.min(profileStep, stepList.length - 1));
+    const hasCompletedWorkoutRefine = parsed.hasCompletedWorkoutRefine === true;
+    const migratedLegacyEmailToRefine =
+      cat === 'fitness' && phase === 'email' && !hasCompletedWorkoutRefine;
+    if (migratedLegacyEmailToRefine) {
+      phase = 'workout_refine';
+      profileStep = Math.max(0, stepList.length - 1);
+    }
+    let fitnessAiPreview = null;
+    if (
+      !migratedLegacyEmailToRefine &&
+      parsed.fitnessAiPreview &&
+      typeof parsed.fitnessAiPreview === 'object' &&
+      !Array.isArray(parsed.fitnessAiPreview)
+    ) {
+      fitnessAiPreview = parsed.fitnessAiPreview;
+    }
     const profileDraft =
       parsed.profileDraft &&
       typeof parsed.profileDraft === 'object' &&
@@ -185,7 +208,10 @@ function readInitialWizard(publicSlug, workspaceCategory) {
         ? parsed.profileDraft
         : {};
     const email = typeof parsed.emailDraft === 'string' ? parsed.emailDraft : '';
-    return { phase, profileStep, profileDraft, email };
+    if (cat === 'fitness' && phase === 'email') {
+      fitnessAiPreview = null;
+    }
+    return { phase, profileStep, profileDraft, email, fitnessAiPreview, hasCompletedWorkoutRefine };
   } catch {
     return empty;
   }
@@ -224,12 +250,20 @@ export default function StorefrontPreviewCta({
 
   /** Must match SSR — never read sessionStorage in the initializer or hydration will mismatch. */
   const [snap, setSnap] = useState(() => ({
-    phase: /** @type {'idle' | 'profile' | 'email'} */ ('idle'),
+    phase: /** @type {'idle' | 'profile' | 'workout_refine' | 'email'} */ ('idle'),
     profileStep: 0,
     profileDraft: /** @type {Record<string, unknown>} */ ({}),
     email: '',
+    fitnessAiPreview: /** @type {Record<string, unknown> | null} */ (null),
+    hasCompletedWorkoutRefine: false,
   }));
-  const { phase, profileStep, profileDraft, email } = snap;
+  const { phase, profileStep, profileDraft, email, fitnessAiPreview } = snap;
+
+  /** Vertex outline fetch (questionnaire only — refine fields applied server-side later). */
+  const [previewFetchStatus, setPreviewFetchStatus] = useState(
+    /** @type {'idle' | 'loading' | 'error' | 'ready'} */ ('idle'),
+  );
+  const [previewFetchError, setPreviewFetchError] = useState(/** @type {string | null} */ (null));
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(/** @type {string | null} */ (null));
@@ -263,6 +297,8 @@ export default function StorefrontPreviewCta({
           profileStep: snap.profileStep,
           profileDraft: snap.profileDraft,
           emailDraft: snap.email,
+          fitnessAiPreview: snap.fitnessAiPreview,
+          hasCompletedWorkoutRefine: snap.hasCompletedWorkoutRefine,
         }),
       );
     } catch {
@@ -283,12 +319,20 @@ export default function StorefrontPreviewCta({
     setError(null);
     setTurnstileToken(null);
     setTurnstileWidgetError(null);
-    setSnap((prev) => ({ ...prev, phase: 'profile', profileStep: 0 }));
+    setPreviewFetchStatus('idle');
+    setPreviewFetchError(null);
+    setSnap((prev) => ({
+      ...prev,
+      phase: 'profile',
+      profileStep: 0,
+      fitnessAiPreview: null,
+      hasCompletedWorkoutRefine: false,
+    }));
   }, []);
 
   const closeToIdle = useCallback(() => {
     setError(null);
-    setSnap((prev) => ({ ...prev, phase: 'idle' }));
+    setSnap((prev) => ({ ...prev, phase: 'idle', hasCompletedWorkoutRefine: false }));
   }, []);
 
   const currentStepDef = steps[profileStep] ?? null;
@@ -320,17 +364,141 @@ export default function StorefrontPreviewCta({
     return typeof v === 'string' && v.trim().length > 0;
   }, [currentStepDef, profileDraft]);
 
+  /** Questionnaire fields only — initial Vertex outline ignores refine step fields. */
+  const questionnaireForVertex = useMemo(
+    () => ({
+      primary_goal: profileDraft.primary_goal,
+      experience_level: profileDraft.experience_level,
+      equipment: profileDraft.equipment,
+      unit_system: profileDraft.unit_system,
+    }),
+    [
+      profileDraft.primary_goal,
+      profileDraft.experience_level,
+      profileDraft.equipment,
+      profileDraft.unit_system,
+    ],
+  );
+
+  const outlineFetchInFlightRef = useRef(false);
+
+  const fetchFitnessOutline = useCallback(async () => {
+    if (outlineFetchInFlightRef.current) return;
+    outlineFetchInFlightRef.current = true;
+    setPreviewFetchError(null);
+    setPreviewFetchStatus('loading');
+    try {
+      const res = await fetch('/api/storefront-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          profile: questionnaireForVertex,
+          ...(turnstileToken ? { turnstileToken } : {}),
+        }),
+      });
+      const data = /** @type {{ error?: string; preview?: Record<string, unknown> }} */ (
+        await res.json().catch(() => ({}))
+      );
+      if (!res.ok) {
+        setPreviewFetchError(
+          typeof data.error === 'string' ? data.error : 'Could not generate your workout outline.',
+        );
+        setPreviewFetchStatus('error');
+        return;
+      }
+      const p = data.preview;
+      if (!p || typeof p !== 'object' || !Array.isArray(p.main_exercises)) {
+        setPreviewFetchError('Invalid outline response.');
+        setPreviewFetchStatus('error');
+        return;
+      }
+      setSnap((prev) => ({ ...prev, fitnessAiPreview: p }));
+      setPreviewFetchStatus('ready');
+    } catch {
+      setPreviewFetchError('Network error.');
+      setPreviewFetchStatus('error');
+    } finally {
+      outlineFetchInFlightRef.current = false;
+    }
+  }, [questionnaireForVertex, turnstileToken]);
+
+  useEffect(() => {
+    if (
+      phase === 'workout_refine' &&
+      fitnessAiPreview?.title &&
+      Array.isArray(fitnessAiPreview.main_exercises)
+    ) {
+      setPreviewFetchStatus('ready');
+    }
+  }, [phase, fitnessAiPreview]);
+
+  useEffect(() => {
+    if (phase !== 'workout_refine' || category !== 'fitness') {
+      return;
+    }
+    if (fitnessAiPreview?.title && Array.isArray(fitnessAiPreview.main_exercises)) {
+      return;
+    }
+    const siteKeyOk = typeof turnstileSiteKey === 'string' && turnstileSiteKey.trim().length > 0;
+    if (import.meta.env.PROD && !siteKeyOk) {
+      return;
+    }
+    if (siteKeyOk && !turnstileToken) {
+      return;
+    }
+    void fetchFitnessOutline();
+  }, [
+    phase,
+    category,
+    fitnessAiPreview,
+    turnstileToken,
+    turnstileSiteKey,
+    questionnaireForVertex,
+    fetchFitnessOutline,
+  ]);
+
+  const setIntensityPreference = useCallback((value) => {
+    setSnap((prev) => ({
+      ...prev,
+      profileDraft: { ...prev.profileDraft, intensity_preference: value },
+    }));
+  }, []);
+
+  const setWorkoutNotes = useCallback((value) => {
+    setSnap((prev) => ({
+      ...prev,
+      profileDraft: { ...prev.profileDraft, storefront_workout_notes: value },
+    }));
+  }, []);
+
   const goNextProfile = useCallback(() => {
     if (!canAdvanceProfile) return;
     const movingToEmail = profileStep >= steps.length - 1;
     if (movingToEmail) {
+      if (category === 'fitness') {
+        setPreviewFetchStatus('idle');
+        setPreviewFetchError(null);
+        setSnap((prev) => {
+          const d = prev.profileDraft;
+          const nextDraft =
+            typeof d.intensity_preference === 'string' ? d : { ...d, intensity_preference: 'same' };
+          return {
+            ...prev,
+            phase: 'workout_refine',
+            profileDraft: nextDraft,
+            fitnessAiPreview: null,
+            hasCompletedWorkoutRefine: false,
+          };
+        });
+        return;
+      }
       setTurnstileToken(null);
       setTurnstileWidgetError(null);
       setSnap((prev) => ({ ...prev, phase: 'email' }));
       return;
     }
     setSnap((prev) => ({ ...prev, profileStep: prev.profileStep + 1 }));
-  }, [canAdvanceProfile, profileStep, steps.length]);
+  }, [canAdvanceProfile, category, profileStep, steps.length]);
 
   const goBackProfile = useCallback(() => {
     setSnap((prev) => {
@@ -344,10 +512,30 @@ export default function StorefrontPreviewCta({
   const goBackFromEmail = useCallback(() => {
     setSnap((prev) => ({
       ...prev,
+      phase: category === 'fitness' ? 'workout_refine' : 'profile',
+      profileStep: Math.max(0, steps.length - 1),
+      hasCompletedWorkoutRefine: category === 'fitness' ? false : prev.hasCompletedWorkoutRefine,
+    }));
+  }, [category, steps.length]);
+
+  const goBackFromWorkoutRefine = useCallback(() => {
+    outlineFetchInFlightRef.current = false;
+    setPreviewFetchStatus('idle');
+    setPreviewFetchError(null);
+    setSnap((prev) => ({
+      ...prev,
       phase: 'profile',
       profileStep: Math.max(0, steps.length - 1),
+      fitnessAiPreview: null,
+      hasCompletedWorkoutRefine: false,
     }));
   }, [steps.length]);
+
+  const continueWorkoutRefineToEmail = useCallback(() => {
+    setTurnstileToken(null);
+    setTurnstileWidgetError(null);
+    setSnap((prev) => ({ ...prev, phase: 'email', hasCompletedWorkoutRefine: true }));
+  }, []);
 
   const onEmailSubmit = useCallback(
     async (e) => {
@@ -519,7 +707,11 @@ export default function StorefrontPreviewCta({
             className="ml-auto inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold text-white opacity-100 ring-2 ring-white/20 transition hover:brightness-110 disabled:pointer-events-none disabled:opacity-50"
             style={{ backgroundColor: accent }}
           >
-            {profileStep >= steps.length - 1 ? 'Continue to email' : 'Next'}
+            {profileStep >= steps.length - 1
+              ? category === 'fitness'
+                ? 'Next: personalize workout'
+                : 'Continue to email'
+              : 'Next'}
           </button>
         </div>
         {error ? (
@@ -527,6 +719,197 @@ export default function StorefrontPreviewCta({
             {error}
           </p>
         ) : null}
+      </div>
+    );
+  }
+
+  if (phase === 'workout_refine' && category === 'fitness') {
+    const intensityValue =
+      profileDraft.intensity_preference === 'lighter' ||
+      profileDraft.intensity_preference === 'harder'
+        ? profileDraft.intensity_preference
+        : 'same';
+    const notesValue =
+      typeof profileDraft.storefront_workout_notes === 'string'
+        ? profileDraft.storefront_workout_notes
+        : '';
+    const siteKeyOk = typeof turnstileSiteKey === 'string' && turnstileSiteKey.trim().length > 0;
+    const prodMissingSiteKey = import.meta.env.PROD && !siteKeyOk;
+    const p = fitnessAiPreview;
+    const outlineReady =
+      p &&
+      typeof p.title === 'string' &&
+      typeof p.summary === 'string' &&
+      Array.isArray(p.main_exercises);
+    const exercises = outlineReady
+      ? p.main_exercises.filter((ex) => ex && typeof ex === 'object')
+      : [];
+
+    return (
+      <div className="w-full max-w-xl rounded-2xl border border-white/20 bg-black/35 p-4 shadow-xl backdrop-blur-md sm:max-w-md">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <p className="text-xs font-medium uppercase tracking-wide text-white/60">
+            Your workout outline
+          </p>
+          <button type="button" onClick={closeToIdle} className={ghostBtnClass}>
+            Close
+          </button>
+        </div>
+        {prodMissingSiteKey ? (
+          <p className="mt-2 rounded-lg border border-amber-400/40 bg-amber-500/15 px-3 py-2 text-xs text-amber-100">
+            AI preview needs{' '}
+            <span className="font-mono text-[0.7rem]">PUBLIC_TURNSTILE_SITE_KEY</span> on the
+            storefront project (same as email step).
+          </p>
+        ) : null}
+        {siteKeyOk ? (
+          <div className="mt-3 flex min-h-[72px] w-full max-w-[320px] flex-col items-center justify-center gap-2 self-center">
+            <Turnstile
+              siteKey={turnstileSiteKey.trim()}
+              options={{ appearance: 'always', size: 'normal', theme: 'auto' }}
+              onSuccess={(token) => {
+                setTurnstileWidgetError(null);
+                setTurnstileToken(token);
+              }}
+              onExpire={() => {
+                setTurnstileToken(null);
+                setTurnstileWidgetError(
+                  'Security check expired. It will refresh automatically, or reload the page.',
+                );
+              }}
+              onError={(code) => {
+                setTurnstileToken(null);
+                setTurnstileWidgetError(
+                  `Turnstile could not run (code ${code ?? 'unknown'}). Check hostnames in Cloudflare Turnstile for this site.`,
+                );
+              }}
+            />
+            {turnstileWidgetError ? (
+              <p className="text-center text-xs text-amber-100" role="alert">
+                {turnstileWidgetError}
+              </p>
+            ) : !turnstileToken ? (
+              <p className="text-center text-[0.65rem] text-white/50">
+                Complete the check so we can generate your outline.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {previewFetchStatus === 'loading' ? (
+          <p className="mt-4 text-sm text-white/85">Generating your personalized outline…</p>
+        ) : null}
+        {previewFetchError ? (
+          <div className="mt-4 space-y-2">
+            <p className="text-xs text-red-200" role="alert">
+              {previewFetchError}
+            </p>
+            <button
+              type="button"
+              onClick={() => void fetchFitnessOutline()}
+              className={ghostBtnClass}
+            >
+              Try again
+            </button>
+          </div>
+        ) : null}
+        {outlineReady ? (
+          <div className="mt-4 space-y-3 border-t border-white/15 pt-4">
+            <h2 className="text-base font-semibold text-white">{String(p.title)}</h2>
+            {typeof p.tagline === 'string' && p.tagline.trim() ? (
+              <p className="text-sm text-white/80">{p.tagline.trim()}</p>
+            ) : null}
+            <p className="text-xs text-white/60">
+              {typeof p.day_label === 'string' ? p.day_label : 'Session'}{' '}
+              {typeof p.estimated_minutes === 'number' ? ` · ~${p.estimated_minutes} min` : ''}
+            </p>
+            <p className="text-sm leading-relaxed text-white/90">{String(p.summary)}</p>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-white/50">Exercises</p>
+              <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm text-white/90">
+                {exercises.map((ex, i) => {
+                  const row = /** @type {Record<string, unknown>} */ (ex);
+                  const name = typeof row.name === 'string' ? row.name : 'Exercise';
+                  const detail = typeof row.detail === 'string' ? row.detail : '';
+                  return (
+                    <li key={i}>
+                      <span className="font-medium">{name}</span>
+                      {detail ? <span className="text-white/80"> — {detail}</span> : null}
+                    </li>
+                  );
+                })}
+              </ol>
+            </div>
+            {typeof p.coach_tip === 'string' && p.coach_tip.trim() ? (
+              <p className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-white/90">
+                <span className="font-medium text-white/70">Coach tip: </span>
+                {p.coach_tip.trim()}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {outlineReady ? (
+          <>
+            <p className="mt-6 text-xs font-medium uppercase tracking-wide text-white/50">
+              Adjust for this session
+            </p>
+            <p className="mt-4 text-xs font-medium uppercase tracking-wide text-white/50">
+              Session intensity
+            </p>
+            <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+              {[
+                { id: 'lighter', label: 'A bit easier' },
+                { id: 'same', label: 'About right' },
+                { id: 'harder', label: 'More challenging' },
+              ].map(({ id, label }) => {
+                const active = intensityValue === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setIntensityPreference(id)}
+                    className={choiceBtnClass(active)}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-4 text-xs font-medium uppercase tracking-wide text-white/50">
+              Anything we should account for?
+            </p>
+            <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-white/75">
+              {WORKOUT_REFINE_PROMPTS.map((line, i) => (
+                <li key={i}>{line}</li>
+              ))}
+            </ul>
+            <label className="sr-only" htmlFor="storefront-workout-notes">
+              Additional notes for your coach
+            </label>
+            <textarea
+              id="storefront-workout-notes"
+              name="storefront_workout_notes"
+              rows={4}
+              value={notesValue}
+              onChange={(ev) => setWorkoutNotes(ev.target.value)}
+              placeholder="Equipment limits, injuries, soreness, intensity preferences, or anything else…"
+              className={`${inputClass} mt-3 min-h-[96px] resize-y`}
+            />
+          </>
+        ) : null}
+        <div className="mt-6 flex flex-wrap gap-2">
+          <button type="button" onClick={goBackFromWorkoutRefine} className={ghostBtnClass}>
+            Back
+          </button>
+          <button
+            type="button"
+            onClick={continueWorkoutRefineToEmail}
+            disabled={!outlineReady || previewFetchStatus === 'loading'}
+            className="ml-auto inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold text-white ring-2 ring-white/20 transition hover:brightness-110 disabled:pointer-events-none disabled:opacity-50"
+            style={{ backgroundColor: accent }}
+          >
+            Continue to email
+          </button>
+        </div>
       </div>
     );
   }

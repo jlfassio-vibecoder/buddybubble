@@ -1035,7 +1035,8 @@ export function KanbanBoard({
       return;
     }
     setTrialGenerationWaitTimedOut(false);
-    const t = window.setTimeout(() => setTrialGenerationWaitTimedOut(true), 180_000);
+    /** Trial workout job is a single fast Vertex call; if this fires, realtime/DB may be stuck. */
+    const t = window.setTimeout(() => setTrialGenerationWaitTimedOut(true), 90_000);
     return () => window.clearTimeout(t);
   }, [showTrialWorkoutGenerating]);
 
@@ -1145,7 +1146,9 @@ export function KanbanBoard({
                 </p>
                 {trialGenerationWaitTimedOut ? (
                   <p className="max-w-sm text-xs text-muted-foreground">
-                    This is taking longer than expected. Try refreshing the page.
+                    Still waiting on your first card—try a refresh. If nothing appears, the
+                    workspace may still be finishing setup; try again in a minute or add a task from
+                    the board menu.
                   </p>
                 ) : null}
               </div>

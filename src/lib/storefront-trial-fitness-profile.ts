@@ -19,6 +19,19 @@ function pickUnitSystem(raw: unknown): UnitSystem {
   return 'metric';
 }
 
+/** Max chars for freeform storefront notes stored in `biometrics` (profile JSON cap is separate). */
+const MAX_STOREFRONT_WORKOUT_NOTES_STORED = 8000;
+
+/** Only merge `biometrics` when `profile` looks like a DB row — not a raw storefront draft (avoids client-injected biometrics). */
+function looksLikePersistedFitnessProfileRow(o: Record<string, unknown>): boolean {
+  return (
+    typeof o.workspace_id === 'string' &&
+    o.workspace_id.length > 0 &&
+    typeof o.user_id === 'string' &&
+    o.user_id.length > 0
+  );
+}
+
 /** Coerce age (years) into a coarse age_range label used by workout prompts. */
 function ageToAgeRange(age: number): string {
   if (age < 18) return '18-25';
@@ -43,6 +56,17 @@ export function mapStorefrontProfileToFitnessProfileUpsert(profile: unknown): {
 
   const o = profile as Record<string, unknown>;
 
+  const bio: Record<string, unknown> = {};
+  const persistedBio = o.biometrics;
+  if (
+    looksLikePersistedFitnessProfileRow(o) &&
+    persistedBio !== null &&
+    typeof persistedBio === 'object' &&
+    !Array.isArray(persistedBio)
+  ) {
+    Object.assign(bio, persistedBio as Record<string, unknown>);
+  }
+
   let goals = strArray(o.goals);
   if (goals.length === 0 && typeof o.primary_goal === 'string' && o.primary_goal.trim()) {
     goals = [o.primary_goal.trim()];
@@ -56,8 +80,6 @@ export function mapStorefrontProfileToFitnessProfileUpsert(profile: unknown): {
   if (equipment.length === 0) equipment = strArray(o.equipmentAvailable);
 
   const unit_system = pickUnitSystem(o.unit_system ?? o.unitSystem);
-
-  const bio: Record<string, unknown> = {};
 
   const wRaw = o.weight_kg ?? o.weightKg ?? o.weight;
   if (typeof wRaw === 'number' && Number.isFinite(wRaw) && wRaw > 0) {
@@ -90,6 +112,20 @@ export function mapStorefrontProfileToFitnessProfileUpsert(profile: unknown): {
 
   if (typeof o.injuries === 'string' && o.injuries.trim()) bio.injuries = o.injuries.trim();
   if (typeof o.conditions === 'string' && o.conditions.trim()) bio.conditions = o.conditions.trim();
+
+  const intensityRaw = o.intensity_preference ?? o.intensityPreference;
+  if (intensityRaw === 'lighter' || intensityRaw === 'same' || intensityRaw === 'harder') {
+    bio.intensity_preference = intensityRaw;
+  }
+
+  const workoutNotes = o.storefront_workout_notes ?? o.storefrontWorkoutNotes;
+  if (typeof workoutNotes === 'string' && workoutNotes.trim()) {
+    const t = workoutNotes.trim();
+    bio.storefront_workout_notes =
+      t.length > MAX_STOREFRONT_WORKOUT_NOTES_STORED
+        ? t.slice(0, MAX_STOREFRONT_WORKOUT_NOTES_STORED)
+        : t;
+  }
 
   return {
     goals,
