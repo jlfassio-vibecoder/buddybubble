@@ -1,5 +1,9 @@
 import { Turnstile } from '@marsidev/react-turnstile';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  getFitnessWorkoutTemplateCopy,
+  WORKOUT_REFINE_PROMPTS,
+} from '../lib/fitness-workout-template-copy.js';
 
 /** useLayoutEffect is a no-op on the server; avoids reading sessionStorage during the initial state initializer (hydration mismatch). */
 const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
@@ -161,7 +165,7 @@ function readInitialWizard(publicSlug, workspaceCategory) {
   const cat = workspaceCategory === 'fitness' ? 'fitness' : 'business';
   const stepList = cat === 'fitness' ? FITNESS_PROFILE_STEPS : BUSINESS_PROFILE_STEPS;
   const empty = {
-    phase: /** @type {'idle' | 'profile' | 'email'} */ ('idle'),
+    phase: /** @type {'idle' | 'profile' | 'workout_refine' | 'email'} */ ('idle'),
     profileStep: 0,
     profileDraft: /** @type {Record<string, unknown>} */ ({}),
     email: '',
@@ -173,7 +177,10 @@ function readInitialWizard(publicSlug, workspaceCategory) {
     const parsed = JSON.parse(raw);
     if (parsed?.version !== STORAGE_VERSION || parsed?.storedSlug !== slug) return empty;
     const phase =
-      parsed.phase === 'profile' || parsed.phase === 'email' || parsed.phase === 'idle'
+      parsed.phase === 'profile' ||
+      parsed.phase === 'email' ||
+      parsed.phase === 'workout_refine' ||
+      parsed.phase === 'idle'
         ? parsed.phase
         : 'idle';
     let profileStep = typeof parsed.profileStep === 'number' ? parsed.profileStep : 0;
@@ -224,7 +231,7 @@ export default function StorefrontPreviewCta({
 
   /** Must match SSR — never read sessionStorage in the initializer or hydration will mismatch. */
   const [snap, setSnap] = useState(() => ({
-    phase: /** @type {'idle' | 'profile' | 'email'} */ ('idle'),
+    phase: /** @type {'idle' | 'profile' | 'workout_refine' | 'email'} */ ('idle'),
     profileStep: 0,
     profileDraft: /** @type {Record<string, unknown>} */ ({}),
     email: '',
@@ -320,17 +327,45 @@ export default function StorefrontPreviewCta({
     return typeof v === 'string' && v.trim().length > 0;
   }, [currentStepDef, profileDraft]);
 
+  const workoutTemplateCopy = useMemo(
+    () => getFitnessWorkoutTemplateCopy(profileDraft),
+    [profileDraft],
+  );
+
+  const setIntensityPreference = useCallback((value) => {
+    setSnap((prev) => ({
+      ...prev,
+      profileDraft: { ...prev.profileDraft, intensity_preference: value },
+    }));
+  }, []);
+
+  const setWorkoutNotes = useCallback((value) => {
+    setSnap((prev) => ({
+      ...prev,
+      profileDraft: { ...prev.profileDraft, storefront_workout_notes: value },
+    }));
+  }, []);
+
   const goNextProfile = useCallback(() => {
     if (!canAdvanceProfile) return;
     const movingToEmail = profileStep >= steps.length - 1;
     if (movingToEmail) {
+      if (category === 'fitness') {
+        setSnap((prev) => {
+          const d = prev.profileDraft;
+          const nextDraft =
+            typeof d.intensity_preference === 'string' ? d : { ...d, intensity_preference: 'same' };
+          return { ...prev, phase: 'workout_refine', profileDraft: nextDraft };
+        });
+        return;
+      }
       setTurnstileToken(null);
       setTurnstileWidgetError(null);
       setSnap((prev) => ({ ...prev, phase: 'email' }));
       return;
     }
     setSnap((prev) => ({ ...prev, profileStep: prev.profileStep + 1 }));
-  }, [canAdvanceProfile, profileStep, steps.length]);
+  }, [canAdvanceProfile, category, profileStep, steps.length]);
 
   const goBackProfile = useCallback(() => {
     setSnap((prev) => {
@@ -344,10 +379,24 @@ export default function StorefrontPreviewCta({
   const goBackFromEmail = useCallback(() => {
     setSnap((prev) => ({
       ...prev,
+      phase: category === 'fitness' ? 'workout_refine' : 'profile',
+      profileStep: Math.max(0, steps.length - 1),
+    }));
+  }, [category, steps.length]);
+
+  const goBackFromWorkoutRefine = useCallback(() => {
+    setSnap((prev) => ({
+      ...prev,
       phase: 'profile',
       profileStep: Math.max(0, steps.length - 1),
     }));
   }, [steps.length]);
+
+  const continueWorkoutRefineToEmail = useCallback(() => {
+    setTurnstileToken(null);
+    setTurnstileWidgetError(null);
+    setSnap((prev) => ({ ...prev, phase: 'email' }));
+  }, []);
 
   const onEmailSubmit = useCallback(
     async (e) => {
@@ -519,7 +568,11 @@ export default function StorefrontPreviewCta({
             className="ml-auto inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold text-white opacity-100 ring-2 ring-white/20 transition hover:brightness-110 disabled:pointer-events-none disabled:opacity-50"
             style={{ backgroundColor: accent }}
           >
-            {profileStep >= steps.length - 1 ? 'Continue to email' : 'Next'}
+            {profileStep >= steps.length - 1
+              ? category === 'fitness'
+                ? 'Next: personalize workout'
+                : 'Continue to email'
+              : 'Next'}
           </button>
         </div>
         {error ? (
@@ -527,6 +580,90 @@ export default function StorefrontPreviewCta({
             {error}
           </p>
         ) : null}
+      </div>
+    );
+  }
+
+  if (phase === 'workout_refine' && category === 'fitness') {
+    const intensityValue =
+      profileDraft.intensity_preference === 'lighter' ||
+      profileDraft.intensity_preference === 'harder'
+        ? profileDraft.intensity_preference
+        : 'same';
+    const notesValue =
+      typeof profileDraft.storefront_workout_notes === 'string'
+        ? profileDraft.storefront_workout_notes
+        : '';
+    const tc = workoutTemplateCopy;
+
+    return (
+      <div className="w-full max-w-xl rounded-2xl border border-white/20 bg-black/35 p-4 shadow-xl backdrop-blur-md sm:max-w-md">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <p className="text-xs font-medium uppercase tracking-wide text-white/60">
+            Your workout template
+          </p>
+          <button type="button" onClick={closeToIdle} className={ghostBtnClass}>
+            Close
+          </button>
+        </div>
+        <h2 className="text-base font-semibold text-white">{tc.headline}</h2>
+        <p className="mt-2 text-sm text-white/85">{tc.focusLine}</p>
+        {tc.equipmentLine ? <p className="mt-2 text-sm text-white/80">{tc.equipmentLine}</p> : null}
+        <p className="mt-4 text-xs font-medium uppercase tracking-wide text-white/50">
+          Session intensity
+        </p>
+        <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+          {[
+            { id: 'lighter', label: 'A bit easier' },
+            { id: 'same', label: 'About right' },
+            { id: 'harder', label: 'More challenging' },
+          ].map(({ id, label }) => {
+            const active = intensityValue === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setIntensityPreference(id)}
+                className={choiceBtnClass(active)}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-4 text-xs font-medium uppercase tracking-wide text-white/50">
+          Anything we should account for?
+        </p>
+        <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-white/75">
+          {WORKOUT_REFINE_PROMPTS.map((line, i) => (
+            <li key={i}>{line}</li>
+          ))}
+        </ul>
+        <label className="sr-only" htmlFor="storefront-workout-notes">
+          Additional notes for your coach
+        </label>
+        <textarea
+          id="storefront-workout-notes"
+          name="storefront_workout_notes"
+          rows={4}
+          value={notesValue}
+          onChange={(ev) => setWorkoutNotes(ev.target.value)}
+          placeholder="Equipment limits, injuries, soreness, intensity preferences, or anything else…"
+          className={`${inputClass} mt-3 min-h-[96px] resize-y`}
+        />
+        <div className="mt-6 flex flex-wrap gap-2">
+          <button type="button" onClick={goBackFromWorkoutRefine} className={ghostBtnClass}>
+            Back
+          </button>
+          <button
+            type="button"
+            onClick={continueWorkoutRefineToEmail}
+            className="ml-auto inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold text-white ring-2 ring-white/20 transition hover:brightness-110"
+            style={{ backgroundColor: accent }}
+          >
+            Continue to email
+          </button>
+        </div>
       </div>
     );
   }

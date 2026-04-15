@@ -91,6 +91,16 @@ export function mapStorefrontProfileToFitnessProfileUpsert(profile: unknown): {
   if (typeof o.injuries === 'string' && o.injuries.trim()) bio.injuries = o.injuries.trim();
   if (typeof o.conditions === 'string' && o.conditions.trim()) bio.conditions = o.conditions.trim();
 
+  const intensityRaw = o.intensity_preference ?? o.intensityPreference;
+  if (intensityRaw === 'lighter' || intensityRaw === 'same' || intensityRaw === 'harder') {
+    bio.intensity_preference = intensityRaw;
+  }
+
+  const workoutNotes = o.storefront_workout_notes ?? o.storefrontWorkoutNotes;
+  if (typeof workoutNotes === 'string' && workoutNotes.trim()) {
+    bio.storefront_workout_notes = workoutNotes.trim();
+  }
+
   return {
     goals,
     equipment,

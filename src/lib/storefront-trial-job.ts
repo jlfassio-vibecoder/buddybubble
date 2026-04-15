@@ -3,7 +3,8 @@
  *
  * Uses the same **single** Vertex call as storefront preview (~14s timeout) instead of the
  * 4-step `generate-workout-chain` (four sequential LLMs, often multi-minute). Falls back to a
- * minimal draft card if generation fails so the Kanban never stays empty indefinitely.
+ * minimal draft card only if **AI generation** fails—not if generation succeeds but the DB insert
+ * fails (that path logs and exits without a second insert).
  *
  * @see docs/tdd-lead-onboarding.md §6, §8 Phase 3
  */
@@ -169,6 +170,10 @@ export async function runStorefrontTrialWorkoutJob(
       exercises,
     });
     if (ok) return;
+    console.error(
+      '[storefront-trial-job] tasks insert failed after successful AI preview; not inserting fallback',
+    );
+    return;
   } else {
     const errText = await preview.response.text().catch(() => '');
     console.error(

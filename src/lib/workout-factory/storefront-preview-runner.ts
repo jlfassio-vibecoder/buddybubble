@@ -103,8 +103,44 @@ export function validateStorefrontPreviewPayload(
   };
 }
 
+function appendSessionPreferencesFromRawProfile(profile: unknown): string {
+  if (
+    profile === null ||
+    profile === undefined ||
+    typeof profile !== 'object' ||
+    Array.isArray(profile)
+  ) {
+    return '';
+  }
+  const o = profile as Record<string, unknown>;
+  const intensityRaw = o.intensity_preference ?? o.intensityPreference;
+  const intensity =
+    intensityRaw === 'lighter' || intensityRaw === 'same' || intensityRaw === 'harder'
+      ? intensityRaw
+      : '';
+  const notesRaw = o.storefront_workout_notes ?? o.storefrontWorkoutNotes;
+  const notes = typeof notesRaw === 'string' ? notesRaw.trim() : '';
+  const lines: string[] = [];
+  if (intensity) {
+    const label =
+      intensity === 'lighter'
+        ? 'less intense / easier'
+        : intensity === 'harder'
+          ? 'more challenging'
+          : 'about as planned';
+    lines.push(`Athlete preferred session intensity: ${label}.`);
+  }
+  if (notes) {
+    lines.push(
+      `Athlete’s additional notes (injuries, equipment, soreness, intensity, etc.): ${notes}`,
+    );
+  }
+  return lines.length ? `\n${lines.join('\n')}` : '';
+}
+
 function buildProfileContextBlock(profile: unknown): string {
   const mapped = mapStorefrontProfileToFitnessProfileUpsert(profile);
+  const sessionExtra = appendSessionPreferencesFromRawProfile(profile);
   if (mapped) {
     const parts = [
       `Goals: ${mapped.goals.join(', ') || '(not specified)'}`,
@@ -115,9 +151,12 @@ function buildProfileContextBlock(profile: unknown): string {
     return parts.join('\n');
   }
   if (profile && typeof profile === 'object' && !Array.isArray(profile)) {
-    return `Raw profile JSON (use for context only):\n${JSON.stringify(profile).slice(0, 4000)}`;
+    return (
+      `Raw profile JSON (use for context only):\n${JSON.stringify(profile).slice(0, 4000)}` +
+      sessionExtra
+    );
   }
-  return 'No structured profile provided.';
+  return 'No structured profile provided.' + sessionExtra;
 }
 
 const SYSTEM_PROMPT = `You are a certified strength coach. Output ONLY valid JSON (no markdown, no code fences) matching this exact shape:
