@@ -104,10 +104,11 @@ export async function setPasswordAction(password: string): Promise<ActionResult>
 }
 
 /**
- * Dashboard profile-completion modal: validates profile fields, then updates the session
- * user’s auth record with the **Admin API** (`email_confirm: true`) so anonymous QR invitees
- * get a verified email immediately without leaving the app — even when global confirmations
- * are on for other flows. Then updates `public.users` with the user-scoped client (RLS).
+ * Dashboard profile-completion modal: validates profile fields, updates **`public.users` first**
+ * (RLS), then updates **`auth.users`**. **Anonymous** users with no session email use the Admin
+ * API (`email_confirm: true`) so QR invitees are verified immediately; everyone else uses
+ * `auth.updateUser` so normal email-confirmation applies when changing address. If auth fails
+ * after the DB write succeeds, we **revert** `public.users` to the prior snapshot.
  */
 export async function completeProfileGateAction(
   input: CompleteProfileGateInput,
@@ -139,21 +140,17 @@ export async function completeProfileGateAction(
   } = await supabase.auth.getUser();
   if (!user) return { error: 'Not signed in.' };
 
-  let admin;
-  try {
-    admin = createServiceRoleClient();
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error('[completeProfileGateAction] service role client:', msg);
-    return { error: 'Could not update account. Try again in a moment.' };
-  }
+  const { data: prior, error: priorErr } = await supabase
+    .from('users')
+    .select('full_name, bio, children_names, avatar_url, email')
+    .eq('id', user.id)
+    .maybeSingle();
+  if (priorErr) return { error: priorErr.message };
+  if (!prior) return { error: 'Profile not found.' };
 
-  const { error: authError } = await admin.auth.admin.updateUserById(user.id, {
-    email,
-    password,
-    email_confirm: true,
-  });
-  if (authError) return { error: authError.message };
+  const hasAuthEmail = typeof user.email === 'string' && user.email.trim().length > 0;
+  const isAnonymous = (user as { is_anonymous?: boolean }).is_anonymous === true;
+  const canUseAdminOnboardingPath = isAnonymous && !hasAuthEmail;
 
   const update: Record<string, unknown> = {
     full_name: fullName,
@@ -165,8 +162,54 @@ export async function completeProfileGateAction(
     update.avatar_url = input.avatarUrl;
   }
 
-  const { error } = await supabase.from('users').update(update).eq('id', user.id);
-  if (error) return { error: error.message };
+  const { error: dbError } = await supabase.from('users').update(update).eq('id', user.id);
+  if (dbError) return { error: dbError.message };
+
+  let authError: { message: string } | null = null;
+
+  if (canUseAdminOnboardingPath) {
+    let admin: ReturnType<typeof createServiceRoleClient> | undefined;
+    try {
+      admin = createServiceRoleClient();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[completeProfileGateAction] service role client:', msg);
+      authError = { message: 'Could not update account. Try again in a moment.' };
+    }
+    if (admin && !authError) {
+      const { error } = await admin.auth.admin.updateUserById(user.id, {
+        email,
+        password,
+        email_confirm: true,
+      });
+      authError = error ?? null;
+    }
+  } else {
+    const authUpdate: { email?: string; password: string } = { password };
+    const currentEmail = (user.email ?? '').trim();
+    if (email !== currentEmail) {
+      authUpdate.email = email;
+    }
+    const { error } = await supabase.auth.updateUser(authUpdate);
+    authError = error ?? null;
+  }
+
+  if (authError) {
+    const revert: Record<string, unknown> = {
+      full_name: prior.full_name,
+      bio: prior.bio,
+      children_names: prior.children_names,
+      email: prior.email,
+    };
+    if (input.avatarUrl !== undefined) {
+      revert.avatar_url = prior.avatar_url;
+    }
+    const { error: revErr } = await supabase.from('users').update(revert).eq('id', user.id);
+    if (revErr) {
+      console.error('[completeProfileGateAction] revert after auth failure:', revErr.message);
+    }
+    return { error: authError.message };
+  }
 
   return { ok: true };
 }

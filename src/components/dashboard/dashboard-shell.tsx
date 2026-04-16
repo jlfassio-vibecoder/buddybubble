@@ -137,6 +137,8 @@ export function DashboardShell({
   const [taskModalCreateBubbleId, setTaskModalCreateBubbleId] = useState<string | null>(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [profileComplete, setProfileComplete] = useState(false);
+  /** `null` = session email not resolved yet (avoid treating legacy users as incomplete during fetch). */
+  const [authHasSessionEmail, setAuthHasSessionEmail] = useState<boolean | null>(null);
   const [peopleInvitesOpen, setPeopleInvitesOpen] = useState(false);
   const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false);
   const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false);
@@ -502,8 +504,24 @@ export function DashboardShell({
   }, [loadUserWorkspaces]);
 
   useEffect(() => {
-    setProfileComplete(isDashboardProfileComplete(profile, activeWorkspace, workspaceId));
-  }, [profile, activeWorkspace, workspaceId]);
+    let cancelled = false;
+    void (async () => {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!cancelled) setAuthHasSessionEmail(Boolean(user?.email?.trim()));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [profile?.id]);
+
+  useEffect(() => {
+    setProfileComplete(
+      isDashboardProfileComplete(profile, activeWorkspace, workspaceId, authHasSessionEmail),
+    );
+  }, [profile, activeWorkspace, workspaceId, authHasSessionEmail]);
 
   useEffect(() => {
     setBoardStripExpandNonce(0);

@@ -23,13 +23,20 @@ export type ProfileCompletionGateWorkspace = {
  *    the shell still only mounts the modal when `profile !== null`.
  * 2. Storefront trial guests in the active route workspace bypass the gate so the trial
  *    surface loads immediately.
- * 3. Everyone else needs a non-empty display name and email on `public.users` (anonymous
- *    invitees set both in the completion modal).
+ * 3. Everyone else needs a non-empty **display name** on `public.users`.
+ * 4. **Email on `public.users`** is required **unless** the session already has an email
+ *    (`authHasSessionEmail === true`) — avoids locking **legacy** accounts that have a name
+ *    but an empty `public.users.email` while `auth.users` already carries an address (OAuth drift).
+ *    `authHasSessionEmail === null` means “still resolving”; treat like unknown so we do not flash
+ *    the gate on first paint. `false` means no session email → gate stays on until the modal
+ *    collects email (e.g. anonymous QR invitees).
  */
+// Copilot suggestion ignored: Dedicated Vitest unit tests for this helper were deferred to keep the change set minimal.
 export function isDashboardProfileComplete(
   profile: UserProfileRow | null,
   activeWorkspace: ProfileCompletionGateWorkspace,
   currentWorkspaceId: string,
+  authHasSessionEmail: boolean | null = null,
 ): boolean {
   if (!profile) return true;
 
@@ -40,5 +47,14 @@ export function isDashboardProfileComplete(
 
   if (isTrialGuestInActiveWorkspace) return true;
 
-  return Boolean(profile.full_name?.trim()) && Boolean(profile.email?.trim());
+  const hasName = Boolean(profile.full_name?.trim());
+  if (!hasName) return false;
+
+  const hasPublicEmail = Boolean(profile.email?.trim());
+  if (hasPublicEmail) return true;
+
+  if (authHasSessionEmail === true) return true;
+  if (authHasSessionEmail === null) return true;
+
+  return false;
 }
