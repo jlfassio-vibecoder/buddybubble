@@ -607,22 +607,34 @@ export function TaskModal({
   const modalBubbleUp = taskId ? bubbleUpPropsFor(taskId) : undefined;
 
   const typeNoun = itemTypeUiNoun(itemType);
-  const isExistingWorkoutCard = Boolean(
-    taskId && (itemType === 'workout' || itemType === 'workout_log'),
-  );
   /** Title-case for modal chrome; `itemTypeUiNoun` stays lowercase for in-flow copy (e.g. labels). */
   const modalTypeNoun =
     itemType === 'workout' ? 'Workout' : itemType === 'workout_log' ? 'Workout log' : typeNoun;
-  const modalTitle = isCreateMode
-    ? `New ${modalTypeNoun}`
-    : isExistingWorkoutCard
-      ? 'Workout Card'
-      : `Edit ${modalTypeNoun}`;
-  const modalSubtitle = isCreateMode
-    ? `Create ${indefiniteArticleForUiNoun(modalTypeNoun)} ${modalTypeNoun} for this bubble`
-    : isExistingWorkoutCard
-      ? ''
-      : `View and edit ${modalTypeNoun} details`;
+  const itemTypeNounLower = typeNoun.toLowerCase();
+
+  let modalTitle: string;
+  let modalSubtitle: string;
+  if (isCreateMode) {
+    modalTitle = `New ${modalTypeNoun}`;
+    modalSubtitle = `Create ${indefiniteArticleForUiNoun(modalTypeNoun)} ${modalTypeNoun} for this bubble`;
+  } else if (taskId) {
+    if (tab === 'comments') {
+      modalTitle = 'Comments';
+      modalSubtitle = `Discuss this ${itemTypeNounLower}.`;
+    } else if (tab === 'subtasks') {
+      modalTitle = 'Subtasks';
+      modalSubtitle = `Break this ${itemTypeNounLower} down into smaller steps.`;
+    } else if (tab === 'activity') {
+      modalTitle = 'Activity Log';
+      modalSubtitle = `History and updates for this ${itemTypeNounLower}.`;
+    } else {
+      modalTitle = `Edit ${modalTypeNoun}`;
+      modalSubtitle = `View and edit ${modalTypeNoun} details`;
+    }
+  } else {
+    modalTitle = `Edit ${modalTypeNoun}`;
+    modalSubtitle = `View and edit ${modalTypeNoun} details`;
+  }
 
   const uploadCardCover = async (file: File) => {
     if (!canWrite || !taskId) return;
@@ -770,7 +782,7 @@ export function TaskModal({
               description={description ?? ''}
               coverPath={cardCoverPath.trim() || null}
               onClose={() => onOpenChange(false)}
-              compactCinematic={heroCinematicCollapsed}
+              compactCinematic={tab !== 'details' || heroCinematicCollapsed}
             />
           ) : null}
 
