@@ -4,8 +4,9 @@ import type { LucideIcon } from 'lucide-react';
 import { normalizeItemType, type TaskRow } from '@/types/database';
 import { getItemTypeVisual, itemTypeUiNoun, type ItemTypeVisual } from '@/lib/item-type-styles';
 import { cn } from '@/lib/utils';
-import type { OpenTaskOptions, TaskModalTab } from '@/components/modals/TaskModal';
-import { BubblyButton, type TaskBubbleUpControlProps } from '@/components/tasks/bubbly-button';
+import type { OpenTaskOptions } from '@/components/modals/TaskModal';
+import type { TaskBubbleUpControlProps } from '@/components/tasks/bubbly-button';
+import { CardTabStrip } from '@/components/tasks/card-tab-strip';
 import { taskCardCoverPath, useTaskCardCoverUrl } from '@/lib/task-card-cover';
 
 export type ChatFeedTaskCardProps = {
@@ -14,13 +15,6 @@ export type ChatFeedTaskCardProps = {
   onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
   bubbleUp?: Omit<TaskBubbleUpControlProps, 'density'>;
 };
-
-const CHAT_FEED_TABS = [
-  ['details', 'Details'],
-  ['comments', 'Comments'],
-  ['subtasks', 'Subtasks'],
-  ['activity', 'Activity'],
-] as const satisfies readonly (readonly [TaskModalTab, string])[];
 
 function ChatFeedCardHeader({
   task,
@@ -163,26 +157,12 @@ export function ChatFeedTaskCard({ task, onOpenTask, bubbleUp }: ChatFeedTaskCar
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
         >
-          <div className="flex flex-wrap gap-1" role="tablist" aria-label="Card sections">
-            {onOpenTask
-              ? CHAT_FEED_TABS.map(([id, label]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    role="tab"
-                    className="rounded-md px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpenTask(task.id, { tab: id });
-                    }}
-                  >
-                    {label}
-                  </button>
-                ))
-              : null}
-            {bubbleUp ? <BubblyButton {...bubbleUp} density="default" tabStrip /> : null}
-          </div>
+          <CardTabStrip
+            taskId={task.id}
+            onOpenTask={onOpenTask}
+            bubbleUp={bubbleUp}
+            bubblyDensity="default"
+          />
         </div>
       ) : null}
     </div>

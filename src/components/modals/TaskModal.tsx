@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Globe, Image as ImageIcon, ListTree, Lock, Sparkles, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { toast } from 'sonner';
 import { createClient } from '@utils/supabase/client';
 import {
@@ -13,7 +13,6 @@ import {
   type UnitSystem,
 } from '@/types/database';
 import type { WorkoutSetTemplate } from '@/lib/workout-factory/types/workout-contract';
-import { WorkoutExercisesEditor } from '@/components/fitness/workout-exercises-editor';
 import { WorkoutViewerDialog } from '@/components/fitness/workout-viewer-dialog';
 import { useBoardColumnDefs } from '@/hooks/use-board-columns';
 import { useTaskBubbleUps } from '@/hooks/use-task-bubble-ups';
@@ -29,21 +28,23 @@ import {
   asComments,
   asSubtasks,
 } from '@/types/task-modal';
-import {
-  TASK_PRIORITY_OPTIONS,
-  type TaskPriority,
-  normalizeTaskPriority,
-} from '@/lib/task-priority';
+import { type TaskPriority, normalizeTaskPriority } from '@/lib/task-priority';
 import { taskDateFieldLabels } from '@/lib/task-date-labels';
 import type { WorkspaceCategory } from '@/types/database';
 import { buildTaskAttachmentObjectPath, TASK_ATTACHMENTS_BUCKET } from '@/lib/task-storage';
-import {
-  createSignedUrlForTaskAttachmentThumb,
-  isLikelyTaskAttachmentImageFileName,
-} from '@/lib/task-attachment-url';
-import { useTaskCardCoverUrl } from '@/lib/task-card-cover';
+import { isLikelyTaskAttachmentImageFileName } from '@/lib/task-attachment-url';
+import { TaskModalActivityPanel } from '@/components/modals/task-modal/TaskModalActivityPanel';
+import { TaskModalAttachmentsSection } from '@/components/modals/task-modal/TaskModalAttachmentsSection';
+import { TaskModalCardCoverSection } from '@/components/modals/task-modal/TaskModalCardCoverSection';
+import { TaskModalItemMetadataSections } from '@/components/modals/task-modal/TaskModalItemMetadataSections';
+import { TaskModalProgramFields } from '@/components/modals/task-modal/TaskModalProgramFields';
+import { TaskModalWorkoutFields } from '@/components/modals/task-modal/TaskModalWorkoutFields';
+import { TaskModalCommentsPanel } from '@/components/modals/task-modal/TaskModalCommentsPanel';
+import { TaskModalDetailsFooterActions } from '@/components/modals/task-modal/TaskModalDetailsFooterActions';
+import { TaskModalEditorChrome } from '@/components/modals/task-modal/TaskModalEditorChrome';
+import { TaskModalSchedulingSection } from '@/components/modals/task-modal/TaskModalSchedulingSection';
+import { TaskModalSubtasksPanel } from '@/components/modals/task-modal/TaskModalSubtasksPanel';
 import { formatUserFacingError } from '@/lib/format-error';
-import { formatMessageTimestamp } from '@/lib/message-timestamp';
 import {
   buildTaskMetadataPayload,
   metadataFieldsFromParsed,
@@ -58,7 +59,6 @@ import {
   WORKOUT_FACTORY_CHAIN_MESSAGES,
 } from '@/lib/workout-factory/api-client';
 import { postGenerateCardCover } from '@/lib/ai/generate-card-cover-client';
-import { CARD_COVER_PRESET_GROUPS } from '@/lib/ai/card-cover-presets';
 import { archiveDuplicateProgramsFromSameTemplate } from '@/lib/fitness/archive-duplicate-template-programs';
 import { archiveOpenChildWorkoutsForProgram } from '@/lib/fitness/archive-program-child-workouts';
 import { hasOtherActiveProgramForUserInWorkspace } from '@/lib/fitness/active-program-for-user';
@@ -82,15 +82,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
-import { ItemTypeSelector } from '@/components/board/item-type-selector';
-import { WorkoutPlayerTriggers } from '@/components/fitness/WorkoutPlayer';
 import { indefiniteArticleForUiNoun, itemTypeUiNoun } from '@/lib/item-type-styles';
 import { taskColumnIsCompletionStatus } from '@/lib/kanban-column-semantic';
-import { cn } from '@/lib/utils';
 import { ALL_BUBBLES_BUBBLE_ID } from '@/lib/all-bubbles';
 import { usePresenceStore } from '@/store/presenceStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
-import { PremiumGate } from '@/components/subscription/premium-gate';
 import { BubblyButton } from '@/components/tasks/bubbly-button';
 import { TaskModalHero } from '@/components/modals/task-modal-hero';
 
@@ -111,56 +107,6 @@ type TabId = TaskModalTab;
 
 function normalizeTaskVisibility(value: unknown): TaskVisibility {
   return value === 'public' ? 'public' : 'private';
-}
-
-/** Private bucket: must use signed URLs — raw `/storage/v1/object/...` 400s in the browser. */
-function TaskAttachmentImagePreview({ path }: { path: string }) {
-  const [src, setSrc] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    const supabase = createClient();
-    void createSignedUrlForTaskAttachmentThumb(supabase, path).then((url) => {
-      if (!cancelled && url) setSrc(url);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [path]);
-  if (!src) {
-    return (
-      <div
-        className="h-10 w-10 shrink-0 animate-pulse rounded border border-border bg-muted"
-        aria-hidden
-      />
-    );
-  }
-  return (
-    <img
-      src={src}
-      alt=""
-      className="h-10 w-10 shrink-0 rounded border border-border object-cover"
-    />
-  );
-}
-
-function TaskCardCoverModalPreview({ path }: { path: string | null }) {
-  const { url, loading } = useTaskCardCoverUrl(path);
-  if (!path?.trim()) return null;
-  if (loading || !url) {
-    return (
-      <div
-        className="h-24 w-full max-w-md animate-pulse rounded-md border border-border bg-muted"
-        aria-hidden
-      />
-    );
-  }
-  return (
-    <img
-      src={url}
-      alt=""
-      className="h-24 w-full max-w-md rounded-md border border-border object-cover"
-    />
-  );
 }
 
 export type TaskModalProps = {
@@ -1870,82 +1816,21 @@ export function TaskModal({
                 ) : null}
               </div>
 
-              {showEditorChrome ? (
-                <>
-                  <div className="border-b border-border px-6 py-3">
-                    <p className="mb-2 text-xs font-medium text-muted-foreground">Type</p>
-                    <ItemTypeSelector
-                      value={itemType}
-                      onChange={setItemType}
-                      disabled={!canWrite}
-                    />
-                  </div>
-
-                  <div className="border-b border-border px-6 py-3">
-                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-xs font-medium text-muted-foreground">Visibility</p>
-                      {hasWorkoutViewerContent ? (
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          className="h-7 gap-1 px-2 text-xs"
-                          onClick={() => setWorkoutViewerOpen(true)}
-                        >
-                          <ListTree className="h-3 w-3 shrink-0" aria-hidden />
-                          Workout viewer
-                        </Button>
-                      ) : null}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        disabled={!canWrite}
-                        onClick={() => setVisibility('private')}
-                        className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                          visibility === 'private'
-                            ? 'border-primary bg-primary/10 text-primary'
-                            : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
-                        }`}
-                      >
-                        <Lock className="size-4 shrink-0" aria-hidden />
-                        Private
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!canWrite}
-                        onClick={() => setVisibility('public')}
-                        className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                          visibility === 'public'
-                            ? 'border-primary bg-primary/10 text-primary'
-                            : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
-                        }`}
-                      >
-                        <Globe className="size-4 shrink-0" aria-hidden />
-                        Public
-                      </button>
-                    </div>
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      Public cards appear on your Astro storefront.
-                    </p>
-                    {(itemType === 'workout' || itemType === 'workout_log') &&
-                      workoutExercises.length > 0 && (
-                        <div className="mt-3 space-y-1.5">
-                          <p className="text-xs font-medium text-muted-foreground">
-                            Workout player
-                          </p>
-                          <WorkoutPlayerTriggers
-                            workoutTitle={title}
-                            exercises={workoutExercises}
-                            bubbleId={bubbleId ?? ''}
-                            workspaceId={workspaceId}
-                            sourceTaskId={taskId}
-                          />
-                        </div>
-                      )}
-                  </div>
-                </>
-              ) : null}
+              <TaskModalEditorChrome
+                showChrome={showEditorChrome}
+                itemType={itemType}
+                onItemTypeChange={setItemType}
+                canWrite={canWrite}
+                visibility={visibility}
+                onVisibilityChange={setVisibility}
+                hasWorkoutViewerContent={hasWorkoutViewerContent}
+                onOpenWorkoutViewer={() => setWorkoutViewerOpen(true)}
+                workoutTitle={title}
+                workoutExercises={workoutExercises}
+                bubbleId={bubbleId}
+                workspaceId={workspaceId}
+                taskId={taskId}
+              />
 
               <div className="px-6 pt-4 pb-4">
                 {error && (
@@ -1983,762 +1868,165 @@ export function TaskModal({
                           />
                         </div>
 
-                        <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3">
-                          <div className="flex items-center gap-2">
-                            <ImageIcon className="h-4 w-4 text-muted-foreground" aria-hidden />
-                            <p className="text-xs font-medium text-muted-foreground">
-                              Board & chat cover
-                            </p>
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            Optional image shown behind the title and details on the board and in
-                            chat.
-                          </p>
-                          {taskId ? (
-                            <>
-                              <TaskCardCoverModalPreview path={cardCoverPath.trim() || null} />
-                              <div className="flex flex-wrap gap-2">
-                                <input
-                                  ref={cardCoverFileInputRef}
-                                  type="file"
-                                  accept="image/*"
-                                  className="sr-only"
-                                  aria-hidden
-                                  onChange={(e) => {
-                                    const f = e.target.files?.[0];
-                                    e.target.value = '';
-                                    if (f) void uploadCardCover(f);
-                                  }}
-                                />
-                                <Button
-                                  type="button"
-                                  variant="secondary"
-                                  size="sm"
-                                  disabled={!canWrite || saving}
-                                  onClick={() => cardCoverFileInputRef.current?.click()}
-                                >
-                                  {cardCoverPath.trim() ? 'Replace image' : 'Upload image'}
-                                </Button>
-                                {cardCoverPath.trim() ? (
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    disabled={!canWrite || saving}
-                                    onClick={() => void removeCardCover()}
-                                  >
-                                    Remove
-                                  </Button>
-                                ) : null}
-                              </div>
-                              <div className="space-y-2 pt-1">
-                                <div className="space-y-1">
-                                  <Label
-                                    htmlFor="card-cover-preset"
-                                    className="text-xs text-muted-foreground"
-                                  >
-                                    Visual preset
-                                  </Label>
-                                  <select
-                                    id="card-cover-preset"
-                                    value={cardCoverPresetId}
-                                    onChange={(e) => setCardCoverPresetId(e.target.value)}
-                                    disabled={!canWrite || saving || aiCardCoverGenerating}
-                                    className="flex h-8 max-w-md rounded-md border border-input bg-background px-2 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                                  >
-                                    <option value="">Auto (by card type)</option>
-                                    {CARD_COVER_PRESET_GROUPS.map((g) => (
-                                      <optgroup key={g.group} label={g.group}>
-                                        {g.options.map((o) => (
-                                          <option key={o.id} value={o.id}>
-                                            {o.label}
-                                          </option>
-                                        ))}
-                                      </optgroup>
-                                    ))}
-                                  </select>
-                                </div>
-                                <div className="space-y-1">
-                                  <Label
-                                    htmlFor="card-cover-ai-hint"
-                                    className="text-xs text-muted-foreground"
-                                  >
-                                    Style hint (optional)
-                                  </Label>
-                                  <Input
-                                    id="card-cover-ai-hint"
-                                    value={cardCoverAiHint}
-                                    onChange={(e) => setCardCoverAiHint(e.target.value)}
-                                    disabled={!canWrite || saving || aiCardCoverGenerating}
-                                    className="h-8 max-w-md text-xs"
-                                    placeholder="e.g. soft gradients, minimal illustration"
-                                    maxLength={220}
-                                  />
-                                </div>
-                                {canWrite ? (
-                                  <PremiumGate feature="ai" inline>
-                                    <Button
-                                      type="button"
-                                      variant="secondary"
-                                      size="sm"
-                                      className="h-8 gap-1 px-2 text-xs"
-                                      disabled={aiCardCoverGenerating || saving}
-                                      onClick={() => void generateCardCoverWithAi()}
-                                    >
-                                      <Sparkles className="h-3 w-3 shrink-0" aria-hidden />
-                                      {aiCardCoverGenerating
-                                        ? 'Generating…'
-                                        : 'Generate cover (AI)'}
-                                    </Button>
-                                  </PremiumGate>
-                                ) : null}
-                              </div>
-                            </>
-                          ) : (
-                            <p className="text-xs text-muted-foreground italic">
-                              Save the card first, then you can add a cover image.
-                            </p>
-                          )}
-                        </div>
+                        <TaskModalCardCoverSection
+                          taskId={taskId}
+                          cardCoverPath={cardCoverPath}
+                          cardCoverFileInputRef={cardCoverFileInputRef}
+                          onCardCoverFileChange={(f) => void uploadCardCover(f)}
+                          onPickCardCover={() => cardCoverFileInputRef.current?.click()}
+                          onRemoveCardCover={removeCardCover}
+                          cardCoverPresetId={cardCoverPresetId}
+                          onCardCoverPresetIdChange={setCardCoverPresetId}
+                          cardCoverAiHint={cardCoverAiHint}
+                          onCardCoverAiHintChange={setCardCoverAiHint}
+                          canWrite={canWrite}
+                          saving={saving}
+                          aiCardCoverGenerating={aiCardCoverGenerating}
+                          onGenerateCardCoverWithAi={generateCardCoverWithAi}
+                        />
 
-                        {itemType === 'event' && (
-                          <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
-                            <p className="text-xs font-medium text-muted-foreground">
-                              Event details
-                            </p>
-                            <div className="space-y-2">
-                              <Label htmlFor="task-event-location">Location</Label>
-                              <Input
-                                id="task-event-location"
-                                value={eventLocation}
-                                onChange={(e) => setEventLocation(e.target.value)}
-                                disabled={!canWrite}
-                                placeholder="e.g. Central Park"
-                                className="h-9"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="task-event-url">Meeting link</Label>
-                              <Input
-                                id="task-event-url"
-                                type="url"
-                                value={eventUrl}
-                                onChange={(e) => setEventUrl(e.target.value)}
-                                disabled={!canWrite}
-                                placeholder="https://…"
-                                className="h-9"
-                              />
-                            </div>
-                          </div>
-                        )}
-
-                        {itemType === 'experience' && (
-                          <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
-                            <p className="text-xs font-medium text-muted-foreground">
-                              Experience span
-                            </p>
-                            <div className="space-y-2">
-                              <Label htmlFor="task-experience-horizon">
-                                Season / label (optional)
-                              </Label>
-                              <Input
-                                id="task-experience-horizon"
-                                value={experienceSeason}
-                                onChange={(e) => setExperienceSeason(e.target.value)}
-                                disabled={!canWrite}
-                                placeholder="e.g. Summer 2026"
-                                className="h-9"
-                              />
-                            </div>
-                            <div className="flex flex-row flex-wrap gap-3">
-                              <div className="min-w-0 flex-1 space-y-2">
-                                <Label htmlFor="task-experience-start">Start date</Label>
-                                <input
-                                  id="task-experience-start"
-                                  type="date"
-                                  value={scheduledOn}
-                                  onChange={(e) => {
-                                    const v = e.target.value;
-                                    setScheduledOn(v);
-                                    if (!v) setScheduledTime('');
-                                  }}
-                                  disabled={!canWrite}
-                                  className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
-                                />
-                              </div>
-                              <div className="min-w-0 flex-1 space-y-2">
-                                <Label htmlFor="task-experience-end">End date</Label>
-                                <input
-                                  id="task-experience-end"
-                                  type="date"
-                                  value={experienceEndDate}
-                                  onChange={(e) => setExperienceEndDate(e.target.value)}
-                                  disabled={!canWrite}
-                                  className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
-                                />
-                              </div>
-                            </div>
-                            <p className="text-xs text-muted-foreground">
-                              Experiences appear as themed pills on their start date in the Month
-                              view.
-                            </p>
-                          </div>
-                        )}
-
-                        {itemType === 'memory' && (
-                          <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3">
-                            <Label htmlFor="task-memory-caption">Caption / reflection</Label>
-                            <Textarea
-                              id="task-memory-caption"
-                              value={memoryCaption}
-                              onChange={(e) => setMemoryCaption(e.target.value)}
-                              disabled={!canWrite}
-                              rows={3}
-                              placeholder="What made this moment special?"
-                            />
-                            <p className="text-xs text-muted-foreground">
-                              Photos and files go in Attachments below after you save.
-                            </p>
-                          </div>
-                        )}
+                        <TaskModalItemMetadataSections
+                          itemType={itemType}
+                          canWrite={canWrite}
+                          eventLocation={eventLocation}
+                          onEventLocationChange={setEventLocation}
+                          eventUrl={eventUrl}
+                          onEventUrlChange={setEventUrl}
+                          experienceSeason={experienceSeason}
+                          onExperienceSeasonChange={setExperienceSeason}
+                          scheduledOn={scheduledOn}
+                          onExperienceStartDateChange={(v) => {
+                            setScheduledOn(v);
+                            if (!v) setScheduledTime('');
+                          }}
+                          experienceEndDate={experienceEndDate}
+                          onExperienceEndDateChange={setExperienceEndDate}
+                          memoryCaption={memoryCaption}
+                          onMemoryCaptionChange={setMemoryCaption}
+                        />
 
                         {(itemType === 'workout' || itemType === 'workout_log') && (
-                          <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
-                            <div className="flex items-center justify-between gap-2">
-                              <p className="text-xs font-medium text-muted-foreground">
-                                {itemType === 'workout_log' ? 'Workout log' : 'Workout details'}
-                              </p>
-                              <div className="flex shrink-0 items-center gap-1.5">
-                                {canWrite && (
-                                  <PremiumGate feature="ai" inline>
-                                    <Button
-                                      type="button"
-                                      variant="secondary"
-                                      size="sm"
-                                      className="h-7 gap-1 px-2 text-xs"
-                                      disabled={aiWorkoutGenerating}
-                                      onClick={() => void handleAiGenerateWorkout()}
-                                    >
-                                      <Sparkles className="h-3 w-3" aria-hidden />
-                                      {aiWorkoutGenerating ? 'Generating…' : 'AI workout'}
-                                    </Button>
-                                  </PremiumGate>
-                                )}
-                                {/* Template picker — only in create mode when templates exist */}
-                                {!taskId && workoutTemplates.length > 0 && canWrite && (
-                                  <div className="relative">
-                                    <button
-                                      type="button"
-                                      onClick={() => setTemplatePickerOpen((v) => !v)}
-                                      className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
-                                    >
-                                      Use template
-                                      <ChevronDown
-                                        className={cn(
-                                          'h-3 w-3 shrink-0 transition-transform',
-                                          templatePickerOpen && 'rotate-180',
-                                        )}
-                                      />
-                                    </button>
-                                    {templatePickerOpen && (
-                                      <div className="absolute right-0 top-full z-10 mt-1 w-56 overflow-hidden rounded-lg border border-border bg-popover shadow-md">
-                                        <ul className="max-h-48 overflow-y-auto py-1">
-                                          {workoutTemplates.map((tpl) => {
-                                            const tplFields = metadataFieldsFromParsed(
-                                              tpl.metadata,
-                                            );
-                                            return (
-                                              <li key={tpl.id}>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => applyWorkoutTemplate(tpl)}
-                                                  className="w-full px-3 py-1.5 text-left text-xs hover:bg-muted"
-                                                >
-                                                  <span className="block font-medium">
-                                                    {tpl.title}
-                                                  </span>
-                                                  {tplFields.workoutType && (
-                                                    <span className="text-muted-foreground">
-                                                      {tplFields.workoutType}
-                                                      {tplFields.workoutDurationMin
-                                                        ? ` · ${tplFields.workoutDurationMin} min`
-                                                        : ''}
-                                                    </span>
-                                                  )}
-                                                </button>
-                                              </li>
-                                            );
-                                          })}
-                                        </ul>
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                            {aiWorkoutGenerating && (
-                              <p className="text-xs text-muted-foreground">
-                                {WORKOUT_FACTORY_CHAIN_MESSAGES[aiWorkoutProgressIdx]}
-                              </p>
+                          <TaskModalWorkoutFields
+                            itemType={itemType}
+                            canWrite={canWrite}
+                            taskId={taskId}
+                            aiWorkoutGenerating={aiWorkoutGenerating}
+                            aiWorkoutProgressIdx={aiWorkoutProgressIdx}
+                            onAiGenerateWorkout={handleAiGenerateWorkout}
+                            workoutTemplates={workoutTemplates}
+                            templatePickerOpen={templatePickerOpen}
+                            onTemplatePickerOpenChange={setTemplatePickerOpen}
+                            onApplyWorkoutTemplate={applyWorkoutTemplate}
+                            workoutType={workoutType}
+                            onWorkoutTypeChange={setWorkoutType}
+                            workoutDurationMin={workoutDurationMin}
+                            onWorkoutDurationMinChange={setWorkoutDurationMin}
+                            workoutExercises={workoutExercises}
+                            onWorkoutExercisesChange={setWorkoutExercises}
+                            workoutUnitSystem={workoutUnitSystem}
+                            autoEditFirstRow={Boolean(
+                              initialAutoEdit && isWorkoutItemType && taskId && canWrite,
                             )}
-                            <div className="flex gap-3">
-                              <div className="min-w-0 flex-1 space-y-2">
-                                <Label htmlFor="task-workout-type">Type</Label>
-                                <Input
-                                  id="task-workout-type"
-                                  value={workoutType}
-                                  onChange={(e) => setWorkoutType(e.target.value)}
-                                  disabled={!canWrite}
-                                  placeholder="e.g. Strength, Cardio, Yoga"
-                                  className="h-9"
-                                />
-                              </div>
-                              <div className="w-28 space-y-2">
-                                <Label htmlFor="task-workout-duration">Duration (min)</Label>
-                                <Input
-                                  id="task-workout-duration"
-                                  type="number"
-                                  min={0}
-                                  value={workoutDurationMin}
-                                  onChange={(e) => setWorkoutDurationMin(e.target.value)}
-                                  disabled={!canWrite}
-                                  className="h-9"
-                                />
-                              </div>
-                            </div>
-                            <WorkoutExercisesEditor
-                              key={taskId ?? 'new-task'}
-                              exercises={workoutExercises}
-                              onChange={setWorkoutExercises}
-                              canWrite={canWrite}
-                              workoutUnitSystem={workoutUnitSystem}
-                              idPrefix="task-ex"
-                              autoEditFirstRow={Boolean(
-                                initialAutoEdit && isWorkoutItemType && taskId && canWrite,
-                              )}
-                            />
-                          </div>
+                          />
                         )}
 
                         {itemType === 'program' && (
-                          <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
-                            <div className="flex items-center justify-between gap-2">
-                              <p className="text-xs font-medium text-muted-foreground">
-                                Program details
-                              </p>
-                              {canWrite && workspaceId && taskId ? (
-                                <Button
-                                  type="button"
-                                  variant="secondary"
-                                  size="sm"
-                                  className="h-7 gap-1 px-2 text-xs"
-                                  disabled={aiProgramPersonalizing}
-                                  onClick={() => void handlePersonalizeProgram()}
-                                >
-                                  <Sparkles className="h-3 w-3" aria-hidden />
-                                  {aiProgramPersonalizing
-                                    ? 'Personalizing…'
-                                    : 'Personalize with AI'}
-                                </Button>
-                              ) : null}
-                            </div>
-
-                            {/* Goal */}
-                            <div className="space-y-2">
-                              <Label htmlFor="task-program-goal">Goal</Label>
-                              <Input
-                                id="task-program-goal"
-                                value={programGoal}
-                                onChange={(e) => setProgramGoal(e.target.value)}
-                                disabled={!canWrite}
-                                placeholder="e.g. Build lean muscle, Run a 5K"
-                                className="h-9"
-                              />
-                            </div>
-
-                            {/* Duration */}
-                            <div className="w-36 space-y-2">
-                              <Label htmlFor="task-program-duration">Duration (weeks)</Label>
-                              <Input
-                                id="task-program-duration"
-                                type="number"
-                                min={1}
-                                value={programDurationWeeks}
-                                onChange={(e) => setProgramDurationWeeks(e.target.value)}
-                                disabled={!canWrite}
-                                className="h-9"
-                              />
-                            </div>
-
-                            {/* Progress (read-only) */}
-                            {programCurrentWeek > 0 && programDurationWeeks && (
-                              <p className="text-xs text-muted-foreground">
-                                Progress: Week {programCurrentWeek} of {programDurationWeeks}
-                              </p>
-                            )}
-
-                            {/* Weekly schedule summary */}
-                            {programSchedule.length > 0 && programSchedule[0].days.length > 0 && (
-                              <div className="space-y-1">
-                                <p className="text-xs font-medium text-muted-foreground">
-                                  Weekly schedule
-                                </p>
-                                {programSchedule[0].days.map((d) => (
-                                  <p key={d.day} className="text-xs text-foreground">
-                                    <span className="font-medium">
-                                      {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d.day - 1]}
-                                    </span>
-                                    {' — '}
-                                    {d.name}
-                                    {d.workout_type ? ` (${d.workout_type})` : ''}
-                                    {d.duration_min ? ` · ${d.duration_min} min` : ''}
-                                  </p>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+                          <TaskModalProgramFields
+                            canWrite={canWrite}
+                            workspaceId={workspaceId}
+                            taskId={taskId}
+                            aiProgramPersonalizing={aiProgramPersonalizing}
+                            onPersonalizeProgram={handlePersonalizeProgram}
+                            programGoal={programGoal}
+                            onProgramGoalChange={setProgramGoal}
+                            programDurationWeeks={programDurationWeeks}
+                            onProgramDurationWeeksChange={setProgramDurationWeeks}
+                            programCurrentWeek={programCurrentWeek}
+                            programSchedule={programSchedule}
+                          />
                         )}
 
-                        <div className="space-y-2">
-                          <Label htmlFor="task-status">Status</Label>
-                          <select
-                            id="task-status"
-                            value={status}
-                            onChange={(e) => setStatus(e.target.value)}
-                            disabled={!canWrite}
-                            className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
-                          >
-                            {statusSelectOptions.map((s) => (
-                              <option key={s.value} value={s.value}>
-                                {s.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="task-priority">Priority</Label>
-                          <select
-                            id="task-priority"
-                            value={priority}
-                            onChange={(e) => setPriority(e.target.value as TaskPriority)}
-                            disabled={!canWrite}
-                            className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
-                          >
-                            {TASK_PRIORITY_OPTIONS.map((p) => (
-                              <option key={p.value} value={p.value}>
-                                {p.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        {workspaceId ? (
-                          <div className="space-y-2">
-                            <Label htmlFor="task-assigned-to">Assigned to</Label>
-                            <select
-                              id="task-assigned-to"
-                              value={assignedTo ?? ''}
-                              onChange={(e) =>
-                                setAssignedTo(e.target.value ? e.target.value : null)
-                              }
-                              disabled={!canWrite}
-                              className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
-                            >
-                              <option value="">Unassigned</option>
-                              {workspaceMembersForAssign.map((m) => (
-                                <option key={m.user_id} value={m.user_id}>
-                                  {m.label}
-                                </option>
-                              ))}
-                            </select>
-                            <p className="text-xs text-muted-foreground">
-                              Owner or member responsible for this card (including programs).
-                            </p>
-                          </div>
-                        ) : null}
-                        {itemType !== 'experience' && (
-                          <div className="space-y-2">
-                            <div className="flex flex-row flex-wrap gap-3 items-end">
-                              <div className="min-w-0 flex-1 space-y-2">
-                                <Label htmlFor="task-scheduled-on">{dateLabels.primary}</Label>
-                                <input
-                                  id="task-scheduled-on"
-                                  type="date"
-                                  value={scheduledOn}
-                                  onChange={(e) => {
-                                    const v = e.target.value;
-                                    setScheduledOn(v);
-                                    if (!v) setScheduledTime('');
-                                  }}
-                                  disabled={!canWrite}
-                                  className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
-                                />
-                              </div>
-                              <div className="min-w-0 flex-1 space-y-2">
-                                <Label htmlFor="task-scheduled-time">
-                                  Time {!scheduledOn ? '(set a date first)' : '(optional)'}
-                                </Label>
-                                <input
-                                  id="task-scheduled-time"
-                                  type="time"
-                                  value={scheduledTime}
-                                  onChange={(e) => setScheduledTime(e.target.value)}
-                                  disabled={!canWrite || !scheduledOn}
-                                  className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
-                                />
-                              </div>
-                            </div>
-                            {dateLabels.helper ? (
-                              <p className="text-xs text-muted-foreground">{dateLabels.helper}</p>
-                            ) : null}
-                          </div>
-                        )}
+                        <TaskModalSchedulingSection
+                          itemType={itemType}
+                          dateLabels={dateLabels}
+                          status={status}
+                          onStatusChange={setStatus}
+                          statusSelectOptions={statusSelectOptions}
+                          priority={priority}
+                          onPriorityChange={setPriority}
+                          workspaceId={workspaceId}
+                          assignedTo={assignedTo}
+                          onAssignedToChange={setAssignedTo}
+                          workspaceMembersForAssign={workspaceMembersForAssign}
+                          scheduledOn={scheduledOn}
+                          onScheduledOnChange={(v) => {
+                            setScheduledOn(v);
+                            if (!v) setScheduledTime('');
+                          }}
+                          scheduledTime={scheduledTime}
+                          onScheduledTimeChange={setScheduledTime}
+                          canWrite={canWrite}
+                        />
 
                         <Separator className="my-2" />
 
-                        <div className="space-y-2">
-                          <Label>Attachments</Label>
-                          {!isCreateMode && taskId && canWrite && (
-                            <input
-                              type="file"
-                              className="block w-full text-xs text-muted-foreground file:mr-2 file:rounded-md file:border file:border-input file:bg-background file:px-2 file:py-1"
-                              onChange={(e) => {
-                                const f = e.target.files?.[0];
-                                e.target.value = '';
-                                if (f) void uploadAttachment(f);
-                              }}
-                            />
-                          )}
-                          {isCreateMode && (
-                            <p className="text-xs text-muted-foreground">
-                              Save the {typeNoun} first, then you can upload files.
-                            </p>
-                          )}
-                          <ul className="space-y-1">
-                            {attachments.map((a) => (
-                              <li
-                                key={a.id}
-                                className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/50 px-2 py-1 text-sm"
-                              >
-                                <div className="flex min-w-0 flex-1 items-center gap-2">
-                                  {isLikelyTaskAttachmentImageFileName(a.name) ? (
-                                    <TaskAttachmentImagePreview path={a.path} />
-                                  ) : null}
-                                  <button
-                                    type="button"
-                                    className="min-w-0 flex-1 truncate text-left text-primary hover:underline"
-                                    onClick={() => void downloadLink(a)}
-                                  >
-                                    {a.name}
-                                  </button>
-                                </div>
-                                {canWrite && !isCreateMode && (
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 text-destructive hover:text-destructive"
-                                    onClick={() => void removeAttachment(a)}
-                                  >
-                                    Remove
-                                  </Button>
-                                )}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
+                        <TaskModalAttachmentsSection
+                          attachments={attachments}
+                          isCreateMode={isCreateMode}
+                          taskId={taskId}
+                          canWrite={canWrite}
+                          typeNoun={typeNoun}
+                          onPickAttachmentFile={(f) => void uploadAttachment(f)}
+                          onDownloadAttachment={downloadLink}
+                          onRemoveAttachment={removeAttachment}
+                        />
 
-                        {canWrite && (
-                          <div className="flex flex-wrap gap-2 pt-2">
-                            {isCreateMode ? (
-                              <Button
-                                type="button"
-                                size="sm"
-                                disabled={saving || !title.trim()}
-                                onClick={() => void createTask()}
-                              >
-                                {saving ? 'Creating…' : `Create ${typeNoun}`}
-                              </Button>
-                            ) : (
-                              <Button
-                                type="button"
-                                size="sm"
-                                disabled={saving || !coreDirty}
-                                onClick={() => void saveCoreFields()}
-                              >
-                                {saving ? 'Saving…' : `Save ${typeNoun}`}
-                              </Button>
-                            )}
-                          </div>
-                        )}
-
-                        {!isCreateMode && taskId && canWrite ? (
-                          <>
-                            <Separator className="my-4" />
-                            <div className="rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-3">
-                              <p className="mb-2 text-xs font-medium text-destructive">
-                                Archive {typeNoun}
-                              </p>
-                              <p className="mb-3 text-xs text-muted-foreground">
-                                Hides this {typeNoun} from the board and calendar. Recovery from
-                                archive is not available in this version yet.
-                              </p>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                                disabled={archiving || saving || loading}
-                                onClick={() => void archiveTask()}
-                              >
-                                {archiving ? 'Archiving…' : `Archive ${typeNoun}`}
-                              </Button>
-                            </div>
-                          </>
-                        ) : null}
+                        <TaskModalDetailsFooterActions
+                          canWrite={canWrite}
+                          isCreateMode={isCreateMode}
+                          saving={saving}
+                          title={title}
+                          typeNoun={typeNoun}
+                          coreDirty={coreDirty}
+                          onCreateTask={createTask}
+                          onSaveCoreFields={saveCoreFields}
+                          taskId={taskId}
+                          archiving={archiving}
+                          loading={loading}
+                          onArchiveTask={archiveTask}
+                        />
                       </div>
                     )}
 
                     {tab === 'comments' && (
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          {comments.length === 0 && (
-                            <p className="text-sm text-muted-foreground">No comments yet.</p>
-                          )}
-                          <ul className="space-y-3">
-                            {comments.map((c) => {
-                              const author = commentUserById[c.user_id];
-                              const displayName = author?.displayName ?? 'Member';
-                              const avatarUrl = author?.avatarUrl ?? null;
-                              return (
-                                <li
-                                  key={c.id}
-                                  className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm"
-                                >
-                                  <div className="flex gap-3">
-                                    <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-primary/15 text-sm font-bold text-primary">
-                                      {avatarUrl ? (
-                                        <img
-                                          src={avatarUrl}
-                                          alt={displayName}
-                                          className="h-full w-full object-cover"
-                                          referrerPolicy="no-referrer"
-                                        />
-                                      ) : (
-                                        (displayName[0]?.toUpperCase() ?? '?')
-                                      )}
-                                    </div>
-                                    <div className="min-w-0 flex-1">
-                                      <div className="flex flex-wrap items-baseline gap-2">
-                                        <span className="font-bold text-foreground">
-                                          {displayName}
-                                        </span>
-                                        <span className="text-xs text-muted-foreground">
-                                          {formatMessageTimestamp(c.created_at)}
-                                        </span>
-                                      </div>
-                                      <p className="mt-0.5 whitespace-pre-wrap text-foreground">
-                                        {c.body}
-                                      </p>
-                                    </div>
-                                  </div>
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        </div>
-                        {canWrite && taskId && (
-                          <div className="space-y-2">
-                            <Label htmlFor="new-comment">Add comment</Label>
-                            <Textarea
-                              id="new-comment"
-                              value={newComment}
-                              onChange={(e) => setNewComment(e.target.value)}
-                              rows={3}
-                            />
-                            <Button
-                              type="button"
-                              size="sm"
-                              disabled={!newComment.trim()}
-                              onClick={() => void addComment()}
-                            >
-                              Post comment
-                            </Button>
-                          </div>
-                        )}
-                        {isCreateMode && (
-                          <p className="text-xs text-muted-foreground">
-                            Create the {typeNoun} to add comments.
-                          </p>
-                        )}
-                      </div>
+                      <TaskModalCommentsPanel
+                        comments={comments}
+                        commentUserById={commentUserById}
+                        newComment={newComment}
+                        onNewCommentChange={setNewComment}
+                        onPostComment={addComment}
+                        canWrite={canWrite}
+                        taskId={taskId}
+                        isCreateMode={isCreateMode}
+                        typeNoun={typeNoun}
+                      />
                     )}
 
                     {tab === 'subtasks' && (
-                      <div className="space-y-4">
-                        <ul className="space-y-2">
-                          {subtasks.map((s) => (
-                            <li key={s.id} className="flex items-center gap-2 text-sm">
-                              <input
-                                type="checkbox"
-                                checked={s.done}
-                                onChange={() => void toggleSubtask(s.id)}
-                                disabled={!canWrite || !taskId}
-                                className="rounded border-input"
-                              />
-                              <span
-                                className={
-                                  s.done ? 'text-muted-foreground line-through' : 'text-foreground'
-                                }
-                              >
-                                {s.title}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                        {canWrite && taskId && (
-                          <div className="flex gap-2">
-                            <Input
-                              placeholder="New subtask"
-                              value={newSubtaskTitle}
-                              onChange={(e) => setNewSubtaskTitle(e.target.value)}
-                              className="h-9"
-                            />
-                            <Button
-                              type="button"
-                              size="sm"
-                              onClick={() => void addSubtask()}
-                              disabled={!newSubtaskTitle.trim()}
-                            >
-                              Add
-                            </Button>
-                          </div>
-                        )}
-                        {isCreateMode && (
-                          <p className="text-xs text-muted-foreground">
-                            Create the {typeNoun} to add subtasks.
-                          </p>
-                        )}
-                      </div>
+                      <TaskModalSubtasksPanel
+                        subtasks={subtasks}
+                        newSubtaskTitle={newSubtaskTitle}
+                        onNewSubtaskTitleChange={setNewSubtaskTitle}
+                        onAddSubtask={addSubtask}
+                        onToggleSubtask={toggleSubtask}
+                        canWrite={canWrite}
+                        taskId={taskId}
+                        isCreateMode={isCreateMode}
+                        typeNoun={typeNoun}
+                      />
                     )}
 
-                    {tab === 'activity' && (
-                      <ul className="space-y-2">
-                        {activityLog.length === 0 && (
-                          <p className="text-sm text-muted-foreground">No activity yet.</p>
-                        )}
-                        {activityLog.map((e) => (
-                          <li
-                            key={e.id}
-                            className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm text-foreground"
-                          >
-                            <p>{formatActivityLine(e)}</p>
-                            <p className="mt-1 text-[10px] text-muted-foreground">
-                              {new Date(e.at).toLocaleString()}
-                            </p>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                    {tab === 'activity' && <TaskModalActivityPanel activityLog={activityLog} />}
                   </>
                 ) : null}
               </div>
@@ -2777,14 +2065,4 @@ export function TaskModal({
       />
     </>
   );
-}
-
-function formatActivityLine(e: TaskActivityEntry): string {
-  if (e.type === 'field_change' && e.field) {
-    if (e.field === 'title') return `Title updated`;
-    if (e.field === 'description') return `Description updated`;
-    if (e.field === 'status') return `Status changed to "${e.to ?? ''}"`;
-    if (e.field === 'priority') return `Priority changed to "${e.to ?? ''}"`;
-  }
-  return e.message || 'Activity';
 }

@@ -29,7 +29,7 @@ import {
 import { getItemTypeVisual } from '@/lib/item-type-styles';
 import { normalizeTaskPriority, type TaskPriority } from '@/lib/task-priority';
 import { asComments, asSubtasks } from '@/types/task-modal';
-import type { OpenTaskOptions, TaskModalTab } from '@/components/modals/TaskModal';
+import type { OpenTaskOptions } from '@/components/modals/TaskModal';
 import { metadataFieldsFromParsed, parseTaskMetadata } from '@/lib/item-metadata';
 import type { KanbanCardDensity } from '@/components/board/kanban-density';
 import { Card, CardContent } from '@/components/ui/card';
@@ -39,7 +39,8 @@ import { scheduledOnRelativeToWorkspaceToday } from '@/lib/workspace-calendar';
 import { formatScheduledTimeDisplay } from '@/lib/task-scheduled-time';
 import { usePresenceStore, type UserPresence } from '@/store/presenceStore';
 import { useUserProfileStore } from '@/store/userProfileStore';
-import { BubblyButton, type TaskBubbleUpControlProps } from '@/components/tasks/bubbly-button';
+import type { TaskBubbleUpControlProps } from '@/components/tasks/bubbly-button';
+import { CardTabStrip } from '@/components/tasks/card-tab-strip';
 import { taskCardCoverPath, useTaskCardCoverUrl } from '@/lib/task-card-cover';
 
 export type KanbanTaskCardProps = {
@@ -291,12 +292,6 @@ export function KanbanTaskCard({
 
   const openTask = onOpenTask ? () => onOpenTask(task.id, { viewMode: 'full' }) : undefined;
 
-  const openTaskSection = (id: TaskModalTab) =>
-    onOpenTask?.(task.id, {
-      tab: id,
-      viewMode: id === 'comments' ? 'comments-only' : 'full',
-    });
-
   const presenceUsers = usePresenceStore((s) => s.users);
   const localUserId = useUserProfileStore((s) => s.profile?.id);
   const taskPresencePeers = useMemo(() => {
@@ -406,33 +401,12 @@ export function KanbanTaskCard({
                 onClick={(e) => e.stopPropagation()}
                 onPointerDown={(e) => e.stopPropagation()}
               >
-                <div className="flex flex-wrap gap-1" role="tablist" aria-label="Card sections">
-                  {onOpenTask
-                    ? (
-                        [
-                          ['details', 'Details'],
-                          ['comments', 'Comments'],
-                          ['subtasks', 'Subtasks'],
-                          ['activity', 'Activity'],
-                        ] as const
-                      ).map(([id, label]) => (
-                        <button
-                          key={id}
-                          type="button"
-                          role="tab"
-                          className="rounded-md px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                          onPointerDown={(e) => e.stopPropagation()}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openTaskSection(id);
-                          }}
-                        >
-                          {label}
-                        </button>
-                      ))
-                    : null}
-                  {bubbleUp ? <BubblyButton {...bubbleUp} density="micro" tabStrip /> : null}
-                </div>
+                <CardTabStrip
+                  taskId={task.id}
+                  onOpenTask={onOpenTask}
+                  bubbleUp={bubbleUp}
+                  bubblyDensity="micro"
+                />
               </div>
             ) : null}
           </CardContent>
@@ -812,33 +786,12 @@ export function KanbanTaskCard({
               onClick={(e) => e.stopPropagation()}
               onPointerDown={(e) => e.stopPropagation()}
             >
-              <div className="flex flex-wrap gap-1" role="tablist" aria-label="Card sections">
-                {onOpenTask
-                  ? (
-                      [
-                        ['details', 'Details'] as const,
-                        ['comments', 'Comments'] as const,
-                        ['subtasks', 'Subtasks'] as const,
-                        ['activity', 'Activity'] as const,
-                      ] as const
-                    ).map(([id, label]) => (
-                      <button
-                        key={id}
-                        type="button"
-                        role="tab"
-                        className="rounded-md px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openTaskSection(id);
-                        }}
-                      >
-                        {label}
-                      </button>
-                    ))
-                  : null}
-                {bubbleUp ? <BubblyButton {...bubbleUp} density="default" tabStrip /> : null}
-              </div>
+              <CardTabStrip
+                taskId={task.id}
+                onOpenTask={onOpenTask}
+                bubbleUp={bubbleUp}
+                bubblyDensity="default"
+              />
             </div>
           ) : null}
         </CardContent>
