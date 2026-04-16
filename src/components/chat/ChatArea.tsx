@@ -537,6 +537,27 @@ export function ChatArea({
       setDbMessages((prev) => prev.filter((m) => m.id !== old.id));
     };
 
+    /** Keep embedded Kanban cards in sync when `tasks` rows change without a `messages` update. */
+    const onTaskInsertOrUpdate = (payload: { new: Record<string, unknown> }) => {
+      const row = payload.new as TaskRow;
+      if (!row?.id) return;
+      setDbMessages((prev) =>
+        prev.map((m) => {
+          if (m.attached_task_id !== row.id) return m;
+          if (row.archived_at) return { ...m, tasks: null };
+          return { ...m, tasks: row };
+        }),
+      );
+    };
+
+    const onTaskDelete = (payload: { old: Record<string, unknown> }) => {
+      const oldId = (payload.old as { id?: string })?.id;
+      if (!oldId) return;
+      setDbMessages((prev) =>
+        prev.map((m) => (m.attached_task_id === oldId ? { ...m, tasks: null } : m)),
+      );
+    };
+
     if (isAll) {
       for (const bid of bubbleIds) {
         channel.on(
@@ -569,6 +590,36 @@ export function ChatArea({
           },
           onDelete,
         );
+        channel.on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'tasks',
+            filter: `bubble_id=eq.${bid}`,
+          },
+          onTaskInsertOrUpdate,
+        );
+        channel.on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'tasks',
+            filter: `bubble_id=eq.${bid}`,
+          },
+          onTaskInsertOrUpdate,
+        );
+        channel.on(
+          'postgres_changes',
+          {
+            event: 'DELETE',
+            schema: 'public',
+            table: 'tasks',
+            filter: `bubble_id=eq.${bid}`,
+          },
+          onTaskDelete,
+        );
       }
     } else {
       channel.on(
@@ -600,6 +651,36 @@ export function ChatArea({
           filter: `bubble_id=eq.${bubbleId}`,
         },
         onDelete,
+      );
+      channel.on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'tasks',
+          filter: `bubble_id=eq.${bubbleId}`,
+        },
+        onTaskInsertOrUpdate,
+      );
+      channel.on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'tasks',
+          filter: `bubble_id=eq.${bubbleId}`,
+        },
+        onTaskInsertOrUpdate,
+      );
+      channel.on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'tasks',
+          filter: `bubble_id=eq.${bubbleId}`,
+        },
+        onTaskDelete,
       );
     }
 

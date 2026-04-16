@@ -57,6 +57,8 @@ export function useCalendarTasks(params: UseCalendarTasksParams): {
   const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Bumped on Supabase Realtime `tasks` events so calendar refetches like KanbanBoard. */
+  const [tasksRealtimeTick, setTasksRealtimeTick] = useState(0);
 
   useEffect(() => {
     if (!enabled || bubbleIds.length === 0 || !rangeStart || !rangeEnd) {
@@ -160,9 +162,54 @@ export function useCalendarTasks(params: UseCalendarTasksParams): {
     rangeEnd,
     rangeStart,
     reloadNonce,
+    tasksRealtimeTick,
     workspaceMemberRole,
     guestTaskUserId,
   ]);
+
+  useEffect(() => {
+    if (!enabled || bubbleIds.length === 0) {
+      return;
+    }
+
+    const supabase = createClient();
+    const sortedKey = [...bubbleIds].sort().join(',');
+    const channelName = `tasks-calendar:${params.workspaceId}:${sortedKey}`;
+    const channel = supabase.channel(channelName);
+
+    const bump = () => setTasksRealtimeTick((n) => n + 1);
+
+    if (bubbleIds.length > 1) {
+      for (const bid of bubbleIds) {
+        channel.on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'tasks',
+            filter: `bubble_id=eq.${bid}`,
+          },
+          bump,
+        );
+      }
+    } else {
+      channel.on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'tasks',
+          filter: `bubble_id=eq.${bubbleIds[0]}`,
+        },
+        bump,
+      );
+    }
+
+    channel.subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [enabled, bubbleIds, params.workspaceId]);
 
   return { tasks, loading, error };
 }
