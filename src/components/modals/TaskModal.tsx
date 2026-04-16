@@ -607,13 +607,22 @@ export function TaskModal({
   const modalBubbleUp = taskId ? bubbleUpPropsFor(taskId) : undefined;
 
   const typeNoun = itemTypeUiNoun(itemType);
+  const isExistingWorkoutCard = Boolean(
+    taskId && (itemType === 'workout' || itemType === 'workout_log'),
+  );
   /** Title-case for modal chrome; `itemTypeUiNoun` stays lowercase for in-flow copy (e.g. labels). */
   const modalTypeNoun =
     itemType === 'workout' ? 'Workout' : itemType === 'workout_log' ? 'Workout log' : typeNoun;
-  const modalTitle = isCreateMode ? `New ${modalTypeNoun}` : `Edit ${modalTypeNoun}`;
+  const modalTitle = isCreateMode
+    ? `New ${modalTypeNoun}`
+    : isExistingWorkoutCard
+      ? 'Workout Card'
+      : `Edit ${modalTypeNoun}`;
   const modalSubtitle = isCreateMode
     ? `Create ${indefiniteArticleForUiNoun(modalTypeNoun)} ${modalTypeNoun} for this bubble`
-    : `View and edit ${modalTypeNoun} details`;
+    : isExistingWorkoutCard
+      ? ''
+      : `View and edit ${modalTypeNoun} details`;
 
   const uploadCardCover = async (file: File) => {
     if (!canWrite || !taskId) return;
