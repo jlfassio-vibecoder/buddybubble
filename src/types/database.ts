@@ -98,6 +98,8 @@ export interface Database {
           created_at: string;
           /** When true, the user can access founder-only routes (/admin/*). */
           is_admin: boolean;
+          /** Bubble Agent service identity; paired with `agent_definitions.auth_user_id`. */
+          is_agent: boolean;
         };
         Insert: {
           id: string;
@@ -109,6 +111,7 @@ export interface Database {
           children_names?: string[];
           created_at?: string;
           is_admin?: boolean;
+          is_agent?: boolean;
         };
         Update: Partial<Database['public']['Tables']['users']['Insert']>;
       };
@@ -713,6 +716,66 @@ export interface Database {
         };
         Update: Partial<Database['public']['Tables']['analytics_events']['Insert']>;
       };
+      agent_definitions: {
+        Row: {
+          id: string;
+          slug: string;
+          mention_handle: string;
+          display_name: string;
+          auth_user_id: string;
+          avatar_url: string | null;
+          is_active: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          slug: string;
+          mention_handle: string;
+          display_name: string;
+          auth_user_id: string;
+          avatar_url?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['agent_definitions']['Insert']>;
+      };
+      /** Webhook idempotency for `agent_create_card_and_reply` (one row per trigger + agent). */
+      agent_message_runs: {
+        Row: {
+          trigger_message_id: string;
+          agent_auth_user_id: string;
+          created_task_id: string | null;
+          reply_message_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          trigger_message_id: string;
+          agent_auth_user_id: string;
+          created_task_id?: string | null;
+          reply_message_id?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['agent_message_runs']['Insert']>;
+      };
+      bubble_agent_bindings: {
+        Row: {
+          id: string;
+          bubble_id: string;
+          agent_definition_id: string;
+          sort_order: number;
+          enabled: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          bubble_id: string;
+          agent_definition_id: string;
+          sort_order?: number;
+          enabled?: boolean;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['bubble_agent_bindings']['Insert']>;
+      };
     };
     Functions: {
       accept_invitation: {
@@ -752,6 +815,19 @@ export interface Database {
         Args: { p_task_ids: string[] };
         Returns: { task_id: string; unread_count: number }[];
       };
+      agent_create_card_and_reply: {
+        Args: {
+          p_trigger_message_id: string;
+          p_agent_auth_user_id: string;
+          p_invoker_user_id: string;
+          p_reply_text: string;
+          p_task_title: string;
+          p_task_description?: string | null;
+          p_task_item_type?: string;
+          p_task_status?: string;
+        };
+        Returns: Json;
+      };
     };
   };
 }
@@ -776,3 +852,6 @@ export type StripeCustomerRow = Database['public']['Tables']['stripe_customers']
 export type WorkspaceSubscriptionRow =
   Database['public']['Tables']['workspace_subscriptions']['Row'];
 export type AnalyticsEventRow = Database['public']['Tables']['analytics_events']['Row'];
+export type AgentDefinitionRow = Database['public']['Tables']['agent_definitions']['Row'];
+export type AgentMessageRunRow = Database['public']['Tables']['agent_message_runs']['Row'];
+export type BubbleAgentBindingRow = Database['public']['Tables']['bubble_agent_bindings']['Row'];

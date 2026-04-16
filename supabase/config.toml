@@ -371,6 +371,9 @@ deno_version = 2
 [functions.generate-message-video-poster]
 verify_jwt = true
 
+[functions.bubble-agent-dispatch]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

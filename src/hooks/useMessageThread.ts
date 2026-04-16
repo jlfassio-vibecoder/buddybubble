@@ -13,7 +13,13 @@ import {
   type MessageThreadFilter,
 } from '@/lib/message-thread';
 import { defaultBubbleIdForWrites } from '@/lib/all-bubbles';
-import type { BubbleRow, MessageRow, MessageRowWithEmbeddedTask, TaskRow } from '@/types/database';
+import type {
+  AgentDefinitionRow,
+  BubbleRow,
+  MessageRow,
+  MessageRowWithEmbeddedTask,
+  TaskRow,
+} from '@/types/database';
 import type { ChatUserSnapshot } from '@/types/chat';
 import {
   attachmentsToJson,
@@ -80,6 +86,15 @@ export function useMessageThread({
   const [taskBubbleId, setTaskBubbleId] = useState<string | null>(null);
 
   const filterKey = messageThreadFilterKey(filter);
+
+  /** Bubble context for agent mentions; null when agents must not load (`all_bubbles` or unknown task bubble). */
+  const agentQueryBubbleId = useMemo(() => {
+    if (!filter) return null;
+    if (filter.scope === 'all_bubbles') return null;
+    if (filter.scope === 'bubble') return filter.bubbleId;
+    if (filter.scope === 'task') return taskBubbleId;
+    return null;
+  }, [filter, taskBubbleId]);
 
   useEffect(() => {
     if (!filter || filter.scope !== 'task') {
@@ -431,19 +446,47 @@ export function useMessageThread({
       return;
     }
     let cancelled = false;
-    async function loadMembers() {
+    async function loadMembersAndAgents() {
       const supabase = createClient();
       const {
         data: { user: authUser },
       } = await supabase.auth.getUser();
       const myId = authUser?.id ?? null;
-      const { data } = await supabase
+
+      const membersPromise = supabase
         .from('workspace_members')
         .select(
           'user_id, show_email_to_workspace_members, users ( id, full_name, avatar_url, email, created_at )',
         )
         .eq('workspace_id', workspaceId);
+
+      const agentsPromise =
+        agentQueryBubbleId != null
+          ? supabase
+              .from('bubble_agent_bindings')
+              .select(
+                'sort_order, agent_definitions ( id, slug, mention_handle, display_name, auth_user_id, avatar_url, is_active, created_at )',
+              )
+              .eq('bubble_id', agentQueryBubbleId)
+              .eq('enabled', true)
+              .order('sort_order', { ascending: true })
+          : Promise.resolve({ data: [] as unknown[], error: null });
+
+      const [{ data, error: wmErr }, { data: agentBindingRows, error: agentErr }] =
+        await Promise.all([membersPromise, agentsPromise]);
+
       if (cancelled) return;
+
+      if (wmErr) {
+        console.error('[useMessageThread] workspace_members', supabaseClientErrorMessage(wmErr));
+      }
+      if (agentErr) {
+        console.error(
+          '[useMessageThread] bubble_agent_bindings',
+          supabaseClientErrorMessage(agentErr),
+        );
+      }
+
       const members: MessageThreadTeamMember[] = [];
       const fromRows: Record<string, ChatUserSnapshot> = {};
       for (const row of data ?? []) {
@@ -471,14 +514,47 @@ export function useMessageThread({
           email: showPeerEmail ? usr.email : null,
         });
       }
-      setTeamMembers(members);
-      setUserById((prev) => ({ ...prev, ...fromRows }));
+
+      const agentMembers: MessageThreadTeamMember[] = [];
+      const agentSnapshots: Record<string, ChatUserSnapshot> = {};
+      const agentAuthIds = new Set<string>();
+
+      for (const raw of agentBindingRows ?? []) {
+        const row = raw as {
+          sort_order: number;
+          agent_definitions: AgentDefinitionRow | AgentDefinitionRow[] | null;
+        };
+        const def = Array.isArray(row.agent_definitions)
+          ? row.agent_definitions[0]
+          : row.agent_definitions;
+        if (!def?.auth_user_id || !def.is_active) continue;
+        agentAuthIds.add(def.auth_user_id);
+        agentMembers.push({
+          id: def.auth_user_id,
+          name: def.display_name,
+          email: '',
+          avatar: def.avatar_url ?? undefined,
+        });
+        agentSnapshots[def.auth_user_id] = toChatUserSnapshot({
+          id: def.auth_user_id,
+          full_name: def.display_name,
+          avatar_url: def.avatar_url,
+          email: null,
+          created_at: def.created_at,
+        });
+      }
+
+      const humanMembersFiltered = members.filter((m) => !agentAuthIds.has(m.id));
+      const mergedMembers = [...agentMembers, ...humanMembersFiltered];
+
+      setTeamMembers(mergedMembers);
+      setUserById((prev) => ({ ...prev, ...agentSnapshots, ...fromRows }));
     }
-    void loadMembers();
+    void loadMembersAndAgents();
     return () => {
       cancelled = true;
     };
-  }, [workspaceId]);
+  }, [workspaceId, agentQueryBubbleId]);
 
   const replyCounts = useMemo(() => buildReplyCounts(messages), [messages]);
 
