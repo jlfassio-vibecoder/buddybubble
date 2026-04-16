@@ -541,21 +541,23 @@ export function ChatArea({
     const onTaskInsertOrUpdate = (payload: { new: Record<string, unknown> }) => {
       const row = payload.new as TaskRow;
       if (!row?.id) return;
-      setDbMessages((prev) =>
-        prev.map((m) => {
+      setDbMessages((prev) => {
+        if (!prev.some((m) => m.attached_task_id === row.id)) return prev;
+        return prev.map((m) => {
           if (m.attached_task_id !== row.id) return m;
           if (row.archived_at) return { ...m, tasks: null };
           return { ...m, tasks: row };
-        }),
-      );
+        });
+      });
     };
 
     const onTaskDelete = (payload: { old: Record<string, unknown> }) => {
       const oldId = (payload.old as { id?: string })?.id;
       if (!oldId) return;
-      setDbMessages((prev) =>
-        prev.map((m) => (m.attached_task_id === oldId ? { ...m, tasks: null } : m)),
-      );
+      setDbMessages((prev) => {
+        if (!prev.some((m) => m.attached_task_id === oldId)) return prev;
+        return prev.map((m) => (m.attached_task_id === oldId ? { ...m, tasks: null } : m));
+      });
     };
 
     if (isAll) {

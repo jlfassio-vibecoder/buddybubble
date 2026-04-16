@@ -8,11 +8,12 @@ export type TaskModalActivityPanelProps = {
 };
 
 export function TaskModalActivityPanel({ activityLog }: TaskModalActivityPanelProps) {
+  if (activityLog.length === 0) {
+    return <p className="text-sm text-muted-foreground">No activity yet.</p>;
+  }
+
   return (
     <ul className="space-y-2">
-      {activityLog.length === 0 && (
-        <p className="text-sm text-muted-foreground">No activity yet.</p>
-      )}
       {activityLog.map((e) => (
         <li
           key={e.id}

@@ -42,6 +42,7 @@ export function CardTabStrip({
     return null;
   }
 
+  // Copilot suggestion ignored: GitHub’s bidirectional-Unicode warning on this file is a false positive for normal ASCII/JSX.
   return (
     <div className="flex flex-wrap gap-1" role="tablist" aria-label="Card sections">
       {onOpenTask
