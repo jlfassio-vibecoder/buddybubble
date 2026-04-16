@@ -1,8 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from 'react';
 import { X } from 'lucide-react';
-import { toast } from 'sonner';
 import { createClient } from '@utils/supabase/client';
 import {
   normalizeItemType,
@@ -10,24 +9,11 @@ import {
   type Json,
   type TaskRow,
   type TaskVisibility,
-  type UnitSystem,
 } from '@/types/database';
-import type { WorkoutSetTemplate } from '@/lib/workout-factory/types/workout-contract';
 import { WorkoutViewerDialog } from '@/components/fitness/workout-viewer-dialog';
 import { useBoardColumnDefs } from '@/hooks/use-board-columns';
 import { useTaskBubbleUps } from '@/hooks/use-task-bubble-ups';
-import {
-  type TaskActivityEntry,
-  type TaskAttachment,
-  type TaskComment,
-  type TaskSubtask,
-  TASK_STATUSES,
-  appendActivityForFieldChange,
-  asActivityLog,
-  asAttachments,
-  asComments,
-  asSubtasks,
-} from '@/types/task-modal';
+import { type TaskAttachment, TASK_STATUSES } from '@/types/task-modal';
 import { type TaskPriority, normalizeTaskPriority } from '@/lib/task-priority';
 import { taskDateFieldLabels } from '@/lib/task-date-labels';
 import type { WorkspaceCategory } from '@/types/database';
@@ -52,43 +38,29 @@ import {
   type ProgramWeek,
   type WorkoutExercise,
 } from '@/lib/item-metadata';
-import { useWorkoutTemplates, type WorkoutTemplate } from '@/hooks/use-workout-templates';
-import {
-  postGenerateWorkoutChain,
-  postPersonalizeProgram,
-  WORKOUT_FACTORY_CHAIN_MESSAGES,
-} from '@/lib/workout-factory/api-client';
-import { postGenerateCardCover } from '@/lib/ai/generate-card-cover-client';
-import { archiveDuplicateProgramsFromSameTemplate } from '@/lib/fitness/archive-duplicate-template-programs';
-import { archiveOpenChildWorkoutsForProgram } from '@/lib/fitness/archive-program-child-workouts';
-import { hasOtherActiveProgramForUserInWorkspace } from '@/lib/fitness/active-program-for-user';
-import {
-  resolveThirdKanbanStatusSlug,
-  upsertProgramWorkoutTasks,
-} from '@/lib/fitness/upsert-program-workout-tasks';
-import { syncProgramLinkedWorkoutSchedules } from '@/lib/fitness/sync-program-workout-schedules';
-import { isMissingColumnSchemaCacheError } from '@/lib/supabase-schema-errors';
-import {
-  alignStatusWithFutureSchedule,
-  promotedStatusForScheduledOnToday,
-} from '@/lib/workspace-calendar';
-import {
-  formatScheduledTimeDisplay,
-  scheduledTimeInputToPgValue,
-  scheduledTimeToInputValue,
-} from '@/lib/task-scheduled-time';
+import { useWorkoutTemplates } from '@/hooks/use-workout-templates';
+import { scheduledTimeToInputValue } from '@/lib/task-scheduled-time';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { indefiniteArticleForUiNoun, itemTypeUiNoun } from '@/lib/item-type-styles';
-import { taskColumnIsCompletionStatus } from '@/lib/kanban-column-semantic';
 import { ALL_BUBBLES_BUBBLE_ID } from '@/lib/all-bubbles';
 import { usePresenceStore } from '@/store/presenceStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { BubblyButton } from '@/components/tasks/bubbly-button';
 import { TaskModalHero } from '@/components/modals/task-modal-hero';
+import { useTaskLoadAndRealtime } from '@/components/modals/task-modal/hooks/useTaskLoadAndRealtime';
+import { useWorkspaceAssignees } from '@/components/modals/task-modal/hooks/useWorkspaceAssignees';
+import { useWorkoutUnitSystem } from '@/components/modals/task-modal/hooks/useWorkoutUnitSystem';
+import { useTaskCardCoverAi } from '@/components/modals/task-modal/hooks/useTaskCardCoverAi';
+import { useTaskProgramPersonalization } from '@/components/modals/task-modal/hooks/useTaskProgramPersonalization';
+import { useTaskWorkoutAi } from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
+import { useTaskOriginalSnapshot } from '@/components/modals/task-modal/hooks/useTaskOriginalSnapshot';
+import { useTaskDirtyState } from '@/components/modals/task-modal/hooks/useTaskDirtyState';
+import { useTaskEmbeddedCollections } from '@/components/modals/task-modal/hooks/useTaskEmbeddedCollections';
+import { useTaskSaveAndCreate } from '@/components/modals/task-modal/hooks/useTaskSaveAndCreate';
 
 export type TaskModalTab = 'details' | 'comments' | 'subtasks' | 'activity';
 
@@ -186,12 +158,14 @@ export function TaskModal({
     }
   }, [open, taskId, activeBubble?.id, updateFocus]);
 
+  const workspaceMembersForAssign = useWorkspaceAssignees(open, workspaceId);
+
   const [tab, setTab] = useState<TabId>('details');
   const [viewMode, setViewMode] = useState<TaskModalViewMode>('full');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [archiving, setArchiving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isCreateMode = open && !taskId && !!bubbleId;
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -205,9 +179,6 @@ export function TaskModal({
   const [visibility, setVisibility] = useState<TaskVisibility>('private');
   /** Workspace member user id, or null = unassigned */
   const [assignedTo, setAssignedTo] = useState<string | null>(null);
-  const [workspaceMembersForAssign, setWorkspaceMembersForAssign] = useState<
-    { user_id: string; label: string }[]
-  >([]);
   const [metadata, setMetadata] = useState<Json>({});
   const [eventLocation, setEventLocation] = useState('');
   const [eventUrl, setEventUrl] = useState('');
@@ -218,15 +189,6 @@ export function TaskModal({
   const [workoutType, setWorkoutType] = useState('');
   const [workoutDurationMin, setWorkoutDurationMin] = useState('');
   const [workoutExercises, setWorkoutExercises] = useState<WorkoutExercise[]>([]);
-  const [workoutViewerOpen, setWorkoutViewerOpen] = useState(false);
-  const workoutViewerAutoOpenedRef = useRef(false);
-  /** Unit system from the user's fitness profile; drives weight labels. */
-  const [workoutUnitSystem, setWorkoutUnitSystem] = useState<UnitSystem>('metric');
-  /** Whether the template picker is expanded (create mode only). */
-  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
-  const [aiWorkoutGenerating, setAiWorkoutGenerating] = useState(false);
-  const [aiProgramPersonalizing, setAiProgramPersonalizing] = useState(false);
-  const [aiWorkoutProgressIdx, setAiWorkoutProgressIdx] = useState(0);
 
   /** Program-specific fields. */
   const [programGoal, setProgramGoal] = useState('');
@@ -239,19 +201,9 @@ export function TaskModal({
   const [cardCoverAiHint, setCardCoverAiHint] = useState('');
   /** Empty string = server default scene by `item_type`. */
   const [cardCoverPresetId, setCardCoverPresetId] = useState('');
-  const [aiCardCoverGenerating, setAiCardCoverGenerating] = useState(false);
   const cardCoverFileInputRef = useRef<HTMLInputElement>(null);
-
-  const [subtasks, setSubtasks] = useState<TaskSubtask[]>([]);
-  const [comments, setComments] = useState<TaskComment[]>([]);
-  const [activityLog, setActivityLog] = useState<TaskActivityEntry[]>([]);
-  const [attachments, setAttachments] = useState<TaskAttachment[]>([]);
-
-  const [newComment, setNewComment] = useState('');
-  const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
-  const [commentUserById, setCommentUserById] = useState<
-    Record<string, { displayName: string; avatarUrl: string | null }>
-  >({});
+  /** After the user uses editor chrome, collapse the 16:9 hero so Details has more vertical room. */
+  const [heroCinematicCollapsed, setHeroCinematicCollapsed] = useState(false);
 
   const boardColumnDefs = useBoardColumnDefs(workspaceId);
 
@@ -261,28 +213,11 @@ export function TaskModal({
     isWorkoutItemType && !taskId ? workspaceId : null,
   );
 
-  // Fetch the user's unit system from their fitness profile so weight labels are accurate.
-  useEffect(() => {
-    if (!open || !isWorkoutItemType) return;
-    let cancelled = false;
-    const supabase = createClient();
-    void supabase.auth.getUser().then(({ data }) => {
-      if (cancelled || !data.user) return;
-      void supabase
-        .from('fitness_profiles')
-        .select('unit_system')
-        .eq('workspace_id', workspaceId)
-        .eq('user_id', data.user.id)
-        .maybeSingle()
-        .then(({ data: fp }) => {
-          if (cancelled) return;
-          setWorkoutUnitSystem((fp?.unit_system as UnitSystem | null) ?? 'metric');
-        });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, isWorkoutItemType, workspaceId]);
+  const { workoutUnitSystem, setWorkoutUnitSystem } = useWorkoutUnitSystem(
+    open,
+    workspaceId,
+    isWorkoutItemType,
+  );
 
   const hasTodayBoardColumn = useMemo(
     () => boardColumnDefs?.some((c) => c.id === 'today') ?? false,
@@ -306,169 +241,55 @@ export function TaskModal({
 
   const defaultStatus = statusOptions[0]?.value ?? 'todo';
 
-  const originalRef = useRef<{
-    title: string;
-    description: string;
-    status: string;
-    priority: TaskPriority;
-    scheduledOn: string | null;
-    /** Normalized `HH:mm` or null */
-    scheduledTime: string | null;
-    itemType: ItemType;
-    /** Stable string for dirty checks */
-    metadataJson: string;
-    visibility: TaskVisibility;
-    assignedTo: string | null;
-  } | null>(null);
+  const { originalRef, setOriginalFromAppliedRow, clearOriginal, patchOriginalMetadataJson } =
+    useTaskOriginalSnapshot();
 
   const dateLabels = taskDateFieldLabels(workspaceCategory);
 
-  useEffect(() => {
-    if (!open || !workspaceId) {
-      setWorkspaceMembersForAssign([]);
-      return;
-    }
-    let cancelled = false;
-    async function loadAssignees() {
-      const supabase = createClient();
-      const {
-        data: { user: authUser },
-      } = await supabase.auth.getUser();
-      const myId = authUser?.id ?? null;
-      const { data } = await supabase
-        .from('workspace_members')
-        .select('user_id, show_email_to_workspace_members, users ( full_name, email )')
-        .eq('workspace_id', workspaceId);
-      if (cancelled || !data) return;
-      const opts: { user_id: string; label: string }[] = [];
-      for (const row of data as unknown as Array<{
-        user_id: string;
-        show_email_to_workspace_members?: boolean;
-        users:
-          | { full_name: string | null; email: string | null }
-          | { full_name: string | null; email: string | null }[]
-          | null;
-      }>) {
-        const u = Array.isArray(row.users) ? row.users[0] : row.users;
-        // Auth not resolved yet: do not treat peers as opted-in; hide their emails.
-        const showPeerEmail =
-          myId != null && (row.user_id === myId || row.show_email_to_workspace_members === true);
-        const label =
-          (u?.full_name && u.full_name.trim()) ||
-          (showPeerEmail ? u?.email?.split('@')[0] : undefined)?.trim() ||
-          'Member';
-        opts.push({ user_id: row.user_id, label });
-      }
-      opts.sort((a, b) => a.label.localeCompare(b.label));
-      setWorkspaceMembersForAssign(opts);
-    }
-    void loadAssignees();
-    return () => {
-      cancelled = true;
-    };
-  }, [open, workspaceId]);
+  const {
+    templatePickerOpen,
+    setTemplatePickerOpen,
+    aiWorkoutGenerating,
+    aiWorkoutProgressIdx,
+    workoutViewerOpen,
+    setWorkoutViewerOpen,
+    applyWorkoutTemplate,
+    handleAiGenerateWorkout,
+    viewerWorkoutSet,
+    hasWorkoutViewerContent,
+    handleWorkoutViewerApply,
+    resetWorkoutAiUi,
+  } = useTaskWorkoutAi({
+    open,
+    taskId,
+    loading,
+    initialOpenWorkoutViewer,
+    canWrite,
+    workspaceId,
+    isWorkoutItemType,
+    title,
+    workoutDurationMin,
+    metadata,
+    workoutExercises,
+    setTitle,
+    setDescription,
+    setWorkoutType,
+    setWorkoutDurationMin,
+    setWorkoutExercises,
+    setMetadata,
+  });
 
-  const applyWorkoutTemplate = useCallback(
-    (tpl: WorkoutTemplate) => {
-      const fields = metadataFieldsFromParsed(tpl.metadata);
-      if (!title.trim()) setTitle(tpl.title);
-      if (fields.workoutType) setWorkoutType(fields.workoutType);
-      if (fields.workoutDurationMin) setWorkoutDurationMin(fields.workoutDurationMin);
-      if (fields.workoutExercises.length) setWorkoutExercises(fields.workoutExercises);
-      setTemplatePickerOpen(false);
-    },
-    [title],
-  );
-
-  useEffect(() => {
-    if (!aiWorkoutGenerating) {
-      setAiWorkoutProgressIdx(0);
-      return;
-    }
-    setAiWorkoutProgressIdx(0);
-    const id = window.setInterval(() => {
-      setAiWorkoutProgressIdx((i) => Math.min(i + 1, WORKOUT_FACTORY_CHAIN_MESSAGES.length - 1));
-    }, 15000);
-    return () => window.clearInterval(id);
-  }, [aiWorkoutGenerating]);
-
-  const handleAiGenerateWorkout = useCallback(async () => {
-    if (!canWrite || !workspaceId || !isWorkoutItemType) return;
-    setAiWorkoutGenerating(true);
-    try {
-      const duration = parseInt(workoutDurationMin, 10);
-      const data = await postGenerateWorkoutChain({
-        workspace_id: workspaceId,
-        daily_checkin: null,
-        persona: {
-          title: title.trim() || undefined,
-          sessionDurationMinutes: !Number.isNaN(duration) && duration > 0 ? duration : 45,
-        },
-      });
-      setTitle((t) => (t.trim() ? t : data.suggestedTitle || t));
-      setDescription((d) => (d.trim() ? d : data.suggestedDescription || d));
-      setWorkoutExercises(data.taskExercises);
-      setWorkoutType((wt) => (wt.trim() ? wt : 'Generated'));
-      setMetadata((prev) => {
-        const o = parseTaskMetadata(prev) as Record<string, unknown>;
-        return {
-          ...o,
-          ai_workout_factory: {
-            generated_at: data.chain_metadata.generated_at,
-            model: data.chain_metadata.model_used,
-            workout_set: data.workoutSet,
-            chain_metadata: data.chain_metadata,
-          },
-        } as unknown as Json;
-      });
-      toast.success('Workout generated — review exercises and save.');
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Generation failed');
-    } finally {
-      setAiWorkoutGenerating(false);
-    }
-  }, [canWrite, workspaceId, isWorkoutItemType, workoutDurationMin, title]);
-
-  const viewerWorkoutSet = useMemo((): WorkoutSetTemplate | null => {
-    const o = parseTaskMetadata(metadata) as Record<string, unknown>;
-    const ai = o.ai_workout_factory;
-    if (!ai || typeof ai !== 'object') return null;
-    const ws = (ai as { workout_set?: unknown }).workout_set;
-    if (!ws || typeof ws !== 'object') return null;
-    return ws as WorkoutSetTemplate;
-  }, [metadata]);
-
-  const hasWorkoutViewerContent =
-    isWorkoutItemType && (workoutExercises.length > 0 || viewerWorkoutSet != null);
-
-  useEffect(() => {
-    if (!open) {
-      setWorkoutViewerOpen(false);
-      workoutViewerAutoOpenedRef.current = false;
-    }
-  }, [open]);
-
-  useEffect(() => {
-    if (!open || !taskId || !initialOpenWorkoutViewer || loading) return;
-    if (!hasWorkoutViewerContent || workoutViewerAutoOpenedRef.current) return;
-    workoutViewerAutoOpenedRef.current = true;
-    setWorkoutViewerOpen(true);
-  }, [open, taskId, loading, initialOpenWorkoutViewer, hasWorkoutViewerContent]);
-
-  const handleWorkoutViewerApply = useCallback(
-    (payload: { title: string; description: string; exercises: WorkoutExercise[] }) => {
-      setTitle(payload.title);
-      setDescription(payload.description);
-      setWorkoutExercises(payload.exercises);
-      setMetadata((prev) => {
-        const o = parseTaskMetadata(prev) as Record<string, unknown>;
-        const next = { ...o };
-        delete next.ai_workout_factory;
-        return next as Json;
-      });
-    },
-    [],
-  );
+  const { aiCardCoverGenerating, generateCardCoverWithAi, resetCardCoverAi } = useTaskCardCoverAi({
+    canWrite,
+    taskId,
+    workspaceId,
+    cardCoverAiHint,
+    cardCoverPresetId,
+    setCardCoverPath,
+    setMetadata,
+    setError,
+    patchOriginalMetadataJson,
+  });
 
   const metadataForSave = useMemo(
     () =>
@@ -512,6 +333,32 @@ export function TaskModal({
     ],
   );
 
+  const {
+    subtasks,
+    comments,
+    activityLog,
+    setActivityLog,
+    attachments,
+    newComment,
+    setNewComment,
+    newSubtaskTitle,
+    setNewSubtaskTitle,
+    commentUserById,
+    addComment,
+    addSubtask,
+    toggleSubtask,
+    uploadAttachment,
+    removeAttachment,
+    hydrateFromTaskRow,
+    resetForCreate,
+  } = useTaskEmbeddedCollections({
+    taskId,
+    canWrite,
+    workspaceId,
+    setError,
+    setSaving,
+  });
+
   const statusSelectOptions = useMemo(() => {
     if (status && !statusOptions.some((o) => o.value === status)) {
       return [...statusOptions, { value: status, label: status }];
@@ -549,16 +396,13 @@ export function TaskModal({
       setProgramSchedule(mf.programSchedule);
       setProgramSourceTitle(mf.programSourceTitle);
       setCardCoverPath(mf.cardCoverPath);
-      setSubtasks(asSubtasks(row.subtasks));
-      setComments(asComments(row.comments));
-      setActivityLog(asActivityLog(row.activity_log));
-      setAttachments(asAttachments(row.attachments));
+      hydrateFromTaskRow(row);
       const vis = normalizeTaskVisibility((row as TaskRow).visibility);
       setVisibility(vis);
       const assignee = (row as TaskRow).assigned_to ?? null;
       setAssignedTo(assignee);
       const st = scheduledTimeToInputValue((row as TaskRow).scheduled_time);
-      originalRef.current = {
+      setOriginalFromAppliedRow({
         title: row.title,
         description: row.description ?? '',
         status: nextStatus,
@@ -569,213 +413,84 @@ export function TaskModal({
         metadataJson: JSON.stringify(buildTaskMetadataPayload(nextItemType, mf, nextMeta)),
         visibility: vis,
         assignedTo: assignee,
-      };
+      });
     },
-    [defaultStatus],
+    [defaultStatus, hydrateFromTaskRow, setOriginalFromAppliedRow],
   );
 
-  const loadTask = useCallback(
-    async (id: string) => {
-      setLoading(true);
-      setError(null);
-      const supabase = createClient();
-      const { data, error: qErr } = await supabase
-        .from('tasks')
-        .select('*')
-        .eq('id', id)
-        .maybeSingle();
-      setLoading(false);
-      if (qErr || !data) {
-        setError(qErr?.message ?? 'Card not found');
-        return;
-      }
-      applyRow(data as TaskRow);
-    },
-    [applyRow],
-  );
-
-  const handlePersonalizeProgram = useCallback(async () => {
-    if (!canWrite || !workspaceId || itemType !== 'program' || !taskId) return;
-    const baseTitle = programSourceTitle.trim() || title.trim();
-    if (!baseTitle) {
-      toast.error('Add a title before personalizing.');
-      return;
-    }
-    const dw = parseInt(programDurationWeeks, 10);
-    const durationWeeks = !Number.isNaN(dw) && dw > 0 ? dw : 0;
-    if (durationWeeks < 1) {
-      toast.error('Set a valid duration (weeks) before personalizing.');
-      return;
-    }
-    setAiProgramPersonalizing(true);
-    try {
-      const supabase = createClient();
-      const {
-        data: { user: authUser },
-      } = await supabase.auth.getUser();
-      const uid = authUser?.id ?? null;
-      if (!uid) {
-        toast.error('Sign in to personalize.');
-        return;
-      }
-      if (await hasOtherActiveProgramForUserInWorkspace(supabase, workspaceId, uid, taskId)) {
-        toast.error('You already have an active program. Please complete or pause it first.');
-        return;
-      }
-
-      const data = await postPersonalizeProgram({
-        workspace_id: workspaceId,
-        program: {
-          base_title: baseTitle,
-          goal: programGoal.trim(),
-          duration_weeks: durationWeeks,
-          schedule: programSchedule,
-        },
-      });
-      const nextTitle = `${baseTitle} - ${data.title_suffix}`;
-      const { slug: statusSlug, usedFallback } = await resolveThirdKanbanStatusSlug(
-        supabase,
-        workspaceId,
-        defaultStatus,
-      );
-      if (usedFallback) {
-        toast.warning(
-          'This board has fewer than three columns; linked workouts were placed in the first column instead.',
-        );
-      }
-      const up = await upsertProgramWorkoutTasks({
-        supabase,
-        workspaceId,
-        programTaskId: taskId,
-        sessions: data.sessions,
-        statusSlug,
-        visibility,
-      });
-      if (up.error) {
-        toast.error(up.error);
-        return;
-      }
-
-      const metaPayload = buildTaskMetadataPayload(
-        'program',
-        {
-          eventLocation,
-          eventUrl,
-          experienceSeason,
-          experienceEndDate,
-          memoryCaption,
-          workoutType,
-          workoutDurationMin,
-          workoutExercises,
-          programGoal,
-          programDurationWeeks,
-          programCurrentWeek,
-          programSchedule,
-          programSourceTitle: baseTitle,
-          cardCoverPath,
-        },
-        {
-          ...(parseTaskMetadata(metadata) as Record<string, unknown>),
-          ai_program_personalization: {
-            generated_at: new Date().toISOString(),
-            model: data.model_used,
-          },
-        },
-      );
-
-      const orig = originalRef.current;
-      let nextActivity = [...activityLog];
-      const nextDesc = (data.description ?? '').trim();
-      if (orig) {
-        if (nextTitle !== orig.title) {
-          nextActivity = appendActivityForFieldChange(nextActivity, {
-            userId: uid,
-            field: 'title',
-            from: orig.title,
-            to: nextTitle,
-          });
-        }
-        if (nextDesc !== (orig.description ?? '').trim()) {
-          nextActivity = appendActivityForFieldChange(nextActivity, {
-            userId: uid,
-            field: 'description',
-            from: orig.description ?? '',
-            to: nextDesc,
-          });
-        }
-      }
-
-      const { data: taskRow, error: rowErr } = await supabase
-        .from('tasks')
-        .select('bubble_id')
-        .eq('id', taskId)
-        .maybeSingle();
-
-      if (rowErr || !taskRow) {
-        toast.error(rowErr?.message ?? 'Could not load task.');
-        return;
-      }
-
-      const { error: updErr } = await supabase
-        .from('tasks')
-        .update({
-          title: nextTitle,
-          description: nextDesc || null,
-          metadata: metaPayload,
-          activity_log: nextActivity as unknown as TaskRow['activity_log'],
-        })
-        .eq('id', taskId);
-
-      if (updErr) {
-        toast.error(formatUserFacingError(updErr));
-        return;
-      }
-
-      const syncSched = await syncProgramLinkedWorkoutSchedules({
-        supabase,
-        programTaskId: taskId,
-        calendarTimezone,
-        hasTodayBoardColumn,
-        hasScheduledBoardColumn,
-      });
-      if (syncSched.error) {
-        toast.error(syncSched.error);
-        return;
-      }
-
-      const srcId = (metaPayload as Record<string, unknown>).source_template_id;
-      if (typeof srcId === 'string' && taskRow.bubble_id) {
-        const { error: archErr } = await archiveDuplicateProgramsFromSameTemplate({
-          supabase,
-          bubbleId: taskRow.bubble_id as string,
-          keepProgramTaskId: taskId,
-          sourceTemplateId: srcId,
-        });
-        if (archErr) {
-          toast.error(archErr);
-        }
-      }
-
-      setActivityLog(asActivityLog(nextActivity));
-      void loadTask(taskId);
-      toast.success('Program personalized.');
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Personalization failed');
-    } finally {
-      setAiProgramPersonalizing(false);
-    }
+  const onResetForCreate = useCallback(() => {
+    setTab('details');
+    const nextItemType = initialCreateItemType ?? 'task';
+    setTitle(initialCreateTitle ?? '');
+    setDescription('');
+    setPriority('medium');
+    setScheduledOn('');
+    setScheduledTime('');
+    setItemType(nextItemType);
+    setMetadata({});
+    setEventLocation('');
+    setEventUrl('');
+    setExperienceSeason('');
+    setExperienceEndDate('');
+    setMemoryCaption('');
+    setWorkoutType('');
+    setWorkoutDurationMin(
+      (nextItemType === 'workout' || nextItemType === 'workout_log') &&
+        initialCreateWorkoutDurationMin != null &&
+        initialCreateWorkoutDurationMin !== ''
+        ? initialCreateWorkoutDurationMin
+        : '',
+    );
+    setWorkoutExercises([]);
+    setWorkoutUnitSystem('metric');
+    resetWorkoutAiUi();
+    setProgramGoal('');
+    setProgramDurationWeeks('');
+    setProgramCurrentWeek(0);
+    setProgramSchedule([]);
+    setProgramSourceTitle('');
+    setCardCoverPath('');
+    setCardCoverAiHint('');
+    setCardCoverPresetId('');
+    resetCardCoverAi();
+    resetForCreate();
+    setVisibility('private');
+    setAssignedTo(null);
+    clearOriginal();
+    setError(null);
   }, [
+    initialCreateItemType,
+    initialCreateTitle,
+    initialCreateWorkoutDurationMin,
+    resetWorkoutAiUi,
+    resetCardCoverAi,
+    resetForCreate,
+    clearOriginal,
+  ]);
+
+  const { loadTask } = useTaskLoadAndRealtime({
+    open,
+    taskId,
+    applyRow,
+    onResetForCreate,
+    setLoading,
+    setError,
+  });
+
+  const { aiProgramPersonalizing, handlePersonalizeProgram } = useTaskProgramPersonalization({
     canWrite,
     workspaceId,
-    itemType,
     taskId,
+    itemType,
     programSourceTitle,
     title,
     programGoal,
     programDurationWeeks,
     programSchedule,
-    defaultStatus,
+    programCurrentWeek,
     visibility,
+    metadata,
+    activityLog,
     eventLocation,
     eventUrl,
     experienceSeason,
@@ -784,105 +499,66 @@ export function TaskModal({
     workoutType,
     workoutDurationMin,
     workoutExercises,
-    programCurrentWeek,
-    metadata,
-    activityLog,
-    loadTask,
+    cardCoverPath,
+    defaultStatus,
     calendarTimezone,
     hasTodayBoardColumn,
     hasScheduledBoardColumn,
-    cardCoverPath,
-  ]);
-
-  useEffect(() => {
-    if (!open) return;
-    if (!taskId) {
-      setTab('details');
-      const nextItemType = initialCreateItemType ?? 'task';
-      setTitle(initialCreateTitle ?? '');
-      setDescription('');
-      setPriority('medium');
-      setScheduledOn('');
-      setScheduledTime('');
-      setItemType(nextItemType);
-      setMetadata({});
-      setEventLocation('');
-      setEventUrl('');
-      setExperienceSeason('');
-      setExperienceEndDate('');
-      setMemoryCaption('');
-      setWorkoutType('');
-      setWorkoutDurationMin(
-        (nextItemType === 'workout' || nextItemType === 'workout_log') &&
-          initialCreateWorkoutDurationMin != null &&
-          initialCreateWorkoutDurationMin !== ''
-          ? initialCreateWorkoutDurationMin
-          : '',
-      );
-      setWorkoutExercises([]);
-      setWorkoutUnitSystem('metric');
-      setTemplatePickerOpen(false);
-      setProgramGoal('');
-      setProgramDurationWeeks('');
-      setProgramCurrentWeek(0);
-      setProgramSchedule([]);
-      setProgramSourceTitle('');
-      setCardCoverPath('');
-      setCardCoverAiHint('');
-      setCardCoverPresetId('');
-      setAiCardCoverGenerating(false);
-      setSubtasks([]);
-      setComments([]);
-      setCommentUserById({});
-      setActivityLog([]);
-      setAttachments([]);
-      setVisibility('private');
-      setAssignedTo(null);
-      originalRef.current = null;
-      setError(null);
-      return;
-    }
-    void loadTask(taskId);
-  }, [
-    open,
-    taskId,
+    originalRef,
     loadTask,
-    initialCreateItemType,
-    initialCreateTitle,
-    initialCreateWorkoutDurationMin,
-  ]);
+    setActivityLog,
+  });
 
-  useEffect(() => {
-    if (!taskId || comments.length === 0) {
-      setCommentUserById({});
-      return;
-    }
-    const ids = [...new Set(comments.map((c) => c.user_id))];
-    let cancelled = false;
-    const supabase = createClient();
-    void supabase
-      .from('users')
-      .select('id, full_name, email, avatar_url')
-      .in('id', ids)
-      .then(({ data }) => {
-        if (cancelled || !data) return;
-        const next: Record<string, { displayName: string; avatarUrl: string | null }> = {};
-        for (const row of data as {
-          id: string;
-          full_name: string | null;
-          email: string | null;
-          avatar_url: string | null;
-        }[]) {
-          const displayName =
-            (row.full_name && row.full_name.trim()) || row.email?.split('@')[0] || 'Member';
-          next[row.id] = { displayName, avatarUrl: row.avatar_url };
-        }
-        setCommentUserById(next);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [taskId, comments]);
+  const { archiving, archiveTask, saveCoreFields, createTask } = useTaskSaveAndCreate({
+    canWrite,
+    taskId,
+    bubbleId,
+    workspaceId,
+    loadTask,
+    onCreated,
+    onOpenChange,
+    onTaskArchived,
+    title,
+    description,
+    status,
+    priority,
+    scheduledOn,
+    scheduledTime,
+    itemType,
+    visibility,
+    assignedTo,
+    metadataForSave,
+    boardColumnDefs,
+    hasTodayBoardColumn,
+    hasScheduledBoardColumn,
+    calendarTimezone,
+    activityLog,
+    setActivityLog,
+    setStatus,
+    setPriority,
+    setScheduledOn,
+    setScheduledTime,
+    setVisibility,
+    setError,
+    setSaving,
+    originalRef,
+    setOriginalFromAppliedRow,
+  });
+
+  const { coreDirty } = useTaskDirtyState({
+    originalRef,
+    isCreateMode,
+    title,
+    description,
+    status,
+    priority,
+    scheduledOn,
+    scheduledTime,
+    itemType,
+    metadataForSave,
+    visibility,
+    assignedTo,
+  });
 
   useEffect(() => {
     if (!open || taskId) return;
@@ -910,647 +586,43 @@ export function TaskModal({
     }
   }, [open, taskId, initialTab, initialViewMode]);
 
+  useEffect(() => {
+    setHeroCinematicCollapsed(false);
+  }, [open, taskId, cardCoverPath]);
+
   const selectTab = useCallback((id: TabId) => {
     setTab(id);
     setViewMode((prev) => (prev === 'comments-only' && id !== 'comments' ? 'full' : prev));
   }, []);
 
-  useEffect(() => {
-    if (!open || !taskId) return;
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`task-modal:${taskId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'tasks',
-          filter: `id=eq.${taskId}`,
-        },
-        () => {
-          void loadTask(taskId);
-        },
-      )
-      .subscribe();
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [open, taskId, loadTask]);
+  /** Hero stays fixed above this pane; collapse the cinematic cover when the user scrolls the body. */
+  const handleTaskModalBodyScroll = useCallback((e: UIEvent<HTMLDivElement>) => {
+    if (e.currentTarget.scrollTop > 8) {
+      setHeroCinematicCollapsed(true);
+    }
+  }, []);
 
   const bubbleUpScopeTaskIds = useMemo(() => (taskId ? [taskId] : []), [taskId]);
   const { bubbleUpPropsFor } = useTaskBubbleUps(bubbleUpScopeTaskIds);
   const modalBubbleUp = taskId ? bubbleUpPropsFor(taskId) : undefined;
 
-  const isCreateMode = open && !taskId && !!bubbleId;
   const typeNoun = itemTypeUiNoun(itemType);
   const isExistingWorkoutCard = Boolean(
     taskId && (itemType === 'workout' || itemType === 'workout_log'),
   );
+  /** Title-case for modal chrome; `itemTypeUiNoun` stays lowercase for in-flow copy (e.g. labels). */
+  const modalTypeNoun =
+    itemType === 'workout' ? 'Workout' : itemType === 'workout_log' ? 'Workout log' : typeNoun;
   const modalTitle = isCreateMode
-    ? `New ${typeNoun}`
+    ? `New ${modalTypeNoun}`
     : isExistingWorkoutCard
       ? 'Workout Card'
-      : `Edit ${typeNoun}`;
+      : `Edit ${modalTypeNoun}`;
   const modalSubtitle = isCreateMode
-    ? `Create ${indefiniteArticleForUiNoun(typeNoun)} ${typeNoun} for this bubble`
+    ? `Create ${indefiniteArticleForUiNoun(modalTypeNoun)} ${modalTypeNoun} for this bubble`
     : isExistingWorkoutCard
       ? ''
-      : `View and edit ${typeNoun} details`;
-
-  const archiveTask = useCallback(async () => {
-    if (!taskId || !canWrite || archiving) return;
-    setArchiving(true);
-    setError(null);
-    const supabase = createClient();
-    const { error: uErr } = await supabase
-      .from('tasks')
-      .update({ archived_at: new Date().toISOString() })
-      .eq('id', taskId);
-    setArchiving(false);
-    if (uErr) {
-      setError(uErr.message);
-      return;
-    }
-    if (itemType === 'program') {
-      const { error: childErr } = await archiveOpenChildWorkoutsForProgram(supabase, taskId);
-      if (childErr) {
-        toast.error(childErr);
-      }
-    }
-    onOpenChange(false);
-    onTaskArchived?.();
-  }, [archiving, canWrite, itemType, onOpenChange, onTaskArchived, taskId]);
-
-  const saveCoreFields = async () => {
-    if (!canWrite || !taskId) return;
-    setSaving(true);
-    setError(null);
-    const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    const uid = user?.id ?? null;
-
-    const orig = originalRef.current;
-    const scheduledOnValue = scheduledOn.trim() ? scheduledOn.trim().slice(0, 10) : null;
-    const newTimeHm = scheduledOnValue
-      ? scheduledTime.trim()
-        ? scheduledTime.trim().slice(0, 5)
-        : null
-      : null;
-    const scheduledTimePg = newTimeHm ? scheduledTimeInputToPgValue(newTimeHm) : null;
-    const schedChanged = orig != null && (scheduledOnValue ?? null) !== (orig.scheduledOn ?? null);
-    const schedTimeChanged = orig != null && (newTimeHm ?? null) !== (orig.scheduledTime ?? null);
-    let effectiveStatus = promotedStatusForScheduledOnToday({
-      currentStatus: status,
-      scheduledOnYmd: scheduledOnValue,
-      calendarTimezone,
-      hasTodayBoardColumn,
-    });
-    effectiveStatus = alignStatusWithFutureSchedule({
-      status: effectiveStatus,
-      scheduledOnYmd: scheduledOnValue,
-      calendarTimezone,
-      hasScheduledBoardColumn,
-      itemType,
-    });
-
-    const typeMetaPatch = {
-      item_type: itemType,
-      metadata: metadataForSave as TaskRow['metadata'],
-    };
-
-    let nextActivity = [...activityLog];
-    if (orig) {
-      if (title.trim() !== orig.title) {
-        nextActivity = appendActivityForFieldChange(nextActivity, {
-          userId: uid,
-          field: 'title',
-          from: orig.title,
-          to: title.trim(),
-        });
-      }
-      if ((description ?? '').trim() !== (orig.description ?? '').trim()) {
-        nextActivity = appendActivityForFieldChange(nextActivity, {
-          userId: uid,
-          field: 'description',
-          from: orig.description ?? '',
-          to: description ?? '',
-        });
-      }
-      if (effectiveStatus !== orig.status) {
-        nextActivity = appendActivityForFieldChange(nextActivity, {
-          userId: uid,
-          field: 'status',
-          from: orig.status,
-          to: effectiveStatus,
-        });
-      }
-      if (priority !== orig.priority) {
-        nextActivity = appendActivityForFieldChange(nextActivity, {
-          userId: uid,
-          field: 'priority',
-          from: orig.priority,
-          to: priority,
-        });
-      }
-      if (visibility !== orig.visibility) {
-        nextActivity = appendActivityForFieldChange(nextActivity, {
-          userId: uid,
-          field: 'visibility',
-          from: orig.visibility,
-          to: visibility,
-        });
-      }
-      const nextSched = scheduledOnValue;
-      const prevSched = orig.scheduledOn;
-      if (nextSched !== prevSched) {
-        nextActivity = appendActivityForFieldChange(nextActivity, {
-          userId: uid,
-          field: 'scheduled_on',
-          from: prevSched ?? '',
-          to: nextSched ?? '',
-        });
-      }
-      const prevTimeHm = orig.scheduledTime ?? null;
-      if ((newTimeHm ?? null) !== (prevTimeHm ?? null)) {
-        nextActivity = appendActivityForFieldChange(nextActivity, {
-          userId: uid,
-          field: 'scheduled_time',
-          from: prevTimeHm ? (formatScheduledTimeDisplay(`${prevTimeHm}:00`) ?? prevTimeHm) : '',
-          to: newTimeHm
-            ? (formatScheduledTimeDisplay(scheduledTimeInputToPgValue(newTimeHm)) ?? newTimeHm)
-            : '',
-        });
-      }
-      const nextAssign = assignedTo ?? null;
-      const prevAssign = orig.assignedTo ?? null;
-      if (nextAssign !== prevAssign) {
-        nextActivity = appendActivityForFieldChange(nextActivity, {
-          userId: uid,
-          field: 'assigned_to',
-          from: prevAssign ?? '',
-          to: nextAssign ?? '',
-        });
-      }
-    }
-
-    /** Only PATCH `scheduled_on` / `scheduled_time` when changed (400 if column missing). */
-
-    const updateWithPriority = {
-      title: title.trim(),
-      description: description.trim() || null,
-      status: effectiveStatus,
-      priority,
-      visibility,
-      assigned_to: assignedTo,
-      ...typeMetaPatch,
-      ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
-      ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
-      activity_log: nextActivity as unknown as TaskRow['activity_log'],
-    };
-
-    let { error: uErr } = await supabase.from('tasks').update(updateWithPriority).eq('id', taskId);
-
-    if (uErr && isMissingColumnSchemaCacheError(uErr, 'scheduled_time')) {
-      const activityWithoutTime = nextActivity.filter(
-        (e) => !(e.type === 'field_change' && e.field === 'scheduled_time'),
-      );
-      const updateNoTime = {
-        title: title.trim(),
-        description: description.trim() || null,
-        status: effectiveStatus,
-        priority,
-        visibility,
-        assigned_to: assignedTo,
-        ...typeMetaPatch,
-        ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
-        activity_log: activityWithoutTime as unknown as TaskRow['activity_log'],
-      };
-      uErr = (await supabase.from('tasks').update(updateNoTime).eq('id', taskId)).error;
-      if (!uErr) {
-        if (orig && schedTimeChanged) {
-          setScheduledTime(orig.scheduledTime ? `${orig.scheduledTime}` : '');
-          setError(
-            'Scheduled time is not saved yet: apply the scheduled-time migration on Supabase (tasks.scheduled_time), then try again.',
-          );
-        }
-        setActivityLog(asActivityLog(activityWithoutTime));
-        setStatus(effectiveStatus);
-        originalRef.current = {
-          title: title.trim(),
-          description: description.trim(),
-          status: effectiveStatus,
-          priority: orig?.priority ?? priority,
-          scheduledOn: orig?.scheduledOn ?? null,
-          scheduledTime: orig?.scheduledTime ?? null,
-          itemType,
-          metadataJson: JSON.stringify(metadataForSave),
-          visibility: orig?.visibility ?? visibility,
-          assignedTo: orig?.assignedTo ?? assignedTo,
-        };
-        setSaving(false);
-        void loadTask(taskId);
-        return;
-      }
-    }
-
-    if (uErr && isMissingColumnSchemaCacheError(uErr, 'scheduled_on')) {
-      const activityWithoutSched = nextActivity.filter(
-        (e) =>
-          !(
-            e.type === 'field_change' &&
-            (e.field === 'scheduled_on' || e.field === 'scheduled_time')
-          ),
-      );
-      // Cannot persist scheduled_on: only promote scheduled→today from a date already loaded from DB, not from unsaved UI input.
-      const statusWithoutSavedSchedule = promotedStatusForScheduledOnToday({
-        currentStatus: status,
-        scheduledOnYmd: orig?.scheduledOn ?? null,
-        calendarTimezone,
-        hasTodayBoardColumn,
-      });
-      const updateNoSched = {
-        title: title.trim(),
-        description: description.trim() || null,
-        status: statusWithoutSavedSchedule,
-        priority,
-        visibility,
-        assigned_to: assignedTo,
-        ...typeMetaPatch,
-        activity_log: activityWithoutSched as unknown as TaskRow['activity_log'],
-      };
-      uErr = (await supabase.from('tasks').update(updateNoSched).eq('id', taskId)).error;
-      if (!uErr) {
-        if (orig && scheduledOnValue !== orig.scheduledOn) {
-          setScheduledOn(orig.scheduledOn ?? '');
-          setScheduledTime(orig.scheduledTime ? `${orig.scheduledTime}` : '');
-          setError(
-            'Scheduled date is not saved yet: apply the scheduled-dates migration on Supabase (tasks.scheduled_on), then try again.',
-          );
-        }
-        setActivityLog(asActivityLog(activityWithoutSched));
-        setStatus(statusWithoutSavedSchedule);
-        originalRef.current = {
-          title: title.trim(),
-          description: description.trim(),
-          status: statusWithoutSavedSchedule,
-          priority: orig?.priority ?? priority,
-          scheduledOn: orig?.scheduledOn ?? null,
-          scheduledTime: orig?.scheduledTime ?? null,
-          itemType,
-          metadataJson: JSON.stringify(metadataForSave),
-          visibility: orig?.visibility ?? visibility,
-          assignedTo: orig?.assignedTo ?? assignedTo,
-        };
-        setSaving(false);
-        void loadTask(taskId);
-        return;
-      }
-    }
-
-    if (uErr && isMissingColumnSchemaCacheError(uErr, 'priority')) {
-      const activityWithoutPriority = nextActivity.filter(
-        (e) => !(e.type === 'field_change' && e.field === 'priority'),
-      );
-      const revertedPriority = orig?.priority ?? 'medium';
-      const updateWithoutPriority = {
-        title: title.trim(),
-        description: description.trim() || null,
-        status: effectiveStatus,
-        visibility,
-        assigned_to: assignedTo,
-        ...typeMetaPatch,
-        ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
-        ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
-        activity_log: activityWithoutPriority as unknown as TaskRow['activity_log'],
-      };
-      uErr = (await supabase.from('tasks').update(updateWithoutPriority).eq('id', taskId)).error;
-      if (!uErr) {
-        if (orig && priority !== orig.priority) setPriority(revertedPriority);
-        setActivityLog(asActivityLog(activityWithoutPriority));
-        setStatus(effectiveStatus);
-        originalRef.current = {
-          title: title.trim(),
-          description: description.trim(),
-          status: effectiveStatus,
-          priority: revertedPriority,
-          scheduledOn: scheduledOnValue,
-          scheduledTime: newTimeHm,
-          itemType,
-          metadataJson: JSON.stringify(metadataForSave),
-          visibility: orig?.visibility ?? visibility,
-          assignedTo: orig?.assignedTo ?? assignedTo,
-        };
-        setSaving(false);
-        void loadTask(taskId);
-        return;
-      }
-    }
-
-    if (uErr && isMissingColumnSchemaCacheError(uErr, 'visibility')) {
-      const activityWithoutVisibility = nextActivity.filter(
-        (e) => !(e.type === 'field_change' && e.field === 'visibility'),
-      );
-      const updateWithoutVisibility = {
-        title: title.trim(),
-        description: description.trim() || null,
-        status: effectiveStatus,
-        priority,
-        assigned_to: assignedTo,
-        ...typeMetaPatch,
-        ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
-        ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
-        activity_log: activityWithoutVisibility as unknown as TaskRow['activity_log'],
-      };
-      uErr = (await supabase.from('tasks').update(updateWithoutVisibility).eq('id', taskId)).error;
-      if (!uErr) {
-        if (orig && visibility !== orig.visibility) setVisibility(orig.visibility);
-        setActivityLog(asActivityLog(activityWithoutVisibility));
-        setStatus(effectiveStatus);
-        originalRef.current = {
-          title: title.trim(),
-          description: description.trim(),
-          status: effectiveStatus,
-          priority,
-          scheduledOn: scheduledOnValue,
-          scheduledTime: newTimeHm,
-          itemType,
-          metadataJson: JSON.stringify(metadataForSave),
-          visibility: orig?.visibility ?? 'private',
-          assignedTo: orig?.assignedTo ?? assignedTo,
-        };
-        setSaving(false);
-        setError(
-          'Visibility is not saved yet: apply the public-portals migration on Supabase (tasks.visibility), then try again.',
-        );
-        void loadTask(taskId);
-        return;
-      }
-    }
-
-    setSaving(false);
-    if (uErr) {
-      setError(formatUserFacingError(uErr));
-      return;
-    }
-    if (
-      itemType === 'program' &&
-      orig &&
-      !taskColumnIsCompletionStatus(orig.status ?? '', boardColumnDefs) &&
-      taskColumnIsCompletionStatus(effectiveStatus, boardColumnDefs)
-    ) {
-      const { error: childErr } = await archiveOpenChildWorkoutsForProgram(supabase, taskId);
-      if (childErr) {
-        toast.error(childErr);
-      }
-    }
-    setActivityLog(asActivityLog(nextActivity));
-    setStatus(effectiveStatus);
-    originalRef.current = {
-      title: title.trim(),
-      description: description.trim(),
-      status: effectiveStatus,
-      priority,
-      scheduledOn: scheduledOnValue,
-      scheduledTime: newTimeHm,
-      itemType,
-      metadataJson: JSON.stringify(metadataForSave),
-      visibility,
-      assignedTo,
-    };
-    void loadTask(taskId);
-  };
-
-  const createTask = async () => {
-    if (!canWrite || !bubbleId || !title.trim()) return;
-    setSaving(true);
-    setError(null);
-    const supabase = createClient();
-    const { data: existing } = await supabase
-      .from('tasks')
-      .select('position')
-      .eq('bubble_id', bubbleId)
-      .order('position', { ascending: false })
-      .limit(1);
-    const maxPos =
-      existing && existing.length > 0
-        ? Number((existing[0] as { position: number }).position) + 1
-        : 0;
-
-    const sched = scheduledOn.trim() ? scheduledOn.trim().slice(0, 10) : null;
-    const createTimeHm = sched && scheduledTime.trim() ? scheduledTime.trim().slice(0, 5) : null;
-    const scheduledTimeInsert = createTimeHm ? scheduledTimeInputToPgValue(createTimeHm) : null;
-    let effectiveStatus = promotedStatusForScheduledOnToday({
-      currentStatus: status,
-      scheduledOnYmd: sched,
-      calendarTimezone,
-      hasTodayBoardColumn,
-    });
-    effectiveStatus = alignStatusWithFutureSchedule({
-      status: effectiveStatus,
-      scheduledOnYmd: sched,
-      calendarTimezone,
-      hasScheduledBoardColumn,
-      itemType,
-    });
-
-    const insertRow = {
-      bubble_id: bubbleId,
-      title: title.trim(),
-      description: description.trim() || null,
-      status: effectiveStatus,
-      priority,
-      position: maxPos,
-      scheduled_on: sched,
-      item_type: itemType,
-      metadata: metadataForSave as TaskRow['metadata'],
-      visibility,
-      assigned_to: assignedTo,
-      ...(sched ? { scheduled_time: scheduledTimeInsert } : {}),
-    };
-
-    let { data, error: cErr } = await supabase
-      .from('tasks')
-      .insert(insertRow)
-      .select()
-      .maybeSingle();
-
-    if (cErr && isMissingColumnSchemaCacheError(cErr, 'scheduled_on')) {
-      const { scheduled_on: _s, scheduled_time: _t, ...insertNoSched } = insertRow;
-      const statusWithoutPersistedSchedule = promotedStatusForScheduledOnToday({
-        currentStatus: status,
-        scheduledOnYmd: null,
-        calendarTimezone,
-        hasTodayBoardColumn,
-      });
-      const retry = await supabase
-        .from('tasks')
-        .insert({ ...insertNoSched, status: statusWithoutPersistedSchedule })
-        .select()
-        .maybeSingle();
-      data = retry.data;
-      cErr = retry.error;
-    }
-
-    if (cErr && isMissingColumnSchemaCacheError(cErr, 'scheduled_time')) {
-      const { scheduled_time: _st, ...insertNoTime } = insertRow as typeof insertRow & {
-        scheduled_time?: string | null;
-      };
-      const retry = await supabase.from('tasks').insert(insertNoTime).select().maybeSingle();
-      data = retry.data;
-      cErr = retry.error;
-    }
-
-    if (cErr && isMissingColumnSchemaCacheError(cErr, 'priority')) {
-      const { priority: _p, ...insertWithoutPriority } = insertRow;
-      const second = await supabase
-        .from('tasks')
-        .insert(insertWithoutPriority)
-        .select()
-        .maybeSingle();
-      data = second.data;
-      cErr = second.error;
-    }
-
-    if (cErr && isMissingColumnSchemaCacheError(cErr, 'visibility')) {
-      const { visibility: _v, ...insertWithoutVisibility } = insertRow;
-      const second = await supabase
-        .from('tasks')
-        .insert(insertWithoutVisibility)
-        .select()
-        .maybeSingle();
-      data = second.data;
-      cErr = second.error;
-    }
-
-    setSaving(false);
-    if (cErr || !data) {
-      setError(formatUserFacingError(cErr));
-      return;
-    }
-    const createdStatus =
-      data.status !== undefined && typeof data.status === 'string' ? data.status : effectiveStatus;
-    setStatus(createdStatus);
-    if (itemType === 'workout') {
-      toast.success('Workout created');
-    } else if (itemType === 'workout_log') {
-      toast.success('Workout log created');
-    }
-    onCreated?.(data.id as string);
-  };
-
-  const addComment = async () => {
-    if (!canWrite || !taskId || !newComment.trim()) return;
-    const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
-    const next: TaskComment[] = [
-      ...comments,
-      {
-        id: crypto.randomUUID(),
-        user_id: user.id,
-        body: newComment.trim(),
-        created_at: new Date().toISOString(),
-      },
-    ];
-    const { error: uErr } = await supabase
-      .from('tasks')
-      .update({ comments: next as unknown as TaskRow['comments'] })
-      .eq('id', taskId);
-    if (uErr) {
-      setError(formatUserFacingError(uErr));
-      return;
-    }
-    setComments(next);
-    setNewComment('');
-  };
-
-  const addSubtask = async () => {
-    if (!canWrite || !taskId || !newSubtaskTitle.trim()) return;
-    const next: TaskSubtask[] = [
-      ...subtasks,
-      {
-        id: crypto.randomUUID(),
-        title: newSubtaskTitle.trim(),
-        done: false,
-        created_at: new Date().toISOString(),
-      },
-    ];
-    const supabase = createClient();
-    const { error: uErr } = await supabase
-      .from('tasks')
-      .update({ subtasks: next as unknown as TaskRow['subtasks'] })
-      .eq('id', taskId);
-    if (uErr) {
-      setError(formatUserFacingError(uErr));
-      return;
-    }
-    setSubtasks(next);
-    setNewSubtaskTitle('');
-  };
-
-  const toggleSubtask = async (id: string) => {
-    if (!canWrite || !taskId) return;
-    const next = subtasks.map((s) => (s.id === id ? { ...s, done: !s.done } : s));
-    const supabase = createClient();
-    const { error: uErr } = await supabase
-      .from('tasks')
-      .update({ subtasks: next as unknown as TaskRow['subtasks'] })
-      .eq('id', taskId);
-    if (uErr) {
-      setError(formatUserFacingError(uErr));
-      return;
-    }
-    setSubtasks(next);
-  };
-
-  const uploadAttachment = async (file: File) => {
-    if (!canWrite || !taskId) return;
-    setSaving(true);
-    setError(null);
-    const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    const path = buildTaskAttachmentObjectPath(workspaceId, taskId, file.name);
-    const { error: upErr } = await supabase.storage
-      .from(TASK_ATTACHMENTS_BUCKET)
-      .upload(path, file, {
-        cacheControl: '3600',
-        upsert: false,
-      });
-    if (upErr) {
-      setSaving(false);
-      setError(formatUserFacingError(upErr));
-      return;
-    }
-    const next: TaskAttachment[] = [
-      ...attachments,
-      {
-        id: crypto.randomUUID(),
-        name: file.name,
-        path,
-        size: file.size,
-        uploaded_at: new Date().toISOString(),
-        uploaded_by: user?.id ?? null,
-      },
-    ];
-    const { error: uErr } = await supabase
-      .from('tasks')
-      .update({ attachments: next as unknown as TaskRow['attachments'] })
-      .eq('id', taskId);
-    setSaving(false);
-    if (uErr) {
-      setError(formatUserFacingError(uErr));
-      void supabase.storage.from(TASK_ATTACHMENTS_BUCKET).remove([path]);
-      return;
-    }
-    setAttachments(next);
-  };
+      : `View and edit ${modalTypeNoun} details`;
 
   const uploadCardCover = async (file: File) => {
     if (!canWrite || !taskId) return;
@@ -1609,12 +681,7 @@ export function TaskModal({
     }
     setCardCoverPath(path);
     setMetadata(metaPayload);
-    if (originalRef.current) {
-      originalRef.current = {
-        ...originalRef.current,
-        metadataJson: JSON.stringify(metaPayload),
-      };
-    }
+    patchOriginalMetadataJson(JSON.stringify(metaPayload));
   };
 
   const removeCardCover = async () => {
@@ -1655,55 +722,7 @@ export function TaskModal({
     void supabase.storage.from(TASK_ATTACHMENTS_BUCKET).remove([pathToRemove]);
     setCardCoverPath('');
     setMetadata(metaPayload);
-    if (originalRef.current) {
-      originalRef.current = {
-        ...originalRef.current,
-        metadataJson: JSON.stringify(metaPayload),
-      };
-    }
-  };
-
-  const generateCardCoverWithAi = async () => {
-    if (!canWrite || !taskId) return;
-    setAiCardCoverGenerating(true);
-    setError(null);
-    try {
-      const { card_cover_path, metadata: nextMeta } = await postGenerateCardCover({
-        workspace_id: workspaceId,
-        task_id: taskId,
-        hint: cardCoverAiHint.trim() || undefined,
-        preset_id: cardCoverPresetId.trim() || undefined,
-      });
-      setCardCoverPath(card_cover_path);
-      setMetadata(nextMeta);
-      if (originalRef.current) {
-        originalRef.current = {
-          ...originalRef.current,
-          metadataJson: JSON.stringify(nextMeta),
-        };
-      }
-    } catch (e) {
-      const err = e as Error & { code?: string };
-      setError(err.message || formatUserFacingError(e));
-    } finally {
-      setAiCardCoverGenerating(false);
-    }
-  };
-
-  const removeAttachment = async (att: TaskAttachment) => {
-    if (!canWrite || !taskId) return;
-    const supabase = createClient();
-    const next = attachments.filter((a) => a.id !== att.id);
-    const { error: uErr } = await supabase
-      .from('tasks')
-      .update({ attachments: next as unknown as TaskRow['attachments'] })
-      .eq('id', taskId);
-    if (uErr) {
-      setError(formatUserFacingError(uErr));
-      return;
-    }
-    await supabase.storage.from(TASK_ATTACHMENTS_BUCKET).remove([att.path]);
-    setAttachments(next);
+    patchOriginalMetadataJson(JSON.stringify(metaPayload));
   };
 
   const downloadLink = async (att: TaskAttachment) => {
@@ -1714,47 +733,6 @@ export function TaskModal({
     if (sErr || !data?.signedUrl) return;
     window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
   };
-
-  const coreDirty = useMemo(() => {
-    const o = originalRef.current;
-    const sched = scheduledOn.trim() ? scheduledOn.trim().slice(0, 10) : null;
-    const timeHm = sched ? (scheduledTime.trim() ? scheduledTime.trim().slice(0, 5) : null) : null;
-    const metaJson = JSON.stringify(metadataForSave);
-    if (!o) {
-      return (
-        isCreateMode &&
-        (title.trim().length > 0 ||
-          itemType !== 'task' ||
-          metaJson !== '{}' ||
-          visibility !== 'private' ||
-          assignedTo != null)
-      );
-    }
-    return (
-      title.trim() !== o.title ||
-      (description ?? '').trim() !== (o.description ?? '').trim() ||
-      status !== o.status ||
-      priority !== o.priority ||
-      sched !== (o.scheduledOn ?? null) ||
-      (timeHm ?? null) !== (o.scheduledTime ?? null) ||
-      itemType !== o.itemType ||
-      metaJson !== o.metadataJson ||
-      visibility !== o.visibility ||
-      (assignedTo ?? null) !== (o.assignedTo ?? null)
-    );
-  }, [
-    title,
-    description,
-    status,
-    priority,
-    scheduledOn,
-    scheduledTime,
-    isCreateMode,
-    itemType,
-    metadataForSave,
-    visibility,
-    assignedTo,
-  ]);
 
   if (!open) return null;
 
@@ -1792,30 +770,34 @@ export function TaskModal({
               description={description ?? ''}
               coverPath={cardCoverPath.trim() || null}
               onClose={() => onOpenChange(false)}
+              compactCinematic={heroCinematicCollapsed}
             />
           ) : null}
 
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-              <div className="flex items-start justify-between border-b border-border px-6 py-4">
-                <div>
-                  <h2 className="text-lg font-bold text-foreground">{modalTitle}</h2>
-                  {modalSubtitle ? (
-                    <p className="text-xs text-muted-foreground">{modalSubtitle}</p>
-                  ) : null}
-                </div>
-                {!taskId ? (
-                  <button
-                    type="button"
-                    className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                    aria-label="Close"
-                    onClick={() => onOpenChange(false)}
-                  >
-                    <X className="h-5 w-5" aria-hidden />
-                  </button>
+            <div className="flex shrink-0 items-start justify-between border-b border-border px-6 py-4">
+              <div>
+                <h2 className="text-lg font-bold text-foreground">{modalTitle}</h2>
+                {modalSubtitle ? (
+                  <p className="text-xs text-muted-foreground">{modalSubtitle}</p>
                 ) : null}
               </div>
+              {!taskId ? (
+                <button
+                  type="button"
+                  className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  aria-label="Close"
+                  onClick={() => onOpenChange(false)}
+                >
+                  <X className="h-5 w-5" aria-hidden />
+                </button>
+              ) : null}
+            </div>
 
+            <div
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+              onScroll={handleTaskModalBodyScroll}
+            >
               <TaskModalEditorChrome
                 showChrome={showEditorChrome}
                 itemType={itemType}
@@ -1830,6 +812,7 @@ export function TaskModal({
                 bubbleId={bubbleId}
                 workspaceId={workspaceId}
                 taskId={taskId}
+                onInteraction={() => setHeroCinematicCollapsed(true)}
               />
 
               <div className="px-6 pt-4 pb-4">

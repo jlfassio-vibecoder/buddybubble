@@ -21,6 +21,8 @@ export type TaskModalEditorChromeProps = {
   bubbleId: string | null;
   workspaceId: string;
   taskId: string | null;
+  /** Fires on click in the type or visibility / workout player sections (capture phase). */
+  onInteraction?: () => void;
 };
 
 export function TaskModalEditorChrome({
@@ -37,17 +39,22 @@ export function TaskModalEditorChrome({
   bubbleId,
   workspaceId,
   taskId,
+  onInteraction,
 }: TaskModalEditorChromeProps) {
   if (!showChrome) return null;
 
+  const notifyInteraction = () => {
+    onInteraction?.();
+  };
+
   return (
     <>
-      <div className="border-b border-border px-6 py-3">
+      <div className="border-b border-border px-6 py-3" onClickCapture={notifyInteraction}>
         <p className="mb-2 text-xs font-medium text-muted-foreground">Type</p>
         <ItemTypeSelector value={itemType} onChange={onItemTypeChange} disabled={!canWrite} />
       </div>
 
-      <div className="border-b border-border px-6 py-3">
+      <div className="border-b border-border px-6 py-3" onClickCapture={notifyInteraction}>
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs font-medium text-muted-foreground">Visibility</p>
           {hasWorkoutViewerContent ? (
