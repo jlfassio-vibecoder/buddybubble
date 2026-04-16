@@ -973,7 +973,7 @@ export function ChatArea({
         density="rail"
         popoverContainerRef={composerPopoverRef}
         value={input}
-        onChange={(next) => setInput(next)}
+        onChange={(next, _meta) => setInput(next)}
         onSubmit={async ({ text, files }) => {
           if (!text.trim() || sendingAttachments) return false;
           const ok = await sendMessage(text, undefined, files);

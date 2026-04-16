@@ -111,7 +111,7 @@ export function ThreadPanel({
             density="thread"
             className="border-t border-border bg-background p-4"
             value={threadInput}
-            onChange={(next) => setThreadInput(next)}
+            onChange={(next, _meta) => setThreadInput(next)}
             onSubmit={async ({ text, files }) => {
               if (!text.trim() || sending) return false;
               const ok = await onSendMessage(text, files);
