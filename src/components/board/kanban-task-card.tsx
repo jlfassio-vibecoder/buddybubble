@@ -463,22 +463,43 @@ export function KanbanTaskCard({
             >
               {!useCoverHero ? (
                 <>
-                  <div className="flex items-start justify-between gap-2">
+                  <div
+                    className="flex w-full min-w-0 justify-end"
+                    data-kanban-no-open
+                    onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    <KanbanCardQuickActions
+                      variant="default"
+                      task={task}
+                      commentCount={commentCount}
+                      onOpenTask={onOpenTask}
+                      onStartWorkout={onStartWorkout}
+                    />
+                  </div>
+                  <div
+                    className={cn(
+                      'w-full min-w-0',
+                      density === 'summary' && 'flex items-start justify-between gap-2',
+                    )}
+                  >
                     <p
                       className={cn(
-                        'font-semibold leading-snug text-foreground',
-                        density === 'summary' ? 'line-clamp-1 text-sm' : 'line-clamp-2',
+                        'min-w-0 font-semibold leading-snug text-foreground',
+                        density === 'summary'
+                          ? 'line-clamp-2 flex-1 text-sm'
+                          : 'line-clamp-2 w-full',
                         isCompleted && 'line-through decoration-muted-foreground/80',
                       )}
                     >
                       {task.title}
                     </p>
-                    {density === 'summary' && (
+                    {density === 'summary' ? (
                       <ExternalLink
                         className="size-3.5 shrink-0 text-primary opacity-80"
                         aria-hidden
                       />
-                    )}
+                    ) : null}
                   </div>
 
                   {showKanbanCoverToggle &&
@@ -611,29 +632,43 @@ export function KanbanTaskCard({
                         density === 'summary' ? 'space-y-1 p-1.5' : 'space-y-2 p-2',
                       )}
                     >
-                      <KanbanCardQuickActions
-                        variant="cover"
-                        task={task}
-                        commentCount={commentCount}
-                        onOpenTask={onOpenTask}
-                        onStartWorkout={onStartWorkout}
-                      />
-                      <div className="flex items-start justify-between gap-2">
+                      <div
+                        className="flex w-full min-w-0 justify-end"
+                        data-kanban-no-open
+                        onClick={(e) => e.stopPropagation()}
+                        onPointerDown={(e) => e.stopPropagation()}
+                      >
+                        <KanbanCardQuickActions
+                          variant="cover"
+                          task={task}
+                          commentCount={commentCount}
+                          onOpenTask={onOpenTask}
+                          onStartWorkout={onStartWorkout}
+                        />
+                      </div>
+                      <div
+                        className={cn(
+                          'w-full min-w-0',
+                          density === 'summary' && 'flex items-start justify-between gap-2',
+                        )}
+                      >
                         <p
                           className={cn(
-                            'font-semibold leading-snug text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.45)]',
-                            density === 'summary' ? 'line-clamp-1 text-sm' : 'line-clamp-2',
+                            'min-w-0 font-semibold leading-snug text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.45)]',
+                            density === 'summary'
+                              ? 'line-clamp-2 flex-1 text-sm'
+                              : 'line-clamp-2 w-full',
                             isCompleted && 'line-through decoration-white/70',
                           )}
                         >
                           {task.title}
                         </p>
-                        {density === 'summary' && (
+                        {density === 'summary' ? (
                           <ExternalLink
                             className="size-3.5 shrink-0 text-white opacity-90"
                             aria-hidden
                           />
-                        )}
+                        ) : null}
                       </div>
 
                       <div className="flex flex-wrap items-center gap-1.5">
@@ -742,16 +777,6 @@ export function KanbanTaskCard({
                 </>
               )}
             </div>
-
-            {!useCoverHero ? (
-              <KanbanCardQuickActions
-                variant="default"
-                task={task}
-                commentCount={commentCount}
-                onOpenTask={onOpenTask}
-                onStartWorkout={onStartWorkout}
-              />
-            ) : null}
           </div>
 
           {showBubble && (
