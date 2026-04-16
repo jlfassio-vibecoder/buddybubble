@@ -1,6 +1,6 @@
 'use client';
 
-import type { OpenTaskOptions, TaskModalTab } from '@/components/modals/TaskModal';
+import type { OpenTaskOptions, TaskModalTab } from '@/types/open-task-options';
 import { BubblyButton, type TaskBubbleUpControlProps } from '@/components/tasks/bubbly-button';
 
 const CARD_SECTION_TABS = [

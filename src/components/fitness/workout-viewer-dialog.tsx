@@ -283,11 +283,23 @@ function RichWorkoutReadView({
   );
 }
 
-function WorkoutViewHero({ cardCoverPath }: { cardCoverPath: string | null }) {
+function WorkoutViewHero({
+  cardCoverPath,
+  fullBleed = true,
+}: {
+  cardCoverPath: string | null;
+  /** When false (embedded pane), hero stays within horizontal padding. */
+  fullBleed?: boolean;
+}) {
   const { url: coverUrl, loading } = useTaskCardCoverUrl(cardCoverPath);
 
   return (
-    <div className="relative -mx-5 h-48 w-[calc(100%+2.5rem)] shrink-0 overflow-hidden bg-muted">
+    <div
+      className={cn(
+        'relative h-48 shrink-0 overflow-hidden bg-muted',
+        fullBleed ? '-mx-5 w-[calc(100%+2.5rem)]' : 'w-full',
+      )}
+    >
       {cardCoverPath && loading ? (
         <div className="h-full w-full animate-pulse bg-muted-foreground/10" aria-hidden />
       ) : coverUrl ? (
@@ -385,6 +397,217 @@ export type WorkoutViewerDialogProps = {
   taskId?: string | null;
 };
 
+export type WorkoutViewerContentProps = Omit<WorkoutViewerDialogProps, 'open' | 'onOpenChange'> & {
+  onRequestClose: () => void;
+  /** Increment when the embedded pane or dialog opens so drafts reset from props. */
+  syncKey: number;
+  /** `dialog`: participate in parent grid via `display:contents`. `embedded`: flex column for TaskModal split pane. */
+  layout?: 'dialog' | 'embedded';
+  /** When true, wrap the visible title in Radix `DialogTitle asChild` for standalone dialog a11y. */
+  dialogTitleAsChild?: boolean;
+  className?: string;
+};
+
+export function WorkoutViewerContent({
+  workoutSet,
+  exercises,
+  title,
+  description,
+  canWrite,
+  workoutUnitSystem,
+  onApply,
+  onRequestClose,
+  syncKey,
+  cardCoverPath = null,
+  taskId = null,
+  layout = 'dialog',
+  dialogTitleAsChild = false,
+  className,
+}: WorkoutViewerContentProps) {
+  const [mode, setMode] = useState<ViewMode>('view');
+  const [localTitle, setLocalTitle] = useState(title);
+  const [localDescription, setLocalDescription] = useState(description);
+  const [localExercises, setLocalExercises] = useState<WorkoutExercise[]>([]);
+
+  useEffect(() => {
+    setLocalTitle(title);
+    setLocalDescription(description);
+    setLocalExercises(exercises.map((e) => ({ ...e })));
+    setMode('view');
+  }, [syncKey, title, description, exercises]);
+
+  const handleApply = useCallback(() => {
+    onApply({
+      title: localTitle.trim(),
+      description: localDescription.trim(),
+      exercises: localExercises,
+    });
+    onRequestClose();
+  }, [localTitle, localDescription, localExercises, onApply, onRequestClose]);
+
+  const showRich = mode === 'view' && workoutSet != null;
+  const displayTitle = localTitle.trim() || title.trim() || 'Untitled workout';
+  const displayDescription = (localDescription || description).trim();
+  const coverPath = cardCoverPath?.trim() ? cardCoverPath.trim() : null;
+  const heroFullBleed = layout === 'dialog';
+
+  const titleNode = dialogTitleAsChild ? (
+    <DialogTitle asChild>
+      <h2 className="text-lg font-semibold leading-tight text-foreground">Workout card</h2>
+    </DialogTitle>
+  ) : (
+    <h2 className="text-lg font-semibold leading-tight text-foreground">Workout card</h2>
+  );
+
+  const header = (
+    <div className="flex flex-col gap-3 border-b border-border px-5 py-4">
+      <div className="flex items-start justify-between gap-2">
+        {titleNode}
+        <div className="flex shrink-0 items-center gap-2">
+          <div className="flex items-center gap-1 rounded-lg border border-border p-0.5">
+            <button
+              type="button"
+              onClick={() => setMode('view')}
+              className={cn(
+                'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                mode === 'view'
+                  ? 'bg-primary/15 text-primary'
+                  : 'text-muted-foreground hover:bg-muted',
+              )}
+            >
+              View
+            </button>
+            <button
+              type="button"
+              disabled={!canWrite}
+              onClick={() => setMode('edit')}
+              className={cn(
+                'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                mode === 'edit'
+                  ? 'bg-primary/15 text-primary'
+                  : 'text-muted-foreground hover:bg-muted',
+                !canWrite && 'cursor-not-allowed opacity-50',
+              )}
+            >
+              Edit
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={onRequestClose}
+            className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            aria-label="Close workout viewer"
+          >
+            <X className="h-5 w-5" aria-hidden />
+          </button>
+        </div>
+      </div>
+      {!canWrite && mode === 'edit' ? (
+        <p className="text-xs text-muted-foreground">
+          You don’t have permission to edit this card.
+        </p>
+      ) : null}
+    </div>
+  );
+
+  const body = (
+    <div className={cn('min-h-0 overflow-y-auto', layout === 'embedded' && 'min-h-0 flex-1')}>
+      {mode === 'view' ? (
+        <div className="flex flex-col pb-2">
+          <WorkoutViewHero cardCoverPath={coverPath} fullBleed={heroFullBleed} />
+          <div className="space-y-8 px-5 py-6">
+            <ViewReadHeader displayTitle={displayTitle} displayDescription={displayDescription} />
+            <section>
+              <h3 className={sectionHeadingClass}>Workout plan</h3>
+              {showRich ? (
+                <RichWorkoutReadView
+                  workoutSet={workoutSet}
+                  cardTitle={displayTitle}
+                  taskId={taskId}
+                />
+              ) : (
+                <div className="space-y-4">
+                  <p className="text-xs text-muted-foreground">
+                    No AI workout structure saved — showing the exercise list from this card.
+                  </p>
+                  <FlatExercisesReadView exercises={localExercises} taskId={taskId} />
+                </div>
+              )}
+            </section>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4 px-5 py-4">
+          <div className="space-y-2">
+            <Label htmlFor="wv-title">Title</Label>
+            <Input
+              id="wv-title"
+              value={localTitle}
+              onChange={(e) => setLocalTitle(e.target.value)}
+              disabled={!canWrite}
+              className="h-9"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="wv-desc">Description</Label>
+            <Textarea
+              id="wv-desc"
+              value={localDescription}
+              onChange={(e) => setLocalDescription(e.target.value)}
+              disabled={!canWrite}
+              rows={4}
+              className="min-h-[96px] resize-y"
+            />
+          </div>
+          <WorkoutExercisesEditor
+            exercises={localExercises}
+            onChange={setLocalExercises}
+            canWrite={canWrite}
+            workoutUnitSystem={workoutUnitSystem}
+            idPrefix="wv-ex"
+          />
+        </div>
+      )}
+    </div>
+  );
+
+  const footer =
+    mode === 'edit' && canWrite ? (
+      <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
+        <Button type="button" variant="outline" size="sm" onClick={onRequestClose}>
+          Cancel
+        </Button>
+        <Button type="button" size="sm" onClick={handleApply}>
+          Apply changes
+        </Button>
+      </div>
+    ) : (
+      <div className="flex justify-end border-t border-border px-5 py-3">
+        <Button type="button" variant="secondary" size="sm" onClick={onRequestClose}>
+          Close
+        </Button>
+      </div>
+    );
+
+  if (layout === 'embedded') {
+    return (
+      <div className={cn('flex h-full min-h-0 flex-col overflow-hidden bg-card', className)}>
+        {header}
+        {body}
+        {footer}
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn('contents', className)}>
+      {header}
+      {body}
+      {footer}
+    </div>
+  );
+}
+
 export function WorkoutViewerDialog({
   open,
   onOpenChange,
@@ -398,36 +621,15 @@ export function WorkoutViewerDialog({
   cardCoverPath = null,
   taskId = null,
 }: WorkoutViewerDialogProps) {
-  const [mode, setMode] = useState<ViewMode>('view');
-  const [localTitle, setLocalTitle] = useState(title);
-  const [localDescription, setLocalDescription] = useState(description);
-  const [localExercises, setLocalExercises] = useState<WorkoutExercise[]>([]);
-
+  const [syncKey, setSyncKey] = useState(0);
   const wasOpenRef = useRef(false);
 
   useEffect(() => {
     if (open && !wasOpenRef.current) {
-      setLocalTitle(title);
-      setLocalDescription(description);
-      setLocalExercises(exercises.map((e) => ({ ...e })));
-      setMode('view');
+      setSyncKey((k) => k + 1);
     }
     wasOpenRef.current = open;
-  }, [open, title, description, exercises]);
-
-  const handleApply = useCallback(() => {
-    onApply({
-      title: localTitle.trim(),
-      description: localDescription.trim(),
-      exercises: localExercises,
-    });
-    onOpenChange(false);
-  }, [localTitle, localDescription, localExercises, onApply, onOpenChange]);
-
-  const showRich = mode === 'view' && workoutSet != null;
-  const displayTitle = localTitle.trim() || title.trim() || 'Untitled workout';
-  const displayDescription = (localDescription || description).trim();
-  const coverPath = cardCoverPath?.trim() ? cardCoverPath.trim() : null;
+  }, [open]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -440,140 +642,21 @@ export function WorkoutViewerDialog({
             'grid-rows-[auto_minmax(0,1fr)_auto]',
           )}
         >
-          <div className="flex flex-col gap-3 border-b border-border px-5 py-4">
-            <div className="flex items-start justify-between gap-2">
-              <DialogTitle className="text-lg font-semibold leading-tight text-foreground">
-                Workout card
-              </DialogTitle>
-              <div className="flex shrink-0 items-center gap-2">
-                <div className="flex items-center gap-1 rounded-lg border border-border p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setMode('view')}
-                    className={cn(
-                      'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-                      mode === 'view'
-                        ? 'bg-primary/15 text-primary'
-                        : 'text-muted-foreground hover:bg-muted',
-                    )}
-                  >
-                    View
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!canWrite}
-                    onClick={() => setMode('edit')}
-                    className={cn(
-                      'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-                      mode === 'edit'
-                        ? 'bg-primary/15 text-primary'
-                        : 'text-muted-foreground hover:bg-muted',
-                      !canWrite && 'cursor-not-allowed opacity-50',
-                    )}
-                  >
-                    Edit
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onOpenChange(false)}
-                  className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  aria-label="Close"
-                >
-                  <X className="h-5 w-5" aria-hidden />
-                </button>
-              </div>
-            </div>
-            {!canWrite && mode === 'edit' ? (
-              <p className="text-xs text-muted-foreground">
-                You don’t have permission to edit this card.
-              </p>
-            ) : null}
-          </div>
-
-          <div className="min-h-0 overflow-y-auto">
-            {mode === 'view' ? (
-              <div className="flex flex-col pb-2">
-                <WorkoutViewHero cardCoverPath={coverPath} />
-                <div className="space-y-8 px-5 py-6">
-                  <ViewReadHeader
-                    displayTitle={displayTitle}
-                    displayDescription={displayDescription}
-                  />
-                  <section>
-                    <h3 className={sectionHeadingClass}>Workout plan</h3>
-                    {showRich ? (
-                      <RichWorkoutReadView
-                        workoutSet={workoutSet}
-                        cardTitle={displayTitle}
-                        taskId={taskId}
-                      />
-                    ) : (
-                      <div className="space-y-4">
-                        <p className="text-xs text-muted-foreground">
-                          No AI workout structure saved — showing the exercise list from this card.
-                        </p>
-                        <FlatExercisesReadView exercises={localExercises} taskId={taskId} />
-                      </div>
-                    )}
-                  </section>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-4 px-5 py-4">
-                <div className="space-y-2">
-                  <Label htmlFor="wv-title">Title</Label>
-                  <Input
-                    id="wv-title"
-                    value={localTitle}
-                    onChange={(e) => setLocalTitle(e.target.value)}
-                    disabled={!canWrite}
-                    className="h-9"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="wv-desc">Description</Label>
-                  <Textarea
-                    id="wv-desc"
-                    value={localDescription}
-                    onChange={(e) => setLocalDescription(e.target.value)}
-                    disabled={!canWrite}
-                    rows={4}
-                    className="min-h-[96px] resize-y"
-                  />
-                </div>
-                <WorkoutExercisesEditor
-                  exercises={localExercises}
-                  onChange={setLocalExercises}
-                  canWrite={canWrite}
-                  workoutUnitSystem={workoutUnitSystem}
-                  idPrefix="wv-ex"
-                />
-              </div>
-            )}
-          </div>
-
-          {mode === 'edit' && canWrite ? (
-            <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
-              <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
-                Cancel
-              </Button>
-              <Button type="button" size="sm" onClick={handleApply}>
-                Apply changes
-              </Button>
-            </div>
-          ) : (
-            <div className="flex justify-end border-t border-border px-5 py-3">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => onOpenChange(false)}
-              >
-                Close
-              </Button>
-            </div>
-          )}
+          <WorkoutViewerContent
+            workoutSet={workoutSet}
+            exercises={exercises}
+            title={title}
+            description={description}
+            canWrite={canWrite}
+            workoutUnitSystem={workoutUnitSystem}
+            onApply={onApply}
+            onRequestClose={() => onOpenChange(false)}
+            syncKey={syncKey}
+            cardCoverPath={cardCoverPath}
+            taskId={taskId}
+            layout="dialog"
+            dialogTitleAsChild
+          />
         </DialogPrimitive.Content>
       </DialogPortal>
     </Dialog>

@@ -62,12 +62,12 @@ function taskStub(partial: Partial<TaskRow> & { id: string }): TaskRow {
     scheduled_on: null,
     scheduled_time: null,
     archived_at: null,
-    subtasks: [],
-    comments: [],
-    activity_log: [],
+    program_id: null,
+    program_session_key: null,
     attachments: [],
     item_type: 'task',
     metadata: {},
+    visibility: 'private',
     ...partial,
   } as TaskRow;
 }

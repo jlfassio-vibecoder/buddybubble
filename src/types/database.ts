@@ -311,6 +311,8 @@ export interface Database {
           attachments: Json;
           /** Optional Kanban card shown as an embed in chat (`20260518130000_messages_attached_task_id`). */
           attached_task_id: string | null;
+          /** Optional task anchor for unified task comments (`20260416000000_normalize_task_collections_and_unified_chat`). */
+          target_task_id: string | null;
         };
         Insert: {
           id?: string;
@@ -321,6 +323,7 @@ export interface Database {
           created_at?: string;
           attachments?: Json;
           attached_task_id?: string | null;
+          target_task_id?: string | null;
         };
         Update: Partial<Database['public']['Tables']['messages']['Insert']>;
       };
@@ -338,6 +341,44 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Database['public']['Tables']['task_bubble_ups']['Insert']>;
+      };
+      task_subtasks: {
+        Row: {
+          id: string;
+          task_id: string;
+          title: string;
+          completed: boolean;
+          created_at: string;
+          position: number;
+        };
+        Insert: {
+          id?: string;
+          task_id: string;
+          title: string;
+          completed?: boolean;
+          created_at?: string;
+          position?: number;
+        };
+        Update: Partial<Database['public']['Tables']['task_subtasks']['Insert']>;
+      };
+      task_activity_log: {
+        Row: {
+          id: string;
+          task_id: string;
+          user_id: string | null;
+          action_type: string;
+          payload: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          task_id: string;
+          user_id?: string | null;
+          action_type: string;
+          payload?: Json;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['task_activity_log']['Insert']>;
       };
       tasks: {
         Row: {
@@ -360,14 +401,15 @@ export interface Database {
           program_id: string | null;
           /** Session key within the program (idempotent upserts). */
           program_session_key: string | null;
-          subtasks: Json;
-          comments: Json;
-          activity_log: Json;
           attachments: Json;
           item_type: string;
           metadata: Json;
           /** Members-only vs public storefront (when workspace is_public). */
           visibility: TaskVisibility;
+          /** Task-scoped `messages` count (`target_task_id`); maintained by trigger (`20260526120000_task_comment_counts_and_views`). */
+          comment_count: number;
+          /** Latest task-scoped message time; maintained by trigger. */
+          last_task_comment_at: string | null;
         };
         Insert: {
           id?: string;
@@ -384,15 +426,29 @@ export interface Database {
           archived_at?: string | null;
           program_id?: string | null;
           program_session_key?: string | null;
-          subtasks?: Json;
-          comments?: Json;
-          activity_log?: Json;
           attachments?: Json;
           item_type?: string;
           metadata?: Json;
           visibility?: TaskVisibility;
+          comment_count?: number;
+          last_task_comment_at?: string | null;
         };
         Update: Partial<Database['public']['Tables']['tasks']['Insert']>;
+      };
+      user_task_views: {
+        Row: {
+          user_id: string;
+          task_id: string;
+          last_viewed_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          task_id: string;
+          last_viewed_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['user_task_views']['Insert']>;
       };
       fitness_profiles: {
         Row: {
@@ -691,6 +747,10 @@ export interface Database {
       workspace_requires_subscription: {
         Args: { p_workspace_id: string };
         Returns: boolean;
+      };
+      task_comment_unread_counts: {
+        Args: { p_task_ids: string[] };
+        Returns: { task_id: string; unread_count: number }[];
       };
     };
   };

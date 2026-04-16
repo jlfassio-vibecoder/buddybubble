@@ -1,17 +1,15 @@
 'use client';
 
 import type { Dispatch, SetStateAction } from 'react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { createClient } from '@utils/supabase/client';
-import type { TaskRow } from '@/types/database';
+import type { Json, TaskRow } from '@/types/database';
 import {
   type TaskActivityEntry,
   type TaskAttachment,
-  type TaskComment,
   type TaskSubtask,
   asActivityLog,
   asAttachments,
-  asComments,
   asSubtasks,
 } from '@/types/task-modal';
 import { buildTaskAttachmentObjectPath, TASK_ATTACHMENTS_BUCKET } from '@/lib/task-storage';
@@ -33,91 +31,24 @@ export function useTaskEmbeddedCollections({
   setSaving,
 }: UseTaskEmbeddedCollectionsArgs) {
   const [subtasks, setSubtasks] = useState<TaskSubtask[]>([]);
-  const [comments, setComments] = useState<TaskComment[]>([]);
   const [activityLog, setActivityLog] = useState<TaskActivityEntry[]>([]);
   const [attachments, setAttachments] = useState<TaskAttachment[]>([]);
-  const [newComment, setNewComment] = useState('');
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
-  const [commentUserById, setCommentUserById] = useState<
-    Record<string, { displayName: string; avatarUrl: string | null }>
-  >({});
 
   const hydrateFromTaskRow = useCallback((row: TaskRow) => {
+    // @ts-ignore — `tasks.subtasks` JSON removed; table-backed subtasks refactor is tracked separately.
     setSubtasks(asSubtasks(row.subtasks));
-    setComments(asComments(row.comments));
+    // @ts-ignore — `tasks.activity_log` JSON removed; table-backed activity refactor is tracked separately.
     setActivityLog(asActivityLog(row.activity_log));
     setAttachments(asAttachments(row.attachments));
   }, []);
 
   const resetForCreate = useCallback(() => {
     setSubtasks([]);
-    setComments([]);
-    setCommentUserById({});
     setActivityLog([]);
     setAttachments([]);
-    setNewComment('');
     setNewSubtaskTitle('');
   }, []);
-
-  useEffect(() => {
-    if (!taskId || comments.length === 0) {
-      setCommentUserById({});
-      return;
-    }
-    const ids = [...new Set(comments.map((c) => c.user_id))];
-    let cancelled = false;
-    const supabase = createClient();
-    void supabase
-      .from('users')
-      .select('id, full_name, email, avatar_url')
-      .in('id', ids)
-      .then(({ data }) => {
-        if (cancelled || !data) return;
-        const next: Record<string, { displayName: string; avatarUrl: string | null }> = {};
-        for (const row of data as {
-          id: string;
-          full_name: string | null;
-          email: string | null;
-          avatar_url: string | null;
-        }[]) {
-          const displayName =
-            (row.full_name && row.full_name.trim()) || row.email?.split('@')[0] || 'Member';
-          next[row.id] = { displayName, avatarUrl: row.avatar_url };
-        }
-        setCommentUserById(next);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [taskId, comments]);
-
-  const addComment = useCallback(async () => {
-    if (!canWrite || !taskId || !newComment.trim()) return;
-    const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
-    const next: TaskComment[] = [
-      ...comments,
-      {
-        id: crypto.randomUUID(),
-        user_id: user.id,
-        body: newComment.trim(),
-        created_at: new Date().toISOString(),
-      },
-    ];
-    const { error: uErr } = await supabase
-      .from('tasks')
-      .update({ comments: next as unknown as TaskRow['comments'] })
-      .eq('id', taskId);
-    if (uErr) {
-      setError(formatUserFacingError(uErr));
-      return;
-    }
-    setComments(next);
-    setNewComment('');
-  }, [canWrite, taskId, newComment, comments, setError]);
 
   const addSubtask = useCallback(async () => {
     if (!canWrite || !taskId || !newSubtaskTitle.trim()) return;
@@ -133,7 +64,7 @@ export function useTaskEmbeddedCollections({
     const supabase = createClient();
     const { error: uErr } = await supabase
       .from('tasks')
-      .update({ subtasks: next as unknown as TaskRow['subtasks'] })
+      .update({ subtasks: next as unknown as Json })
       .eq('id', taskId);
     if (uErr) {
       setError(formatUserFacingError(uErr));
@@ -150,7 +81,7 @@ export function useTaskEmbeddedCollections({
       const supabase = createClient();
       const { error: uErr } = await supabase
         .from('tasks')
-        .update({ subtasks: next as unknown as TaskRow['subtasks'] })
+        .update({ subtasks: next as unknown as Json })
         .eq('id', taskId);
       if (uErr) {
         setError(formatUserFacingError(uErr));
@@ -229,16 +160,11 @@ export function useTaskEmbeddedCollections({
 
   return {
     subtasks,
-    comments,
     activityLog,
     setActivityLog,
     attachments,
-    newComment,
-    setNewComment,
     newSubtaskTitle,
     setNewSubtaskTitle,
-    commentUserById,
-    addComment,
     addSubtask,
     toggleSubtask,
     uploadAttachment,

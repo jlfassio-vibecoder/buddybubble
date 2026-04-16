@@ -178,7 +178,7 @@ export function useTaskSaveAndCreate({
       ...typeMetaPatch,
       ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
       ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
-      activity_log: nextActivity as unknown as TaskRow['activity_log'],
+      activity_log: nextActivity as unknown as Json,
     };
 
     let { error: uErr } = await supabase.from('tasks').update(updateWithPriority).eq('id', taskId);
@@ -196,7 +196,7 @@ export function useTaskSaveAndCreate({
         assigned_to: assignedTo,
         ...typeMetaPatch,
         ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
-        activity_log: activityWithoutTime as unknown as TaskRow['activity_log'],
+        activity_log: activityWithoutTime as unknown as Json,
       };
       uErr = (await supabase.from('tasks').update(updateNoTime).eq('id', taskId)).error;
       if (!uErr) {
@@ -248,7 +248,7 @@ export function useTaskSaveAndCreate({
         visibility,
         assigned_to: assignedTo,
         ...typeMetaPatch,
-        activity_log: activityWithoutSched as unknown as TaskRow['activity_log'],
+        activity_log: activityWithoutSched as unknown as Json,
       };
       uErr = (await supabase.from('tasks').update(updateNoSched).eq('id', taskId)).error;
       if (!uErr) {
@@ -293,7 +293,7 @@ export function useTaskSaveAndCreate({
         ...typeMetaPatch,
         ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
         ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
-        activity_log: activityWithoutPriority as unknown as TaskRow['activity_log'],
+        activity_log: activityWithoutPriority as unknown as Json,
       };
       uErr = (await supabase.from('tasks').update(updateWithoutPriority).eq('id', taskId)).error;
       if (!uErr) {
@@ -331,7 +331,7 @@ export function useTaskSaveAndCreate({
         ...typeMetaPatch,
         ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
         ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
-        activity_log: activityWithoutVisibility as unknown as TaskRow['activity_log'],
+        activity_log: activityWithoutVisibility as unknown as Json,
       };
       uErr = (await supabase.from('tasks').update(updateWithoutVisibility).eq('id', taskId)).error;
       if (!uErr) {

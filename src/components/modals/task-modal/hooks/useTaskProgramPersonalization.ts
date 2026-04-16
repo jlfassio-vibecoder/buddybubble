@@ -4,7 +4,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 import { createClient } from '@utils/supabase/client';
-import type { ItemType, Json, TaskRow, TaskVisibility } from '@/types/database';
+import type { ItemType, Json, TaskVisibility } from '@/types/database';
 import {
   buildTaskMetadataPayload,
   parseTaskMetadata,
@@ -220,7 +220,7 @@ export function useTaskProgramPersonalization({
           title: nextTitle,
           description: nextDesc || null,
           metadata: metaPayload,
-          activity_log: nextActivity as unknown as TaskRow['activity_log'],
+          activity_log: nextActivity as unknown as Json,
         })
         .eq('id', taskId);
 

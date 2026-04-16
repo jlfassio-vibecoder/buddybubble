@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "src/components/chat/**/*.ts",
+    "src/components/chat/**/*.tsx",
+    "src/hooks/useMessageThread.ts",
+    "src/lib/chat-message-mapper.ts",
+    "src/lib/chat-composer-tokens.ts",
+    "src/lib/message-thread.ts",
+    "src/types/chat.ts",
+    "src/types/open-task-options.ts"
+  ]
+}

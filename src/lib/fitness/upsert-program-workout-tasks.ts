@@ -168,9 +168,6 @@ export async function upsertProgramWorkoutTasks(params: {
         program_session_key: session.key,
         assigned_to: programAssignedTo,
         visibility,
-        subtasks: [],
-        comments: [],
-        activity_log: [],
         attachments: [],
       });
       if (iErr) return { error: iErr.message };
