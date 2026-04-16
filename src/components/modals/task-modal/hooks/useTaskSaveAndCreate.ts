@@ -212,13 +212,13 @@ export function useTaskSaveAndCreate({
           title: title.trim(),
           description: description.trim(),
           status: effectiveStatus,
-          priority: orig?.priority ?? priority,
-          scheduledOn: orig?.scheduledOn ?? null,
+          priority,
+          scheduledOn: schedChanged ? scheduledOnValue : (orig?.scheduledOn ?? null),
           scheduledTime: orig?.scheduledTime ?? null,
           itemType,
           metadataJson: JSON.stringify(metadataForSave),
-          visibility: orig?.visibility ?? visibility,
-          assignedTo: orig?.assignedTo ?? assignedTo,
+          visibility,
+          assignedTo,
         });
         setSaving(false);
         void loadTask(taskId);
@@ -265,13 +265,13 @@ export function useTaskSaveAndCreate({
           title: title.trim(),
           description: description.trim(),
           status: statusWithoutSavedSchedule,
-          priority: orig?.priority ?? priority,
+          priority,
           scheduledOn: orig?.scheduledOn ?? null,
           scheduledTime: orig?.scheduledTime ?? null,
           itemType,
           metadataJson: JSON.stringify(metadataForSave),
-          visibility: orig?.visibility ?? visibility,
-          assignedTo: orig?.assignedTo ?? assignedTo,
+          visibility,
+          assignedTo,
         });
         setSaving(false);
         void loadTask(taskId);
@@ -437,10 +437,7 @@ export function useTaskSaveAndCreate({
         ? Number((existing[0] as { position: number }).position) + 1
         : 0;
 
-    const { sched, createTimeHm, scheduledTimeInsert } = parseCreateScheduleInputs(
-      scheduledOn,
-      scheduledTime,
-    );
+    const { sched, scheduledTimeInsert } = parseCreateScheduleInputs(scheduledOn, scheduledTime);
     const effectiveStatus = computeEffectiveStatusForSchedule({
       currentStatus: status,
       scheduledOnYmd: sched,
@@ -520,7 +517,7 @@ export function useTaskSaveAndCreate({
 
     setSaving(false);
     if (cErr || !data) {
-      setError(formatUserFacingError(cErr));
+      setError(formatUserFacingError(cErr ?? new Error('Create failed')));
       return;
     }
     const createdStatus =
