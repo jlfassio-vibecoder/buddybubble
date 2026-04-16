@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { motion } from 'motion/react';
-import { Camera, Plus, Save, Trash2, User } from 'lucide-react';
+import { Camera, Mail, Plus, Save, Trash2, User } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
 import { useUserProfileStore, type UserProfileRow } from '@/store/userProfileStore';
 import {
@@ -11,7 +11,8 @@ import {
   extractAvatarObjectPath,
 } from '@/lib/avatar-storage';
 import { formatUserFacingError } from '@/lib/format-error';
-import { updateMyProfileAction, setPasswordAction } from '@/app/(dashboard)/profile-actions';
+import { completeProfileGateAction } from '@/app/(dashboard)/profile-actions';
+import { reportProfileCompletionJourneyStepAction } from '@/app/(dashboard)/profile-completion-analytics-actions';
 import { setWorkspaceMemberShowEmailAction } from '@/app/(dashboard)/workspace-member-email-actions';
 
 type Props = {
@@ -36,6 +37,7 @@ export function ProfileCompletionModal({
   const [bio, setBio] = useState(profile.bio?.trim() ?? '');
   const [childrenNames, setChildrenNames] = useState<string[]>(profile.children_names ?? []);
   const [newChildName, setNewChildName] = useState('');
+  const [email, setEmail] = useState(() => profile.email?.trim() ?? '');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [avatarPreview, setAvatarPreview] = useState(profile.avatar_url ?? '');
@@ -46,6 +48,35 @@ export function ProfileCompletionModal({
   const [emailVisibilityLoaded, setEmailVisibilityLoaded] = useState(!workspaceId);
   const [emailVisibilityPending, setEmailVisibilityPending] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const profileJourneyLogged = useRef(false);
+
+  const emailTrimmed = email.trim();
+  const emailLooksValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrimmed);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (cancelled || !user?.email?.trim()) return;
+      setEmail((prev) => (prev.trim() ? prev : user.email!.trim()));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (profileJourneyLogged.current) return;
+    profileJourneyLogged.current = true;
+    void reportProfileCompletionJourneyStepAction({
+      workspaceId,
+      step: 'profile_completion_modal_shown',
+      detail: { has_name: Boolean(profile.full_name?.trim()) },
+    });
+  }, [workspaceId, profile.full_name]);
 
   useEffect(() => {
     if (!workspaceId) {
@@ -145,6 +176,11 @@ export function ProfileCompletionModal({
       setError('Passwords do not match.');
       return;
     }
+    const emailTrim = email.trim();
+    if (!emailTrim || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrim)) {
+      setError('A valid email is required to secure your account.');
+      return;
+    }
 
     setError(null);
     startTransition(async () => {
@@ -178,12 +214,13 @@ export function ProfileCompletionModal({
 
       const normalizedChildren = childrenNames.map((n) => n.trim()).filter(Boolean);
 
-      // 2. Persist text fields via server action (validated in updateMyProfileAction)
-      const result = await updateMyProfileAction({
+      const result = await completeProfileGateAction({
         fullName: trimmedName,
         bio: bio.trim() || null,
         childrenNames: normalizedChildren,
         avatarUrl: nextAvatarUrl,
+        email: emailTrim,
+        password: pwTrimmed,
       });
       if ('error' in result) {
         setError(result.error);
@@ -198,11 +235,11 @@ export function ProfileCompletionModal({
         }
       }
 
-      const pwResult = await setPasswordAction(pwTrimmed);
-      if ('error' in pwResult) {
-        setError(pwResult.error);
-        return;
-      }
+      void reportProfileCompletionJourneyStepAction({
+        workspaceId,
+        step: 'profile_completion_modal_completed',
+        detail: {},
+      });
 
       const savedProfile: UserProfileRow = {
         ...profile,
@@ -210,6 +247,7 @@ export function ProfileCompletionModal({
         bio: bio.trim() || null,
         children_names: normalizedChildren,
         avatar_url: nextAvatarUrl,
+        email: emailTrim,
       };
       setStoreProfile(savedProfile);
       onComplete();
@@ -221,6 +259,7 @@ export function ProfileCompletionModal({
   /** Password step complete: min length + match (confirm field only appears once user starts typing a password). */
   const passwordReady = pwTrimmedForUi.length >= 8 && pwTrimmedForUi === confirmTrimmedForUi;
   const showConfirmPassword = pwTrimmedForUi.length > 0;
+  const emailReady = emailLooksValid && emailTrimmed.length <= 254;
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
@@ -314,6 +353,32 @@ export function ProfileCompletionModal({
               <p className="mt-1 text-xs text-muted-foreground">
                 Shown to members in socialspaces you share.
               </p>
+            </div>
+
+            {/* Email — required for account recovery and workspace identity */}
+            <div>
+              <label className="mb-1.5 block text-sm font-semibold text-foreground">
+                Email{' '}
+                <span className="text-destructive" aria-hidden>
+                  *
+                </span>
+              </label>
+              <p className="mb-2 text-xs text-muted-foreground">
+                Used to secure your account and so hosts can recognise you. You can use a different
+                address from the one that received an invite link.
+              </p>
+              <div className="relative">
+                <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="email"
+                  disabled={pending}
+                  className="w-full rounded-lg border border-input bg-background py-2 pl-10 pr-4 text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-50"
+                  placeholder="you@example.com"
+                />
+              </div>
             </div>
 
             {/* Bio — optional */}
@@ -479,7 +544,7 @@ export function ProfileCompletionModal({
           <button
             type="button"
             onClick={handleSave}
-            disabled={pending || !name.trim() || !passwordReady}
+            disabled={pending || !name.trim() || !emailReady || !passwordReady}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 font-semibold text-primary-foreground shadow-lg transition-colors hover:bg-primary/90 disabled:opacity-50"
           >
             <Save className="h-4 w-4" />

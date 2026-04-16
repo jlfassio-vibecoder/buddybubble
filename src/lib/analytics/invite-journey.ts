@@ -26,9 +26,17 @@ export const INVITE_JOURNEY_STEPS = [
   'login_with_invite_token_opened',
   'invite_handoff_cookie_saved',
   'login_magic_link_session_resolved',
+  'profile_completion_modal_shown',
+  'profile_completion_modal_completed',
 ] as const;
 
 export type InviteJourneyStep = (typeof INVITE_JOURNEY_STEPS)[number];
+
+/** Steps emitted from the authenticated dashboard profile-completion gate (no invite token). */
+export type ProfileCompletionInviteJourneyStep = Extract<
+  InviteJourneyStep,
+  'profile_completion_modal_shown' | 'profile_completion_modal_completed'
+>;
 
 export const INVITE_JOURNEY_STEP_LABELS: Record<InviteJourneyStep, string> = {
   invite_created: 'Invite created (QR / link / email / SMS)',
@@ -55,4 +63,8 @@ export const INVITE_JOURNEY_STEP_LABELS: Record<InviteJourneyStep, string> = {
   invite_handoff_cookie_saved: 'Login: invite handoff saved to secure cookie',
   login_magic_link_session_resolved:
     'Login: session established (e.g. email link); shows where they were sent',
+  profile_completion_modal_shown:
+    'Dashboard: profile completion modal shown (name/email/password gate)',
+  profile_completion_modal_completed:
+    'Dashboard: profile completion saved (email, password, profile fields)',
 };

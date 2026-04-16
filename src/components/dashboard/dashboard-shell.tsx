@@ -68,6 +68,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { useUpdatePresence } from '@/hooks/use-update-presence';
 import { ActiveUsersStack } from '@/components/presence/ActiveUsersStack';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
+import { isDashboardProfileComplete } from '@/lib/profile-helpers';
 import {
   shouldBlockWorkoutForExpiredMemberPreview,
   shouldSoftLockTrialSurfaces,
@@ -136,6 +137,8 @@ export function DashboardShell({
   const [taskModalCreateBubbleId, setTaskModalCreateBubbleId] = useState<string | null>(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [profileComplete, setProfileComplete] = useState(false);
+  /** `null` = session email not resolved yet (avoid treating legacy users as incomplete during fetch). */
+  const [authHasSessionEmail, setAuthHasSessionEmail] = useState<boolean | null>(null);
   const [peopleInvitesOpen, setPeopleInvitesOpen] = useState(false);
   const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false);
   const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false);
@@ -501,15 +504,24 @@ export function DashboardShell({
   }, [loadUserWorkspaces]);
 
   useEffect(() => {
-    if (profile === null) return;
-    const isTrialGuestInActiveWorkspace =
-      activeWorkspace?.id === workspaceId &&
-      activeWorkspace.role === 'guest' &&
-      activeWorkspace.onboarding_status === 'trial_active';
-    // Storefront trial guests should land directly in the trial experience;
-    // do not block with profile completion modal before the first workout appears.
-    setProfileComplete(isTrialGuestInActiveWorkspace || !!profile.full_name?.trim());
-  }, [profile, activeWorkspace, workspaceId]);
+    let cancelled = false;
+    void (async () => {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!cancelled) setAuthHasSessionEmail(Boolean(user?.email?.trim()));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [profile?.id]);
+
+  useEffect(() => {
+    setProfileComplete(
+      isDashboardProfileComplete(profile, activeWorkspace, workspaceId, authHasSessionEmail),
+    );
+  }, [profile, activeWorkspace, workspaceId, authHasSessionEmail]);
 
   useEffect(() => {
     setBoardStripExpandNonce(0);
@@ -1094,6 +1106,7 @@ export function DashboardShell({
             permissionsContext={profilePermissionsContext}
             showFamilyNames={showFamilyNames}
           />
+          {/* Modal requires `profile`; `isDashboardProfileComplete` treats null profile as gate-off while store loads */}
           {!profileComplete && profile !== null ? (
             <ProfileCompletionModal
               profile={profile}
