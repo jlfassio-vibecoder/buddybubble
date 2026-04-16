@@ -527,7 +527,10 @@ export function KanbanBoard({
         setCommentUnreadByTaskId({});
         return;
       }
-      let query = supabase.from('tasks').select('*').order('position', { ascending: true });
+      let query = supabase
+        .from('tasks')
+        .select('*, task_subtasks(*)')
+        .order('position', { ascending: true });
       if (isAll) {
         query = query.in('bubble_id', ids);
       } else {

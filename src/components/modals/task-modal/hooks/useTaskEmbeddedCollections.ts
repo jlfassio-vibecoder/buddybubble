@@ -4,13 +4,12 @@ import type { Dispatch, SetStateAction } from 'react';
 import { useCallback, useState } from 'react';
 import { createClient } from '@utils/supabase/client';
 import type { Json, TaskRow } from '@/types/database';
+import { taskActivityLogRowToEntry } from '@/lib/task-activity-log-persist';
 import {
   type TaskActivityEntry,
   type TaskAttachment,
   type TaskSubtask,
-  asActivityLog,
   asAttachments,
-  asSubtasks,
 } from '@/types/task-modal';
 import { buildTaskAttachmentObjectPath, TASK_ATTACHMENTS_BUCKET } from '@/lib/task-storage';
 import { formatUserFacingError } from '@/lib/format-error';
@@ -36,11 +35,44 @@ export function useTaskEmbeddedCollections({
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
 
   const hydrateFromTaskRow = useCallback((row: TaskRow) => {
-    // @ts-ignore — `tasks.subtasks` JSON removed; table-backed subtasks refactor is tracked separately.
-    setSubtasks(asSubtasks(row.subtasks));
-    // @ts-ignore — `tasks.activity_log` JSON removed; table-backed activity refactor is tracked separately.
-    setActivityLog(asActivityLog(row.activity_log));
     setAttachments(asAttachments(row.attachments));
+    const r = row as TaskRow & {
+      task_subtasks?: Array<{
+        id: string;
+        title: string;
+        completed: boolean;
+        created_at: string;
+        position: number;
+      }>;
+      task_activity_log?: Array<{
+        id: string;
+        user_id: string | null;
+        action_type: string;
+        payload: Json;
+        created_at: string;
+      }>;
+    };
+    if (r.task_subtasks?.length) {
+      const sorted = [...r.task_subtasks].sort((a, b) => a.position - b.position);
+      setSubtasks(
+        sorted.map((s) => ({
+          id: s.id,
+          title: s.title,
+          done: s.completed,
+          created_at: s.created_at,
+        })),
+      );
+    } else {
+      setSubtasks([]);
+    }
+    if (r.task_activity_log?.length) {
+      const sortedLogs = [...r.task_activity_log].sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+      );
+      setActivityLog(sortedLogs.map((log) => taskActivityLogRowToEntry(log)));
+    } else {
+      setActivityLog([]);
+    }
   }, []);
 
   const resetForCreate = useCallback(() => {
@@ -52,42 +84,46 @@ export function useTaskEmbeddedCollections({
 
   const addSubtask = useCallback(async () => {
     if (!canWrite || !taskId || !newSubtaskTitle.trim()) return;
-    const next: TaskSubtask[] = [
-      ...subtasks,
-      {
-        id: crypto.randomUUID(),
-        title: newSubtaskTitle.trim(),
-        done: false,
-        created_at: new Date().toISOString(),
-      },
-    ];
     const supabase = createClient();
-    const { error: uErr } = await supabase
-      .from('tasks')
-      .update({ subtasks: next as unknown as Json })
-      .eq('id', taskId);
-    if (uErr) {
-      setError(formatUserFacingError(uErr));
+    const nextPosition = subtasks.length;
+    const { data: inserted, error: uErr } = await supabase
+      .from('task_subtasks')
+      .insert({
+        task_id: taskId,
+        title: newSubtaskTitle.trim(),
+        completed: false,
+        position: nextPosition,
+      })
+      .select('id, title, completed, created_at')
+      .maybeSingle();
+    if (uErr || !inserted) {
+      setError(formatUserFacingError(uErr ?? new Error('Could not add subtask.')));
       return;
     }
-    setSubtasks(next);
+    const ins = inserted as { id: string; title: string; completed: boolean; created_at: string };
+    setSubtasks([
+      ...subtasks,
+      { id: ins.id, title: ins.title, done: ins.completed, created_at: ins.created_at },
+    ]);
     setNewSubtaskTitle('');
   }, [canWrite, taskId, newSubtaskTitle, subtasks, setError]);
 
   const toggleSubtask = useCallback(
     async (id: string) => {
       if (!canWrite || !taskId) return;
-      const next = subtasks.map((s) => (s.id === id ? { ...s, done: !s.done } : s));
+      const target = subtasks.find((s) => s.id === id);
+      if (!target) return;
+      const nextDone = !target.done;
       const supabase = createClient();
       const { error: uErr } = await supabase
-        .from('tasks')
-        .update({ subtasks: next as unknown as Json })
-        .eq('id', taskId);
+        .from('task_subtasks')
+        .update({ completed: nextDone })
+        .eq('id', id);
       if (uErr) {
         setError(formatUserFacingError(uErr));
         return;
       }
-      setSubtasks(next);
+      setSubtasks(subtasks.map((s) => (s.id === id ? { ...s, done: nextDone } : s)));
     },
     [canWrite, taskId, subtasks, setError],
   );

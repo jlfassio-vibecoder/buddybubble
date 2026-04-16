@@ -515,7 +515,7 @@ export function useMessageThread({
       }
 
       if (!hasAttachedTask) {
-        if (!content.trim()) {
+        if (!content.trim() && raw.length === 0) {
           setError('Message text is required.');
           return false;
         }

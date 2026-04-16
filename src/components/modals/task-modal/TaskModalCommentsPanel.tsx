@@ -106,7 +106,7 @@ export function TaskModalCommentsPanel({
     return () => {
       cancelled = true;
       window.clearTimeout(t);
-      void recordCommentsViewed();
+      // Intentionally omit `recordCommentsViewed` here so a brief open does not mark comments read before the debounce fires.
     };
   }, [myProfile?.id, taskId, recordCommentsViewed]);
 
@@ -371,7 +371,7 @@ export function TaskModalCommentsPanel({
               value={threadDraft}
               onChange={(next, _meta) => setThreadDraft(next)}
               onSubmit={async ({ text, files }) => {
-                if (!text.trim() || sending) return false;
+                if ((!text.trim() && (!files || files.length === 0)) || sending) return false;
                 const ok = await chat.sendMessage(text, activeThreadParent.id, files);
                 if (ok) {
                   setThreadDraft('');
@@ -385,7 +385,9 @@ export function TaskModalCommentsPanel({
               onAttachmentFilesSelected={() => chat.clearError()}
               disabled={!canWrite || sending}
               isSending={sending}
-              canSubmit={!!threadDraft.trim() && canWrite && !sending}
+              canSubmit={
+                (!!threadDraft.trim() || threadPendingFiles.length > 0) && canWrite && !sending
+              }
               attachDisabled={!canWrite || sending}
               placeholder="Reply to thread…"
               errorText={chat.error}

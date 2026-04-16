@@ -1,4 +1,5 @@
 {
+  // Copilot suggestion ignored: PR title/body and deployment notes belong on GitHub; this file only scopes `tsc -p tsconfig.chat.json`.
   "extends": "./tsconfig.json",
   "include": [
     "src/components/chat/**/*.ts",
@@ -7,6 +8,7 @@
     "src/lib/chat-message-mapper.ts",
     "src/lib/chat-composer-tokens.ts",
     "src/lib/message-thread.ts",
+    "src/lib/task-activity-log-persist.ts",
     "src/types/chat.ts",
     "src/types/open-task-options.ts"
   ]

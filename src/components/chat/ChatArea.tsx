@@ -975,7 +975,7 @@ export function ChatArea({
         value={input}
         onChange={(next, _meta) => setInput(next)}
         onSubmit={async ({ text, files }) => {
-          if (!text.trim() || sendingAttachments) return false;
+          if ((!text.trim() && (!files || files.length === 0)) || sendingAttachments) return false;
           const ok = await sendMessage(text, undefined, files);
           if (!ok) return false;
           setInput('');
@@ -988,7 +988,9 @@ export function ChatArea({
         onAttachmentFilesSelected={() => clearError()}
         disabled={!canPostMessages || !canPostInComposer || sendingAttachments}
         isSending={sendingAttachments}
-        canSubmit={!!input.trim() && canPostMessages && canPostInComposer}
+        canSubmit={
+          (!!input.trim() || pendingFiles.length > 0) && canPostMessages && canPostInComposer
+        }
         attachDisabled={!canPostMessages || !canPostInComposer || sendingAttachments}
         createCardDisabled={
           !canPostMessages ||

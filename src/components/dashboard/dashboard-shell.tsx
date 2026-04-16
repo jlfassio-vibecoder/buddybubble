@@ -236,6 +236,7 @@ export function DashboardShell({
     open: false,
     taskId: null,
   });
+  const taskCommentToastTitleByIdRef = useRef<Map<string, string>>(new Map());
 
   const activeBubbleIsPrivate = useMemo(() => {
     if (selectedBubbleId === ALL_BUBBLES_BUBBLE_ID) return false;
@@ -444,6 +445,11 @@ export function DashboardShell({
       if (modal.open && modal.taskId === taskCommentTaskId) return;
 
       void (async () => {
+        const cached = taskCommentToastTitleByIdRef.current.get(taskCommentTaskId);
+        if (cached) {
+          setCommentAlert({ taskId: taskCommentTaskId, title: cached });
+          return;
+        }
         const s = createClient();
         const { data: t } = await s
           .from('tasks')
@@ -452,6 +458,7 @@ export function DashboardShell({
           .maybeSingle();
         const title = (t as { title?: string } | null)?.title;
         if (!title) return;
+        taskCommentToastTitleByIdRef.current.set(taskCommentTaskId, title);
         setCommentAlert({ taskId: taskCommentTaskId, title });
       })();
     };

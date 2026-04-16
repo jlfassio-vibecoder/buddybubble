@@ -28,7 +28,6 @@ import {
 } from '@/types/database';
 import { getItemTypeVisual } from '@/lib/item-type-styles';
 import { normalizeTaskPriority, type TaskPriority } from '@/lib/task-priority';
-import { asSubtasks } from '@/types/task-modal';
 import type { OpenTaskOptions } from '@/components/modals/TaskModal';
 import { metadataFieldsFromParsed, parseTaskMetadata } from '@/lib/item-metadata';
 import type { KanbanCardDensity } from '@/components/board/kanban-density';
@@ -100,9 +99,15 @@ function readKanbanCoverHiddenFromStorage(taskId: string, enabled: boolean): boo
 }
 
 function subtaskProgress(task: TaskRow): { done: number; total: number } | null {
-  const st = asSubtasks((task as unknown as { subtasks?: unknown }).subtasks);
-  if (st.length === 0) return null;
-  return { done: st.filter((s) => s.done).length, total: st.length };
+  const rows = (
+    task as TaskRow & {
+      task_subtasks?: Array<{ completed: boolean; position: number }>;
+    }
+  ).task_subtasks;
+  if (!rows?.length) return null;
+  const total = rows.length;
+  const done = rows.filter((r) => r.completed).length;
+  return { done, total };
 }
 
 function priorityChip(p: TaskPriority): { label: string; className: string } {

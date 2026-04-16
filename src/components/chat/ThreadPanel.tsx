@@ -113,7 +113,7 @@ export function ThreadPanel({
             value={threadInput}
             onChange={(next, _meta) => setThreadInput(next)}
             onSubmit={async ({ text, files }) => {
-              if (!text.trim() || sending) return false;
+              if ((!text.trim() && (!files || files.length === 0)) || sending) return false;
               const ok = await onSendMessage(text, files);
               if (!ok) return false;
               setThreadInput('');
@@ -126,7 +126,10 @@ export function ThreadPanel({
             disabled={!canPostMessages || !activeThreadParent || sending}
             isSending={sending}
             canSubmit={
-              !!threadInput.trim() && !!canPostMessages && !!activeThreadParent && !sending
+              (!!threadInput.trim() || pendingFiles.length > 0) &&
+              !!canPostMessages &&
+              !!activeThreadParent &&
+              !sending
             }
             attachDisabled={!canPostMessages || !activeThreadParent || sending}
             placeholder="Reply to thread…"

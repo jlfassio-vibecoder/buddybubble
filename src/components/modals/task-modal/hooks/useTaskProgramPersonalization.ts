@@ -21,6 +21,10 @@ import {
 import { syncProgramLinkedWorkoutSchedules } from '@/lib/fitness/sync-program-workout-schedules';
 import { formatUserFacingError } from '@/lib/format-error';
 import {
+  diffNewActivityEntries,
+  insertTaskActivityLogEntries,
+} from '@/lib/task-activity-log-persist';
+import {
   appendActivityForFieldChange,
   asActivityLog,
   type TaskActivityEntry,
@@ -220,13 +224,21 @@ export function useTaskProgramPersonalization({
           title: nextTitle,
           description: nextDesc || null,
           metadata: metaPayload,
-          activity_log: nextActivity as unknown as Json,
         })
         .eq('id', taskId);
 
       if (updErr) {
         toast.error(formatUserFacingError(updErr));
         return;
+      }
+
+      const actDelta = diffNewActivityEntries(activityLog, nextActivity);
+      const { error: actErr } = await insertTaskActivityLogEntries(supabase, taskId, actDelta);
+      if (actErr) {
+        console.warn(
+          '[useTaskProgramPersonalization] task_activity_log insert failed',
+          actErr.message,
+        );
       }
 
       const syncSched = await syncProgramLinkedWorkoutSchedules({
