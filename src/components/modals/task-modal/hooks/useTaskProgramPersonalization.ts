@@ -232,6 +232,7 @@ export function useTaskProgramPersonalization({
         return;
       }
 
+      // Copilot suggestion ignored: personalization audit lines go to `task_activity_log` via `insertTaskActivityLogEntries`, not `tasks.activity_log`.
       const actDelta = diffNewActivityEntries(activityLog, nextActivity);
       const { error: actErr } = await insertTaskActivityLogEntries(supabase, taskId, actDelta);
       if (actErr) {

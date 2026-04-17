@@ -98,6 +98,7 @@ function readKanbanCoverHiddenFromStorage(taskId: string, enabled: boolean): boo
   }
 }
 
+// Copilot suggestion ignored: counts use embedded `task_subtasks` from the board query, not removed `tasks.subtasks` JSON.
 function subtaskProgress(task: TaskRow): { done: number; total: number } | null {
   const rows = (
     task as TaskRow & {

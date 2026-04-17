@@ -438,7 +438,8 @@ export function useMessageThread({
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [filterKey, filter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- realtime filters are fully determined by `filterKey`; `filter` object identity can change without semantic scope change.
+  }, [filterKey]);
 
   useEffect(() => {
     if (!workspaceId) {

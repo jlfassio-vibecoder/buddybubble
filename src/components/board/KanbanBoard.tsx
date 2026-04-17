@@ -507,11 +507,14 @@ export function KanbanBoard({
     ),
   );
   const draggingRef = useRef(false);
+  /** Bumps on each `loadTasks` start so stale async completions cannot overwrite state after bubble/filter changes. */
+  const loadTasksGenerationRef = useRef(0);
   const columnsSnapshotRef = useRef<Record<string, TaskRow[]> | null>(null);
   const columnsRef = useRef(columns);
   columnsRef.current = columns;
 
   const loadTasks = useCallback(async () => {
+    const loadGen = ++loadTasksGenerationRef.current;
     setTasksBoardLoading(true);
     try {
       if (!bubbleId || columnSlugs.length === 0) {
@@ -544,10 +547,12 @@ export function KanbanBoard({
         query = query.or(guestTaskAssignmentVisibilityOr(guestTaskUserId));
       }
       const { data, error: loadErr } = await query;
+      if (loadGen !== loadTasksGenerationRef.current) return;
       if (loadErr) {
         console.error('[KanbanBoard] load tasks failed', supabaseClientErrorMessage(loadErr));
       }
       if (draggingRef.current) return;
+      if (loadGen !== loadTasksGenerationRef.current) return;
       const rows = ((data ?? []) as TaskRow[]).filter((t) => !t.archived_at);
 
       const tz = calendarTimezone?.trim() || null;
@@ -593,6 +598,7 @@ export function KanbanBoard({
       setColumns(groupTasksToColumns(toGroup, columnSlugs));
 
       const taskIds = toGroup.map((t) => t.id);
+      if (loadGen !== loadTasksGenerationRef.current) return;
       if (taskIds.length === 0) {
         setCommentUnreadByTaskId({});
       } else {
@@ -602,6 +608,7 @@ export function KanbanBoard({
             p_task_ids: taskIds,
           },
         );
+        if (loadGen !== loadTasksGenerationRef.current) return;
         if (unreadErr) {
           console.error(
             '[KanbanBoard] task_comment_unread_counts failed',

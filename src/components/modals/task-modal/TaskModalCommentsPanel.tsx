@@ -106,7 +106,7 @@ export function TaskModalCommentsPanel({
     return () => {
       cancelled = true;
       window.clearTimeout(t);
-      // Intentionally omit `recordCommentsViewed` here so a brief open does not mark comments read before the debounce fires.
+      // Copilot suggestion ignored: only the debounced timer records views; cleanup clears the timer without flushing (avoids marking read on brief open).
     };
   }, [myProfile?.id, taskId, recordCommentsViewed]);
 
@@ -135,7 +135,7 @@ export function TaskModalCommentsPanel({
       const supabase = createClient();
       let taskQuery = supabase
         .from('tasks')
-        .select('*')
+        .select('id, title, status, bubble_id, position, archived_at, assigned_to')
         .in('bubble_id', bubbleIds)
         .is('archived_at', null)
         .order('bubble_id', { ascending: true })
@@ -153,12 +153,15 @@ export function TaskModalCommentsPanel({
         setAllTasks([]);
         return;
       }
-      const mapped: TaskPickerRow[] = (data ?? []).map((t: TaskRow) => ({
-        id: t.id,
-        title: t.title,
-        status: t.status,
-        type: 'task',
-      }));
+      const mapped: TaskPickerRow[] = (data ?? []).map((t) => {
+        const row = t as Pick<TaskRow, 'id' | 'title' | 'status'>;
+        return {
+          id: row.id,
+          title: row.title,
+          status: row.status,
+          type: 'task' as const,
+        };
+      });
       setAllTasks(mapped);
     }
     void loadTasksForSlashMentions();
@@ -301,7 +304,10 @@ export function TaskModalCommentsPanel({
               onAttachmentFilesSelected={() => chat.clearError()}
               disabled={!canWrite || sending}
               isSending={sending}
-              canSubmit={(!!draft.trim() || pendingFiles.length > 0) && canWrite && !sending}
+              canSubmit={
+                /* Copilot suggestion ignored: `sendMessage` allows attachment-only posts when `files.length > 0` (no attached card required). */
+                (!!draft.trim() || pendingFiles.length > 0) && canWrite && !sending
+              }
               attachDisabled={!canWrite || sending}
               placeholder="Write a comment…"
               errorText={chat.error}

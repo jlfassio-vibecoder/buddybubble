@@ -66,6 +66,7 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
   if (req.method !== 'POST') {
+    // Copilot suggestion ignored: keep non-POST as HTTP 200 so misrouted probes are not confused with Supabase webhook retry storms.
     return json({ ok: false, error: 'method_not_allowed' }, 200);
   }
 
@@ -84,6 +85,7 @@ Deno.serve(async (req) => {
   const headerSecret = req.headers.get('x-bubble-agent-secret')?.trim() ?? '';
   const token = headerSecret || bearer;
   if (!token || token !== webhookSecret) {
+    // Copilot suggestion ignored: HTTP 200 on bad secret avoids webhook infrastructure treating auth failures as delivery failures / retry loops.
     return json({ ok: false, error: 'unauthorized' }, 200);
   }
 
@@ -108,12 +110,17 @@ Deno.serve(async (req) => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const { data: selfAgent } = await supabase
+  const { data: selfAgent, error: selfAgentErr } = await supabase
     .from('agent_definitions')
     .select('id')
     .eq('auth_user_id', record.user_id)
     .eq('is_active', true)
     .maybeSingle();
+
+  if (selfAgentErr) {
+    console.error('[bubble-agent-dispatch] agent_definitions self lookup', selfAgentErr.message);
+    return json({ ok: false, error: 'agent_lookup_failed' }, 200);
+  }
 
   if (selfAgent) {
     return json({ ok: true, skipped: 'author_is_agent' }, 200);

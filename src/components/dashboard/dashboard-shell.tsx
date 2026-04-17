@@ -445,6 +445,7 @@ export function DashboardShell({
       if (modal.open && modal.taskId === taskCommentTaskId) return;
 
       void (async () => {
+        // Copilot suggestion ignored: titles are cached in `taskCommentToastTitleByIdRef` after the first fetch per taskId (not N+1 per notification burst).
         const cached = taskCommentToastTitleByIdRef.current.get(taskCommentTaskId);
         if (cached) {
           setCommentAlert({ taskId: taskCommentTaskId, title: cached });

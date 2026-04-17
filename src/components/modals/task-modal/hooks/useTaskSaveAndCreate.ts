@@ -172,6 +172,7 @@ export function useTaskSaveAndCreate({
       assignedTo,
     });
 
+    // Copilot suggestion ignored: field-change activity is inserted into `task_activity_log` via `insertTaskActivityLogEntries`, not `tasks.activity_log`.
     const persistNewActivity = async (nextActs: typeof nextActivity) => {
       const delta = diffNewActivityEntries(activityLog, nextActs);
       const { error: actErr } = await insertTaskActivityLogEntries(supabase, taskId, delta);

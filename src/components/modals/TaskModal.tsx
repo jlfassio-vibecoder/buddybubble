@@ -920,7 +920,7 @@ export function TaskModal({
                     Details
                   </Button>
                 ) : null}
-                {!taskId ? (
+                {!taskId || showWorkoutSplitPane ? (
                   <button
                     type="button"
                     className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"

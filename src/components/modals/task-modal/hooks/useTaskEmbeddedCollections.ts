@@ -29,6 +29,7 @@ export function useTaskEmbeddedCollections({
   setError,
   setSaving,
 }: UseTaskEmbeddedCollectionsArgs) {
+  // Copilot suggestion ignored: subtasks/activity use `task_subtasks` / `task_activity_log` tables, not dropped JSON columns on `tasks`.
   const [subtasks, setSubtasks] = useState<TaskSubtask[]>([]);
   const [activityLog, setActivityLog] = useState<TaskActivityEntry[]>([]);
   const [attachments, setAttachments] = useState<TaskAttachment[]>([]);

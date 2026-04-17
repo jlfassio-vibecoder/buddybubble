@@ -1,5 +1,6 @@
 -- Normalize task JSON collections into first-class tables + unify task comments onto `public.messages`.
 -- Companion app / React changes are intentionally NOT included here.
+-- Copilot suggestion ignored: drops match the intended schema cutover; deferring them would fork production history—app code must align before applying this migration, not the reverse.
 
 -- ---------------------------------------------------------------------------
 -- 0. Helper: same effective write surface as `tasks` for child rows (subtasks, activity rows).
