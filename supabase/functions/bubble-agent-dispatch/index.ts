@@ -42,7 +42,7 @@ type BindingRow = {
   agent_definitions: AgentDefEmbed | AgentDefEmbed[] | null;
 };
 
-type VertexContent = {
+type GeminiContent = {
   role: 'user' | 'model' | 'system';
   parts: Array<{ text: string }>;
 };
@@ -66,21 +66,19 @@ const STUB_REPLY = 'Here is the 3-day split you requested.';
 const STUB_TASK_TITLE = 'Mock: 3-day split';
 const STUB_TASK_DESCRIPTION: string | null = null;
 
-type VertexJsonResponse = {
+type GeminiJsonResponse = {
   reply_content: string;
   task_title: string;
   task_description: string;
 };
 
-async function vertexGenerateJson(args: {
+async function geminiGenerateJson(args: {
   apiKey: string;
   model: string;
   systemPrompt: string;
-  contents: VertexContent[];
-}): Promise<VertexJsonResponse> {
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${args.model}:generateContent?key=${encodeURIComponent(
-    args.apiKey,
-  )}`;
+  contents: GeminiContent[];
+}): Promise<GeminiJsonResponse> {
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${args.model}:generateContent`;
 
   const body = {
     system_instruction: {
@@ -107,23 +105,24 @@ async function vertexGenerateJson(args: {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'x-goog-api-key': args.apiKey,
     },
     body: JSON.stringify(body),
   });
 
   if (!resp.ok) {
     const txt = await resp.text().catch(() => '');
-    throw new Error(`vertex_http_${resp.status}:${txt.slice(0, 400)}`);
+    throw new Error(`gemini_http_${resp.status}:${txt.slice(0, 400)}`);
   }
 
-  const json = (await resp.json()) as {
+  const respJson = (await resp.json()) as {
     candidates?: Array<{
       content?: { parts?: Array<{ text?: string }> };
     }>;
   };
-  const text = json.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  const text = respJson.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
   if (typeof text !== 'string' || !text.trim()) {
-    throw new Error('vertex_empty_response');
+    throw new Error('gemini_empty_response');
   }
 
   const parsed = JSON.parse(text) as Record<string, unknown>;
@@ -132,7 +131,7 @@ async function vertexGenerateJson(args: {
   const taskDescription =
     typeof parsed.task_description === 'string' ? parsed.task_description : null;
   if (!replyContent || !taskTitle || taskDescription == null) {
-    throw new Error('vertex_invalid_json_shape');
+    throw new Error('gemini_invalid_json_shape');
   }
 
   return {
@@ -242,7 +241,10 @@ Deno.serve(async (req) => {
     return json({ ok: true, skipped: 'no_agent_mention' }, 200);
   }
 
-  const vertexModel = Deno.env.get('VERTEX_GEMINI_MODEL')?.trim() || 'gemini-2.0-flash';
+  const geminiModel =
+    Deno.env.get('GEMINI_MODEL')?.trim() ||
+    Deno.env.get('VERTEX_GEMINI_MODEL')?.trim() ||
+    'gemini-2.0-flash';
 
   const systemPrompt =
     'You are a BuddyBubble assistant. You can act as both a Fitness Coach and an Organizer. ' +
@@ -278,30 +280,30 @@ Deno.serve(async (req) => {
       }
 
       const historyAsc = [...(historyRows ?? [])].reverse();
-      const vertexContents: VertexContent[] = historyAsc
+      const geminiContents: GeminiContent[] = historyAsc
         .map((m) => {
           const row = m as { user_id?: string | null; content?: string | null };
           const txt = row.content ?? '';
           if (!txt.trim()) return null;
-          const role: VertexContent['role'] =
+          const role: GeminiContent['role'] =
             row.user_id && bubbleAgentAuthIds.has(row.user_id) ? 'model' : 'user';
           return { role, parts: [{ text: txt }] };
         })
-        .filter((v): v is VertexContent => v != null);
+        .filter((v): v is GeminiContent => v != null);
 
-      vertexContents.push({ role: 'user', parts: [{ text: content }] });
+      geminiContents.push({ role: 'user', parts: [{ text: content }] });
 
-      const out = await vertexGenerateJson({
+      const out = await geminiGenerateJson({
         apiKey: geminiApiKey,
-        model: vertexModel,
+        model: geminiModel,
         systemPrompt,
-        contents: vertexContents,
+        contents: geminiContents,
       });
       replyText = out.reply_content;
       taskTitle = out.task_title;
       taskDescription = out.task_description;
     } catch (e) {
-      console.error('[bubble-agent-dispatch] vertex', String(e), {
+      console.error('[bubble-agent-dispatch] gemini', String(e), {
         message_id: record.id,
         slug: resolvedSlug,
       });
@@ -309,7 +311,7 @@ Deno.serve(async (req) => {
         'Something went wrong while generating your agent response. I created a placeholder card so you can keep moving.';
       taskTitle = 'Agent error: generation failed';
       taskDescription =
-        'Vertex AI request failed or returned invalid JSON. Check Edge Function logs for details.';
+        'Gemini API request failed or returned invalid JSON. Check Edge Function logs for details.';
     }
   }
 
