@@ -1,0 +1,8 @@
+/* BuddyBubble
+ *
+ * Next.js serves real app styles from `/_next/static/css/app/layout.css` (build hash in query).
+ * If the browser requests `/layout.css` at the site root, that is not a Next convention — it is
+ * usually a mistaken relative URL, an old bookmark, or a crawler. This file exists so that
+ * request returns 200 instead of cluttering the console with a 404. Global styles live in
+ * `src/app/globals.css` (imported from `src/app/layout.tsx`).
+ */

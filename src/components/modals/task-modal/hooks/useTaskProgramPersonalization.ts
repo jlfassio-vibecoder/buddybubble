@@ -4,7 +4,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 import { createClient } from '@utils/supabase/client';
-import type { ItemType, Json, TaskRow, TaskVisibility } from '@/types/database';
+import type { ItemType, Json, TaskVisibility } from '@/types/database';
 import {
   buildTaskMetadataPayload,
   parseTaskMetadata,
@@ -20,6 +20,10 @@ import {
 } from '@/lib/fitness/upsert-program-workout-tasks';
 import { syncProgramLinkedWorkoutSchedules } from '@/lib/fitness/sync-program-workout-schedules';
 import { formatUserFacingError } from '@/lib/format-error';
+import {
+  diffNewActivityEntries,
+  insertTaskActivityLogEntries,
+} from '@/lib/task-activity-log-persist';
 import {
   appendActivityForFieldChange,
   asActivityLog,
@@ -220,13 +224,22 @@ export function useTaskProgramPersonalization({
           title: nextTitle,
           description: nextDesc || null,
           metadata: metaPayload,
-          activity_log: nextActivity as unknown as TaskRow['activity_log'],
         })
         .eq('id', taskId);
 
       if (updErr) {
         toast.error(formatUserFacingError(updErr));
         return;
+      }
+
+      // Copilot suggestion ignored: personalization audit lines go to `task_activity_log` via `insertTaskActivityLogEntries`, not `tasks.activity_log`.
+      const actDelta = diffNewActivityEntries(activityLog, nextActivity);
+      const { error: actErr } = await insertTaskActivityLogEntries(supabase, taskId, actDelta);
+      if (actErr) {
+        console.warn(
+          '[useTaskProgramPersonalization] task_activity_log insert failed',
+          actErr.message,
+        );
       }
 
       const syncSched = await syncProgramLinkedWorkoutSchedules({

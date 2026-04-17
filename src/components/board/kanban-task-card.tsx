@@ -28,7 +28,6 @@ import {
 } from '@/types/database';
 import { getItemTypeVisual } from '@/lib/item-type-styles';
 import { normalizeTaskPriority, type TaskPriority } from '@/lib/task-priority';
-import { asComments, asSubtasks } from '@/types/task-modal';
 import type { OpenTaskOptions } from '@/components/modals/TaskModal';
 import { metadataFieldsFromParsed, parseTaskMetadata } from '@/lib/item-metadata';
 import type { KanbanCardDensity } from '@/components/board/kanban-density';
@@ -72,6 +71,8 @@ export type KanbanTaskCardProps = {
    * while keeping title, pills, and description; preference is stored per task in `localStorage`.
    */
   showKanbanCoverToggle?: boolean;
+  /** Unread task-scoped messages for current user (`task_comment_unread_counts`); Kanban board only. */
+  commentUnreadCount?: number;
 };
 
 const KANBAN_HIDE_COVER_KEY = 'bb.kanban.hideCardCover';
@@ -97,10 +98,17 @@ function readKanbanCoverHiddenFromStorage(taskId: string, enabled: boolean): boo
   }
 }
 
+// Copilot suggestion ignored: counts use embedded `task_subtasks` from the board query, not removed `tasks.subtasks` JSON.
 function subtaskProgress(task: TaskRow): { done: number; total: number } | null {
-  const st = asSubtasks(task.subtasks);
-  if (st.length === 0) return null;
-  return { done: st.filter((s) => s.done).length, total: st.length };
+  const rows = (
+    task as TaskRow & {
+      task_subtasks?: Array<{ completed: boolean; position: number }>;
+    }
+  ).task_subtasks;
+  if (!rows?.length) return null;
+  const total = rows.length;
+  const done = rows.filter((r) => r.completed).length;
+  return { done, total };
 }
 
 function priorityChip(p: TaskPriority): { label: string; className: string } {
@@ -148,12 +156,14 @@ function KanbanCardQuickActions({
   variant,
   task,
   commentCount,
+  commentUnreadCount,
   onOpenTask,
   onStartWorkout,
 }: {
   variant: 'cover' | 'default';
   task: TaskRow;
   commentCount: number;
+  commentUnreadCount: number;
   onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
   onStartWorkout?: (task: TaskRow) => void;
 }) {
@@ -223,7 +233,11 @@ function KanbanCardQuickActions({
             type="button"
             className={cn(base, 'relative', neutral)}
             aria-label="Open comments"
-            title="Comments"
+            title={
+              commentUnreadCount > 0
+                ? `${commentCount} comment${commentCount === 1 ? '' : 's'}, ${commentUnreadCount} unread`
+                : 'Comments'
+            }
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
@@ -231,6 +245,12 @@ function KanbanCardQuickActions({
             }}
           >
             <MessageCircle className="size-4" aria-hidden />
+            {commentUnreadCount > 0 ? (
+              <span
+                className="absolute -left-0.5 -bottom-0.5 size-2 rounded-full bg-destructive ring-2 ring-background"
+                aria-hidden
+              />
+            ) : null}
             {commentCount > 0 ? (
               <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium leading-none text-primary-foreground">
                 {commentCount > 99 ? '99+' : commentCount}
@@ -258,6 +278,7 @@ export function KanbanTaskCard({
   dragHandle,
   bubbleUp,
   showKanbanCoverToggle = false,
+  commentUnreadCount = 0,
 }: KanbanTaskCardProps) {
   const subtasks = subtaskProgress(task);
   const itemKind = normalizeItemType(task.item_type);
@@ -288,7 +309,7 @@ export function KanbanTaskCard({
   const showBubble =
     (density === 'full' || density === 'detailed') && canWrite && bubbles.length > 0;
   const showDetailedMeta = density === 'detailed';
-  const commentCount = asComments(task.comments).length;
+  const commentCount = task.comment_count ?? 0;
 
   const openTask = onOpenTask ? () => onOpenTask(task.id, { viewMode: 'full' }) : undefined;
 
@@ -473,6 +494,7 @@ export function KanbanTaskCard({
                       variant="default"
                       task={task}
                       commentCount={commentCount}
+                      commentUnreadCount={commentUnreadCount}
                       onOpenTask={onOpenTask}
                       onStartWorkout={onStartWorkout}
                     />
@@ -642,6 +664,7 @@ export function KanbanTaskCard({
                           variant="cover"
                           task={task}
                           commentCount={commentCount}
+                          commentUnreadCount={commentUnreadCount}
                           onOpenTask={onOpenTask}
                           onStartWorkout={onStartWorkout}
                         />

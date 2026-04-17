@@ -11,6 +11,10 @@ import { asActivityLog } from '@/types/task-modal';
 import { formatUserFacingError } from '@/lib/format-error';
 import { archiveOpenChildWorkoutsForProgram } from '@/lib/fitness/archive-program-child-workouts';
 import { isMissingColumnSchemaCacheError } from '@/lib/supabase-schema-errors';
+import {
+  diffNewActivityEntries,
+  insertTaskActivityLogEntries,
+} from '@/lib/task-activity-log-persist';
 import { taskColumnIsCompletionStatus } from '@/lib/kanban-column-semantic';
 import {
   buildActivityLogForCoreFieldChanges,
@@ -168,6 +172,15 @@ export function useTaskSaveAndCreate({
       assignedTo,
     });
 
+    // Copilot suggestion ignored: field-change activity is inserted into `task_activity_log` via `insertTaskActivityLogEntries`, not `tasks.activity_log`.
+    const persistNewActivity = async (nextActs: typeof nextActivity) => {
+      const delta = diffNewActivityEntries(activityLog, nextActs);
+      const { error: actErr } = await insertTaskActivityLogEntries(supabase, taskId, delta);
+      if (actErr) {
+        console.warn('[useTaskSaveAndCreate] task_activity_log insert failed', actErr.message);
+      }
+    };
+
     const updateWithPriority = {
       title: title.trim(),
       description: description.trim() || null,
@@ -178,7 +191,6 @@ export function useTaskSaveAndCreate({
       ...typeMetaPatch,
       ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
       ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
-      activity_log: nextActivity as unknown as TaskRow['activity_log'],
     };
 
     let { error: uErr } = await supabase.from('tasks').update(updateWithPriority).eq('id', taskId);
@@ -196,7 +208,6 @@ export function useTaskSaveAndCreate({
         assigned_to: assignedTo,
         ...typeMetaPatch,
         ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
-        activity_log: activityWithoutTime as unknown as TaskRow['activity_log'],
       };
       uErr = (await supabase.from('tasks').update(updateNoTime).eq('id', taskId)).error;
       if (!uErr) {
@@ -206,6 +217,7 @@ export function useTaskSaveAndCreate({
             'Scheduled time is not saved yet: apply the scheduled-time migration on Supabase (tasks.scheduled_time), then try again.',
           );
         }
+        await persistNewActivity(activityWithoutTime);
         setActivityLog(asActivityLog(activityWithoutTime));
         setStatus(effectiveStatus);
         setOriginalFromAppliedRow({
@@ -248,7 +260,6 @@ export function useTaskSaveAndCreate({
         visibility,
         assigned_to: assignedTo,
         ...typeMetaPatch,
-        activity_log: activityWithoutSched as unknown as TaskRow['activity_log'],
       };
       uErr = (await supabase.from('tasks').update(updateNoSched).eq('id', taskId)).error;
       if (!uErr) {
@@ -259,6 +270,7 @@ export function useTaskSaveAndCreate({
             'Scheduled date is not saved yet: apply the scheduled-dates migration on Supabase (tasks.scheduled_on), then try again.',
           );
         }
+        await persistNewActivity(activityWithoutSched);
         setActivityLog(asActivityLog(activityWithoutSched));
         setStatus(statusWithoutSavedSchedule);
         setOriginalFromAppliedRow({
@@ -293,11 +305,11 @@ export function useTaskSaveAndCreate({
         ...typeMetaPatch,
         ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
         ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
-        activity_log: activityWithoutPriority as unknown as TaskRow['activity_log'],
       };
       uErr = (await supabase.from('tasks').update(updateWithoutPriority).eq('id', taskId)).error;
       if (!uErr) {
         if (orig && priority !== orig.priority) setPriority(revertedPriority);
+        await persistNewActivity(activityWithoutPriority);
         setActivityLog(asActivityLog(activityWithoutPriority));
         setStatus(effectiveStatus);
         setOriginalFromAppliedRow({
@@ -331,11 +343,11 @@ export function useTaskSaveAndCreate({
         ...typeMetaPatch,
         ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
         ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
-        activity_log: activityWithoutVisibility as unknown as TaskRow['activity_log'],
       };
       uErr = (await supabase.from('tasks').update(updateWithoutVisibility).eq('id', taskId)).error;
       if (!uErr) {
         if (orig && visibility !== orig.visibility) setVisibility(orig.visibility);
+        await persistNewActivity(activityWithoutVisibility);
         setActivityLog(asActivityLog(activityWithoutVisibility));
         setStatus(effectiveStatus);
         setOriginalFromAppliedRow({
@@ -375,6 +387,7 @@ export function useTaskSaveAndCreate({
         toast.error(childErr);
       }
     }
+    await persistNewActivity(nextActivity);
     setActivityLog(asActivityLog(nextActivity));
     setStatus(effectiveStatus);
     setOriginalFromAppliedRow({

@@ -482,6 +482,8 @@ export function KanbanBoard({
   const bubbleId = activeBubble?.id ?? null;
 
   const [columns, setColumns] = useState<Record<string, TaskRow[]>>({});
+  /** Per-task unread comment counts from `task_comment_unread_counts` (merged into cards). */
+  const [commentUnreadByTaskId, setCommentUnreadByTaskId] = useState<Record<string, number>>({});
   /** True while a tasks query for the current bubble is in flight (for trial-bubble generating UI). */
   const [tasksBoardLoading, setTasksBoardLoading] = useState(false);
   const [trialGenerationWaitTimedOut, setTrialGenerationWaitTimedOut] = useState(false);
@@ -505,15 +507,19 @@ export function KanbanBoard({
     ),
   );
   const draggingRef = useRef(false);
+  /** Bumps on each `loadTasks` start so stale async completions cannot overwrite state after bubble/filter changes. */
+  const loadTasksGenerationRef = useRef(0);
   const columnsSnapshotRef = useRef<Record<string, TaskRow[]> | null>(null);
   const columnsRef = useRef(columns);
   columnsRef.current = columns;
 
   const loadTasks = useCallback(async () => {
+    const loadGen = ++loadTasksGenerationRef.current;
     setTasksBoardLoading(true);
     try {
       if (!bubbleId || columnSlugs.length === 0) {
         setColumns(makeEmptyColumns(columnSlugs.length ? columnSlugs : ['todo']));
+        setCommentUnreadByTaskId({});
         return;
       }
       const supabase = createClient();
@@ -521,9 +527,13 @@ export function KanbanBoard({
       const ids = bubbles.map((b) => b.id);
       if (isAll && ids.length === 0) {
         setColumns(makeEmptyColumns(columnSlugs));
+        setCommentUnreadByTaskId({});
         return;
       }
-      let query = supabase.from('tasks').select('*').order('position', { ascending: true });
+      let query = supabase
+        .from('tasks')
+        .select('*, task_subtasks(*)')
+        .order('position', { ascending: true });
       if (isAll) {
         query = query.in('bubble_id', ids);
       } else {
@@ -537,10 +547,12 @@ export function KanbanBoard({
         query = query.or(guestTaskAssignmentVisibilityOr(guestTaskUserId));
       }
       const { data, error: loadErr } = await query;
+      if (loadGen !== loadTasksGenerationRef.current) return;
       if (loadErr) {
         console.error('[KanbanBoard] load tasks failed', supabaseClientErrorMessage(loadErr));
       }
       if (draggingRef.current) return;
+      if (loadGen !== loadTasksGenerationRef.current) return;
       const rows = ((data ?? []) as TaskRow[]).filter((t) => !t.archived_at);
 
       const tz = calendarTimezone?.trim() || null;
@@ -584,6 +596,35 @@ export function KanbanBoard({
       }
 
       setColumns(groupTasksToColumns(toGroup, columnSlugs));
+
+      const taskIds = toGroup.map((t) => t.id);
+      if (loadGen !== loadTasksGenerationRef.current) return;
+      if (taskIds.length === 0) {
+        setCommentUnreadByTaskId({});
+      } else {
+        const { data: unreadRows, error: unreadErr } = await supabase.rpc(
+          'task_comment_unread_counts',
+          {
+            p_task_ids: taskIds,
+          },
+        );
+        if (loadGen !== loadTasksGenerationRef.current) return;
+        if (unreadErr) {
+          console.error(
+            '[KanbanBoard] task_comment_unread_counts failed',
+            supabaseClientErrorMessage(unreadErr),
+          );
+          setCommentUnreadByTaskId({});
+        } else {
+          const next: Record<string, number> = {};
+          for (const row of unreadRows ?? []) {
+            const r = row as { task_id: string; unread_count: number | string | null };
+            const c = Number(r.unread_count);
+            next[r.task_id] = Number.isFinite(c) ? c : 0;
+          }
+          setCommentUnreadByTaskId(next);
+        }
+      }
     } finally {
       setTasksBoardLoading(false);
     }
@@ -1274,6 +1315,7 @@ export function KanbanBoard({
                     cardDensity={cardDensity}
                     workspaceCategory={workspaceCategory}
                     calendarTimezone={tz}
+                    commentUnreadByTaskId={commentUnreadByTaskId}
                     onMoveToBubble={moveTaskToBubble}
                     onOpenTask={onOpenTask}
                     onStartWorkout={onStartWorkout}
@@ -1462,6 +1504,7 @@ type ColumnProps = {
   cardDensity: KanbanCardDensity;
   workspaceCategory: WorkspaceCategory | null;
   calendarTimezone: string;
+  commentUnreadByTaskId: Record<string, number>;
   onMoveToBubble: (taskId: string, targetBubbleId: string) => void;
   onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
   onStartWorkout?: (task: TaskRow) => void;
@@ -1485,6 +1528,7 @@ function KanbanColumn({
   cardDensity,
   workspaceCategory,
   calendarTimezone,
+  commentUnreadByTaskId,
   onMoveToBubble,
   onOpenTask,
   onStartWorkout,
@@ -1559,6 +1603,7 @@ function KanbanColumn({
                         cardDensity={cardDensity}
                         workspaceCategory={workspaceCategory}
                         calendarTimezone={calendarTimezone}
+                        commentUnreadCount={commentUnreadByTaskId[task.id] ?? 0}
                         onMoveToBubble={onMoveToBubble}
                         onOpenTask={onOpenTask}
                         onStartWorkout={onStartWorkout}
@@ -1593,6 +1638,7 @@ type CardProps = {
   cardDensity: KanbanCardDensity;
   workspaceCategory: WorkspaceCategory | null;
   calendarTimezone: string;
+  commentUnreadCount: number;
   onMoveToBubble: (taskId: string, targetBubbleId: string) => void;
   onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
   onStartWorkout?: (task: TaskRow) => void;
@@ -1608,6 +1654,7 @@ function SortableTaskCard({
   cardDensity,
   workspaceCategory,
   calendarTimezone,
+  commentUnreadCount,
   onMoveToBubble,
   onOpenTask,
   onStartWorkout,
@@ -1648,6 +1695,7 @@ function SortableTaskCard({
         density={cardDensity}
         workspaceCategory={workspaceCategory}
         calendarTimezone={calendarTimezone}
+        commentUnreadCount={commentUnreadCount}
         onMoveToBubble={onMoveToBubble}
         onOpenTask={onOpenTask}
         onStartWorkout={onStartWorkout}

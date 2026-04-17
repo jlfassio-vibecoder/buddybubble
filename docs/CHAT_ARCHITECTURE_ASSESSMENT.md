@@ -1,8 +1,8 @@
-# Chat Architecture Assessment (Chat Rail Baseline)
+# Chat Architecture Assessment (Chat Rail — post-refactor)
 
-This report documents the current “Chat Rail” implementation so we can later refactor `TaskModal` Comments to reuse the same system (nested replies + `@` mentions) **while explicitly preventing chat from creating new cards inside the task modal**.
+This document describes the **current** Chat Rail stack after the refactor of `ChatArea.tsx`: shared types, row mapping, a filter-based message hook, and a reusable composer. It still records **database facts** and **product constraints** (for example, TaskModal can turn off “create card” while reusing the same composer contract).
 
-Scope: code + generated DB types + Supabase migrations. No refactor code is proposed here—just baseline facts and implications.
+Scope: code + generated DB types + Supabase migrations. Deeper step-by-step plans live in [`CHAT_AREA_REFACTOR_PLAN.md`](./CHAT_AREA_REFACTOR_PLAN.md) and [`COMPOSER_EXTRACTION_PLAN.md`](./COMPOSER_EXTRACTION_PLAN.md).
 
 ---
 
@@ -19,203 +19,144 @@ The initial `public.messages` table is created in `supabase/migrations/202604041
 - **parent_id**: `uuid` FK → `public.messages(id)` (`on delete set null`)
 - **created_at**: `timestamptz not null default now()`
 
-Then later migrations add:
+Later migrations add:
 
-- **attachments**: `jsonb not null default '[]'::jsonb` via `supabase/migrations/20260414120000_messages_attachments_and_storage.sql`
-- **attached_task_id**: `uuid` FK → `public.tasks(id)` (`on delete set null`) via `supabase/migrations/20260518130000_messages_attached_task_id.sql`
+- **attachments**: `jsonb not null default '[]'::jsonb` — `20260414120000_messages_attachments_and_storage.sql`
+- **attached_task_id**: `uuid` FK → `public.tasks(id)` (`on delete set null`) — `20260518130000_messages_attached_task_id.sql`
+- **target_task_id**: `uuid` FK → `public.tasks(id)` (`on delete cascade`), with RLS/trigger alignment for task-scoped threads — `20260416000000_normalize_task_collections_and_unified_chat.sql` (and follow-ups such as comment counts / views where applicable).
 
-### 1.2 Schema as consumed by the app (generated types)
+### 1.2 Schema as consumed by the app (`src/types/database.ts`)
 
-`src/types/database.ts` currently exposes:
+`Database['public']['Tables']['messages']['Row']` includes at least:
 
-- `Database['public']['Tables']['messages']['Row']` with:
-  - `id: string`
-  - `bubble_id: string`
-  - `user_id: string`
-  - `content: string`
-  - `parent_id: string | null`
-  - `created_at: string`
-  - `attachments: Json`
-  - `attached_task_id: string | null`
+- `id`, `bubble_id`, `user_id`, `content`, `parent_id`, `created_at`
+- `attachments: Json`
+- `attached_task_id: string | null` — “this message **embeds** a Kanban card preview”
+- `target_task_id: string | null` — “this message **belongs to** a task’s comment thread” (still requires a `bubble_id` consistent with that task; enforced in DB)
 
-### 1.3 Nesting/threading model
+### 1.3 Nesting / threading model
 
-**Threading is handled exclusively via `parent_id`.**
+**Threading is still modeled only with `parent_id`.**
 
-- A “root” message is a row with `parent_id = null`.
-- A “reply” is a row with `parent_id = <root_message_id>` (or potentially another reply’s id, but the UI currently treats threads as “parent + replies,” not arbitrary-depth trees).
-- There is **no** `thread_id`, `reply_to_id`, `root_id`, or `path` column today.
+- Root: `parent_id = null`
+- Reply: `parent_id = <parent message id>`
+- The UI remains a **two-level** experience (root feed + `ThreadPanel` for replies), not an arbitrary-depth inline tree.
 
-Implication: Nested replies beyond one level would require either:
+### 1.4 Two different “task” links on a message
 
-- **Schema extension** (e.g. `root_id`, `path`, `depth`) for efficient retrieval/rendering, or
-- Client-side tree build with multiple queries / constraints (harder to do efficiently with PostgREST pagination).
+| Column               | Meaning                                                                                                                                                                                                                                        |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **attached_task_id** | Optional embedded card (`ChatFeedTaskCard`). Used for “create and attach card” and similar flows. PostgREST embed: `tasks!messages_attached_task_id_fkey(*)`.                                                                                  |
+| **target_task_id**   | Optional anchor for **task-scoped** discussion. The rail continues to filter primarily by **bubble** (or all bubbles); `TaskModalCommentsPanel` uses `useMessageThread({ scope: 'task', taskId })` so loads and realtime use `target_task_id`. |
 
-### 1.4 How cards are attached to chat messages
-
-Cards are linked via **`messages.attached_task_id`** (nullable FK to `tasks.id`).
-
-In the UI:
-
-- `ChatArea` uses a PostgREST embed to load the task row when present:
-  - `const MESSAGES_SELECT_WITH_TASK = '*, tasks!messages_attached_task_id_fkey(*)'`
-- Each message is mapped to `ChatMessage.attachedTask` for rendering an embedded card preview (via `ChatFeedTaskCard`).
-
-The “Create and attach card” flow is explicitly built around this link:
-
-- The composer’s “grid” button triggers `onOpenCreateTaskForChat(...)` (parent-owned).
-- After the task is created, it posts a message with `{ attachedTaskId: taskId }` in the insert payload.
-
-This is important for the TaskModal plan: **the chat system already supports “message ↔ task” linking**, but only as “message embeds a task,” not “task has its own message thread” (there is no `target_task_id` / `thread_task_id` today).
+So: the system supports both “message that shows a card” and “message that is a comment on a task,” with different columns.
 
 ### 1.5 `@` mentions storage
 
-There is **no structural mentions column** in `messages`:
-
-- No `mentioned_user_ids` array
-- No `entities` JSON
-- No `mentions` join table
-
-Mentions are currently **presentation-only**, derived by parsing the raw `content` string at render time:
-
-- `ChatArea.renderMessageContent` builds a regex from known workspace member names and wraps `@Name` tokens in a styled `<span>`.
-- Mention suggestions are also client-side: when typing `@` the composer shows a dropdown, but it inserts raw text `@${userName}` into the input.
-
-Result: the app can _display_ highlighted mentions, but it cannot reliably:
-
-- query “messages that mention user X,”
-- notify users based on a normalized mention entity,
-- handle renames robustly (mentions are name-text based).
+Unchanged: **no structural mentions column**. Mentions are plain text in `content`, highlighted at render time (see §2).
 
 ### 1.6 Attachments storage
 
-Message attachments are stored as JSON metadata in `messages.attachments` (array) and files live in a private bucket `message-attachments` with RLS keyed by `{workspace_id}/{message_id}/...` (see `docs/tdd-message-attachments.md` for the design and `20260414120000_messages_attachments_and_storage.sql` for policies).
+Unchanged: JSON on `messages.attachments`, files in the `message-attachments` bucket; see `docs/tdd-message-attachments.md` and the attachments migration.
 
 ---
 
-## 2. The Compose UI
+## 2. Compose UI
 
-### 2.1 Primary input component
+### 2.1 Reusable composer
 
-There is **not** a standalone `ChatInput.tsx` / `ComposeBox.tsx` component.
+The rail and thread reply surfaces use **`RichMessageComposer`** (`src/components/chat/RichMessageComposer.tsx`):
 
-The composer is implemented **inline** inside:
+- Controlled `value` / `onChange(next, { selectionStart })`
+- Optional `@` mentions and `/` task-link pickers via `mentionConfig` / `slashConfig` and `features`
+- Pending files, attach/create-card actions (create card is omitted when the prop is not passed)
+- `density: 'rail' | 'thread'` and optional `popoverContainerRef` for portal-style popovers
 
-- `src/components/chat/ChatArea.tsx` (main channel composer)
-- `src/components/chat/ThreadPanel.tsx` (thread reply composer)
+**`ChatArea`** wires the rail instance: permissions, `pendingFiles`, `sendMessage` from the hook, `handleComposeChatCard`, and `composerPopoverRef`.
 
-Both are standard `<input type=\"text\" ... />` driven by local state.
+**`ThreadPanel`** wires a thread instance with mentions/slash disabled for parity-minimal replies unless you expand props later.
 
-### 2.2 Reusability inside `TaskModal.tsx`
+### 2.2 `ChatArea.tsx` role (orchestration shell)
 
-Today the composer logic is **not drop-in reusable** for TaskModal Comments because `ChatArea` is a large, stateful component coupled to:
+`ChatArea` is no longer the single owner of fetch + realtime + send internals. It still owns **rail-only** concerns:
 
-- workspace/bubble selection (`activeBubble` from `useWorkspaceStore`)
-- “All bubbles” aggregation behavior
-- permissions split: `canPostMessages` vs `canWriteTasks`
-- embedded-card creation (`onOpenCreateTaskForChat`)
-- attachments flow + message storage bucket management
-- mention dropdown UI (workspace members) and `/` task-link dropdown (tasks list)
-- realtime subscriptions and local message caches (`dbMessages`, `userById`)
-- thread panel state (open/close, parent selection)
+- Workspace store: `activeBubble`, `workspaceId`, role, profile overlay for “self” in the directory
+- **`messageThreadFilter`**: `{ scope: 'bubble', bubbleId }` or `{ scope: 'all_bubbles', bubbleIds }` derived from `activeBubble` and `bubbles`
+- **`useMessageThread`** — messages, authors, team list for mentions, `sendMessage`, errors, sending state
+- Search UI, notifications stub/join-request preview, scroll behavior, `ChatMessageRow` mapping, `ThreadPanel`, media modal, task list for `/` **rendering** in `renderMessageContent`
 
-It _is_ extractable, but the current composition suggests that to reuse chat inside `TaskModal`, you’ll likely want to carve out:
+### 2.3 Mention and `/` task link behavior
 
-- **a generic composer component** (UI + keyboard handling + suggestion dropdowns) and
-- **a transport layer/hook** (sendMessage, upload attachments, realtime).
+- **Composer:** inserts `@Name` or `/Task title` text; logic lives in `RichMessageComposer` + `src/lib/chat-composer-tokens.ts` (`lastTaskMentionSlashIndex`).
+- **Feed rendering:** `ChatArea`’s `renderMessageContent` still regex-splits on member names and task titles for the rail (and `TaskModalCommentsPanel` may use a simpler renderer for the modal tab).
 
-### 2.3 Mention support today
+Mentions remain **not queryable as entities** (same limitation as before).
 
-The composer supports `@` mentions in the UX sense:
+### 2.4 Reuse in `TaskModal`
 
-- Typing `@` at a token boundary opens a member dropdown.
-- Selecting a member inserts raw `@Name` into the text input.
-
-However, as noted in §1.5, mentions are **not persisted structurally**—they are only text.
-
-### 2.4 `/` commands scaffolding
-
-There is partial scaffolding, but it is **not a general command system**:
-
-- Typing `/` at a token boundary opens a **task link** picker (it inserts `/${task.title}`).
-- Render-time parsing turns `/Exact Task Title` into a clickable UI element that opens the task.
-
-This behaves like a very specific `/` “entity mention” feature, not a flexible `/command` architecture.
-
-Also: because it matches by **exact title**, it’s fragile under renames and collisions (two tasks with the same title).
+`TaskModalCommentsPanel` uses the same **`useMessageThread`** + **`RichMessageComposer`** + **`ChatMessageRow`** pattern with `filter: { scope: 'task', taskId }` and without the rail’s “create card” action. “Prevent chat from creating new cards inside the task modal” is a **product wiring** choice (omit `onRequestCreateAndAttachCard` / gate `features`), not a separate chat stack.
 
 ---
 
-## 3. Data Fetching & Realtime
+## 3. Data fetching and realtime
 
-### 3.1 How messages are fetched
+### 3.1 Hook: `useMessageThread`
 
-Message loading is done directly inside `ChatArea`:
+**Location:** `src/hooks/useMessageThread.ts`
 
-- `supabase.from('messages').select(MESSAGES_SELECT_WITH_TASK).order('created_at', { ascending: true })`
-- Scoped by:
-  - `eq('bubble_id', bubbleId)` for a single bubble, or
-  - `in('bubble_id', bubbleIds)` for the “All bubbles” aggregate view
+**Inputs:** `filter` (`MessageThreadFilter` from `src/lib/message-thread.ts`), `workspaceId`, `bubbles`, `canPostMessages`.
 
-Users (senders) are then loaded separately from `public.users` by `in('id', ids)` and cached in `userById`.
+**Responsibilities:**
 
-### 3.2 Realtime subscriptions
+- Initial load of `messages` with `MESSAGES_SELECT_WITH_TASK` (defined in `message-thread.ts`), ordered by `created_at`
+- Scope:
+  - **bubble:** `.eq('bubble_id', bubbleId)`
+  - **all_bubbles:** `.in('bubble_id', bubbleIds)`
+  - **task:** `.eq('target_task_id', taskId)` (and resolves the task’s `bubble_id` for inserts)
+- Hydrates `userById` / `teamMembers` for the thread
+- **Realtime:** one channel name from `messageThreadChannelName(filter)`; registers `postgres_changes` on `messages` (and task listeners for embedded card freshness) consistent with the prior `ChatArea` behavior, moved out of the component
+- **`sendMessage`:** validation, insert, attachment pipeline (storage, PDF thumb, video metadata, etc.), optimistic updates — same semantics as before, centralized in the hook
 
-Realtime is also managed in `ChatArea` via a Supabase channel:
+### 3.2 Mapping and shared types
 
-- Subscribes to `messages` INSERT/UPDATE/DELETE with `filter: bubble_id=eq.<id>` (or one subscription per bubble in aggregate view).
-- On INSERT/UPDATE, it fetches an embedded task row if needed (`fetchEmbeddedTaskForMessage`) and merges into `dbMessages`.
+- **`src/types/chat.ts`:** `ChatMessage`, `ChatUserSnapshot`, `SearchMessageJoinRow`, etc.
+- **`src/lib/chat-message-mapper.ts`:** `rowToChatMessage`, `searchJoinRowToChatMessage`
+- **`src/lib/message-thread.ts`:** `MESSAGES_SELECT_WITH_TASK`, `buildReplyCounts`, `fetchEmbeddedTaskForMessage`, filter helpers
 
-Additionally, `ChatArea` subscribes to `tasks` INSERT/UPDATE/DELETE for the same bubble(s) to keep embedded cards in sync even if the message row didn’t change.
+### 3.3 Partitioning keys
 
-### 3.3 Coupling to `workspace_id` / `bubble_id`
-
-The primary chat partition key is **`bubble_id`**.
-
-There is no built-in way to fetch “messages for a task thread” because:
-
-- `messages` has **no** `target_task_id` (or similar)
-- `attached_task_id` is for “message embeds a task,” not “message belongs to task”
-
-Could it be filtered by `attached_task_id`? Yes technically (`eq('attached_task_id', taskId)`), but that would represent **only messages that embed that task**, not a true “task discussion thread.”
-
-Implication for TaskModal Comments: if the goal is “comments are chat messages tied to a task,” you’ll need either:
-
-- a new column on `messages` (e.g. `target_task_id`) and an index, or
-- a join table (message ↔ task), or
-- a dedicated `task_threads` table and reference from messages.
+- **Bubble rail:** primary read/write partition remains **`bubble_id`** (plus synthetic “All Bubbles” = many bubble ids).
+- **Task comments:** **`target_task_id`** on `messages`, with `bubble_id` still set to the task’s bubble for routing and triggers.
 
 ---
 
-## 4. Nesting UI (Threads)
+## 4. Nesting UI (threads)
 
 ### 4.1 Primary renderer
 
-The main feed is rendered directly inside `ChatArea` by mapping `displayMessages` (root messages only):
+- Root list: `displayMessages` = mapped messages without `parentId`
+- Rows: **`ChatMessageRow`** (`src/components/chat/ChatMessageRow.tsx`) for the main feed (and reused from `ThreadPanel` / search patterns where wired)
 
-- `displayMessages = allMessages.filter((m) => !m.parentId)`
-- Reply counts are computed by scanning raw rows: `buildReplyCounts(rows)` increments on `parent_id`.
+### 4.2 `ThreadPanel`
 
-### 4.2 How nesting is visually represented
-
-Nesting is **not rendered inline** as a recursive tree.
-
-Instead:
-
-- Root messages show a “Reply in thread” affordance or a “N replies” button.
-- Clicking opens `ThreadPanel` (a right-side panel) that shows:
-  - the parent message
-  - a flat list of replies (`threadMessages = allMessages.filter((m) => m.parentId === activeThreadParent.id)`)
-  - its own reply composer
-
-This is a **two-level UI model** (parent → replies) even though the DB could technically represent deeper nesting with `parent_id`.
+Still a **side panel**: parent message, flat replies, **`RichMessageComposer`** for replies. Reply counts come from **`buildReplyCounts`** over loaded rows (via hook → `replyCounts` → mapper into `ChatMessage`).
 
 ---
 
-## Key takeaways for “TaskModal Comments → Chat system”
+## 5. Narrow TypeScript scope (optional CI)
 
-- **Schema baseline:** chat messages are in `public.messages` with `parent_id` threads and optional `attached_task_id` embeds. No structural mentions.
-- **Compose is monolithic:** there is no reusable composer component; extracting one is likely prerequisite for embedding chat in TaskModal.
-- **Realtime is bubble-scoped:** current subscriptions and queries are keyed to `bubble_id`; you’ll need a new filter key (e.g. `target_task_id`) for task-centric chat.
-- **Threading exists but is 2-level in UI:** DB supports `parent_id`; UI uses a thread side panel, not recursive inline nesting.
-- **Mentions are text-only:** highlighted via regex on known names; no normalized mention entities.
+`tsconfig.chat.json` includes chat modules, the message hook, mappers, and related types so `npx tsc -p tsconfig.chat.json --noEmit` can validate this slice without pulling the whole app graph.
+
+---
+
+## Key takeaways
+
+| Topic               | Current state                                                                                                                                            |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Schema**          | `messages` has `parent_id`, `attached_task_id`, and **`target_task_id`** for unified task comments; embed select still uses `MESSAGES_SELECT_WITH_TASK`. |
+| **Compose**         | **`RichMessageComposer`** is the shared UI; **`ChatArea`** orchestrates rail-only shell + search + notifications.                                        |
+| **Data path**       | **`useMessageThread(filter)`** owns load, realtime, and **`sendMessage`** for bubble, all-bubbles, and **task** scopes.                                  |
+| **Types / mapping** | **`src/types/chat.ts`** + **`src/lib/chat-message-mapper.ts`** + **`src/lib/message-thread.ts`** replace inline definitions in `ChatArea`.               |
+| **Threading**       | Still two-level UX; DB still single-parent chain via `parent_id`.                                                                                        |
+| **Mentions**        | Still text-only; composer + `renderMessageContent` unchanged in that respect.                                                                            |
+| **TaskModal**       | Same hook/composer/row stack with **`scope: 'task'`**; card creation is optional and typically off in the modal.                                         |

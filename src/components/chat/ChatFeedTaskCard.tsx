@@ -4,7 +4,7 @@ import type { LucideIcon } from 'lucide-react';
 import { normalizeItemType, type TaskRow } from '@/types/database';
 import { getItemTypeVisual, itemTypeUiNoun, type ItemTypeVisual } from '@/lib/item-type-styles';
 import { cn } from '@/lib/utils';
-import type { OpenTaskOptions } from '@/components/modals/TaskModal';
+import type { OpenTaskOptions } from '@/types/open-task-options';
 import type { TaskBubbleUpControlProps } from '@/components/tasks/bubbly-button';
 import { CardTabStrip } from '@/components/tasks/card-tab-strip';
 import { taskCardCoverPath, useTaskCardCoverUrl } from '@/lib/task-card-cover';

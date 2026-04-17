@@ -1,18 +1,15 @@
 'use client';
 
 import type { Dispatch, SetStateAction } from 'react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { createClient } from '@utils/supabase/client';
-import type { TaskRow } from '@/types/database';
+import type { Json, TaskRow } from '@/types/database';
+import { taskActivityLogRowToEntry } from '@/lib/task-activity-log-persist';
 import {
   type TaskActivityEntry,
   type TaskAttachment,
-  type TaskComment,
   type TaskSubtask,
-  asActivityLog,
   asAttachments,
-  asComments,
-  asSubtasks,
 } from '@/types/task-modal';
 import { buildTaskAttachmentObjectPath, TASK_ATTACHMENTS_BUCKET } from '@/lib/task-storage';
 import { formatUserFacingError } from '@/lib/format-error';
@@ -32,131 +29,102 @@ export function useTaskEmbeddedCollections({
   setError,
   setSaving,
 }: UseTaskEmbeddedCollectionsArgs) {
+  // Copilot suggestion ignored: subtasks/activity use `task_subtasks` / `task_activity_log` tables, not dropped JSON columns on `tasks`.
   const [subtasks, setSubtasks] = useState<TaskSubtask[]>([]);
-  const [comments, setComments] = useState<TaskComment[]>([]);
   const [activityLog, setActivityLog] = useState<TaskActivityEntry[]>([]);
   const [attachments, setAttachments] = useState<TaskAttachment[]>([]);
-  const [newComment, setNewComment] = useState('');
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
-  const [commentUserById, setCommentUserById] = useState<
-    Record<string, { displayName: string; avatarUrl: string | null }>
-  >({});
 
   const hydrateFromTaskRow = useCallback((row: TaskRow) => {
-    setSubtasks(asSubtasks(row.subtasks));
-    setComments(asComments(row.comments));
-    setActivityLog(asActivityLog(row.activity_log));
     setAttachments(asAttachments(row.attachments));
+    const r = row as TaskRow & {
+      task_subtasks?: Array<{
+        id: string;
+        title: string;
+        completed: boolean;
+        created_at: string;
+        position: number;
+      }>;
+      task_activity_log?: Array<{
+        id: string;
+        user_id: string | null;
+        action_type: string;
+        payload: Json;
+        created_at: string;
+      }>;
+    };
+    if (r.task_subtasks?.length) {
+      const sorted = [...r.task_subtasks].sort((a, b) => a.position - b.position);
+      setSubtasks(
+        sorted.map((s) => ({
+          id: s.id,
+          title: s.title,
+          done: s.completed,
+          created_at: s.created_at,
+        })),
+      );
+    } else {
+      setSubtasks([]);
+    }
+    if (r.task_activity_log?.length) {
+      const sortedLogs = [...r.task_activity_log].sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+      );
+      setActivityLog(sortedLogs.map((log) => taskActivityLogRowToEntry(log)));
+    } else {
+      setActivityLog([]);
+    }
   }, []);
 
   const resetForCreate = useCallback(() => {
     setSubtasks([]);
-    setComments([]);
-    setCommentUserById({});
     setActivityLog([]);
     setAttachments([]);
-    setNewComment('');
     setNewSubtaskTitle('');
   }, []);
 
-  useEffect(() => {
-    if (!taskId || comments.length === 0) {
-      setCommentUserById({});
-      return;
-    }
-    const ids = [...new Set(comments.map((c) => c.user_id))];
-    let cancelled = false;
-    const supabase = createClient();
-    void supabase
-      .from('users')
-      .select('id, full_name, email, avatar_url')
-      .in('id', ids)
-      .then(({ data }) => {
-        if (cancelled || !data) return;
-        const next: Record<string, { displayName: string; avatarUrl: string | null }> = {};
-        for (const row of data as {
-          id: string;
-          full_name: string | null;
-          email: string | null;
-          avatar_url: string | null;
-        }[]) {
-          const displayName =
-            (row.full_name && row.full_name.trim()) || row.email?.split('@')[0] || 'Member';
-          next[row.id] = { displayName, avatarUrl: row.avatar_url };
-        }
-        setCommentUserById(next);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [taskId, comments]);
-
-  const addComment = useCallback(async () => {
-    if (!canWrite || !taskId || !newComment.trim()) return;
-    const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
-    const next: TaskComment[] = [
-      ...comments,
-      {
-        id: crypto.randomUUID(),
-        user_id: user.id,
-        body: newComment.trim(),
-        created_at: new Date().toISOString(),
-      },
-    ];
-    const { error: uErr } = await supabase
-      .from('tasks')
-      .update({ comments: next as unknown as TaskRow['comments'] })
-      .eq('id', taskId);
-    if (uErr) {
-      setError(formatUserFacingError(uErr));
-      return;
-    }
-    setComments(next);
-    setNewComment('');
-  }, [canWrite, taskId, newComment, comments, setError]);
-
   const addSubtask = useCallback(async () => {
     if (!canWrite || !taskId || !newSubtaskTitle.trim()) return;
-    const next: TaskSubtask[] = [
-      ...subtasks,
-      {
-        id: crypto.randomUUID(),
-        title: newSubtaskTitle.trim(),
-        done: false,
-        created_at: new Date().toISOString(),
-      },
-    ];
     const supabase = createClient();
-    const { error: uErr } = await supabase
-      .from('tasks')
-      .update({ subtasks: next as unknown as TaskRow['subtasks'] })
-      .eq('id', taskId);
-    if (uErr) {
-      setError(formatUserFacingError(uErr));
+    const nextPosition = subtasks.length;
+    const { data: inserted, error: uErr } = await supabase
+      .from('task_subtasks')
+      .insert({
+        task_id: taskId,
+        title: newSubtaskTitle.trim(),
+        completed: false,
+        position: nextPosition,
+      })
+      .select('id, title, completed, created_at')
+      .maybeSingle();
+    if (uErr || !inserted) {
+      setError(formatUserFacingError(uErr ?? new Error('Could not add subtask.')));
       return;
     }
-    setSubtasks(next);
+    const ins = inserted as { id: string; title: string; completed: boolean; created_at: string };
+    setSubtasks([
+      ...subtasks,
+      { id: ins.id, title: ins.title, done: ins.completed, created_at: ins.created_at },
+    ]);
     setNewSubtaskTitle('');
   }, [canWrite, taskId, newSubtaskTitle, subtasks, setError]);
 
   const toggleSubtask = useCallback(
     async (id: string) => {
       if (!canWrite || !taskId) return;
-      const next = subtasks.map((s) => (s.id === id ? { ...s, done: !s.done } : s));
+      const target = subtasks.find((s) => s.id === id);
+      if (!target) return;
+      const nextDone = !target.done;
       const supabase = createClient();
       const { error: uErr } = await supabase
-        .from('tasks')
-        .update({ subtasks: next as unknown as TaskRow['subtasks'] })
-        .eq('id', taskId);
+        .from('task_subtasks')
+        .update({ completed: nextDone })
+        .eq('id', id);
       if (uErr) {
         setError(formatUserFacingError(uErr));
         return;
       }
-      setSubtasks(next);
+      setSubtasks(subtasks.map((s) => (s.id === id ? { ...s, done: nextDone } : s)));
     },
     [canWrite, taskId, subtasks, setError],
   );
@@ -229,16 +197,11 @@ export function useTaskEmbeddedCollections({
 
   return {
     subtasks,
-    comments,
     activityLog,
     setActivityLog,
     attachments,
-    newComment,
-    setNewComment,
     newSubtaskTitle,
     setNewSubtaskTitle,
-    commentUserById,
-    addComment,
     addSubtask,
     toggleSubtask,
     uploadAttachment,

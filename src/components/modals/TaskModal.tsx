@@ -1,16 +1,18 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from 'react';
-import { X } from 'lucide-react';
+import { ListTree, X } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
 import {
   normalizeItemType,
+  type BubbleRow,
   type ItemType,
   type Json,
   type TaskRow,
   type TaskVisibility,
 } from '@/types/database';
-import { WorkoutViewerDialog } from '@/components/fitness/workout-viewer-dialog';
+import { WorkoutViewerContent } from '@/components/fitness/workout-viewer-dialog';
+import { cn } from '@/lib/utils';
 import { useBoardColumnDefs } from '@/hooks/use-board-columns';
 import { useTaskBubbleUps } from '@/hooks/use-task-bubble-ups';
 import { type TaskAttachment, TASK_STATUSES } from '@/types/task-modal';
@@ -105,7 +107,7 @@ export type TaskModalProps = {
   initialViewMode?: TaskModalViewMode;
   /** When true, workout / workout_log opens the exercise editor on the first row (Kanban pencil shortcut). */
   initialAutoEdit?: boolean;
-  /** When true, open WorkoutViewerDialog once the task has viewer content (Kanban quick view). */
+  /** When true, open the unified workout pane once the task has viewer content (Kanban quick view). */
   initialOpenWorkoutViewer?: boolean;
   /** Drives Due by vs Scheduled on labels (`workspaces.category_type`). */
   workspaceCategory?: WorkspaceCategory | null;
@@ -113,6 +115,10 @@ export type TaskModalProps = {
   calendarTimezone?: string | null;
   /** After a successful archive (existing task only); parent should refresh board/calendar lists. */
   onTaskArchived?: () => void;
+  /** After the user views task comments long enough to record `user_task_views` (Kanban unread). */
+  onTaskCommentsMarkedRead?: () => void;
+  /** Bubbles in the active BuddyBubble — used for task-scoped comments (`useMessageThread`). */
+  bubbles: BubbleRow[];
 };
 
 export function TaskModal({
@@ -134,6 +140,8 @@ export function TaskModal({
   workspaceCategory = null,
   calendarTimezone = null,
   onTaskArchived,
+  onTaskCommentsMarkedRead,
+  bubbles,
 }: TaskModalProps) {
   const updateFocus = usePresenceStore((s) => s.updateFocus);
   const activeBubble = useWorkspaceStore((s) => s.activeBubble);
@@ -161,6 +169,12 @@ export function TaskModal({
   const workspaceMembersForAssign = useWorkspaceAssignees(open, workspaceId);
 
   const [tab, setTab] = useState<TabId>('details');
+  /** When comments tab is showing a drilled-down thread (`TaskModalCommentsPanel`). */
+  const [commentsInThreadView, setCommentsInThreadView] = useState(false);
+  /** Below `md`, which pane is visible when the workout split is open. */
+  const [mobileUnifiedPane, setMobileUnifiedPane] = useState<'workout' | 'card'>('workout');
+  const [workoutPaneSyncKey, setWorkoutPaneSyncKey] = useState(0);
+  const prevWorkoutSplitRef = useRef(false);
   const [viewMode, setViewMode] = useState<TaskModalViewMode>('full');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -279,6 +293,10 @@ export function TaskModal({
     setMetadata,
   });
 
+  const showWorkoutSplitPane = Boolean(
+    open && taskId && workoutViewerOpen && hasWorkoutViewerContent && isWorkoutItemType,
+  );
+
   const { aiCardCoverGenerating, generateCardCoverWithAi, resetCardCoverAi } = useTaskCardCoverAi({
     canWrite,
     taskId,
@@ -335,16 +353,11 @@ export function TaskModal({
 
   const {
     subtasks,
-    comments,
     activityLog,
     setActivityLog,
     attachments,
-    newComment,
-    setNewComment,
     newSubtaskTitle,
     setNewSubtaskTitle,
-    commentUserById,
-    addComment,
     addSubtask,
     toggleSubtask,
     uploadAttachment,
@@ -587,13 +600,40 @@ export function TaskModal({
   }, [open, taskId, initialTab, initialViewMode]);
 
   useEffect(() => {
+    if (tab !== 'comments') setCommentsInThreadView(false);
+  }, [tab]);
+
+  useEffect(() => {
+    setCommentsInThreadView(false);
+  }, [taskId]);
+
+  useEffect(() => {
+    if (!open) setCommentsInThreadView(false);
+  }, [open]);
+
+  useEffect(() => {
     setHeroCinematicCollapsed(false);
   }, [open, taskId, cardCoverPath]);
 
-  const selectTab = useCallback((id: TabId) => {
-    setTab(id);
-    setViewMode((prev) => (prev === 'comments-only' && id !== 'comments' ? 'full' : prev));
-  }, []);
+  useEffect(() => {
+    if (showWorkoutSplitPane && !prevWorkoutSplitRef.current) {
+      setWorkoutPaneSyncKey((k) => k + 1);
+      setMobileUnifiedPane('workout');
+    }
+    prevWorkoutSplitRef.current = showWorkoutSplitPane;
+  }, [showWorkoutSplitPane]);
+
+  const selectTab = useCallback(
+    (id: TabId) => {
+      setTab(id);
+      setViewMode((prev) => {
+        if (id === 'comments' && taskId) return 'comments-only';
+        if (prev === 'comments-only' && id !== 'comments') return 'full';
+        return prev;
+      });
+    },
+    [taskId],
+  );
 
   /** Hero stays fixed above this pane; collapse the cinematic cover when the user scrolls the body. */
   const handleTaskModalBodyScroll = useCallback((e: UIEvent<HTMLDivElement>) => {
@@ -619,8 +659,13 @@ export function TaskModal({
     modalSubtitle = `Create ${indefiniteArticleForUiNoun(modalTypeNoun)} ${modalTypeNoun} for this bubble`;
   } else if (taskId) {
     if (tab === 'comments') {
-      modalTitle = 'Comments';
-      modalSubtitle = `Discuss this ${itemTypeNounLower}.`;
+      if (commentsInThreadView) {
+        modalTitle = 'Replies';
+        modalSubtitle = `Thread on this ${itemTypeNounLower}.`;
+      } else {
+        modalTitle = 'Comments';
+        modalSubtitle = `Discuss this ${itemTypeNounLower}.`;
+      }
     } else if (tab === 'subtasks') {
       modalTitle = 'Subtasks';
       modalSubtitle = `Break this ${itemTypeNounLower} down into smaller steps.`;
@@ -767,43 +812,125 @@ export function TaskModal({
 
   /* Task modal must sit above MobileTabBar (z-90) and drawer sheets (z-110–120) or actions are obscured on phones. */
   return (
-    <>
-      <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
-        <button
-          type="button"
-          className="absolute inset-0 bg-black/40"
-          aria-label="Close"
-          onClick={() => onOpenChange(false)}
-        />
-        <div className="relative z-10 flex min-h-0 max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl">
-          {taskId ? (
-            <TaskModalHero
-              title={title}
-              description={description ?? ''}
-              coverPath={cardCoverPath.trim() || null}
-              onClose={() => onOpenChange(false)}
-              compactCinematic={tab !== 'details' || heroCinematicCollapsed}
-            />
-          ) : null}
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/40"
+        aria-label="Close"
+        onClick={() => onOpenChange(false)}
+      />
+      <div
+        className={cn(
+          'relative z-10 flex min-h-0 max-h-[90vh] w-full flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl transition-[max-width] duration-200 ease-out',
+          showWorkoutSplitPane ? 'max-w-6xl' : 'max-w-2xl',
+        )}
+      >
+        {taskId && !showWorkoutSplitPane ? (
+          <TaskModalHero
+            title={title}
+            description={description ?? ''}
+            coverPath={cardCoverPath.trim() || null}
+            onClose={() => onOpenChange(false)}
+            compactCinematic={tab !== 'details' || heroCinematicCollapsed}
+          />
+        ) : null}
 
-          <div className="flex min-h-0 flex-1 flex-col">
-            <div className="flex shrink-0 items-start justify-between border-b border-border px-6 py-4">
-              <div>
+        <div
+          className={cn(
+            'flex min-h-0 flex-1 flex-col',
+            showWorkoutSplitPane && 'md:flex-row md:items-stretch',
+          )}
+        >
+          {showWorkoutSplitPane ? (
+            <div
+              className="flex gap-1 border-b border-border bg-muted/40 px-2 py-2 md:hidden"
+              role="tablist"
+              aria-label="Workout or card"
+            >
+              <button
+                type="button"
+                className={cn(
+                  'flex-1 rounded-md py-2 text-xs font-semibold transition-colors',
+                  mobileUnifiedPane === 'workout'
+                    ? 'bg-card text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:bg-muted/80',
+                )}
+                aria-pressed={mobileUnifiedPane === 'workout'}
+                onClick={() => setMobileUnifiedPane('workout')}
+              >
+                Workout
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  'flex-1 rounded-md py-2 text-xs font-semibold transition-colors',
+                  mobileUnifiedPane === 'card'
+                    ? 'bg-card text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:bg-muted/80',
+                )}
+                aria-pressed={mobileUnifiedPane === 'card'}
+                onClick={() => setMobileUnifiedPane('card')}
+              >
+                Card
+              </button>
+            </div>
+          ) : null}
+          <div
+            className={cn(
+              'flex min-h-0 min-w-0 flex-1 flex-col',
+              showWorkoutSplitPane && mobileUnifiedPane === 'workout' && 'max-md:hidden',
+              showWorkoutSplitPane && 'md:border-r md:border-border',
+              /* Narrow rail for card + comments; workout pane takes remaining width (see sibling). */
+              showWorkoutSplitPane &&
+                'md:max-w-[min(38%,400px)] md:shrink-0 md:basis-[min(32%,340px)] md:grow-0 md:flex-none',
+            )}
+          >
+            <div className="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-border px-6 py-4">
+              <div className="min-w-0 flex-1">
                 <h2 className="text-lg font-bold text-foreground">{modalTitle}</h2>
                 {modalSubtitle ? (
                   <p className="text-xs text-muted-foreground">{modalSubtitle}</p>
                 ) : null}
               </div>
-              {!taskId ? (
-                <button
-                  type="button"
-                  className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  aria-label="Close"
-                  onClick={() => onOpenChange(false)}
-                >
-                  <X className="h-5 w-5" aria-hidden />
-                </button>
-              ) : null}
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                {taskId && hasWorkoutViewerContent && !showWorkoutSplitPane ? (
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    className="gap-2 shadow-sm"
+                    onClick={() => setWorkoutViewerOpen(true)}
+                  >
+                    <ListTree className="size-4 shrink-0" aria-hidden />
+                    Workout viewer
+                  </Button>
+                ) : null}
+                {taskId &&
+                tab === 'comments' &&
+                !commentsInThreadView &&
+                !showWorkoutSplitPane &&
+                !hasWorkoutViewerContent ? (
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    className="shadow-sm"
+                    onClick={() => selectTab('details')}
+                  >
+                    Details
+                  </Button>
+                ) : null}
+                {!taskId || showWorkoutSplitPane ? (
+                  <button
+                    type="button"
+                    className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    aria-label="Close"
+                    onClick={() => onOpenChange(false)}
+                  >
+                    <X className="h-5 w-5" aria-hidden />
+                  </button>
+                ) : null}
+              </div>
             </div>
 
             <div
@@ -817,8 +944,6 @@ export function TaskModal({
                 canWrite={canWrite}
                 visibility={visibility}
                 onVisibilityChange={setVisibility}
-                hasWorkoutViewerContent={hasWorkoutViewerContent}
-                onOpenWorkoutViewer={() => setWorkoutViewerOpen(true)}
                 workoutTitle={title}
                 workoutExercises={workoutExercises}
                 bubbleId={bubbleId}
@@ -993,19 +1118,21 @@ export function TaskModal({
                       </div>
                     )}
 
-                    {tab === 'comments' && (
-                      <TaskModalCommentsPanel
-                        comments={comments}
-                        commentUserById={commentUserById}
-                        newComment={newComment}
-                        onNewCommentChange={setNewComment}
-                        onPostComment={addComment}
-                        canWrite={canWrite}
-                        taskId={taskId}
-                        isCreateMode={isCreateMode}
-                        typeNoun={typeNoun}
-                      />
-                    )}
+                    {tab === 'comments' &&
+                      (taskId ? (
+                        <TaskModalCommentsPanel
+                          taskId={taskId}
+                          workspaceId={workspaceId}
+                          bubbles={bubbles}
+                          canWrite={canWrite}
+                          onThreadViewChange={setCommentsInThreadView}
+                          onMarkedRead={onTaskCommentsMarkedRead}
+                        />
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          Create the {typeNoun} to add comments.
+                        </p>
+                      ))}
 
                     {tab === 'subtasks' && (
                       <TaskModalSubtasksPanel
@@ -1043,21 +1170,34 @@ export function TaskModal({
               </div>
             </div>
           </div>
+          {showWorkoutSplitPane ? (
+            <div
+              className={cn(
+                'flex min-h-0 flex-col md:min-h-0 md:min-w-0 md:flex-1',
+                mobileUnifiedPane === 'workout'
+                  ? 'max-md:flex max-md:flex-1 max-md:min-h-0'
+                  : 'max-md:hidden',
+                'md:flex',
+              )}
+            >
+              <WorkoutViewerContent
+                workoutSet={viewerWorkoutSet}
+                exercises={workoutExercises}
+                title={title}
+                description={description}
+                canWrite={canWrite}
+                workoutUnitSystem={workoutUnitSystem}
+                onApply={handleWorkoutViewerApply}
+                onRequestClose={() => setWorkoutViewerOpen(false)}
+                syncKey={workoutPaneSyncKey}
+                cardCoverPath={cardCoverPath.trim() || null}
+                taskId={taskId}
+                layout="embedded"
+              />
+            </div>
+          ) : null}
         </div>
       </div>
-      <WorkoutViewerDialog
-        open={workoutViewerOpen}
-        onOpenChange={setWorkoutViewerOpen}
-        workoutSet={viewerWorkoutSet}
-        exercises={workoutExercises}
-        title={title}
-        description={description}
-        canWrite={canWrite}
-        workoutUnitSystem={workoutUnitSystem}
-        onApply={handleWorkoutViewerApply}
-        cardCoverPath={cardCoverPath.trim() || null}
-        taskId={taskId}
-      />
-    </>
+    </div>
   );
 }

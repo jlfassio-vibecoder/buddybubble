@@ -40,7 +40,6 @@ import { cn } from '@/lib/utils';
 import { fetchPendingJoinRequestCountAndPreview } from '@/lib/workspace-join-requests';
 import type { JoinRequestPreviewItem } from '@/lib/workspace-join-requests';
 import { useUserProfileStore } from '@/store/userProfileStore';
-import { asComments } from '@/types/task-modal';
 import {
   bubbleSidebarCollapsedStorageKey,
   calendarCollapsedStorageKey,
@@ -231,13 +230,13 @@ export function DashboardShell({
    */
   const calendarRailIsCollapsed = kanbanCollapsed ? false : calendarCollapsed;
 
-  const taskCommentCountsRef = useRef<Map<string, number>>(new Map());
   /** When set, `TaskModal` `onCreated` also runs this (chat: post message with `attached_task_id`). */
   const chatCardOnCreatedRef = useRef<((taskId: string) => void) | null>(null);
   const taskModalForToastRef = useRef<{ open: boolean; taskId: string | null }>({
     open: false,
     taskId: null,
   });
+  const taskCommentToastTitleByIdRef = useRef<Map<string, string>>(new Map());
 
   const activeBubbleIsPrivate = useMemo(() => {
     if (selectedBubbleId === ALL_BUBBLES_BUBBLE_ID) return false;
@@ -426,10 +425,6 @@ export function DashboardShell({
   }, [taskModalOpen, taskModalTaskId]);
 
   useEffect(() => {
-    taskCommentCountsRef.current = new Map();
-  }, [workspaceId]);
-
-  useEffect(() => {
     const myId = profile?.id;
     if (!myId || bubbles.length === 0) return;
 
@@ -437,49 +432,48 @@ export function DashboardShell({
     const channelName = `task-comment-alerts:${workspaceId}:${[...bubbles.map((b) => b.id)].sort().join(',')}`;
     const channel = supabase.channel(channelName);
 
-    const onTaskUpdate = (payload: { new: Record<string, unknown> }) => {
-      const row = payload.new as TaskRow;
-      if (!row?.id) return;
-
-      const list = asComments(row.comments);
-      const next = list.length;
-      const prev = taskCommentCountsRef.current.get(row.id);
-
-      if (prev === undefined) {
-        taskCommentCountsRef.current.set(row.id, next);
-        return;
-      }
-      if (next <= prev) {
-        taskCommentCountsRef.current.set(row.id, next);
-        return;
-      }
-
-      const last = list[list.length - 1];
-      if (last && last.user_id === myId) {
-        taskCommentCountsRef.current.set(row.id, next);
-        return;
-      }
+    const onMessageInsert = (payload: { new: Record<string, unknown> }) => {
+      const row = payload.new as {
+        target_task_id?: string | null;
+        user_id?: string | null;
+      };
+      const taskCommentTaskId = row.target_task_id;
+      if (!taskCommentTaskId || !row.user_id) return;
+      if (row.user_id === myId) return;
 
       const modal = taskModalForToastRef.current;
-      if (modal.open && modal.taskId === row.id) {
-        taskCommentCountsRef.current.set(row.id, next);
-        return;
-      }
+      if (modal.open && modal.taskId === taskCommentTaskId) return;
 
-      taskCommentCountsRef.current.set(row.id, next);
-      setCommentAlert({ taskId: row.id, title: row.title });
+      void (async () => {
+        // Copilot suggestion ignored: titles are cached in `taskCommentToastTitleByIdRef` after the first fetch per taskId (not N+1 per notification burst).
+        const cached = taskCommentToastTitleByIdRef.current.get(taskCommentTaskId);
+        if (cached) {
+          setCommentAlert({ taskId: taskCommentTaskId, title: cached });
+          return;
+        }
+        const s = createClient();
+        const { data: t } = await s
+          .from('tasks')
+          .select('title')
+          .eq('id', taskCommentTaskId)
+          .maybeSingle();
+        const title = (t as { title?: string } | null)?.title;
+        if (!title) return;
+        taskCommentToastTitleByIdRef.current.set(taskCommentTaskId, title);
+        setCommentAlert({ taskId: taskCommentTaskId, title });
+      })();
     };
 
     for (const b of bubbles) {
       channel.on(
         'postgres_changes',
         {
-          event: 'UPDATE',
+          event: 'INSERT',
           schema: 'public',
-          table: 'tasks',
+          table: 'messages',
           filter: `bubble_id=eq.${b.id}`,
         },
-        onTaskUpdate,
+        onMessageInsert,
       );
     }
 
@@ -1058,6 +1052,7 @@ export function DashboardShell({
             taskId={taskModalTaskId}
             bubbleId={resolvedTaskModalBubbleId}
             workspaceId={workspaceId}
+            bubbles={bubbles}
             canWrite={canWriteTasks}
             onCreated={(id) => {
               setTaskModalTaskId(id);
@@ -1077,6 +1072,7 @@ export function DashboardShell({
             workspaceCategory={effectiveKanbanCategory}
             calendarTimezone={workspaceCalendarTz}
             onTaskArchived={bumpTaskViews}
+            onTaskCommentsMarkedRead={bumpTaskViews}
           />
           {workoutPlayerTask && (
             <WorkoutPlayer

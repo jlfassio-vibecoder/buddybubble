@@ -1,9 +1,8 @@
 'use client';
 
-import { Globe, ListTree, Lock } from 'lucide-react';
+import { Globe, Lock } from 'lucide-react';
 import { ItemTypeSelector } from '@/components/board/item-type-selector';
 import { WorkoutPlayerTriggers } from '@/components/fitness/WorkoutPlayer';
-import { Button } from '@/components/ui/button';
 import type { ItemType, TaskVisibility } from '@/types/database';
 import type { WorkoutExercise } from '@/lib/item-metadata';
 
@@ -14,8 +13,6 @@ export type TaskModalEditorChromeProps = {
   canWrite: boolean;
   visibility: TaskVisibility;
   onVisibilityChange: (next: TaskVisibility) => void;
-  hasWorkoutViewerContent: boolean;
-  onOpenWorkoutViewer: () => void;
   workoutTitle: string;
   workoutExercises: WorkoutExercise[];
   bubbleId: string | null;
@@ -32,8 +29,6 @@ export function TaskModalEditorChrome({
   canWrite,
   visibility,
   onVisibilityChange,
-  hasWorkoutViewerContent,
-  onOpenWorkoutViewer,
   workoutTitle,
   workoutExercises,
   bubbleId,
@@ -55,21 +50,7 @@ export function TaskModalEditorChrome({
       </div>
 
       <div className="border-b border-border px-6 py-3" onClickCapture={notifyInteraction}>
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs font-medium text-muted-foreground">Visibility</p>
-          {hasWorkoutViewerContent ? (
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="h-7 gap-1 px-2 text-xs"
-              onClick={onOpenWorkoutViewer}
-            >
-              <ListTree className="h-3 w-3 shrink-0" aria-hidden />
-              Workout viewer
-            </Button>
-          ) : null}
-        </div>
+        <p className="mb-2 text-xs font-medium text-muted-foreground">Visibility</p>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"

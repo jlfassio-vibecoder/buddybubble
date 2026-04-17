@@ -1,13 +1,11 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Send,
   Hash,
   Info,
   Search,
   Bell,
   Star,
-  AtSign,
   X,
   Calendar as CalendarIcon,
   User,
@@ -15,99 +13,37 @@ import {
   Clock,
   Paperclip,
   PanelLeftClose,
-  Zap,
-  Lightbulb,
-  CheckSquare,
   Loader2,
-  LayoutGrid,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabaseClientErrorMessage } from '@/lib/supabase-client-error';
 import { cn } from '@/lib/utils';
 import { formatMessageTimestamp } from '@/lib/message-timestamp';
+import { rowToChatMessage, searchJoinRowToChatMessage } from '@/lib/chat-message-mapper';
 import { createClient } from '@utils/supabase/client';
 import { guestTaskAssignmentVisibilityOr, isGuestWorkspaceRole } from '@/lib/guest-task-query';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useUserProfileStore } from '@/store/userProfileStore';
-import type { BubbleRow, MessageRow, MessageRowWithEmbeddedTask, TaskRow } from '@/types/database';
+import type { BubbleRow, TaskRow } from '@/types/database';
 import {
   ALL_BUBBLES_BUBBLE_ID,
   ALL_BUBBLES_LABEL,
   defaultBubbleIdForWrites,
 } from '@/lib/all-bubbles';
 import type { Database } from '@/types/database';
-import {
-  attachmentsToJson,
-  classifyFileKind,
-  inferMimeFromFileName,
-  parseMessageAttachments,
-  type MessageAttachment,
-} from '@/types/message-attachment';
-import {
-  buildMessageAttachmentObjectPath,
-  MESSAGE_ATTACHMENTS_BUCKET,
-  removeMessageAttachmentPrefix,
-} from '@/lib/message-storage';
-import {
-  MESSAGE_ATTACHMENT_FILE_ACCEPT,
-  validateAttachmentFiles,
-} from '@/lib/message-attachment-limits';
-import { captureVideoPoster, getVideoFileMetadata } from '@/lib/video-poster';
-import { renderPdfFirstPageToJpegBlob } from '@/lib/pdf-page-thumbnail';
-import { formatUserFacingError } from '@/lib/format-error';
+import type { MessageAttachment } from '@/types/message-attachment';
+import type { ChatMessage, ChatUserSnapshot, SearchMessageJoinRow } from '@/types/chat';
+import { MESSAGE_ATTACHMENT_FILE_ACCEPT } from '@/lib/message-attachment-limits';
 import type { JoinRequestPreviewItem } from '@/lib/workspace-join-requests';
 import { ChatFeedTaskCard } from './ChatFeedTaskCard';
+import { ChatMessageRow } from './ChatMessageRow';
+import { RichMessageComposer } from './RichMessageComposer';
 import { ThreadPanel } from './ThreadPanel';
-import { MessageAttachmentThumbnails } from './MessageAttachmentThumbnails';
 import { MessageMediaModal } from './MessageMediaModal';
-import type { OpenTaskOptions } from '@/components/modals/TaskModal';
+import type { OpenTaskOptions } from '@/types/open-task-options';
 import { useTaskBubbleUps } from '@/hooks/use-task-bubble-ups';
-
-type UserRow = Database['public']['Tables']['users']['Row'];
-
-/** Subset of `users` loaded in chat queries/joins — avoids requiring `bio` / `children_names` on partial selects. */
-type ChatUserSnapshot = Pick<UserRow, 'id' | 'full_name' | 'avatar_url' | 'email' | 'created_at'>;
-
-function toChatUserSnapshot(u: {
-  id: string;
-  full_name: string | null;
-  avatar_url: string | null;
-  email: string | null;
-  created_at: string;
-}): ChatUserSnapshot {
-  return {
-    id: u.id,
-    full_name: u.full_name,
-    avatar_url: u.avatar_url,
-    email: u.email,
-    created_at: u.created_at,
-  };
-}
-
-/** Chat row shape used by ChatArea markup */
-export type ChatMessage = {
-  id: string;
-  sender: string;
-  senderAvatar?: string;
-  content: string;
-  timestamp: Date;
-  department: string;
-  attachments?: MessageAttachment[];
-  uid: string;
-  parentId?: string;
-  threadCount?: number;
-  /** Same as `messages.attached_task_id` (raw id for loaders that skip the embed). */
-  attached_task_id?: string | null;
-  /** Left join from `tasks(*)` when present. */
-  attachedTask?: TaskRow | null;
-};
-
-type UserProfile = {
-  id: string;
-  name: string;
-  email: string;
-  avatar?: string;
-};
+import { useMessageThread } from '@/hooks/useMessageThread';
+import { toChatUserSnapshot, type MessageThreadFilter } from '@/lib/message-thread';
 
 type TaskPickerRow = {
   id: string;
@@ -127,34 +63,6 @@ type NotificationStub = {
   timestamp: Date;
   actionHref?: string;
 };
-
-/** PostgREST embed for `messages.attached_task_id` → `tasks` (`messages_attached_task_id_fkey`). */
-const MESSAGES_SELECT_WITH_TASK = '*, tasks!messages_attached_task_id_fkey(*)';
-
-async function fetchEmbeddedTaskForMessage(
-  supabase: ReturnType<typeof createClient>,
-  row: MessageRow,
-): Promise<MessageRowWithEmbeddedTask> {
-  if (!row.attached_task_id) {
-    return { ...row, tasks: null };
-  }
-  const { data } = await supabase
-    .from('tasks')
-    .select('*')
-    .eq('id', row.attached_task_id)
-    .maybeSingle();
-  return { ...row, tasks: (data as TaskRow | null) ?? null };
-}
-
-function buildReplyCounts(rows: readonly Pick<MessageRow, 'parent_id'>[]): Map<string, number> {
-  const m = new Map<string, number>();
-  for (const r of rows) {
-    if (r.parent_id) {
-      m.set(r.parent_id, (m.get(r.parent_id) ?? 0) + 1);
-    }
-  }
-  return m;
-}
 
 /** Parsed search query (same rules as legacy in-memory search). */
 export type ParsedMessageSearch = {
@@ -194,76 +102,12 @@ export function parseSearchFilters(searchQuery: string, searchSender: string): P
   return { cleanQuery, fromOperator, inOperator, hasAttachment };
 }
 
-type SearchMessageJoinRow = MessageRow & {
-  users: { full_name: string | null; avatar_url: string | null };
-  bubbles: { name: string };
-  tasks: TaskRow | null;
-};
-
-function searchJoinRowToChatMessage(
-  row: SearchMessageJoinRow,
-  replyCounts: Map<string, number>,
-): ChatMessage {
-  const user = row.users;
-  const bubbleName = row.bubbles.name;
-  const sender = (user?.full_name && user.full_name.trim()) || 'Member';
-  return {
-    id: row.id,
-    sender,
-    senderAvatar: user?.avatar_url ?? undefined,
-    content: row.content,
-    timestamp: new Date(row.created_at),
-    department: bubbleName,
-    uid: row.user_id,
-    parentId: row.parent_id ?? undefined,
-    threadCount: replyCounts.get(row.id) ?? 0,
-    attachments: parseMessageAttachments(row.attachments),
-    attached_task_id: row.attached_task_id,
-    attachedTask: row.tasks ?? null,
-  };
-}
-
 function dayBoundsIso(searchDate: string): { start: string; end: string } | null {
   if (!searchDate || !/^\d{4}-\d{2}-\d{2}$/.test(searchDate)) return null;
   const [y, mo, d] = searchDate.split('-').map(Number);
   const start = new Date(y, mo - 1, d, 0, 0, 0, 0);
   const end = new Date(y, mo - 1, d, 23, 59, 59, 999);
   return { start: start.toISOString(), end: end.toISOString() };
-}
-
-/** Rightmost `/` that starts a `/task` token (after start or whitespace), not slashes inside e.g. `https://`. */
-function lastTaskMentionSlashIndex(s: string): number {
-  for (let i = s.length - 1; i >= 0; i--) {
-    if (s[i] !== '/') continue;
-    if (i === 0) return 0;
-    const before = s[i - 1];
-    if (before === ' ' || before === '\n' || before === '\r' || before === '\t') return i;
-  }
-  return -1;
-}
-
-function rowToChatMessage(
-  row: MessageRowWithEmbeddedTask,
-  user: ChatUserSnapshot | undefined,
-  bubbleName: string,
-  replyCounts: Map<string, number>,
-): ChatMessage {
-  const sender =
-    (user?.full_name && user.full_name.trim()) || user?.email?.split('@')[0] || 'Member';
-  return {
-    id: row.id,
-    sender,
-    senderAvatar: user?.avatar_url ?? undefined,
-    content: row.content,
-    timestamp: new Date(row.created_at),
-    department: bubbleName,
-    uid: row.user_id,
-    parentId: row.parent_id ?? undefined,
-    threadCount: replyCounts.get(row.id) ?? 0,
-    attachments: parseMessageAttachments(row.attachments),
-    attached_task_id: row.attached_task_id,
-    attachedTask: row.tasks ?? null,
-  };
 }
 
 export type ChatAreaProps = {
@@ -312,12 +156,6 @@ export function ChatArea({
   useEffect(() => {
     latestInputRef.current = input;
   }, [input]);
-  const [mentionSearch, setMentionSearch] = useState('');
-  const [showMentions, setShowMentions] = useState(false);
-  const [mentionIndex, setMentionIndex] = useState(-1);
-  const [taskMentionSearch, setTaskMentionSearch] = useState('');
-  const [showTaskMentions, setShowTaskMentions] = useState(false);
-  const [taskMentionIndex, setTaskMentionIndex] = useState(-1);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchSender, setSearchSender] = useState('');
@@ -331,16 +169,11 @@ export function ChatArea({
   const [searchResults, setSearchResults] = useState<ChatMessage[] | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-  const [attachmentError, setAttachmentError] = useState<string | null>(null);
-  const [sendingAttachments, setSendingAttachments] = useState(false);
   const [mediaModal, setMediaModal] = useState<{
     attachments: MessageAttachment[];
     index: number;
   } | null>(null);
 
-  const [dbMessages, setDbMessages] = useState<MessageRowWithEmbeddedTask[]>([]);
-  const [userById, setUserById] = useState<Record<string, ChatUserSnapshot>>({});
-  const [teamMembers, setTeamMembers] = useState<UserProfile[]>([]);
   const [allTasks, setAllTasks] = useState<TaskPickerRow[]>([]);
 
   const joinRequestNotifications: NotificationStub[] = useMemo(() => {
@@ -368,8 +201,7 @@ export function ChatArea({
   const onMarkNotificationRead = (_id: string) => {};
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const attachmentInputRef = useRef<HTMLInputElement>(null);
+  const composerPopoverRef = useRef<HTMLDivElement>(null);
 
   const bubbleName = activeBubble?.name ?? 'Bubble';
 
@@ -385,15 +217,39 @@ export function ChatArea({
     [bubbles],
   );
 
-  const replyCounts = useMemo(() => buildReplyCounts(dbMessages), [dbMessages]);
+  const messageThreadFilter = useMemo<MessageThreadFilter | null>(() => {
+    if (!activeBubble) return null;
+    if (activeBubble.id === ALL_BUBBLES_BUBBLE_ID) {
+      if (realBubbleIds.length === 0) return null;
+      return { scope: 'all_bubbles', bubbleIds: realBubbleIds };
+    }
+    return { scope: 'bubble', bubbleId: activeBubble.id };
+  }, [activeBubble, realBubbleIds]);
+
+  const {
+    messages,
+    userById,
+    teamMembers,
+    replyCounts,
+    error: messageError,
+    sending: sendingAttachments,
+    sendMessage,
+    clearError,
+    setError,
+  } = useMessageThread({
+    filter: messageThreadFilter,
+    workspaceId,
+    bubbles,
+    canPostMessages,
+  });
 
   const chatBubbleTaskIds = useMemo(() => {
     const s = new Set<string>();
-    for (const m of dbMessages) {
+    for (const m of messages) {
       if (m.attached_task_id) s.add(m.attached_task_id);
     }
     return [...s];
-  }, [dbMessages]);
+  }, [messages]);
 
   const { bubbleUpPropsFor } = useTaskBubbleUps(chatBubbleTaskIds);
 
@@ -411,13 +267,13 @@ export function ChatArea({
   }, [teamMembers, myProfile]);
 
   const allMessages = useMemo(() => {
-    return dbMessages.map((row) => {
+    return messages.map((row) => {
       const base = userById[row.user_id];
       const user: ChatUserSnapshot | undefined =
         myProfile && row.user_id === myProfile.id ? toChatUserSnapshot(myProfile) : base;
       return rowToChatMessage(row, user, bubbleNameById[row.bubble_id] ?? bubbleName, replyCounts);
     });
-  }, [dbMessages, userById, myProfile, bubbleNameById, bubbleName, replyCounts]);
+  }, [messages, userById, myProfile, bubbleNameById, bubbleName, replyCounts]);
 
   const displayMessages = useMemo(() => {
     return allMessages.filter((m) => !m.parentId);
@@ -440,314 +296,13 @@ export function ChatArea({
 
   useEffect(() => {
     if (!activeBubble) {
-      setDbMessages([]);
       setActiveThreadParent(null);
       return;
     }
-    const isAll = activeBubble.id === ALL_BUBBLES_BUBBLE_ID;
-    const bubbleIds = bubbles.map((b) => b.id);
-    if (isAll && bubbleIds.length === 0) {
-      setDbMessages([]);
+    if (activeBubble.id === ALL_BUBBLES_BUBBLE_ID && realBubbleIds.length === 0) {
       setActiveThreadParent(null);
-      return;
     }
-    const bubbleId = activeBubble.id;
-    let cancelled = false;
-    async function load() {
-      const supabase = createClient();
-      let q = supabase
-        .from('messages')
-        .select(MESSAGES_SELECT_WITH_TASK)
-        .order('created_at', { ascending: true });
-      if (isAll) {
-        q = q.in('bubble_id', bubbleIds);
-      } else {
-        q = q.eq('bubble_id', bubbleId);
-      }
-      const { data, error } = await q;
-      if (cancelled || error) return;
-      const rows = (data ?? []) as MessageRowWithEmbeddedTask[];
-      setDbMessages(rows);
-      const ids = [...new Set(rows.map((r) => r.user_id))];
-      if (ids.length === 0) return;
-      const { data: users } = await supabase
-        .from('users')
-        .select('id, full_name, avatar_url, email, created_at')
-        .in('id', ids);
-      if (cancelled) return;
-      setUserById((prev) => {
-        const next = { ...prev };
-        for (const u of users ?? []) {
-          next[u.id] = toChatUserSnapshot(u);
-        }
-        return next;
-      });
-    }
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeBubble?.id, bubbles]);
-
-  useEffect(() => {
-    if (!activeBubble) return;
-    const isAll = activeBubble.id === ALL_BUBBLES_BUBBLE_ID;
-    const bubbleIds = bubbles.map((b) => b.id);
-    if (isAll && bubbleIds.length === 0) return;
-
-    const supabase = createClient();
-    const bubbleId = activeBubble.id;
-    const channelName = isAll
-      ? `messages-rt-all:${[...bubbleIds].sort().join(',')}`
-      : `messages-rt:${bubbleId}`;
-    const channel = supabase.channel(channelName);
-
-    const onInsert = (payload: { new: Record<string, unknown> }) => {
-      const row = payload.new as MessageRow;
-      void (async () => {
-        const supa = createClient();
-        const enriched = await fetchEmbeddedTaskForMessage(supa, row);
-        setDbMessages((prev) => {
-          if (prev.some((m) => m.id === enriched.id)) return prev;
-          return [...prev, enriched].sort(
-            (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-          );
-        });
-        const { data: u } = await supa
-          .from('users')
-          .select('id, full_name, avatar_url, email, created_at')
-          .eq('id', row.user_id)
-          .maybeSingle();
-        if (u) {
-          setUserById((prev) => ({ ...prev, [u.id]: toChatUserSnapshot(u) }));
-        }
-      })();
-    };
-    const onUpdate = (payload: { new: Record<string, unknown> }) => {
-      const row = payload.new as MessageRow;
-      void (async () => {
-        const supa = createClient();
-        const enriched = await fetchEmbeddedTaskForMessage(supa, row);
-        setDbMessages((prev) => prev.map((m) => (m.id === row.id ? enriched : m)));
-      })();
-    };
-    const onDelete = (payload: { old: Record<string, unknown> }) => {
-      const old = payload.old as { id?: string };
-      if (!old?.id) return;
-      setDbMessages((prev) => prev.filter((m) => m.id !== old.id));
-    };
-
-    /** Keep embedded Kanban cards in sync when `tasks` rows change without a `messages` update. */
-    const onTaskInsertOrUpdate = (payload: { new: Record<string, unknown> }) => {
-      const row = payload.new as TaskRow;
-      if (!row?.id) return;
-      setDbMessages((prev) => {
-        if (!prev.some((m) => m.attached_task_id === row.id)) return prev;
-        return prev.map((m) => {
-          if (m.attached_task_id !== row.id) return m;
-          if (row.archived_at) return { ...m, tasks: null };
-          return { ...m, tasks: row };
-        });
-      });
-    };
-
-    const onTaskDelete = (payload: { old: Record<string, unknown> }) => {
-      const oldId = (payload.old as { id?: string })?.id;
-      if (!oldId) return;
-      setDbMessages((prev) => {
-        if (!prev.some((m) => m.attached_task_id === oldId)) return prev;
-        return prev.map((m) => (m.attached_task_id === oldId ? { ...m, tasks: null } : m));
-      });
-    };
-
-    if (isAll) {
-      for (const bid of bubbleIds) {
-        channel.on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'messages',
-            filter: `bubble_id=eq.${bid}`,
-          },
-          onInsert,
-        );
-        channel.on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'messages',
-            filter: `bubble_id=eq.${bid}`,
-          },
-          onUpdate,
-        );
-        channel.on(
-          'postgres_changes',
-          {
-            event: 'DELETE',
-            schema: 'public',
-            table: 'messages',
-            filter: `bubble_id=eq.${bid}`,
-          },
-          onDelete,
-        );
-        channel.on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'tasks',
-            filter: `bubble_id=eq.${bid}`,
-          },
-          onTaskInsertOrUpdate,
-        );
-        channel.on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'tasks',
-            filter: `bubble_id=eq.${bid}`,
-          },
-          onTaskInsertOrUpdate,
-        );
-        channel.on(
-          'postgres_changes',
-          {
-            event: 'DELETE',
-            schema: 'public',
-            table: 'tasks',
-            filter: `bubble_id=eq.${bid}`,
-          },
-          onTaskDelete,
-        );
-      }
-    } else {
-      channel.on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `bubble_id=eq.${bubbleId}`,
-        },
-        onInsert,
-      );
-      channel.on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'messages',
-          filter: `bubble_id=eq.${bubbleId}`,
-        },
-        onUpdate,
-      );
-      channel.on(
-        'postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'messages',
-          filter: `bubble_id=eq.${bubbleId}`,
-        },
-        onDelete,
-      );
-      channel.on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'tasks',
-          filter: `bubble_id=eq.${bubbleId}`,
-        },
-        onTaskInsertOrUpdate,
-      );
-      channel.on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'tasks',
-          filter: `bubble_id=eq.${bubbleId}`,
-        },
-        onTaskInsertOrUpdate,
-      );
-      channel.on(
-        'postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'tasks',
-          filter: `bubble_id=eq.${bubbleId}`,
-        },
-        onTaskDelete,
-      );
-    }
-
-    channel.subscribe();
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [activeBubble?.id, bubbles]);
-
-  useEffect(() => {
-    if (!workspaceId) {
-      setTeamMembers([]);
-      return;
-    }
-    let cancelled = false;
-    async function loadMembers() {
-      const supabase = createClient();
-      const {
-        data: { user: authUser },
-      } = await supabase.auth.getUser();
-      const myId = authUser?.id ?? null;
-      // Copilot suggestion ignored: omitting email from this select needs a redacted profile view/RPC; peers may still read users under existing RLS until then.
-      const { data } = await supabase
-        .from('workspace_members')
-        .select(
-          'user_id, show_email_to_workspace_members, users ( id, full_name, avatar_url, email, created_at )',
-        )
-        .eq('workspace_id', workspaceId);
-      if (cancelled) return;
-      const members: UserProfile[] = [];
-      const fromRows: Record<string, ChatUserSnapshot> = {};
-      for (const row of data ?? []) {
-        const u = (row as { users?: ChatUserSnapshot | ChatUserSnapshot[] | null }).users;
-        const usr = Array.isArray(u) ? u[0] : u;
-        if (!usr?.id) continue;
-        // Auth not resolved yet: do not treat peers as opted-in; hide their emails.
-        const showPeerEmail =
-          myId != null &&
-          (usr.id === myId ||
-            (row as { show_email_to_workspace_members?: boolean })
-              .show_email_to_workspace_members === true);
-        const displayEmail = showPeerEmail ? (usr.email ?? '') : '';
-        const displayName =
-          usr.full_name?.trim() ||
-          (showPeerEmail ? usr.email?.split('@')[0] : undefined)?.trim() ||
-          'Member';
-        members.push({
-          id: usr.id,
-          name: displayName,
-          email: displayEmail,
-          avatar: usr.avatar_url ?? undefined,
-        });
-        fromRows[usr.id] = toChatUserSnapshot({
-          ...usr,
-          email: showPeerEmail ? usr.email : null,
-        });
-      }
-      setTeamMembers(members);
-      setUserById((prev) => ({ ...prev, ...fromRows }));
-    }
-    void loadMembers();
-    return () => {
-      cancelled = true;
-    };
-  }, [workspaceId]);
+  }, [activeBubble, realBubbleIds.length]);
 
   /** Task / feature picker: all tasks in this BuddyBubble (matches legacy global task list for `/…` links). */
   useEffect(() => {
@@ -790,383 +345,21 @@ export function ChatArea({
     };
   }, [workspaceId, bubbles, workspaceRole, myProfile?.id]);
 
-  const sendMessage = useCallback(
-    async (
-      content: string,
-      parentId?: string,
-      files?: File[],
-      options?: { attachedTaskId?: string | null },
-    ): Promise<boolean> => {
-      if (!canPostMessages) {
-        setAttachmentError('You do not have permission to post messages in this channel.');
-        return false;
-      }
-      if (!workspaceId) {
-        setAttachmentError('No socialspace selected.');
-        return false;
-      }
-      const raw = files ?? [];
-      const attachedTaskId = options?.attachedTaskId ?? null;
-      const hasAttachedTask = Boolean(attachedTaskId);
-
-      if (!content.trim() && raw.length === 0 && !hasAttachedTask) return false;
-
-      if (hasAttachedTask && raw.length > 0) {
-        setAttachmentError(
-          'Remove pending attachments before posting a card, or send files separately.',
-        );
-        return false;
-      }
-
-      if (!hasAttachedTask) {
-        if (!content.trim()) {
-          setAttachmentError('Message text is required.');
-          return false;
-        }
-      }
-      const candidates = raw.filter((f) => classifyFileKind(f) !== 'unsupported');
-      const validated = validateAttachmentFiles(candidates);
-      if (!validated.ok) {
-        setAttachmentError(validated.message);
-        return false;
-      }
-      const accepted = validated.files;
-      setAttachmentError(null);
-
-      let targetBubbleId: string | null = null;
-      if (parentId) {
-        const parentRow = dbMessages.find((m) => m.id === parentId);
-        targetBubbleId = parentRow?.bubble_id ?? null;
-      } else if (!activeBubble) {
-        setAttachmentError('Select a bubble to post.');
-        return false;
-      } else if (activeBubble.id === ALL_BUBBLES_BUBBLE_ID) {
-        targetBubbleId = defaultBubbleIdForWrites(bubbles);
-      } else {
-        targetBubbleId = activeBubble.id;
-      }
-      if (!targetBubbleId) {
-        setAttachmentError(
-          parentId
-            ? 'Could not find thread parent. Try closing and reopening the thread.'
-            : 'Add a bubble in this socialspace before posting attachments.',
-        );
-        return false;
-      }
-
-      const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        setAttachmentError('You need to be signed in to send messages.');
-        return false;
-      }
-
-      if (attachedTaskId) {
-        const { data: attachTask, error: attachErr } = await supabase
-          .from('tasks')
-          .select('bubble_id')
-          .eq('id', attachedTaskId)
-          .single();
-        if (attachErr || !attachTask) {
-          setAttachmentError('Could not verify the card for this message.');
-          return false;
-        }
-        if (attachTask.bubble_id !== targetBubbleId) {
-          setAttachmentError('That card belongs to a different bubble than this message.');
-          return false;
-        }
-      }
-
-      setSendingAttachments(true);
-      try {
-        const { data: inserted, error: insErr } = await supabase
-          .from('messages')
-          .insert({
-            bubble_id: targetBubbleId,
-            user_id: user.id,
-            content: content.trim(),
-            parent_id: parentId ?? null,
-            attached_task_id: attachedTaskId,
-          })
-          .select(MESSAGES_SELECT_WITH_TASK)
-          .single();
-
-        if (insErr || !inserted?.id) {
-          console.error(
-            '[ChatArea] message insert',
-            insErr ? supabaseClientErrorMessage(insErr) : 'insert returned no row',
-          );
-          setAttachmentError(
-            insErr ? formatUserFacingError(insErr) : 'Could not create message. Please try again.',
-          );
-          return false;
-        }
-
-        const messageId = inserted.id;
-        const row = inserted as MessageRowWithEmbeddedTask;
-        setDbMessages((prev) => {
-          if (prev.some((m) => m.id === row.id)) return prev;
-          return [...prev, row].sort(
-            (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-          );
-        });
-
-        const abortAttempt = async () => {
-          await removeMessageAttachmentPrefix(supabase, workspaceId, messageId);
-          await supabase.from('messages').delete().eq('id', messageId);
-        };
-
-        const meta: MessageAttachment[] = [];
-
-        for (const file of accepted) {
-          const k = classifyFileKind(file);
-          if (k === 'image' || k === 'document') {
-            const path = buildMessageAttachmentObjectPath(workspaceId, messageId, file.name);
-            const { error: upErr } = await supabase.storage
-              .from(MESSAGE_ATTACHMENTS_BUCKET)
-              .upload(path, file, { cacheControl: '3600', upsert: false });
-            if (upErr) {
-              console.error('[ChatArea] attachment upload', supabaseClientErrorMessage(upErr));
-              setAttachmentError(formatUserFacingError(upErr));
-              await abortAttempt();
-              return false;
-            }
-            const mime =
-              file.type || inferMimeFromFileName(file.name) || 'application/octet-stream';
-            const isPdf = mime === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-            let pdfThumbPath: string | null = null;
-            let pdfW: number | null = null;
-            let pdfH: number | null = null;
-            if (k === 'document' && isPdf) {
-              try {
-                const pdfThumb = await renderPdfFirstPageToJpegBlob(file);
-                const thumbStorePath = buildMessageAttachmentObjectPath(
-                  workspaceId,
-                  messageId,
-                  'pdf-thumb.jpg',
-                );
-                const { error: upPdfThumb } = await supabase.storage
-                  .from(MESSAGE_ATTACHMENTS_BUCKET)
-                  .upload(thumbStorePath, pdfThumb.blob, {
-                    cacheControl: '3600',
-                    upsert: false,
-                    contentType: 'image/jpeg',
-                  });
-                if (!upPdfThumb) {
-                  pdfThumbPath = thumbStorePath;
-                  pdfW = pdfThumb.width;
-                  pdfH = pdfThumb.height;
-                } else {
-                  console.error(
-                    '[ChatArea] pdf thumb upload',
-                    supabaseClientErrorMessage(upPdfThumb),
-                  );
-                }
-              } catch (e) {
-                console.error('[ChatArea] pdf thumb', supabaseClientErrorMessage(e));
-              }
-            }
-            const docImage: MessageAttachment = {
-              id: crypto.randomUUID(),
-              kind: k,
-              path,
-              file_name: file.name,
-              mime_type: mime,
-              size_bytes: file.size,
-              uploaded_at: new Date().toISOString(),
-            };
-            if (pdfThumbPath) {
-              docImage.thumb_path = pdfThumbPath;
-              docImage.width = pdfW;
-              docImage.height = pdfH;
-            }
-            meta.push(docImage);
-          } else if (k === 'video') {
-            const path = buildMessageAttachmentObjectPath(workspaceId, messageId, file.name);
-            const thumbPath = buildMessageAttachmentObjectPath(
-              workspaceId,
-              messageId,
-              'poster.jpg',
-            );
-            const { error: upVid } = await supabase.storage
-              .from(MESSAGE_ATTACHMENTS_BUCKET)
-              .upload(path, file, { cacheControl: '3600', upsert: false });
-            if (upVid) {
-              console.error('[ChatArea] video upload', supabaseClientErrorMessage(upVid));
-              setAttachmentError(formatUserFacingError(upVid));
-              await abortAttempt();
-              return false;
-            }
-
-            let vm: Awaited<ReturnType<typeof getVideoFileMetadata>>;
-            try {
-              vm = await getVideoFileMetadata(file);
-            } catch (e) {
-              console.error('[ChatArea] video metadata', supabaseClientErrorMessage(e));
-              setAttachmentError(e instanceof Error ? e.message : 'Could not read video.');
-              await abortAttempt();
-              return false;
-            }
-
-            const useEdgePoster = process.env.NEXT_PUBLIC_MESSAGE_VIDEO_POSTER_EDGE === '1';
-            let thumb_path = thumbPath;
-            let width = vm.width;
-            let height = vm.height;
-            let duration_sec = vm.duration_sec;
-
-            if (useEdgePoster) {
-              const { data, error: fnErr } = await supabase.functions.invoke(
-                'generate-message-video-poster',
-                {
-                  body: {
-                    workspace_id: workspaceId,
-                    message_id: messageId,
-                    video_path: path,
-                    thumb_path: thumbPath,
-                  },
-                },
-              );
-              const edgePayload = data as { ok?: boolean } | null;
-              const edgeOk = !fnErr && edgePayload?.ok === true;
-
-              if (!edgeOk) {
-                console.error(
-                  '[ChatArea] generate-message-video-poster: fallback to client poster',
-                  fnErr
-                    ? supabaseClientErrorMessage(fnErr)
-                    : 'invoke returned no error but response was not ok',
-                );
-                let poster: Awaited<ReturnType<typeof captureVideoPoster>>;
-                try {
-                  poster = await captureVideoPoster(file);
-                } catch (e) {
-                  console.error('[ChatArea] video poster fallback', supabaseClientErrorMessage(e));
-                  setAttachmentError(e instanceof Error ? e.message : 'Could not read video.');
-                  await abortAttempt();
-                  return false;
-                }
-                const { error: upPoster } = await supabase.storage
-                  .from(MESSAGE_ATTACHMENTS_BUCKET)
-                  .upload(thumbPath, poster.blob, {
-                    cacheControl: '3600',
-                    upsert: false,
-                    contentType: 'image/jpeg',
-                  });
-                if (upPoster) {
-                  console.error('[ChatArea] poster upload', supabaseClientErrorMessage(upPoster));
-                  setAttachmentError(formatUserFacingError(upPoster));
-                  await abortAttempt();
-                  return false;
-                }
-                thumb_path = thumbPath;
-                width = poster.width;
-                height = poster.height;
-                duration_sec = poster.duration_sec;
-              }
-            } else {
-              let poster: Awaited<ReturnType<typeof captureVideoPoster>>;
-              try {
-                poster = await captureVideoPoster(file);
-              } catch (e) {
-                console.error('[ChatArea] video poster', supabaseClientErrorMessage(e));
-                setAttachmentError(e instanceof Error ? e.message : 'Could not read video.');
-                await abortAttempt();
-                return false;
-              }
-              const { error: upPoster } = await supabase.storage
-                .from(MESSAGE_ATTACHMENTS_BUCKET)
-                .upload(thumbPath, poster.blob, {
-                  cacheControl: '3600',
-                  upsert: false,
-                  contentType: 'image/jpeg',
-                });
-              if (upPoster) {
-                console.error('[ChatArea] poster upload', supabaseClientErrorMessage(upPoster));
-                setAttachmentError(formatUserFacingError(upPoster));
-                await abortAttempt();
-                return false;
-              }
-              thumb_path = thumbPath;
-              width = poster.width;
-              height = poster.height;
-              duration_sec = poster.duration_sec;
-            }
-
-            meta.push({
-              id: crypto.randomUUID(),
-              kind: 'video',
-              path,
-              thumb_path,
-              file_name: file.name,
-              mime_type: file.type || inferMimeFromFileName(file.name) || 'video/mp4',
-              size_bytes: file.size,
-              uploaded_at: new Date().toISOString(),
-              width,
-              height,
-              duration_sec,
-            });
-          }
-        }
-
-        if (meta.length > 0) {
-          const attachmentsJson = attachmentsToJson(meta);
-          const { error: updErr } = await supabase
-            .from('messages')
-            .update({ attachments: attachmentsJson })
-            .eq('id', messageId);
-          if (updErr) {
-            console.error(
-              '[ChatArea] message attachments update',
-              supabaseClientErrorMessage(updErr),
-            );
-            setAttachmentError(formatUserFacingError(updErr));
-            await abortAttempt();
-            return false;
-          }
-          setDbMessages((prev) => {
-            const idx = prev.findIndex((m) => m.id === messageId);
-            if (idx === -1) return prev;
-            const next = [...prev];
-            next[idx] = { ...next[idx], attachments: attachmentsJson as MessageRow['attachments'] };
-            return next;
-          });
-        }
-
-        const { data: self } = await supabase
-          .from('users')
-          .select('id, full_name, avatar_url, email, created_at')
-          .eq('id', user.id)
-          .maybeSingle();
-        if (self) {
-          setUserById((prev) => ({ ...prev, [self.id]: toChatUserSnapshot(self) }));
-        }
-        return true;
-      } finally {
-        setSendingAttachments(false);
-      }
-    },
-    [activeBubble, bubbles, canPostMessages, dbMessages, workspaceId],
-  );
-
   const handleComposeChatCard = useCallback(() => {
     if (!canWriteTasks || !onOpenCreateTaskForChat) return;
     if (pendingFiles.length > 0) {
-      setAttachmentError(
-        'Remove pending attachments before posting a card, or send files separately.',
-      );
+      setError('Remove pending attachments before posting a card, or send files separately.');
       return;
     }
-    setAttachmentError(null);
+    setError(null);
 
     let targetBubbleId: string | null = null;
     const threadParentId = activeThreadParent?.id;
     if (threadParentId) {
-      const parentRow = dbMessages.find((m) => m.id === threadParentId);
+      const parentRow = messages.find((m) => m.id === threadParentId);
       targetBubbleId = parentRow?.bubble_id ?? null;
     } else if (!activeBubble) {
-      setAttachmentError('Select a bubble to post.');
+      setError('Select a bubble to post.');
       return;
     } else if (activeBubble.id === ALL_BUBBLES_BUBBLE_ID) {
       targetBubbleId = defaultBubbleIdForWrites(bubbles);
@@ -1174,7 +367,7 @@ export function ChatArea({
       targetBubbleId = activeBubble.id;
     }
     if (!targetBubbleId) {
-      setAttachmentError(
+      setError(
         threadParentId
           ? 'Could not find thread parent. Try closing and reopening the thread.'
           : 'Add a bubble in this socialspace before posting.',
@@ -1192,8 +385,6 @@ export function ChatArea({
           });
           if (ok) {
             setInput('');
-            setShowMentions(false);
-            setShowTaskMentions(false);
           }
         })();
       },
@@ -1203,105 +394,29 @@ export function ChatArea({
     activeThreadParent?.id,
     bubbles,
     canWriteTasks,
-    dbMessages,
+    messages,
     onOpenCreateTaskForChat,
     pendingFiles.length,
     sendMessage,
+    setError,
   ]);
 
   const canPostInComposer =
     !!activeBubble &&
     (activeBubble.id !== ALL_BUBBLES_BUBBLE_ID || defaultBubbleIdForWrites(bubbles) !== null);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setInput(value);
-
-    const cursorPosition = e.target.selectionStart || 0;
-    const textBeforeCursor = value.substring(0, cursorPosition);
-
-    const lastAtSymbol = textBeforeCursor.lastIndexOf('@');
-    if (lastAtSymbol !== -1) {
-      const charBeforeAt = lastAtSymbol > 0 ? textBeforeCursor[lastAtSymbol - 1] : ' ';
-      if (charBeforeAt === ' ' || charBeforeAt === '\n') {
-        const query = textBeforeCursor.substring(lastAtSymbol + 1);
-        if (!query.includes(' ')) {
-          setMentionSearch(query);
-          setShowMentions(true);
-          setMentionIndex(0);
-          setShowTaskMentions(false);
-          return;
-        }
-      }
-    }
-    setShowMentions(false);
-
-    const lastSlashSymbol = lastTaskMentionSlashIndex(textBeforeCursor);
-    if (lastSlashSymbol !== -1) {
-      const query = textBeforeCursor.substring(lastSlashSymbol + 1);
-      if (!query.includes(' ')) {
-        setTaskMentionSearch(query);
-        setShowTaskMentions(true);
-        setTaskMentionIndex(0);
-        return;
-      }
-    }
-    setShowTaskMentions(false);
-  };
-
-  const insertMention = (userName: string) => {
-    const cursorPosition = inputRef.current?.selectionStart || 0;
-    const textBeforeCursor = input.substring(0, cursorPosition);
-    const textAfterCursor = input.substring(cursorPosition);
-    const lastAtSymbol = textBeforeCursor.lastIndexOf('@');
-
-    const newValue =
-      textBeforeCursor.substring(0, lastAtSymbol) + `@${userName} ` + textAfterCursor;
-
-    setInput(newValue);
-    setShowMentions(false);
-    inputRef.current?.focus();
-  };
-
-  const insertTaskMention = (taskTitle: string) => {
-    const cursorPosition = inputRef.current?.selectionStart || 0;
-    const textBeforeCursor = input.substring(0, cursorPosition);
-    const textAfterCursor = input.substring(cursorPosition);
-    const lastSlashSymbol = lastTaskMentionSlashIndex(textBeforeCursor);
-    if (lastSlashSymbol < 0) return;
-
-    const newValue =
-      textBeforeCursor.substring(0, lastSlashSymbol) + `/${taskTitle} ` + textAfterCursor;
-
-    setInput(newValue);
-    setShowTaskMentions(false);
-    inputRef.current?.focus();
-  };
-
-  const handleAttachmentPick = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const incoming = e.target.files;
-    const picked = incoming?.length ? Array.from(incoming) : [];
-    e.target.value = '';
-    if (picked.length === 0) return;
-    setAttachmentError(null);
-    setPendingFiles((prev) => [...prev, ...picked]);
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || sendingAttachments) return;
-    const text = input;
-    const files = [...pendingFiles];
-    const ok = await sendMessage(text, undefined, files);
-    if (!ok) return;
-    setInput('');
-    setPendingFiles([]);
-    setShowMentions(false);
-  };
-
-  const filteredMembers = teamMembersResolved.filter((member) =>
-    member.name.toLowerCase().includes(mentionSearch.toLowerCase()),
+  const richMentionConfig = useMemo(
+    () => ({
+      members: teamMembersResolved.map((m) => ({
+        id: m.id,
+        name: m.name,
+        email: m.email,
+      })),
+    }),
+    [teamMembersResolved],
   );
+
+  const richSlashConfig = useMemo(() => ({ tasks: allTasks }), [allTasks]);
 
   const performSearch = useCallback(
     async (overrides?: { query?: string; sender?: string; date?: string }) => {
@@ -1491,7 +606,10 @@ export function ChatArea({
     return parts;
   };
   return (
-    <div className="relative flex h-full min-h-0 min-w-0 w-full flex-col bg-background">
+    <div
+      ref={composerPopoverRef}
+      className="relative flex h-full min-h-0 min-w-0 w-full flex-col bg-background"
+    >
       {/* Header */}
       <header className="flex shrink-0 flex-col border-b border-border bg-background">
         {workspaceTitle ? (
@@ -1804,80 +922,21 @@ export function ChatArea({
                 key={msg.id}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className={cn(
-                  'flex gap-4 group relative',
-                  activeThreadParent?.id === msg.id && 'bg-primary/15 -mx-6 px-6 py-2',
-                )}
               >
-                <div className="w-10 h-10 rounded-lg bg-primary/15 flex items-center justify-center text-primary font-bold shrink-0 overflow-hidden border border-border">
-                  {msg.senderAvatar ? (
-                    <img
-                      src={msg.senderAvatar}
-                      alt={msg.sender}
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    msg.sender[0]
+                <ChatMessageRow
+                  message={msg}
+                  density="rail"
+                  renderContent={renderMessageContent}
+                  onOpenAttachment={(attachments, index) => setMediaModal({ attachments, index })}
+                  onOpenTask={(taskId, opts) => onOpenTask?.(taskId, opts)}
+                  bubbleUpPropsFor={bubbleUpPropsFor}
+                  onOpenThread={handleOpenThread}
+                  isActiveThreadParent={activeThreadParent?.id === msg.id}
+                  threadUnread={notifications.some(
+                    (n) => n.type === 'thread_reply' && n.relatedId === msg.id && !n.read,
                   )}
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-baseline gap-2">
-                    <span className="font-bold text-foreground">{msg.sender}</span>
-                    {msg.department === ALL_BUBBLES_LABEL && (
-                      <span className="text-[10px] px-1.5 py-0.5 bg-primary/10 text-primary rounded-full font-bold border border-primary/20">
-                        {ALL_BUBBLES_LABEL}
-                      </span>
-                    )}
-                    <span className="text-xs text-muted-foreground">
-                      {formatMessageTimestamp(msg.timestamp)}
-                    </span>
-                  </div>
-                  <div className="text-foreground leading-relaxed mt-0.5">
-                    {renderMessageContent(msg.content)}
-                  </div>
-                  {msg.attachedTask ? (
-                    <ChatFeedTaskCard
-                      task={msg.attachedTask}
-                      onOpenTask={(taskId, opts) => onOpenTask?.(taskId, opts)}
-                      bubbleUp={bubbleUpPropsFor(msg.attachedTask.id)}
-                    />
-                  ) : null}
-                  {msg.attachments && msg.attachments.length > 0 && (
-                    <MessageAttachmentThumbnails
-                      attachments={msg.attachments}
-                      onOpenAttachment={(i) =>
-                        setMediaModal({ attachments: msg.attachments!, index: i })
-                      }
-                    />
-                  )}
-
-                  {/* Thread Indicator */}
-                  {msg.threadCount && msg.threadCount > 0 ? (
-                    <button
-                      onClick={() => handleOpenThread(msg)}
-                      className="mt-2 flex items-center gap-2 text-[10px] font-bold text-primary hover:text-primary transition-colors bg-primary/10 px-2 py-1 rounded-md border border-primary/20"
-                    >
-                      <MessageSquare className="w-3 h-3" />
-                      {msg.threadCount} {msg.threadCount === 1 ? 'reply' : 'replies'}
-                      {notifications.some(
-                        (n) => n.type === 'thread_reply' && n.relatedId === msg.id && !n.read,
-                      ) && (
-                        <span className="animate-pulse rounded-full bg-destructive px-1 py-0.5 text-[7px] font-medium uppercase tracking-tighter text-destructive-foreground">
-                          New
-                        </span>
-                      )}
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => handleOpenThread(msg)}
-                      className="mt-1 opacity-0 group-hover:opacity-100 flex items-center gap-1 text-[10px] font-bold text-muted-foreground hover:text-primary transition-all"
-                    >
-                      <MessageSquare className="w-3 h-3" />
-                      Reply in thread
-                    </button>
-                  )}
-                </div>
+                  showDepartmentBadgeLabel={ALL_BUBBLES_LABEL}
+                />
               </motion.div>
             ))}
           </AnimatePresence>
@@ -1901,105 +960,6 @@ export function ChatArea({
         />
       </div>
 
-      {/* Mention Suggestions */}
-      <AnimatePresence>
-        {showMentions && filteredMembers.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 10, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 10, scale: 0.95 }}
-            className="absolute bottom-24 left-6 z-50 w-64 overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-2xl"
-          >
-            <div className="p-2 bg-muted/70 border-b border-border flex items-center gap-2">
-              <AtSign className="w-3 h-3 text-primary" />
-              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                Mention Team Member
-              </span>
-            </div>
-            <div className="max-h-48 overflow-y-auto custom-scrollbar">
-              {filteredMembers.map((member, idx) => (
-                <button
-                  key={member.id}
-                  onClick={() => insertMention(member.name)}
-                  className={cn(
-                    'w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors',
-                    idx === mentionIndex
-                      ? 'bg-primary/10 text-primary'
-                      : 'hover:bg-muted/70 text-foreground',
-                  )}
-                >
-                  <div className="w-7 h-7 rounded-full bg-primary/15 flex items-center justify-center text-[10px] font-bold text-primary">
-                    {member.name[0]}
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-semibold">{member.name}</span>
-                    <span className="text-[10px] text-muted-foreground">
-                      {member.email || 'Email hidden'}
-                    </span>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </motion.div>
-        )}
-
-        {showTaskMentions && (
-          <motion.div
-            initial={{ opacity: 0, y: 10, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 10, scale: 0.95 }}
-            className="absolute bottom-24 left-6 z-50 w-80 overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-2xl"
-          >
-            <div className="p-2 bg-muted/70 border-b border-border flex items-center gap-2">
-              <Hash className="h-3 w-3 text-[var(--accent-green-text)]" />
-              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                Link card / Feature
-              </span>
-            </div>
-            <div className="max-h-48 overflow-y-auto custom-scrollbar">
-              {allTasks.filter((t) =>
-                t.title.toLowerCase().includes(taskMentionSearch.toLowerCase()),
-              ).length === 0 ? (
-                <div className="p-4 text-center">
-                  <p className="text-xs text-muted-foreground">No cards found</p>
-                </div>
-              ) : (
-                allTasks
-                  .filter((t) => t.title.toLowerCase().includes(taskMentionSearch.toLowerCase()))
-                  .map((task, idx) => (
-                    <button
-                      key={task.id}
-                      onClick={() => insertTaskMention(task.title)}
-                      className={cn(
-                        'w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors',
-                        idx === taskMentionIndex
-                          ? 'bg-[var(--accent-green-bg)] text-[var(--accent-green-text)]'
-                          : 'text-foreground hover:bg-muted/70',
-                      )}
-                    >
-                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-[color:color-mix(in_srgb,var(--accent-green)_22%,transparent)] text-[10px] font-bold text-[var(--accent-green-text)]">
-                        {task.type === 'request' ? (
-                          <Zap className="w-3 h-3" />
-                        ) : task.type === 'idea' ? (
-                          <Lightbulb className="w-3 h-3" />
-                        ) : (
-                          <CheckSquare className="w-3 h-3" />
-                        )}
-                      </div>
-                      <div className="flex flex-col min-w-0">
-                        <span className="text-sm font-semibold truncate">{task.title}</span>
-                        <span className="text-[10px] text-muted-foreground truncate">
-                          {task.status}
-                        </span>
-                      </div>
-                    </button>
-                  ))
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       <MessageMediaModal
         open={mediaModal !== null}
         onOpenChange={(open) => {
@@ -2009,138 +969,49 @@ export function ChatArea({
         initialIndex={mediaModal?.index ?? 0}
       />
 
-      {/* Input */}
-      <div className="p-6 pt-0">
-        <input
-          ref={attachmentInputRef}
-          type="file"
-          className="hidden"
-          multiple
-          accept={MESSAGE_ATTACHMENT_FILE_ACCEPT}
-          onChange={handleAttachmentPick}
-        />
-        {attachmentError && (
-          <p className="mb-2 px-1 text-xs text-destructive" role="alert">
-            {attachmentError}
-          </p>
-        )}
-        {pendingFiles.length > 0 && (
-          <div className="mb-2 flex flex-wrap gap-1.5 px-1">
-            {pendingFiles.map((f, i) => (
-              <span
-                key={`${f.name}-${i}`}
-                className="inline-flex max-w-[200px] items-center gap-1 rounded-md border border-border bg-muted/70 px-2 py-1 text-[10px] text-foreground"
-              >
-                <span className="truncate">{f.name}</span>
-                <button
-                  type="button"
-                  className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                  onClick={() => setPendingFiles((p) => p.filter((_, j) => j !== i))}
-                  aria-label="Remove file"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
-        <form onSubmit={handleSubmit} className="flex items-center gap-2">
-          <button
-            type="button"
-            className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-primary disabled:opacity-30"
-            disabled={!canPostMessages || !canPostInComposer || sendingAttachments}
-            title="Attach image, video, or document"
-            aria-label="Attach file"
-            onClick={() => attachmentInputRef.current?.click()}
-          >
-            <Paperclip className="h-5 w-5" />
-          </button>
-          <button
-            type="button"
-            className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-primary disabled:opacity-30"
-            disabled={
-              !canPostMessages ||
-              !canPostInComposer ||
-              !canWriteTasks ||
-              !onOpenCreateTaskForChat ||
-              pendingFiles.length > 0 ||
-              sendingAttachments
-            }
-            title="Create and attach card"
-            aria-label="Create and attach card"
-            onClick={handleComposeChatCard}
-          >
-            <LayoutGrid className="h-5 w-5" aria-hidden />
-          </button>
-          <div className="relative min-w-0 flex-1">
-            <input
-              ref={inputRef}
-              type="text"
-              value={input}
-              onChange={handleInputChange}
-              onKeyDown={(e) => {
-                if (showMentions && filteredMembers.length > 0) {
-                  if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    setMentionIndex((prev) => (prev + 1) % filteredMembers.length);
-                  } else if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    setMentionIndex(
-                      (prev) => (prev - 1 + filteredMembers.length) % filteredMembers.length,
-                    );
-                  } else if (e.key === 'Enter' || e.key === 'Tab') {
-                    e.preventDefault();
-                    insertMention(filteredMembers[mentionIndex].name);
-                  } else if (e.key === 'Escape') {
-                    setShowMentions(false);
-                  }
-                } else if (showTaskMentions) {
-                  const filtered = allTasks.filter((t) =>
-                    t.title.toLowerCase().includes(taskMentionSearch.toLowerCase()),
-                  );
-                  if (filtered.length > 0) {
-                    if (e.key === 'ArrowDown') {
-                      e.preventDefault();
-                      setTaskMentionIndex((prev) => (prev + 1) % filtered.length);
-                    } else if (e.key === 'ArrowUp') {
-                      e.preventDefault();
-                      setTaskMentionIndex((prev) => (prev - 1 + filtered.length) % filtered.length);
-                    } else if (e.key === 'Enter' || e.key === 'Tab') {
-                      e.preventDefault();
-                      if (filtered[taskMentionIndex]) {
-                        insertTaskMention(filtered[taskMentionIndex].title);
-                      }
-                    }
-                  }
-                  if (e.key === 'Escape') {
-                    setShowTaskMentions(false);
-                  }
-                }
-              }}
-              placeholder={activeBubble ? `Message #${activeBubble.name}` : 'Select a bubble…'}
-              disabled={!canPostMessages || !canPostInComposer || sendingAttachments}
-              className="w-full rounded-xl border border-input bg-background px-4 py-3 pr-12 text-foreground transition-all placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-50"
-            />
-            <button
-              type="submit"
-              disabled={
-                !input.trim() || !canPostMessages || !canPostInComposer || sendingAttachments
-              }
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-primary hover:bg-primary/10 rounded-lg disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-            >
-              {sendingAttachments ? (
-                <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
-              ) : (
-                <Send className="w-5 h-5" />
-              )}
-            </button>
-          </div>
-        </form>
-        <p className="mt-2 px-1 text-[10px] text-muted-foreground">
-          <b>Return</b> to send (after attaching, pick files then send) • <b>Shift + Return</b> for
-          new line • <b>@</b> to mention
-        </p>
-      </div>
+      <RichMessageComposer
+        density="rail"
+        popoverContainerRef={composerPopoverRef}
+        value={input}
+        onChange={(next, _meta) => setInput(next)}
+        onSubmit={async ({ text, files }) => {
+          if ((!text.trim() && (!files || files.length === 0)) || sendingAttachments) return false;
+          const ok = await sendMessage(text, undefined, files);
+          if (!ok) return false;
+          setInput('');
+          setPendingFiles([]);
+          return true;
+        }}
+        pendingFiles={pendingFiles}
+        onPendingFilesChange={setPendingFiles}
+        fileAccept={MESSAGE_ATTACHMENT_FILE_ACCEPT}
+        onAttachmentFilesSelected={() => clearError()}
+        disabled={!canPostMessages || !canPostInComposer || sendingAttachments}
+        isSending={sendingAttachments}
+        canSubmit={
+          (!!input.trim() || pendingFiles.length > 0) && canPostMessages && canPostInComposer
+        }
+        attachDisabled={!canPostMessages || !canPostInComposer || sendingAttachments}
+        createCardDisabled={
+          !canPostMessages ||
+          !canPostInComposer ||
+          !canWriteTasks ||
+          !onOpenCreateTaskForChat ||
+          pendingFiles.length > 0 ||
+          sendingAttachments
+        }
+        placeholder={activeBubble ? `Message #${activeBubble.name}` : 'Select a bubble…'}
+        errorText={messageError}
+        mentionConfig={richMentionConfig}
+        slashConfig={richSlashConfig}
+        onRequestCreateAndAttachCard={handleComposeChatCard}
+        footerHint={
+          <>
+            <b>Return</b> to send (after attaching, pick files then send) • <b>Shift + Return</b>{' '}
+            for new line • <b>@</b> to mention
+          </>
+        }
+      />
     </div>
   );
 }

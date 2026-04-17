@@ -75,9 +75,6 @@ async function insertFallbackTrialWorkoutTask(
     metadata,
     assigned_to: args.userId,
     visibility: 'private',
-    subtasks: [],
-    comments: [],
-    activity_log: [],
     attachments: [],
   });
 
