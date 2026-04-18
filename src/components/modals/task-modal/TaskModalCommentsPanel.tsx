@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from 'react';
+import { ArrowLeft, Sparkles } from 'lucide-react';
 import type { BubbleRow, TaskRow } from '@/types/database';
 import type { MessageAttachment } from '@/types/message-attachment';
 import type { ChatMessage } from '@/types/chat';
@@ -18,6 +18,8 @@ import { MessageMediaModal } from '@/components/chat/MessageMediaModal';
 import { createClient } from '@utils/supabase/client';
 import { supabaseClientErrorMessage } from '@/lib/supabase-client-error';
 import { guestTaskAssignmentVisibilityOr, isGuestWorkspaceRole } from '@/lib/guest-task-query';
+import { Button } from '@/components/ui/button';
+import { PremiumGate } from '@/components/subscription/premium-gate';
 
 type TaskPickerRow = {
   id: string;
@@ -31,10 +33,21 @@ export type TaskModalCommentsPanelProps = {
   workspaceId: string;
   bubbles: BubbleRow[];
   canWrite: boolean;
+  /** Task-scoped `messages.id` to open that comment thread after messages load (replies resolve via `parentId`). */
+  initialCommentThreadMessageId?: string | null;
   /** Notifies parent (e.g. `TaskModal`) to switch chrome title between Comments vs Replies. */
   onThreadViewChange?: (inThread: boolean) => void;
   /** After `user_task_views` is updated (debounced); parent may refresh Kanban unread. */
   onMarkedRead?: () => void;
+  /**
+   * When the hero is hidden (e.g. workout split pane), show a single-row Generate control here.
+   * Otherwise generation is offered from the hero next to the description toggle.
+   */
+  showInlineGenerateWorkout?: boolean;
+  onGenerateWorkout?: () => void;
+  generateWorkoutBusy?: boolean;
+  /** Forwarded from TaskModal so scrolling the message list collapses the cinematic hero. */
+  onMessagesScroll?: (e: UIEvent<HTMLDivElement>) => void;
 };
 
 export function TaskModalCommentsPanel({
@@ -42,8 +55,13 @@ export function TaskModalCommentsPanel({
   workspaceId,
   bubbles,
   canWrite,
+  initialCommentThreadMessageId = null,
   onThreadViewChange,
   onMarkedRead,
+  showInlineGenerateWorkout = false,
+  onGenerateWorkout,
+  generateWorkoutBusy = false,
+  onMessagesScroll,
 }: TaskModalCommentsPanelProps) {
   const myProfile = useUserProfileStore((s) => s.profile);
   const workspaceRole = useWorkspaceStore((s) => s.activeWorkspace?.role ?? null);
@@ -60,6 +78,7 @@ export function TaskModalCommentsPanel({
   const composerPopoverRef = useRef<HTMLDivElement>(null);
   const threadComposerPopoverRef = useRef<HTMLDivElement>(null);
   const threadScrollRef = useRef<HTMLDivElement>(null);
+  const deepLinkConsumedRef = useRef(false);
 
   const chat = useMessageThread({
     filter: { scope: 'task', taskId },
@@ -218,6 +237,23 @@ export function TaskModalCommentsPanel({
     });
   }, [sortedRows, userById, replyCounts, myProfile, bubbleNameById]);
 
+  useEffect(() => {
+    deepLinkConsumedRef.current = false;
+  }, [taskId, initialCommentThreadMessageId]);
+
+  useEffect(() => {
+    const raw = initialCommentThreadMessageId?.trim();
+    if (!raw || isLoading || deepLinkConsumedRef.current) return;
+    const hit = chatMessages.find((m) => m.id === raw);
+    if (!hit) return;
+    const pid = hit.parentId;
+    const threadParent =
+      pid != null && pid !== '' ? (chatMessages.find((m) => m.id === pid) ?? undefined) : hit;
+    if (!threadParent) return;
+    deepLinkConsumedRef.current = true;
+    setActiveThreadParent(threadParent);
+  }, [initialCommentThreadMessageId, isLoading, chatMessages]);
+
   const rootMessages = useMemo(() => chatMessages.filter((m) => !m.parentId), [chatMessages]);
 
   const threadMessages = useMemo(
@@ -249,6 +285,28 @@ export function TaskModalCommentsPanel({
     setActiveThreadParent(msg);
   }, []);
 
+  const inlineGenerateRow =
+    showInlineGenerateWorkout && onGenerateWorkout ? (
+      <div className="shrink-0 border-b border-border px-6 py-1.5">
+        <div className="flex justify-end">
+          <PremiumGate feature="ai" inline>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="h-8 gap-1.5 px-2 text-xs shadow-sm"
+              disabled={generateWorkoutBusy || sending || isLoading}
+              onClick={() => onGenerateWorkout()}
+              title="Build the plan from this card’s title, description, and duration (same as Details → AI workout)."
+            >
+              <Sparkles className="size-3.5 shrink-0" aria-hidden />
+              {generateWorkoutBusy ? 'Generating…' : 'Generate'}
+            </Button>
+          </PremiumGate>
+        </div>
+      </div>
+    ) : null;
+
   return (
     <div className="relative -mx-6 flex min-h-0 flex-1 flex-col">
       <MessageMediaModal
@@ -262,7 +320,11 @@ export function TaskModalCommentsPanel({
 
       {!activeThreadParent ? (
         <>
-          <div className="custom-scrollbar min-h-0 flex-1 space-y-6 overflow-y-auto scroll-smooth px-6 pb-2">
+          {inlineGenerateRow}
+          <div
+            className="custom-scrollbar min-h-0 flex-1 space-y-6 overflow-y-auto scroll-smooth px-6 pb-2"
+            onScroll={onMessagesScroll}
+          >
             {isLoading ? (
               <p className="text-sm text-muted-foreground">Loading comments…</p>
             ) : rootMessages.length === 0 ? (
@@ -328,6 +390,7 @@ export function TaskModalCommentsPanel({
         </>
       ) : (
         <>
+          {inlineGenerateRow}
           <div className="shrink-0 border-b border-border px-6 py-1">
             <button
               type="button"
@@ -342,9 +405,10 @@ export function TaskModalCommentsPanel({
           <div
             ref={threadScrollRef}
             className="custom-scrollbar min-h-0 flex-1 overflow-y-auto scroll-smooth px-6 pb-2 pt-2"
+            onScroll={onMessagesScroll}
           >
-            <div className="mb-4 rounded-xl border border-border bg-muted/35 p-4 shadow-sm ring-1 ring-border/40 dark:bg-muted/20">
-              <p className="mb-3 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <div className="mb-3 rounded-xl border border-border bg-muted/35 p-3 shadow-sm ring-1 ring-border/40 dark:bg-muted/20">
+              <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Original comment
               </p>
               <ChatMessageRow
@@ -356,6 +420,9 @@ export function TaskModalCommentsPanel({
               />
             </div>
             <div className="ml-2 space-y-5 border-l-2 border-primary/25 pl-4">
+              {threadMessages.length === 0 ? (
+                <p className="py-1 text-xs text-muted-foreground">No replies yet.</p>
+              ) : null}
               {threadMessages.map((reply) => (
                 <ChatMessageRow
                   key={reply.id}
@@ -395,7 +462,7 @@ export function TaskModalCommentsPanel({
                 (!!threadDraft.trim() || threadPendingFiles.length > 0) && canWrite && !sending
               }
               attachDisabled={!canWrite || sending}
-              placeholder="Reply to thread…"
+              placeholder="Write a reply…"
               errorText={chat.error}
               features={{ enableAtMentions: false, enableSlashTaskLinks: false }}
             />

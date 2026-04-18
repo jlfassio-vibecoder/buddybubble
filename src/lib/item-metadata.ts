@@ -38,6 +38,10 @@ export type WorkoutExercise = {
   rounds?: number;
   /** Short coach note from AI chain. */
   coach_notes?: string;
+  /** Equipment for this movement (e.g. dumbbell, barbell, suspension trainer). */
+  equipment?: string;
+  /** Injury-aware coaching; highly detailed tier, separate from form_cues. */
+  injury_prevention_tips?: string | string[];
   /** Instructions shown in the player's detailed view. */
   notes?: string;
   /** Optional step-by-step or long-form instructions (detailed player; preferred over `notes` when both exist). */

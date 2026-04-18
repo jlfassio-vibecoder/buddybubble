@@ -38,7 +38,10 @@ export function buildCoachPrompt(
   availableEquipment: string[],
   _hiitMode?: boolean,
   previousPhaseWorkouts?: ProgramSchedule[],
+  options?: { kanbanBriefAuthoritative?: boolean },
 ): string {
+  const briefAuth = !!options?.kanbanBriefAuthoritative;
+
   const daysDescription = patterns.days
     .map((day) => {
       const patternList = day.patterns
@@ -57,11 +60,17 @@ Consider progressing to harder variations or adding volume where appropriate.
 `
       : '';
 
+  const briefEquipmentPreamble = briefAuth
+    ? `The Workout Architect already locked intent to a Kanban/Coach brief. The list below is a CONSTRAINT PHRASE, not a gym catalog—honor only equipment implied by that upstream brief when naming exercises.
+
+`
+    : '';
+
   return `Role: You are the Equipment Coach.
 Task: Fill each movement pattern with a SPECIFIC exercise based on available equipment.
 
 === AVAILABLE EQUIPMENT ===
-${availableEquipment.length > 0 ? availableEquipment.join(', ') : 'Bodyweight only (no equipment)'}
+${briefEquipmentPreamble}${availableEquipment.length > 0 ? availableEquipment.join(', ') : 'Bodyweight only (no equipment)'}
 ${previousPhaseSection}
 === PATTERN SKELETON FROM BIOMECHANIST ===
 ${daysDescription}
@@ -77,7 +86,7 @@ Examples:
 - "Knee Dominant" (compound) + Bodyweight only → "Bodyweight Squats"
 
 Rules:
-1. Only use equipment from the available list
+1. ${briefAuth ? 'Only prescribe tools/modalities consistent with the Kanban workout brief that shaped the architect output (the list above restates that rule—do not invent barbell/rack work if the brief was bands-only).' : 'Only use equipment from the available list'}
 2. Prioritize compound movements for "compound" category
 3. Choose variations appropriate for the equipment
 4. Add notes for any special considerations

@@ -21,6 +21,10 @@ import type {
   Exercise,
   WarmupBlock,
 } from '@/lib/workout-factory/types/ai-program';
+import type {
+  KanbanExtractBriefOutput,
+  KanbanEnrichBiomechanicsOutput,
+} from '@/lib/workout-factory/types/kanban-extract-types';
 
 /** Re-export for consumers. */
 export type { ExerciseBlock, Exercise, WarmupBlock };
@@ -117,6 +121,11 @@ export interface WorkoutPersona {
   amrapDensityOptions?: AmrapDensityOptions;
   tabataBalancedMode?: boolean;
   tabataBalancedOptions?: TabataBalancedOptions;
+  /**
+   * When true (Coach Kanban handoff), Vertex treats `title` + `description` as the strict
+   * prescription brief; profile equipment/goals are secondary safety context only.
+   */
+  kanbanBriefAuthoritative?: boolean;
 }
 
 export interface WorkoutConfig {
@@ -267,7 +276,10 @@ export interface WorkoutMetadata {
   workoutCount?: number;
 }
 
-export interface WorkoutChainMetadata {
+/** Legacy 4-step Vertex chain (Architect → Biomechanist → Coach → Mathematician). */
+export interface WorkoutChainMetadataLegacy {
+  /** Present on new responses; omitted on older saved `ai_workout_factory` metadata. */
+  pipeline?: 'legacy_four_step';
   step1_workout_architect: WorkoutArchitectBlueprint;
   step2_biomechanist: PatternSkeleton;
   step3_coach: ExerciseSelection[];
@@ -276,6 +288,18 @@ export interface WorkoutChainMetadata {
   model_used: string;
   total_tokens?: number;
 }
+
+/** Kanban / Coach authoritative brief: Extract → Enrich (no architect/coach/mathematician steps). */
+export interface WorkoutChainMetadataKanbanExtract {
+  pipeline: 'kanban_extract_enrich';
+  extract_workout_from_brief: KanbanExtractBriefOutput;
+  enrich_workout_biomechanics: KanbanEnrichBiomechanicsOutput;
+  generated_at: string;
+  model_used: string;
+  total_tokens?: number;
+}
+
+export type WorkoutChainMetadata = WorkoutChainMetadataLegacy | WorkoutChainMetadataKanbanExtract;
 
 export interface WorkoutLibraryItem extends WorkoutMetadata {
   id: string;

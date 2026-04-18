@@ -126,6 +126,9 @@ export function DashboardShell({
   const [taskModalViewMode, setTaskModalViewMode] = useState<TaskModalViewMode>('full');
   const [taskModalAutoEdit, setTaskModalAutoEdit] = useState(false);
   const [taskModalOpenWorkoutViewer, setTaskModalOpenWorkoutViewer] = useState(false);
+  const [taskModalCommentThreadMessageId, setTaskModalCommentThreadMessageId] = useState<
+    string | null
+  >(null);
   const [taskModalInitialCreateItemType, setTaskModalInitialCreateItemType] =
     useState<ItemType | null>(null);
   const [taskModalInitialCreateTitle, setTaskModalInitialCreateTitle] = useState<string | null>(
@@ -142,7 +145,11 @@ export function DashboardShell({
   const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false);
   const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false);
   const [fitnessProfileOpen, setFitnessProfileOpen] = useState(false);
-  const [commentAlert, setCommentAlert] = useState<{ taskId: string; title: string } | null>(null);
+  const [commentAlert, setCommentAlert] = useState<{
+    taskId: string;
+    title: string;
+    messageId: string;
+  } | null>(null);
   const [workoutPlayerTask, setWorkoutPlayerTask] = useState<TaskRow | null>(null);
   const [workspaceRailCollapsed, setWorkspaceRailCollapsed] = useState(false);
   const [bubbleSidebarCollapsed, setBubbleSidebarCollapsed] = useState(false);
@@ -307,6 +314,7 @@ export function DashboardShell({
     setTaskModalViewMode(vm);
     setTaskModalAutoEdit(opts?.autoEdit ?? false);
     setTaskModalOpenWorkoutViewer(opts?.openWorkoutViewer === true);
+    setTaskModalCommentThreadMessageId(opts?.commentThreadMessageId?.trim() || null);
     if (vm === 'comments-only' && opts?.tab == null) {
       setTaskModalInitialTab('comments');
     } else {
@@ -333,6 +341,7 @@ export function DashboardShell({
       setTaskModalViewMode('full');
       setTaskModalAutoEdit(false);
       setTaskModalOpenWorkoutViewer(false);
+      setTaskModalCommentThreadMessageId(null);
       setTaskModalTaskId(null);
       setTaskModalInitialCreateItemType(opts?.itemType ?? null);
       setTaskModalInitialCreateTitle(opts?.title ?? null);
@@ -413,6 +422,7 @@ export function DashboardShell({
       setTaskModalViewMode('full');
       setTaskModalAutoEdit(false);
       setTaskModalOpenWorkoutViewer(false);
+      setTaskModalCommentThreadMessageId(null);
       setTaskModalInitialCreateItemType(null);
       setTaskModalInitialCreateTitle(null);
       setTaskModalInitialCreateWorkoutDurationMin(null);
@@ -434,10 +444,12 @@ export function DashboardShell({
 
     const onMessageInsert = (payload: { new: Record<string, unknown> }) => {
       const row = payload.new as {
+        id?: string;
         target_task_id?: string | null;
         user_id?: string | null;
       };
       const taskCommentTaskId = row.target_task_id;
+      const messageId = typeof row.id === 'string' ? row.id : '';
       if (!taskCommentTaskId || !row.user_id) return;
       if (row.user_id === myId) return;
 
@@ -448,7 +460,7 @@ export function DashboardShell({
         // Copilot suggestion ignored: titles are cached in `taskCommentToastTitleByIdRef` after the first fetch per taskId (not N+1 per notification burst).
         const cached = taskCommentToastTitleByIdRef.current.get(taskCommentTaskId);
         if (cached) {
-          setCommentAlert({ taskId: taskCommentTaskId, title: cached });
+          setCommentAlert({ taskId: taskCommentTaskId, title: cached, messageId: messageId || '' });
           return;
         }
         const s = createClient();
@@ -460,7 +472,11 @@ export function DashboardShell({
         const title = (t as { title?: string } | null)?.title;
         if (!title) return;
         taskCommentToastTitleByIdRef.current.set(taskCommentTaskId, title);
-        setCommentAlert({ taskId: taskCommentTaskId, title });
+        setCommentAlert({
+          taskId: taskCommentTaskId,
+          title,
+          messageId: messageId || '',
+        });
       })();
     };
 
@@ -1069,6 +1085,7 @@ export function DashboardShell({
             initialViewMode={taskModalViewMode}
             initialAutoEdit={taskModalAutoEdit}
             initialOpenWorkoutViewer={taskModalOpenWorkoutViewer}
+            initialCommentThreadMessageId={taskModalCommentThreadMessageId}
             workspaceCategory={effectiveKanbanCategory}
             calendarTimezone={workspaceCalendarTz}
             onTaskArchived={bumpTaskViews}
@@ -1155,6 +1172,7 @@ export function DashboardShell({
                   openTaskModal(commentAlert.taskId, {
                     tab: 'comments',
                     viewMode: 'comments-only',
+                    commentThreadMessageId: commentAlert.messageId || undefined,
                   });
                   setCommentAlert(null);
                 }}

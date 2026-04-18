@@ -100,6 +100,13 @@ export interface Database {
           is_admin: boolean;
           /** Bubble Agent service identity; paired with `agent_definitions.auth_user_id`. */
           is_agent: boolean;
+          /**
+           * Trainer-hub global role (`20260619120000_trainer_hub_schema_and_rls`): client | trainer | admin.
+           * Distinct from `workspace_members.role`.
+           */
+          role: string | null;
+          /** Trainer Spoke / hub storefront program ordering (`20260620100000_users_purchased_index`). */
+          purchased_index: number | null;
         };
         Insert: {
           id: string;
@@ -112,6 +119,8 @@ export interface Database {
           created_at?: string;
           is_admin?: boolean;
           is_agent?: boolean;
+          role?: string | null;
+          purchased_index?: number | null;
         };
         Update: Partial<Database['public']['Tables']['users']['Insert']>;
       };
@@ -716,6 +725,411 @@ export interface Database {
         };
         Update: Partial<Database['public']['Tables']['analytics_events']['Insert']>;
       };
+      /** Canonical exercise catalog (SEO slugs, RAG); public SELECT, service_role writes. */
+      exercise_dictionary: {
+        Row: {
+          id: string;
+          slug: string;
+          name: string;
+          complexity_level: string | null;
+          kinetic_chain_type: string | null;
+          status: string;
+          biomechanics: Json;
+          instructions: Json;
+          media: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          slug: string;
+          name: string;
+          complexity_level?: string | null;
+          kinetic_chain_type?: string | null;
+          status?: string;
+          biomechanics?: Json;
+          instructions?: Json;
+          media?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          slug?: string;
+          name?: string;
+          complexity_level?: string | null;
+          kinetic_chain_type?: string | null;
+          status?: string;
+          biomechanics?: Json;
+          instructions?: Json;
+          media?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      /** Hub: week bucket for a challenge (`20260619120000_trainer_hub_schema_and_rls`). */
+      challenge_weeks: {
+        Row: {
+          id: string;
+          challenge_id: string;
+          week_number: number;
+          content: Json | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          challenge_id: string;
+          week_number: number;
+          content?: Json | null;
+          created_at?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['challenge_weeks']['Insert']>;
+      };
+      /** Hub: trainer-authored challenge template. */
+      challenges: {
+        Row: {
+          id: string;
+          title: string;
+          description: string | null;
+          author_id: string;
+          status: string;
+          config: Json | null;
+          chain_metadata: Json | null;
+          hero_image_url: string | null;
+          section_images: Json | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          title: string;
+          description?: string | null;
+          author_id: string;
+          status?: string;
+          config?: Json | null;
+          chain_metadata?: Json | null;
+          hero_image_url?: string | null;
+          section_images?: Json | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['challenges']['Insert']>;
+      };
+      /** Hub: global equipment catalog (RLS: authenticated read, hub admin write). */
+      equipment_inventory: {
+        Row: {
+          id: string;
+          name: string;
+          category: string;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          category: string;
+          created_at?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['equipment_inventory']['Insert']>;
+      };
+      /** Hub: modality / zone presets with equipment id lists. */
+      equipment_zones: {
+        Row: {
+          id: string;
+          name: string;
+          category: string;
+          description: string | null;
+          biomechanical_constraints: string[] | null;
+          equipment_ids: string[] | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          category: string;
+          description?: string | null;
+          biomechanical_constraints?: string[] | null;
+          equipment_ids?: string[] | null;
+          created_at?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['equipment_zones']['Insert']>;
+      };
+      /** Hub: AI / editor WOD drafts (`generated_wods`). */
+      generated_wods: {
+        Row: {
+          id: string;
+          title: string;
+          level: string | null;
+          workout_detail: Json | null;
+          author_id: string | null;
+          created_at: string | null;
+          updated_at: string | null;
+          status: string;
+          name: string | null;
+          genre: string | null;
+          image: string | null;
+          day: string | null;
+          description: string | null;
+          intensity: number;
+          exercise_overrides: Json | null;
+          iteration: Json | null;
+          parameters: Json | null;
+          resolved_format: Json | null;
+          target_volume_minutes: number | null;
+          window_minutes: number | null;
+          rest_load: string | null;
+        };
+        Insert: {
+          id?: string;
+          title: string;
+          level?: string | null;
+          workout_detail?: Json | null;
+          author_id?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+          status?: string;
+          name?: string | null;
+          genre?: string | null;
+          image?: string | null;
+          day?: string | null;
+          description?: string | null;
+          intensity?: number;
+          exercise_overrides?: Json | null;
+          iteration?: Json | null;
+          parameters?: Json | null;
+          resolved_format?: Json | null;
+          target_volume_minutes?: number | null;
+          window_minutes?: number | null;
+          rest_load?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['generated_wods']['Insert']>;
+      };
+      /** Hub: week slice for a program. */
+      program_weeks: {
+        Row: {
+          id: string;
+          program_id: string;
+          week_number: number;
+          content: Json | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          program_id: string;
+          week_number: number;
+          content?: Json | null;
+          created_at?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['program_weeks']['Insert']>;
+      };
+      /** Hub: trainer program template. */
+      programs: {
+        Row: {
+          id: string;
+          trainer_id: string;
+          title: string;
+          description: string | null;
+          difficulty: string | null;
+          duration_weeks: number | null;
+          tags: string[] | null;
+          status: string;
+          is_public: boolean | null;
+          config: Json | null;
+          chain_metadata: Json | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          trainer_id: string;
+          title: string;
+          description?: string | null;
+          difficulty?: string | null;
+          duration_weeks?: number | null;
+          tags?: string[] | null;
+          status?: string;
+          is_public?: boolean | null;
+          config?: Json | null;
+          chain_metadata?: Json | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['programs']['Insert']>;
+      };
+      /** Hub: user enrollment in a challenge. */
+      user_challenges: {
+        Row: {
+          id: string;
+          user_id: string;
+          challenge_id: string;
+          start_date: string | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          challenge_id: string;
+          start_date?: string | null;
+          created_at?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['user_challenges']['Insert']>;
+      };
+      /** Hub: purchased / assigned program instance. */
+      user_programs: {
+        Row: {
+          id: string;
+          user_id: string;
+          program_id: string;
+          start_date: string | null;
+          purchased_at: string | null;
+          status: string | null;
+          source: string;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          program_id: string;
+          start_date?: string | null;
+          purchased_at?: string | null;
+          status?: string | null;
+          source?: string;
+          created_at?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['user_programs']['Insert']>;
+      };
+      /** Hub: per-session completion log (program/week/workout ids as text keys). */
+      user_workout_logs: {
+        Row: {
+          id: string;
+          user_id: string;
+          program_id: string;
+          week_id: string;
+          workout_id: string;
+          date: string;
+          duration_seconds: number;
+          exercises: Json;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          program_id: string;
+          week_id: string;
+          workout_id: string;
+          date: string;
+          duration_seconds?: number;
+          exercises?: Json;
+          created_at?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['user_workout_logs']['Insert']>;
+      };
+      /** Hub: singleton-ish warmup slot config (`id` default `default`). */
+      warmup_config: {
+        Row: {
+          id: string;
+          slots: Json;
+          duration_per_exercise: number;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          slots?: Json;
+          duration_per_exercise?: number;
+          updated_at?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['warmup_config']['Insert']>;
+      };
+      /** Hub: subjective session log (effort / rating / readiness). */
+      workout_logs: {
+        Row: {
+          id: string;
+          user_id: string;
+          workout_id: string | null;
+          workout_name: string;
+          date: string;
+          effort: number;
+          rating: number;
+          notes: string | null;
+          created_at: string | null;
+          readiness_score: number | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          workout_id?: string | null;
+          workout_name: string;
+          date: string;
+          effort: number;
+          rating: number;
+          notes?: string | null;
+          created_at?: string | null;
+          readiness_score?: number | null;
+        };
+        Update: Partial<Database['public']['Tables']['workout_logs']['Insert']>;
+      };
+      /** Hub: published workout set (multi-session JSON). */
+      workout_sets: {
+        Row: {
+          id: string;
+          title: string;
+          description: string | null;
+          author_id: string;
+          status: string;
+          config: Json | null;
+          chain_metadata: Json | null;
+          workouts: Json;
+          workout_count: number;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          title: string;
+          description?: string | null;
+          author_id: string;
+          status?: string;
+          config?: Json | null;
+          chain_metadata?: Json | null;
+          workouts?: Json;
+          workout_count?: number;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['workout_sets']['Insert']>;
+      };
+      /** Hub: workout template row (optional `program_id`). */
+      workouts: {
+        Row: {
+          id: string;
+          program_id: string | null;
+          trainer_id: string;
+          title: string;
+          description: string | null;
+          duration_minutes: number | null;
+          difficulty_level: string | null;
+          blocks: Json | null;
+          status: string | null;
+          scheduled_week: number | null;
+          scheduled_day: number | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          program_id?: string | null;
+          trainer_id: string;
+          title: string;
+          description?: string | null;
+          duration_minutes?: number | null;
+          difficulty_level?: string | null;
+          blocks?: Json | null;
+          status?: string | null;
+          scheduled_week?: number | null;
+          scheduled_day?: number | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['workouts']['Insert']>;
+      };
       agent_definitions: {
         Row: {
           id: string;
@@ -777,6 +1191,15 @@ export interface Database {
         Update: Partial<Database['public']['Tables']['bubble_agent_bindings']['Insert']>;
       };
     };
+    Views: {
+      [_ in never]: never;
+    };
+    Enums: {
+      [_ in never]: never;
+    };
+    CompositeTypes: {
+      [_ in never]: never;
+    };
     Functions: {
       accept_invitation: {
         Args: { p_token: string };
@@ -811,22 +1234,123 @@ export interface Database {
         Args: { p_workspace_id: string };
         Returns: boolean;
       };
+      can_mutate_task_linked_rows: {
+        Args: { _task_id: string };
+        Returns: boolean;
+      };
+      can_view_bubble: {
+        Args: { _bubble_id: string };
+        Returns: boolean;
+      };
+      can_write_bubble: {
+        Args: { _bubble_id: string };
+        Returns: boolean;
+      };
+      can_write_workspace: {
+        Args: { _workspace_id: string };
+        Returns: boolean;
+      };
+      ensure_profile_for_uid: {
+        Args: { _uid: string };
+        Returns: undefined;
+      };
+      is_workspace_admin: {
+        Args: { _workspace_id: string };
+        Returns: boolean;
+      };
+      is_workspace_guest: {
+        Args: { _workspace_id: string };
+        Returns: boolean;
+      };
+      is_workspace_member: {
+        Args: { _workspace_id: string };
+        Returns: boolean;
+      };
+      storage_message_attachment_path_deletable: {
+        Args: { _bucket_id: string; _name: string };
+        Returns: boolean;
+      };
+      storage_message_attachment_path_readable: {
+        Args: { _bucket_id: string; _name: string };
+        Returns: boolean;
+      };
+      storage_message_attachment_path_writable: {
+        Args: { _bucket_id: string; _name: string };
+        Returns: boolean;
+      };
+      storage_task_attachment_path_readable: {
+        Args: { _bucket_id: string; _name: string };
+        Returns: boolean;
+      };
+      storage_task_attachment_path_writable: {
+        Args: { _bucket_id: string; _name: string };
+        Returns: boolean;
+      };
+      task_bubble_id: {
+        Args: { _task_id: string };
+        Returns: string;
+      };
+      workspace_id_for_bubble: {
+        Args: { _bubble_id: string };
+        Returns: string;
+      };
       task_comment_unread_counts: {
         Args: { p_task_ids: string[] };
-        Returns: { task_id: string; unread_count: number }[];
+        Returns: {
+          task_id: string;
+          unread_count: number;
+          latest_unread_message_id: string | null;
+        }[];
       };
       agent_create_card_and_reply: {
         Args: {
           p_trigger_message_id: string;
+          /** Slack thread root for `messages.parent_id` on the agent reply. */
+          p_thread_id: string;
           p_agent_auth_user_id: string;
           p_invoker_user_id: string;
           p_reply_text: string;
-          p_task_title: string;
+          p_create_card: boolean;
+          p_task_title?: string;
           p_task_description?: string | null;
-          p_task_item_type?: string;
+          /** Maps to `tasks.item_type` (e.g. `workout`, `task`, `program`). */
+          p_task_type?: string;
           p_task_status?: string;
+          /** When set with a new task, inserts an agent `messages` row scoped to that task (`target_task_id`). */
+          p_seed_task_comment_text?: string | null;
         };
         Returns: Json;
+      };
+      /** Coach edits an existing task in the bubble + agent thread reply; idempotent per trigger + agent. */
+      agent_update_task_and_reply: {
+        Args: {
+          p_trigger_message_id: string;
+          p_thread_id: string;
+          p_agent_auth_user_id: string;
+          p_invoker_user_id: string;
+          p_target_task_id: string;
+          p_reply_text: string;
+          p_new_title?: string | null;
+          p_new_description?: string | null;
+        };
+        Returns: Json;
+      };
+      /** Batch name match: lower(trim); prefers published, then newest updated_at. Row[] at runtime. */
+      exercise_dictionary_lookup_by_names: {
+        Args: { p_names: string[] };
+        Returns: {
+          id: string;
+          slug: string;
+          name: string;
+          complexity_level: string | null;
+          kinetic_chain_type: string | null;
+          status: string;
+          biomechanics: Json;
+          instructions: Json;
+          media: Json;
+          created_at: string;
+          updated_at: string;
+        }[];
       };
     };
   };
@@ -852,6 +1376,22 @@ export type StripeCustomerRow = Database['public']['Tables']['stripe_customers']
 export type WorkspaceSubscriptionRow =
   Database['public']['Tables']['workspace_subscriptions']['Row'];
 export type AnalyticsEventRow = Database['public']['Tables']['analytics_events']['Row'];
+export type ExerciseDictionaryRow = Database['public']['Tables']['exercise_dictionary']['Row'];
 export type AgentDefinitionRow = Database['public']['Tables']['agent_definitions']['Row'];
 export type AgentMessageRunRow = Database['public']['Tables']['agent_message_runs']['Row'];
 export type BubbleAgentBindingRow = Database['public']['Tables']['bubble_agent_bindings']['Row'];
+
+export type ProgramRow = Database['public']['Tables']['programs']['Row'];
+export type ProgramWeekRow = Database['public']['Tables']['program_weeks']['Row'];
+export type HubWorkoutRow = Database['public']['Tables']['workouts']['Row'];
+export type ChallengeRow = Database['public']['Tables']['challenges']['Row'];
+export type ChallengeWeekRow = Database['public']['Tables']['challenge_weeks']['Row'];
+export type WorkoutLogRow = Database['public']['Tables']['workout_logs']['Row'];
+export type UserWorkoutLogRow = Database['public']['Tables']['user_workout_logs']['Row'];
+export type UserProgramRow = Database['public']['Tables']['user_programs']['Row'];
+export type UserChallengeRow = Database['public']['Tables']['user_challenges']['Row'];
+export type EquipmentInventoryRow = Database['public']['Tables']['equipment_inventory']['Row'];
+export type EquipmentZoneRow = Database['public']['Tables']['equipment_zones']['Row'];
+export type WarmupConfigRow = Database['public']['Tables']['warmup_config']['Row'];
+export type GeneratedWodRow = Database['public']['Tables']['generated_wods']['Row'];
+export type WorkoutSetRow = Database['public']['Tables']['workout_sets']['Row'];

@@ -84,6 +84,9 @@ export type RichMessageComposerProps = {
   footerHint?: ReactNode;
 
   className?: string;
+
+  /** Increment to focus the text input (e.g. after opening a thread from a notification). */
+  focusRequestNonce?: number;
 };
 
 const defaultFeatures: Required<RichMessageComposerFeatures> = {
@@ -115,6 +118,7 @@ export function RichMessageComposer({
   popoverContainerRef,
   footerHint,
   className,
+  focusRequestNonce = 0,
 }: RichMessageComposerProps) {
   const features = { ...defaultFeatures, ...featuresProp };
   const inputRef = useRef<HTMLInputElement>(null);
@@ -154,6 +158,22 @@ export function RichMessageComposer({
       setShowTaskMentions(false);
     }
   }, [value]);
+
+  useEffect(() => {
+    if (!focusRequestNonce || disabled) return;
+    const t = window.setTimeout(() => {
+      const el = inputRef.current;
+      if (!el || el.disabled) return;
+      el.focus();
+      const len = el.value.length;
+      try {
+        el.setSelectionRange(len, len);
+      } catch {
+        /* ignore */
+      }
+    }, 320);
+    return () => window.clearTimeout(t);
+  }, [focusRequestNonce, disabled]);
 
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {

@@ -29,11 +29,11 @@ import {
 } from '@/lib/workout-factory/prompt-chain/step4-workout-mathematician';
 import { normalizeWorkoutSet } from '@/lib/workout-factory/program-schedule-utils';
 import { callVertexAI, getVertexAICredentials } from '@/lib/workout-factory/vertex-ai-client';
-
-export interface WorkoutChainGenerationResponse {
-  workoutSet: WorkoutSetTemplate;
-  chain_metadata: WorkoutChainMetadata;
-}
+import {
+  runExtractAndEnrichChain,
+  useKanbanExtractPipeline,
+} from '@/lib/workout-factory/generate-workout-kanban-extract-runner';
+import type { WorkoutChainGenerationResponse } from '@/lib/workout-factory/workout-chain-response';
 
 export async function runGenerateWorkoutChain(
   rawBody: unknown,
@@ -60,6 +60,12 @@ export async function runGenerateWorkoutChain(
 
   const creds = await getVertexAICredentials('[generate-workout-chain]');
   if ('error' in creds) return { ok: false, response: creds.error };
+
+  if (useKanbanExtractPipeline(persona)) {
+    if (shouldLog) console.warn('[generate-workout-chain] Using Kanban extract & enrich pipeline');
+    return runExtractAndEnrichChain(prepared.data, creds, shouldLog);
+  }
+
   const { projectId, region, accessToken } = creds;
 
   let workoutArchitect: WorkoutArchitectBlueprint;
@@ -90,9 +96,10 @@ export async function runGenerateWorkoutChain(
     if (shouldLog) console.warn('[generate-workout-chain] Step 1: Workout Architect...');
     const step1Prompt =
       step1UserPromptOverride ?? buildWorkoutArchitectPrompt(persona, zoneContext, hiitOptions);
+    const step1System =
+      'You are the Workout Architect (PhD Exercise Physiology). Output ONLY valid JSON.';
     const step1Response = await callVertexAI({
-      systemPrompt:
-        'You are the Workout Architect (PhD Exercise Physiology). Output ONLY valid JSON.',
+      systemPrompt: step1System,
       userPrompt: step1Prompt,
       accessToken,
       projectId,
@@ -165,10 +172,13 @@ export async function runGenerateWorkoutChain(
   const patterns: PatternSkeleton = step2Validation.data;
 
   if (shouldLog) console.warn('[generate-workout-chain] Step 3: Coach...');
-  const step3Prompt = buildCoachPrompt(patterns, availableEquipment, hiitMode);
+  const step3Prompt = buildCoachPrompt(patterns, availableEquipment, hiitMode, undefined, {
+    kanbanBriefAuthoritative: !!persona.kanbanBriefAuthoritative,
+  });
+  const step3System =
+    'You are the Equipment Coach. Select specific exercises based on available equipment. Output ONLY valid JSON.';
   const step3Response = await callVertexAI({
-    systemPrompt:
-      'You are the Equipment Coach. Select specific exercises based on available equipment. Output ONLY valid JSON.',
+    systemPrompt: step3System,
     userPrompt: step3Prompt,
     accessToken,
     projectId,
@@ -255,6 +265,7 @@ export async function runGenerateWorkoutChain(
   });
 
   const chain_metadata: WorkoutChainMetadata = {
+    pipeline: 'legacy_four_step',
     step1_workout_architect: workoutArchitect,
     step2_biomechanist: patterns,
     step3_coach: exercises,

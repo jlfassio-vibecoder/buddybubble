@@ -73,6 +73,8 @@ export type KanbanTaskCardProps = {
   showKanbanCoverToggle?: boolean;
   /** Unread task-scoped messages for current user (`task_comment_unread_counts`); Kanban board only. */
   commentUnreadCount?: number;
+  /** Most recent unread task comment `messages.id` from `task_comment_unread_counts`; Kanban board only. */
+  commentLatestUnreadMessageId?: string | null;
 };
 
 const KANBAN_HIDE_COVER_KEY = 'bb.kanban.hideCardCover';
@@ -157,6 +159,7 @@ function KanbanCardQuickActions({
   task,
   commentCount,
   commentUnreadCount,
+  commentLatestUnreadMessageId,
   onOpenTask,
   onStartWorkout,
 }: {
@@ -164,6 +167,7 @@ function KanbanCardQuickActions({
   task: TaskRow;
   commentCount: number;
   commentUnreadCount: number;
+  commentLatestUnreadMessageId: string | null;
   onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
   onStartWorkout?: (task: TaskRow) => void;
 }) {
@@ -241,7 +245,10 @@ function KanbanCardQuickActions({
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
-              onOpenTask(task.id, { tab: 'comments', viewMode: 'comments-only' });
+              const deepId = commentLatestUnreadMessageId?.trim();
+              const opts: OpenTaskOptions = { tab: 'comments', viewMode: 'comments-only' };
+              if (commentUnreadCount > 0 && deepId) opts.commentThreadMessageId = deepId;
+              onOpenTask(task.id, opts);
             }}
           >
             <MessageCircle className="size-4" aria-hidden />
@@ -279,6 +286,7 @@ export function KanbanTaskCard({
   bubbleUp,
   showKanbanCoverToggle = false,
   commentUnreadCount = 0,
+  commentLatestUnreadMessageId = null,
 }: KanbanTaskCardProps) {
   const subtasks = subtaskProgress(task);
   const itemKind = normalizeItemType(task.item_type);
@@ -495,6 +503,7 @@ export function KanbanTaskCard({
                       task={task}
                       commentCount={commentCount}
                       commentUnreadCount={commentUnreadCount}
+                      commentLatestUnreadMessageId={commentLatestUnreadMessageId}
                       onOpenTask={onOpenTask}
                       onStartWorkout={onStartWorkout}
                     />
@@ -665,6 +674,7 @@ export function KanbanTaskCard({
                           task={task}
                           commentCount={commentCount}
                           commentUnreadCount={commentUnreadCount}
+                          commentLatestUnreadMessageId={commentLatestUnreadMessageId}
                           onOpenTask={onOpenTask}
                           onStartWorkout={onStartWorkout}
                         />

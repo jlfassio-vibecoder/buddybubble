@@ -14,6 +14,8 @@ export type ChatFeedTaskCardProps = {
   /** Opens TaskModal; optional `tab` matches the board card tab strip. */
   onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
   bubbleUp?: Omit<TaskBubbleUpControlProps, 'density'>;
+  /** Bubble `messages.id` for this embed (coach reply in thread); enables task comment thread deep-link. */
+  hostBubbleMessageId?: string | null;
 };
 
 function ChatFeedCardHeader({
@@ -112,7 +114,12 @@ function ChatFeedCardHeader({
 /**
  * Read-only Kanban card preview for the Messages rail (“tweet” embed).
  */
-export function ChatFeedTaskCard({ task, onOpenTask, bubbleUp }: ChatFeedTaskCardProps) {
+export function ChatFeedTaskCard({
+  task,
+  onOpenTask,
+  bubbleUp,
+  hostBubbleMessageId = null,
+}: ChatFeedTaskCardProps) {
   if (!task) {
     return null;
   }
@@ -123,7 +130,13 @@ export function ChatFeedTaskCard({ task, onOpenTask, bubbleUp }: ChatFeedTaskCar
   const noun = itemTypeUiNoun(itemType);
   const typeLabel = noun.charAt(0).toUpperCase() + noun.slice(1);
 
-  const openDefault = () => onOpenTask?.(task.id);
+  const anchorOpts = (): Pick<OpenTaskOptions, 'taskCommentAnchorBubbleMessageId'> => {
+    const id = hostBubbleMessageId?.trim();
+    return id ? { taskCommentAnchorBubbleMessageId: id } : {};
+  };
+
+  const openDefault = () =>
+    onOpenTask?.(task.id, { tab: 'comments', viewMode: 'full', ...anchorOpts() });
 
   return (
     <div
@@ -162,6 +175,7 @@ export function ChatFeedTaskCard({ task, onOpenTask, bubbleUp }: ChatFeedTaskCar
             onOpenTask={onOpenTask}
             bubbleUp={bubbleUp}
             bubblyDensity="default"
+            taskCommentAnchorBubbleMessageId={hostBubbleMessageId}
           />
         </div>
       ) : null}

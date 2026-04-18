@@ -484,6 +484,9 @@ export function KanbanBoard({
   const [columns, setColumns] = useState<Record<string, TaskRow[]>>({});
   /** Per-task unread comment counts from `task_comment_unread_counts` (merged into cards). */
   const [commentUnreadByTaskId, setCommentUnreadByTaskId] = useState<Record<string, number>>({});
+  const [commentLatestUnreadMessageIdByTaskId, setCommentLatestUnreadMessageIdByTaskId] = useState<
+    Record<string, string | null>
+  >({});
   /** True while a tasks query for the current bubble is in flight (for trial-bubble generating UI). */
   const [tasksBoardLoading, setTasksBoardLoading] = useState(false);
   const [trialGenerationWaitTimedOut, setTrialGenerationWaitTimedOut] = useState(false);
@@ -601,6 +604,7 @@ export function KanbanBoard({
       if (loadGen !== loadTasksGenerationRef.current) return;
       if (taskIds.length === 0) {
         setCommentUnreadByTaskId({});
+        setCommentLatestUnreadMessageIdByTaskId({});
       } else {
         const { data: unreadRows, error: unreadErr } = await supabase.rpc(
           'task_comment_unread_counts',
@@ -615,14 +619,23 @@ export function KanbanBoard({
             supabaseClientErrorMessage(unreadErr),
           );
           setCommentUnreadByTaskId({});
+          setCommentLatestUnreadMessageIdByTaskId({});
         } else {
-          const next: Record<string, number> = {};
+          const nextCount: Record<string, number> = {};
+          const nextLatestId: Record<string, string | null> = {};
           for (const row of unreadRows ?? []) {
-            const r = row as { task_id: string; unread_count: number | string | null };
+            const r = row as {
+              task_id: string;
+              unread_count: number | string | null;
+              latest_unread_message_id?: string | null;
+            };
             const c = Number(r.unread_count);
-            next[r.task_id] = Number.isFinite(c) ? c : 0;
+            nextCount[r.task_id] = Number.isFinite(c) ? c : 0;
+            const mid = r.latest_unread_message_id;
+            nextLatestId[r.task_id] = typeof mid === 'string' && mid.trim() !== '' ? mid : null;
           }
-          setCommentUnreadByTaskId(next);
+          setCommentUnreadByTaskId(nextCount);
+          setCommentLatestUnreadMessageIdByTaskId(nextLatestId);
         }
       }
     } finally {
@@ -1316,6 +1329,7 @@ export function KanbanBoard({
                     workspaceCategory={workspaceCategory}
                     calendarTimezone={tz}
                     commentUnreadByTaskId={commentUnreadByTaskId}
+                    commentLatestUnreadMessageIdByTaskId={commentLatestUnreadMessageIdByTaskId}
                     onMoveToBubble={moveTaskToBubble}
                     onOpenTask={onOpenTask}
                     onStartWorkout={onStartWorkout}
@@ -1505,6 +1519,7 @@ type ColumnProps = {
   workspaceCategory: WorkspaceCategory | null;
   calendarTimezone: string;
   commentUnreadByTaskId: Record<string, number>;
+  commentLatestUnreadMessageIdByTaskId: Record<string, string | null>;
   onMoveToBubble: (taskId: string, targetBubbleId: string) => void;
   onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
   onStartWorkout?: (task: TaskRow) => void;
@@ -1529,6 +1544,7 @@ function KanbanColumn({
   workspaceCategory,
   calendarTimezone,
   commentUnreadByTaskId,
+  commentLatestUnreadMessageIdByTaskId,
   onMoveToBubble,
   onOpenTask,
   onStartWorkout,
@@ -1604,6 +1620,9 @@ function KanbanColumn({
                         workspaceCategory={workspaceCategory}
                         calendarTimezone={calendarTimezone}
                         commentUnreadCount={commentUnreadByTaskId[task.id] ?? 0}
+                        commentLatestUnreadMessageId={
+                          commentLatestUnreadMessageIdByTaskId[task.id] ?? null
+                        }
                         onMoveToBubble={onMoveToBubble}
                         onOpenTask={onOpenTask}
                         onStartWorkout={onStartWorkout}
@@ -1639,6 +1658,7 @@ type CardProps = {
   workspaceCategory: WorkspaceCategory | null;
   calendarTimezone: string;
   commentUnreadCount: number;
+  commentLatestUnreadMessageId: string | null;
   onMoveToBubble: (taskId: string, targetBubbleId: string) => void;
   onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
   onStartWorkout?: (task: TaskRow) => void;
@@ -1655,6 +1675,7 @@ function SortableTaskCard({
   workspaceCategory,
   calendarTimezone,
   commentUnreadCount,
+  commentLatestUnreadMessageId,
   onMoveToBubble,
   onOpenTask,
   onStartWorkout,
@@ -1696,6 +1717,7 @@ function SortableTaskCard({
         workspaceCategory={workspaceCategory}
         calendarTimezone={calendarTimezone}
         commentUnreadCount={commentUnreadCount}
+        commentLatestUnreadMessageId={commentLatestUnreadMessageId}
         onMoveToBubble={onMoveToBubble}
         onOpenTask={onOpenTask}
         onStartWorkout={onStartWorkout}

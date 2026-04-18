@@ -26,6 +26,8 @@ export type ThreadPanelProps = {
   renderMessageContent: (content: string) => ReactNode;
   /** True while main chat is uploading attachments for a message */
   sending?: boolean;
+  /** Bump (from parent) to focus the thread reply composer after open / notification. */
+  composerFocusNonce?: number;
 };
 
 export function ThreadPanel({
@@ -39,6 +41,7 @@ export function ThreadPanel({
   bubbleUpPropsFor,
   renderMessageContent,
   sending = false,
+  composerFocusNonce = 0,
 }: ThreadPanelProps) {
   const [threadInput, setThreadInput] = useState('');
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -134,6 +137,7 @@ export function ThreadPanel({
             attachDisabled={!canPostMessages || !activeThreadParent || sending}
             placeholder="Reply to thread…"
             features={{ enableAtMentions: false, enableSlashTaskLinks: false }}
+            focusRequestNonce={composerFocusNonce}
           />
         </motion.div>
       )}
