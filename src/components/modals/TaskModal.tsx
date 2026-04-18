@@ -64,28 +64,9 @@ import { useTaskOriginalSnapshot } from '@/components/modals/task-modal/hooks/us
 import { useTaskDirtyState } from '@/components/modals/task-modal/hooks/useTaskDirtyState';
 import { useTaskEmbeddedCollections } from '@/components/modals/task-modal/hooks/useTaskEmbeddedCollections';
 import { useTaskSaveAndCreate } from '@/components/modals/task-modal/hooks/useTaskSaveAndCreate';
+import type { TaskModalTab, TaskModalViewMode } from '@/types/open-task-options';
 
-export type TaskModalTab = 'details' | 'comments' | 'subtasks' | 'activity';
-
-export type TaskModalViewMode = 'full' | 'comments-only';
-
-export type OpenTaskOptions = {
-  tab?: TaskModalTab;
-  viewMode?: TaskModalViewMode;
-  /** When true (e.g. Kanban pencil), workout cards open the first exercise row in edit mode immediately. */
-  autoEdit?: boolean;
-  /** When true (e.g. Kanban quick view), open the workout viewer after the task loads. */
-  openWorkoutViewer?: boolean;
-  /**
-   * `messages.id` for a task-scoped comment or reply; opens that thread in TaskModal Comments after load.
-   * Replies use `parent_id` to resolve the root thread parent.
-   */
-  commentThreadMessageId?: string | null;
-  /**
-   * Bubble `messages.id` for coach reply + card; resolved client-side before modal opens (see ChatArea).
-   */
-  taskCommentAnchorBubbleMessageId?: string | null;
-};
+export type { OpenTaskOptions, TaskModalTab, TaskModalViewMode } from '@/types/open-task-options';
 
 type TabId = TaskModalTab;
 

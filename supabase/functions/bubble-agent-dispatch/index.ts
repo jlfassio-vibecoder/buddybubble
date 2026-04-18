@@ -5,7 +5,7 @@
  * Resolves agent by @mention on root messages, or by thread continuation (latest agent message in the same thread) when `parent_id` is set.
  *
  * Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, BUBBLE_AGENT_WEBHOOK_SECRET, GEMINI_API_KEY.
- * Optional: GEMINI_FETCH_TIMEOUT_MS (default 55000), GEMINI_MODEL.
+ * Optional: GEMINI_FETCH_TIMEOUT_MS (default 55000); model: GEMINI_MODEL, else VERTEX_GEMINI_MODEL (see env reads below).
  * Deploy with verify_jwt=false (see supabase/config.toml); authenticate via shared secret header.
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';

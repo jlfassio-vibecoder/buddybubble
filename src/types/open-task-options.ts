@@ -1,8 +1,5 @@
 /**
- * Lightweight TaskModal open options.
- *
- * NOTE: Duplicated from `src/components/modals/TaskModal.tsx` to avoid importing that module
- * while task modal types are temporarily in flux during the unified chat migration.
+ * Canonical TaskModal open options and tab types for Kanban, chat, calendar, and the modal barrel.
  */
 export type TaskModalTab = 'details' | 'comments' | 'subtasks' | 'activity';
 
