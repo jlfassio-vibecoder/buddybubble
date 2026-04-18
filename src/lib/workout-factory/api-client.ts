@@ -50,6 +50,8 @@ export async function postGenerateWorkoutChain(body: {
   persona?: Partial<WorkoutPersona>;
   daily_checkin?: Record<string, unknown> | null;
   blockOptions?: BlockOptions;
+  /** Task modal / Coach card: title+description are the prescription brief for Vertex. */
+  workout_brief_authoritative?: boolean;
 }): Promise<GenerateWorkoutChainResponse> {
   const res = await fetch('/api/ai/generate-workout-chain', {
     method: 'POST',

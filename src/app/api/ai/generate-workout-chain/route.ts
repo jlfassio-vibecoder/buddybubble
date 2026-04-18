@@ -16,6 +16,11 @@ type RequestBody = {
   /** Daily check-in / readiness — JSON forwarded into architect context. */
   daily_checkin?: Record<string, unknown> | null;
   blockOptions?: BlockOptions;
+  /**
+   * When true, Vertex treats task title/description as the strict Coach brief (handoff path).
+   * Also inferred server-side from a long persona.description.
+   */
+  workout_brief_authoritative?: boolean;
 };
 
 /**
@@ -60,10 +65,16 @@ export async function POST(req: Request) {
 
     const profile = profileRow as FitnessProfileRow | null;
 
+    const personaDesc =
+      typeof body.persona?.description === 'string' ? body.persona.description.trim() : '';
+    const inferredBriefAuth = personaDesc.length >= 80;
+    const briefAuthFlag = body.workout_brief_authoritative === true || inferredBriefAuth;
+
     const { persona, availableEquipmentNames } = buildBuddyWorkoutPersona({
       profile,
       overrides: body.persona,
       dailyCheckIn: body.daily_checkin ?? null,
+      workoutBriefAuthoritative: briefAuthFlag,
     });
 
     const chainBody: Record<string, unknown> = {
@@ -94,9 +105,14 @@ export async function POST(req: Request) {
       );
     }
 
-    const { workoutSet, chain_metadata } = result.data;
+    const { workoutSet, chain_metadata, taskExercises: taskExercisesFromChain } = result.data;
     const firstWorkout = workoutSet.workouts[0];
-    const taskExercises = firstWorkout ? workoutInSetToTaskExercises(firstWorkout) : [];
+    const taskExercises =
+      taskExercisesFromChain && taskExercisesFromChain.length > 0
+        ? taskExercisesFromChain
+        : firstWorkout
+          ? workoutInSetToTaskExercises(firstWorkout)
+          : [];
 
     return NextResponse.json({
       workoutSet,

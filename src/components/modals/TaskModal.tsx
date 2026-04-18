@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from 'react';
-import { ListTree, X } from 'lucide-react';
+import { ListTree, Sparkles, X } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
 import {
   normalizeItemType,
@@ -53,6 +53,7 @@ import { usePresenceStore } from '@/store/presenceStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { BubblyButton } from '@/components/tasks/bubbly-button';
 import { TaskModalHero } from '@/components/modals/task-modal-hero';
+import { PremiumGate } from '@/components/subscription/premium-gate';
 import { useTaskLoadAndRealtime } from '@/components/modals/task-modal/hooks/useTaskLoadAndRealtime';
 import { useWorkspaceAssignees } from '@/components/modals/task-modal/hooks/useWorkspaceAssignees';
 import { useWorkoutUnitSystem } from '@/components/modals/task-modal/hooks/useWorkoutUnitSystem';
@@ -63,19 +64,9 @@ import { useTaskOriginalSnapshot } from '@/components/modals/task-modal/hooks/us
 import { useTaskDirtyState } from '@/components/modals/task-modal/hooks/useTaskDirtyState';
 import { useTaskEmbeddedCollections } from '@/components/modals/task-modal/hooks/useTaskEmbeddedCollections';
 import { useTaskSaveAndCreate } from '@/components/modals/task-modal/hooks/useTaskSaveAndCreate';
+import type { TaskModalTab, TaskModalViewMode } from '@/types/open-task-options';
 
-export type TaskModalTab = 'details' | 'comments' | 'subtasks' | 'activity';
-
-export type TaskModalViewMode = 'full' | 'comments-only';
-
-export type OpenTaskOptions = {
-  tab?: TaskModalTab;
-  viewMode?: TaskModalViewMode;
-  /** When true (e.g. Kanban pencil), workout cards open the first exercise row in edit mode immediately. */
-  autoEdit?: boolean;
-  /** When true (e.g. Kanban quick view), open the workout viewer after the task loads. */
-  openWorkoutViewer?: boolean;
-};
+export type { OpenTaskOptions, TaskModalTab, TaskModalViewMode } from '@/types/open-task-options';
 
 type TabId = TaskModalTab;
 
@@ -109,6 +100,8 @@ export type TaskModalProps = {
   initialAutoEdit?: boolean;
   /** When true, open the unified workout pane once the task has viewer content (Kanban quick view). */
   initialOpenWorkoutViewer?: boolean;
+  /** Task-scoped `messages.id` to auto-open that comment thread in Comments (root resolved from `parent_id`). */
+  initialCommentThreadMessageId?: string | null;
   /** Drives Due by vs Scheduled on labels (`workspaces.category_type`). */
   workspaceCategory?: WorkspaceCategory | null;
   /** Workspace IANA timezone for scheduled-on vs calendar "today" (see `workspaces.calendar_timezone`). */
@@ -137,6 +130,7 @@ export function TaskModal({
   initialViewMode = 'full',
   initialAutoEdit = false,
   initialOpenWorkoutViewer = false,
+  initialCommentThreadMessageId = null,
   workspaceCategory = null,
   calendarTimezone = null,
   onTaskArchived,
@@ -282,6 +276,7 @@ export function TaskModal({
     workspaceId,
     isWorkoutItemType,
     title,
+    description,
     workoutDurationMin,
     metadata,
     workoutExercises,
@@ -294,8 +289,17 @@ export function TaskModal({
   });
 
   const showWorkoutSplitPane = Boolean(
-    open && taskId && workoutViewerOpen && hasWorkoutViewerContent && isWorkoutItemType,
+    open &&
+    taskId &&
+    workoutViewerOpen &&
+    isWorkoutItemType &&
+    (hasWorkoutViewerContent || aiWorkoutGenerating),
   );
+
+  const handleGenerateWorkoutFromComments = useCallback(() => {
+    setWorkoutViewerOpen(true);
+    void handleAiGenerateWorkout();
+  }, [setWorkoutViewerOpen, handleAiGenerateWorkout]);
 
   const { aiCardCoverGenerating, generateCardCoverWithAi, resetCardCoverAi } = useTaskCardCoverAi({
     canWrite,
@@ -592,12 +596,16 @@ export function TaskModal({
     }
     const vm = initialViewMode ?? 'full';
     setViewMode(vm);
+    if (initialCommentThreadMessageId?.trim()) {
+      setTab('comments');
+      return;
+    }
     if (vm === 'comments-only' && initialTab == null) {
       setTab('comments');
     } else {
       setTab(initialTab ?? 'details');
     }
-  }, [open, taskId, initialTab, initialViewMode]);
+  }, [open, taskId, initialTab, initialViewMode, initialCommentThreadMessageId]);
 
   useEffect(() => {
     if (tab !== 'comments') setCommentsInThreadView(false);
@@ -794,6 +802,12 @@ export function TaskModal({
   if (!open) return null;
 
   const showEditorChrome = !taskId || viewMode === 'full';
+  /** Hero + inspector tuned for reading workout context next to coach thread / comments-only. */
+  const commentsReadingContext =
+    Boolean(taskId) && tab === 'comments' && (viewMode === 'comments-only' || commentsInThreadView);
+
+  /** Chat-first layout: inner scroll lives in comments panel; outer body does not scroll. */
+  const commentsChatLayout = Boolean(taskId) && tab === 'comments';
 
   const tabBtn = (id: TabId, label: string) => (
     <button
@@ -831,7 +845,27 @@ export function TaskModal({
             description={description ?? ''}
             coverPath={cardCoverPath.trim() || null}
             onClose={() => onOpenChange(false)}
-            compactCinematic={tab !== 'details' || heroCinematicCollapsed}
+            compactCinematic={tab !== 'details' || heroCinematicCollapsed || commentsReadingContext}
+            descriptionExpanded={commentsReadingContext}
+            descriptionCollapseMode={commentsReadingContext ? 'preview_toggle' : 'none'}
+            readingContextActions={
+              commentsReadingContext && itemType === 'workout' && canWrite ? (
+                <PremiumGate feature="ai" inline>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="h-8 gap-1.5 px-2 text-xs shadow-sm"
+                    disabled={aiWorkoutGenerating}
+                    onClick={handleGenerateWorkoutFromComments}
+                    title="Build the plan from this card’s title, description, and duration (same as Details → AI workout)."
+                  >
+                    <Sparkles className="size-3.5 shrink-0" aria-hidden />
+                    {aiWorkoutGenerating ? 'Generating…' : 'Generate'}
+                  </Button>
+                </PremiumGate>
+              ) : null
+            }
           />
         ) : null}
 
@@ -893,7 +927,10 @@ export function TaskModal({
                 ) : null}
               </div>
               <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                {taskId && hasWorkoutViewerContent && !showWorkoutSplitPane ? (
+                {taskId &&
+                (hasWorkoutViewerContent || aiWorkoutGenerating) &&
+                !showWorkoutSplitPane &&
+                isWorkoutItemType ? (
                   <Button
                     type="button"
                     variant="default"
@@ -934,25 +971,37 @@ export function TaskModal({
             </div>
 
             <div
-              className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
-              onScroll={handleTaskModalBodyScroll}
+              className={cn(
+                commentsChatLayout
+                  ? 'flex min-h-0 flex-1 flex-col overflow-hidden overscroll-contain'
+                  : 'min-h-0 flex-1 overflow-y-auto overscroll-contain',
+              )}
+              onScroll={commentsChatLayout ? undefined : handleTaskModalBodyScroll}
             >
-              <TaskModalEditorChrome
-                showChrome={showEditorChrome}
-                itemType={itemType}
-                onItemTypeChange={setItemType}
-                canWrite={canWrite}
-                visibility={visibility}
-                onVisibilityChange={setVisibility}
-                workoutTitle={title}
-                workoutExercises={workoutExercises}
-                bubbleId={bubbleId}
-                workspaceId={workspaceId}
-                taskId={taskId}
-                onInteraction={() => setHeroCinematicCollapsed(true)}
-              />
+              <div className="shrink-0">
+                <TaskModalEditorChrome
+                  showChrome={showEditorChrome}
+                  showTypeAndVisibility={showEditorChrome && !commentsReadingContext}
+                  itemType={itemType}
+                  onItemTypeChange={setItemType}
+                  canWrite={canWrite}
+                  visibility={visibility}
+                  onVisibilityChange={setVisibility}
+                  workoutTitle={title}
+                  workoutExercises={workoutExercises}
+                  bubbleId={bubbleId}
+                  workspaceId={workspaceId}
+                  taskId={taskId}
+                  onInteraction={() => setHeroCinematicCollapsed(true)}
+                />
+              </div>
 
-              <div className="px-6 pt-4 pb-4">
+              <div
+                className={cn(
+                  'px-6 pt-4',
+                  commentsChatLayout ? 'flex min-h-0 flex-1 flex-col pb-0' : 'pb-4',
+                )}
+              >
                 {error && (
                   <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                     {error}
@@ -1120,14 +1169,26 @@ export function TaskModal({
 
                     {tab === 'comments' &&
                       (taskId ? (
-                        <TaskModalCommentsPanel
-                          taskId={taskId}
-                          workspaceId={workspaceId}
-                          bubbles={bubbles}
-                          canWrite={canWrite}
-                          onThreadViewChange={setCommentsInThreadView}
-                          onMarkedRead={onTaskCommentsMarkedRead}
-                        />
+                        <div className="flex min-h-0 flex-1 flex-col">
+                          <TaskModalCommentsPanel
+                            key={`${taskId}-${initialCommentThreadMessageId ?? ''}`}
+                            taskId={taskId}
+                            workspaceId={workspaceId}
+                            bubbles={bubbles}
+                            canWrite={canWrite}
+                            initialCommentThreadMessageId={initialCommentThreadMessageId}
+                            onThreadViewChange={setCommentsInThreadView}
+                            onMarkedRead={onTaskCommentsMarkedRead}
+                            showInlineGenerateWorkout={
+                              Boolean(showWorkoutSplitPane) && itemType === 'workout' && canWrite
+                            }
+                            onGenerateWorkout={handleGenerateWorkoutFromComments}
+                            generateWorkoutBusy={aiWorkoutGenerating}
+                            onMessagesScroll={
+                              commentsChatLayout ? handleTaskModalBodyScroll : undefined
+                            }
+                          />
+                        </div>
                       ) : (
                         <p className="text-xs text-muted-foreground">
                           Create the {typeNoun} to add comments.
@@ -1193,6 +1254,7 @@ export function TaskModal({
                 cardCoverPath={cardCoverPath.trim() || null}
                 taskId={taskId}
                 layout="embedded"
+                isAiGenerating={aiWorkoutGenerating}
               />
             </div>
           ) : null}

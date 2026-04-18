@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@utils/supabase/client';
 import { supabaseClientErrorMessage } from '@/lib/supabase-client-error';
 import {
@@ -46,11 +46,24 @@ export type MessageThreadTeamMember = {
   avatar?: string;
 };
 
+export type PeerThreadReplyInsertPayload = {
+  threadRootMessageId: string;
+  replyMessageId: string;
+  contentPreview: string;
+};
+
 export type UseMessageThreadArgs = {
   filter: MessageThreadFilter | null;
   workspaceId: string | null;
   bubbles: BubbleRow[];
   canPostMessages: boolean;
+  /** Current user id — used to ignore own realtime inserts for bubble thread notifications. */
+  currentUserId?: string | null;
+  /**
+   * Bubble / all-bubbles scope only: another user posted a reply (`parent_id` set, not task-scoped).
+   * ChatArea uses this for bell + auto-open thread.
+   */
+  onPeerThreadReplyInsert?: (payload: PeerThreadReplyInsertPayload) => void;
 };
 
 export type UseMessageThreadResult = {
@@ -76,8 +89,14 @@ export function useMessageThread({
   workspaceId,
   bubbles,
   canPostMessages,
+  currentUserId = null,
+  onPeerThreadReplyInsert,
 }: UseMessageThreadArgs): UseMessageThreadResult {
   const [messages, setMessages] = useState<MessageRowWithEmbeddedTask[]>([]);
+  const currentUserIdRef = useRef<string | null>(null);
+  const onPeerThreadReplyInsertRef = useRef<typeof onPeerThreadReplyInsert>(undefined);
+  currentUserIdRef.current = currentUserId ?? null;
+  onPeerThreadReplyInsertRef.current = onPeerThreadReplyInsert;
   const [userById, setUserById] = useState<Record<string, ChatUserSnapshot>>({});
   const [teamMembers, setTeamMembers] = useState<MessageThreadTeamMember[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -206,6 +225,21 @@ export function useMessageThread({
           .maybeSingle();
         if (u) {
           setUserById((prev) => ({ ...prev, [u.id]: toChatUserSnapshot(u) }));
+        }
+
+        const myId = currentUserIdRef.current;
+        const parentId = enriched.parent_id ?? row.parent_id ?? null;
+        const uid = enriched.user_id ?? row.user_id ?? null;
+        const isBubbleScope = f.scope === 'bubble' || f.scope === 'all_bubbles';
+        const noTaskTarget = enriched.target_task_id == null && row.target_task_id == null;
+        if (parentId && isBubbleScope && noTaskTarget && myId && uid && uid !== myId) {
+          const raw = typeof enriched.content === 'string' ? enriched.content : '';
+          const preview = raw.trim().slice(0, 120) || 'New reply in thread';
+          onPeerThreadReplyInsertRef.current?.({
+            threadRootMessageId: parentId,
+            replyMessageId: enriched.id,
+            contentPreview: preview,
+          });
         }
       })();
     };

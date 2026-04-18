@@ -10,11 +10,19 @@ const CARD_SECTION_TABS = [
   ['activity', 'Activity'],
 ] as const satisfies readonly (readonly [TaskModalTab, string])[];
 
-function openOptionsForTab(tab: TaskModalTab): OpenTaskOptions {
-  return {
+function openOptionsForTab(
+  tab: TaskModalTab,
+  taskCommentAnchorBubbleMessageId?: string | null,
+): OpenTaskOptions {
+  const base: OpenTaskOptions = {
     tab,
     viewMode: tab === 'comments' ? 'comments-only' : 'full',
   };
+  const anchor = taskCommentAnchorBubbleMessageId?.trim();
+  if (tab === 'comments' && anchor) {
+    return { ...base, taskCommentAnchorBubbleMessageId: anchor };
+  }
+  return base;
 }
 
 export type CardTabStripProps = {
@@ -23,6 +31,8 @@ export type CardTabStripProps = {
   bubbleUp?: Omit<TaskBubbleUpControlProps, 'density'>;
   /** Matches `BubblyButton` density; Kanban micro cards use `micro`. */
   bubblyDensity?: 'default' | 'micro';
+  /** Passed through for Comments tab when opening from a bubble message embed. */
+  taskCommentAnchorBubbleMessageId?: string | null;
 };
 
 const PILL_CLASS =
@@ -37,6 +47,7 @@ export function CardTabStrip({
   onOpenTask,
   bubbleUp,
   bubblyDensity = 'default',
+  taskCommentAnchorBubbleMessageId = null,
 }: CardTabStripProps) {
   if (!onOpenTask && !bubbleUp) {
     return null;
@@ -55,7 +66,7 @@ export function CardTabStrip({
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
-                onOpenTask(taskId, openOptionsForTab(id));
+                onOpenTask(taskId, openOptionsForTab(id, taskCommentAnchorBubbleMessageId));
               }}
             >
               {label}

@@ -103,6 +103,7 @@ export function ChatMessageRow({
         {message.attachedTask ? (
           <ChatFeedTaskCard
             task={message.attachedTask}
+            hostBubbleMessageId={message.id}
             onOpenTask={onOpenTask ? (taskId, opts) => onOpenTask(taskId, opts) : undefined}
             bubbleUp={bubbleUpPropsFor?.(message.attachedTask.id)}
           />

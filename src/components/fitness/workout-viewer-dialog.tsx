@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { toast } from 'sonner';
 import type { Exercise } from '@/lib/workout-factory/types/ai-program';
@@ -18,7 +18,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { WorkoutExercisesEditor } from '@/components/fitness/workout-exercises-editor';
 import { formatRepsDisplay } from '@/lib/workout-factory/parse-reps-scalar';
 import { useTaskCardCoverUrl } from '@/lib/task-card-cover';
-import { Dumbbell, Image as ImageIcon, X } from 'lucide-react';
+import { Dumbbell, Image as ImageIcon, Loader2, X } from 'lucide-react';
+import { WORKOUT_FACTORY_CHAIN_MESSAGES } from '@/lib/workout-factory/api-client';
 
 export type WorkoutViewerApplyPayload = {
   title: string;
@@ -379,6 +380,44 @@ function FlatExercisesReadView({
 const sectionHeadingClass =
   'mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground';
 
+function WorkoutPlanGeneratingView({ active }: { active: boolean }) {
+  const statusLines = useMemo(
+    () => ['Reading coach notes…', ...WORKOUT_FACTORY_CHAIN_MESSAGES, 'Almost there…'],
+    [],
+  );
+  const [lineIdx, setLineIdx] = useState(0);
+
+  useEffect(() => {
+    if (!active) return;
+    setLineIdx(0);
+  }, [active]);
+
+  useEffect(() => {
+    if (!active) return;
+    const t = setInterval(() => {
+      setLineIdx((i) => (i + 1) % statusLines.length);
+    }, 3400);
+    return () => clearInterval(t);
+  }, [active, statusLines.length]);
+
+  if (!active) return null;
+
+  return (
+    <div
+      className="flex min-h-[min(280px,45vh)] flex-col items-center justify-center gap-4 rounded-xl border border-border/60 bg-muted/25 px-6 py-12 text-center"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <Loader2 className="size-9 shrink-0 animate-spin text-primary" aria-hidden />
+      <div className="max-w-sm space-y-2">
+        <p className="text-base font-semibold text-foreground">Workout generating</p>
+        <p className="text-xs leading-relaxed text-muted-foreground">{statusLines[lineIdx]}</p>
+      </div>
+    </div>
+  );
+}
+
 export type WorkoutViewerDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -395,6 +434,8 @@ export type WorkoutViewerDialogProps = {
   cardCoverPath?: string | null;
   /** For exercise image request emails / context. */
   taskId?: string | null;
+  /** Embedded viewer: show a loading state in the plan section while the AI chain runs. */
+  isAiGenerating?: boolean;
 };
 
 export type WorkoutViewerContentProps = Omit<WorkoutViewerDialogProps, 'open' | 'onOpenChange'> & {
@@ -423,6 +464,7 @@ export function WorkoutViewerContent({
   layout = 'dialog',
   dialogTitleAsChild = false,
   className,
+  isAiGenerating = false,
 }: WorkoutViewerContentProps) {
   const [mode, setMode] = useState<ViewMode>('view');
   const [localTitle, setLocalTitle] = useState(title);
@@ -525,6 +567,8 @@ export function WorkoutViewerContent({
                   cardTitle={displayTitle}
                   taskId={taskId}
                 />
+              ) : isAiGenerating && mode === 'view' ? (
+                <WorkoutPlanGeneratingView active />
               ) : (
                 <div className="space-y-4">
                   <p className="text-xs text-muted-foreground">

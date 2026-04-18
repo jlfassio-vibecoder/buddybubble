@@ -76,22 +76,45 @@ export interface BuildBuddyWorkoutPersonaParams {
   overrides?: Partial<WorkoutPersona>;
   /** Recent check-in or readiness — merged into description for the architect */
   dailyCheckIn?: Record<string, unknown> | null;
+  /**
+   * When true, task title/description are the Coach-approved brief for Vertex (not profile-driven).
+   * May also be inferred from a long `overrides.description`.
+   */
+  workoutBriefAuthoritative?: boolean;
 }
 
 /**
  * Default single-session Kanban workout: one session in the chain, full-body, moderate duration.
  */
+const MIN_DESCRIPTION_CHARS_FOR_INFERRED_BRIEF_AUTH = 80;
+
 export function buildBuddyWorkoutPersona(params: BuildBuddyWorkoutPersonaParams): {
   persona: WorkoutPersona;
   availableEquipmentNames: string[];
 } {
-  const { profile, overrides, dailyCheckIn } = params;
+  const { profile, overrides, dailyCheckIn, workoutBriefAuthoritative } = params;
 
   const demographics = overrides?.demographics ?? demographicsFromProfile(profile);
   const goals = overrides?.goals ?? goalsFromProfile(profile);
   const medical = overrides?.medical ?? medicalFromProfile(profile);
 
-  const equipment = profile?.equipment?.length ? [...profile.equipment] : ['Bodyweight'];
+  const descTrim = overrides?.description?.trim() ?? '';
+  const titleTrim = overrides?.title?.trim() ?? '';
+  const inferredBriefAuth =
+    descTrim.length >= MIN_DESCRIPTION_CHARS_FOR_INFERRED_BRIEF_AUTH ||
+    (titleTrim.length > 0 && descTrim.length >= 40);
+  const briefAuthoritative =
+    workoutBriefAuthoritative === true ||
+    overrides?.kanbanBriefAuthoritative === true ||
+    inferredBriefAuth;
+
+  const equipmentFromProfile = profile?.equipment?.length ? [...profile.equipment] : ['Bodyweight'];
+  /** When Coach Kanban brief drives generation, do not inject profile inventory into Vertex. */
+  const equipment = briefAuthoritative
+    ? [
+        'Use ONLY equipment, modalities, and constraints explicitly stated or clearly implied in the WORKOUT BRIEF (Title + Description). Do not substitute barbell/rack/cable defaults unless the brief implies them.',
+      ]
+    : equipmentFromProfile;
 
   const sessionDuration =
     overrides?.sessionDurationMinutes ??
@@ -126,6 +149,7 @@ export function buildBuddyWorkoutPersona(params: BuildBuddyWorkoutPersonaParams)
     amrapDensityOptions: overrides?.amrapDensityOptions,
     tabataBalancedMode: overrides?.tabataBalancedMode,
     tabataBalancedOptions: overrides?.tabataBalancedOptions,
+    ...(briefAuthoritative ? { kanbanBriefAuthoritative: true as const } : {}),
   };
 
   return {

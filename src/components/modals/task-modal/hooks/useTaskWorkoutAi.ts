@@ -25,6 +25,7 @@ export type UseTaskWorkoutAiArgs = {
   workspaceId: string;
   isWorkoutItemType: boolean;
   title: string;
+  description: string;
   workoutDurationMin: string;
   metadata: Json;
   workoutExercises: WorkoutExercise[];
@@ -45,6 +46,7 @@ export function useTaskWorkoutAi({
   workspaceId,
   isWorkoutItemType,
   title,
+  description,
   workoutDurationMin,
   metadata,
   workoutExercises,
@@ -101,8 +103,10 @@ export function useTaskWorkoutAi({
       const data = await postGenerateWorkoutChain({
         workspace_id: workspaceId,
         daily_checkin: null,
+        workout_brief_authoritative: title.trim().length > 0 && description.trim().length > 0,
         persona: {
           title: title.trim() || undefined,
+          description: description.trim() || undefined,
           sessionDurationMinutes: !Number.isNaN(duration) && duration > 0 ? duration : 45,
         },
       });
@@ -134,6 +138,7 @@ export function useTaskWorkoutAi({
     isWorkoutItemType,
     workoutDurationMin,
     title,
+    description,
     setTitle,
     setDescription,
     setWorkoutExercises,

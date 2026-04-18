@@ -41,8 +41,9 @@ import { RichMessageComposer } from './RichMessageComposer';
 import { ThreadPanel } from './ThreadPanel';
 import { MessageMediaModal } from './MessageMediaModal';
 import type { OpenTaskOptions } from '@/types/open-task-options';
+import { resolveTaskCommentMessageIdFromBubbleAnchor } from '@/lib/resolve-task-comment-from-bubble-anchor';
 import { useTaskBubbleUps } from '@/hooks/use-task-bubble-ups';
-import { useMessageThread } from '@/hooks/useMessageThread';
+import { useMessageThread, type PeerThreadReplyInsertPayload } from '@/hooks/useMessageThread';
 import { toChatUserSnapshot, type MessageThreadFilter } from '@/lib/message-thread';
 
 type TaskPickerRow = {
@@ -161,6 +162,13 @@ export function ChatArea({
   const [searchSender, setSearchSender] = useState('');
   const [searchDate, setSearchDate] = useState('');
   const [activeThreadParent, setActiveThreadParent] = useState<ChatMessage | null>(null);
+  const [peerThreadReplyNotifications, setPeerThreadReplyNotifications] = useState<
+    NotificationStub[]
+  >([]);
+  const [openThreadFromPeerIntent, setOpenThreadFromPeerIntent] = useState<{
+    threadRootMessageId: string;
+  } | null>(null);
+  const [threadComposerFocusNonce, setThreadComposerFocusNonce] = useState(0);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>(() => {
     const saved = typeof window !== 'undefined' ? localStorage.getItem('recentSearches') : null;
@@ -193,12 +201,65 @@ export function ChatArea({
     }));
   }, [workspaceId, workspaceName, joinRequestBellPreview]);
 
-  const stubNotifications: NotificationStub[] = [];
   const notifications = useMemo(
-    () => [...joinRequestNotifications, ...stubNotifications],
-    [joinRequestNotifications],
+    () => [...joinRequestNotifications, ...peerThreadReplyNotifications],
+    [joinRequestNotifications, peerThreadReplyNotifications],
   );
-  const onMarkNotificationRead = (_id: string) => {};
+
+  const onMarkNotificationRead = useCallback((id: string) => {
+    setPeerThreadReplyNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
+    );
+  }, []);
+
+  /** Resolves bubble coach+embed anchor to task-scoped `commentThreadMessageId` when opening TaskModal. */
+  const openTaskFromChat = useCallback(
+    async (taskId: string, opts?: OpenTaskOptions) => {
+      const merged: OpenTaskOptions = { ...(opts ?? {}) };
+      const anchor = opts?.taskCommentAnchorBubbleMessageId?.trim();
+      delete merged.taskCommentAnchorBubbleMessageId;
+      if (anchor && !merged.commentThreadMessageId) {
+        try {
+          const supabase = createClient();
+          const resolved = await resolveTaskCommentMessageIdFromBubbleAnchor(
+            supabase,
+            taskId,
+            anchor,
+          );
+          if (resolved) {
+            merged.tab = 'comments';
+            merged.commentThreadMessageId = resolved;
+            merged.viewMode = merged.viewMode ?? 'full';
+          }
+        } catch {
+          /* open without deep link */
+        }
+      }
+      onOpenTask(taskId, merged);
+    },
+    [onOpenTask],
+  );
+
+  const handlePeerThreadReplyInsert = useCallback((payload: PeerThreadReplyInsertPayload) => {
+    setPeerThreadReplyNotifications((prev) => {
+      const nid = `tr:${payload.replyMessageId}`;
+      if (prev.some((n) => n.id === nid)) return prev;
+      return [
+        ...prev,
+        {
+          id: nid,
+          userId: '',
+          title: 'New reply in thread',
+          content: payload.contentPreview,
+          type: 'thread_reply' as const,
+          relatedId: payload.threadRootMessageId,
+          read: false,
+          timestamp: new Date(),
+        },
+      ];
+    });
+    setOpenThreadFromPeerIntent({ threadRootMessageId: payload.threadRootMessageId });
+  }, []);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const composerPopoverRef = useRef<HTMLDivElement>(null);
@@ -241,6 +302,8 @@ export function ChatArea({
     workspaceId,
     bubbles,
     canPostMessages,
+    currentUserId: myProfile?.id ?? null,
+    onPeerThreadReplyInsert: handlePeerThreadReplyInsert,
   });
 
   const chatBubbleTaskIds = useMemo(() => {
@@ -283,6 +346,28 @@ export function ChatArea({
     if (!activeThreadParent) return [];
     return allMessages.filter((m) => m.parentId === activeThreadParent.id);
   }, [allMessages, activeThreadParent]);
+
+  useEffect(() => {
+    if (!openThreadFromPeerIntent) return;
+    const parent = allMessages.find((m) => m.id === openThreadFromPeerIntent.threadRootMessageId);
+    if (!parent) return;
+    setActiveThreadParent(parent);
+    setOpenThreadFromPeerIntent(null);
+    setThreadComposerFocusNonce((n) => n + 1);
+  }, [openThreadFromPeerIntent, allMessages]);
+
+  useEffect(() => {
+    setPeerThreadReplyNotifications([]);
+    setOpenThreadFromPeerIntent(null);
+  }, [activeBubble?.id]);
+
+  useEffect(() => {
+    const id = activeThreadParent?.id;
+    if (!id) return;
+    setPeerThreadReplyNotifications((prev) =>
+      prev.map((n) => (n.type === 'thread_reply' && n.relatedId === id ? { ...n, read: true } : n)),
+    );
+  }, [activeThreadParent?.id]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -533,6 +618,7 @@ export function ChatArea({
 
   const handleOpenThread = (msg: ChatMessage) => {
     setActiveThreadParent(msg);
+    setThreadComposerFocusNonce((n) => n + 1);
     notifications
       .filter((n) => n.type === 'thread_reply' && n.relatedId === msg.id && !n.read)
       .forEach((n) => onMarkNotificationRead(n.id));
@@ -589,7 +675,7 @@ export function ChatArea({
                 <button
                   key={`task-${i}`}
                   type="button"
-                  onClick={() => onOpenTask(task.id)}
+                  onClick={() => void openTaskFromChat(task.id, { viewMode: 'full' })}
                   className="cursor-pointer rounded border border-[color:color-mix(in_srgb,var(--accent-green)_38%,transparent)] bg-[var(--accent-green-bg)] px-1 font-bold text-[var(--accent-green-text)] transition-colors hover:opacity-90"
                   title={`View card: ${task.title}`}
                 >
@@ -688,11 +774,14 @@ export function ChatArea({
                                 setIsNotificationsOpen(false);
                                 return;
                               }
-                              onMarkNotificationRead(n.id);
                               if (n.type === 'thread_reply') {
                                 const parent = allMessages.find((m) => m.id === n.relatedId);
-                                if (parent) setActiveThreadParent(parent);
+                                if (parent) {
+                                  setActiveThreadParent(parent);
+                                  setThreadComposerFocusNonce((x) => x + 1);
+                                }
                               }
+                              onMarkNotificationRead(n.id);
                               setIsNotificationsOpen(false);
                             }}
                           >
@@ -891,7 +980,7 @@ export function ChatArea({
                           {msg.attachedTask ? (
                             <ChatFeedTaskCard
                               task={msg.attachedTask}
-                              onOpenTask={(taskId, opts) => onOpenTask?.(taskId, opts)}
+                              onOpenTask={(taskId, opts) => void openTaskFromChat(taskId, opts)}
                               bubbleUp={bubbleUpPropsFor(msg.attachedTask.id)}
                             />
                           ) : null}
@@ -953,10 +1042,11 @@ export function ChatArea({
             return sendMessage(content, activeThreadParent.id, files);
           }}
           onOpenAttachment={(attachments, index) => setMediaModal({ attachments, index })}
-          onOpenTask={(taskId, opts) => onOpenTask?.(taskId, opts)}
+          onOpenTask={(taskId, opts) => void openTaskFromChat(taskId, opts)}
           bubbleUpPropsFor={bubbleUpPropsFor}
           renderMessageContent={renderMessageContent}
           sending={sendingAttachments}
+          composerFocusNonce={threadComposerFocusNonce}
         />
       </div>
 

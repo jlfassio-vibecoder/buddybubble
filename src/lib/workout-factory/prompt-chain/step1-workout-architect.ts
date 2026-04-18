@@ -310,6 +310,7 @@ export function validateWorkoutArchitectOutput(
   ) {
     return { valid: false, error: 'split.days_per_week must be between 1 and 7' };
   }
+
   const minSplitDuration =
     tabataBalancedMode && tabataBalancedOptions
       ? tabataBalancedSessionMinutes(tabataBalancedOptions.roundCount)
