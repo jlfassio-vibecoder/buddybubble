@@ -17,6 +17,7 @@ export type ThreadPanelProps = {
   activeThreadParent: ChatMessage | null;
   threadMessages: ChatMessage[];
   canPostMessages: boolean;
+  liveSessionViewerUserId?: string | null;
   onClose: () => void;
   /** Submit a new reply in the current thread (parent id is handled by the caller). */
   onSendMessage: (content: string, files?: File[]) => Promise<SendMessageSuccess | null>;
@@ -42,6 +43,7 @@ export function ThreadPanel({
   activeThreadParent,
   threadMessages,
   canPostMessages,
+  liveSessionViewerUserId = null,
   onClose,
   onSendMessage,
   onSubmitIntent,
@@ -103,6 +105,7 @@ export function ThreadPanel({
                 onOpenAttachment={onOpenAttachment}
                 onOpenTask={onOpenTask}
                 bubbleUpPropsFor={bubbleUpPropsFor}
+                liveSessionViewerUserId={liveSessionViewerUserId}
               />
             </div>
 
@@ -117,6 +120,7 @@ export function ThreadPanel({
                   onOpenAttachment={onOpenAttachment}
                   onOpenTask={onOpenTask}
                   bubbleUpPropsFor={bubbleUpPropsFor}
+                  liveSessionViewerUserId={liveSessionViewerUserId}
                 />
               ))}
             </div>

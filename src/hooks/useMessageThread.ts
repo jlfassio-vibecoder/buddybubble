@@ -16,6 +16,7 @@ import { defaultBubbleIdForWrites } from '@/lib/all-bubbles';
 import type {
   AgentDefinitionRow,
   BubbleRow,
+  Json,
   MessageRow,
   MessageRowWithEmbeddedTask,
   TaskRow,
@@ -88,7 +89,7 @@ export type UseMessageThreadResult = {
     content: string,
     parentId?: string,
     files?: File[],
-    options?: { attachedTaskId?: string | null },
+    options?: { attachedTaskId?: string | null; metadata?: Json },
   ) => Promise<SendMessageSuccess | null>;
   clearError: () => void;
   setError: (message: string | null) => void;
@@ -622,7 +623,7 @@ export function useMessageThread({
       content: string,
       parentId?: string,
       files?: File[],
-      options?: { attachedTaskId?: string | null },
+      options?: { attachedTaskId?: string | null; metadata?: Json },
     ): Promise<SendMessageSuccess | null> => {
       if (!canPostMessages) {
         setError('You do not have permission to post messages in this channel.');
@@ -638,6 +639,7 @@ export function useMessageThread({
       }
       const raw = files ?? [];
       const attachedTaskId = options?.attachedTaskId ?? null;
+      const messageMetadata = options?.metadata;
       const hasAttachedTask = Boolean(attachedTaskId);
 
       if (!content.trim() && raw.length === 0 && !hasAttachedTask) return null;
@@ -722,6 +724,7 @@ export function useMessageThread({
             parent_id: parentId ?? null,
             attached_task_id: attachedTaskId,
             target_task_id: targetTaskId,
+            ...(messageMetadata !== undefined ? { metadata: messageMetadata } : {}),
           })
           .select(MESSAGES_SELECT_WITH_TASK)
           .single();

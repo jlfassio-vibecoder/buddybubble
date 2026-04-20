@@ -1,4 +1,5 @@
 import type { CoachDraftPayload } from '@/types/coach-draft';
+import type { LiveSessionInvitePayload } from '@/types/live-session-invite';
 import type { Database, MessageRow, TaskRow } from '@/types/database';
 import type { MessageAttachment } from '@/types/message-attachment';
 
@@ -29,6 +30,8 @@ export type ChatMessage = {
   attachedTask?: TaskRow | null;
   /** Parsed from `messages.metadata` when the coach proposed a workout revision. */
   coachDraft?: CoachDraftPayload | null;
+  /** Parsed from `messages.metadata.live_session` for live video join cards. */
+  liveSessionInvite?: LiveSessionInvitePayload | null;
 };
 
 /** Join row shape used by message search (PostgREST embed). */
