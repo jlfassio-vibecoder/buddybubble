@@ -33,6 +33,11 @@ type Props = {
   hideCalendarSlot?: boolean;
   /** Mobile chat tab (`?tab=chat`): hide Kanban/calendar stage so Messages fills the width. */
   hideMainStageBelowMd?: boolean;
+  /**
+   * Desktop Messages focus: omit board/calendar column so chat is the only flex child and fills
+   * horizontal space. Intended when `!chatCollapsed && kanbanCollapsed` (parent passes only then).
+   */
+  hideMainStage?: boolean;
   /** Chat panel; receives onCollapse for the header control (e.g. ChatArea). */
   renderChat: (helpers: { onCollapse: () => void }) => React.ReactNode;
   /** Pre-built `CalendarRail` element; merged into `KanbanBoard` as `calendarSlot` when the board is visible. */
@@ -56,8 +61,9 @@ type Props = {
  * Resizable split: Messages | Kanban (calendar on the right of the board, same DnD context).
  * Chat width persists per workspace in localStorage; collapse flags are controlled by the parent.
  *
- * When Kanban is collapsed: Messages and Calendar **split the main stage** (`flex-1` each). User
- * opens Kanban again by collapsing Messages (shell invariant).
+ * When Kanban is collapsed and `hideMainStage` is false: Messages and Calendar **split** the row
+ * (`flex-1` each). When `hideMainStage` is true (desktop Messages focus), only chat renders so it
+ * spans the full main width. User opens Kanban again by collapsing Messages (shell invariant).
  */
 export function WorkspaceMainSplit({
   workspaceId,
@@ -68,6 +74,7 @@ export function WorkspaceMainSplit({
   omitCollapsedMessagesStrip = false,
   hideCalendarSlot = false,
   hideMainStageBelowMd = false,
+  hideMainStage = false,
   renderChat,
   calendarRail,
   board,
@@ -201,42 +208,44 @@ export function WorkspaceMainSplit({
         </div>
       )}
 
-      <div
-        className={cn(
-          'flex min-h-0 min-w-0 flex-1 flex-row',
-          hideMainStageBelowMd && 'max-md:hidden',
-        )}
-      >
-        {!kanbanCollapsed ? (
-          boardSoftLocked ? (
+      {!hideMainStage && (
+        <div
+          className={cn(
+            'flex min-h-0 min-w-0 flex-1 flex-row',
+            hideMainStageBelowMd && 'max-md:hidden',
+          )}
+        >
+          {!kanbanCollapsed ? (
+            boardSoftLocked ? (
+              <TrialPaywallGuard locked className="flex min-h-0 min-w-0 flex-1 flex-col">
+                {isValidElement(board)
+                  ? cloneElement(board, {
+                      calendarSlot: hideCalendarSlot ? undefined : calendarRail,
+                      taskViewsNonce,
+                    })
+                  : board}
+              </TrialPaywallGuard>
+            ) : isValidElement(board) ? (
+              cloneElement(board, {
+                calendarSlot: hideCalendarSlot ? undefined : calendarRail,
+                taskViewsNonce,
+              })
+            ) : (
+              board
+            )
+          ) : boardSoftLocked ? (
             <TrialPaywallGuard locked className="flex min-h-0 min-w-0 flex-1 flex-col">
-              {isValidElement(board)
-                ? cloneElement(board, {
-                    calendarSlot: hideCalendarSlot ? undefined : calendarRail,
-                    taskViewsNonce,
-                  })
-                : board}
+              {isValidElement(calendarRail)
+                ? cloneElement(calendarRail, { mainStage: true } as Partial<CalendarRailProps>)
+                : calendarRail}
             </TrialPaywallGuard>
-          ) : isValidElement(board) ? (
-            cloneElement(board, {
-              calendarSlot: hideCalendarSlot ? undefined : calendarRail,
-              taskViewsNonce,
-            })
+          ) : isValidElement(calendarRail) ? (
+            cloneElement(calendarRail, { mainStage: true } as Partial<CalendarRailProps>)
           ) : (
-            board
-          )
-        ) : boardSoftLocked ? (
-          <TrialPaywallGuard locked className="flex min-h-0 min-w-0 flex-1 flex-col">
-            {isValidElement(calendarRail)
-              ? cloneElement(calendarRail, { mainStage: true } as Partial<CalendarRailProps>)
-              : calendarRail}
-          </TrialPaywallGuard>
-        ) : isValidElement(calendarRail) ? (
-          cloneElement(calendarRail, { mainStage: true } as Partial<CalendarRailProps>)
-        ) : (
-          calendarRail
-        )}
-      </div>
+            calendarRail
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -93,7 +93,7 @@ export function WorkspaceRail({
         className={cn(
           /* Avoid overflow-hidden on the column — it can clip the footer invite/create/profile stack. */
           'flex min-h-0 flex-col bg-[var(--rail-bg)] transition-[width] duration-200 ease-out motion-reduce:transition-none',
-          !collapsed && 'h-full w-[72px] shrink-0 border-r border-white/15 py-2',
+          !collapsed && 'h-full w-[97px] shrink-0 border-r border-white/15 py-2',
           isCollapsedStrip &&
             cn('h-full shrink-0 border-r border-white/15 py-2', COLLAPSED_COLUMN_WIDTH_CLASS),
           isStackedBottom && 'min-h-0 flex-1 w-full border-0 py-2',

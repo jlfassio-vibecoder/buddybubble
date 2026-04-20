@@ -109,7 +109,7 @@ export function BubbleSidebar({
           /* Do not use overflow-hidden here — it clips the header workspace-settings control on the right. */
           'flex min-h-0 flex-col transition-[width] duration-200 ease-out motion-reduce:transition-none',
           !collapsed &&
-            'h-full w-56 shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground',
+            'h-full w-[302px] shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground',
           isCollapsedStrip &&
             cn(
               'h-full shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground',

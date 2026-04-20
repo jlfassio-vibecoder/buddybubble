@@ -57,6 +57,11 @@ export type UseMessageThreadArgs = {
   workspaceId: string | null;
   bubbles: BubbleRow[];
   canPostMessages: boolean;
+  /**
+   * Task scope only: bubble id for the open task (e.g. from `TaskModal`’s `bubbleId`).
+   * Ensures `bubble_agent_bindings` loads before the async `tasks.bubble_id` fetch resolves.
+   */
+  taskBubbleIdHint?: string | null;
   /** Current user id — used to ignore own realtime inserts for bubble thread notifications. */
   currentUserId?: string | null;
   /**
@@ -66,10 +71,15 @@ export type UseMessageThreadArgs = {
   onPeerThreadReplyInsert?: (payload: PeerThreadReplyInsertPayload) => void;
 };
 
+/** Returned from `sendMessage` on success (message id + server timestamp for coach-wait UX). */
+export type SendMessageSuccess = { messageId: string; createdAt: string };
+
 export type UseMessageThreadResult = {
   messages: MessageRowWithEmbeddedTask[];
   userById: Record<string, ChatUserSnapshot>;
   teamMembers: MessageThreadTeamMember[];
+  /** Coach / agent `messages.user_id` values for this thread’s bubble (from `bubble_agent_bindings`). */
+  agentAuthUserIds: string[];
   replyCounts: Map<string, number>;
   isLoading: boolean;
   error: string | null;
@@ -79,7 +89,7 @@ export type UseMessageThreadResult = {
     parentId?: string,
     files?: File[],
     options?: { attachedTaskId?: string | null },
-  ) => Promise<boolean>;
+  ) => Promise<SendMessageSuccess | null>;
   clearError: () => void;
   setError: (message: string | null) => void;
 };
@@ -89,6 +99,7 @@ export function useMessageThread({
   workspaceId,
   bubbles,
   canPostMessages,
+  taskBubbleIdHint = null,
   currentUserId = null,
   onPeerThreadReplyInsert,
 }: UseMessageThreadArgs): UseMessageThreadResult {
@@ -99,6 +110,7 @@ export function useMessageThread({
   onPeerThreadReplyInsertRef.current = onPeerThreadReplyInsert;
   const [userById, setUserById] = useState<Record<string, ChatUserSnapshot>>({});
   const [teamMembers, setTeamMembers] = useState<MessageThreadTeamMember[]>([]);
+  const [agentAuthUserIds, setAgentAuthUserIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -106,14 +118,22 @@ export function useMessageThread({
 
   const filterKey = messageThreadFilterKey(filter);
 
+  const taskBubbleIdFromMessages = useMemo(() => {
+    if (!filter || filter.scope !== 'task') return null;
+    const row = messages.find((m) => m.bubble_id);
+    return row?.bubble_id ?? null;
+  }, [filter, messages]);
+
   /** Bubble context for agent mentions; null when agents must not load (`all_bubbles` or unknown task bubble). */
   const agentQueryBubbleId = useMemo(() => {
     if (!filter) return null;
     if (filter.scope === 'all_bubbles') return null;
     if (filter.scope === 'bubble') return filter.bubbleId;
-    if (filter.scope === 'task') return taskBubbleId;
+    if (filter.scope === 'task') {
+      return taskBubbleId ?? taskBubbleIdFromMessages ?? taskBubbleIdHint ?? null;
+    }
     return null;
-  }, [filter, taskBubbleId]);
+  }, [filter, taskBubbleId, taskBubbleIdFromMessages, taskBubbleIdHint]);
 
   useEffect(() => {
     if (!filter || filter.scope !== 'task') {
@@ -478,6 +498,7 @@ export function useMessageThread({
   useEffect(() => {
     if (!workspaceId) {
       setTeamMembers([]);
+      setAgentAuthUserIds([]);
       return;
     }
     let cancelled = false;
@@ -583,6 +604,7 @@ export function useMessageThread({
       const mergedMembers = [...agentMembers, ...humanMembersFiltered];
 
       setTeamMembers(mergedMembers);
+      setAgentAuthUserIds([...agentAuthIds]);
       setUserById((prev) => ({ ...prev, ...agentSnapshots, ...fromRows }));
     }
     void loadMembersAndAgents();
@@ -601,41 +623,41 @@ export function useMessageThread({
       parentId?: string,
       files?: File[],
       options?: { attachedTaskId?: string | null },
-    ): Promise<boolean> => {
+    ): Promise<SendMessageSuccess | null> => {
       if (!canPostMessages) {
         setError('You do not have permission to post messages in this channel.');
-        return false;
+        return null;
       }
       if (!workspaceId) {
         setError('No socialspace selected.');
-        return false;
+        return null;
       }
       if (!filter) {
         setError('Select a bubble to post.');
-        return false;
+        return null;
       }
       const raw = files ?? [];
       const attachedTaskId = options?.attachedTaskId ?? null;
       const hasAttachedTask = Boolean(attachedTaskId);
 
-      if (!content.trim() && raw.length === 0 && !hasAttachedTask) return false;
+      if (!content.trim() && raw.length === 0 && !hasAttachedTask) return null;
 
       if (hasAttachedTask && raw.length > 0) {
         setError('Remove pending attachments before posting a card, or send files separately.');
-        return false;
+        return null;
       }
 
       if (!hasAttachedTask) {
         if (!content.trim() && raw.length === 0) {
           setError('Message text is required.');
-          return false;
+          return null;
         }
       }
       const candidates = raw.filter((f) => classifyFileKind(f) !== 'unsupported');
       const validated = validateAttachmentFiles(candidates);
       if (!validated.ok) {
         setError(validated.message);
-        return false;
+        return null;
       }
       const accepted = validated.files;
       setError(null);
@@ -659,7 +681,7 @@ export function useMessageThread({
               ? 'Could not resolve task bubble.'
               : 'Add a bubble in this socialspace before posting attachments.',
         );
-        return false;
+        return null;
       }
 
       const supabase = createClient();
@@ -668,7 +690,7 @@ export function useMessageThread({
       } = await supabase.auth.getUser();
       if (!user) {
         setError('You need to be signed in to send messages.');
-        return false;
+        return null;
       }
 
       if (attachedTaskId) {
@@ -679,11 +701,11 @@ export function useMessageThread({
           .single();
         if (attachErr || !attachTask) {
           setError('Could not verify the card for this message.');
-          return false;
+          return null;
         }
         if (attachTask.bubble_id !== targetBubbleId) {
           setError('That card belongs to a different bubble than this message.');
-          return false;
+          return null;
         }
       }
 
@@ -712,10 +734,12 @@ export function useMessageThread({
           setError(
             insErr ? formatUserFacingError(insErr) : 'Could not create message. Please try again.',
           );
-          return false;
+          return null;
         }
 
         const messageId = inserted.id;
+        const createdAt =
+          typeof inserted.created_at === 'string' ? inserted.created_at : new Date().toISOString();
         const row = inserted as MessageRowWithEmbeddedTask;
         setMessages((prev) => {
           if (prev.some((m) => m.id === row.id)) return prev;
@@ -745,7 +769,7 @@ export function useMessageThread({
               );
               setError(formatUserFacingError(upErr));
               await abortAttempt();
-              return false;
+              return null;
             }
             const mime =
               file.type || inferMimeFromFileName(file.name) || 'application/octet-stream';
@@ -811,7 +835,7 @@ export function useMessageThread({
               console.error('[useMessageThread] video upload', supabaseClientErrorMessage(upVid));
               setError(formatUserFacingError(upVid));
               await abortAttempt();
-              return false;
+              return null;
             }
 
             let vm: Awaited<ReturnType<typeof getVideoFileMetadata>>;
@@ -821,7 +845,7 @@ export function useMessageThread({
               console.error('[useMessageThread] video metadata', supabaseClientErrorMessage(e));
               setError(e instanceof Error ? e.message : 'Could not read video.');
               await abortAttempt();
-              return false;
+              return null;
             }
 
             const useEdgePoster = process.env.NEXT_PUBLIC_MESSAGE_VIDEO_POSTER_EDGE === '1';
@@ -862,7 +886,7 @@ export function useMessageThread({
                   );
                   setError(e instanceof Error ? e.message : 'Could not read video.');
                   await abortAttempt();
-                  return false;
+                  return null;
                 }
                 const { error: upPoster } = await supabase.storage
                   .from(MESSAGE_ATTACHMENTS_BUCKET)
@@ -878,7 +902,7 @@ export function useMessageThread({
                   );
                   setError(formatUserFacingError(upPoster));
                   await abortAttempt();
-                  return false;
+                  return null;
                 }
                 thumb_path = thumbPath;
                 width = poster.width;
@@ -893,7 +917,7 @@ export function useMessageThread({
                 console.error('[useMessageThread] video poster', supabaseClientErrorMessage(e));
                 setError(e instanceof Error ? e.message : 'Could not read video.');
                 await abortAttempt();
-                return false;
+                return null;
               }
               const { error: upPoster } = await supabase.storage
                 .from(MESSAGE_ATTACHMENTS_BUCKET)
@@ -909,7 +933,7 @@ export function useMessageThread({
                 );
                 setError(formatUserFacingError(upPoster));
                 await abortAttempt();
-                return false;
+                return null;
               }
               thumb_path = thumbPath;
               width = poster.width;
@@ -946,7 +970,7 @@ export function useMessageThread({
             );
             setError(formatUserFacingError(updErr));
             await abortAttempt();
-            return false;
+            return null;
           }
           setMessages((prev) => {
             const idx = prev.findIndex((m) => m.id === messageId);
@@ -965,7 +989,7 @@ export function useMessageThread({
         if (self) {
           setUserById((prev) => ({ ...prev, [self.id]: toChatUserSnapshot(self) }));
         }
-        return true;
+        return { messageId, createdAt };
       } finally {
         setSending(false);
       }
@@ -977,6 +1001,7 @@ export function useMessageThread({
     messages,
     userById,
     teamMembers,
+    agentAuthUserIds,
     replyCounts,
     isLoading,
     error,

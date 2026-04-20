@@ -1,3 +1,4 @@
+import type { CoachDraftPayload } from '@/types/coach-draft';
 import type { Database, MessageRow, TaskRow } from '@/types/database';
 import type { MessageAttachment } from '@/types/message-attachment';
 
@@ -26,6 +27,8 @@ export type ChatMessage = {
   attached_task_id?: string | null;
   /** Left join from `tasks(*)` when present. */
   attachedTask?: TaskRow | null;
+  /** Parsed from `messages.metadata` when the coach proposed a workout revision. */
+  coachDraft?: CoachDraftPayload | null;
 };
 
 /** Join row shape used by message search (PostgREST embed). */

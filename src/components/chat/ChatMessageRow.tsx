@@ -10,6 +10,8 @@ import { cn } from '@/lib/utils';
 import type { MessageAttachment } from '@/types/message-attachment';
 import type { ChatMessage } from '@/types/chat';
 
+import type { TaskModalChatCardWorkoutActions } from '@/components/modals/task-modal/TaskModalCommentsPanel';
+import { CoachDraftCard } from './CoachDraftCard';
 import { ChatFeedTaskCard } from './ChatFeedTaskCard';
 import { MessageAttachmentThumbnails } from './MessageAttachmentThumbnails';
 
@@ -31,6 +33,10 @@ export type ChatMessageRowProps = {
 
   density?: 'rail' | 'thread';
   className?: string;
+  /** TaskModal handoff: after coach draft finalize RPC succeeds. */
+  onCoachDraftFinalizeSuccess?: () => void | Promise<void>;
+  /** TaskModal-only: workout review / generate on coach draft and embedded task for this modal task. */
+  chatCardWorkoutActions?: TaskModalChatCardWorkoutActions | null;
 };
 
 export function ChatMessageRow({
@@ -45,12 +51,25 @@ export function ChatMessageRow({
   showDepartmentBadgeLabel,
   density = 'rail',
   className,
+  onCoachDraftFinalizeSuccess,
+  chatCardWorkoutActions = null,
 }: ChatMessageRowProps) {
   const avatarSize = density === 'thread' ? 'h-8 w-8' : 'h-10 w-10';
   const senderClass = density === 'thread' ? 'text-sm' : 'text-base';
   const bodyClass = density === 'thread' ? 'mt-1 text-sm' : 'leading-relaxed mt-0.5';
   const showDepartmentBadge =
     showDepartmentBadgeLabel != null && message.department === showDepartmentBadgeLabel;
+
+  const coachDraft = message.coachDraft;
+  const showCoachDraftCard = coachDraft != null;
+  const hideTaskCardForPendingDraft = coachDraft?.status === 'pending';
+
+  const feedChatCardActions =
+    chatCardWorkoutActions &&
+    message.attachedTask &&
+    message.attachedTask.id === chatCardWorkoutActions.modalTaskId
+      ? chatCardWorkoutActions
+      : undefined;
 
   return (
     <div
@@ -100,12 +119,22 @@ export function ChatMessageRow({
 
         <div className={cn('text-foreground', bodyClass)}>{renderContent(message.content)}</div>
 
-        {message.attachedTask ? (
+        {showCoachDraftCard ? (
+          <CoachDraftCard
+            messageId={message.id}
+            draft={coachDraft}
+            onFinalizeSuccess={onCoachDraftFinalizeSuccess}
+            chatCardWorkoutActions={chatCardWorkoutActions ?? undefined}
+          />
+        ) : null}
+
+        {message.attachedTask && !hideTaskCardForPendingDraft ? (
           <ChatFeedTaskCard
             task={message.attachedTask}
             hostBubbleMessageId={message.id}
             onOpenTask={onOpenTask ? (taskId, opts) => onOpenTask(taskId, opts) : undefined}
             bubbleUp={bubbleUpPropsFor?.(message.attachedTask.id)}
+            chatCardWorkoutActions={feedChatCardActions}
           />
         ) : null}
 

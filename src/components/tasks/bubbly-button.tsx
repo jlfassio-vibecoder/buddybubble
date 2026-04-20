@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useId, useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { cn } from '@/lib/utils';
+import { BubbleBurst } from '@/components/tasks/bubble-burst';
 
 /**
  * Inactive — workspace bubble rail accent (`--sidebar-active` from theme engine).
@@ -25,6 +26,11 @@ export type TaskBubbleUpControlProps = {
   density?: 'default' | 'micro';
   /** Match card section tab chips (next to Details / … / Activity). */
   tabStrip?: boolean;
+  /**
+   * Icon row in `TaskModalTabBar`: larger bubble icon, ~44px touch target, word label screen-reader only.
+   * Use with `tabStrip`.
+   */
+  tabBarIconsRow?: boolean;
 };
 
 function usePrefersReducedMotion(): boolean {
@@ -80,73 +86,6 @@ function BubbleIcon({
   );
 }
 
-/** Maps total Bubble Ups (at burst time) to animation strength; caps so UI stays sane above ~25. */
-function burstStrength(total: number): number {
-  const t = Math.max(1, Math.min(total, 50));
-  return Math.log10(t + 1) / Math.log10(51);
-}
-
-function BubbleBurst({
-  activeKey,
-  tone,
-  intensity,
-}: {
-  activeKey: number;
-  /** Emerald when Bubbling up; schema accent when removing. */
-  tone: 'emerald' | 'schema';
-  /** Total Bubble Ups driving particle count, spread, size, and travel (1–50). */
-  intensity: number;
-}) {
-  const reduced = usePrefersReducedMotion();
-  const s = burstStrength(intensity);
-  const particleCount = Math.min(18, Math.round(5 + s * 13));
-  const particles = Array.from({ length: particleCount }, (_, i) => i);
-  if (reduced) return null;
-  const particleClass =
-    tone === 'emerald' ? 'bg-emerald-500 dark:bg-emerald-400' : 'bg-[color:var(--sidebar-active)]';
-  const spreadBase = 7 + s * 14;
-  const liftBase = 26 + s * 22;
-  const stagger = Math.max(0.012, 0.032 - s * 0.012);
-  const duration = 0.42 + s * 0.35;
-  const mid = (particleCount - 1) / 2;
-
-  return (
-    <span className="pointer-events-none absolute inset-0 overflow-visible" aria-hidden>
-      <AnimatePresence>
-        {activeKey > 0
-          ? particles.map((i) => {
-              const spread = (i - mid) * spreadBase;
-              const sizePx = 5 + s * 7 + (i % 3) * 0.5;
-              return (
-                <motion.span
-                  key={`${activeKey}-${i}`}
-                  className={cn(
-                    'absolute bottom-1 left-1/2 -translate-x-1/2 rounded-full',
-                    particleClass,
-                  )}
-                  style={{ width: sizePx, height: sizePx }}
-                  initial={{ x: spread * 0.35, y: 0, opacity: 0.95, scale: 0.35 + s * 0.2 }}
-                  animate={{
-                    x: spread,
-                    y: -liftBase - i * (2.2 + s * 2.5),
-                    opacity: 0,
-                    scale: 0.85 + s * 0.45,
-                  }}
-                  exit={{ opacity: 0 }}
-                  transition={{
-                    duration,
-                    ease: [0.22, 1, 0.36, 1],
-                    delay: i * stagger,
-                  }}
-                />
-              );
-            })
-          : null}
-      </AnimatePresence>
-    </span>
-  );
-}
-
 /**
  * Inactive: bubble schema accent + “Bubbly” + total count.
  * Active (hasMine): green + “Bubbling” + total count.
@@ -159,6 +98,7 @@ export function BubblyButton({
   onToggle,
   density = 'default',
   tabStrip = false,
+  tabBarIconsRow = false,
 }: TaskBubbleUpControlProps) {
   const labelId = useId();
   const [burstKey, setBurstKey] = useState(0);
@@ -192,12 +132,17 @@ export function BubblyButton({
 
   const micro = density === 'micro';
   const label = hasMine ? 'Bubbling' : 'Bubbly';
+  const countLabel = `${count} Bubble Up${count === 1 ? '' : 's'}`;
+  const tabBarA11yLabel = hasMine
+    ? `Bubbling, ${countLabel}. Remove your Bubble Up.`
+    : `Bubbly, ${countLabel}. Add your Bubble Up.`;
 
   return (
     <motion.div
       className={cn(
         'relative inline-flex rounded-md',
         micro && !tabStrip ? 'max-w-[min(100%,7rem)]' : '',
+        tabBarIconsRow && 'flex h-full min-h-11 w-full min-w-0 items-stretch justify-center',
       )}
       animate={
         showTrendAmbience
@@ -216,22 +161,29 @@ export function BubblyButton({
           : undefined
       }
     >
-      <BubbleBurst activeKey={burstKey} tone={burstTone} intensity={burstIntensity} />
+      <BubbleBurst
+        activeKey={burstKey}
+        tone={burstTone}
+        intensity={burstIntensity}
+        prefersReducedMotion={reduced}
+      />
       <button
         type="button"
         className={cn(
           'relative z-10 inline-flex max-w-full items-center gap-0.5 rounded-md font-semibold outline-none ring-offset-background transition-colors',
           'focus-visible:ring-2 focus-visible:ring-offset-2',
           hasMine ? BUBBLE_ACTIVE : BUBBLE_INACTIVE,
-          tabStrip
-            ? 'px-1.5 py-0.5 text-[9px]'
-            : micro
-              ? 'px-1 py-0.5 text-[9px]'
-              : 'px-1.5 py-1 text-[10px]',
+          tabBarIconsRow
+            ? 'min-h-11 w-full min-w-0 flex-col justify-center gap-0 px-1 py-1 text-[10px]'
+            : tabStrip
+              ? 'px-1.5 py-0.5 text-[9px]'
+              : micro
+                ? 'px-1 py-0.5 text-[9px]'
+                : 'px-1.5 py-1 text-[10px]',
           (disabled || busy) && 'opacity-40 pointer-events-none',
         )}
         aria-pressed={hasMine}
-        aria-labelledby={labelId}
+        {...(tabBarIconsRow ? { 'aria-label': tabBarA11yLabel } : { 'aria-labelledby': labelId })}
         title={
           hasMine ? 'Bubbling — click to remove your Bubble Up' : 'Bubbly — Bubble Up for this card'
         }
@@ -239,11 +191,11 @@ export function BubblyButton({
         onPointerDown={handlePointerDown}
       >
         <BubbleIcon
-          className={micro || tabStrip ? 'size-3' : 'size-3.5'}
+          className={cn(tabBarIconsRow ? 'size-5' : micro || tabStrip ? 'size-3' : 'size-3.5')}
           filled={hasMine}
           selected={hasMine}
         />
-        <span id={labelId} className="min-w-0 truncate">
+        <span id={labelId} className={cn('min-w-0 truncate', tabBarIconsRow && 'sr-only')}>
           {label}
         </span>
         <span
@@ -255,8 +207,9 @@ export function BubblyButton({
                 ? 'text-emerald-800 dark:text-emerald-200'
                 : 'text-[color:color-mix(in_srgb,var(--sidebar-active)_75%,var(--foreground))]',
             micro ? 'text-[9px]' : 'text-[10px]',
+            tabBarIconsRow && 'leading-none',
           )}
-          aria-label={`${count} Bubble Ups`}
+          {...(tabBarIconsRow ? {} : { 'aria-label': `${count} Bubble Ups` })}
         >
           {count > 99 ? '99+' : count}
         </span>
