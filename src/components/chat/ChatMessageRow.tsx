@@ -13,6 +13,7 @@ import type { ChatMessage } from '@/types/chat';
 import type { TaskModalChatCardWorkoutActions } from '@/components/modals/task-modal/TaskModalCommentsPanel';
 import { CoachDraftCard } from './CoachDraftCard';
 import { ChatFeedTaskCard } from './ChatFeedTaskCard';
+import { LiveSessionMessageCard } from './LiveSessionMessageCard';
 import { MessageAttachmentThumbnails } from './MessageAttachmentThumbnails';
 
 export type ChatMessageRowProps = {
@@ -37,6 +38,8 @@ export type ChatMessageRowProps = {
   onCoachDraftFinalizeSuccess?: () => void | Promise<void>;
   /** TaskModal-only: workout review / generate on coach draft and embedded task for this modal task. */
   chatCardWorkoutActions?: TaskModalChatCardWorkoutActions | null;
+  /** Logged-in user id for live-session join card (host vs recipient). */
+  liveSessionViewerUserId?: string | null;
 };
 
 export function ChatMessageRow({
@@ -53,6 +56,7 @@ export function ChatMessageRow({
   className,
   onCoachDraftFinalizeSuccess,
   chatCardWorkoutActions = null,
+  liveSessionViewerUserId = null,
 }: ChatMessageRowProps) {
   const avatarSize = density === 'thread' ? 'h-8 w-8' : 'h-10 w-10';
   const senderClass = density === 'thread' ? 'text-sm' : 'text-base';
@@ -118,6 +122,15 @@ export function ChatMessageRow({
         </div>
 
         <div className={cn('text-foreground', bodyClass)}>{renderContent(message.content)}</div>
+
+        {message.liveSessionInvite ? (
+          <LiveSessionMessageCard
+            messageId={message.id}
+            invite={message.liveSessionInvite}
+            starterDisplayName={message.sender}
+            currentUserId={liveSessionViewerUserId ?? null}
+          />
+        ) : null}
 
         {showCoachDraftCard ? (
           <CoachDraftCard

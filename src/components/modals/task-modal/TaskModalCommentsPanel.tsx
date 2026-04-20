@@ -569,6 +569,7 @@ export const TaskModalCommentsPanel = forwardRef<
                     onOpenThread={handleOpenThread}
                     onCoachDraftFinalizeSuccess={onCoachDraftFinalizeSuccess}
                     chatCardWorkoutActions={chatCardWorkoutActions}
+                    liveSessionViewerUserId={myProfile?.id ?? null}
                   />
                 ))
               : null}
@@ -616,6 +617,7 @@ export const TaskModalCommentsPanel = forwardRef<
                 bubbleUpPropsFor={bubbleUpPropsFor}
                 onCoachDraftFinalizeSuccess={onCoachDraftFinalizeSuccess}
                 chatCardWorkoutActions={chatCardWorkoutActions}
+                liveSessionViewerUserId={myProfile?.id ?? null}
               />
             </div>
             <div className="ml-2 space-y-5 border-l-2 border-primary/25 pl-4">
@@ -632,6 +634,7 @@ export const TaskModalCommentsPanel = forwardRef<
                   bubbleUpPropsFor={bubbleUpPropsFor}
                   onCoachDraftFinalizeSuccess={onCoachDraftFinalizeSuccess}
                   chatCardWorkoutActions={chatCardWorkoutActions}
+                  liveSessionViewerUserId={myProfile?.id ?? null}
                 />
               ))}
               {isWaitingForCoach ? (

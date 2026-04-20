@@ -37,6 +37,7 @@ import { metadataFieldsFromParsed } from '@/lib/item-metadata';
 import { FitnessProfileSheet } from '@/components/fitness/FitnessProfileSheet';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { markLiveSessionInviteMessageEnded } from '@/lib/mark-live-session-invite-ended';
 import { fetchPendingJoinRequestCountAndPreview } from '@/lib/workspace-join-requests';
 import type { JoinRequestPreviewItem } from '@/lib/workspace-join-requests';
 import { useUserProfileStore } from '@/store/userProfileStore';
@@ -67,6 +68,8 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { useUpdatePresence } from '@/hooks/use-update-presence';
 import { ActiveUsersStack } from '@/components/presence/ActiveUsersStack';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
+import { useLiveVideoStore } from '@/store/liveVideoStore';
+import { DashboardLiveVideoDock } from '@/components/dashboard/dashboard-live-video-dock';
 import { isDashboardProfileComplete } from '@/lib/profile-helpers';
 import {
   shouldBlockWorkoutForExpiredMemberPreview,
@@ -308,6 +311,38 @@ export function DashboardShell({
   useEffect(() => {
     void initSubscription(workspaceId);
   }, [workspaceId, initSubscription]);
+
+  const activeLiveVideoSession = useLiveVideoStore((s) => s.activeSession);
+  const joinLiveVideoSession = useLiveVideoStore((s) => s.joinSession);
+
+  useEffect(() => {
+    if (activeLiveVideoSession && activeLiveVideoSession.workspaceId !== workspaceId) {
+      useLiveVideoStore.getState().leaveSession();
+    }
+  }, [activeLiveVideoSession, workspaceId]);
+
+  const onLiveVideoLeaveSession = useCallback(async () => {
+    const { activeSession, leaveSession } = useLiveVideoStore.getState();
+    const inviteMessageId = activeSession?.inviteMessageId?.trim();
+    const uid = profile?.id;
+    if (inviteMessageId && uid && activeSession?.hostUserId === uid) {
+      const supabase = createClient();
+      await markLiveSessionInviteMessageEnded(supabase, inviteMessageId);
+    }
+    leaveSession();
+  }, [profile?.id]);
+
+  const handleJoinDevLiveVideo = useCallback(() => {
+    const uid = profile?.id;
+    if (!uid) return;
+    joinLiveVideoSession({
+      workspaceId,
+      sessionId: `dashboard-${workspaceId}`,
+      channelId: `bb-live-${workspaceId}`,
+      hostUserId: uid,
+      mode: 'workout',
+    });
+  }, [workspaceId, profile?.id, joinLiveVideoSession]);
 
   const openTaskModal = useCallback((id: string, opts?: OpenTaskOptions) => {
     chatCardOnCreatedRef.current = null;
@@ -990,83 +1025,111 @@ export function DashboardShell({
                 )}
               </div>
 
-              <WorkspaceMainSplit
-                workspaceId={workspaceId}
-                chatCollapsed={chatCollapsed}
-                onChatCollapsedChange={setChatCollapsed}
-                kanbanCollapsed={kanbanCollapsed}
-                calendarCollapsed={calendarRailIsCollapsed}
-                hideMainStage={hideMainStageForDesktopChat}
-                omitCollapsedMessagesStrip={
-                  (tripleStack && chatCollapsed) || omitMobileNonChatStrip
-                }
-                hideCalendarSlot={hideCalendarForMobileBoard}
-                hideMainStageBelowMd={layoutMobile && mobileTab === 'chat'}
-                taskViewsNonce={taskViewsNonce}
-                boardSoftLocked={trialSoftLockSurfaces}
-                calendarRail={
-                  <CalendarRail
-                    isCollapsed={calendarRailIsCollapsed}
-                    onExpand={() => setCalendarCollapsed(false)}
-                    onCollapse={() => setCalendarCollapsed(true)}
-                    buddyBubbleTitle={buddyBubbleTitle}
-                    {...calendarContext}
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                {process.env.NODE_ENV === 'development' &&
+                !embedMode &&
+                !activeLiveVideoSession &&
+                profile?.id ? (
+                  <div className="flex shrink-0 justify-end border-b border-border bg-muted/30 px-2 py-1">
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant="secondary"
+                      onClick={handleJoinDevLiveVideo}
+                    >
+                      Start live video (dev)
+                    </Button>
+                  </div>
+                ) : null}
+                {activeLiveVideoSession && profile?.id ? (
+                  <DashboardLiveVideoDock
+                    session={activeLiveVideoSession}
+                    localUserId={profile.id}
+                    onLeaveSession={onLiveVideoLeaveSession}
                   />
-                }
-                renderChat={({ onCollapse }) => (
-                  <ChatArea
-                    bubbles={bubbles}
-                    canPostMessages={canPostMessages}
-                    canWriteTasks={canWriteTasks}
-                    onOpenTask={openTaskModal}
-                    onOpenCreateTaskForChat={openChatComposeForTask}
-                    onCollapse={onCollapse}
-                    workspaceTitle={workspaceTitle}
-                    joinRequestBellPreview={isAdmin ? joinRequestBellPreview : undefined}
-                  />
-                )}
-                board={
-                  isAnalyticsBubble ? (
-                    <PremiumGate feature="analytics" className="flex-1 min-h-0">
-                      <AnalyticsBoard
-                        workspaceId={workspaceId}
-                        calendarTimezone={workspaceCalendarTz}
+                ) : null}
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                  <WorkspaceMainSplit
+                    workspaceId={workspaceId}
+                    chatCollapsed={chatCollapsed}
+                    onChatCollapsedChange={setChatCollapsed}
+                    kanbanCollapsed={kanbanCollapsed}
+                    calendarCollapsed={calendarRailIsCollapsed}
+                    hideMainStage={hideMainStageForDesktopChat}
+                    omitCollapsedMessagesStrip={
+                      (tripleStack && chatCollapsed) || omitMobileNonChatStrip
+                    }
+                    hideCalendarSlot={hideCalendarForMobileBoard}
+                    hideMainStageBelowMd={layoutMobile && mobileTab === 'chat'}
+                    taskViewsNonce={taskViewsNonce}
+                    boardSoftLocked={trialSoftLockSurfaces}
+                    calendarRail={
+                      <CalendarRail
+                        isCollapsed={calendarRailIsCollapsed}
+                        onExpand={() => setCalendarCollapsed(false)}
+                        onCollapse={() => setCalendarCollapsed(true)}
+                        buddyBubbleTitle={buddyBubbleTitle}
+                        {...calendarContext}
                       />
-                    </PremiumGate>
-                  ) : isClassesBubble ? (
-                    <ClassesBoard workspaceId={workspaceId} />
-                  ) : isProgramsBubble ? (
-                    <ProgramsBoard
-                      workspaceId={workspaceId}
-                      selectedBubbleId={selectedBubbleId!}
-                      bubbles={bubbles}
-                      workspaceCategory={effectiveKanbanCategory}
-                      calendarTimezone={workspaceCalendarTz}
-                      taskViewsNonce={taskViewsNonce}
-                      canWrite={canWriteTasks}
-                      onOpenTask={openTaskModal}
-                      onOpenCreateTask={openCreateTaskModal}
-                    />
-                  ) : (
-                    <KanbanBoard
-                      canWrite={canWriteTasks}
-                      bubbles={bubbles}
-                      onOpenTask={openTaskModal}
-                      onOpenCreateTask={openCreateTaskModal}
-                      onStartWorkout={handleStartWorkout}
-                      workspaceCategory={effectiveKanbanCategory}
-                      calendarTimezone={workspaceCalendarTz}
-                      boardStripExpandNonce={boardStripExpandNonce}
-                      calendarStripCollapsed={calendarRailIsCollapsed}
-                      onExpandCalendarWhenKanbanStripCollapse={() => setCalendarCollapsed(false)}
-                      onRetractKanbanPanel={() => setKanbanCollapsed(true)}
-                      buddyBubbleTitle={buddyBubbleTitle}
-                      workspaceMemberRole={effectiveWorkspaceRole}
-                      guestTaskUserId={profile?.id ?? null}
-                    />
-                  )
-                }
-              />
+                    }
+                    renderChat={({ onCollapse }) => (
+                      <ChatArea
+                        bubbles={bubbles}
+                        canPostMessages={canPostMessages}
+                        canWriteTasks={canWriteTasks}
+                        onOpenTask={openTaskModal}
+                        onOpenCreateTaskForChat={openChatComposeForTask}
+                        onCollapse={onCollapse}
+                        workspaceTitle={workspaceTitle}
+                        joinRequestBellPreview={isAdmin ? joinRequestBellPreview : undefined}
+                      />
+                    )}
+                    board={
+                      isAnalyticsBubble ? (
+                        <PremiumGate feature="analytics" className="flex-1 min-h-0">
+                          <AnalyticsBoard
+                            workspaceId={workspaceId}
+                            calendarTimezone={workspaceCalendarTz}
+                          />
+                        </PremiumGate>
+                      ) : isClassesBubble ? (
+                        <ClassesBoard workspaceId={workspaceId} />
+                      ) : isProgramsBubble ? (
+                        <ProgramsBoard
+                          workspaceId={workspaceId}
+                          selectedBubbleId={selectedBubbleId!}
+                          bubbles={bubbles}
+                          workspaceCategory={effectiveKanbanCategory}
+                          calendarTimezone={workspaceCalendarTz}
+                          taskViewsNonce={taskViewsNonce}
+                          canWrite={canWriteTasks}
+                          onOpenTask={openTaskModal}
+                          onOpenCreateTask={openCreateTaskModal}
+                        />
+                      ) : (
+                        <KanbanBoard
+                          canWrite={canWriteTasks}
+                          bubbles={bubbles}
+                          onOpenTask={openTaskModal}
+                          onOpenCreateTask={openCreateTaskModal}
+                          onStartWorkout={handleStartWorkout}
+                          workspaceCategory={effectiveKanbanCategory}
+                          calendarTimezone={workspaceCalendarTz}
+                          boardStripExpandNonce={boardStripExpandNonce}
+                          calendarStripCollapsed={calendarRailIsCollapsed}
+                          onExpandCalendarWhenKanbanStripCollapse={() =>
+                            setCalendarCollapsed(false)
+                          }
+                          onRetractKanbanPanel={() => setKanbanCollapsed(true)}
+                          buddyBubbleTitle={buddyBubbleTitle}
+                          workspaceMemberRole={effectiveWorkspaceRole}
+                          guestTaskUserId={profile?.id ?? null}
+                        />
+                      )
+                    }
+                  />
+                </div>
+              </div>
             </div>
           </div>
 

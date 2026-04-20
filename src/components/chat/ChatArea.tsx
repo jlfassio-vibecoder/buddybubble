@@ -24,6 +24,7 @@ import { createClient } from '@utils/supabase/client';
 import { guestTaskAssignmentVisibilityOr, isGuestWorkspaceRole } from '@/lib/guest-task-query';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useUserProfileStore } from '@/store/userProfileStore';
+import { useLiveVideoStore } from '@/store/liveVideoStore';
 import type { BubbleRow, TaskRow } from '@/types/database';
 import {
   ALL_BUBBLES_BUBBLE_ID,
@@ -47,6 +48,7 @@ import { useCoachTypingWait } from '@/hooks/useCoachTypingWait';
 import { useMessageThread, type PeerThreadReplyInsertPayload } from '@/hooks/useMessageThread';
 import { CoachTypingIndicator } from '@/components/chat/CoachTypingIndicator';
 import { toChatUserSnapshot, type MessageThreadFilter } from '@/lib/message-thread';
+import { liveSessionInviteMetadataToJson } from '@/types/live-session-invite';
 
 type TaskPickerRow = {
   id: string;
@@ -466,6 +468,78 @@ export function ChatArea({
       cancelled = true;
     };
   }, [workspaceId, bubbles, workspaceRole, myProfile?.id]);
+
+  const handleStartLiveWorkout = useCallback(() => {
+    if (!workspaceId || !myProfile?.id) {
+      setError('You need a socialspace and profile to start a live workout.');
+      return;
+    }
+    if (pendingFiles.length > 0) {
+      setError('Remove pending attachments before starting a live workout.');
+      return;
+    }
+    setError(null);
+
+    const threadParentId = activeThreadParent?.id;
+    let targetBubbleId: string | null = null;
+    if (threadParentId) {
+      const parentRow = messages.find((m) => m.id === threadParentId);
+      targetBubbleId = parentRow?.bubble_id ?? null;
+    } else if (!activeBubble) {
+      setError('Select a bubble to post.');
+      return;
+    } else if (activeBubble.id === ALL_BUBBLES_BUBBLE_ID) {
+      targetBubbleId = defaultBubbleIdForWrites(bubbles);
+    } else {
+      targetBubbleId = activeBubble.id;
+    }
+    if (!targetBubbleId) {
+      setError(
+        threadParentId
+          ? 'Could not find thread parent. Try closing and reopening the thread.'
+          : 'Add a bubble in this socialspace before posting.',
+      );
+      return;
+    }
+
+    void (async () => {
+      const wsId = workspaceId;
+      const sessionId = crypto.randomUUID();
+      const shortId = sessionId.replace(/-/g, '').slice(0, 8);
+      const channelId = `bb-live-${wsId}-${shortId}`;
+      const createdAt = new Date().toISOString();
+      const metadata = liveSessionInviteMetadataToJson({
+        type: 'live_session',
+        workspaceId: wsId,
+        sessionId,
+        channelId,
+        hostUserId: myProfile.id,
+        mode: 'workout',
+        createdAt,
+      });
+      const content = 'Started a live workout — tap Join below.';
+      const sent = await sendMessage(content, threadParentId, undefined, { metadata });
+      if (!sent) return;
+      useLiveVideoStore.getState().joinSession({
+        workspaceId: wsId,
+        sessionId,
+        channelId,
+        hostUserId: myProfile.id,
+        mode: 'workout',
+        inviteMessageId: sent.messageId,
+      });
+    })();
+  }, [
+    activeBubble,
+    activeThreadParent?.id,
+    bubbles,
+    messages,
+    myProfile?.id,
+    pendingFiles.length,
+    sendMessage,
+    setError,
+    workspaceId,
+  ]);
 
   const handleComposeChatCard = useCallback(() => {
     if (!canWriteTasks || !onOpenCreateTaskForChat) return;
@@ -1062,6 +1136,7 @@ export function ChatArea({
                     (n) => n.type === 'thread_reply' && n.relatedId === msg.id && !n.read,
                   )}
                   showDepartmentBadgeLabel={ALL_BUBBLES_LABEL}
+                  liveSessionViewerUserId={myProfile?.id ?? null}
                 />
               </motion.div>
             ))}
@@ -1078,6 +1153,7 @@ export function ChatArea({
           activeThreadParent={activeThreadParent}
           threadMessages={threadMessages}
           canPostMessages={canPostMessages}
+          liveSessionViewerUserId={myProfile?.id ?? null}
           onClose={() => {
             coachWaitThread.clear();
             setActiveThreadParent(null);
@@ -1148,6 +1224,18 @@ export function ChatArea({
         mentionConfig={richMentionConfig}
         slashConfig={richSlashConfig}
         onRequestCreateAndAttachCard={handleComposeChatCard}
+        features={{
+          enableStartLiveWorkout: true,
+        }}
+        onRequestStartLiveWorkout={handleStartLiveWorkout}
+        startLiveWorkoutDisabled={
+          !canPostMessages ||
+          !canPostInComposer ||
+          !workspaceId ||
+          !myProfile?.id ||
+          pendingFiles.length > 0 ||
+          sendingAttachments
+        }
         footerHint={
           <>
             <b>Return</b> to send (after attaching, pick files then send) • <b>Shift + Return</b>{' '}

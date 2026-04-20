@@ -12,6 +12,7 @@ import {
   Loader2,
   Paperclip,
   Send,
+  Video,
   X,
   Zap,
 } from 'lucide-react';
@@ -46,6 +47,7 @@ export type RichMessageComposerFeatures = {
   enableAtMentions?: boolean;
   enableSlashTaskLinks?: boolean;
   enableCreateAndAttachCard?: boolean;
+  enableStartLiveWorkout?: boolean;
 };
 
 export type RichMessageComposerProps = {
@@ -83,6 +85,9 @@ export type RichMessageComposerProps = {
   slashConfig?: RichMessageComposerSlashConfig;
 
   onRequestCreateAndAttachCard?: () => void;
+  onRequestStartLiveWorkout?: () => void;
+
+  startLiveWorkoutDisabled?: boolean;
 
   density?: 'rail' | 'thread';
 
@@ -100,6 +105,7 @@ const defaultFeatures: Required<RichMessageComposerFeatures> = {
   enableAtMentions: true,
   enableSlashTaskLinks: true,
   enableCreateAndAttachCard: true,
+  enableStartLiveWorkout: false,
 };
 
 export function RichMessageComposer({
@@ -122,6 +128,8 @@ export function RichMessageComposer({
   mentionConfig,
   slashConfig,
   onRequestCreateAndAttachCard,
+  onRequestStartLiveWorkout,
+  startLiveWorkoutDisabled,
   density = 'rail',
   popoverContainerRef,
   footerHint,
@@ -329,6 +337,7 @@ export function RichMessageComposer({
     : 'shrink-0 rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-primary disabled:opacity-30';
   const paperclipIcon = isRail ? 'h-5 w-5' : 'h-4 w-4';
   const layoutIcon = isRail ? 'h-5 w-5' : 'h-4 w-4';
+  const videoIcon = layoutIcon;
   const inputClass = isRail
     ? 'w-full rounded-xl border border-input bg-background px-4 py-3 pr-12 text-foreground transition-all placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-50'
     : cn(
@@ -511,6 +520,21 @@ export function RichMessageComposer({
             onClick={onRequestCreateAndAttachCard}
           >
             <LayoutGrid className={layoutIcon} aria-hidden />
+          </button>
+        ) : null}
+        {features.enableStartLiveWorkout && onRequestStartLiveWorkout ? (
+          <button
+            type="button"
+            className={attachBtnClass}
+            disabled={startLiveWorkoutDisabled ?? disabled}
+            title="Start live workout"
+            aria-label="Start live workout"
+            onClick={(e) => {
+              e.preventDefault();
+              onRequestStartLiveWorkout();
+            }}
+          >
+            <Video className={videoIcon} aria-hidden />
           </button>
         ) : null}
         <div className="relative min-w-0 flex-1">
