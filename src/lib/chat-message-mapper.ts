@@ -1,3 +1,4 @@
+import { parseCoachDraftFromMessageMetadata } from '@/types/coach-draft';
 import { parseMessageAttachments } from '@/types/message-attachment';
 import type { MessageRowWithEmbeddedTask } from '@/types/database';
 import type { ChatMessage, ChatUserSnapshot, SearchMessageJoinRow } from '@/types/chat';
@@ -23,6 +24,7 @@ export function rowToChatMessage(
     attachments: parseMessageAttachments(row.attachments),
     attached_task_id: row.attached_task_id,
     attachedTask: row.tasks ?? null,
+    coachDraft: parseCoachDraftFromMessageMetadata(row.metadata),
   };
 }
 
@@ -46,5 +48,6 @@ export function searchJoinRowToChatMessage(
     attachments: parseMessageAttachments(row.attachments),
     attached_task_id: row.attached_task_id,
     attachedTask: row.tasks ?? null,
+    coachDraft: parseCoachDraftFromMessageMetadata(row.metadata),
   };
 }

@@ -163,6 +163,13 @@ export function DashboardShell({
 
   const bumpTaskViews = useCallback(() => setTaskViewsNonce((n) => n + 1), []);
 
+  /** Clears chat deep-link open options so TaskModal tab routing cannot re-apply Comments from stale props. */
+  const clearTaskModalCommentDeepLink = useCallback(() => {
+    setTaskModalCommentThreadMessageId(null);
+    setTaskModalInitialTab(null);
+    setTaskModalViewMode('full');
+  }, []);
+
   const openPeopleInvites = useCallback(() => {
     setPeopleInvitesOpen(true);
     if (layoutMobile) setMobileNavOpen(false);
@@ -178,11 +185,10 @@ export function DashboardShell({
     setChatCollapsedState(v);
   }, []);
 
-  /** Hiding Kanban (Messages + Calendar stage): keep Calendar expanded so the stage is never blank. */
+  /** Hiding Kanban: ensure chat stays open (shell invariant). Calendar rail collapse is derived when Kanban is hidden. */
   const setKanbanCollapsed = useCallback((v: boolean) => {
     if (v) {
       setChatCollapsedState(false);
-      setCalendarCollapsedState(false);
     }
     setKanbanCollapsedState(v);
   }, []);
@@ -854,6 +860,9 @@ export function DashboardShell({
     return null;
   }, [layoutMobile, embedMode, chatCollapsed, kanbanCollapsed, calendarCollapsed]);
 
+  const hideMainStageForDesktopChat =
+    !layoutMobile && !embedMode && desktopFocusModeActive === 'chat';
+
   const applyDesktopFocusMode = useCallback(
     (mode: DesktopFocusMode) => {
       if (!layoutHydrated || embedMode) return;
@@ -861,8 +870,8 @@ export function DashboardShell({
         case 'chat':
           setChatCollapsedState(false);
           setKanbanCollapsedState(true);
-          // Persist calendar as expanded while Kanban is hidden so reopening board does not restore a collapsed rail.
-          setCalendarCollapsedState(false);
+          setWorkspaceRailCollapsed(false);
+          setBubbleSidebarCollapsed(false);
           break;
         case 'board':
           setChatCollapsedState(true);
@@ -987,6 +996,7 @@ export function DashboardShell({
                 onChatCollapsedChange={setChatCollapsed}
                 kanbanCollapsed={kanbanCollapsed}
                 calendarCollapsed={calendarRailIsCollapsed}
+                hideMainStage={hideMainStageForDesktopChat}
                 omitCollapsedMessagesStrip={
                   (tripleStack && chatCollapsed) || omitMobileNonChatStrip
                 }
@@ -1090,6 +1100,7 @@ export function DashboardShell({
             calendarTimezone={workspaceCalendarTz}
             onTaskArchived={bumpTaskViews}
             onTaskCommentsMarkedRead={bumpTaskViews}
+            onClearOpenTaskCommentDeepLink={clearTaskModalCommentDeepLink}
           />
           {workoutPlayerTask && (
             <WorkoutPlayer

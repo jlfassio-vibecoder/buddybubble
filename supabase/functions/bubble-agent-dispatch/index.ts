@@ -1,7 +1,7 @@
 /**
  * Supabase Edge Function: Database Webhook handler for Bubble Agents.
  * Calls Gemini, then inserts an agent reply via public.agent_create_card_and_reply and/or
- * public.agent_update_task_and_reply (service_role) when updating an existing card from thread context.
+ * public.agent_insert_coach_workout_draft_reply (service_role) when revising an existing workout card (draft → user finalizes via apply_workout_draft).
  * Resolves agent by @mention on root messages, or by thread continuation (latest agent message in the same thread) when `parent_id` is set.
  *
  * Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, BUBBLE_AGENT_WEBHOOK_SECRET, GEMINI_API_KEY.
@@ -68,15 +68,16 @@ type AgentCreateCardRpcArgs = {
   p_seed_task_comment_text?: string | null;
 };
 
-type AgentUpdateTaskRpcArgs = {
+type AgentInsertCoachDraftRpcArgs = {
   p_trigger_message_id: string;
   p_thread_id: string;
   p_agent_auth_user_id: string;
   p_invoker_user_id: string;
   p_target_task_id: string;
   p_reply_text: string;
-  p_new_title?: string | null;
-  p_new_description?: string | null;
+  p_proposed_title: string | null;
+  p_proposed_description: string | null;
+  p_proposed_metadata: Record<string, unknown>;
 };
 
 /** Max length for coach seed comment passed to Postgres (RPC). */
@@ -111,7 +112,12 @@ function unwrapDef(row: BindingRow): AgentDefEmbed | null {
   return o as AgentDefEmbed;
 }
 
-type IntakePhase = 'greeting' | 'clarifying_session' | 'ready_to_prescribe' | 'other';
+type IntakePhase =
+  | 'greeting'
+  | 'clarifying_session'
+  | 'pre_draft_confirmation'
+  | 'ready_to_prescribe'
+  | 'other';
 
 type IntakeCategory =
   | 'sleep_energy'
@@ -125,6 +131,7 @@ type IntakeCategory =
 const INTAKE_PHASES: readonly IntakePhase[] = [
   'greeting',
   'clarifying_session',
+  'pre_draft_confirmation',
   'ready_to_prescribe',
   'other',
 ];
@@ -157,6 +164,8 @@ type CoachGeminiJsonResponse = {
   session_request: boolean;
   /** When create_card, optional body for task comment seed (null otherwise). */
   coach_task_notes: string | null;
+  /** When update_existing_task: structured fields merged into tasks.metadata on finalize (exercises, workout_type, duration_min). */
+  proposed_workout_metadata: Record<string, unknown> | null;
 };
 
 /**
@@ -183,6 +192,38 @@ function coalesceTaskDescription(parsed: Record<string, unknown>): string | null
 }
 
 /** Card body for update-existing-task flow (Gemini may use alternate keys). */
+/** Normalizes Gemini `proposed_workout_metadata` for `tasks.metadata` merge on finalize. */
+function parseProposedWorkoutMetadata(parsed: Record<string, unknown>): Record<string, unknown> {
+  const raw = parsed.proposed_workout_metadata ?? parsed['proposed_workout_metadata'];
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const o = raw as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  if (typeof o.workout_type === 'string' && o.workout_type.trim()) {
+    out.workout_type = o.workout_type.trim();
+  }
+  if (typeof o.duration_min === 'number' && Number.isFinite(o.duration_min) && o.duration_min > 0) {
+    out.duration_min = Math.round(o.duration_min);
+  }
+  if (Array.isArray(o.exercises)) {
+    const exercises: Record<string, unknown>[] = [];
+    for (const ex of o.exercises) {
+      if (!ex || typeof ex !== 'object' || Array.isArray(ex)) continue;
+      const e = ex as Record<string, unknown>;
+      const name = typeof e.name === 'string' ? e.name.trim() : '';
+      if (!name) continue;
+      const row: Record<string, unknown> = { name };
+      if (typeof e.sets === 'number' && e.sets > 0) row.sets = Math.round(e.sets);
+      if (e.reps != null) row.reps = e.reps;
+      if (typeof e.coach_notes === 'string' && e.coach_notes.trim())
+        row.coach_notes = e.coach_notes.trim();
+      if (typeof e.equipment === 'string' && e.equipment.trim()) row.equipment = e.equipment.trim();
+      exercises.push(row);
+    }
+    if (exercises.length > 0) out.exercises = exercises;
+  }
+  return out;
+}
+
 function coalesceUpdatedTaskDescription(parsed: Record<string, unknown>): string | null {
   const candidates: unknown[] = [
     parsed.updated_task_description,
@@ -357,6 +398,10 @@ function parseGeminiJsonText(text: string): CoachGeminiJsonResponse {
     updated_task_description,
   };
 
+  const proposed_workout_metadata = parseProposedWorkoutMetadata(parsed);
+  const proposedMetaOrNull =
+    Object.keys(proposed_workout_metadata).length > 0 ? proposed_workout_metadata : null;
+
   if (createCard) {
     const titleTrimmed = typeof rawTitle === 'string' ? rawTitle.trim() : '';
     if (!titleTrimmed) {
@@ -368,6 +413,7 @@ function parseGeminiJsonText(text: string): CoachGeminiJsonResponse {
       task_title: titleTrimmed,
       task_description: rawDesc,
       coach_task_notes: ensureCoachTaskNotesCta(parseCoachTaskNotes(parsed.coach_task_notes)),
+      proposed_workout_metadata: null,
       ...intakeTail,
       ...updateTail,
     };
@@ -379,6 +425,7 @@ function parseGeminiJsonText(text: string): CoachGeminiJsonResponse {
     task_title: null,
     task_description: null,
     coach_task_notes: null,
+    proposed_workout_metadata: proposedMetaOrNull,
     ...intakeTail,
     ...updateTail,
   };
@@ -406,11 +453,15 @@ async function geminiGenerateJson(args: {
       responseSchema: {
         type: 'OBJECT',
         properties: {
-          reply_content: { type: 'STRING' },
+          reply_content: {
+            type: 'STRING',
+            description:
+              'Single concise coaching message. On pre_draft_confirmation turns, ask for a final green light; do not claim the workout draft or card already exists.',
+          },
           create_card: {
             type: 'BOOLEAN',
             description:
-              'TRUE only when session readiness is sufficient for today (missing_intake_categories is empty), you can prescribe safely, AND task fields are filled — OR the user explicitly asked to skip questions (see user_requested_immediate_card). Do NOT set true on first-pass vague session requests when profile alone looks complete; profile is not session readiness. Default FALSE while asking 1–2 targeted intake questions.',
+              'TRUE only when session readiness is sufficient (missing_intake_categories empty), you can prescribe safely, task fields are filled, AND PRE-DRAFT CONFIRMATION is satisfied OR user_requested_immediate_card. MUST be FALSE on pre_draft_confirmation turns where you are only asking for final approval before drafting. Do NOT set true on first-pass vague session requests when profile alone looks complete. Default FALSE while asking intake questions.',
           },
           task_title: {
             type: 'STRING',
@@ -429,7 +480,7 @@ async function geminiGenerateJson(args: {
             type: 'STRING',
             enum: [...INTAKE_PHASES],
             description:
-              'Conversation stage: greeting; clarifying_session while collecting readiness; ready_to_prescribe when about to or creating a card; other.',
+              'Conversation stage: greeting; clarifying_session while collecting readiness; pre_draft_confirmation when asking for final green light before drafting (create_card false, proposed_workout_metadata null); ready_to_prescribe when this response actually creates the card or outputs the structured draft; other.',
           },
           session_readiness_score: {
             type: 'INTEGER',
@@ -448,7 +499,7 @@ async function geminiGenerateJson(args: {
           user_requested_immediate_card: {
             type: 'BOOLEAN',
             description:
-              'TRUE only if the user clearly asks to skip intake and put the workout on a card now (e.g. "just put it on a card", "generate the workout now"). Default false.',
+              'TRUE if the user clearly asks to skip remaining steps—including PRE-DRAFT CONFIRMATION—and generate or draft the workout now (e.g. "just put it on a card", "draft it now", "skip the questions"). Default false.',
           },
           session_request: {
             type: 'BOOLEAN',
@@ -464,7 +515,7 @@ async function geminiGenerateJson(args: {
           update_existing_task: {
             type: 'BOOLEAN',
             description:
-              'TRUE only when the server provided CURRENT TASK CONTEXT and the user asked to modify that existing card/workout. Provide updated_task_title and/or updated_task_description as the FULL revised card text (not a diff). Set FALSE when creating a NEW card (create_card) or for general chat. Never invent task IDs — the server resolves the task.',
+              'TRUE when CURRENT TASK CONTEXT applies AND the user has confirmed drafting/revising OR user_requested_immediate_card—not on pre_draft_confirmation-only turns. Provide updated_task_title and/or updated_task_description and/or proposed_workout_metadata (at least one non-empty) when true. Set FALSE when creating a NEW card (create_card) or when only asking for pre-draft confirmation. Never invent task IDs — the server resolves the task.',
           },
           updated_task_title: {
             type: 'STRING',
@@ -479,6 +530,29 @@ async function geminiGenerateJson(args: {
             description:
               'When update_existing_task is true: full new task description / workout brief for the existing card. Use null to leave description unchanged only if updated_task_title is non-empty.',
           },
+          proposed_workout_metadata: {
+            type: 'OBJECT',
+            nullable: true,
+            description:
+              'When update_existing_task is true: structured workout fields to merge into tasks.metadata on user finalize (exercises array with name, sets, reps; workout_type; duration_min). MUST be null on pre_draft_confirmation turns and until the user confirms drafting or user_requested_immediate_card. Use null if only updating title/description text.',
+            properties: {
+              exercises: {
+                type: 'ARRAY',
+                items: {
+                  type: 'OBJECT',
+                  properties: {
+                    name: { type: 'STRING' },
+                    sets: { type: 'INTEGER', nullable: true },
+                    reps: { type: 'STRING', nullable: true },
+                    coach_notes: { type: 'STRING', nullable: true },
+                    equipment: { type: 'STRING', nullable: true },
+                  },
+                },
+              },
+              workout_type: { type: 'STRING', nullable: true },
+              duration_min: { type: 'INTEGER', nullable: true },
+            },
+          },
         },
         // Keys must be present so Gemini does not drop task_description on create_card flows.
         required: [
@@ -489,6 +563,7 @@ async function geminiGenerateJson(args: {
           'update_existing_task',
           'updated_task_title',
           'updated_task_description',
+          'proposed_workout_metadata',
         ],
       },
     },
@@ -772,19 +847,12 @@ async function fetchUserContext(
 
   const assignedRow = lastAssignedRes.data as LastWorkoutTaskRow | null;
   const bubbleRow = lastBubbleRes.data as LastWorkoutTaskRow | null;
-  let lastWorkoutScope: 'assigned' | 'bubble' | 'none' = 'none';
   let lastRow: LastWorkoutTaskRow | null = null;
   if (assignedRow?.title?.trim()) {
     lastRow = assignedRow;
-    lastWorkoutScope = 'assigned';
   } else if (bubbleRow?.title?.trim()) {
     lastRow = bubbleRow;
-    lastWorkoutScope = 'bubble';
   }
-  if (lastWorkoutScope !== 'none') {
-    console.log('[bubble-agent-dispatch] last_workout_scope=' + lastWorkoutScope);
-  }
-
   const nextRow = nextWorkoutRes.data as {
     title?: string | null;
     scheduled_on?: string | null;
@@ -988,16 +1056,19 @@ Deno.serve(async (req) => {
     'You are a consultative fitness coach inside BuddyBubble. Chat naturally and helpfully. ' +
     'SESSION READINESS (today) is separate from static profile completeness. Profile (CURRENT USER CONTEXT) tells you who they are generally; readiness tells you what is appropriate for THIS session (sleep/energy, soreness, equipment they have right now, time budget, intensity preference, injury flags). ' +
     'Use LAST WORKOUT CONTEXT when present to ask grounded follow-ups (recovery, progression, what felt hard), not generic questionnaires. ' +
-    'Do not set create_card to true until missing_intake_categories is empty (or the user has clearly waived intake via user_requested_immediate_card) AND you can prescribe safely for today. If missing_intake_categories is non-empty, create_card should normally be false. ' +
+    'Do not set create_card to true until missing_intake_categories is empty (or the user has clearly waived intake via user_requested_immediate_card) AND you can prescribe safely for today AND (you have completed PRE-DRAFT CONFIRMATION as above OR user_requested_immediate_card). If missing_intake_categories is non-empty, create_card should normally be false. ' +
     'Always prioritize asking 1–2 targeted questions over immediate card generation unless the user explicitly asks to skip questions and "just put it on a card" / generate now (then set user_requested_immediate_card true). ' +
     'Check CURRENT USER CONTEXT for goals, schedule, and default equipment: do not re-ask for data that is clearly already on file unless you need today-specific overrides (e.g. equipment_today). ' +
+    'PRE-DRAFT CONFIRMATION (critical human-in-the-loop step): After session readiness is sufficient (missing_intake_categories is empty, or the user waived further intake via user_requested_immediate_card), do NOT claim the workout is finished, fully written, or already saved as a draft. Do NOT imply that structured proposed_workout_metadata or a Kanban card body already exists in the system. ' +
+    'On the first turn where you would otherwise prescribe or draft, unless user_requested_immediate_card is true: (1) acknowledge what they shared, (2) say you are starting to design or are ready to draft (intent, not completion), (3) ask for a final green light—e.g. any last injuries, preferences, or explicit OK to draft. Set create_card to false; set update_existing_task to false; leave proposed_workout_metadata null; use intake_phase pre_draft_confirmation. Example tone (adapt, do not copy verbatim): "Excellent! Since you are feeling strong with good energy and no soreness, I have started to put together a challenging full-body AMRAP using bodyweight and bands—it will hit major muscle groups and keep your heart rate up. Any last items you want to address before I draft the outline?" ' +
+    'Draft triggers: Only set create_card to true with full task_title and task_description AFTER the user gives clear affirmative consent to create the card (or user_requested_immediate_card). Only populate proposed_workout_metadata when update_existing_task is true AND the user has clearly confirmed they want the structured draft or revision (e.g. yes, draft it, go ahead), OR user_requested_immediate_card—never on the pre_draft_confirmation turn alone. ' +
     'When create_card is true, you must provide non-empty task_title and a rich task_description for the Kanban card body (workout details, structure, equipment, safety). Never leave task_description null or empty when create_card is true. ' +
     "When create_card is true, also populate coach_task_notes with a task-scoped coach comment: brief readiness summary, rationale for this prescription, and scaling or regression options. task_description is the executable plan; coach_task_notes are the \"why\" and how to adjust. Always end coach_task_notes with this exact call-to-action (verbatim): Does this proposed workout look good? If so, click 'Generate Workout' on the card. If you'd like any adjustments, let me know here in the chat! Use null for coach_task_notes only when create_card is false. " +
     'When create_card is false, set task_title, task_description, and coach_task_notes to null. ' +
-    'When the server includes CURRENT TASK CONTEXT, the user is discussing that existing task. If they ask to change or revise that workout/card, set update_existing_task to true and provide updated_task_title and/or updated_task_description as the FULL revised content (not a diff). At least one of those two must be non-empty when update_existing_task is true. Prefer update_existing_task over create_card when modifying an existing card (set create_card false). The server resolves the task id — never output a task id. ' +
+    'When the server includes CURRENT TASK CONTEXT, the user is discussing that existing task. Follow PRE-DRAFT CONFIRMATION before emitting structured proposed_workout_metadata: on the confirmation-only turn, set update_existing_task to false and leave proposed_workout_metadata null. When the user has clearly approved drafting or revising (or user_requested_immediate_card), set update_existing_task to true and provide updated_task_title and/or updated_task_description as the FULL revised card text (not a diff), and/or proposed_workout_metadata with structured exercises (name, sets, reps, etc.), workout_type, and/or duration_min. At least one of: non-empty updated title, non-empty updated description, or non-empty proposed_workout_metadata must be present when update_existing_task is true. Prefer update_existing_task over create_card when modifying an existing card (set create_card false). The server resolves the task id — never output a task id. ' +
     'Set session_request true when the user wants a workout or session planned for today or soon; false otherwise. The server uses this for turn gating—be honest. ' +
-    'Align intake_phase, session_readiness_score, and missing_intake_categories with your judgment (e.g. clarifying_session while collecting readiness; ready_to_prescribe when issuing a card). ' +
-    'Return ONLY a raw JSON object (no markdown, no code fences) with keys: reply_content, create_card, task_title, task_description, update_existing_task, updated_task_title, updated_task_description, intake_phase, session_readiness_score, missing_intake_categories, user_requested_immediate_card, session_request, coach_task_notes. ' +
+    'Align intake_phase, session_readiness_score, and missing_intake_categories with your judgment (e.g. clarifying_session while collecting readiness; pre_draft_confirmation when asking for the final green light before drafting; ready_to_prescribe when you are actually outputting the card or structured draft in this same response). ' +
+    'Return ONLY a raw JSON object (no markdown, no code fences) with keys: reply_content, create_card, task_title, task_description, update_existing_task, updated_task_title, updated_task_description, proposed_workout_metadata, intake_phase, session_readiness_score, missing_intake_categories, user_requested_immediate_card, session_request, coach_task_notes. ' +
     'You MUST respond in valid JSON matching the provided schema. Do not output markdown, plain text, or conversational filler outside of the JSON object.';
 
   if (!geminiApiKey) {
@@ -1018,6 +1089,7 @@ Deno.serve(async (req) => {
   let updateExistingTask = false;
   let updatedTaskTitle: string | null = null;
   let updatedTaskDescription: string | null = null;
+  let proposedWorkoutMetadata: Record<string, unknown> | null = null;
 
   try {
     if (historyRows === null) {
@@ -1054,15 +1126,11 @@ Deno.serve(async (req) => {
           '--- CURRENT TASK CONTEXT ---\n' +
           `You are discussing an existing task titled "${ctxTask.title.trim()}".\n` +
           `Description:\n${desc}\n` +
-          'If the user asks to modify this workout or card, set update_existing_task to true and provide updated_task_title and/or updated_task_description with the full revised content.';
+          'PRE-DRAFT CONFIRMATION: Do not populate proposed_workout_metadata until the user has given clear affirmative consent to draft or revise this card (or user_requested_immediate_card). On a confirmation-only turn, set update_existing_task to false and proposed_workout_metadata to null. When they confirm, set update_existing_task to true and provide updated_task_title and/or updated_task_description with the full revised text, and/or proposed_workout_metadata with structured exercises (and workout_type, duration_min as appropriate). The user must finalize changes on the card — do not assume the database updates immediately.';
       }
     }
 
     const userContextBlock = await fetchUserContext(supabase, record.user_id, record.bubble_id);
-    console.log(
-      '[Context Debug] User Context Block length:',
-      userContextBlock == null ? 'NULL' : userContextBlock.length,
-    );
     const systemPromptParts: string[] = [baseCoachPrompt];
     if (currentTaskContextBlock) systemPromptParts.push(currentTaskContextBlock);
     if (userContextBlock) systemPromptParts.push(userContextBlock);
@@ -1097,6 +1165,7 @@ Deno.serve(async (req) => {
     updateExistingTask = out.update_existing_task;
     updatedTaskTitle = out.updated_task_title;
     updatedTaskDescription = out.updated_task_description;
+    proposedWorkoutMetadata = out.proposed_workout_metadata;
 
     if (knownTargetTaskId && out.update_existing_task) {
       createCard = false;
@@ -1117,23 +1186,10 @@ Deno.serve(async (req) => {
         layerBReason = 'session_request_turn_gate';
       }
       if (layerBReason !== null) {
-        const modelCreateCard = createCard;
         createCard = false;
         taskTitle = null;
         taskDescription = null;
         seedTaskCommentText = null;
-        console.log(
-          JSON.stringify({
-            layerB: layerBReason,
-            priorUserMessageCount,
-            session_request: out.session_request,
-            user_requested_immediate_card: out.user_requested_immediate_card,
-            model_create_card: modelCreateCard,
-            intake_phase: out.intake_phase,
-            missing_intake_categories: out.missing_intake_categories,
-            session_readiness_score: out.session_readiness_score,
-          }),
-        );
       }
     }
 
@@ -1154,35 +1210,29 @@ Deno.serve(async (req) => {
   const trimmedNewTitle = updatedTaskTitle?.trim() ?? '';
   const trimmedNewDesc = updatedTaskDescription?.trim() ?? '';
   const hasUpdateBody = trimmedNewTitle.length > 0 || trimmedNewDesc.length > 0;
-  const shouldUpdateTask = knownTargetTaskId !== null && updateExistingTask && hasUpdateBody;
-
-  if (!shouldUpdateTask && knownTargetTaskId && updateExistingTask && !hasUpdateBody) {
-    console.log(
-      JSON.stringify({
-        update_existing_task_ignored_no_body: true,
-        message_id: record.id,
-        bubble_id: record.bubble_id,
-      }),
-    );
-  }
+  const hasProposedMeta =
+    proposedWorkoutMetadata != null && Object.keys(proposedWorkoutMetadata).length > 0;
+  const shouldInsertDraft =
+    knownTargetTaskId !== null && updateExistingTask && (hasUpdateBody || hasProposedMeta);
 
   let rpcData: unknown;
   let rpcErr: { message: string } | null;
 
-  if (shouldUpdateTask) {
-    const updatePayload: AgentUpdateTaskRpcArgs = {
+  if (shouldInsertDraft) {
+    const draftPayload: AgentInsertCoachDraftRpcArgs = {
       p_trigger_message_id: record.id,
       p_thread_id: threadId,
       p_agent_auth_user_id: resolvedAgentUserId!,
       p_invoker_user_id: record.user_id,
-      p_target_task_id: knownTargetTaskId,
+      p_target_task_id: knownTargetTaskId!,
       p_reply_text: replyText,
-      p_new_title: trimmedNewTitle.length > 0 ? trimmedNewTitle : null,
-      p_new_description: trimmedNewDesc.length > 0 ? trimmedNewDesc : null,
+      p_proposed_title: trimmedNewTitle.length > 0 ? trimmedNewTitle : null,
+      p_proposed_description: trimmedNewDesc.length > 0 ? trimmedNewDesc : null,
+      p_proposed_metadata: hasProposedMeta ? proposedWorkoutMetadata! : {},
     };
-    const upd = await supabase.rpc('agent_update_task_and_reply', updatePayload);
-    rpcData = upd.data;
-    rpcErr = upd.error ? { message: upd.error.message } : null;
+    const draft = await supabase.rpc('agent_insert_coach_workout_draft_reply', draftPayload);
+    rpcData = draft.data;
+    rpcErr = draft.error ? { message: draft.error.message } : null;
   } else {
     const rpcPayload: AgentCreateCardRpcArgs = {
       p_trigger_message_id: record.id,
@@ -1227,16 +1277,6 @@ Deno.serve(async (req) => {
     });
     return json({ ok: false, error: 'rpc_rejected', detail: rpcData }, 500);
   }
-
-  console.log(
-    JSON.stringify({
-      ok: true,
-      message_id: record.id,
-      bubble_id: record.bubble_id,
-      agent_slug: resolvedSlug,
-      rpc: rpcData,
-    }),
-  );
 
   return json({ ok: true, result: rpcData }, 200);
 });

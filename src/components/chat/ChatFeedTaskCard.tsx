@@ -8,6 +8,9 @@ import type { OpenTaskOptions } from '@/types/open-task-options';
 import type { TaskBubbleUpControlProps } from '@/components/tasks/bubbly-button';
 import { CardTabStrip } from '@/components/tasks/card-tab-strip';
 import { taskCardCoverPath, useTaskCardCoverUrl } from '@/lib/task-card-cover';
+import type { TaskModalChatCardWorkoutActions } from '@/components/modals/task-modal/TaskModalCommentsPanel';
+import { WorkoutAiGenerateButton } from '@/components/modals/task-modal/workout-ai-generate-button';
+import { Button } from '@/components/ui/button';
 
 export type ChatFeedTaskCardProps = {
   task: TaskRow | null;
@@ -16,6 +19,8 @@ export type ChatFeedTaskCardProps = {
   bubbleUp?: Omit<TaskBubbleUpControlProps, 'density'>;
   /** Bubble `messages.id` for this embed (coach reply in thread); enables task comment thread deep-link. */
   hostBubbleMessageId?: string | null;
+  /** TaskModal: Review / Generate for the open workout card (same task id as modal). */
+  chatCardWorkoutActions?: TaskModalChatCardWorkoutActions;
 };
 
 function ChatFeedCardHeader({
@@ -119,6 +124,7 @@ export function ChatFeedTaskCard({
   onOpenTask,
   bubbleUp,
   hostBubbleMessageId = null,
+  chatCardWorkoutActions,
 }: ChatFeedTaskCardProps) {
   if (!task) {
     return null;
@@ -177,6 +183,32 @@ export function ChatFeedTaskCard({
             bubblyDensity="default"
             taskCommentAnchorBubbleMessageId={hostBubbleMessageId}
           />
+        </div>
+      ) : null}
+
+      {chatCardWorkoutActions ? (
+        <div
+          className="border-t border-border/60 bg-card px-2 py-2 dark:border-border"
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <div className="flex flex-wrap items-stretch justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="min-w-0 flex-1 gap-1.5 text-xs sm:flex-none"
+              onClick={() => chatCardWorkoutActions.onReviewDetails()}
+            >
+              Review & Generate
+            </Button>
+            {chatCardWorkoutActions.onGenerateWorkout ? (
+              <WorkoutAiGenerateButton
+                onClick={() => chatCardWorkoutActions.onGenerateWorkout?.()}
+                busy={chatCardWorkoutActions.generateBusy}
+              />
+            ) : null}
+          </div>
         </div>
       ) : null}
     </div>

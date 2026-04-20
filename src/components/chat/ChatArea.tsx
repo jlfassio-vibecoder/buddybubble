@@ -43,7 +43,9 @@ import { MessageMediaModal } from './MessageMediaModal';
 import type { OpenTaskOptions } from '@/types/open-task-options';
 import { resolveTaskCommentMessageIdFromBubbleAnchor } from '@/lib/resolve-task-comment-from-bubble-anchor';
 import { useTaskBubbleUps } from '@/hooks/use-task-bubble-ups';
+import { useCoachTypingWait } from '@/hooks/useCoachTypingWait';
 import { useMessageThread, type PeerThreadReplyInsertPayload } from '@/hooks/useMessageThread';
+import { CoachTypingIndicator } from '@/components/chat/CoachTypingIndicator';
 import { toChatUserSnapshot, type MessageThreadFilter } from '@/lib/message-thread';
 
 type TaskPickerRow = {
@@ -291,6 +293,7 @@ export function ChatArea({
     messages,
     userById,
     teamMembers,
+    agentAuthUserIds,
     replyCounts,
     error: messageError,
     sending: sendingAttachments,
@@ -305,6 +308,40 @@ export function ChatArea({
     currentUserId: myProfile?.id ?? null,
     onPeerThreadReplyInsert: handlePeerThreadReplyInsert,
   });
+
+  const coachScopeRootMessages = useMemo(
+    () => messages.filter((m) => m.parent_id == null || m.parent_id === ''),
+    [messages],
+  );
+  const coachScopeThreadMessages = useMemo(() => {
+    const pid = activeThreadParent?.id;
+    if (!pid) return [];
+    return messages.filter((m) => m.id === pid || m.parent_id === pid);
+  }, [messages, activeThreadParent?.id]);
+
+  const coachWaitMain = useCoachTypingWait({
+    messages: coachScopeRootMessages,
+    myUserId: myProfile?.id,
+  });
+  const coachWaitThread = useCoachTypingWait({
+    messages: coachScopeThreadMessages,
+    myUserId: myProfile?.id,
+  });
+
+  const coachTypingAvatarUrl = useMemo(() => {
+    const id = agentAuthUserIds[0];
+    if (!id) return null;
+    return userById[id]?.avatar_url ?? null;
+  }, [agentAuthUserIds, userById]);
+
+  useEffect(() => {
+    coachWaitMain.clear();
+    coachWaitThread.clear();
+  }, [activeBubble?.id, coachWaitMain.clear, coachWaitThread.clear]);
+
+  useEffect(() => {
+    coachWaitThread.clear();
+  }, [activeThreadParent?.id, coachWaitThread.clear]);
 
   const chatBubbleTaskIds = useMemo(() => {
     const s = new Set<string>();
@@ -465,10 +502,10 @@ export function ChatArea({
       onTaskCreated: (taskId) => {
         const caption = latestInputRef.current.trim();
         void (async () => {
-          const ok = await sendMessage(caption, threadParentId, undefined, {
+          const sent = await sendMessage(caption, threadParentId, undefined, {
             attachedTaskId: taskId,
           });
-          if (ok) {
+          if (sent) {
             setInput('');
           }
         })();
@@ -1029,6 +1066,11 @@ export function ChatArea({
               </motion.div>
             ))}
           </AnimatePresence>
+          {coachWaitMain.isWaitingForCoach ? (
+            <div className="mt-6 w-full shrink-0">
+              <CoachTypingIndicator density="rail" coachAvatarUrl={coachTypingAvatarUrl} />
+            </div>
+          ) : null}
         </div>
 
         {/* Thread Panel */}
@@ -1036,11 +1078,20 @@ export function ChatArea({
           activeThreadParent={activeThreadParent}
           threadMessages={threadMessages}
           canPostMessages={canPostMessages}
-          onClose={() => setActiveThreadParent(null)}
-          onSendMessage={async (content, files) => {
-            if (!activeThreadParent) return false;
-            return sendMessage(content, activeThreadParent.id, files);
+          onClose={() => {
+            coachWaitThread.clear();
+            setActiveThreadParent(null);
           }}
+          onSendMessage={async (content, files) => {
+            if (!activeThreadParent) return null;
+            return await sendMessage(content, activeThreadParent.id, files);
+          }}
+          onSubmitIntent={coachWaitThread.optimisticIntent}
+          onSuccessfulThreadSend={(sent) => {
+            coachWaitThread.registerSuccessfulSend(sent);
+          }}
+          isWaitingForCoach={coachWaitThread.isWaitingForCoach}
+          coachTypingAvatarUrl={coachTypingAvatarUrl}
           onOpenAttachment={(attachments, index) => setMediaModal({ attachments, index })}
           onOpenTask={(taskId, opts) => void openTaskFromChat(taskId, opts)}
           bubbleUpPropsFor={bubbleUpPropsFor}
@@ -1064,12 +1115,14 @@ export function ChatArea({
         popoverContainerRef={composerPopoverRef}
         value={input}
         onChange={(next, _meta) => setInput(next)}
+        onSubmitIntent={coachWaitMain.optimisticIntent}
         onSubmit={async ({ text, files }) => {
           if ((!text.trim() && (!files || files.length === 0)) || sendingAttachments) return false;
-          const ok = await sendMessage(text, undefined, files);
-          if (!ok) return false;
+          const sent = await sendMessage(text, undefined, files);
+          if (!sent) return false;
           setInput('');
           setPendingFiles([]);
+          coachWaitMain.registerSuccessfulSend(sent);
           return true;
         }}
         pendingFiles={pendingFiles}

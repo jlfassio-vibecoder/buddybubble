@@ -1,7 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from 'react';
-import { ListTree, Sparkles, X } from 'lucide-react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type UIEvent,
+} from 'react';
+import { ListTree, X } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
 import {
   normalizeItemType,
@@ -27,11 +35,15 @@ import { TaskModalCardCoverSection } from '@/components/modals/task-modal/TaskMo
 import { TaskModalItemMetadataSections } from '@/components/modals/task-modal/TaskModalItemMetadataSections';
 import { TaskModalProgramFields } from '@/components/modals/task-modal/TaskModalProgramFields';
 import { TaskModalWorkoutFields } from '@/components/modals/task-modal/TaskModalWorkoutFields';
-import { TaskModalCommentsPanel } from '@/components/modals/task-modal/TaskModalCommentsPanel';
+import {
+  TaskModalCommentsPanel,
+  type TaskModalCommentsPanelHandle,
+} from '@/components/modals/task-modal/TaskModalCommentsPanel';
 import { TaskModalDetailsFooterActions } from '@/components/modals/task-modal/TaskModalDetailsFooterActions';
 import { TaskModalEditorChrome } from '@/components/modals/task-modal/TaskModalEditorChrome';
 import { TaskModalSchedulingSection } from '@/components/modals/task-modal/TaskModalSchedulingSection';
 import { TaskModalSubtasksPanel } from '@/components/modals/task-modal/TaskModalSubtasksPanel';
+import { TaskModalTabBar } from '@/components/modals/task-modal/TaskModalTabBar';
 import { formatUserFacingError } from '@/lib/format-error';
 import {
   buildTaskMetadataPayload,
@@ -51,9 +63,9 @@ import { indefiniteArticleForUiNoun, itemTypeUiNoun } from '@/lib/item-type-styl
 import { ALL_BUBBLES_BUBBLE_ID } from '@/lib/all-bubbles';
 import { usePresenceStore } from '@/store/presenceStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
-import { BubblyButton } from '@/components/tasks/bubbly-button';
 import { TaskModalHero } from '@/components/modals/task-modal-hero';
-import { PremiumGate } from '@/components/subscription/premium-gate';
+import { TaskModalWorkoutHero } from '@/components/modals/task-modal-workout-hero';
+import { WorkoutAiGenerateButton } from '@/components/modals/task-modal/workout-ai-generate-button';
 import { useTaskLoadAndRealtime } from '@/components/modals/task-modal/hooks/useTaskLoadAndRealtime';
 import { useWorkspaceAssignees } from '@/components/modals/task-modal/hooks/useWorkspaceAssignees';
 import { useWorkoutUnitSystem } from '@/components/modals/task-modal/hooks/useWorkoutUnitSystem';
@@ -110,6 +122,13 @@ export type TaskModalProps = {
   onTaskArchived?: () => void;
   /** After the user views task comments long enough to record `user_task_views` (Kanban unread). */
   onTaskCommentsMarkedRead?: () => void;
+  /**
+   * After coach draft is applied and the modal navigates to Details: parent should clear
+   * `initialCommentThreadMessageId` / `initialTab` / comments-only view mode from open options.
+   * Otherwise those props survive across re-renders and the tab-sync layout effect can force
+   * Comments again when the task row updates (realtime) or the shell re-renders.
+   */
+  onClearOpenTaskCommentDeepLink?: () => void;
   /** Bubbles in the active BuddyBubble — used for task-scoped comments (`useMessageThread`). */
   bubbles: BubbleRow[];
 };
@@ -135,6 +154,7 @@ export function TaskModal({
   calendarTimezone = null,
   onTaskArchived,
   onTaskCommentsMarkedRead,
+  onClearOpenTaskCommentDeepLink,
   bubbles,
 }: TaskModalProps) {
   const updateFocus = usePresenceStore((s) => s.updateFocus);
@@ -163,8 +183,21 @@ export function TaskModal({
   const workspaceMembersForAssign = useWorkspaceAssignees(open, workspaceId);
 
   const [tab, setTab] = useState<TabId>('details');
+  /** Apply `initialTab` / comment deep-link routing once per `taskId` while open (see tab sync layout effect). */
+  const appliedInitialTabForTaskIdRef = useRef<string | null>(null);
+  /**
+   * After `selectTab` runs (tab bar, coach draft handoff, etc.), never re-apply open-options tab
+   * routing from props. Parent re-renders (e.g. bumpTaskViews ~1.5s after user_task_views debounce),
+   * realtime, or `initial*` identity churn would otherwise re-run the layout effect and force
+   * Comments while `initialCommentThreadMessageId` remains set.
+   */
+  const tabChoiceOwnedByUserRef = useRef(false);
+  const lastTabSyncTaskIdRef = useRef<string | null>(null);
   /** When comments tab is showing a drilled-down thread (`TaskModalCommentsPanel`). */
   const [commentsInThreadView, setCommentsInThreadView] = useState(false);
+  const commentsUnifiedScrollRef = useRef<HTMLDivElement>(null);
+  const commentsPanelRef = useRef<TaskModalCommentsPanelHandle>(null);
+  const [composerPortalHost, setComposerPortalHost] = useState<HTMLDivElement | null>(null);
   /** Below `md`, which pane is visible when the workout split is open. */
   const [mobileUnifiedPane, setMobileUnifiedPane] = useState<'workout' | 'card'>('workout');
   const [workoutPaneSyncKey, setWorkoutPaneSyncKey] = useState(0);
@@ -587,13 +620,40 @@ export function TaskModal({
     setStatus(defaultStatus);
   }, [open, taskId, defaultStatus, initialCreateStatus]);
 
-  useEffect(() => {
-    if (!open) return;
+  useLayoutEffect(() => {
+    if (!open) {
+      appliedInitialTabForTaskIdRef.current = null;
+      tabChoiceOwnedByUserRef.current = false;
+      lastTabSyncTaskIdRef.current = null;
+      return;
+    }
     if (!taskId) {
       setViewMode('full');
       setTab('details');
+      appliedInitialTabForTaskIdRef.current = null;
+      tabChoiceOwnedByUserRef.current = false;
+      lastTabSyncTaskIdRef.current = null;
       return;
     }
+
+    // Switching to a different task while the modal stays open: allow initial routing again.
+    if (lastTabSyncTaskIdRef.current !== null && lastTabSyncTaskIdRef.current !== taskId) {
+      tabChoiceOwnedByUserRef.current = false;
+      appliedInitialTabForTaskIdRef.current = null;
+    }
+    lastTabSyncTaskIdRef.current = taskId;
+
+    // User explicitly chose a tab (or coach draft handoff) — do not override from props.
+    if (tabChoiceOwnedByUserRef.current) {
+      return;
+    }
+
+    // Apply open-options routing once per task until the user selects a tab (see ref above).
+    if (appliedInitialTabForTaskIdRef.current === taskId) {
+      return;
+    }
+    appliedInitialTabForTaskIdRef.current = taskId;
+
     const vm = initialViewMode ?? 'full';
     setViewMode(vm);
     if (initialCommentThreadMessageId?.trim()) {
@@ -602,9 +662,9 @@ export function TaskModal({
     }
     if (vm === 'comments-only' && initialTab == null) {
       setTab('comments');
-    } else {
-      setTab(initialTab ?? 'details');
+      return;
     }
+    setTab(initialTab ?? 'details');
   }, [open, taskId, initialTab, initialViewMode, initialCommentThreadMessageId]);
 
   useEffect(() => {
@@ -633,6 +693,7 @@ export function TaskModal({
 
   const selectTab = useCallback(
     (id: TabId) => {
+      tabChoiceOwnedByUserRef.current = true;
       setTab(id);
       setViewMode((prev) => {
         if (id === 'comments' && taskId) return 'comments-only';
@@ -642,6 +703,21 @@ export function TaskModal({
     },
     [taskId],
   );
+
+  const handleCoachDraftFinalizeSuccess = useCallback(async () => {
+    if (!taskId) return;
+    commentsPanelRef.current?.exitThread();
+    selectTab('details');
+    onClearOpenTaskCommentDeepLink?.();
+    await loadTask(taskId);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = document.getElementById('task-desc');
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (el instanceof HTMLElement) el.focus();
+      });
+    });
+  }, [taskId, loadTask, onClearOpenTaskCommentDeepLink, selectTab]);
 
   /** Hero stays fixed above this pane; collapse the cinematic cover when the user scrolls the body. */
   const handleTaskModalBodyScroll = useCallback((e: UIEvent<HTMLDivElement>) => {
@@ -799,6 +875,25 @@ export function TaskModal({
     window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
   };
 
+  const taskModalChatCardWorkoutActions = useMemo(() => {
+    if (!open || !taskId) return null;
+    return {
+      modalTaskId: taskId,
+      onReviewDetails: () => selectTab('details'),
+      onGenerateWorkout:
+        canWrite && itemType === 'workout' ? handleGenerateWorkoutFromComments : undefined,
+      generateBusy: aiWorkoutGenerating,
+    };
+  }, [
+    open,
+    taskId,
+    canWrite,
+    itemType,
+    selectTab,
+    handleGenerateWorkoutFromComments,
+    aiWorkoutGenerating,
+  ]);
+
   if (!open) return null;
 
   const showEditorChrome = !taskId || viewMode === 'full';
@@ -808,65 +903,68 @@ export function TaskModal({
 
   /** Chat-first layout: inner scroll lives in comments panel; outer body does not scroll. */
   const commentsChatLayout = Boolean(taskId) && tab === 'comments';
-
-  const tabBtn = (id: TabId, label: string) => (
-    <button
-      key={id}
-      type="button"
-      role="tab"
-      aria-selected={tab === id}
-      onClick={() => selectTab(id)}
-      className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
-        tab === id ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-muted'
-      }`}
-    >
-      {label}
-    </button>
-  );
+  /** Hero + messages share one scroll; composer portaled above tab bar (no workout split). */
+  const useCommentsUnifiedLayout = commentsChatLayout && !showWorkoutSplitPane;
+  const commentsSlimWorkoutViewer =
+    Boolean(taskId) && (hasWorkoutViewerContent || aiWorkoutGenerating) && isWorkoutItemType;
+  const commentsSlimDetails = Boolean(taskId) && !commentsInThreadView && !hasWorkoutViewerContent;
+  const showCommentsSlimActionRow =
+    useCommentsUnifiedLayout && (commentsSlimWorkoutViewer || commentsSlimDetails);
+  const unifiedThreadBack =
+    useCommentsUnifiedLayout && commentsInThreadView && taskId
+      ? () => commentsPanelRef.current?.exitThread()
+      : undefined;
 
   /* Task modal must sit above MobileTabBar (z-90) and drawer sheets (z-110–120) or actions are obscured on phones. */
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 max-md:p-0 max-md:items-stretch">
       <button
         type="button"
         className="absolute inset-0 bg-black/40"
         aria-label="Close"
         onClick={() => onOpenChange(false)}
       />
+      {/* QA: compact-path description bleed uses -mx-*; on mobile the shell is full-width so cinematic heroes need not rely on negative margins at the modal edge. */}
       <div
         className={cn(
-          'relative z-10 flex min-h-0 max-h-[90vh] w-full flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl transition-[max-width] duration-200 ease-out',
+          'relative z-10 flex min-h-0 w-full flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl transition-[max-width] duration-200 ease-out',
+          'max-md:flex-1 max-md:min-h-0 max-md:max-h-none max-md:max-w-none max-md:rounded-none max-md:border-x-0 max-md:border-t-0',
+          'md:max-h-[min(90dvh,100dvh)]',
           showWorkoutSplitPane ? 'max-w-6xl' : 'max-w-2xl',
         )}
       >
-        {taskId && !showWorkoutSplitPane ? (
-          <TaskModalHero
-            title={title}
-            description={description ?? ''}
-            coverPath={cardCoverPath.trim() || null}
-            onClose={() => onOpenChange(false)}
-            compactCinematic={tab !== 'details' || heroCinematicCollapsed || commentsReadingContext}
-            descriptionExpanded={commentsReadingContext}
-            descriptionCollapseMode={commentsReadingContext ? 'preview_toggle' : 'none'}
-            readingContextActions={
-              commentsReadingContext && itemType === 'workout' && canWrite ? (
-                <PremiumGate feature="ai" inline>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    className="h-8 gap-1.5 px-2 text-xs shadow-sm"
-                    disabled={aiWorkoutGenerating}
+        {taskId && !showWorkoutSplitPane && !useCommentsUnifiedLayout ? (
+          isWorkoutItemType ? (
+            <TaskModalWorkoutHero
+              title={title}
+              description={description ?? ''}
+              coverPath={cardCoverPath.trim() || null}
+              onClose={() => onOpenChange(false)}
+              descriptionExpanded={commentsReadingContext}
+              descriptionCollapseMode={commentsReadingContext ? 'preview_toggle' : 'none'}
+              readingContextActions={
+                commentsReadingContext && itemType === 'workout' && canWrite ? (
+                  <WorkoutAiGenerateButton
                     onClick={handleGenerateWorkoutFromComments}
-                    title="Build the plan from this card’s title, description, and duration (same as Details → AI workout)."
-                  >
-                    <Sparkles className="size-3.5 shrink-0" aria-hidden />
-                    {aiWorkoutGenerating ? 'Generating…' : 'Generate'}
-                  </Button>
-                </PremiumGate>
-              ) : null
-            }
-          />
+                    busy={aiWorkoutGenerating}
+                  />
+                ) : null
+              }
+            />
+          ) : (
+            <TaskModalHero
+              title={title}
+              description={description ?? ''}
+              coverPath={cardCoverPath.trim() || null}
+              onClose={() => onOpenChange(false)}
+              compactCinematic={
+                tab !== 'details' || heroCinematicCollapsed || commentsReadingContext
+              }
+              descriptionExpanded={commentsReadingContext}
+              descriptionCollapseMode={commentsReadingContext ? 'preview_toggle' : 'none'}
+              readingContextActions={null}
+            />
+          )
         ) : null}
 
         <div
@@ -919,317 +1017,466 @@ export function TaskModal({
                 'md:max-w-[min(38%,400px)] md:shrink-0 md:basis-[min(32%,340px)] md:grow-0 md:flex-none',
             )}
           >
-            <div className="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-border px-6 py-4">
-              <div className="min-w-0 flex-1">
-                <h2 className="text-lg font-bold text-foreground">{modalTitle}</h2>
-                {modalSubtitle ? (
-                  <p className="text-xs text-muted-foreground">{modalSubtitle}</p>
-                ) : null}
-              </div>
-              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                {taskId &&
-                (hasWorkoutViewerContent || aiWorkoutGenerating) &&
-                !showWorkoutSplitPane &&
-                isWorkoutItemType ? (
-                  <Button
-                    type="button"
-                    variant="default"
-                    size="sm"
-                    className="gap-2 shadow-sm"
-                    onClick={() => setWorkoutViewerOpen(true)}
-                  >
-                    <ListTree className="size-4 shrink-0" aria-hidden />
-                    Workout viewer
-                  </Button>
-                ) : null}
-                {taskId &&
-                tab === 'comments' &&
-                !commentsInThreadView &&
-                !showWorkoutSplitPane &&
-                !hasWorkoutViewerContent ? (
-                  <Button
-                    type="button"
-                    variant="default"
-                    size="sm"
-                    className="shadow-sm"
-                    onClick={() => selectTab('details')}
-                  >
-                    Details
-                  </Button>
-                ) : null}
-                {!taskId || showWorkoutSplitPane ? (
-                  <button
-                    type="button"
-                    className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                    aria-label="Close"
-                    onClick={() => onOpenChange(false)}
-                  >
-                    <X className="h-5 w-5" aria-hidden />
-                  </button>
-                ) : null}
-              </div>
-            </div>
-
-            <div
-              className={cn(
-                commentsChatLayout
-                  ? 'flex min-h-0 flex-1 flex-col overflow-hidden overscroll-contain'
-                  : 'min-h-0 flex-1 overflow-y-auto overscroll-contain',
-              )}
-              onScroll={commentsChatLayout ? undefined : handleTaskModalBodyScroll}
-            >
-              <div className="shrink-0">
-                <TaskModalEditorChrome
-                  showChrome={showEditorChrome}
-                  showTypeAndVisibility={showEditorChrome && !commentsReadingContext}
-                  itemType={itemType}
-                  onItemTypeChange={setItemType}
-                  canWrite={canWrite}
-                  visibility={visibility}
-                  onVisibilityChange={setVisibility}
-                  workoutTitle={title}
-                  workoutExercises={workoutExercises}
-                  bubbleId={bubbleId}
-                  workspaceId={workspaceId}
-                  taskId={taskId}
-                  onInteraction={() => setHeroCinematicCollapsed(true)}
-                />
-              </div>
-
-              <div
-                className={cn(
-                  'px-6 pt-4',
-                  commentsChatLayout ? 'flex min-h-0 flex-1 flex-col pb-0' : 'pb-4',
-                )}
-              >
-                {error && (
-                  <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                    {error}
+            {useCommentsUnifiedLayout ? (
+              <>
+                <div
+                  ref={commentsUnifiedScrollRef}
+                  className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain"
+                  onScroll={handleTaskModalBodyScroll}
+                >
+                  {taskId ? (
+                    isWorkoutItemType ? (
+                      <TaskModalWorkoutHero
+                        title={title}
+                        description={description ?? ''}
+                        coverPath={cardCoverPath.trim() || null}
+                        onClose={() => onOpenChange(false)}
+                        onBack={unifiedThreadBack}
+                        descriptionExpanded={commentsReadingContext}
+                        descriptionCollapseMode={commentsReadingContext ? 'preview_toggle' : 'none'}
+                        readingContextActions={
+                          commentsReadingContext && itemType === 'workout' && canWrite ? (
+                            <WorkoutAiGenerateButton
+                              onClick={handleGenerateWorkoutFromComments}
+                              busy={aiWorkoutGenerating}
+                            />
+                          ) : null
+                        }
+                      />
+                    ) : (
+                      <TaskModalHero
+                        title={title}
+                        description={description ?? ''}
+                        coverPath={cardCoverPath.trim() || null}
+                        onClose={() => onOpenChange(false)}
+                        onBack={unifiedThreadBack}
+                        compactCinematic={
+                          heroCinematicCollapsed ||
+                          commentsReadingContext ||
+                          tab === 'comments' ||
+                          tab === 'subtasks' ||
+                          tab === 'activity'
+                        }
+                        descriptionExpanded={commentsReadingContext}
+                        descriptionCollapseMode={commentsReadingContext ? 'preview_toggle' : 'none'}
+                        readingContextActions={null}
+                      />
+                    )
+                  ) : null}
+                  {showCommentsSlimActionRow ? (
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-b border-border px-6 py-2">
+                      {commentsSlimWorkoutViewer ? (
+                        <Button
+                          type="button"
+                          variant="default"
+                          size="sm"
+                          className="gap-2 shadow-sm"
+                          onClick={() => setWorkoutViewerOpen(true)}
+                        >
+                          <ListTree className="size-4 shrink-0" aria-hidden />
+                          Workout viewer
+                        </Button>
+                      ) : null}
+                      {commentsSlimDetails ? (
+                        <Button
+                          type="button"
+                          variant="default"
+                          size="sm"
+                          className="shadow-sm"
+                          onClick={() => selectTab('details')}
+                        >
+                          Details
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  <div className="shrink-0">
+                    <TaskModalEditorChrome
+                      showChrome={showEditorChrome}
+                      showTypeAndVisibility={showEditorChrome && !commentsReadingContext}
+                      itemType={itemType}
+                      onItemTypeChange={setItemType}
+                      canWrite={canWrite}
+                      visibility={visibility}
+                      onVisibilityChange={setVisibility}
+                      workoutTitle={title}
+                      workoutExercises={workoutExercises}
+                      bubbleId={bubbleId}
+                      workspaceId={workspaceId}
+                      taskId={taskId}
+                      onInteraction={() => setHeroCinematicCollapsed(true)}
+                    />
                   </div>
-                )}
+                  <div className="flex min-h-0 flex-1 flex-col px-6 pt-4 pb-2">
+                    {error && (
+                      <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                        {error}
+                      </div>
+                    )}
+                    {loading && taskId ? (
+                      <p className="text-sm text-muted-foreground">Loading {typeNoun}…</p>
+                    ) : null}
+                    {!loading || !taskId ? (
+                      <TaskModalCommentsPanel
+                        ref={commentsPanelRef}
+                        key={`${taskId}-${initialCommentThreadMessageId ?? ''}`}
+                        taskId={taskId!}
+                        workspaceId={workspaceId}
+                        bubbles={bubbles}
+                        canWrite={canWrite}
+                        taskBubbleIdHint={bubbleId}
+                        initialCommentThreadMessageId={initialCommentThreadMessageId}
+                        onThreadViewChange={setCommentsInThreadView}
+                        onMarkedRead={onTaskCommentsMarkedRead}
+                        showInlineGenerateWorkout={false}
+                        onGenerateWorkout={handleGenerateWorkoutFromComments}
+                        generateWorkoutBusy={aiWorkoutGenerating}
+                        unifiedScrollLayout
+                        composerPortalHost={composerPortalHost}
+                        scrollContainerRef={commentsUnifiedScrollRef}
+                        hideThreadBackRow
+                        onCoachDraftFinalizeSuccess={handleCoachDraftFinalizeSuccess}
+                        chatCardWorkoutActions={taskModalChatCardWorkoutActions}
+                      />
+                    ) : null}
+                  </div>
+                </div>
+                <div
+                  ref={(el) => setComposerPortalHost(el)}
+                  className="relative shrink-0 border-t border-border bg-card"
+                />
+                <TaskModalTabBar
+                  tab={tab}
+                  onSelectTab={selectTab}
+                  bubblyProps={modalBubbleUp ?? null}
+                />
+              </>
+            ) : (
+              <>
+                <div className="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-border px-6 py-4">
+                  <div className="min-w-0 flex-1">
+                    <h2 className="text-lg font-bold text-foreground">{modalTitle}</h2>
+                    {modalSubtitle ? (
+                      <p className="text-xs text-muted-foreground">{modalSubtitle}</p>
+                    ) : null}
+                  </div>
+                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                    {taskId &&
+                    (hasWorkoutViewerContent || aiWorkoutGenerating) &&
+                    !showWorkoutSplitPane &&
+                    isWorkoutItemType ? (
+                      <Button
+                        type="button"
+                        variant="default"
+                        size="sm"
+                        className="gap-2 shadow-sm"
+                        onClick={() => setWorkoutViewerOpen(true)}
+                      >
+                        <ListTree className="size-4 shrink-0" aria-hidden />
+                        Workout viewer
+                      </Button>
+                    ) : null}
+                    {taskId &&
+                    tab === 'comments' &&
+                    !commentsInThreadView &&
+                    !showWorkoutSplitPane &&
+                    !hasWorkoutViewerContent ? (
+                      <Button
+                        type="button"
+                        variant="default"
+                        size="sm"
+                        className="shadow-sm"
+                        onClick={() => selectTab('details')}
+                      >
+                        Details
+                      </Button>
+                    ) : null}
+                    {!taskId || showWorkoutSplitPane ? (
+                      <button
+                        type="button"
+                        className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        aria-label="Close"
+                        onClick={() => onOpenChange(false)}
+                      >
+                        <X className="h-5 w-5" aria-hidden />
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
 
-                {loading && taskId ? (
-                  <p className="text-sm text-muted-foreground">Loading {typeNoun}…</p>
-                ) : null}
+                <div
+                  className={cn(
+                    commentsChatLayout
+                      ? 'flex min-h-0 flex-1 flex-col overflow-hidden overscroll-contain'
+                      : 'min-h-0 flex-1 overflow-y-auto overscroll-contain',
+                  )}
+                  onScroll={
+                    commentsChatLayout && !useCommentsUnifiedLayout
+                      ? handleTaskModalBodyScroll
+                      : undefined
+                  }
+                >
+                  <div className="shrink-0">
+                    <TaskModalEditorChrome
+                      showChrome={showEditorChrome}
+                      showTypeAndVisibility={showEditorChrome && !commentsReadingContext}
+                      itemType={itemType}
+                      onItemTypeChange={setItemType}
+                      canWrite={canWrite}
+                      visibility={visibility}
+                      onVisibilityChange={setVisibility}
+                      workoutTitle={title}
+                      workoutExercises={workoutExercises}
+                      bubbleId={bubbleId}
+                      workspaceId={workspaceId}
+                      taskId={taskId}
+                      onInteraction={() => setHeroCinematicCollapsed(true)}
+                    />
+                  </div>
 
-                {!loading || !taskId ? (
-                  <>
-                    {tab === 'details' && (
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="task-title">Title</Label>
-                          <Input
-                            id="task-title"
-                            value={title}
-                            onChange={(e) => setTitle(e.target.value)}
-                            disabled={!canWrite}
-                            className="h-9"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="task-desc">Description</Label>
-                          <Textarea
-                            id="task-desc"
-                            value={description}
-                            onChange={(e) => setDescription(e.target.value)}
-                            disabled={!canWrite}
-                            rows={5}
-                          />
-                        </div>
-
-                        <TaskModalCardCoverSection
-                          taskId={taskId}
-                          cardCoverPath={cardCoverPath}
-                          cardCoverFileInputRef={cardCoverFileInputRef}
-                          onCardCoverFileChange={(f) => void uploadCardCover(f)}
-                          onPickCardCover={() => cardCoverFileInputRef.current?.click()}
-                          onRemoveCardCover={removeCardCover}
-                          cardCoverPresetId={cardCoverPresetId}
-                          onCardCoverPresetIdChange={setCardCoverPresetId}
-                          cardCoverAiHint={cardCoverAiHint}
-                          onCardCoverAiHintChange={setCardCoverAiHint}
-                          canWrite={canWrite}
-                          saving={saving}
-                          aiCardCoverGenerating={aiCardCoverGenerating}
-                          onGenerateCardCoverWithAi={generateCardCoverWithAi}
-                        />
-
-                        <TaskModalItemMetadataSections
-                          itemType={itemType}
-                          canWrite={canWrite}
-                          eventLocation={eventLocation}
-                          onEventLocationChange={setEventLocation}
-                          eventUrl={eventUrl}
-                          onEventUrlChange={setEventUrl}
-                          experienceSeason={experienceSeason}
-                          onExperienceSeasonChange={setExperienceSeason}
-                          scheduledOn={scheduledOn}
-                          onExperienceStartDateChange={(v) => {
-                            setScheduledOn(v);
-                            if (!v) setScheduledTime('');
-                          }}
-                          experienceEndDate={experienceEndDate}
-                          onExperienceEndDateChange={setExperienceEndDate}
-                          memoryCaption={memoryCaption}
-                          onMemoryCaptionChange={setMemoryCaption}
-                        />
-
-                        {(itemType === 'workout' || itemType === 'workout_log') && (
-                          <TaskModalWorkoutFields
-                            itemType={itemType}
-                            canWrite={canWrite}
-                            taskId={taskId}
-                            aiWorkoutGenerating={aiWorkoutGenerating}
-                            aiWorkoutProgressIdx={aiWorkoutProgressIdx}
-                            onAiGenerateWorkout={handleAiGenerateWorkout}
-                            workoutTemplates={workoutTemplates}
-                            templatePickerOpen={templatePickerOpen}
-                            onTemplatePickerOpenChange={setTemplatePickerOpen}
-                            onApplyWorkoutTemplate={applyWorkoutTemplate}
-                            workoutType={workoutType}
-                            onWorkoutTypeChange={setWorkoutType}
-                            workoutDurationMin={workoutDurationMin}
-                            onWorkoutDurationMinChange={setWorkoutDurationMin}
-                            workoutExercises={workoutExercises}
-                            onWorkoutExercisesChange={setWorkoutExercises}
-                            workoutUnitSystem={workoutUnitSystem}
-                            autoEditFirstRow={Boolean(
-                              initialAutoEdit && isWorkoutItemType && taskId && canWrite,
-                            )}
-                          />
-                        )}
-
-                        {itemType === 'program' && (
-                          <TaskModalProgramFields
-                            canWrite={canWrite}
-                            workspaceId={workspaceId}
-                            taskId={taskId}
-                            aiProgramPersonalizing={aiProgramPersonalizing}
-                            onPersonalizeProgram={handlePersonalizeProgram}
-                            programGoal={programGoal}
-                            onProgramGoalChange={setProgramGoal}
-                            programDurationWeeks={programDurationWeeks}
-                            onProgramDurationWeeksChange={setProgramDurationWeeks}
-                            programCurrentWeek={programCurrentWeek}
-                            programSchedule={programSchedule}
-                          />
-                        )}
-
-                        <TaskModalSchedulingSection
-                          itemType={itemType}
-                          dateLabels={dateLabels}
-                          status={status}
-                          onStatusChange={setStatus}
-                          statusSelectOptions={statusSelectOptions}
-                          priority={priority}
-                          onPriorityChange={setPriority}
-                          workspaceId={workspaceId}
-                          assignedTo={assignedTo}
-                          onAssignedToChange={setAssignedTo}
-                          workspaceMembersForAssign={workspaceMembersForAssign}
-                          scheduledOn={scheduledOn}
-                          onScheduledOnChange={(v) => {
-                            setScheduledOn(v);
-                            if (!v) setScheduledTime('');
-                          }}
-                          scheduledTime={scheduledTime}
-                          onScheduledTimeChange={setScheduledTime}
-                          canWrite={canWrite}
-                        />
-
-                        <Separator className="my-2" />
-
-                        <TaskModalAttachmentsSection
-                          attachments={attachments}
-                          isCreateMode={isCreateMode}
-                          taskId={taskId}
-                          canWrite={canWrite}
-                          typeNoun={typeNoun}
-                          onPickAttachmentFile={(f) => void uploadAttachment(f)}
-                          onDownloadAttachment={downloadLink}
-                          onRemoveAttachment={removeAttachment}
-                        />
-
-                        <TaskModalDetailsFooterActions
-                          canWrite={canWrite}
-                          isCreateMode={isCreateMode}
-                          saving={saving}
-                          title={title}
-                          typeNoun={typeNoun}
-                          coreDirty={coreDirty}
-                          onCreateTask={createTask}
-                          onSaveCoreFields={saveCoreFields}
-                          taskId={taskId}
-                          archiving={archiving}
-                          loading={loading}
-                          onArchiveTask={archiveTask}
-                        />
+                  <div
+                    className={cn(
+                      'px-6 pt-4',
+                      commentsChatLayout ? 'flex min-h-0 flex-1 flex-col pb-0' : 'pb-4',
+                    )}
+                  >
+                    {error && (
+                      <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                        {error}
                       </div>
                     )}
 
-                    {tab === 'comments' &&
-                      (taskId ? (
-                        <div className="flex min-h-0 flex-1 flex-col">
-                          <TaskModalCommentsPanel
-                            key={`${taskId}-${initialCommentThreadMessageId ?? ''}`}
-                            taskId={taskId}
-                            workspaceId={workspaceId}
-                            bubbles={bubbles}
+                    {loading && taskId ? (
+                      <p className="text-sm text-muted-foreground">Loading {typeNoun}…</p>
+                    ) : null}
+
+                    {!loading || !taskId ? (
+                      <>
+                        {tab === 'details' && (
+                          <div className="space-y-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="task-title">Title</Label>
+                              <Input
+                                id="task-title"
+                                value={title}
+                                onChange={(e) => setTitle(e.target.value)}
+                                disabled={!canWrite}
+                                className="h-9"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="task-desc">Description</Label>
+                              <Textarea
+                                id="task-desc"
+                                value={description}
+                                onChange={(e) => setDescription(e.target.value)}
+                                disabled={!canWrite}
+                                rows={5}
+                              />
+                            </div>
+
+                            {itemType === 'workout' && canWrite ? (
+                              <div className="flex justify-end pt-1">
+                                <WorkoutAiGenerateButton
+                                  onClick={handleGenerateWorkoutFromComments}
+                                  busy={aiWorkoutGenerating}
+                                />
+                              </div>
+                            ) : null}
+
+                            <TaskModalCardCoverSection
+                              taskId={taskId}
+                              cardCoverPath={cardCoverPath}
+                              cardCoverFileInputRef={cardCoverFileInputRef}
+                              onCardCoverFileChange={(f) => void uploadCardCover(f)}
+                              onPickCardCover={() => cardCoverFileInputRef.current?.click()}
+                              onRemoveCardCover={removeCardCover}
+                              cardCoverPresetId={cardCoverPresetId}
+                              onCardCoverPresetIdChange={setCardCoverPresetId}
+                              cardCoverAiHint={cardCoverAiHint}
+                              onCardCoverAiHintChange={setCardCoverAiHint}
+                              canWrite={canWrite}
+                              saving={saving}
+                              aiCardCoverGenerating={aiCardCoverGenerating}
+                              onGenerateCardCoverWithAi={generateCardCoverWithAi}
+                            />
+
+                            <TaskModalItemMetadataSections
+                              itemType={itemType}
+                              canWrite={canWrite}
+                              eventLocation={eventLocation}
+                              onEventLocationChange={setEventLocation}
+                              eventUrl={eventUrl}
+                              onEventUrlChange={setEventUrl}
+                              experienceSeason={experienceSeason}
+                              onExperienceSeasonChange={setExperienceSeason}
+                              scheduledOn={scheduledOn}
+                              onExperienceStartDateChange={(v) => {
+                                setScheduledOn(v);
+                                if (!v) setScheduledTime('');
+                              }}
+                              experienceEndDate={experienceEndDate}
+                              onExperienceEndDateChange={setExperienceEndDate}
+                              memoryCaption={memoryCaption}
+                              onMemoryCaptionChange={setMemoryCaption}
+                            />
+
+                            {(itemType === 'workout' || itemType === 'workout_log') && (
+                              <TaskModalWorkoutFields
+                                itemType={itemType}
+                                canWrite={canWrite}
+                                taskId={taskId}
+                                aiWorkoutGenerating={aiWorkoutGenerating}
+                                aiWorkoutProgressIdx={aiWorkoutProgressIdx}
+                                onAiGenerateWorkout={handleAiGenerateWorkout}
+                                workoutTemplates={workoutTemplates}
+                                templatePickerOpen={templatePickerOpen}
+                                onTemplatePickerOpenChange={setTemplatePickerOpen}
+                                onApplyWorkoutTemplate={applyWorkoutTemplate}
+                                workoutType={workoutType}
+                                onWorkoutTypeChange={setWorkoutType}
+                                workoutDurationMin={workoutDurationMin}
+                                onWorkoutDurationMinChange={setWorkoutDurationMin}
+                                workoutExercises={workoutExercises}
+                                onWorkoutExercisesChange={setWorkoutExercises}
+                                workoutUnitSystem={workoutUnitSystem}
+                                autoEditFirstRow={Boolean(
+                                  initialAutoEdit && isWorkoutItemType && taskId && canWrite,
+                                )}
+                              />
+                            )}
+
+                            {itemType === 'program' && (
+                              <TaskModalProgramFields
+                                canWrite={canWrite}
+                                workspaceId={workspaceId}
+                                taskId={taskId}
+                                aiProgramPersonalizing={aiProgramPersonalizing}
+                                onPersonalizeProgram={handlePersonalizeProgram}
+                                programGoal={programGoal}
+                                onProgramGoalChange={setProgramGoal}
+                                programDurationWeeks={programDurationWeeks}
+                                onProgramDurationWeeksChange={setProgramDurationWeeks}
+                                programCurrentWeek={programCurrentWeek}
+                                programSchedule={programSchedule}
+                              />
+                            )}
+
+                            <TaskModalSchedulingSection
+                              itemType={itemType}
+                              dateLabels={dateLabels}
+                              status={status}
+                              onStatusChange={setStatus}
+                              statusSelectOptions={statusSelectOptions}
+                              priority={priority}
+                              onPriorityChange={setPriority}
+                              workspaceId={workspaceId}
+                              assignedTo={assignedTo}
+                              onAssignedToChange={setAssignedTo}
+                              workspaceMembersForAssign={workspaceMembersForAssign}
+                              scheduledOn={scheduledOn}
+                              onScheduledOnChange={(v) => {
+                                setScheduledOn(v);
+                                if (!v) setScheduledTime('');
+                              }}
+                              scheduledTime={scheduledTime}
+                              onScheduledTimeChange={setScheduledTime}
+                              canWrite={canWrite}
+                            />
+
+                            <Separator className="my-2" />
+
+                            <TaskModalAttachmentsSection
+                              attachments={attachments}
+                              isCreateMode={isCreateMode}
+                              taskId={taskId}
+                              canWrite={canWrite}
+                              typeNoun={typeNoun}
+                              onPickAttachmentFile={(f) => void uploadAttachment(f)}
+                              onDownloadAttachment={downloadLink}
+                              onRemoveAttachment={removeAttachment}
+                            />
+
+                            <TaskModalDetailsFooterActions
+                              canWrite={canWrite}
+                              isCreateMode={isCreateMode}
+                              saving={saving}
+                              title={title}
+                              typeNoun={typeNoun}
+                              coreDirty={coreDirty}
+                              onCreateTask={createTask}
+                              onSaveCoreFields={saveCoreFields}
+                              taskId={taskId}
+                              archiving={archiving}
+                              loading={loading}
+                              onArchiveTask={archiveTask}
+                            />
+                          </div>
+                        )}
+
+                        {tab === 'comments' &&
+                          (taskId ? (
+                            <div className="flex min-h-0 flex-1 flex-col">
+                              <TaskModalCommentsPanel
+                                ref={commentsPanelRef}
+                                key={`${taskId}-${initialCommentThreadMessageId ?? ''}`}
+                                taskId={taskId}
+                                workspaceId={workspaceId}
+                                bubbles={bubbles}
+                                canWrite={canWrite}
+                                taskBubbleIdHint={bubbleId}
+                                initialCommentThreadMessageId={initialCommentThreadMessageId}
+                                onThreadViewChange={setCommentsInThreadView}
+                                onMarkedRead={onTaskCommentsMarkedRead}
+                                showInlineGenerateWorkout={
+                                  Boolean(showWorkoutSplitPane) &&
+                                  itemType === 'workout' &&
+                                  canWrite
+                                }
+                                onGenerateWorkout={handleGenerateWorkoutFromComments}
+                                generateWorkoutBusy={aiWorkoutGenerating}
+                                onMessagesScroll={
+                                  commentsChatLayout && !useCommentsUnifiedLayout
+                                    ? handleTaskModalBodyScroll
+                                    : undefined
+                                }
+                                onCoachDraftFinalizeSuccess={handleCoachDraftFinalizeSuccess}
+                                chatCardWorkoutActions={taskModalChatCardWorkoutActions}
+                              />
+                            </div>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">
+                              Create the {typeNoun} to add comments.
+                            </p>
+                          ))}
+
+                        {tab === 'subtasks' && (
+                          <TaskModalSubtasksPanel
+                            subtasks={subtasks}
+                            newSubtaskTitle={newSubtaskTitle}
+                            onNewSubtaskTitleChange={setNewSubtaskTitle}
+                            onAddSubtask={addSubtask}
+                            onToggleSubtask={toggleSubtask}
                             canWrite={canWrite}
-                            initialCommentThreadMessageId={initialCommentThreadMessageId}
-                            onThreadViewChange={setCommentsInThreadView}
-                            onMarkedRead={onTaskCommentsMarkedRead}
-                            showInlineGenerateWorkout={
-                              Boolean(showWorkoutSplitPane) && itemType === 'workout' && canWrite
-                            }
-                            onGenerateWorkout={handleGenerateWorkoutFromComments}
-                            generateWorkoutBusy={aiWorkoutGenerating}
-                            onMessagesScroll={
-                              commentsChatLayout ? handleTaskModalBodyScroll : undefined
-                            }
+                            taskId={taskId}
+                            isCreateMode={isCreateMode}
+                            typeNoun={typeNoun}
                           />
-                        </div>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">
-                          Create the {typeNoun} to add comments.
-                        </p>
-                      ))}
+                        )}
 
-                    {tab === 'subtasks' && (
-                      <TaskModalSubtasksPanel
-                        subtasks={subtasks}
-                        newSubtaskTitle={newSubtaskTitle}
-                        onNewSubtaskTitleChange={setNewSubtaskTitle}
-                        onAddSubtask={addSubtask}
-                        onToggleSubtask={toggleSubtask}
-                        canWrite={canWrite}
-                        taskId={taskId}
-                        isCreateMode={isCreateMode}
-                        typeNoun={typeNoun}
-                      />
-                    )}
+                        {tab === 'activity' && <TaskModalActivityPanel activityLog={activityLog} />}
+                      </>
+                    ) : null}
+                  </div>
+                </div>
 
-                    {tab === 'activity' && <TaskModalActivityPanel activityLog={activityLog} />}
-                  </>
-                ) : null}
-              </div>
-            </div>
-
-            <div
-              className="shrink-0 border-t border-border bg-card px-6 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))]"
-              role="tablist"
-              aria-label="Card sections"
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                {tabBtn('details', 'Details')}
-                {tabBtn('comments', 'Comments')}
-                {tabBtn('subtasks', 'Subtasks')}
-                {tabBtn('activity', 'Activity')}
-                {modalBubbleUp ? (
-                  <BubblyButton {...modalBubbleUp} density="default" tabStrip />
-                ) : null}
-              </div>
-            </div>
+                <TaskModalTabBar
+                  tab={tab}
+                  onSelectTab={selectTab}
+                  bubblyProps={modalBubbleUp ?? null}
+                />
+              </>
+            )}
           </div>
           {showWorkoutSplitPane ? (
             <div

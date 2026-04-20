@@ -1,6 +1,17 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  forwardRef,
+  type UIEvent,
+} from 'react';
+import { createPortal } from 'react-dom';
 import { ArrowLeft, Sparkles } from 'lucide-react';
 import type { BubbleRow, TaskRow } from '@/types/database';
 import type { MessageAttachment } from '@/types/message-attachment';
@@ -8,6 +19,8 @@ import type { ChatMessage } from '@/types/chat';
 import { useUserProfileStore } from '@/store/userProfileStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useMessageThread } from '@/hooks/useMessageThread';
+import { useCoachTypingWait } from '@/hooks/useCoachTypingWait';
+import { CoachTypingIndicator } from '@/components/chat/CoachTypingIndicator';
 import { useTaskBubbleUps } from '@/hooks/use-task-bubble-ups';
 import { rowToChatMessage } from '@/lib/chat-message-mapper';
 import { toChatUserSnapshot } from '@/lib/message-thread';
@@ -28,12 +41,24 @@ type TaskPickerRow = {
   type: 'task' | 'request' | 'idea';
 };
 
+export type TaskModalCommentsPanelHandle = {
+  exitThread: () => void;
+};
+
+/** Passed from TaskModal into chat rows for coach draft / embedded task workout actions. */
+export type TaskModalChatCardWorkoutActions = {
+  modalTaskId: string;
+  onReviewDetails: () => void;
+  onGenerateWorkout?: () => void;
+  generateBusy: boolean;
+};
+
 export type TaskModalCommentsPanelProps = {
   taskId: string;
   workspaceId: string;
   bubbles: BubbleRow[];
   canWrite: boolean;
-  /** Task-scoped `messages.id` to open that comment thread after messages load (replies resolve via `parentId`). */
+  /** Task-scoped `messages.id` to open that comment thread after messages load (replies resolve from `parent_id`). */
   initialCommentThreadMessageId?: string | null;
   /** Notifies parent (e.g. `TaskModal`) to switch chrome title between Comments vs Replies. */
   onThreadViewChange?: (inThread: boolean) => void;
@@ -46,23 +71,55 @@ export type TaskModalCommentsPanelProps = {
   showInlineGenerateWorkout?: boolean;
   onGenerateWorkout?: () => void;
   generateWorkoutBusy?: boolean;
-  /** Forwarded from TaskModal so scrolling the message list collapses the cinematic hero. */
+  /** Forwarded from TaskModal so scrolling the message list collapses the cinematic hero (non-unified layout). */
   onMessagesScroll?: (e: UIEvent<HTMLDivElement>) => void;
+  /** Parent coordinates scroll (hero + messages); no nested message scroll areas. */
+  unifiedScrollLayout?: boolean;
+  /**
+   * When set with `unifiedScrollLayout`, RichMessageComposer renders via portal into this element.
+   */
+  composerPortalHost?: HTMLElement | null;
+  /** Parent scroll container (for thread auto-scroll when unified). */
+  scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
+  /** When true with `unifiedScrollLayout`, omit the inline “Back to comments” row (parent shows it). */
+  hideThreadBackRow?: boolean;
+  /** After coach draft finalize: parent refetches task, switches to Details, focuses description. */
+  onCoachDraftFinalizeSuccess?: () => void | Promise<void>;
+  /** TaskModal-only: Review / Generate on coach draft and matching embedded task cards. */
+  chatCardWorkoutActions?: TaskModalChatCardWorkoutActions | null;
+  /**
+   * Resolved bubble for this task (`TaskModal`’s `bubbleId`) so coach agent bindings load
+   * immediately instead of waiting on `tasks.bubble_id` / first message row.
+   */
+  taskBubbleIdHint?: string | null;
 };
 
-export function TaskModalCommentsPanel({
-  taskId,
-  workspaceId,
-  bubbles,
-  canWrite,
-  initialCommentThreadMessageId = null,
-  onThreadViewChange,
-  onMarkedRead,
-  showInlineGenerateWorkout = false,
-  onGenerateWorkout,
-  generateWorkoutBusy = false,
-  onMessagesScroll,
-}: TaskModalCommentsPanelProps) {
+export const TaskModalCommentsPanel = forwardRef<
+  TaskModalCommentsPanelHandle,
+  TaskModalCommentsPanelProps
+>(function TaskModalCommentsPanel(
+  {
+    taskId,
+    workspaceId,
+    bubbles,
+    canWrite,
+    initialCommentThreadMessageId = null,
+    onThreadViewChange,
+    onMarkedRead,
+    showInlineGenerateWorkout = false,
+    onGenerateWorkout,
+    generateWorkoutBusy = false,
+    onMessagesScroll,
+    unifiedScrollLayout = false,
+    composerPortalHost = null,
+    scrollContainerRef,
+    hideThreadBackRow = false,
+    onCoachDraftFinalizeSuccess,
+    chatCardWorkoutActions = null,
+    taskBubbleIdHint = null,
+  },
+  ref,
+) {
   const myProfile = useUserProfileStore((s) => s.profile);
   const workspaceRole = useWorkspaceStore((s) => s.activeWorkspace?.role ?? null);
   const [draft, setDraft] = useState('');
@@ -78,16 +135,26 @@ export function TaskModalCommentsPanel({
   const composerPopoverRef = useRef<HTMLDivElement>(null);
   const threadComposerPopoverRef = useRef<HTMLDivElement>(null);
   const threadScrollRef = useRef<HTMLDivElement>(null);
+  const rootFeedScrollRef = useRef<HTMLDivElement>(null);
   const deepLinkConsumedRef = useRef(false);
+
+  const unified = unifiedScrollLayout;
+  const portalComposers = unifiedScrollLayout && Boolean(composerPortalHost);
+
+  useImperativeHandle(ref, () => ({
+    exitThread: () => setActiveThreadParent(null),
+  }));
 
   const chat = useMessageThread({
     filter: { scope: 'task', taskId },
     workspaceId,
     bubbles,
     canPostMessages: canWrite,
+    taskBubbleIdHint,
   });
 
-  const { messages, userById, teamMembers, replyCounts, sending, isLoading } = chat;
+  const { messages, userById, teamMembers, agentAuthUserIds, replyCounts, sending, isLoading } =
+    chat;
 
   const onMarkedReadRef = useRef(onMarkedRead);
   onMarkedReadRef.current = onMarkedRead;
@@ -125,7 +192,6 @@ export function TaskModalCommentsPanel({
     return () => {
       cancelled = true;
       window.clearTimeout(t);
-      // Copilot suggestion ignored: only the debounced timer records views; cleanup clears the timer without flushing (avoids marking read on brief open).
     };
   }, [myProfile?.id, taskId, recordCommentsViewed]);
 
@@ -142,7 +208,6 @@ export function TaskModalCommentsPanel({
     setThreadPendingFiles([]);
   }, [activeThreadParent?.id]);
 
-  /** Task picker for `/…` links (same rules as `ChatArea`). */
   useEffect(() => {
     if (!workspaceId || bubbles.length === 0) {
       setAllTasks([]);
@@ -229,6 +294,30 @@ export function TaskModalCommentsPanel({
     [messages],
   );
 
+  const coachTypingMessages = useMemo(() => {
+    if (activeThreadParent) {
+      const pid = activeThreadParent.id;
+      return sortedRows.filter((m) => m.id === pid || m.parent_id === pid);
+    }
+    return sortedRows.filter((m) => m.parent_id == null || m.parent_id === '');
+  }, [sortedRows, activeThreadParent?.id]);
+
+  const {
+    isWaitingForCoach,
+    optimisticIntent: onComposerSubmitIntent,
+    registerSuccessfulSend,
+    clear: clearCoachWait,
+  } = useCoachTypingWait({
+    messages: coachTypingMessages,
+    myUserId: myProfile?.id,
+  });
+
+  const coachTypingAvatarUrl = useMemo(() => {
+    const id = agentAuthUserIds[0];
+    if (!id) return null;
+    return userById[id]?.avatar_url ?? null;
+  }, [agentAuthUserIds, userById]);
+
   const chatMessages: ChatMessage[] = useMemo(() => {
     return sortedRows.map((row) => {
       const base = userById[row.user_id];
@@ -261,11 +350,44 @@ export function TaskModalCommentsPanel({
     [chatMessages, activeThreadParent?.id],
   );
 
+  const prevThreadParentIdRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    if (threadScrollRef.current) {
-      threadScrollRef.current.scrollTop = threadScrollRef.current.scrollHeight;
+    const next = activeThreadParent?.id ?? null;
+    if (prevThreadParentIdRef.current === undefined) {
+      prevThreadParentIdRef.current = next;
+      return;
     }
-  }, [threadMessages, activeThreadParent?.id]);
+    if (prevThreadParentIdRef.current === next) return;
+    prevThreadParentIdRef.current = next;
+    clearCoachWait();
+  }, [activeThreadParent?.id, clearCoachWait]);
+
+  useLayoutEffect(() => {
+    if (!isWaitingForCoach) return;
+    const scrollEl = unified
+      ? (scrollContainerRef?.current ?? null)
+      : activeThreadParent
+        ? threadScrollRef.current
+        : rootFeedScrollRef.current;
+    if (!scrollEl) return;
+    requestAnimationFrame(() => {
+      scrollEl.scrollTop = scrollEl.scrollHeight;
+    });
+  }, [
+    isWaitingForCoach,
+    messages.length,
+    activeThreadParent?.id,
+    unified,
+    scrollContainerRef,
+    threadMessages.length,
+    rootMessages.length,
+  ]);
+
+  useEffect(() => {
+    const el = unified ? (scrollContainerRef?.current ?? null) : threadScrollRef.current;
+    if (!el || !activeThreadParent) return;
+    el.scrollTop = el.scrollHeight;
+  }, [threadMessages, activeThreadParent?.id, unified, scrollContainerRef]);
 
   const embeddedTaskIds = useMemo(() => {
     const s = new Set<string>();
@@ -307,8 +429,114 @@ export function TaskModalCommentsPanel({
       </div>
     ) : null;
 
+  const rootScrollClass = unified
+    ? 'space-y-6 px-6 pb-2'
+    : 'custom-scrollbar min-h-0 flex-1 space-y-6 overflow-y-auto scroll-smooth px-6 pb-2';
+
+  const rootComposer = (
+    <RichMessageComposer
+      density="rail"
+      popoverContainerRef={composerPopoverRef}
+      className="border-t border-border px-6 pt-4"
+      value={draft}
+      onChange={(next, _meta) => setDraft(next)}
+      onSubmitIntent={onComposerSubmitIntent}
+      onSubmit={async ({ text, files }) => {
+        if (!text.trim() && (!files || files.length === 0)) return false;
+        const sent = await chat.sendMessage(text, undefined, files);
+        if (sent) {
+          setDraft('');
+          setPendingFiles([]);
+          registerSuccessfulSend(sent);
+        }
+        return sent != null;
+      }}
+      pendingFiles={pendingFiles}
+      onPendingFilesChange={setPendingFiles}
+      fileAccept={MESSAGE_ATTACHMENT_FILE_ACCEPT}
+      onAttachmentFilesSelected={() => chat.clearError()}
+      disabled={!canWrite || sending}
+      isSending={sending}
+      canSubmit={(!!draft.trim() || pendingFiles.length > 0) && canWrite && !sending}
+      attachDisabled={!canWrite || sending}
+      placeholder="Write a comment…"
+      errorText={chat.error}
+      mentionConfig={richMentionConfig}
+      slashConfig={richSlashConfig}
+      features={{
+        enableAtMentions: true,
+        enableSlashTaskLinks: true,
+        enableCreateAndAttachCard: false,
+      }}
+      footerHint={
+        <>
+          <b>Return</b> to send • <b>@</b> to mention • <b>/</b> to link a card
+        </>
+      }
+    />
+  );
+
+  const threadComposer = (
+    <RichMessageComposer
+      density="thread"
+      popoverContainerRef={threadComposerPopoverRef}
+      className="border-t border-border px-6 py-4"
+      value={threadDraft}
+      onChange={(next, _meta) => setThreadDraft(next)}
+      onSubmitIntent={onComposerSubmitIntent}
+      onSubmit={async ({ text, files }) => {
+        if ((!text.trim() && (!files || files.length === 0)) || sending) return false;
+        const parentId = activeThreadParent!.id;
+        const sent = await chat.sendMessage(text, parentId, files);
+        if (sent) {
+          setThreadDraft('');
+          setThreadPendingFiles([]);
+          registerSuccessfulSend(sent);
+        }
+        return sent != null;
+      }}
+      pendingFiles={threadPendingFiles}
+      onPendingFilesChange={setThreadPendingFiles}
+      fileAccept={MESSAGE_ATTACHMENT_FILE_ACCEPT}
+      onAttachmentFilesSelected={() => chat.clearError()}
+      disabled={!canWrite || sending}
+      isSending={sending}
+      canSubmit={(!!threadDraft.trim() || threadPendingFiles.length > 0) && canWrite && !sending}
+      attachDisabled={!canWrite || sending}
+      placeholder="Write a reply…"
+      errorText={chat.error}
+      features={{ enableAtMentions: false, enableSlashTaskLinks: false }}
+    />
+  );
+
+  const renderRootComposer = () => {
+    const wrapped = <div ref={composerPopoverRef}>{rootComposer}</div>;
+    if (portalComposers && composerPortalHost) {
+      return createPortal(wrapped, composerPortalHost);
+    }
+    return <div className="relative shrink-0">{wrapped}</div>;
+  };
+
+  const renderThreadComposer = () => {
+    const wrapped = <div ref={threadComposerPopoverRef}>{threadComposer}</div>;
+    if (portalComposers && composerPortalHost) {
+      return createPortal(wrapped, composerPortalHost);
+    }
+    return <div className="relative shrink-0">{wrapped}</div>;
+  };
+
+  const threadMessagesClass = unified
+    ? 'px-6 pb-2 pt-2'
+    : 'custom-scrollbar min-h-0 flex-1 overflow-y-auto scroll-smooth px-6 pb-2 pt-2';
+
+  const showInlineBack = !(unifiedScrollLayout && hideThreadBackRow);
+
   return (
-    <div className="relative -mx-6 flex min-h-0 flex-1 flex-col">
+    <div
+      className={
+        unified ? 'relative w-full min-w-0' : 'relative -mx-6 flex min-h-0 flex-1 flex-col'
+      }
+    >
       <MessageMediaModal
         open={mediaModal !== null}
         onOpenChange={(open) => {
@@ -322,90 +550,59 @@ export function TaskModalCommentsPanel({
         <>
           {inlineGenerateRow}
           <div
-            className="custom-scrollbar min-h-0 flex-1 space-y-6 overflow-y-auto scroll-smooth px-6 pb-2"
-            onScroll={onMessagesScroll}
+            ref={rootFeedScrollRef}
+            className={rootScrollClass}
+            onScroll={unified ? undefined : onMessagesScroll}
           >
-            {isLoading ? (
+            {isLoading && rootMessages.length === 0 ? (
               <p className="text-sm text-muted-foreground">Loading comments…</p>
-            ) : rootMessages.length === 0 ? (
+            ) : null}
+            {rootMessages.length > 0
+              ? rootMessages.map((msg) => (
+                  <ChatMessageRow
+                    key={msg.id}
+                    message={msg}
+                    density="rail"
+                    renderContent={renderMessageContent}
+                    onOpenAttachment={(attachments, index) => setMediaModal({ attachments, index })}
+                    bubbleUpPropsFor={bubbleUpPropsFor}
+                    onOpenThread={handleOpenThread}
+                    onCoachDraftFinalizeSuccess={onCoachDraftFinalizeSuccess}
+                    chatCardWorkoutActions={chatCardWorkoutActions}
+                  />
+                ))
+              : null}
+            {!isLoading && rootMessages.length === 0 ? (
               <p className="text-sm text-muted-foreground">No comments yet.</p>
-            ) : (
-              rootMessages.map((msg) => (
-                <ChatMessageRow
-                  key={msg.id}
-                  message={msg}
-                  density="rail"
-                  renderContent={renderMessageContent}
-                  onOpenAttachment={(attachments, index) => setMediaModal({ attachments, index })}
-                  bubbleUpPropsFor={bubbleUpPropsFor}
-                  onOpenThread={handleOpenThread}
-                />
-              ))
-            )}
+            ) : null}
+            {isWaitingForCoach ? (
+              <div className="mt-6 w-full shrink-0">
+                <CoachTypingIndicator density="rail" coachAvatarUrl={coachTypingAvatarUrl} />
+              </div>
+            ) : null}
           </div>
-
-          <div ref={composerPopoverRef} className="relative shrink-0">
-            <RichMessageComposer
-              density="rail"
-              popoverContainerRef={composerPopoverRef}
-              className="border-t border-border px-6 pt-4"
-              value={draft}
-              onChange={(next, _meta) => setDraft(next)}
-              onSubmit={async ({ text, files }) => {
-                if (!text.trim() && (!files || files.length === 0)) return false;
-                const ok = await chat.sendMessage(text, undefined, files);
-                if (ok) {
-                  setDraft('');
-                  setPendingFiles([]);
-                }
-                return ok;
-              }}
-              pendingFiles={pendingFiles}
-              onPendingFilesChange={setPendingFiles}
-              fileAccept={MESSAGE_ATTACHMENT_FILE_ACCEPT}
-              onAttachmentFilesSelected={() => chat.clearError()}
-              disabled={!canWrite || sending}
-              isSending={sending}
-              canSubmit={
-                /* Copilot suggestion ignored: `sendMessage` allows attachment-only posts when `files.length > 0` (no attached card required). */
-                (!!draft.trim() || pendingFiles.length > 0) && canWrite && !sending
-              }
-              attachDisabled={!canWrite || sending}
-              placeholder="Write a comment…"
-              errorText={chat.error}
-              mentionConfig={richMentionConfig}
-              slashConfig={richSlashConfig}
-              features={{
-                enableAtMentions: true,
-                enableSlashTaskLinks: true,
-                enableCreateAndAttachCard: false,
-              }}
-              footerHint={
-                <>
-                  <b>Return</b> to send • <b>@</b> to mention • <b>/</b> to link a card
-                </>
-              }
-            />
-          </div>
+          {renderRootComposer()}
         </>
       ) : (
         <>
           {inlineGenerateRow}
-          <div className="shrink-0 border-b border-border px-6 py-1">
-            <button
-              type="button"
-              onClick={() => setActiveThreadParent(null)}
-              className="inline-flex items-center gap-2 rounded-md px-1.5 py-1 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <ArrowLeft className="size-4 shrink-0" aria-hidden />
-              Back to comments
-            </button>
-          </div>
+          {showInlineBack ? (
+            <div className="shrink-0 border-b border-border px-6 py-1">
+              <button
+                type="button"
+                onClick={() => setActiveThreadParent(null)}
+                className="inline-flex items-center gap-2 rounded-md px-1.5 py-1 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <ArrowLeft className="size-4 shrink-0" aria-hidden />
+                Back to comments
+              </button>
+            </div>
+          ) : null}
 
           <div
-            ref={threadScrollRef}
-            className="custom-scrollbar min-h-0 flex-1 overflow-y-auto scroll-smooth px-6 pb-2 pt-2"
-            onScroll={onMessagesScroll}
+            ref={unified ? undefined : threadScrollRef}
+            className={threadMessagesClass}
+            onScroll={unified ? undefined : onMessagesScroll}
           >
             <div className="mb-3 rounded-xl border border-border bg-muted/35 p-3 shadow-sm ring-1 ring-border/40 dark:bg-muted/20">
               <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -417,6 +614,8 @@ export function TaskModalCommentsPanel({
                 renderContent={renderMessageContent}
                 onOpenAttachment={(attachments, index) => setMediaModal({ attachments, index })}
                 bubbleUpPropsFor={bubbleUpPropsFor}
+                onCoachDraftFinalizeSuccess={onCoachDraftFinalizeSuccess}
+                chatCardWorkoutActions={chatCardWorkoutActions}
               />
             </div>
             <div className="ml-2 space-y-5 border-l-2 border-primary/25 pl-4">
@@ -431,44 +630,20 @@ export function TaskModalCommentsPanel({
                   renderContent={renderMessageContent}
                   onOpenAttachment={(attachments, index) => setMediaModal({ attachments, index })}
                   bubbleUpPropsFor={bubbleUpPropsFor}
+                  onCoachDraftFinalizeSuccess={onCoachDraftFinalizeSuccess}
+                  chatCardWorkoutActions={chatCardWorkoutActions}
                 />
               ))}
+              {isWaitingForCoach ? (
+                <div className="mt-6 w-full shrink-0">
+                  <CoachTypingIndicator density="thread" coachAvatarUrl={coachTypingAvatarUrl} />
+                </div>
+              ) : null}
             </div>
           </div>
-
-          <div ref={threadComposerPopoverRef} className="relative shrink-0">
-            <RichMessageComposer
-              density="thread"
-              popoverContainerRef={threadComposerPopoverRef}
-              className="border-t border-border px-6 py-4"
-              value={threadDraft}
-              onChange={(next, _meta) => setThreadDraft(next)}
-              onSubmit={async ({ text, files }) => {
-                if ((!text.trim() && (!files || files.length === 0)) || sending) return false;
-                const ok = await chat.sendMessage(text, activeThreadParent.id, files);
-                if (ok) {
-                  setThreadDraft('');
-                  setThreadPendingFiles([]);
-                }
-                return ok;
-              }}
-              pendingFiles={threadPendingFiles}
-              onPendingFilesChange={setThreadPendingFiles}
-              fileAccept={MESSAGE_ATTACHMENT_FILE_ACCEPT}
-              onAttachmentFilesSelected={() => chat.clearError()}
-              disabled={!canWrite || sending}
-              isSending={sending}
-              canSubmit={
-                (!!threadDraft.trim() || threadPendingFiles.length > 0) && canWrite && !sending
-              }
-              attachDisabled={!canWrite || sending}
-              placeholder="Write a reply…"
-              errorText={chat.error}
-              features={{ enableAtMentions: false, enableSlashTaskLinks: false }}
-            />
-          </div>
+          {renderThreadComposer()}
         </>
       )}
     </div>
   );
-}
+});

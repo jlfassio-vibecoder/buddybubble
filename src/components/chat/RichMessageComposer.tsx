@@ -55,6 +55,13 @@ export type RichMessageComposerProps = {
   /** Return `true` when the parent cleared / accepted the send (composer may reset local popover UI). */
   onSubmit: (payload: { text: string; files: File[] }) => boolean | Promise<boolean>;
 
+  /**
+   * Fires on every `<form>` submit (Enter or send button), immediately after `preventDefault`,
+   * **before** the internal `canSubmit` / `isSending` guard. Use for optimistic UI when the parent
+   * `onSubmit` would otherwise never run due to that guard.
+   */
+  onSubmitIntent?: () => void;
+
   pendingFiles: File[];
   onPendingFilesChange: (next: File[]) => void;
   fileAccept: string;
@@ -99,6 +106,7 @@ export function RichMessageComposer({
   value,
   onChange,
   onSubmit,
+  onSubmitIntent,
   pendingFiles,
   onPendingFilesChange,
   fileAccept,
@@ -271,6 +279,7 @@ export function RichMessageComposer({
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit || isSending) return;
+    onSubmitIntent?.();
     const ok = await onSubmit({ text: value, files: [...pendingFiles] });
     if (ok) {
       setShowMentions(false);

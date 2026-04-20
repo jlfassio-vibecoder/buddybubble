@@ -325,6 +325,8 @@ export interface Database {
           attached_task_id: string | null;
           /** Optional task anchor for unified task comments (`20260416000000_normalize_task_collections_and_unified_chat`). */
           target_task_id: string | null;
+          /** App JSON e.g. coach draft proposals (`20260623120000_coach_workout_draft_messages_metadata`). */
+          metadata: Json;
         };
         Insert: {
           id?: string;
@@ -336,6 +338,7 @@ export interface Database {
           attachments?: Json;
           attached_task_id?: string | null;
           target_task_id?: string | null;
+          metadata?: Json;
         };
         Update: Partial<Database['public']['Tables']['messages']['Insert']>;
       };
@@ -1333,6 +1336,26 @@ export interface Database {
           p_new_title?: string | null;
           p_new_description?: string | null;
         };
+        Returns: Json;
+      };
+      /** Agent inserts a thread reply with `messages.metadata.coach_draft`; does not mutate tasks. service_role only. */
+      agent_insert_coach_workout_draft_reply: {
+        Args: {
+          p_trigger_message_id: string;
+          p_thread_id: string;
+          p_agent_auth_user_id: string;
+          p_invoker_user_id: string;
+          p_target_task_id: string;
+          p_reply_text: string;
+          p_proposed_title?: string | null;
+          p_proposed_description?: string | null;
+          p_proposed_metadata?: Json;
+        };
+        Returns: Json;
+      };
+      /** Merge coach draft into tasks and mark message draft accepted. */
+      apply_workout_draft: {
+        Args: { p_message_id: string };
         Returns: Json;
       };
       /** Batch name match: lower(trim); prefers published, then newest updated_at. Row[] at runtime. */

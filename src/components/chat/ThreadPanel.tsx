@@ -8,8 +8,10 @@ import type { TaskBubbleUpControlProps } from '@/components/tasks/bubbly-button'
 import type { ChatMessage } from '@/types/chat';
 import type { MessageAttachment } from '@/types/message-attachment';
 import { MESSAGE_ATTACHMENT_FILE_ACCEPT } from '@/lib/message-attachment-limits';
+import type { SendMessageSuccess } from '@/hooks/useMessageThread';
 import { ChatMessageRow } from './ChatMessageRow';
 import { RichMessageComposer } from './RichMessageComposer';
+import { CoachTypingIndicator } from './CoachTypingIndicator';
 
 export type ThreadPanelProps = {
   activeThreadParent: ChatMessage | null;
@@ -17,7 +19,13 @@ export type ThreadPanelProps = {
   canPostMessages: boolean;
   onClose: () => void;
   /** Submit a new reply in the current thread (parent id is handled by the caller). */
-  onSendMessage: (content: string, files?: File[]) => Promise<boolean>;
+  onSendMessage: (content: string, files?: File[]) => Promise<SendMessageSuccess | null>;
+  /** Fires before submit guards; use for optimistic coach typing UI. */
+  onSubmitIntent?: () => void;
+  /** After a successful send; parent registers coach wait with server message id. */
+  onSuccessfulThreadSend?: (sent: SendMessageSuccess) => void;
+  isWaitingForCoach?: boolean;
+  coachTypingAvatarUrl?: string | null;
   onOpenAttachment: (attachments: MessageAttachment[], index: number) => void;
   /** Opens the task modal for an embedded Kanban card (chat feed cards). */
   onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
@@ -36,6 +44,10 @@ export function ThreadPanel({
   canPostMessages,
   onClose,
   onSendMessage,
+  onSubmitIntent,
+  onSuccessfulThreadSend,
+  isWaitingForCoach = false,
+  coachTypingAvatarUrl,
   onOpenAttachment,
   onOpenTask,
   bubbleUpPropsFor,
@@ -108,6 +120,11 @@ export function ThreadPanel({
                 />
               ))}
             </div>
+            {isWaitingForCoach ? (
+              <div className="mt-6 w-full shrink-0">
+                <CoachTypingIndicator density="thread" coachAvatarUrl={coachTypingAvatarUrl} />
+              </div>
+            ) : null}
           </div>
 
           <RichMessageComposer
@@ -115,10 +132,12 @@ export function ThreadPanel({
             className="border-t border-border bg-background p-4"
             value={threadInput}
             onChange={(next, _meta) => setThreadInput(next)}
+            onSubmitIntent={onSubmitIntent}
             onSubmit={async ({ text, files }) => {
               if ((!text.trim() && (!files || files.length === 0)) || sending) return false;
-              const ok = await onSendMessage(text, files);
-              if (!ok) return false;
+              const sent = await onSendMessage(text, files);
+              if (!sent) return false;
+              onSuccessfulThreadSend?.(sent);
               setThreadInput('');
               setPendingFiles([]);
               return true;
