@@ -34,10 +34,12 @@ function childShellDebugName(children: ReactNode | undefined): string {
  * Horizontally centered shell: video stage + injectable interactive UI (timers, games, etc.).
  */
 export function BaseVideoHarness(props: BaseVideoHarnessProps) {
-  console.log(
-    '[DEBUG] BaseVideoHarness Rendered with child shell:',
-    childShellDebugName(props.children),
-  );
+  if (process.env.NODE_ENV === 'development') {
+    console.log(
+      '[DEBUG] BaseVideoHarness Rendered with child shell:',
+      childShellDebugName(props.children),
+    );
+  }
 
   const {
     isConnected,

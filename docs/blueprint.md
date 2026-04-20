@@ -1,6 +1,6 @@
 Live video (Agora) — BuddyBubble blueprint
 
-Status: Scaffold (mock session; no agora-rtc-sdk-ng yet)
+Status: Agora-backed live video (token API + browser SDK wired)
 Purpose: Single reference for humans and coding agents. Use absolute paths in BuddyBubble when reviewing or extending this feature. Do not copy legacy Interval Timers code verbatim; reuse ideas (token boundary, lifecycle) only.
 
 Revised Cursor / agent prompt (use this verbatim for scaffolding tasks)
@@ -11,7 +11,7 @@ Constraints
 
 Do not copy-paste legacy app files. New code lives under src/features/live-video/.
 
-Do not add agora-rtc-sdk-ng until token + server routes and CSP/mic-camera UX are designed.
+Agora SDK: agora-rtc-sdk-ng is used with server-minted RTC tokens (see src/app/api/live-video/token/route.ts). Keep secrets server-side.
 
 ThemeScope: ThemeScope uses display: contents; it injects CSS variables only. The live subtree must remain a descendant of the dashboard ThemeScope (today: anything rendered inside DashboardShell under src/components/dashboard/dashboard-shell.tsx lines ~902–1205, including routed {children}).
 

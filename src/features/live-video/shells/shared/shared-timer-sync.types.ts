@@ -68,6 +68,7 @@ function isFiniteNumber(x: unknown): x is number {
 /**
  * Narrow an untyped Realtime broadcast payload to `SharedTimerBroadcastPayload`, or null if invalid.
  */
+// Copilot suggestion ignored: dedicated parsing/math tests will be added in a follow-up PR (keeping this PR scoped).
 export function parseSharedTimerBroadcastPayload(raw: unknown): SharedTimerBroadcastPayload | null {
   if (!isRecord(raw)) return null;
   const action = raw.action;

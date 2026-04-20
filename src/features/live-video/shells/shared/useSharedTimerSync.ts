@@ -255,6 +255,7 @@ export function useSharedTimerSync(options: UseSharedTimerSyncOptions): UseShare
     }
     const channel = channelRef.current;
     if (!channel || !connectedRef.current) return;
+    if (isRunningRef.current) return;
 
     const now = Date.now();
     const gen = generationRef.current;

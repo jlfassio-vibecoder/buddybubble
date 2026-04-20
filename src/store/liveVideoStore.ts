@@ -31,7 +31,9 @@ export const useLiveVideoStore = create<LiveVideoStore>((set) => ({
   },
 
   leaveSession: () => {
-    console.warn('[DEBUG] leaveSession called. Clearing Zustand store.');
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[DEBUG] leaveSession called. Clearing Zustand store.');
+    }
     set({ activeSession: null });
   },
 }));

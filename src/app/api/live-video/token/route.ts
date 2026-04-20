@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+// Copilot suggestion ignored: `agora-access-token` is deprecated, but migration to `agora-token` will be done
+// in a follow-up PR after validating API parity and token correctness end-to-end.
 import { RtcRole, RtcTokenBuilder } from 'agora-access-token';
 import { agoraUidFromUuid } from '@/lib/live-video/agora-uid';
 import { createClient } from '@utils/supabase/server';
@@ -84,7 +86,10 @@ export async function POST(req: Request) {
     }
   }
 
-  console.log('[DEBUG] Token API hit for channel:', channelId);
+  // Copilot suggestion ignored: keep the exact tripwire string, but gate it to dev to avoid noisy prod logs.
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[DEBUG] Token API hit for channel:', channelId);
+  }
 
   const uid = agoraUidFromUuid(user.id);
   const now = Math.floor(Date.now() / 1000);

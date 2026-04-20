@@ -35,7 +35,7 @@ export function LiveSessionMessageCard({
   }, [activeSession, invite.channelId, invite.sessionId, invite.workspaceId]);
 
   const ended = Boolean(invite.endedAt);
-  const joinDisabled = ended || inThisSession;
+  const joinDisabled = ended || inThisSession || !currentUserId;
 
   const title = invite.mode === 'workout' ? 'Live workout' : 'Live session';
 
@@ -57,6 +57,8 @@ export function LiveSessionMessageCard({
             <p className="text-xs text-muted-foreground">This session has ended.</p>
           ) : inThisSession ? (
             <p className="text-xs text-muted-foreground">You are in this session.</p>
+          ) : !currentUserId ? (
+            <p className="text-xs text-muted-foreground">Sign in to join this session.</p>
           ) : null}
           <p className="text-[10px] text-muted-foreground">
             Joining opens the live video dock at the top of the dashboard.
