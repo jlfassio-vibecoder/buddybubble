@@ -8,6 +8,7 @@ comment on column public.messages.metadata is
   'App-defined JSON (e.g. coach_draft: proposed title/description/metadata before user finalizes to tasks).';
 
 -- Aligns with public.tasks_update USING (see 20260521100000_storefront_trial_phase2_guest_tasks_rls.sql).
+-- Copilot suggestion ignored: _uid is the subject of assigned_to checks; can_write_bubble / is_workspace_guest mirror tasks_update RLS and intentionally use auth.uid() like the referenced migration, not membership inlined by _uid.
 create or replace function public.user_may_update_task_row(_uid uuid, _task public.tasks)
 returns boolean
 language sql
@@ -267,8 +268,12 @@ begin
     raise exception 'apply_workout_draft: missing target_task_id' using errcode = 'P0001';
   end if;
 
-  if v_msg.attached_task_id is not null and v_msg.attached_task_id is distinct from v_target then
-    raise exception 'apply_workout_draft: attached_task_id mismatch' using errcode = 'P0001';
+  -- Definer bypasses messages RLS: require this row to reference the draft target (and same bubble below).
+  if not (
+    v_msg.attached_task_id is not distinct from v_target
+    or v_msg.target_task_id is not distinct from v_target
+  ) then
+    raise exception 'apply_workout_draft: message not scoped to target task' using errcode = 'P0001';
   end if;
 
   select t.*
@@ -276,6 +281,10 @@ begin
   from public.tasks t
   where t.id = v_target
   for update;
+
+  if v_msg.bubble_id is distinct from v_task.bubble_id then
+    raise exception 'apply_workout_draft: bubble mismatch' using errcode = 'P0001';
+  end if;
 
   if not public.user_may_update_task_row(v_uid, v_task) then
     raise exception 'apply_workout_draft: forbidden' using errcode = 'P0001';

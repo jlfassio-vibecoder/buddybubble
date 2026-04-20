@@ -62,6 +62,12 @@ export function useCoachTypingWait({ messages, myUserId }: UseCoachTypingWaitArg
     }, COACH_WAIT_FAILSAFE_MS);
   }, [clearFailsafe]);
 
+  useEffect(() => {
+    return () => {
+      clearFailsafe();
+    };
+  }, [clearFailsafe]);
+
   const optimisticIntent = useCallback(() => {
     outboundMessageIdRef.current = null;
     beginWait();

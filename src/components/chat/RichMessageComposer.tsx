@@ -278,8 +278,8 @@ export function RichMessageComposer({
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmitIntent?.();
     if (!canSubmit || isSending) return;
+    onSubmitIntent?.();
     const ok = await onSubmit({ text: value, files: [...pendingFiles] });
     if (ok) {
       setShowMentions(false);
