@@ -1,7 +1,19 @@
 /** Wall-clock ms when the sender committed this transition (client clock in v1). */
 export type AuthoritativeTimestampMs = number;
 
-export type SharedTimerAction = 'START' | 'PAUSE' | 'RESET' | 'SYNC_REQUEST' | 'SYNC_RESPONSE';
+/** Host-synced global video tile aspect ratio (broadcast with timer channel). */
+export type LiveAspectRatioId = '16:9' | '9:16' | '1:1';
+
+/** Derived session rhythm for UI: never started, running segment, or paused with elapsed time. */
+export type SharedTimerSessionStatus = 'idle' | 'running' | 'paused';
+
+export type SharedTimerAction =
+  | 'START'
+  | 'PAUSE'
+  | 'RESET'
+  | 'SYNC_REQUEST'
+  | 'SYNC_RESPONSE'
+  | 'LAYOUT_CHANGE';
 
 export type SharedTimerBroadcastPayload =
   | {
@@ -41,6 +53,13 @@ export type SharedTimerBroadcastPayload =
       segmentStartedAt: AuthoritativeTimestampMs | null;
       accumulatedMsBeforeSegment: number;
       snapshotHostNow: AuthoritativeTimestampMs;
+      aspectRatio: LiveAspectRatioId;
+    }
+  | {
+      action: 'LAYOUT_CHANGE';
+      authoritativeTimestamp: AuthoritativeTimestampMs;
+      senderId: string;
+      aspectRatio: LiveAspectRatioId;
     };
 
 /** Ref-backed model exposed to UI for rAF extrapolation (no per-ms React updates in the hook). */
@@ -53,6 +72,10 @@ export type SharedTimerSnapshot = {
   segmentStartedAt: number | null;
   /** `hostNow - localNow` from the last `SYNC_RESPONSE`; host keeps 0. */
   epochOffsetMs: number;
+  /** Host-synced global aspect ratio for video tiles. */
+  aspectRatio: LiveAspectRatioId;
+  /** Session lifecycle hint for shells (derived from timer refs). */
+  status: SharedTimerSessionStatus;
 };
 
 export type SharedTimerConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -63,6 +86,10 @@ function isRecord(x: unknown): x is Record<string, unknown> {
 
 function isFiniteNumber(x: unknown): x is number {
   return typeof x === 'number' && Number.isFinite(x);
+}
+
+export function isLiveAspectRatioId(x: unknown): x is LiveAspectRatioId {
+  return x === '16:9' || x === '9:16' || x === '1:1';
 }
 
 /**
@@ -77,7 +104,8 @@ export function parseSharedTimerBroadcastPayload(raw: unknown): SharedTimerBroad
     action !== 'PAUSE' &&
     action !== 'RESET' &&
     action !== 'SYNC_REQUEST' &&
-    action !== 'SYNC_RESPONSE'
+    action !== 'SYNC_RESPONSE' &&
+    action !== 'LAYOUT_CHANGE'
   ) {
     return null;
   }
@@ -154,6 +182,10 @@ export function parseSharedTimerBroadcastPayload(raw: unknown): SharedTimerBroad
     const segmentStartedAt = raw.segmentStartedAt;
     const accumulatedMsBeforeSegment = raw.accumulatedMsBeforeSegment;
     const snapshotHostNow = raw.snapshotHostNow;
+    const aspectRatioRaw = raw.aspectRatio;
+    const aspectRatio: LiveAspectRatioId = isLiveAspectRatioId(aspectRatioRaw)
+      ? aspectRatioRaw
+      : '16:9';
     if (
       !isFiniteNumber(generation) ||
       typeof isRunning !== 'boolean' ||
@@ -172,6 +204,18 @@ export function parseSharedTimerBroadcastPayload(raw: unknown): SharedTimerBroad
       segmentStartedAt,
       accumulatedMsBeforeSegment,
       snapshotHostNow,
+      aspectRatio,
+    };
+  }
+
+  if (action === 'LAYOUT_CHANGE') {
+    const aspectRatio = raw.aspectRatio;
+    if (!isLiveAspectRatioId(aspectRatio)) return null;
+    return {
+      action: 'LAYOUT_CHANGE',
+      authoritativeTimestamp,
+      senderId,
+      aspectRatio,
     };
   }
 

@@ -26,7 +26,7 @@ SheetOverlay.displayName = DialogPrimitive.Overlay.displayName;
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
-    side?: 'left' | 'right';
+    side?: 'left' | 'right' | 'bottom';
   }
 >(({ side = 'left', className, children, ...props }, ref) => (
   <SheetPortal>
@@ -38,6 +38,8 @@ const SheetContent = React.forwardRef<
         side === 'left' &&
           'inset-y-0 left-0 h-full w-[min(100vw-1rem,22rem)] max-w-[24rem] border-r p-0',
         side === 'right' && 'inset-y-0 right-0 h-full w-[min(100vw-1rem,22rem)] border-l p-0',
+        side === 'bottom' &&
+          'inset-x-0 bottom-0 max-h-[85vh] h-[85vh] w-full rounded-t-xl border-t p-0',
         className,
       )}
       {...props}

@@ -23,6 +23,21 @@ export function calendarCollapsedStorageKey(workspaceId: string) {
   return `buddybubble.calendarCollapsed.${workspaceId}`;
 }
 
+/** Percent split between live-video dock (top) and WorkspaceMainSplit — JSON `{ dash-live-dock: n, dash-workspace: n }`. */
+export function dockWorkspaceSplitStorageKey(workspaceId: string) {
+  return `buddybubble.dockWorkspaceSplit.${workspaceId}`;
+}
+
+/** Desktop theater deck builder: Kanban board (left) vs live dock (right) — JSON `{ theater-board, theater-dock }`. */
+export function theaterBoardDockSplitStorageKey(workspaceId: string) {
+  return `buddybubble.theaterBoardDockSplit.${workspaceId}`;
+}
+
+/** Live huddle: exercise editor (left) vs video (right) — JSON `{ huddle-editor, huddle-video }`. */
+export function huddleEditorVideoSplitStorageKey(workspaceId: string) {
+  return `buddybubble.huddleEditorVideoSplit.${workspaceId}`;
+}
+
 /** Per-workspace Kanban column strips (`buddybubble.kanbanCollapsedColumns:${workspaceId}` JSON array of column ids). */
 export function kanbanBoardCollapsedColumnsStorageKey(workspaceId: string) {
   return `buddybubble.kanbanCollapsedColumns:${workspaceId}`;

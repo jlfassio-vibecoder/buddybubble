@@ -210,6 +210,7 @@ export function WorkspaceMainSplit({
 
       {!hideMainStage && (
         <div
+          data-workspace-kanban-stage
           className={cn(
             'flex min-h-0 min-w-0 flex-1 flex-row',
             hideMainStageBelowMd && 'max-md:hidden',

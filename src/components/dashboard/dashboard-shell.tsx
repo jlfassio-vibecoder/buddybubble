@@ -1,6 +1,16 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  cloneElement,
+  isValidElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { X } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
@@ -45,7 +55,9 @@ import {
   bubbleSidebarCollapsedStorageKey,
   calendarCollapsedStorageKey,
   chatCollapsedStorageKey,
+  dockWorkspaceSplitStorageKey,
   kanbanCollapsedStorageKey,
+  theaterBoardDockSplitStorageKey,
   workspaceRailCollapsedStorageKey,
 } from '@/lib/layout-collapse-keys';
 import {
@@ -70,6 +82,15 @@ import { ActiveUsersStack } from '@/components/presence/ActiveUsersStack';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
 import { useLiveVideoStore } from '@/store/liveVideoStore';
 import { DashboardLiveVideoDock } from '@/components/dashboard/dashboard-live-video-dock';
+import {
+  WorkoutDeckSelectionProvider,
+  useWorkoutDeckSelection,
+} from '@/features/live-video/shells/huddle/workout-deck-selection-context';
+import { TrialPaywallGuard } from '@/components/subscription/trial-paywall-guard';
+import { LiveSessionRuntimeProvider } from '@/features/live-video/theater/live-session-runtime-context';
+import { useLiveTheaterLayoutPlanContext } from '@/features/live-video/theater/live-theater-layout-context';
+import type { LiveTheaterLayoutPlan } from '@/features/live-video/theater/live-theater-layout.types';
+import { LiveVideoSessionShell } from '@/features/live-video/theater/live-video-session-shell';
 import { isDashboardProfileComplete } from '@/lib/profile-helpers';
 import {
   shouldBlockWorkoutForExpiredMemberPreview,
@@ -80,6 +101,71 @@ import { ExpiredGate } from '@/components/subscription/expired-gate';
 import { StartTrialModal } from '@/components/subscription/start-trial-modal';
 import { PremiumGate } from '@/components/subscription/premium-gate';
 import { AnalyticsProvider } from '@/components/analytics/analytics-provider';
+import type { Layout } from 'react-resizable-panels';
+import { useGroupRef } from 'react-resizable-panels';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
+
+const DASH_DOCK_PANEL_ID = 'dash-live-dock';
+const DASH_WORKSPACE_PANEL_ID = 'dash-workspace';
+const THEATER_BOARD_PANEL_ID = 'theater-board';
+const THEATER_DOCK_PANEL_ID = 'theater-dock';
+
+function LiveTheaterPlanBranch({
+  children,
+}: {
+  children: (plan: LiveTheaterLayoutPlan) => ReactNode;
+}) {
+  const plan = useLiveTheaterLayoutPlanContext();
+  return <>{children(plan)}</>;
+}
+
+function readDockWorkspaceLayout(workspaceId: string): Layout {
+  const fallback: Layout = {
+    [DASH_DOCK_PANEL_ID]: 42,
+    [DASH_WORKSPACE_PANEL_ID]: 58,
+  };
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const raw = localStorage.getItem(dockWorkspaceSplitStorageKey(workspaceId));
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as Layout;
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      typeof parsed[DASH_DOCK_PANEL_ID] === 'number' &&
+      typeof parsed[DASH_WORKSPACE_PANEL_ID] === 'number'
+    ) {
+      return parsed;
+    }
+  } catch {
+    /* ignore */
+  }
+  return fallback;
+}
+
+function readTheaterBoardDockLayout(workspaceId: string): Layout {
+  const fallback: Layout = {
+    [THEATER_BOARD_PANEL_ID]: 42,
+    [THEATER_DOCK_PANEL_ID]: 58,
+  };
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const raw = localStorage.getItem(theaterBoardDockSplitStorageKey(workspaceId));
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as Layout;
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      typeof parsed[THEATER_BOARD_PANEL_ID] === 'number' &&
+      typeof parsed[THEATER_DOCK_PANEL_ID] === 'number'
+    ) {
+      return parsed;
+    }
+  } catch {
+    /* ignore */
+  }
+  return fallback;
+}
 
 type Props = {
   workspaceId: string;
@@ -89,7 +175,7 @@ type Props = {
   children: React.ReactNode;
 };
 
-export function DashboardShell({
+function DashboardShellInner({
   workspaceId,
   initialRole,
   initialPendingJoinRequestCount = 0,
@@ -163,6 +249,8 @@ export function DashboardShell({
   const [layoutHydrated, setLayoutHydrated] = useState(false);
   /** Bumped when the calendar is collapsed so `KanbanBoard` expands its column strip (avoid empty stage). */
   const [boardStripExpandNonce, setBoardStripExpandNonce] = useState(0);
+
+  const workoutDeckSelection = useWorkoutDeckSelection();
 
   const bumpTaskViews = useCallback(() => setTaskViewsNonce((n) => n + 1), []);
 
@@ -253,6 +341,8 @@ export function DashboardShell({
     taskId: null,
   });
   const taskCommentToastTitleByIdRef = useRef<Map<string, string>>(new Map());
+  /** One-time desktop rail collapse per live session join (user can expand rails again). */
+  const liveVideoTheaterRailsPrimedForSessionIdRef = useRef<string | null>(null);
 
   const activeBubbleIsPrivate = useMemo(() => {
     if (selectedBubbleId === ALL_BUBBLES_BUBBLE_ID) return false;
@@ -320,6 +410,43 @@ export function DashboardShell({
       useLiveVideoStore.getState().leaveSession();
     }
   }, [activeLiveVideoSession, workspaceId]);
+
+  const liveVideoSessionWithUser = Boolean(activeLiveVideoSession && profile?.id);
+
+  useEffect(() => {
+    if (!activeLiveVideoSession) {
+      liveVideoTheaterRailsPrimedForSessionIdRef.current = null;
+    }
+  }, [activeLiveVideoSession]);
+
+  /** Desktop: collapse left rails once per join so theater gets maximum width (toggles still work). */
+  useEffect(() => {
+    if (!layoutHydrated) return;
+    if (layoutMobile || embedMode) return;
+    const sessionId = activeLiveVideoSession?.sessionId;
+    if (!sessionId || !profile?.id) return;
+    if (liveVideoTheaterRailsPrimedForSessionIdRef.current === sessionId) return;
+    liveVideoTheaterRailsPrimedForSessionIdRef.current = sessionId;
+    setWorkspaceRailCollapsed(true);
+    setBubbleSidebarCollapsed(true);
+    setChatCollapsed(true);
+  }, [
+    activeLiveVideoSession?.sessionId,
+    embedMode,
+    layoutHydrated,
+    layoutMobile,
+    profile?.id,
+    setWorkspaceRailCollapsed,
+    setBubbleSidebarCollapsed,
+    setChatCollapsed,
+  ]);
+
+  /** Expand Kanban while picking cards into the workout deck (session UX; not theater collapse hacks). */
+  useEffect(() => {
+    if (!layoutHydrated) return;
+    if (!workoutDeckSelection.isSelectingFromBoard) return;
+    setKanbanCollapsed(false);
+  }, [layoutHydrated, workoutDeckSelection.isSelectingFromBoard, setKanbanCollapsed]);
 
   const onLiveVideoLeaveSession = useCallback(async () => {
     const { activeSession, leaveSession } = useLiveVideoStore.getState();
@@ -932,340 +1059,602 @@ export function DashboardShell({
     [embedMode, layoutHydrated],
   );
 
+  const dockWorkspaceGroupRef = useGroupRef();
+
+  const [dockWorkspaceDefaultLayout, setDockWorkspaceDefaultLayout] = useState<Layout>(() => ({
+    [DASH_DOCK_PANEL_ID]: 42,
+    [DASH_WORKSPACE_PANEL_ID]: 58,
+  }));
+
+  const [theaterBoardDockDefaultLayout, setTheaterBoardDockDefaultLayout] = useState<Layout>(
+    () => ({
+      [THEATER_BOARD_PANEL_ID]: 42,
+      [THEATER_DOCK_PANEL_ID]: 58,
+    }),
+  );
+
+  useEffect(() => {
+    setDockWorkspaceDefaultLayout(readDockWorkspaceLayout(workspaceId));
+    setTheaterBoardDockDefaultLayout(readTheaterBoardDockLayout(workspaceId));
+  }, [workspaceId]);
+
+  const onPlanningVerticalLayoutChanged = useCallback(
+    (layout: Layout) => {
+      if (workoutDeckSelection.isSelectingFromBoard) return;
+      try {
+        localStorage.setItem(dockWorkspaceSplitStorageKey(workspaceId), JSON.stringify(layout));
+      } catch {
+        /* ignore */
+      }
+    },
+    [workspaceId, workoutDeckSelection.isSelectingFromBoard],
+  );
+
+  const onTheaterBoardDockLayoutChanged = useCallback(
+    (layout: Layout) => {
+      try {
+        localStorage.setItem(theaterBoardDockSplitStorageKey(workspaceId), JSON.stringify(layout));
+      } catch {
+        /* ignore */
+      }
+    },
+    [workspaceId],
+  );
+
+  const handleDoneSelectingFromBoard = useCallback(() => {
+    workoutDeckSelection.exitSelectionMode();
+  }, [workoutDeckSelection.exitSelectionMode]);
+
+  const calendarRailEl = useMemo(
+    () => (
+      <CalendarRail
+        isCollapsed={calendarRailIsCollapsed}
+        onExpand={() => setCalendarCollapsed(false)}
+        onCollapse={() => setCalendarCollapsed(true)}
+        buddyBubbleTitle={buddyBubbleTitle}
+        {...calendarContext}
+      />
+    ),
+    [buddyBubbleTitle, calendarContext, calendarRailIsCollapsed, setCalendarCollapsed],
+  );
+
+  const workspaceBoardEl = useMemo(
+    () =>
+      isAnalyticsBubble ? (
+        <PremiumGate feature="analytics" className="flex-1 min-h-0">
+          <AnalyticsBoard workspaceId={workspaceId} calendarTimezone={workspaceCalendarTz} />
+        </PremiumGate>
+      ) : isClassesBubble ? (
+        <ClassesBoard workspaceId={workspaceId} />
+      ) : isProgramsBubble ? (
+        <ProgramsBoard
+          workspaceId={workspaceId}
+          selectedBubbleId={selectedBubbleId!}
+          bubbles={bubbles}
+          workspaceCategory={effectiveKanbanCategory}
+          calendarTimezone={workspaceCalendarTz}
+          taskViewsNonce={taskViewsNonce}
+          canWrite={canWriteTasks}
+          onOpenTask={openTaskModal}
+          onOpenCreateTask={openCreateTaskModal}
+        />
+      ) : (
+        <KanbanBoard
+          canWrite={canWriteTasks}
+          bubbles={bubbles}
+          onOpenTask={openTaskModal}
+          onOpenCreateTask={openCreateTaskModal}
+          onStartWorkout={handleStartWorkout}
+          workspaceCategory={effectiveKanbanCategory}
+          calendarTimezone={workspaceCalendarTz}
+          boardStripExpandNonce={boardStripExpandNonce}
+          calendarStripCollapsed={calendarRailIsCollapsed}
+          onExpandCalendarWhenKanbanStripCollapse={() => setCalendarCollapsed(false)}
+          onRetractKanbanPanel={() => setKanbanCollapsed(true)}
+          buddyBubbleTitle={buddyBubbleTitle}
+          workspaceMemberRole={effectiveWorkspaceRole}
+          guestTaskUserId={profile?.id ?? null}
+          workoutSelectionMode={workoutDeckSelection.isSelectingFromBoard}
+          onTaskSelectedForWorkoutDeck={workoutDeckSelection.addTaskToDeck}
+        />
+      ),
+    [
+      isAnalyticsBubble,
+      isClassesBubble,
+      isProgramsBubble,
+      workspaceId,
+      workspaceCalendarTz,
+      selectedBubbleId,
+      bubbles,
+      effectiveKanbanCategory,
+      taskViewsNonce,
+      canWriteTasks,
+      openTaskModal,
+      openCreateTaskModal,
+      handleStartWorkout,
+      boardStripExpandNonce,
+      calendarRailIsCollapsed,
+      buddyBubbleTitle,
+      effectiveWorkspaceRole,
+      profile?.id,
+      workoutDeckSelection.isSelectingFromBoard,
+      workoutDeckSelection.addTaskToDeck,
+      setCalendarCollapsed,
+      setKanbanCollapsed,
+    ],
+  );
+
+  const workspaceStage = (
+    <WorkspaceMainSplit
+      workspaceId={workspaceId}
+      chatCollapsed={chatCollapsed}
+      onChatCollapsedChange={setChatCollapsed}
+      kanbanCollapsed={kanbanCollapsed}
+      calendarCollapsed={calendarRailIsCollapsed}
+      hideMainStage={hideMainStageForDesktopChat}
+      omitCollapsedMessagesStrip={(tripleStack && chatCollapsed) || omitMobileNonChatStrip}
+      hideCalendarSlot={hideCalendarForMobileBoard}
+      hideMainStageBelowMd={layoutMobile && mobileTab === 'chat'}
+      taskViewsNonce={taskViewsNonce}
+      boardSoftLocked={trialSoftLockSurfaces}
+      calendarRail={calendarRailEl}
+      renderChat={({ onCollapse }) => (
+        <ChatArea
+          bubbles={bubbles}
+          canPostMessages={canPostMessages}
+          canWriteTasks={canWriteTasks}
+          onOpenTask={openTaskModal}
+          onOpenCreateTaskForChat={openChatComposeForTask}
+          onCollapse={onCollapse}
+          workspaceTitle={workspaceTitle}
+          joinRequestBellPreview={isAdmin ? joinRequestBellPreview : undefined}
+        />
+      )}
+      board={workspaceBoardEl}
+    />
+  );
+
+  const workspaceBoardHorizontalStage = (
+    <div
+      data-workspace-kanban-stage
+      className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden bg-background"
+    >
+      {trialSoftLockSurfaces ? (
+        <TrialPaywallGuard locked className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {isValidElement(workspaceBoardEl)
+            ? cloneElement(
+                workspaceBoardEl as ReactElement<{
+                  calendarSlot?: React.ReactNode;
+                  taskViewsNonce?: number;
+                }>,
+                {
+                  calendarSlot: hideCalendarForMobileBoard ? undefined : calendarRailEl,
+                  taskViewsNonce,
+                },
+              )
+            : workspaceBoardEl}
+        </TrialPaywallGuard>
+      ) : isValidElement(workspaceBoardEl) ? (
+        cloneElement(
+          workspaceBoardEl as ReactElement<{
+            calendarSlot?: React.ReactNode;
+            taskViewsNonce?: number;
+          }>,
+          {
+            calendarSlot: hideCalendarForMobileBoard ? undefined : calendarRailEl,
+            taskViewsNonce,
+          },
+        )
+      ) : (
+        workspaceBoardEl
+      )}
+    </div>
+  );
+
   return (
     <AnalyticsProvider workspaceId={workspaceId} userId={profile?.id}>
-      <ThemeScope category={effectiveThemeCategory}>
-        <div className="flex h-screen min-h-0 flex-col bg-background md:flex-row md:overflow-hidden">
-          {layoutMobile ? (
-            <MobileHeader
-              title={buddyBubbleTitle}
-              trailing={embedMode ? null : <ActiveUsersStack localUserId={profile?.id} />}
-            />
-          ) : null}
-          {layoutMobile ? (
-            <MobileSidebarSheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-              <WorkspaceRail {...drawerRailProps} />
-              <BubbleSidebar {...drawerBubbleProps} />
-            </MobileSidebarSheet>
-          ) : null}
+      <LiveSessionRuntimeProvider
+        workspaceId={workspaceId}
+        sessionId={activeLiveVideoSession?.sessionId ?? ''}
+        localUserId={profile?.id ?? ''}
+        hostUserId={activeLiveVideoSession?.hostUserId ?? ''}
+        enabled={Boolean(activeLiveVideoSession && profile?.id)}
+      >
+        <LiveVideoSessionShell
+          theaterPlanDeps={{
+            hasLiveVideoSession: liveVideoSessionWithUser,
+            isSelectingFromBoard: workoutDeckSelection.isSelectingFromBoard,
+            layoutMobile,
+            embedMode,
+            layoutHydrated,
+          }}
+        >
+          <ThemeScope category={effectiveThemeCategory}>
+            <div className="flex h-screen min-h-0 flex-col bg-background md:flex-row md:overflow-hidden">
+              {layoutMobile ? (
+                <MobileHeader
+                  title={buddyBubbleTitle}
+                  trailing={embedMode ? null : <ActiveUsersStack localUserId={profile?.id} />}
+                />
+              ) : null}
+              {layoutMobile ? (
+                <MobileSidebarSheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+                  <WorkspaceRail {...drawerRailProps} />
+                  <BubbleSidebar {...drawerBubbleProps} />
+                </MobileSidebarSheet>
+              ) : null}
 
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-0">
-            {!embedMode ? (
-              <div className="max-md:hidden flex h-11 shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-4">
-                <span
-                  className="min-w-0 truncate text-sm font-semibold text-foreground"
-                  title={`${buddyBubbleTitle} - ${workspaceTitle}`}
-                >
-                  {buddyBubbleTitle}
-                  <span className="font-normal text-muted-foreground"> - </span>
-                  {workspaceTitle}
-                </span>
-                <div className="flex min-w-0 shrink-0 items-center gap-2">
-                  {embedMode ? null : <ActiveUsersStack localUserId={profile?.id} />}
-                  <DesktopViewSwitcher
-                    activeMode={desktopFocusModeActive}
-                    onChange={applyDesktopFocusMode}
-                    disabled={!layoutHydrated}
-                  />
-                </div>
-              </div>
-            ) : null}
-            {!embedMode && <TrialBanner />}
-            {!embedMode && <ExpiredGate />}
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:min-h-0 md:flex-row">
-              <div className="hidden h-full min-h-0 shrink-0 md:flex md:flex-row">
-                {tripleStack ? (
-                  <div
-                    className={cn(
-                      'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-border',
-                      COLLAPSED_COLUMN_WIDTH_CLASS,
-                    )}
-                  >
-                    {chatCollapsed ? (
-                      <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-border bg-black">
-                        <CollapsedColumnStrip
-                          title="Messages"
-                          expandTitle="Expand Messages"
-                          expandAriaLabel="Expand Messages panel"
-                          onExpand={() => setChatCollapsed(false)}
-                          edge="left"
-                          variant="black"
-                        />
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-0">
+                {!embedMode ? (
+                  <div className="max-md:hidden flex h-11 shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-4">
+                    <span
+                      className="min-w-0 truncate text-sm font-semibold text-foreground"
+                      title={`${buddyBubbleTitle} - ${workspaceTitle}`}
+                    >
+                      {buddyBubbleTitle}
+                      <span className="font-normal text-muted-foreground"> - </span>
+                      {workspaceTitle}
+                    </span>
+                    <div className="flex min-w-0 shrink-0 items-center gap-2">
+                      {embedMode ? null : <ActiveUsersStack localUserId={profile?.id} />}
+                      <DesktopViewSwitcher
+                        activeMode={desktopFocusModeActive}
+                        onChange={applyDesktopFocusMode}
+                        disabled={!layoutHydrated}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+                {!embedMode && <TrialBanner />}
+                {!embedMode && <ExpiredGate />}
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:min-h-0 md:flex-row">
+                  <div className="hidden h-full min-h-0 shrink-0 md:flex md:flex-row">
+                    {tripleStack ? (
+                      <div
+                        className={cn(
+                          'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-border',
+                          COLLAPSED_COLUMN_WIDTH_CLASS,
+                        )}
+                      >
+                        {chatCollapsed ? (
+                          <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-border bg-black">
+                            <CollapsedColumnStrip
+                              title="Messages"
+                              expandTitle="Expand Messages"
+                              expandAriaLabel="Expand Messages panel"
+                              onExpand={() => setChatCollapsed(false)}
+                              edge="left"
+                              variant="black"
+                            />
+                          </div>
+                        ) : (
+                          <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-border bg-background">
+                            <CollapsedColumnStrip
+                              title="Kanban"
+                              expandTitle="Expand Kanban"
+                              expandAriaLabel="Expand Kanban panel"
+                              onExpand={() => setKanbanCollapsed(false)}
+                              edge="left"
+                              variant="card"
+                            />
+                          </div>
+                        )}
+                        <BubbleSidebar {...bubbleSidebarProps} collapsedStackSlot="middle" />
+                        <WorkspaceRail {...workspaceRailProps} collapsedStackSlot="bottom" />
+                      </div>
+                    ) : railsCollapsed ? (
+                      <div
+                        className={cn(
+                          'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-border',
+                          COLLAPSED_COLUMN_WIDTH_CLASS,
+                        )}
+                      >
+                        <BubbleSidebar {...bubbleSidebarProps} collapsedStackSlot="top" />
+                        <WorkspaceRail {...workspaceRailProps} collapsedStackSlot="bottom" />
                       </div>
                     ) : (
-                      <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-border bg-background">
-                        <CollapsedColumnStrip
-                          title="Kanban"
-                          expandTitle="Expand Kanban"
-                          expandAriaLabel="Expand Kanban panel"
-                          onExpand={() => setKanbanCollapsed(false)}
-                          edge="left"
-                          variant="card"
-                        />
+                      <>
+                        <WorkspaceRail {...workspaceRailProps} />
+                        <BubbleSidebar {...bubbleSidebarProps} />
+                      </>
+                    )}
+                  </div>
+
+                  <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                    {process.env.NODE_ENV === 'development' &&
+                    !embedMode &&
+                    !activeLiveVideoSession &&
+                    profile?.id ? (
+                      <div className="flex shrink-0 justify-end border-b border-border bg-muted/30 px-2 py-1">
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="secondary"
+                          onClick={handleJoinDevLiveVideo}
+                        >
+                          Start live video (dev)
+                        </Button>
+                      </div>
+                    ) : null}
+                    {activeLiveVideoSession && profile?.id ? (
+                      <LiveTheaterPlanBranch>
+                        {(plan) => {
+                          const shellKind =
+                            plan.shell.kind !== 'inactive'
+                              ? plan.shell.kind
+                              : layoutMobile || embedMode
+                                ? 'vertical_compact_session'
+                                : 'vertical_planning';
+
+                          if (
+                            shellKind === 'vertical_planning' ||
+                            shellKind === 'vertical_compact_session'
+                          ) {
+                            return (
+                              <ResizablePanelGroup
+                                key={`${workspaceId}-lv-plan`}
+                                direction="vertical"
+                                groupRef={dockWorkspaceGroupRef}
+                                id={`dock-workspace-split-${workspaceId}`}
+                                defaultLayout={dockWorkspaceDefaultLayout}
+                                onLayoutChanged={onPlanningVerticalLayoutChanged}
+                                disabled={layoutMobile || embedMode}
+                                className="flex min-h-0 min-w-0 flex-1 flex-col"
+                              >
+                                <ResizablePanel
+                                  id={DASH_DOCK_PANEL_ID}
+                                  minSize={200}
+                                  maxSize="75%"
+                                  className="flex min-h-0 min-w-0 flex-col overflow-hidden"
+                                >
+                                  <DashboardLiveVideoDock
+                                    session={activeLiveVideoSession}
+                                    localUserId={profile.id}
+                                    onLeaveSession={onLiveVideoLeaveSession}
+                                    canWriteTasks={canWriteTasks}
+                                    onWorkoutDeckPersisted={bumpTaskViews}
+                                  />
+                                </ResizablePanel>
+                                <ResizableHandle
+                                  direction="vertical"
+                                  withHandle
+                                  className="z-20 shrink-0"
+                                />
+                                <ResizablePanel
+                                  id={DASH_WORKSPACE_PANEL_ID}
+                                  minSize={300}
+                                  className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+                                >
+                                  {workspaceStage}
+                                </ResizablePanel>
+                              </ResizablePanelGroup>
+                            );
+                          }
+
+                          if (shellKind === 'theater_focus') {
+                            return (
+                              <div
+                                key={`${workspaceId}-lv-theater-focus`}
+                                className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+                              >
+                                <DashboardLiveVideoDock
+                                  session={activeLiveVideoSession}
+                                  localUserId={profile.id}
+                                  onLeaveSession={onLiveVideoLeaveSession}
+                                  canWriteTasks={canWriteTasks}
+                                  onWorkoutDeckPersisted={bumpTaskViews}
+                                />
+                              </div>
+                            );
+                          }
+
+                          if (shellKind === 'theater_board_split') {
+                            return (
+                              <ResizablePanelGroup
+                                key={`${workspaceId}-lv-theater-board-dock`}
+                                direction="horizontal"
+                                groupRef={dockWorkspaceGroupRef}
+                                id={`theater-board-dock-${workspaceId}`}
+                                defaultLayout={theaterBoardDockDefaultLayout}
+                                onLayoutChanged={onTheaterBoardDockLayoutChanged}
+                                className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row"
+                              >
+                                <ResizablePanel
+                                  id={THEATER_BOARD_PANEL_ID}
+                                  minSize={280}
+                                  maxSize="70%"
+                                  className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+                                >
+                                  {workspaceBoardHorizontalStage}
+                                </ResizablePanel>
+                                <ResizableHandle
+                                  direction="horizontal"
+                                  withHandle
+                                  className="z-20 shrink-0"
+                                />
+                                <ResizablePanel
+                                  id={THEATER_DOCK_PANEL_ID}
+                                  minSize={200}
+                                  className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+                                >
+                                  <DashboardLiveVideoDock
+                                    session={activeLiveVideoSession}
+                                    localUserId={profile.id}
+                                    onLeaveSession={onLiveVideoLeaveSession}
+                                    canWriteTasks={canWriteTasks}
+                                    onWorkoutDeckPersisted={bumpTaskViews}
+                                  />
+                                </ResizablePanel>
+                              </ResizablePanelGroup>
+                            );
+                          }
+
+                          return null;
+                        }}
+                      </LiveTheaterPlanBranch>
+                    ) : (
+                      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                        {workspaceStage}
                       </div>
                     )}
-                    <BubbleSidebar {...bubbleSidebarProps} collapsedStackSlot="middle" />
-                    <WorkspaceRail {...workspaceRailProps} collapsedStackSlot="bottom" />
                   </div>
-                ) : railsCollapsed ? (
-                  <div
-                    className={cn(
-                      'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-border',
-                      COLLAPSED_COLUMN_WIDTH_CLASS,
-                    )}
-                  >
-                    <BubbleSidebar {...bubbleSidebarProps} collapsedStackSlot="top" />
-                    <WorkspaceRail {...workspaceRailProps} collapsedStackSlot="bottom" />
-                  </div>
-                ) : (
-                  <>
-                    <WorkspaceRail {...workspaceRailProps} />
-                    <BubbleSidebar {...bubbleSidebarProps} />
-                  </>
-                )}
-              </div>
-
-              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-                {process.env.NODE_ENV === 'development' &&
-                !embedMode &&
-                !activeLiveVideoSession &&
-                profile?.id ? (
-                  <div className="flex shrink-0 justify-end border-b border-border bg-muted/30 px-2 py-1">
-                    <Button
-                      type="button"
-                      size="xs"
-                      variant="secondary"
-                      onClick={handleJoinDevLiveVideo}
-                    >
-                      Start live video (dev)
-                    </Button>
-                  </div>
-                ) : null}
-                {activeLiveVideoSession && profile?.id ? (
-                  <DashboardLiveVideoDock
-                    session={activeLiveVideoSession}
-                    localUserId={profile.id}
-                    onLeaveSession={onLiveVideoLeaveSession}
-                  />
-                ) : null}
-                <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-                  <WorkspaceMainSplit
-                    workspaceId={workspaceId}
-                    chatCollapsed={chatCollapsed}
-                    onChatCollapsedChange={setChatCollapsed}
-                    kanbanCollapsed={kanbanCollapsed}
-                    calendarCollapsed={calendarRailIsCollapsed}
-                    hideMainStage={hideMainStageForDesktopChat}
-                    omitCollapsedMessagesStrip={
-                      (tripleStack && chatCollapsed) || omitMobileNonChatStrip
-                    }
-                    hideCalendarSlot={hideCalendarForMobileBoard}
-                    hideMainStageBelowMd={layoutMobile && mobileTab === 'chat'}
-                    taskViewsNonce={taskViewsNonce}
-                    boardSoftLocked={trialSoftLockSurfaces}
-                    calendarRail={
-                      <CalendarRail
-                        isCollapsed={calendarRailIsCollapsed}
-                        onExpand={() => setCalendarCollapsed(false)}
-                        onCollapse={() => setCalendarCollapsed(true)}
-                        buddyBubbleTitle={buddyBubbleTitle}
-                        {...calendarContext}
-                      />
-                    }
-                    renderChat={({ onCollapse }) => (
-                      <ChatArea
-                        bubbles={bubbles}
-                        canPostMessages={canPostMessages}
-                        canWriteTasks={canWriteTasks}
-                        onOpenTask={openTaskModal}
-                        onOpenCreateTaskForChat={openChatComposeForTask}
-                        onCollapse={onCollapse}
-                        workspaceTitle={workspaceTitle}
-                        joinRequestBellPreview={isAdmin ? joinRequestBellPreview : undefined}
-                      />
-                    )}
-                    board={
-                      isAnalyticsBubble ? (
-                        <PremiumGate feature="analytics" className="flex-1 min-h-0">
-                          <AnalyticsBoard
-                            workspaceId={workspaceId}
-                            calendarTimezone={workspaceCalendarTz}
-                          />
-                        </PremiumGate>
-                      ) : isClassesBubble ? (
-                        <ClassesBoard workspaceId={workspaceId} />
-                      ) : isProgramsBubble ? (
-                        <ProgramsBoard
-                          workspaceId={workspaceId}
-                          selectedBubbleId={selectedBubbleId!}
-                          bubbles={bubbles}
-                          workspaceCategory={effectiveKanbanCategory}
-                          calendarTimezone={workspaceCalendarTz}
-                          taskViewsNonce={taskViewsNonce}
-                          canWrite={canWriteTasks}
-                          onOpenTask={openTaskModal}
-                          onOpenCreateTask={openCreateTaskModal}
-                        />
-                      ) : (
-                        <KanbanBoard
-                          canWrite={canWriteTasks}
-                          bubbles={bubbles}
-                          onOpenTask={openTaskModal}
-                          onOpenCreateTask={openCreateTaskModal}
-                          onStartWorkout={handleStartWorkout}
-                          workspaceCategory={effectiveKanbanCategory}
-                          calendarTimezone={workspaceCalendarTz}
-                          boardStripExpandNonce={boardStripExpandNonce}
-                          calendarStripCollapsed={calendarRailIsCollapsed}
-                          onExpandCalendarWhenKanbanStripCollapse={() =>
-                            setCalendarCollapsed(false)
-                          }
-                          onRetractKanbanPanel={() => setKanbanCollapsed(true)}
-                          buddyBubbleTitle={buddyBubbleTitle}
-                          workspaceMemberRole={effectiveWorkspaceRole}
-                          guestTaskUserId={profile?.id ?? null}
-                        />
-                      )
-                    }
-                  />
                 </div>
               </div>
-            </div>
-          </div>
 
-          {layoutMobile ? <MobileTabBar onOpenNavigation={() => setMobileNavOpen(true)} /> : null}
+              {layoutMobile ? (
+                <MobileTabBar onOpenNavigation={() => setMobileNavOpen(true)} />
+              ) : null}
 
-          <TaskModal
-            open={taskModalOpen}
-            onOpenChange={onTaskModalOpenChange}
-            taskId={taskModalTaskId}
-            bubbleId={resolvedTaskModalBubbleId}
-            workspaceId={workspaceId}
-            bubbles={bubbles}
-            canWrite={canWriteTasks}
-            onCreated={(id) => {
-              setTaskModalTaskId(id);
-              bumpTaskViews();
-              const postToChat = chatCardOnCreatedRef.current;
-              chatCardOnCreatedRef.current = null;
-              if (postToChat) postToChat(id);
-            }}
-            initialCreateStatus={taskModalInitialStatus}
-            initialCreateItemType={taskModalInitialCreateItemType}
-            initialCreateTitle={taskModalInitialCreateTitle}
-            initialCreateWorkoutDurationMin={taskModalInitialCreateWorkoutDurationMin}
-            initialTab={taskModalInitialTab}
-            initialViewMode={taskModalViewMode}
-            initialAutoEdit={taskModalAutoEdit}
-            initialOpenWorkoutViewer={taskModalOpenWorkoutViewer}
-            initialCommentThreadMessageId={taskModalCommentThreadMessageId}
-            workspaceCategory={effectiveKanbanCategory}
-            calendarTimezone={workspaceCalendarTz}
-            onTaskArchived={bumpTaskViews}
-            onTaskCommentsMarkedRead={bumpTaskViews}
-            onClearOpenTaskCommentDeepLink={clearTaskModalCommentDeepLink}
-          />
-          {workoutPlayerTask && (
-            <WorkoutPlayer
-              open
-              onClose={() => setWorkoutPlayerTask(null)}
-              workspaceId={workspaceId}
-              workoutTitle={workoutPlayerTask.title}
-              exercises={metadataFieldsFromParsed(workoutPlayerTask.metadata).workoutExercises}
-              bubbleId={workoutPlayerTask.bubble_id}
-              sourceTaskId={workoutPlayerTask.id}
-              onComplete={bumpTaskViews}
-            />
-          )}
-          <WorkspaceSettingsModal
-            open={workspaceSettingsOpen}
-            onOpenChange={setWorkspaceSettingsOpen}
-            workspaceId={workspaceId}
-            isAdmin={isAdmin}
-            isOwner={isOwner}
-            onSaved={() => {
-              void loadUserWorkspaces().then(() => syncActiveFromRoute(workspaceId));
-            }}
-          />
-          <ProfileModal
-            open={profileModalOpen}
-            onOpenChange={setProfileModalOpen}
-            permissionsContext={profilePermissionsContext}
-            showFamilyNames={showFamilyNames}
-          />
-          {/* Modal requires `profile`; `isDashboardProfileComplete` treats null profile as gate-off while store loads */}
-          {!profileComplete && profile !== null ? (
-            <ProfileCompletionModal
-              profile={profile}
-              showFamilyNames={showFamilyNames}
-              workspaceId={workspaceId}
-              onComplete={() => void loadProfile()}
-            />
-          ) : null}
-          <PeopleInvitesModal
-            open={peopleInvitesOpen}
-            onOpenChange={setPeopleInvitesOpen}
-            workspaceId={workspaceId}
-            themeCategory={effectiveThemeCategory}
-            preferPendingTab={pendingJoinRequestCount > 0}
-            onRequestCreateOwnWorkspace={embedMode ? undefined : openCreateWorkspace}
-          />
-          {!embedMode ? (
-            <CreateWorkspaceModal
-              open={createWorkspaceOpen}
-              onOpenChange={setCreateWorkspaceOpen}
-            />
-          ) : null}
-          {workspaceCategoryForUi === 'fitness' ? (
-            <FitnessProfileSheet
-              open={fitnessProfileOpen}
-              onOpenChange={setFitnessProfileOpen}
-              workspaceId={workspaceId}
-              bubbleIdForTasks={
-                selectedBubbleId && selectedBubbleId !== ALL_BUBBLES_BUBBLE_ID
-                  ? selectedBubbleId
-                  : null
-              }
-              onQuickWorkoutCreated={bumpTaskViews}
-            />
-          ) : null}
-          {workspaceCategoryForUi === 'fitness' || workspaceCategoryForUi === 'business' ? (
-            <StartTrialModal workspaceId={workspaceId} categoryType={workspaceCategoryForUi} />
-          ) : null}
-          {commentAlert ? (
-            <div
-              className="pointer-events-auto fixed bottom-20 left-1/2 z-[100] flex max-w-md -translate-x-1/2 items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-lg md:bottom-6"
-              role="status"
-            >
-              <p className="min-w-0 flex-1 text-sm text-foreground">
-                Someone commented on &ldquo;{commentAlert.title}&rdquo;
-              </p>
-              <Button
-                size="sm"
-                onClick={() => {
-                  openTaskModal(commentAlert.taskId, {
-                    tab: 'comments',
-                    viewMode: 'comments-only',
-                    commentThreadMessageId: commentAlert.messageId || undefined,
-                  });
-                  setCommentAlert(null);
+              <TaskModal
+                open={taskModalOpen}
+                onOpenChange={onTaskModalOpenChange}
+                taskId={taskModalTaskId}
+                bubbleId={resolvedTaskModalBubbleId}
+                workspaceId={workspaceId}
+                bubbles={bubbles}
+                canWrite={canWriteTasks}
+                onCreated={(id) => {
+                  setTaskModalTaskId(id);
+                  bumpTaskViews();
+                  const postToChat = chatCardOnCreatedRef.current;
+                  chatCardOnCreatedRef.current = null;
+                  if (postToChat) postToChat(id);
                 }}
-              >
-                Open
-              </Button>
-              <button
-                type="button"
-                className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                aria-label="Dismiss"
-                onClick={() => setCommentAlert(null)}
-              >
-                <X className="size-4" />
-              </button>
+                initialCreateStatus={taskModalInitialStatus}
+                initialCreateItemType={taskModalInitialCreateItemType}
+                initialCreateTitle={taskModalInitialCreateTitle}
+                initialCreateWorkoutDurationMin={taskModalInitialCreateWorkoutDurationMin}
+                initialTab={taskModalInitialTab}
+                initialViewMode={taskModalViewMode}
+                initialAutoEdit={taskModalAutoEdit}
+                initialOpenWorkoutViewer={taskModalOpenWorkoutViewer}
+                initialCommentThreadMessageId={taskModalCommentThreadMessageId}
+                workspaceCategory={effectiveKanbanCategory}
+                calendarTimezone={workspaceCalendarTz}
+                onTaskArchived={bumpTaskViews}
+                onTaskCommentsMarkedRead={bumpTaskViews}
+                onClearOpenTaskCommentDeepLink={clearTaskModalCommentDeepLink}
+              />
+              {workoutPlayerTask && (
+                <WorkoutPlayer
+                  open
+                  onClose={() => setWorkoutPlayerTask(null)}
+                  workspaceId={workspaceId}
+                  workoutTitle={workoutPlayerTask.title}
+                  exercises={metadataFieldsFromParsed(workoutPlayerTask.metadata).workoutExercises}
+                  bubbleId={workoutPlayerTask.bubble_id}
+                  sourceTaskId={workoutPlayerTask.id}
+                  onComplete={bumpTaskViews}
+                />
+              )}
+              <WorkspaceSettingsModal
+                open={workspaceSettingsOpen}
+                onOpenChange={setWorkspaceSettingsOpen}
+                workspaceId={workspaceId}
+                isAdmin={isAdmin}
+                isOwner={isOwner}
+                onSaved={() => {
+                  void loadUserWorkspaces().then(() => syncActiveFromRoute(workspaceId));
+                }}
+              />
+              <ProfileModal
+                open={profileModalOpen}
+                onOpenChange={setProfileModalOpen}
+                permissionsContext={profilePermissionsContext}
+                showFamilyNames={showFamilyNames}
+              />
+              {/* Modal requires `profile`; `isDashboardProfileComplete` treats null profile as gate-off while store loads */}
+              {!profileComplete && profile !== null ? (
+                <ProfileCompletionModal
+                  profile={profile}
+                  showFamilyNames={showFamilyNames}
+                  workspaceId={workspaceId}
+                  onComplete={() => void loadProfile()}
+                />
+              ) : null}
+              <PeopleInvitesModal
+                open={peopleInvitesOpen}
+                onOpenChange={setPeopleInvitesOpen}
+                workspaceId={workspaceId}
+                themeCategory={effectiveThemeCategory}
+                preferPendingTab={pendingJoinRequestCount > 0}
+                onRequestCreateOwnWorkspace={embedMode ? undefined : openCreateWorkspace}
+              />
+              {!embedMode ? (
+                <CreateWorkspaceModal
+                  open={createWorkspaceOpen}
+                  onOpenChange={setCreateWorkspaceOpen}
+                />
+              ) : null}
+              {workspaceCategoryForUi === 'fitness' ? (
+                <FitnessProfileSheet
+                  open={fitnessProfileOpen}
+                  onOpenChange={setFitnessProfileOpen}
+                  workspaceId={workspaceId}
+                  bubbleIdForTasks={
+                    selectedBubbleId && selectedBubbleId !== ALL_BUBBLES_BUBBLE_ID
+                      ? selectedBubbleId
+                      : null
+                  }
+                  onQuickWorkoutCreated={bumpTaskViews}
+                />
+              ) : null}
+              {workspaceCategoryForUi === 'fitness' || workspaceCategoryForUi === 'business' ? (
+                <StartTrialModal workspaceId={workspaceId} categoryType={workspaceCategoryForUi} />
+              ) : null}
+              {commentAlert ? (
+                <div
+                  className="pointer-events-auto fixed bottom-20 left-1/2 z-[100] flex max-w-md -translate-x-1/2 items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-lg md:bottom-6"
+                  role="status"
+                >
+                  <p className="min-w-0 flex-1 text-sm text-foreground">
+                    Someone commented on &ldquo;{commentAlert.title}&rdquo;
+                  </p>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      openTaskModal(commentAlert.taskId, {
+                        tab: 'comments',
+                        viewMode: 'comments-only',
+                        commentThreadMessageId: commentAlert.messageId || undefined,
+                      });
+                      setCommentAlert(null);
+                    }}
+                  >
+                    Open
+                  </Button>
+                  <button
+                    type="button"
+                    className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    aria-label="Dismiss"
+                    onClick={() => setCommentAlert(null)}
+                  >
+                    <X className="size-4" />
+                  </button>
+                </div>
+              ) : null}
+              {workoutDeckSelection.isSelectingFromBoard ? (
+                <Button
+                  type="button"
+                  className="fixed bottom-24 left-4 z-[200] shadow-md md:bottom-6 md:left-6"
+                  onClick={handleDoneSelectingFromBoard}
+                >
+                  Done selecting
+                </Button>
+              ) : null}
+              {children}
             </div>
-          ) : null}
-          {children}
-        </div>
-      </ThemeScope>
+          </ThemeScope>
+        </LiveVideoSessionShell>
+      </LiveSessionRuntimeProvider>
     </AnalyticsProvider>
+  );
+}
+
+export function DashboardShell(props: Props) {
+  return (
+    <WorkoutDeckSelectionProvider>
+      <DashboardShellInner {...props} />
+    </WorkoutDeckSelectionProvider>
   );
 }

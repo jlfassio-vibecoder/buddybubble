@@ -319,7 +319,11 @@ export function KanbanTaskCard({
   const showDetailedMeta = density === 'detailed';
   const commentCount = task.comment_count ?? 0;
 
-  const openTask = onOpenTask ? () => onOpenTask(task.id, { viewMode: 'full' }) : undefined;
+  const openTask = onOpenTask
+    ? () => {
+        onOpenTask(task.id, { viewMode: 'full' });
+      }
+    : undefined;
 
   const presenceUsers = usePresenceStore((s) => s.users);
   const localUserId = useUserProfileStore((s) => s.profile?.id);
