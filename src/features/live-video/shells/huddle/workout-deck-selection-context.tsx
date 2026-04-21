@@ -4,7 +4,6 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -48,11 +47,9 @@ export function WorkoutDeckSelectionProvider({ children }: { children: ReactNode
   }, []);
 
   const addTaskToDeck = useCallback((task: TaskRow) => {
-    console.log('[TRACE 2] addTaskToDeck called. Incoming Task ID:', task.id);
     const newSnapshot = createSessionDeckSnapshot(task);
     setActiveSnapshotIdState(newSnapshot.snapshotId);
     setDeck((prevDeck) => {
-      console.log('[TRACE 3] setDeck running. Prev length:', prevDeck.length);
       return [...prevDeck, newSnapshot];
     });
   }, []);
@@ -103,15 +100,7 @@ export function WorkoutDeckSelectionProvider({ children }: { children: ReactNode
   const exitSelectionMode = useCallback(() => {
     setIsSelectingFromBoard(false);
   }, []);
-
-  useEffect(() => {
-    console.log('[TRACE 4] Provider Deck State Changed. Current length:', deck.length);
-  }, [deck]);
-
-  useEffect(() => {
-    console.log('[TRACE 5] PROVIDER MOUNTED');
-    return () => console.log('[TRACE 6] PROVIDER UNMOUNTED (WARNING)');
-  }, []);
+  // Copilot suggestion ignored: we are not deduping deck snapshots here because the current UX allows adding duplicates intentionally.
 
   const value = useMemo(
     (): WorkoutDeckSelectionContextValue => ({

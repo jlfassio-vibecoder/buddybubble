@@ -38,7 +38,6 @@ function SortableDeckTile({
   snapshot,
   workspaceCategory,
   calendarTimezone,
-  boardColumnDefs,
   isCompleted,
   tallCardChrome,
   isActive,
@@ -48,7 +47,6 @@ function SortableDeckTile({
   snapshot: SessionDeckSnapshot;
   workspaceCategory: WorkspaceCategory | null;
   calendarTimezone: string | null;
-  boardColumnDefs: { id: string; label: string }[] | null;
   isCompleted: boolean;
   tallCardChrome?: boolean;
   isActive: boolean;
@@ -188,13 +186,6 @@ export function SessionDeckBuilder({ state, className }: SessionDeckBuilderProps
 
   const ids = useMemo(() => deckToRender.map((s) => s.snapshotId), [deckToRender]);
 
-  console.log(
-    '[TRACE 7] DeckBuilder Rendered. Context deck length:',
-    deckContext?.deck?.length,
-    'Scaffold deck length:',
-    scaffoldDeck?.length,
-  );
-
   return (
     <div className={cn('flex w-full min-h-0 shrink-0 flex-col gap-2', className)}>
       <div className="flex shrink-0 items-baseline justify-between gap-2 px-0.5">
@@ -217,7 +208,6 @@ export function SessionDeckBuilder({ state, className }: SessionDeckBuilderProps
                   snapshot={snapshot}
                   workspaceCategory={workspaceCategory}
                   calendarTimezone={calendarTimezone}
-                  boardColumnDefs={columnDefs}
                   isCompleted={taskColumnIsCompletionStatus(snapshot.task.status, columnDefs)}
                   tallCardChrome={selectingFromBoard}
                   isActive={activeSnapshotId === snapshot.snapshotId}
