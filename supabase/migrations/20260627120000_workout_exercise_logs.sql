@@ -30,9 +30,6 @@ comment on table public.workout_exercise_logs is
 -- The UNIQUE constraint already provides a leading-`user_id` composite index;
 -- these single-column indexes cover the other common scan shapes.
 
-create index if not exists workout_exercise_logs_user_id_idx
-  on public.workout_exercise_logs (user_id);
-
 create index if not exists workout_exercise_logs_session_id_idx
   on public.workout_exercise_logs (session_id);
 
@@ -65,6 +62,9 @@ create policy workout_exercise_logs_insert on public.workout_exercise_logs
   for insert with check (
     auth.uid() is not null
     and user_id = auth.uid()
+    and public.can_view_bubble(
+      public.get_task_bubble_id(workout_exercise_logs.task_id)
+    )
   );
 
 create policy workout_exercise_logs_update on public.workout_exercise_logs

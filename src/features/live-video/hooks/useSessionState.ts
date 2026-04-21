@@ -129,7 +129,7 @@ export function useSessionState(options: UseSessionStateOptions): UseSessionStat
           parsed.state.generation,
         );
       }
-      if (!isHost) {
+      if (!isHost && process.env.NODE_ENV === 'development') {
         console.log('[DEBUG] Participant received active item:', parsed.state.activeDeckItemId);
       }
       if (!isHost && typeof parsed.hostNow === 'number') {
@@ -305,7 +305,9 @@ export function useSessionState(options: UseSessionStateOptions): UseSessionStat
   const handleSetActiveDeckItem = useCallback(
     (id: string | null) => {
       if (!isHost) return;
-      console.log('[DEBUG] Host broadcast active item:', id);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[DEBUG] Host broadcast active item:', id);
+      }
       setState((prev) => {
         const next = reduceSetActiveDeckItem(prev, id);
         scheduleHostBroadcast(next, prev);

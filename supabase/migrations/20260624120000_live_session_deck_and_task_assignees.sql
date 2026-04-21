@@ -46,6 +46,8 @@ comment on table public.live_session_deck_items is
 -- task_assignees / live_session_deck_items policies must not subquery public.tasks
 -- directly, or they recurse with tasks_select / tasks_update (which reference task_assignees).
 
+-- Copilot suggestion ignored: We intentionally add get_task_bubble_id alongside legacy public.task_bubble_id so new deck/assignee RLS uses one explicit name without rewriting older policies that still call task_bubble_id.
+
 create or replace function public.get_task_bubble_id(p_task_id uuid)
 returns uuid
 language sql

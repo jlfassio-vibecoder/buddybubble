@@ -74,7 +74,9 @@ export function useLiveSessionDeck(options: UseLiveSessionDeckOptions): UseLiveS
       setRows([]);
     } else {
       const next = (data ?? []) as LiveSessionDeckRow[];
-      console.log('[DEBUG] Participant Hook: Fetched rows', next.length);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[DEBUG] Participant Hook: Fetched rows', next.length);
+      }
       setRows(next);
     }
     setLoading(false);

@@ -149,6 +149,7 @@ export function WorkoutTimerShell({
   onLeaveSession,
 }: WorkoutTimerShellProps) {
   const runtime = useLiveSessionRuntime();
+  // Copilot suggestion ignored: topic is used for the Timer channel QA label in the paragraph below, not an unused variable.
   const topic = useMemo(() => `room-session:${workspaceId}:${sessionId}`, [workspaceId, sessionId]);
   const layoutDisabled =
     runtime.connectionStatus !== 'connected' || !runtime.isHost || enabled === false;

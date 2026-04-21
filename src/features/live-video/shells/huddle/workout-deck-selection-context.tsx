@@ -205,7 +205,10 @@ export function WorkoutDeckSelectionProvider({ children }: { children: ReactNode
         if (idx < 0) break;
         const s = live[idx];
         flushWrittenSnapshotIds.add(s.snapshotId);
-        console.log('[DEBUG] Host DB Write: flush insert', s.originTaskId, 'index', idx);
+        hostDeckInsertIssuedRef.current.add(s.snapshotId);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[DEBUG] Host DB Write: flush insert', s.originTaskId, 'index', idx);
+        }
         const { data, error } = await supabase
           .from('live_session_deck_items')
           .insert({
@@ -217,6 +220,7 @@ export function WorkoutDeckSelectionProvider({ children }: { children: ReactNode
           .maybeSingle();
         if (error) {
           flushWrittenSnapshotIds.delete(s.snapshotId);
+          hostDeckInsertIssuedRef.current.delete(s.snapshotId);
           logDeckWriteError('flush_insert', error);
           continue;
         }
@@ -247,7 +251,9 @@ export function WorkoutDeckSelectionProvider({ children }: { children: ReactNode
         const sortOrder = deckRef.current.findIndex((s) => s.snapshotId === snapId);
         if (sortOrder < 0) return;
         hostDeckInsertIssuedRef.current.add(snapId);
-        console.log('[DEBUG] Host DB Write: Inserting task', task.id);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[DEBUG] Host DB Write: Inserting task', task.id);
+        }
         void supabase
           .from('live_session_deck_items')
           .insert({

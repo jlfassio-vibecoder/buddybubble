@@ -763,8 +763,8 @@ async function fetchUserContext(
       .in('task.item_type', ['workout', 'workout_log'])
       .in('task.status', ['done', 'completed'])
       .is('task.archived_at', null)
-      .order('task.scheduled_on', { ascending: false, nullsFirst: false })
-      .order('task.created_at', { ascending: false })
+      .order('scheduled_on', { ascending: false, nullsFirst: false, referencedTable: 'tasks' })
+      .order('created_at', { ascending: false, referencedTable: 'tasks' })
       .limit(1)
       .maybeSingle(),
     supabase
