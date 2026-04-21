@@ -801,8 +801,8 @@ export function KanbanBoard({
         const t = taskByIdBoard.get(taskId);
         if (t) {
           onTaskSelectedForWorkoutDeck(t);
+          return;
         }
-        return;
       }
       onOpenTask?.(taskId, opts);
     },

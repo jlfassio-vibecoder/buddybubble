@@ -436,6 +436,8 @@ function DashboardShellInner({
     layoutHydrated,
     layoutMobile,
     profile?.id,
+    setWorkspaceRailCollapsed,
+    setBubbleSidebarCollapsed,
     setChatCollapsed,
   ]);
 
