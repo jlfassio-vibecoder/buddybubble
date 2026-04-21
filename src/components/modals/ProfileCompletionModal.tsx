@@ -11,6 +11,7 @@ import {
   extractAvatarObjectPath,
 } from '@/lib/avatar-storage';
 import { formatUserFacingError } from '@/lib/format-error';
+import { childrenNamesFromJson } from '@/lib/profile-helpers';
 import { completeProfileGateAction } from '@/app/(dashboard)/profile-actions';
 import { reportProfileCompletionJourneyStepAction } from '@/app/(dashboard)/profile-completion-analytics-actions';
 import { setWorkspaceMemberShowEmailAction } from '@/app/(dashboard)/workspace-member-email-actions';
@@ -35,7 +36,9 @@ export function ProfileCompletionModal({
 
   const [name, setName] = useState(profile.full_name?.trim() ?? '');
   const [bio, setBio] = useState(profile.bio?.trim() ?? '');
-  const [childrenNames, setChildrenNames] = useState<string[]>(profile.children_names ?? []);
+  const [childrenNames, setChildrenNames] = useState<string[]>(() =>
+    childrenNamesFromJson(profile.children_names),
+  );
   const [newChildName, setNewChildName] = useState('');
   const [email, setEmail] = useState(() => profile.email?.trim() ?? '');
   const [password, setPassword] = useState('');

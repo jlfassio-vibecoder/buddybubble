@@ -1,18 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
 import { BaseVideoHarness } from '@/features/live-video/BaseVideoHarness';
 import { AmrapVideoOverlays } from '@/features/live-video/ui/AmrapVideoOverlays';
 import { TimerDisplay } from '@/features/live-video/shells/TimerDisplay';
-import {
-  useSharedTimerSync,
-  type UseSharedTimerSyncResult,
-} from '@/features/live-video/shells/shared/useSharedTimerSync';
-import type { LiveAspectRatioId } from '@/features/live-video/shells/shared/shared-timer-sync.types';
+import { useLiveSessionRuntime } from '@/features/live-video/theater/live-session-runtime-context';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-
-export type WorkoutPhase = 'idle' | 'amrap' | 'tabata';
 
 export type WorkoutTimerShellProps = {
   workspaceId: string;
@@ -27,42 +21,35 @@ export type WorkoutTimerShellProps = {
   onLeaveSession?: () => void;
 };
 
-function WorkoutTimerHarnessHud({
-  timer,
-  activePhase,
-  setActivePhase,
-}: {
-  timer: UseSharedTimerSyncResult;
-  activePhase: WorkoutPhase;
-  setActivePhase: (phase: WorkoutPhase) => void;
-}) {
-  const realtimeConnected = timer.connectionStatus === 'connected';
-  const snapshot = timer.getSnapshot();
-  const timerStatus = snapshot.status;
+function WorkoutTimerHarnessHud({}: {}) {
+  const runtime = useLiveSessionRuntime();
+  const realtimeConnected = runtime.connectionStatus === 'connected';
+  const state = runtime.state;
+  const sessionStatus = state.status;
 
   return (
     <div className="mt-6 rounded-xl border border-border bg-card/70 p-5 shadow-md backdrop-blur-md">
       <div className="flex flex-col gap-5">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <TimerDisplay getElapsedMs={timer.getElapsedMs} isActive={realtimeConnected} />
+            <TimerDisplay getElapsedMs={runtime.getElapsedMs} isActive={realtimeConnected} />
             <p className="mt-1 text-xs text-muted-foreground">
-              Realtime: {timer.connectionStatus} · gen {timer.generation} · session{' '}
-              <span className="font-medium text-foreground">{timerStatus}</span>
+              Realtime: {runtime.connectionStatus} · gen {state.generation} · session{' '}
+              <span className="font-medium text-foreground">{sessionStatus}</span>
             </p>
           </div>
         </div>
 
-        {timer.isHost ? (
+        {runtime.isHost ? (
           <div className="flex flex-col gap-4">
-            {timerStatus === 'idle' ? (
+            {sessionStatus === 'idle' ? (
               <Button
                 type="button"
                 size="lg"
                 className="w-full font-semibold sm:w-auto sm:min-w-[12rem]"
                 disabled={!realtimeConnected}
                 onClick={() => {
-                  timer.start();
+                  runtime.actions.startSession();
                 }}
               >
                 Start Session
@@ -79,20 +66,19 @@ function WorkoutTimerHarnessHud({
                     variant="destructive"
                     disabled={!realtimeConnected}
                     onClick={() => {
-                      timer.reset();
-                      setActivePhase('idle');
+                      runtime.actions.endSession();
                     }}
                   >
                     End Session
                   </Button>
-                  {snapshot.isRunning ? (
+                  {sessionStatus === 'running' ? (
                     <Button
                       type="button"
                       size="sm"
                       variant="outline"
                       className="border-border/80 bg-background/50"
                       disabled={!realtimeConnected}
-                      onClick={() => timer.pause()}
+                      onClick={() => runtime.actions.pauseSession()}
                     >
                       Pause
                     </Button>
@@ -103,7 +89,7 @@ function WorkoutTimerHarnessHud({
                       variant="outline"
                       className="border-border/80 bg-background/50"
                       disabled={!realtimeConnected}
-                      onClick={() => timer.start()}
+                      onClick={() => runtime.actions.resumeSession()}
                     >
                       Resume
                     </Button>
@@ -112,27 +98,27 @@ function WorkoutTimerHarnessHud({
                   <Button
                     type="button"
                     size="sm"
-                    variant={activePhase === 'idle' ? 'secondary' : 'outline'}
-                    className={activePhase === 'idle' ? '' : 'border-border/80 bg-background/50'}
-                    onClick={() => setActivePhase('idle')}
+                    variant={state.phase === 'warmup' ? 'secondary' : 'outline'}
+                    className={state.phase === 'warmup' ? '' : 'border-border/80 bg-background/50'}
+                    onClick={() => runtime.actions.transitionToPhase('warmup')}
                   >
                     Warm-up
                   </Button>
                   <Button
                     type="button"
                     size="sm"
-                    variant={activePhase === 'amrap' ? 'secondary' : 'outline'}
-                    className={activePhase === 'amrap' ? '' : 'border-border/80 bg-background/50'}
-                    onClick={() => setActivePhase('amrap')}
+                    variant={state.phase === 'amrap' ? 'secondary' : 'outline'}
+                    className={state.phase === 'amrap' ? '' : 'border-border/80 bg-background/50'}
+                    onClick={() => runtime.actions.transitionToPhase('amrap')}
                   >
                     AMRAP block
                   </Button>
                   <Button
                     type="button"
                     size="sm"
-                    variant={activePhase === 'tabata' ? 'secondary' : 'outline'}
-                    className={activePhase === 'tabata' ? '' : 'border-border/80 bg-background/50'}
-                    onClick={() => setActivePhase('tabata')}
+                    variant={state.phase === 'tabata' ? 'secondary' : 'outline'}
+                    className={state.phase === 'tabata' ? '' : 'border-border/80 bg-background/50'}
+                    onClick={() => runtime.actions.transitionToPhase('tabata')}
                   >
                     Tabata block
                   </Button>
@@ -162,17 +148,10 @@ export function WorkoutTimerShell({
   enabled = true,
   onLeaveSession,
 }: WorkoutTimerShellProps) {
-  const topic = `timer-sync:${workspaceId}:${sessionId}`;
-  const timer = useSharedTimerSync({ topic, localUserId, hostUserId, enabled });
-  const [activePhase, setActivePhase] = useState<WorkoutPhase>('idle');
-
-  useEffect(() => {
-    if (timer.getSnapshot().status === 'idle') {
-      setActivePhase('idle');
-    }
-  }, [timer.generation]);
-
-  const layoutDisabled = timer.connectionStatus !== 'connected' || !timer.isHost;
+  const runtime = useLiveSessionRuntime();
+  const topic = useMemo(() => `room-session:${workspaceId}:${sessionId}`, [workspaceId, sessionId]);
+  const layoutDisabled =
+    runtime.connectionStatus !== 'connected' || !runtime.isHost || enabled === false;
 
   return (
     <div
@@ -190,18 +169,20 @@ export function WorkoutTimerShell({
           onAfterLeave={onLeaveSession}
           localUserId={localUserId}
           hostUserId={hostUserId}
-          aspectRatio={timer.getSnapshot().aspectRatio}
+          aspectRatio={runtime.aspectRatio}
           videoOverlays={
-            activePhase === 'amrap' ? <AmrapVideoOverlays isHost={timer.isHost} /> : null
+            runtime.state.phase === 'amrap' ? <AmrapVideoOverlays isHost={runtime.isHost} /> : null
           }
           floatingMediaExtras={
-            timer.isHost ? (
+            runtime.isHost ? (
               <label className="flex items-center gap-2 text-xs text-white/90">
                 <span className="whitespace-nowrap">Layout</span>
                 <select
                   className="h-8 min-w-[4.5rem] rounded-md border border-white/20 bg-white/10 px-2 text-xs text-white shadow-sm disabled:opacity-50 [&>option]:bg-neutral-900 [&>option]:text-white"
-                  value={timer.aspectRatio}
-                  onChange={(e) => timer.setAspectRatio(e.target.value as LiveAspectRatioId)}
+                  value={runtime.aspectRatio}
+                  onChange={(e) =>
+                    runtime.actions.setAspectRatio(e.target.value as typeof runtime.aspectRatio)
+                  }
                   disabled={layoutDisabled}
                   aria-label="Global aspect ratio"
                 >
@@ -214,11 +195,7 @@ export function WorkoutTimerShell({
           }
         />
 
-        <WorkoutTimerHarnessHud
-          timer={timer}
-          activePhase={activePhase}
-          setActivePhase={setActivePhase}
-        />
+        <WorkoutTimerHarnessHud />
 
         <div className="mt-8 rounded-xl border border-border bg-muted/50 p-6">
           <h3 className="mb-4 text-xl font-semibold text-foreground">Workout Details</h3>

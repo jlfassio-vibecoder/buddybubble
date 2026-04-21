@@ -4,11 +4,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import {
   endSession,
+  getBlockElapsedMs,
   initialSessionState,
   pauseBlock,
   resumeBlock,
+  setActiveDeckItem as reduceSetActiveDeckItem,
+  setAspectRatio as reduceSetAspectRatio,
   startSession,
   transitionToPhase,
+  type SessionAspectRatioId,
   type SessionPhase,
   type SessionState,
 } from '@/features/live-video/state/sessionStateMachine';
@@ -35,12 +39,22 @@ export type SessionActions = {
   transitionToPhase: (phase: SessionPhase) => void;
   pauseSession: () => void;
   resumeSession: () => void;
+  setAspectRatio: (ratio: SessionAspectRatioId) => void;
+  /** Host only: broadcast `live_session_deck_items.id` (or null) for mirrored queue / player. */
+  setActiveDeckItem: (id: string | null) => void;
 };
 
 export type UseSessionStateResult = {
+  connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error';
   state: SessionState;
   actions: SessionActions;
   isHost: boolean;
+  /** Ref-backed state model for rAF-based clocks (no per-tick React updates). */
+  getSnapshot: () => SessionState;
+  /** Block elapsed time (ms), aligned to host clock when possible. */
+  getElapsedMs: () => number;
+  /** Subscribe to discrete model changes (layout/phase/status updates). */
+  subscribeTick: (cb: () => void) => () => void;
 };
 
 function buildRoomSessionTopic(workspaceId: string, sessionId: string): string {
@@ -48,10 +62,11 @@ function buildRoomSessionTopic(workspaceId: string, sessionId: string): string {
 }
 
 function sendStateBroadcast(channel: RealtimeChannel, next: SessionState, senderId: string): void {
+  const hostNow = Date.now();
   void channel.send({
     type: 'broadcast',
     event: SESSION_STATE_BROADCAST_EVENT,
-    payload: { state: next, senderId },
+    payload: { state: next, senderId, hostNow },
   });
 }
 
@@ -60,10 +75,20 @@ export function useSessionState(options: UseSessionStateOptions): UseSessionStat
 
   const isHost = localUserId === hostUserId;
   const [state, setState] = useState<SessionState>(initialSessionState);
+  const [connectionStatus, setConnectionStatus] =
+    useState<UseSessionStateResult['connectionStatus']>('disconnected');
   const stateRef = useRef(state);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const connectedRef = useRef(false);
   const syncRequestSentRef = useRef(false);
+  const epochOffsetMsRef = useRef(0);
+  const tickListenersRef = useRef(new Set<() => void>());
+
+  const notifyTick = useCallback(() => {
+    tickListenersRef.current.forEach((cb) => {
+      cb();
+    });
+  }, []);
 
   useEffect(() => {
     stateRef.current = state;
@@ -94,9 +119,27 @@ export function useSessionState(options: UseSessionStateOptions): UseSessionStat
       if (!parsed) return;
       if (parsed.senderId !== hostUserId) return;
       if (isHost && parsed.senderId === localUserId) return;
+      if (process.env.NODE_ENV === 'development') {
+        console.log(
+          '[DEBUG] useSessionState broadcast received: senderId=%s phase=%s status=%s aspectRatio=%s generation=%s',
+          parsed.senderId,
+          parsed.state.phase,
+          parsed.state.status,
+          parsed.state.aspectRatio,
+          parsed.state.generation,
+        );
+      }
+      if (!isHost) {
+        console.log('[DEBUG] Participant received active item:', parsed.state.activeDeckItemId);
+      }
+      if (!isHost && typeof parsed.hostNow === 'number') {
+        const localReceive = Date.now();
+        epochOffsetMsRef.current = parsed.hostNow - localReceive;
+      }
       setState(parsed.state);
+      notifyTick();
     },
-    [hostUserId, isHost, localUserId],
+    [hostUserId, isHost, localUserId, notifyTick],
   );
 
   const handleIncomingSyncRequest = useCallback(
@@ -121,6 +164,8 @@ export function useSessionState(options: UseSessionStateOptions): UseSessionStat
       connectedRef.current = false;
       channelRef.current = null;
       syncRequestSentRef.current = false;
+      epochOffsetMsRef.current = 0;
+      setConnectionStatus('disconnected');
       return;
     }
 
@@ -129,6 +174,7 @@ export function useSessionState(options: UseSessionStateOptions): UseSessionStat
     });
     channelRef.current = channel;
     syncRequestSentRef.current = false;
+    setConnectionStatus('connecting');
 
     channel.on('broadcast', { event: SESSION_STATE_BROADCAST_EVENT }, (message) => {
       handleIncomingStateBroadcast(message.payload);
@@ -141,6 +187,8 @@ export function useSessionState(options: UseSessionStateOptions): UseSessionStat
     channel.subscribe((status, err) => {
       if (status === 'SUBSCRIBED') {
         connectedRef.current = true;
+        setConnectionStatus('connected');
+        epochOffsetMsRef.current = 0;
         if (isHost) {
           queueMicrotask(() => {
             const ch = channelRef.current;
@@ -165,6 +213,7 @@ export function useSessionState(options: UseSessionStateOptions): UseSessionStat
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
         connectedRef.current = false;
         console.error('[useSessionState] subscribe', status, err);
+        setConnectionStatus('error');
       }
     });
 
@@ -172,6 +221,7 @@ export function useSessionState(options: UseSessionStateOptions): UseSessionStat
       connectedRef.current = false;
       channelRef.current = null;
       void supabase.removeChannel(channel);
+      setConnectionStatus('disconnected');
     };
   }, [
     enabled,
@@ -237,6 +287,34 @@ export function useSessionState(options: UseSessionStateOptions): UseSessionStat
     });
   }, [isHost, scheduleHostBroadcast]);
 
+  const handleSetAspectRatio = useCallback(
+    (ratio: SessionAspectRatioId) => {
+      if (!isHost) return;
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[DEBUG] useSessionState setAspectRatio (host): ratio=%s', ratio);
+      }
+      setState((prev) => {
+        const next = reduceSetAspectRatio(prev, ratio);
+        scheduleHostBroadcast(next, prev);
+        return next;
+      });
+    },
+    [isHost, scheduleHostBroadcast],
+  );
+
+  const handleSetActiveDeckItem = useCallback(
+    (id: string | null) => {
+      if (!isHost) return;
+      console.log('[DEBUG] Host broadcast active item:', id);
+      setState((prev) => {
+        const next = reduceSetActiveDeckItem(prev, id);
+        scheduleHostBroadcast(next, prev);
+        return next;
+      });
+    },
+    [isHost, scheduleHostBroadcast],
+  );
+
   const actions = useMemo(
     () => ({
       startSession: handleStartSession,
@@ -244,19 +322,42 @@ export function useSessionState(options: UseSessionStateOptions): UseSessionStat
       transitionToPhase: handleTransitionPhase,
       pauseSession: handlePauseSession,
       resumeSession: handleResumeSession,
+      setAspectRatio: handleSetAspectRatio,
+      setActiveDeckItem: handleSetActiveDeckItem,
     }),
     [
       handleEndSession,
       handlePauseSession,
       handleResumeSession,
       handleStartSession,
+      handleSetActiveDeckItem,
+      handleSetAspectRatio,
       handleTransitionPhase,
     ],
   );
 
+  const getSnapshot = useCallback(() => stateRef.current, []);
+
+  const getElapsedMs = useCallback(() => {
+    const now = Date.now();
+    const effectiveNow = isHost ? now : now + epochOffsetMsRef.current;
+    return getBlockElapsedMs(stateRef.current, effectiveNow);
+  }, [isHost]);
+
+  const subscribeTick = useCallback((cb: () => void) => {
+    tickListenersRef.current.add(cb);
+    return () => {
+      tickListenersRef.current.delete(cb);
+    };
+  }, []);
+
   return {
+    connectionStatus,
     state,
     actions,
     isHost,
+    getSnapshot,
+    getElapsedMs,
+    subscribeTick,
   };
 }

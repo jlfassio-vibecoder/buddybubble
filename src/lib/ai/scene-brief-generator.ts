@@ -8,7 +8,7 @@
  */
 
 import { itemTypeLabelForPrompt } from '@/lib/ai/card-cover-presets';
-import { normalizeItemType } from '@/types/database';
+import { normalizeItemType } from '@/lib/item-types';
 
 const MAX_ERROR_LOG_LENGTH = 500;
 const MAX_INPUT_TITLE = 220;

@@ -756,15 +756,15 @@ async function fetchUserContext(
       .eq('workspace_id', workspaceId)
       .maybeSingle(),
     supabase
-      .from('tasks')
-      .select(lastWorkoutSelect)
-      .eq('bubble_id', bubbleId)
-      .eq('assigned_to', userId)
-      .in('item_type', ['workout', 'workout_log'])
-      .in('status', ['done', 'completed'])
-      .is('archived_at', null)
-      .order('scheduled_on', { ascending: false, nullsFirst: false })
-      .order('created_at', { ascending: false })
+      .from('task_assignees')
+      .select(`task:tasks!inner(${lastWorkoutSelect})`)
+      .eq('user_id', userId)
+      .eq('task.bubble_id', bubbleId)
+      .in('task.item_type', ['workout', 'workout_log'])
+      .in('task.status', ['done', 'completed'])
+      .is('task.archived_at', null)
+      .order('task.scheduled_on', { ascending: false, nullsFirst: false })
+      .order('task.created_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
     supabase
@@ -845,7 +845,8 @@ async function fetchUserContext(
 
   const profileLine = profileBits.length > 0 ? profileBits.join(' | ') : '';
 
-  const assignedRow = lastAssignedRes.data as LastWorkoutTaskRow | null;
+  const assignedJoin = lastAssignedRes.data as { task?: LastWorkoutTaskRow | null } | null;
+  const assignedRow = (assignedJoin?.task ?? null) as LastWorkoutTaskRow | null;
   const bubbleRow = lastBubbleRes.data as LastWorkoutTaskRow | null;
   let lastRow: LastWorkoutTaskRow | null = null;
   if (assignedRow?.title?.trim()) {

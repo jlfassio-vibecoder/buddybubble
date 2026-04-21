@@ -1,19 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { RealtimeChannel } from '@supabase/supabase-js';
+import { useCallback, useEffect, useMemo } from 'react';
 import { createClient } from '@utils/supabase/client';
 import {
-  computeElapsedMs,
-  parseSharedTimerBroadcastPayload,
   type LiveAspectRatioId,
-  type SharedTimerBroadcastPayload,
   type SharedTimerConnectionStatus,
   type SharedTimerSessionStatus,
   type SharedTimerSnapshot,
 } from '@/features/live-video/shells/shared/shared-timer-sync.types';
-
-const BROADCAST_EVENT = 'timer_sync' as const;
+import { useSessionState } from '@/features/live-video/hooks/useSessionState';
+import type { SessionAspectRatioId } from '@/features/live-video/state/sessionStateMachine';
 
 export type UseSharedTimerSyncOptions = {
   /** Stable Realtime channel name, e.g. `timer-sync:${workspaceId}:${sessionId}`. */
@@ -43,444 +39,107 @@ export type UseSharedTimerSyncResult = {
 };
 
 function buildSnapshot(
+  status: SharedTimerSessionStatus,
   generation: number,
-  isRunning: boolean,
-  accumulatedMs: number,
+  elapsedMs: number,
   segmentStartedAt: number | null,
-  epochOffsetMs: number,
   aspectRatio: LiveAspectRatioId,
 ): SharedTimerSnapshot {
-  const status: SharedTimerSessionStatus = isRunning
-    ? 'running'
-    : accumulatedMs > 0
-      ? 'paused'
-      : 'idle';
   return {
-    generation,
-    isRunning,
-    accumulatedMs,
-    segmentStartedAt,
-    epochOffsetMs,
-    aspectRatio,
     status,
+    generation,
+    isRunning: status === 'running',
+    accumulatedMs: status === 'running' ? 0 : elapsedMs,
+    segmentStartedAt,
+    epochOffsetMs: 0,
+    aspectRatio,
   };
 }
 
 /**
- * Shared workout-style timer over **Supabase Realtime Broadcast** (no Postgres writes per tick).
- *
- * - **Host** (`localUserId === hostUserId`) may `start` / `pause` / `reset` and answers `SYNC_REQUEST` with `SYNC_RESPONSE`.
- * - **Clients** apply broadcasts and align clocks using `snapshotHostNow` from `SYNC_RESPONSE` (v1: not NTP-grade).
- * - **Layout:** host may `setAspectRatio` → `LAYOUT_CHANGE`; `SYNC_RESPONSE` carries current `aspectRatio`.
- * - **Performance:** timer math lives in refs; do not call `setState` on every frame. Drive UI with
- *   `requestAnimationFrame` + `getSnapshot()` / `getElapsedMs()`, or `subscribeTick` to re-render on discrete events only.
+ * @deprecated This hook has been folded into `useSessionState` + `LiveSessionRuntimeProvider`.
+ * Prefer consuming `useLiveSessionRuntime()` from `src/features/live-video/theater/live-session-runtime-context.tsx`.
  */
 export function useSharedTimerSync(options: UseSharedTimerSyncOptions): UseSharedTimerSyncResult {
   const { topic, localUserId, hostUserId, enabled = true } = options;
-  const isHost = localUserId === hostUserId;
 
-  const generationRef = useRef(0);
-  const isRunningRef = useRef(false);
-  const segmentStartedAtRef = useRef<number | null>(null);
-  const accumulatedMsRef = useRef(0);
-  const epochOffsetMsRef = useRef(0);
-  const aspectRatioRef = useRef<LiveAspectRatioId>('16:9');
+  const { workspaceId, sessionId } = useMemo(() => {
+    // Legacy topics remain `timer-sync:${workspaceId}:${sessionId}`. The unified session hook
+    // publishes on `room-session:${workspaceId}:${sessionId}` and the runtime sits above it.
+    if (!topic.startsWith('timer-sync:')) {
+      return { workspaceId: '', sessionId: '' };
+    }
+    const parts = topic.split(':');
+    return { workspaceId: parts[1] ?? '', sessionId: parts[2] ?? '' };
+  }, [topic]);
 
-  const [connectionStatus, setConnectionStatus] =
-    useState<SharedTimerConnectionStatus>('disconnected');
-  const [generation, setGeneration] = useState(0);
-  /** Bumps on every discrete model change so UI re-renders even when `generation` is unchanged (e.g. pause/resume). */
-  const [modelRevision, setModelRevision] = useState(0);
-  const [aspectRatio, setAspectRatioState] = useState<LiveAspectRatioId>('16:9');
+  const supabase = useMemo(() => createClient(), []);
+  const session = useSessionState({
+    workspaceId,
+    sessionId,
+    localUserId,
+    hostUserId,
+    supabase,
+    enabled,
+  });
 
-  const channelRef = useRef<RealtimeChannel | null>(null);
-  const connectedRef = useRef(false);
-  const tickListenersRef = useRef(new Set<() => void>());
-  const processedBroadcastKeysRef = useRef(new Set<string>());
-  const syncRequestSentRef = useRef(false);
-  const syncResponseDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const aspectRatio = session.state.aspectRatio as LiveAspectRatioId;
+  const generation = session.state.generation;
 
-  const notifyTick = useCallback(() => {
-    tickListenersRef.current.forEach((cb) => {
-      cb();
-    });
-  }, []);
-
-  const bumpGenerationState = useCallback(() => {
-    setGeneration(generationRef.current);
-    setModelRevision((n) => n + 1);
-  }, []);
-
-  const applyAspectRatio = useCallback(
-    (next: LiveAspectRatioId) => {
-      aspectRatioRef.current = next;
-      setAspectRatioState(next);
-      notifyTick();
-    },
-    [notifyTick],
-  );
-
-  const applyModel = useCallback(
-    (patch: {
-      generation: number;
-      isRunning: boolean;
-      accumulatedMs: number;
-      segmentStartedAt: number | null;
-      epochOffsetMs?: number;
-    }) => {
-      generationRef.current = patch.generation;
-      isRunningRef.current = patch.isRunning;
-      accumulatedMsRef.current = patch.accumulatedMs;
-      segmentStartedAtRef.current = patch.segmentStartedAt;
-      if (patch.epochOffsetMs !== undefined) {
-        epochOffsetMsRef.current = patch.epochOffsetMs;
-      }
-      bumpGenerationState();
-      notifyTick();
-    },
-    [bumpGenerationState, notifyTick],
-  );
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log(
+        '[DEBUG] useSharedTimerSync render: topic=%s aspectRatio=%s connection=%s',
+        topic,
+        aspectRatio,
+        session.connectionStatus,
+      );
+    }
+  }, [aspectRatio, session.connectionStatus, topic]);
 
   const getSnapshot = useCallback((): SharedTimerSnapshot => {
+    const status: SharedTimerSessionStatus =
+      session.state.status === 'idle'
+        ? 'idle'
+        : session.state.status === 'paused'
+          ? 'paused'
+          : 'running';
     return buildSnapshot(
-      generationRef.current,
-      isRunningRef.current,
-      accumulatedMsRef.current,
-      segmentStartedAtRef.current,
-      isHost ? 0 : epochOffsetMsRef.current,
-      aspectRatioRef.current,
+      status,
+      session.state.generation,
+      session.getElapsedMs(),
+      status === 'running' ? session.state.blockStartedAt : null,
+      aspectRatio,
     );
-  }, [isHost]);
+  }, [aspectRatio, session]);
 
-  const getElapsedMs = useCallback(() => {
-    return computeElapsedMs(Date.now(), getSnapshot());
-  }, [getSnapshot]);
-
-  const subscribeTick = useCallback((cb: () => void) => {
-    tickListenersRef.current.add(cb);
-    return () => {
-      tickListenersRef.current.delete(cb);
-    };
-  }, []);
-
-  const sendPayload = useCallback(
-    (channel: RealtimeChannel, payload: SharedTimerBroadcastPayload) => {
-      void channel.send({ type: 'broadcast', event: BROADCAST_EVENT, payload });
-    },
-    [],
-  );
-
-  const emitSyncResponse = useCallback(() => {
-    if (syncResponseDebounceRef.current) {
-      clearTimeout(syncResponseDebounceRef.current);
-    }
-    syncResponseDebounceRef.current = setTimeout(() => {
-      syncResponseDebounceRef.current = null;
-      const ch = channelRef.current;
-      if (!ch || !connectedRef.current) return;
-      const now = Date.now();
-      const payload: SharedTimerBroadcastPayload = {
-        action: 'SYNC_RESPONSE',
-        authoritativeTimestamp: now,
-        senderId: localUserId,
-        generation: generationRef.current,
-        isRunning: isRunningRef.current,
-        segmentStartedAt: segmentStartedAtRef.current,
-        accumulatedMsBeforeSegment: accumulatedMsRef.current,
-        snapshotHostNow: now,
-        aspectRatio: aspectRatioRef.current,
-      };
-      sendPayload(ch, payload);
-    }, 120);
-  }, [localUserId, sendPayload]);
-
-  const markProcessed = useCallback((dedupeKey: string) => {
-    if (processedBroadcastKeysRef.current.has(dedupeKey)) return false;
-    processedBroadcastKeysRef.current.add(dedupeKey);
-    if (processedBroadcastKeysRef.current.size > 200) {
-      processedBroadcastKeysRef.current.clear();
-    }
-    return true;
-  }, []);
-
-  const handleIncomingPayload = useCallback(
-    (payload: SharedTimerBroadcastPayload, dedupeKey: string) => {
-      if (processedBroadcastKeysRef.current.has(dedupeKey)) return;
-
-      switch (payload.action) {
-        case 'SYNC_REQUEST': {
-          if (!isHost) return;
-          if (!markProcessed(dedupeKey)) return;
-          emitSyncResponse();
-          return;
-        }
-        case 'SYNC_RESPONSE': {
-          if (isHost) return;
-          if (!markProcessed(dedupeKey)) return;
-          const localReceive = Date.now();
-          const epochOffsetMs = payload.snapshotHostNow - localReceive;
-          applyModel({
-            generation: payload.generation,
-            isRunning: payload.isRunning,
-            accumulatedMs: payload.accumulatedMsBeforeSegment,
-            segmentStartedAt: payload.segmentStartedAt,
-            epochOffsetMs,
-          });
-          applyAspectRatio(payload.aspectRatio);
-          return;
-        }
-        case 'LAYOUT_CHANGE': {
-          if (payload.senderId !== hostUserId) return;
-          if (!markProcessed(dedupeKey)) return;
-          applyAspectRatio(payload.aspectRatio);
-          return;
-        }
-        case 'RESET': {
-          if (!markProcessed(dedupeKey)) return;
-          applyModel({
-            generation: payload.nextGeneration,
-            isRunning: false,
-            accumulatedMs: 0,
-            segmentStartedAt: null,
-          });
-          return;
-        }
-        case 'START': {
-          if (payload.generation < generationRef.current) return;
-          if (!markProcessed(dedupeKey)) return;
-          applyModel({
-            generation: payload.generation,
-            isRunning: true,
-            accumulatedMs: payload.accumulatedMsBeforeSegment,
-            segmentStartedAt: payload.segmentStartedAt,
-          });
-          return;
-        }
-        case 'PAUSE': {
-          if (payload.generation !== generationRef.current) return;
-          if (!markProcessed(dedupeKey)) return;
-          applyModel({
-            generation: payload.generation,
-            isRunning: false,
-            accumulatedMs: payload.accumulatedMsAtPause,
-            segmentStartedAt: null,
-          });
-          return;
-        }
-        default:
-          return;
-      }
-    },
-    [applyAspectRatio, applyModel, emitSyncResponse, hostUserId, isHost, markProcessed],
-  );
-
-  const broadcastAndApplyHost = useCallback(
-    (channel: RealtimeChannel, payload: SharedTimerBroadcastPayload) => {
-      const dedupeKey =
-        payload.action === 'LAYOUT_CHANGE'
-          ? `${payload.action}-${payload.authoritativeTimestamp}-${payload.senderId}-${payload.aspectRatio}`
-          : `${payload.action}-${payload.authoritativeTimestamp}-${payload.senderId}-${'generation' in payload ? payload.generation : 'na'}`;
-      sendPayload(channel, payload);
-      handleIncomingPayload(payload, dedupeKey);
-    },
-    [handleIncomingPayload, sendPayload],
-  );
+  const getElapsedMs = useCallback(() => session.getElapsedMs(), [session]);
+  const subscribeTick = useCallback((cb: () => void) => session.subscribeTick(cb), [session]);
 
   const setAspectRatio = useCallback(
     (ratio: LiveAspectRatioId) => {
-      if (!isHost) {
-        if (process.env.NODE_ENV === 'development') {
-          console.warn('[useSharedTimerSync] setAspectRatio() ignored: not host');
-        }
-        return;
+      if (process.env.NODE_ENV === 'development') {
+        console.log(
+          '[DEBUG] useSharedTimerSync setAspectRatio requested: ratio=%s isHost=%s',
+          ratio,
+          session.isHost,
+        );
       }
-      const channel = channelRef.current;
-      if (!channel || !connectedRef.current) return;
-
-      const now = Date.now();
-      const payload: SharedTimerBroadcastPayload = {
-        action: 'LAYOUT_CHANGE',
-        authoritativeTimestamp: now,
-        senderId: localUserId,
-        aspectRatio: ratio,
-      };
-      broadcastAndApplyHost(channel, payload);
+      session.actions.setAspectRatio(ratio as SessionAspectRatioId);
     },
-    [broadcastAndApplyHost, isHost, localUserId],
+    [session],
   );
 
-  const start = useCallback(() => {
-    if (!isHost) {
-      if (process.env.NODE_ENV === 'development') {
-        console.warn('[useSharedTimerSync] start() ignored: not host');
-      }
-      return;
-    }
-    const channel = channelRef.current;
-    if (!channel || !connectedRef.current) return;
-    if (isRunningRef.current) return;
+  const start = useCallback(() => session.actions.startSession(), [session]);
+  const pause = useCallback(() => session.actions.pauseSession(), [session]);
+  const reset = useCallback(() => session.actions.endSession(), [session]);
 
-    const now = Date.now();
-    const gen = generationRef.current;
-    const accumulatedMsBeforeSegment = accumulatedMsRef.current;
-    isRunningRef.current = true;
-    segmentStartedAtRef.current = now;
-    bumpGenerationState();
-    notifyTick();
-
-    const payload: SharedTimerBroadcastPayload = {
-      action: 'START',
-      authoritativeTimestamp: now,
-      senderId: localUserId,
-      generation: gen,
-      segmentStartedAt: now,
-      accumulatedMsBeforeSegment,
-    };
-    broadcastAndApplyHost(channel, payload);
-  }, [broadcastAndApplyHost, bumpGenerationState, isHost, localUserId, notifyTick]);
-
-  const pause = useCallback(() => {
-    if (!isHost) {
-      if (process.env.NODE_ENV === 'development') {
-        console.warn('[useSharedTimerSync] pause() ignored: not host');
-      }
-      return;
-    }
-    const channel = channelRef.current;
-    if (!channel || !connectedRef.current) return;
-
-    const now = Date.now();
-    const snap = buildSnapshot(
-      generationRef.current,
-      isRunningRef.current,
-      accumulatedMsRef.current,
-      segmentStartedAtRef.current,
-      isHost ? 0 : epochOffsetMsRef.current,
-      aspectRatioRef.current,
-    );
-    const elapsed = computeElapsedMs(now, snap);
-
-    isRunningRef.current = false;
-    segmentStartedAtRef.current = null;
-    accumulatedMsRef.current = elapsed;
-    bumpGenerationState();
-    notifyTick();
-
-    const payload: SharedTimerBroadcastPayload = {
-      action: 'PAUSE',
-      authoritativeTimestamp: now,
-      senderId: localUserId,
-      generation: generationRef.current,
-      accumulatedMsAtPause: elapsed,
-    };
-    broadcastAndApplyHost(channel, payload);
-  }, [broadcastAndApplyHost, bumpGenerationState, isHost, localUserId, notifyTick]);
-
-  const reset = useCallback(() => {
-    if (!isHost) {
-      if (process.env.NODE_ENV === 'development') {
-        console.warn('[useSharedTimerSync] reset() ignored: not host');
-      }
-      return;
-    }
-    const channel = channelRef.current;
-    if (!channel || !connectedRef.current) return;
-
-    const now = Date.now();
-    const prevGen = generationRef.current;
-    const nextGen = prevGen + 1;
-    generationRef.current = nextGen;
-    isRunningRef.current = false;
-    segmentStartedAtRef.current = null;
-    accumulatedMsRef.current = 0;
-    bumpGenerationState();
-    notifyTick();
-
-    const payload: SharedTimerBroadcastPayload = {
-      action: 'RESET',
-      authoritativeTimestamp: now,
-      senderId: localUserId,
-      generation: prevGen,
-      nextGeneration: nextGen,
-    };
-    broadcastAndApplyHost(channel, payload);
-  }, [broadcastAndApplyHost, bumpGenerationState, isHost, localUserId, notifyTick]);
-
-  useEffect(() => {
-    if (!enabled || !topic) {
-      setConnectionStatus('disconnected');
-      return;
-    }
-
-    const supabase = createClient();
-    const channel = supabase.channel(topic, {
-      config: { broadcast: { ack: false } },
-    });
-    channelRef.current = channel;
-    syncRequestSentRef.current = false;
-    processedBroadcastKeysRef.current.clear();
-
-    channel.on('broadcast', { event: BROADCAST_EVENT }, (message) => {
-      const raw = message.payload;
-      const payload = parseSharedTimerBroadcastPayload(raw);
-      if (!payload) return;
-
-      const genPart =
-        payload.action === 'LAYOUT_CHANGE'
-          ? payload.aspectRatio
-          : 'generation' in payload
-            ? String(payload.generation)
-            : payload.action === 'SYNC_REQUEST'
-              ? 'sr'
-              : 'na';
-      const dedupeKey = `${payload.action}-${payload.authoritativeTimestamp}-${payload.senderId}-${genPart}`;
-
-      handleIncomingPayload(payload, dedupeKey);
-    });
-
-    setConnectionStatus('connecting');
-
-    channel.subscribe((status, err) => {
-      if (status === 'SUBSCRIBED') {
-        connectedRef.current = true;
-        setConnectionStatus('connected');
-        epochOffsetMsRef.current = 0;
-        if (!isHost && !syncRequestSentRef.current) {
-          syncRequestSentRef.current = true;
-          const now = Date.now();
-          const req: SharedTimerBroadcastPayload = {
-            action: 'SYNC_REQUEST',
-            authoritativeTimestamp: now,
-            senderId: localUserId,
-            requestId: `${localUserId}-${now}`,
-          };
-          sendPayload(channel, req);
-        }
-        return;
-      }
-      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-        connectedRef.current = false;
-        console.error('[useSharedTimerSync] subscribe', status, err);
-        setConnectionStatus('error');
-      }
-    });
-
-    return () => {
-      connectedRef.current = false;
-      if (syncResponseDebounceRef.current) {
-        clearTimeout(syncResponseDebounceRef.current);
-        syncResponseDebounceRef.current = null;
-      }
-      channelRef.current = null;
-      void supabase.removeChannel(channel);
-      setConnectionStatus('disconnected');
-    };
-  }, [enabled, topic, localUserId, hostUserId, isHost, handleIncomingPayload, sendPayload]);
+  const connectionStatus: SharedTimerConnectionStatus = session.connectionStatus;
 
   return useMemo(
     () => ({
       connectionStatus,
-      isHost,
+      isHost: session.isHost,
       generation,
       aspectRatio,
       getSnapshot,
@@ -494,16 +153,15 @@ export function useSharedTimerSync(options: UseSharedTimerSyncOptions): UseShare
     [
       aspectRatio,
       connectionStatus,
-      isHost,
       generation,
-      modelRevision,
-      getSnapshot,
       getElapsedMs,
-      subscribeTick,
-      start,
+      getSnapshot,
       pause,
       reset,
+      session.isHost,
       setAspectRatio,
+      start,
+      subscribeTick,
     ],
   );
 }

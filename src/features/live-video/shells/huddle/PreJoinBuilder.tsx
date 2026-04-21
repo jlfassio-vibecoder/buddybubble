@@ -19,6 +19,8 @@ export type PreJoinBuilderProps = {
   canWriteTasks?: boolean;
   /** Bumps Kanban/task views after successful Supabase writes from the live workout player. */
   onWorkoutDeckPersisted?: () => void;
+  /** Closes the live-video dock for this user only (does not end the shared session). */
+  onLeaveDock?: () => void;
 };
 
 /**
@@ -32,6 +34,7 @@ export function PreJoinBuilder({
   supabase,
   canWriteTasks = false,
   onWorkoutDeckPersisted,
+  onLeaveDock,
 }: PreJoinBuilderProps) {
   const { state } = useLiveSessionRuntime();
   const { huddle } = useLiveTheaterLayoutPlanContext();
@@ -67,6 +70,17 @@ export function PreJoinBuilder({
           <p className="text-xs text-destructive sm:mr-auto" role="alert">
             {joinError}
           </p>
+        ) : null}
+        {onLeaveDock ? (
+          <Button
+            type="button"
+            size="lg"
+            variant="outline"
+            className="font-semibold sm:mr-auto"
+            onClick={onLeaveDock}
+          >
+            Exit workout
+          </Button>
         ) : null}
         <Button
           type="button"

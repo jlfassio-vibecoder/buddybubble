@@ -448,15 +448,20 @@ function DashboardShellInner({
     setKanbanCollapsed(false);
   }, [layoutHydrated, workoutDeckSelection.isSelectingFromBoard, setKanbanCollapsed]);
 
-  const onLiveVideoLeaveSession = useCallback(async () => {
-    const { activeSession, leaveSession } = useLiveVideoStore.getState();
+  /** Clears the local live-video dock only (does not end the workout for others or mark the chat invite ended). */
+  const onLiveVideoLeaveSession = useCallback(() => {
+    useLiveVideoStore.getState().leaveSession();
+  }, []);
+
+  /** Host-only: broadcast `endSession` + mark the chat invite ended so others cannot re-join from the card. */
+  const onHostEndLiveSessionForAll = useCallback(async () => {
+    const { activeSession } = useLiveVideoStore.getState();
     const inviteMessageId = activeSession?.inviteMessageId?.trim();
     const uid = profile?.id;
     if (inviteMessageId && uid && activeSession?.hostUserId === uid) {
       const supabase = createClient();
       await markLiveSessionInviteMessageEnded(supabase, inviteMessageId);
     }
-    leaveSession();
   }, [profile?.id]);
 
   const handleJoinDevLiveVideo = useCallback(() => {
@@ -1411,6 +1416,7 @@ function DashboardShellInner({
                                     session={activeLiveVideoSession}
                                     localUserId={profile.id}
                                     onLeaveSession={onLiveVideoLeaveSession}
+                                    onHostEndLiveSessionForAll={onHostEndLiveSessionForAll}
                                     canWriteTasks={canWriteTasks}
                                     onWorkoutDeckPersisted={bumpTaskViews}
                                   />
@@ -1441,6 +1447,7 @@ function DashboardShellInner({
                                   session={activeLiveVideoSession}
                                   localUserId={profile.id}
                                   onLeaveSession={onLiveVideoLeaveSession}
+                                  onHostEndLiveSessionForAll={onHostEndLiveSessionForAll}
                                   canWriteTasks={canWriteTasks}
                                   onWorkoutDeckPersisted={bumpTaskViews}
                                 />
@@ -1481,6 +1488,7 @@ function DashboardShellInner({
                                     session={activeLiveVideoSession}
                                     localUserId={profile.id}
                                     onLeaveSession={onLiveVideoLeaveSession}
+                                    onHostEndLiveSessionForAll={onHostEndLiveSessionForAll}
                                     canWriteTasks={canWriteTasks}
                                     onWorkoutDeckPersisted={bumpTaskViews}
                                   />
@@ -1639,7 +1647,7 @@ function DashboardShellInner({
                   className="fixed bottom-24 left-4 z-[200] shadow-md md:bottom-6 md:left-6"
                   onClick={handleDoneSelectingFromBoard}
                 >
-                  Done selecting
+                  Save to Workout
                 </Button>
               ) : null}
               {children}

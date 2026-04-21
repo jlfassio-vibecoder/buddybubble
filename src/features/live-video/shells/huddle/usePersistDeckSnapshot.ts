@@ -94,7 +94,6 @@ export function usePersistDeckSnapshot({
           item_type: t.item_type,
           metadata: t.metadata as TaskRow['metadata'],
           visibility: t.visibility,
-          assigned_to: t.assigned_to ?? null,
           program_id: t.program_id ?? null,
           program_session_key: t.program_session_key ?? null,
           attachments: t.attachments ?? {},

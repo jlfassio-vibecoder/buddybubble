@@ -58,3 +58,9 @@ export function isDashboardProfileComplete(
 
   return false;
 }
+
+/** `users.children_names` is stored as JSON; coerce for React state. */
+export function childrenNamesFromJson(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((x): x is string => typeof x === 'string');
+}

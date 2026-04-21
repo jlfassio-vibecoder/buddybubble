@@ -24,6 +24,7 @@ import {
   extractAvatarObjectPath,
 } from '@/lib/avatar-storage';
 import { formatUserFacingError } from '@/lib/format-error';
+import { childrenNamesFromJson } from '@/lib/profile-helpers';
 import { ThemeToggle } from '@/components/theme/theme-toggle';
 import { CategoryThemeSelect } from '@/components/theme/category-theme-select';
 import { isMissingColumnSchemaCacheError } from '@/lib/supabase-schema-errors';
@@ -129,7 +130,7 @@ export function ProfileModal({
     if (!profile) return;
     setName(profile.full_name?.trim() || '');
     setBio(profile.bio?.trim() ?? '');
-    setChildrenNames(profile.children_names ?? []);
+    setChildrenNames(childrenNamesFromJson(profile.children_names));
     setNewChildName('');
     setTimezone(profile.timezone?.trim() || 'UTC');
     setAvatarPreview(profile.avatar_url ?? '');

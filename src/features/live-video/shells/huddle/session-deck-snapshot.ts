@@ -8,8 +8,15 @@ import {
 } from '@/lib/item-metadata';
 
 export type SessionDeckSnapshot = {
+  /**
+   * Stable unique id for this deck **row** (React keys + dnd-kit). Never equals another row’s key,
+   * even when `snapshotId` / `task.id` collide across rehydration vs optimistic state.
+   */
+  deckRowKey: string;
   /** Client-only id used for deck DnD and `TaskRow.id` on the cloned row. */
   snapshotId: string;
+  /** `live_session_deck_items.id` once persisted for this session; null until insert succeeds. */
+  deckItemId: string | null;
   /** Original `tasks.id` from the Kanban board. */
   originTaskId: string;
   /** Deep-cloned task; `task.id` equals `snapshotId`. */
@@ -61,11 +68,14 @@ export function createSessionDeckSnapshot(task: TaskRow): SessionDeckSnapshot {
     cloned = JSON.parse(JSON.stringify(task)) as TaskRow;
   }
   const snapshotId = newSnapshotId();
+  const deckRowKey = newSnapshotId();
   const originTaskId = task.id;
   cloned.id = snapshotId;
   const baselineMetadata = cloneJsonMetadata(cloned.metadata);
   return {
+    deckRowKey,
     snapshotId,
+    deckItemId: null,
     originTaskId,
     task: cloned,
     baselineMetadata,

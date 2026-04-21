@@ -84,6 +84,7 @@ export {
   initialSessionState,
   pauseBlock,
   resumeBlock,
+  setActiveDeckItem,
   startSession,
   transitionToPhase,
   type SessionPhase,

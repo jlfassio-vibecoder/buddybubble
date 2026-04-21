@@ -10,12 +10,8 @@ import {
   startOfMonth,
   startOfWeek,
 } from 'date-fns';
-import {
-  normalizeItemType,
-  type BubbleRow,
-  type TaskRow,
-  type WorkspaceCategory,
-} from '@/types/database';
+import { normalizeItemType } from '@/lib/item-types';
+import type { BubbleRow, TaskRow, WorkspaceCategory } from '@/types/database';
 import type { OpenTaskOptions } from '@/components/modals/TaskModal';
 import type { TaskBubbleUpControlProps } from '@/components/tasks/bubbly-button';
 import { KanbanTaskCard } from '@/components/board/kanban-task-card';

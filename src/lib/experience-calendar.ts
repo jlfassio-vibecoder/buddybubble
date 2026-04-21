@@ -1,4 +1,5 @@
-import { normalizeItemType, type TaskRow } from '@/types/database';
+import { normalizeItemType } from '@/lib/item-types';
+import type { TaskRow } from '@/types/database';
 import { parseTaskMetadata } from '@/lib/item-metadata';
 
 /** End YYYY-MM-DD for an experience; falls back to `scheduled_on` when `metadata.end_date` is unset. */

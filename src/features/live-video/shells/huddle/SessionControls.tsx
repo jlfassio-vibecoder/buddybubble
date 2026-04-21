@@ -11,6 +11,8 @@ export type SessionControlsProps = {
   actions: SessionActions;
   /** When true, session / phase / pause controls are non-interactive (e.g. non-host clients). */
   disableActions?: boolean;
+  /** Host: runs after `actions.endSession()` (e.g. mark chat invite ended). */
+  onHostEndLiveSessionForAll?: () => void | Promise<void>;
   className?: string;
 };
 
@@ -22,9 +24,15 @@ export function SessionControls({
   state,
   actions,
   disableActions = false,
+  onHostEndLiveSessionForAll,
   className,
 }: SessionControlsProps) {
   const isIdle = state.status === 'idle';
+
+  const handleEndSessionForAll = () => {
+    actions.endSession();
+    void onHostEndLiveSessionForAll?.();
+  };
   const inHuddle = state.phase === 'lobby';
   const activeBlock = !inHuddle && state.status !== 'idle';
   const phaseDisabled = isIdle || disableActions;
@@ -52,18 +60,17 @@ export function SessionControls({
           >
             Start Session
           </Button>
-        ) : (
+        ) : !disableActions ? (
           <Button
             type="button"
             size="sm"
             variant="destructive"
             className="font-medium"
-            disabled={disableActions}
-            onClick={actions.endSession}
+            onClick={handleEndSessionForAll}
           >
-            End Session
+            End Session for All
           </Button>
-        )}
+        ) : null}
 
         {!isIdle && inHuddle ? (
           <div className="flex flex-wrap items-center justify-center gap-2">
