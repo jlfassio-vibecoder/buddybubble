@@ -21,6 +21,31 @@ export function formatElapsedMs(ms: number): string {
   return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}.${tenths}`;
 }
 
+export type SessionTimeFormat = 'count-up' | 'countdown-seconds' | 'countdown-tenths';
+
+/**
+ * Session block clock formatting. Elapsed `ms` is block elapsed from {@link getBlockElapsedMs}.
+ * Countdown modes subtract elapsed from `totalBlockMs` (remaining time).
+ */
+export function formatSessionTime(
+  elapsedMs: number,
+  format: SessionTimeFormat = 'count-up',
+  totalBlockMs?: number,
+): string {
+  if (format === 'count-up') {
+    return formatElapsedMs(elapsedMs);
+  }
+  const total = totalBlockMs ?? 0;
+  const remaining = Math.max(0, total - elapsedMs);
+  if (format === 'countdown-seconds') {
+    const totalSec = Math.ceil(remaining / 1000);
+    const sec = totalSec % 60;
+    const min = Math.floor(totalSec / 60);
+    return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  }
+  return formatElapsedMs(remaining);
+}
+
 /**
  * High-frequency clock display: keeps `setState` local to this subtree.
  * Parent `BaseVideoHarness` does not re-render on each tick (only this component does).

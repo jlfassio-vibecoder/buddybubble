@@ -17,6 +17,8 @@ function marketingFrameAncestorsHeader(): { key: string; value: string } | null 
 const frameAncestors = marketingFrameAncestorsHeader();
 
 const nextConfig: NextConfig = {
+  /** Ensures Agora Web SDK is transpiled consistently (fewer webpack async-chunk edge cases). */
+  transpilePackages: ['agora-rtc-sdk-ng'],
   reactStrictMode: true,
   async headers() {
     if (!frameAncestors) return [];

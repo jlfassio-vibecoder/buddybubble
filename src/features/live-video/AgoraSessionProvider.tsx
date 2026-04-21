@@ -262,7 +262,12 @@ export function AgoraSessionProvider({
         }
 
         try {
-          const tracks = await AgoraRTC.createMicrophoneAndCameraTracks();
+          const tracks = await AgoraRTC.createMicrophoneAndCameraTracks(
+            {}, // default audio config
+            {
+              encoderConfig: '720p_2', // 1280x720, 30fps, wide-angle 16:9
+            },
+          );
           audio = tracks[0];
           video = tracks[1];
         } catch (e) {

@@ -6,8 +6,10 @@ import { createClient } from '@utils/supabase/client';
 import {
   computeElapsedMs,
   parseSharedTimerBroadcastPayload,
+  type LiveAspectRatioId,
   type SharedTimerBroadcastPayload,
   type SharedTimerConnectionStatus,
+  type SharedTimerSessionStatus,
   type SharedTimerSnapshot,
 } from '@/features/live-video/shells/shared/shared-timer-sync.types';
 
@@ -27,6 +29,8 @@ export type UseSharedTimerSyncResult = {
   isHost: boolean;
   /** Low-frequency mirror of `generationRef` for React keys / debug. */
   generation: number;
+  /** Host-synced aspect ratio; updates on `LAYOUT_CHANGE` and `SYNC_RESPONSE` (for React re-renders). */
+  aspectRatio: LiveAspectRatioId;
   /** Read-only view of ref-backed model; safe to call inside `requestAnimationFrame`. */
   getSnapshot: () => SharedTimerSnapshot;
   /** Same as `computeElapsedMs(Date.now(), getSnapshot())` for convenience. */
@@ -35,6 +39,7 @@ export type UseSharedTimerSyncResult = {
   start: () => void;
   pause: () => void;
   reset: () => void;
+  setAspectRatio: (ratio: LiveAspectRatioId) => void;
 };
 
 function buildSnapshot(
@@ -43,13 +48,21 @@ function buildSnapshot(
   accumulatedMs: number,
   segmentStartedAt: number | null,
   epochOffsetMs: number,
+  aspectRatio: LiveAspectRatioId,
 ): SharedTimerSnapshot {
+  const status: SharedTimerSessionStatus = isRunning
+    ? 'running'
+    : accumulatedMs > 0
+      ? 'paused'
+      : 'idle';
   return {
     generation,
     isRunning,
     accumulatedMs,
     segmentStartedAt,
     epochOffsetMs,
+    aspectRatio,
+    status,
   };
 }
 
@@ -58,6 +71,7 @@ function buildSnapshot(
  *
  * - **Host** (`localUserId === hostUserId`) may `start` / `pause` / `reset` and answers `SYNC_REQUEST` with `SYNC_RESPONSE`.
  * - **Clients** apply broadcasts and align clocks using `snapshotHostNow` from `SYNC_RESPONSE` (v1: not NTP-grade).
+ * - **Layout:** host may `setAspectRatio` → `LAYOUT_CHANGE`; `SYNC_RESPONSE` carries current `aspectRatio`.
  * - **Performance:** timer math lives in refs; do not call `setState` on every frame. Drive UI with
  *   `requestAnimationFrame` + `getSnapshot()` / `getElapsedMs()`, or `subscribeTick` to re-render on discrete events only.
  */
@@ -70,10 +84,14 @@ export function useSharedTimerSync(options: UseSharedTimerSyncOptions): UseShare
   const segmentStartedAtRef = useRef<number | null>(null);
   const accumulatedMsRef = useRef(0);
   const epochOffsetMsRef = useRef(0);
+  const aspectRatioRef = useRef<LiveAspectRatioId>('16:9');
 
   const [connectionStatus, setConnectionStatus] =
     useState<SharedTimerConnectionStatus>('disconnected');
   const [generation, setGeneration] = useState(0);
+  /** Bumps on every discrete model change so UI re-renders even when `generation` is unchanged (e.g. pause/resume). */
+  const [modelRevision, setModelRevision] = useState(0);
+  const [aspectRatio, setAspectRatioState] = useState<LiveAspectRatioId>('16:9');
 
   const channelRef = useRef<RealtimeChannel | null>(null);
   const connectedRef = useRef(false);
@@ -90,7 +108,17 @@ export function useSharedTimerSync(options: UseSharedTimerSyncOptions): UseShare
 
   const bumpGenerationState = useCallback(() => {
     setGeneration(generationRef.current);
+    setModelRevision((n) => n + 1);
   }, []);
+
+  const applyAspectRatio = useCallback(
+    (next: LiveAspectRatioId) => {
+      aspectRatioRef.current = next;
+      setAspectRatioState(next);
+      notifyTick();
+    },
+    [notifyTick],
+  );
 
   const applyModel = useCallback(
     (patch: {
@@ -120,6 +148,7 @@ export function useSharedTimerSync(options: UseSharedTimerSyncOptions): UseShare
       accumulatedMsRef.current,
       segmentStartedAtRef.current,
       isHost ? 0 : epochOffsetMsRef.current,
+      aspectRatioRef.current,
     );
   }, [isHost]);
 
@@ -159,6 +188,7 @@ export function useSharedTimerSync(options: UseSharedTimerSyncOptions): UseShare
         segmentStartedAt: segmentStartedAtRef.current,
         accumulatedMsBeforeSegment: accumulatedMsRef.current,
         snapshotHostNow: now,
+        aspectRatio: aspectRatioRef.current,
       };
       sendPayload(ch, payload);
     }, 120);
@@ -196,6 +226,13 @@ export function useSharedTimerSync(options: UseSharedTimerSyncOptions): UseShare
             segmentStartedAt: payload.segmentStartedAt,
             epochOffsetMs,
           });
+          applyAspectRatio(payload.aspectRatio);
+          return;
+        }
+        case 'LAYOUT_CHANGE': {
+          if (payload.senderId !== hostUserId) return;
+          if (!markProcessed(dedupeKey)) return;
+          applyAspectRatio(payload.aspectRatio);
           return;
         }
         case 'RESET': {
@@ -234,16 +271,42 @@ export function useSharedTimerSync(options: UseSharedTimerSyncOptions): UseShare
           return;
       }
     },
-    [applyModel, emitSyncResponse, isHost, markProcessed],
+    [applyAspectRatio, applyModel, emitSyncResponse, hostUserId, isHost, markProcessed],
   );
 
   const broadcastAndApplyHost = useCallback(
     (channel: RealtimeChannel, payload: SharedTimerBroadcastPayload) => {
-      const dedupeKey = `${payload.action}-${payload.authoritativeTimestamp}-${payload.senderId}-${'generation' in payload ? payload.generation : 'na'}`;
+      const dedupeKey =
+        payload.action === 'LAYOUT_CHANGE'
+          ? `${payload.action}-${payload.authoritativeTimestamp}-${payload.senderId}-${payload.aspectRatio}`
+          : `${payload.action}-${payload.authoritativeTimestamp}-${payload.senderId}-${'generation' in payload ? payload.generation : 'na'}`;
       sendPayload(channel, payload);
       handleIncomingPayload(payload, dedupeKey);
     },
     [handleIncomingPayload, sendPayload],
+  );
+
+  const setAspectRatio = useCallback(
+    (ratio: LiveAspectRatioId) => {
+      if (!isHost) {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('[useSharedTimerSync] setAspectRatio() ignored: not host');
+        }
+        return;
+      }
+      const channel = channelRef.current;
+      if (!channel || !connectedRef.current) return;
+
+      const now = Date.now();
+      const payload: SharedTimerBroadcastPayload = {
+        action: 'LAYOUT_CHANGE',
+        authoritativeTimestamp: now,
+        senderId: localUserId,
+        aspectRatio: ratio,
+      };
+      broadcastAndApplyHost(channel, payload);
+    },
+    [broadcastAndApplyHost, isHost, localUserId],
   );
 
   const start = useCallback(() => {
@@ -293,6 +356,7 @@ export function useSharedTimerSync(options: UseSharedTimerSyncOptions): UseShare
       accumulatedMsRef.current,
       segmentStartedAtRef.current,
       isHost ? 0 : epochOffsetMsRef.current,
+      aspectRatioRef.current,
     );
     const elapsed = computeElapsedMs(now, snap);
 
@@ -362,11 +426,13 @@ export function useSharedTimerSync(options: UseSharedTimerSyncOptions): UseShare
       if (!payload) return;
 
       const genPart =
-        'generation' in payload
-          ? String(payload.generation)
-          : payload.action === 'SYNC_REQUEST'
-            ? 'sr'
-            : 'na';
+        payload.action === 'LAYOUT_CHANGE'
+          ? payload.aspectRatio
+          : 'generation' in payload
+            ? String(payload.generation)
+            : payload.action === 'SYNC_REQUEST'
+              ? 'sr'
+              : 'na';
       const dedupeKey = `${payload.action}-${payload.authoritativeTimestamp}-${payload.senderId}-${genPart}`;
 
       handleIncomingPayload(payload, dedupeKey);
@@ -416,23 +482,28 @@ export function useSharedTimerSync(options: UseSharedTimerSyncOptions): UseShare
       connectionStatus,
       isHost,
       generation,
+      aspectRatio,
       getSnapshot,
       getElapsedMs,
       subscribeTick,
       start,
       pause,
       reset,
+      setAspectRatio,
     }),
     [
+      aspectRatio,
       connectionStatus,
       isHost,
       generation,
+      modelRevision,
       getSnapshot,
       getElapsedMs,
       subscribeTick,
       start,
       pause,
       reset,
+      setAspectRatio,
     ],
   );
 }

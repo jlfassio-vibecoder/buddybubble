@@ -342,6 +342,12 @@ type Props = {
   buddyBubbleTitle?: string;
   /** Opens the Workout Player for a workout / workout_log card (fitness workspaces). */
   onStartWorkout?: (task: TaskRow) => void;
+  /**
+   * When true, card "open" intents add the full `TaskRow` to the live workout deck instead of opening the modal.
+   * Requires `onTaskSelectedForWorkoutDeck`.
+   */
+  workoutSelectionMode?: boolean;
+  onTaskSelectedForWorkoutDeck?: (task: TaskRow) => void;
   /** When set with `guestTaskUserId`, task lists add an assigned-to / unassigned filter (guest isolation). */
   workspaceMemberRole?: MemberRole | null;
   guestTaskUserId?: string | null;
@@ -362,6 +368,8 @@ export function KanbanBoard({
   onExpandCalendarWhenKanbanStripCollapse,
   buddyBubbleTitle,
   onStartWorkout,
+  workoutSelectionMode = false,
+  onTaskSelectedForWorkoutDeck,
   workspaceMemberRole = null,
   guestTaskUserId = null,
 }: Props) {
@@ -776,6 +784,30 @@ export function KanbanBoard({
     dateSortMode,
     tz,
   ]);
+
+  const taskByIdBoard = useMemo(() => {
+    const map = new Map<string, TaskRow>();
+    for (const list of Object.values(columns)) {
+      for (const t of list) {
+        map.set(t.id, t);
+      }
+    }
+    return map;
+  }, [columns]);
+
+  const handleOpenTaskForBoard = useCallback(
+    (taskId: string, opts?: OpenTaskOptions) => {
+      if (workoutSelectionMode && onTaskSelectedForWorkoutDeck) {
+        const t = taskByIdBoard.get(taskId);
+        if (t) {
+          onTaskSelectedForWorkoutDeck(t);
+        }
+        return;
+      }
+      onOpenTask?.(taskId, opts);
+    },
+    [workoutSelectionMode, onTaskSelectedForWorkoutDeck, taskByIdBoard, onOpenTask],
+  );
 
   const allBoardTaskIds = useMemo(() => {
     const ids: string[] = [];
@@ -1331,7 +1363,7 @@ export function KanbanBoard({
                     commentUnreadByTaskId={commentUnreadByTaskId}
                     commentLatestUnreadMessageIdByTaskId={commentLatestUnreadMessageIdByTaskId}
                     onMoveToBubble={moveTaskToBubble}
-                    onOpenTask={onOpenTask}
+                    onOpenTask={handleOpenTaskForBoard}
                     onStartWorkout={onStartWorkout}
                     bubbleUpPropsFor={bubbleUpPropsFor}
                     onAddNew={addNew}
@@ -1349,7 +1381,12 @@ export function KanbanBoard({
   }
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-muted/30">
+    <div
+      className={cn(
+        'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-muted/30',
+        workoutSelectionMode && 'relative ring-1 ring-inset ring-primary/15 bg-muted/40',
+      )}
+    >
       {!bubbleId ? (
         isValidElement(calendarMerged) ? (
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
