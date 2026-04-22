@@ -155,6 +155,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: message }, { status: preview.response.status || 502 });
     }
 
+    console.log('[DEBUG] Fetching tasks with updated multi-assignee filter. User ID:', user.id);
     const svc = createServiceRoleClient();
     const inserted = await insertWorkoutTaskFromStorefrontPreview(svc, {
       bubbleId,

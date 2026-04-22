@@ -19,7 +19,6 @@ type WorkoutTask = {
   scheduled_on: string | null;
   metadata: Json;
   program_id?: string | null;
-  assigned_to?: string | null;
 };
 
 type WorkoutMeta = { workout_type?: string; duration_min?: number };
@@ -137,12 +136,16 @@ export function AnalyticsBoard({
         return;
       }
       const bubbleIds = bubbles.map((b) => b.id as string);
+      console.log(
+        '[DEBUG] Fetching tasks with updated multi-assignee filter. User ID:',
+        viewerUserId,
+      );
       const { data, error } = await supabase
         .from('tasks')
-        .select('id, title, created_at')
+        .select('id, title, created_at, task_assignees!inner(user_id)')
         .in('bubble_id', bubbleIds)
         .eq('item_type', 'program')
-        .eq('assigned_to', viewerUserId)
+        .eq('task_assignees.user_id', viewerUserId)
         .order('created_at', { ascending: false })
         .limit(100);
       if (cancelled) return;
@@ -189,6 +192,10 @@ export function AnalyticsBoard({
       }
       setWorkoutsLoading(true);
       const supabase = createClient();
+      console.log(
+        '[DEBUG] Fetching tasks with updated multi-assignee filter. User ID:',
+        viewerUserId,
+      );
       const { data: bubbles, error: bubblesErr } = await supabase
         .from('bubbles')
         .select('id')
@@ -211,11 +218,13 @@ export function AnalyticsBoard({
       const bubbleIds = bubbles.map((b) => b.id as string);
       const { data, error: tasksErr } = await supabase
         .from('tasks')
-        .select('id, title, status, created_at, scheduled_on, metadata, program_id, assigned_to')
+        .select(
+          'id, title, status, created_at, scheduled_on, metadata, program_id, task_assignees!inner(user_id)',
+        )
         .in('bubble_id', bubbleIds)
         .in('item_type', ['workout', 'workout_log'])
         .eq('program_id', selectedProgramId)
-        .eq('assigned_to', viewerUserId)
+        .eq('task_assignees.user_id', viewerUserId)
         .order('created_at', { ascending: false })
         .limit(500);
       if (!cancelled) {

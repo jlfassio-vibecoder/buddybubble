@@ -449,8 +449,11 @@ export function TaskModal({
       hydrateFromTaskRow(row);
       const vis = normalizeTaskVisibility((row as TaskRow).visibility);
       setVisibility(vis);
-      // Legacy `tasks.assigned_to` removed; assignees live in `task_assignees` (hydrate separately).
-      const assignee = null;
+      const assigneeRows = (row as TaskRow & { task_assignees?: { user_id: string }[] | null })
+        .task_assignees;
+      const assignee =
+        assigneeRows?.find((r) => typeof r.user_id === 'string' && r.user_id.trim())?.user_id ??
+        null;
       setAssignedTo(assignee);
       const st = scheduledTimeToInputValue((row as TaskRow).scheduled_time);
       setOriginalFromAppliedRow({

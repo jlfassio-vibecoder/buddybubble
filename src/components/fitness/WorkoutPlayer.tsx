@@ -24,6 +24,7 @@ import { toast } from 'sonner';
 import type { WorkoutExercise } from '@/lib/item-metadata';
 import type { UnitSystem } from '@/types/database';
 import { useUserProfileStore } from '@/store/userProfileStore';
+import { replaceTaskAssigneesWithUserIds } from '@/lib/task-assignees-db';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -563,17 +564,18 @@ export function WorkoutPlayer({
     let sourceRow: {
       program_id: string | null;
       program_session_key: string | null;
-      assigned_to: string | null;
       scheduled_on: string | null;
       scheduled_time: string | null;
       visibility: string | null;
     } | null = null;
 
+    let sourceAssigneeUserIds: string[] = [];
+
     if (sourceTaskId) {
       const { data: fetched, error: sourceTaskError } = await supabase
         .from('tasks')
         .select(
-          'program_id, program_session_key, assigned_to, scheduled_on, scheduled_time, visibility',
+          'program_id, program_session_key, scheduled_on, scheduled_time, visibility, task_assignees(user_id)',
         )
         .eq('id', sourceTaskId)
         .maybeSingle();
@@ -584,7 +586,30 @@ export function WorkoutPlayer({
         setSaving(false);
         return;
       }
-      if (fetched) sourceRow = fetched;
+      if (fetched) {
+        const f = fetched as {
+          program_id: string | null;
+          program_session_key: string | null;
+          scheduled_on: string | null;
+          scheduled_time: string | null;
+          visibility: string | null;
+          task_assignees?: { user_id: string }[] | null;
+        };
+        sourceRow = {
+          program_id: f.program_id,
+          program_session_key: f.program_session_key,
+          scheduled_on: f.scheduled_on,
+          scheduled_time: f.scheduled_time,
+          visibility: f.visibility,
+        };
+        sourceAssigneeUserIds = [
+          ...new Set(
+            (f.task_assignees ?? [])
+              .map((r) => r.user_id)
+              .filter((id): id is string => Boolean(id?.trim())),
+          ),
+        ];
+      }
     }
 
     const workoutLogTask = {
@@ -596,7 +621,6 @@ export function WorkoutPlayer({
       ...(sourceRow?.program_session_key != null
         ? { program_session_key: sourceRow.program_session_key }
         : {}),
-      ...(sourceRow?.assigned_to != null ? { assigned_to: sourceRow.assigned_to } : {}),
       ...(sourceRow?.scheduled_on != null ? { scheduled_on: sourceRow.scheduled_on } : {}),
       ...(sourceRow?.scheduled_time != null ? { scheduled_time: sourceRow.scheduled_time } : {}),
       ...(sourceRow?.visibility != null ? { visibility: sourceRow.visibility } : {}),
@@ -606,13 +630,31 @@ export function WorkoutPlayer({
       },
     };
 
-    const { error: insertError } = await supabase.from('tasks').insert(workoutLogTask);
+    const { data: insertedLog, error: insertError } = await supabase
+      .from('tasks')
+      .insert(workoutLogTask)
+      .select('id')
+      .maybeSingle();
 
-    if (insertError) {
+    if (insertError || !insertedLog?.id) {
       console.error('Failed to create workout log', insertError);
-      toast.error(formatUserFacingError(insertError));
+      toast.error(formatUserFacingError(insertError ?? new Error('Insert failed')));
       setSaving(false);
       return;
+    }
+
+    if (sourceAssigneeUserIds.length > 0) {
+      const { error: syncErr } = await replaceTaskAssigneesWithUserIds(
+        supabase,
+        insertedLog.id,
+        sourceAssigneeUserIds,
+      );
+      if (syncErr) {
+        console.error('Failed to sync workout log assignees', syncErr);
+        toast.error(syncErr);
+        setSaving(false);
+        return;
+      }
     }
 
     setSaving(false);

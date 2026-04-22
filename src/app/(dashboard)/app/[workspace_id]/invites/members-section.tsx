@@ -27,6 +27,7 @@ const ROLE_LABELS: Record<MemberRole, string> = {
   admin: 'Admin',
   member: 'Member',
   guest: 'Guest',
+  trialing: 'Trialing',
 };
 
 const ROLE_DESCRIPTIONS: Record<MemberRole, string> = {
@@ -34,10 +35,15 @@ const ROLE_DESCRIPTIONS: Record<MemberRole, string> = {
   admin: 'Manage socialspace, members & bubbles',
   member: 'Write access to all public bubbles',
   guest: 'Explicit-access only (assigned bubbles/cards)',
+  trialing: 'Storefront Lead — reverse-trial preview (acts like member until trial expires)',
 };
 
-/** Stable order for role `<select>` options when unioning assignable roles with the row’s current role. */
-const ROLE_SELECT_ORDER: MemberRole[] = ['owner', 'admin', 'member', 'guest'];
+/**
+ * Stable order for role `<select>` options when unioning assignable roles with the row’s current role.
+ * `trialing` is listed last so it only appears for rows whose current role is already `trialing`
+ * (issued by the Storefront Lead intake API; admins cannot newly assign it via this UI).
+ */
+const ROLE_SELECT_ORDER: MemberRole[] = ['owner', 'admin', 'member', 'guest', 'trialing'];
 
 function roleSelectOptions(assignable: MemberRole[], current: MemberRole): MemberRole[] {
   const combined = assignable.includes(current) ? assignable : [...assignable, current];

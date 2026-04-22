@@ -23,6 +23,7 @@ const ROLE_LABELS: Record<MemberRole, string> = {
   admin: 'Admin',
   member: 'Member',
   guest: 'Guest',
+  trialing: 'Trialing',
 };
 
 type Props = {

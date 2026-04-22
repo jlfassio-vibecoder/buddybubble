@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { Hash, Lock, PanelLeftClose, Settings, Settings2 } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Hash, Lock, PanelLeftClose, Settings, Settings2, Sparkles, Users } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
 import type { BubbleRow } from '@/types/database';
 import { ALL_BUBBLES_BUBBLE_ID, ALL_BUBBLES_LABEL } from '@/lib/all-bubbles';
@@ -16,6 +16,8 @@ import {
 import { BubbleSettingsModal } from '@/components/modals/BubbleSettingsModal';
 import { usePresenceStore, type UserPresence } from '@/store/presenceStore';
 import { useUserProfileStore } from '@/store/userProfileStore';
+
+type BubbleTab = 'main' | 'trials' | 'members';
 
 type Props = {
   workspaceId: string;
@@ -53,9 +55,50 @@ export function BubbleSidebar({
   hideSidebarCollapseButton = false,
   workspaceTitle,
 }: Props) {
+  const [activeTab, setActiveTab] = useState<BubbleTab>('main');
+  const initialTabSyncDoneRef = useRef(false);
   const [name, setName] = useState('');
   const [adding, setAdding] = useState(false);
   const [bubbleSettingsId, setBubbleSettingsId] = useState<string | null>(null);
+
+  /** One-time: align default tab with the selected bubble’s bucket (admin only). */
+  useEffect(() => {
+    if (!isAdmin || initialTabSyncDoneRef.current) return;
+    if (selectedBubbleId == null || selectedBubbleId === ALL_BUBBLES_BUBBLE_ID) {
+      initialTabSyncDoneRef.current = true;
+      return;
+    }
+    const b = bubbles.find((x) => x.id === selectedBubbleId);
+    if (b) {
+      if (b.bubble_type === 'trial') setActiveTab('trials');
+      else if (b.bubble_type === 'dm') setActiveTab('members');
+      initialTabSyncDoneRef.current = true;
+      return;
+    }
+    if (bubbles.length > 0) {
+      initialTabSyncDoneRef.current = true;
+    }
+  }, [isAdmin, selectedBubbleId, bubbles]);
+
+  const visibleBubbles = useMemo(() => {
+    if (!isAdmin) return bubbles;
+    switch (activeTab) {
+      case 'trials':
+        return bubbles.filter((b) => b.bubble_type === 'trial');
+      case 'members':
+        return bubbles.filter((b) => b.bubble_type === 'dm');
+      case 'main':
+      default:
+        return bubbles.filter((b) => b.bubble_type !== 'trial' && b.bubble_type !== 'dm');
+    }
+  }, [bubbles, activeTab, isAdmin]);
+
+  console.log(
+    '[DEBUG] [BubbleSidebar] Rendering tab:',
+    activeTab,
+    'Total bubbles:',
+    bubbles.length,
+  );
 
   const myId = useUserProfileStore((s) => s.profile?.id);
   const presenceUsers = usePresenceStore((s) => s.users);
@@ -155,7 +198,7 @@ export function BubbleSidebar({
                   <h2 className="min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/70">
                     Bubbles
                   </h2>
-                  {onOpenWorkspaceSettings && canCreateWorkspaceBubble ? (
+                  {onOpenWorkspaceSettings && isAdmin ? (
                     <div className="relative z-10 flex shrink-0 items-center gap-0.5">
                       <button
                         type="button"
@@ -183,25 +226,90 @@ export function BubbleSidebar({
                   </Button>
                 </form>
               )}
-            </div>
-            <ScrollArea className="min-h-0 flex-1 overflow-hidden">
-              <ul className="p-2">
-                <li key={ALL_BUBBLES_BUBBLE_ID}>
+              {isAdmin ? (
+                <div
+                  className="mt-2 flex h-9 w-full gap-0.5 rounded-md border border-sidebar-border bg-sidebar-accent/30 p-0.5"
+                  role="group"
+                  aria-label="Bubble list scope"
+                >
                   <button
                     type="button"
-                    onClick={() => onSelectBubble(ALL_BUBBLES_BUBBLE_ID)}
+                    onClick={() => setActiveTab('main')}
+                    aria-pressed={activeTab === 'main'}
                     className={cn(
-                      'mb-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-medium transition-colors',
-                      selectedBubbleId === ALL_BUBBLES_BUBBLE_ID
+                      'flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-sm px-1.5 text-xs font-medium transition-colors',
+                      activeTab === 'main'
                         ? 'bg-[color:var(--sidebar-active)] text-[var(--primary-foreground)]'
-                        : 'text-sidebar-foreground hover:bg-[color:var(--sidebar-hover)]',
+                        : 'text-sidebar-foreground/80 hover:bg-[color:var(--sidebar-hover)]',
                     )}
                   >
-                    <Hash className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
-                    {ALL_BUBBLES_LABEL}
+                    <Hash className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    <span className="truncate">Main</span>
                   </button>
-                </li>
-                {bubbles.map((b) => {
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('trials')}
+                    aria-pressed={activeTab === 'trials'}
+                    className={cn(
+                      'flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-sm px-1.5 text-xs font-medium transition-colors',
+                      activeTab === 'trials'
+                        ? 'bg-[color:var(--sidebar-active)] text-[var(--primary-foreground)]'
+                        : 'text-sidebar-foreground/80 hover:bg-[color:var(--sidebar-hover)]',
+                    )}
+                  >
+                    <Sparkles className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    <span className="truncate">Trials</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('members')}
+                    aria-pressed={activeTab === 'members'}
+                    className={cn(
+                      'flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-sm px-1.5 text-xs font-medium transition-colors',
+                      activeTab === 'members'
+                        ? 'bg-[color:var(--sidebar-active)] text-[var(--primary-foreground)]'
+                        : 'text-sidebar-foreground/80 hover:bg-[color:var(--sidebar-hover)]',
+                    )}
+                  >
+                    <Users className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    <span className="truncate">Members</span>
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            <ScrollArea className="min-h-0 flex-1 overflow-hidden">
+              {isAdmin && activeTab === 'trials' ? (
+                <div className="flex items-center gap-2 border-b border-sidebar-border/60 px-2 pb-2 pt-2">
+                  <Input
+                    className="h-8 flex-1 text-sm"
+                    placeholder="Search trial leads (coming soon)"
+                    disabled
+                    readOnly
+                  />
+                  <Button type="button" size="sm" variant="outline" className="shrink-0" disabled>
+                    Sort
+                  </Button>
+                </div>
+              ) : null}
+              <ul className="p-2">
+                {(!isAdmin || activeTab === 'main') && (
+                  <li key={ALL_BUBBLES_BUBBLE_ID}>
+                    <button
+                      type="button"
+                      onClick={() => onSelectBubble(ALL_BUBBLES_BUBBLE_ID)}
+                      className={cn(
+                        'mb-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-medium transition-colors',
+                        selectedBubbleId === ALL_BUBBLES_BUBBLE_ID
+                          ? 'bg-[color:var(--sidebar-active)] text-[var(--primary-foreground)]'
+                          : 'text-sidebar-foreground hover:bg-[color:var(--sidebar-hover)]',
+                      )}
+                    >
+                      <Hash className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
+                      {ALL_BUBBLES_LABEL}
+                    </button>
+                  </li>
+                )}
+                {visibleBubbles.map((b) => {
                   const bubblePeers = peersByBubbleId.get(b.id) ?? [];
                   return (
                     <li key={b.id} className="group relative mb-1">
@@ -268,6 +376,30 @@ export function BubbleSidebar({
                 {bubbles.length === 0 && (
                   <li className="px-2 py-4 text-sm text-sidebar-foreground/70">No bubbles yet.</li>
                 )}
+                {isAdmin &&
+                  bubbles.length > 0 &&
+                  visibleBubbles.length === 0 &&
+                  activeTab === 'main' && (
+                    <li className="px-2 py-4 text-sm text-sidebar-foreground/70">
+                      No community channels yet.
+                    </li>
+                  )}
+                {isAdmin &&
+                  bubbles.length > 0 &&
+                  visibleBubbles.length === 0 &&
+                  activeTab === 'trials' && (
+                    <li className="px-2 py-4 text-sm text-sidebar-foreground/70">
+                      No trial bubbles yet.
+                    </li>
+                  )}
+                {isAdmin &&
+                  bubbles.length > 0 &&
+                  visibleBubbles.length === 0 &&
+                  activeTab === 'members' && (
+                    <li className="px-2 py-4 text-sm text-sidebar-foreground/70">
+                      No 1:1 client bubbles yet.
+                    </li>
+                  )}
               </ul>
             </ScrollArea>
           </>

@@ -38,8 +38,12 @@ const EXPIRY_OPTIONS = [
   { label: '7 days', hours: 24 * 7 },
 ] as const;
 
+/**
+ * Invitable roles exclude `owner` (promotion-only via owner action) and
+ * `trialing` (issued only by the Storefront Lead intake API, not via invites).
+ */
 const INVITE_ROLE_OPTIONS: Array<{
-  value: Exclude<MemberRole, 'owner'>;
+  value: Exclude<MemberRole, 'owner' | 'trialing'>;
   label: string;
   desc: string;
 }> = [
@@ -100,7 +104,7 @@ export function InvitesClient({
   const [linkMaxUses, setLinkMaxUses] = useState('1');
   const [linkExpiryHours, setLinkExpiryHours] = useState(24);
   const [linkMode, setLinkMode] = useState<'link' | 'qr'>('link');
-  const [linkRole, setLinkRole] = useState<Exclude<MemberRole, 'owner'>>('member');
+  const [linkRole, setLinkRole] = useState<Exclude<MemberRole, 'owner' | 'trialing'>>('member');
   const [lastCreatedUrl, setLastCreatedUrl] = useState<string | null>(null);
   const [lastCreatedMode, setLastCreatedMode] = useState<'link' | 'qr' | null>(null);
 
@@ -108,13 +112,13 @@ export function InvitesClient({
   const [emailLabel, setEmailLabel] = useState('');
   const [emailMaxUses, setEmailMaxUses] = useState('1');
   const [emailExpiryHours, setEmailExpiryHours] = useState(24 * 7);
-  const [emailRole, setEmailRole] = useState<Exclude<MemberRole, 'owner'>>('member');
+  const [emailRole, setEmailRole] = useState<Exclude<MemberRole, 'owner' | 'trialing'>>('member');
 
   const [smsPhone, setSmsPhone] = useState('');
   const [smsLabel, setSmsLabel] = useState('');
   const [smsMaxUses, setSmsMaxUses] = useState('1');
   const [smsExpiryHours, setSmsExpiryHours] = useState(24 * 7);
-  const [smsRole, setSmsRole] = useState<Exclude<MemberRole, 'owner'>>('member');
+  const [smsRole, setSmsRole] = useState<Exclude<MemberRole, 'owner' | 'trialing'>>('member');
 
   useEffect(() => {
     setInvites(initialInvites);
@@ -434,7 +438,9 @@ export function InvitesClient({
                     <label className="mb-1 block text-sm font-medium">Invite as</label>
                     <select
                       value={linkRole}
-                      onChange={(e) => setLinkRole(e.target.value as Exclude<MemberRole, 'owner'>)}
+                      onChange={(e) =>
+                        setLinkRole(e.target.value as Exclude<MemberRole, 'owner' | 'trialing'>)
+                      }
                       className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     >
                       {INVITE_ROLE_OPTIONS.map((o) => (
@@ -525,7 +531,9 @@ export function InvitesClient({
                     <label className="mb-1 block text-sm font-medium">Invite as</label>
                     <select
                       value={emailRole}
-                      onChange={(e) => setEmailRole(e.target.value as Exclude<MemberRole, 'owner'>)}
+                      onChange={(e) =>
+                        setEmailRole(e.target.value as Exclude<MemberRole, 'owner' | 'trialing'>)
+                      }
                       className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     >
                       {INVITE_ROLE_OPTIONS.map((o) => (
@@ -599,7 +607,9 @@ export function InvitesClient({
                     <label className="mb-1 block text-sm font-medium">Invite as</label>
                     <select
                       value={smsRole}
-                      onChange={(e) => setSmsRole(e.target.value as Exclude<MemberRole, 'owner'>)}
+                      onChange={(e) =>
+                        setSmsRole(e.target.value as Exclude<MemberRole, 'owner' | 'trialing'>)
+                      }
                       className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     >
                       {INVITE_ROLE_OPTIONS.map((o) => (

@@ -11,6 +11,7 @@ import { asActivityLog } from '@/types/task-modal';
 import { formatUserFacingError } from '@/lib/format-error';
 import { archiveOpenChildWorkoutsForProgram } from '@/lib/fitness/archive-program-child-workouts';
 import { isMissingColumnSchemaCacheError } from '@/lib/supabase-schema-errors';
+import { replaceTaskAssigneesWithUserIds } from '@/lib/task-assignees-db';
 import {
   diffNewActivityEntries,
   insertTaskActivityLogEntries,
@@ -135,6 +136,17 @@ export function useTaskSaveAndCreate({
     } = await supabase.auth.getUser();
     const uid = user?.id ?? null;
 
+    const syncAssigneesNow = async () => {
+      const { error: syncErr } = await replaceTaskAssigneesWithUserIds(
+        supabase,
+        taskId,
+        assignedTo ? [assignedTo] : [],
+      );
+      if (syncErr) {
+        console.warn('[useTaskSaveAndCreate] task_assignees sync failed', syncErr);
+      }
+    };
+
     const orig = originalRef.current;
     const scheduledOnValue = parseScheduledDateFromInput(scheduledOn);
     const newTimeHm = parseTimeHmFromScheduledInputs(scheduledOnValue, scheduledTime);
@@ -187,7 +199,6 @@ export function useTaskSaveAndCreate({
       status: effectiveStatus,
       priority,
       visibility,
-      assigned_to: assignedTo,
       ...typeMetaPatch,
       ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
       ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
@@ -205,7 +216,6 @@ export function useTaskSaveAndCreate({
         status: effectiveStatus,
         priority,
         visibility,
-        assigned_to: assignedTo,
         ...typeMetaPatch,
         ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
       };
@@ -233,6 +243,7 @@ export function useTaskSaveAndCreate({
           assignedTo,
         });
         setSaving(false);
+        await syncAssigneesNow();
         void loadTask(taskId);
         return;
       }
@@ -258,7 +269,6 @@ export function useTaskSaveAndCreate({
         status: statusWithoutSavedSchedule,
         priority,
         visibility,
-        assigned_to: assignedTo,
         ...typeMetaPatch,
       };
       uErr = (await supabase.from('tasks').update(updateNoSched).eq('id', taskId)).error;
@@ -286,6 +296,7 @@ export function useTaskSaveAndCreate({
           assignedTo,
         });
         setSaving(false);
+        await syncAssigneesNow();
         void loadTask(taskId);
         return;
       }
@@ -301,7 +312,6 @@ export function useTaskSaveAndCreate({
         description: description.trim() || null,
         status: effectiveStatus,
         visibility,
-        assigned_to: assignedTo,
         ...typeMetaPatch,
         ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
         ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
@@ -325,6 +335,7 @@ export function useTaskSaveAndCreate({
           assignedTo: orig?.assignedTo ?? assignedTo,
         });
         setSaving(false);
+        await syncAssigneesNow();
         void loadTask(taskId);
         return;
       }
@@ -339,7 +350,6 @@ export function useTaskSaveAndCreate({
         description: description.trim() || null,
         status: effectiveStatus,
         priority,
-        assigned_to: assignedTo,
         ...typeMetaPatch,
         ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
         ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
@@ -366,6 +376,7 @@ export function useTaskSaveAndCreate({
         setError(
           'Visibility is not saved yet: apply the public-portals migration on Supabase (tasks.visibility), then try again.',
         );
+        await syncAssigneesNow();
         void loadTask(taskId);
         return;
       }
@@ -402,6 +413,7 @@ export function useTaskSaveAndCreate({
       visibility,
       assignedTo,
     });
+    await syncAssigneesNow();
     void loadTask(taskId);
   }, [
     activityLog,
@@ -471,14 +483,13 @@ export function useTaskSaveAndCreate({
       item_type: itemType,
       metadata: metadataForSave as TaskRow['metadata'],
       visibility,
-      assigned_to: assignedTo,
       ...(sched ? { scheduled_time: scheduledTimeInsert } : {}),
     };
 
     let { data, error: cErr } = await supabase
       .from('tasks')
       .insert(insertRow)
-      .select()
+      .select('id')
       .maybeSingle();
 
     if (cErr && isMissingColumnSchemaCacheError(cErr, 'scheduled_on')) {
@@ -491,7 +502,7 @@ export function useTaskSaveAndCreate({
       const retry = await supabase
         .from('tasks')
         .insert({ ...insertNoSched, status: statusWithoutPersistedSchedule })
-        .select()
+        .select('id')
         .maybeSingle();
       data = retry.data;
       cErr = retry.error;
@@ -501,7 +512,7 @@ export function useTaskSaveAndCreate({
       const { scheduled_time: _st, ...insertNoTime } = insertRow as typeof insertRow & {
         scheduled_time?: string | null;
       };
-      const retry = await supabase.from('tasks').insert(insertNoTime).select().maybeSingle();
+      const retry = await supabase.from('tasks').insert(insertNoTime).select('id').maybeSingle();
       data = retry.data;
       cErr = retry.error;
     }
@@ -511,7 +522,7 @@ export function useTaskSaveAndCreate({
       const second = await supabase
         .from('tasks')
         .insert(insertWithoutPriority)
-        .select()
+        .select('id')
         .maybeSingle();
       data = second.data;
       cErr = second.error;
@@ -533,15 +544,22 @@ export function useTaskSaveAndCreate({
       setError(formatUserFacingError(cErr ?? new Error('Create failed')));
       return;
     }
-    const createdStatus =
-      data.status !== undefined && typeof data.status === 'string' ? data.status : effectiveStatus;
-    setStatus(createdStatus);
+    setStatus(effectiveStatus);
+    const newTaskId = (data as { id: string }).id;
+    const { error: assigneeErr } = await replaceTaskAssigneesWithUserIds(
+      supabase,
+      newTaskId,
+      assignedTo ? [assignedTo] : [],
+    );
+    if (assigneeErr) {
+      console.warn('[useTaskSaveAndCreate] task_assignees sync after create failed', assigneeErr);
+    }
     if (itemType === 'workout') {
       toast.success('Workout created');
     } else if (itemType === 'workout_log') {
       toast.success('Workout log created');
     }
-    onCreated?.(data.id as string);
+    onCreated?.(newTaskId);
   }, [
     assignedTo,
     bubbleId,

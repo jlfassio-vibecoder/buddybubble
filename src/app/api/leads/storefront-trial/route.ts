@@ -27,6 +27,7 @@ import { validateStorefrontPreviewPayload } from '@/lib/workout-factory/storefro
 import {
   createTrialBubbleAndMembers,
   findExistingStorefrontTrial,
+  grantStorefrontTrialDefaultBubbles,
   mergeLeadMetadataWithTrialBubble,
   resolveStorefrontCoachUserId,
 } from '@/lib/storefront-trial-isolation';
@@ -499,7 +500,10 @@ export async function POST(req: Request) {
     const existingRole = (membership as { role?: MemberRole } | null)?.role;
     const existingTrialExpires = (membership as { trial_expires_at?: string | null } | null)
       ?.trial_expires_at;
-    if (existingRole && existingRole !== 'guest') {
+    // Storefront leads may arrive with a prior `trialing` row (re-entry) or a legacy
+    // `guest` row from the pre-separation intake. Both are safe to re-upsert into
+    // `trialing`; any other role means the account is already a real member.
+    if (existingRole && existingRole !== 'trialing' && existingRole !== 'guest') {
       return NextResponse.json(
         { error: 'This account is already a member of this workspace.' },
         { status: 409 },
@@ -514,7 +518,7 @@ export async function POST(req: Request) {
       {
         workspace_id: workspaceId,
         user_id: userId,
-        role: 'guest',
+        role: 'trialing',
         trial_expires_at: trialEnd,
         onboarding_status: 'trial_active',
       },
@@ -534,6 +538,18 @@ export async function POST(req: Request) {
     const existing = await findExistingStorefrontTrial(db, workspaceId, userId);
     if (existing) {
       await db.from('leads').update({ last_seen_at: now }).eq('id', existing.leadId);
+
+      // Backfill default community bubbles on re-entry so Hosts who updated
+      // Trial & Member Access settings after the lead's first visit are honored.
+      // Best-effort: upserts are idempotent and never fail the intake.
+      try {
+        await grantStorefrontTrialDefaultBubbles({ db, workspaceId, userId });
+      } catch (e) {
+        console.error(
+          '[leads/storefront-trial] default bubbles grant (re-entry) failed',
+          e instanceof Error ? e.message : 'Unknown error',
+        );
+      }
 
       if (body.profile !== undefined) {
         await upsertFitnessProfileFromStorefrontIfApplicable(
@@ -592,6 +608,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: bubbleResult.error }, { status: 500 });
     }
     const { trialBubbleId } = bubbleResult;
+
+    // Phase 3 (Consumption): grant the Host-configured default community bubbles
+    // immediately after the 1-to-1 trial bubble is provisioned. Wrapped in a
+    // try/catch so a community-bubble grant failure (e.g., a default bubble was
+    // deleted between the Host's save and this intake) never blocks the trial:
+    // the lead still lands successfully in their trial bubble.
+    try {
+      await grantStorefrontTrialDefaultBubbles({ db, workspaceId, userId });
+    } catch (e) {
+      console.error(
+        '[leads/storefront-trial] default bubbles grant (new intake) failed',
+        e instanceof Error ? e.message : 'Unknown error',
+      );
+    }
 
     const baseMetadata: Json = {
       acquisition: 'storefront',

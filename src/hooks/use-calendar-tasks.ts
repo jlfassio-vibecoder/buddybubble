@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { createClient } from '@utils/supabase/client';
 import type { MemberRole, TaskRow } from '@/types/database';
-import { guestTaskAssignmentVisibilityOr, isGuestWorkspaceRole } from '@/lib/guest-task-query';
 import { compareScheduledTime } from '@/lib/task-scheduled-time';
 import { experienceOverlapsYmdRange } from '@/lib/experience-calendar';
 import { isMissingColumnSchemaCacheError } from '@/lib/supabase-schema-errors';
@@ -20,6 +19,7 @@ export type UseCalendarTasksParams = {
   enabled?: boolean;
   /** Bump (e.g. after archive or calendar drop) to refetch without changing range. */
   reloadNonce?: number;
+  /** Guest isolation is enforced by RLS; this is kept for call-site compatibility only. */
   workspaceMemberRole?: MemberRole | null;
   guestTaskUserId?: string | null;
 };
@@ -51,7 +51,7 @@ export function useCalendarTasks(params: UseCalendarTasksParams): {
     rangeEnd,
     enabled = true,
     reloadNonce = 0,
-    workspaceMemberRole = null,
+    workspaceMemberRole: _workspaceMemberRole = null,
     guestTaskUserId = null,
   } = params;
   const [tasks, setTasks] = useState<TaskRow[]>([]);
@@ -73,8 +73,12 @@ export function useCalendarTasks(params: UseCalendarTasksParams): {
     setError(null);
 
     async function run() {
+      console.log(
+        '[DEBUG] Fetching tasks with updated multi-assignee filter. User ID:',
+        guestTaskUserId?.trim() || 'unknown',
+      );
       const supabase = createClient();
-      let inRangeQuery = supabase
+      const inRangeQuery = supabase
         .from('tasks')
         .select('*')
         .in('bubble_id', bubbleIds)
@@ -82,13 +86,6 @@ export function useCalendarTasks(params: UseCalendarTasksParams): {
         .lte('scheduled_on', rangeEnd)
         .order('scheduled_on', { ascending: true })
         .order('position', { ascending: true });
-      if (
-        isGuestWorkspaceRole(workspaceMemberRole) &&
-        guestTaskUserId &&
-        guestTaskUserId.length > 0
-      ) {
-        inRangeQuery = inRangeQuery.or(guestTaskAssignmentVisibilityOr(guestTaskUserId));
-      }
       const { data: inRange, error: qErr } = await inRangeQuery;
 
       if (cancelled) return;
@@ -101,7 +98,7 @@ export function useCalendarTasks(params: UseCalendarTasksParams): {
       }
 
       let spanRows: TaskRow[] = [];
-      let spanBuilder = supabase
+      const spanBuilder = supabase
         .from('tasks')
         .select('*')
         .in('bubble_id', bubbleIds)
@@ -109,13 +106,6 @@ export function useCalendarTasks(params: UseCalendarTasksParams): {
         .lte('scheduled_on', rangeEnd)
         .order('scheduled_on', { ascending: true })
         .order('position', { ascending: true });
-      if (
-        isGuestWorkspaceRole(workspaceMemberRole) &&
-        guestTaskUserId &&
-        guestTaskUserId.length > 0
-      ) {
-        spanBuilder = spanBuilder.or(guestTaskAssignmentVisibilityOr(guestTaskUserId));
-      }
       const spanQuery = await spanBuilder;
 
       if (cancelled) return;
@@ -163,7 +153,6 @@ export function useCalendarTasks(params: UseCalendarTasksParams): {
     rangeStart,
     reloadNonce,
     tasksRealtimeTick,
-    workspaceMemberRole,
     guestTaskUserId,
   ]);
 

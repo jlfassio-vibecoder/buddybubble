@@ -33,7 +33,7 @@ export function useTaskLoadAndRealtime({
       const supabase = createClient();
       const { data, error: qErr } = await supabase
         .from('tasks')
-        .select('*, task_subtasks(*), task_activity_log(*)')
+        .select('*, task_subtasks(*), task_activity_log(*), task_assignees(user_id)')
         .eq('id', id)
         .maybeSingle();
       setLoading(false);

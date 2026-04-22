@@ -1,9 +1,8 @@
 'use server';
 
 import { formatUserFacingError } from '@/lib/format-error';
-import { guestTaskAssignmentVisibilityOr, isGuestWorkspaceRole } from '@/lib/guest-task-query';
 import { createClient } from '@utils/supabase/server';
-import type { MemberRole, TaskRow } from '@/types/database';
+import type { TaskRow } from '@/types/database';
 
 export type ArchivedTasksResult = { ok: true; tasks: TaskRow[] } | { ok: false; error: string };
 
@@ -24,31 +23,14 @@ export async function getArchivedTasksAction(bubbleId: string): Promise<Archived
     return { ok: false, error: 'You must be signed in.' };
   }
 
-  let taskQuery = supabase
+  console.log('[DEBUG] Fetching tasks with updated multi-assignee filter. User ID:', user.id);
+
+  const taskQuery = supabase
     .from('tasks')
     .select('*')
     .eq('bubble_id', trimmed)
     .not('archived_at', 'is', null)
     .order('archived_at', { ascending: false });
-
-  const { data: bubbleRow } = await supabase
-    .from('bubbles')
-    .select('workspace_id')
-    .eq('id', trimmed)
-    .maybeSingle();
-  const wsId = bubbleRow?.workspace_id as string | undefined;
-  if (wsId) {
-    const { data: wm } = await supabase
-      .from('workspace_members')
-      .select('role')
-      .eq('workspace_id', wsId)
-      .eq('user_id', user.id)
-      .maybeSingle();
-    const role = (wm as { role?: MemberRole } | null)?.role;
-    if (isGuestWorkspaceRole(role)) {
-      taskQuery = taskQuery.or(guestTaskAssignmentVisibilityOr(user.id));
-    }
-  }
 
   const { data, error } = await taskQuery;
 

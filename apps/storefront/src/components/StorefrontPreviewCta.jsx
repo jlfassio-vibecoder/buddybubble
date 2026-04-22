@@ -423,13 +423,31 @@ export default function StorefrontPreviewCta({
           ...(turnstileToken ? { turnstileToken } : {}),
         }),
       });
-      const data = /** @type {{ error?: string; preview?: Record<string, unknown> }} */ (
-        await res.json().catch(() => ({}))
-      );
+      const rawText = await res.text();
+      /** @type {{ error?: string; hint?: string; target?: string; preview?: Record<string, unknown> }} */
+      let data = {};
+      if (rawText) {
+        try {
+          data = JSON.parse(rawText);
+        } catch {
+          data = {};
+        }
+      }
       if (!res.ok) {
-        setPreviewFetchError(
-          typeof data.error === 'string' ? data.error : 'Could not generate your workout outline.',
-        );
+        let msg =
+          typeof data.error === 'string' && data.error.trim()
+            ? data.error.trim()
+            : `Could not generate your workout outline (${res.status}).`;
+        if (res.status === 502) {
+          const hint =
+            typeof data.hint === 'string' && data.hint.trim() ? ` ${data.hint.trim()}` : '';
+          const target =
+            typeof data.target === 'string' && data.target.trim()
+              ? ` Upstream: ${data.target}`
+              : '';
+          msg = `${msg}${target}${hint}`;
+        }
+        setPreviewFetchError(msg);
         setPreviewFetchStatus('error');
         return;
       }
@@ -441,8 +459,13 @@ export default function StorefrontPreviewCta({
       }
       setSnap((prev) => ({ ...prev, fitnessAiPreview: p }));
       setPreviewFetchStatus('ready');
-    } catch {
-      setPreviewFetchError('Network error.');
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      setPreviewFetchError(
+        message && message !== 'Failed to fetch'
+          ? `Network error: ${message}`
+          : 'Network error. If you are on a local storefront, confirm the dev server is running and try again.',
+      );
       setPreviewFetchStatus('error');
     } finally {
       outlineFetchInFlightRef.current = false;
