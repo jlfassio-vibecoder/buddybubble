@@ -19,9 +19,6 @@ type Props = {
 
 export function TrialPaywallGuard({ locked, children, className }: Props) {
   const openTrialModal = useSubscriptionStore((s) => s.openTrialModal);
-  /** Mirrors parent decision (`shouldSoftLockTrialSurfaces` → member preview ended). */
-  const isExpired = locked;
-  console.log('[DEBUG] [PaywallGuard] Evaluating user access. Expired:', isExpired);
 
   if (!locked) {
     return <div className={cn('min-h-0 min-w-0 flex-1', className)}>{children}</div>;

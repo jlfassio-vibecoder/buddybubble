@@ -6,7 +6,7 @@ This document is the **canonical reference** for workspace roles, Postgres Row L
 
 ## Executive summary
 
-- **Workspace roles** live in `public.workspace_members.role`: `owner`, `admin`, `member`, and `guest` (trial / storefront lead). They control admin surfaces, bubble visibility, and—for `guest`—a stricter task visibility policy.
+- **Workspace roles** live in `public.workspace_members.role`: `owner`, `admin`, `member`, `guest`, and `trialing` (Storefront Lead reverse-trial). They control admin surfaces, bubble visibility, and—for `guest`—a stricter task visibility policy.
 - **Data fencing** is enforced primarily by **RLS** on Supabase (`bubbles`, `tasks`, `workspace_subscriptions`, etc.). The Next.js `app/(dashboard)/app/[workspace_id]/layout.tsx` gate only verifies **membership** (any role); it does not replace RLS.
 - **UI guards** mirror product intent (e.g. owner-only analytics settings, admin-only socialspace settings gear) and **subscription paywalls** (`PremiumGate`) for paid workspace categories.
 - **Stripe** drives `workspace_subscriptions.status` (and related fields). **Feature gating** for premium capabilities uses **subscription status + workspace category**, not which Stripe price tier was purchased—so all members in a paid-category workspace share the same premium vs locked experience while the host’s subscription is active or trialing.
@@ -15,16 +15,17 @@ This document is the **canonical reference** for workspace roles, Postgres Row L
 
 ## Role definitions
 
-| Role       | Typical use                       | Workspace admin?           | Bubble visibility (summary)                                                                                                                             |
-| ---------- | --------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **owner**  | Billing entity, full host control | Yes (`is_workspace_admin`) | All bubbles the workspace can access per RLS                                                                                                            |
-| **admin**  | Host delegates management         | Yes                        | Same as owner for visibility; some owner-only routes remain exclusive to `owner`                                                                        |
-| **member** | Standard participant              | No                         | Non-private bubbles by default; private bubbles require `bubble_members`                                                                                |
-| **guest**  | Storefront trial / lead preview   | No                         | **No** automatic access to all non-private bubbles via workspace role alone; **requires `bubble_members`** (or equivalent grants) for bubble visibility |
+| Role         | Typical use                                | Workspace admin?           | Bubble visibility (summary)                                                                                                                             |
+| ------------ | ------------------------------------------ | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **owner**    | Billing entity, full host control          | Yes (`is_workspace_admin`) | All bubbles the workspace can access per RLS                                                                                                            |
+| **admin**    | Host delegates management                  | Yes                        | Same as owner for visibility; some owner-only routes remain exclusive to `owner`                                                                        |
+| **member**   | Standard participant                       | No                         | Non-private bubbles by default; private bubbles require `bubble_members`                                                                                |
+| **trialing** | Storefront lead reverse-trial (3 days)     | No                         | Treated as “member-ish” for `can_view_bubble` / `can_write_bubble` during the trial window (product gates still apply).                                 |
+| **guest**    | Invite-only guest / restricted participant | No                         | **No** automatic access to all non-private bubbles via workspace role alone; **requires `bubble_members`** (or equivalent grants) for bubble visibility |
 
 **Parsing:** Application code normalizes DB strings through `parseMemberRole` (`src/lib/permissions.ts`).
 
-**Guests vs “trial”:** The `guest` role is used with storefront onboarding; preview end dates and onboarding status live on `workspace_members` (e.g. `trial_expires_at`, `onboarding_status`). That is **separate** from the workspace Stripe subscription row (`workspace_subscriptions`) used for `PremiumGate`.
+**Trialing vs guest:** `trialing` is issued by the Storefront Lead intake API and acts like a member for baseline participation during the `trial_expires_at` window. `guest` remains the stricter, invite-only role. Preview end dates and onboarding status live on `workspace_members` (e.g. `trial_expires_at`, `onboarding_status`) and are **separate** from the workspace Stripe subscription row (`workspace_subscriptions`) used for `PremiumGate`.
 
 ---
 

@@ -651,7 +651,9 @@ export function WorkoutPlayer({
       );
       if (syncErr) {
         console.error('Failed to sync workout log assignees', syncErr);
-        toast.error(syncErr);
+        toast.error(
+          typeof syncErr === 'string' && syncErr.trim() ? syncErr : 'Failed to sync assignees.',
+        );
         setSaving(false);
         return;
       }

@@ -515,10 +515,6 @@ export function ProgramsBoard({
     setError(null);
     const supabase = createClient();
 
-    console.log(
-      '[DEBUG] Fetching tasks with updated multi-assignee filter. User ID:',
-      viewerUserId ?? 'unknown',
-    );
     const { data, error: tasksErr } = await supabase
       .from('tasks')
       .select(
@@ -878,7 +874,9 @@ export function ProgramsBoard({
           user.id,
         ]);
         if (syncErr) {
-          setError(syncErr);
+          setError(
+            typeof syncErr === 'string' && syncErr.trim() ? syncErr : 'Failed to sync assignees.',
+          );
           return;
         }
       }

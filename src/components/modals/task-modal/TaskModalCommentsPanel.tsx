@@ -213,10 +213,6 @@ export const TaskModalCommentsPanel = forwardRef<
     const bubbleIds = bubbles.map((b) => b.id);
     let cancelled = false;
     async function loadTasksForSlashMentions() {
-      console.log(
-        '[DEBUG] Fetching tasks with updated multi-assignee filter. User ID:',
-        myProfile?.id ?? 'unknown',
-      );
       const supabase = createClient();
       const taskQuery = supabase
         .from('tasks')

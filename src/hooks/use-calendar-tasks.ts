@@ -73,10 +73,6 @@ export function useCalendarTasks(params: UseCalendarTasksParams): {
     setError(null);
 
     async function run() {
-      console.log(
-        '[DEBUG] Fetching tasks with updated multi-assignee filter. User ID:',
-        guestTaskUserId?.trim() || 'unknown',
-      );
       const supabase = createClient();
       const inRangeQuery = supabase
         .from('tasks')

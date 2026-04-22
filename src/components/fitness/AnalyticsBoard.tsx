@@ -136,10 +136,6 @@ export function AnalyticsBoard({
         return;
       }
       const bubbleIds = bubbles.map((b) => b.id as string);
-      console.log(
-        '[DEBUG] Fetching tasks with updated multi-assignee filter. User ID:',
-        viewerUserId,
-      );
       const { data, error } = await supabase
         .from('tasks')
         .select('id, title, created_at, task_assignees!inner(user_id)')
@@ -192,10 +188,6 @@ export function AnalyticsBoard({
       }
       setWorkoutsLoading(true);
       const supabase = createClient();
-      console.log(
-        '[DEBUG] Fetching tasks with updated multi-assignee filter. User ID:',
-        viewerUserId,
-      );
       const { data: bubbles, error: bubblesErr } = await supabase
         .from('bubbles')
         .select('id')

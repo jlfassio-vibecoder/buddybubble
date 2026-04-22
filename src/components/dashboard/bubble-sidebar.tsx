@@ -93,13 +93,6 @@ export function BubbleSidebar({
     }
   }, [bubbles, activeTab, isAdmin]);
 
-  console.log(
-    '[DEBUG] [BubbleSidebar] Rendering tab:',
-    activeTab,
-    'Total bubbles:',
-    bubbles.length,
-  );
-
   const myId = useUserProfileStore((s) => s.profile?.id);
   const presenceUsers = usePresenceStore((s) => s.users);
   const peersByBubbleId = useMemo(() => {

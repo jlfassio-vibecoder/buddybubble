@@ -61,8 +61,6 @@ function validatePublicSlug(slug: string | null): string | null {
 export async function updateWorkspaceSettingsAction(
   input: UpdateWorkspaceSettingsInput,
 ): Promise<UpdateWorkspaceSettingsResult> {
-  console.log('[DEBUG] [ServerAction] Hit update action for workspace. Payload:', input);
-
   const supabase = await createClient();
   const {
     data: { user },

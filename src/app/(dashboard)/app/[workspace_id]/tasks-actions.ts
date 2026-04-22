@@ -23,8 +23,6 @@ export async function getArchivedTasksAction(bubbleId: string): Promise<Archived
     return { ok: false, error: 'You must be signed in.' };
   }
 
-  console.log('[DEBUG] Fetching tasks with updated multi-assignee filter. User ID:', user.id);
-
   const taskQuery = supabase
     .from('tasks')
     .select('*')
