@@ -121,17 +121,44 @@ function appendSessionPreferencesFromRawProfile(profile: unknown): string {
     return '';
   }
   const o = profile as Record<string, unknown>;
-  const intensityRaw = o.intensity_preference ?? o.intensityPreference;
+  // Storefront refine keys may arrive either as flat keys (storefront wizard draft)
+  // or nested inside `fitness_profiles.biometrics` (persisted DB row).
+  const biometrics =
+    o.biometrics && typeof o.biometrics === 'object' && !Array.isArray(o.biometrics)
+      ? (o.biometrics as Record<string, unknown>)
+      : null;
+
+  const intensityRaw =
+    o.intensity_preference ??
+    o.intensityPreference ??
+    biometrics?.intensity_preference ??
+    biometrics?.intensityPreference;
   const intensity =
     intensityRaw === 'lighter' || intensityRaw === 'same' || intensityRaw === 'harder'
       ? intensityRaw
       : '';
-  const notesRaw = o.storefront_workout_notes ?? o.storefrontWorkoutNotes;
+
+  const notesRaw =
+    o.storefront_workout_notes ??
+    o.storefrontWorkoutNotes ??
+    biometrics?.storefront_workout_notes ??
+    biometrics?.storefrontWorkoutNotes;
   const notesTrimmed = typeof notesRaw === 'string' ? notesRaw.trim() : '';
   const notes =
     notesTrimmed.length > MAX_STOREFRONT_WORKOUT_NOTES_IN_PROMPT
       ? notesTrimmed.slice(0, MAX_STOREFRONT_WORKOUT_NOTES_IN_PROMPT)
       : notesTrimmed;
+
+  const goalsTextRaw =
+    o.storefront_fitness_goals_text ??
+    o.storefrontFitnessGoalsText ??
+    biometrics?.storefront_fitness_goals_text ??
+    biometrics?.storefrontFitnessGoalsText;
+  const goalsText =
+    typeof goalsTextRaw === 'string' && goalsTextRaw.trim()
+      ? goalsTextRaw.trim().slice(0, 2000)
+      : '';
+
   const lines: string[] = [];
   if (intensity) {
     const label =
@@ -146,6 +173,9 @@ function appendSessionPreferencesFromRawProfile(profile: unknown): string {
     lines.push(
       `Athlete’s additional notes (injuries, equipment, soreness, intensity, etc.): ${notes}`,
     );
+  }
+  if (goalsText.length > 0) {
+    lines.push(`Athlete’s additional goal notes (one per line):\n${goalsText}`);
   }
   return lines.length ? `\n${lines.join('\n')}` : '';
 }
