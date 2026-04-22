@@ -1,0 +1,40 @@
+/*
+ * Top-level hero wrap. Provides:
+ *  - a relative positioning context for the radial purple glow
+ *  - a constrained centered column for the nav + shell stack
+ */
+
+.heroWrap {
+  position: relative;
+  width: 100%;
+  isolation: isolate; /* keeps the glow behind the content without affecting the outer <header> */
+}
+
+.radialGlow {
+  position: absolute;
+  top: -180px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 800px;
+  height: 400px;
+  background: radial-gradient(ellipse at center, rgba(127, 119, 221, 0.14), transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.radialGlowStrong {
+  /*
+   * Used for phases that need more focal pull (email, loading). Layered on top
+   * of (not replacing) .radialGlow via a second absolute div so we can keep the
+   * base glow consistent across phases.
+   */
+  position: absolute;
+  top: -180px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 800px;
+  height: 400px;
+  background: radial-gradient(ellipse at center, rgba(127, 119, 221, 0.08), transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}

@@ -1,0 +1,181 @@
+.pulseCircle {
+  width: 72px;
+  height: 72px;
+  border-radius: 100px;
+  background: rgba(127, 119, 221, 0.14);
+  border: 0.5px solid rgba(127, 119, 221, 0.3);
+  display: grid;
+  place-items: center;
+}
+
+.pulseDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 100px;
+  background: #7f77dd;
+  animation: hero-pulse-dot 1.4s ease-in-out infinite;
+}
+
+.headline {
+  font-size: 26px;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  color: #fff;
+}
+
+@media (min-width: 640px) {
+  .headline {
+    font-size: 28px;
+  }
+}
+
+.subcopy {
+  font-size: 14px;
+  line-height: 1.55;
+  color: #9a9a9a;
+  max-width: 480px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.takingLonger {
+  font-size: 13px;
+  color: #888;
+  font-style: italic;
+}
+
+.stepList {
+  width: 100%;
+  max-width: 480px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.stepRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: #111;
+  border: 0.5px solid #1f1f1f;
+  text-align: left;
+}
+
+.stepIconWrap {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+}
+
+.stepIconDone {
+  width: 20px;
+  height: 20px;
+  border-radius: 100px;
+  background: #7f77dd;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.stepIconActive {
+  width: 20px;
+  height: 20px;
+  border-radius: 100px;
+  border: 2px solid rgba(127, 119, 221, 0.6);
+  border-top-color: transparent;
+  animation: hero-spin 0.9s linear infinite;
+}
+
+.stepIconPending {
+  width: 20px;
+  height: 20px;
+  border-radius: 100px;
+  border: 1.5px solid #2a2a2a;
+  background: transparent;
+}
+
+.stepLabel {
+  font-size: 14px;
+  flex: 1;
+}
+
+.stepLabelDone {
+  color: #9a9a9a;
+}
+
+.stepLabelActive {
+  color: #e8e8e8;
+}
+
+.stepLabelPending {
+  color: #555;
+}
+
+.errorCard {
+  width: 100%;
+  max-width: 480px;
+  border-radius: 12px;
+  background: rgba(239, 68, 68, 0.06);
+  border: 0.5px solid rgba(239, 68, 68, 0.3);
+  padding: 16px 18px;
+  text-align: left;
+  color: #fca5a5;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.errorActions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.primaryBtn {
+  padding: 12px 22px;
+  border-radius: 10px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: filter 120ms ease;
+}
+
+.primaryBtn:hover {
+  filter: brightness(1.08);
+}
+
+.primaryBtn:focus-visible {
+  outline: 2px solid #7f77dd;
+  outline-offset: 2px;
+}
+
+.ghostLink {
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: transparent;
+  color: #888;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.ghostLink:hover {
+  color: #e8e8e8;
+}
+
+.ghostLink:focus-visible {
+  outline: 2px solid #7f77dd;
+  outline-offset: 2px;
+}
