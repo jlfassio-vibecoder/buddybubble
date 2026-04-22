@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { WorkoutExercise } from '@/lib/item-metadata';
 import type { PersonalizeProgramSession } from '@/lib/workout-factory/types/personalize-program';
 import type { Json, TaskVisibility } from '@/types/database';
+import { replaceTaskAssigneesWithUserIds } from '@/lib/task-assignees-db';
 
 export async function resolveThirdKanbanStatusSlug(
   supabase: SupabaseClient,
@@ -67,7 +68,7 @@ export async function upsertProgramWorkoutTasks(params: {
 
   const { data: programRow, error: programErr } = await supabase
     .from('tasks')
-    .select('assigned_to')
+    .select('task_assignees(user_id)')
     .eq('id', programTaskId)
     .eq('item_type', 'program')
     .maybeSingle();
@@ -76,10 +77,16 @@ export async function upsertProgramWorkoutTasks(params: {
     return { error: programErr.message };
   }
 
-  const programAssignedTo =
-    programRow && typeof (programRow as { assigned_to?: string | null }).assigned_to !== 'undefined'
-      ? ((programRow as { assigned_to: string | null }).assigned_to ?? null)
-      : null;
+  const programAssigneeUserIds = [
+    ...new Set(
+      (
+        (programRow as { task_assignees?: { user_id: string }[] | null } | null)?.task_assignees ??
+        []
+      )
+        .map((r) => r.user_id)
+        .filter((id): id is string => Boolean(id?.trim())),
+    ),
+  ];
 
   const { data: programWorkoutRows, error: fetchErr } = await supabase
     .from('tasks')
@@ -145,32 +152,48 @@ export async function upsertProgramWorkoutTasks(params: {
           metadata: meta,
           program_id: programTaskId,
           program_session_key: session.key,
-          assigned_to: programAssignedTo,
         })
         .eq('id', row.id);
       if (uErr) return { error: uErr.message };
+      const { error: syncErr } = await replaceTaskAssigneesWithUserIds(
+        supabase,
+        row.id,
+        programAssigneeUserIds,
+      );
+      if (syncErr) return { error: syncErr };
     } else {
       maxPos += 1;
       const meta: Json = {
         exercises,
         workout_type: workoutType,
       } as Json;
-      const { error: iErr } = await supabase.from('tasks').insert({
-        bubble_id: workoutsBubbleId,
-        title: session.title.trim() || session.key,
-        description: session.description.trim() || null,
-        status: statusSlug,
-        position: maxPos,
-        priority: 'medium',
-        item_type: 'workout',
-        metadata: meta,
-        program_id: programTaskId,
-        program_session_key: session.key,
-        assigned_to: programAssignedTo,
-        visibility,
-        attachments: [],
-      });
+      const { data: newRow, error: iErr } = await supabase
+        .from('tasks')
+        .insert({
+          bubble_id: workoutsBubbleId,
+          title: session.title.trim() || session.key,
+          description: session.description.trim() || null,
+          status: statusSlug,
+          position: maxPos,
+          priority: 'medium',
+          item_type: 'workout',
+          metadata: meta,
+          program_id: programTaskId,
+          program_session_key: session.key,
+          visibility,
+          attachments: [],
+        })
+        .select('id')
+        .maybeSingle();
       if (iErr) return { error: iErr.message };
+      if (newRow?.id) {
+        const { error: syncErr } = await replaceTaskAssigneesWithUserIds(
+          supabase,
+          newRow.id,
+          programAssigneeUserIds,
+        );
+        if (syncErr) return { error: syncErr };
+      }
     }
   }
 

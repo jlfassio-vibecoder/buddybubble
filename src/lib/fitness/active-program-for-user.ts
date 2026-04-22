@@ -33,10 +33,10 @@ export async function hasOtherActiveProgramForUserInWorkspace(
   const bubbleIds = bubbleRows.map((r) => r.id as string);
   const { data: rows, error } = await supabase
     .from('tasks')
-    .select('id, status, metadata, assigned_to')
+    .select('id, status, metadata, task_assignees!inner(user_id)')
     .in('bubble_id', bubbleIds)
     .eq('item_type', 'program')
-    .eq('assigned_to', userId)
+    .eq('task_assignees.user_id', userId)
     .is('archived_at', null);
 
   if (error || !rows?.length) return false;

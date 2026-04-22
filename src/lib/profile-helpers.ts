@@ -9,7 +9,7 @@ type UserProfileRow = Database['public']['Tables']['users']['Row'];
  */
 export type ProfileCompletionGateWorkspace = {
   id: string;
-  role: 'admin' | 'member' | 'guest';
+  role: 'admin' | 'member' | 'guest' | 'trialing';
   onboarding_status: WorkspaceMemberOnboardingStatus;
 } | null;
 

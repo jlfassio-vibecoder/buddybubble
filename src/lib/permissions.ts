@@ -14,15 +14,24 @@ export function parseMemberRole(raw: string | null | undefined): MemberRole {
   const r = String(raw ?? '')
     .trim()
     .toLowerCase();
-  if (r === 'owner' || r === 'admin' || r === 'member' || r === 'guest') return r;
+  if (r === 'owner' || r === 'admin' || r === 'member' || r === 'guest' || r === 'trialing') {
+    return r;
+  }
   return 'member';
 }
 
-/** Numeric rank: higher = more capability. */
+/**
+ * Numeric rank: higher = more capability.
+ *
+ * `trialing` is ranked at the `member` tier so Storefront Lead reverse-trial
+ * users get the same UI gates as full members during the trial window
+ * (soft-lock is driven by `memberPreviewPeriodEnded`, not this rank table).
+ */
 const ROLE_RANK: Record<MemberRole, number> = {
   owner: 4,
   admin: 3,
   member: 2,
+  trialing: 2,
   guest: 1,
 };
 

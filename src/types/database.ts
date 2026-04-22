@@ -27,7 +27,7 @@ export type { ItemType } from '@/lib/item-types';
 
 /** Template for a new BuddyBubble (`workspaces.category_type`). */
 export type WorkspaceCategory = 'business' | 'kids' | 'class' | 'community' | 'fitness';
-export type MemberRole = 'owner' | 'admin' | 'member' | 'guest';
+export type MemberRole = 'owner' | 'admin' | 'member' | 'guest' | 'trialing';
 export type BubbleMemberRole = 'editor' | 'viewer';
 export type InviteType = 'qr' | 'link' | 'email' | 'sms';
 export type InvitationJoinRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
@@ -67,6 +67,13 @@ export type BubbleMemberRow = Database['public']['Tables']['bubble_members']['Ro
 export type MessageRow = Database['public']['Tables']['messages']['Row'];
 export type TaskRow = Database['public']['Tables']['tasks']['Row'];
 
+/**
+ * Many-to-many task assignments (`public.task_assignees`: `task_id` + `user_id`).
+ * Legacy `tasks.assigned_to` was removed; filter with `task_assignees!inner(user_id)` or sync via
+ * `replaceTaskAssigneesWithUserIds` in `@/lib/task-assignees-db`.
+ */
+export type TaskAssigneeRow = Database['public']['Tables']['task_assignees']['Row'];
+
 /** Row shape when loading messages with a left-joined task embed (`tasks(*)` in ChatArea). */
 export type MessageRowWithEmbeddedTask = MessageRow & {
   tasks: TaskRow | null;
@@ -82,6 +89,52 @@ export type ExerciseDictionaryRow = Database['public']['Tables']['exercise_dicti
 export type AgentDefinitionRow = Database['public']['Tables']['agent_definitions']['Row'];
 export type AgentMessageRunRow = Database['public']['Tables']['agent_message_runs']['Row'];
 export type BubbleAgentBindingRow = Database['public']['Tables']['bubble_agent_bindings']['Row'];
+
+/**
+ * Trial & Member Access (normalized per-role permissions).
+ *
+ * These tables are defined in `supabase/migrations/20260629120000_workspace_role_access_tables.sql`.
+ * Hand-authored here until the next `supabase gen types typescript --linked` regenerates
+ * `database.generated.ts`; once regenerated, prefer the generated aliases.
+ *
+ * Canonical feature keys are owned by the app (`TRIAL_MEMBER_FEATURE_KEYS` in the feature
+ * module); `feature_key` is intentionally TEXT in the DB to avoid a migration per new flag.
+ */
+export type WorkspaceRoleFeatureFlagRow = {
+  workspace_id: string;
+  role: MemberRole;
+  feature_key: string;
+  is_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WorkspaceRoleFeatureFlagInsert = {
+  workspace_id: string;
+  role: MemberRole;
+  feature_key: string;
+  is_enabled?: boolean;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type WorkspaceRoleFeatureFlagUpdate = Partial<WorkspaceRoleFeatureFlagInsert>;
+
+export type WorkspaceRoleDefaultBubbleRow = {
+  workspace_id: string;
+  role: MemberRole;
+  bubble_id: string;
+  created_at: string;
+};
+
+export type WorkspaceRoleDefaultBubbleInsert = {
+  workspace_id: string;
+  role: MemberRole;
+  bubble_id: string;
+  created_at?: string;
+};
+
+export type WorkspaceRoleDefaultBubbleUpdate = Partial<WorkspaceRoleDefaultBubbleInsert>;
 
 export type ProgramRow = Database['public']['Tables']['programs']['Row'];
 export type ProgramWeekRow = Database['public']['Tables']['program_weeks']['Row'];

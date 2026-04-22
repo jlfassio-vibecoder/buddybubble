@@ -2037,6 +2037,77 @@ export type Database = {
           },
         ];
       };
+      workspace_role_default_bubbles: {
+        Row: {
+          bubble_id: string;
+          created_at: string;
+          role: string;
+          workspace_id: string;
+        };
+        Insert: {
+          bubble_id: string;
+          created_at?: string;
+          role: string;
+          workspace_id: string;
+        };
+        Update: {
+          bubble_id?: string;
+          created_at?: string;
+          role?: string;
+          workspace_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'workspace_role_default_bubbles_bubble_id_fkey';
+            columns: ['bubble_id'];
+            isOneToOne: false;
+            referencedRelation: 'bubbles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'workspace_role_default_bubbles_workspace_id_fkey';
+            columns: ['workspace_id'];
+            isOneToOne: false;
+            referencedRelation: 'workspaces';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      workspace_role_feature_flags: {
+        Row: {
+          created_at: string;
+          feature_key: string;
+          is_enabled: boolean;
+          role: string;
+          updated_at: string;
+          workspace_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          feature_key: string;
+          is_enabled?: boolean;
+          role: string;
+          updated_at?: string;
+          workspace_id: string;
+        };
+        Update: {
+          created_at?: string;
+          feature_key?: string;
+          is_enabled?: boolean;
+          role?: string;
+          updated_at?: string;
+          workspace_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'workspace_role_feature_flags_workspace_id_fkey';
+            columns: ['workspace_id'];
+            isOneToOne: false;
+            referencedRelation: 'workspaces';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       workspace_subscriptions: {
         Row: {
           cancel_at_period_end: boolean;
