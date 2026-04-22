@@ -17,7 +17,6 @@ import type { BubbleRow, TaskRow } from '@/types/database';
 import type { MessageAttachment } from '@/types/message-attachment';
 import type { ChatMessage } from '@/types/chat';
 import { useUserProfileStore } from '@/store/userProfileStore';
-import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useMessageThread } from '@/hooks/useMessageThread';
 import { useCoachTypingWait } from '@/hooks/useCoachTypingWait';
 import { CoachTypingIndicator } from '@/components/chat/CoachTypingIndicator';
@@ -30,7 +29,6 @@ import { RichMessageComposer } from '@/components/chat/RichMessageComposer';
 import { MessageMediaModal } from '@/components/chat/MessageMediaModal';
 import { createClient } from '@utils/supabase/client';
 import { supabaseClientErrorMessage } from '@/lib/supabase-client-error';
-import { guestTaskAssignmentVisibilityOr, isGuestWorkspaceRole } from '@/lib/guest-task-query';
 import { Button } from '@/components/ui/button';
 import { PremiumGate } from '@/components/subscription/premium-gate';
 
@@ -121,7 +119,6 @@ export const TaskModalCommentsPanel = forwardRef<
   ref,
 ) {
   const myProfile = useUserProfileStore((s) => s.profile);
-  const workspaceRole = useWorkspaceStore((s) => s.activeWorkspace?.role ?? null);
   const [draft, setDraft] = useState('');
   const [threadDraft, setThreadDraft] = useState('');
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -217,16 +214,13 @@ export const TaskModalCommentsPanel = forwardRef<
     let cancelled = false;
     async function loadTasksForSlashMentions() {
       const supabase = createClient();
-      let taskQuery = supabase
+      const taskQuery = supabase
         .from('tasks')
-        .select('id, title, status, bubble_id, position, archived_at, assigned_to')
+        .select('id, title, status, bubble_id, position, archived_at')
         .in('bubble_id', bubbleIds)
         .is('archived_at', null)
         .order('bubble_id', { ascending: true })
         .order('position', { ascending: true });
-      if (isGuestWorkspaceRole(workspaceRole) && myProfile?.id) {
-        taskQuery = taskQuery.or(guestTaskAssignmentVisibilityOr(myProfile.id));
-      }
       const { data, error } = await taskQuery;
       if (cancelled) return;
       if (error) {
@@ -252,7 +246,7 @@ export const TaskModalCommentsPanel = forwardRef<
     return () => {
       cancelled = true;
     };
-  }, [workspaceId, bubbles, workspaceRole, myProfile?.id]);
+  }, [workspaceId, bubbles, myProfile?.id]);
 
   const teamMembersResolved = useMemo(() => {
     if (!myProfile) return teamMembers;

@@ -38,6 +38,7 @@ import {
   programHasAssociatedData,
 } from '@/lib/fitness/remove-program-task';
 import { hasOtherActiveProgramForUserInWorkspace } from '@/lib/fitness/active-program-for-user';
+import { replaceTaskAssigneesWithUserIds } from '@/lib/task-assignees-db';
 import { syncProgramLinkedWorkoutSchedules } from '@/lib/fitness/sync-program-workout-schedules';
 import type { BubbleRow, ItemType, Json, TaskRow, WorkspaceCategory } from '@/types/database';
 import {
@@ -92,12 +93,21 @@ type ProgramTask = {
   title: string;
   status: string | null;
   metadata: Json;
-  assigned_to?: string | null;
+  task_assignees?: { user_id: string }[] | null;
   scheduled_on?: string | null;
   scheduled_time?: string | null;
   /** Tasks table has no `updated_at`; use `created_at` for ordering when multiple programs are active. */
   created_at?: string | null;
 };
+
+function programTaskIncludesAssignee(
+  task: ProgramTask,
+  userId: string | null | undefined,
+): boolean {
+  if (!userId) return false;
+  const rows = task.task_assignees ?? [];
+  return rows.some((r) => r.user_id === userId);
+}
 
 function programTaskDerived(task: ProgramTask) {
   const fields = metadataFieldsFromParsed(task.metadata);
@@ -507,7 +517,9 @@ export function ProgramsBoard({
 
     const { data, error: tasksErr } = await supabase
       .from('tasks')
-      .select('id, title, status, metadata, created_at, scheduled_on, scheduled_time, assigned_to')
+      .select(
+        'id, title, status, metadata, created_at, scheduled_on, scheduled_time, task_assignees(user_id)',
+      )
       .eq('bubble_id', selectedBubbleId)
       .eq('item_type', 'program')
       .is('archived_at', null)
@@ -520,7 +532,7 @@ export function ProgramsBoard({
       setPrograms((data ?? []) as ProgramTask[]);
     }
     setLoading(false);
-  }, [selectedBubbleId]);
+  }, [selectedBubbleId, viewerUserId]);
 
   useEffect(() => {
     void load();
@@ -622,7 +634,7 @@ export function ProgramsBoard({
   const activeProgramForViewer = useMemo(() => {
     if (!viewerUserId) return null;
     const mine = programs.filter(
-      (t) => t.assigned_to === viewerUserId && programTaskDerived(t).isActiveProgram,
+      (t) => programTaskIncludesAssignee(t, viewerUserId) && programTaskDerived(t).isActiveProgram,
     );
     if (mine.length === 0) return null;
     return (
@@ -638,7 +650,7 @@ export function ProgramsBoard({
     if (activeProgramForViewer) return activeProgramForViewer;
     if (!viewerUserId) return null;
     const scheduledOnly = programs.filter((t) => {
-      if (t.assigned_to !== viewerUserId) return false;
+      if (!programTaskIncludesAssignee(t, viewerUserId)) return false;
       const d = programTaskDerived(t);
       if (d.isFinished || d.cw > 0) return false;
       return t.scheduled_on != null && String(t.scheduled_on).trim() !== '';
@@ -838,7 +850,6 @@ export function ProgramsBoard({
           title: tpl.title,
           item_type: 'program',
           status: 'planned',
-          assigned_to: user?.id ?? null,
           metadata: {
             goal: tpl.goal,
             duration_weeks: tpl.duration_weeks,
@@ -857,8 +868,21 @@ export function ProgramsBoard({
         return;
       }
 
+      const newId = (data as { id: string }).id;
+      if (user?.id) {
+        const { error: syncErr } = await replaceTaskAssigneesWithUserIds(supabase, newId, [
+          user.id,
+        ]);
+        if (syncErr) {
+          setError(
+            typeof syncErr === 'string' && syncErr.trim() ? syncErr : 'Failed to sync assignees.',
+          );
+          return;
+        }
+      }
+
       await load();
-      onOpenTask?.((data as { id: string }).id);
+      onOpenTask?.(newId);
     },
     [selectedBubbleId, canWrite, load, onOpenTask],
   );
@@ -997,7 +1021,6 @@ export function ProgramsBoard({
           .update({
             metadata: newMetadata,
             status: effectiveStatus,
-            assigned_to: task.assigned_to ?? uid,
           })
           .eq('id', task.id);
         if (updateErr) {

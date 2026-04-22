@@ -87,11 +87,13 @@ function batchJson(batch: QueuedEvent[]): string {
 /** Chromium caps keepalive request bodies (~64KiB); WebKit often throws TypeError "network error" on keepalive. */
 const KEEPALIVE_MAX_BYTES = 60_000;
 
-async function flush(options?: { unload?: boolean }) {
-  if (queue.length === 0) return;
-  const batch = queue.splice(0, queue.length);
-  const body = batchJson(batch);
-
+/**
+ * Network POST for batched analytics only. Isolated so 401/5xx never affects callers.
+ */
+async function postAnalyticsEventBatch(
+  body: string,
+  options?: { unload?: boolean },
+): Promise<void> {
   try {
     if (options?.unload && typeof navigator !== 'undefined' && navigator.sendBeacon) {
       const blob = new Blob([body], { type: 'application/json' });
@@ -103,14 +105,30 @@ async function flush(options?: { unload?: boolean }) {
     const useKeepalive =
       Boolean(options?.unload) && body.length > 0 && body.length < KEEPALIVE_MAX_BYTES;
 
-    await fetch('/api/analytics/event', {
+    const res = await fetch('/api/analytics/event', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       ...(useKeepalive ? { keepalive: true } : {}),
       body,
     });
+    if (!res.ok) {
+      // e.g. 401 when session expired — ignore; never throw into product flows
+      return;
+    }
   } catch {
     // Silently swallow — analytics must never break the app
+  }
+}
+
+async function flush(options?: { unload?: boolean }) {
+  if (queue.length === 0) return;
+  const batch = queue.splice(0, queue.length);
+  const body = batchJson(batch);
+
+  try {
+    await postAnalyticsEventBatch(body, options);
+  } catch {
+    // Defensive: postAnalyticsEventBatch should not throw; never propagate
   }
 }
 

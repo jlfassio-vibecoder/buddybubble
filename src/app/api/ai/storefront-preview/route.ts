@@ -121,7 +121,19 @@ export async function POST(req: Request) {
   }
 
   const t0 = Date.now();
-  const result = await runStorefrontPreviewGeneration(profile ?? {});
+  let result: Awaited<ReturnType<typeof runStorefrontPreviewGeneration>>;
+  try {
+    result = await runStorefrontPreviewGeneration(profile ?? {});
+  } catch (e) {
+    const err = e instanceof Error ? e : new Error(String(e));
+    console.error(
+      '[storefront-preview] runStorefrontPreviewGeneration threw',
+      err.name,
+      err.message,
+      err.stack,
+    );
+    return jsonWithCors(req, { error: err.message || 'Preview generation error' }, { status: 502 });
+  }
   const ms = Date.now() - t0;
 
   if (!result.ok) {

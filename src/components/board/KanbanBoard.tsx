@@ -61,7 +61,8 @@ import { taskColumnIsCompletionStatus } from '@/lib/kanban-column-semantic';
 import { scheduledOnRelativeToWorkspaceToday } from '@/lib/workspace-calendar';
 import type { MemberRole, WorkspaceCategory } from '@/types/database';
 import type { BubbleRow, TaskRow } from '@/types/database';
-import { guestTaskAssignmentVisibilityOr, isGuestWorkspaceRole } from '@/lib/guest-task-query';
+import { isGuestWorkspaceRole } from '@/lib/guest-task-query';
+import { useUserProfileStore } from '@/store/userProfileStore';
 import { KanbanBoardHeader } from '@/components/board/kanban-board-header';
 import { KanbanColumnHeader } from '@/components/board/kanban-column-header';
 import { KanbanColumnAdd } from '@/components/board/kanban-column-add';
@@ -378,6 +379,7 @@ export function KanbanBoard({
   const [trialWorkoutRetryBusy, setTrialWorkoutRetryBusy] = useState(false);
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
   const workspaceId = activeWorkspace?.id ?? null;
+  const profileUserId = useUserProfileStore((s) => s.profile?.id ?? null);
 
   const [boardStripCollapsed, setBoardStripCollapsed] = useState(false);
   const boardStripCollapsedRef = useRef(boardStripCollapsed);
@@ -541,21 +543,18 @@ export function KanbanBoard({
         setCommentUnreadByTaskId({});
         return;
       }
+      console.log(
+        '[DEBUG] Fetching tasks with updated multi-assignee filter. User ID:',
+        guestTaskUserId?.trim() || profileUserId || 'unknown',
+      );
       let query = supabase
         .from('tasks')
-        .select('*, task_subtasks(*)')
+        .select('*, task_subtasks(*), task_assignees(user_id)')
         .order('position', { ascending: true });
       if (isAll) {
         query = query.in('bubble_id', ids);
       } else {
         query = query.eq('bubble_id', bubbleId);
-      }
-      if (
-        isGuestWorkspaceRole(workspaceMemberRole) &&
-        guestTaskUserId &&
-        guestTaskUserId.length > 0
-      ) {
-        query = query.or(guestTaskAssignmentVisibilityOr(guestTaskUserId));
       }
       const { data, error: loadErr } = await query;
       if (loadGen !== loadTasksGenerationRef.current) return;
@@ -657,6 +656,7 @@ export function KanbanBoard({
     canWrite,
     workspaceMemberRole,
     guestTaskUserId,
+    profileUserId,
   ]);
 
   useEffect(() => {

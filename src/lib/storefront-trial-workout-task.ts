@@ -8,6 +8,7 @@ import type { WorkoutExercise } from '@/lib/item-metadata';
 import type { Json } from '@/types/database';
 import { storefrontPreviewExerciseToWorkoutExercise } from '@/lib/workout-factory/storefront-preview-exercise-detail';
 import type { StorefrontPreviewPayload } from '@/lib/workout-factory/storefront-preview-runner';
+import { replaceTaskAssigneesWithUserIds } from '@/lib/task-assignees-db';
 
 export const BUBBLE_WORKOUT_GENERATION_KEY = 'workout_generation' as const;
 
@@ -53,6 +54,7 @@ export async function insertWorkoutTaskFromStorefrontPreview(
     preview: StorefrontPreviewPayload;
   },
 ): Promise<boolean> {
+  console.log('[DEBUG] Fetching tasks with updated multi-assignee filter. User ID:', args.userId);
   const p = args.preview;
   const exercises: WorkoutExercise[] = p.main_exercises.map((e) =>
     storefrontPreviewExerciseToWorkoutExercise(e.name, e.detail),
@@ -69,22 +71,32 @@ export async function insertWorkoutTaskFromStorefrontPreview(
     workout_type: 'strength',
   } as Json;
 
-  const { error: insertErr } = await db.from('tasks').insert({
-    bubble_id: args.bubbleId,
-    title,
-    description,
-    status: statusSlug,
-    position: 0,
-    priority: 'medium',
-    item_type: 'workout',
-    metadata,
-    assigned_to: args.userId,
-    visibility: 'private',
-    attachments: [],
-  });
+  const { data: inserted, error: insertErr } = await db
+    .from('tasks')
+    .insert({
+      bubble_id: args.bubbleId,
+      title,
+      description,
+      status: statusSlug,
+      position: 0,
+      priority: 'medium',
+      item_type: 'workout',
+      metadata,
+      visibility: 'private',
+      attachments: [],
+    })
+    .select('id')
+    .maybeSingle();
 
-  if (insertErr) {
+  if (insertErr || !inserted?.id) {
     console.error('[storefront-trial-workout-task] tasks insert', insertErr);
+    return false;
+  }
+  const { error: assigneeErr } = await replaceTaskAssigneesWithUserIds(db, inserted.id, [
+    args.userId,
+  ]);
+  if (assigneeErr) {
+    console.error('[storefront-trial-workout-task] task_assignees insert', assigneeErr);
     return false;
   }
   return true;
@@ -114,10 +126,10 @@ export async function trialBubbleNeedsStorefrontWorkout(
 ): Promise<boolean> {
   const { count, error } = await db
     .from('tasks')
-    .select('id', { count: 'exact', head: true })
+    .select('id, task_assignees!inner(user_id)', { count: 'exact', head: true })
     .eq('bubble_id', trialBubbleId)
     .eq('item_type', 'workout')
-    .eq('assigned_to', userId)
+    .eq('task_assignees.user_id', userId)
     .is('archived_at', null);
 
   if (error) {

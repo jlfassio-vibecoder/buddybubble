@@ -152,6 +152,89 @@ export async function createTrialBubbleAndMembers(opts: {
   return { trialBubbleId };
 }
 
+/**
+ * Grant a newly-provisioned `trialing` user access to the Host's configured
+ * default community bubbles (backed by `workspace_role_default_bubbles`).
+ *
+ * Non-fatal: any DB failure is logged and swallowed — the caller must never let
+ * a default-bubble failure bounce the whole Storefront Lead intake. The user's
+ * 1-to-1 trial bubble (`createTrialBubbleAndMembers`) is the must-have; community
+ * bubbles are a best-effort onboarding convenience.
+ *
+ * Idempotency: we upsert on `(bubble_id, user_id)` with `ignoreDuplicates` so
+ *   1. Re-entry on an existing trial does not duplicate rows.
+ *   2. If the user already has a higher-privilege grant (`editor`) on one of the
+ *      default bubbles from another flow, we do NOT downgrade them to `viewer`.
+ *
+ * Role choice: `viewer` — trialing users get read + chat via `can_view_bubble`
+ * (member-like), but default community bubbles intentionally do not grant task
+ * authorship beyond what RLS already allows; the Host's dedicated trial bubble
+ * remains the only place the lead is `editor`.
+ */
+export async function grantStorefrontTrialDefaultBubbles(opts: {
+  db: ServiceDb;
+  workspaceId: string;
+  userId: string;
+}): Promise<{ granted: number; attempted: number; errored: boolean }> {
+  const { db, workspaceId, userId } = opts;
+
+  try {
+    const { data: defaults, error: defErr } = await db
+      .from('workspace_role_default_bubbles')
+      .select('bubble_id')
+      .eq('workspace_id', workspaceId)
+      .eq('role', 'trialing');
+
+    if (defErr) {
+      console.error(
+        '[storefront-trial-isolation] default-bubbles query',
+        defErr.message || 'Unknown error',
+      );
+      return { granted: 0, attempted: 0, errored: true };
+    }
+
+    const rows = (defaults ?? []) as Array<{ bubble_id: string }>;
+    if (rows.length === 0) {
+      return { granted: 0, attempted: 0, errored: false };
+    }
+
+    const payload = rows.map((r) => ({
+      bubble_id: r.bubble_id,
+      user_id: userId,
+      role: 'viewer' as const,
+    }));
+
+    const { data: inserted, error: bmErr } = await db
+      .from('bubble_members')
+      .upsert(payload, {
+        onConflict: 'bubble_id,user_id',
+        ignoreDuplicates: true,
+      })
+      .select('bubble_id');
+
+    if (bmErr) {
+      console.error(
+        '[storefront-trial-isolation] default bubble_members upsert',
+        bmErr.message || 'Unknown error',
+        { attempted: payload.length },
+      );
+      return { granted: 0, attempted: payload.length, errored: true };
+    }
+
+    return {
+      granted: (inserted ?? []).length,
+      attempted: payload.length,
+      errored: false,
+    };
+  } catch (e) {
+    console.error(
+      '[storefront-trial-isolation] default bubbles grant threw',
+      e instanceof Error ? e.message : 'Unknown error',
+    );
+    return { granted: 0, attempted: 0, errored: true };
+  }
+}
+
 export function mergeLeadMetadataWithTrialBubble(
   base: Json,
   trialBubbleId: string,

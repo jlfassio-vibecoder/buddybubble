@@ -9,9 +9,16 @@ import { ALL_BUBBLES_BUBBLE_ID } from '@/lib/all-bubbles';
 import type { WorkspaceRow } from '@/store/workspaceStore';
 import type { BubbleRow } from '@/types/database';
 
-/** True after cron marks trial_expired, or if trial_active but wall-clock past trial_expires_at (before cron). */
+/**
+ * True after cron marks trial_expired, or if trial_active but wall-clock past
+ * trial_expires_at (before cron).
+ *
+ * Storefront Lead preview is gated strictly to `trialing` role — the Social
+ * Space `guest` role (explicit-access-only invitees) intentionally does NOT
+ * trigger this soft-lock.
+ */
 export function memberPreviewPeriodEnded(ws: WorkspaceRow | null): boolean {
-  if (!ws || ws.role !== 'guest') return false;
+  if (!ws || ws.role !== 'trialing') return false;
   if (ws.onboarding_status === 'trial_expired') return true;
   if (ws.onboarding_status === 'trial_active' && ws.trial_expires_at) {
     return new Date(ws.trial_expires_at) < new Date();

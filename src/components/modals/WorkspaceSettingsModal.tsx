@@ -3,16 +3,18 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { CreditCard, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { createClient } from '@utils/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { formatUserFacingError } from '@/lib/format-error';
-import { isMissingColumnSchemaCacheError } from '@/lib/supabase-schema-errors';
 import { COMMON_CALENDAR_TIMEZONES } from '@/lib/calendar-timezones';
 import { shouldSubscribeWithoutTrial } from '@/lib/subscription-permissions';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
+import { updateWorkspaceSettingsAction } from '@/app/(dashboard)/workspace-settings-actions';
+import { TrialMemberAccessSection } from '@/components/modals/workspace-settings/TrialMemberAccessSection';
 
 export { COMMON_CALENDAR_TIMEZONES };
 
@@ -52,13 +54,13 @@ export function WorkspaceSettingsModal({
   const [customDomain, setCustomDomain] = useState('');
   const [initialCustomDomain, setInitialCustomDomain] = useState('');
   const [configuringDomain, setConfiguringDomain] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const [domainSyncToast, setDomainSyncToast] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 4000);
+    if (!domainSyncToast) return;
+    const t = setTimeout(() => setDomainSyncToast(null), 4000);
     return () => clearTimeout(t);
-  }, [toast]);
+  }, [domainSyncToast]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -106,42 +108,28 @@ export function WorkspaceSettingsModal({
     customDomain.trim() !== initialCustomDomain.trim();
 
   const save = async () => {
-    const oldDomain = initialCustomDomain.trim() || null;
-    const newDomain = customDomain.trim() || null;
+    const oldDomain = initialCustomDomain.trim().toLowerCase() || null;
+    const newDomain = customDomain.trim().toLowerCase() || null;
     const domainChanged = oldDomain !== newDomain;
 
     setSaving(true);
     setError(null);
-    setToast(null);
-    const supabase = createClient();
-    const slugNorm = publicSlug.trim() || null;
-    const domainNorm = customDomain.trim() || null;
-    const { error: uErr } = await supabase
-      .from('workspaces')
-      .update({
-        calendar_timezone: timezone,
-        is_public: isPublic,
-        public_slug: slugNorm,
-        custom_domain: domainNorm,
-      })
-      .eq('id', workspaceId);
+    setDomainSyncToast(null);
+    const slugNorm = publicSlug.trim().toLowerCase() || null;
+    const domainNorm = customDomain.trim().toLowerCase() || null;
+    const formData = {
+      workspaceId,
+      calendar_timezone: timezone,
+      is_public: isPublic,
+      public_slug: slugNorm,
+      custom_domain: domainNorm,
+    };
+
+    const saveResult = await updateWorkspaceSettingsAction(formData);
     setSaving(false);
-    if (uErr) {
-      if (isMissingColumnSchemaCacheError(uErr, 'calendar_timezone')) {
-        setError(
-          'Calendar timezone is not available on this database yet. Apply the scheduled-dates migration in Supabase, then try again.',
-        );
-      } else if (
-        isMissingColumnSchemaCacheError(uErr, 'is_public') ||
-        isMissingColumnSchemaCacheError(uErr, 'public_slug') ||
-        isMissingColumnSchemaCacheError(uErr, 'custom_domain')
-      ) {
-        setError(
-          'Public portal fields are not available on this database yet. Apply the public-portals migration in Supabase, then try again.',
-        );
-      } else {
-        setError(formatUserFacingError(uErr));
-      }
+    if ('error' in saveResult) {
+      setError(saveResult.error);
+      toast.error(saveResult.error);
       return;
     }
 
@@ -171,9 +159,9 @@ export function WorkspaceSettingsModal({
             body: JSON.stringify({ workspace_id: workspaceId, domain: oldDomain }),
           });
           if (!del.ok) {
-            setError(
-              `Could not remove the previous domain from Vercel: ${await parseDomainApiMessage(del)}`,
-            );
+            const msg = `Could not remove the previous domain from Vercel: ${await parseDomainApiMessage(del)}`;
+            setError(msg);
+            toast.error(msg);
             return;
           }
         }
@@ -184,15 +172,17 @@ export function WorkspaceSettingsModal({
             body: JSON.stringify({ workspace_id: workspaceId, domain: newDomain }),
           });
           if (!post.ok) {
-            setError(
-              `Could not register the domain with Vercel: ${await parseDomainApiMessage(post)}`,
-            );
+            const msg = `Could not register the domain with Vercel: ${await parseDomainApiMessage(post)}`;
+            setError(msg);
+            toast.error(msg);
             return;
           }
         }
         vercelSynced = true;
       } catch (e) {
-        setError(formatUserFacingError(e));
+        const msg = formatUserFacingError(e);
+        setError(msg);
+        toast.error(msg);
         return;
       } finally {
         setConfiguringDomain(false);
@@ -201,24 +191,27 @@ export function WorkspaceSettingsModal({
 
     setInitialTz(timezone);
     setInitialIsPublic(isPublic);
-    setInitialPublicSlug(publicSlug.trim());
-    setInitialCustomDomain(customDomain.trim());
+    setInitialPublicSlug(slugNorm ?? '');
+    setInitialCustomDomain(domainNorm ?? '');
+    setPublicSlug(slugNorm ?? '');
+    setCustomDomain(domainNorm ?? '');
     onSaved?.();
+    toast.success('Socialspace settings saved.');
     if (vercelSynced) {
-      setToast('Custom domain synced with Vercel.');
+      setDomainSyncToast('Custom domain synced with Vercel.');
     }
     onOpenChange(false);
   };
 
   return (
     <>
-      {toast ? (
+      {domainSyncToast ? (
         <div
           className="fixed bottom-4 left-1/2 z-[60] max-w-md -translate-x-1/2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-900 shadow-lg dark:text-emerald-100"
           role="status"
           aria-live="polite"
         >
-          {toast}
+          {domainSyncToast}
         </div>
       ) : null}
       {!open ? null : (
@@ -229,9 +222,9 @@ export function WorkspaceSettingsModal({
             aria-label="Close"
             onClick={() => onOpenChange(false)}
           />
-          <div className="relative z-10 w-full max-w-lg rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-2xl">
-            <div className="flex items-start justify-between gap-2">
-              <div>
+          <div className="relative z-10 flex max-h-[calc(100vh-2rem)] min-h-0 w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl">
+            <div className="flex shrink-0 items-start justify-between gap-2 border-b border-border bg-card px-6 pb-3 pt-6">
+              <div className="min-w-0 pr-2">
                 <h2 className="text-lg font-bold text-foreground">Socialspace settings</h2>
                 <p className="text-xs text-muted-foreground">
                   Calendar timezone for cards and automation.
@@ -251,7 +244,7 @@ export function WorkspaceSettingsModal({
               <button
                 type="button"
                 onClick={() => onOpenChange(false)}
-                className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+                className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
                 aria-label="Close"
               >
                 <X className="h-5 w-5" />
@@ -259,150 +252,164 @@ export function WorkspaceSettingsModal({
             </div>
 
             {loading ? (
-              <p className="mt-4 text-sm text-muted-foreground">Loading…</p>
+              <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-6 py-4">
+                <p className="text-sm text-muted-foreground">Loading…</p>
+              </div>
             ) : (
-              <div className="mt-4 space-y-4">
-                {error ? (
-                  <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                    {error}
-                  </div>
-                ) : null}
-                <div className="space-y-2">
-                  <Label htmlFor="ws-cal-tz">Calendar timezone</Label>
-                  <select
-                    id="ws-cal-tz"
-                    value={timezone}
-                    onChange={(e) => setTimezone(e.target.value)}
-                    className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
-                  >
-                    {!COMMON_CALENDAR_TIMEZONES.includes(
-                      timezone as (typeof COMMON_CALENDAR_TIMEZONES)[number],
-                    ) && <option value={timezone}>{timezone} (current)</option>}
-                    {COMMON_CALENDAR_TIMEZONES.map((tz) => (
-                      <option key={tz} value={tz}>
-                        {tz}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-muted-foreground">
-                    Changing this affects when cards move to the Today column and how due dates
-                    compare to &ldquo;today&rdquo; for this socialspace.
-                  </p>
-                </div>
-
-                <Separator />
-
+              <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-6 py-4">
                 <div className="space-y-4">
-                  <div>
-                    <h3 className="text-sm font-semibold text-foreground">Public Portal</h3>
+                  {error ? (
+                    <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                      {error}
+                    </div>
+                  ) : null}
+                  <div className="space-y-2">
+                    <Label htmlFor="ws-cal-tz">Calendar timezone</Label>
+                    <select
+                      id="ws-cal-tz"
+                      value={timezone}
+                      onChange={(e) => setTimezone(e.target.value)}
+                      className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                    >
+                      {!COMMON_CALENDAR_TIMEZONES.includes(
+                        timezone as (typeof COMMON_CALENDAR_TIMEZONES)[number],
+                      ) && <option value={timezone}>{timezone} (current)</option>}
+                      {COMMON_CALENDAR_TIMEZONES.map((tz) => (
+                        <option key={tz} value={tz}>
+                          {tz}
+                        </option>
+                      ))}
+                    </select>
                     <p className="text-xs text-muted-foreground">
-                      Optional public storefront for this BuddyBubble (Astro).
+                      Changing this affects when cards move to the Today column and how due dates
+                      compare to &ldquo;today&rdquo; for this socialspace.
                     </p>
                   </div>
-                  <div className="flex items-start gap-2">
-                    <input
-                      id="ws-is-public"
-                      type="checkbox"
-                      checked={isPublic}
-                      onChange={(e) => setIsPublic(e.target.checked)}
-                      className="mt-1 size-4 rounded border-input"
-                    />
+
+                  <Separator />
+
+                  <div className="space-y-4">
                     <div>
-                      <Label htmlFor="ws-is-public" className="cursor-pointer font-medium">
-                        Publish storefront
-                      </Label>
+                      <h3 className="text-sm font-semibold text-foreground">Public Portal</h3>
                       <p className="text-xs text-muted-foreground">
-                        When on, anonymous visitors can read published cards on your public portal
-                        (per card visibility).
+                        Optional public storefront for this BuddyBubble (Astro).
+                      </p>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <input
+                        id="ws-is-public"
+                        type="checkbox"
+                        checked={isPublic}
+                        onChange={(e) => setIsPublic(e.target.checked)}
+                        className="mt-1 size-4 rounded border-input"
+                      />
+                      <div>
+                        <Label htmlFor="ws-is-public" className="cursor-pointer font-medium">
+                          Publish storefront
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                          When on, anonymous visitors can read published cards on your public portal
+                          (per card visibility).
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="ws-public-slug">Public URL slug</Label>
+                      <div className="flex min-w-0 items-stretch rounded-md border border-input bg-background text-sm shadow-sm">
+                        <span className="flex shrink-0 items-center border-r border-input bg-muted/50 px-2 text-muted-foreground">
+                          buddybubble.app/
+                        </span>
+                        <Input
+                          id="ws-public-slug"
+                          value={publicSlug}
+                          onChange={(e) => setPublicSlug(e.target.value)}
+                          placeholder="your-community"
+                          className="min-w-0 border-0 shadow-none focus-visible:ring-0"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="ws-custom-domain">Custom domain</Label>
+                      <Input
+                        id="ws-custom-domain"
+                        value={customDomain}
+                        onChange={(e) => setCustomDomain(e.target.value)}
+                        placeholder="mycommunity.com"
+                        className="h-9"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Requires Vercel DNS configuration.
                       </p>
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="ws-public-slug">Public URL slug</Label>
-                    <div className="flex min-w-0 items-stretch rounded-md border border-input bg-background text-sm shadow-sm">
-                      <span className="flex shrink-0 items-center border-r border-input bg-muted/50 px-2 text-muted-foreground">
-                        buddybubble.app/
-                      </span>
-                      <Input
-                        id="ws-public-slug"
-                        value={publicSlug}
-                        onChange={(e) => setPublicSlug(e.target.value)}
-                        placeholder="your-community"
-                        className="min-w-0 border-0 shadow-none focus-visible:ring-0"
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="ws-custom-domain">Custom domain</Label>
-                    <Input
-                      id="ws-custom-domain"
-                      value={customDomain}
-                      onChange={(e) => setCustomDomain(e.target.value)}
-                      placeholder="mycommunity.com"
-                      className="h-9"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Requires Vercel DNS configuration.
-                    </p>
-                  </div>
-                </div>
 
-                {isOwner &&
-                  subscriptionStatus !== null &&
-                  subscriptionStatus !== 'not_required' && (
+                  {isOwner || isAdmin ? (
                     <>
                       <Separator />
-                      <div className="space-y-3">
-                        <div>
-                          <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
-                            <CreditCard className="h-4 w-4 text-muted-foreground" aria-hidden />
-                            Subscription
-                          </h3>
-                          <p className="text-xs text-muted-foreground">
-                            {subscriptionStatus === 'trialing'
-                              ? 'Your free trial is active.'
-                              : subscriptionStatus === 'active'
-                                ? 'Your subscription is active.'
-                                : subscriptionStatus === 'past_due'
-                                  ? 'Payment failed — update your payment method.'
-                                  : subscriptionStatus === 'no_subscription'
-                                    ? 'No active subscription.'
-                                    : 'Your subscription has ended.'}
-                          </p>
-                        </div>
-                        {['trialing', 'active', 'past_due'].includes(subscriptionStatus) ? (
-                          <a
-                            href={`/api/stripe/portal?workspaceId=${encodeURIComponent(workspaceId)}`}
-                            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
-                            onClick={() => onOpenChange(false)}
-                          >
-                            Manage billing
-                          </a>
-                        ) : (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="default"
-                            onClick={() => {
-                              onOpenChange(false);
-                              openTrialModal();
-                            }}
-                          >
-                            {subscribeCta ? 'Subscribe' : 'Start free trial'}
-                          </Button>
-                        )}
-                      </div>
+                      <TrialMemberAccessSection
+                        workspaceId={workspaceId}
+                        canManage={isOwner || isAdmin}
+                      />
                     </>
-                  )}
+                  ) : null}
 
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={saving || configuringDomain || !dirty}
-                  onClick={() => void save()}
-                >
-                  {configuringDomain ? 'Updating domain…' : saving ? 'Saving…' : 'Save'}
-                </Button>
+                  {isOwner &&
+                    subscriptionStatus !== null &&
+                    subscriptionStatus !== 'not_required' && (
+                      <>
+                        <Separator />
+                        <div className="space-y-3">
+                          <div>
+                            <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                              <CreditCard className="h-4 w-4 text-muted-foreground" aria-hidden />
+                              Subscription
+                            </h3>
+                            <p className="text-xs text-muted-foreground">
+                              {subscriptionStatus === 'trialing'
+                                ? 'Your free trial is active.'
+                                : subscriptionStatus === 'active'
+                                  ? 'Your subscription is active.'
+                                  : subscriptionStatus === 'past_due'
+                                    ? 'Payment failed — update your payment method.'
+                                    : subscriptionStatus === 'no_subscription'
+                                      ? 'No active subscription.'
+                                      : 'Your subscription has ended.'}
+                            </p>
+                          </div>
+                          {['trialing', 'active', 'past_due'].includes(subscriptionStatus) ? (
+                            <a
+                              href={`/api/stripe/portal?workspaceId=${encodeURIComponent(workspaceId)}`}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
+                              onClick={() => onOpenChange(false)}
+                            >
+                              Manage billing
+                            </a>
+                          ) : (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="default"
+                              onClick={() => {
+                                onOpenChange(false);
+                                openTrialModal();
+                              }}
+                            >
+                              {subscribeCta ? 'Subscribe' : 'Start free trial'}
+                            </Button>
+                          )}
+                        </div>
+                      </>
+                    )}
+
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={saving || configuringDomain || !dirty}
+                    onClick={() => void save()}
+                  >
+                    {configuringDomain ? 'Updating domain…' : saving ? 'Saving…' : 'Save'}
+                  </Button>
+                </div>
               </div>
             )}
           </div>

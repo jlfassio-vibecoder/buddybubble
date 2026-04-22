@@ -27,6 +27,7 @@ import type { OpenTaskOptions } from '@/components/modals/TaskModal';
 import { metadataFieldsFromParsed, parseTaskMetadata } from '@/lib/item-metadata';
 import type { KanbanCardDensity } from '@/components/board/kanban-density';
 import { Card, CardContent } from '@/components/ui/card';
+import { Avatar, AvatarFallback, AvatarGroup, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { taskDateFieldLabels } from '@/lib/task-date-labels';
 import { scheduledOnRelativeToWorkspaceToday } from '@/lib/workspace-calendar';
@@ -106,6 +107,67 @@ function subtaskProgress(task: TaskRow): { done: number; total: number } | null 
   const total = rows.length;
   const done = rows.filter((r) => r.completed).length;
   return { done, total };
+}
+
+type TaskWithAssigneeEmbed = TaskRow & { task_assignees?: { user_id: string }[] | null };
+
+function KanbanAssigneeAvatarCluster({
+  task,
+  presenceUsers,
+  onCover,
+}: {
+  task: TaskRow;
+  presenceUsers: Map<string, UserPresence>;
+  onCover: boolean;
+}) {
+  const rows = (task as TaskWithAssigneeEmbed).task_assignees ?? [];
+  const ids = [
+    ...new Set(rows.map((r) => r.user_id).filter((id): id is string => Boolean(id?.trim()))),
+  ];
+  if (ids.length === 0) return null;
+  const maxShown = 4;
+  const shown = ids.slice(0, maxShown);
+  const extra = ids.length - shown.length;
+  return (
+    <div
+      className="mt-1 flex min-w-0 max-w-full flex-wrap items-center justify-end gap-1"
+      data-kanban-no-open
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      title={ids.length > 1 ? `${ids.length} assignees` : 'Assignee'}
+    >
+      <AvatarGroup className="-space-x-1 shrink-0 *:data-[slot=avatar]:size-5 *:data-[slot=avatar]:ring-1 *:data-[slot=avatar]:ring-background">
+        {shown.map((uid) => {
+          const p = presenceUsers.get(uid);
+          const label = p?.name?.trim() || 'Member';
+          const initial = label.slice(0, 1).toUpperCase();
+          return (
+            <Avatar key={uid} size="sm" title={label}>
+              {p?.avatar_url ? <AvatarImage src={p.avatar_url} alt="" /> : null}
+              <AvatarFallback
+                className={
+                  onCover ? 'bg-white/25 text-[9px] text-white' : 'text-[9px] text-muted-foreground'
+                }
+              >
+                {initial}
+              </AvatarFallback>
+            </Avatar>
+          );
+        })}
+        {extra > 0 ? (
+          <span
+            className={
+              onCover
+                ? 'flex size-5 shrink-0 items-center justify-center rounded-full bg-black/35 text-[9px] font-medium text-white ring-1 ring-white/40'
+                : 'flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[9px] font-medium text-muted-foreground ring-1 ring-background'
+            }
+          >
+            +{extra}
+          </span>
+        ) : null}
+      </AvatarGroup>
+    </div>
+  );
 }
 
 function priorityChip(p: TaskPriority): { label: string; className: string } {
@@ -615,6 +677,12 @@ export function KanbanTaskCard({
                     ) : null}
                   </div>
 
+                  <KanbanAssigneeAvatarCluster
+                    task={task}
+                    presenceUsers={presenceUsers}
+                    onCover={false}
+                  />
+
                   {showDescription && task.description ? (
                     <p className="text-xs leading-relaxed text-muted-foreground line-clamp-3">
                       {task.description}
@@ -753,6 +821,12 @@ export function KanbanTaskCard({
                           )
                         ) : null}
                       </div>
+
+                      <KanbanAssigneeAvatarCluster
+                        task={task}
+                        presenceUsers={presenceUsers}
+                        onCover
+                      />
 
                       {showDescription && task.description ? (
                         <p className="line-clamp-3 text-xs leading-relaxed text-white/90 [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]">

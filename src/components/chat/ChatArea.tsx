@@ -24,7 +24,6 @@ import { cn } from '@/lib/utils';
 import { formatMessageTimestamp } from '@/lib/message-timestamp';
 import { rowToChatMessage, searchJoinRowToChatMessage } from '@/lib/chat-message-mapper';
 import { createClient } from '@utils/supabase/client';
-import { guestTaskAssignmentVisibilityOr, isGuestWorkspaceRole } from '@/lib/guest-task-query';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useUserProfileStore } from '@/store/userProfileStore';
 import { useLiveVideoStore } from '@/store/liveVideoStore';
@@ -52,6 +51,7 @@ import { useMessageThread, type PeerThreadReplyInsertPayload } from '@/hooks/use
 import { CoachTypingIndicator } from '@/components/chat/CoachTypingIndicator';
 import { toChatUserSnapshot, type MessageThreadFilter } from '@/lib/message-thread';
 import { liveSessionInviteMetadataToJson } from '@/types/live-session-invite';
+import { randomUuid } from '@/lib/random-uuid';
 
 type TaskPickerRow = {
   id: string;
@@ -155,7 +155,7 @@ export function ChatArea({
   const activeBubble = useWorkspaceStore((s) => s.activeBubble);
   const workspaceId = useWorkspaceStore((s) => s.activeWorkspace?.id) ?? null;
   const workspaceName = useWorkspaceStore((s) => s.activeWorkspace?.name);
-  const workspaceRole = useWorkspaceStore((s) => s.activeWorkspace?.role ?? null);
+  const workspaceRole = useWorkspaceStore((s) => s.activeWorkspace?.role);
   const myProfile = useUserProfileStore((s) => s.profile);
 
   const [input, setInput] = useState('');
@@ -441,16 +441,13 @@ export function ChatArea({
     let cancelled = false;
     async function loadTasksForMentions() {
       const supabase = createClient();
-      let taskQuery = supabase
+      const taskQuery = supabase
         .from('tasks')
         .select('*')
         .in('bubble_id', bubbleIds)
         .is('archived_at', null)
         .order('bubble_id', { ascending: true })
         .order('position', { ascending: true });
-      if (isGuestWorkspaceRole(workspaceRole) && myProfile?.id) {
-        taskQuery = taskQuery.or(guestTaskAssignmentVisibilityOr(myProfile.id));
-      }
       const { data, error } = await taskQuery;
       if (cancelled) return;
       if (error) {
@@ -471,9 +468,13 @@ export function ChatArea({
     return () => {
       cancelled = true;
     };
-  }, [workspaceId, bubbles, workspaceRole, myProfile?.id]);
+  }, [workspaceId, bubbles, myProfile?.id]);
 
   const handleStartLiveWorkout = useCallback(() => {
+    if (workspaceRole === 'trialing') {
+      setError('Live sessions are not available during a storefront trial.');
+      return;
+    }
     if (!workspaceId || !myProfile?.id) {
       setError('You need a socialspace and profile to start a live workout.');
       return;
@@ -508,7 +509,7 @@ export function ChatArea({
 
     void (async () => {
       const wsId = workspaceId;
-      const sessionId = crypto.randomUUID();
+      const sessionId = randomUuid();
       const shortId = sessionId.replace(/-/g, '').slice(0, 8);
       const channelId = `bb-live-${wsId}-${shortId}`;
       const createdAt = new Date().toISOString();
@@ -543,6 +544,7 @@ export function ChatArea({
     sendMessage,
     setError,
     workspaceId,
+    workspaceRole,
   ]);
 
   const handleComposeChatCard = useCallback(() => {
@@ -1229,9 +1231,11 @@ export function ChatArea({
         slashConfig={richSlashConfig}
         onRequestCreateAndAttachCard={handleComposeChatCard}
         features={{
-          enableStartLiveWorkout: true,
+          enableStartLiveWorkout: workspaceRole !== 'trialing',
         }}
-        onRequestStartLiveWorkout={handleStartLiveWorkout}
+        onRequestStartLiveWorkout={
+          workspaceRole === 'trialing' ? undefined : handleStartLiveWorkout
+        }
         startLiveWorkoutDisabled={
           !canPostMessages ||
           !canPostInComposer ||

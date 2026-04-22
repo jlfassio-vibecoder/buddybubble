@@ -69,11 +69,28 @@ export const POST: APIRoute = async ({ request }) => {
       body: JSON.stringify(payload),
     });
   } catch (e) {
-    console.error('[storefront-proxy] upstream fetch failed', target, e);
-    return new Response(JSON.stringify({ error: 'Could not reach app server', target }), {
-      status: 502,
-      headers: { 'Content-Type': 'application/json' },
+    const err = e instanceof Error ? e : new Error(String(e));
+    console.error('[storefront-proxy] upstream fetch failed', {
+      target,
+      name: err.name,
+      message: err.message,
+      stack: err.stack,
     });
+    const hint =
+      process.env.NODE_ENV === 'development' || import.meta.env.DEV
+        ? 'Start the Next.js app (repo root, usually http://localhost:3000). Override with STOREFRONT_CRM_ORIGIN or APP_URL if using a different port.'
+        : undefined;
+    return new Response(
+      JSON.stringify({
+        error: 'Could not reach app server',
+        target,
+        ...(hint ? { hint } : {}),
+      }),
+      {
+        status: 502,
+        headers: { 'Content-Type': 'application/json' },
+      },
+    );
   }
 
   const text = await upstream.text();

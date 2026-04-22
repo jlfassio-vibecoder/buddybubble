@@ -19,6 +19,7 @@ import {
   setBubbleWorkoutGenerationStatus,
 } from '@/lib/storefront-trial-workout-task';
 import type { Json } from '@/types/database';
+import { replaceTaskAssigneesWithUserIds } from '@/lib/task-assignees-db';
 
 export type StorefrontTrialJobPayload = {
   workspaceId: string;
@@ -63,23 +64,33 @@ async function insertFallbackTrialWorkoutTask(
     workout_type: 'strength',
   } as Json;
 
-  const { error: insertErr } = await db.from('tasks').insert({
-    bubble_id: args.trialBubbleId,
-    title: 'Your trial workout',
-    description:
-      'We added a starter workout you can edit. If AI was unavailable, replace these with your plan.',
-    status: statusSlug,
-    position: 0,
-    priority: 'medium',
-    item_type: 'workout',
-    metadata,
-    assigned_to: args.userId,
-    visibility: 'private',
-    attachments: [],
-  });
+  const { data: inserted, error: insertErr } = await db
+    .from('tasks')
+    .insert({
+      bubble_id: args.trialBubbleId,
+      title: 'Your trial workout',
+      description:
+        'We added a starter workout you can edit. If AI was unavailable, replace these with your plan.',
+      status: statusSlug,
+      position: 0,
+      priority: 'medium',
+      item_type: 'workout',
+      metadata,
+      visibility: 'private',
+      attachments: [],
+    })
+    .select('id')
+    .maybeSingle();
 
-  if (insertErr) {
+  if (insertErr || !inserted?.id) {
     console.error('[storefront-trial-job] fallback tasks insert', insertErr);
+    return false;
+  }
+  const { error: assigneeErr } = await replaceTaskAssigneesWithUserIds(db, inserted.id, [
+    args.userId,
+  ]);
+  if (assigneeErr) {
+    console.error('[storefront-trial-job] task_assignees insert', assigneeErr);
     return false;
   }
   return true;
@@ -114,10 +125,10 @@ export async function runStorefrontTrialWorkoutJob(
 
   const { data: existingWorkout, error: existErr } = await db
     .from('tasks')
-    .select('id')
+    .select('id, task_assignees!inner(user_id)')
     .eq('bubble_id', trialBubbleId)
     .eq('item_type', 'workout')
-    .eq('assigned_to', userId)
+    .eq('task_assignees.user_id', userId)
     .is('archived_at', null)
     .limit(1)
     .maybeSingle();

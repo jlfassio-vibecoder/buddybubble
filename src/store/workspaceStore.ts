@@ -9,7 +9,7 @@ export type WorkspaceRow = {
   name: string;
   category_type: WorkspaceCategory;
   created_at: string;
-  role: 'admin' | 'member' | 'guest';
+  role: 'admin' | 'member' | 'guest' | 'trialing';
   /** Avatar in the far-left rail; optional until set in DB. */
   icon_url?: string | null;
   /** IANA timezone; drives task "today" and scheduled automation. */
