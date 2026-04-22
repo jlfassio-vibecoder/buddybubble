@@ -17,6 +17,8 @@ const MAX_EX_NAME = 80;
 const MAX_EX_DETAIL = 240;
 /** User notes appended to Vertex prompt; keep bounded for latency/cost. */
 const MAX_STOREFRONT_WORKOUT_NOTES_IN_PROMPT = 1200;
+/** Freeform goals text appended to Vertex prompt; keep bounded for latency/cost. */
+const MAX_STOREFRONT_FITNESS_GOALS_TEXT_IN_PROMPT = 2000;
 
 /**
  * Vertex MaaS can exceed a tight window under load; keep under `maxDuration` on
@@ -156,7 +158,7 @@ function appendSessionPreferencesFromRawProfile(profile: unknown): string {
     biometrics?.storefrontFitnessGoalsText;
   const goalsText =
     typeof goalsTextRaw === 'string' && goalsTextRaw.trim()
-      ? goalsTextRaw.trim().slice(0, 2000)
+      ? goalsTextRaw.trim().slice(0, MAX_STOREFRONT_FITNESS_GOALS_TEXT_IN_PROMPT)
       : '';
 
   const lines: string[] = [];

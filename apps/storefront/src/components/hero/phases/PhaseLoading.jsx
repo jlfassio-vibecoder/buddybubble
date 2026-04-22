@@ -39,6 +39,10 @@ export default function PhaseLoading({ submitState, onRetry, onEditEmail }) {
   const steps = status === 'already_member' ? STEPS_WELCOME : STEPS_TRIAL;
   const [reached, setReached] = useState(0);
 
+  useEffect(() => {
+    if (status === 'pending') setReached(0);
+  }, [status]);
+
   // Cosmetic step progression while we wait on the network.
   useEffect(() => {
     if (status !== 'pending' && status !== 'taking_longer') return;

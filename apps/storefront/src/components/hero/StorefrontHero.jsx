@@ -13,6 +13,11 @@ import { useWizardDraft } from './hooks/useWizardDraft';
 import { useSubmitState } from './hooks/useSubmitState';
 import { nextAfter, previousOf } from './lib/phaseTransitions';
 import { getCurrentAttribution } from './lib/attribution';
+import { isValidOutline } from './lib/fetchOutline';
+import { storageKey } from './lib/storageKey';
+
+/** Mirrors `MAX_PROFILE_JSON_BYTES` in `src/app/api/leads/storefront-trial/route.ts`. */
+const MAX_STOREFRONT_PROFILE_JSON_BYTES = 100_000;
 
 /**
  * Top-level orchestrator. Owns the submit lifecycle so PhaseEmail stays thin and
@@ -41,6 +46,7 @@ export default function StorefrontHero({
   const { submitState, submit, retry, reset } = useSubmitState();
 
   const [interrupted, setInterrupted] = useState(false);
+  const [profilePayloadError, setProfilePayloadError] = useState(null);
 
   // Reload during `loading`: the Turnstile token is single-use and we have no
   // active submit in-flight, so bounce back to email and prompt a retry.
@@ -59,6 +65,20 @@ export default function StorefrontHero({
     }
   }, [phase, submitState.status, reset]);
 
+  useEffect(() => {
+    if (phase !== 'email') setProfilePayloadError(null);
+  }, [phase]);
+
+  useEffect(() => {
+    if (submitState.status !== 'success' && submitState.status !== 'already_member') return;
+    if (!slug || typeof window === 'undefined') return;
+    try {
+      window.sessionStorage.removeItem(storageKey(slug));
+    } catch {
+      // ignore
+    }
+  }, [slug, submitState.status]);
+
   const goNext = useCallback(
     () => setPhase(nextAfter(phase, categoryType)),
     [setPhase, phase, categoryType],
@@ -74,26 +94,38 @@ export default function StorefrontHero({
         .trim()
         .toLowerCase();
       if (!trimmed) return;
+      setProfilePayloadError(null);
       const { source, utmParams } = getCurrentAttribution();
 
       // Fitness-only: include cachedWorkoutData when PhaseOutline has populated a
       // valid Vertex preview on the draft (pass 3). Business flows never populate
       // `fitnessAiPreview`, so this naturally omits the key.
       const outline = draft?.fitnessAiPreview;
-      const hasOutline =
-        categoryType === 'fitness' &&
-        outline &&
-        typeof outline === 'object' &&
-        typeof outline.title === 'string' &&
-        outline.title.trim().length > 0 &&
-        Array.isArray(outline.main_exercises);
+      const hasOutline = categoryType === 'fitness' && isValidOutline(outline);
+
+      const profile = { ...draft, email: trimmed };
+      let profileBytes = 0;
+      try {
+        profileBytes = new TextEncoder().encode(JSON.stringify(profile)).length;
+      } catch {
+        setProfilePayloadError(
+          'Something in your profile could not be saved. Remove unusual values and try again.',
+        );
+        return;
+      }
+      if (profileBytes > MAX_STOREFRONT_PROFILE_JSON_BYTES) {
+        setProfilePayloadError(
+          'Your answers use too much space. Shorten notes or goals and try again.',
+        );
+        return;
+      }
 
       const payload = {
         publicSlug: slug,
         email: trimmed,
         source,
         utmParams,
-        profile: { ...draft, email: trimmed },
+        profile,
         ...(hasOutline ? { cachedWorkoutData: outline } : {}),
       };
 
@@ -157,6 +189,7 @@ export default function StorefrontHero({
           onBack={goBack}
           accentColor={accentColor}
           interrupted={interrupted}
+          payloadGuardError={profilePayloadError}
         />
       );
       break;

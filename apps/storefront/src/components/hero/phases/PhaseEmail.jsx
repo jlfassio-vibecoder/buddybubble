@@ -16,6 +16,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  *   onBack: () => void;
  *   accentColor?: string;
  *   interrupted?: boolean;
+ *   payloadGuardError?: string | null;
  * }} props
  */
 export default function PhaseEmail({
@@ -25,9 +26,14 @@ export default function PhaseEmail({
   onBack,
   accentColor,
   interrupted,
+  payloadGuardError,
 }) {
   const [email, setEmail] = useState(String(draft?.email ?? ''));
   const [fieldError, setFieldError] = useState(null);
+
+  useEffect(() => {
+    setEmail(String(draft?.email ?? ''));
+  }, [draft?.email]);
 
   // Lazy-load the Turnstile script on first arrival at this phase so we don't
   // pay the network cost on the landing page. `useSubmitState` will call
@@ -79,6 +85,12 @@ export default function PhaseEmail({
       {interrupted ? (
         <div className={styles.interruptedNotice} role="status">
           Your previous submission didn’t complete. Please try again.
+        </div>
+      ) : null}
+
+      {payloadGuardError ? (
+        <div className={styles.interruptedNotice} role="alert">
+          {payloadGuardError}
         </div>
       ) : null}
 

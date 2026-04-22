@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { StorefrontProfileDraft, WizardPhase } from './wizard-types';
 
 const STORAGE_VERSION = 1;
@@ -36,19 +36,33 @@ export function useWizardState(publicSlug: string): WizardState & WizardActions 
     profileDraft: {},
   }));
 
-  const hydratedRef = useRef(false);
+  const [hasHydrated, setHasHydrated] = useState(false);
 
   // Hydrate from sessionStorage on the client after mount.
   useEffect(() => {
-    hydratedRef.current = true;
-    if (!slug) return;
+    if (!slug) {
+      setHasHydrated(true);
+      return;
+    }
     try {
       const raw = sessionStorage.getItem(storageKey(slug));
-      if (!raw) return;
+      if (!raw) {
+        setHasHydrated(true);
+        return;
+      }
       const parsed = JSON.parse(raw) as PersistedWizardState;
-      if (!parsed || typeof parsed !== 'object') return;
-      if (parsed.version !== STORAGE_VERSION) return;
-      if (parsed.storedSlug !== slug) return;
+      if (!parsed || typeof parsed !== 'object') {
+        setHasHydrated(true);
+        return;
+      }
+      if (parsed.version !== STORAGE_VERSION) {
+        setHasHydrated(true);
+        return;
+      }
+      if (parsed.storedSlug !== slug) {
+        setHasHydrated(true);
+        return;
+      }
 
       const phase = ensurePhase(parsed.phase);
       const profileDraft =
@@ -62,11 +76,12 @@ export function useWizardState(publicSlug: string): WizardState & WizardActions 
     } catch {
       // ignore (private mode, JSON errors)
     }
+    setHasHydrated(true);
   }, [slug]);
 
   // Persist on every change after hydration.
   useEffect(() => {
-    if (!hydratedRef.current) return;
+    if (!hasHydrated) return;
     if (!slug) return;
     try {
       const payload: PersistedWizardState = {
@@ -79,7 +94,7 @@ export function useWizardState(publicSlug: string): WizardState & WizardActions 
     } catch {
       // ignore quota / private mode
     }
-  }, [slug, state.phase, state.profileDraft]);
+  }, [slug, state.phase, state.profileDraft, hasHydrated]);
 
   const setPhase = useCallback((phase: WizardPhase) => {
     setState((prev) => ({ ...prev, phase }));

@@ -1,6 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { normalizePhase, readPersisted, writePersisted } from '../lib/storageKey';
 import { canTransition } from '../lib/phaseTransitions';
+
+/** `useLayoutEffect` is a no-op on the server; hydrates before passive effects so persist never sees initial `idle` over restored phase. */
+const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
 /**
  * Phase state machine persisted to sessionStorage.
@@ -13,21 +16,24 @@ import { canTransition } from '../lib/phaseTransitions';
 export function useHeroPhase(publicSlug, categoryType) {
   const slug = (publicSlug || '').trim().toLowerCase();
   const [phase, setPhaseState] = useState('idle');
-  const hydratedRef = useRef(false);
+  const [hasHydrated, setHasHydrated] = useState(false);
 
-  useEffect(() => {
-    hydratedRef.current = true;
-    if (!slug) return;
+  useIsoLayoutEffect(() => {
+    if (!slug) {
+      setHasHydrated(true);
+      return;
+    }
     const persisted = readPersisted(slug);
     if (persisted && typeof persisted.phase === 'string') {
       setPhaseState(normalizePhase(persisted.phase));
     }
+    setHasHydrated(true);
   }, [slug]);
 
   useEffect(() => {
-    if (!hydratedRef.current || !slug) return;
+    if (!hasHydrated || !slug) return;
     writePersisted(slug, { phase });
-  }, [slug, phase]);
+  }, [slug, phase, hasHydrated]);
 
   const setPhase = useCallback(
     (next) => {

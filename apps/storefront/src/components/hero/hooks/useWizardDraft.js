@@ -1,5 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { readPersisted, writePersisted } from '../lib/storageKey';
+
+/** Same as `useHeroPhase`: hydrate in layout so passive persist never overwrites with initial `{}`. */
+const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
 /**
  * Wizard-draft state persisted to sessionStorage.
@@ -10,11 +13,13 @@ import { readPersisted, writePersisted } from '../lib/storageKey';
 export function useWizardDraft(publicSlug) {
   const slug = (publicSlug || '').trim().toLowerCase();
   const [draft, setDraft] = useState({});
-  const hydratedRef = useRef(false);
+  const [hasHydrated, setHasHydrated] = useState(false);
 
-  useEffect(() => {
-    hydratedRef.current = true;
-    if (!slug) return;
+  useIsoLayoutEffect(() => {
+    if (!slug) {
+      setHasHydrated(true);
+      return;
+    }
     const persisted = readPersisted(slug);
     if (
       persisted &&
@@ -24,12 +29,13 @@ export function useWizardDraft(publicSlug) {
     ) {
       setDraft(persisted.profileDraft);
     }
+    setHasHydrated(true);
   }, [slug]);
 
   useEffect(() => {
-    if (!hydratedRef.current || !slug) return;
+    if (!hasHydrated || !slug) return;
     writePersisted(slug, { profileDraft: draft });
-  }, [slug, draft]);
+  }, [slug, draft, hasHydrated]);
 
   const updateDraft = useCallback((partial) => {
     setDraft((prev) => ({ ...prev, ...partial }));

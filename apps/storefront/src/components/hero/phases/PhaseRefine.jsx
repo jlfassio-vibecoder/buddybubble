@@ -42,7 +42,10 @@ function OptionChips({ label, options, selected, onToggle }) {
 export default function PhaseRefine({ draft, onChange, onNext, onBack, accentColor }) {
   const focus = Array.isArray(draft?.refine_focus) ? draft.refine_focus : [];
   const avoid = Array.isArray(draft?.refine_avoid) ? draft.refine_avoid : [];
-  const duration = Number(draft?.refine_duration_min ?? 45);
+  const rawDuration = Number(draft?.refine_duration_min ?? 45);
+  const duration = Number.isFinite(rawDuration)
+    ? Math.min(DURATION_MAX, Math.max(DURATION_MIN, rawDuration))
+    : 45;
   const notes = String(draft?.storefront_workout_notes ?? '');
 
   const toggle = (key, current, opt) =>
