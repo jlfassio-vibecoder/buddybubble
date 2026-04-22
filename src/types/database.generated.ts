@@ -1023,6 +1023,41 @@ export type Database = {
           },
         ];
       };
+      live_session_deck_items: {
+        Row: {
+          created_at: string;
+          id: string;
+          session_id: string;
+          sort_order: number;
+          task_id: string;
+          updated_at: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          session_id: string;
+          sort_order?: number;
+          task_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          session_id?: string;
+          sort_order?: number;
+          task_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'live_session_deck_items_task_id_fkey';
+            columns: ['task_id'];
+            isOneToOne: false;
+            referencedRelation: 'tasks';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       messages: {
         Row: {
           attached_task_id: string | null;
@@ -1031,6 +1066,7 @@ export type Database = {
           content: string;
           created_at: string;
           id: string;
+          metadata: Json;
           parent_id: string | null;
           target_task_id: string | null;
           user_id: string;
@@ -1042,6 +1078,7 @@ export type Database = {
           content?: string;
           created_at?: string;
           id?: string;
+          metadata?: Json;
           parent_id?: string | null;
           target_task_id?: string | null;
           user_id: string;
@@ -1053,6 +1090,7 @@ export type Database = {
           content?: string;
           created_at?: string;
           id?: string;
+          metadata?: Json;
           parent_id?: string | null;
           target_task_id?: string | null;
           user_id?: string;
@@ -1276,6 +1314,39 @@ export type Database = {
           },
         ];
       };
+      task_assignees: {
+        Row: {
+          assigned_at: string;
+          task_id: string;
+          user_id: string;
+        };
+        Insert: {
+          assigned_at?: string;
+          task_id: string;
+          user_id: string;
+        };
+        Update: {
+          assigned_at?: string;
+          task_id?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'task_assignees_task_id_fkey';
+            columns: ['task_id'];
+            isOneToOne: false;
+            referencedRelation: 'tasks';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'task_assignees_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       task_bubble_ups: {
         Row: {
           created_at: string;
@@ -1350,7 +1421,6 @@ export type Database = {
       tasks: {
         Row: {
           archived_at: string | null;
-          assigned_to: string | null;
           attachments: Json;
           bubble_id: string;
           comment_count: number;
@@ -1372,7 +1442,6 @@ export type Database = {
         };
         Insert: {
           archived_at?: string | null;
-          assigned_to?: string | null;
           attachments?: Json;
           bubble_id: string;
           comment_count?: number;
@@ -1394,7 +1463,6 @@ export type Database = {
         };
         Update: {
           archived_at?: string | null;
-          assigned_to?: string | null;
           attachments?: Json;
           bubble_id?: string;
           comment_count?: number;
@@ -1415,13 +1483,6 @@ export type Database = {
           visibility?: string;
         };
         Relationships: [
-          {
-            foreignKeyName: 'tasks_assigned_to_fkey';
-            columns: ['assigned_to'];
-            isOneToOne: false;
-            referencedRelation: 'users';
-            referencedColumns: ['id'];
-          },
           {
             foreignKeyName: 'tasks_bubble_id_fkey';
             columns: ['bubble_id'];
@@ -1670,6 +1731,60 @@ export type Database = {
           updated_at?: string | null;
         };
         Relationships: [];
+      };
+      workout_exercise_logs: {
+        Row: {
+          created_at: string;
+          exercise_name: string;
+          id: string;
+          reps: number | null;
+          rpe: number | null;
+          session_id: string;
+          set_number: number;
+          task_id: string;
+          user_id: string;
+          weight_lbs: number | null;
+        };
+        Insert: {
+          created_at?: string;
+          exercise_name: string;
+          id?: string;
+          reps?: number | null;
+          rpe?: number | null;
+          session_id: string;
+          set_number: number;
+          task_id: string;
+          user_id: string;
+          weight_lbs?: number | null;
+        };
+        Update: {
+          created_at?: string;
+          exercise_name?: string;
+          id?: string;
+          reps?: number | null;
+          rpe?: number | null;
+          session_id?: string;
+          set_number?: number;
+          task_id?: string;
+          user_id?: string;
+          weight_lbs?: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'workout_exercise_logs_task_id_fkey';
+            columns: ['task_id'];
+            isOneToOne: false;
+            referencedRelation: 'tasks';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'workout_exercise_logs_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       workout_logs: {
         Row: {
@@ -2056,6 +2171,20 @@ export type Database = {
         };
         Returns: Json;
       };
+      agent_insert_coach_workout_draft_reply: {
+        Args: {
+          p_agent_auth_user_id: string;
+          p_invoker_user_id: string;
+          p_proposed_description?: string;
+          p_proposed_metadata?: Json;
+          p_proposed_title?: string;
+          p_reply_text: string;
+          p_target_task_id: string;
+          p_thread_id: string;
+          p_trigger_message_id: string;
+        };
+        Returns: Json;
+      };
       agent_update_task_and_reply: {
         Args: {
           p_agent_auth_user_id: string;
@@ -2069,9 +2198,14 @@ export type Database = {
         };
         Returns: Json;
       };
+      apply_workout_draft: { Args: { p_message_id: string }; Returns: Json };
       approve_invitation_join_request: {
         Args: { p_join_request_id: string };
         Returns: Json;
+      };
+      assign_user_to_session_deck: {
+        Args: { p_session_id: string; p_user_id: string };
+        Returns: number;
       };
       can_mutate_task_linked_rows: {
         Args: { _task_id: string };
@@ -2104,6 +2238,7 @@ export type Database = {
         };
       };
       get_invite_preview: { Args: { p_token: string }; Returns: Json };
+      get_task_bubble_id: { Args: { p_task_id: string }; Returns: string };
       get_workspace_subscription_status: {
         Args: { p_workspace_id: string };
         Returns: string;
@@ -2144,10 +2279,17 @@ export type Database = {
       task_comment_unread_counts: {
         Args: { p_task_ids: string[] };
         Returns: {
+          latest_unread_message_id: string;
           task_id: string;
           unread_count: number;
-          latest_unread_message_id: string | null;
         }[];
+      };
+      user_may_update_task_row: {
+        Args: {
+          _task: Database['public']['Tables']['tasks']['Row'];
+          _uid: string;
+        };
+        Returns: boolean;
       };
       workspace_id_for_bubble: { Args: { _bubble_id: string }; Returns: string };
       workspace_requires_subscription: {

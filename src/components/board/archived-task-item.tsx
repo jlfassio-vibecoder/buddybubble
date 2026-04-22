@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { Loader2, RotateCcw, Trash2 } from 'lucide-react';
 import { getItemTypeVisual } from '@/lib/item-type-styles';
-import { normalizeItemType, type TaskRow } from '@/types/database';
+import { normalizeItemType } from '@/lib/item-types';
+import type { TaskRow } from '@/types/database';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 

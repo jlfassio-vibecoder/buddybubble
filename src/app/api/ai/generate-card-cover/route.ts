@@ -15,7 +15,8 @@ import {
 } from '@/lib/subscription-permissions';
 import { buildTaskAttachmentObjectPath, TASK_ATTACHMENTS_BUCKET } from '@/lib/task-storage';
 import { getVertexAICredentials } from '@/lib/workout-factory/vertex-ai-client';
-import { normalizeItemType, type TaskRow, type WorkspaceCategory } from '@/types/database';
+import { normalizeItemType } from '@/lib/item-types';
+import type { TaskRow, WorkspaceCategory } from '@/types/database';
 
 export const maxDuration = 300;
 

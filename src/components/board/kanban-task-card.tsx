@@ -18,14 +18,9 @@ import {
   MessageCircle,
   Pencil,
   Play,
-  User,
 } from 'lucide-react';
-import {
-  normalizeItemType,
-  type BubbleRow,
-  type TaskRow,
-  type WorkspaceCategory,
-} from '@/types/database';
+import { normalizeItemType } from '@/lib/item-types';
+import type { BubbleRow, TaskRow, WorkspaceCategory } from '@/types/database';
 import { getItemTypeVisual } from '@/lib/item-type-styles';
 import { normalizeTaskPriority, type TaskPriority } from '@/lib/task-priority';
 import type { OpenTaskOptions } from '@/components/modals/TaskModal';
@@ -626,20 +621,12 @@ export function KanbanTaskCard({
                     </p>
                   ) : null}
 
-                  {showDetailedMeta && (subtasks || task.assigned_to) ? (
+                  {showDetailedMeta && subtasks ? (
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                      {subtasks ? (
-                        <span className="inline-flex items-center gap-1">
-                          <ListChecks className="size-3 shrink-0" aria-hidden />
-                          Subtasks {subtasks.done}/{subtasks.total}
-                        </span>
-                      ) : null}
-                      {task.assigned_to ? (
-                        <span className="inline-flex items-center gap-1">
-                          <User className="size-3 shrink-0" aria-hidden />
-                          Assigned
-                        </span>
-                      ) : null}
+                      <span className="inline-flex items-center gap-1">
+                        <ListChecks className="size-3 shrink-0" aria-hidden />
+                        Subtasks {subtasks.done}/{subtasks.total}
+                      </span>
                     </div>
                   ) : null}
                 </>
@@ -773,20 +760,12 @@ export function KanbanTaskCard({
                         </p>
                       ) : null}
 
-                      {showDetailedMeta && (subtasks || task.assigned_to) ? (
+                      {showDetailedMeta && subtasks ? (
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-white/85">
-                          {subtasks ? (
-                            <span className="inline-flex items-center gap-1">
-                              <ListChecks className="size-3 shrink-0" aria-hidden />
-                              Subtasks {subtasks.done}/{subtasks.total}
-                            </span>
-                          ) : null}
-                          {task.assigned_to ? (
-                            <span className="inline-flex items-center gap-1">
-                              <User className="size-3 shrink-0" aria-hidden />
-                              Assigned
-                            </span>
-                          ) : null}
+                          <span className="inline-flex items-center gap-1">
+                            <ListChecks className="size-3 shrink-0" aria-hidden />
+                            Subtasks {subtasks.done}/{subtasks.total}
+                          </span>
                         </div>
                       ) : null}
                     </div>

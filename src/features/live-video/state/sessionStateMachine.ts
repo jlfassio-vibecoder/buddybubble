@@ -4,12 +4,23 @@ export type SessionPhase = 'lobby' | 'warmup' | 'amrap' | 'tabata';
 /** Global session: idle until Start Session; running/paused until End Session. */
 export type SessionStatus = 'idle' | 'running' | 'paused';
 
+export type SessionAspectRatioId = '16:9' | '9:16' | '1:1';
+
 export type SessionState = {
   phase: SessionPhase;
   status: SessionStatus;
   globalStartedAt: number | null;
   blockStartedAt: number | null;
   blockPausedAt: number | null;
+  /** Host-synced global aspect ratio for the live video stage. */
+  aspectRatio: SessionAspectRatioId;
+  /**
+   * Host-selected `live_session_deck_items.id` for the workout player / queue highlight.
+   * Matches participant deck row ids; null when nothing selected or row not yet persisted.
+   */
+  activeDeckItemId: string | null;
+  /** Monotonic generation counter to help clients ignore stale out-of-order events. */
+  generation: number;
 };
 
 export const initialSessionState: SessionState = {
@@ -18,6 +29,9 @@ export const initialSessionState: SessionState = {
   globalStartedAt: null,
   blockStartedAt: null,
   blockPausedAt: null,
+  aspectRatio: '16:9',
+  activeDeckItemId: null,
+  generation: 0,
 };
 
 /** Elapsed ms for the current block (0 in lobby or without a started block). */
@@ -86,6 +100,19 @@ export function resumeBlock(state: SessionState, timestamp: number): SessionStat
   };
 }
 
+export function setAspectRatio(
+  state: SessionState,
+  aspectRatio: SessionAspectRatioId,
+): SessionState {
+  if (state.aspectRatio === aspectRatio) return state;
+  return { ...state, aspectRatio };
+}
+
+export function setActiveDeckItem(state: SessionState, id: string | null): SessionState {
+  if (state.activeDeckItemId === id) return state;
+  return { ...state, activeDeckItemId: id };
+}
+
 export function endSession(_state: SessionState): SessionState {
-  return { ...initialSessionState };
+  return { ...initialSessionState, generation: _state.generation + 1 };
 }

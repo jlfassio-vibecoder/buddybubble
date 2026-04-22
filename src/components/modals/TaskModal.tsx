@@ -11,13 +11,14 @@ import {
 } from 'react';
 import { ListTree, X } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
-import {
-  normalizeItemType,
-  type BubbleRow,
-  type ItemType,
-  type Json,
-  type TaskRow,
-  type TaskVisibility,
+import { normalizeItemType } from '@/lib/item-types';
+import type {
+  BubbleRow,
+  ItemType,
+  Json,
+  TaskRow,
+  TaskVisibility,
+  WorkspaceCategory,
 } from '@/types/database';
 import { WorkoutViewerContent } from '@/components/fitness/workout-viewer-dialog';
 import { cn } from '@/lib/utils';
@@ -26,7 +27,6 @@ import { useTaskBubbleUps } from '@/hooks/use-task-bubble-ups';
 import { type TaskAttachment, TASK_STATUSES } from '@/types/task-modal';
 import { type TaskPriority, normalizeTaskPriority } from '@/lib/task-priority';
 import { taskDateFieldLabels } from '@/lib/task-date-labels';
-import type { WorkspaceCategory } from '@/types/database';
 import { buildTaskAttachmentObjectPath, TASK_ATTACHMENTS_BUCKET } from '@/lib/task-storage';
 import { isLikelyTaskAttachmentImageFileName } from '@/lib/task-attachment-url';
 import { TaskModalActivityPanel } from '@/components/modals/task-modal/TaskModalActivityPanel';
@@ -449,7 +449,8 @@ export function TaskModal({
       hydrateFromTaskRow(row);
       const vis = normalizeTaskVisibility((row as TaskRow).visibility);
       setVisibility(vis);
-      const assignee = (row as TaskRow).assigned_to ?? null;
+      // Legacy `tasks.assigned_to` removed; assignees live in `task_assignees` (hydrate separately).
+      const assignee = null;
       setAssignedTo(assignee);
       const st = scheduledTimeToInputValue((row as TaskRow).scheduled_time);
       setOriginalFromAppliedRow({

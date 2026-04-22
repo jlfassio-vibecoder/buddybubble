@@ -10,7 +10,7 @@ export type LiveVideoActiveSession = {
   channelId: string;
   hostUserId: string;
   mode: LiveVideoShellMode;
-  /** Chat row id for `metadata.live_session` — host PATCHes `endedAt` on Leave. */
+  /** Chat row id for `metadata.live_session` — host PATCHes `endedAt` on "End session for all". */
   inviteMessageId?: string | null;
 };
 

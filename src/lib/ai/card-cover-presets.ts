@@ -1,4 +1,4 @@
-import { normalizeItemType, type ItemType } from '@/types/database';
+import { normalizeItemType, type ItemType } from '@/lib/item-types';
 
 export interface CardCoverPreset {
   id: string;

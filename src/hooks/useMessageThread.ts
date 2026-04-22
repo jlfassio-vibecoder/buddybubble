@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@utils/supabase/client';
-import { supabaseClientErrorMessage } from '@/lib/supabase-client-error';
+import {
+  isSupabaseBenignRequestAbort,
+  supabaseClientErrorMessage,
+} from '@/lib/supabase-client-error';
 import {
   buildReplyCounts,
   fetchEmbeddedTaskForMessage,
@@ -188,6 +191,10 @@ export function useMessageThread({
       const { data, error: qErr } = await q;
       if (cancelled) return;
       if (qErr) {
+        if (isSupabaseBenignRequestAbort(qErr)) {
+          setIsLoading(false);
+          return;
+        }
         console.error('[useMessageThread] load messages', supabaseClientErrorMessage(qErr));
         setMessages([]);
         setIsLoading(false);

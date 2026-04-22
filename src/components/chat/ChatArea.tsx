@@ -16,7 +16,10 @@ import {
   Loader2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { supabaseClientErrorMessage } from '@/lib/supabase-client-error';
+import {
+  isSupabaseBenignRequestAbort,
+  supabaseClientErrorMessage,
+} from '@/lib/supabase-client-error';
 import { cn } from '@/lib/utils';
 import { formatMessageTimestamp } from '@/lib/message-timestamp';
 import { rowToChatMessage, searchJoinRowToChatMessage } from '@/lib/chat-message-mapper';
@@ -451,6 +454,7 @@ export function ChatArea({
       const { data, error } = await taskQuery;
       if (cancelled) return;
       if (error) {
+        if (isSupabaseBenignRequestAbort(error)) return;
         console.error('[ChatArea] load tasks for / mentions', supabaseClientErrorMessage(error));
         setAllTasks([]);
         return;

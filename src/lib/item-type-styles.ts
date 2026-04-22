@@ -9,7 +9,7 @@ import {
   MapPin,
   Sparkles,
 } from 'lucide-react';
-import type { ItemType } from '@/types/database';
+import type { ItemType } from '@/lib/item-types';
 
 /** Presentation config for `tasks.item_type` (Kanban, calendar micro cells, modal). */
 export type ItemTypeVisual = {

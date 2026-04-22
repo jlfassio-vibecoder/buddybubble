@@ -1,7 +1,8 @@
 'use client';
 
 import type { LucideIcon } from 'lucide-react';
-import { normalizeItemType, type TaskRow } from '@/types/database';
+import { normalizeItemType } from '@/lib/item-types';
+import type { TaskRow } from '@/types/database';
 import { getItemTypeVisual, itemTypeUiNoun, type ItemTypeVisual } from '@/lib/item-type-styles';
 import { cn } from '@/lib/utils';
 import type { OpenTaskOptions } from '@/types/open-task-options';

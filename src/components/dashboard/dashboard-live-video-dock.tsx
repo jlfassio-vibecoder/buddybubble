@@ -5,12 +5,17 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@utils/supabase/client';
 import { AgoraSessionProvider, LiveSessionView, useAgoraSession } from '@/features/live-video';
 import { PreJoinBuilder } from '@/features/live-video/shells/huddle/PreJoinBuilder';
+import { ParticipantPreJoinSummary } from '@/features/live-video/shells/ParticipantPreJoinSummary';
+import type { Database } from '@/types/database';
 import type { LiveVideoActiveSession } from '@/store/liveVideoStore';
 
 export type DashboardLiveVideoDockProps = {
   session: LiveVideoActiveSession;
   localUserId: string;
+  /** Clears this user's live dock (`leaveSession`); does not end the shared workout or the chat invite. */
   onLeaveSession: () => void;
+  /** Host: after `endSession` broadcast, marks the chat invite ended (optional). */
+  onHostEndLiveSessionForAll?: () => void | Promise<void>;
   canWriteTasks?: boolean;
   onWorkoutDeckPersisted?: () => void;
 };
@@ -18,15 +23,17 @@ export type DashboardLiveVideoDockProps = {
 type DockRouterProps = {
   session: LiveVideoActiveSession;
   localUserId: string;
-  supabase: SupabaseClient;
+  supabase: SupabaseClient<Database>;
   onLeaveSession: () => void;
+  onHostEndLiveSessionForAll?: () => void | Promise<void>;
   canWriteTasks: boolean;
   onWorkoutDeckPersisted?: () => void;
 };
 
 /**
- * Strict pre-join boundary: while Agora is disconnected we render `PreJoinBuilder`
- * (queue + editor + Join CTA). Once `isConnected` or `isConnecting` is true we render
+ * Strict pre-join boundary: while Agora is disconnected, the host sees `PreJoinBuilder`
+ * (queue + editor + Join CTA); participants see `ParticipantPreJoinSummary` (read-only deck +
+ * bulk assign RPC, then Join video). Once `isConnected` or `isConnecting` is true we render
  * the `LiveSessionView` Huddle (video stage + session controls).
  *
  * VideoState (Agora) and SessionState (workout timer) stay independent: this router
@@ -37,18 +44,34 @@ function DashboardLiveVideoDockRouter({
   localUserId,
   supabase,
   onLeaveSession,
+  onHostEndLiveSessionForAll,
   canWriteTasks,
   onWorkoutDeckPersisted,
 }: DockRouterProps) {
-  const { isConnected, isConnecting } = useAgoraSession();
+  const { isConnected, isConnecting, joinChannel, joinError } = useAgoraSession();
+  const isHost = localUserId === session.hostUserId;
 
   if (!isConnected && !isConnecting) {
+    if (isHost) {
+      return (
+        <PreJoinBuilder
+          workspaceId={session.workspaceId}
+          supabase={supabase}
+          canWriteTasks={canWriteTasks}
+          onWorkoutDeckPersisted={onWorkoutDeckPersisted}
+          onLeaveDock={onLeaveSession}
+          className="min-h-0 flex-1 px-0 py-0"
+        />
+      );
+    }
     return (
-      <PreJoinBuilder
-        workspaceId={session.workspaceId}
+      <ParticipantPreJoinSummary
+        sessionId={session.sessionId}
+        localUserId={localUserId}
         supabase={supabase}
-        canWriteTasks={canWriteTasks}
-        onWorkoutDeckPersisted={onWorkoutDeckPersisted}
+        onJoin={joinChannel}
+        joinError={joinError}
+        onLeaveDock={onLeaveSession}
         className="min-h-0 flex-1 px-0 py-0"
       />
     );
@@ -58,7 +81,7 @@ function DashboardLiveVideoDockRouter({
     <LiveSessionView
       localUserId={localUserId}
       hostUserId={session.hostUserId}
-      onAfterLeave={onLeaveSession}
+      onHostEndLiveSessionForAll={onHostEndLiveSessionForAll}
       workspaceId={session.workspaceId}
       supabase={supabase}
       canWriteTasks={canWriteTasks}
@@ -75,6 +98,7 @@ export function DashboardLiveVideoDock({
   session,
   localUserId,
   onLeaveSession,
+  onHostEndLiveSessionForAll,
   canWriteTasks = false,
   onWorkoutDeckPersisted,
 }: DashboardLiveVideoDockProps) {
@@ -92,6 +116,7 @@ export function DashboardLiveVideoDock({
               localUserId={localUserId}
               supabase={supabase}
               onLeaveSession={onLeaveSession}
+              onHostEndLiveSessionForAll={onHostEndLiveSessionForAll}
               canWriteTasks={canWriteTasks}
               onWorkoutDeckPersisted={onWorkoutDeckPersisted}
             />

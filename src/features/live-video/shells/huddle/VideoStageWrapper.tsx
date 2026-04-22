@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { BaseVideoHarness } from '@/features/live-video/BaseVideoHarness';
-import type { LiveAspectRatioId } from '@/features/live-video/shells/shared/shared-timer-sync.types';
+import { useLiveSessionRuntime } from '@/features/live-video/theater/live-session-runtime-context';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -14,11 +14,9 @@ export type VideoStageWrapperProps = {
   hostUserId: string;
   /** Injected above video (`pointer-events-none` shell); cards use `pointer-events-auto`. */
   videoOverlays?: ReactNode;
-  /** Optional initial aspect ratio. Host-synced ratios can replace local state later. */
-  defaultAspectRatio?: LiveAspectRatioId;
 };
 
-const ASPECT_RATIO_OPTIONS: ReadonlyArray<{ id: LiveAspectRatioId; label: string }> = [
+const ASPECT_RATIO_OPTIONS: ReadonlyArray<{ id: '16:9' | '9:16' | '1:1'; label: string }> = [
   { id: '16:9', label: '16:9' },
   { id: '9:16', label: '9:16' },
   { id: '1:1', label: '1:1' },
@@ -35,9 +33,18 @@ export function VideoStageWrapper({
   localUserId,
   hostUserId,
   videoOverlays,
-  defaultAspectRatio = '16:9',
 }: VideoStageWrapperProps) {
-  const [aspectRatio, setAspectRatio] = useState<LiveAspectRatioId>(defaultAspectRatio);
+  const runtime = useLiveSessionRuntime();
+  const aspectRatio = runtime.aspectRatio;
+
+  if (process.env.NODE_ENV === 'development') {
+    console.log(
+      '[DEBUG] VideoStageWrapper render: aspectRatio=%s isHost=%s connection=%s',
+      aspectRatio,
+      runtime.isHost,
+      runtime.connectionStatus,
+    );
+  }
 
   return (
     <div className={cn('flex min-h-0 w-full flex-col items-center overflow-hidden', className)}>
@@ -53,32 +60,39 @@ export function VideoStageWrapper({
         />
       </div>
 
-      <div
-        className="flex shrink-0 items-center justify-center gap-1 pb-2"
-        role="radiogroup"
-        aria-label="Video aspect ratio"
-      >
-        {ASPECT_RATIO_OPTIONS.map((opt) => {
-          const active = opt.id === aspectRatio;
-          return (
-            <Button
-              key={opt.id}
-              type="button"
-              size="xs"
-              variant={active ? 'secondary' : 'outline'}
-              role="radio"
-              aria-checked={active}
-              className={cn(
-                'min-w-[3rem] font-mono text-xs',
-                active && 'ring-1 ring-primary ring-offset-1 ring-offset-background',
-              )}
-              onClick={() => setAspectRatio(opt.id)}
-            >
-              {opt.label}
-            </Button>
-          );
-        })}
-      </div>
+      {runtime.isHost ? (
+        <div
+          className="flex shrink-0 items-center justify-center gap-1 pb-2"
+          role="radiogroup"
+          aria-label="Video aspect ratio"
+        >
+          {ASPECT_RATIO_OPTIONS.map((opt) => {
+            const active = opt.id === aspectRatio;
+            const disabled = runtime.connectionStatus !== 'connected';
+            return (
+              <Button
+                key={opt.id}
+                type="button"
+                size="xs"
+                variant={active ? 'secondary' : 'outline'}
+                role="radio"
+                aria-checked={active}
+                disabled={disabled}
+                className={cn(
+                  'min-w-[3rem] font-mono text-xs',
+                  active && 'ring-1 ring-primary ring-offset-1 ring-offset-background',
+                )}
+                onClick={() => {
+                  if (disabled) return;
+                  runtime.actions.setAspectRatio(opt.id);
+                }}
+              >
+                {opt.label}
+              </Button>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }

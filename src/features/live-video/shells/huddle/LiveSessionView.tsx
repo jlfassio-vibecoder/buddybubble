@@ -10,6 +10,7 @@ import { SessionHeader } from '@/features/live-video/shells/huddle/SessionHeader
 import { SessionControls } from '@/features/live-video/shells/huddle/SessionControls';
 import { SessionDeckBuilder } from '@/features/live-video/shells/huddle/SessionDeckBuilder';
 import { LiveSessionWorkoutPlayer } from '@/features/live-video/shells/huddle/LiveSessionWorkoutPlayer';
+import { ParticipantWorkoutLogger } from '@/features/live-video/shells/ParticipantWorkoutLogger';
 import { ActivePhaseOverlays } from '@/features/live-video/shells/huddle/ActivePhaseOverlays';
 import { VideoStageWrapper } from '@/features/live-video/shells/huddle/VideoStageWrapper';
 import { useWorkoutDeckSelectionOptional } from '@/features/live-video/shells/huddle/workout-deck-selection-context';
@@ -48,7 +49,7 @@ function readHuddleEditorVideoLayout(workspaceId: string): Layout {
 
 export type LiveSessionViewProps = {
   className?: string;
-  /** Runs after Agora `leaveChannel` when the user taps Leave in the floating media bar. */
+  /** Optional: runs after Agora `leaveChannel` (e.g. clear local UI). Leave must not end the shared session. */
   onAfterLeave?: () => void;
   localUserId: string;
   hostUserId: string;
@@ -56,6 +57,8 @@ export type LiveSessionViewProps = {
   supabase: SupabaseClient;
   canWriteTasks: boolean;
   onWorkoutDeckPersisted?: () => void;
+  /** Host: invoked after `actions.endSession()` (e.g. mark chat invite ended). */
+  onHostEndLiveSessionForAll?: () => void | Promise<void>;
 };
 
 /**
@@ -74,6 +77,7 @@ export function LiveSessionView({
   supabase,
   canWriteTasks,
   onWorkoutDeckPersisted,
+  onHostEndLiveSessionForAll,
 }: LiveSessionViewProps) {
   const { state, actions, isHost } = useLiveSessionRuntime();
 
@@ -81,6 +85,10 @@ export function LiveSessionView({
   const selectingFromBoard = Boolean(deckSel?.isSelectingFromBoard);
   const activeSnapshotId = deckSel?.activeSnapshotId ?? null;
   const compact = useIsNarrowBelowMd();
+
+  const hostSideEditorOpen = isHost && activeSnapshotId != null;
+  const participantLoggerOpen = !isHost && state.activeDeckItemId != null;
+  const sideEditorOpen = hostSideEditorOpen || participantLoggerOpen;
 
   const uiMode = state.globalStartedAt != null || state.status !== 'idle' ? 'live' : 'builder';
 
@@ -111,41 +119,41 @@ export function LiveSessionView({
   const videoStage = useMemo(
     () => (
       <VideoStageWrapper
-        className={cn(
-          'min-h-0',
-          compact || activeSnapshotId === null ? 'flex-1' : 'h-full min-h-0',
-        )}
+        className={cn('min-h-0', compact || !sideEditorOpen ? 'flex-1' : 'h-full min-h-0')}
         onAfterLeave={onAfterLeave}
         localUserId={localUserId}
         hostUserId={hostUserId}
         videoOverlays={<ActivePhaseOverlays state={state} />}
       />
     ),
-    [compact, activeSnapshotId, onAfterLeave, localUserId, hostUserId, state],
+    [compact, sideEditorOpen, onAfterLeave, localUserId, hostUserId, state],
   );
 
   const workoutPlayer = useMemo(
-    () => (
-      <LiveSessionWorkoutPlayer
-        className={compact ? 'min-h-0 flex-1' : 'h-full min-h-0'}
-        workspaceId={workspaceId}
-        supabase={supabase}
-        canWrite={canWriteTasks}
-        onPersistSuccess={onWorkoutDeckPersisted}
-      />
-    ),
-    [compact, workspaceId, supabase, canWriteTasks, onWorkoutDeckPersisted],
+    () =>
+      isHost ? (
+        <LiveSessionWorkoutPlayer
+          className={compact ? 'min-h-0 flex-1' : 'h-full min-h-0'}
+          workspaceId={workspaceId}
+          supabase={supabase}
+          canWrite={canWriteTasks}
+          onPersistSuccess={onWorkoutDeckPersisted}
+        />
+      ) : (
+        <ParticipantWorkoutLogger className={compact ? 'min-h-0 flex-1' : 'h-full min-h-0'} />
+      ),
+    [isHost, compact, workspaceId, supabase, canWriteTasks, onWorkoutDeckPersisted],
   );
 
-  const showSideEditor = !compact && activeSnapshotId != null;
+  const showSideEditor = !compact && sideEditorOpen;
 
   const handleSheetOpenChange = useCallback(
     (open: boolean) => {
-      if (!open) {
+      if (!open && isHost) {
         deckSel?.setActiveSnapshotId(null);
       }
     },
-    [deckSel],
+    [deckSel, isHost],
   );
 
   return (
@@ -202,6 +210,7 @@ export function LiveSessionView({
             state={state}
             actions={actions}
             disableActions={!isHost}
+            onHostEndLiveSessionForAll={isHost ? onHostEndLiveSessionForAll : undefined}
             className="shrink-0"
           />
         )}
@@ -209,10 +218,10 @@ export function LiveSessionView({
       </div>
 
       {compact ? (
-        <Sheet open={activeSnapshotId != null} onOpenChange={handleSheetOpenChange}>
+        <Sheet open={sideEditorOpen} onOpenChange={handleSheetOpenChange}>
           <SheetContent side="bottom" className="flex h-[85vh] min-h-0 flex-col gap-0 p-0">
             <div className="shrink-0 border-b border-border px-4 py-3">
-              <SheetTitle>Edit exercises</SheetTitle>
+              <SheetTitle>{isHost ? 'Edit exercises' : 'Log workout'}</SheetTitle>
             </div>
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-4 pt-2">
               {workoutPlayer}
