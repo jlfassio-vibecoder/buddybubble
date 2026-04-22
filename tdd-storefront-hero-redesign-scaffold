@@ -1,0 +1,175 @@
+# Storefront Hero Redesign (Scaffold Only)
+
+## Your role
+
+You are a UI/UX Specialist. You will scaffold a new hero layout for the Astro storefront page at `apps/storefront/src/pages/[slug].astro`. **This task is scaffold only — produce working structure and phase plumbing with placeholder styling. Do not implement final visual design, animations, or backend integration beyond what already exists.**
+
+You may write code in this turn. Stay within the scope defined below.
+
+## What stays and what changes
+
+### Do not touch
+- The `<section>` block containing the branding description (below the header).
+- The `<main>` block containing "Public cards" heading and the `<PublicCard>` grid.
+- The workspace data fetching at the top of `[slug].astro` (`ws`, `branding`, `accent`, `publicCards`, `previewEligible`, `joinHref`, etc.).
+- The CRM intake route (`src/app/api/leads/storefront-trial/route.ts`), the Astro proxy (`apps/storefront/src/pages/api/storefront-trial.ts`), or any Supabase schema.
+- `sessionStorage` key conventions — continue using `buddybubble_storefront_trial_v1:{publicSlug}`.
+
+### What you are replacing
+The `<header>` block currently spanning roughly lines 139–171 of `[slug].astro`. Specifically:
+- The flex-row layout with branding-left / wizard+join-right inside `max-w-6xl`.
+- The current `<StorefrontHeroCTA>` mount point.
+- The current inline "Join community" anchor inside the header stack.
+
+The new hero replaces that entire `<header>` inner content while preserving the outer `<header>` element, its `hero_url` background image, and its gradient overlay.
+
+## What you are scaffolding
+
+A single centered hero that houses a six-phase client-side flow. The phases are:
+
+1. `idle` — headline + "Start 3-day preview" CTA
+2. `profile` — 4-step wizard (goal → experience → equipment → units)
+3. `outline` — generated 3-day plan preview in a card grid
+4. `refine` — chip multi-selects + duration slider + free-text (fitness only, skippable)
+5. `email` — email input + invisible Turnstile + plan summary card
+6. `loading` — narrated handoff until magic-link redirect
+
+The hero container is visually stable across phases; only the inner content swaps.
+
+**Scaffold scope**: render each phase as a distinct component that mounts based on a `phase` state value, with hardcoded placeholder content inside. Wire the phase state machine and `sessionStorage` persistence. Do not style to pixel-perfect design yet — use minimal Tailwind classes sufficient to verify layout and transitions. Final styling comes in a later pass.
+
+## File structure to create
+
+```
+apps/storefront/src/components/hero/
+├── StorefrontHero.jsx              — top-level orchestrator, replaces StorefrontHeroCTA
+├── HeroShell.jsx                   — visual container, persistent across phases
+├── HeroNav.jsx                     — nav strip with brand + "Join community" ghost button
+├── phases/
+│   ├── PhaseIdle.jsx
+│   ├── PhaseProfile.jsx
+│   ├── PhaseOutline.jsx
+│   ├── PhaseRefine.jsx
+│   ├── PhaseEmail.jsx
+│   └── PhaseLoading.jsx
+├── hooks/
+│   ├── useHeroPhase.js             — phase state machine + sessionStorage
+│   └── useWizardDraft.js           — form field state persisted to sessionStorage
+└── lib/
+    ├── phaseTransitions.js         — pure function: validates transitions
+    └── storageKey.js               — generates sessionStorage key from publicSlug
+```
+
+Do **not** create these yet (later passes):
+- Final CSS Modules for selected states, pip progress bar, chip styling
+- Animation wrappers (AnimatePresence or equivalent)
+- Phase 5 Turnstile integration (leave a clearly marked TODO)
+- Phase 6 backend step narration (scaffold the UI, use a static step list)
+- Responsive breakpoints beyond what Tailwind gives for free
+
+## Non-negotiable behavior at scaffold stage
+
+1. **`StorefrontHero` must be a drop-in replacement for `StorefrontHeroCTA`** in `[slug].astro`. Same `client:load` directive, same `publicSlug` prop. The existing `StorefrontHeroCTA.jsx` (if still referenced elsewhere) stays untouched; do not delete it.
+
+2. **Phase state persists to `sessionStorage`.** On mount, `useHeroPhase` reads the existing key (`buddybubble_storefront_trial_v1:{publicSlug}`) and restores phase + wizard draft. On every transition, it writes back. If the existing key contains a `phase` value compatible with the old wizard (`profile`, `workout_refine`, `email`), map it forward:
+   - `profile` → `profile`
+   - `workout_refine` → `refine`
+   - `email` → `email`
+   - anything else or empty → `idle`
+
+3. **Phase transitions flow through `phaseTransitions.js`.** A pure function `canTransition(from, to)` returns boolean. Invalid transitions are no-ops. The valid graph is:
+   - `idle → profile`
+   - `profile → outline` (after step 4 of wizard)
+   - `profile → idle` (back from step 1)
+   - `outline → refine` (fitness workspaces only) OR `outline → email` (non-fitness)
+   - `refine → email`
+   - `refine → outline` (back)
+   - `email → loading` (on submit)
+   - `email → refine` (back)
+   - `loading → idle` (on error, with retry)
+
+4. **Each phase component accepts props only — no direct `sessionStorage` access.** State lives in `StorefrontHero` via hooks; phases receive `{ draft, onChange, onNext, onBack }` or equivalent.
+
+5. **Join community link moves out of the header content but stays on the page.** Scaffold a `<HeroNav>` with brand text on the left and a "Join community" ghost button on the right. Wire the button to the existing `joinHref` passed as a prop. The current inline `<a>` inside the header's right stack gets removed — its replacement lives in `<HeroNav>`.
+
+6. **Fitness vs. non-fitness branching.** `StorefrontHero` must accept a `categoryType` prop (`'business' | 'fitness'`). The `refine` phase is skipped entirely for `'business'` workspaces — `phaseTransitions` routes `outline → email` directly. The hero is not rendered at all for category types outside `business | fitness`; `[slug].astro` already gates on `previewEligible`, so `StorefrontHero` trusts its mount context.
+
+7. **Outer `<header>` element is preserved.** Keep the existing background image logic, gradient overlay, and outer padding. Only the inner flex-row content is replaced. The new hero should sit inside the existing `<header>` with the same `max-w-6xl` wrapper (or wider — confirm with the design target; for scaffold, match current width).
+
+## Props contract
+
+```
+<StorefrontHero
+  publicSlug={string}            // from existing slug param
+  categoryType={'business' | 'fitness'}
+  workspaceName={string}         // ws.name, used for copy
+  accentColor={string}           // accent, used for Join community button
+  joinHref={string}              // existing joinHref
+  client:load
+/>
+```
+
+Every one of these props is already computed in `[slug].astro`. Read that file and wire them from the existing variables — do not add new data fetches.
+
+## Placeholder content for each phase
+
+For scaffold stage, render each phase with minimal Tailwind styling and placeholder copy so the flow can be manually walked end-to-end. Include:
+
+- **Idle**: headline "Your next workout, built for you in 60 seconds." + primary button "Start 3-day preview" → transitions to `profile`
+- **Profile**: four-step wizard. For each step, a question, 2–4 option buttons, Back/Next. Step 4's Next transitions to `outline`. Use simple radio-group semantics; pip progress visual can be a row of four `<div>` placeholders.
+- **Outline**: three cards showing day 1/2/3 with hardcoded exercise lists. Button "Fine-tune this plan" → `refine` (fitness) or `email` (business).
+- **Refine**: chip rows (hardcoded lists for "Focus areas", "Avoid"), a native range input for duration, a textarea for notes. "Skip" and "Apply & continue" both → `email`.
+- **Email**: email input + "Save & start preview" submit. For scaffold, submit transitions to `loading` without actually calling the intake API — leave a clearly marked TODO where the POST will go.
+- **Loading**: static four-step list with one step marked active. For scaffold, after a 3-second `setTimeout`, log the would-be redirect URL to console. Do not redirect yet.
+
+## What the plan must NOT include in this pass
+
+- Do not wire the Phase 5 submit to the intake API. Leave a single clearly marked `// TODO: POST to /api/storefront-trial` with a comment referencing where in the current `StorefrontPreviewCta.jsx` that logic currently lives.
+- Do not implement Turnstile. Leave a TODO in Phase 5.
+- Do not implement the 409 handling, 8-second timeout, or 20-second retry in Phase 6. Leave TODOs.
+- Do not remove `StorefrontPreviewCta.jsx` or `StorefrontHeroCTA.jsx` — they may still be imported in other code paths. Check before deleting anything.
+- Do not modify `[slug].astro` beyond: (a) importing `StorefrontHero` instead of `StorefrontHeroCTA`, (b) replacing the inner flex-row content of `<header>` with the new component, (c) removing the now-redundant inline "Join community" anchor that lived inside the old right-stack.
+- Do not add new npm dependencies.
+- Do not write tests in this pass.
+
+## Verification checklist
+
+When you finish, the following must be true:
+
+- `pnpm dev` (or the project's dev command) runs without errors
+- Loading a `business` workspace slug renders the new hero with phase `idle`
+- Loading a `fitness` workspace slug renders the new hero with phase `idle`
+- Clicking "Start 3-day preview" advances to `profile`, walks through 4 steps, lands on `outline`
+- Fitness slug: `outline → refine → email → loading`
+- Business slug: `outline → email → loading` (refine phase is skipped)
+- Back button at every phase restores the previous phase and the wizard answers
+- Reloading the page mid-flow restores the phase and answers from `sessionStorage`
+- The "Join community" button is present in the top nav at all phases and opens `joinHref`
+- The workspace description `<section>` and `<PublicCard>` grid render unchanged below the hero
+
+## Before you begin
+
+1. Read `apps/storefront/src/pages/[slug].astro` in full. Confirm you understand which props are available and where the existing header boundaries are.
+2. Read `apps/storefront/src/components/StorefrontHeroCTA.jsx` (and `StorefrontPreviewCta.jsx` if still present). Confirm the existing `sessionStorage` schema — you must preserve the reading path for backward compatibility.
+3. Check for any `.cursorrules` or `.cursor/rules/` in the repo and follow them.
+4. If you find a mismatch between this brief and the actual repo state (e.g., the file boundaries have moved, the sessionStorage schema differs, `StorefrontHeroCTA` is named differently), **stop and surface the mismatch before coding**. Do not guess.
+
+## Output
+
+After reading the files listed above, produce:
+1. A one-paragraph summary of what you found in the current code (what `StorefrontHeroCTA` does today, what the existing `sessionStorage` schema looks like).
+2. The full file scaffold matching the structure in "File structure to create".
+3. The diff to `[slug].astro`.
+4. A short "TODOs for later passes" list at the end, listing every `TODO:` comment you left in the code and why.
+
+Keep each scaffolded component under ~80 lines. Scaffolds that balloon past that size are a signal you're implementing instead of scaffolding — pull back.
+
+---
+
+A few notes for you, Justin, before you paste this to Cursor:
+
+**The `accentColor` prop is in the contract but I didn't give the scaffold specific instructions on how to use it.** Decide whether the new hero's primary button keeps using the workspace's accent color (as the old "Join community" link did) or whether it standardizes on the blue `#2563eb` from the mockups. The old behavior was per-workspace accent; the mockup is a single brand blue. I'd default to brand blue for the primary CTA and keep the accent only for "Join community," but that's a product call.
+
+**The "map forward" logic for `sessionStorage` in rule 2** assumes the existing key schema has a `phase` field. If your current `StorefrontPreviewCta` stores something structurally different (e.g., separate keys per field, or a different root shape), Cursor will catch it in step 2 of "Before you begin" and should surface it. Don't let it silently wrap the old shape in a new one — that creates two sources of truth.
+
+**If Cursor comes back asking about design tokens**, the mockups we built earlier in this conversation are the source. Paste the relevant phase's widget code as reference for the final styling pass — not this scaffold pass.

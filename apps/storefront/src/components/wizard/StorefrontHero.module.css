@@ -1,0 +1,232 @@
+.heroWrap {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+}
+
+.radialGlow {
+  position: absolute;
+  inset: -90px -80px -110px -80px;
+  background: radial-gradient(
+    500px 320px at 50% 0%,
+    rgba(127, 119, 221, 0.32) 0%,
+    rgba(127, 119, 221, 0.14) 35%,
+    rgba(127, 119, 221, 0.04) 60%,
+    rgba(0, 0, 0, 0) 75%
+  );
+  filter: blur(1px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.heroCard {
+  position: relative;
+  z-index: 1;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #111;
+  color: rgba(255, 255, 255, 0.92);
+  box-shadow:
+    0 14px 44px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  backdrop-filter: blur(6px);
+  padding: 18px;
+  min-height: 340px;
+  display: flex;
+  flex-direction: column;
+}
+
+.headline {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.subhead {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.divider {
+  margin-top: 14px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.primaryBtn {
+  width: 100%;
+  height: 44px;
+  border: 0;
+  border-radius: 14px;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  box-shadow: 0 12px 26px rgba(37, 99, 235, 0.25);
+  transition:
+    transform 120ms ease,
+    filter 120ms ease;
+  cursor: pointer;
+}
+
+.primaryBtn:hover {
+  filter: brightness(1.05);
+}
+
+.primaryBtn:active {
+  transform: translateY(1px);
+}
+
+.secondaryBtn {
+  height: 36px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.84);
+  font-weight: 600;
+  font-size: 13px;
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.secondaryBtn:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.pipRow {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.pip {
+  width: 36px;
+  height: 3px;
+  border-radius: 999px;
+}
+
+.pipFilled {
+  background: #7f77dd;
+  box-shadow: 0 0 0 1px rgba(127, 119, 221, 0.24);
+}
+
+.pipEmpty {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.stepTitle {
+  margin-top: 14px;
+  font-size: 14px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.options {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.optionCard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    transform 140ms ease;
+}
+
+.optionCard:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.optionCard:active {
+  transform: translateY(1px);
+}
+
+.optionCardSelected {
+  background: rgba(127, 119, 221, 0.12);
+  border-color: rgba(127, 119, 221, 0.55);
+  box-shadow: 0 0 0 3px rgba(127, 119, 221, 0.1);
+}
+
+.radioDot {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 1.5px solid rgba(255, 255, 255, 0.28);
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+
+.radioDotInner {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.optionCardSelected .radioDot {
+  border-color: rgba(127, 119, 221, 0.9);
+}
+
+.optionCardSelected .radioDotInner {
+  background: #7f77dd;
+}
+
+.fieldLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.75);
+  margin-top: 12px;
+}
+
+.input {
+  margin-top: 8px;
+  width: 100%;
+  height: 44px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.92);
+  padding: 0 12px;
+  outline: none;
+}
+
+.input::placeholder {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.input:focus {
+  border-color: rgba(127, 119, 221, 0.6);
+  box-shadow: 0 0 0 4px rgba(127, 119, 221, 0.14);
+}
+
+.formRow {
+  margin-top: 18px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.grow {
+  flex: 1 1 auto;
+}
+
+.footer {
+  margin-top: auto;
+  padding-top: 14px;
+}
