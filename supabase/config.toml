@@ -374,6 +374,11 @@ verify_jwt = true
 [functions.bubble-agent-dispatch]
 verify_jwt = false
 
+# Authentication: BUDDY_AGENT_WEBHOOK_SECRET in the function (Bearer or x-buddy-agent-secret), not Supabase JWT.
+# Buddy is the general-purpose onboarding/guidance agent; intentionally isolated from bubble-agent-dispatch.
+[functions.buddy-agent-dispatch]
+verify_jwt = false
+
 # Authentication: LEAD_SMS_ALERT_WEBHOOK_SECRET in the function (Bearer or x-lead-sms-alert-secret), not Supabase JWT.
 [functions.lead-sms-alert]
 verify_jwt = false

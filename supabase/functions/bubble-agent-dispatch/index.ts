@@ -37,6 +37,7 @@ type WebhookPayload = {
 type AgentDefEmbed = {
   slug: string;
   display_name: string;
+  mention_handle: string;
   auth_user_id: string;
   is_active: boolean;
 };
@@ -45,6 +46,11 @@ type BindingRow = {
   sort_order: number;
   agent_definitions: AgentDefEmbed | AgentDefEmbed[] | null;
 };
+
+/** Matches `sortAgentEntries` / `UNBOUND_AGENT_SORT_ORDER` in the app client. */
+const UNBOUND_AGENT_SORT_ORDER = Number.MAX_SAFE_INTEGER;
+
+type OrderedAgentEntry = { sortOrder: number; def: AgentDefEmbed };
 
 type GeminiContent = {
   role: 'user' | 'model' | 'system';
@@ -961,7 +967,9 @@ Deno.serve(async (req) => {
 
   const { data: bindingRows, error: bindErr } = await supabase
     .from('bubble_agent_bindings')
-    .select('sort_order, agent_definitions ( slug, display_name, auth_user_id, is_active )')
+    .select(
+      'sort_order, agent_definitions ( slug, display_name, mention_handle, auth_user_id, is_active )',
+    )
     .eq('bubble_id', record.bubble_id)
     .eq('enabled', true)
     .order('sort_order', { ascending: true });
@@ -977,18 +985,64 @@ Deno.serve(async (req) => {
   const bubbleAgentAuthIds = new Set<string>();
   const authIdToSlug = new Map<string, string>();
 
+  // Bubble-bound agents (same rows as `bubble_agent_bindings` on the client), deduped by
+  // `auth_user_id`, ordered by `sort_order` then `slug` — then workspace-global Buddy merged
+  // after bound agents (`useMessageThread` + `sortAgentEntries`).
+  const seenAuthIds = new Set<string>();
+  const rawEntries: OrderedAgentEntry[] = [];
+
   for (const raw of (bindingRows ?? []) as BindingRow[]) {
     const def = unwrapDef(raw);
-    if (!def?.is_active) continue;
+    if (!def?.is_active || !def.auth_user_id) continue;
+    if (seenAuthIds.has(def.auth_user_id)) continue;
+    seenAuthIds.add(def.auth_user_id);
+    rawEntries.push({ sortOrder: raw.sort_order, def });
+  }
+
+  const { data: buddyAgentRow, error: buddyAgentErr } = await supabase
+    .from('agent_definitions')
+    .select('slug, display_name, mention_handle, auth_user_id, is_active')
+    .eq('slug', 'buddy')
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (buddyAgentErr) {
+    console.error('[bubble-agent-dispatch] buddy agent_definitions', buddyAgentErr.message);
+  }
+
+  const buddyDef = buddyAgentRow as AgentDefEmbed | null;
+  if (buddyDef?.auth_user_id && buddyDef.is_active && !seenAuthIds.has(buddyDef.auth_user_id)) {
+    seenAuthIds.add(buddyDef.auth_user_id);
+    rawEntries.push({ sortOrder: UNBOUND_AGENT_SORT_ORDER, def: buddyDef });
+  }
+
+  rawEntries.sort((a, b) => {
+    if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+    return a.def.slug.localeCompare(b.def.slug);
+  });
+
+  const agentsInClientOrder = rawEntries.map((e) => e.def);
+  for (const def of agentsInClientOrder) {
     if (def.auth_user_id) {
       bubbleAgentAuthIds.add(def.auth_user_id);
       authIdToSlug.set(def.auth_user_id, def.slug);
     }
-    const tokenInMessage = `@${def.display_name}`;
-    if (!content.includes(tokenInMessage)) continue;
-    resolvedAgentUserId = def.auth_user_id;
-    resolvedSlug = def.slug;
-    break;
+  }
+
+  // Positional first-match-wins, matching `resolveTargetAgent` on the client: same regex,
+  // scan mentions in order, first hit uses `availableAgents.find` order (= insertion order
+  // above: bubble-bound first, then unbound e.g. Buddy).
+  const MENTION_TOKEN_REGEX = /(^|[^\w])@(\w+)(?!\w)/g;
+  for (const match of content.matchAll(MENTION_TOKEN_REGEX)) {
+    const handleLower = (match[2] ?? '').toLowerCase();
+    const hit = agentsInClientOrder.find(
+      (d) => (d.mention_handle ?? '').trim().toLowerCase() === handleLower,
+    );
+    if (hit?.auth_user_id) {
+      resolvedAgentUserId = hit.auth_user_id;
+      resolvedSlug = hit.slug;
+      break;
+    }
   }
 
   // Slack-style thread root: same parent_id for all messages in the thread (UI matches on root id).

@@ -1,0 +1,24 @@
+-- Phase 1 placeholder for the Buddy agent webhook wiring.
+--
+-- Buddy is a new, general-purpose AI assistant scaffolded in
+-- `supabase/functions/buddy-agent-dispatch/index.ts`. It is intentionally isolated
+-- from the fitness @Coach pipeline in `supabase/functions/bubble-agent-dispatch`
+-- (separate function, separate secret, separate prompts, separate RPCs).
+--
+-- Intent for a follow-up migration (NOT done here):
+--   * Configure a Supabase Database Webhook on INSERT into `public.messages` that
+--     POSTs to the new Edge Function:
+--       URL:    https://<project-ref>.supabase.co/functions/v1/buddy-agent-dispatch
+--       Method: POST
+--       Header: x-buddy-agent-secret: <BUDDY_AGENT_WEBHOOK_SECRET>
+--   * Keep the existing `bubble-agent-dispatch` webhook untouched; both webhooks
+--     may fan out from the same `public.messages` INSERT event. Each function is
+--     responsible for its own fast-reject (see `buddy-agent-dispatch/index.ts`).
+--   * If/when we introduce an implicit onboarding trigger that is NOT an @Buddy
+--     mention, consider either (a) a dedicated `buddy_onboarding_events` table
+--     with its own webhook, or (b) an app-inserted bootstrap message that Buddy
+--     can detect inside its existing fast-reject.
+--
+-- This migration is intentionally a no-op so it can ship alongside the Phase 1
+-- function scaffold without changing database state.
+SELECT 1;

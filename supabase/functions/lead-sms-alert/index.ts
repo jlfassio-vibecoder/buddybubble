@@ -1,15 +1,17 @@
 /**
- * Supabase Edge Function: Database Webhook on `public.messages` INSERT → optional SMS to the host
+ * Supabase Edge Function: Database Webhook on `public.messages` INSERT → optional Twilio SMS and/or Resend email
  * when chat silence exceeds workspace-configured thresholds (`metadata.lead_inactivity_timeout`,
- * `metadata.member_inactivity_timeout`) and `metadata.lead_alert_phone` is set.
+ * `metadata.member_inactivity_timeout`); needs `metadata.lead_alert_phone` and/or `RESEND` + `ADMIN_ALERT_EMAIL`.
  *
  * Secrets (set in Supabase Dashboard → Edge Functions → Secrets):
  * - SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (auto-injected on hosted projects)
  * - APP_URL — origin for deep link, e.g. https://buddybubble.app (no trailing slash)
- * - TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER — Twilio Programmable SMS
+ * - TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER — Twilio Programmable SMS (optional; failures are logged, not fatal)
+ * - RESEND_API_KEY, ADMIN_ALERT_EMAIL — Resend outbound email (optional; if configured, runs after Twilio attempt)
+ * - RESEND_FROM_EMAIL — optional `from` address for Resend (defaults to onboarding@resend.dev)
  * - LEAD_SMS_ALERT_WEBHOOK_SECRET — required; send as `Authorization: Bearer <secret>` or `x-lead-sms-alert-secret`
  *
- * After a successful send, `workspaces.metadata.last_sms_sent_at` is set to an ISO-8601 timestamp.
+ * After a successful Twilio SMS and/or Resend email, `workspaces.metadata.last_sms_sent_at` is set to an ISO-8601 timestamp (name retained for compatibility).
  *
  * Configure the Database Webhook to POST this function’s URL with the default Supabase payload
  * (`type`, `table`, `schema`, `record`). `verify_jwt` should be false (see `supabase/config.toml`); authenticate
@@ -185,8 +187,13 @@ Deno.serve(async (req) => {
 
   const meta = asRecord((ws as { metadata?: unknown } | null)?.metadata);
   const alertPhone = readMetadataString(meta, 'lead_alert_phone');
-  if (!alertPhone) {
-    return json({ ok: true, skipped: 'no_lead_alert_phone' }, 200);
+
+  const resendApiKey = Deno.env.get('RESEND_API_KEY')?.trim();
+  const adminAlertEmail = Deno.env.get('ADMIN_ALERT_EMAIL')?.trim();
+  const canResend = !!(resendApiKey && adminAlertEmail);
+
+  if (!alertPhone && !canResend) {
+    return json({ ok: true, skipped: 'no_sms_or_email_configured' }, 200);
   }
 
   const threshold =
@@ -231,38 +238,88 @@ Deno.serve(async (req) => {
   const accountSid = Deno.env.get('TWILIO_ACCOUNT_SID')?.trim();
   const authToken = Deno.env.get('TWILIO_AUTH_TOKEN')?.trim();
   const twilioFrom = Deno.env.get('TWILIO_PHONE_NUMBER')?.trim();
-  if (!accountSid || !authToken || !twilioFrom) {
-    console.error(
-      '[lead-sms-alert] missing TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, or TWILIO_PHONE_NUMBER',
-    );
-    return json({ ok: true, skipped: 'twilio_env_incomplete' }, 200);
-  }
+  const canTwilio = !!(accountSid && authToken && twilioFrom && alertPhone);
 
-  const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
-  const form = new URLSearchParams();
-  form.set('To', alertPhone);
-  form.set('From', twilioFrom);
-  form.set('Body', smsBody);
+  /** First successful channel (SMS or email) wins this timestamp for `last_sms_sent_at`. */
+  let alertSentAt: string | null = null;
 
-  const smsRes = await fetch(twilioUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Authorization: `Basic ${btoa(`${accountSid}:${authToken}`)}`,
-    },
-    body: form,
-  });
+  if (canTwilio) {
+    const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
+    const form = new URLSearchParams();
+    form.set('To', alertPhone!);
+    form.set('From', twilioFrom!);
+    form.set('Body', smsBody);
 
-  if (!smsRes.ok) {
-    const detail = await smsRes.text().catch(() => '');
-    console.error('[lead-sms-alert] twilio_sms_http_error', {
-      status: smsRes.status,
-      body: detail,
+    const smsRes = await fetch(twilioUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Authorization: `Basic ${btoa(`${accountSid}:${authToken}`)}`,
+      },
+      body: form,
     });
-    return json({ error: 'sms_dispatch_failed' }, 500);
+
+    if (smsRes.ok) {
+      alertSentAt = new Date().toISOString();
+    } else {
+      const detail = await smsRes.text().catch(() => '');
+      console.error('[lead-sms-alert] twilio_sms_http_error', {
+        status: smsRes.status,
+        body: detail,
+      });
+    }
+  } else {
+    if (!alertPhone) {
+      console.error('[lead-sms-alert] twilio_skipped: no lead_alert_phone');
+    } else {
+      console.error(
+        '[lead-sms-alert] twilio_skipped: missing TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, or TWILIO_PHONE_NUMBER',
+      );
+    }
   }
 
-  const nowIso = new Date().toISOString();
+  const resendFrom = Deno.env.get('RESEND_FROM_EMAIL')?.trim() || 'onboarding@resend.dev';
+
+  if (canResend) {
+    const emailRes = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${resendApiKey}`,
+      },
+      body: JSON.stringify({
+        from: resendFrom,
+        to: adminAlertEmail,
+        subject: '🚨 BuddyBubble: New Trial Message!',
+        text: smsBody,
+      }),
+    });
+
+    if (emailRes.ok) {
+      if (!alertSentAt) alertSentAt = new Date().toISOString();
+    } else {
+      const detail = await emailRes.text().catch(() => '');
+      console.error('[lead-sms-alert] resend_email_http_error', {
+        status: emailRes.status,
+        body: detail,
+      });
+      if (!alertSentAt) {
+        return json({ error: 'email_dispatch_failed' }, 500);
+      }
+    }
+  } else if (!alertSentAt) {
+    if (canTwilio) {
+      return json({ error: 'sms_dispatch_failed' }, 500);
+    }
+    console.error('[lead-sms-alert] missing RESEND_API_KEY or ADMIN_ALERT_EMAIL');
+    return json({ ok: true, skipped: 'resend_env_incomplete' }, 200);
+  }
+
+  if (!alertSentAt) {
+    return json({ ok: true, skipped: 'dispatch_failed' }, 200);
+  }
+
+  const nowIso = alertSentAt;
   const nextMetadata = { ...meta, last_sms_sent_at: nowIso };
   const { error: metaUpdErr } = await supabase
     .from('workspaces')
@@ -271,7 +328,7 @@ Deno.serve(async (req) => {
     .select('id');
 
   if (metaUpdErr) {
-    // Return 200 after successful Twilio so the webhook does not retry and send duplicate billable SMS; log for ops.
+    // Return 200 after a successful alert dispatch so the webhook does not retry billable sends; log for ops.
     console.error('[lead-sms-alert] metadata_update_failed', metaUpdErr);
     return json(
       { ok: true, sent: true, last_sms_sent_at: nowIso, metadata_persist_failed: true },
