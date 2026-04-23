@@ -92,10 +92,12 @@ begin
   v_has_task := v_title <> '';
 
   if v_has_task then
-    -- Serialize position computation for concurrent inserts into the same bubble.
+    -- Serialize position + assignee writes for this bubble. `FOR UPDATE` on `tasks` alone does
+    -- not acquire a lock when the bubble has zero tasks, so concurrent first inserts could pick
+    -- the same position; locking the bubble row covers the empty case.
     perform 1
-    from public.tasks t
-    where t.bubble_id = p_bubble_id
+    from public.bubbles b
+    where b.id = p_bubble_id
     for update;
 
     select coalesce(max(t.position), 0) + 1
@@ -132,6 +134,16 @@ begin
     returning id into v_task_id;
 
     if p_task_assignee_user_id is not null then
+      if not exists (
+        select 1
+        from public.workspace_members wm
+        where wm.workspace_id = public.workspace_id_for_bubble(p_bubble_id)
+          and wm.user_id = p_task_assignee_user_id
+      ) then
+        raise exception 'organizer_create_reply_and_task: task assignee is not a workspace member'
+          using errcode = 'P0001';
+      end if;
+
       insert into public.task_assignees (task_id, user_id)
       values (v_task_id, p_task_assignee_user_id)
       on conflict do nothing;
