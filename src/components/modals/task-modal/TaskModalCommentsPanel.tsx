@@ -528,6 +528,7 @@ export const TaskModalCommentsPanel = forwardRef<
   const rootComposer = (
     <RichMessageComposer
       density="rail"
+      formTestId="task-composer-root"
       popoverContainerRef={composerPopoverRef}
       className="border-t border-border px-6 pt-4"
       value={draft}
@@ -587,6 +588,7 @@ export const TaskModalCommentsPanel = forwardRef<
   const threadComposer = (
     <RichMessageComposer
       density="thread"
+      formTestId="task-composer-thread"
       popoverContainerRef={threadComposerPopoverRef}
       className="border-t border-border px-6 py-4"
       value={threadDraft}

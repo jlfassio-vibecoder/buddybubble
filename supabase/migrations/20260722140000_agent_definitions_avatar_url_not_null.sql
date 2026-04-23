@@ -17,6 +17,5 @@ comment on column public.agent_definitions.avatar_url is
   'contract. Consumers resolve avatars via `src/lib/agents/resolveAgentAvatar.ts` which '
   'prioritizes this column over per-slug branded fallbacks.';
 
--- Down (manual, for ops rollback — NOT auto-applied):
---   alter table public.agent_definitions alter column avatar_url drop not null;
---   comment on column public.agent_definitions.avatar_url is null;
+-- Manual DOWN (not applied by CLI):
+--   `docs/refactor/migrations-phase3-manual-down/agent_definitions_avatar_url_not_null.down.sql`

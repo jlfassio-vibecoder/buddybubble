@@ -139,6 +139,7 @@ export function ThreadPanel({
 
           <RichMessageComposer
             density="thread"
+            formTestId="chat-composer-thread"
             className="border-t border-border bg-background p-4"
             value={threadInput}
             onChange={(next, _meta) => setThreadInput(next)}

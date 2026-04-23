@@ -308,6 +308,7 @@ export function BubbleSidebar({
                     <li key={b.id} className="group relative mb-1">
                       <button
                         type="button"
+                        data-bubble-id={b.id}
                         onClick={() => onSelectBubble(b.id)}
                         className={cn(
                           'flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-medium transition-colors',

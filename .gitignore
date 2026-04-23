@@ -4,7 +4,9 @@ node_modules/
 
 build/
 dist/
-.next/
+.next
+playwright-report/
+test-results/
 coverage/
 .DS_Store
 *.log

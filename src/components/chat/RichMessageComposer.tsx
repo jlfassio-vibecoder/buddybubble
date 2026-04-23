@@ -99,6 +99,8 @@ export type RichMessageComposerProps = {
 
   /** Increment to focus the text input (e.g. after opening a thread from a notification). */
   focusRequestNonce?: number;
+  /** Optional `data-testid` on the `<form>` for E2E harnesses (rail vs thread composers). */
+  formTestId?: string;
 };
 
 const defaultFeatures: Required<RichMessageComposerFeatures> = {
@@ -135,6 +137,7 @@ export function RichMessageComposer({
   footerHint,
   className,
   focusRequestNonce = 0,
+  formTestId,
 }: RichMessageComposerProps) {
   const features = { ...defaultFeatures, ...featuresProp };
   const inputRef = useRef<HTMLInputElement>(null);
@@ -497,6 +500,7 @@ export function RichMessageComposer({
         </div>
       ) : null}
       <form
+        data-testid={formTestId}
         onSubmit={(e) => void handleFormSubmit(e)}
         className={cn('flex items-center', isRail ? 'gap-2' : 'gap-1.5')}
       >
