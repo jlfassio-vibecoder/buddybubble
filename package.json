@@ -21,6 +21,7 @@
     "verify:storefront": "npm run check:storefront && npm run build:storefront",
     "check": "npm run format:check && npm run lint && npm run build && npm run check:storefront",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "db:provision-agents": "tsx scripts/provision-agents.ts",
     "db:audit-agent-avatars": "tsx scripts/audit-agent-avatars.ts",
     "prepare": "node -e \"if (process.env.CI || process.env.VERCEL) process.exit(0); require('child_process').execSync('npx husky', { stdio: 'inherit', shell: true })\""
@@ -71,6 +72,7 @@
     "zustand": "^5.0.3"
   },
   "devDependencies": {
+    "@playwright/test": "1.52.0",
     "@tailwindcss/postcss": "^4.1.14",
     "@testing-library/react": "^16.3.2",
     "@types/dompurify": "^3.0.5",

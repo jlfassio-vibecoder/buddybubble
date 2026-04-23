@@ -62,6 +62,8 @@ export function AgentTypingIndicator({
     <div
       role="status"
       aria-live="polite"
+      data-testid="agent-typing-indicator"
+      data-pending-slug={pending.agentSlug}
       className={cn(
         'flex w-full shrink-0 min-h-12 items-end justify-start gap-3 overflow-visible py-1',
         className,

@@ -546,6 +546,17 @@ export function useMessageThread({
       return;
     }
     let cancelled = false;
+    /**
+     * Loads workspace members and bubble-scoped agents (plus workspace-global Buddy).
+     *
+     * **Ordering contract for `agentAuthUserIds`:** `bubble_agent_bindings.sort_order` ASC,
+     * then `agent_definitions.slug` ASC as a deterministic tiebreaker (`sortAgentEntries`).
+     * Workspace-global Buddy is inserted with `UNBOUND_AGENT_SORT_ORDER` so he always sorts
+     * after bubble-bound agents.
+     *
+     * Consumers must never rely on array index for identity; always look up by slug via
+     * `agentsByAuthUserId`.
+     */
     async function loadMembersAndAgents() {
       const supabase = createClient();
       const {

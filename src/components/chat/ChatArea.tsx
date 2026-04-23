@@ -1302,6 +1302,7 @@ export function ChatArea({
 
       <RichMessageComposer
         density="rail"
+        formTestId="chat-composer-rail"
         popoverContainerRef={composerPopoverRef}
         value={input}
         onChange={(next, _meta) => setInput(next)}

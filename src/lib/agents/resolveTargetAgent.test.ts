@@ -148,6 +148,22 @@ describe('resolveTargetAgent', () => {
     expect(result).toBeNull();
   });
 
+  it('scopes @Coach to whichever coach row is in availableAgents (per-bubble / Recipes vs Fitness)', () => {
+    const recipesCoach = makeAgent({
+      id: 'recipes-coach-id',
+      slug: 'coach',
+      mention_handle: 'Coach',
+      display_name: 'Recipes Coach',
+      auth_user_id: 'recipes-coach-auth',
+    });
+    const result = resolveTargetAgent({
+      messageDraft: '@Coach hi',
+      availableAgents: [recipesCoach],
+      contextDefaultAgentSlug: 'coach',
+    });
+    expect(result).toEqual({ agent: recipesCoach, via: 'mention' });
+  });
+
   it('returns null when default slug is not in availableAgents', () => {
     const result = resolveTargetAgent({
       messageDraft: 'hi',
