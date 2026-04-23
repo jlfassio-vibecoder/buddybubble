@@ -36,7 +36,7 @@ export type Database = {
       agent_definitions: {
         Row: {
           auth_user_id: string;
-          avatar_url: string | null;
+          avatar_url: string;
           created_at: string;
           display_name: string;
           id: string;
@@ -47,7 +47,7 @@ export type Database = {
         };
         Insert: {
           auth_user_id: string;
-          avatar_url?: string | null;
+          avatar_url: string;
           created_at?: string;
           display_name: string;
           id?: string;
@@ -58,7 +58,7 @@ export type Database = {
         };
         Update: {
           auth_user_id?: string;
-          avatar_url?: string | null;
+          avatar_url?: string;
           created_at?: string;
           display_name?: string;
           id?: string;
