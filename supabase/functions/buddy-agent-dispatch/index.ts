@@ -570,10 +570,12 @@ function extractGeminiCandidateText(
   return parts.map((p) => (typeof p?.text === 'string' ? p.text : '')).join('');
 }
 
-/** Pull the first top-level `{ ... }` substring; handles prose before/after JSON. */
-function extractFirstJsonObject(s: string): string | null {
-  const start = s.indexOf('{');
-  if (start < 0) return null;
+/**
+ * Balanced `{ ... }` slice starting at `start` (must be `{`). String-aware so `{` inside
+ * JSON strings does not confuse depth.
+ */
+function extractBalancedJsonAt(s: string, start: number): string | null {
+  if (s[start] !== '{') return null;
   let depth = 0;
   let inString = false;
   let escape = false;
@@ -656,9 +658,19 @@ function parseBuddyJsonObject(cleaned: string): Record<string, unknown> | null {
   const direct = tryParse(cleaned);
   if (direct) return direct;
 
-  const extracted = extractFirstJsonObject(cleaned);
-  if (!extracted || extracted === cleaned) return null;
-  return tryParse(extracted);
+  // Try every `{` start: prose may contain a spurious `{...}` before the real JSON object.
+  let search = 0;
+  while (search < cleaned.length) {
+    const start = cleaned.indexOf('{', search);
+    if (start < 0) break;
+    const extracted = extractBalancedJsonAt(cleaned, start);
+    if (extracted) {
+      const parsed = tryParse(extracted);
+      if (parsed) return parsed;
+    }
+    search = start + 1;
+  }
+  return null;
 }
 
 function parseBuddyResponse(rawText: string): BuddyParsedResponse | null {
