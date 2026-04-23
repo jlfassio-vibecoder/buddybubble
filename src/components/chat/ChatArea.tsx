@@ -361,6 +361,8 @@ export function ChatArea({
   });
 
   const waitMainClear = waitMain.clear;
+  const waitMainRegisterIntent = waitMain.registerIntent;
+  const waitMainRegisterSuccessfulSend = waitMain.registerSuccessfulSend;
   const waitThreadClear = waitThread.clear;
 
   useEffect(() => {
@@ -445,19 +447,19 @@ export function ChatArea({
 
     // Arm the typing indicator optimistically; the send below will re-arm with the server
     // timestamp so the identity-bleed fix in `useAgentResponseWait` applies cleanly.
-    waitMain.registerIntent(buddyAgent);
+    waitMainRegisterIntent(buddyAgent);
 
     void sendMessage(BUDDY_ONBOARDING_SYSTEM_EVENT)
       .then((sent) => {
         if (sent) {
-          waitMain.registerSuccessfulSend(sent, buddyAgent);
+          waitMainRegisterSuccessfulSend(sent, buddyAgent);
         }
       })
       .catch((e) => {
         console.error('[Buddy UI] silent onboarding trigger failed', e);
         // On failure, allow a future empty-thread visit to try again.
         buddyTriggerFiredRef.current.delete(bubbleId);
-        waitMain.clear();
+        waitMainClear();
       });
   }, [
     activeBubble?.id,
@@ -466,7 +468,9 @@ export function ChatArea({
     messages.length,
     sendMessage,
     buddyAgent,
-    waitMain,
+    waitMainRegisterIntent,
+    waitMainRegisterSuccessfulSend,
+    waitMainClear,
   ]);
 
   const displayMessages = useMemo(() => {

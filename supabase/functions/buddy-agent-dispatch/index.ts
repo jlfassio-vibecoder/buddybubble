@@ -10,6 +10,7 @@
  * Do not share prompt files, RPCs, or secrets between the two functions.
  *
  * Secrets (to be configured): SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, BUDDY_AGENT_WEBHOOK_SECRET.
+ * Optional: BUDDY_AGENT_DEBUG=1 — logs full Gemini webhook payloads (avoid in production).
  * Deploy with verify_jwt=false (see supabase/config.toml); authenticate via shared secret header.
  *
  * Return contract: ALWAYS HTTP 200 for skips / auth failures / malformed payloads so Supabase's
@@ -266,21 +267,6 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
-  // Parse early (best-effort) so the tripwire log always has the payload shape available.
-  let payload: WebhookPayload | null = null;
-  if (req.method === 'POST') {
-    try {
-      payload = (await req.json()) as WebhookPayload;
-    } catch {
-      payload = null;
-    }
-  }
-  const record: MessageRecord | undefined = payload?.record;
-
-  // Tripwire: absolute top of the execution path. Do NOT remove without replacing with
-  // an equivalent observability hook — this is how we debug webhook wiring end-to-end.
-  console.log('[DEBUG] [Buddy Agent] Webhook invoked', { payload: record });
-
   if (req.method !== 'POST') {
     // Keep non-POST as HTTP 200 so misrouted probes are not confused with webhook retries.
     return json({ ok: false, error: 'method_not_allowed' }, 200);
@@ -316,10 +302,19 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: 'unauthorized' }, 200);
   }
 
+  let payload: WebhookPayload | null = null;
+  try {
+    payload = (await req.json()) as WebhookPayload;
+  } catch {
+    payload = null;
+  }
+
   if (!payload) {
     console.log('[DEBUG] [Buddy Agent] invalid_json payload');
     return json({ ok: false, error: 'invalid_json' }, 200);
   }
+
+  const record: MessageRecord | undefined = payload.record;
 
   const evt = (payload.type ?? '').toUpperCase();
   if (payload.schema !== 'public' || payload.table !== 'messages' || evt !== 'INSERT') {
@@ -494,12 +489,9 @@ Deno.serve(async (req) => {
     );
   }
 
-  // Log the raw LLM envelope (Phase 3 tripwire) so we still see exactly what Gemini returned
-  // end-to-end. We consume the body once here and reuse `geminiEnvelope` downstream.
   const geminiEnvelope = (await response.json().catch(() => null)) as {
     candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
   } | null;
-  console.log('[DEBUG] [Buddy Agent] LLM Response received:', geminiEnvelope);
 
   if (!geminiEnvelope) {
     return json({ ok: false, error: 'gemini_invalid_envelope' }, 200);
@@ -507,6 +499,15 @@ Deno.serve(async (req) => {
 
   // Extract the JSON text Gemini produced (JSON mode emits it as a single text part).
   const generatedText = geminiEnvelope.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  const candidateCount = geminiEnvelope.candidates?.length ?? 0;
+  if (Deno.env.get('BUDDY_AGENT_DEBUG')?.trim() === '1') {
+    console.log('[DEBUG] [Buddy Agent] LLM envelope (BUDDY_AGENT_DEBUG=1)', geminiEnvelope);
+  } else {
+    console.log('[Buddy Agent] gemini response', {
+      candidateCount,
+      textChars: generatedText.length,
+    });
+  }
   const parsedBuddyResponse = parseBuddyResponse(generatedText);
   if (!parsedBuddyResponse) {
     // Graceful: return 200 so a bad LLM hallucination does not trigger webhook retries.

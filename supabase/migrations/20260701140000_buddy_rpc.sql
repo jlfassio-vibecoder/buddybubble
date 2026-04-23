@@ -72,6 +72,19 @@ begin
       using errcode = 'P0001';
   end if;
 
+  -- Parent must exist in the same bubble (messages.parent_id has no cross-bubble FK guard).
+  if p_parent_id is not null then
+    if not exists (
+      select 1
+      from public.messages m
+      where m.id = p_parent_id
+        and m.bubble_id = p_bubble_id
+    ) then
+      raise exception 'buddy_create_onboarding_reply: parent message not in bubble'
+        using errcode = 'P0001';
+    end if;
+  end if;
+
   -- --- Optional Kanban card ----------------------------------------------
   -- Onboarding cards intentionally use generic task fields (item_type='task',
   -- status='todo', priority='medium'). No fitness-specific fields touched.

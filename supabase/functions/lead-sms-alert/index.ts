@@ -270,9 +270,9 @@ Deno.serve(async (req) => {
     }
   } else {
     if (!alertPhone) {
-      console.error('[lead-sms-alert] twilio_skipped: no lead_alert_phone');
+      console.warn('[lead-sms-alert] twilio_skipped: no lead_alert_phone');
     } else {
-      console.error(
+      console.warn(
         '[lead-sms-alert] twilio_skipped: missing TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, or TWILIO_PHONE_NUMBER',
       );
     }

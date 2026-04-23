@@ -335,6 +335,8 @@ export const TaskModalCommentsPanel = forwardRef<
   });
 
   const waitMainClear = waitMain.clear;
+  const waitMainRegisterIntent = waitMain.registerIntent;
+  const waitMainRegisterSuccessfulSend = waitMain.registerSuccessfulSend;
   const waitThreadClear = waitThread.clear;
 
   const chatMessages: ChatMessage[] = useMemo(() => {
@@ -410,22 +412,31 @@ export const TaskModalCommentsPanel = forwardRef<
 
     buddyTriggerFiredRef.current.add(taskId);
 
-    waitMain.registerIntent(buddyAgent);
+    waitMainRegisterIntent(buddyAgent);
 
     void sendMessageRef
       .current(BUDDY_ONBOARDING_SYSTEM_EVENT)
       .then((sent) => {
         if (sent) {
-          waitMain.registerSuccessfulSend(sent, buddyAgent);
+          waitMainRegisterSuccessfulSend(sent, buddyAgent);
         }
       })
       .catch((e) => {
         console.error('[Buddy UI] task panel silent onboarding trigger failed', e);
         // On failure, allow a future reopen of this task to try again.
         buddyTriggerFiredRef.current.delete(taskId);
-        waitMain.clear();
+        waitMainClear();
       });
-  }, [taskId, isLoading, canWrite, messages.length, buddyAgent, waitMain]);
+  }, [
+    taskId,
+    isLoading,
+    canWrite,
+    messages.length,
+    buddyAgent,
+    waitMainRegisterIntent,
+    waitMainRegisterSuccessfulSend,
+    waitMainClear,
+  ]);
 
   const prevThreadParentIdRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {

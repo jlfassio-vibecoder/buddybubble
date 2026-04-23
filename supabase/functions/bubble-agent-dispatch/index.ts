@@ -47,9 +47,6 @@ type BindingRow = {
   agent_definitions: AgentDefEmbed | AgentDefEmbed[] | null;
 };
 
-/** Matches `sortAgentEntries` / `UNBOUND_AGENT_SORT_ORDER` in the app client. */
-const UNBOUND_AGENT_SORT_ORDER = Number.MAX_SAFE_INTEGER;
-
 type OrderedAgentEntry = { sortOrder: number; def: AgentDefEmbed };
 
 type GeminiContent = {
@@ -985,9 +982,7 @@ Deno.serve(async (req) => {
   const bubbleAgentAuthIds = new Set<string>();
   const authIdToSlug = new Map<string, string>();
 
-  // Bubble-bound agents (same rows as `bubble_agent_bindings` on the client), deduped by
-  // `auth_user_id`, ordered by `sort_order` then `slug` — then workspace-global Buddy merged
-  // after bound agents (`useMessageThread` + `sortAgentEntries`).
+  // Bubble-bound agents only; @Buddy is handled by `buddy-agent-dispatch` (Coach RPC requires a binding row).
   const seenAuthIds = new Set<string>();
   const rawEntries: OrderedAgentEntry[] = [];
 
@@ -997,23 +992,6 @@ Deno.serve(async (req) => {
     if (seenAuthIds.has(def.auth_user_id)) continue;
     seenAuthIds.add(def.auth_user_id);
     rawEntries.push({ sortOrder: raw.sort_order, def });
-  }
-
-  const { data: buddyAgentRow, error: buddyAgentErr } = await supabase
-    .from('agent_definitions')
-    .select('slug, display_name, mention_handle, auth_user_id, is_active')
-    .eq('slug', 'buddy')
-    .eq('is_active', true)
-    .maybeSingle();
-
-  if (buddyAgentErr) {
-    console.error('[bubble-agent-dispatch] buddy agent_definitions', buddyAgentErr.message);
-  }
-
-  const buddyDef = buddyAgentRow as AgentDefEmbed | null;
-  if (buddyDef?.auth_user_id && buddyDef.is_active && !seenAuthIds.has(buddyDef.auth_user_id)) {
-    seenAuthIds.add(buddyDef.auth_user_id);
-    rawEntries.push({ sortOrder: UNBOUND_AGENT_SORT_ORDER, def: buddyDef });
   }
 
   rawEntries.sort((a, b) => {
@@ -1029,9 +1007,10 @@ Deno.serve(async (req) => {
     }
   }
 
-  // Positional first-match-wins, matching `resolveTargetAgent` on the client: same regex,
-  // scan mentions in order, first hit uses `availableAgents.find` order (= insertion order
-  // above: bubble-bound first, then unbound e.g. Buddy).
+  // Positional first-match-wins: iterate @tokens in order; first bound agent wins (same as
+  // client when `availableAgents` lists bubble-bound agents before global Buddy).
+  // Copilot suggestion ignored: widening beyond \\w+ or adding a DB CHECK belongs to a
+  // coordinated client+schema change; handles today are slug-like alphanumeric tokens.
   const MENTION_TOKEN_REGEX = /(^|[^\w])@(\w+)(?!\w)/g;
   for (const match of content.matchAll(MENTION_TOKEN_REGEX)) {
     const handleLower = (match[2] ?? '').toLowerCase();
