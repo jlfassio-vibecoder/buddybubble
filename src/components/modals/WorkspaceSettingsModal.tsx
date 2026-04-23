@@ -18,6 +18,44 @@ import { TrialMemberAccessSection } from '@/components/modals/workspace-settings
 
 export { COMMON_CALENDAR_TIMEZONES };
 
+const LEAD_INACTIVITY_OPTIONS: { value: number; label: string }[] = [
+  { value: 2, label: '2 minutes' },
+  { value: 5, label: '5 minutes' },
+  { value: 10, label: '10 minutes' },
+  { value: 30, label: '30 minutes' },
+];
+
+const MEMBER_INACTIVITY_OPTIONS: { value: number; label: string }[] = [
+  { value: 15, label: '15 minutes' },
+  { value: 30, label: '30 minutes' },
+  { value: 60, label: '1 hour' },
+  { value: 720, label: '12 hours' },
+  { value: 1440, label: '24 hours' },
+];
+
+const LEAD_INACTIVITY_ALLOWED = new Set(LEAD_INACTIVITY_OPTIONS.map((o) => o.value));
+const MEMBER_INACTIVITY_ALLOWED = new Set(MEMBER_INACTIVITY_OPTIONS.map((o) => o.value));
+
+function readLeadInactivityTimeoutMinutes(metadata: unknown): number {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return 5;
+  const raw = (metadata as Record<string, unknown>).lead_inactivity_timeout;
+  const n = Number(raw);
+  if (Number.isInteger(n) && LEAD_INACTIVITY_ALLOWED.has(n)) {
+    return n;
+  }
+  return 5;
+}
+
+function readMemberInactivityTimeoutMinutes(metadata: unknown): number {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return 15;
+  const raw = (metadata as Record<string, unknown>).member_inactivity_timeout;
+  const n = Number(raw);
+  if (Number.isInteger(n) && MEMBER_INACTIVITY_ALLOWED.has(n)) {
+    return n;
+  }
+  return 15;
+}
+
 export type WorkspaceSettingsModalProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -53,8 +91,16 @@ export function WorkspaceSettingsModal({
   const [initialPublicSlug, setInitialPublicSlug] = useState('');
   const [customDomain, setCustomDomain] = useState('');
   const [initialCustomDomain, setInitialCustomDomain] = useState('');
+  const [leadAlertPhone, setLeadAlertPhone] = useState('');
+  const [initialLeadAlertPhone, setInitialLeadAlertPhone] = useState('');
+  const [leadInactivityTimeout, setLeadInactivityTimeout] = useState(5);
+  const [initialLeadInactivityTimeout, setInitialLeadInactivityTimeout] = useState(5);
+  const [memberInactivityTimeout, setMemberInactivityTimeout] = useState(15);
+  const [initialMemberInactivityTimeout, setInitialMemberInactivityTimeout] = useState(15);
   const [configuringDomain, setConfiguringDomain] = useState(false);
   const [domainSyncToast, setDomainSyncToast] = useState<string | null>(null);
+
+  const canConfigureLeadAlerts = isOwner || isAdmin;
 
   useEffect(() => {
     if (!domainSyncToast) return;
@@ -68,7 +114,11 @@ export function WorkspaceSettingsModal({
     const supabase = createClient();
     const { data, error: qErr } = await supabase
       .from('workspaces')
-      .select('*')
+      .select(
+        isOwner || isAdmin
+          ? 'calendar_timezone, is_public, public_slug, custom_domain, metadata'
+          : 'calendar_timezone, is_public, public_slug, custom_domain',
+      )
       .eq('id', workspaceId)
       .maybeSingle();
     setLoading(false);
@@ -81,6 +131,7 @@ export function WorkspaceSettingsModal({
       is_public?: boolean | null;
       public_slug?: string | null;
       custom_domain?: string | null;
+      metadata?: unknown;
     };
     const tz = row.calendar_timezone?.trim() || 'UTC';
     setTimezone(tz);
@@ -94,7 +145,31 @@ export function WorkspaceSettingsModal({
     const domain = row.custom_domain?.trim() ?? '';
     setCustomDomain(domain);
     setInitialCustomDomain(domain);
-  }, [workspaceId]);
+
+    if (isOwner || isAdmin) {
+      const meta = row.metadata;
+      let phone = '';
+      if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
+        const v = (meta as Record<string, unknown>).lead_alert_phone;
+        if (typeof v === 'string') phone = v;
+      }
+      setLeadAlertPhone(phone);
+      setInitialLeadAlertPhone(phone);
+      const leadT = readLeadInactivityTimeoutMinutes(meta);
+      const memberT = readMemberInactivityTimeoutMinutes(meta);
+      setLeadInactivityTimeout(leadT);
+      setInitialLeadInactivityTimeout(leadT);
+      setMemberInactivityTimeout(memberT);
+      setInitialMemberInactivityTimeout(memberT);
+    } else {
+      setLeadAlertPhone('');
+      setInitialLeadAlertPhone('');
+      setLeadInactivityTimeout(5);
+      setInitialLeadInactivityTimeout(5);
+      setMemberInactivityTimeout(15);
+      setInitialMemberInactivityTimeout(15);
+    }
+  }, [workspaceId, isOwner, isAdmin]);
 
   useEffect(() => {
     if (!open) return;
@@ -105,7 +180,11 @@ export function WorkspaceSettingsModal({
     timezone !== initialTz ||
     isPublic !== initialIsPublic ||
     publicSlug.trim() !== initialPublicSlug.trim() ||
-    customDomain.trim() !== initialCustomDomain.trim();
+    customDomain.trim() !== initialCustomDomain.trim() ||
+    (canConfigureLeadAlerts &&
+      (leadAlertPhone.trim() !== initialLeadAlertPhone.trim() ||
+        leadInactivityTimeout !== initialLeadInactivityTimeout ||
+        memberInactivityTimeout !== initialMemberInactivityTimeout));
 
   const save = async () => {
     const oldDomain = initialCustomDomain.trim().toLowerCase() || null;
@@ -123,6 +202,13 @@ export function WorkspaceSettingsModal({
       is_public: isPublic,
       public_slug: slugNorm,
       custom_domain: domainNorm,
+      ...(canConfigureLeadAlerts
+        ? {
+            lead_alert_phone: leadAlertPhone.trim().length > 0 ? leadAlertPhone.trim() : null,
+            lead_inactivity_timeout: leadInactivityTimeout,
+            member_inactivity_timeout: memberInactivityTimeout,
+          }
+        : {}),
     };
 
     const saveResult = await updateWorkspaceSettingsAction(formData);
@@ -195,6 +281,13 @@ export function WorkspaceSettingsModal({
     setInitialCustomDomain(domainNorm ?? '');
     setPublicSlug(slugNorm ?? '');
     setCustomDomain(domainNorm ?? '');
+    if (canConfigureLeadAlerts) {
+      const savedPhone = leadAlertPhone.trim();
+      setInitialLeadAlertPhone(savedPhone);
+      setLeadAlertPhone(savedPhone);
+      setInitialLeadInactivityTimeout(leadInactivityTimeout);
+      setInitialMemberInactivityTimeout(memberInactivityTimeout);
+    }
     onSaved?.();
     toast.success('Socialspace settings saved.');
     if (vercelSynced) {
@@ -342,6 +435,78 @@ export function WorkspaceSettingsModal({
                       </p>
                     </div>
                   </div>
+
+                  {canConfigureLeadAlerts ? (
+                    <>
+                      <Separator />
+                      <div className="space-y-4">
+                        <div>
+                          <h3 className="text-sm font-semibold text-foreground">Lead Alerts</h3>
+                          <p className="text-xs text-muted-foreground">
+                            Receive a text message when a new lead messages you in their trial
+                            bubble.
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="ws-lead-alert-phone">Alert phone number</Label>
+                          <Input
+                            id="ws-lead-alert-phone"
+                            type="tel"
+                            autoComplete="tel"
+                            value={leadAlertPhone}
+                            onChange={(e) => setLeadAlertPhone(e.target.value)}
+                            placeholder="+1 555 123 4567"
+                            className="h-9"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Saved on this BuddyBubble only. Leave blank to turn off SMS alerts.
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="ws-lead-inactivity-timeout">
+                            Lead Timeout (Trial Bubbles)
+                          </Label>
+                          <select
+                            id="ws-lead-inactivity-timeout"
+                            value={leadInactivityTimeout}
+                            onChange={(e) => setLeadInactivityTimeout(Number(e.target.value))}
+                            className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                          >
+                            {LEAD_INACTIVITY_OPTIONS.map((o) => (
+                              <option key={o.value} value={o.value}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-xs text-muted-foreground">
+                            How long a trial chat must be quiet before a new message triggers a
+                            text.
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="ws-member-inactivity-timeout">
+                            Member Timeout (Standard Bubbles)
+                          </Label>
+                          <select
+                            id="ws-member-inactivity-timeout"
+                            value={memberInactivityTimeout}
+                            onChange={(e) => setMemberInactivityTimeout(Number(e.target.value))}
+                            className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                          >
+                            {MEMBER_INACTIVITY_OPTIONS.map((o) => (
+                              <option key={o.value} value={o.value}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-xs text-muted-foreground">
+                            How long a member chat must be quiet before a new message triggers a
+                            text.
+                          </p>
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
 
                   {isOwner || isAdmin ? (
                     <>
