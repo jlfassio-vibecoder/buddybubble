@@ -30,6 +30,9 @@ type AgentSpec = {
   mentionHandle?: string;
 };
 
+/** Matches Phase 3 backfill (`supabase/migrations/20260722130000_backfill_agent_avatars.sql`). */
+const DEFAULT_AGENT_AVATAR_URL = '/brand/BuddyBubble-mark.svg';
+
 const AGENTS: readonly AgentSpec[] = [
   {
     slug: 'coach',
@@ -174,6 +177,7 @@ async function provisionAgent(
       mention_handle: spec.mentionHandle ?? slug,
       display_name: displayName,
       auth_user_id: userId,
+      avatar_url: DEFAULT_AGENT_AVATAR_URL,
       is_active: true,
     })
     .select('id')
