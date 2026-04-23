@@ -22,6 +22,12 @@ type AgentSpec = {
   slug: string;
   email: string;
   displayName: string;
+  /**
+   * Token after `@` used for the catalog row's `mention_handle`. Optional; defaults to
+   * `slug` to preserve existing behavior for coach/organizer. Override when the handle
+   * should differ from the slug (e.g. Buddy uses capitalized `Buddy`).
+   */
+  mentionHandle?: string;
 };
 
 const AGENTS: readonly AgentSpec[] = [
@@ -34,6 +40,14 @@ const AGENTS: readonly AgentSpec[] = [
     slug: 'organizer',
     email: 'bubble-agent-organizer@system.buddybubble.local',
     displayName: 'Organizer',
+  },
+  {
+    // Buddy: general-purpose onboarding / guidance agent. Isolated from the fitness @Coach pipeline
+    // (see `supabase/functions/buddy-agent-dispatch/` vs. `supabase/functions/bubble-agent-dispatch/`).
+    slug: 'buddy',
+    email: 'buddy-agent@system.buddybubble.local',
+    displayName: 'Buddy',
+    mentionHandle: 'Buddy',
   },
 ];
 
@@ -157,7 +171,7 @@ async function provisionAgent(
     .from('agent_definitions')
     .insert({
       slug,
-      mention_handle: slug,
+      mention_handle: spec.mentionHandle ?? slug,
       display_name: displayName,
       auth_user_id: userId,
       is_active: true,

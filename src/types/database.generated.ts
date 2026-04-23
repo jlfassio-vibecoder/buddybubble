@@ -42,6 +42,7 @@ export type Database = {
           id: string;
           is_active: boolean;
           mention_handle: string;
+          response_timeout_ms: number;
           slug: string;
         };
         Insert: {
@@ -52,6 +53,7 @@ export type Database = {
           id?: string;
           is_active?: boolean;
           mention_handle: string;
+          response_timeout_ms?: number;
           slug: string;
         };
         Update: {
@@ -62,6 +64,7 @@ export type Database = {
           id?: string;
           is_active?: boolean;
           mention_handle?: string;
+          response_timeout_ms?: number;
           slug?: string;
         };
         Relationships: [
@@ -2280,6 +2283,18 @@ export type Database = {
       assign_user_to_session_deck: {
         Args: { p_session_id: string; p_user_id: string };
         Returns: number;
+      };
+      buddy_create_onboarding_reply: {
+        Args: {
+          p_action_type: string;
+          p_bubble_id: string;
+          p_buddy_user_id: string;
+          p_card_desc: string;
+          p_card_title: string;
+          p_parent_id: string;
+          p_reply_content: string;
+        };
+        Returns: Json;
       };
       can_mutate_task_linked_rows: {
         Args: { _task_id: string };

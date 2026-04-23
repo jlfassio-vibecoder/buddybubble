@@ -25,6 +25,8 @@ import type {
   TaskRow,
 } from '@/types/database';
 import type { ChatUserSnapshot } from '@/types/chat';
+import type { AgentDefinitionLite } from '@/lib/agents/resolveTargetAgent';
+import { sortAgentEntries, UNBOUND_AGENT_SORT_ORDER } from '@/lib/agents/sortAgentEntries';
 import {
   attachmentsToJson,
   classifyFileKind,
@@ -42,6 +44,20 @@ import { renderPdfFirstPageToJpegBlob } from '@/lib/pdf-page-thumbnail';
 import { formatUserFacingError } from '@/lib/format-error';
 
 export type { MessageThreadFilter } from '@/lib/message-thread';
+
+const DEFAULT_AGENT_RESPONSE_TIMEOUT_MS = 30_000;
+
+function toAgentDefinitionLite(def: AgentDefinitionRow): AgentDefinitionLite {
+  return {
+    id: def.id,
+    slug: def.slug,
+    mention_handle: def.mention_handle,
+    display_name: def.display_name,
+    avatar_url: def.avatar_url,
+    auth_user_id: def.auth_user_id,
+    response_timeout_ms: def.response_timeout_ms ?? DEFAULT_AGENT_RESPONSE_TIMEOUT_MS,
+  };
+}
 
 export type MessageThreadTeamMember = {
   id: string;
@@ -82,8 +98,25 @@ export type UseMessageThreadResult = {
   messages: MessageRowWithEmbeddedTask[];
   userById: Record<string, ChatUserSnapshot>;
   teamMembers: MessageThreadTeamMember[];
-  /** Coach / agent `messages.user_id` values for this thread’s bubble (from `bubble_agent_bindings`). */
+  /**
+   * Agent `messages.user_id` values available in this thread's bubble.
+   *
+   * Ordering contract (see `sortAgentEntries` in this file):
+   *   1. `bubble_agent_bindings.sort_order` ASC
+   *   2. `agent_definitions.slug` ASC (stable tiebreaker)
+   *   3. Workspace-global agents (e.g. Buddy) always appear after bubble-bound agents.
+   *
+   * Consumers must NEVER rely on array index for identity — always look up by slug via
+   * `agentsByAuthUserId`. The ordering is exposed only so that sweeps (server-side mention
+   * parsing, realtime dedupe) have a reproducible iteration order.
+   */
   agentAuthUserIds: string[];
+  /**
+   * Agent definitions available in this surface, keyed by `auth_user_id`. Used by the chat
+   * message mapper (for agent-sourced avatars) and by `useAgentResponseWait` consumers (for
+   * looking up by sender id). Replaces ad-hoc `agentAuthUserIds[0]` lookups.
+   */
+  agentsByAuthUserId: Map<string, AgentDefinitionLite>;
   replyCounts: Map<string, number>;
   isLoading: boolean;
   error: string | null;
@@ -115,6 +148,9 @@ export function useMessageThread({
   const [userById, setUserById] = useState<Record<string, ChatUserSnapshot>>({});
   const [teamMembers, setTeamMembers] = useState<MessageThreadTeamMember[]>([]);
   const [agentAuthUserIds, setAgentAuthUserIds] = useState<string[]>([]);
+  const [agentsByAuthUserId, setAgentsByAuthUserId] = useState<Map<string, AgentDefinitionLite>>(
+    () => new Map(),
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -529,15 +565,31 @@ export function useMessageThread({
           ? supabase
               .from('bubble_agent_bindings')
               .select(
-                'sort_order, agent_definitions ( id, slug, mention_handle, display_name, auth_user_id, avatar_url, is_active, created_at )',
+                'sort_order, agent_definitions ( id, slug, mention_handle, display_name, auth_user_id, avatar_url, is_active, created_at, response_timeout_ms )',
               )
               .eq('bubble_id', agentQueryBubbleId)
               .eq('enabled', true)
               .order('sort_order', { ascending: true })
           : Promise.resolve({ data: [] as unknown[], error: null });
 
-      const [{ data, error: wmErr }, { data: agentBindingRows, error: agentErr }] =
-        await Promise.all([membersPromise, agentsPromise]);
+      // Buddy is a workspace-global onboarding/guidance agent — available in EVERY bubble without
+      // needing a `bubble_agent_bindings` row. We fetch him directly from `agent_definitions`
+      // and merge into `teamMembers` below, deduped against bubble-bound agents by `auth_user_id`.
+      // @Coach / @Organizer behavior is unchanged — they still only appear where bound.
+      const buddyAgentPromise = supabase
+        .from('agent_definitions')
+        .select(
+          'id, slug, mention_handle, display_name, auth_user_id, avatar_url, is_active, created_at, response_timeout_ms',
+        )
+        .eq('slug', 'buddy')
+        .eq('is_active', true)
+        .maybeSingle();
+
+      const [
+        { data, error: wmErr },
+        { data: agentBindingRows, error: agentErr },
+        { data: buddyAgentRow, error: buddyAgentErr },
+      ] = await Promise.all([membersPromise, agentsPromise, buddyAgentPromise]);
 
       if (cancelled) return;
 
@@ -548,6 +600,12 @@ export function useMessageThread({
         console.error(
           '[useMessageThread] bubble_agent_bindings',
           supabaseClientErrorMessage(agentErr),
+        );
+      }
+      if (buddyAgentErr) {
+        console.error(
+          '[useMessageThread] buddy agent_definitions',
+          supabaseClientErrorMessage(buddyAgentErr),
         );
       }
 
@@ -579,9 +637,12 @@ export function useMessageThread({
         });
       }
 
-      const agentMembers: MessageThreadTeamMember[] = [];
-      const agentSnapshots: Record<string, ChatUserSnapshot> = {};
-      const agentAuthIds = new Set<string>();
+      // Collect agent rows (bubble-bound + workspace-global) and sort them through a single
+      // deterministic comparator so that agentAuthUserIds, teamMembers, and the Map below
+      // all share the same iteration order. See `sortAgentEntries` JSDoc for the contract.
+      type OrderedEntry = { sortOrder: number; def: AgentDefinitionRow };
+      const seenAuthIds = new Set<string>();
+      const rawEntries: OrderedEntry[] = [];
 
       for (const raw of agentBindingRows ?? []) {
         const row = raw as {
@@ -592,7 +653,29 @@ export function useMessageThread({
           ? row.agent_definitions[0]
           : row.agent_definitions;
         if (!def?.auth_user_id || !def.is_active) continue;
+        if (seenAuthIds.has(def.auth_user_id)) continue;
+        seenAuthIds.add(def.auth_user_id);
+        rawEntries.push({ sortOrder: row.sort_order, def });
+      }
+
+      // Merge the workspace-global Buddy agent. Dedup against bubble-bound agents so a React key
+      // collision cannot happen if Buddy ever gets both global and per-bubble bindings.
+      const buddyDef = buddyAgentRow as AgentDefinitionRow | null;
+      if (buddyDef?.auth_user_id && buddyDef.is_active && !seenAuthIds.has(buddyDef.auth_user_id)) {
+        seenAuthIds.add(buddyDef.auth_user_id);
+        rawEntries.push({ sortOrder: UNBOUND_AGENT_SORT_ORDER, def: buddyDef });
+      }
+
+      const orderedEntries = sortAgentEntries(rawEntries);
+
+      const agentMembers: MessageThreadTeamMember[] = [];
+      const agentSnapshots: Record<string, ChatUserSnapshot> = {};
+      const agentAuthIds = new Set<string>();
+      const agentsMap = new Map<string, AgentDefinitionLite>();
+
+      for (const { def } of orderedEntries) {
         agentAuthIds.add(def.auth_user_id);
+        agentsMap.set(def.auth_user_id, toAgentDefinitionLite(def));
         agentMembers.push({
           id: def.auth_user_id,
           name: def.display_name,
@@ -613,6 +696,7 @@ export function useMessageThread({
 
       setTeamMembers(mergedMembers);
       setAgentAuthUserIds([...agentAuthIds]);
+      setAgentsByAuthUserId(agentsMap);
       setUserById((prev) => ({ ...prev, ...agentSnapshots, ...fromRows }));
     }
     void loadMembersAndAgents();
@@ -1012,6 +1096,7 @@ export function useMessageThread({
     userById,
     teamMembers,
     agentAuthUserIds,
+    agentsByAuthUserId,
     replyCounts,
     isLoading,
     error,

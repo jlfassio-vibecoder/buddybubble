@@ -9,9 +9,10 @@ import type { ChatMessage } from '@/types/chat';
 import type { MessageAttachment } from '@/types/message-attachment';
 import { MESSAGE_ATTACHMENT_FILE_ACCEPT } from '@/lib/message-attachment-limits';
 import type { SendMessageSuccess } from '@/hooks/useMessageThread';
+import type { PendingAgentResponse } from '@/hooks/useAgentResponseWait';
 import { ChatMessageRow } from './ChatMessageRow';
 import { RichMessageComposer } from './RichMessageComposer';
-import { CoachTypingIndicator } from './CoachTypingIndicator';
+import { AgentTypingIndicator } from './AgentTypingIndicator';
 
 export type ThreadPanelProps = {
   activeThreadParent: ChatMessage | null;
@@ -21,12 +22,18 @@ export type ThreadPanelProps = {
   onClose: () => void;
   /** Submit a new reply in the current thread (parent id is handled by the caller). */
   onSendMessage: (content: string, files?: File[]) => Promise<SendMessageSuccess | null>;
-  /** Fires before submit guards; use for optimistic coach typing UI. */
-  onSubmitIntent?: () => void;
-  /** After a successful send; parent registers coach wait with server message id. */
-  onSuccessfulThreadSend?: (sent: SendMessageSuccess) => void;
-  isWaitingForCoach?: boolean;
-  coachTypingAvatarUrl?: string | null;
+  /**
+   * Fires before submit guards with the current draft text so the caller can run the
+   * agent resolver and arm (or skip) the optimistic "agent typing" UI.
+   */
+  onSubmitIntent?: (text: string) => void;
+  /**
+   * After a successful send; parent runs the resolver against the sent content and wires
+   * `useAgentResponseWait.registerSuccessfulSend(sent, agent)` when a target agent matches.
+   */
+  onSuccessfulThreadSend?: (sent: SendMessageSuccess, text: string) => void;
+  /** Pending agent response in the thread scope — when set, the typing indicator renders. */
+  threadPending?: PendingAgentResponse | null;
   onOpenAttachment: (attachments: MessageAttachment[], index: number) => void;
   /** Opens the task modal for an embedded Kanban card (chat feed cards). */
   onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
@@ -48,8 +55,7 @@ export function ThreadPanel({
   onSendMessage,
   onSubmitIntent,
   onSuccessfulThreadSend,
-  isWaitingForCoach = false,
-  coachTypingAvatarUrl,
+  threadPending = null,
   onOpenAttachment,
   onOpenTask,
   bubbleUpPropsFor,
@@ -124,9 +130,9 @@ export function ThreadPanel({
                 />
               ))}
             </div>
-            {isWaitingForCoach ? (
+            {threadPending ? (
               <div className="mt-6 w-full shrink-0">
-                <CoachTypingIndicator density="thread" coachAvatarUrl={coachTypingAvatarUrl} />
+                <AgentTypingIndicator density="thread" pending={threadPending} />
               </div>
             ) : null}
           </div>
@@ -136,12 +142,12 @@ export function ThreadPanel({
             className="border-t border-border bg-background p-4"
             value={threadInput}
             onChange={(next, _meta) => setThreadInput(next)}
-            onSubmitIntent={onSubmitIntent}
+            onSubmitIntent={() => onSubmitIntent?.(threadInput)}
             onSubmit={async ({ text, files }) => {
               if ((!text.trim() && (!files || files.length === 0)) || sending) return false;
               const sent = await onSendMessage(text, files);
               if (!sent) return false;
-              onSuccessfulThreadSend?.(sent);
+              onSuccessfulThreadSend?.(sent, text);
               setThreadInput('');
               setPendingFiles([]);
               return true;

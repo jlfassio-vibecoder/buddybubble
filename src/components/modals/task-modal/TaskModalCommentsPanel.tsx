@@ -18,10 +18,11 @@ import type { MessageAttachment } from '@/types/message-attachment';
 import type { ChatMessage } from '@/types/chat';
 import { useUserProfileStore } from '@/store/userProfileStore';
 import { useMessageThread } from '@/hooks/useMessageThread';
-import { useCoachTypingWait } from '@/hooks/useCoachTypingWait';
-import { CoachTypingIndicator } from '@/components/chat/CoachTypingIndicator';
+import { useAgentResponseWait } from '@/hooks/useAgentResponseWait';
+import { AgentTypingIndicator } from '@/components/chat/AgentTypingIndicator';
 import { useTaskBubbleUps } from '@/hooks/use-task-bubble-ups';
 import { rowToChatMessage } from '@/lib/chat-message-mapper';
+import { resolveTargetAgent } from '@/lib/agents/resolveTargetAgent';
 import { toChatUserSnapshot } from '@/lib/message-thread';
 import { MESSAGE_ATTACHMENT_FILE_ACCEPT } from '@/lib/message-attachment-limits';
 import { ChatMessageRow } from '@/components/chat/ChatMessageRow';
@@ -31,6 +32,22 @@ import { createClient } from '@utils/supabase/client';
 import { supabaseClientErrorMessage } from '@/lib/supabase-client-error';
 import { Button } from '@/components/ui/button';
 import { PremiumGate } from '@/components/subscription/premium-gate';
+
+/**
+ * Silent system-message sentinel that wakes the Buddy agent on first entry into an empty task
+ * comment thread. Inserted as a normal `messages` row so the webhook fires; filtered out of
+ * every downstream view so the user never sees the raw string. Keep in sync with the value in
+ * `src/components/chat/ChatArea.tsx` and `supabase/functions/buddy-agent-dispatch`.
+ */
+const BUDDY_ONBOARDING_SYSTEM_EVENT = '[SYSTEM_EVENT: ONBOARDING_STARTED]';
+
+/**
+ * Default target agent slug for task-modal comments. A task lives inside a bubble whose agent
+ * binding drives which agent (if any) replies to unscoped comments. We mirror the BuddyBubble
+ * default (`'coach'`) so per-bubble Coach variants will be picked up automatically when the
+ * bindings resolve them.
+ */
+const TASK_COMMENTS_DEFAULT_AGENT_SLUG = 'coach';
 
 type TaskPickerRow = {
   id: string;
@@ -150,7 +167,7 @@ export const TaskModalCommentsPanel = forwardRef<
     taskBubbleIdHint,
   });
 
-  const { messages, userById, teamMembers, agentAuthUserIds, replyCounts, sending, isLoading } =
+  const { messages, userById, teamMembers, agentsByAuthUserId, replyCounts, sending, isLoading } =
     chat;
 
   const onMarkedReadRef = useRef(onMarkedRead);
@@ -282,43 +299,59 @@ export const TaskModalCommentsPanel = forwardRef<
 
   const sortedRows = useMemo(
     () =>
-      [...messages].sort(
-        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-      ),
+      // Hide the silent Buddy onboarding sentinel from every downstream view (root feed, thread
+      // panel, coach-typing detection). The raw string must NEVER reach the comment UI.
+      [...messages]
+        .filter((m) => m.content !== BUDDY_ONBOARDING_SYSTEM_EVENT)
+        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()),
     [messages],
   );
 
-  const coachTypingMessages = useMemo(() => {
-    if (activeThreadParent) {
-      const pid = activeThreadParent.id;
-      return sortedRows.filter((m) => m.id === pid || m.parent_id === pid);
-    }
-    return sortedRows.filter((m) => m.parent_id == null || m.parent_id === '');
+  const agentScopeRootMessages = useMemo(
+    () => sortedRows.filter((m) => m.parent_id == null || m.parent_id === ''),
+    [sortedRows],
+  );
+  const agentScopeThreadMessages = useMemo(() => {
+    const pid = activeThreadParent?.id;
+    if (!pid) return [];
+    return sortedRows.filter((m) => m.id === pid || m.parent_id === pid);
   }, [sortedRows, activeThreadParent?.id]);
 
-  const {
-    isWaitingForCoach,
-    optimisticIntent: onComposerSubmitIntent,
-    registerSuccessfulSend,
-    clear: clearCoachWait,
-  } = useCoachTypingWait({
-    messages: coachTypingMessages,
-    myUserId: myProfile?.id,
+  const availableAgents = useMemo(() => [...agentsByAuthUserId.values()], [agentsByAuthUserId]);
+  const buddyAgent = useMemo(
+    () => availableAgents.find((a) => a.slug === 'buddy') ?? null,
+    [availableAgents],
+  );
+
+  const waitMain = useAgentResponseWait({
+    messages: agentScopeRootMessages,
+    myUserId: myProfile?.id ?? null,
+    agentsByAuthUserId,
+  });
+  const waitThread = useAgentResponseWait({
+    messages: agentScopeThreadMessages,
+    myUserId: myProfile?.id ?? null,
+    agentsByAuthUserId,
   });
 
-  const coachTypingAvatarUrl = useMemo(() => {
-    const id = agentAuthUserIds[0];
-    if (!id) return null;
-    return userById[id]?.avatar_url ?? null;
-  }, [agentAuthUserIds, userById]);
+  const waitMainClear = waitMain.clear;
+  const waitMainRegisterIntent = waitMain.registerIntent;
+  const waitMainRegisterSuccessfulSend = waitMain.registerSuccessfulSend;
+  const waitThreadClear = waitThread.clear;
 
   const chatMessages: ChatMessage[] = useMemo(() => {
     return sortedRows.map((row) => {
       const base = userById[row.user_id];
       const user = myProfile && row.user_id === myProfile.id ? toChatUserSnapshot(myProfile) : base;
-      return rowToChatMessage(row, user, bubbleNameById[row.bubble_id] ?? 'Bubble', replyCounts);
+      return rowToChatMessage(
+        row,
+        user,
+        bubbleNameById[row.bubble_id] ?? 'Bubble',
+        replyCounts,
+        agentsByAuthUserId,
+      );
     });
-  }, [sortedRows, userById, replyCounts, myProfile, bubbleNameById]);
+  }, [sortedRows, userById, replyCounts, myProfile, bubbleNameById, agentsByAuthUserId]);
 
   useEffect(() => {
     deepLinkConsumedRef.current = false;
@@ -344,6 +377,67 @@ export const TaskModalCommentsPanel = forwardRef<
     [chatMessages, activeThreadParent?.id],
   );
 
+  // ---------------------------------------------------------------------------
+  // Buddy: proactive onboarding trigger + "typing" indicator for task comments.
+  // When the user opens a card whose comment thread is empty, silently insert the sentinel so
+  // `buddy-agent-dispatch` fires. `sortedRows` is already filtered to exclude the sentinel, so
+  // the user never sees it. Loop-prevention is keyed on raw `messages.length` (NOT `sortedRows`
+  // or `rootMessages`) — otherwise the filter would make the thread look permanently empty
+  // after a fire and we would re-trigger forever.
+  // ---------------------------------------------------------------------------
+
+  /** Task ids we have already fired the trigger for in this mount — prevents re-fire loops. */
+  const buddyTriggerFiredRef = useRef<Set<string>>(new Set());
+  /** Stable ref to the current `sendMessage` so the trigger effect isn't re-run each render. */
+  const sendMessageRef = useRef(chat.sendMessage);
+  sendMessageRef.current = chat.sendMessage;
+
+  // Reset any lingering pending typing state whenever the active task changes so switching
+  // cards never leaves a phantom indicator running from a previous task.
+  useEffect(() => {
+    waitMainClear();
+    waitThreadClear();
+  }, [taskId, waitMainClear, waitThreadClear]);
+
+  useEffect(() => {
+    if (!taskId) return;
+    if (isLoading) return;
+    if (!canWrite) return;
+    // IMPORTANT: check RAW `messages` (NOT `sortedRows` / `rootMessages`) so we truly detect an
+    // empty thread. Using filtered lists would re-fire indefinitely after the hidden sentinel
+    // is inserted.
+    if (messages.length !== 0) return;
+    if (buddyTriggerFiredRef.current.has(taskId)) return;
+    if (!buddyAgent) return;
+
+    buddyTriggerFiredRef.current.add(taskId);
+
+    waitMainRegisterIntent(buddyAgent);
+
+    void sendMessageRef
+      .current(BUDDY_ONBOARDING_SYSTEM_EVENT)
+      .then((sent) => {
+        if (sent) {
+          waitMainRegisterSuccessfulSend(sent, buddyAgent);
+        }
+      })
+      .catch((e) => {
+        console.error('[Buddy UI] task panel silent onboarding trigger failed', e);
+        // On failure, allow a future reopen of this task to try again.
+        buddyTriggerFiredRef.current.delete(taskId);
+        waitMainClear();
+      });
+  }, [
+    taskId,
+    isLoading,
+    canWrite,
+    messages.length,
+    buddyAgent,
+    waitMainRegisterIntent,
+    waitMainRegisterSuccessfulSend,
+    waitMainClear,
+  ]);
+
   const prevThreadParentIdRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     const next = activeThreadParent?.id ?? null;
@@ -353,11 +447,14 @@ export const TaskModalCommentsPanel = forwardRef<
     }
     if (prevThreadParentIdRef.current === next) return;
     prevThreadParentIdRef.current = next;
-    clearCoachWait();
-  }, [activeThreadParent?.id, clearCoachWait]);
+    waitThreadClear();
+  }, [activeThreadParent?.id, waitThreadClear]);
+
+  const hasMainPending = waitMain.pending != null;
+  const hasThreadPending = waitThread.pending != null;
 
   useLayoutEffect(() => {
-    if (!isWaitingForCoach) return;
+    if (!(hasMainPending || hasThreadPending)) return;
     const scrollEl = unified
       ? (scrollContainerRef?.current ?? null)
       : activeThreadParent
@@ -368,7 +465,8 @@ export const TaskModalCommentsPanel = forwardRef<
       scrollEl.scrollTop = scrollEl.scrollHeight;
     });
   }, [
-    isWaitingForCoach,
+    hasMainPending,
+    hasThreadPending,
     messages.length,
     activeThreadParent?.id,
     unified,
@@ -434,14 +532,30 @@ export const TaskModalCommentsPanel = forwardRef<
       className="border-t border-border px-6 pt-4"
       value={draft}
       onChange={(next, _meta) => setDraft(next)}
-      onSubmitIntent={onComposerSubmitIntent}
+      onSubmitIntent={() => {
+        const result = resolveTargetAgent({
+          messageDraft: draft,
+          availableAgents,
+          contextDefaultAgentSlug: TASK_COMMENTS_DEFAULT_AGENT_SLUG,
+        });
+        if (result) {
+          waitMain.registerIntent(result.agent);
+        }
+      }}
       onSubmit={async ({ text, files }) => {
         if (!text.trim() && (!files || files.length === 0)) return false;
         const sent = await chat.sendMessage(text, undefined, files);
         if (sent) {
           setDraft('');
           setPendingFiles([]);
-          registerSuccessfulSend(sent);
+          const result = resolveTargetAgent({
+            messageDraft: text,
+            availableAgents,
+            contextDefaultAgentSlug: TASK_COMMENTS_DEFAULT_AGENT_SLUG,
+          });
+          if (result) {
+            waitMain.registerSuccessfulSend(sent, result.agent);
+          }
         }
         return sent != null;
       }}
@@ -477,7 +591,18 @@ export const TaskModalCommentsPanel = forwardRef<
       className="border-t border-border px-6 py-4"
       value={threadDraft}
       onChange={(next, _meta) => setThreadDraft(next)}
-      onSubmitIntent={onComposerSubmitIntent}
+      onSubmitIntent={() => {
+        // Thread-composer gating (fixes the "ungated bleed" documented in the audit): only arm
+        // the thread-scoped typing indicator when the resolver returns a non-null target agent.
+        const result = resolveTargetAgent({
+          messageDraft: threadDraft,
+          availableAgents,
+          contextDefaultAgentSlug: TASK_COMMENTS_DEFAULT_AGENT_SLUG,
+        });
+        if (result) {
+          waitThread.registerIntent(result.agent);
+        }
+      }}
       onSubmit={async ({ text, files }) => {
         if ((!text.trim() && (!files || files.length === 0)) || sending) return false;
         const parentId = activeThreadParent!.id;
@@ -485,7 +610,14 @@ export const TaskModalCommentsPanel = forwardRef<
         if (sent) {
           setThreadDraft('');
           setThreadPendingFiles([]);
-          registerSuccessfulSend(sent);
+          const result = resolveTargetAgent({
+            messageDraft: text,
+            availableAgents,
+            contextDefaultAgentSlug: TASK_COMMENTS_DEFAULT_AGENT_SLUG,
+          });
+          if (result) {
+            waitThread.registerSuccessfulSend(sent, result.agent);
+          }
         }
         return sent != null;
       }}
@@ -567,12 +699,12 @@ export const TaskModalCommentsPanel = forwardRef<
                   />
                 ))
               : null}
-            {!isLoading && rootMessages.length === 0 ? (
+            {!isLoading && rootMessages.length === 0 && !waitMain.pending ? (
               <p className="text-sm text-muted-foreground">No comments yet.</p>
             ) : null}
-            {isWaitingForCoach ? (
+            {waitMain.pending ? (
               <div className="mt-6 w-full shrink-0">
-                <CoachTypingIndicator density="rail" coachAvatarUrl={coachTypingAvatarUrl} />
+                <AgentTypingIndicator density="rail" pending={waitMain.pending} />
               </div>
             ) : null}
           </div>
@@ -631,9 +763,9 @@ export const TaskModalCommentsPanel = forwardRef<
                   liveSessionViewerUserId={myProfile?.id ?? null}
                 />
               ))}
-              {isWaitingForCoach ? (
+              {waitThread.pending ? (
                 <div className="mt-6 w-full shrink-0">
-                  <CoachTypingIndicator density="thread" coachAvatarUrl={coachTypingAvatarUrl} />
+                  <AgentTypingIndicator density="thread" pending={waitThread.pending} />
                 </div>
               ) : null}
             </div>

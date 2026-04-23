@@ -46,12 +46,29 @@ import { MessageMediaModal } from './MessageMediaModal';
 import type { OpenTaskOptions } from '@/types/open-task-options';
 import { resolveTaskCommentMessageIdFromBubbleAnchor } from '@/lib/resolve-task-comment-from-bubble-anchor';
 import { useTaskBubbleUps } from '@/hooks/use-task-bubble-ups';
-import { useCoachTypingWait } from '@/hooks/useCoachTypingWait';
+import { useAgentResponseWait } from '@/hooks/useAgentResponseWait';
 import { useMessageThread, type PeerThreadReplyInsertPayload } from '@/hooks/useMessageThread';
-import { CoachTypingIndicator } from '@/components/chat/CoachTypingIndicator';
+import { AgentTypingIndicator } from '@/components/chat/AgentTypingIndicator';
+import { resolveTargetAgent } from '@/lib/agents/resolveTargetAgent';
 import { toChatUserSnapshot, type MessageThreadFilter } from '@/lib/message-thread';
 import { liveSessionInviteMetadataToJson } from '@/types/live-session-invite';
 import { randomUuid } from '@/lib/random-uuid';
+
+/**
+ * Silent system-message sentinel that wakes the Buddy agent on first entry into an empty chat
+ * context. The frontend inserts this as a normal `messages` row (so the webhook fires), and then
+ * the render path filters it out of `displayMessages` so the user never sees the raw string.
+ * Keep in sync with `BUDDY_ONBOARDING_SYSTEM_EVENT` in `supabase/functions/buddy-agent-dispatch`.
+ */
+const BUDDY_ONBOARDING_SYSTEM_EVENT = '[SYSTEM_EVENT: ONBOARDING_STARTED]';
+
+/**
+ * Default target agent slug for a BuddyBubble chat area. The fitness surface assumes `@Coach`
+ * is the implicit responder for non-mention messages. Kept here (not in generic agent code)
+ * per `docs/refactor/agent-routing-audit.md` — `contextDefaultAgentSlug` lives at the surface
+ * level, not in the resolver library.
+ */
+const CHAT_AREA_DEFAULT_AGENT_SLUG = 'coach';
 
 type TaskPickerRow = {
   id: string;
@@ -298,8 +315,9 @@ export function ChatArea({
     messages,
     userById,
     teamMembers,
-    agentAuthUserIds,
+    agentsByAuthUserId,
     replyCounts,
+    isLoading: isThreadLoading,
     error: messageError,
     sending: sendingAttachments,
     sendMessage,
@@ -314,39 +332,47 @@ export function ChatArea({
     onPeerThreadReplyInsert: handlePeerThreadReplyInsert,
   });
 
-  const coachScopeRootMessages = useMemo(
+  const agentScopeRootMessages = useMemo(
     () => messages.filter((m) => m.parent_id == null || m.parent_id === ''),
     [messages],
   );
-  const coachScopeThreadMessages = useMemo(() => {
+  const agentScopeThreadMessages = useMemo(() => {
     const pid = activeThreadParent?.id;
     if (!pid) return [];
     return messages.filter((m) => m.id === pid || m.parent_id === pid);
   }, [messages, activeThreadParent?.id]);
 
-  const coachWaitMain = useCoachTypingWait({
-    messages: coachScopeRootMessages,
-    myUserId: myProfile?.id,
+  const availableAgents = useMemo(() => [...agentsByAuthUserId.values()], [agentsByAuthUserId]);
+
+  const buddyAgent = useMemo(
+    () => availableAgents.find((a) => a.slug === 'buddy') ?? null,
+    [availableAgents],
+  );
+
+  const waitMain = useAgentResponseWait({
+    messages: agentScopeRootMessages,
+    myUserId: myProfile?.id ?? null,
+    agentsByAuthUserId,
   });
-  const coachWaitThread = useCoachTypingWait({
-    messages: coachScopeThreadMessages,
-    myUserId: myProfile?.id,
+  const waitThread = useAgentResponseWait({
+    messages: agentScopeThreadMessages,
+    myUserId: myProfile?.id ?? null,
+    agentsByAuthUserId,
   });
 
-  const coachTypingAvatarUrl = useMemo(() => {
-    const id = agentAuthUserIds[0];
-    if (!id) return null;
-    return userById[id]?.avatar_url ?? null;
-  }, [agentAuthUserIds, userById]);
+  const waitMainClear = waitMain.clear;
+  const waitMainRegisterIntent = waitMain.registerIntent;
+  const waitMainRegisterSuccessfulSend = waitMain.registerSuccessfulSend;
+  const waitThreadClear = waitThread.clear;
 
   useEffect(() => {
-    coachWaitMain.clear();
-    coachWaitThread.clear();
-  }, [activeBubble?.id, coachWaitMain.clear, coachWaitThread.clear]);
+    waitMainClear();
+    waitThreadClear();
+  }, [activeBubble?.id, waitMainClear, waitThreadClear]);
 
   useEffect(() => {
-    coachWaitThread.clear();
-  }, [activeThreadParent?.id, coachWaitThread.clear]);
+    waitThreadClear();
+  }, [activeThreadParent?.id, waitThreadClear]);
 
   const chatBubbleTaskIds = useMemo(() => {
     const s = new Set<string>();
@@ -372,13 +398,80 @@ export function ChatArea({
   }, [teamMembers, myProfile]);
 
   const allMessages = useMemo(() => {
-    return messages.map((row) => {
-      const base = userById[row.user_id];
-      const user: ChatUserSnapshot | undefined =
-        myProfile && row.user_id === myProfile.id ? toChatUserSnapshot(myProfile) : base;
-      return rowToChatMessage(row, user, bubbleNameById[row.bubble_id] ?? bubbleName, replyCounts);
-    });
-  }, [messages, userById, myProfile, bubbleNameById, bubbleName, replyCounts]);
+    return (
+      messages
+        // Hide the silent Buddy onboarding sentinel from every downstream view (main feed + threads
+        // + thread panel). The raw string must NEVER reach the chat UI.
+        .filter((row) => row.content !== BUDDY_ONBOARDING_SYSTEM_EVENT)
+        .map((row) => {
+          const base = userById[row.user_id];
+          const user: ChatUserSnapshot | undefined =
+            myProfile && row.user_id === myProfile.id ? toChatUserSnapshot(myProfile) : base;
+          return rowToChatMessage(
+            row,
+            user,
+            bubbleNameById[row.bubble_id] ?? bubbleName,
+            replyCounts,
+            agentsByAuthUserId,
+          );
+        })
+    );
+  }, [messages, userById, myProfile, bubbleNameById, bubbleName, replyCounts, agentsByAuthUserId]);
+
+  // ---------------------------------------------------------------------------
+  // Buddy: proactive onboarding trigger + "typing" indicator.
+  // When the user lands on an empty bubble for the first time, silently insert the sentinel
+  // system message so the `buddy-agent-dispatch` Edge Function fires. `allMessages` is already
+  // filtered to exclude the sentinel, so the user never sees it in the feed.
+  // ---------------------------------------------------------------------------
+
+  /** Bubble ids we have already fired the trigger for in this mount — prevents re-fire loops. */
+  const buddyTriggerFiredRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const bubbleId = activeBubble?.id;
+    if (!bubbleId) return;
+    // Never fire on the synthetic "All Bubbles" view — it is not a single onboarding context.
+    if (bubbleId === ALL_BUBBLES_BUBBLE_ID) return;
+    if (isThreadLoading) return;
+    if (!canPostMessages) return;
+    // IMPORTANT: check RAW `messages` (not `allMessages`) so we truly detect an empty thread.
+    // If we had used `allMessages` the sentinel-filter would make this permanently "empty" after
+    // a first fire and cause an infinite loop.
+    if (messages.length !== 0) return;
+    if (buddyTriggerFiredRef.current.has(bubbleId)) return;
+    // Buddy may not be loaded yet when the component mounts into an empty bubble; wait a tick.
+    if (!buddyAgent) return;
+
+    buddyTriggerFiredRef.current.add(bubbleId);
+
+    // Arm the typing indicator optimistically; the send below will re-arm with the server
+    // timestamp so the identity-bleed fix in `useAgentResponseWait` applies cleanly.
+    waitMainRegisterIntent(buddyAgent);
+
+    void sendMessage(BUDDY_ONBOARDING_SYSTEM_EVENT)
+      .then((sent) => {
+        if (sent) {
+          waitMainRegisterSuccessfulSend(sent, buddyAgent);
+        }
+      })
+      .catch((e) => {
+        console.error('[Buddy UI] silent onboarding trigger failed', e);
+        // On failure, allow a future empty-thread visit to try again.
+        buddyTriggerFiredRef.current.delete(bubbleId);
+        waitMainClear();
+      });
+  }, [
+    activeBubble?.id,
+    isThreadLoading,
+    canPostMessages,
+    messages.length,
+    sendMessage,
+    buddyAgent,
+    waitMainRegisterIntent,
+    waitMainRegisterSuccessfulSend,
+    waitMainClear,
+  ]);
 
   const displayMessages = useMemo(() => {
     return allMessages.filter((m) => !m.parentId);
@@ -1147,9 +1240,9 @@ export function ChatArea({
               </motion.div>
             ))}
           </AnimatePresence>
-          {coachWaitMain.isWaitingForCoach ? (
+          {waitMain.pending ? (
             <div className="mt-6 w-full shrink-0">
-              <CoachTypingIndicator density="rail" coachAvatarUrl={coachTypingAvatarUrl} />
+              <AgentTypingIndicator density="rail" pending={waitMain.pending} />
             </div>
           ) : null}
         </div>
@@ -1161,19 +1254,34 @@ export function ChatArea({
           canPostMessages={canPostMessages}
           liveSessionViewerUserId={myProfile?.id ?? null}
           onClose={() => {
-            coachWaitThread.clear();
+            waitThread.clear();
             setActiveThreadParent(null);
           }}
           onSendMessage={async (content, files) => {
             if (!activeThreadParent) return null;
             return await sendMessage(content, activeThreadParent.id, files);
           }}
-          onSubmitIntent={coachWaitThread.optimisticIntent}
-          onSuccessfulThreadSend={(sent) => {
-            coachWaitThread.registerSuccessfulSend(sent);
+          onSubmitIntent={(text) => {
+            const result = resolveTargetAgent({
+              messageDraft: text,
+              availableAgents,
+              contextDefaultAgentSlug: CHAT_AREA_DEFAULT_AGENT_SLUG,
+            });
+            if (result) {
+              waitThread.registerIntent(result.agent);
+            }
           }}
-          isWaitingForCoach={coachWaitThread.isWaitingForCoach}
-          coachTypingAvatarUrl={coachTypingAvatarUrl}
+          onSuccessfulThreadSend={(sent, text) => {
+            const result = resolveTargetAgent({
+              messageDraft: text,
+              availableAgents,
+              contextDefaultAgentSlug: CHAT_AREA_DEFAULT_AGENT_SLUG,
+            });
+            if (result) {
+              waitThread.registerSuccessfulSend(sent, result.agent);
+            }
+          }}
+          threadPending={waitThread.pending}
           onOpenAttachment={(attachments, index) => setMediaModal({ attachments, index })}
           onOpenTask={(taskId, opts) => void openTaskFromChat(taskId, opts)}
           bubbleUpPropsFor={bubbleUpPropsFor}
@@ -1197,14 +1305,30 @@ export function ChatArea({
         popoverContainerRef={composerPopoverRef}
         value={input}
         onChange={(next, _meta) => setInput(next)}
-        onSubmitIntent={coachWaitMain.optimisticIntent}
+        onSubmitIntent={() => {
+          const result = resolveTargetAgent({
+            messageDraft: input,
+            availableAgents,
+            contextDefaultAgentSlug: CHAT_AREA_DEFAULT_AGENT_SLUG,
+          });
+          if (result) {
+            waitMain.registerIntent(result.agent);
+          }
+        }}
         onSubmit={async ({ text, files }) => {
           if ((!text.trim() && (!files || files.length === 0)) || sendingAttachments) return false;
           const sent = await sendMessage(text, undefined, files);
           if (!sent) return false;
           setInput('');
           setPendingFiles([]);
-          coachWaitMain.registerSuccessfulSend(sent);
+          const result = resolveTargetAgent({
+            messageDraft: text,
+            availableAgents,
+            contextDefaultAgentSlug: CHAT_AREA_DEFAULT_AGENT_SLUG,
+          });
+          if (result) {
+            waitMain.registerSuccessfulSend(sent, result.agent);
+          }
           return true;
         }}
         pendingFiles={pendingFiles}
