@@ -454,6 +454,7 @@ Deno.serve(async (req) => {
     generationConfig: {
       temperature: 0.4,
       maxOutputTokens: 1024,
+      // Gemini JSON mode — required so the model emits parseable structured output.
       responseMimeType: 'application/json',
       responseSchema: BUDDY_RESPONSE_SCHEMA,
     },
@@ -497,8 +498,8 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: 'gemini_invalid_envelope' }, 200);
   }
 
-  // Extract the JSON text Gemini produced (JSON mode emits it as a single text part).
-  const generatedText = geminiEnvelope.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  // Concatenate every text part (JSON mode is usually one part; multi-part avoids silent truncation).
+  const generatedText = extractGeminiCandidateText(geminiEnvelope.candidates?.[0]);
   const candidateCount = geminiEnvelope.candidates?.length ?? 0;
   if (Deno.env.get('BUDDY_AGENT_DEBUG')?.trim() === '1') {
     console.log('[DEBUG] [Buddy Agent] LLM envelope (BUDDY_AGENT_DEBUG=1)', geminiEnvelope);
@@ -561,6 +562,50 @@ Deno.serve(async (req) => {
 // Returns null on any shape / type mismatch so callers can 200 OK gracefully.
 // ---------------------------------------------------------------------------
 
+function extractGeminiCandidateText(
+  candidate: { content?: { parts?: Array<{ text?: string }> } } | undefined,
+): string {
+  const parts = candidate?.content?.parts;
+  if (!Array.isArray(parts)) return '';
+  return parts.map((p) => (typeof p?.text === 'string' ? p.text : '')).join('');
+}
+
+/**
+ * Balanced `{ ... }` slice starting at `start` (must be `{`). String-aware so `{` inside
+ * JSON strings does not confuse depth.
+ */
+function extractBalancedJsonAt(s: string, start: number): string | null {
+  if (s[start] !== '{') return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < s.length; i++) {
+    const c = s[i]!;
+    if (inString) {
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (c === '\\') {
+        escape = true;
+        continue;
+      }
+      if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') {
+      inString = true;
+      continue;
+    }
+    if (c === '{') depth++;
+    else if (c === '}') {
+      depth--;
+      if (depth === 0) return s.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
 type BuddyCreateCard = {
   title: string;
   description: string;
@@ -574,28 +619,66 @@ type BuddyParsedResponse = {
 
 function stripJsonCodeFences(raw: string): string {
   let t = raw.trim();
+  // Whole string is one fenced block: ```json ... ``` or ``` ... ```
   const fullFence = /^```(?:json)?\s*\r?\n?([\s\S]*?)\r?\n?```\s*$/i;
   const m = t.match(fullFence);
-  if (m) return m[1].trim();
-  if (/^```(?:json)?\s*\r?\n?/i.test(t)) {
-    t = t.replace(/^```(?:json)?\s*\r?\n?/i, '');
-    t = t.replace(/\r?\n?```\s*$/, '');
+  if (m?.[1]) return m[1].trim();
+  // Opening fence only (model forgot closing ```)
+  if (/^```(?:json)?\s*/i.test(t)) {
+    t = t.replace(/^```(?:json)?\s*/i, '');
+    t = t.replace(/\r?\n?```\s*$/i, '');
   }
   return t.trim();
 }
 
+/** Strip BOM, markdown fences, and common LLM wrappers before JSON.parse. */
+function sanitizeBuddyModelJsonText(raw: string): string {
+  let t = raw.replace(/^\uFEFF/, '').trim();
+  t = stripJsonCodeFences(t);
+  t = t
+    .replace(
+      /^(?:ok[,.\s]*)?(?:here(?:'s| is| are)\s+)?(?:the\s+)?(?:json|response|output)\s*[:.\s-]*\r?\n?/i,
+      '',
+    )
+    .trim();
+  return t;
+}
+
+function parseBuddyJsonObject(cleaned: string): Record<string, unknown> | null {
+  const tryParse = (s: string): Record<string, unknown> | null => {
+    try {
+      const parsed = JSON.parse(s) as unknown;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+      return parsed as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  };
+
+  const direct = tryParse(cleaned);
+  if (direct) return direct;
+
+  // Try every `{` start: prose may contain a spurious `{...}` before the real JSON object.
+  let search = 0;
+  while (search < cleaned.length) {
+    const start = cleaned.indexOf('{', search);
+    if (start < 0) break;
+    const extracted = extractBalancedJsonAt(cleaned, start);
+    if (extracted) {
+      const parsed = tryParse(extracted);
+      if (parsed) return parsed;
+    }
+    search = start + 1;
+  }
+  return null;
+}
+
 function parseBuddyResponse(rawText: string): BuddyParsedResponse | null {
-  const cleaned = stripJsonCodeFences(rawText);
+  const cleaned = sanitizeBuddyModelJsonText(rawText);
   if (!cleaned) return null;
 
-  let obj: Record<string, unknown>;
-  try {
-    const parsed = JSON.parse(cleaned) as unknown;
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-    obj = parsed as Record<string, unknown>;
-  } catch {
-    return null;
-  }
+  const obj = parseBuddyJsonObject(cleaned);
+  if (!obj) return null;
 
   const replyContentRaw = obj.replyContent;
   if (typeof replyContentRaw !== 'string') return null;
