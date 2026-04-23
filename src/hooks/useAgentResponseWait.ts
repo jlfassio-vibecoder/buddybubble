@@ -6,6 +6,20 @@ import type { AgentDefinitionLite } from '@/lib/agents/resolveTargetAgent';
 import type { SendMessageSuccess } from '@/hooks/useMessageThread';
 
 /**
+ * Optional per-event callbacks. The hook owns the failsafe timer, so it owns the "timeout"
+ * and "response received" signals — callers should not run a parallel timer. Use these to
+ * emit structured telemetry at `src/lib/agents/agentRoutingLogger.ts` call sites.
+ */
+export type UseAgentResponseWaitCallbacks = {
+  onExpire?: (info: {
+    agentSlug: string;
+    elapsedMs: number;
+    configuredFailsafeMs: number;
+  }) => void;
+  onReceived?: (info: { agentSlug: string; elapsedMs: number }) => void;
+};
+
+/**
  * Message shape needed by this hook. Matches the subset of `MessageRow` that matters for
  * identity-checking the sender ("was this the agent we were waiting for?") — no content, no
  * metadata. Callers can hand us any superset.
@@ -34,6 +48,7 @@ export type UseAgentResponseWaitInput = {
   messages: AgentWaitMessageSlice[];
   myUserId: string | null | undefined;
   agentsByAuthUserId: Map<string, AgentDefinitionLite>;
+  callbacks?: UseAgentResponseWaitCallbacks;
 };
 
 export type UseAgentResponseWaitResult = {
@@ -108,14 +123,27 @@ export function shouldClearPendingFromMessages(
  *     (realtime dedupe, unexpected-agent detection) can extend without breaking callers.
  */
 export function useAgentResponseWait(input: UseAgentResponseWaitInput): UseAgentResponseWaitResult {
-  const { messages } = input;
+  const { messages, callbacks } = input;
   // Currently unused; see JSDoc. Touched explicitly to make the intent clear and to avoid
   // accidental "unused import" churn if a reviewer removes them.
   void input.myUserId;
   void input.agentsByAuthUserId;
 
   const [pending, setPending] = useState<PendingAgentResponse | null>(null);
+  const pendingRef = useRef<PendingAgentResponse | null>(null);
   const failsafeRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
+  const callbacksRef = useRef(callbacks);
+
+  // Keep ref in sync so the timer callback always sees the latest handler identity without
+  // re-arming on every render.
+  useEffect(() => {
+    callbacksRef.current = callbacks;
+  }, [callbacks]);
+
+  const setPendingBoth = useCallback((next: PendingAgentResponse | null) => {
+    pendingRef.current = next;
+    setPending(next);
+  }, []);
 
   const clearFailsafe = useCallback(() => {
     if (failsafeRef.current != null) {
@@ -126,36 +154,45 @@ export function useAgentResponseWait(input: UseAgentResponseWaitInput): UseAgent
 
   const clear = useCallback(() => {
     clearFailsafe();
-    setPending(null);
-  }, [clearFailsafe]);
+    setPendingBoth(null);
+  }, [clearFailsafe, setPendingBoth]);
 
   const armFailsafe = useCallback(
     (failsafeMs: number) => {
       clearFailsafe();
       failsafeRef.current = globalThis.setTimeout(() => {
         failsafeRef.current = null;
-        setPending(null);
+        const expired = pendingRef.current;
+        if (expired) {
+          const elapsedMs = Date.now() - expired.startedAt;
+          callbacksRef.current?.onExpire?.({
+            agentSlug: expired.agentSlug,
+            elapsedMs,
+            configuredFailsafeMs: expired.failsafeMs,
+          });
+        }
+        setPendingBoth(null);
       }, failsafeMs);
     },
-    [clearFailsafe],
+    [clearFailsafe, setPendingBoth],
   );
 
   const registerIntent = useCallback(
     (agent: AgentDefinitionLite) => {
       const next = buildPendingFromIntent(agent, Date.now());
-      setPending(next);
+      setPendingBoth(next);
       armFailsafe(next.failsafeMs);
     },
-    [armFailsafe],
+    [armFailsafe, setPendingBoth],
   );
 
   const registerSuccessfulSend = useCallback(
     (sent: SendMessageSuccess, agent: AgentDefinitionLite) => {
       const next = buildPendingFromSend(sent, agent);
-      setPending(next);
+      setPendingBoth(next);
       armFailsafe(next.failsafeMs);
     },
-    [armFailsafe],
+    [armFailsafe, setPendingBoth],
   );
 
   useEffect(() => () => clearFailsafe(), [clearFailsafe]);
@@ -163,6 +200,11 @@ export function useAgentResponseWait(input: UseAgentResponseWaitInput): UseAgent
   useEffect(() => {
     if (!pending) return;
     if (shouldClearPendingFromMessages(pending, messages)) {
+      const elapsedMs = Date.now() - pending.startedAt;
+      callbacksRef.current?.onReceived?.({
+        agentSlug: pending.agentSlug,
+        elapsedMs,
+      });
       clear();
     }
   }, [messages, pending, clear]);

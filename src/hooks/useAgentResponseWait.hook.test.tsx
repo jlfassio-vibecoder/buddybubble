@@ -197,4 +197,95 @@ describe('useAgentResponseWait — React integration', () => {
     rerender(messages);
     expect(result.current.pending).toBeNull();
   });
+
+  it('send-fail: registerIntent fires, registerSuccessfulSend never does → pending clears at response_timeout_ms (not earlier)', () => {
+    // Simulates the send mutation rejecting after intent. Callers that forget to call
+    // `registerIntent` would see `pending === null` immediately; callers that only call
+    // `registerIntent` (send later fails) see pending live until the failsafe.
+    const agent = makeAgent({ response_timeout_ms: 15_000 });
+    const { result } = renderHook(() =>
+      useAgentResponseWait({
+        messages: [],
+        myUserId: MY_USER_ID,
+        agentsByAuthUserId: EMPTY_AGENTS_MAP,
+      }),
+    );
+
+    act(() => {
+      result.current.registerIntent(agent);
+    });
+    expect(result.current.pending?.agentSlug).toBe('coach');
+
+    // No registerSuccessfulSend call (simulates send promise rejecting).
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+    expect(result.current.pending).not.toBeNull();
+
+    // Full failsafe window elapses — pending clears.
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+    expect(result.current.pending).toBeNull();
+  });
+
+  it('onExpire callback fires with elapsed + configured failsafe when the timer fires', () => {
+    const agent = makeAgent({ response_timeout_ms: 15_000 });
+    const onExpire = vi.fn();
+
+    const { result } = renderHook(() =>
+      useAgentResponseWait({
+        messages: [],
+        myUserId: MY_USER_ID,
+        agentsByAuthUserId: EMPTY_AGENTS_MAP,
+        callbacks: { onExpire },
+      }),
+    );
+
+    act(() => {
+      result.current.registerIntent(agent);
+    });
+    act(() => {
+      vi.advanceTimersByTime(15_000);
+    });
+
+    expect(onExpire).toHaveBeenCalledTimes(1);
+    expect(onExpire).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentSlug: 'coach',
+        configuredFailsafeMs: 15_000,
+      }),
+    );
+    const elapsed = (onExpire.mock.calls[0][0] as { elapsedMs: number }).elapsedMs;
+    expect(elapsed).toBeGreaterThanOrEqual(15_000);
+  });
+
+  it('onReceived callback fires when the target agent replies', () => {
+    const agent = makeAgent({ response_timeout_ms: 30_000, auth_user_id: 'coach-auth' });
+    const onReceived = vi.fn();
+
+    let messages: AgentWaitMessageSlice[] = [];
+    const { result, rerender } = renderHook(
+      (current: AgentWaitMessageSlice[]) =>
+        useAgentResponseWait({
+          messages: current,
+          myUserId: MY_USER_ID,
+          agentsByAuthUserId: EMPTY_AGENTS_MAP,
+          callbacks: { onReceived },
+        }),
+      { initialProps: messages },
+    );
+
+    act(() => {
+      result.current.registerIntent(agent);
+    });
+
+    messages = [{ id: 'm-coach', user_id: 'coach-auth', created_at: new Date().toISOString() }];
+    rerender(messages);
+
+    expect(onReceived).toHaveBeenCalledTimes(1);
+    expect(onReceived).toHaveBeenCalledWith(
+      expect.objectContaining({ agentSlug: 'coach' }),
+    );
+  });
 });

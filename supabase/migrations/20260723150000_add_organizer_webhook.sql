@@ -1,0 +1,24 @@
+-- Phase 4 placeholder for the Organizer agent webhook wiring.
+--
+-- Organizer is the meeting / calendar coordinator agent scaffolded in
+-- `supabase/functions/organizer-agent-dispatch/index.ts`. It is intentionally isolated from
+-- the fitness @Coach pipeline in `supabase/functions/bubble-agent-dispatch` and from the
+-- general-purpose @Buddy pipeline in `supabase/functions/buddy-agent-dispatch` (separate
+-- function, separate secret, separate prompts, separate RPC).
+--
+-- Intent for the accompanying Supabase dashboard change (NOT done here — Supabase hosts
+-- webhooks as an infrastructure primitive, not SQL objects, so this migration is a
+-- documentation / marker no-op):
+--   * Create a Supabase Database Webhook named `organizer_dispatch_webhook`:
+--       Table:  public.messages
+--       Events: INSERT
+--       URL:    https://<project-ref>.supabase.co/functions/v1/organizer-agent-dispatch
+--       Method: POST
+--       Header: x-organizer-agent-secret: <ORGANIZER_AGENT_WEBHOOK_SECRET>
+--   * Keep the existing `bubble-agent-dispatch` and `buddy-agent-dispatch` webhooks
+--     untouched; all three may fan out from the same `public.messages` INSERT event. Each
+--     function is responsible for its own fast-reject.
+--
+-- See `docs/refactor/phase4-env-vars.md` for the full environment-variable contract.
+
+SELECT 1;

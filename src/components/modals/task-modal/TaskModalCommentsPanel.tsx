@@ -23,6 +23,7 @@ import { AgentTypingIndicator } from '@/components/chat/AgentTypingIndicator';
 import { useTaskBubbleUps } from '@/hooks/use-task-bubble-ups';
 import { rowToChatMessage } from '@/lib/chat-message-mapper';
 import { resolveTargetAgent } from '@/lib/agents/resolveTargetAgent';
+import { logAgentRoutingEvent } from '@/lib/agents/agentRoutingLogger';
 import { toChatUserSnapshot } from '@/lib/message-thread';
 import { MESSAGE_ATTACHMENT_FILE_ACCEPT } from '@/lib/message-attachment-limits';
 import { ChatMessageRow } from '@/components/chat/ChatMessageRow';
@@ -323,15 +324,59 @@ export const TaskModalCommentsPanel = forwardRef<
     [availableAgents],
   );
 
+  const bubbleIdForTelemetry: string | null = taskBubbleIdHint?.trim() || null;
+
   const waitMain = useAgentResponseWait({
     messages: agentScopeRootMessages,
     myUserId: myProfile?.id ?? null,
     agentsByAuthUserId,
+    callbacks: {
+      onExpire: ({ agentSlug, elapsedMs, configuredFailsafeMs }) => {
+        logAgentRoutingEvent({
+          event: 'agent.response.timeout',
+          agentSlug,
+          elapsedMs,
+          configuredFailsafeMs,
+          bubbleId: bubbleIdForTelemetry,
+          surface: 'task-modal-root',
+        });
+      },
+      onReceived: ({ agentSlug, elapsedMs }) => {
+        logAgentRoutingEvent({
+          event: 'agent.response.received',
+          agentSlug,
+          elapsedMs,
+          bubbleId: bubbleIdForTelemetry,
+          surface: 'task-modal-root',
+        });
+      },
+    },
   });
   const waitThread = useAgentResponseWait({
     messages: agentScopeThreadMessages,
     myUserId: myProfile?.id ?? null,
     agentsByAuthUserId,
+    callbacks: {
+      onExpire: ({ agentSlug, elapsedMs, configuredFailsafeMs }) => {
+        logAgentRoutingEvent({
+          event: 'agent.response.timeout',
+          agentSlug,
+          elapsedMs,
+          configuredFailsafeMs,
+          bubbleId: bubbleIdForTelemetry,
+          surface: 'task-modal-thread',
+        });
+      },
+      onReceived: ({ agentSlug, elapsedMs }) => {
+        logAgentRoutingEvent({
+          event: 'agent.response.received',
+          agentSlug,
+          elapsedMs,
+          bubbleId: bubbleIdForTelemetry,
+          surface: 'task-modal-thread',
+        });
+      },
+    },
   });
 
   const waitMainClear = waitMain.clear;
@@ -540,7 +585,21 @@ export const TaskModalCommentsPanel = forwardRef<
           contextDefaultAgentSlug: TASK_COMMENTS_DEFAULT_AGENT_SLUG,
         });
         if (result) {
+          logAgentRoutingEvent({
+            event: 'agent.routing.resolved',
+            agentSlug: result.agent.slug,
+            via: result.via,
+            bubbleId: bubbleIdForTelemetry,
+            surface: 'task-modal-root',
+          });
           waitMain.registerIntent(result.agent);
+        } else {
+          logAgentRoutingEvent({
+            event: 'agent.routing.unresolved',
+            surface: 'task-modal-root',
+            bubbleId: bubbleIdForTelemetry,
+            hadMention: /(^|[^\w])@\w+/.test(draft),
+          });
         }
       }}
       onSubmit={async ({ text, files }) => {
@@ -602,7 +661,21 @@ export const TaskModalCommentsPanel = forwardRef<
           contextDefaultAgentSlug: TASK_COMMENTS_DEFAULT_AGENT_SLUG,
         });
         if (result) {
+          logAgentRoutingEvent({
+            event: 'agent.routing.resolved',
+            agentSlug: result.agent.slug,
+            via: result.via,
+            bubbleId: bubbleIdForTelemetry,
+            surface: 'task-modal-thread',
+          });
           waitThread.registerIntent(result.agent);
+        } else {
+          logAgentRoutingEvent({
+            event: 'agent.routing.unresolved',
+            surface: 'task-modal-thread',
+            bubbleId: bubbleIdForTelemetry,
+            hadMention: /(^|[^\w])@\w+/.test(threadDraft),
+          });
         }
       }}
       onSubmit={async ({ text, files }) => {
