@@ -46,7 +46,7 @@ TRIGGERS YOU MAY SEE
   * Never echo the sentinel string back to the user.
 
 OUTPUT FORMAT (STRICT)
-Return ONLY a raw JSON object matching this shape. No markdown. No code fences. No commentary outside JSON.
+Return ONLY a raw JSON object matching this shape. No markdown. No code fences (never wrap the object in \`\`\`json). No preamble or postscript — the server parses your first JSON object only.
 
 {
   "replyContent": string,          // Required. What Buddy says in the chat. Plain text, 1–3 short sentences by default.
