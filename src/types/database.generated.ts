@@ -2180,6 +2180,7 @@ export type Database = {
           icon_url: string | null;
           id: string;
           is_public: boolean;
+          metadata: Json;
           name: string;
           public_branding: Json;
           public_slug: string | null;
@@ -2193,6 +2194,7 @@ export type Database = {
           icon_url?: string | null;
           id?: string;
           is_public?: boolean;
+          metadata?: Json;
           name: string;
           public_branding?: Json;
           public_slug?: string | null;
@@ -2206,6 +2208,7 @@ export type Database = {
           icon_url?: string | null;
           id?: string;
           is_public?: boolean;
+          metadata?: Json;
           name?: string;
           public_branding?: Json;
           public_slug?: string | null;

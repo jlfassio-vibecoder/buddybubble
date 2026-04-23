@@ -1,0 +1,100 @@
+---
+import '../styles/global.css';
+import { resolveCrmOriginForStorefront } from '../lib/crm-origin';
+import { getPublicEnv } from '../lib/public-env';
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description = 'BuddyBubble — policy and legal information.' } = Astro.props;
+
+const appOrigin = resolveCrmOriginForStorefront(
+  getPublicEnv('PUBLIC_APP_ORIGIN'),
+  Astro.url.hostname,
+);
+const appLoginHref = `${appOrigin}/login`;
+const year = new Date().getFullYear();
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" href="/favicon.ico" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="generator" content={Astro.generator} />
+    <title>{title} | BuddyBubble</title>
+    <meta name="description" content={description} />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&display=swap"
+      rel="stylesheet"
+    />
+    <style is:global>
+      .font-display {
+        font-family: 'Fraunces', Georgia, 'Times New Roman', serif;
+      }
+    </style>
+  </head>
+  <body class="relative isolate min-h-screen overflow-x-hidden bg-amber-50 text-amber-950 antialiased">
+    <header class="sticky top-0 z-40 border-b border-amber-200/90 bg-white/85 backdrop-blur-md">
+      <div class="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
+        <a href="/" class="inline-flex items-center gap-2.5">
+          <span
+            class="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-amber-950 text-sm font-bold text-white"
+          >
+            B
+          </span>
+          <span class="text-base font-semibold tracking-tight text-amber-950">BuddyBubble</span>
+        </a>
+        <div class="flex items-center gap-2 sm:gap-3">
+          <a
+            href={appLoginHref}
+            class="rounded-lg px-3 py-2 text-sm font-medium text-amber-800 transition hover:bg-amber-100 hover:text-amber-950"
+          >
+            Sign In
+          </a>
+          <a
+            href={appLoginHref}
+            class="rounded-lg border border-amber-200 bg-white px-3.5 py-2 text-sm font-semibold text-amber-950 shadow-sm transition hover:bg-amber-100"
+          >
+            Create a Bubble
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <main class="mx-auto w-full max-w-3xl px-4 py-10 sm:px-6 sm:py-14">
+      <h1 class="font-display text-3xl font-medium tracking-tight text-amber-950 sm:text-4xl">
+        {title}
+      </h1>
+      <p class="mt-2 text-sm text-amber-800/90">
+        Last updated: {new Date().toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        })}
+      </p>
+      <div
+        class="mt-8 space-y-6 text-sm leading-relaxed text-amber-900 [&_h2]:mt-10 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:text-amber-950 [&_h2]:first:mt-0 [&_ul]:list-disc [&_ul]:space-y-2 [&_ul]:pl-5 [&_a]:text-amber-800 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-amber-950"
+      >
+        <slot />
+      </div>
+    </main>
+
+    <footer class="border-t border-amber-200">
+      <div
+        class="mx-auto flex w-full max-w-6xl flex-col items-start justify-between gap-3 px-4 py-6 text-sm text-amber-800 sm:flex-row sm:items-center sm:px-6"
+      >
+        <p>&copy; {year} BuddyBubble. All rights reserved.</p>
+        <div class="flex items-center gap-4">
+          <a href="/privacy" class="transition hover:text-amber-950">Privacy Policy</a>
+          <a href="/terms" class="transition hover:text-amber-950">Terms of Service</a>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

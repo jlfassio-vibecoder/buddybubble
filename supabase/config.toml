@@ -374,6 +374,9 @@ verify_jwt = true
 [functions.bubble-agent-dispatch]
 verify_jwt = false
 
+[functions.lead-sms-alert]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
