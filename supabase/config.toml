@@ -374,6 +374,7 @@ verify_jwt = true
 [functions.bubble-agent-dispatch]
 verify_jwt = false
 
+# Authentication: LEAD_SMS_ALERT_WEBHOOK_SECRET in the function (Bearer or x-lead-sms-alert-secret), not Supabase JWT.
 [functions.lead-sms-alert]
 verify_jwt = false
 

@@ -114,7 +114,11 @@ export function WorkspaceSettingsModal({
     const supabase = createClient();
     const { data, error: qErr } = await supabase
       .from('workspaces')
-      .select('*')
+      .select(
+        isOwner || isAdmin
+          ? 'calendar_timezone, is_public, public_slug, custom_domain, metadata'
+          : 'calendar_timezone, is_public, public_slug, custom_domain',
+      )
       .eq('id', workspaceId)
       .maybeSingle();
     setLoading(false);

@@ -7,18 +7,21 @@
  * - SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (auto-injected on hosted projects)
  * - APP_URL — origin for deep link, e.g. https://buddybubble.app (no trailing slash)
  * - TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER — Twilio Programmable SMS
+ * - LEAD_SMS_ALERT_WEBHOOK_SECRET — required; send as `Authorization: Bearer <secret>` or `x-lead-sms-alert-secret`
  *
  * After a successful send, `workspaces.metadata.last_sms_sent_at` is set to an ISO-8601 timestamp.
  *
  * Configure the Database Webhook to POST this function’s URL with the default Supabase payload
- * (`type`, `table`, `schema`, `record`). `verify_jwt` should be false (see `supabase/config.toml`).
+ * (`type`, `table`, `schema`, `record`). `verify_jwt` should be false (see `supabase/config.toml`); authenticate
+ * with the shared secret above.
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type, x-lead-sms-alert-secret',
 };
 
 type MessageRecord = {
@@ -83,6 +86,23 @@ Deno.serve(async (req) => {
   }
   if (req.method !== 'POST') {
     return json({ ok: false, error: 'method_not_allowed' }, 405);
+  }
+
+  const webhookSecret = Deno.env.get('LEAD_SMS_ALERT_WEBHOOK_SECRET')?.trim();
+  if (!webhookSecret) {
+    console.error('[lead-sms-alert] missing LEAD_SMS_ALERT_WEBHOOK_SECRET');
+    return json({ ok: false, error: 'server_misconfigured' }, 500);
+  }
+  const bearer =
+    req.headers
+      .get('authorization')
+      ?.replace(/^Bearer\s+/i, '')
+      ?.trim() ?? '';
+  const headerSecret = req.headers.get('x-lead-sms-alert-secret')?.trim() ?? '';
+  const token = headerSecret || bearer;
+  if (!token || token !== webhookSecret) {
+    // HTTP 200 limits DB webhook retry storms on bad auth (same pattern as bubble-agent-dispatch).
+    return json({ ok: false, error: 'unauthorized' }, 200);
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
@@ -251,8 +271,12 @@ Deno.serve(async (req) => {
     .select('id');
 
   if (metaUpdErr) {
+    // Return 200 after successful Twilio so the webhook does not retry and send duplicate billable SMS; log for ops.
     console.error('[lead-sms-alert] metadata_update_failed', metaUpdErr);
-    return json({ error: 'database_update_failed' }, 500);
+    return json(
+      { ok: true, sent: true, last_sms_sent_at: nowIso, metadata_persist_failed: true },
+      200,
+    );
   }
 
   return json({ ok: true, sent: true, last_sms_sent_at: nowIso }, 200);

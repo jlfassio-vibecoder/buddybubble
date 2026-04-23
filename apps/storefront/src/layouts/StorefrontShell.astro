@@ -16,6 +16,8 @@ const appOrigin = resolveCrmOriginForStorefront(
 );
 const appLoginHref = `${appOrigin}/login`;
 const year = new Date().getFullYear();
+/** Bump only when the legal page body copy changes (stable for SEO/caching). */
+const LEGAL_DOCS_LAST_UPDATED = 'April 22, 2026';
 ---
 
 <html lang="en">
@@ -71,13 +73,7 @@ const year = new Date().getFullYear();
       <h1 class="font-display text-3xl font-medium tracking-tight text-amber-950 sm:text-4xl">
         {title}
       </h1>
-      <p class="mt-2 text-sm text-amber-800/90">
-        Last updated: {new Date().toLocaleDateString('en-US', {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-        })}
-      </p>
+      <p class="mt-2 text-sm text-amber-800/90">Last updated: {LEGAL_DOCS_LAST_UPDATED}</p>
       <div
         class="mt-8 space-y-6 text-sm leading-relaxed text-amber-900 [&_h2]:mt-10 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:text-amber-950 [&_h2]:first:mt-0 [&_ul]:list-disc [&_ul]:space-y-2 [&_ul]:pl-5 [&_a]:text-amber-800 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-amber-950"
       >
