@@ -983,12 +983,18 @@ Deno.serve(async (req) => {
   const authIdToSlug = new Map<string, string>();
 
   // Bubble-bound agents only; @Buddy is handled by `buddy-agent-dispatch` (Coach RPC requires a binding row).
+  // Phase 4: @Organizer now has its own dispatcher (`organizer-agent-dispatch`). Filter it out
+  // here so it does not double-fire on the same `messages` INSERT. A DB-level check would be
+  // ideal, but the agent slug list is authoritative in `agent_definitions` and we want each
+  // dispatcher to own its own inclusion rule.
+  const DISPATCHER_EXCLUDED_SLUGS: ReadonlySet<string> = new Set(['organizer']);
   const seenAuthIds = new Set<string>();
   const rawEntries: OrderedAgentEntry[] = [];
 
   for (const raw of (bindingRows ?? []) as BindingRow[]) {
     const def = unwrapDef(raw);
     if (!def?.is_active || !def.auth_user_id) continue;
+    if (DISPATCHER_EXCLUDED_SLUGS.has(def.slug)) continue;
     if (seenAuthIds.has(def.auth_user_id)) continue;
     seenAuthIds.add(def.auth_user_id);
     rawEntries.push({ sortOrder: raw.sort_order, def });

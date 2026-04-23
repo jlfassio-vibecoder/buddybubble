@@ -379,6 +379,12 @@ verify_jwt = false
 [functions.buddy-agent-dispatch]
 verify_jwt = false
 
+# Authentication: ORGANIZER_AGENT_WEBHOOK_SECRET in the function (Bearer or x-organizer-agent-secret), not Supabase JWT.
+# Organizer is the meeting/calendar coordinator agent; intentionally isolated from bubble-agent-dispatch
+# (the @Coach fitness pipeline) and from buddy-agent-dispatch.
+[functions.organizer-agent-dispatch]
+verify_jwt = false
+
 # Authentication: LEAD_SMS_ALERT_WEBHOOK_SECRET in the function (Bearer or x-lead-sms-alert-secret), not Supabase JWT.
 [functions.lead-sms-alert]
 verify_jwt = false

@@ -136,6 +136,37 @@ test.describe('Agent routing — main chat', () => {
     );
   });
 
+  test('Organizer bubble: @Organizer when can we meet tomorrow → meeting-scoped reply with Organizer avatar', async ({
+    page,
+  }) => {
+    const ws =
+      process.env.E2E_ORGANIZER_WORKSPACE_ID?.trim() ?? process.env.E2E_WORKSPACE_ID!.trim();
+    const bubbleId = process.env.E2E_ORGANIZER_BUBBLE_ID?.trim();
+    test.skip(!bubbleId, 'Set E2E_ORGANIZER_BUBBLE_ID (bubble with Organizer binding)');
+    await page.goto(`/app/${ws}`);
+    await page.locator(`[data-bubble-id="${bubbleId}"]`).click();
+    await railInput(page).fill('@Organizer when can we meet tomorrow');
+    await railSubmit(page).click();
+
+    // Typing indicator must be Organizer, with a non-empty image source (NOT the Buddy mark
+    // post-Phase-4 asset swap).
+    const ind = page.getByTestId('agent-typing-indicator');
+    await expect(ind).toBeVisible();
+    await expect(ind).toHaveAttribute('data-pending-slug', 'organizer');
+    const img = ind.locator('img');
+    await expect(img).toBeVisible();
+
+    if (!process.env.E2E_SKIP_AGENT_REPLY) {
+      // Organizer replies in meeting vocabulary. Assert on any of the meeting-scoped tokens so
+      // this stays robust against model tone drift.
+      await expect(ind).toBeHidden({ timeout: 120_000 });
+      const lastAgentBubble = page.getByTestId('chat-message').last();
+      await expect(lastAgentBubble).toContainText(
+        /meet|meeting|schedule|availability|agenda/i,
+      );
+    }
+  });
+
   test('DM bubble: hi → no typing indicator when default coach is unavailable', async ({
     page,
   }) => {

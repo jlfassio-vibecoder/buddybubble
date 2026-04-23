@@ -50,6 +50,7 @@ import { useAgentResponseWait } from '@/hooks/useAgentResponseWait';
 import { useMessageThread, type PeerThreadReplyInsertPayload } from '@/hooks/useMessageThread';
 import { AgentTypingIndicator } from '@/components/chat/AgentTypingIndicator';
 import { resolveTargetAgent } from '@/lib/agents/resolveTargetAgent';
+import { logAgentRoutingEvent } from '@/lib/agents/agentRoutingLogger';
 import { toChatUserSnapshot, type MessageThreadFilter } from '@/lib/message-thread';
 import { liveSessionInviteMetadataToJson } from '@/types/live-session-invite';
 import { randomUuid } from '@/lib/random-uuid';
@@ -349,15 +350,59 @@ export function ChatArea({
     [availableAgents],
   );
 
+  const bubbleIdForTelemetry = activeBubble?.id ?? null;
+
   const waitMain = useAgentResponseWait({
     messages: agentScopeRootMessages,
     myUserId: myProfile?.id ?? null,
     agentsByAuthUserId,
+    callbacks: {
+      onExpire: ({ agentSlug, elapsedMs, configuredFailsafeMs }) => {
+        logAgentRoutingEvent({
+          event: 'agent.response.timeout',
+          agentSlug,
+          elapsedMs,
+          configuredFailsafeMs,
+          bubbleId: bubbleIdForTelemetry,
+          surface: 'chat',
+        });
+      },
+      onReceived: ({ agentSlug, elapsedMs }) => {
+        logAgentRoutingEvent({
+          event: 'agent.response.received',
+          agentSlug,
+          elapsedMs,
+          bubbleId: bubbleIdForTelemetry,
+          surface: 'chat',
+        });
+      },
+    },
   });
   const waitThread = useAgentResponseWait({
     messages: agentScopeThreadMessages,
     myUserId: myProfile?.id ?? null,
     agentsByAuthUserId,
+    callbacks: {
+      onExpire: ({ agentSlug, elapsedMs, configuredFailsafeMs }) => {
+        logAgentRoutingEvent({
+          event: 'agent.response.timeout',
+          agentSlug,
+          elapsedMs,
+          configuredFailsafeMs,
+          bubbleId: bubbleIdForTelemetry,
+          surface: 'thread-panel',
+        });
+      },
+      onReceived: ({ agentSlug, elapsedMs }) => {
+        logAgentRoutingEvent({
+          event: 'agent.response.received',
+          agentSlug,
+          elapsedMs,
+          bubbleId: bubbleIdForTelemetry,
+          surface: 'thread-panel',
+        });
+      },
+    },
   });
 
   const waitMainClear = waitMain.clear;
@@ -1268,7 +1313,21 @@ export function ChatArea({
               contextDefaultAgentSlug: CHAT_AREA_DEFAULT_AGENT_SLUG,
             });
             if (result) {
+              logAgentRoutingEvent({
+                event: 'agent.routing.resolved',
+                agentSlug: result.agent.slug,
+                via: result.via,
+                bubbleId: bubbleIdForTelemetry,
+                surface: 'thread-panel',
+              });
               waitThread.registerIntent(result.agent);
+            } else {
+              logAgentRoutingEvent({
+                event: 'agent.routing.unresolved',
+                surface: 'thread-panel',
+                bubbleId: bubbleIdForTelemetry,
+                hadMention: /(^|[^\w])@\w+/.test(text),
+              });
             }
           }}
           onSuccessfulThreadSend={(sent, text) => {
@@ -1313,7 +1372,21 @@ export function ChatArea({
             contextDefaultAgentSlug: CHAT_AREA_DEFAULT_AGENT_SLUG,
           });
           if (result) {
+            logAgentRoutingEvent({
+              event: 'agent.routing.resolved',
+              agentSlug: result.agent.slug,
+              via: result.via,
+              bubbleId: bubbleIdForTelemetry,
+              surface: 'chat',
+            });
             waitMain.registerIntent(result.agent);
+          } else {
+            logAgentRoutingEvent({
+              event: 'agent.routing.unresolved',
+              surface: 'chat',
+              bubbleId: bubbleIdForTelemetry,
+              hadMention: /(^|[^\w])@\w+/.test(input),
+            });
           }
         }}
         onSubmit={async ({ text, files }) => {

@@ -31,8 +31,18 @@ describe('resolveAgentAvatar', () => {
     expect(resolveAgentAvatar(agent)).toBe('/brand/BuddyBubble-mark.svg');
   });
 
-  it('returns empty string for an unknown slug without avatar_url', () => {
+  it('returns the branded Coach mark when no avatar_url is set', () => {
     const agent = makeAgent({ avatar_url: null, slug: 'coach' });
+    expect(resolveAgentAvatar(agent)).toBe('/brand/BuddyBubble-Coach-mark.svg');
+  });
+
+  it('returns the branded Organizer mark when no avatar_url is set', () => {
+    const agent = makeAgent({ avatar_url: null, slug: 'organizer' });
+    expect(resolveAgentAvatar(agent)).toBe('/brand/BuddyBubble-Organizer-mark.svg');
+  });
+
+  it('returns empty string for an unknown slug without avatar_url', () => {
+    const agent = makeAgent({ avatar_url: null, slug: 'future-unknown-agent' });
     expect(resolveAgentAvatar(agent)).toBe('');
   });
 

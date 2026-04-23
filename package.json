@@ -20,8 +20,9 @@
     "build:storefront": "npm run build -w storefront",
     "verify:storefront": "npm run check:storefront && npm run build:storefront",
     "check": "npm run format:check && npm run lint && npm run build && npm run check:storefront",
-    "test": "vitest run",
+    "test": "tsx scripts/check-agent-coupling.ts && vitest run",
     "test:e2e": "playwright test",
+    "check:agent-coupling": "tsx scripts/check-agent-coupling.ts",
     "db:provision-agents": "tsx scripts/provision-agents.ts",
     "db:audit-agent-avatars": "tsx scripts/audit-agent-avatars.ts",
     "prepare": "node -e \"if (process.env.CI || process.env.VERCEL) process.exit(0); require('child_process').execSync('npx husky', { stdio: 'inherit', shell: true })\""
