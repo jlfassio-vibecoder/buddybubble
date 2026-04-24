@@ -32,6 +32,7 @@ import {
   resolveStorefrontCoachUserId,
 } from '@/lib/storefront-trial-isolation';
 import { sendStorefrontTrialLoginEmail } from '@/lib/storefront-trial-login-email';
+import { buildStorefrontTrialAppPath } from '@/lib/storefront-trial-deeplink';
 import type { Json, MemberRole } from '@/types/database';
 
 export const maxDuration = 300;
@@ -64,10 +65,6 @@ function trialExpiresIso(): string {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() + 3);
   return d.toISOString();
-}
-
-function trialDeepLinkPath(workspaceId: string, trialBubbleId: string): string {
-  return `/app/${workspaceId}?bubble=${encodeURIComponent(trialBubbleId)}`;
 }
 
 function trimDisplayNameCandidate(raw: string): string {
@@ -147,8 +144,9 @@ async function buildStorefrontTrialMagicLink(
   email: string,
   workspaceId: string,
   trialBubbleId: string,
+  categoryType: string,
 ): Promise<string> {
-  const nextPath = trialDeepLinkPath(workspaceId, trialBubbleId);
+  const nextPath = buildStorefrontTrialAppPath(workspaceId, trialBubbleId, categoryType);
   const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(nextPath)}`;
 
   const { data, error } = await db.auth.admin.generateLink({
@@ -576,6 +574,7 @@ export async function POST(req: Request) {
         emailRaw,
         workspaceId,
         existing.trialBubbleId,
+        categoryType,
       );
       void maybeEmailStorefrontTrialLoginDuplicate(emailRaw, next);
       return NextResponse.json({
@@ -688,6 +687,7 @@ export async function POST(req: Request) {
       emailRaw,
       workspaceId,
       trialBubbleId,
+      categoryType,
     );
     void maybeEmailStorefrontTrialLoginDuplicate(emailRaw, next);
 

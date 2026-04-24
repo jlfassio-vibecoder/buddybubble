@@ -31,17 +31,31 @@ export function useTaskLoadAndRealtime({
       setLoading(true);
       setError(null);
       const supabase = createClient();
-      const { data, error: qErr } = await supabase
-        .from('tasks')
-        .select('*, task_subtasks(*), task_activity_log(*), task_assignees(user_id)')
-        .eq('id', id)
-        .maybeSingle();
-      setLoading(false);
-      if (qErr || !data) {
-        setError(qErr?.message ?? 'Card not found');
-        return;
+      const maxAttempts = 5;
+      const delayMs = 400;
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const { data, error: qErr } = await supabase
+          .from('tasks')
+          .select('*, task_subtasks(*), task_activity_log(*), task_assignees(user_id)')
+          .eq('id', id)
+          .maybeSingle();
+        if (qErr) {
+          setLoading(false);
+          setError(qErr.message ?? 'Card not found');
+          return;
+        }
+        if (data) {
+          setLoading(false);
+          applyRow(data as TaskRow);
+          return;
+        }
+        // Row not visible yet (e.g. client opened TaskModal the moment after insert, before read-your-writes)
+        if (attempt < maxAttempts - 1) {
+          await new Promise((r) => setTimeout(r, delayMs));
+        }
       }
-      applyRow(data as TaskRow);
+      setLoading(false);
+      setError('Card not found');
     },
     [applyRow, setLoading, setError],
   );

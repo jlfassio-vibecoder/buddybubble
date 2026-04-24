@@ -284,8 +284,6 @@ describe('useAgentResponseWait — React integration', () => {
     rerender(messages);
 
     expect(onReceived).toHaveBeenCalledTimes(1);
-    expect(onReceived).toHaveBeenCalledWith(
-      expect.objectContaining({ agentSlug: 'coach' }),
-    );
+    expect(onReceived).toHaveBeenCalledWith(expect.objectContaining({ agentSlug: 'coach' }));
   });
 });

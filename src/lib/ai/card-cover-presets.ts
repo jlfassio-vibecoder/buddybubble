@@ -81,6 +81,41 @@ export const CARD_COVER_PRESET_GROUPS: CardCoverPresetGroup[] = [
         label: 'Training space',
         text: 'Bright athletic training space, clean gym lighting, motion and energy, safe for work, no graphic injury imagery.',
       },
+      {
+        id: 'fit-outdoor-park',
+        label: 'Outdoor park',
+        text: 'Sunlit outdoor calisthenics park, green grass, mature trees, natural daylight, dynamic athletic energy, photorealistic, cinematic 35mm photography.',
+      },
+      {
+        id: 'fit-big-box',
+        label: 'Modern big box gym',
+        text: 'Spacious modern commercial gym, rows of sleek cardio and weight machines, bright LED lighting, clean aesthetic, high-end fitness photography.',
+      },
+      {
+        id: 'fit-boutique',
+        label: 'Boutique studio',
+        text: 'Intimate boutique fitness studio, moody ambient lighting, premium sleek equipment, dark hardwood floors, high-end editorial photography.',
+      },
+      {
+        id: 'fit-yoga',
+        label: 'Yoga studio',
+        text: 'Serene minimal yoga studio, warm natural sunlight, bamboo floors, potted plants, peaceful and grounded atmosphere, soft cinematic lighting.',
+      },
+      {
+        id: 'fit-crossfit',
+        label: 'CrossFit style gym',
+        text: 'Gritty industrial functional fitness gym, steel rig setups, bumper plates, chalk dust in the air, dramatic side lighting, high contrast, raw athletic energy.',
+      },
+      {
+        id: 'fit-combine',
+        label: 'Sports combine',
+        text: 'Professional indoor sports combine turf facility, yard lines, speed and agility cones, stadium-style overhead lighting, high-performance athletic atmosphere.',
+      },
+      {
+        id: 'fit-athletic-club',
+        label: 'Athletic club',
+        text: 'Luxury premium athletic club fitness center, bright wide windows, pristine high-end gym equipment, lifestyle photography.',
+      },
     ],
   },
 ];

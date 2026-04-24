@@ -1506,6 +1506,25 @@ export function TaskModal({
                 taskId={taskId}
                 layout="embedded"
                 isAiGenerating={aiWorkoutGenerating}
+                cardCoverAiHint={cardCoverAiHint}
+                onCardCoverAiHintChange={setCardCoverAiHint}
+                cardCoverPresetId={cardCoverPresetId}
+                onCardCoverPresetIdChange={setCardCoverPresetId}
+                aiCardCoverGenerating={aiCardCoverGenerating}
+                onGenerateCardCoverWithAi={generateCardCoverWithAi}
+                showInlineCardCoverAi={Boolean(
+                  taskId && canWrite && (itemType === 'workout' || itemType === 'workout_log'),
+                )}
+                cardCoverSaveBusy={saving}
+                {...(canWrite && taskId
+                  ? {
+                      onSaveTask: () => {
+                        void saveCoreFields();
+                      },
+                      saving,
+                      saveDisabled: !coreDirty,
+                    }
+                  : {})}
               />
             </div>
           ) : null}

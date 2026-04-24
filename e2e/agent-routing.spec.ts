@@ -161,9 +161,7 @@ test.describe('Agent routing — main chat', () => {
       // this stays robust against model tone drift.
       await expect(ind).toBeHidden({ timeout: 120_000 });
       const lastAgentBubble = page.getByTestId('chat-message').last();
-      await expect(lastAgentBubble).toContainText(
-        /meet|meeting|schedule|availability|agenda/i,
-      );
+      await expect(lastAgentBubble).toContainText(/meet|meeting|schedule|availability|agenda/i);
     }
   });
 

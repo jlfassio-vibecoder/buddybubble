@@ -18,8 +18,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { WorkoutExercisesEditor } from '@/components/fitness/workout-exercises-editor';
 import { formatRepsDisplay } from '@/lib/workout-factory/parse-reps-scalar';
 import { useTaskCardCoverUrl } from '@/lib/task-card-cover';
-import { Dumbbell, Image as ImageIcon, Loader2, X } from 'lucide-react';
+import { ChevronRight, Dumbbell, Image as ImageIcon, Loader2, X } from 'lucide-react';
 import { WORKOUT_FACTORY_CHAIN_MESSAGES } from '@/lib/workout-factory/api-client';
+import { TaskModalCardCoverAiBlock } from '@/components/modals/task-modal/TaskModalCardCoverAiBlock';
 
 export type WorkoutViewerApplyPayload = {
   title: string;
@@ -287,10 +288,13 @@ function RichWorkoutReadView({
 function WorkoutViewHero({
   cardCoverPath,
   fullBleed = true,
+  cardCoverGenerating = false,
 }: {
   cardCoverPath: string | null;
   /** When false (embedded pane), hero stays within horizontal padding. */
   fullBleed?: boolean;
+  /** AI cover generation in progress: pulsing overlay on the hero. */
+  cardCoverGenerating?: boolean;
 }) {
   const { url: coverUrl, loading } = useTaskCardCoverUrl(cardCoverPath);
 
@@ -316,6 +320,22 @@ function WorkoutViewHero({
           <ImageIcon className="size-10" aria-hidden />
         </div>
       )}
+      {cardCoverGenerating ? (
+        <div
+          className="absolute inset-0 flex items-center justify-center bg-background/55 backdrop-blur-[1px]"
+          aria-busy
+          aria-live="polite"
+        >
+          <div
+            className="h-full w-full animate-pulse bg-muted-foreground/15"
+            role="status"
+            aria-label="Generating cover"
+          />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Loader2 className="size-8 shrink-0 animate-spin text-primary" aria-hidden />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -436,6 +456,22 @@ export type WorkoutViewerDialogProps = {
   taskId?: string | null;
   /** Embedded viewer: show a loading state in the plan section while the AI chain runs. */
   isAiGenerating?: boolean;
+  /** TaskModal: inline AI card cover (shared `useTaskCardCoverAi` state). */
+  cardCoverAiHint?: string;
+  onCardCoverAiHintChange?: (hint: string) => void;
+  cardCoverPresetId?: string;
+  onCardCoverPresetIdChange?: (id: string) => void;
+  aiCardCoverGenerating?: boolean;
+  onGenerateCardCoverWithAi?: () => void | Promise<void>;
+  showInlineCardCoverAi?: boolean;
+  /** Parity with TaskModal Details: disable AI controls while saving. */
+  cardCoverSaveBusy?: boolean;
+  /** When set, show a DB save control in the view-mode footer (e.g. `TaskModal` + `saveCoreFields`). */
+  onSaveTask?: () => void | Promise<void>;
+  /** Busy state while persisting the task. */
+  saving?: boolean;
+  /** When true, save is disabled (e.g. `!coreDirty` in the parent). */
+  saveDisabled?: boolean;
 };
 
 export type WorkoutViewerContentProps = Omit<WorkoutViewerDialogProps, 'open' | 'onOpenChange'> & {
@@ -465,6 +501,17 @@ export function WorkoutViewerContent({
   dialogTitleAsChild = false,
   className,
   isAiGenerating = false,
+  cardCoverAiHint = '',
+  onCardCoverAiHintChange,
+  cardCoverPresetId = '',
+  onCardCoverPresetIdChange,
+  aiCardCoverGenerating = false,
+  onGenerateCardCoverWithAi,
+  showInlineCardCoverAi = false,
+  cardCoverSaveBusy = false,
+  onSaveTask,
+  saving = false,
+  saveDisabled = false,
 }: WorkoutViewerContentProps) {
   const [mode, setMode] = useState<ViewMode>('view');
   const [localTitle, setLocalTitle] = useState(title);
@@ -492,6 +539,55 @@ export function WorkoutViewerContent({
   const displayDescription = (localDescription || description).trim();
   const coverPath = cardCoverPath?.trim() ? cardCoverPath.trim() : null;
   const heroFullBleed = layout === 'dialog';
+  const showEmbeddedAiCover = Boolean(
+    showInlineCardCoverAi &&
+    layout === 'embedded' &&
+    taskId &&
+    onCardCoverAiHintChange &&
+    onCardCoverPresetIdChange &&
+    onGenerateCardCoverWithAi,
+  );
+  const aiBlockDisabled = !canWrite || cardCoverSaveBusy || aiCardCoverGenerating;
+  const inlineAiNode =
+    showEmbeddedAiCover &&
+    onCardCoverPresetIdChange &&
+    onCardCoverAiHintChange &&
+    onGenerateCardCoverWithAi ? (
+      coverPath ? (
+        <details className="border-b border-border/50 bg-muted/10 px-5 py-1 open:[&>summary>svg]:rotate-90">
+          <summary className="flex cursor-pointer list-none items-center gap-1 py-2 text-xs font-medium text-muted-foreground outline-none marker:content-['']">
+            <ChevronRight className="size-3.5 shrink-0 transition-transform" aria-hidden />
+            AI cover: update style
+          </summary>
+          <div className="pb-3 pt-0">
+            <TaskModalCardCoverAiBlock
+              presetId={cardCoverPresetId}
+              onPresetChange={onCardCoverPresetIdChange}
+              hint={cardCoverAiHint}
+              onHintChange={onCardCoverAiHintChange}
+              isGenerating={aiCardCoverGenerating}
+              isDisabled={aiBlockDisabled}
+              onGenerate={onGenerateCardCoverWithAi}
+              canWrite={canWrite}
+            />
+          </div>
+        </details>
+      ) : (
+        <div className="space-y-2 border-b border-border/50 bg-muted/10 px-5 py-3">
+          <p className="text-xs text-muted-foreground">AI cover for this workout</p>
+          <TaskModalCardCoverAiBlock
+            presetId={cardCoverPresetId}
+            onPresetChange={onCardCoverPresetIdChange}
+            hint={cardCoverAiHint}
+            onHintChange={onCardCoverAiHintChange}
+            isGenerating={aiCardCoverGenerating}
+            isDisabled={aiBlockDisabled}
+            onGenerate={onGenerateCardCoverWithAi}
+            canWrite={canWrite}
+          />
+        </div>
+      )
+    ) : null;
 
   const titleNode = dialogTitleAsChild ? (
     <DialogTitle asChild>
@@ -556,7 +652,14 @@ export function WorkoutViewerContent({
     <div className={cn('min-h-0 overflow-y-auto', layout === 'embedded' && 'min-h-0 flex-1')}>
       {mode === 'view' ? (
         <div className="flex flex-col pb-2">
-          <WorkoutViewHero cardCoverPath={coverPath} fullBleed={heroFullBleed} />
+          <WorkoutViewHero
+            cardCoverPath={coverPath}
+            fullBleed={heroFullBleed}
+            cardCoverGenerating={Boolean(
+              showInlineCardCoverAi && layout === 'embedded' && aiCardCoverGenerating,
+            )}
+          />
+          {inlineAiNode}
           <div className="space-y-8 px-5 py-6">
             <ViewReadHeader displayTitle={displayTitle} displayDescription={displayDescription} />
             <section>
@@ -626,10 +729,20 @@ export function WorkoutViewerContent({
         </Button>
       </div>
     ) : (
-      <div className="flex justify-end border-t border-border px-5 py-3">
-        <Button type="button" variant="secondary" size="sm" onClick={onRequestClose}>
+      <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
+        <Button type="button" variant="outline" size="sm" onClick={onRequestClose}>
           Close
         </Button>
+        {onSaveTask ? (
+          <Button
+            type="button"
+            size="sm"
+            disabled={saveDisabled || saving}
+            onClick={() => void onSaveTask()}
+          >
+            {saving ? 'Saving...' : 'Save'}
+          </Button>
+        ) : null}
       </div>
     );
 
@@ -664,6 +777,9 @@ export function WorkoutViewerDialog({
   onApply,
   cardCoverPath = null,
   taskId = null,
+  onSaveTask,
+  saving,
+  saveDisabled,
 }: WorkoutViewerDialogProps) {
   const [syncKey, setSyncKey] = useState(0);
   const wasOpenRef = useRef(false);
@@ -698,6 +814,9 @@ export function WorkoutViewerDialog({
             syncKey={syncKey}
             cardCoverPath={cardCoverPath}
             taskId={taskId}
+            onSaveTask={onSaveTask}
+            saving={saving}
+            saveDisabled={saveDisabled}
             layout="dialog"
             dialogTitleAsChild
           />

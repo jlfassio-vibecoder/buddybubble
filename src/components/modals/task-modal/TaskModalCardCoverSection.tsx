@@ -1,13 +1,10 @@
 'use client';
 
 import type { RefObject } from 'react';
-import { Image as ImageIcon, Sparkles } from 'lucide-react';
+import { Image as ImageIcon } from 'lucide-react';
 import { TaskCardCoverModalPreview } from '@/components/modals/task-modal/task-modal-media';
-import { PremiumGate } from '@/components/subscription/premium-gate';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { CARD_COVER_PRESET_GROUPS } from '@/lib/ai/card-cover-presets';
+import { TaskModalCardCoverAiBlock } from '@/components/modals/task-modal/TaskModalCardCoverAiBlock';
 
 export type TaskModalCardCoverSectionProps = {
   taskId: string | null;
@@ -90,60 +87,16 @@ export function TaskModalCardCoverSection({
               </Button>
             ) : null}
           </div>
-          <div className="space-y-2 pt-1">
-            <div className="space-y-1">
-              <Label htmlFor="card-cover-preset" className="text-xs text-muted-foreground">
-                Visual preset
-              </Label>
-              <select
-                id="card-cover-preset"
-                value={cardCoverPresetId}
-                onChange={(e) => onCardCoverPresetIdChange(e.target.value)}
-                disabled={!canWrite || saving || aiCardCoverGenerating}
-                className="flex h-8 max-w-md rounded-md border border-input bg-background px-2 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <option value="">Auto (by card type)</option>
-                {CARD_COVER_PRESET_GROUPS.map((g) => (
-                  <optgroup key={g.group} label={g.group}>
-                    {g.options.map((o) => (
-                      <option key={o.id} value={o.id}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="card-cover-ai-hint" className="text-xs text-muted-foreground">
-                Style hint (optional)
-              </Label>
-              <Input
-                id="card-cover-ai-hint"
-                value={cardCoverAiHint}
-                onChange={(e) => onCardCoverAiHintChange(e.target.value)}
-                disabled={!canWrite || saving || aiCardCoverGenerating}
-                className="h-8 max-w-md text-xs"
-                placeholder="e.g. soft gradients, minimal illustration"
-                maxLength={220}
-              />
-            </div>
-            {canWrite ? (
-              <PremiumGate feature="ai" inline>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="h-8 gap-1 px-2 text-xs"
-                  disabled={aiCardCoverGenerating || saving}
-                  onClick={() => void onGenerateCardCoverWithAi()}
-                >
-                  <Sparkles className="h-3 w-3 shrink-0" aria-hidden />
-                  {aiCardCoverGenerating ? 'Generating…' : 'Generate cover (AI)'}
-                </Button>
-              </PremiumGate>
-            ) : null}
-          </div>
+          <TaskModalCardCoverAiBlock
+            presetId={cardCoverPresetId}
+            onPresetChange={onCardCoverPresetIdChange}
+            hint={cardCoverAiHint}
+            onHintChange={onCardCoverAiHintChange}
+            isGenerating={aiCardCoverGenerating}
+            isDisabled={!canWrite || saving || aiCardCoverGenerating}
+            onGenerate={onGenerateCardCoverWithAi}
+            canWrite={canWrite}
+          />
         </>
       ) : (
         <p className="text-xs text-muted-foreground italic">

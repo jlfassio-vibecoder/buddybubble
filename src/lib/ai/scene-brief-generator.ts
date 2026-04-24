@@ -56,6 +56,8 @@ export type GenerateSceneBriefInput = {
   description?: string;
   /** Raw `item_type` (normalized internally for the user prompt line). */
   itemType: string;
+  /** Comma-separated movement names (and optional equipment) for workout cards. */
+  exercises?: string;
 };
 
 /**
@@ -75,7 +77,8 @@ export async function generateSceneBrief(
   const descRaw = (input.description ?? '').trim();
   const description = descRaw ? descRaw.slice(0, MAX_INPUT_DESCRIPTION) : '';
 
-  const userPrompt = `Card Type: ${typeLine}\nTitle: ${title || '(untitled)'}\nDescription: ${description || 'None'}.`;
+  const exercises = input.exercises?.trim() || 'None specified';
+  const userPrompt = `Card Type: ${typeLine}\nTitle: ${title || '(untitled)'}\nDescription: ${description || 'None'}.\nExercises/Equipment: ${exercises}.`;
 
   const location = resolveVertexGeminiLocation();
   const modelId = resolveSceneBriefGeminiModelId();

@@ -518,9 +518,20 @@ export function ChatArea({
     waitMainClear,
   ]);
 
+  /** Ids of hidden onboarding sentinel rows — direct replies belong in the main rail. */
+  const buddyOnboardingSentinelMessageIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const row of messages) {
+      if (row.content === BUDDY_ONBOARDING_SYSTEM_EVENT) ids.add(row.id);
+    }
+    return ids;
+  }, [messages]);
+
   const displayMessages = useMemo(() => {
-    return allMessages.filter((m) => !m.parentId);
-  }, [allMessages]);
+    return allMessages.filter(
+      (m) => !m.parentId || buddyOnboardingSentinelMessageIds.has(m.parentId),
+    );
+  }, [allMessages, buddyOnboardingSentinelMessageIds]);
 
   const threadMessages = useMemo(() => {
     if (!activeThreadParent) return [];
