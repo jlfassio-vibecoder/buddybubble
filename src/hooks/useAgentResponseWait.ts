@@ -11,11 +11,7 @@ import type { SendMessageSuccess } from '@/hooks/useMessageThread';
  * emit structured telemetry at `src/lib/agents/agentRoutingLogger.ts` call sites.
  */
 export type UseAgentResponseWaitCallbacks = {
-  onExpire?: (info: {
-    agentSlug: string;
-    elapsedMs: number;
-    configuredFailsafeMs: number;
-  }) => void;
+  onExpire?: (info: { agentSlug: string; elapsedMs: number; configuredFailsafeMs: number }) => void;
   onReceived?: (info: { agentSlug: string; elapsedMs: number }) => void;
 };
 

@@ -92,6 +92,7 @@ import { useLiveTheaterLayoutPlanContext } from '@/features/live-video/theater/l
 import type { LiveTheaterLayoutPlan } from '@/features/live-video/theater/live-theater-layout.types';
 import { LiveVideoSessionShell } from '@/features/live-video/theater/live-video-session-shell';
 import { isDashboardProfileComplete } from '@/lib/profile-helpers';
+import { useStorefrontTrialWorkoutAutoOpen } from '@/hooks/use-storefront-trial-workout-auto-open';
 import {
   shouldBlockWorkoutForExpiredMemberPreview,
   shouldSoftLockTrialSurfaces,
@@ -308,6 +309,11 @@ function DashboardShellInner({
       : null;
   const workspaceCalendarTz =
     activeWorkspace?.id === workspaceId ? (activeWorkspace.calendar_timezone ?? null) : null;
+
+  const fitnessScopeForStorefrontAutoOpen = useMemo((): 'unknown' | 'yes' | 'no' => {
+    if (activeWorkspace?.id !== workspaceId) return 'unknown';
+    return activeWorkspace.category_type === 'fitness' ? 'yes' : 'no';
+  }, [activeWorkspace, workspaceId]);
 
   // Copilot suggestion ignored: storing analytics bubble id in a ref does not fix rename; a stable channel key would need schema (e.g. bubble slug) — V1 matches seed name "Analytics".
   /** True when the selected bubble is the Analytics bubble in a fitness workspace. */
@@ -559,6 +565,16 @@ function DashboardShellInner({
     },
     [activeWorkspace, bubbles, openTrialModal],
   );
+
+  useStorefrontTrialWorkoutAutoOpen({
+    workspaceId,
+    fitnessScope: fitnessScopeForStorefrontAutoOpen,
+    layoutHydrated,
+    userId: profile?.id,
+    selectedBubbleId,
+    bubbles,
+    openTaskModal,
+  });
 
   const calendarContext = useMemo(
     () => ({

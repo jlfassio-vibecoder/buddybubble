@@ -23,7 +23,7 @@ This doc walks through the full flow end-to-end, with a worked example of adding
    `sort_order` carefully — the client lists agents in this order, and the resolver's
    positional "first mention wins" rule uses it.
 4. **Confirm the surface-component `contextDefaultAgentSlug` wiring** if this agent should
-   be the *default* when the user types a plain message (no `@mention`). For Phase 4, the
+   be the _default_ when the user types a plain message (no `@mention`). For Phase 4, the
    default is hardcoded to `'coach'` in `src/components/chat/ChatArea.tsx` and
    `src/components/modals/task-modal/TaskModalCommentsPanel.tsx`. Both are on the
    lint-allowlist; do not inline the slug elsewhere.
@@ -147,7 +147,7 @@ explicitly. That keeps the surface-component hardcode stable.
    and `agent.response.timeout` logs with `agentSlug: 'recipe_coach'`.
 ```
 
-Any *dispatch* logic (Gemini prompts, RPC calls, Kanban card creation) is OUT OF SCOPE
+Any _dispatch_ logic (Gemini prompts, RPC calls, Kanban card creation) is OUT OF SCOPE
 for this doc; a new coach either reuses `bubble-agent-dispatch` (for fitness-style
 behavior) or gets its own `<slug>-agent-dispatch` function following the pattern at
 `supabase/functions/organizer-agent-dispatch/`.

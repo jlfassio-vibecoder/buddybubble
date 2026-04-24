@@ -299,12 +299,7 @@ export function parseOrganizerResponse(rawText: string): OrganizerParsedResponse
     const rationale =
       typeof pw.rationale === 'string' && pw.rationale.trim() ? pw.rationale.trim() : '';
     const payloadRaw = pw.payload;
-    if (
-      rationale &&
-      payloadRaw &&
-      typeof payloadRaw === 'object' &&
-      !Array.isArray(payloadRaw)
-    ) {
+    if (rationale && payloadRaw && typeof payloadRaw === 'object' && !Array.isArray(payloadRaw)) {
       const payload = payloadRaw as Record<string, unknown>;
       if (kind === 'create_task') {
         const title = typeof payload.title === 'string' ? payload.title.trim() : '';
@@ -518,10 +513,7 @@ Deno.serve(async (req) => {
     Deno.env.get('GEMINI_MODEL')?.trim() ||
     'gemini-2.5-flash';
 
-  const timeoutRaw = Number.parseInt(
-    Deno.env.get('ORGANIZER_GEMINI_FETCH_TIMEOUT_MS') ?? '',
-    10,
-  );
+  const timeoutRaw = Number.parseInt(Deno.env.get('ORGANIZER_GEMINI_FETCH_TIMEOUT_MS') ?? '', 10);
   const organizerFetchTimeoutMs =
     Number.isFinite(timeoutRaw) && timeoutRaw >= 1000
       ? timeoutRaw
@@ -567,7 +559,11 @@ Deno.serve(async (req) => {
 
   if (!response.ok) {
     const errTxt = await response.text().catch(() => '');
-    console.error('[organizer-agent-dispatch] LLM HTTP error', response.status, errTxt.slice(0, 400));
+    console.error(
+      '[organizer-agent-dispatch] LLM HTTP error',
+      response.status,
+      errTxt.slice(0, 400),
+    );
     return json(
       { ok: false, error: `gemini_http_${response.status}`, detail: errTxt.slice(0, 400) },
       200,
@@ -584,7 +580,10 @@ Deno.serve(async (req) => {
 
   const generatedText = geminiEnvelope.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
   if (Deno.env.get('ORGANIZER_AGENT_DEBUG')?.trim() === '1') {
-    console.log('[organizer-agent-dispatch] LLM envelope (ORGANIZER_AGENT_DEBUG=1)', geminiEnvelope);
+    console.log(
+      '[organizer-agent-dispatch] LLM envelope (ORGANIZER_AGENT_DEBUG=1)',
+      geminiEnvelope,
+    );
   }
   const parsed = parseOrganizerResponse(generatedText);
   if (!parsed) {
@@ -602,19 +601,16 @@ Deno.serve(async (req) => {
       ? record.parent_id
       : record.id!;
 
-  const { data: rpcData, error: rpcErr } = await supabase.rpc(
-    'organizer_create_reply_and_task',
-    {
-      p_bubble_id: record.bubble_id,
-      p_organizer_user_id: organizerAuthUserId,
-      p_parent_id: parentId,
-      p_reply_content: parsed.replyContent,
-      p_task_title: writeGate.p_task_title,
-      p_task_description: writeGate.p_task_description,
-      p_task_due_on: writeGate.p_task_due_on,
-      p_task_assignee_user_id: writeGate.p_task_assignee_user_id,
-    },
-  );
+  const { data: rpcData, error: rpcErr } = await supabase.rpc('organizer_create_reply_and_task', {
+    p_bubble_id: record.bubble_id,
+    p_organizer_user_id: organizerAuthUserId,
+    p_parent_id: parentId,
+    p_reply_content: parsed.replyContent,
+    p_task_title: writeGate.p_task_title,
+    p_task_description: writeGate.p_task_description,
+    p_task_due_on: writeGate.p_task_due_on,
+    p_task_assignee_user_id: writeGate.p_task_assignee_user_id,
+  });
 
   if (rpcErr) {
     console.error('[organizer-agent-dispatch] RPC failed', rpcErr.message);

@@ -175,7 +175,7 @@ const RULES: Rule[] = [
   {
     id: 'hardcoded-buddy-mark',
     message:
-      '/brand/BuddyBubble-mark.svg outside the resolver / migrations. Use `resolveAgentAvatar` or the agent row\'s avatar_url.',
+      "/brand/BuddyBubble-mark.svg outside the resolver / migrations. Use `resolveAgentAvatar` or the agent row's avatar_url.",
     allowlist: BUDDY_MARK_ALLOWLIST,
     pattern: /\/brand\/BuddyBubble-mark\.svg/g,
   },
@@ -343,7 +343,10 @@ function parseArgs(argv: string[]): { roots?: string[]; silent: boolean } {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--roots' && argv[i + 1]) {
-      out.roots = argv[i + 1].split(',').map((s) => s.trim()).filter(Boolean);
+      out.roots = argv[i + 1]
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
       i++;
     } else if (a === '--silent') {
       out.silent = true;
@@ -366,9 +369,7 @@ async function main(): Promise<void> {
     if (violations.length === 0) {
       process.stdout.write('check-agent-coupling: OK\n');
     } else {
-      process.stderr.write(
-        `check-agent-coupling: FAILED with ${violations.length} violation(s)\n`,
-      );
+      process.stderr.write(`check-agent-coupling: FAILED with ${violations.length} violation(s)\n`);
     }
   }
   process.exit(violations.length === 0 ? 0 : 1);

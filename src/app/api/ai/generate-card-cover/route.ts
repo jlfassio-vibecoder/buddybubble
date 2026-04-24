@@ -8,7 +8,11 @@ import {
   resolveVertexImagenModelId,
 } from '@/lib/ai/vertex-image-gen';
 import { trackServerEvent } from '@/lib/analytics/server';
-import { buildTaskMetadataPayload, metadataFieldsFromParsed } from '@/lib/item-metadata';
+import {
+  buildTaskMetadataPayload,
+  metadataFieldsFromParsed,
+  parseTaskMetadata,
+} from '@/lib/item-metadata';
 import {
   resolveSubscriptionPermissions,
   type SubscriptionStatus,
@@ -32,6 +36,48 @@ type RequestBody = {
 
 function isUuid(s: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
+}
+
+/** Cap for Gemini/Imagen context (between 5–10 per product spec). */
+const MAX_EXERCISES_FOR_CARD_COVER = 8;
+
+/**
+ * Array of exercise labels (name, plus equipment in parens if present) from
+ * `metadata.exercises` or, when empty, `metadata.workout_factory_workout.exercises`.
+ * The caller joins for the scene-brief input.
+ */
+function extractExerciseLabelsForCardCover(taskMetadata: unknown): string[] {
+  const fromForm = metadataFieldsFromParsed(taskMetadata).workoutExercises;
+  const fromArray = (arr: unknown): string[] => {
+    if (!Array.isArray(arr)) return [];
+    const out: string[] = [];
+    for (const x of arr) {
+      if (typeof x !== 'object' || x === null) continue;
+      const o = x as { name?: unknown; equipment?: unknown };
+      const name = typeof o.name === 'string' ? o.name.trim() : '';
+      if (!name) continue;
+      const eq = typeof o.equipment === 'string' && o.equipment.trim() ? o.equipment.trim() : '';
+      out.push(eq ? `${name} (${eq})` : name);
+    }
+    return out;
+  };
+  if (fromForm.length > 0) {
+    return fromForm
+      .map((ex) => {
+        const name = ex.name.trim();
+        if (!name) return '';
+        const eq =
+          typeof ex.equipment === 'string' && ex.equipment.trim() ? ex.equipment.trim() : '';
+        return eq ? `${name} (${eq})` : name;
+      })
+      .filter(Boolean);
+  }
+  const o = parseTaskMetadata(taskMetadata) as Record<string, unknown>;
+  const nested = o.workout_factory_workout;
+  if (typeof nested === 'object' && nested !== null) {
+    return fromArray((nested as { exercises?: unknown }).exercises);
+  }
+  return [];
 }
 
 export async function POST(req: Request) {
@@ -135,6 +181,12 @@ export async function POST(req: Request) {
       return creds.error;
     }
 
+    const exerciseLabels = extractExerciseLabelsForCardCover(task.metadata).slice(
+      0,
+      MAX_EXERCISES_FOR_CARD_COVER,
+    );
+    const extractedExercises = exerciseLabels.join(', ');
+
     let sceneBrief: string;
     try {
       sceneBrief = await generateSceneBrief(
@@ -142,6 +194,7 @@ export async function POST(req: Request) {
           title,
           description: description || undefined,
           itemType,
+          ...(extractedExercises ? { exercises: extractedExercises } : {}),
         },
         { projectId: creds.projectId, accessToken: creds.accessToken },
         { logPrefix },

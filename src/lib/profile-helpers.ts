@@ -1,5 +1,5 @@
 import type { WorkspaceMemberOnboardingStatus } from '@/lib/leads-source';
-import type { Database } from '@/types/database';
+import type { Database, WorkspaceCategory } from '@/types/database';
 
 type UserProfileRow = Database['public']['Tables']['users']['Row'];
 
@@ -11,6 +11,8 @@ export type ProfileCompletionGateWorkspace = {
   id: string;
   role: 'admin' | 'member' | 'guest' | 'trialing';
   onboarding_status: WorkspaceMemberOnboardingStatus;
+  /** When set, enables fitness-specific bypass (e.g. storefront trial + TaskModal handoff). */
+  category_type?: WorkspaceCategory;
 } | null;
 
 /**
@@ -23,6 +25,8 @@ export type ProfileCompletionGateWorkspace = {
  *    the shell still only mounts the modal when `profile !== null`.
  * 2. Storefront trial guests in the active route workspace bypass the gate so the trial
  *    surface loads immediately.
+ * 2b. **Fitness** storefront trial with `trialing` + `trial_active` also bypasses so
+ *     ProfileCompletionModal does not stack over the first-visit WorkoutViewer handoff.
  * 3. Everyone else needs a non-empty **display name** on `public.users`.
  * 4. **Email on `public.users`** is required **unless** the session already has an email
  *    (`authHasSessionEmail === true`) — avoids locking **legacy** accounts that have a name
@@ -46,6 +50,14 @@ export function isDashboardProfileComplete(
     activeWorkspace.onboarding_status === 'trial_active';
 
   if (isTrialGuestInActiveWorkspace) return true;
+
+  const isFitnessStorefrontTrialingInActiveWorkspace =
+    activeWorkspace?.id === currentWorkspaceId &&
+    activeWorkspace.role === 'trialing' &&
+    activeWorkspace.onboarding_status === 'trial_active' &&
+    activeWorkspace.category_type === 'fitness';
+
+  if (isFitnessStorefrontTrialingInActiveWorkspace) return true;
 
   const hasName = Boolean(profile.full_name?.trim());
   if (!hasName) return false;

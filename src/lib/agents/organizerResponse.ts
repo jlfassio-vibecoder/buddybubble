@@ -86,12 +86,7 @@ export function parseOrganizerResponse(rawText: string): OrganizerParsedResponse
     const rationale =
       typeof pw.rationale === 'string' && pw.rationale.trim() ? pw.rationale.trim() : '';
     const payloadRaw = pw.payload;
-    if (
-      rationale &&
-      payloadRaw &&
-      typeof payloadRaw === 'object' &&
-      !Array.isArray(payloadRaw)
-    ) {
+    if (rationale && payloadRaw && typeof payloadRaw === 'object' && !Array.isArray(payloadRaw)) {
       const payload = payloadRaw as Record<string, unknown>;
       if (kind === 'create_task') {
         const title = typeof payload.title === 'string' ? payload.title.trim() : '';
@@ -104,8 +99,7 @@ export function parseOrganizerResponse(rawText: string): OrganizerParsedResponse
           const due_on = due_on_raw && ISO_DATE_RE.test(due_on_raw) ? due_on_raw : null;
           const assignee_raw =
             typeof payload.assignee_user_id === 'string' ? payload.assignee_user_id.trim() : '';
-          const assignee_user_id =
-            assignee_raw && UUID_RE.test(assignee_raw) ? assignee_raw : null;
+          const assignee_user_id = assignee_raw && UUID_RE.test(assignee_raw) ? assignee_raw : null;
           proposedWrite = {
             kind: 'create_task',
             rationale,

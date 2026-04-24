@@ -61,11 +61,7 @@ describe('check-agent-coupling self-test (guardrail for the guardrail)', () => {
 
   it('detects hardcoded slug literal outside the allowlist', async () => {
     const offendingPath = path.join(tmpDir, 'src', 'components', 'chat', 'SlugLeak.tsx');
-    await fs.writeFile(
-      offendingPath,
-      `export const DEFAULT = 'organizer';\n`,
-      'utf8',
-    );
+    await fs.writeFile(offendingPath, `export const DEFAULT = 'organizer';\n`, 'utf8');
 
     const violations = await runCheck({ cwd: tmpDir, roots: ['src'] });
     const hit = violations.find((v) => v.ruleId === 'hardcoded-agent-slug-literal');
