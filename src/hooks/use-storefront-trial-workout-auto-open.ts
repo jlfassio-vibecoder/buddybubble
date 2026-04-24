@@ -12,6 +12,8 @@ import {
 import { ALL_BUBBLES_BUBBLE_ID } from '@/lib/all-bubbles';
 import type { OpenTaskOptions } from '@/components/modals/TaskModal';
 
+// Copilot suggestion ignored: end-to-end tests for this hook (timers, router, Supabase) are not added in this pass to keep scope minimal.
+
 const POLL_MS = 1000;
 const MAX_WAIT_MS = 90_000;
 
@@ -52,6 +54,7 @@ export function useStorefrontTrialWorkoutAutoOpen({
   const urlStripRef = useRef(false);
   const doneRef = useRef(false);
   const waitEpochRef = useRef(0);
+  const findTaskInFlightRef = useRef(false);
 
   // Restore handoff after redirect strip (e.g. React Strict Mode remount) via sessionStorage.
   useEffect(() => {
@@ -100,6 +103,8 @@ export function useStorefrontTrialWorkoutAutoOpen({
     }
   }, [activeHandoff, fitnessScope, workspaceId]);
 
+  // Copilot suggestion ignored: the poll still needs the latest `bubbles` to gate on the selected bubble’s `bubble_type` and to wait until the list is loaded.
+
   // Poll for workout task, then open modal.
   useEffect(() => {
     if (!activeHandoff || doneRef.current) return;
@@ -129,32 +134,24 @@ export function useStorefrontTrialWorkoutAutoOpen({
     const findTaskId = async (): Promise<string | null> => {
       const { data, error } = await supabase
         .from('tasks')
-        .select('id, created_at, task_assignees(user_id)')
+        .select('id, task_assignees!inner(user_id)')
         .eq('bubble_id', selectedBubbleId)
         .eq('item_type', 'workout')
-        .is('archived_at', null);
+        .is('archived_at', null)
+        .eq('task_assignees.user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
       if (error || cancelled) {
         return null;
       }
-      const rows = Array.isArray(data) ? data : [];
-      if (rows.length === 0) return null;
-      const forUser = rows.filter((t) => {
-        const asg = (t as { task_assignees?: { user_id: string }[] | null }).task_assignees;
-        if (!Array.isArray(asg) || asg.length === 0) return false;
-        return asg.some((a) => a && typeof a.user_id === 'string' && a.user_id === userId);
-      });
-      if (forUser.length === 0) return null;
-      forUser.sort(
-        (a, b) =>
-          new Date(String((b as { created_at?: string }).created_at ?? 0)).getTime() -
-          new Date(String((a as { created_at?: string }).created_at ?? 0)).getTime(),
-      );
-      const id = (forUser[0] as { id?: string }).id;
-      return typeof id === 'string' && id ? id : null;
+      if (!data || typeof data.id !== 'string' || !data.id) return null;
+      return data.id;
     };
 
     const tick = async () => {
       if (cancelled || doneRef.current) return;
+      if (findTaskInFlightRef.current) return;
       if (Date.now() - started > MAX_WAIT_MS) {
         doneRef.current = true;
         setActiveHandoff(false);
@@ -168,7 +165,13 @@ export function useStorefrontTrialWorkoutAutoOpen({
         );
         return;
       }
-      const taskId = await findTaskId();
+      findTaskInFlightRef.current = true;
+      let taskId: string | null = null;
+      try {
+        taskId = await findTaskId();
+      } finally {
+        findTaskInFlightRef.current = false;
+      }
       if (cancelled || doneRef.current) return;
       if (!taskId) return;
       doneRef.current = true;

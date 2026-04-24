@@ -77,8 +77,11 @@ export async function generateSceneBrief(
   const descRaw = (input.description ?? '').trim();
   const description = descRaw ? descRaw.slice(0, MAX_INPUT_DESCRIPTION) : '';
 
-  const exercises = input.exercises?.trim() || 'None specified';
-  const userPrompt = `Card Type: ${typeLine}\nTitle: ${title || '(untitled)'}\nDescription: ${description || 'None'}.\nExercises/Equipment: ${exercises}.`;
+  const isWorkoutish = itemKind === 'workout' || itemKind === 'workout_log';
+  const exercisesBlock = isWorkoutish
+    ? `\nExercises/Equipment: ${input.exercises?.trim() || 'None specified'}.`
+    : '';
+  const userPrompt = `Card Type: ${typeLine}\nTitle: ${title || '(untitled)'}\nDescription: ${description || 'None'}.${exercisesBlock}`;
 
   const location = resolveVertexGeminiLocation();
   const modelId = resolveSceneBriefGeminiModelId();

@@ -42,8 +42,9 @@ function isUuid(s: string): boolean {
 const MAX_EXERCISES_FOR_CARD_COVER = 8;
 
 /**
- * Comma-separated exercise labels (name, plus equipment in parens if present) from
+ * Array of exercise labels (name, plus equipment in parens if present) from
  * `metadata.exercises` or, when empty, `metadata.workout_factory_workout.exercises`.
+ * The caller joins for the scene-brief input.
  */
 function extractExerciseLabelsForCardCover(taskMetadata: unknown): string[] {
   const fromForm = metadataFieldsFromParsed(taskMetadata).workoutExercises;
