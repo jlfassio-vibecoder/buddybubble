@@ -7,9 +7,11 @@ import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PrivacyToggle } from '@/components/ui/privacy-toggle';
 import { cn } from '@/lib/utils';
 import { createClient } from '@utils/supabase/client';
 import type { Json, UnitSystem } from '@/types/database';
+import { setFitnessProfileBiometricsPublicAction } from '@/app/(dashboard)/fitness-profile-actions';
 
 type BiometricsRecord = {
   weight?: number;
@@ -81,6 +83,7 @@ type LocalProfile = {
   weight: string;
   height: string;
   age: string;
+  biometricsIsPublic: boolean;
 };
 
 const EMPTY_PROFILE: LocalProfile = {
@@ -91,6 +94,7 @@ const EMPTY_PROFILE: LocalProfile = {
   weight: '',
   height: '',
   age: '',
+  biometricsIsPublic: true,
 };
 
 const EQUIPMENT_OPTIONS = [
@@ -112,6 +116,8 @@ export type FitnessProfileSheetProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   workspaceId: string;
+  /** When set, load/save this user's fitness profile (trainer view). Defaults to the signed-in user. */
+  targetUserId?: string | null;
   /** Current board bubble (not “All”); required to attach a generated workout card. */
   bubbleIdForTasks?: string | null;
   /** Bump Kanban / task views after a workout card is inserted. */
@@ -122,6 +128,7 @@ export function FitnessProfileSheet({
   open,
   onOpenChange,
   workspaceId,
+  targetUserId = null,
   bubbleIdForTasks = null,
   onQuickWorkoutCreated,
 }: FitnessProfileSheetProps) {
@@ -133,6 +140,8 @@ export function FitnessProfileSheet({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [quickWorkoutBusy, setQuickWorkoutBusy] = useState(false);
+  const [privacyToggleBusy, setPrivacyToggleBusy] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const loadProfile = useCallback(async () => {
     setLoading(true);
@@ -146,11 +155,13 @@ export function FitnessProfileSheet({
       return;
     }
 
+    setCurrentUserId(user.id);
+    const effectiveUserId = targetUserId?.trim() || user.id;
     const { data } = await supabase
       .from('fitness_profiles')
       .select('*')
       .eq('workspace_id', workspaceId)
-      .eq('user_id', user.id)
+      .eq('user_id', effectiveUserId)
       .maybeSingle();
 
     if (data) {
@@ -169,13 +180,15 @@ export function FitnessProfileSheet({
         weight: decodeWeightDisplay(bio, unitSystem),
         height: decodeHeightDisplay(bio, unitSystem),
         age: bio.age != null ? String(bio.age) : '',
+        biometricsIsPublic:
+          (data as { biometrics_is_public?: boolean | null }).biometrics_is_public ?? true,
       });
     } else {
       setBioExtras({});
       setProfile(EMPTY_PROFILE);
     }
     setLoading(false);
-  }, [workspaceId]);
+  }, [workspaceId, targetUserId]);
 
   useEffect(() => {
     if (!open) return;
@@ -194,6 +207,8 @@ export function FitnessProfileSheet({
       return;
     }
 
+    setCurrentUserId(user.id);
+    const effectiveUserId = targetUserId?.trim() || user.id;
     const w = parseFloat(profile.weight);
     const h = parseFloat(profile.height);
     const a = parseInt(profile.age, 10);
@@ -219,11 +234,12 @@ export function FitnessProfileSheet({
 
     const payload = {
       workspace_id: workspaceId,
-      user_id: user.id,
+      user_id: effectiveUserId,
       goals: profile.goals,
       equipment: profile.equipment,
       unit_system: profile.unitSystem,
       biometrics: biometrics as Json,
+      biometrics_is_public: profile.biometricsIsPublic,
       updated_at: new Date().toISOString(),
     };
 
@@ -240,7 +256,46 @@ export function FitnessProfileSheet({
     onOpenChange(false);
   };
 
+  const handleBiometricsPrivacyToggle = async (next: boolean) => {
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    const sessionUserId = user?.id ?? null;
+    const effectiveUserId = targetUserId?.trim() || sessionUserId;
+    if (!sessionUserId || !effectiveUserId) return;
+    if (sessionUserId !== effectiveUserId) return;
+
+    setCurrentUserId(sessionUserId);
+    setPrivacyToggleBusy(true);
+    setProfile((p) => ({ ...p, biometricsIsPublic: next }));
+    const res = await setFitnessProfileBiometricsPublicAction({
+      workspaceId,
+      show: next,
+    });
+    setPrivacyToggleBusy(false);
+    if ('error' in res) {
+      setProfile((p) => ({ ...p, biometricsIsPublic: !next }));
+      setError(res.error);
+    }
+  };
+
   const handleQuickWorkout = async () => {
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    const sessionUserId = user?.id ?? null;
+    const effectiveUserId = targetUserId?.trim() || sessionUserId;
+    if (!sessionUserId || !effectiveUserId) {
+      toast.error('Sign in to generate a workout.');
+      return;
+    }
+    setCurrentUserId(sessionUserId);
+    if (sessionUserId !== effectiveUserId) {
+      toast.error('Quick workout is only available for your own profile.');
+      return;
+    }
     if (!bubbleIdForTasks?.trim()) {
       toast.error('Select a bubble on the board (not “All”) before generating a workout.');
       return;
@@ -295,6 +350,10 @@ export function FitnessProfileSheet({
 
   const weightLabel = profile.unitSystem === 'metric' ? 'Weight (kg)' : 'Weight (lbs)';
   const heightLabel = profile.unitSystem === 'metric' ? 'Height (cm)' : 'Height (in)';
+  const effectiveProfileUserId = targetUserId?.trim() || currentUserId;
+  const isOwnerView =
+    Boolean(currentUserId && effectiveProfileUserId && currentUserId === effectiveProfileUserId) ||
+    (currentUserId != null && !targetUserId?.trim());
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -347,50 +406,67 @@ export function FitnessProfileSheet({
                 Biometrics{' '}
                 <span className="text-xs font-normal text-muted-foreground">(optional)</span>
               </p>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="space-y-1">
-                  <Label htmlFor="fp-weight" className="text-xs">
-                    {weightLabel}
-                  </Label>
-                  <Input
-                    id="fp-weight"
-                    type="number"
-                    min={0}
-                    step="0.1"
-                    value={profile.weight}
-                    onChange={(e) => setProfile((p) => ({ ...p, weight: e.target.value }))}
-                    className="h-9"
-                  />
+
+              <PrivacyToggle
+                id="fitness-profile-biometrics-privacy"
+                title="Show my biometrics"
+                description="When off, your weight, height, and age are hidden from trainers and other viewers."
+                checked={profile.biometricsIsPublic}
+                disabled={privacyToggleBusy || saving || loading || !isOwnerView}
+                pending={privacyToggleBusy}
+                onCheckedChange={(next) => void handleBiometricsPrivacyToggle(next)}
+              />
+
+              {targetUserId?.trim() && profile.biometricsIsPublic === false ? (
+                <div className="rounded-lg border border-border bg-muted/20 px-3 py-3 text-sm text-muted-foreground">
+                  This user has kept their biometrics private.
                 </div>
-                <div className="space-y-1">
-                  <Label htmlFor="fp-height" className="text-xs">
-                    {heightLabel}
-                  </Label>
-                  <Input
-                    id="fp-height"
-                    type="number"
-                    min={0}
-                    step="0.1"
-                    value={profile.height}
-                    onChange={(e) => setProfile((p) => ({ ...p, height: e.target.value }))}
-                    className="h-9"
-                  />
+              ) : (
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <Label htmlFor="fp-weight" className="text-xs">
+                      {weightLabel}
+                    </Label>
+                    <Input
+                      id="fp-weight"
+                      type="number"
+                      min={0}
+                      step="0.1"
+                      value={profile.weight}
+                      onChange={(e) => setProfile((p) => ({ ...p, weight: e.target.value }))}
+                      className="h-9"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="fp-height" className="text-xs">
+                      {heightLabel}
+                    </Label>
+                    <Input
+                      id="fp-height"
+                      type="number"
+                      min={0}
+                      step="0.1"
+                      value={profile.height}
+                      onChange={(e) => setProfile((p) => ({ ...p, height: e.target.value }))}
+                      className="h-9"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="fp-age" className="text-xs">
+                      Age
+                    </Label>
+                    <Input
+                      id="fp-age"
+                      type="number"
+                      min={0}
+                      max={120}
+                      value={profile.age}
+                      onChange={(e) => setProfile((p) => ({ ...p, age: e.target.value }))}
+                      className="h-9"
+                    />
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <Label htmlFor="fp-age" className="text-xs">
-                    Age
-                  </Label>
-                  <Input
-                    id="fp-age"
-                    type="number"
-                    min={0}
-                    max={120}
-                    value={profile.age}
-                    onChange={(e) => setProfile((p) => ({ ...p, age: e.target.value }))}
-                    className="h-9"
-                  />
-                </div>
-              </div>
+              )}
             </div>
 
             {/* Goals */}

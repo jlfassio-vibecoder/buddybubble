@@ -15,6 +15,7 @@ import { childrenNamesFromJson } from '@/lib/profile-helpers';
 import { completeProfileGateAction } from '@/app/(dashboard)/profile-actions';
 import { reportProfileCompletionJourneyStepAction } from '@/app/(dashboard)/profile-completion-analytics-actions';
 import { setWorkspaceMemberShowEmailAction } from '@/app/(dashboard)/workspace-member-email-actions';
+import { PrivacyToggle } from '@/components/ui/privacy-toggle';
 
 type Props = {
   profile: UserProfileRow;
@@ -403,42 +404,28 @@ export function ProfileCompletionModal({
 
             {/* Family members — Kids / Community workspaces */}
             {workspaceId && emailVisibilityLoaded ? (
-              <div className="rounded-lg border border-border bg-muted/30 p-4">
-                <label className="flex cursor-pointer items-start gap-3">
-                  <input
-                    type="checkbox"
-                    checked={showEmailToPeers}
-                    disabled={emailVisibilityPending}
-                    onChange={(e) => {
-                      const next = e.target.checked;
-                      setShowEmailToPeers(next);
-                      setEmailVisibilityPending(true);
-                      void (async () => {
-                        const res = await setWorkspaceMemberShowEmailAction({
-                          workspaceId,
-                          show: next,
-                        });
-                        setEmailVisibilityPending(false);
-                        if ('error' in res) {
-                          setShowEmailToPeers(!next);
-                          setError(res.error);
-                        }
-                      })();
-                    }}
-                    className="mt-1 size-4 shrink-0 rounded border-input"
-                  />
-                  <span>
-                    <span className="block text-sm font-semibold text-foreground">
-                      Show my email to others in this BuddyBubble
-                    </span>
-                    <span className="mt-0.5 block text-xs text-muted-foreground">
-                      Off by default — members won&apos;t see your address in chat or mentions
-                      unless you turn this on. Socialspace owners and admins can still see it for
-                      support.
-                    </span>
-                  </span>
-                </label>
-              </div>
+              <PrivacyToggle
+                id="profile-show-email"
+                checked={showEmailToPeers}
+                pending={emailVisibilityPending}
+                onCheckedChange={(next) => {
+                  setShowEmailToPeers(next);
+                  setEmailVisibilityPending(true);
+                  void (async () => {
+                    const res = await setWorkspaceMemberShowEmailAction({
+                      workspaceId,
+                      show: next,
+                    });
+                    setEmailVisibilityPending(false);
+                    if ('error' in res) {
+                      setShowEmailToPeers(!next);
+                      setError(res.error);
+                    }
+                  })();
+                }}
+                title="Show my email to others in this BuddyBubble"
+                description="Off by default — members won’t see your address in chat or mentions unless you turn this on. Socialspace owners and admins can still see it for support."
+              />
             ) : null}
 
             {showFamilyNames ? (

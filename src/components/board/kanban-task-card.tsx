@@ -18,6 +18,7 @@ import {
   MessageCircle,
   Pencil,
   Play,
+  Video,
 } from 'lucide-react';
 import { normalizeItemType } from '@/lib/item-types';
 import type { BubbleRow, TaskRow, WorkspaceCategory } from '@/types/database';
@@ -27,6 +28,7 @@ import type { OpenTaskOptions } from '@/components/modals/TaskModal';
 import { metadataFieldsFromParsed, parseTaskMetadata } from '@/lib/item-metadata';
 import type { KanbanCardDensity } from '@/components/board/kanban-density';
 import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarGroup, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { taskDateFieldLabels } from '@/lib/task-date-labels';
@@ -34,6 +36,8 @@ import { scheduledOnRelativeToWorkspaceToday } from '@/lib/workspace-calendar';
 import { formatScheduledTimeDisplay } from '@/lib/task-scheduled-time';
 import { usePresenceStore, type UserPresence } from '@/store/presenceStore';
 import { useUserProfileStore } from '@/store/userProfileStore';
+import { useLiveVideoStore } from '@/store/liveVideoStore';
+import { parseLiveSessionInviteFromMessageMetadata } from '@/types/live-session-invite';
 import type { TaskBubbleUpControlProps } from '@/components/tasks/bubbly-button';
 import { CardTabStrip } from '@/components/tasks/card-tab-strip';
 import { taskCardCoverPath, useTaskCardCoverUrl } from '@/lib/task-card-cover';
@@ -94,6 +98,50 @@ function readKanbanCoverHiddenFromStorage(taskId: string, enabled: boolean): boo
   } catch {
     return false;
   }
+}
+
+function KanbanCardLiveJoinRow({
+  taskId,
+  liveInvite,
+  inLiveSession,
+  currentUserId,
+  size,
+}: {
+  taskId: string;
+  liveInvite: NonNullable<ReturnType<typeof parseLiveSessionInviteFromMessageMetadata>>;
+  inLiveSession: boolean;
+  currentUserId: string | null;
+  size: 'micro' | 'default';
+}) {
+  if (liveInvite.endedAt) return null;
+  const joinDisabled = inLiveSession || !currentUserId;
+  const label = inLiveSession ? 'Joined' : !currentUserId ? 'Sign in to join' : 'Join live session';
+  return (
+    <div className={size === 'micro' ? 'mb-1' : 'mb-2'}>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        className={cn('w-full gap-1.5 shadow-sm', size === 'micro' && 'h-7 text-[10px]')}
+        disabled={joinDisabled}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (joinDisabled) return;
+          useLiveVideoStore.getState().joinSession({
+            workspaceId: liveInvite.workspaceId,
+            sessionId: liveInvite.sessionId,
+            channelId: liveInvite.channelId,
+            hostUserId: liveInvite.hostUserId,
+            mode: liveInvite.mode,
+            sourceTaskId: taskId,
+          });
+        }}
+      >
+        <Video className={cn('shrink-0', size === 'micro' ? 'size-3' : 'size-3.5')} aria-hidden />
+        {label}
+      </Button>
+    </div>
+  );
 }
 
 // Copilot suggestion ignored: counts use embedded `task_subtasks` from the board query, not removed `tasks.subtasks` JSON.
@@ -393,6 +441,20 @@ export function KanbanTaskCard({
     return peers;
   }, [presenceUsers, localUserId, task.id]);
 
+  const liveInvite = useMemo(
+    () => parseLiveSessionInviteFromMessageMetadata(task.metadata),
+    [task.metadata],
+  );
+  const activeLiveSession = useLiveVideoStore((s) => s.activeSession);
+  const inLiveSession = useMemo(() => {
+    if (!activeLiveSession || !liveInvite) return false;
+    return (
+      activeLiveSession.sessionId === liveInvite.sessionId &&
+      activeLiveSession.channelId === liveInvite.channelId &&
+      activeLiveSession.workspaceId === liveInvite.workspaceId
+    );
+  }, [activeLiveSession, liveInvite]);
+
   const primaryPeer = taskPresencePeers[0];
   const hasPeerPresence = taskPresencePeers.length > 0;
 
@@ -484,19 +546,30 @@ export function KanbanTaskCard({
                 </div>
               </div>
             </div>
-            {onOpenTask || bubbleUp ? (
+            {(liveInvite && !liveInvite.endedAt) || onOpenTask || bubbleUp ? (
               <div
                 className="mt-1 border-t border-border/60 pt-1"
                 data-kanban-no-open
                 onClick={(e) => e.stopPropagation()}
                 onPointerDown={(e) => e.stopPropagation()}
               >
-                <CardTabStrip
-                  taskId={task.id}
-                  onOpenTask={onOpenTask}
-                  bubbleUp={bubbleUp}
-                  bubblyDensity="micro"
-                />
+                {liveInvite && !liveInvite.endedAt ? (
+                  <KanbanCardLiveJoinRow
+                    taskId={task.id}
+                    liveInvite={liveInvite}
+                    inLiveSession={inLiveSession}
+                    currentUserId={localUserId ?? null}
+                    size="micro"
+                  />
+                ) : null}
+                {onOpenTask || bubbleUp ? (
+                  <CardTabStrip
+                    taskId={task.id}
+                    onOpenTask={onOpenTask}
+                    bubbleUp={bubbleUp}
+                    bubblyDensity="micro"
+                  />
+                ) : null}
               </div>
             ) : null}
           </CardContent>
@@ -894,19 +967,30 @@ export function KanbanTaskCard({
             </div>
           )}
 
-          {onOpenTask || bubbleUp ? (
+          {(liveInvite && !liveInvite.endedAt) || onOpenTask || bubbleUp ? (
             <div
               className="mt-2 border-t border-border/60 pt-2"
               data-kanban-no-open
               onClick={(e) => e.stopPropagation()}
               onPointerDown={(e) => e.stopPropagation()}
             >
-              <CardTabStrip
-                taskId={task.id}
-                onOpenTask={onOpenTask}
-                bubbleUp={bubbleUp}
-                bubblyDensity="default"
-              />
+              {liveInvite && !liveInvite.endedAt ? (
+                <KanbanCardLiveJoinRow
+                  taskId={task.id}
+                  liveInvite={liveInvite}
+                  inLiveSession={inLiveSession}
+                  currentUserId={localUserId ?? null}
+                  size="default"
+                />
+              ) : null}
+              {onOpenTask || bubbleUp ? (
+                <CardTabStrip
+                  taskId={task.id}
+                  onOpenTask={onOpenTask}
+                  bubbleUp={bubbleUp}
+                  bubblyDensity="default"
+                />
+              ) : null}
             </div>
           ) : null}
         </CardContent>

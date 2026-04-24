@@ -126,6 +126,16 @@ function loadKanbanFiltersToolbarCollapsed(workspaceId: string | null): boolean 
   }
 }
 
+type TaskWithAssigneeEmbed = TaskRow & { task_assignees?: { user_id: string }[] | null };
+
+/** Bubble names that use created_by + task_assignees personalization for non-managers. */
+const PERSONALIZED_BUBBLE_NAMES = ['Workouts', 'Programs'] as const;
+
+function shouldKeepForPersonalizedBubble(t: TaskWithAssigneeEmbed, viewerId: string): boolean {
+  const assignees = t.task_assignees ?? [];
+  return t.created_by === viewerId || assignees.some((a) => a.user_id === viewerId);
+}
+
 /**
  * One grid: row 1 = per-rail chrome, row 2 = rail bodies. Shared column template keeps each
  * chrome bar exactly above its rail (same width as `CalendarRail` / Kanban column stack).
@@ -489,7 +499,16 @@ export function KanbanBoard({
   const columnSlugs = useMemo(() => (columnDefs ?? []).map((c) => c.id), [columnDefs]);
 
   const activeBubble = useWorkspaceStore((s) => s.activeBubble);
-  const bubbleId = activeBubble?.id ?? null;
+  /** Primitive for deps / fetch identity — avoids `activeBubble` object reference churn in `loadTasks`. */
+  const activeBubbleId = activeBubble?.id ?? null;
+  const bubbleId = activeBubbleId;
+  const personalizedBubbleIds = useMemo(
+    () =>
+      new Set(
+        bubbles.filter((b) => PERSONALIZED_BUBBLE_NAMES.some((n) => n === b.name)).map((b) => b.id),
+      ),
+    [bubbles],
+  );
 
   const [columns, setColumns] = useState<Record<string, TaskRow[]>>({});
   /** Per-task unread comment counts from `task_comment_unread_counts` (merged into cards). */
@@ -543,10 +562,6 @@ export function KanbanBoard({
         setCommentUnreadByTaskId({});
         return;
       }
-      console.log(
-        '[DEBUG] Fetching tasks with updated multi-assignee filter. User ID:',
-        guestTaskUserId?.trim() || profileUserId || 'unknown',
-      );
       let query = supabase
         .from('tasks')
         .select('*, task_subtasks(*), task_assignees(user_id)')
@@ -563,7 +578,28 @@ export function KanbanBoard({
       }
       if (draggingRef.current) return;
       if (loadGen !== loadTasksGenerationRef.current) return;
-      const rows = ((data ?? []) as TaskRow[]).filter((t) => !t.archived_at);
+      let rows = ((data ?? []) as TaskWithAssigneeEmbed[]).filter((t) => !t.archived_at);
+
+      const isManagerView = workspaceMemberRole === 'owner' || workspaceMemberRole === 'admin';
+      const viewerId = (guestTaskUserId?.trim() || profileUserId) ?? null;
+      const isPersonalizedSingle =
+        !isAll && Boolean(bubbleId) && personalizedBubbleIds.has(bubbleId);
+      const needPersonalization =
+        !isManagerView &&
+        Boolean(viewerId) &&
+        (isPersonalizedSingle || (isAll && personalizedBubbleIds.size > 0));
+
+      if (needPersonalization && viewerId) {
+        if (isPersonalizedSingle) {
+          rows = rows.filter((t) => shouldKeepForPersonalizedBubble(t, viewerId));
+        } else if (isAll && personalizedBubbleIds.size > 0) {
+          rows = rows.filter(
+            (t) =>
+              !personalizedBubbleIds.has(t.bubble_id) ||
+              shouldKeepForPersonalizedBubble(t, viewerId),
+          );
+        }
+      }
 
       const tz = calendarTimezone?.trim() || null;
       const canPromote =
@@ -649,14 +685,15 @@ export function KanbanBoard({
       setTasksBoardLoading(false);
     }
   }, [
-    bubbleId,
+    activeBubbleId,
     bubbles,
     columnSlugs,
     calendarTimezone,
     canWrite,
-    workspaceMemberRole,
     guestTaskUserId,
     profileUserId,
+    personalizedBubbleIds,
+    workspaceMemberRole,
   ]);
 
   useEffect(() => {

@@ -9,6 +9,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
   type SetStateAction,
 } from 'react';
@@ -26,6 +27,12 @@ import {
   withSnapshotTask,
 } from '@/features/live-video/shells/huddle/session-deck-snapshot';
 import type { SessionDeckSnapshot } from '@/features/live-video/shells/huddle/session-deck-snapshot';
+import {
+  setWorkoutDeckBoardAddTaskHandler,
+  setWorkoutDeckBoardSelecting,
+  subscribeWorkoutDeckBoardSelecting,
+  getWorkoutDeckBoardSelectingSnapshot,
+} from '@/features/live-video/shells/huddle/workout-deck-board-bridge';
 
 /** Survives React Strict Mode remounts so we do not wipe `deckItemId` / re-flush the same `session_id`. */
 let moduleLastDeckAnchorSessionId: string | null = null;
@@ -76,24 +83,67 @@ export type WorkoutDeckSelectionContextValue = {
 
 const WorkoutDeckSelectionContext = createContext<WorkoutDeckSelectionContextValue | null>(null);
 
-export function WorkoutDeckSelectionProvider({ children }: { children: ReactNode }) {
+export type WorkoutDeckSelectionProviderProps = {
+  children: ReactNode;
+  /** When set (non-empty after trim), deck rows persist to this session id instead of the live-video dock store. */
+  sessionIdOverride?: string | null;
+  /** When set with `sessionIdOverride`, must match signed-in user for `canPersist` (live_session host). */
+  hostUserIdOverride?: string | null;
+  /**
+   * When true, `enterSelectionMode` / `exitSelectionMode` do not touch the global Kanban bridge
+   * (`workout-deck-board-bridge`). Use for nested class deck pickers so the main board does not enter selection mode.
+   */
+  disableGlobalBoardBridge?: boolean;
+};
+
+export function WorkoutDeckSelectionProvider({
+  children,
+  sessionIdOverride,
+  hostUserIdOverride,
+  disableGlobalBoardBridge = false,
+}: WorkoutDeckSelectionProviderProps) {
   const supabase = useMemo(() => createClient(), []);
   const [deck, setDeck] = useState<SessionDeckSnapshot[]>([]);
-  const [isSelectingFromBoard, setIsSelectingFromBoard] = useState(false);
   const [activeSnapshotId, setActiveSnapshotIdState] = useState<string | null>(null);
 
-  const sessionId = useLiveVideoStore((s) => s.activeSession?.sessionId ?? null);
-  const hostUserId = useLiveVideoStore((s) => s.activeSession?.hostUserId ?? null);
+  const storeSessionId = useLiveVideoStore((s) => s.activeSession?.sessionId ?? null);
+  const storeHostUserId = useLiveVideoStore((s) => s.activeSession?.hostUserId ?? null);
   const localUserId = useUserProfileStore((s) => s.profile?.id ?? null);
 
-  const sidTrimmed = sessionId?.trim() ?? '';
-  const canPersist = Boolean(sidTrimmed && localUserId && hostUserId && localUserId === hostUserId);
+  const sidTrimmed = useMemo(() => {
+    if (sessionIdOverride !== undefined && sessionIdOverride !== null) {
+      const t = String(sessionIdOverride).trim();
+      if (t.length > 0) return t;
+    }
+    return storeSessionId?.trim() ?? '';
+  }, [sessionIdOverride, storeSessionId]);
+
+  const effectiveHostUserId = useMemo(() => {
+    if (hostUserIdOverride !== undefined && hostUserIdOverride !== null) {
+      const t = String(hostUserIdOverride).trim();
+      if (t.length > 0) return t;
+    }
+    return storeHostUserId ?? null;
+  }, [hostUserIdOverride, storeHostUserId]);
+
+  const canPersist = Boolean(
+    sidTrimmed && localUserId && effectiveHostUserId && localUserId === effectiveHostUserId,
+  );
+
+  const bridgeSelecting = useSyncExternalStore(
+    subscribeWorkoutDeckBoardSelecting,
+    getWorkoutDeckBoardSelectingSnapshot,
+    getWorkoutDeckBoardSelectingSnapshot,
+  );
+  const [localSelectingFromBoard, setLocalSelectingFromBoard] = useState(false);
+  const isSelectingFromBoard = disableGlobalBoardBridge ? localSelectingFromBoard : bridgeSelecting;
 
   const sessionIdRef = useRef<string | null>(null);
   const canPersistRef = useRef(false);
   const flushedSessionIdRef = useRef<string | null>(null);
   const hydratedSessionIdRef = useRef<string | null>(null);
   const deckRef = useRef<SessionDeckSnapshot[]>([]);
+  const addTaskToDeckRef = useRef<(task: TaskRow) => void>(() => {});
   /** SnapshotIds for which a host `insert` was issued; cleared only on insert error (Strict / double microtask guard). */
   const hostDeckInsertIssuedRef = useRef(new Set<string>());
 
@@ -206,9 +256,6 @@ export function WorkoutDeckSelectionProvider({ children }: { children: ReactNode
         const s = live[idx];
         flushWrittenSnapshotIds.add(s.snapshotId);
         hostDeckInsertIssuedRef.current.add(s.snapshotId);
-        if (process.env.NODE_ENV === 'development') {
-          console.log('[DEBUG] Host DB Write: flush insert', s.originTaskId, 'index', idx);
-        }
         const { data, error } = await supabase
           .from('live_session_deck_items')
           .insert({
@@ -251,9 +298,6 @@ export function WorkoutDeckSelectionProvider({ children }: { children: ReactNode
         const sortOrder = deckRef.current.findIndex((s) => s.snapshotId === snapId);
         if (sortOrder < 0) return;
         hostDeckInsertIssuedRef.current.add(snapId);
-        if (process.env.NODE_ENV === 'development') {
-          console.log('[DEBUG] Host DB Write: Inserting task', task.id);
-        }
         void supabase
           .from('live_session_deck_items')
           .insert({
@@ -283,6 +327,34 @@ export function WorkoutDeckSelectionProvider({ children }: { children: ReactNode
     },
     [supabase],
   );
+
+  addTaskToDeckRef.current = addTaskToDeck;
+
+  const enterSelectionMode = useCallback(() => {
+    if (disableGlobalBoardBridge) {
+      setLocalSelectingFromBoard(true);
+      return;
+    }
+    setWorkoutDeckBoardAddTaskHandler((task) => {
+      addTaskToDeckRef.current(task);
+    });
+    setWorkoutDeckBoardSelecting(true);
+  }, [disableGlobalBoardBridge]);
+
+  const exitSelectionMode = useCallback(() => {
+    if (disableGlobalBoardBridge) {
+      setLocalSelectingFromBoard(false);
+      return;
+    }
+    setWorkoutDeckBoardSelecting(false);
+  }, [disableGlobalBoardBridge]);
+
+  useEffect(() => {
+    if (!disableGlobalBoardBridge) return;
+    return () => {
+      setLocalSelectingFromBoard(false);
+    };
+  }, [disableGlobalBoardBridge]);
 
   const setDeckOrder = useCallback(
     (next: SetStateAction<SessionDeckSnapshot[]>) => {
@@ -380,13 +452,6 @@ export function WorkoutDeckSelectionProvider({ children }: { children: ReactNode
     );
   }, []);
 
-  const enterSelectionMode = useCallback(() => {
-    setIsSelectingFromBoard(true);
-  }, []);
-
-  const exitSelectionMode = useCallback(() => {
-    setIsSelectingFromBoard(false);
-  }, []);
   // Copilot suggestion ignored: we are not deduping deck snapshots here because the current UX allows adding duplicates intentionally.
 
   const value = useMemo(

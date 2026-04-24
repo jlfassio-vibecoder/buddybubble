@@ -29,6 +29,7 @@ import {
   toPgScheduledTime,
   type TaskModalOriginalSnapshot,
 } from '@/components/modals/task-modal/task-modal-save-utils';
+import { mergeJsonWithLiveSessionToggle } from '@/lib/card-live-session-metadata';
 export type UseTaskSaveAndCreateArgs = {
   canWrite: boolean;
   taskId: string | null;
@@ -48,6 +49,8 @@ export type UseTaskSaveAndCreateArgs = {
   visibility: TaskVisibility;
   assignedTo: string | null;
   metadataForSave: Json;
+  /** When true, merge or mint `metadata.live_session` on save (card-based live video). */
+  liveStreamEnabled: boolean;
   boardColumnDefs: { id: string; label: string }[] | null;
   hasTodayBoardColumn: boolean;
   hasScheduledBoardColumn: boolean;
@@ -84,6 +87,7 @@ export function useTaskSaveAndCreate({
   visibility,
   assignedTo,
   metadataForSave,
+  liveStreamEnabled,
   boardColumnDefs,
   hasTodayBoardColumn,
   hasScheduledBoardColumn,
@@ -165,9 +169,15 @@ export function useTaskSaveAndCreate({
       itemType,
     });
 
+    const mergedMetadata = mergeJsonWithLiveSessionToggle(metadataForSave, {
+      enabled: liveStreamEnabled,
+      workspaceId,
+      hostUserId: uid,
+    }) as TaskRow['metadata'];
+
     const typeMetaPatch = {
       item_type: itemType,
-      metadata: metadataForSave as TaskRow['metadata'],
+      metadata: mergedMetadata,
     };
 
     const nextActivity = buildActivityLogForCoreFieldChanges({
@@ -238,9 +248,10 @@ export function useTaskSaveAndCreate({
           scheduledOn: schedChanged ? scheduledOnValue : (orig?.scheduledOn ?? null),
           scheduledTime: orig?.scheduledTime ?? null,
           itemType,
-          metadataJson: JSON.stringify(metadataForSave),
+          metadataJson: JSON.stringify(mergedMetadata),
           visibility,
           assignedTo,
+          liveStreamEnabled,
         });
         setSaving(false);
         await syncAssigneesNow();
@@ -291,9 +302,10 @@ export function useTaskSaveAndCreate({
           scheduledOn: orig?.scheduledOn ?? null,
           scheduledTime: orig?.scheduledTime ?? null,
           itemType,
-          metadataJson: JSON.stringify(metadataForSave),
+          metadataJson: JSON.stringify(mergedMetadata),
           visibility,
           assignedTo,
+          liveStreamEnabled,
         });
         setSaving(false);
         await syncAssigneesNow();
@@ -330,9 +342,10 @@ export function useTaskSaveAndCreate({
           scheduledOn: scheduledOnValue,
           scheduledTime: newTimeHm,
           itemType,
-          metadataJson: JSON.stringify(metadataForSave),
+          metadataJson: JSON.stringify(mergedMetadata),
           visibility: orig?.visibility ?? visibility,
           assignedTo: orig?.assignedTo ?? assignedTo,
+          liveStreamEnabled,
         });
         setSaving(false);
         await syncAssigneesNow();
@@ -368,9 +381,10 @@ export function useTaskSaveAndCreate({
           scheduledOn: scheduledOnValue,
           scheduledTime: newTimeHm,
           itemType,
-          metadataJson: JSON.stringify(metadataForSave),
+          metadataJson: JSON.stringify(mergedMetadata),
           visibility: orig?.visibility ?? 'private',
           assignedTo: orig?.assignedTo ?? assignedTo,
+          liveStreamEnabled,
         });
         setSaving(false);
         setError(
@@ -409,9 +423,10 @@ export function useTaskSaveAndCreate({
       scheduledOn: scheduledOnValue,
       scheduledTime: newTimeHm,
       itemType,
-      metadataJson: JSON.stringify(metadataForSave),
+      metadataJson: JSON.stringify(mergedMetadata),
       visibility,
       assignedTo,
+      liveStreamEnabled,
     });
     await syncAssigneesNow();
     void loadTask(taskId);
@@ -426,6 +441,7 @@ export function useTaskSaveAndCreate({
     hasTodayBoardColumn,
     itemType,
     loadTask,
+    liveStreamEnabled,
     metadataForSave,
     originalRef,
     priority,
@@ -444,6 +460,7 @@ export function useTaskSaveAndCreate({
     taskId,
     title,
     visibility,
+    workspaceId,
   ]);
 
   const createTask = useCallback(async () => {
@@ -451,6 +468,20 @@ export function useTaskSaveAndCreate({
     setSaving(true);
     setError(null);
     const supabase = createClient();
+    const {
+      data: { user: authUser },
+      error: authErr,
+    } = await supabase.auth.getUser();
+    if (authErr || !authUser?.id) {
+      setSaving(false);
+      setError(
+        formatUserFacingError(
+          authErr instanceof Error ? authErr : new Error('You must be signed in to create a task.'),
+        ),
+      );
+      return;
+    }
+
     const { data: existing } = await supabase
       .from('tasks')
       .select('position')
@@ -472,6 +503,12 @@ export function useTaskSaveAndCreate({
       itemType,
     });
 
+    const mergedMetadata = mergeJsonWithLiveSessionToggle(metadataForSave, {
+      enabled: liveStreamEnabled,
+      workspaceId,
+      hostUserId: authUser.id,
+    }) as TaskRow['metadata'];
+
     const insertRow = {
       bubble_id: bubbleId,
       title: title.trim(),
@@ -481,8 +518,9 @@ export function useTaskSaveAndCreate({
       position: maxPos,
       scheduled_on: sched,
       item_type: itemType,
-      metadata: metadataForSave as TaskRow['metadata'],
+      metadata: mergedMetadata,
       visibility,
+      created_by: authUser.id,
       ...(sched ? { scheduled_time: scheduledTimeInsert } : {}),
     };
 
@@ -539,6 +577,17 @@ export function useTaskSaveAndCreate({
       cErr = second.error;
     }
 
+    if (cErr && isMissingColumnSchemaCacheError(cErr, 'created_by')) {
+      const { created_by: _cb, ...insertWithoutCreatedBy } = insertRow;
+      const second = await supabase
+        .from('tasks')
+        .insert(insertWithoutCreatedBy)
+        .select('id')
+        .maybeSingle();
+      data = second.data;
+      cErr = second.error;
+    }
+
     setSaving(false);
     if (cErr || !data) {
       setError(formatUserFacingError(cErr ?? new Error('Create failed')));
@@ -568,6 +617,7 @@ export function useTaskSaveAndCreate({
     hasScheduledBoardColumn,
     hasTodayBoardColumn,
     itemType,
+    liveStreamEnabled,
     metadataForSave,
     onCreated,
     priority,
@@ -579,6 +629,7 @@ export function useTaskSaveAndCreate({
     status,
     title,
     visibility,
+    workspaceId,
     calendarTimezone,
   ]);
 

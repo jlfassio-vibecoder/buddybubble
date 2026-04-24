@@ -62,7 +62,7 @@ export const WORKSPACE_SEED_BY_CATEGORY: Record<
       { name: 'Analytics' },
     ],
     columns: [
-      { name: 'Planned', slug: 'planned', position: 0 },
+      { name: 'Library', slug: 'planned', position: 0 },
       { name: 'Scheduled', slug: 'scheduled', position: 1 },
       { name: 'Today', slug: 'today', position: 2 },
       { name: 'Completed', slug: 'completed', position: 3 },

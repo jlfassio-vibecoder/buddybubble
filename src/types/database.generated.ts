@@ -733,6 +733,7 @@ export type Database = {
       fitness_profiles: {
         Row: {
           biometrics: Json;
+          biometrics_is_public: boolean;
           created_at: string;
           equipment: string[];
           goals: string[];
@@ -744,6 +745,7 @@ export type Database = {
         };
         Insert: {
           biometrics?: Json;
+          biometrics_is_public?: boolean;
           created_at?: string;
           equipment?: string[];
           goals?: string[];
@@ -755,6 +757,7 @@ export type Database = {
         };
         Update: {
           biometrics?: Json;
+          biometrics_is_public?: boolean;
           created_at?: string;
           equipment?: string[];
           goals?: string[];
@@ -1428,6 +1431,7 @@ export type Database = {
           bubble_id: string;
           comment_count: number;
           created_at: string;
+          created_by: string | null;
           description: string | null;
           id: string;
           item_type: string;
@@ -1449,6 +1453,7 @@ export type Database = {
           bubble_id: string;
           comment_count?: number;
           created_at?: string;
+          created_by?: string | null;
           description?: string | null;
           id?: string;
           item_type?: string;
@@ -1470,6 +1475,7 @@ export type Database = {
           bubble_id?: string;
           comment_count?: number;
           created_at?: string;
+          created_by?: string | null;
           description?: string | null;
           id?: string;
           item_type?: string;
@@ -1491,6 +1497,13 @@ export type Database = {
             columns: ['bubble_id'];
             isOneToOne: false;
             referencedRelation: 'bubbles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'tasks_created_by_fkey';
+            columns: ['created_by'];
+            isOneToOne: false;
+            referencedRelation: 'users';
             referencedColumns: ['id'];
           },
           {

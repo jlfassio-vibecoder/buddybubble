@@ -12,6 +12,10 @@ export type LiveVideoActiveSession = {
   mode: LiveVideoShellMode;
   /** Chat row id for `metadata.live_session` — host PATCHes `endedAt` on "End session for all". */
   inviteMessageId?: string | null;
+  /** Kanban / card-backed session — host ends by PATCHing `tasks.metadata.live_session.endedAt`. */
+  sourceTaskId?: string | null;
+  /** Class instance card — host ends by PATCHing `class_instances.metadata.live_session.endedAt`. */
+  sourceInstanceId?: string | null;
 };
 
 type LiveVideoStore = {
@@ -31,9 +35,6 @@ export const useLiveVideoStore = create<LiveVideoStore>((set) => ({
   },
 
   leaveSession: () => {
-    if (process.env.NODE_ENV === 'development') {
-      console.warn('[DEBUG] leaveSession called. Clearing Zustand store.');
-    }
     set({ activeSession: null });
   },
 }));

@@ -24,6 +24,7 @@ export type UseTaskDirtyStateArgs = {
   metadataForSave: unknown;
   visibility: TaskVisibility;
   assignedTo: string | null;
+  liveStreamEnabled?: boolean;
 };
 
 export function useTaskDirtyState({
@@ -39,12 +40,14 @@ export function useTaskDirtyState({
   metadataForSave,
   visibility,
   assignedTo,
+  liveStreamEnabled = false,
 }: UseTaskDirtyStateArgs): { coreDirty: boolean } {
   const coreDirty = useMemo(() => {
     const o = originalRef.current;
     const sched = parseScheduledDateFromInput(scheduledOn);
     const timeHm = parseTimeHmFromScheduledInputs(sched, scheduledTime);
     const metaJson = JSON.stringify(metadataForSave);
+    const origLive = o?.liveStreamEnabled ?? false;
     if (!o) {
       return (
         isCreateMode &&
@@ -52,7 +55,8 @@ export function useTaskDirtyState({
           itemType !== 'task' ||
           metaJson !== '{}' ||
           visibility !== 'private' ||
-          assignedTo != null)
+          assignedTo != null ||
+          liveStreamEnabled)
       );
     }
     return (
@@ -65,7 +69,8 @@ export function useTaskDirtyState({
       itemType !== o.itemType ||
       metaJson !== o.metadataJson ||
       visibility !== o.visibility ||
-      (assignedTo ?? null) !== (o.assignedTo ?? null)
+      (assignedTo ?? null) !== (o.assignedTo ?? null) ||
+      liveStreamEnabled !== origLive
     );
   }, [
     title,
@@ -79,6 +84,7 @@ export function useTaskDirtyState({
     metadataForSave,
     visibility,
     assignedTo,
+    liveStreamEnabled,
   ]);
 
   return { coreDirty };

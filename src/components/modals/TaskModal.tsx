@@ -41,6 +41,7 @@ import {
 } from '@/components/modals/task-modal/TaskModalCommentsPanel';
 import { TaskModalDetailsFooterActions } from '@/components/modals/task-modal/TaskModalDetailsFooterActions';
 import { TaskModalEditorChrome } from '@/components/modals/task-modal/TaskModalEditorChrome';
+import { ClassEditor } from '@/components/modals/class-modal/ClassEditor';
 import { TaskModalSchedulingSection } from '@/components/modals/task-modal/TaskModalSchedulingSection';
 import { TaskModalSubtasksPanel } from '@/components/modals/task-modal/TaskModalSubtasksPanel';
 import { TaskModalTabBar } from '@/components/modals/task-modal/TaskModalTabBar';
@@ -60,6 +61,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { indefiniteArticleForUiNoun, itemTypeUiNoun } from '@/lib/item-type-styles';
+import { parseLiveSessionInviteFromMessageMetadata } from '@/types/live-session-invite';
 import { ALL_BUBBLES_BUBBLE_ID } from '@/lib/all-bubbles';
 import { usePresenceStore } from '@/store/presenceStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
@@ -94,6 +96,14 @@ export type TaskModalProps = {
   bubbleId: string | null;
   workspaceId: string;
   canWrite: boolean;
+  /** Workspace owner/admin — show Class in the type picker and mount `ClassEditor` for item type `class`. */
+  canManageClasses?: boolean;
+  /** When set with class flow, `ClassEditor` opens in edit mode for this `class_instances.id`. */
+  classEditorInstanceId?: string | null;
+  /** Called after a class is created from `ClassEditor` (not a `tasks` row). */
+  onClassCreated?: (ids: { offeringId: string; instanceId: string }) => void;
+  /** Called after a class is updated from `ClassEditor` (refresh lists). */
+  onClassSaved?: () => void;
   /** Called after a task is created so the parent can keep the modal in edit mode. */
   onCreated?: (newTaskId: string) => void;
   /** When opening create mode, pre-select this Kanban column status if it exists on the board. */
@@ -140,6 +150,10 @@ export function TaskModal({
   bubbleId,
   workspaceId,
   canWrite,
+  canManageClasses = false,
+  classEditorInstanceId = null,
+  onClassCreated,
+  onClassSaved,
   onCreated,
   initialCreateStatus = null,
   initialCreateItemType = null,
@@ -245,6 +259,15 @@ export function TaskModal({
   const cardCoverFileInputRef = useRef<HTMLInputElement>(null);
   /** After the user uses editor chrome, collapse the 16:9 hero so Details has more vertical room. */
   const [heroCinematicCollapsed, setHeroCinematicCollapsed] = useState(false);
+  /** Card-based live video (`metadata.live_session`); class items use `ClassEditor` instead. */
+  const [liveStreamEnabled, setLiveStreamEnabled] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    if (itemType === 'class' && !canManageClasses) {
+      setItemType('task');
+    }
+  }, [open, itemType, canManageClasses]);
 
   const boardColumnDefs = useBoardColumnDefs(workspaceId);
 
@@ -427,7 +450,10 @@ export function TaskModal({
       const sched = row.scheduled_on ? String(row.scheduled_on).slice(0, 10) : '';
       setScheduledOn(sched);
       setScheduledTime(scheduledTimeToInputValue((row as TaskRow).scheduled_time));
-      const nextItemType = normalizeItemType((row as TaskRow).item_type);
+      let nextItemType = normalizeItemType((row as TaskRow).item_type);
+      if (nextItemType === 'class' && !canManageClasses) {
+        nextItemType = 'task';
+      }
       const nextMeta = parseTaskMetadata((row as TaskRow).metadata);
       setItemType(nextItemType);
       setMetadata(nextMeta);
@@ -455,6 +481,9 @@ export function TaskModal({
         assigneeRows?.find((r) => typeof r.user_id === 'string' && r.user_id.trim())?.user_id ??
         null;
       setAssignedTo(assignee);
+      const liveInvite = parseLiveSessionInviteFromMessageMetadata((row as TaskRow).metadata);
+      const nextLiveEnabled = Boolean(liveInvite && !liveInvite.endedAt);
+      setLiveStreamEnabled(nextLiveEnabled);
       const st = scheduledTimeToInputValue((row as TaskRow).scheduled_time);
       setOriginalFromAppliedRow({
         title: row.title,
@@ -467,14 +496,18 @@ export function TaskModal({
         metadataJson: JSON.stringify(buildTaskMetadataPayload(nextItemType, mf, nextMeta)),
         visibility: vis,
         assignedTo: assignee,
+        liveStreamEnabled: nextLiveEnabled,
       });
     },
-    [defaultStatus, hydrateFromTaskRow, setOriginalFromAppliedRow],
+    [canManageClasses, defaultStatus, hydrateFromTaskRow, setOriginalFromAppliedRow],
   );
 
   const onResetForCreate = useCallback(() => {
     setTab('details');
-    const nextItemType = initialCreateItemType ?? 'task';
+    let nextItemType = initialCreateItemType ?? 'task';
+    if (nextItemType === 'class' && !canManageClasses) {
+      nextItemType = 'task';
+    }
     setTitle(initialCreateTitle ?? '');
     setDescription('');
     setPriority('medium');
@@ -510,9 +543,11 @@ export function TaskModal({
     resetForCreate();
     setVisibility('private');
     setAssignedTo(null);
+    setLiveStreamEnabled(false);
     clearOriginal();
     setError(null);
   }, [
+    canManageClasses,
     initialCreateItemType,
     initialCreateTitle,
     initialCreateWorkoutDurationMin,
@@ -582,6 +617,7 @@ export function TaskModal({
     visibility,
     assignedTo,
     metadataForSave,
+    liveStreamEnabled,
     boardColumnDefs,
     hasTodayBoardColumn,
     hasScheduledBoardColumn,
@@ -612,6 +648,7 @@ export function TaskModal({
     metadataForSave,
     visibility,
     assignedTo,
+    liveStreamEnabled,
   });
 
   useEffect(() => {
@@ -737,7 +774,13 @@ export function TaskModal({
   const typeNoun = itemTypeUiNoun(itemType);
   /** Title-case for modal chrome; `itemTypeUiNoun` stays lowercase for in-flow copy (e.g. labels). */
   const modalTypeNoun =
-    itemType === 'workout' ? 'Workout' : itemType === 'workout_log' ? 'Workout log' : typeNoun;
+    itemType === 'workout'
+      ? 'Workout'
+      : itemType === 'workout_log'
+        ? 'Workout log'
+        : itemType === 'class'
+          ? 'Class'
+          : typeNoun;
   const itemTypeNounLower = typeNoun.toLowerCase();
 
   let modalTitle: string;
@@ -899,6 +942,81 @@ export function TaskModal({
   ]);
 
   if (!open) return null;
+
+  const showClassEditorShell = itemType === 'class' && canManageClasses;
+  if (showClassEditorShell) {
+    const classShellTitle = classEditorInstanceId ? `Edit ${modalTypeNoun}` : modalTitle;
+    const classShellSubtitle = classEditorInstanceId
+      ? `Update the scheduled ${itemTypeNounLower} for this workspace`
+      : modalSubtitle;
+
+    return (
+      <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 max-md:p-0 max-md:items-stretch">
+        <button
+          type="button"
+          className="absolute inset-0 bg-black/40"
+          aria-label="Close"
+          onClick={() => onOpenChange(false)}
+        />
+        <div
+          className={cn(
+            'relative z-10 flex min-h-0 w-full flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl transition-[max-width] duration-200 ease-out',
+            'max-md:flex-1 max-md:min-h-0 max-md:max-h-none max-md:max-w-none max-md:rounded-none max-md:border-x-0 max-md:border-t-0',
+            'md:max-h-[min(90dvh,100dvh)] md:max-w-2xl',
+          )}
+        >
+          <div className="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-border px-6 py-4">
+            <div className="min-w-0 flex-1">
+              <h2 className="text-lg font-bold text-foreground">{classShellTitle}</h2>
+              {classShellSubtitle ? (
+                <p className="text-xs text-muted-foreground">{classShellSubtitle}</p>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              aria-label="Close"
+              onClick={() => onOpenChange(false)}
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <TaskModalEditorChrome
+            showChrome
+            showTypeAndVisibility
+            itemType={itemType}
+            onItemTypeChange={setItemType}
+            canManageClasses={canManageClasses}
+            canWrite={canWrite}
+            visibility={visibility}
+            onVisibilityChange={setVisibility}
+            workoutTitle={title}
+            workoutMetadata={metadata}
+            bubbleId={bubbleId}
+            workspaceId={workspaceId}
+            taskId={taskId}
+            onInteraction={() => setHeroCinematicCollapsed(true)}
+          />
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-2">
+            <ClassEditor
+              layout="embedded"
+              workspaceId={workspaceId}
+              canWrite={canManageClasses}
+              mode={classEditorInstanceId ? 'edit' : 'create'}
+              instanceId={classEditorInstanceId ?? undefined}
+              onCreated={(ids) => {
+                onClassCreated?.(ids);
+              }}
+              onSaved={() => {
+                onClassSaved?.();
+              }}
+              onClose={() => onOpenChange(false)}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const showEditorChrome = !taskId || viewMode === 'full';
   /** Hero + inspector tuned for reading workout context next to coach thread / comments-only. */
@@ -1100,11 +1218,14 @@ export function TaskModal({
                       showTypeAndVisibility={showEditorChrome && !commentsReadingContext}
                       itemType={itemType}
                       onItemTypeChange={setItemType}
+                      canManageClasses={canManageClasses}
                       canWrite={canWrite}
                       visibility={visibility}
                       onVisibilityChange={setVisibility}
+                      liveStreamEnabled={liveStreamEnabled}
+                      onLiveStreamEnabledChange={setLiveStreamEnabled}
                       workoutTitle={title}
-                      workoutExercises={workoutExercises}
+                      workoutMetadata={metadata}
                       bubbleId={bubbleId}
                       workspaceId={workspaceId}
                       taskId={taskId}
@@ -1226,11 +1347,14 @@ export function TaskModal({
                       showTypeAndVisibility={showEditorChrome && !commentsReadingContext}
                       itemType={itemType}
                       onItemTypeChange={setItemType}
+                      canManageClasses={canManageClasses}
                       canWrite={canWrite}
                       visibility={visibility}
                       onVisibilityChange={setVisibility}
+                      liveStreamEnabled={liveStreamEnabled}
+                      onLiveStreamEnabledChange={setLiveStreamEnabled}
                       workoutTitle={title}
-                      workoutExercises={workoutExercises}
+                      workoutMetadata={metadata}
                       bubbleId={bubbleId}
                       workspaceId={workspaceId}
                       taskId={taskId}
