@@ -1,21 +1,39 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarDays, CheckCircle2, Clock, History, MapPin, Users } from 'lucide-react';
+import {
+  CalendarDays,
+  CheckCircle2,
+  Clock,
+  History,
+  MapPin,
+  Pencil,
+  Users,
+  Video,
+} from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { KanbanColumnAdd } from '@/components/board/kanban-column-add';
+import type { ItemType } from '@/types/database';
 import { DEFAULT_CLASS_PROVIDER, type ClassInstance } from '@/lib/fitness/class-providers';
+import { useLiveVideoStore } from '@/store/liveVideoStore';
+import { useUserProfileStore } from '@/store/userProfileStore';
+import { parseLiveSessionInviteFromMessageMetadata } from '@/types/live-session-invite';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Returns "YYYY-MM-DD" in local time (UTC-relative is fine for column bucketing). */
-function localYmd(iso: string): string {
-  return iso.slice(0, 10);
+/** Calendar date `YYYY-MM-DD` in the browser's local timezone (for bucketing vs "today"). */
+function getLocalYmd(dateInput: string | number | Date): string {
+  const d = new Date(dateInput);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function todayYmd(): string {
-  return localYmd(new Date().toISOString());
+  return getLocalYmd(new Date());
 }
 
 function formatTime(iso: string): string {
@@ -70,11 +88,11 @@ const COLUMNS: ColumnDef[] = [
 // ── Bucketing ────────────────────────────────────────────────────────────────
 
 function bucketInstance(inst: ClassInstance, today: string): ColumnDef['id'] {
-  const instDate = localYmd(inst.scheduled_at);
-  const isPast = instDate < today || inst.status === 'completed' || inst.status === 'cancelled';
+  const instanceYmd = getLocalYmd(inst.scheduled_at);
+  const isPast = instanceYmd < today || inst.status === 'completed' || inst.status === 'cancelled';
 
   if (isPast) return 'history';
-  if (instDate === today && inst.my_enrollment_status === 'enrolled') return 'today';
+  if (instanceYmd === today && inst.my_enrollment_status === 'enrolled') return 'today';
   if (inst.my_enrollment_status === 'enrolled' || inst.my_enrollment_status === 'waitlisted') {
     return 'scheduled';
   }
@@ -85,20 +103,48 @@ function bucketInstance(inst: ClassInstance, today: string): ColumnDef['id'] {
 
 type ClassCardProps = {
   instance: ClassInstance;
+  /** Local calendar `YYYY-MM-DD` for the board render (must match `bucketInstance`). */
+  todayYmd: string;
   onEnroll: (instance: ClassInstance) => void;
   onUnenroll: (instance: ClassInstance) => void;
   enrolling: boolean;
+  /** When set with `onOpenClassEditor`, trainers see “Edit” to open the class editor. */
+  canManageClasses?: boolean;
+  onOpenClassEditor?: (instanceId: string) => void;
 };
 
-function ClassCard({ instance, onEnroll, onUnenroll, enrolling }: ClassCardProps) {
+function ClassCard({
+  instance,
+  todayYmd: todayYmdProp,
+  onEnroll,
+  onUnenroll,
+  enrolling,
+  canManageClasses = false,
+  onOpenClassEditor,
+}: ClassCardProps) {
   const { offering } = instance;
   const enrolled = instance.my_enrollment_status === 'enrolled';
   const waitlisted = instance.my_enrollment_status === 'waitlisted';
   const isFull = instance.capacity !== null && instance.enrollment_count >= instance.capacity;
   const isPast =
-    localYmd(instance.scheduled_at) < todayYmd() ||
+    getLocalYmd(instance.scheduled_at) < todayYmdProp ||
     instance.status === 'completed' ||
     instance.status === 'cancelled';
+
+  const liveInvite = useMemo(
+    () => parseLiveSessionInviteFromMessageMetadata(instance.metadata),
+    [instance.metadata],
+  );
+  const activeLiveSession = useLiveVideoStore((s) => s.activeSession);
+  const currentUserId = useUserProfileStore((s) => s.profile?.id ?? null);
+  const inLiveSession = useMemo(() => {
+    if (!activeLiveSession || !liveInvite) return false;
+    return (
+      activeLiveSession.sessionId === liveInvite.sessionId &&
+      activeLiveSession.channelId === liveInvite.channelId &&
+      activeLiveSession.workspaceId === liveInvite.workspaceId
+    );
+  }, [activeLiveSession, liveInvite]);
 
   return (
     <div className="rounded-lg border border-border bg-card p-3 shadow-sm">
@@ -150,6 +196,47 @@ function ClassCard({ instance, onEnroll, onUnenroll, enrolling }: ClassCardProps
         </p>
       )}
 
+      {!isPast &&
+      ((liveInvite && !liveInvite.endedAt) || (canManageClasses && onOpenClassEditor)) ? (
+        <div className="mt-3 flex flex-col gap-2">
+          {canManageClasses && onOpenClassEditor ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="h-8 w-full gap-2 text-xs shadow-sm"
+              onClick={() => onOpenClassEditor(instance.id)}
+            >
+              <Pencil className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              Edit
+            </Button>
+          ) : null}
+          {liveInvite && !liveInvite.endedAt ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 w-full gap-2 text-xs shadow-sm"
+              disabled={inLiveSession || !currentUserId}
+              onClick={() => {
+                if (inLiveSession || !currentUserId || !liveInvite) return;
+                useLiveVideoStore.getState().joinSession({
+                  workspaceId: liveInvite.workspaceId,
+                  sessionId: liveInvite.sessionId,
+                  channelId: liveInvite.channelId,
+                  hostUserId: liveInvite.hostUserId,
+                  mode: liveInvite.mode,
+                  sourceInstanceId: instance.id,
+                });
+              }}
+            >
+              <Video className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              {inLiveSession ? 'Joined' : !currentUserId ? 'Sign in to join' : 'Join live session'}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
       {!isPast && (
         <div className="mt-3">
           {enrolled || waitlisted ? (
@@ -190,9 +277,32 @@ type Props = {
   calendarSlot?: React.ReactNode;
   /** Bumped when tasks change; triggers a re-fetch. */
   taskViewsNonce?: number;
+  /** Workspace owner/admin — show “Add new class” and open TaskModal with `class` type. */
+  canManageClasses?: boolean;
+  /** Bubble id for `openCreateTaskModal` when creating a class from this board. */
+  classCreateBubbleId?: string | null;
+  onOpenCreateTask?: (opts?: {
+    status?: string;
+    itemType?: ItemType;
+    title?: string;
+    workoutDurationMin?: string | null;
+    bubbleId?: string | null;
+    classEditorInstanceId?: string | null;
+    preserveChatCallback?: boolean;
+  }) => void;
+  /** Opens TaskModal class shell in edit mode for the instance (details, schedule, workout deck). */
+  onOpenClassEditor?: (instanceId: string) => void;
 };
 
-export function ClassesBoard({ workspaceId, calendarSlot, taskViewsNonce }: Props) {
+export function ClassesBoard({
+  workspaceId,
+  calendarSlot,
+  taskViewsNonce,
+  canManageClasses = false,
+  classCreateBubbleId = null,
+  onOpenCreateTask,
+  onOpenClassEditor,
+}: Props) {
   const [instances, setInstances] = useState<ClassInstance[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -285,6 +395,12 @@ export function ClassesBoard({ workspaceId, calendarSlot, taskViewsNonce }: Prop
           <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-4">
             {COLUMNS.map((col) => {
               const items = columns.get(col.id) ?? [];
+              const showAddClass =
+                canManageClasses &&
+                !!onOpenCreateTask &&
+                !!classCreateBubbleId &&
+                (col.id === 'scheduled' || col.id === 'available');
+
               return (
                 <div
                   key={col.id}
@@ -314,12 +430,25 @@ export function ClassesBoard({ workspaceId, calendarSlot, taskViewsNonce }: Prop
                         <ClassCard
                           key={inst.id}
                           instance={inst}
+                          todayYmd={today}
                           onEnroll={handleEnroll}
                           onUnenroll={handleUnenroll}
                           enrolling={enrollingId === inst.id}
+                          canManageClasses={canManageClasses}
+                          onOpenClassEditor={onOpenClassEditor}
                         />
                       ))
                     )}
+                    {showAddClass ? (
+                      <KanbanColumnAdd
+                        onAdd={() =>
+                          onOpenCreateTask!({
+                            itemType: 'class',
+                            bubbleId: classCreateBubbleId,
+                          })
+                        }
+                      />
+                    ) : null}
                   </div>
                 </div>
               );

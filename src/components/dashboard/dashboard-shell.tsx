@@ -12,7 +12,7 @@ import {
   type ReactNode,
 } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { X } from 'lucide-react';
+import { Dumbbell, X } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
 import type { BubbleMemberRole, BubbleRow, ItemType, TaskRow } from '@/types/database';
 import {
@@ -43,11 +43,14 @@ import { AnalyticsBoard } from '@/components/fitness/AnalyticsBoard';
 import { ClassesBoard } from '@/components/fitness/ClassesBoard';
 import { ProgramsBoard } from '@/components/fitness/ProgramsBoard';
 import { WorkoutPlayer } from '@/components/fitness/WorkoutPlayer';
-import { metadataFieldsFromParsed } from '@/lib/item-metadata';
 import { FitnessProfileSheet } from '@/components/fitness/FitnessProfileSheet';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { markLiveSessionInviteMessageEnded } from '@/lib/mark-live-session-invite-ended';
+import {
+  markClassInstanceLiveSessionEnded,
+  markTaskLiveSessionEnded,
+} from '@/lib/mark-card-live-session-ended';
 import { fetchPendingJoinRequestCountAndPreview } from '@/lib/workspace-join-requests';
 import type { JoinRequestPreviewItem } from '@/lib/workspace-join-requests';
 import { useUserProfileStore } from '@/store/userProfileStore';
@@ -86,6 +89,10 @@ import {
   WorkoutDeckSelectionProvider,
   useWorkoutDeckSelection,
 } from '@/features/live-video/shells/huddle/workout-deck-selection-context';
+import {
+  dispatchWorkoutDeckTaskFromBoard,
+  useWorkoutDeckBoardSelecting,
+} from '@/features/live-video/shells/huddle/workout-deck-board-bridge';
 import { TrialPaywallGuard } from '@/components/subscription/trial-paywall-guard';
 import { LiveSessionRuntimeProvider } from '@/features/live-video/theater/live-session-runtime-context';
 import { useLiveTheaterLayoutPlanContext } from '@/features/live-video/theater/live-theater-layout-context';
@@ -227,6 +234,10 @@ function DashboardShellInner({
   const [taskModalInitialCreateWorkoutDurationMin, setTaskModalInitialCreateWorkoutDurationMin] =
     useState<string | null>(null);
   const [taskModalCreateBubbleId, setTaskModalCreateBubbleId] = useState<string | null>(null);
+  /** Edit `class_instances` in TaskModal (`ClassEditor`) without a `tasks` row. */
+  const [taskModalClassEditorInstanceId, setTaskModalClassEditorInstanceId] = useState<
+    string | null
+  >(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [profileComplete, setProfileComplete] = useState(false);
   /** `null` = session email not resolved yet (avoid treating legacy users as incomplete during fetch). */
@@ -235,6 +246,7 @@ function DashboardShellInner({
   const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false);
   const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false);
   const [fitnessProfileOpen, setFitnessProfileOpen] = useState(false);
+  const [fitnessProfileTargetUserId, setFitnessProfileTargetUserId] = useState<string | null>(null);
   const [commentAlert, setCommentAlert] = useState<{
     taskId: string;
     title: string;
@@ -252,6 +264,7 @@ function DashboardShellInner({
   const [boardStripExpandNonce, setBoardStripExpandNonce] = useState(0);
 
   const workoutDeckSelection = useWorkoutDeckSelection();
+  const workoutBoardSelecting = useWorkoutDeckBoardSelecting();
 
   const bumpTaskViews = useCallback(() => setTaskViewsNonce((n) => n + 1), []);
 
@@ -401,6 +414,52 @@ function DashboardShellInner({
   const { canWriteTasks, canPostMessages, canCreateWorkspaceBubble, isAdmin, isOwner } =
     usePermissions(effectiveWorkspaceRole, myBubbleRole, activeBubbleIsPrivate);
 
+  const canManageWorkspaceClasses = useMemo(
+    () => effectiveWorkspaceRole === 'owner' || effectiveWorkspaceRole === 'admin',
+    [effectiveWorkspaceRole],
+  );
+
+  useEffect(() => {
+    const uid = profile?.id ?? null;
+    if (!uid) {
+      setFitnessProfileTargetUserId(null);
+      return;
+    }
+    if (selectedBubbleId === ALL_BUBBLES_BUBBLE_ID || selectedBubbleId == null) {
+      setFitnessProfileTargetUserId(null);
+      return;
+    }
+    if (!activeBubbleIsPrivate) {
+      setFitnessProfileTargetUserId(null);
+      return;
+    }
+    if (!isAdmin && !isOwner) {
+      setFitnessProfileTargetUserId(null);
+      return;
+    }
+    const supabase = createClient();
+    let cancelled = false;
+    void supabase
+      .from('bubble_members')
+      .select('user_id')
+      .eq('bubble_id', selectedBubbleId)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error || !data) {
+          setFitnessProfileTargetUserId(null);
+          return;
+        }
+        const others = (data as Array<{ user_id?: string | null }>).map((r) => r.user_id ?? null);
+        const cleaned = others
+          .filter((id): id is string => typeof id === 'string' && id.trim() !== '')
+          .filter((id) => id !== uid);
+        setFitnessProfileTargetUserId(cleaned.length === 1 ? cleaned[0] : null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeBubbleIsPrivate, isAdmin, isOwner, profile?.id, selectedBubbleId]);
+
   useUpdatePresence({ embedMode, workspaceId });
 
   const initSubscription = useSubscriptionStore((s) => s.initSubscription);
@@ -450,9 +509,9 @@ function DashboardShellInner({
   /** Expand Kanban while picking cards into the workout deck (session UX; not theater collapse hacks). */
   useEffect(() => {
     if (!layoutHydrated) return;
-    if (!workoutDeckSelection.isSelectingFromBoard) return;
+    if (!workoutBoardSelecting) return;
     setKanbanCollapsed(false);
-  }, [layoutHydrated, workoutDeckSelection.isSelectingFromBoard, setKanbanCollapsed]);
+  }, [layoutHydrated, workoutBoardSelecting, setKanbanCollapsed]);
 
   /** Clears the local live-video dock only (does not end the workout for others or mark the chat invite ended). */
   const onLiveVideoLeaveSession = useCallback(() => {
@@ -462,11 +521,24 @@ function DashboardShellInner({
   /** Host-only: broadcast `endSession` + mark the chat invite ended so others cannot re-join from the card. */
   const onHostEndLiveSessionForAll = useCallback(async () => {
     const { activeSession } = useLiveVideoStore.getState();
-    const inviteMessageId = activeSession?.inviteMessageId?.trim();
+    const inviteMessageId = activeSession?.inviteMessageId?.trim() ?? '';
+    const sourceTaskId = activeSession?.sourceTaskId?.trim() ?? '';
+    const sourceInstanceId = activeSession?.sourceInstanceId?.trim() ?? '';
     const uid = profile?.id;
-    if (inviteMessageId && uid && activeSession?.hostUserId === uid) {
-      const supabase = createClient();
+
+    if (!uid || activeSession?.hostUserId !== uid) return;
+
+    const supabase = createClient();
+    if (inviteMessageId) {
       await markLiveSessionInviteMessageEnded(supabase, inviteMessageId);
+      return;
+    }
+    if (sourceTaskId) {
+      await markTaskLiveSessionEnded(supabase, sourceTaskId);
+      return;
+    }
+    if (sourceInstanceId) {
+      await markClassInstanceLiveSessionEnded(supabase, sourceInstanceId);
     }
   }, [profile?.id]);
 
@@ -488,6 +560,7 @@ function DashboardShellInner({
     setTaskModalInitialCreateTitle(null);
     setTaskModalInitialCreateWorkoutDurationMin(null);
     setTaskModalCreateBubbleId(null);
+    setTaskModalClassEditorInstanceId(null);
     setTaskModalTaskId(id);
     const vm = opts?.viewMode ?? 'full';
     setTaskModalViewMode(vm);
@@ -509,6 +582,8 @@ function DashboardShellInner({
       title?: string;
       workoutDurationMin?: string | null;
       bubbleId?: string | null;
+      /** When set with `itemType: 'class'`, opens `ClassEditor` in edit mode for this instance. */
+      classEditorInstanceId?: string | null;
       /** When true, do not clear `chatCardOnCreatedRef` (caller just set it for chat compose). */
       preserveChatCallback?: boolean;
     }) => {
@@ -528,6 +603,7 @@ function DashboardShellInner({
         opts?.workoutDurationMin !== undefined ? opts.workoutDurationMin : null,
       );
       setTaskModalCreateBubbleId(opts?.bubbleId ?? null);
+      setTaskModalClassEditorInstanceId(opts?.classEditorInstanceId ?? null);
       setTaskModalOpen(true);
     },
     [],
@@ -616,6 +692,7 @@ function DashboardShellInner({
       setTaskModalInitialCreateTitle(null);
       setTaskModalInitialCreateWorkoutDurationMin(null);
       setTaskModalCreateBubbleId(null);
+      setTaskModalClassEditorInstanceId(null);
     }
   }, []);
 
@@ -1101,14 +1178,14 @@ function DashboardShellInner({
 
   const onPlanningVerticalLayoutChanged = useCallback(
     (layout: Layout) => {
-      if (workoutDeckSelection.isSelectingFromBoard) return;
+      if (workoutBoardSelecting) return;
       try {
         localStorage.setItem(dockWorkspaceSplitStorageKey(workspaceId), JSON.stringify(layout));
       } catch {
         /* ignore */
       }
     },
-    [workspaceId, workoutDeckSelection.isSelectingFromBoard],
+    [workspaceId, workoutBoardSelecting],
   );
 
   const onTheaterBoardDockLayoutChanged = useCallback(
@@ -1146,7 +1223,20 @@ function DashboardShellInner({
           <AnalyticsBoard workspaceId={workspaceId} calendarTimezone={workspaceCalendarTz} />
         </PremiumGate>
       ) : isClassesBubble ? (
-        <ClassesBoard workspaceId={workspaceId} />
+        <ClassesBoard
+          workspaceId={workspaceId}
+          taskViewsNonce={taskViewsNonce}
+          canManageClasses={canManageWorkspaceClasses}
+          classCreateBubbleId={defaultTaskModalBubbleId}
+          onOpenCreateTask={openCreateTaskModal}
+          onOpenClassEditor={(instanceId) =>
+            openCreateTaskModal({
+              itemType: 'class',
+              bubbleId: defaultTaskModalBubbleId,
+              classEditorInstanceId: instanceId,
+            })
+          }
+        />
       ) : isProgramsBubble ? (
         <ProgramsBoard
           workspaceId={workspaceId}
@@ -1175,8 +1265,10 @@ function DashboardShellInner({
           buddyBubbleTitle={buddyBubbleTitle}
           workspaceMemberRole={effectiveWorkspaceRole}
           guestTaskUserId={profile?.id ?? null}
-          workoutSelectionMode={workoutDeckSelection.isSelectingFromBoard}
-          onTaskSelectedForWorkoutDeck={workoutDeckSelection.addTaskToDeck}
+          workoutSelectionMode={workoutBoardSelecting}
+          onTaskSelectedForWorkoutDeck={(task) =>
+            dispatchWorkoutDeckTaskFromBoard(task, workoutDeckSelection.addTaskToDeck)
+          }
         />
       ),
     [
@@ -1190,6 +1282,8 @@ function DashboardShellInner({
       effectiveKanbanCategory,
       taskViewsNonce,
       canWriteTasks,
+      canManageWorkspaceClasses,
+      defaultTaskModalBubbleId,
       openTaskModal,
       openCreateTaskModal,
       handleStartWorkout,
@@ -1198,7 +1292,7 @@ function DashboardShellInner({
       buddyBubbleTitle,
       effectiveWorkspaceRole,
       profile?.id,
-      workoutDeckSelection.isSelectingFromBoard,
+      workoutBoardSelecting,
       workoutDeckSelection.addTaskToDeck,
       setCalendarCollapsed,
       setKanbanCollapsed,
@@ -1323,6 +1417,20 @@ function DashboardShellInner({
                         onChange={applyDesktopFocusMode}
                         disabled={!layoutHydrated}
                       />
+                      {workspaceCategoryForUi === 'fitness' ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setFitnessProfileOpen(true)}
+                          title="Fitness Profile"
+                          aria-label="Fitness Profile"
+                          disabled={!layoutHydrated}
+                          className="h-8 w-8"
+                        >
+                          <Dumbbell className="h-4 w-4" aria-hidden />
+                        </Button>
+                      ) : null}
                     </div>
                   </div>
                 ) : null}
@@ -1537,6 +1645,13 @@ function DashboardShellInner({
                 workspaceId={workspaceId}
                 bubbles={bubbles}
                 canWrite={canWriteTasks}
+                canManageClasses={canManageWorkspaceClasses}
+                classEditorInstanceId={taskModalClassEditorInstanceId}
+                onClassCreated={() => {
+                  bumpTaskViews();
+                  onTaskModalOpenChange(false);
+                }}
+                onClassSaved={bumpTaskViews}
                 onCreated={(id) => {
                   setTaskModalTaskId(id);
                   bumpTaskViews();
@@ -1559,18 +1674,18 @@ function DashboardShellInner({
                 onTaskCommentsMarkedRead={bumpTaskViews}
                 onClearOpenTaskCommentDeepLink={clearTaskModalCommentDeepLink}
               />
-              {workoutPlayerTask && (
+              {workoutPlayerTask ? (
                 <WorkoutPlayer
                   open
                   onClose={() => setWorkoutPlayerTask(null)}
                   workspaceId={workspaceId}
                   workoutTitle={workoutPlayerTask.title}
-                  exercises={metadataFieldsFromParsed(workoutPlayerTask.metadata).workoutExercises}
+                  metadata={workoutPlayerTask.metadata}
                   bubbleId={workoutPlayerTask.bubble_id}
                   sourceTaskId={workoutPlayerTask.id}
                   onComplete={bumpTaskViews}
                 />
-              )}
+              ) : null}
               <WorkspaceSettingsModal
                 open={workspaceSettingsOpen}
                 onOpenChange={setWorkspaceSettingsOpen}
@@ -1615,6 +1730,7 @@ function DashboardShellInner({
                   open={fitnessProfileOpen}
                   onOpenChange={setFitnessProfileOpen}
                   workspaceId={workspaceId}
+                  targetUserId={fitnessProfileTargetUserId}
                   bubbleIdForTasks={
                     selectedBubbleId && selectedBubbleId !== ALL_BUBBLES_BUBBLE_ID
                       ? selectedBubbleId
@@ -1657,7 +1773,7 @@ function DashboardShellInner({
                   </button>
                 </div>
               ) : null}
-              {workoutDeckSelection.isSelectingFromBoard ? (
+              {workoutBoardSelecting ? (
                 <Button
                   type="button"
                   className="fixed bottom-24 left-4 z-[200] shadow-md md:bottom-6 md:left-6"

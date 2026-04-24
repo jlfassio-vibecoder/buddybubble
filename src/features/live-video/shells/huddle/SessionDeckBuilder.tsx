@@ -179,7 +179,15 @@ const stripContainerClass = (selectingFromBoard: boolean) =>
 
 export function SessionDeckBuilder({ state, className }: SessionDeckBuilderProps) {
   const runtime = useLiveSessionRuntimeOptional();
-  const isHost = runtime?.isHost ?? true;
+  /**
+   * `LiveSessionRuntimeProvider` is always mounted in the dashboard with `sessionId: ''` when
+   * idle, so `runtime.isHost` is false even though the user is not in a participant role. Only
+   * treat them as a live-session participant when a real session id exists and they are not host.
+   */
+  const liveSessionActive = Boolean(runtime?.sessionId?.trim());
+  const isLiveSessionParticipant = Boolean(runtime && liveSessionActive && !runtime.isHost);
+  /** Editable host queue (DnD + board picker): not a joined non-host participant. */
+  const isDeckHostUi = !isLiveSessionParticipant;
   const fallbackSupabase = useMemo(() => createClient(), []);
 
   const participantDeck = useLiveSessionDeck({
@@ -206,9 +214,9 @@ export function SessionDeckBuilder({ state, className }: SessionDeckBuilderProps
   const [scaffoldDeck, setScaffoldDeck] = useState<SessionDeckSnapshot[]>([]);
 
   const deckToRender = useMemo(() => {
-    if (!isHost) return participantSnapshots;
+    if (!isDeckHostUi) return participantSnapshots;
     return deckContext !== null ? deckContext.deck : scaffoldDeck;
-  }, [isHost, participantSnapshots, deckContext, scaffoldDeck]);
+  }, [isDeckHostUi, participantSnapshots, deckContext, scaffoldDeck]);
 
   const applyDeckOrder = useCallback(
     (updater: (prev: SessionDeckSnapshot[]) => SessionDeckSnapshot[]) => {
@@ -247,7 +255,7 @@ export function SessionDeckBuilder({ state, className }: SessionDeckBuilderProps
   }, [runtime, activeSnapshotId, deckToRender]);
 
   const enterSelectionMode = deckContext?.enterSelectionMode ?? (() => {});
-  const selectingFromBoard = Boolean(isHost && deckContext?.isSelectingFromBoard);
+  const selectingFromBoard = Boolean(isDeckHostUi && deckContext?.isSelectingFromBoard);
 
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
   const workspaceId = activeWorkspace?.id ?? null;
@@ -286,7 +294,7 @@ export function SessionDeckBuilder({ state, className }: SessionDeckBuilderProps
 
   const ids = useMemo(() => deckToRender.map((s) => s.deckRowKey), [deckToRender]);
 
-  const participantStatus = !isHost ? (
+  const participantStatus = !isDeckHostUi ? (
     <div className="px-0.5">
       {participantDeck.loading ? (
         <p className="text-xs text-muted-foreground">Loading queue…</p>
@@ -298,7 +306,7 @@ export function SessionDeckBuilder({ state, className }: SessionDeckBuilderProps
     </div>
   ) : null;
 
-  if (!isHost) {
+  if (!isDeckHostUi) {
     return (
       <div className={cn('flex w-full min-h-0 shrink-0 flex-col gap-2', className)}>
         <div className="flex shrink-0 items-baseline justify-between gap-2 px-0.5">

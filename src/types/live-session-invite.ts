@@ -53,3 +53,41 @@ export function parseLiveSessionInviteFromMessageMetadata(
 export function liveSessionInviteMetadataToJson(invite: LiveSessionInvitePayload): Json {
   return JSON.parse(JSON.stringify({ live_session: invite })) as Json;
 }
+
+/** Stored under `class_instances.metadata.async_session` for deck-only (no Agora) sessions. */
+export type AsyncSessionPayload = {
+  type: 'async_session';
+  sessionId: string;
+  createdAt: string;
+  hostUserId: string;
+  /** Reserved for parity with live_session; unset for active async decks. */
+  endedAt?: string | null;
+};
+
+export function parseAsyncSessionFromInstanceMetadata(
+  metadata: unknown,
+): AsyncSessionPayload | null {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  const o = metadata as Record<string, unknown>;
+  const raw = o.async_session;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const a = raw as Record<string, unknown>;
+  if (a.type !== 'async_session') return null;
+  const sessionId = typeof a.sessionId === 'string' ? a.sessionId.trim() : '';
+  const createdAt = typeof a.createdAt === 'string' ? a.createdAt : '';
+  const hostUserId = typeof a.hostUserId === 'string' ? a.hostUserId.trim() : '';
+  if (!sessionId || !createdAt || !hostUserId) return null;
+  const endedAt =
+    a.endedAt === null || a.endedAt === undefined
+      ? undefined
+      : typeof a.endedAt === 'string'
+        ? a.endedAt
+        : undefined;
+  return {
+    type: 'async_session',
+    sessionId,
+    createdAt,
+    hostUserId,
+    ...(endedAt !== undefined ? { endedAt } : {}),
+  };
+}

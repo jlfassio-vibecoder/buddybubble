@@ -4,6 +4,7 @@ import {
   CheckSquare,
   ClipboardList,
   Dumbbell,
+  GraduationCap,
   Lightbulb,
   ListChecks,
   MapPin,
@@ -35,6 +36,7 @@ export const ITEM_TYPES_ORDER: ItemType[] = [
   'workout',
   'workout_log',
   'program',
+  'class',
 ];
 
 export const ITEM_TYPE_VISUAL: Record<ItemType, ItemTypeVisual> = {
@@ -112,6 +114,15 @@ export const ITEM_TYPE_VISUAL: Record<ItemType, ItemTypeVisual> = {
     typeChip:
       'border-violet-200/90 bg-violet-100 text-violet-900 dark:border-violet-800/50 dark:bg-violet-950/70 dark:text-violet-200',
   },
+  class: {
+    Icon: GraduationCap,
+    label: 'Class',
+    leftBar: 'border-l-teal-500 dark:border-l-teal-400',
+    surface: 'bg-teal-500/[0.07] dark:bg-teal-500/[0.12]',
+    iconText: 'text-teal-600 dark:text-teal-400',
+    typeChip:
+      'border-teal-200/90 bg-teal-100 text-teal-900 dark:border-teal-800/50 dark:bg-teal-950/70 dark:text-teal-200',
+  },
 };
 
 export function getItemTypeVisual(type: ItemType): ItemTypeVisual {
@@ -128,6 +139,7 @@ export const ITEM_TYPE_UI_NOUN: Record<ItemType, string> = {
   workout: 'workout',
   workout_log: 'workout log',
   program: 'program',
+  class: 'class',
 };
 
 export function itemTypeUiNoun(type: ItemType): string {

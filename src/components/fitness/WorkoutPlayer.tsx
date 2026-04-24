@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import {
   AlignLeft,
@@ -21,8 +21,9 @@ import { Separator } from '@/components/ui/separator';
 import { formatUserFacingError } from '@/lib/format-error';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { metadataFieldsFromParsed } from '@/lib/item-metadata';
 import type { WorkoutExercise } from '@/lib/item-metadata';
-import type { UnitSystem } from '@/types/database';
+import type { Json, UnitSystem } from '@/types/database';
 import { useUserProfileStore } from '@/store/userProfileStore';
 import { replaceTaskAssigneesWithUserIds } from '@/lib/task-assignees-db';
 
@@ -46,10 +47,11 @@ export type WorkoutPlayerProps = {
   /** Used to load `fitness_profiles.unit_system` for the active workspace (not cross-workspace). */
   workspaceId: string;
   workoutTitle: string;
-  exercises: WorkoutExercise[];
+  /** Raw `tasks.metadata` from the source workout; parsed inside the player. */
+  metadata: Json;
   bubbleId: string;
   /** Source workout / workout_log task id — used to copy program linkage and scheduling onto the log row. */
-  sourceTaskId?: string | null;
+  sourceTaskId: string | null;
   onComplete?: () => void;
 };
 
@@ -437,7 +439,7 @@ export function WorkoutPlayer({
   mode,
   workspaceId,
   workoutTitle,
-  exercises,
+  metadata,
   bubbleId,
   sourceTaskId,
   onComplete,
@@ -449,6 +451,13 @@ export function WorkoutPlayer({
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('metric');
   const [resolvedMode, setResolvedMode] = useState<'desktop' | 'mobile'>('desktop');
   const profileId = useUserProfileStore((s) => s.profile?.id);
+
+  const metadataDigest = useMemo(() => JSON.stringify(metadata ?? null), [metadata]);
+  const exercises = useMemo(() => {
+    const parsed = JSON.parse(metadataDigest) as unknown;
+    return metadataFieldsFromParsed(parsed).workoutExercises;
+  }, [metadataDigest]);
+  const exercisesStringDigest = useMemo(() => JSON.stringify(exercises), [exercises]);
 
   useLayoutEffect(() => {
     if (mode === 'desktop' || mode === 'mobile') {
@@ -477,15 +486,14 @@ export function WorkoutPlayer({
       });
   }, [profileId, workspaceId]);
 
-  // Reset when player opens
+  // Reset when player opens or when task / exercise content identity changes (not array ref churn).
   useEffect(() => {
-    if (open) {
-      setLogs(exercises.map(makeSets));
-      setView('simple');
-      setElapsed(0);
-      setSaving(false);
-    }
-  }, [open, exercises]);
+    if (!open) return;
+    setLogs(exercises.map(makeSets));
+    setView('simple');
+    setElapsed(0);
+    setSaving(false);
+  }, [open, sourceTaskId, exercisesStringDigest]);
 
   // Elapsed timer
   useEffect(() => {
@@ -750,16 +758,16 @@ export function WorkoutPlayer({
 
 type WorkoutPlayerTriggersProps = {
   workoutTitle: string;
-  exercises: WorkoutExercise[];
+  metadata: Json;
   bubbleId: string;
   workspaceId: string;
-  sourceTaskId?: string | null;
+  sourceTaskId: string | null;
   onComplete?: () => void;
 };
 
 export function WorkoutPlayerTriggers({
   workoutTitle,
-  exercises,
+  metadata,
   bubbleId,
   workspaceId,
   sourceTaskId,
@@ -767,7 +775,7 @@ export function WorkoutPlayerTriggers({
 }: WorkoutPlayerTriggersProps) {
   const [mode, setMode] = useState<'desktop' | 'mobile' | null>(null);
 
-  if (exercises.length === 0) return null;
+  if (metadataFieldsFromParsed(metadata ?? {}).workoutExercises.length === 0) return null;
 
   return (
     <>
@@ -797,7 +805,7 @@ export function WorkoutPlayerTriggers({
           onClose={() => setMode(null)}
           workspaceId={workspaceId}
           workoutTitle={workoutTitle}
-          exercises={exercises}
+          metadata={metadata}
           bubbleId={bubbleId}
           sourceTaskId={sourceTaskId}
           onComplete={() => {

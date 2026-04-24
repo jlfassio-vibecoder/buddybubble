@@ -21,6 +21,8 @@ export type TaskModalOriginalSnapshot = {
   metadataJson: string;
   visibility: TaskVisibility;
   assignedTo: string | null;
+  /** Card-based live video toggle (parallel to `metadata.live_session`). */
+  liveStreamEnabled?: boolean;
 };
 
 export function parseScheduledDateFromInput(scheduledOn: string): string | null {

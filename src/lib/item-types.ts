@@ -11,7 +11,8 @@ export type ItemType =
   | 'memory'
   | 'workout'
   | 'workout_log'
-  | 'program';
+  | 'program'
+  | 'class';
 
 const ITEM_TYPE_SET = new Set<string>([
   'task',
@@ -22,6 +23,7 @@ const ITEM_TYPE_SET = new Set<string>([
   'workout',
   'workout_log',
   'program',
+  'class',
 ]);
 
 /** Safe default when `item_type` is missing (stale client) or invalid. */

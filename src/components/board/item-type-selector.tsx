@@ -1,7 +1,7 @@
 'use client';
 
-import type { ItemType } from '@/types/database';
 import { getItemTypeVisual, ITEM_TYPES_ORDER } from '@/lib/item-type-styles';
+import type { ItemType } from '@/lib/item-types';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -10,6 +10,8 @@ export type ItemTypeSelectorProps = {
   onChange: (next: ItemType) => void;
   disabled?: boolean;
   className?: string;
+  /** When set, only these types appear (e.g. hide `class` for members). Order matches array order. */
+  typesOrder?: ItemType[];
 };
 
 /** Segmented control for `tasks.item_type` (polymorphic smart table). */
@@ -18,10 +20,12 @@ export function ItemTypeSelector({
   onChange,
   disabled = false,
   className,
+  typesOrder,
 }: ItemTypeSelectorProps) {
+  const order = typesOrder ?? ITEM_TYPES_ORDER;
   return (
     <div role="group" aria-label="Type" className={cn('flex flex-wrap gap-1.5', className)}>
-      {ITEM_TYPES_ORDER.map((v) => {
+      {order.map((v) => {
         const { Icon, label } = getItemTypeVisual(v);
         const selected = value === v;
         return (
