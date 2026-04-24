@@ -23,7 +23,7 @@ In [dashboard-shell.tsx](../../src/components/dashboard/dashboard-shell.tsx), th
 
 If an admin **renames** one of these bubbles, the shell **stops** rendering the special board until the name matches again (V1 has no slug-based routing; see comments near `isAnalyticsBubble` in the shell).
 
-**Workouts** and **Trainer** do **not** have name checks: they use the default [KanbanBoard](../../src/components/board/kanban-board.tsx) with the same chat and calendar rail behavior as other non-fitness workspaces, plus fitness category theming and tasks.
+**Workouts** and **Trainer** do **not** have name checks: they use the default [KanbanBoard](../../src/components/board/KanbanBoard.tsx) with the same chat and calendar rail behavior as other non-fitness workspaces, plus fitness category theming and tasks.
 
 ```mermaid
 flowchart TD

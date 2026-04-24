@@ -8,7 +8,7 @@ The channel name **`Trainer`** is defined in [`WORKSPACE_SEED_BY_CATEGORY.fitnes
 
 ## What you see
 
-The main stage is **[`KanbanBoard`](../../src/components/board/kanban-board.tsx)** with fitness theming, **chat** in the split layout, and the **calendar rail** when the layout injects it. Use **TaskModal** to create and edit cards (events, tasks, workouts, etc.) like other bubbles.
+The main stage is **[`KanbanBoard`](../../src/components/board/KanbanBoard.tsx)** with fitness theming, **chat** in the split layout, and the **calendar rail** when the layout injects it. Use **TaskModal** to create and edit cards (events, tasks, workouts, etc.) like other bubbles.
 
 ## Typical content
 

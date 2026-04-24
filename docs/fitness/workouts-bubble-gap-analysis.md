@@ -11,7 +11,7 @@
 
 1. **(Addressed)** **Unstable `exercises` reference reset in-progress set logs.**  
    Previously the shell passed a fresh `exercises` array from `metadataFieldsFromParsed` on every render. **Current behavior:** [WorkoutPlayer](../../src/components/fitness/WorkoutPlayer.tsx) accepts raw `metadata` and `sourceTaskId`, derives exercises with a `metadataDigest` / `exercisesStringDigest`, and resets session state only when `open`, `sourceTaskId`, or the exercise content digest changes.
-2. `**handleFinish` dependency on `exercises` + `logs` vs async source task fetch.\*\*
+2. **`handleFinish` dependency on `exercises` + `logs` vs async source task fetch.**
    `handleFinish` re-fetches the source task if `sourceTaskId` is set, then inserts `workout_log`. The callback closes over `logs` and `exercises` from the latest render. The pattern is sound if no reset bug fires; if logs were reset (issue 1), the user could finish with empty or partial data.
 3. **Kanban `loadTasks` vs drag race (mitigated, not zero risk).**
    [KanbanBoard.tsx](../../src/components/board/KanbanBoard.tsx) uses `loadTasksGenerationRef` to drop stale async results and `draggingRef` to **skip** applying `setColumns` if a drag is active (~560–565, ~608). This reduces column flicker; edge cases remain if drag state and load completion interleave in unexpected ways (e.g. rapid bubble switch + drag end).

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@utils/supabase/client';
-import type { TaskRow } from '@/types/database';
+import type { Json, TaskRow } from '@/types/database';
 import { formatUserFacingError } from '@/lib/format-error';
 import { metadataFieldsFromParsed } from '@/lib/item-metadata';
 import { normalizeItemType } from '@/lib/item-types';
@@ -48,7 +48,9 @@ export function ClassEditorWorkoutPicker({ workspaceId }: ClassEditorWorkoutPick
 
       const { data: rows, error: tErr } = await supabase
         .from('tasks')
-        .select('*')
+        .select(
+          'id, title, item_type, metadata, status, bubble_id, created_at, created_by, position, priority, scheduled_on, scheduled_time, program_id, program_session_key, archived_at, comment_count, last_task_comment_at, visibility',
+        )
         .eq('bubble_id', bubble.id)
         .eq('status', 'planned')
         .eq('item_type', 'workout')
@@ -61,9 +63,15 @@ export function ClassEditorWorkoutPicker({ workspaceId }: ClassEditorWorkoutPick
         return;
       }
 
-      const list = (rows ?? []) as TaskRow[];
+      const list = (rows ?? []).map(
+        (r) =>
+          ({
+            ...r,
+            description: null,
+            attachments: [] as unknown as Json,
+          }) as TaskRow,
+      );
       setTasks(list);
-      console.log('[DEBUG] Fetched Library Workouts', { count: list.length });
     } catch (e) {
       setError(formatUserFacingError(e));
       setTasks([]);

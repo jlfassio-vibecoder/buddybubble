@@ -52,7 +52,7 @@ At render-time, the board shows **ClassInstance** cards that include:
 ## Architectural bottlenecks / risks
 
 - **No pagination**: `listInstances` reads all instances for a workspace and then reads enrollments for those instance ids. Larger workspaces may need pagination or server-side aggregation.
-- **Time bucketing**: `todayYmd()` uses `new Date().toISOString().slice(0, 10)` (UTC date). This is acceptable for “rough bucketing” but will misclassify “today” near timezone boundaries; consider using workspace timezone in a later iteration.
+- **Time bucketing**: `todayYmd()` uses the browser’s local calendar date (`getLocalYmd(new Date())`), so **Today** stays aligned with each instance’s local `scheduled_at` date until local midnight.
 - **Mutation refresh**: enroll/unenroll calls `load()` again. This is simple but can create extra load without optimistic updates.
 
 ## Internal UI

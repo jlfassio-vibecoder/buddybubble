@@ -35,15 +35,8 @@ type ClassEditorLiveDeckInnerProps = {
 };
 
 function ClassEditorLiveDeckInner({ workspaceId, canWrite }: ClassEditorLiveDeckInnerProps) {
-  const { isSelectingFromBoard, activeSnapshotId } = useWorkoutDeckSelection();
+  const { isSelectingFromBoard } = useWorkoutDeckSelection();
   const supabase = useMemo(() => createClient(), []);
-
-  useEffect(() => {
-    if (isSelectingFromBoard) return;
-    console.log('[DEBUG] Rendering Class Exercise Canvas', {
-      activeDeckItemId: activeSnapshotId,
-    });
-  }, [isSelectingFromBoard, activeSnapshotId]);
 
   return (
     <div className="mt-4 space-y-2 border-t border-border pt-4">
@@ -54,7 +47,7 @@ function ClassEditorLiveDeckInner({ workspaceId, canWrite }: ClassEditorLiveDeck
       {isSelectingFromBoard ? (
         <ClassEditorWorkoutPicker workspaceId={workspaceId} />
       ) : (
-        <div className="flex min-h-[min(360px,45vh)] min-h-0 flex-col gap-2">
+        <div className="flex min-h-[min(360px,45vh)] flex-col gap-2">
           <LiveSessionWorkoutPlayer
             className="min-h-0 flex-1"
             workspaceId={workspaceId}
@@ -717,10 +710,6 @@ export function ClassEditor({
                 ) : null}
                 {showClassWorkoutDeck && resolvedDeckSession ? (
                   <>
-                    {console.log('[DEBUG] Resolved Session for Deck Builder', {
-                      type: resolvedDeckSession.kind,
-                      sessionId: resolvedDeckSession.sessionId,
-                    })}
                     <ClassEditorLiveDeckBlock
                       workspaceId={workspaceId}
                       sessionId={resolvedDeckSession.sessionId}

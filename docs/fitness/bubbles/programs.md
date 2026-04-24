@@ -8,7 +8,7 @@ The channel name **`Programs`** is defined in [`WORKSPACE_SEED_BY_CATEGORY.fitne
 
 ## What you see
 
-The main stage is **[`ProgramsBoard`](../../src/components/fitness/ProgramsBoard.tsx)**, documented in [programs-board.md](../programs-board.md). It replaces the generic [KanbanBoard](../../src/components/board/kanban-board.tsx) when the selected bubble’s name is `Programs`. Program start scheduling can open [ScheduleProgramStartDialog](../schedule-program-start-dialog.md).
+The main stage is **[`ProgramsBoard`](../../src/components/fitness/ProgramsBoard.tsx)**, documented in [programs-board.md](../programs-board.md). It replaces the generic [KanbanBoard](../../src/components/board/KanbanBoard.tsx) when the selected bubble’s name is `Programs`. Program start scheduling can open [ScheduleProgramStartDialog](../schedule-program-start-dialog.md).
 
 ## Typical content
 

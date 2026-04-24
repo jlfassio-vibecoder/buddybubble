@@ -133,6 +133,9 @@ const PERSONALIZED_BUBBLE_NAMES = ['Workouts', 'Programs'] as const;
 
 function shouldKeepForPersonalizedBubble(t: TaskWithAssigneeEmbed, viewerId: string): boolean {
   const assignees = t.task_assignees ?? [];
+  if (t.created_by == null && assignees.length === 0) {
+    return true;
+  }
   return t.created_by === viewerId || assignees.some((a) => a.user_id === viewerId);
 }
 

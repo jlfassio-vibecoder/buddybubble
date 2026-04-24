@@ -8,7 +8,7 @@ The channel name **`Workouts`** is defined in [`WORKSPACE_SEED_BY_CATEGORY.fitne
 
 ## What you see
 
-The main stage is **[`KanbanBoard`](../../src/components/board/kanban-board.tsx)** with fitness workspace category and columns from the workspace’s `board_columns` (seeded as Library, Scheduled, Today, Completed for fitness). The shell passes `onStartWorkout` so opening a workout from the board can launch **[`WorkoutPlayer`](../workout-player.md)** (see [dashboard-shell.tsx](../../src/components/dashboard/dashboard-shell.tsx) `handleStartWorkout` / `workoutPlayerTask`).
+The main stage is **[`KanbanBoard`](../../src/components/board/KanbanBoard.tsx)** with fitness workspace category and columns from the workspace’s `board_columns` (seeded as Library, Scheduled, Today, Completed for fitness). The shell passes `onStartWorkout` so opening a workout from the board can launch **[`WorkoutPlayer`](../workout-player.md)** (see [dashboard-shell.tsx](../../src/components/dashboard/dashboard-shell.tsx) `handleStartWorkout` / `workoutPlayerTask`).
 
 ## Typical content
 
@@ -17,7 +17,7 @@ The main stage is **[`KanbanBoard`](../../src/components/board/kanban-board.tsx)
 
 ## Permissions, state, and gating (this channel)
 
-Same **role and state** model as the rest of the app ([bubbles README](README.md#architecture-roles-state-and-gating)). **Workouts** uses the standard [KanbanBoard](../../src/components/board/kanban-board.tsx); task creation/editing and chat obey **`canWriteTasks`**, **`canPostMessages`**, and private-bubble `bubble_members` as elsewhere. **Starting a workout** runs through **`handleStartWorkout`**: in addition to normal permissions, the shell may **open `StartTrialModal` instead of `WorkoutPlayer`** when [shouldBlockWorkoutForExpiredMemberPreview](../../src/lib/member-trial-soft-lock.ts) is true (task on a **trial** bubble after storefront preview ended)—an explicit redirect, not a hidden control.
+Same **role and state** model as the rest of the app ([bubbles README](README.md#architecture-roles-state-and-gating)). **Workouts** uses the standard [KanbanBoard](../../src/components/board/KanbanBoard.tsx); task creation/editing and chat obey **`canWriteTasks`**, **`canPostMessages`**, and private-bubble `bubble_members` as elsewhere. **Starting a workout** runs through **`handleStartWorkout`**: in addition to normal permissions, the shell may **open `StartTrialModal` instead of `WorkoutPlayer`** when [shouldBlockWorkoutForExpiredMemberPreview](../../src/lib/member-trial-soft-lock.ts) is true (task on a **trial** bubble after storefront preview ended)—an explicit redirect, not a hidden control.
 
 ## Related
 
