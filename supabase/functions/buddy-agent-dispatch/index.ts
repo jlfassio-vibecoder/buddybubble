@@ -351,21 +351,27 @@ Deno.serve(async (req) => {
   // Phase 3 refactor: also read `mention_handle` here so the server-side @mention regex is
   // driven by the same DB column the client resolver uses. This aligns the two sides and
   // lets ops rename Buddy's handle without redeploying the Edge Function.
-  const { data: buddyDef, error: buddyDefErr } = await supabase
+  const { data: agentDefRows, error: buddyDefErr } = await supabase
     .from('agent_definitions')
-    .select('auth_user_id, mention_handle')
-    .eq('slug', 'buddy')
-    .eq('is_active', true)
-    .maybeSingle();
+    .select('slug, auth_user_id, mention_handle')
+    .in('slug', ['buddy', 'coach'])
+    .eq('is_active', true);
 
   if (buddyDefErr) {
     console.error('[DEBUG] [Buddy Agent] buddy identity lookup failed', buddyDefErr.message);
     return json({ ok: false, error: 'buddy_identity_lookup_failed' }, 200);
   }
 
-  const buddyRow = buddyDef as { auth_user_id?: string; mention_handle?: string } | null;
+  const rows = (agentDefRows ?? []) as Array<{
+    slug: string;
+    auth_user_id?: string;
+    mention_handle?: string;
+  }>;
+  const buddyRow = rows.find((r) => r.slug === 'buddy') ?? null;
+  const coachRow = rows.find((r) => r.slug === 'coach') ?? null;
   const buddyAuthUserId = buddyRow?.auth_user_id ?? null;
   const buddyMentionHandle = buddyRow?.mention_handle?.trim() || 'Buddy';
+  const coachMentionHandle = coachRow?.mention_handle?.trim() || 'Coach';
   if (!buddyAuthUserId) {
     console.error(
       '[DEBUG] [Buddy Agent] buddy identity not seeded — run scripts/provision-agents.ts',
@@ -378,6 +384,16 @@ Deno.serve(async (req) => {
   if (record.user_id === buddyAuthUserId) {
     console.log("[DEBUG] [Buddy Agent] Loop guard triggered. Ignoring Buddy's own message.");
     return json({ ok: true, skipped: 'loop_guard' }, 200);
+  }
+
+  // Explicit @Coach: do not use Buddy thread continuation (otherwise Buddy answers after his own
+  // prior message even when the user prefixed @Coach — `bubble-agent-dispatch` owns Coach).
+  if (mentionsHandle(record.content, coachMentionHandle)) {
+    console.log('[DEBUG] [Buddy Agent] skipped — explicit_coach_mention', {
+      message_id: record.id,
+      bubble_id: record.bubble_id,
+    });
+    return json({ ok: true, skipped: 'explicit_coach_mention' }, 200);
   }
 
   // Thread continuation: if the user is replying within an active Buddy conversation,

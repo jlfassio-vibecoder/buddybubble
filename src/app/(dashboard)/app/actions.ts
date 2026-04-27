@@ -2,6 +2,7 @@
 
 import { redirect } from 'next/navigation';
 import { formatUserFacingError } from '@/lib/format-error';
+import { ensureCoachBubbleBindings } from '@/lib/fitness/ensure-coach-bubble-binding';
 import { WORKSPACE_SEED_BY_CATEGORY } from '@/lib/workspace-seed-templates';
 import { createClient } from '@utils/supabase/server';
 
@@ -77,11 +78,34 @@ async function createWorkspaceCore(name: string, categoryType: string): Promise<
     icon: 'Hash',
   }));
 
-  const { error: bubblesError } = await supabase.from('bubbles').insert(bubbleRows);
+  const { data: insertedBubbles, error: bubblesError } = await supabase
+    .from('bubbles')
+    .insert(bubbleRows)
+    .select('id');
 
   if (bubblesError) {
     await supabase.from('workspaces').delete().eq('id', workspaceId);
     return { error: formatUserFacingError(bubblesError) };
+  }
+
+  if (categoryType === 'fitness' && insertedBubbles && insertedBubbles.length > 0) {
+    const coachBind = await ensureCoachBubbleBindings(
+      supabase,
+      insertedBubbles.map((b) => b.id as string),
+    );
+    if (!coachBind.ok) {
+      await supabase.from('workspaces').delete().eq('id', workspaceId);
+      return { error: coachBind.error };
+    }
+    const { error: workoutsVisErr } = await supabase
+      .from('bubbles')
+      .update({ message_visibility: 'subject_threads' })
+      .eq('workspace_id', workspaceId)
+      .eq('name', 'Workouts');
+    if (workoutsVisErr) {
+      await supabase.from('workspaces').delete().eq('id', workspaceId);
+      return { error: formatUserFacingError(workoutsVisErr) };
+    }
   }
 
   const columnRows = seed.columns.map((c) => ({

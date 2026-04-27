@@ -2,7 +2,9 @@
  * Supabase Edge Function: Database Webhook handler for Bubble Agents.
  * Calls Gemini, then inserts an agent reply via public.agent_create_card_and_reply and/or
  * public.agent_insert_coach_workout_draft_reply (service_role) when revising an existing workout card (draft → user finalizes via apply_workout_draft).
- * Resolves agent by @mention on root messages, or by thread continuation (latest agent message in the same thread) when `parent_id` is set.
+ * Coach may return `execution_patch` in JSON; it is merged onto the reply `messages.metadata` for the live player.
+ * Resolves agent by @mention on root messages, optional `messages.metadata.default_agent_slug`
+ * (client default, e.g. WorkoutCoachRail), or by thread continuation when `parent_id` is set.
  *
  * Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, BUBBLE_AGENT_WEBHOOK_SECRET, GEMINI_API_KEY.
  * Optional: GEMINI_FETCH_TIMEOUT_MS (default 55000); model: GEMINI_MODEL, else VERTEX_GEMINI_MODEL (see env reads below).
@@ -25,6 +27,8 @@ type MessageRecord = {
   parent_id?: string | null;
   target_task_id?: string | null;
   attached_task_id?: string | null;
+  /** Client hint for root messages without @mentions (e.g. `{ default_agent_slug: 'coach' }`). */
+  metadata?: Record<string, unknown> | null;
 };
 
 type WebhookPayload = {
@@ -89,6 +93,91 @@ const COACH_TASK_NOTES_MAX_CHARS = 8000;
 /** Appended server-side if the model omits it (matches system prompt contract). */
 const COACH_TASK_SEED_CTA =
   "Does this proposed workout look good? If so, click 'Generate Workout' on the card. If you'd like any adjustments, let me know here in the chat!";
+
+/** Root-only: bubble-agent-dispatch + WorkoutCoachRail agree on this key (no `@` in body). */
+function parseRootDefaultAgentSlug(record: MessageRecord): string | null {
+  const m = record.metadata;
+  if (m == null || typeof m !== 'object' || Array.isArray(m)) return null;
+  const v = (m as Record<string, unknown>).default_agent_slug;
+  if (typeof v !== 'string') return null;
+  const t = v.trim().toLowerCase();
+  return t.length > 0 ? t : null;
+}
+
+/** Keep in sync with `WORKOUT_COACH_SENTINEL_EVENT` in `src/components/chat/WorkoutCoachRail.tsx`. */
+const WORKOUT_COACH_SENTINEL_EVENT = '[SYSTEM_EVENT: WORKOUT_CONTEXT]';
+const WORKOUT_CONTEXT_JSON_PROMPT_CAP = 16_000;
+/** Keep in sync with `MESSAGE_METADATA_WORKOUT_TASK_TITLE_KEY` in `WorkoutCoachRail.tsx`. */
+const WORKOUT_OPEN_GREETING_METADATA_TITLE_KEY = 'workout_task_title';
+
+function isWorkoutContextSentinel(record: MessageRecord): boolean {
+  const c = record.content;
+  return typeof c === 'string' && c.trim() === WORKOUT_COACH_SENTINEL_EVENT;
+}
+
+function asMetadataObject(record: MessageRecord): Record<string, unknown> {
+  const m = record.metadata;
+  if (m != null && typeof m === 'object' && !Array.isArray(m)) return m as Record<string, unknown>;
+  return {};
+}
+
+function extractWorkoutTaskTitleFromMetadata(meta: Record<string, unknown>): string {
+  const v = meta[WORKOUT_OPEN_GREETING_METADATA_TITLE_KEY];
+  if (typeof v === 'string' && v.trim()) return v.trim();
+  return 'this workout';
+}
+
+function stringifyWorkoutContextForPrompt(raw: unknown): string {
+  try {
+    const s = JSON.stringify(raw ?? null);
+    if (s.length <= WORKOUT_CONTEXT_JSON_PROMPT_CAP) return s;
+    return `${s.slice(0, WORKOUT_CONTEXT_JSON_PROMPT_CAP)}...(truncated)`;
+  } catch {
+    return '';
+  }
+}
+
+function isNonEmptyWorkoutPayload(raw: unknown): boolean {
+  if (raw == null) return false;
+  if (Array.isArray(raw)) return raw.length > 0;
+  if (typeof raw === 'object') return Object.keys(raw as object).length > 0;
+  if (typeof raw === 'string') return raw.trim().length > 0;
+  return true;
+}
+
+/** Prefer `metadata.workoutContext` (exercise queue); else non-empty `metadata.workout_context`. */
+function extractRawWorkoutContextFromMetadata(meta: unknown): unknown | null {
+  if (meta == null || typeof meta !== 'object' || Array.isArray(meta)) return null;
+  const o = meta as Record<string, unknown>;
+  const wc = o.workoutContext ?? o['workoutContext'];
+  if (wc != null && isNonEmptyWorkoutPayload(wc)) return wc;
+  const wctx = o.workout_context ?? o['workout_context'];
+  if (wctx != null && isNonEmptyWorkoutPayload(wctx)) return wctx;
+  return null;
+}
+
+/**
+ * Latest chronologically wins: walk oldest→newest rows, then trigger metadata (e.g. user follow-up
+ * without payload still keeps prior best from sentinel in history).
+ */
+function resolveCurrentWorkoutContextJsonFromThread(
+  rowsChronologicalOldestFirst: Array<{ metadata?: unknown }>,
+  trigger: MessageRecord,
+): string | null {
+  let best: unknown | null = null;
+  for (const r of rowsChronologicalOldestFirst) {
+    const raw = extractRawWorkoutContextFromMetadata(r.metadata);
+    if (raw != null && isNonEmptyWorkoutPayload(raw)) best = raw;
+  }
+  const fromTrigger = extractRawWorkoutContextFromMetadata(trigger.metadata);
+  if (fromTrigger != null && isNonEmptyWorkoutPayload(fromTrigger)) best = fromTrigger;
+  if (best == null) return null;
+  const s = stringifyWorkoutContextForPrompt(best);
+  return s.length > 0 ? s : null;
+}
+
+const MID_WORKOUT_SUPPORT_MODE_DIRECTIVE =
+  "If 'CURRENT WORKOUT CONTEXT' is provided below, you are in Mid-Workout Support Mode. Your primary job is to guide the user through THIS specific workout, modify weights or reps for THIS workout, or answer form and execution questions about THIS workout. DO NOT generate a brand new workout or prescribe a replacement program unless the user explicitly asks to completely replace the current session.";
 
 function ensureCoachTaskNotesCta(notes: string | null): string | null {
   if (!notes) return null;
@@ -169,6 +258,18 @@ type CoachGeminiJsonResponse = {
   coach_task_notes: string | null;
   /** When update_existing_task: structured fields merged into tasks.metadata on finalize (exercises, workout_type, duration_min). */
   proposed_workout_metadata: Record<string, unknown> | null;
+  /**
+   * Optional: live `WorkoutPlayer` grid updates (0-based indices vs CURRENT WORKOUT CONTEXT / workoutContext).
+   * Persisted on the agent `messages` row for the client. Null/omit when not updating the live session.
+   */
+  execution_patch: Array<{
+    exerciseIndex: number;
+    setIndex: number;
+    weight?: string;
+    reps?: string;
+    rpe?: string;
+    done?: boolean;
+  }> | null;
 };
 
 /**
@@ -352,6 +453,49 @@ function parseCoachTaskNotes(raw: unknown): string | null {
   return t.slice(0, COACH_TASK_NOTES_MAX_CHARS - 3) + '...';
 }
 
+function parseExecutionPatchFromGemini(raw: unknown): CoachGeminiJsonResponse['execution_patch'] {
+  try {
+    if (raw == null) return null;
+    if (!Array.isArray(raw) || raw.length === 0) return null;
+    const out: NonNullable<CoachGeminiJsonResponse['execution_patch']> = [];
+    for (const el of raw) {
+      if (el == null || typeof el !== 'object' || Array.isArray(el)) return null;
+      const o = el as Record<string, unknown>;
+      const ex = o.exerciseIndex;
+      const st = o.setIndex;
+      if (typeof ex !== 'number' || !Number.isInteger(ex) || ex < 0) return null;
+      if (typeof st !== 'number' || !Number.isInteger(st) || st < 0) return null;
+      const item: NonNullable<CoachGeminiJsonResponse['execution_patch']>[number] = {
+        exerciseIndex: ex,
+        setIndex: st,
+      };
+      if (o.weight !== undefined) {
+        if (typeof o.weight !== 'string') return null;
+        item.weight = o.weight;
+      }
+      if (o.reps !== undefined) {
+        if (typeof o.reps !== 'string') return null;
+        item.reps = o.reps;
+      }
+      if (o.rpe !== undefined) {
+        if (typeof o.rpe !== 'string') return null;
+        item.rpe = o.rpe;
+      }
+      if (o.done !== undefined) {
+        if (typeof o.done !== 'boolean') return null;
+        item.done = o.done;
+      }
+      out.push(item);
+    }
+    return out.length > 0 ? out : null;
+  } catch (e) {
+    console.error('[bubble-agent-dispatch] execution_patch_parse_caught', String(e), {
+      rawType: raw === null ? 'null' : typeof raw,
+    });
+    return null;
+  }
+}
+
 function parseGeminiJsonText(text: string): CoachGeminiJsonResponse {
   const cleanText = stripMarkdownCodeFences(text);
   let parsed: Record<string, unknown>;
@@ -405,6 +549,16 @@ function parseGeminiJsonText(text: string): CoachGeminiJsonResponse {
   const proposedMetaOrNull =
     Object.keys(proposed_workout_metadata).length > 0 ? proposed_workout_metadata : null;
 
+  let execution_patch: CoachGeminiJsonResponse['execution_patch'] = null;
+  try {
+    execution_patch = parseExecutionPatchFromGemini(
+      (parsed as Record<string, unknown>).execution_patch,
+    );
+  } catch (e) {
+    console.error('[bubble-agent-dispatch] execution_patch_field_nonfatal', String(e));
+    execution_patch = null;
+  }
+
   if (createCard) {
     const titleTrimmed = typeof rawTitle === 'string' ? rawTitle.trim() : '';
     if (!titleTrimmed) {
@@ -417,6 +571,7 @@ function parseGeminiJsonText(text: string): CoachGeminiJsonResponse {
       task_description: rawDesc,
       coach_task_notes: ensureCoachTaskNotesCta(parseCoachTaskNotes(parsed.coach_task_notes)),
       proposed_workout_metadata: null,
+      execution_patch,
       ...intakeTail,
       ...updateTail,
     };
@@ -429,9 +584,50 @@ function parseGeminiJsonText(text: string): CoachGeminiJsonResponse {
     task_description: null,
     coach_task_notes: null,
     proposed_workout_metadata: proposedMetaOrNull,
+    execution_patch,
     ...intakeTail,
     ...updateTail,
   };
+}
+
+/** Merges `execution_patch` onto the agent reply row so the client can apply live player updates. */
+async function mergeExecutionPatchIntoAgentReplyMetadata(
+  supabase: ReturnType<typeof createClient>,
+  rpcResult: unknown,
+  patch: NonNullable<CoachGeminiJsonResponse['execution_patch']>,
+) {
+  try {
+    if (patch == null || patch.length === 0) return;
+    if (!rpcResult || typeof rpcResult !== 'object') return;
+    const rid = (rpcResult as { reply_message_id?: unknown }).reply_message_id;
+    if (typeof rid !== 'string' || !isUuidString(rid)) return;
+
+    const { data: row, error: fetchErr } = await supabase
+      .from('messages')
+      .select('metadata')
+      .eq('id', rid)
+      .maybeSingle();
+
+    if (fetchErr) {
+      console.error('[bubble-agent-dispatch] execution_patch metadata fetch', fetchErr.message);
+      return;
+    }
+    const existing = row?.metadata;
+    const meta: Record<string, unknown> =
+      existing != null && typeof existing === 'object' && !Array.isArray(existing)
+        ? { ...(existing as Record<string, unknown>) }
+        : {};
+    meta.execution_patch = patch;
+    const { error: upErr } = await supabase
+      .from('messages')
+      .update({ metadata: meta })
+      .eq('id', rid);
+    if (upErr) {
+      console.error('[bubble-agent-dispatch] execution_patch metadata update', upErr.message);
+    }
+  } catch (e) {
+    console.error('[bubble-agent-dispatch] execution_patch metadata_merge_caught', String(e));
+  }
 }
 
 async function geminiGenerateJson(args: {
@@ -556,8 +752,34 @@ async function geminiGenerateJson(args: {
               duration_min: { type: 'INTEGER', nullable: true },
             },
           },
+          execution_patch: {
+            type: 'ARRAY',
+            nullable: true,
+            description:
+              "Optional. Omit this key or set to null when not updating the live player. When set: use this field to programmatically update the user's live workout player. exerciseIndex and setIndex are 0-based and must match the indices in the provided workoutContext (see CURRENT WORKOUT CONTEXT in the system prompt).",
+            items: {
+              type: 'OBJECT',
+              properties: {
+                exerciseIndex: {
+                  type: 'INTEGER',
+                  description:
+                    '0-based index of the exercise in workoutContext (same ordering as the live player).',
+                },
+                setIndex: {
+                  type: 'INTEGER',
+                  description: '0-based set index within that exercise.',
+                },
+                weight: { type: 'STRING', nullable: true },
+                reps: { type: 'STRING', nullable: true },
+                rpe: { type: 'STRING', nullable: true },
+                done: { type: 'BOOLEAN', nullable: true },
+              },
+              required: ['exerciseIndex', 'setIndex'],
+            },
+          },
         },
         // Keys must be present so Gemini does not drop task_description on create_card flows.
+        // execution_patch is NOT required: model may omit it; parse treats missing as null.
         required: [
           'reply_content',
           'create_card',
@@ -598,6 +820,83 @@ async function geminiGenerateJson(args: {
   }
 
   return parseGeminiJsonText(text);
+}
+
+async function geminiGenerateWorkoutOpenGreeting(args: {
+  apiKey: string;
+  model: string;
+  systemPrompt: string;
+  userText: string;
+  signal: AbortSignal;
+}): Promise<string> {
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${args.model}:generateContent`;
+  const body = {
+    system_instruction: {
+      parts: [{ text: args.systemPrompt }],
+    },
+    contents: [{ role: 'user', parts: [{ text: args.userText }] }] as GeminiContent[],
+    generationConfig: {
+      temperature: 0.35,
+      maxOutputTokens: 512,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: 'OBJECT',
+        properties: {
+          reply_content: {
+            type: 'STRING',
+            description:
+              'Single visible chat message: time-of-day greeting, name the workout, invite questions; 2–5 sentences, plain text.',
+          },
+        },
+        required: ['reply_content'],
+      },
+    },
+  };
+
+  const resp = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': args.apiKey,
+    },
+    body: JSON.stringify(body),
+    signal: args.signal,
+  });
+
+  if (!resp.ok) {
+    const txt = await resp.text().catch(() => '');
+    throw new Error(`gemini_http_${resp.status}:${txt.slice(0, 400)}`);
+  }
+
+  const respJson = (await resp.json()) as {
+    candidates?: Array<{
+      content?: { parts?: Array<{ text?: string }> };
+    }>;
+  };
+  const text = respJson.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  if (typeof text !== 'string' || !text.trim()) {
+    throw new Error('gemini_empty_response');
+  }
+  const cleanText = stripMarkdownCodeFences(text);
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(cleanText) as Record<string, unknown>;
+  } catch (e) {
+    console.error('[bubble-agent-dispatch] workout_open_greeting_json_parse_failed', {
+      error: String(e),
+      rawCharLength: text.length,
+      cleanCharLength: cleanText.length,
+    });
+    // Fail-open: greeting must never hard-crash the sentinel flow. If Gemini violates JSON mode,
+    // use its plain text as the visible greeting (trimmed).
+    const fallback = cleanText.trim();
+    if (fallback) return fallback;
+    throw new Error('workout_open_greeting_json_parse_failed');
+  }
+  const rc = parsed.reply_content;
+  const out = typeof rc === 'string' ? rc.trim() : '';
+  if (!out) throw new Error('workout_open_greeting_empty');
+  return out;
 }
 
 function formatIsoDate(value: string | null | undefined): string {
@@ -982,7 +1281,7 @@ Deno.serve(async (req) => {
   const bubbleAgentAuthIds = new Set<string>();
   const authIdToSlug = new Map<string, string>();
 
-  // Bubble-bound agents only; @Buddy is handled by `buddy-agent-dispatch` (Coach RPC requires a binding row).
+  // Bubble-bound agents only; @Buddy is handled by `buddy-agent-dispatch` (Coach requires a binding row).
   // Phase 4: @Organizer now has its own dispatcher (`organizer-agent-dispatch`). Filter it out
   // here so it does not double-fire on the same `messages` INSERT. A DB-level check would be
   // ideal, but the agent slug list is authoritative in `agent_definitions` and we want each
@@ -1030,6 +1329,19 @@ Deno.serve(async (req) => {
     }
   }
 
+  // Root message + no @mention: optional client default (matches `resolveTargetAgent` default slug).
+  const parentIdTrim = (record.parent_id ?? '').trim();
+  if (!resolvedAgentUserId && parentIdTrim.length === 0) {
+    const slugLower = parseRootDefaultAgentSlug(record);
+    if (slugLower) {
+      const def = agentsInClientOrder.find((d) => d.slug.toLowerCase() === slugLower);
+      if (def?.auth_user_id) {
+        resolvedAgentUserId = def.auth_user_id;
+        resolvedSlug = def.slug;
+      }
+    }
+  }
+
   // Slack-style thread root: same parent_id for all messages in the thread (UI matches on root id).
   const threadId = record.parent_id != null ? record.parent_id : record.id;
   type HistoryRow = {
@@ -1040,6 +1352,7 @@ Deno.serve(async (req) => {
     parent_id?: string | null;
     target_task_id?: string | null;
     attached_task_id?: string | null;
+    metadata?: unknown;
   };
   let historyRows: HistoryRow[] | null = null;
   let historyErr: { message: string } | null = null;
@@ -1047,12 +1360,14 @@ Deno.serve(async (req) => {
   const loadThreadHistory = async () => {
     const { data, error } = await supabase
       .from('messages')
-      .select('id, user_id, content, created_at, parent_id, target_task_id, attached_task_id')
+      .select(
+        'id, user_id, content, created_at, parent_id, target_task_id, attached_task_id, metadata',
+      )
       .eq('bubble_id', record.bubble_id)
       .or(`parent_id.eq.${threadId},id.eq.${threadId}`)
       .neq('id', record.id)
       .order('created_at', { ascending: false })
-      .limit(10);
+      .limit(50);
     historyRows = (data ?? []) as HistoryRow[];
     historyErr = error ? { message: error.message } : null;
   };
@@ -1086,6 +1401,84 @@ Deno.serve(async (req) => {
     Deno.env.get('VERTEX_GEMINI_MODEL')?.trim() ||
     'gemini-2.0-flash';
 
+  if (!geminiApiKey) {
+    console.error('[bubble-agent-dispatch] missing GEMINI_API_KEY');
+    return json({ ok: false, error: 'gemini_misconfigured' }, 500);
+  }
+
+  const geminiTimeoutRaw = Number.parseInt(Deno.env.get('GEMINI_FETCH_TIMEOUT_MS') ?? '', 10);
+  const geminiFetchTimeoutMs =
+    Number.isFinite(geminiTimeoutRaw) && geminiTimeoutRaw >= 1000 ? geminiTimeoutRaw : 55_000;
+
+  if (isWorkoutContextSentinel(record)) {
+    if (resolvedSlug !== 'coach') {
+      return json({ ok: true, skipped: 'workout_context_sentinel_not_coach' }, 200);
+    }
+    const workoutMeta = asMetadataObject(record);
+    const workoutTitle = extractWorkoutTaskTitleFromMetadata(workoutMeta);
+    const workoutJson = stringifyWorkoutContextForPrompt(workoutMeta['workoutContext']);
+    try {
+      const userContextBlock = await fetchUserContext(supabase, record.user_id, record.bubble_id!);
+      const isoNow = new Date().toISOString();
+      const systemPromptParts = [
+        'You are Coach in BuddyBubble. The member just opened the in-app workout player and is about to perform the workout.',
+        `Workout title: "${workoutTitle}".`,
+        'Write exactly ONE short chat message (2–5 sentences) that will appear in the bubble thread.',
+        'Start with a natural time-of-day greeting (infer from the timestamp or use a neutral greeting).',
+        'Name the workout. Acknowledge they are about to start it.',
+        'Invite them to ask questions about exercises, weights, reps, or sets.',
+        'You may briefly offer to help log or review their results if they want.',
+        'Do NOT offer to create a Kanban card, draft a card, or run a long intake questionnaire.',
+        'Do NOT paste or reference any SYSTEM_EVENT string or technical trigger text.',
+        `Reference timestamp (UTC): ${isoNow}`,
+      ];
+      if (userContextBlock) {
+        systemPromptParts.push('--- USER CONTEXT ---\n' + userContextBlock);
+      }
+      const systemPrompt = systemPromptParts.join('\n\n');
+      const userText = `Structured workout data (JSON; may be truncated):\n${workoutJson || '{}'}`;
+      const greeting = await geminiGenerateWorkoutOpenGreeting({
+        apiKey: geminiApiKey,
+        model: geminiModel,
+        systemPrompt,
+        userText,
+        signal: AbortSignal.timeout(geminiFetchTimeoutMs),
+      });
+      const cr = await supabase.rpc('agent_create_card_and_reply', {
+        p_trigger_message_id: record.id,
+        p_thread_id: threadId,
+        p_agent_auth_user_id: resolvedAgentUserId!,
+        p_invoker_user_id: record.user_id,
+        p_reply_text: greeting,
+        p_create_card: false,
+        p_task_type: 'workout',
+        p_task_status: 'todo',
+      });
+      if (cr.error) {
+        console.error('[bubble-agent-dispatch] workout_context_greeting rpc', cr.error.message);
+        return json({ ok: false, error: 'rpc_failed', detail: cr.error.message }, 500);
+      }
+      const rpcData = cr.data;
+      if (
+        rpcData &&
+        typeof rpcData === 'object' &&
+        'ok' in rpcData &&
+        (rpcData as { ok?: unknown }).ok === false
+      ) {
+        console.error('[bubble-agent-dispatch] workout_context_greeting rpc ok false', { rpcData });
+        return json({ ok: false, error: 'rpc_rejected', detail: rpcData }, 500);
+      }
+      console.log('[bubble-agent-dispatch] workout_context_greeting_ok', { message_id: record.id });
+      return json({ ok: true, workout_context_greeting_ok: true, result: rpcData }, 200);
+    } catch (e) {
+      console.error('[DEBUG-GEMINI-CRASH] Edge Function Failed:', e);
+      console.error('[bubble-agent-dispatch] workout_context_greeting_failed', String(e), {
+        message_id: record.id,
+      });
+      return json({ ok: false, error: 'workout_context_greeting_failed', detail: String(e) }, 500);
+    }
+  }
+
   const currentDate = new Date().toISOString().split('T')[0];
 
   const baseCoachPrompt =
@@ -1108,17 +1501,10 @@ Deno.serve(async (req) => {
     'When the server includes CURRENT TASK CONTEXT, the user is discussing that existing task. Follow PRE-DRAFT CONFIRMATION before emitting structured proposed_workout_metadata: on the confirmation-only turn, set update_existing_task to false and leave proposed_workout_metadata null. When the user has clearly approved drafting or revising (or user_requested_immediate_card), set update_existing_task to true and provide updated_task_title and/or updated_task_description as the FULL revised card text (not a diff), and/or proposed_workout_metadata with structured exercises (name, sets, reps, etc.), workout_type, and/or duration_min. At least one of: non-empty updated title, non-empty updated description, or non-empty proposed_workout_metadata must be present when update_existing_task is true. Prefer update_existing_task over create_card when modifying an existing card (set create_card false). The server resolves the task id — never output a task id. ' +
     'Set session_request true when the user wants a workout or session planned for today or soon; false otherwise. The server uses this for turn gating—be honest. ' +
     'Align intake_phase, session_readiness_score, and missing_intake_categories with your judgment (e.g. clarifying_session while collecting readiness; pre_draft_confirmation when asking for the final green light before drafting; ready_to_prescribe when you are actually outputting the card or structured draft in this same response). ' +
-    'Return ONLY a raw JSON object (no markdown, no code fences) with keys: reply_content, create_card, task_title, task_description, update_existing_task, updated_task_title, updated_task_description, proposed_workout_metadata, intake_phase, session_readiness_score, missing_intake_categories, user_requested_immediate_card, session_request, coach_task_notes. ' +
+    "EXECUTION PATCH (live player): When CURRENT WORKOUT CONTEXT is present and the user mentions specific equipment (e.g. 'I have 60lb kettlebells') or asks for specific changes to the current workout session (workoutContext JSON under CURRENT WORKOUT CONTEXT), you MUST compute the appropriate weights, reps, RPE, and/or set completion and include them in the execution_patch field. " +
+    'Do not only describe numbers in reply_content; you must also provide the JSON execution_patch so the app can update the live grid. You may list multiple sets and multiple exercises in one patch. String fields (weight, reps, rpe) are plain text for display in inputs (e.g. "60", "8-10"). Set execution_patch to null when you are not changing the live log. ' +
+    'Return ONLY a raw JSON object (no markdown, no code fences) with keys: reply_content, create_card, task_title, task_description, update_existing_task, updated_task_title, updated_task_description, proposed_workout_metadata, execution_patch, intake_phase, session_readiness_score, missing_intake_categories, user_requested_immediate_card, session_request, coach_task_notes. ' +
     'You MUST respond in valid JSON matching the provided schema. Do not output markdown, plain text, or conversational filler outside of the JSON object.';
-
-  if (!geminiApiKey) {
-    console.error('[bubble-agent-dispatch] missing GEMINI_API_KEY');
-    return json({ ok: false, error: 'gemini_misconfigured' }, 500);
-  }
-
-  const geminiTimeoutRaw = Number.parseInt(Deno.env.get('GEMINI_FETCH_TIMEOUT_MS') ?? '', 10);
-  const geminiFetchTimeoutMs =
-    Number.isFinite(geminiTimeoutRaw) && geminiTimeoutRaw >= 1000 ? geminiTimeoutRaw : 55_000;
 
   let replyText: string;
   let createCard: boolean;
@@ -1130,6 +1516,7 @@ Deno.serve(async (req) => {
   let updatedTaskTitle: string | null = null;
   let updatedTaskDescription: string | null = null;
   let proposedWorkoutMetadata: Record<string, unknown> | null = null;
+  let executionPatch: CoachGeminiJsonResponse['execution_patch'] = null;
 
   try {
     if (historyRows === null) {
@@ -1171,17 +1558,27 @@ Deno.serve(async (req) => {
     }
 
     const userContextBlock = await fetchUserContext(supabase, record.user_id, record.bubble_id);
+    const historyAsc = [...(historyRows ?? [])].reverse();
+    const currentWorkoutContextJson = resolveCurrentWorkoutContextJsonFromThread(
+      historyAsc,
+      record,
+    );
+
     const systemPromptParts: string[] = [baseCoachPrompt];
+    if (currentWorkoutContextJson) {
+      systemPromptParts.push('--- CURRENT WORKOUT CONTEXT ---\n' + currentWorkoutContextJson);
+      systemPromptParts.push(MID_WORKOUT_SUPPORT_MODE_DIRECTIVE);
+    }
     if (currentTaskContextBlock) systemPromptParts.push(currentTaskContextBlock);
     if (userContextBlock) systemPromptParts.push(userContextBlock);
     const systemPrompt = systemPromptParts.join('\n\n');
 
-    const historyAsc = [...(historyRows ?? [])].reverse();
     const geminiContents: GeminiContent[] = historyAsc
       .map((m) => {
         const row = m as { user_id?: string | null; content?: string | null };
         const txt = row.content ?? '';
         if (!txt.trim()) return null;
+        if (txt.trim() === WORKOUT_COACH_SENTINEL_EVENT) return null;
         const role: GeminiContent['role'] =
           row.user_id && bubbleAgentAuthIds.has(row.user_id) ? 'model' : 'user';
         return { role, parts: [{ text: txt }] };
@@ -1206,6 +1603,7 @@ Deno.serve(async (req) => {
     updatedTaskTitle = out.updated_task_title;
     updatedTaskDescription = out.updated_task_description;
     proposedWorkoutMetadata = out.proposed_workout_metadata;
+    executionPatch = out.execution_patch;
 
     if (knownTargetTaskId && out.update_existing_task) {
       createCard = false;
@@ -1240,6 +1638,7 @@ Deno.serve(async (req) => {
       seedTaskCommentText = null;
     }
   } catch (e) {
+    console.error('[DEBUG-GEMINI-CRASH] Edge Function Failed:', e);
     console.error('[bubble-agent-dispatch] gemini', String(e), {
       message_id: record.id,
       slug: resolvedSlug,
@@ -1316,6 +1715,10 @@ Deno.serve(async (req) => {
       rpcData,
     });
     return json({ ok: false, error: 'rpc_rejected', detail: rpcData }, 500);
+  }
+
+  if (executionPatch && executionPatch.length > 0) {
+    await mergeExecutionPatchIntoAgentReplyMetadata(supabase, rpcData, executionPatch);
   }
 
   return json({ ok: true, result: rpcData }, 200);

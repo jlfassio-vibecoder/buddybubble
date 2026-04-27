@@ -25,6 +25,7 @@ import { formatMessageTimestamp } from '@/lib/message-timestamp';
 import { rowToChatMessage, searchJoinRowToChatMessage } from '@/lib/chat-message-mapper';
 import { createClient } from '@utils/supabase/client';
 import { useWorkspaceStore } from '@/store/workspaceStore';
+import { useWorkspaceSessionSubject } from '@/context/WorkspaceSessionContext';
 import { useUserProfileStore } from '@/store/userProfileStore';
 import { useLiveVideoStore } from '@/store/liveVideoStore';
 import type { BubbleRow, TaskRow } from '@/types/database';
@@ -33,7 +34,7 @@ import {
   ALL_BUBBLES_LABEL,
   defaultBubbleIdForWrites,
 } from '@/lib/all-bubbles';
-import type { Database } from '@/types/database';
+import type { Database, Json } from '@/types/database';
 import type { MessageAttachment } from '@/types/message-attachment';
 import type { ChatMessage, ChatUserSnapshot, SearchMessageJoinRow } from '@/types/chat';
 import { MESSAGE_ATTACHMENT_FILE_ACCEPT } from '@/lib/message-attachment-limits';
@@ -175,6 +176,7 @@ export function ChatArea({
   const workspaceName = useWorkspaceStore((s) => s.activeWorkspace?.name);
   const workspaceRole = useWorkspaceStore((s) => s.activeWorkspace?.role);
   const myProfile = useUserProfileStore((s) => s.profile);
+  const { subjectUserId: workspaceSessionSubjectUserId } = useWorkspaceSessionSubject();
 
   const [input, setInput] = useState('');
   /** Latest composer text for chat-card handoff (read when the task modal saves). */
@@ -297,9 +299,13 @@ export function ChatArea({
     return m;
   }, [bubbles]);
 
-  /** Real Bubbles in this BuddyBubble only (excludes synthetic "All Bubbles"). */
+  /** Real Bubbles in this BuddyBubble only (excludes synthetic "All Bubbles" and subject-thread channels). */
   const realBubbleIds = useMemo(
-    () => bubbles.filter((b) => b.id !== ALL_BUBBLES_BUBBLE_ID).map((b) => b.id),
+    () =>
+      bubbles
+        .filter((b) => b.id !== ALL_BUBBLES_BUBBLE_ID)
+        .filter((b) => b.message_visibility !== 'subject_threads')
+        .map((b) => b.id),
     [bubbles],
   );
 
@@ -330,6 +336,7 @@ export function ChatArea({
     bubbles,
     canPostMessages,
     currentUserId: myProfile?.id ?? null,
+    threadSubjectUserId: workspaceSessionSubjectUserId ?? myProfile?.id ?? null,
     onPeerThreadReplyInsert: handlePeerThreadReplyInsert,
   });
 
@@ -354,7 +361,7 @@ export function ChatArea({
 
   const waitMain = useAgentResponseWait({
     messages: agentScopeRootMessages,
-    myUserId: myProfile?.id ?? null,
+    myUserId: workspaceSessionSubjectUserId ?? myProfile?.id ?? null,
     agentsByAuthUserId,
     callbacks: {
       onExpire: ({ agentSlug, elapsedMs, configuredFailsafeMs }) => {
@@ -380,7 +387,7 @@ export function ChatArea({
   });
   const waitThread = useAgentResponseWait({
     messages: agentScopeThreadMessages,
-    myUserId: myProfile?.id ?? null,
+    myUserId: workspaceSessionSubjectUserId ?? myProfile?.id ?? null,
     agentsByAuthUserId,
     callbacks: {
       onExpire: ({ agentSlug, elapsedMs, configuredFailsafeMs }) => {
@@ -1402,15 +1409,21 @@ export function ChatArea({
         }}
         onSubmit={async ({ text, files }) => {
           if ((!text.trim() && (!files || files.length === 0)) || sendingAttachments) return false;
-          const sent = await sendMessage(text, undefined, files);
-          if (!sent) return false;
-          setInput('');
-          setPendingFiles([]);
           const result = resolveTargetAgent({
             messageDraft: text,
             availableAgents,
             contextDefaultAgentSlug: CHAT_AREA_DEFAULT_AGENT_SLUG,
           });
+          // Root inserts must carry `default_agent_slug` so `bubble-agent-dispatch` can resolve
+          // Coach the same way as `WorkoutCoachRail` (parseRootDefaultAgentSlug); @mention still wins server-side.
+          const sendOpts: { metadata?: Json } | undefined =
+            result?.agent.slug === 'coach'
+              ? { metadata: { default_agent_slug: CHAT_AREA_DEFAULT_AGENT_SLUG } satisfies Json }
+              : undefined;
+          const sent = await sendMessage(text, undefined, files, sendOpts);
+          if (!sent) return false;
+          setInput('');
+          setPendingFiles([]);
           if (result) {
             waitMain.registerSuccessfulSend(sent, result.agent);
           }
