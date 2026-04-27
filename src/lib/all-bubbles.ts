@@ -13,6 +13,7 @@ export function makeAllBubblesBubbleRow(workspaceId: string): BubbleRow {
     icon: null,
     is_private: false,
     bubble_type: 'standard',
+    message_visibility: 'workspace_public',
     metadata: {} as Json,
     created_at: new Date(0).toISOString(),
   };

@@ -4,6 +4,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { ensureCoachBubbleBindings } from '@/lib/fitness/ensure-coach-bubble-binding';
 import type { Json } from '@/types/database';
 
 export const STOREFRONT_LEAD_METADATA_TRIAL_BUBBLE_KEY = 'trial_bubble_id';
@@ -147,6 +148,13 @@ export async function createTrialBubbleAndMembers(opts: {
     console.error('[storefront-trial-isolation] bubble_members insert', bmErr);
     await db.from('bubbles').delete().eq('id', trialBubbleId);
     return { error: 'Failed to add trial bubble members' };
+  }
+
+  const coachBind = await ensureCoachBubbleBindings(db, [trialBubbleId]);
+  if (!coachBind.ok) {
+    console.error('[storefront-trial-isolation] coach bubble binding', coachBind.error);
+    await db.from('bubbles').delete().eq('id', trialBubbleId);
+    return { error: 'Failed to bind Coach to trial bubble' };
   }
 
   return { trialBubbleId };

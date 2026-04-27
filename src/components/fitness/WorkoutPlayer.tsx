@@ -26,6 +26,8 @@ import type { WorkoutExercise } from '@/lib/item-metadata';
 import type { Json, UnitSystem } from '@/types/database';
 import { useUserProfileStore } from '@/store/userProfileStore';
 import { replaceTaskAssigneesWithUserIds } from '@/lib/task-assignees-db';
+import { WorkoutCoachRail } from '@/components/chat/WorkoutCoachRail';
+import type { ExecutionPatch } from '@/types/execution-patch';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -52,6 +54,11 @@ export type WorkoutPlayerProps = {
   bubbleId: string;
   /** Source workout / workout_log task id — used to copy program linkage and scheduling onto the log row. */
   sourceTaskId: string | null;
+  sessionId: string | null;
+  class_instance_id: string | null;
+  isMemberView: boolean;
+  canPostMessages: boolean;
+  workoutData?: Json;
   onComplete?: () => void;
 };
 
@@ -442,6 +449,11 @@ export function WorkoutPlayer({
   metadata,
   bubbleId,
   sourceTaskId,
+  sessionId,
+  class_instance_id,
+  isMemberView,
+  canPostMessages,
+  workoutData,
   onComplete,
 }: WorkoutPlayerProps) {
   const [logs, setLogs] = useState<SetDraft[][]>([]);
@@ -450,6 +462,7 @@ export function WorkoutPlayer({
   const [saving, setSaving] = useState(false);
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('metric');
   const [resolvedMode, setResolvedMode] = useState<'desktop' | 'mobile'>('desktop');
+  const [mobileUnifiedPane, setMobileUnifiedPane] = useState<'workout' | 'coach'>('workout');
   const profileId = useUserProfileStore((s) => s.profile?.id);
 
   const metadataDigest = useMemo(() => JSON.stringify(metadata ?? null), [metadata]);
@@ -468,6 +481,19 @@ export function WorkoutPlayer({
     const mobile = window.matchMedia('(max-width: 768px)').matches;
     setResolvedMode(mobile ? 'mobile' : 'desktop');
   }, [open, mode]);
+
+  // Dev-only: log once per open / identity change — not on every render (elapsed timer would spam).
+  useEffect(() => {
+    if (!open) return;
+    if (process.env.NODE_ENV === 'production') return;
+    // eslint-disable-next-line no-console
+    console.log('[DEBUG] WorkoutPlayer open. Session props:', {
+      sessionId,
+      class_instance_id,
+      bubbleId,
+      isMemberView,
+    });
+  }, [open, sessionId, class_instance_id, bubbleId, isMemberView]);
 
   // Load unit system from fitness profile (scoped to active workspace)
   useEffect(() => {
@@ -493,6 +519,7 @@ export function WorkoutPlayer({
     setView('simple');
     setElapsed(0);
     setSaving(false);
+    setMobileUnifiedPane('workout');
   }, [open, sourceTaskId, exercisesStringDigest]);
 
   // Elapsed timer
@@ -544,6 +571,23 @@ export function WorkoutPlayer({
     },
     [exercises],
   );
+
+  const handleApplyExecutionPatch = useCallback((patch: ExecutionPatch) => {
+    setLogs((prev) => {
+      const next = prev.map((row) => row.map((c) => ({ ...c })));
+      for (const { exerciseIndex: exIdx, setIndex: setIdx, weight, reps, rpe, done } of patch) {
+        if (exIdx < 0 || exIdx >= prev.length) continue;
+        const exRow = prev[exIdx];
+        if (setIdx < 0 || setIdx >= exRow.length) continue;
+        const cell = next[exIdx][setIdx];
+        if (weight !== undefined) cell.weight = weight;
+        if (reps !== undefined) cell.reps = reps;
+        if (rpe !== undefined) cell.rpe = rpe;
+        if (done !== undefined) cell.done = done;
+      }
+      return next;
+    });
+  }, []);
 
   const handleFinish = useCallback(async () => {
     setSaving(true);
@@ -635,6 +679,7 @@ export function WorkoutPlayer({
       metadata: {
         ...(durationMins > 0 ? { duration_min: durationMins } : {}),
         exercises: exercisePayload,
+        ...(class_instance_id ? { class_instance_id } : {}),
       },
     };
 
@@ -670,7 +715,17 @@ export function WorkoutPlayer({
     setSaving(false);
     onComplete?.();
     onClose();
-  }, [exercises, logs, elapsed, bubbleId, workoutTitle, sourceTaskId, onComplete, onClose]);
+  }, [
+    exercises,
+    logs,
+    elapsed,
+    bubbleId,
+    workoutTitle,
+    sourceTaskId,
+    class_instance_id,
+    onComplete,
+    onClose,
+  ]);
 
   const unit = unitSystem === 'imperial' ? 'lbs' : 'kg';
 
@@ -691,6 +746,78 @@ export function WorkoutPlayer({
     footerSafeArea: resolvedMode === 'mobile',
   };
 
+  const splitPaneBody = (
+    <div className="flex min-h-0 flex-1 flex-col md:flex-row md:items-stretch">
+      {/* Mobile tab toggle (Workout | Coach) */}
+      <div
+        className="flex gap-1 border-b border-border bg-muted/40 px-2 py-2 md:hidden"
+        role="tablist"
+        aria-label="Workout or coach"
+      >
+        <button
+          type="button"
+          className={cn(
+            'flex-1 rounded-md py-2 text-xs font-semibold transition-colors',
+            mobileUnifiedPane === 'workout'
+              ? 'bg-card text-foreground shadow-sm'
+              : 'text-muted-foreground hover:bg-muted/80',
+          )}
+          aria-pressed={mobileUnifiedPane === 'workout'}
+          onClick={() => setMobileUnifiedPane('workout')}
+        >
+          Workout
+        </button>
+        <button
+          type="button"
+          className={cn(
+            'flex-1 rounded-md py-2 text-xs font-semibold transition-colors',
+            mobileUnifiedPane === 'coach'
+              ? 'bg-card text-foreground shadow-sm'
+              : 'text-muted-foreground hover:bg-muted/80',
+          )}
+          aria-pressed={mobileUnifiedPane === 'coach'}
+          onClick={() => setMobileUnifiedPane('coach')}
+        >
+          Coach
+        </button>
+      </div>
+
+      {/* Left pane: Coach rail */}
+      <div
+        className={cn(
+          'flex min-h-0 min-w-0 flex-1 flex-col',
+          mobileUnifiedPane === 'coach' ? 'max-md:flex' : 'max-md:hidden',
+          'md:border-r md:border-border',
+          'md:max-w-[min(38%,400px)] md:shrink-0 md:basis-[min(32%,340px)] md:grow-0 md:flex-none',
+        )}
+      >
+        <WorkoutCoachRail
+          workspaceId={workspaceId}
+          bubbleId={bubbleId}
+          taskId={sourceTaskId ?? ''}
+          canPostMessages={canPostMessages}
+          sessionId={sessionId}
+          class_instance_id={class_instance_id}
+          isMemberView={isMemberView}
+          workoutTitle={workoutTitle}
+          workoutData={workoutData}
+          onApplyExecutionPatch={handleApplyExecutionPatch}
+        />
+      </div>
+
+      {/* Right pane: Workout body */}
+      <div
+        className={cn(
+          'flex min-h-0 min-w-0 flex-1 flex-col',
+          mobileUnifiedPane === 'workout' ? 'max-md:flex' : 'max-md:hidden',
+          'md:flex',
+        )}
+      >
+        <PlayerBody {...bodyProps} />
+      </div>
+    </div>
+  );
+
   // ── Desktop: centered dialog ──────────────────────────────────────────────
 
   if (resolvedMode === 'desktop') {
@@ -706,7 +833,7 @@ export function WorkoutPlayer({
           <DialogPrimitive.Content
             className={cn(
               'fixed left-[50%] top-[50%] z-[160] flex w-full translate-x-[-50%] translate-y-[-50%] flex-col overflow-hidden',
-              'h-[90dvh] max-h-[90dvh] max-w-[95vw] rounded-2xl border border-border bg-card text-card-foreground shadow-2xl sm:max-w-2xl',
+              'h-[90dvh] max-h-[90dvh] max-w-[95vw] rounded-2xl border border-border bg-card text-card-foreground shadow-2xl sm:max-w-6xl',
               'gap-0 p-0',
               'data-[state=open]:animate-in data-[state=closed]:animate-out',
               'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
@@ -715,7 +842,7 @@ export function WorkoutPlayer({
               'data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]',
             )}
           >
-            <PlayerBody {...bodyProps} />
+            {splitPaneBody}
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>
@@ -747,7 +874,7 @@ export function WorkoutPlayer({
           <div className="flex shrink-0 justify-center pt-2.5 pb-0">
             <div className="h-1 w-10 rounded-full bg-muted-foreground/30" />
           </div>
-          <PlayerBody {...bodyProps} />
+          {splitPaneBody}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
@@ -808,6 +935,10 @@ export function WorkoutPlayerTriggers({
           metadata={metadata}
           bubbleId={bubbleId}
           sourceTaskId={sourceTaskId}
+          sessionId={null}
+          class_instance_id={null}
+          isMemberView={true}
+          canPostMessages={true}
           onComplete={() => {
             setMode(null);
             onComplete?.();

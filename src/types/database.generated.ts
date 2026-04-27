@@ -364,6 +364,7 @@ export type Database = {
           icon: string | null;
           id: string;
           is_private: boolean;
+          message_visibility: string;
           metadata: Json;
           name: string;
           workspace_id: string;
@@ -374,6 +375,7 @@ export type Database = {
           icon?: string | null;
           id?: string;
           is_private?: boolean;
+          message_visibility?: string;
           metadata?: Json;
           name: string;
           workspace_id: string;
@@ -384,6 +386,7 @@ export type Database = {
           icon?: string | null;
           id?: string;
           is_private?: boolean;
+          message_visibility?: string;
           metadata?: Json;
           name?: string;
           workspace_id?: string;
@@ -1075,6 +1078,7 @@ export type Database = {
           metadata: Json;
           parent_id: string | null;
           target_task_id: string | null;
+          thread_subject_user_id: string;
           user_id: string;
         };
         Insert: {
@@ -1087,6 +1091,7 @@ export type Database = {
           metadata?: Json;
           parent_id?: string | null;
           target_task_id?: string | null;
+          thread_subject_user_id?: string;
           user_id: string;
         };
         Update: {
@@ -1099,6 +1104,7 @@ export type Database = {
           metadata?: Json;
           parent_id?: string | null;
           target_task_id?: string | null;
+          thread_subject_user_id?: string;
           user_id?: string;
         };
         Relationships: [
@@ -1128,6 +1134,13 @@ export type Database = {
             columns: ['target_task_id'];
             isOneToOne: false;
             referencedRelation: 'tasks';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'messages_thread_subject_user_id_fkey';
+            columns: ['thread_subject_user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
             referencedColumns: ['id'];
           },
           {

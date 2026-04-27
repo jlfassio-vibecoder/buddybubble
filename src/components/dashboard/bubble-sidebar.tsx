@@ -14,6 +14,7 @@ import {
   CollapsedColumnStrip,
 } from '@/components/layout/collapsed-column-strip';
 import { BubbleSettingsModal } from '@/components/modals/BubbleSettingsModal';
+import { ensureCoachBubbleBindings } from '@/lib/fitness/ensure-coach-bubble-binding';
 import { usePresenceStore, type UserPresence } from '@/store/presenceStore';
 import { useUserProfileStore } from '@/store/userProfileStore';
 
@@ -38,6 +39,8 @@ type Props = {
   hideSidebarCollapseButton?: boolean;
   /** Centered above the "Bubbles" heading — current BuddyBubble (workspace) name, not channel. */
   workspaceTitle?: string;
+  /** When `fitness`, new bubbles get a `bubble_agent_bindings` row for Coach. */
+  workspaceCategory?: string | null;
 };
 
 export function BubbleSidebar({
@@ -54,6 +57,7 @@ export function BubbleSidebar({
   onOpenWorkspaceSettings,
   hideSidebarCollapseButton = false,
   workspaceTitle,
+  workspaceCategory = null,
 }: Props) {
   const [activeTab, setActiveTab] = useState<BubbleTab>('main');
   const initialTabSyncDoneRef = useRef(false);
@@ -132,6 +136,12 @@ export function BubbleSidebar({
       .single();
     setAdding(false);
     if (!error && data) {
+      if (workspaceCategory === 'fitness') {
+        const coachBind = await ensureCoachBubbleBindings(supabase, [data.id as string]);
+        if (!coachBind.ok) {
+          console.error('[BubbleSidebar] Coach binding failed:', coachBind.error);
+        }
+      }
       onBubblesChange([...bubbles, data as BubbleRow]);
       onSelectBubble((data as BubbleRow).id);
       setName('');

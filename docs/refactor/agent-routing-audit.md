@@ -322,11 +322,13 @@ four lowercase regexes listed above.
 
 ## 5. Sentinel / system-event messages
 
-| Constant                                                 | Value                                | File:line                                                        |
-| -------------------------------------------------------- | ------------------------------------ | ---------------------------------------------------------------- |
-| `BUDDY_ONBOARDING_SYSTEM_EVENT` (frontend, main chat)    | `[SYSTEM_EVENT: ONBOARDING_STARTED]` | `src/components/chat/ChatArea.tsx:72`                            |
-| `BUDDY_ONBOARDING_SYSTEM_EVENT` (frontend, task modal)   | same value                           | `src/components/modals/task-modal/TaskModalCommentsPanel.tsx:51` |
-| `BUDDY_ONBOARDING_SYSTEM_EVENT` (backend, edge function) | same value                           | `supabase/functions/buddy-agent-dispatch/index.ts:110`           |
+| Constant                                                 | Value                                | File:line                                                                        |
+| -------------------------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------- |
+| `BUDDY_ONBOARDING_SYSTEM_EVENT` (frontend, main chat)    | `[SYSTEM_EVENT: ONBOARDING_STARTED]` | `src/components/chat/ChatArea.tsx:72`                                            |
+| `BUDDY_ONBOARDING_SYSTEM_EVENT` (frontend, task modal)   | same value                           | `src/components/modals/task-modal/TaskModalCommentsPanel.tsx:51`                 |
+| `BUDDY_ONBOARDING_SYSTEM_EVENT` (backend, edge function) | same value                           | `supabase/functions/buddy-agent-dispatch/index.ts:110`                           |
+| `WORKOUT_COACH_SENTINEL_EVENT` (frontend, workout rail)  | `[SYSTEM_EVENT: WORKOUT_CONTEXT]`    | `src/components/chat/WorkoutCoachRail.tsx` (constant)                            |
+| Same (backend, edge function)                            | same value                           | `supabase/functions/bubble-agent-dispatch/index.ts` (`isWorkoutContextSentinel`) |
 
 ### 5.1 Filtering so users never see the sentinel
 
@@ -364,10 +366,13 @@ Both emitters:
 
 ### 5.4 Other agent-invoking system triggers
 
-- None found besides the Buddy sentinel. Grepping the repo for `SYSTEM_EVENT` and
-  `system_event` returns only Buddy-related hits (see §5 citations).
-- There is no sentinel for Coach or Organizer. Coach invocation is strictly via `@coach` mention
-  (handled server-side in `supabase/functions/bubble-agent-dispatch`).
+- **Workout player:** `[SYSTEM_EVENT: WORKOUT_CONTEXT]` is inserted from `WorkoutCoachRail` with
+  `metadata.default_agent_slug: coach`, `workout_task_title`, and `workoutContext`. The UI hides the
+  sentinel row; `bubble-agent-dispatch` detects it and runs a short **workout-open greeting** path
+  (reply-only RPC), then returns.
+- Buddy onboarding sentinel remains separate (`buddy-agent-dispatch`).
+- Coach for normal bubble chat remains `@mention` / `default_agent_slug` on user-authored roots in
+  `bubble-agent-dispatch`.
 
 ---
 

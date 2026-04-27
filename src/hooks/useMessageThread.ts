@@ -6,6 +6,7 @@ import {
   isSupabaseBenignRequestAbort,
   supabaseClientErrorMessage,
 } from '@/lib/supabase-client-error';
+import { randomUuid } from '@/lib/random-uuid';
 import {
   buildReplyCounts,
   fetchEmbeddedTaskForMessage,
@@ -85,6 +86,11 @@ export type UseMessageThreadArgs = {
   /** Current user id — used to ignore own realtime inserts for bubble thread notifications. */
   currentUserId?: string | null;
   /**
+   * `messages.thread_subject_user_id` on insert (RLS for `subject_threads` bubbles). Defaults to
+   * `currentUserId` / auth user in `sendMessage` when omitted.
+   */
+  threadSubjectUserId?: string | null;
+  /**
    * Bubble / all-bubbles scope only: another user posted a reply (`parent_id` set, not task-scoped).
    * ChatArea uses this for bell + auto-open thread.
    */
@@ -138,9 +144,14 @@ export function useMessageThread({
   canPostMessages,
   taskBubbleIdHint = null,
   currentUserId = null,
+  threadSubjectUserId = null,
   onPeerThreadReplyInsert,
 }: UseMessageThreadArgs): UseMessageThreadResult {
   const [messages, setMessages] = useState<MessageRowWithEmbeddedTask[]>([]);
+  /** Keeps latest rows without forcing `sendMessage` to change on every INSERT (avoids consumer effect thrash). */
+  const messagesRef = useRef<MessageRowWithEmbeddedTask[]>([]);
+  messagesRef.current = messages;
+
   const currentUserIdRef = useRef<string | null>(null);
   const onPeerThreadReplyInsertRef = useRef<typeof onPeerThreadReplyInsert>(undefined);
   currentUserIdRef.current = currentUserId ?? null;
@@ -148,6 +159,8 @@ export function useMessageThread({
   const [userById, setUserById] = useState<Record<string, ChatUserSnapshot>>({});
   const [teamMembers, setTeamMembers] = useState<MessageThreadTeamMember[]>([]);
   const [agentAuthUserIds, setAgentAuthUserIds] = useState<string[]>([]);
+  const threadSubjectUserIdRef = useRef<string | null>(null);
+  threadSubjectUserIdRef.current = threadSubjectUserId ?? null;
   const [agentsByAuthUserId, setAgentsByAuthUserId] = useState<Map<string, AgentDefinitionLite>>(
     () => new Map(),
   );
@@ -155,6 +168,11 @@ export function useMessageThread({
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [taskBubbleId, setTaskBubbleId] = useState<string | null>(null);
+  /** Unique suffix per hook instance to prevent realtime channel name collisions. */
+  const channelInstanceIdRef = useRef<string>('');
+  if (!channelInstanceIdRef.current) {
+    channelInstanceIdRef.current = randomUuid().replace(/-/g, '').slice(0, 10);
+  }
 
   const filterKey = messageThreadFilterKey(filter);
 
@@ -164,16 +182,26 @@ export function useMessageThread({
     return row?.bubble_id ?? null;
   }, [filter, messages]);
 
+  /**
+   * Task-scope bubble resolution used for:
+   * - agent bindings query (agentQueryBubbleId)
+   * - inserts (sendMessage) before async task bubble lookup resolves
+   */
+  const resolvedTaskBubbleId = useMemo(() => {
+    if (!filter || filter.scope !== 'task') return null;
+    return taskBubbleId ?? taskBubbleIdFromMessages ?? taskBubbleIdHint ?? null;
+  }, [filter, taskBubbleId, taskBubbleIdFromMessages, taskBubbleIdHint]);
+
   /** Bubble context for agent mentions; null when agents must not load (`all_bubbles` or unknown task bubble). */
   const agentQueryBubbleId = useMemo(() => {
     if (!filter) return null;
     if (filter.scope === 'all_bubbles') return null;
     if (filter.scope === 'bubble') return filter.bubbleId;
     if (filter.scope === 'task') {
-      return taskBubbleId ?? taskBubbleIdFromMessages ?? taskBubbleIdHint ?? null;
+      return resolvedTaskBubbleId;
     }
     return null;
-  }, [filter, taskBubbleId, taskBubbleIdFromMessages, taskBubbleIdHint]);
+  }, [filter, resolvedTaskBubbleId]);
 
   useEffect(() => {
     if (!filter || filter.scope !== 'task') {
@@ -237,6 +265,7 @@ export function useMessageThread({
         return;
       }
       const rows = (data ?? []) as MessageRowWithEmbeddedTask[];
+
       setMessages(rows);
       const ids = [...new Set(rows.map((r) => r.user_id))];
       if (ids.length === 0) {
@@ -269,13 +298,18 @@ export function useMessageThread({
 
     const supabase = createClient();
     const channelName = messageThreadChannelName(f);
-    const channel = supabase.channel(channelName);
+    // IMPORTANT: multiple surfaces (e.g. dashboard ChatArea + WorkoutCoachRail) can subscribe to
+    // the same bubble concurrently. Supabase reuses channels by name; if a channel is already
+    // subscribed, adding postgres_changes handlers will throw. Suffix the channel name per hook
+    // instance so subscriptions never collide.
+    const channel = supabase.channel(`${channelName}:${channelInstanceIdRef.current}`);
 
     const onInsert = (payload: { new: Record<string, unknown> }) => {
       const row = payload.new as MessageRow;
       void (async () => {
         const supa = createClient();
         const enriched = await fetchEmbeddedTaskForMessage(supa, row);
+
         setMessages((prev) => {
           if (prev.some((m) => m.id === enriched.id)) return prev;
           return [...prev, enriched].sort(
@@ -768,14 +802,14 @@ export function useMessageThread({
 
       let targetBubbleId: string | null = null;
       if (parentId) {
-        const parentRow = messages.find((m) => m.id === parentId);
+        const parentRow = messagesRef.current.find((m) => m.id === parentId);
         targetBubbleId = parentRow?.bubble_id ?? null;
       } else if (filter.scope === 'all_bubbles') {
         targetBubbleId = defaultBubbleIdForWrites(bubbles);
       } else if (filter.scope === 'bubble') {
         targetBubbleId = filter.bubbleId;
       } else {
-        targetBubbleId = taskBubbleId;
+        targetBubbleId = resolvedTaskBubbleId;
       }
       if (!targetBubbleId) {
         setError(
@@ -817,6 +851,7 @@ export function useMessageThread({
 
       setSending(true);
       try {
+        const subjectForInsert = threadSubjectUserIdRef.current ?? user.id;
         const { data: inserted, error: insErr } = await supabase
           .from('messages')
           .insert({
@@ -826,6 +861,7 @@ export function useMessageThread({
             parent_id: parentId ?? null,
             attached_task_id: attachedTaskId,
             target_task_id: targetTaskId,
+            thread_subject_user_id: subjectForInsert,
             ...(messageMetadata !== undefined ? { metadata: messageMetadata } : {}),
           })
           .select(MESSAGES_SELECT_WITH_TASK)
@@ -1099,7 +1135,7 @@ export function useMessageThread({
         setSending(false);
       }
     },
-    [bubbles, canPostMessages, filter, messages, taskBubbleId, workspaceId],
+    [bubbles, canPostMessages, filter, taskBubbleId, threadSubjectUserId, workspaceId],
   );
 
   return {
