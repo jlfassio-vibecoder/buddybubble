@@ -1135,7 +1135,7 @@ export function useMessageThread({
         setSending(false);
       }
     },
-    [bubbles, canPostMessages, filter, taskBubbleId, threadSubjectUserId, workspaceId],
+    [bubbles, canPostMessages, filter, resolvedTaskBubbleId, threadSubjectUserId, workspaceId],
   );
 
   return {

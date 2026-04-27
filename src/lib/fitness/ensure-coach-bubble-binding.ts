@@ -4,7 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
  * Binds the workspace-global Coach (`agent_definitions.slug = 'coach'`) to one or more bubbles
  * so `bubble_agent_bindings` + RPCs (`agent_create_card_and_reply`) stay consistent.
  *
- * Idempotent: upserts with `ignoreDuplicates` so repeated calls are safe.
+ * Idempotent: upserts on `(bubble_id, agent_definition_id)` so repeated calls re-enable / refresh rows.
  */
 export async function ensureCoachBubbleBindings(
   supabase: SupabaseClient,
@@ -37,7 +37,6 @@ export async function ensureCoachBubbleBindings(
 
   const { error: bindErr } = await supabase.from('bubble_agent_bindings').upsert(rows, {
     onConflict: 'bubble_id,agent_definition_id',
-    ignoreDuplicates: true,
   });
 
   if (bindErr) {

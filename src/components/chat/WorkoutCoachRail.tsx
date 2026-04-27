@@ -267,6 +267,7 @@ export function WorkoutCoachRail({
     workspaceId,
   ]);
 
+  // Copilot suggestion ignored: the contract applies `execution_patch` only for the newest message (id + dedupe Set), not a backward scan, to match the edge/player idempotency model.
   useEffect(() => {
     if (isLoading) return;
     if (messages.length === 0) return;

@@ -1416,8 +1416,9 @@ export function ChatArea({
           });
           // Root inserts must carry `default_agent_slug` so `bubble-agent-dispatch` can resolve
           // Coach the same way as `WorkoutCoachRail` (parseRootDefaultAgentSlug); @mention still wins server-side.
+          // When `availableAgents` is not ready, `result` is null but we still need the hint for dispatch.
           const sendOpts: { metadata?: Json } | undefined =
-            result?.agent.slug === 'coach'
+            result == null || result.agent.slug === 'coach'
               ? { metadata: { default_agent_slug: CHAT_AREA_DEFAULT_AGENT_SLUG } satisfies Json }
               : undefined;
           const sent = await sendMessage(text, undefined, files, sendOpts);

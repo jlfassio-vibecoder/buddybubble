@@ -84,6 +84,7 @@
     "happy-dom": "^16.7.3",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
+    "only-allow": "1.1.1",
     "prettier": "^3.5.3",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.19.3",
