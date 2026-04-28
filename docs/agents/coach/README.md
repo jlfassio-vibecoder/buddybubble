@@ -2,11 +2,11 @@
 
 This document describes the **current** BuddyBubble **Coach** (`slug: coach`) end-to-end: identity, dispatch, Gemini contract, Postgres RPCs, and client surfaces. It supersedes conceptual-only material in:
 
-- [`docs/BUBBLE_AGENTS_ARCHITECTURE_PLAN.md`](../docs/BUBBLE_AGENTS_ARCHITECTURE_PLAN.md) — pre-implementation architecture (e.g. single-tool `create_kanban_card` story).
-- [`docs/agents/adding-a-coach.md`](../docs/agents/adding-a-coach.md) — Phase-4 checklist (still useful for **provisioning** a new agent slug; see [Adding or extending coaches](#adding-or-extending-coaches) below for Coach-specific reality).
-- [`docs/refactor/agent-routing-audit.md`](../docs/refactor/agent-routing-audit.md) — resolver / typing-indicator refactor notes (aligned with `resolveTargetAgent` + `useAgentResponseWait`).
-- [`docs/agents/adding-an-organizer-variant.md`](../docs/agents/adding-an-organizer-variant.md) — Organizer is a **separate** dispatcher; not covered here.
-- [`coach/ARCHITECTURE_ASSESSMENT.md`](./ARCHITECTURE_ASSESSMENT.md) — gap analysis and recommendations against the implementation described here.
+- [`docs/BUBBLE_AGENTS_ARCHITECTURE_PLAN.md`](../../BUBBLE_AGENTS_ARCHITECTURE_PLAN.md) — pre-implementation architecture (e.g. single-tool `create_kanban_card` story).
+- [`docs/agents/adding-a-coach.md`](../adding-a-coach.md) — Phase-4 checklist (still useful for **provisioning** a new agent slug; see [Adding or extending coaches](#adding-or-extending-coaches) below for Coach-specific reality).
+- [`docs/refactor/agent-routing-audit.md`](../../refactor/agent-routing-audit.md) — resolver / typing-indicator refactor notes (aligned with `resolveTargetAgent` + `useAgentResponseWait`).
+- [`docs/agents/adding-an-organizer-variant.md`](../adding-an-organizer-variant.md) — Organizer is a **separate** dispatcher; not covered here.
+- [`docs/agents/coach/ARCHITECTURE_ASSESSMENT.md`](./ARCHITECTURE_ASSESSMENT.md) — gap analysis and recommendations against the implementation described here.
 
 When in doubt, **trust the code** paths cited here.
 
@@ -36,13 +36,13 @@ It is **not** the Organizer (community) agent or the Buddy (general / app help) 
 ## Dispatch: webhook → Edge Function
 
 1. **Trigger:** Supabase **database webhook** on `public.messages` **INSERT** (payload filtered to `schema=public`, `table=messages`, `type=INSERT` in code).
-2. **Handler:** [`supabase/functions/bubble-agent-dispatch/index.ts`](../supabase/functions/bubble-agent-dispatch/index.ts) (service role + shared secret, `verify_jwt: false` — see `supabase/config.toml`).
+2. **Handler:** [`supabase/functions/bubble-agent-dispatch/index.ts`](../../../supabase/functions/bubble-agent-dispatch/index.ts) (service role + shared secret, `verify_jwt: false` — see `supabase/config.toml`).
 3. **Secrets:** `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `BUBBLE_AGENT_WEBHOOK_SECRET`, `GEMINI_API_KEY`; optional `GEMINI_MODEL` / `VERTEX_GEMINI_MODEL`, `GEMINI_FETCH_TIMEOUT_MS`.
 
 **Not handled here**
 
-- **Organizer** — slug `organizer` is **filtered out** of the binding list so the shared webhook does not double-fire with `organizer-agent-dispatch` (see `DISPATCHER_EXCLUDED_SLUGS` in `bubble-agent-dispatch`).
-- **Buddy** — product pipeline is [`buddy-agent-dispatch`](../supabase/functions/buddy-agent-dispatch/index.ts). The client may merge Buddy from `agent_definitions` without a per-bubble binding; Coach resolution in the Edge Function uses **`bubble_agent_bindings` only** (so `@Buddy` in a bubble is not the same as Coach routing in this function — Buddy’s mentions are intended to be served by the Buddy webhook).
+- **Organizer** — the shared webhook now proceeds only for resolved slug `coach`, so Organizer and any other non-Coach slug short-circuit with `skipped: 'not_handled_by_coach_dispatcher'`.
+- **Buddy** — product pipeline is [`buddy-agent-dispatch`](../../../supabase/functions/buddy-agent-dispatch/index.ts). The client may merge Buddy from `agent_definitions` without a per-bubble binding; Coach resolution in the Edge Function uses **`bubble_agent_bindings` only** (so `@Buddy` in a bubble is not the same as Coach routing in this function — Buddy’s mentions are intended to be served by the Buddy webhook).
 
 **Loop prevention:** Messages whose `user_id` matches an **active** `agent_definitions.auth_user_id` are skipped (`skipped: 'author_is_agent'`).
 
@@ -50,7 +50,7 @@ It is **not** the Organizer (community) agent or the Buddy (general / app help) 
 
 ## How the target agent is resolved (server)
 
-Order of operations (must stay aligned with [`src/lib/agents/resolveTargetAgent.ts`](../src/lib/agents/resolveTargetAgent.ts) on the client):
+Order of operations (must stay aligned with [`src/lib/agents/resolveTargetAgent.ts`](../../../src/lib/agents/resolveTargetAgent.ts) on the client):
 
 1. **@mention** — first `\w+` handle in `content` that matches a **bound** agent’s `mention_handle` (order from `sort_order` then `slug`, after excluding `organizer`).
 2. **Root default** — for **root** messages (`parent_id` empty), read `metadata.default_agent_slug` (lowercased). If that slug exists among bound agents, it selects Coach when the user did not type `@...`. This is the **server-side** counterpart to `contextDefaultAgentSlug` in the client resolver.
@@ -76,23 +76,25 @@ The architecture plan’s “one tool / create card” model is **narrower** tha
 ### 2) Revise an **existing** workout card — draft in chat, user finalizes
 
 - When the thread is tied to a **known task** (`knownTargetTaskId` from `target_task_id` / task context) and the model returns `update_existing_task: true` with title, description, and/or `proposed_workout_metadata`, the Edge Function calls **`agent_insert_coach_workout_draft_reply`**.
-- That inserts a Coach **reply** with `messages.metadata.coach_draft` (`pending` / `accepted` / `superseded` — see [`src/types/coach-draft.ts`](../src/types/coach-draft.ts)) and does **not** mutate `tasks` until the user accepts.
-- The user calls **`apply_workout_draft(p_message_id)`** (authenticated RPC) from the UI ([`src/components/chat/CoachDraftCard.tsx`](../src/components/chat/CoachDraftCard.tsx)) to merge the draft into the task and mark the draft applied.
+- That inserts a Coach **reply** with `messages.metadata.coach_draft` (`pending` / `accepted` / `superseded` — see [`src/types/coach-draft.ts`](../../../src/types/coach-draft.ts)) and does **not** mutate `tasks` until the user accepts.
+- The user calls **`apply_workout_draft(p_message_id)`** (authenticated RPC) from the UI ([`src/components/chat/CoachDraftCard.tsx`](../../../src/components/chat/CoachDraftCard.tsx)) to merge the draft into the task and mark the draft applied.
 
 ### 3) Workout player **silent sentinel** (opening greeting)
 
-- The workout rail sends a **hidden** one-shot user message: content **`[SYSTEM_EVENT: WORKOUT_CONTEXT]`** (must match the Edge constant and `WorkoutCoachRail`).
+- The workout rail sends a **hidden** one-shot user message with user-facing content **`Started a workout session.`**; routing and filtering use metadata, not the displayed body. Legacy rows with **`[SYSTEM_EVENT: WORKOUT_CONTEXT]`** are still treated as sentinels.
 - Metadata carries `workoutContext`, `workout_task_title`, `is_silent_sentinel: true`, session/class ids, etc.
 - The function handles this **before** the main JSON coach flow: a **dedicated** small Gemini call (`geminiGenerateWorkoutOpenGreeting`) produces a short human greeting; persistence uses **`agent_create_card_and_reply`** with `p_create_card: false`.
 - The sentinel path requires resolved agent slug **`coach`**; otherwise `workout_context_sentinel_not_coach`.
-- The rail **filters** the sentinel string out of the visible transcript (users never see the token).
+- The rail **filters** the sentinel row out of the visible transcript and does **not** arm `useAgentResponseWait` for this bootstrap send; only explicit user messages show the typing indicator.
 
 ### 4) Mid-workout support + **execution_patch** (live `WorkoutPlayer` grid)
 
-- **CURRENT WORKOUT CONTEXT** is built from `metadata.workoutContext` / `workout_context` on thread messages (latest non-empty payload wins), with a **`tasks.metadata` fallback** when the 50-message history no longer contains a valid payload (so the sentinel is not required to stay in-window), plus a fixed **mid-workout directive** in the system prompt.
+- **CURRENT WORKOUT CONTEXT** is built from `metadata.workoutContext` / `workout_context` on prior messages (latest non-empty payload wins), with a **`tasks.metadata` fallback** when the 50-message history no longer contains a valid payload (so the sentinel is not required to stay in-window), plus a fixed **mid-workout directive** in the system prompt.
+- History loading is **task-aware**: when the trigger row has `target_task_id`, the Edge Function loads recent messages for that full task-scoped conversation instead of only Slack-style `parent_id` replies. This keeps live workout turns aligned with what `WorkoutCoachRail` shows the user.
 - The model can return `execution_patch`: an array of `{ exerciseIndex, setIndex, weight?, reps?, rpe?, done? }` (0-based indices aligned with the player).
+- The mid-workout prompt no longer nudges Coach to ask about moving to the next exercise after every patch; transitions should follow the user's conversational flow.
 - **`agent_create_card_and_reply`** and **`agent_insert_coach_workout_draft_reply`** accept `p_execution_patch` and write `messages.metadata.execution_patch` on the **same INSERT** as the agent reply (migration `20260729120000_agent_rpcs_persist_execution_patch.sql`) — a single `postgres_changes` event for clients.
-- The client does **not** re-fetch exercises from this alone: [`WorkoutCoachRail`](../src/components/chat/WorkoutCoachRail.tsx) watches the **latest** Coach message and, if valid, calls `onApplyExecutionPatch` → [`WorkoutPlayer`](../src/components/fitness/WorkoutPlayer.tsx) `handleApplyExecutionPatch` updates the **local** set grid.
+- The client does **not** re-fetch exercises from this alone: [`WorkoutCoachRail`](../../../src/components/chat/WorkoutCoachRail.tsx) watches the **latest** Coach message and, if valid, calls `onApplyExecutionPatch` → [`WorkoutPlayer`](../../../src/components/fitness/WorkoutPlayer.tsx) `handleApplyExecutionPatch` updates the **local** set grid.
 
 ---
 
@@ -122,19 +124,19 @@ The architecture plan does **not** list these fields; the **file header** and `C
 
 ## Client routing and “typing” UX (agent-agnostic layer)
 
-| Piece                                                              | Role                                                                                                                                                                                                                                                           |
-| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`resolveTargetAgent.ts`](../src/lib/agents/resolveTargetAgent.ts) | First `@mention` wins, else `contextDefaultAgentSlug` if that agent exists in the loaded list.                                                                                                                                                                 |
-| [`useAgentResponseWait.ts`](../src/hooks/useAgentResponseWait.ts)  | After send, shows pending typing state until an agent message arrives or `response_timeout_ms` elapses.                                                                                                                                                        |
-| [`useMessageThread.ts`](../src/hooks/useMessageThread.ts)          | Loads `bubble_agent_bindings` + `agent_definitions`, merges **Buddy** globally, ordered for consistent mention resolution.                                                                                                                                     |
-| [`resolveAgentAvatar.ts`](../src/lib/agents/resolveAgentAvatar.ts) | Avatars for agent messages.                                                                                                                                                                                                                                    |
-| `messages.metadata.default_agent_slug`                             | **Root-only** server hint: matches resolver default so “no @mention” messages still dispatch to Coach. **Without this metadata on the insert, plain-text routing may not hit Coach on the server** even if the client resolved Coach for the typing indicator. |
+| Piece                                                                    | Role                                                                                                                                                                                                                                                           |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`resolveTargetAgent.ts`](../../../src/lib/agents/resolveTargetAgent.ts) | First `@mention` wins, else `contextDefaultAgentSlug` if that agent exists in the loaded list.                                                                                                                                                                 |
+| [`useAgentResponseWait.ts`](../../../src/hooks/useAgentResponseWait.ts)  | After explicit user sends, shows pending typing state until an agent message arrives or `response_timeout_ms` elapses. Hidden sentinel bootstrap sends intentionally do not arm this hook.                                                                     |
+| [`useMessageThread.ts`](../../../src/hooks/useMessageThread.ts)          | Loads `bubble_agent_bindings` + `agent_definitions`, merges **Buddy** globally, ordered for consistent mention resolution.                                                                                                                                     |
+| [`resolveAgentAvatar.ts`](../../../src/lib/agents/resolveAgentAvatar.ts) | Avatars for agent messages.                                                                                                                                                                                                                                    |
+| `messages.metadata.default_agent_slug`                                   | **Root-only** server hint: matches resolver default so “no @mention” messages still dispatch to Coach. **Without this metadata on the insert, plain-text routing may not hit Coach on the server** even if the client resolved Coach for the typing indicator. |
 
 **Surfaces that set `contextDefaultAgentSlug` / `default_agent_slug` to `coach`**
 
-- [`ChatArea.tsx`](../src/components/chat/ChatArea.tsx) — `CHAT_AREA_DEFAULT_AGENT_SLUG = 'coach'`; sends `metadata: { default_agent_slug: 'coach' }` for Coach sends where applicable.
-- [`TaskModalCommentsPanel.tsx`](../src/components/modals/task-modal/TaskModalCommentsPanel.tsx) — `TASK_COMMENTS_DEFAULT_AGENT_SLUG = 'coach'`.
-- [`WorkoutCoachRail.tsx`](../src/components/chat/WorkoutCoachRail.tsx) — same default for Coach tab; **Buddy** tab prefixes `@Buddy` so the Buddy pipeline can own routing without relying on `default_agent_slug` for that send.
+- [`ChatArea.tsx`](../../../src/components/chat/ChatArea.tsx) — `CHAT_AREA_DEFAULT_AGENT_SLUG = 'coach'`; sends `metadata: { default_agent_slug: 'coach' }` for Coach sends where applicable.
+- [`TaskModalCommentsPanel.tsx`](../../../src/components/modals/task-modal/TaskModalCommentsPanel.tsx) — `TASK_COMMENTS_DEFAULT_AGENT_SLUG = 'coach'`.
+- [`WorkoutCoachRail.tsx`](../../../src/components/chat/WorkoutCoachRail.tsx) — same default for Coach tab; **Buddy** tab prefixes `@Buddy` so the Buddy pipeline can own routing without relying on `default_agent_slug` for that send.
 
 ---
 
@@ -152,7 +154,7 @@ The architecture plan does **not** list these fields; the **file header** and `C
 
 ## Adding or extending coaches
 
-For a **new** agent slug (e.g. another vertical), follow the operational steps in [`docs/agents/adding-a-coach.md`](../docs/agents/adding-a-coach.md) (provision user, `agent_definitions`, `bubble_agent_bindings`, and surface `contextDefaultAgentSlug`).
+For a **new** agent slug (e.g. another vertical), follow the operational steps in [`docs/agents/adding-a-coach.md`](../adding-a-coach.md) (provision user, `agent_definitions`, `bubble_agent_bindings`, and surface `contextDefaultAgentSlug`).
 
 **Coach-specific note:** the **fitness** Gemini prompt, JSON schema, RPC branching (`workout` task type, draft RPCs, execution_patch), and WorkoutPlayer wiring are **coupled to the `coach` slug and fitness UX**. Reusing the same Edge Function for a second “coach” slug would require explicit product/engineering work (prompt branching, binding surfaces, and possibly separate RPCs).
 
