@@ -19,7 +19,8 @@ describe('organizer system prompt (scope invariants)', () => {
     expect(organizerSystemPromptMirror).toMatch(/NOT a fitness coach/i);
     // Negative assertions: Organizer must never be told to prescribe workouts.
     expect(organizerSystemPromptMirror).not.toMatch(/prescribe.*workout/i);
-    expect(organizerSystemPromptMirror).not.toMatch(/rep scheme/i);
+    // Copy may say "rep scheme" inside a prohibition (do not produce…) — require an explicit Do-NOT line instead.
+    expect(organizerSystemPromptMirror).toMatch(/Do NOT produce a workout/i);
   });
 
   it('requires human-in-the-loop for writes', () => {
@@ -140,6 +141,18 @@ describe('parseOrganizerResponse', () => {
   it('tolerates ```json ... ``` fences from the model', () => {
     const raw = '```json\n{"replyContent":"ok"}\n```';
     expect(parseOrganizerResponse(raw)).toEqual({ replyContent: 'ok', proposedWrite: null });
+  });
+
+  it('strips a leading ```json fence when there is no closing fence (partial fence path)', () => {
+    const raw = '```json\n{"replyContent":"ok no closing fence"}';
+    expect(parseOrganizerResponse(raw)).toEqual({
+      replyContent: 'ok no closing fence',
+      proposedWrite: null,
+    });
+  });
+
+  it('returns null when JSON is invalid after stripping', () => {
+    expect(parseOrganizerResponse('```json\nnot-json\n```')).toBeNull();
   });
 
   it('ignores a proposedWrite with unknown kind', () => {

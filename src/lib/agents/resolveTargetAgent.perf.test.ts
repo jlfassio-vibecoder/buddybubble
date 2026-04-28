@@ -33,14 +33,14 @@ describe('resolveTargetAgent perf', () => {
 
     const fillerChunk = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. ';
     let draft = '';
-    // 3 `@` tokens: two misses (FAQ-shaped content) and one real mention near the tail.
+    // 3 `@` tokens: two misses (FAQ-shaped content) and one real @Coach hit (must stay inside the
+    // 500-char window — truncating the tail would drop the mention and return null from the resolver).
     draft += '@NotAnAgent opened a discussion. ';
-    draft += fillerChunk.repeat(4); // ~230 chars
+    draft += 'Hit @Coach early so slice(0,500) cannot remove it. ';
     draft += '@AlsoMissing followed up. ';
-    draft += fillerChunk.repeat(4); // another ~230
-    draft += 'Finally @Coach should you weigh in?';
+    draft += fillerChunk.repeat(8);
 
-    // Pad to exactly 500 chars by trimming trailing filler if needed.
+    // Pad to at least 500 chars, then keep the first 500 (Coach mention is already in-prefix).
     if (draft.length < 500) {
       draft += fillerChunk.repeat(Math.ceil((500 - draft.length) / fillerChunk.length));
     }

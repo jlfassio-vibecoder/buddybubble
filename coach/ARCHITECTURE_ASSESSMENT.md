@@ -15,10 +15,11 @@ The Coach implementation is **substantially more sophisticated than the original
 **Most leverage to invest in (ranked):**
 
 1. **Tests** for the pure parsers and the resolver, plus an integration smoke test for the dispatch state machine. (#7.1)
-2. **Fix the `execution_patch` realtime race** — likely already producing dropped patches in production. (#3.2)
-3. **Extract the Coach prompt and JSON schema into versioned modules** (mirroring `buddyPrompt.ts`) and split the Edge Function by flow mode. (#6.1, #6.3)
-4. **Replace the `agent_create_card_and_reply` “orphan reply” reuse branch** with a more conservative dedupe key, or document its semantics explicitly. (#3.1)
-5. **Server-side Coach-vs-other-agent dispatch guard** (right now only `organizer` is excluded). (#4.1)
+2. **Extract the Coach prompt and JSON schema into versioned modules** (mirroring `buddyPrompt.ts`) and split the Edge Function by flow mode. (#6.1, #6.3)
+3. **Replace the `agent_create_card_and_reply` “orphan reply” reuse branch** with a more conservative dedupe key, or document its semantics explicitly. (#3.1)
+4. **Server-side Coach-vs-other-agent dispatch guard** (right now only `organizer` is excluded). (#4.1)
+
+_Resolved: #3.2 (`execution_patch` on initial RPC insert + rail dedupe) — `20260729120000_agent_rpcs_persist_execution_patch.sql`. Resolved: #5.5 (`tasks.metadata` fallback in `resolveCurrentWorkoutContextJsonFromThread` when history lacks `workoutContext`)._
 
 ---
 
@@ -57,9 +58,13 @@ In `20260531100000_agent_create_card_seed_task_comment.sql` (lines ~73–105), i
   2. Keep the branch but **insert a new reply row** anyway (do not return early); use the orphan reuse only as a hint for `created_task_id`.
   3. At minimum, add a `comment on function` and an explicit log line so this behavior is traceable.
 
-### 3.2 `execution_patch` realtime race (likely live bug)
+### 3.2 `execution_patch` realtime race (likely live bug) — **RESOLVED**
 
-Sequence today (dispatch ~lines 1693–1722):
+**Fix (in repo):** `p_execution_patch` on `agent_create_card_and_reply` / `agent_insert_coach_workout_draft_reply` (`20260729120000_agent_rpcs_persist_execution_patch.sql`); post-insert `mergeExecutionPatchIntoAgentReplyMetadata` removed; `WorkoutCoachRail` only adds the message id to the handled set after a successful patch apply.
+
+_Historical analysis (before the fix):_
+
+Sequence before fix (dispatch ~lines 1693–1722):
 
 1. `agent_create_card_and_reply` **inserts** the agent reply row → realtime broadcasts an `INSERT` with `metadata` that does **not** yet contain `execution_patch`.
 2. Edge Function then **fetches and updates** that row to attach `execution_patch` (`mergeExecutionPatchIntoAgentReplyMetadata`) → realtime broadcasts an `UPDATE`.
@@ -182,11 +187,11 @@ A user spamming `@Coach` produces N Gemini calls, each ~55 s timeout-budgeted, e
 
 Single-shot fetch with `AbortSignal.timeout(55_000)`. A flaky Gemini → user gets the typing-indicator timeout. No DLQ, no replay.
 
-### 5.5 History limit of 50
+### 5.5 History limit of 50 — **RESOLVED**
 
-`loadThreadHistory` fetches at most 50 most-recent messages (dispatch ~line 1369). For long mid-workout threads this can evict the original sentinel’s `workoutContext` (mitigated by “latest-non-empty wins” in `resolveCurrentWorkoutContextJsonFromThread`, but only if a later message also carries the payload).
+**Fix (in repo):** when `knownTargetTaskId` is set, the dispatcher loads `tasks.metadata` and passes it as a third argument to `resolveCurrentWorkoutContextJsonFromThread` so if the 50-row history has no `workoutContext`, **CURRENT WORKOUT CONTEXT** still comes from the live task’s metadata.
 
-- **Remediation:** when in mid-workout mode, prefer pulling the trigger task’s metadata directly rather than relying on the chat scroll-back.
+_Historical note:_ `loadThreadHistory` fetches at most 50 most-recent messages (dispatch ~line 1369). For long mid-workout threads the original sentinel’s `workoutContext` could be evicted; the task-metadata fallback addresses that.
 
 ### 5.6 `messages.metadata` realtime payload size
 
@@ -208,7 +213,6 @@ Single-shot fetch with `AbortSignal.timeout(55_000)`. A flaky Gemini → user ge
 - Mid-workout / new-card / draft-revise branching.
 - Gemini schema, system prompt, parsers.
 - `fetchUserContext` (5-query fitness join).
-- `mergeExecutionPatchIntoAgentReplyMetadata`.
 
 That structure makes prompt iteration risky (one test failure per concern), encourages copy-paste when adding flows, and makes diff review hard.
 
@@ -243,7 +247,7 @@ The base Coach prompt is concatenated string literals across ~25 lines (dispatch
 
 There is no structured emission to Sentry/PostHog/Datadog from the function. Questions like “What % of Coach turns produce a card vs draft vs none?”, “p95 Gemini latency?”, “How often does Layer B fire?” are unanswerable today without log scraping.
 
-- **Remediation:** emit structured events at every branch boundary (`agent.turn.start`, `agent.turn.gemini_done`, `agent.turn.layerb_fired`, `agent.turn.rpc_done`, `agent.turn.execution_patch_merged`) with stable property names.
+- **Remediation:** emit structured events at every branch boundary (`agent.turn.start`, `agent.turn.gemini_done`, `agent.turn.layerb_fired`, `agent.turn.rpc_done`, `agent.turn.execution_patch_on_insert`, etc.) with stable property names.
 
 ---
 
@@ -324,7 +328,7 @@ A pragmatic order, optimized for **risk reduction first, then leverage**.
 
 ### Tier A — do soon (correctness)
 
-1. **Pin the `execution_patch` to the original RPC insert** so realtime delivers a single row event with the patch attached. Removes #3.2.
+1. ~~**Pin the `execution_patch` to the original RPC insert** — done (`20260729120000_…`, rail dedupe).~~
 2. **Make Layer B rewrite `reply_content`** when it overrides `create_card`. Removes the “Here’s your card!” lie. (#3.3)
 3. **Audit `agent_create_card_and_reply` orphan-reply branch.** Either delete it or document semantics + add an integration test. (#3.1)
 4. **Tighten dispatcher slug handling** — only `coach` enters the Coach pipeline; others short-circuit with a clear `skipped` reason. (#4.1)
@@ -357,7 +361,7 @@ A pragmatic order, optimized for **risk reduction first, then leverage**.
 ## 11. Open questions for the team
 
 1. **Is the orphan-reply reuse in `agent_create_card_and_reply` intentional?** It looks like a backfill safety from earlier migrations. If yes, please document; if no, see #3.1.
-2. **Is the `execution_patch` realtime race actually visible in production?** A single-day metric on “patch attached but never applied client-side” would confirm.
+2. ~~**Is the `execution_patch` realtime race actually visible in production?**~~ — addressed in code: patch is on the initial INSERT; validate with a smoke test in staging if needed.
 3. **Will Coach stay the only agent on `bubble-agent-dispatch`?** This determines whether the dispatcher should be renamed/specialized or generalized with per-slug handlers.
 4. **Should drafts auto-supersede when Coach proposes a newer one in the same task?** Today nothing flips an old `pending` draft to `superseded` — two pending drafts in the same task is reachable.
 5. **Should the sentinel’s greeting persist in the timeline?** It currently does (it’s a real `messages` row); this preserves history but also clutters task chats with a Coach greeting per workout open.

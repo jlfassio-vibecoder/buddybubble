@@ -2262,6 +2262,7 @@ export type Database = {
         Args: {
           p_agent_auth_user_id: string;
           p_create_card?: boolean;
+          p_execution_patch?: Json;
           p_invoker_user_id: string;
           p_reply_text: string;
           p_seed_task_comment_text?: string;
@@ -2277,6 +2278,7 @@ export type Database = {
       agent_insert_coach_workout_draft_reply: {
         Args: {
           p_agent_auth_user_id: string;
+          p_execution_patch?: Json;
           p_invoker_user_id: string;
           p_proposed_description?: string;
           p_proposed_metadata?: Json;
