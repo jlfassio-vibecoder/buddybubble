@@ -1,6 +1,6 @@
 # Coach Agent — Architectural Assessment & Gap Analysis
 
-Companion to [`coach/README.md`](./README.md). The README documents **what is**; this document evaluates **how well it holds up** and **where it’s likely to break**. Cited line ranges are approximate but anchored to current symbols/strings.
+Companion to [`README.md`](./README.md). The README documents **what is**; this document evaluates **how well it holds up** and **where it’s likely to break**. Cited line ranges are approximate but anchored to current symbols/strings.
 
 > Scope: the **Coach** flow only — `supabase/functions/bubble-agent-dispatch`, the four Coach surfaces (`ChatArea`, `TaskModalCommentsPanel`, `WorkoutCoachRail`, `WorkoutPlayer`), the three Coach-related RPCs (`agent_create_card_and_reply`, `agent_insert_coach_workout_draft_reply`, `apply_workout_draft`), and the agent-routing layer (`resolveTargetAgent`, `useAgentResponseWait`, `useMessageThread`).
 >
@@ -19,7 +19,7 @@ The Coach implementation is **substantially more sophisticated than the original
 3. **Replace the `agent_create_card_and_reply` “orphan reply” reuse branch** with a more conservative dedupe key, or document its semantics explicitly. (#3.1)
 4. **Server-side Coach-vs-other-agent dispatch guard** (right now only `organizer` is excluded). (#4.1)
 
-_Resolved: #3.2 (`execution_patch` on initial RPC insert + rail dedupe) — `20260729120000_agent_rpcs_persist_execution_patch.sql`. Resolved: #5.5 (`tasks.metadata` fallback in `resolveCurrentWorkoutContextJsonFromThread` when history lacks `workoutContext`)._
+_Resolved: #3.2 (`execution_patch` on initial RPC insert + rail dedupe) — `20260729120000_agent_rpcs_persist_execution_patch.sql`. Resolved: #3.4 metadata-first workout sentinel detection. Resolved: #4.1 strict Coach-only dispatcher guard (`skipped: 'not_handled_by_coach_dispatcher'`). Resolved: #5.5 (`tasks.metadata` fallback in `resolveCurrentWorkoutContextJsonFromThread` when history lacks `workoutContext`). Resolved: task-scoped history loading for live workout rail turns (`target_task_id` before thread fallback)._
 
 ---
 
@@ -41,7 +41,7 @@ These properties are non-trivially right and should not be sacrificed in any rew
 | S10 | **Slack-style threading** is consistent across human + agent inserts (`p_thread_id == coalesce(parent_id, id)`).                                               | both card RPCs                                          |
 | S11 | **Webhook returns HTTP 200 on auth/parse/skip** to avoid Supabase retry storms — explicitly designed and well-commented.                                       | dispatch top of `Deno.serve`                            |
 | S12 | **Client `resolveTargetAgent` is pure and agent-agnostic**, isolating naming/UX changes from the dispatcher.                                                   | `src/lib/agents/resolveTargetAgent.ts`                  |
-| S13 | **Workout sentinel is filtered out of the visible transcript** at the rail layer (`row.content !== WORKOUT_COACH_SENTINEL_EVENT`).                             | `WorkoutCoachRail.tsx`                                  |
+| S13 | **Workout sentinel is metadata-marked and filtered out of the visible transcript**; legacy magic-string rows are still hidden for compatibility.               | `WorkoutCoachRail.tsx`                                  |
 
 ---
 
@@ -89,19 +89,16 @@ When `priorUserMessageCount === 0` or the `session_request_turn_gate` fires, the
 - **Symptom:** user sees Coach claim a card was made; no card appears.
 - **Remediation:** when Layer B overrides, regenerate or adjust `reply_content` (cheap follow-up Gemini call, or static rewrite to a “before I draft, give me one more turn” message).
 
-### 3.4 Sentinel is content-equality-keyed and unguarded server-side
+### 3.4 Sentinel was content-equality-keyed and unguarded server-side — **RESOLVED**
 
-Any user message whose trimmed content **equals** `[SYSTEM_EVENT: WORKOUT_CONTEXT]` enters the greeting branch (dispatch ~line 113). There is:
+**Fix (in repo):** workout-open sentinel detection is metadata-first (`metadata.is_silent_sentinel === true` plus `workout_context.source === 'workout_player'`). The rail sends user-facing content (`Started a workout session.`), filters the metadata-marked row from the visible transcript, and keeps legacy `[SYSTEM_EVENT: WORKOUT_CONTEXT]` support only for old rows.
 
-- No DB constraint preventing this string in `messages.content`.
-- No marker tying the sentinel to the rail (a user pasting the literal string in any fitness bubble triggers a greeting flow).
-- No de-dupe across mounts of the rail beyond the per-mount `sentinelHasFiredRef` — closing/reopening the workout player can produce repeated greetings.
+Remaining gap: there is still no server-side de-dupe across mounts of the rail beyond the per-mount `sentinelHasFiredRef`; closing/reopening the workout player can produce repeated greetings because each sentinel insert has a fresh trigger id.
 
 **Remediation options:**
 
-- Move the marker out of `content` and into a metadata flag (`is_silent_sentinel: true` already exists in the rail’s `metadata`); have the dispatcher detect by metadata, not by content equality.
 - Add a server-side dedupe key per `(target_task_id, user_id, kind: 'workout_open_greeting')` so additional sentinels for the same task are no-ops.
-- Reject inserts of the magic string from non-rail clients (or rewrite to empty content with metadata flag).
+- Eventually drop legacy magic-string detection after old rows are no longer relevant.
 
 ### 3.5 `apply_workout_draft` does a top-level `metadata` merge
 
@@ -127,11 +124,11 @@ No single source of truth and no schema-level CHECK on `messages.metadata->'coac
 
 ## 4. Routing & isolation gaps
 
-### 4.1 Dispatcher only excludes `organizer`
+### 4.1 Dispatcher only excluded `organizer` — **RESOLVED**
 
-`DISPATCHER_EXCLUDED_SLUGS = new Set(['organizer'])` (dispatch ~line 1289). Any **other** non-Coach slug bound to a bubble would be routed through `bubble-agent-dispatch` and answered with the **Coach** prompt — silent semantic drift.
+The dispatcher now only proceeds when the resolved slug is `coach`; otherwise it returns `skipped: 'not_handled_by_coach_dispatcher'`. This avoids future non-Coach bound agents accidentally entering the Coach prompt.
 
-- **Remediation:** invert the rule — only handle `coach`, return `skipped: 'not_handled_by_coach_dispatcher'` otherwise. Or move per-agent handling into a slug-keyed map (`'coach' → coachHandler, 'fitness_coach' → coachHandler, …`).
+- **Future option:** if the shared dispatcher grows again, move per-agent handling into a slug-keyed map (`'coach' → coachHandler, 'fitness_coach' → coachHandler, …`).
 
 ### 4.2 Two regex implementations of “first @mention wins”
 
@@ -191,7 +188,7 @@ Single-shot fetch with `AbortSignal.timeout(55_000)`. A flaky Gemini → user ge
 
 **Fix (in repo):** when `knownTargetTaskId` is set, the dispatcher loads `tasks.metadata` and passes it as a third argument to `resolveCurrentWorkoutContextJsonFromThread` so if the 50-row history has no `workoutContext`, **CURRENT WORKOUT CONTEXT** still comes from the live task’s metadata.
 
-_Historical note:_ `loadThreadHistory` fetches at most 50 most-recent messages (dispatch ~line 1369). For long mid-workout threads the original sentinel’s `workoutContext` could be evicted; the task-metadata fallback addresses that.
+_Historical note:_ `loadThreadHistory` fetches at most 50 most-recent messages. For long mid-workout threads the original sentinel’s `workoutContext` could be evicted; the task-metadata fallback addresses that. For live workout rail messages, history loading is now task-scoped by `target_task_id` before falling back to Slack-style thread history, so Gemini sees the same workout-task conversation the user sees.
 
 ### 5.6 `messages.metadata` realtime payload size
 
@@ -332,7 +329,7 @@ A pragmatic order, optimized for **risk reduction first, then leverage**.
 2. **Make Layer B rewrite `reply_content`** when it overrides `create_card`. Removes the “Here’s your card!” lie. (#3.3)
 3. **Audit `agent_create_card_and_reply` orphan-reply branch.** Either delete it or document semantics + add an integration test. (#3.1)
 4. **Tighten dispatcher slug handling** — only `coach` enters the Coach pipeline; others short-circuit with a clear `skipped` reason. (#4.1)
-5. **Move sentinel detection from content-equality to a metadata flag.** Reject content equality from non-rail callers. (#3.4)
+5. **Add server-side dedupe for workout-open sentinel greetings.** Metadata detection is fixed; repeat greetings on rail remount remain possible. (#3.4)
 
 ### Tier B — do next (maintainability)
 
