@@ -503,6 +503,7 @@ export function WorkoutPlayer({
   const [mobileUnifiedPane, setMobileUnifiedPane] = useState<'workout' | 'coach'>('workout');
   const [activeLogTaskId, setActiveLogTaskId] = useState<string | null>(null);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inFlightAutosaveRef = useRef<Promise<void> | null>(null);
   const activeLogTaskIdRef = useRef<string | null>(null);
   const profileId = useUserProfileStore((s) => s.profile?.id);
 
@@ -579,6 +580,7 @@ export function WorkoutPlayer({
       const { data: draft, error } = await supabase
         .from('tasks')
         .select('id, metadata')
+        .eq('bubble_id', bubbleId)
         .eq('item_type', 'workout_log')
         .eq('status', 'in_progress')
         .eq('metadata->>source_task_id', sourceTaskId)
@@ -617,7 +619,7 @@ export function WorkoutPlayer({
     return () => {
       cancelled = true;
     };
-  }, [open, sourceTaskId, exercisesStringDigest, exercises]);
+  }, [open, sourceTaskId, exercisesStringDigest, exercises, bubbleId]);
 
   // Debounced cloud autosave of in-progress draft_logs (2s) — no UI spinner.
   useEffect(() => {
@@ -631,7 +633,7 @@ export function WorkoutPlayer({
 
     saveTimeoutRef.current = setTimeout(() => {
       saveTimeoutRef.current = null;
-      void (async () => {
+      const p = (async () => {
         const supabase = createClient();
         const meta = buildDraftMetadata(sourceTaskId, logs, class_instance_id);
 
@@ -664,6 +666,10 @@ export function WorkoutPlayer({
           if (error) console.error('workout draft autosave update failed', error);
         }
       })();
+      inFlightAutosaveRef.current = p;
+      void p.finally(() => {
+        if (inFlightAutosaveRef.current === p) inFlightAutosaveRef.current = null;
+      });
     }, AUTOSAVE_MS);
 
     return () => {
@@ -755,6 +761,13 @@ export function WorkoutPlayer({
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
       saveTimeoutRef.current = null;
+    }
+    if (inFlightAutosaveRef.current) {
+      try {
+        await inFlightAutosaveRef.current;
+      } catch {
+        // Autosave path already logs; continue finalizing the workout log.
+      }
     }
 
     setSaving(true);

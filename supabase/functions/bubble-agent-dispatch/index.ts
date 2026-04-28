@@ -1419,16 +1419,21 @@ Deno.serve(async (req) => {
   let historyErr: { message: string } | null = null;
 
   const loadThreadHistory = async () => {
-    const { data, error } = await supabase
+    let query = supabase
       .from('messages')
       .select(
         'id, user_id, content, created_at, parent_id, target_task_id, attached_task_id, metadata',
       )
       .eq('bubble_id', record.bubble_id)
-      .or(`parent_id.eq.${threadId},id.eq.${threadId}`)
-      .neq('id', record.id)
-      .order('created_at', { ascending: false })
-      .limit(50);
+      .neq('id', record.id);
+
+    if (record.target_task_id) {
+      query = query.eq('target_task_id', record.target_task_id);
+    } else {
+      query = query.or(`parent_id.eq.${threadId},id.eq.${threadId}`);
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false }).limit(50);
     historyRows = (data ?? []) as HistoryRow[];
     historyErr = error ? { message: error.message } : null;
   };
@@ -1562,9 +1567,8 @@ Deno.serve(async (req) => {
     'Set session_request true when the user wants a workout or session planned for today or soon; false otherwise. The server uses this for turn gating—be honest. ' +
     'Align intake_phase, session_readiness_score, and missing_intake_categories with your judgment (e.g. clarifying_session while collecting readiness; pre_draft_confirmation when asking for the final green light before drafting; ready_to_prescribe when you are actually outputting the card or structured draft in this same response). ' +
     'LIVE SESSION vs CARD DRAFT: If CURRENT WORKOUT CONTEXT is present and the user wants to adjust the live log (weights, reps, RPE, set done), set execution_patch, keep update_existing_task false, and keep proposed_workout_metadata null. Use update_existing_task and proposed_workout_metadata only when the user explicitly wants a permanent rewrite of the task or card (e.g. restructure the whole program or replace the written workout in the task). ' +
-    'After you output a non-empty execution_patch for an exercise, your reply should briefly check whether the user is ready to move to the next exercise when that fits the flow. ' +
     "EXECUTION PATCH (live player): When CURRENT WORKOUT CONTEXT is present and the user mentions specific equipment (e.g. 'I have 60lb kettlebells') or asks for specific changes to the current workout session (workoutContext JSON under CURRENT WORKOUT CONTEXT), you MUST compute the appropriate weights, reps, RPE, and/or set completion and include them in the execution_patch field. " +
-    'Do not only describe numbers in reply_content; you must also provide the JSON execution_patch so the app can update the live grid. You may list multiple sets and multiple exercises in one patch. String fields (weight, reps, rpe) are plain text for display in inputs (e.g. "60", "8-10"). Set execution_patch to null when you are not changing the live log. ' +
+    'Do not only describe numbers in reply_content; you must also provide the JSON execution_patch so the app can update the live grid. You may list multiple sets and multiple exercises in one patch. String fields (weight, reps, rpe) must be pure numeric strings only, with no ranges, units, or extra text (e.g. "60", "8", "7.5"). Set execution_patch to null when you are not changing the live log. ' +
     'Return ONLY a raw JSON object (no markdown, no code fences) with keys: reply_content, create_card, task_title, task_description, update_existing_task, updated_task_title, updated_task_description, proposed_workout_metadata, execution_patch, intake_phase, session_readiness_score, missing_intake_categories, user_requested_immediate_card, session_request, coach_task_notes. ' +
     'You MUST respond in valid JSON matching the provided schema. Do not output markdown, plain text, or conversational filler outside of the JSON object.';
 

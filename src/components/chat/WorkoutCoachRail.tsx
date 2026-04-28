@@ -221,8 +221,6 @@ export function WorkoutCoachRail({
       },
     },
   });
-  const waitMainRegisterIntent = waitMain.registerIntent;
-  const waitMainRegisterSuccessfulSend = waitMain.registerSuccessfulSend;
   const waitMainClear = waitMain.clear;
 
   // Latest value for the one-shot sentinel — avoids effect deps on `sendMessage` identity churn.
@@ -248,13 +246,12 @@ export function WorkoutCoachRail({
     if (!bubbleRow) return;
     if (isLoading) return;
     if (sentinelHasFiredRef.current) return;
-    const coachAgent = availableAgents.find((a) => a.slug === 'coach');
-    if (!coachAgent) return;
+    const hasCoachAgent = availableAgents.some((a) => a.slug === 'coach');
+    if (!hasCoachAgent) return;
 
     const workoutContext = resolveWorkoutContextForSentinel(workoutData, workoutTitle);
 
     sentinelHasFiredRef.current = true;
-    waitMainRegisterIntent(coachAgent);
 
     const metadata: Json = {
       [MESSAGE_METADATA_DEFAULT_AGENT_SLUG_KEY]: CHAT_AREA_DEFAULT_AGENT_SLUG,
@@ -273,15 +270,9 @@ export function WorkoutCoachRail({
 
     void (async () => {
       try {
-        const sentMsg = await sendMessageRef.current(
-          WORKOUT_COACH_SENTINEL_DISPLAY_TEXT,
-          undefined,
-          undefined,
-          { metadata },
-        );
-        if (sentMsg) {
-          waitMainRegisterSuccessfulSend(sentMsg, coachAgent);
-        }
+        await sendMessageRef.current(WORKOUT_COACH_SENTINEL_DISPLAY_TEXT, undefined, undefined, {
+          metadata,
+        });
       } catch {
         // Strict once-per-mount: do not retry (avoids tight failure loops / egress spikes).
         waitMainClear();
@@ -301,13 +292,11 @@ export function WorkoutCoachRail({
     workoutTitle,
     workspaceId,
     waitMainClear,
-    waitMainRegisterIntent,
-    waitMainRegisterSuccessfulSend,
   ]);
 
-  // `execution_patch` is present on the agent reply row at INSERT (no follow-up UPDATE). We only
-  // add the message id to the dedupe Set after a successful parse + apply so a first INSERT
-  // without a patch (or a parse error) is not marked handled and can be re-tried on re-render.
+  // `execution_patch` is present on the agent reply row at INSERT (no follow-up UPDATE). We mark
+  // a message id handled only after a successful parse: no patch (done) or patch applied. Parse
+  // throws are not marked so a transient error can be retried on a later render.
   useEffect(() => {
     if (isLoading) return;
     if (messages.length === 0) return;
@@ -318,7 +307,6 @@ export function WorkoutCoachRail({
     if (!coachAuthUserId) return;
     if (last.user_id !== coachAuthUserId) return;
     if (coachExecutionHandledMessageIdsRef.current.has(last.id)) return;
-    coachExecutionHandledMessageIdsRef.current.add(last.id);
     const meta = last.metadata;
     const raw =
       meta != null && typeof meta === 'object' && !Array.isArray(meta)
@@ -331,9 +319,11 @@ export function WorkoutCoachRail({
       return;
     }
     if (!patch) {
+      coachExecutionHandledMessageIdsRef.current.add(last.id);
       return;
     }
     onApplyExecutionPatch(patch);
+    coachExecutionHandledMessageIdsRef.current.add(last.id);
   }, [availableAgents, isLoading, messages, onApplyExecutionPatch]);
 
   const bubbleName = bubbleRow?.name ?? 'Coach';
