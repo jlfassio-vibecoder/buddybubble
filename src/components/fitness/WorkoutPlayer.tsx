@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import {
   AlignLeft,
@@ -79,6 +79,44 @@ function makeSets(ex: WorkoutExercise): SetDraft[] {
     done: false,
   }));
 }
+
+function isSetDraftMatrix(raw: unknown): raw is SetDraft[][] {
+  if (!Array.isArray(raw)) return false;
+  for (const row of raw) {
+    if (!Array.isArray(row)) return false;
+    for (const cell of row) {
+      if (cell == null || typeof cell !== 'object' || Array.isArray(cell)) return false;
+      const c = cell as Record<string, unknown>;
+      if (
+        typeof c.weight !== 'string' ||
+        typeof c.reps !== 'string' ||
+        typeof c.rpe !== 'string' ||
+        typeof c.done !== 'boolean'
+      ) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function logsEqualTemplate(logs: SetDraft[][], exercises: WorkoutExercise[]): boolean {
+  return JSON.stringify(logs) === JSON.stringify(exercises.map(makeSets));
+}
+
+function buildDraftMetadata(
+  sourceTaskId: string,
+  logs: SetDraft[][],
+  classInstanceId: string | null,
+): Json {
+  return {
+    source_task_id: sourceTaskId,
+    draft_logs: logs,
+    ...(classInstanceId ? { class_instance_id: classInstanceId } : {}),
+  };
+}
+
+const AUTOSAVE_MS = 2000;
 
 function trimNonEmpty(s: string | undefined): string | null {
   const t = typeof s === 'string' ? s.trim() : '';
@@ -463,7 +501,14 @@ export function WorkoutPlayer({
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('metric');
   const [resolvedMode, setResolvedMode] = useState<'desktop' | 'mobile'>('desktop');
   const [mobileUnifiedPane, setMobileUnifiedPane] = useState<'workout' | 'coach'>('workout');
+  const [activeLogTaskId, setActiveLogTaskId] = useState<string | null>(null);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeLogTaskIdRef = useRef<string | null>(null);
   const profileId = useUserProfileStore((s) => s.profile?.id);
+
+  useEffect(() => {
+    activeLogTaskIdRef.current = activeLogTaskId;
+  }, [activeLogTaskId]);
 
   const metadataDigest = useMemo(() => JSON.stringify(metadata ?? null), [metadata]);
   const exercises = useMemo(() => {
@@ -512,15 +557,132 @@ export function WorkoutPlayer({
       });
   }, [profileId, workspaceId]);
 
-  // Reset when player opens or when task / exercise content identity changes (not array ref churn).
+  // Reset / recover draft when player opens or when task / exercise content identity changes.
   useEffect(() => {
     if (!open) return;
-    setLogs(exercises.map(makeSets));
+    let cancelled = false;
     setView('simple');
     setElapsed(0);
     setSaving(false);
     setMobileUnifiedPane('workout');
-  }, [open, sourceTaskId, exercisesStringDigest]);
+
+    const recover = async () => {
+      if (!sourceTaskId) {
+        if (!cancelled) {
+          setLogs(exercises.map(makeSets));
+          setActiveLogTaskId(null);
+        }
+        return;
+      }
+
+      const supabase = createClient();
+      const { data: draft, error } = await supabase
+        .from('tasks')
+        .select('id, metadata')
+        .eq('item_type', 'workout_log')
+        .eq('status', 'in_progress')
+        .eq('metadata->>source_task_id', sourceTaskId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (cancelled) return;
+
+      if (error) {
+        console.error('workout draft recovery failed', error);
+        setLogs(exercises.map(makeSets));
+        setActiveLogTaskId(null);
+        return;
+      }
+
+      if (draft?.id) {
+        const meta = draft.metadata;
+        const raw =
+          meta && typeof meta === 'object' && !Array.isArray(meta)
+            ? (meta as { draft_logs?: unknown }).draft_logs
+            : undefined;
+        if (isSetDraftMatrix(raw) && raw.length === exercises.length) {
+          setLogs(raw);
+          setActiveLogTaskId(draft.id);
+          return;
+        }
+      }
+
+      setLogs(exercises.map(makeSets));
+      setActiveLogTaskId(null);
+    };
+
+    void recover();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, sourceTaskId, exercisesStringDigest, exercises]);
+
+  // Debounced cloud autosave of in-progress draft_logs (2s) — no UI spinner.
+  useEffect(() => {
+    if (!open || !sourceTaskId || logs.length === 0) return;
+    if (!activeLogTaskId && logsEqualTemplate(logs, exercises)) return;
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+
+    saveTimeoutRef.current = setTimeout(() => {
+      saveTimeoutRef.current = null;
+      void (async () => {
+        const supabase = createClient();
+        const meta = buildDraftMetadata(sourceTaskId, logs, class_instance_id);
+
+        const currentDraftId = activeLogTaskIdRef.current;
+        if (!currentDraftId) {
+          const { data, error } = await supabase
+            .from('tasks')
+            .insert({
+              bubble_id: bubbleId,
+              title: `${workoutTitle} — Log`,
+              item_type: 'workout_log',
+              status: 'in_progress',
+              metadata: meta,
+            })
+            .select('id')
+            .maybeSingle();
+          if (error) {
+            console.error('workout draft autosave insert failed', error);
+            return;
+          }
+          if (data?.id) {
+            activeLogTaskIdRef.current = data.id;
+            setActiveLogTaskId(data.id);
+          }
+        } else {
+          const { error } = await supabase
+            .from('tasks')
+            .update({ metadata: meta })
+            .eq('id', currentDraftId);
+          if (error) console.error('workout draft autosave update failed', error);
+        }
+      })();
+    }, AUTOSAVE_MS);
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+      }
+    };
+  }, [
+    logs,
+    open,
+    activeLogTaskId,
+    sourceTaskId,
+    workoutTitle,
+    bubbleId,
+    class_instance_id,
+    exercisesStringDigest,
+    exercises,
+  ]);
 
   // Elapsed timer
   useEffect(() => {
@@ -590,6 +752,11 @@ export function WorkoutPlayer({
   }, []);
 
   const handleFinish = useCallback(async () => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+
     setSaving(true);
     const supabase = createClient();
 
@@ -664,11 +831,14 @@ export function WorkoutPlayer({
       }
     }
 
-    const workoutLogTask = {
-      bubble_id: bubbleId,
-      title: `${workoutTitle} — Log`,
-      item_type: 'workout_log' as const,
-      status: 'completed' as const,
+    const finalMetadata: Json = {
+      ...(sourceTaskId ? { source_task_id: sourceTaskId } : {}),
+      ...(durationMins > 0 ? { duration_min: durationMins } : {}),
+      exercises: exercisePayload,
+      ...(class_instance_id ? { class_instance_id } : {}),
+    };
+
+    const programFields = {
       ...(sourceRow?.program_id != null ? { program_id: sourceRow.program_id } : {}),
       ...(sourceRow?.program_session_key != null
         ? { program_session_key: sourceRow.program_session_key }
@@ -676,11 +846,62 @@ export function WorkoutPlayer({
       ...(sourceRow?.scheduled_on != null ? { scheduled_on: sourceRow.scheduled_on } : {}),
       ...(sourceRow?.scheduled_time != null ? { scheduled_time: sourceRow.scheduled_time } : {}),
       ...(sourceRow?.visibility != null ? { visibility: sourceRow.visibility } : {}),
-      metadata: {
-        ...(durationMins > 0 ? { duration_min: durationMins } : {}),
-        exercises: exercisePayload,
-        ...(class_instance_id ? { class_instance_id } : {}),
-      },
+    } as const;
+
+    const syncAssignees = async (taskId: string) => {
+      if (sourceAssigneeUserIds.length === 0) return true;
+      const { error: syncErr } = await replaceTaskAssigneesWithUserIds(
+        supabase,
+        taskId,
+        sourceAssigneeUserIds,
+      );
+      if (syncErr) {
+        console.error('Failed to sync workout log assignees', syncErr);
+        toast.error(
+          typeof syncErr === 'string' && syncErr.trim() ? syncErr : 'Failed to sync assignees.',
+        );
+        return false;
+      }
+      return true;
+    };
+
+    if (activeLogTaskId) {
+      const { error: updateError } = await supabase
+        .from('tasks')
+        .update({
+          status: 'completed',
+          ...programFields,
+          metadata: finalMetadata,
+        })
+        .eq('id', activeLogTaskId);
+
+      if (updateError) {
+        console.error('Failed to finalize workout log', updateError);
+        toast.error(formatUserFacingError(updateError));
+        setSaving(false);
+        return;
+      }
+
+      if (!(await syncAssignees(activeLogTaskId))) {
+        setSaving(false);
+        return;
+      }
+
+      setActiveLogTaskId(null);
+      activeLogTaskIdRef.current = null;
+      setSaving(false);
+      onComplete?.();
+      onClose();
+      return;
+    }
+
+    const workoutLogTask = {
+      bubble_id: bubbleId,
+      title: `${workoutTitle} — Log`,
+      item_type: 'workout_log' as const,
+      status: 'completed' as const,
+      ...programFields,
+      metadata: finalMetadata,
     };
 
     const { data: insertedLog, error: insertError } = await supabase
@@ -696,20 +917,9 @@ export function WorkoutPlayer({
       return;
     }
 
-    if (sourceAssigneeUserIds.length > 0) {
-      const { error: syncErr } = await replaceTaskAssigneesWithUserIds(
-        supabase,
-        insertedLog.id,
-        sourceAssigneeUserIds,
-      );
-      if (syncErr) {
-        console.error('Failed to sync workout log assignees', syncErr);
-        toast.error(
-          typeof syncErr === 'string' && syncErr.trim() ? syncErr : 'Failed to sync assignees.',
-        );
-        setSaving(false);
-        return;
-      }
+    if (!(await syncAssignees(insertedLog.id))) {
+      setSaving(false);
+      return;
     }
 
     setSaving(false);
@@ -723,6 +933,7 @@ export function WorkoutPlayer({
     workoutTitle,
     sourceTaskId,
     class_instance_id,
+    activeLogTaskId,
     onComplete,
     onClose,
   ]);

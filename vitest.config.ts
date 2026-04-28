@@ -12,5 +12,18 @@ export default defineConfig({
     // happy-dom provides File/Blob and other browser globals used by attachment tests (Node alone does not).
     environment: 'happy-dom',
     include: ['src/**/*.test.{ts,tsx}'],
+    coverage: {
+      provider: 'v8',
+      /** Scope: agent-routing pure modules (unit-tested). Widen as more areas get Vitest coverage. */
+      include: ['src/lib/agents/**/*.ts'],
+      exclude: ['**/*.test.ts', '**/*.test.tsx'],
+      reportOnFailure: true,
+      thresholds: {
+        statements: 80,
+        branches: 80,
+        functions: 80,
+        lines: 80,
+      },
+    },
   },
 });

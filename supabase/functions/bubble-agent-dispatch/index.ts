@@ -2,7 +2,7 @@
  * Supabase Edge Function: Database Webhook handler for Bubble Agents.
  * Calls Gemini, then inserts an agent reply via public.agent_create_card_and_reply and/or
  * public.agent_insert_coach_workout_draft_reply (service_role) when revising an existing workout card (draft → user finalizes via apply_workout_draft).
- * Coach may return `execution_patch` in JSON; it is merged onto the reply `messages.metadata` for the live player.
+ * Coach may return `execution_patch` in JSON; it is persisted on the agent reply `messages.metadata` in the same RPC INSERT.
  * Resolves agent by @mention on root messages, optional `messages.metadata.default_agent_slug`
  * (client default, e.g. WorkoutCoachRail), or by thread continuation when `parent_id` is set.
  *
@@ -73,6 +73,8 @@ type AgentCreateCardRpcArgs = {
   p_task_description?: string | null;
   /** Optional first task-scoped message (`messages.target_task_id`) after card insert. */
   p_seed_task_comment_text?: string | null;
+  /** Live player grid updates; stored in `messages.metadata.execution_patch` on insert. */
+  p_execution_patch?: unknown;
 };
 
 type AgentInsertCoachDraftRpcArgs = {
@@ -85,6 +87,8 @@ type AgentInsertCoachDraftRpcArgs = {
   p_proposed_title: string | null;
   p_proposed_description: string | null;
   p_proposed_metadata: Record<string, unknown>;
+  /** Merged with `coach_draft` on the same reply row. */
+  p_execution_patch?: unknown;
 };
 
 /** Max length for coach seed comment passed to Postgres (RPC). */
@@ -104,15 +108,31 @@ function parseRootDefaultAgentSlug(record: MessageRecord): string | null {
   return t.length > 0 ? t : null;
 }
 
-/** Keep in sync with `WORKOUT_COACH_SENTINEL_EVENT` in `src/components/chat/WorkoutCoachRail.tsx`. */
-const WORKOUT_COACH_SENTINEL_EVENT = '[SYSTEM_EVENT: WORKOUT_CONTEXT]';
 const WORKOUT_CONTEXT_JSON_PROMPT_CAP = 16_000;
 /** Keep in sync with `MESSAGE_METADATA_WORKOUT_TASK_TITLE_KEY` in `WorkoutCoachRail.tsx`. */
 const WORKOUT_OPEN_GREETING_METADATA_TITLE_KEY = 'workout_task_title';
 
+/**
+ * Workout open sentinel: source of truth is `metadata.is_silent_sentinel` + `workout_context.source`.
+ * Legacy content-based rows may still exist in thread history until backfilled.
+ */
 function isWorkoutContextSentinel(record: MessageRecord): boolean {
-  const c = record.content;
-  return typeof c === 'string' && c.trim() === WORKOUT_COACH_SENTINEL_EVENT;
+  const m = asMetadataObject(record);
+  if (m.is_silent_sentinel !== true) return false;
+  const wctx = m.workout_context;
+  if (wctx == null || typeof wctx !== 'object' || Array.isArray(wctx)) return false;
+  const src = (wctx as Record<string, unknown>).source;
+  return src === 'workout_player';
+}
+
+/** Exclude sentinel from Gemini history: metadata (new) or legacy magic string (old rows). */
+function shouldExcludeWorkoutSentinelFromHistory(row: {
+  content?: string | null;
+  metadata?: unknown;
+}): boolean {
+  if (isWorkoutContextSentinel(row as MessageRecord)) return true;
+  const c = row.content;
+  return typeof c === 'string' && c.trim() === '[SYSTEM_EVENT: WORKOUT_CONTEXT]';
 }
 
 function asMetadataObject(record: MessageRecord): Record<string, unknown> {
@@ -159,10 +179,13 @@ function extractRawWorkoutContextFromMetadata(meta: unknown): unknown | null {
 /**
  * Latest chronologically wins: walk oldest→newest rows, then trigger metadata (e.g. user follow-up
  * without payload still keeps prior best from sentinel in history).
+ * If no message in the 50-row history contains `workoutContext` (e.g. sentinel evicted), use
+ * `taskMetadataFallback` (typically `tasks.metadata` for the active workout task) so mid-workout context is never lost.
  */
 function resolveCurrentWorkoutContextJsonFromThread(
   rowsChronologicalOldestFirst: Array<{ metadata?: unknown }>,
   trigger: MessageRecord,
+  taskMetadataFallback: unknown | null,
 ): string | null {
   let best: unknown | null = null;
   for (const r of rowsChronologicalOldestFirst) {
@@ -171,13 +194,28 @@ function resolveCurrentWorkoutContextJsonFromThread(
   }
   const fromTrigger = extractRawWorkoutContextFromMetadata(trigger.metadata);
   if (fromTrigger != null && isNonEmptyWorkoutPayload(fromTrigger)) best = fromTrigger;
+  if (
+    best == null &&
+    taskMetadataFallback != null &&
+    typeof taskMetadataFallback === 'object' &&
+    !Array.isArray(taskMetadataFallback) &&
+    isNonEmptyWorkoutPayload(taskMetadataFallback)
+  ) {
+    best = taskMetadataFallback;
+  }
   if (best == null) return null;
   const s = stringifyWorkoutContextForPrompt(best);
   return s.length > 0 ? s : null;
 }
 
 const MID_WORKOUT_SUPPORT_MODE_DIRECTIVE =
-  "If 'CURRENT WORKOUT CONTEXT' is provided below, you are in Mid-Workout Support Mode. Your primary job is to guide the user through THIS specific workout, modify weights or reps for THIS workout, or answer form and execution questions about THIS workout. DO NOT generate a brand new workout or prescribe a replacement program unless the user explicitly asks to completely replace the current session.";
+  "If 'CURRENT WORKOUT CONTEXT' is provided below, you are in Mid-Workout Support Mode. Your primary job is to guide the user through THIS specific workout, modify weights or reps for THIS workout, or answer form and execution questions about THIS workout. DO NOT generate a brand new workout or prescribe a replacement program unless the user explicitly asks to completely replace the current session. " +
+  "If 'CURRENT TASK CONTEXT' also appears below, ignore PRE-DRAFT CONFIRMATION from that block for live load adjustments: mid-workout weight, rep, or RPE changes are execution_patch only (keep update_existing_task false) unless the user clearly asks to permanently change the task or card. ";
+
+/** When CURRENT WORKOUT CONTEXT is present, the user is in active execution (live session), not planning a future workout. Server also clamps JSON output deterministically. */
+const ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE =
+  'EXECUTION STATE (CRITICAL): The member is in an active workout right now. You MUST set create_card to false, task_title, task_description, and coach_task_notes to null, update_existing_task to false, and proposed_workout_metadata to null. Do not describe or claim you are creating a new Kanban workout card. For live set adjustments (load, reps, RPE, done), use execution_patch only. ' +
+  'If the user asks a general coaching question, answer in reply_content without card fields.';
 
 function ensureCoachTaskNotesCta(notes: string | null): string | null {
   if (!notes) return null;
@@ -453,6 +491,18 @@ function parseCoachTaskNotes(raw: unknown): string | null {
   return t.slice(0, COACH_TASK_NOTES_MAX_CHARS - 3) + '...';
 }
 
+/**
+ * Extract the first valid numeric sequence (optional decimal) from a string.
+ * Returns null if no valid token or not parseable; does not throw.
+ */
+function sanitizeNumericString(raw: string): string | null {
+  const match = raw.match(/[0-9]+(?:\.[0-9]+)?/);
+  if (!match) return null;
+  const n = Number(match[0]);
+  if (!Number.isFinite(n)) return null;
+  return match[0];
+}
+
 function parseExecutionPatchFromGemini(raw: unknown): CoachGeminiJsonResponse['execution_patch'] {
   try {
     if (raw == null) return null;
@@ -470,16 +520,23 @@ function parseExecutionPatchFromGemini(raw: unknown): CoachGeminiJsonResponse['e
         setIndex: st,
       };
       if (o.weight !== undefined) {
-        if (typeof o.weight !== 'string') return null;
-        item.weight = o.weight;
+        if (typeof o.weight === 'string') {
+          const s = sanitizeNumericString(o.weight);
+          if (s !== null) item.weight = s;
+        }
+        // non-string or sanitize failure: omit field, do not drop the whole patch
       }
       if (o.reps !== undefined) {
-        if (typeof o.reps !== 'string') return null;
-        item.reps = o.reps;
+        if (typeof o.reps === 'string') {
+          const s = sanitizeNumericString(o.reps);
+          if (s !== null) item.reps = s;
+        }
       }
       if (o.rpe !== undefined) {
-        if (typeof o.rpe !== 'string') return null;
-        item.rpe = o.rpe;
+        if (typeof o.rpe === 'string') {
+          const s = sanitizeNumericString(o.rpe);
+          if (s !== null) item.rpe = s;
+        }
       }
       if (o.done !== undefined) {
         if (typeof o.done !== 'boolean') return null;
@@ -590,44 +647,39 @@ function parseGeminiJsonText(text: string): CoachGeminiJsonResponse {
   };
 }
 
-/** Merges `execution_patch` onto the agent reply row so the client can apply live player updates. */
-async function mergeExecutionPatchIntoAgentReplyMetadata(
-  supabase: ReturnType<typeof createClient>,
-  rpcResult: unknown,
-  patch: NonNullable<CoachGeminiJsonResponse['execution_patch']>,
-) {
-  try {
-    if (patch == null || patch.length === 0) return;
-    if (!rpcResult || typeof rpcResult !== 'object') return;
-    const rid = (rpcResult as { reply_message_id?: unknown }).reply_message_id;
-    if (typeof rid !== 'string' || !isUuidString(rid)) return;
+function executionPatchForRpc(patch: CoachGeminiJsonResponse['execution_patch']): unknown | null {
+  if (patch == null || patch.length === 0) return null;
+  return patch;
+}
 
-    const { data: row, error: fetchErr } = await supabase
-      .from('messages')
-      .select('metadata')
-      .eq('id', rid)
-      .maybeSingle();
+/**
+ * Concatenate every `text` part in the first candidate (JSON mode is usually one part; multi-part avoids silent truncation).
+ */
+function extractGeminiText(
+  candidate:
+    | {
+        content?: { parts?: Array<{ text?: string }> };
+      }
+    | undefined,
+): string {
+  const parts = candidate?.content?.parts;
+  if (!Array.isArray(parts)) return '';
+  return parts.map((p) => (typeof p?.text === 'string' ? p.text : '')).join('');
+}
 
-    if (fetchErr) {
-      console.error('[bubble-agent-dispatch] execution_patch metadata fetch', fetchErr.message);
-      return;
-    }
-    const existing = row?.metadata;
-    const meta: Record<string, unknown> =
-      existing != null && typeof existing === 'object' && !Array.isArray(existing)
-        ? { ...(existing as Record<string, unknown>) }
-        : {};
-    meta.execution_patch = patch;
-    const { error: upErr } = await supabase
-      .from('messages')
-      .update({ metadata: meta })
-      .eq('id', rid);
-    if (upErr) {
-      console.error('[bubble-agent-dispatch] execution_patch metadata update', upErr.message);
-    }
-  } catch (e) {
-    console.error('[bubble-agent-dispatch] execution_patch metadata_merge_caught', String(e));
+/**
+ * True when the error came from the Gemini generate/parse path; used to insert a safe user-visible reply instead of only 500.
+ */
+function isGeminiRelatedDispatchError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (msg === 'gemini_json_parse_failed') return true;
+  if (msg === 'gemini_invalid_json_shape') return true;
+  if (msg === 'gemini_empty_response') return true;
+  if (msg.startsWith('gemini_http_')) return true;
+  if (e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')) {
+    return true;
   }
+  return false;
 }
 
 async function geminiGenerateJson(args: {
@@ -679,7 +731,7 @@ async function geminiGenerateJson(args: {
             type: 'STRING',
             enum: [...INTAKE_PHASES],
             description:
-              'Conversation stage: greeting; clarifying_session while collecting readiness; pre_draft_confirmation when asking for final green light before drafting (create_card false, proposed_workout_metadata null); ready_to_prescribe when this response actually creates the card or outputs the structured draft; other.',
+              'Conversation stage: greeting; clarifying_session while collecting readiness; pre_draft_confirmation when asking for final green light before drafting (create_card false, proposed_workout_metadata null); ready_to_prescribe when this response actually creates the card or outputs the structured draft; other. For live mid-workout execution help only (execution_patch, no card draft), do not use pre_draft_confirmation; use clarifying_session or other as appropriate.',
           },
           session_readiness_score: {
             type: 'INTEGER',
@@ -714,7 +766,7 @@ async function geminiGenerateJson(args: {
           update_existing_task: {
             type: 'BOOLEAN',
             description:
-              'TRUE when CURRENT TASK CONTEXT applies AND the user has confirmed drafting/revising OR user_requested_immediate_card—not on pre_draft_confirmation-only turns. Provide updated_task_title and/or updated_task_description and/or proposed_workout_metadata (at least one non-empty) when true. Set FALSE when creating a NEW card (create_card) or when only asking for pre-draft confirmation. Never invent task IDs — the server resolves the task.',
+              'TRUE for card/task rewrites and draft flows when the user has confirmed (or user_requested_immediate_card)—not for mid-workout log tweaks. Mid-workout weight, rep, or RPE changes use execution_patch with this field FALSE. Provide updated_task_title and/or updated_task_description and/or proposed_workout_metadata (at least one non-empty) when true. Set FALSE when creating a NEW card (create_card), when only asking for pre-draft confirmation, or when only updating the live player via execution_patch. Never invent task IDs — the server resolves the task.',
           },
           updated_task_title: {
             type: 'STRING',
@@ -733,7 +785,7 @@ async function geminiGenerateJson(args: {
             type: 'OBJECT',
             nullable: true,
             description:
-              'When update_existing_task is true: structured workout fields to merge into tasks.metadata on user finalize (exercises array with name, sets, reps; workout_type; duration_min). MUST be null on pre_draft_confirmation turns and until the user confirms drafting or user_requested_immediate_card. Use null if only updating title/description text.',
+              'When update_existing_task is true: structured workout fields to merge into tasks.metadata on user finalize (exercises array with name, sets, reps; workout_type; duration_min). MUST be null on pre_draft_confirmation turns and until the user confirms drafting or user_requested_immediate_card. MUST be null when you are only updating the live grid via execution_patch (use execution_patch, not this object). Use null if only updating title/description text.',
             properties: {
               exercises: {
                 type: 'ARRAY',
@@ -756,7 +808,7 @@ async function geminiGenerateJson(args: {
             type: 'ARRAY',
             nullable: true,
             description:
-              "Optional. Omit this key or set to null when not updating the live player. When set: use this field to programmatically update the user's live workout player. exerciseIndex and setIndex are 0-based and must match the indices in the provided workoutContext (see CURRENT WORKOUT CONTEXT in the system prompt).",
+              'Optional. Omit or null when not updating the live player. When the user asks for load or rep targets: you must compute and put the values here—do not ask the user to type the numbers for you. exerciseIndex and setIndex are 0-based and must match workoutContext (see CURRENT WORKOUT CONTEXT).',
             items: {
               type: 'OBJECT',
               properties: {
@@ -769,9 +821,24 @@ async function geminiGenerateJson(args: {
                   type: 'INTEGER',
                   description: '0-based set index within that exercise.',
                 },
-                weight: { type: 'STRING', nullable: true },
-                reps: { type: 'STRING', nullable: true },
-                rpe: { type: 'STRING', nullable: true },
+                weight: {
+                  type: 'STRING',
+                  nullable: true,
+                  description:
+                    'Calculated or prescribed load for this set. MUST BE PURE NUMBER STRING ONLY. Do not include units (lbs/kg), ranges, parentheses, or text. Example: "135" or "60.5".',
+                },
+                reps: {
+                  type: 'STRING',
+                  nullable: true,
+                  description:
+                    'Calculated or prescribed reps for this set. MUST BE PURE NUMBER STRING ONLY (single integer). Do not include ranges (e.g. "8-10"), units, or text. Example: "8".',
+                },
+                rpe: {
+                  type: 'STRING',
+                  nullable: true,
+                  description:
+                    'Calculated or prescribed RPE (1-10) for this set. MUST BE PURE NUMBER STRING ONLY. Do not include ranges or text. Example: "7" or "8.5".',
+                },
                 done: { type: 'BOOLEAN', nullable: true },
               },
               required: ['exerciseIndex', 'setIndex'],
@@ -814,12 +881,13 @@ async function geminiGenerateJson(args: {
       content?: { parts?: Array<{ text?: string }> };
     }>;
   };
-  const text = respJson.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  const text = extractGeminiText(respJson.candidates?.[0]);
   if (typeof text !== 'string' || !text.trim()) {
     throw new Error('gemini_empty_response');
   }
 
-  return parseGeminiJsonText(text);
+  const parsedResponse = parseGeminiJsonText(text);
+  return parsedResponse;
 }
 
 async function geminiGenerateWorkoutOpenGreeting(args: {
@@ -873,7 +941,7 @@ async function geminiGenerateWorkoutOpenGreeting(args: {
       content?: { parts?: Array<{ text?: string }> };
     }>;
   };
-  const text = respJson.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  const text = extractGeminiText(respJson.candidates?.[0]);
   if (typeof text !== 'string' || !text.trim()) {
     throw new Error('gemini_empty_response');
   }
@@ -887,11 +955,7 @@ async function geminiGenerateWorkoutOpenGreeting(args: {
       rawCharLength: text.length,
       cleanCharLength: cleanText.length,
     });
-    // Fail-open: greeting must never hard-crash the sentinel flow. If Gemini violates JSON mode,
-    // use its plain text as the visible greeting (trimmed).
-    const fallback = cleanText.trim();
-    if (fallback) return fallback;
-    throw new Error('workout_open_greeting_json_parse_failed');
+    return "Good to see you back in the gym! Let's get to work.";
   }
   const rc = parsed.reply_content;
   const out = typeof rc === 'string' ? rc.trim() : '';
@@ -1281,19 +1345,16 @@ Deno.serve(async (req) => {
   const bubbleAgentAuthIds = new Set<string>();
   const authIdToSlug = new Map<string, string>();
 
-  // Bubble-bound agents only; @Buddy is handled by `buddy-agent-dispatch` (Coach requires a binding row).
-  // Phase 4: @Organizer now has its own dispatcher (`organizer-agent-dispatch`). Filter it out
-  // here so it does not double-fire on the same `messages` INSERT. A DB-level check would be
-  // ideal, but the agent slug list is authoritative in `agent_definitions` and we want each
-  // dispatcher to own its own inclusion rule.
-  const DISPATCHER_EXCLUDED_SLUGS: ReadonlySet<string> = new Set(['organizer']);
+  // This Edge Function handles Coach only. Buddy uses `buddy-agent-dispatch`; Organizer uses
+  // `organizer-agent-dispatch`; other agents get their own dispatchers or are skipped.
+  const DISPATCHER_ALLOWED_SLUGS: ReadonlySet<string> = new Set(['coach']);
   const seenAuthIds = new Set<string>();
   const rawEntries: OrderedAgentEntry[] = [];
 
   for (const raw of (bindingRows ?? []) as BindingRow[]) {
     const def = unwrapDef(raw);
     if (!def?.is_active || !def.auth_user_id) continue;
-    if (DISPATCHER_EXCLUDED_SLUGS.has(def.slug)) continue;
+    if (!DISPATCHER_ALLOWED_SLUGS.has(def.slug)) continue;
     if (seenAuthIds.has(def.auth_user_id)) continue;
     seenAuthIds.add(def.auth_user_id);
     rawEntries.push({ sortOrder: raw.sort_order, def });
@@ -1392,8 +1453,8 @@ Deno.serve(async (req) => {
     }
   }
 
-  if (!resolvedAgentUserId) {
-    return json({ ok: true, skipped: 'no_agent_mention' }, 200);
+  if (!resolvedAgentUserId || resolvedSlug !== 'coach') {
+    return json({ ok: true, skipped: 'not_handled_by_coach_dispatcher' }, 200);
   }
 
   const geminiModel =
@@ -1411,9 +1472,6 @@ Deno.serve(async (req) => {
     Number.isFinite(geminiTimeoutRaw) && geminiTimeoutRaw >= 1000 ? geminiTimeoutRaw : 55_000;
 
   if (isWorkoutContextSentinel(record)) {
-    if (resolvedSlug !== 'coach') {
-      return json({ ok: true, skipped: 'workout_context_sentinel_not_coach' }, 200);
-    }
     const workoutMeta = asMetadataObject(record);
     const workoutTitle = extractWorkoutTaskTitleFromMetadata(workoutMeta);
     const workoutJson = stringifyWorkoutContextForPrompt(workoutMeta['workoutContext']);
@@ -1453,6 +1511,7 @@ Deno.serve(async (req) => {
         p_create_card: false,
         p_task_type: 'workout',
         p_task_status: 'todo',
+        p_execution_patch: null,
       });
       if (cr.error) {
         console.error('[bubble-agent-dispatch] workout_context_greeting rpc', cr.error.message);
@@ -1487,6 +1546,7 @@ Deno.serve(async (req) => {
     'CRITICAL: Task titles must be short, clean, and concise (under 100 characters). NEVER repeat the same phrase, sentence, or placeholder in task_title or reply_content. Output the exact title once and stop. ' +
     'Never use emojis in task titles, it causes database crashes. Keep all titles under 100 characters plain text. ' +
     'You are a consultative fitness coach inside BuddyBubble. Chat naturally and helpfully. ' +
+    'ROLE: You are an expert AI Fitness Coach. When a user asks for weight, rep, or RPE recommendations, you MUST calculate and prescribe specific values from their context and feedback. DO NOT ask the user to supply the numbers for you to copy. ' +
     'SESSION READINESS (today) is separate from static profile completeness. Profile (CURRENT USER CONTEXT) tells you who they are generally; readiness tells you what is appropriate for THIS session (sleep/energy, soreness, equipment they have right now, time budget, intensity preference, injury flags). ' +
     'Use LAST WORKOUT CONTEXT when present to ask grounded follow-ups (recovery, progression, what felt hard), not generic questionnaires. ' +
     'Do not set create_card to true until missing_intake_categories is empty (or the user has clearly waived intake via user_requested_immediate_card) AND you can prescribe safely for today AND (you have completed PRE-DRAFT CONFIRMATION as above OR user_requested_immediate_card). If missing_intake_categories is non-empty, create_card should normally be false. ' +
@@ -1501,6 +1561,8 @@ Deno.serve(async (req) => {
     'When the server includes CURRENT TASK CONTEXT, the user is discussing that existing task. Follow PRE-DRAFT CONFIRMATION before emitting structured proposed_workout_metadata: on the confirmation-only turn, set update_existing_task to false and leave proposed_workout_metadata null. When the user has clearly approved drafting or revising (or user_requested_immediate_card), set update_existing_task to true and provide updated_task_title and/or updated_task_description as the FULL revised card text (not a diff), and/or proposed_workout_metadata with structured exercises (name, sets, reps, etc.), workout_type, and/or duration_min. At least one of: non-empty updated title, non-empty updated description, or non-empty proposed_workout_metadata must be present when update_existing_task is true. Prefer update_existing_task over create_card when modifying an existing card (set create_card false). The server resolves the task id — never output a task id. ' +
     'Set session_request true when the user wants a workout or session planned for today or soon; false otherwise. The server uses this for turn gating—be honest. ' +
     'Align intake_phase, session_readiness_score, and missing_intake_categories with your judgment (e.g. clarifying_session while collecting readiness; pre_draft_confirmation when asking for the final green light before drafting; ready_to_prescribe when you are actually outputting the card or structured draft in this same response). ' +
+    'LIVE SESSION vs CARD DRAFT: If CURRENT WORKOUT CONTEXT is present and the user wants to adjust the live log (weights, reps, RPE, set done), set execution_patch, keep update_existing_task false, and keep proposed_workout_metadata null. Use update_existing_task and proposed_workout_metadata only when the user explicitly wants a permanent rewrite of the task or card (e.g. restructure the whole program or replace the written workout in the task). ' +
+    'After you output a non-empty execution_patch for an exercise, your reply should briefly check whether the user is ready to move to the next exercise when that fits the flow. ' +
     "EXECUTION PATCH (live player): When CURRENT WORKOUT CONTEXT is present and the user mentions specific equipment (e.g. 'I have 60lb kettlebells') or asks for specific changes to the current workout session (workoutContext JSON under CURRENT WORKOUT CONTEXT), you MUST compute the appropriate weights, reps, RPE, and/or set completion and include them in the execution_patch field. " +
     'Do not only describe numbers in reply_content; you must also provide the JSON execution_patch so the app can update the live grid. You may list multiple sets and multiple exercises in one patch. String fields (weight, reps, rpe) are plain text for display in inputs (e.g. "60", "8-10"). Set execution_patch to null when you are not changing the live log. ' +
     'Return ONLY a raw JSON object (no markdown, no code fences) with keys: reply_content, create_card, task_title, task_description, update_existing_task, updated_task_title, updated_task_description, proposed_workout_metadata, execution_patch, intake_phase, session_readiness_score, missing_intake_categories, user_requested_immediate_card, session_request, coach_task_notes. ' +
@@ -1533,10 +1595,11 @@ Deno.serve(async (req) => {
     knownTargetTaskId = await resolveKnownTargetTaskId(supabase, record, historyRows ?? []);
 
     let currentTaskContextBlock = '';
+    let taskMetadataForContext: unknown | null = null;
     if (knownTargetTaskId) {
       const { data: ctxTask, error: ctxErr } = await supabase
         .from('tasks')
-        .select('title, description')
+        .select('title, description, metadata')
         .eq('id', knownTargetTaskId)
         .eq('bubble_id', record.bubble_id)
         .maybeSingle();
@@ -1545,13 +1608,15 @@ Deno.serve(async (req) => {
           task_id: knownTargetTaskId,
         });
       } else if (ctxTask && typeof ctxTask.title === 'string' && ctxTask.title.trim()) {
+        const row = ctxTask as { title: string; description?: string | null; metadata?: unknown };
+        taskMetadataForContext = row.metadata ?? null;
         const desc =
-          typeof ctxTask.description === 'string' && ctxTask.description.trim()
-            ? ctxTask.description.trim()
+          typeof row.description === 'string' && row.description.trim()
+            ? row.description.trim()
             : '(empty description)';
         currentTaskContextBlock =
           '--- CURRENT TASK CONTEXT ---\n' +
-          `You are discussing an existing task titled "${ctxTask.title.trim()}".\n` +
+          `You are discussing an existing task titled "${row.title.trim()}".\n` +
           `Description:\n${desc}\n` +
           'PRE-DRAFT CONFIRMATION: Do not populate proposed_workout_metadata until the user has given clear affirmative consent to draft or revise this card (or user_requested_immediate_card). On a confirmation-only turn, set update_existing_task to false and proposed_workout_metadata to null. When they confirm, set update_existing_task to true and provide updated_task_title and/or updated_task_description with the full revised text, and/or proposed_workout_metadata with structured exercises (and workout_type, duration_min as appropriate). The user must finalize changes on the card — do not assume the database updates immediately.';
       }
@@ -1562,12 +1627,14 @@ Deno.serve(async (req) => {
     const currentWorkoutContextJson = resolveCurrentWorkoutContextJsonFromThread(
       historyAsc,
       record,
+      taskMetadataForContext,
     );
 
     const systemPromptParts: string[] = [baseCoachPrompt];
     if (currentWorkoutContextJson) {
       systemPromptParts.push('--- CURRENT WORKOUT CONTEXT ---\n' + currentWorkoutContextJson);
       systemPromptParts.push(MID_WORKOUT_SUPPORT_MODE_DIRECTIVE);
+      systemPromptParts.push(ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE);
     }
     if (currentTaskContextBlock) systemPromptParts.push(currentTaskContextBlock);
     if (userContextBlock) systemPromptParts.push(userContextBlock);
@@ -1575,10 +1642,14 @@ Deno.serve(async (req) => {
 
     const geminiContents: GeminiContent[] = historyAsc
       .map((m) => {
-        const row = m as { user_id?: string | null; content?: string | null };
+        const row = m as {
+          user_id?: string | null;
+          content?: string | null;
+          metadata?: unknown;
+        };
         const txt = row.content ?? '';
         if (!txt.trim()) return null;
-        if (txt.trim() === WORKOUT_COACH_SENTINEL_EVENT) return null;
+        if (shouldExcludeWorkoutSentinelFromHistory(row)) return null;
         const role: GeminiContent['role'] =
           row.user_id && bubbleAgentAuthIds.has(row.user_id) ? 'model' : 'user';
         return { role, parts: [{ text: txt }] };
@@ -1637,12 +1708,59 @@ Deno.serve(async (req) => {
       taskDescription = null;
       seedTaskCommentText = null;
     }
+
+    if (currentWorkoutContextJson) {
+      createCard = false;
+      taskTitle = null;
+      taskDescription = null;
+      seedTaskCommentText = null;
+      updateExistingTask = false;
+      updatedTaskTitle = null;
+      updatedTaskDescription = null;
+      proposedWorkoutMetadata = null;
+    }
   } catch (e) {
     console.error('[DEBUG-GEMINI-CRASH] Edge Function Failed:', e);
     console.error('[bubble-agent-dispatch] gemini', String(e), {
       message_id: record.id,
       slug: resolvedSlug,
     });
+    if (
+      isGeminiRelatedDispatchError(e) &&
+      record.id &&
+      threadId &&
+      resolvedAgentUserId &&
+      record.user_id
+    ) {
+      const fr = await supabase.rpc('agent_create_card_and_reply', {
+        p_trigger_message_id: record.id,
+        p_thread_id: threadId,
+        p_agent_auth_user_id: resolvedAgentUserId,
+        p_invoker_user_id: record.user_id,
+        p_reply_text:
+          'I experienced a technical hiccup calculating your workout. Could you repeat that?',
+        p_create_card: false,
+        p_task_type: 'workout',
+        p_task_status: 'todo',
+        p_execution_patch: null,
+      });
+      if (fr.error) {
+        console.error('[bubble-agent-dispatch] gemini_fallback_rpc', fr.error.message, {
+          message_id: record.id,
+        });
+        return json({ ok: false, error: 'gemini_failed', detail: String(e) }, 500);
+      }
+      const fallbackRpcData = fr.data;
+      if (
+        fallbackRpcData &&
+        typeof fallbackRpcData === 'object' &&
+        'ok' in fallbackRpcData &&
+        (fallbackRpcData as { ok?: unknown }).ok === false
+      ) {
+        return json({ ok: false, error: 'gemini_failed', detail: String(e) }, 500);
+      }
+      return json({ ok: true, fallback_reply_inserted: true, result: fallbackRpcData }, 200);
+    }
     return json({ ok: false, error: 'gemini_failed', detail: String(e) }, 500);
   }
 
@@ -1658,6 +1776,7 @@ Deno.serve(async (req) => {
   let rpcErr: { message: string } | null;
 
   if (shouldInsertDraft) {
+    const patchParam = executionPatchForRpc(executionPatch);
     const draftPayload: AgentInsertCoachDraftRpcArgs = {
       p_trigger_message_id: record.id,
       p_thread_id: threadId,
@@ -1668,6 +1787,7 @@ Deno.serve(async (req) => {
       p_proposed_title: trimmedNewTitle.length > 0 ? trimmedNewTitle : null,
       p_proposed_description: trimmedNewDesc.length > 0 ? trimmedNewDesc : null,
       p_proposed_metadata: hasProposedMeta ? proposedWorkoutMetadata! : {},
+      p_execution_patch: patchParam,
     };
     const draft = await supabase.rpc('agent_insert_coach_workout_draft_reply', draftPayload);
     rpcData = draft.data;
@@ -1690,6 +1810,8 @@ Deno.serve(async (req) => {
       rpcPayload.p_task_description = taskDescription ?? null;
       rpcPayload.p_seed_task_comment_text = seedTaskCommentText ?? null;
     }
+    const patchParamCreate = executionPatchForRpc(executionPatch);
+    rpcPayload.p_execution_patch = patchParamCreate;
     const cr = await supabase.rpc('agent_create_card_and_reply', rpcPayload);
     rpcData = cr.data;
     rpcErr = cr.error ? { message: cr.error.message } : null;
@@ -1715,10 +1837,6 @@ Deno.serve(async (req) => {
       rpcData,
     });
     return json({ ok: false, error: 'rpc_rejected', detail: rpcData }, 500);
-  }
-
-  if (executionPatch && executionPatch.length > 0) {
-    await mergeExecutionPatchIntoAgentReplyMetadata(supabase, rpcData, executionPatch);
   }
 
   return json({ ok: true, result: rpcData }, 200);

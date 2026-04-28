@@ -24,13 +24,34 @@ import { parseExecutionPatchFromMetadata, type ExecutionPatch } from '@/types/ex
 const CHAT_AREA_DEFAULT_AGENT_SLUG = 'coach';
 /** Persisted on `messages.metadata` for root inserts; `bubble-agent-dispatch` reads this key. */
 const MESSAGE_METADATA_DEFAULT_AGENT_SLUG_KEY = 'default_agent_slug' as const;
+/** User-visible body for the workout open sentinel; routing uses `metadata.is_silent_sentinel` (see Edge Function). */
+const WORKOUT_COACH_SENTINEL_DISPLAY_TEXT = 'Started a workout session.';
 /**
- * Silent trigger for workout-player context. Must match the classifier in
- * `supabase/functions/bubble-agent-dispatch/index.ts` (`isWorkoutContextSentinel`).
+ * Pre-metadata rows only: used to keep old test threads from showing the system string in the rail.
+ * Do not use for new sends — prefer `isWorkoutPlayerSilentSentinelMessage`.
  */
-const WORKOUT_COACH_SENTINEL_EVENT = '[SYSTEM_EVENT: WORKOUT_CONTEXT]';
+const WORKOUT_COACH_SENTINEL_LEGACY_CONTENT = '[SYSTEM_EVENT: WORKOUT_CONTEXT]';
 /** Server reads this for the opening greeting copy (bubble-agent-dispatch). */
 const MESSAGE_METADATA_WORKOUT_TASK_TITLE_KEY = 'workout_task_title' as const;
+
+type MessageRowForSentinel = { content?: string | null; metadata?: Json | null };
+
+function isWorkoutPlayerSilentSentinelMessage(row: MessageRowForSentinel): boolean {
+  const m = row.metadata;
+  if (m == null || typeof m !== 'object' || Array.isArray(m)) return false;
+  const o = m as Record<string, unknown>;
+  if (o.is_silent_sentinel !== true) return false;
+  const wctx = o.workout_context;
+  if (wctx == null || typeof wctx !== 'object' || Array.isArray(wctx)) return false;
+  return (wctx as Record<string, unknown>).source === 'workout_player';
+}
+
+/** Hide from rail and skip patch logic: metadata flag (new) or legacy magic string (old DB rows). */
+function shouldHideWorkoutCoachSentinelFromRail(row: MessageRowForSentinel): boolean {
+  if (isWorkoutPlayerSilentSentinelMessage(row)) return true;
+  if (row.content != null && row.content === WORKOUT_COACH_SENTINEL_LEGACY_CONTENT) return true;
+  return false;
+}
 
 /** True when `workoutData` is non-nullish and not an empty container (fat payload ready). */
 function isPopulatedWorkoutDataJson(wd: Json | undefined): boolean {
@@ -98,6 +119,7 @@ export function WorkoutCoachRail({
   const [input, setInput] = useState('');
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [activeAgent, setActiveAgent] = useState<'coach' | 'buddy'>('coach');
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Resolve the bubble row so `useMessageThread` + mappers have names/types.
   useEffect(() => {
@@ -173,13 +195,8 @@ export function WorkoutCoachRail({
     [activeAgent, buddyMention],
   );
 
-  const agentScopeRootMessages = useMemo(
-    () => messages.filter((m) => m.parent_id == null || m.parent_id === ''),
-    [messages],
-  );
-
   const waitMain = useAgentResponseWait({
-    messages: agentScopeRootMessages,
+    messages,
     myUserId: workspaceSubjectUserId ?? myProfile?.id ?? null,
     agentsByAuthUserId,
     callbacks: {
@@ -204,6 +221,9 @@ export function WorkoutCoachRail({
       },
     },
   });
+  const waitMainRegisterIntent = waitMain.registerIntent;
+  const waitMainRegisterSuccessfulSend = waitMain.registerSuccessfulSend;
+  const waitMainClear = waitMain.clear;
 
   // Latest value for the one-shot sentinel — avoids effect deps on `sendMessage` identity churn.
   const sendMessageRef = useRef(sendMessage);
@@ -228,10 +248,13 @@ export function WorkoutCoachRail({
     if (!bubbleRow) return;
     if (isLoading) return;
     if (sentinelHasFiredRef.current) return;
+    const coachAgent = availableAgents.find((a) => a.slug === 'coach');
+    if (!coachAgent) return;
 
     const workoutContext = resolveWorkoutContextForSentinel(workoutData, workoutTitle);
 
     sentinelHasFiredRef.current = true;
+    waitMainRegisterIntent(coachAgent);
 
     const metadata: Json = {
       [MESSAGE_METADATA_DEFAULT_AGENT_SLUG_KEY]: CHAT_AREA_DEFAULT_AGENT_SLUG,
@@ -248,12 +271,24 @@ export function WorkoutCoachRail({
       },
     };
 
-    void sendMessageRef
-      .current(WORKOUT_COACH_SENTINEL_EVENT, undefined, undefined, { metadata })
-      .catch(() => {
+    void (async () => {
+      try {
+        const sentMsg = await sendMessageRef.current(
+          WORKOUT_COACH_SENTINEL_DISPLAY_TEXT,
+          undefined,
+          undefined,
+          { metadata },
+        );
+        if (sentMsg) {
+          waitMainRegisterSuccessfulSend(sentMsg, coachAgent);
+        }
+      } catch {
         // Strict once-per-mount: do not retry (avoids tight failure loops / egress spikes).
-      });
+        waitMainClear();
+      }
+    })();
   }, [
+    availableAgents,
     bubbleId,
     bubbleRow,
     canPostMessages,
@@ -265,19 +300,25 @@ export function WorkoutCoachRail({
     workoutData,
     workoutTitle,
     workspaceId,
+    waitMainClear,
+    waitMainRegisterIntent,
+    waitMainRegisterSuccessfulSend,
   ]);
 
-  // Copilot suggestion ignored: the contract applies `execution_patch` only for the newest message (id + dedupe Set), not a backward scan, to match the edge/player idempotency model.
+  // `execution_patch` is present on the agent reply row at INSERT (no follow-up UPDATE). We only
+  // add the message id to the dedupe Set after a successful parse + apply so a first INSERT
+  // without a patch (or a parse error) is not marked handled and can be re-tried on re-render.
   useEffect(() => {
     if (isLoading) return;
     if (messages.length === 0) return;
     const last = messages[messages.length - 1];
     if (!last.id) return;
-    if (last.content === WORKOUT_COACH_SENTINEL_EVENT) return;
+    if (shouldHideWorkoutCoachSentinelFromRail(last)) return;
     const coachAuthUserId = availableAgents.find((a) => a.slug === 'coach')?.auth_user_id;
     if (!coachAuthUserId) return;
     if (last.user_id !== coachAuthUserId) return;
     if (coachExecutionHandledMessageIdsRef.current.has(last.id)) return;
+    coachExecutionHandledMessageIdsRef.current.add(last.id);
     const meta = last.metadata;
     const raw =
       meta != null && typeof meta === 'object' && !Array.isArray(meta)
@@ -287,22 +328,19 @@ export function WorkoutCoachRail({
     try {
       patch = parseExecutionPatchFromMetadata(raw);
     } catch {
-      coachExecutionHandledMessageIdsRef.current.add(last.id);
       return;
     }
     if (!patch) {
-      coachExecutionHandledMessageIdsRef.current.add(last.id);
       return;
     }
     onApplyExecutionPatch(patch);
-    coachExecutionHandledMessageIdsRef.current.add(last.id);
   }, [availableAgents, isLoading, messages, onApplyExecutionPatch]);
 
   const bubbleName = bubbleRow?.name ?? 'Coach';
 
   const allMessages = useMemo(() => {
     return messages
-      .filter((row) => row.content !== WORKOUT_COACH_SENTINEL_EVENT)
+      .filter((row) => !shouldHideWorkoutCoachSentinelFromRail(row))
       .map((row) => {
         const base = userById[row.user_id];
         const user: ChatUserSnapshot | undefined =
@@ -310,6 +348,18 @@ export function WorkoutCoachRail({
         return rowToChatMessage(row, user, bubbleName, replyCounts, agentsByAuthUserId);
       });
   }, [agentsByAuthUserId, bubbleName, messages, myProfile, replyCounts, userById]);
+
+  useEffect(() => {
+    if (!scrollContainerRef.current) return;
+    const container = scrollContainerRef.current;
+    const id = window.setTimeout(() => {
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: 'smooth',
+      });
+    }, 50);
+    return () => clearTimeout(id);
+  }, [allMessages, waitMain.pending]);
 
   const handleSubmitIntent = useCallback(() => {
     const draft = applyAgentPrefix(input);
@@ -391,7 +441,7 @@ export function WorkoutCoachRail({
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+      <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         {isLoading ? <p className="text-sm text-muted-foreground">Loading…</p> : null}
         {error ? (
           <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
@@ -417,82 +467,84 @@ export function WorkoutCoachRail({
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-border bg-card px-4 pt-3 pb-2">
-        <div
-          className="grid grid-cols-2 rounded-lg border border-border bg-muted/30 p-1"
-          role="tablist"
-          aria-label="Active agent"
-        >
-          <button
-            type="button"
-            className={cn(
-              'rounded-md px-3 py-2 text-xs font-semibold transition-colors',
-              activeAgent === 'coach'
-                ? 'bg-primary/15 text-primary shadow-sm'
-                : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
-            )}
-            aria-pressed={activeAgent === 'coach'}
-            onClick={() => setActiveAgent('coach')}
-            title="Ask Coach about the workout"
+      <div className="shrink-0 border-t border-border bg-card pt-4">
+        <RichMessageComposer
+          density="rail"
+          formTestId="workout-coach-composer-rail"
+          className="px-4 pt-0 pb-3"
+          value={input}
+          onChange={(next) => setInput(next)}
+          onSubmitIntent={handleSubmitIntent}
+          onSubmit={handleSubmit}
+          pendingFiles={pendingFiles}
+          onPendingFilesChange={setPendingFiles}
+          fileAccept={MESSAGE_ATTACHMENT_FILE_ACCEPT}
+          onAttachmentFilesSelected={() => clearError()}
+          disabled={!canPostMessages || sending}
+          isSending={sending}
+          canSubmit={(!!input.trim() || pendingFiles.length > 0) && canPostMessages && !sending}
+          attachDisabled={!canPostMessages || sending}
+          createCardDisabled
+          placeholder={activeAgent === 'coach' ? 'Message Coach…' : 'Message Buddy…'}
+          errorText={null}
+          mentionConfig={{
+            members: teamMembers.map((m) => ({ id: m.id, name: m.name, email: m.email })),
+          }}
+          slashConfig={{ tasks: [] }}
+          features={{
+            enableAtMentions: true,
+            enableSlashTaskLinks: false,
+            enableCreateAndAttachCard: false,
+            enableStartLiveWorkout: false,
+          }}
+          footerHint={
+            <>
+              <b>Return</b> to send • <b>Shift + Return</b> for new line • <b>@</b> to mention
+            </>
+          }
+        />
+        <div className="shrink-0 bg-card px-4 pb-4">
+          <div
+            className="grid grid-cols-2 rounded-lg border border-border bg-muted/30 p-1"
+            role="tablist"
+            aria-label="Active agent"
           >
-            Coach
-          </button>
-          <button
-            type="button"
-            className={cn(
-              'rounded-md px-3 py-2 text-xs font-semibold transition-colors',
-              activeAgent === 'buddy'
-                ? 'bg-primary/15 text-primary shadow-sm'
-                : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
-            )}
-            aria-pressed={activeAgent === 'buddy'}
-            onClick={() => setActiveAgent('buddy')}
-            title="Ask Buddy about using the app"
-          >
-            Buddy
-          </button>
+            <button
+              type="button"
+              className={cn(
+                'rounded-md px-3 py-2 text-xs font-semibold transition-colors',
+                activeAgent === 'coach'
+                  ? 'bg-primary/15 text-primary shadow-sm'
+                  : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
+              )}
+              aria-pressed={activeAgent === 'coach'}
+              onClick={() => setActiveAgent('coach')}
+              title="Ask Coach about the workout"
+            >
+              Coach
+            </button>
+            <button
+              type="button"
+              className={cn(
+                'rounded-md px-3 py-2 text-xs font-semibold transition-colors',
+                activeAgent === 'buddy'
+                  ? 'bg-primary/15 text-primary shadow-sm'
+                  : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
+              )}
+              aria-pressed={activeAgent === 'buddy'}
+              onClick={() => setActiveAgent('buddy')}
+              title="Ask Buddy about using the app"
+            >
+              Buddy
+            </button>
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            {activeAgent === 'coach'
+              ? 'Coach (default): workout guidance and form cues.'
+              : 'Buddy: help using the player and app.'}
+          </p>
         </div>
-        <p className="mt-2 text-[11px] text-muted-foreground">
-          {activeAgent === 'coach'
-            ? 'Coach (default): workout guidance and form cues.'
-            : 'Buddy: help using the player and app.'}
-        </p>
       </div>
-
-      <RichMessageComposer
-        density="rail"
-        formTestId="workout-coach-composer-rail"
-        value={input}
-        onChange={(next) => setInput(next)}
-        onSubmitIntent={handleSubmitIntent}
-        onSubmit={handleSubmit}
-        pendingFiles={pendingFiles}
-        onPendingFilesChange={setPendingFiles}
-        fileAccept={MESSAGE_ATTACHMENT_FILE_ACCEPT}
-        onAttachmentFilesSelected={() => clearError()}
-        disabled={!canPostMessages || sending}
-        isSending={sending}
-        canSubmit={(!!input.trim() || pendingFiles.length > 0) && canPostMessages && !sending}
-        attachDisabled={!canPostMessages || sending}
-        createCardDisabled
-        placeholder={activeAgent === 'coach' ? 'Message Coach…' : 'Message Buddy…'}
-        errorText={null}
-        mentionConfig={{
-          members: teamMembers.map((m) => ({ id: m.id, name: m.name, email: m.email })),
-        }}
-        slashConfig={{ tasks: [] }}
-        features={{
-          enableAtMentions: true,
-          enableSlashTaskLinks: false,
-          enableCreateAndAttachCard: false,
-          enableStartLiveWorkout: false,
-        }}
-        footerHint={
-          <>
-            <b>Return</b> to send • <b>Shift + Return</b> for new line • <b>@</b> to mention
-          </>
-        }
-      />
     </div>
   );
 }

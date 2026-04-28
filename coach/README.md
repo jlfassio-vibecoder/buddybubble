@@ -89,9 +89,9 @@ The architecture plan’s “one tool / create card” model is **narrower** tha
 
 ### 4) Mid-workout support + **execution_patch** (live `WorkoutPlayer` grid)
 
-- **CURRENT WORKOUT CONTEXT** is built from `metadata.workoutContext` / `workout_context` on thread messages (latest non-empty payload wins) plus a fixed **mid-workout directive** in the system prompt.
+- **CURRENT WORKOUT CONTEXT** is built from `metadata.workoutContext` / `workout_context` on thread messages (latest non-empty payload wins), with a **`tasks.metadata` fallback** when the 50-message history no longer contains a valid payload (so the sentinel is not required to stay in-window), plus a fixed **mid-workout directive** in the system prompt.
 - The model can return `execution_patch`: an array of `{ exerciseIndex, setIndex, weight?, reps?, rpe?, done? }` (0-based indices aligned with the player).
-- After `agent_create_card_and_reply` (or draft RPC) succeeds, the function may **`mergeExecutionPatchIntoAgentReplyMetadata`** to attach `execution_patch` to the **agent’s reply** row in `messages.metadata`.
+- **`agent_create_card_and_reply`** and **`agent_insert_coach_workout_draft_reply`** accept `p_execution_patch` and write `messages.metadata.execution_patch` on the **same INSERT** as the agent reply (migration `20260729120000_agent_rpcs_persist_execution_patch.sql`) — a single `postgres_changes` event for clients.
 - The client does **not** re-fetch exercises from this alone: [`WorkoutCoachRail`](../src/components/chat/WorkoutCoachRail.tsx) watches the **latest** Coach message and, if valid, calls `onApplyExecutionPatch` → [`WorkoutPlayer`](../src/components/fitness/WorkoutPlayer.tsx) `handleApplyExecutionPatch` updates the **local** set grid.
 
 ---
@@ -112,11 +112,11 @@ The architecture plan does **not** list these fields; the **file header** and `C
 
 ## Postgres RPCs
 
-| RPC                                      | Who invokes                            | Role                                                                                                                                                                                                                         |
-| ---------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent_create_card_and_reply`            | `bubble-agent-dispatch` (service role) | Atomic: insert Coach reply; optionally create `workout` task; optional task-comment seed. Early migrations: `20260528100000_…`, thread id `20260530120000_…`, task type `20260529120000_…`, seed comment `20260531100000_…`. |
-| `agent_insert_coach_workout_draft_reply` | `bubble-agent-dispatch` (service role) | Insert reply with `metadata.coach_draft` only (no direct `tasks` update). Migration: `20260623120000_coach_workout_draft_messages_metadata.sql`.                                                                             |
-| `apply_workout_draft`                    | Authenticated user (client)            | Merge `coach_draft` into the task; update draft state. Same migration file.                                                                                                                                                  |
+| RPC                                      | Who invokes                            | Role                                                                                                                                                                                                                               |
+| ---------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent_create_card_and_reply`            | `bubble-agent-dispatch` (service role) | Atomic: insert Coach reply; optionally create `workout` task; optional task-comment seed; optional `p_execution_patch` on reply metadata. See `20260729120000_agent_rpcs_persist_execution_patch.sql` and earlier card migrations. |
+| `agent_insert_coach_workout_draft_reply` | `bubble-agent-dispatch` (service role) | Insert reply with `metadata.coach_draft` (and optional `execution_patch` on the same row); no direct `tasks` update. Migrations: `20260623120000_…`, `20260729120000_…`.                                                           |
+| `apply_workout_draft`                    | Authenticated user (client)            | Merge `coach_draft` into the task; update draft state. Same migration file.                                                                                                                                                        |
 
 ---
 
