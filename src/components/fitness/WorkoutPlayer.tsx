@@ -505,6 +505,9 @@ export function WorkoutPlayer({
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlightAutosaveRef = useRef<Promise<void> | null>(null);
   const activeLogTaskIdRef = useRef<string | null>(null);
+  const hasUserEditedRef = useRef(false);
+  /** Bumps only when `sourceTaskId` / `bubble` / exercise template identity actually changes, not on effect churn. */
+  const lastRecoveryIdentityRef = useRef<string | null>(null);
   const profileId = useUserProfileStore((s) => s.profile?.id);
 
   useEffect(() => {
@@ -560,7 +563,15 @@ export function WorkoutPlayer({
 
   // Reset / recover draft when player opens or when task / exercise content identity changes.
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      lastRecoveryIdentityRef.current = null;
+      return;
+    }
+    const identity = `${sourceTaskId ?? 'null'}:${bubbleId}:${exercisesStringDigest}`;
+    if (lastRecoveryIdentityRef.current !== identity) {
+      lastRecoveryIdentityRef.current = identity;
+      hasUserEditedRef.current = false;
+    }
     let cancelled = false;
     setView('simple');
     setElapsed(0);
@@ -592,7 +603,9 @@ export function WorkoutPlayer({
 
       if (error) {
         console.error('workout draft recovery failed', error);
-        setLogs(exercises.map(makeSets));
+        if (!hasUserEditedRef.current) {
+          setLogs(exercises.map(makeSets));
+        }
         setActiveLogTaskId(null);
         return;
       }
@@ -604,13 +617,69 @@ export function WorkoutPlayer({
             ? (meta as { draft_logs?: unknown }).draft_logs
             : undefined;
         if (isSetDraftMatrix(raw) && raw.length === exercises.length) {
-          setLogs(raw);
-          setActiveLogTaskId(draft.id);
+          if (!hasUserEditedRef.current) {
+            setLogs(raw);
+            setActiveLogTaskId(draft.id);
+          }
           return;
         }
       }
 
-      setLogs(exercises.map(makeSets));
+      let prefilledLogs = exercises.map(makeSets);
+
+      const { data: historical } = await supabase
+        .from('tasks')
+        .select('metadata')
+        .eq('bubble_id', bubbleId)
+        .eq('item_type', 'workout_log')
+        .eq('status', 'completed')
+        .eq('metadata->>source_task_id', sourceTaskId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (cancelled) return;
+
+      const histMeta = historical?.metadata;
+      if (histMeta && typeof histMeta === 'object' && !Array.isArray(histMeta)) {
+        const rawEx = (histMeta as { exercises?: unknown }).exercises;
+        if (Array.isArray(rawEx) && rawEx.length > 0) {
+          const byName = new Map<string, WorkoutExercise>();
+          for (const h of rawEx) {
+            if (h == null || typeof h !== 'object' || Array.isArray(h)) continue;
+            const he = h as WorkoutExercise;
+            if (typeof he.name !== 'string') continue;
+            const key = he.name.toLowerCase().trim();
+            if (!byName.has(key)) byName.set(key, he);
+          }
+
+          prefilledLogs = exercises.map((ex) => {
+            const base = makeSets(ex);
+            const key = ex.name.toLowerCase().trim();
+            const hist = byName.get(key);
+            if (!hist?.set_logs || !Array.isArray(hist.set_logs)) return base;
+            return base.map((cell, j) => {
+              const sl = hist.set_logs![j];
+              if (sl == null || typeof sl !== 'object') {
+                return { ...cell, done: false };
+              }
+              return {
+                weight: sl.weight != null ? String(sl.weight) : cell.weight,
+                reps: sl.reps != null ? String(sl.reps) : cell.reps,
+                rpe: sl.rpe != null ? String(sl.rpe) : cell.rpe,
+                done: false,
+              };
+            });
+          });
+        }
+      }
+
+      if (cancelled) return;
+      if (hasUserEditedRef.current) {
+        return;
+      }
+
+      setLogs(prefilledLogs);
       setActiveLogTaskId(null);
     };
 
@@ -624,7 +693,9 @@ export function WorkoutPlayer({
   // Debounced cloud autosave of in-progress draft_logs (2s) — no UI spinner.
   useEffect(() => {
     if (!open || !sourceTaskId || logs.length === 0) return;
-    if (!activeLogTaskId && logsEqualTemplate(logs, exercises)) return;
+    if (!activeLogTaskId && !hasUserEditedRef.current && logsEqualTemplate(logs, exercises)) {
+      return;
+    }
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
@@ -699,6 +770,7 @@ export function WorkoutPlayer({
 
   const updateSet = useCallback(
     (exIdx: number, setIdx: number, field: 'weight' | 'reps' | 'rpe', value: string) => {
+      hasUserEditedRef.current = true;
       setLogs((prev) => {
         const next = prev.map((s) => [...s]);
         const row = next[exIdx]?.[setIdx];
@@ -710,6 +782,7 @@ export function WorkoutPlayer({
   );
 
   const toggleDone = useCallback((exIdx: number, setIdx: number) => {
+    hasUserEditedRef.current = true;
     setLogs((prev) => {
       const next = prev.map((s) => [...s]);
       const row = next[exIdx]?.[setIdx];
@@ -720,6 +793,7 @@ export function WorkoutPlayer({
 
   const addSet = useCallback(
     (exIdx: number) => {
+      hasUserEditedRef.current = true;
       setLogs((prev) => {
         const next = prev.map((s) => [...s]);
         const ex = exercises[exIdx];
@@ -741,6 +815,7 @@ export function WorkoutPlayer({
   );
 
   const handleApplyExecutionPatch = useCallback((patch: ExecutionPatch) => {
+    hasUserEditedRef.current = true;
     setLogs((prev) => {
       const next = prev.map((row) => row.map((c) => ({ ...c })));
       for (const { exerciseIndex: exIdx, setIndex: setIdx, weight, reps, rpe, done } of patch) {

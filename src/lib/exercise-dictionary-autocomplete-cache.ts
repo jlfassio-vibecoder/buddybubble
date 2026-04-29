@@ -37,10 +37,7 @@ export async function loadExerciseDictionaryForAutocomplete(
   const now = Date.now();
   const hit = cacheByUserId.get(userId);
   if (!force && hit && now - hit.loadedAt < TTL_MS) {
-    const rows = hit.rows;
-    // Copilot suggestion ignored: [DEBUG] tripwires kept for post-merge manual QA; removed in a follow-up.
-    console.log('[DEBUG][autocomplete-load]', { rows: rows.length, fromCache: true });
-    return rows;
+    return hit.rows;
   }
 
   if (!force) {
@@ -73,8 +70,6 @@ export async function loadExerciseDictionaryForAutocomplete(
 
     const loadedAt = Date.now();
     cacheByUserId.set(userId, { rows, loadedAt });
-    // Copilot suggestion ignored: [DEBUG] tripwires kept for post-merge manual QA; removed in a follow-up.
-    console.log('[DEBUG][autocomplete-load]', { rows: rows.length, fromCache: false });
     return rows;
   })();
 
