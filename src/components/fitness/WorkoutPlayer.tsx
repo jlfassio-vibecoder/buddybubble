@@ -100,6 +100,10 @@ function isSetDraftMatrix(raw: unknown): raw is SetDraft[][] {
   return true;
 }
 
+function logsEqualTemplate(logs: SetDraft[][], exercises: WorkoutExercise[]): boolean {
+  return JSON.stringify(logs) === JSON.stringify(exercises.map(makeSets));
+}
+
 function buildDraftMetadata(
   sourceTaskId: string,
   logs: SetDraft[][],
@@ -673,7 +677,9 @@ export function WorkoutPlayer({
   // Debounced cloud autosave of in-progress draft_logs (2s) — no UI spinner.
   useEffect(() => {
     if (!open || !sourceTaskId || logs.length === 0) return;
-    if (!activeLogTaskId && !hasUserEditedRef.current) return;
+    if (!activeLogTaskId && !hasUserEditedRef.current && logsEqualTemplate(logs, exercises)) {
+      return;
+    }
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
