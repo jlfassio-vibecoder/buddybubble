@@ -594,7 +594,9 @@ export function WorkoutPlayer({
 
       if (error) {
         console.error('workout draft recovery failed', error);
-        setLogs(exercises.map(makeSets));
+        if (!hasUserEditedRef.current) {
+          setLogs(exercises.map(makeSets));
+        }
         setActiveLogTaskId(null);
         return;
       }
@@ -606,8 +608,10 @@ export function WorkoutPlayer({
             ? (meta as { draft_logs?: unknown }).draft_logs
             : undefined;
         if (isSetDraftMatrix(raw) && raw.length === exercises.length) {
-          setLogs(raw);
-          setActiveLogTaskId(draft.id);
+          if (!hasUserEditedRef.current) {
+            setLogs(raw);
+            setActiveLogTaskId(draft.id);
+          }
           return;
         }
       }
@@ -662,6 +666,9 @@ export function WorkoutPlayer({
       }
 
       if (cancelled) return;
+      if (hasUserEditedRef.current) {
+        return;
+      }
 
       setLogs(prefilledLogs);
       setActiveLogTaskId(null);
