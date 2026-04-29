@@ -49,7 +49,7 @@ import { resolveTaskCommentMessageIdFromBubbleAnchor } from '@/lib/resolve-task-
 import { useTaskBubbleUps } from '@/hooks/use-task-bubble-ups';
 import { useAgentResponseWait } from '@/hooks/useAgentResponseWait';
 import { useMessageThread, type PeerThreadReplyInsertPayload } from '@/hooks/useMessageThread';
-import { useExerciseDictionaryAutocomplete } from '@/hooks/useExerciseDictionaryAutocomplete';
+import { usePublishedExerciseDictionary } from '@/hooks/usePublishedExerciseDictionary';
 import { AgentTypingIndicator } from '@/components/chat/AgentTypingIndicator';
 import { resolveTargetAgent } from '@/lib/agents/resolveTargetAgent';
 import { logAgentRoutingEvent } from '@/lib/agents/agentRoutingLogger';
@@ -781,7 +781,7 @@ export function ChatArea({
     exercises: exerciseDictionaryForHash,
     loading: exerciseDictionaryLoading,
     error: exerciseDictionaryError,
-  } = useExerciseDictionaryAutocomplete();
+  } = usePublishedExerciseDictionary();
   const richHashConfig = useMemo(
     () => ({
       exercises: exerciseDictionaryForHash,

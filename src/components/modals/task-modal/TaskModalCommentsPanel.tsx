@@ -21,7 +21,7 @@ import { useMessageThread } from '@/hooks/useMessageThread';
 import { useAgentResponseWait } from '@/hooks/useAgentResponseWait';
 import { AgentTypingIndicator } from '@/components/chat/AgentTypingIndicator';
 import { useTaskBubbleUps } from '@/hooks/use-task-bubble-ups';
-import { useExerciseDictionaryAutocomplete } from '@/hooks/useExerciseDictionaryAutocomplete';
+import { usePublishedExerciseDictionary } from '@/hooks/usePublishedExerciseDictionary';
 import { rowToChatMessage } from '@/lib/chat-message-mapper';
 import { resolveTargetAgent } from '@/lib/agents/resolveTargetAgent';
 import { logAgentRoutingEvent } from '@/lib/agents/agentRoutingLogger';
@@ -297,7 +297,7 @@ export const TaskModalCommentsPanel = forwardRef<
     exercises: exerciseDictionaryForHash,
     loading: exerciseDictionaryLoading,
     error: exerciseDictionaryError,
-  } = useExerciseDictionaryAutocomplete();
+  } = usePublishedExerciseDictionary();
   const richHashConfig = useMemo(
     () => ({
       exercises: exerciseDictionaryForHash,

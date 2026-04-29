@@ -1,75 +1,99 @@
-import { createClient } from '@utils/supabase/client';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabaseClientErrorMessage } from '@/lib/supabase-client-error';
-import type { RichMessageComposerExercise } from '@/components/chat/RichMessageComposer';
+import type { Database } from '@/types/database';
 
-const EXERCISE_LIST_LIMIT = 2000;
+const TTL_MS = 5 * 60 * 1000;
 
-let cachedRows: RichMessageComposerExercise[] | null = null;
-let inFlight: Promise<RichMessageComposerExercise[]> | null = null;
-let lastLoadError: string | null = null;
-
-function mapRow(row: {
+export type ExerciseDictionaryAutocompleteRow = {
   id: string;
   name: string;
   slug: string;
-  status: string;
-}): RichMessageComposerExercise {
-  return {
-    id: row.id,
-    name: row.name,
-    slug: row.slug,
-    status: row.status,
-  };
+  status: 'published' | 'pending';
+};
+
+type CacheEntry = {
+  rows: ExerciseDictionaryAutocompleteRow[];
+  loadedAt: number;
+};
+
+const cacheByUserId = new Map<string, CacheEntry>();
+/** Coalesce concurrent non-force fetches for the same userId. */
+const inFlightByUserId = new Map<string, Promise<ExerciseDictionaryAutocompleteRow[]>>();
+
+function narrowStatus(s: string): 'published' | 'pending' | null {
+  if (s === 'published' || s === 'pending') return s;
+  return null;
 }
 
 /**
- * Synchronous peek for hooks to avoid a loading flash when data is already in memory.
+ * RLS-scoped `exercise_dictionary` rows for `#` exercise autocomplete.
+ * No status filter — RLS enforces published + own pending (+ trainer/admin).
  */
-export function getCachedPublishedExerciseDictionary(): RichMessageComposerExercise[] | null {
-  return cachedRows;
-}
+export async function loadExerciseDictionaryForAutocomplete(
+  supabase: SupabaseClient<Database>,
+  opts: { userId: string; limit?: number; force?: boolean },
+): Promise<ExerciseDictionaryAutocompleteRow[]> {
+  const { userId, limit = 1000, force = false } = opts;
+  const now = Date.now();
+  const hit = cacheByUserId.get(userId);
+  if (!force && hit && now - hit.loadedAt < TTL_MS) {
+    const rows = hit.rows;
+    // Copilot suggestion ignored: [DEBUG] tripwires kept for post-merge manual QA; removed in a follow-up.
+    console.log('[DEBUG][autocomplete-load]', { rows: rows.length, fromCache: true });
+    return rows;
+  }
 
-/**
- * Idempotent load: one in-flight request shared by all consumers; result cached in module memory.
- */
-export function loadPublishedExerciseDictionary(): Promise<RichMessageComposerExercise[]> {
-  if (cachedRows) return Promise.resolve(cachedRows);
-  if (inFlight) return inFlight;
+  if (!force) {
+    const pending = inFlightByUserId.get(userId);
+    if (pending) return pending;
+  }
 
-  inFlight = (async () => {
-    try {
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from('exercise_dictionary')
-        .select('id,name,slug,status')
-        .eq('status', 'published')
-        .order('name')
-        .limit(EXERCISE_LIST_LIMIT);
-      if (error) {
-        const msg = supabaseClientErrorMessage(error);
-        lastLoadError = msg;
-        throw new Error(msg);
-      }
-      cachedRows = (data ?? []).map((row) =>
-        mapRow(row as { id: string; name: string; slug: string; status: string }),
-      );
-      lastLoadError = null;
-      return cachedRows;
-    } finally {
-      inFlight = null;
+  const work = (async (): Promise<ExerciseDictionaryAutocompleteRow[]> => {
+    const { data, error } = await supabase
+      .from('exercise_dictionary')
+      .select('id,name,slug,status')
+      .order('name')
+      .limit(limit);
+    if (error) {
+      const msg = supabaseClientErrorMessage(error);
+      throw new Error(msg);
     }
+
+    const rows: ExerciseDictionaryAutocompleteRow[] = [];
+    for (const r of data ?? []) {
+      const st = typeof r.status === 'string' ? narrowStatus(r.status) : null;
+      if (st == null) continue;
+      rows.push({
+        id: r.id,
+        name: r.name,
+        slug: r.slug,
+        status: st,
+      });
+    }
+
+    const loadedAt = Date.now();
+    cacheByUserId.set(userId, { rows, loadedAt });
+    // Copilot suggestion ignored: [DEBUG] tripwires kept for post-merge manual QA; removed in a follow-up.
+    console.log('[DEBUG][autocomplete-load]', { rows: rows.length, fromCache: false });
+    return rows;
   })();
 
-  return inFlight;
+  if (!force) {
+    inFlightByUserId.set(userId, work);
+    void work.finally(() => {
+      inFlightByUserId.delete(userId);
+    });
+  }
+
+  return work;
 }
 
-export function getLastPublishedExerciseDictionaryError(): string | null {
-  return lastLoadError;
+export function clearExerciseDictionaryAutocompleteCache(): void {
+  cacheByUserId.clear();
+  inFlightByUserId.clear();
 }
 
 /** @internal tests only */
-export function resetExerciseDictionaryCacheForTests() {
-  cachedRows = null;
-  inFlight = null;
-  lastLoadError = null;
+export function resetExerciseDictionaryAutocompleteCacheForTests(): void {
+  clearExerciseDictionaryAutocompleteCache();
 }

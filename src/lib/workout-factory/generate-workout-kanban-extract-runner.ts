@@ -93,6 +93,8 @@ export async function runExtractAndEnrichChain(
   prepared: PreparedWorkoutChainRequest,
   creds: VertexAICredentials,
   shouldLog: boolean,
+  /** User who triggered generation (for RLS / created_by on pending cache rows; service_role insert). */
+  createdByUserId?: string | null,
 ): Promise<{ ok: true; data: WorkoutChainGenerationResponse } | { ok: false; response: Response }> {
   if (!isVertexCreds(creds)) return { ok: false, response: creds.error };
 
@@ -235,7 +237,12 @@ Generate one coherent workout only.`;
       const en = byOrder.get(order);
       if (!ex || !en) continue;
       try {
-        await insertExerciseDictionaryPendingFromEnrichment(serviceClient, ex.exercise_name, en);
+        await insertExerciseDictionaryPendingFromEnrichment(
+          serviceClient,
+          ex.exercise_name,
+          en,
+          createdByUserId,
+        );
       } catch (err) {
         if (shouldLog) {
           console.warn(
