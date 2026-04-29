@@ -337,9 +337,10 @@ export function RichMessageComposer({
       const textAfterCursor = value.substring(cursorPosition);
       const lastHash = lastExerciseHashIndex(textBeforeCursor);
       if (lastHash < 0) return;
-      const newValue =
-        textBeforeCursor.substring(0, lastHash) + `#${exerciseName} ` + textAfterCursor;
-      onChange(newValue, { selectionStart: newValue.length });
+      const textBeforeHash = textBeforeCursor.substring(0, lastHash);
+      const insertedExerciseHash = `#${exerciseName} `;
+      const newValue = textBeforeHash + insertedExerciseHash + textAfterCursor;
+      onChange(newValue, { selectionStart: (textBeforeHash + insertedExerciseHash).length });
       setShowHashMentions(false);
       inputRef.current?.focus();
     },

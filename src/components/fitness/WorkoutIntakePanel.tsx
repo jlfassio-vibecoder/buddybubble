@@ -9,6 +9,7 @@ import { WORKOUT_AI_GENERATE_PRIMARY_CLASS } from '@/components/modals/task-moda
 import { cn } from '@/lib/utils';
 import type { WorkoutIntakeWizardData } from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
 
+// Copilot suggestion ignored: wiring this list to profile/zone equipment is a larger follow-up; the static list matches the intake UX and daily_checkin equipment array for the chain.
 const MOCK_EQUIPMENT_OPTIONS = [
   'Dumbbells',
   'Kettlebell',

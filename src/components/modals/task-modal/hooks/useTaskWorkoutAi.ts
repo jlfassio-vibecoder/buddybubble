@@ -111,9 +111,17 @@ export function useTaskWorkoutAi({
       setAiWorkoutGenerating(true);
       try {
         const duration = parseInt(workoutDurationMin, 10);
+        const dailyCheckInPayload = wizardData
+          ? {
+              ...wizardData,
+              ...(typeof wizardData.durationMinutes === 'number'
+                ? { target_duration_min: wizardData.durationMinutes }
+                : {}),
+            }
+          : null;
         const data = await postGenerateWorkoutChain({
           workspace_id: workspaceId,
-          daily_checkin: wizardData ? { ...wizardData } : null,
+          daily_checkin: dailyCheckInPayload,
           workout_brief_authoritative: title.trim().length > 0 && description.trim().length > 0,
           persona: {
             title: title.trim() || undefined,

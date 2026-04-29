@@ -102,6 +102,18 @@ export async function runExtractAndEnrichChain(
 
   if (shouldLog) console.warn('[generate-workout-chain] Kanban path: Extract (Step A)...');
   const extractPrompt = buildExtractWorkoutFromBriefPrompt(persona);
+  const equipmentList = prepared.availableEquipment
+    .map((e) => (typeof e === 'string' ? e.trim() : ''))
+    .filter((e) => e.length > 0);
+  const extractUserPrompt =
+    equipmentList.length > 0
+      ? `${extractPrompt}
+
+=== RESOLVED AVAILABLE EQUIPMENT (AUTHORITATIVE) ===
+${equipmentList.map((item) => `- ${item}`).join('\n')}
+
+You must only prescribe exercises that can be performed with the equipment listed above (use bodyweight only if it is listed or clearly allowed by the brief).`
+      : extractPrompt;
   const extractSystem = `You are an expert AI fitness coach and JSON generator.
 Output ONLY valid JSON matching the user-provided schema. No markdown, no commentary.
 
@@ -123,7 +135,7 @@ CHECK-IN UTILIZATION:
 Generate one coherent workout only.`;
   const extractResponse = await callVertexAI({
     systemPrompt: extractSystem,
-    userPrompt: extractPrompt,
+    userPrompt: extractUserPrompt,
     accessToken,
     projectId,
     region,
