@@ -276,7 +276,10 @@ export interface WorkoutMetadata {
   workoutCount?: number;
 }
 
-/** Legacy 4-step Vertex chain (Architect → Biomechanist → Coach → Mathematician). */
+/**
+ * Legacy 4-step Vertex chain metadata (read-only: older saved workouts / program data may still include this shape).
+ * New generation uses only {@link WorkoutChainMetadataKanbanExtract} (`kanban_extract_enrich`).
+ */
 export interface WorkoutChainMetadataLegacy {
   /** Present on new responses; omitted on older saved `ai_workout_factory` metadata. */
   pipeline?: 'legacy_four_step';

@@ -35,6 +35,7 @@ import { TaskModalCardCoverSection } from '@/components/modals/task-modal/TaskMo
 import { TaskModalItemMetadataSections } from '@/components/modals/task-modal/TaskModalItemMetadataSections';
 import { TaskModalProgramFields } from '@/components/modals/task-modal/TaskModalProgramFields';
 import { TaskModalWorkoutFields } from '@/components/modals/task-modal/TaskModalWorkoutFields';
+import { WorkoutIntakePanel } from '@/components/fitness/WorkoutIntakePanel';
 import {
   TaskModalCommentsPanel,
   type TaskModalCommentsPanelHandle,
@@ -73,7 +74,10 @@ import { useWorkspaceAssignees } from '@/components/modals/task-modal/hooks/useW
 import { useWorkoutUnitSystem } from '@/components/modals/task-modal/hooks/useWorkoutUnitSystem';
 import { useTaskCardCoverAi } from '@/components/modals/task-modal/hooks/useTaskCardCoverAi';
 import { useTaskProgramPersonalization } from '@/components/modals/task-modal/hooks/useTaskProgramPersonalization';
-import { useTaskWorkoutAi } from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
+import {
+  useTaskWorkoutAi,
+  type WorkoutIntakeWizardData,
+} from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
 import { useTaskOriginalSnapshot } from '@/components/modals/task-modal/hooks/useTaskOriginalSnapshot';
 import { useTaskDirtyState } from '@/components/modals/task-modal/hooks/useTaskDirtyState';
 import { useTaskEmbeddedCollections } from '@/components/modals/task-modal/hooks/useTaskEmbeddedCollections';
@@ -346,7 +350,6 @@ export function TaskModal({
 
   const showWorkoutSplitPane = Boolean(
     open &&
-    taskId &&
     workoutViewerOpen &&
     isWorkoutItemType &&
     (hasWorkoutViewerContent || aiWorkoutGenerating),
@@ -356,6 +359,14 @@ export function TaskModal({
     setWorkoutViewerOpen(true);
     void handleAiGenerateWorkout();
   }, [setWorkoutViewerOpen, handleAiGenerateWorkout]);
+
+  const handleGenerateWorkoutFromIntake = useCallback(
+    (wizardData: WorkoutIntakeWizardData) => {
+      setWorkoutViewerOpen(true);
+      void handleAiGenerateWorkout(wizardData);
+    },
+    [setWorkoutViewerOpen, handleAiGenerateWorkout],
+  );
 
   const { aiCardCoverGenerating, generateCardCoverWithAi, resetCardCoverAi } = useTaskCardCoverAi({
     canWrite,
@@ -1404,12 +1415,10 @@ export function TaskModal({
                             </div>
 
                             {itemType === 'workout' && canWrite ? (
-                              <div className="flex justify-end pt-1">
-                                <WorkoutAiGenerateButton
-                                  onClick={handleGenerateWorkoutFromComments}
-                                  busy={aiWorkoutGenerating}
-                                />
-                              </div>
+                              <WorkoutIntakePanel
+                                handleAiGenerateWorkout={handleGenerateWorkoutFromIntake}
+                                isGenerating={aiWorkoutGenerating}
+                              />
                             ) : null}
 
                             <TaskModalCardCoverSection
@@ -1449,9 +1458,9 @@ export function TaskModal({
                               onMemoryCaptionChange={setMemoryCaption}
                             />
 
-                            {(itemType === 'workout' || itemType === 'workout_log') && (
+                            {itemType === 'workout_log' && (
                               <TaskModalWorkoutFields
-                                itemType={itemType}
+                                itemType="workout_log"
                                 canWrite={canWrite}
                                 taskId={taskId}
                                 aiWorkoutGenerating={aiWorkoutGenerating}
@@ -1640,13 +1649,13 @@ export function TaskModal({
                   taskId && canWrite && (itemType === 'workout' || itemType === 'workout_log'),
                 )}
                 cardCoverSaveBusy={saving}
-                {...(canWrite && taskId
+                {...(canWrite
                   ? {
                       onSaveTask: () => {
-                        void saveCoreFields();
+                        void (taskId ? saveCoreFields() : createTask());
                       },
                       saving,
-                      saveDisabled: !coreDirty,
+                      saveDisabled: taskId ? !coreDirty : !title.trim(),
                     }
                   : {})}
               />

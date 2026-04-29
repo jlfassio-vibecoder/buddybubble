@@ -21,6 +21,7 @@ import { useMessageThread } from '@/hooks/useMessageThread';
 import { useAgentResponseWait } from '@/hooks/useAgentResponseWait';
 import { AgentTypingIndicator } from '@/components/chat/AgentTypingIndicator';
 import { useTaskBubbleUps } from '@/hooks/use-task-bubble-ups';
+import { useExerciseDictionaryAutocomplete } from '@/hooks/useExerciseDictionaryAutocomplete';
 import { rowToChatMessage } from '@/lib/chat-message-mapper';
 import { resolveTargetAgent } from '@/lib/agents/resolveTargetAgent';
 import { logAgentRoutingEvent } from '@/lib/agents/agentRoutingLogger';
@@ -291,6 +292,20 @@ export const TaskModalCommentsPanel = forwardRef<
   );
 
   const richSlashConfig = useMemo(() => ({ tasks: allTasks }), [allTasks]);
+
+  const {
+    exercises: exerciseDictionaryForHash,
+    loading: exerciseDictionaryLoading,
+    error: exerciseDictionaryError,
+  } = useExerciseDictionaryAutocomplete();
+  const richHashConfig = useMemo(
+    () => ({
+      exercises: exerciseDictionaryForHash,
+      isLoading: exerciseDictionaryLoading,
+      errorText: exerciseDictionaryError,
+    }),
+    [exerciseDictionaryForHash, exerciseDictionaryLoading, exerciseDictionaryError],
+  );
 
   const bubbleNameById = useMemo(() => {
     const m: Record<string, string> = {};
@@ -631,14 +646,17 @@ export const TaskModalCommentsPanel = forwardRef<
       errorText={chat.error}
       mentionConfig={richMentionConfig}
       slashConfig={richSlashConfig}
+      hashConfig={richHashConfig}
       features={{
         enableAtMentions: true,
         enableSlashTaskLinks: true,
+        enableExerciseHashMentions: true,
         enableCreateAndAttachCard: false,
       }}
       footerHint={
         <>
-          <b>Return</b> to send • <b>@</b> to mention • <b>/</b> to link a card
+          <b>Return</b> to send • <b>@</b> to mention • <b>/</b> to link a card • <b>#</b> to tag an
+          exercise
         </>
       }
     />

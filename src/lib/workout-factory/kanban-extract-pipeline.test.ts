@@ -1,45 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { useKanbanExtractPipeline } from '@/lib/workout-factory/generate-workout-kanban-extract-runner';
 import { validateExtractWorkoutFromBriefOutput } from '@/lib/workout-factory/prompt-chain/extract-workout-from-brief';
 import { validateEnrichWorkoutBiomechanicsOutput } from '@/lib/workout-factory/prompt-chain/enrich-workout-biomechanics';
 import { mergeKanbanExtractEnrichToTaskExercises } from '@/lib/workout-factory/map-kanban-extract-to-workout';
-import type { WorkoutPersona } from '@/lib/workout-factory/types/ai-workout';
-
-const basePersona = (): WorkoutPersona => ({
-  demographics: {
-    ageRange: '30-39',
-    sex: 'any',
-    weight: 165,
-    experienceLevel: 'intermediate',
-  },
-  medical: { injuries: '', conditions: '' },
-  goals: { primary: 'Strength', secondary: 'Conditioning' },
-  weeklyTimeMinutes: 180,
-  sessionsPerWeek: 3,
-  sessionDurationMinutes: 45,
-  splitType: 'full_body',
-  lifestyle: 'active',
-  twoADay: false,
-});
-
-describe('useKanbanExtractPipeline', () => {
-  it('is true for authoritative strength persona with title', () => {
-    const p = basePersona();
-    p.kanbanBriefAuthoritative = true;
-    p.title = 'Leg day';
-    p.description = 'Squats and hinges.';
-    expect(useKanbanExtractPipeline(p)).toBe(true);
-  });
-
-  it('is false when HIIT mode is on', () => {
-    const p = basePersona();
-    p.kanbanBriefAuthoritative = true;
-    p.title = 'HIIT';
-    p.description = 'Intervals.';
-    p.hiitMode = true;
-    expect(useKanbanExtractPipeline(p)).toBe(false);
-  });
-});
 
 describe('validateExtractWorkoutFromBriefOutput', () => {
   it('accepts valid extract JSON', () => {

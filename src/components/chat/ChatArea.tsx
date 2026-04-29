@@ -49,6 +49,7 @@ import { resolveTaskCommentMessageIdFromBubbleAnchor } from '@/lib/resolve-task-
 import { useTaskBubbleUps } from '@/hooks/use-task-bubble-ups';
 import { useAgentResponseWait } from '@/hooks/useAgentResponseWait';
 import { useMessageThread, type PeerThreadReplyInsertPayload } from '@/hooks/useMessageThread';
+import { useExerciseDictionaryAutocomplete } from '@/hooks/useExerciseDictionaryAutocomplete';
 import { AgentTypingIndicator } from '@/components/chat/AgentTypingIndicator';
 import { resolveTargetAgent } from '@/lib/agents/resolveTargetAgent';
 import { logAgentRoutingEvent } from '@/lib/agents/agentRoutingLogger';
@@ -776,6 +777,20 @@ export function ChatArea({
 
   const richSlashConfig = useMemo(() => ({ tasks: allTasks }), [allTasks]);
 
+  const {
+    exercises: exerciseDictionaryForHash,
+    loading: exerciseDictionaryLoading,
+    error: exerciseDictionaryError,
+  } = useExerciseDictionaryAutocomplete();
+  const richHashConfig = useMemo(
+    () => ({
+      exercises: exerciseDictionaryForHash,
+      isLoading: exerciseDictionaryLoading,
+      errorText: exerciseDictionaryError,
+    }),
+    [exerciseDictionaryForHash, exerciseDictionaryLoading, exerciseDictionaryError],
+  );
+
   const performSearch = useCallback(
     async (overrides?: { query?: string; sender?: string; date?: string }) => {
       const qRaw = overrides?.query ?? searchQuery;
@@ -1452,9 +1467,11 @@ export function ChatArea({
         errorText={messageError}
         mentionConfig={richMentionConfig}
         slashConfig={richSlashConfig}
+        hashConfig={richHashConfig}
         onRequestCreateAndAttachCard={handleComposeChatCard}
         features={{
           enableStartLiveWorkout: workspaceRole !== 'trialing',
+          enableExerciseHashMentions: true,
         }}
         onRequestStartLiveWorkout={
           workspaceRole === 'trialing' ? undefined : handleStartLiveWorkout
@@ -1470,7 +1487,8 @@ export function ChatArea({
         footerHint={
           <>
             <b>Return</b> to send (after attaching, pick files then send) • <b>Shift + Return</b>{' '}
-            for new line • <b>@</b> to mention
+            for new line • <b>@</b> to mention • <b>/</b> to link a card • <b>#</b> to tag an
+            exercise
           </>
         }
       />

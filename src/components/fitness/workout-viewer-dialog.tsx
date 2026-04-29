@@ -535,6 +535,8 @@ export function WorkoutViewerContent({
   }, [localTitle, localDescription, localExercises, onApply, onRequestClose]);
 
   const showRich = mode === 'view' && workoutSet != null;
+  const hasWorkoutViewerContent = workoutSet != null || localExercises.length > 0;
+  const showUnsavedPersistenceNotice = !taskId && (hasWorkoutViewerContent || isAiGenerating);
   const displayTitle = localTitle.trim() || title.trim() || 'Untitled workout';
   const displayDescription = (localDescription || description).trim();
   const coverPath = cardCoverPath?.trim() ? cardCoverPath.trim() : null;
@@ -644,6 +646,11 @@ export function WorkoutViewerContent({
         <p className="text-xs text-muted-foreground">
           You don’t have permission to edit this card.
         </p>
+      ) : null}
+      {showUnsavedPersistenceNotice ? (
+        <div className="rounded-lg border border-border/70 bg-muted/35 px-3 py-2 text-xs text-muted-foreground">
+          Create or save this card to persist your generated workout and enable task-linked tools.
+        </div>
       ) : null}
     </div>
   );

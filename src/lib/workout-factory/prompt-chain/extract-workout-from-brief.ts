@@ -25,6 +25,14 @@ export function buildExtractWorkoutFromBriefPrompt(persona: WorkoutPersona): str
     ]
       .filter(Boolean)
       .join('\n') || 'None stated';
+  const isTimeBased = !!(
+    persona.hiitMode ||
+    persona.amrapDensityMode ||
+    persona.tabataBalancedMode
+  );
+  const timeBasedInstructions = isTimeBased
+    ? "\nCRITICAL FORMATTING: This is a HIIT/Time-based workout (AMRAP, EMOM, Tabata). Do NOT omit 'reps'. For Tabata/intervals, include BOTH 'work_seconds' (e.g., 20) and a target for 'reps' (e.g., '15+'). For AMRAP circuits, provide the specific 'reps' required for each movement to complete one round. You can use 'work_seconds' to define the total time cap or interval length."
+    : '';
 
   return `=== WORKOUT BRIEF (AUTHORITATIVE) ===
 Title: ${title}
@@ -43,6 +51,7 @@ Extract a SINGLE workout exactly as written in the Description. Do NOT invent ex
 3. For each exercise: copy the name as "exercise_name" (concise, as in the brief). Extract sets, reps, equipment, rest, RPE, work_seconds, rounds ONLY if explicitly stated or clearly implied next to that exercise.
 4. If reps are a time hold (e.g. "30-60 seconds"), put that text in "reps" and omit sets or use sets: 1.
 5. "equipment": short string (e.g. "Dumbbell", "Barbell", "Suspension trainer") inferred only from the brief for that movement.
+${timeBasedInstructions}
 
 === OUTPUT FORMAT ===
 Return ONLY valid JSON. No markdown, no explanations. Start with { and end with }.

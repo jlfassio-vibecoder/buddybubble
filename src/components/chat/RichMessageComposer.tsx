@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   AtSign,
   CheckSquare,
+  Dumbbell,
   Hash,
   LayoutGrid,
   Lightbulb,
@@ -18,7 +19,15 @@ import {
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import { lastTaskMentionSlashIndex } from '@/lib/chat-composer-tokens';
+import {
+  lastExerciseHashIndex,
+  lastTaskMentionSlashIndex,
+  resolveActiveComposerTrigger,
+} from '@/lib/chat-composer-tokens';
+import {
+  rankExercisesForHashQuery,
+  shouldSuppressHashPopoverAfterSelection,
+} from '@/lib/exercise-hash-candidates';
 
 export type RichMessageComposerMentionMember = {
   id: string;
@@ -43,9 +52,27 @@ export type RichMessageComposerSlashConfig = {
   getSlashCandidates?: (query: string) => RichMessageComposerSlashTask[];
 };
 
+export type RichMessageComposerExercise = {
+  id: string;
+  name: string;
+  slug?: string;
+  status?: string;
+};
+
+export type RichMessageComposerHashConfig = {
+  exercises: RichMessageComposerExercise[];
+  getHashCandidates?: (query: string) => RichMessageComposerExercise[];
+  /** True while the exercise catalog is loading (first request or background refresh). */
+  isLoading?: boolean;
+  /** Error loading the catalog; shown in the # popover (distinct from the composer `errorText` prop). */
+  errorText?: string | null;
+};
+
 export type RichMessageComposerFeatures = {
   enableAtMentions?: boolean;
   enableSlashTaskLinks?: boolean;
+  /** `#` to insert canonical exercise names (requires `hashConfig`). */
+  enableExerciseHashMentions?: boolean;
   enableCreateAndAttachCard?: boolean;
   enableStartLiveWorkout?: boolean;
 };
@@ -83,6 +110,7 @@ export type RichMessageComposerProps = {
   features?: RichMessageComposerFeatures;
   mentionConfig?: RichMessageComposerMentionConfig;
   slashConfig?: RichMessageComposerSlashConfig;
+  hashConfig?: RichMessageComposerHashConfig;
 
   onRequestCreateAndAttachCard?: () => void;
   onRequestStartLiveWorkout?: () => void;
@@ -106,6 +134,7 @@ export type RichMessageComposerProps = {
 const defaultFeatures: Required<RichMessageComposerFeatures> = {
   enableAtMentions: true,
   enableSlashTaskLinks: true,
+  enableExerciseHashMentions: false,
   enableCreateAndAttachCard: true,
   enableStartLiveWorkout: false,
 };
@@ -129,6 +158,7 @@ export function RichMessageComposer({
   features: featuresProp,
   mentionConfig,
   slashConfig,
+  hashConfig,
   onRequestCreateAndAttachCard,
   onRequestStartLiveWorkout,
   startLiveWorkoutDisabled,
@@ -153,6 +183,10 @@ export function RichMessageComposer({
   const [showTaskMentions, setShowTaskMentions] = useState(false);
   const [taskMentionIndex, setTaskMentionIndex] = useState(-1);
 
+  const [hashSearch, setHashSearch] = useState('');
+  const [showHashMentions, setShowHashMentions] = useState(false);
+  const [hashMentionIndex, setHashMentionIndex] = useState(-1);
+
   const filteredMembers = useMemo(() => {
     if (!features.enableAtMentions || !mentionConfig) return [];
     const q = mentionSearch.toLowerCase();
@@ -171,10 +205,24 @@ export function RichMessageComposer({
     return slashConfig.tasks.filter((t) => t.title.toLowerCase().includes(q));
   }, [features.enableSlashTaskLinks, slashConfig, taskMentionSearch]);
 
+  const hashExerciseExactNames = useMemo(() => {
+    if (!hashConfig?.exercises.length) return new Set<string>();
+    return new Set(hashConfig.exercises.map((e) => e.name.toLowerCase()));
+  }, [hashConfig?.exercises]);
+
+  const filteredExercises = useMemo(() => {
+    if (!features.enableExerciseHashMentions || !hashConfig) return [];
+    if (hashConfig.getHashCandidates) {
+      return hashConfig.getHashCandidates(hashSearch);
+    }
+    return rankExercisesForHashQuery(hashConfig.exercises, hashSearch);
+  }, [features.enableExerciseHashMentions, hashConfig, hashSearch]);
+
   useEffect(() => {
     if (!value) {
       setShowMentions(false);
       setShowTaskMentions(false);
+      setShowHashMentions(false);
     }
   }, [value]);
 
@@ -201,49 +249,53 @@ export function RichMessageComposer({
       onChange(next, { selectionStart: cursorPosition });
 
       const textBeforeCursor = next.substring(0, cursorPosition);
+      const active = resolveActiveComposerTrigger(textBeforeCursor, {
+        enableAt: features.enableAtMentions && Boolean(mentionConfig),
+        enableSlash: features.enableSlashTaskLinks && Boolean(slashConfig),
+        enableHash: features.enableExerciseHashMentions && Boolean(hashConfig),
+      });
 
-      if (features.enableAtMentions && mentionConfig) {
-        const lastAtSymbol = textBeforeCursor.lastIndexOf('@');
-        if (lastAtSymbol !== -1) {
-          const charBeforeAt = lastAtSymbol > 0 ? textBeforeCursor[lastAtSymbol - 1] : ' ';
-          if (charBeforeAt === ' ' || charBeforeAt === '\n') {
-            const query = textBeforeCursor.substring(lastAtSymbol + 1);
-            if (!query.includes(' ')) {
-              setMentionSearch(query);
-              setShowMentions(true);
-              setMentionIndex(0);
-              setShowTaskMentions(false);
-              return;
-            }
-          }
+      if (active?.kind === 'mention') {
+        setMentionSearch(active.query);
+        setShowMentions(true);
+        setMentionIndex(0);
+        setShowTaskMentions(false);
+        setShowHashMentions(false);
+      } else if (active?.kind === 'slash') {
+        setTaskMentionSearch(active.query);
+        setShowTaskMentions(true);
+        setTaskMentionIndex(0);
+        setShowMentions(false);
+        setShowHashMentions(false);
+      } else if (active?.kind === 'hash') {
+        if (
+          hashConfig &&
+          shouldSuppressHashPopoverAfterSelection(active.rawQuery, hashExerciseExactNames)
+        ) {
+          setHashSearch(active.query);
+          setShowHashMentions(false);
+        } else {
+          setHashSearch(active.query);
+          setShowHashMentions(true);
+          setHashMentionIndex(0);
         }
         setShowMentions(false);
+        setShowTaskMentions(false);
       } else {
         setShowMentions(false);
-      }
-
-      if (features.enableSlashTaskLinks && slashConfig) {
-        const lastSlashSymbol = lastTaskMentionSlashIndex(textBeforeCursor);
-        if (lastSlashSymbol !== -1) {
-          const query = textBeforeCursor.substring(lastSlashSymbol + 1);
-          if (!query.includes(' ')) {
-            setTaskMentionSearch(query);
-            setShowTaskMentions(true);
-            setTaskMentionIndex(0);
-            return;
-          }
-        }
         setShowTaskMentions(false);
-      } else {
-        setShowTaskMentions(false);
+        setShowHashMentions(false);
       }
     },
     [
       features.enableAtMentions,
+      features.enableExerciseHashMentions,
       features.enableSlashTaskLinks,
+      hashConfig,
       mentionConfig,
       onChange,
       slashConfig,
+      hashExerciseExactNames,
     ],
   );
 
@@ -278,6 +330,22 @@ export function RichMessageComposer({
     [onChange, value],
   );
 
+  const insertExerciseHash = useCallback(
+    (exerciseName: string) => {
+      const cursorPosition = inputRef.current?.selectionStart || 0;
+      const textBeforeCursor = value.substring(0, cursorPosition);
+      const textAfterCursor = value.substring(cursorPosition);
+      const lastHash = lastExerciseHashIndex(textBeforeCursor);
+      if (lastHash < 0) return;
+      const newValue =
+        textBeforeCursor.substring(0, lastHash) + `#${exerciseName} ` + textAfterCursor;
+      onChange(newValue, { selectionStart: newValue.length });
+      setShowHashMentions(false);
+      inputRef.current?.focus();
+    },
+    [onChange, value],
+  );
+
   const handleAttachmentPick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const incoming = e.target.files;
     const picked = incoming?.length ? Array.from(incoming) : [];
@@ -295,6 +363,7 @@ export function RichMessageComposer({
     if (ok) {
       setShowMentions(false);
       setShowTaskMentions(false);
+      setShowHashMentions(false);
     }
   };
 
@@ -331,6 +400,25 @@ export function RichMessageComposer({
       if (e.key === 'Escape') {
         setShowTaskMentions(false);
       }
+    } else if (features.enableExerciseHashMentions && showHashMentions) {
+      const filtered = filteredExercises;
+      if (filtered.length > 0) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          setHashMentionIndex((prev) => (prev + 1) % filtered.length);
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          setHashMentionIndex((prev) => (prev - 1 + filtered.length) % filtered.length);
+        } else if (e.key === 'Enter' || e.key === 'Tab') {
+          e.preventDefault();
+          if (filtered[hashMentionIndex]) {
+            insertExerciseHash(filtered[hashMentionIndex].name);
+          }
+        }
+      }
+      if (e.key === 'Escape') {
+        setShowHashMentions(false);
+      }
     }
   };
 
@@ -365,7 +453,8 @@ export function RichMessageComposer({
   const showMentionPopover =
     showMentions && features.enableAtMentions && filteredMembers.length > 0;
   const showSlashPopover = showTaskMentions && features.enableSlashTaskLinks;
-  const showAnyPopover = showMentionPopover || showSlashPopover;
+  const showHashPopover = showHashMentions && features.enableExerciseHashMentions;
+  const showAnyPopover = showMentionPopover || showSlashPopover || showHashPopover;
 
   const popoverLayer = showAnyPopover ? (
     <AnimatePresence>
@@ -457,6 +546,79 @@ export function RichMessageComposer({
                     <span className="truncate text-[10px] text-muted-foreground">
                       {task.status}
                     </span>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </motion.div>
+      ) : null}
+
+      {showHashPopover ? (
+        <motion.div
+          key="hash-exercise"
+          initial={{ opacity: 0, y: 10, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 10, scale: 0.95 }}
+          className="absolute bottom-24 left-6 z-50 w-80 overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-2xl"
+        >
+          <div className="flex items-center gap-2 border-b border-border bg-muted/70 p-2">
+            <Dumbbell className="h-3 w-3 text-primary" />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              Tag exercise
+            </span>
+          </div>
+          <div className="custom-scrollbar max-h-48 overflow-y-auto">
+            {hashConfig?.errorText && hashConfig.exercises.length > 0 ? (
+              <div
+                className="border-b border-destructive/20 bg-destructive/5 px-3 py-1.5 text-[10px] text-destructive"
+                role="status"
+              >
+                {hashConfig.errorText} — using exercises available offline.
+              </div>
+            ) : null}
+            {hashConfig?.errorText &&
+            hashConfig.exercises.length === 0 &&
+            !hashConfig.getHashCandidates ? (
+              <div className="p-4 text-center">
+                <p className="text-xs text-destructive" role="alert">
+                  {hashConfig.errorText}
+                </p>
+              </div>
+            ) : hashConfig?.isLoading &&
+              hashConfig.exercises.length === 0 &&
+              !hashConfig.getHashCandidates ? (
+              <div className="flex items-center justify-center gap-2 p-4 text-center">
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" aria-hidden />
+                <p className="text-xs text-muted-foreground">Loading exercises…</p>
+              </div>
+            ) : filteredExercises.length === 0 ? (
+              <div className="p-4 text-center">
+                <p className="text-xs text-muted-foreground">No exercises found</p>
+              </div>
+            ) : (
+              filteredExercises.map((ex, idx) => (
+                <button
+                  key={ex.id}
+                  type="button"
+                  onClick={() => insertExerciseHash(ex.name)}
+                  className={cn(
+                    'flex w-full min-w-0 items-center gap-3 px-4 py-2.5 text-left transition-colors',
+                    idx === hashMentionIndex
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-foreground hover:bg-muted/70',
+                  )}
+                >
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-primary/15 text-[10px] font-bold text-primary">
+                    <Dumbbell className="h-3.5 w-3.5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold">{ex.name}</span>
+                    {ex.slug ? (
+                      <span className="block truncate text-[10px] text-muted-foreground">
+                        {ex.slug}
+                      </span>
+                    ) : null}
                   </div>
                 </button>
               ))

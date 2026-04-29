@@ -1,8 +1,8 @@
 /**
  * Phase 3: async AI workout for storefront soft-trial (service-role task insert).
  *
- * Uses the same **single** Vertex call as storefront preview (shared timeout budget) instead of the
- * 4-step `generate-workout-chain` (four sequential LLMs, often multi-minute). Falls back to a
+ * Uses the same **single** Vertex call as storefront preview (shared timeout budget) instead of
+ * the full `generate-workout-chain` service (Vertex extract, optional dictionary merge, enrich, etc.). Falls back to a
  * minimal draft card only if **AI generation** fails—not if generation succeeds but the DB insert
  * fails (that path logs and exits without a second insert).
  *

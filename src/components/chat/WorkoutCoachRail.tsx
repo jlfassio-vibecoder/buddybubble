@@ -11,7 +11,10 @@ import { toChatUserSnapshot, type MessageThreadFilter } from '@/lib/message-thre
 import type { ChatUserSnapshot } from '@/types/chat';
 import { useUserProfileStore } from '@/store/userProfileStore';
 import { ChatMessageRow } from '@/components/chat/ChatMessageRow';
-import { RichMessageComposer } from '@/components/chat/RichMessageComposer';
+import {
+  RichMessageComposer,
+  type RichMessageComposerExercise,
+} from '@/components/chat/RichMessageComposer';
 import { MESSAGE_ATTACHMENT_FILE_ACCEPT } from '@/lib/message-attachment-limits';
 import { resolveTargetAgent } from '@/lib/agents/resolveTargetAgent';
 import { useAgentResponseWait } from '@/hooks/useAgentResponseWait';
@@ -19,6 +22,8 @@ import { AgentTypingIndicator } from '@/components/chat/AgentTypingIndicator';
 import { logAgentRoutingEvent } from '@/lib/agents/agentRoutingLogger';
 import type { Json } from '@/types/database';
 import { useWorkspaceSessionSubject } from '@/context/WorkspaceSessionContext';
+import { useExerciseDictionaryAutocomplete } from '@/hooks/useExerciseDictionaryAutocomplete';
+import { metadataFieldsFromParsed } from '@/lib/item-metadata';
 import { parseExecutionPatchFromMetadata, type ExecutionPatch } from '@/types/execution-patch';
 
 const CHAT_AREA_DEFAULT_AGENT_SLUG = 'coach';
@@ -177,6 +182,36 @@ export function WorkoutCoachRail({
   });
 
   const availableAgents = useMemo(() => [...agentsByAuthUserId.values()], [agentsByAuthUserId]);
+
+  const {
+    exercises: dictExercises,
+    loading: exerciseDictionaryLoading,
+    error: exerciseDictionaryError,
+  } = useExerciseDictionaryAutocomplete();
+
+  const workoutExerciseNameList = useMemo(
+    () => metadataFieldsFromParsed(workoutData ?? null).workoutExercises.map((e) => e.name),
+    [workoutData],
+  );
+
+  const hashExercises = useMemo((): RichMessageComposerExercise[] => {
+    const seen = new Set<string>();
+    const out: RichMessageComposerExercise[] = [];
+    for (const name of workoutExerciseNameList) {
+      const t = name.trim();
+      const k = t.toLowerCase();
+      if (!k || seen.has(k)) continue;
+      seen.add(k);
+      out.push({ id: `workout:${k}`, name: t });
+    }
+    for (const ex of dictExercises) {
+      const k = ex.name.trim().toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(ex);
+    }
+    return out;
+  }, [workoutExerciseNameList, dictExercises]);
 
   const buddyMention = useMemo(
     () => availableAgents.find((a) => a.slug === 'buddy')?.mention_handle ?? 'Buddy',
@@ -481,15 +516,22 @@ export function WorkoutCoachRail({
             members: teamMembers.map((m) => ({ id: m.id, name: m.name, email: m.email })),
           }}
           slashConfig={{ tasks: [] }}
+          hashConfig={{
+            exercises: hashExercises,
+            isLoading: exerciseDictionaryLoading,
+            errorText: exerciseDictionaryError,
+          }}
           features={{
             enableAtMentions: true,
             enableSlashTaskLinks: false,
+            enableExerciseHashMentions: true,
             enableCreateAndAttachCard: false,
             enableStartLiveWorkout: false,
           }}
           footerHint={
             <>
-              <b>Return</b> to send • <b>Shift + Return</b> for new line • <b>@</b> to mention
+              <b>Return</b> to send • <b>Shift + Return</b> for new line • <b>@</b> to mention •{' '}
+              <b>#</b> to tag an exercise
             </>
           }
         />

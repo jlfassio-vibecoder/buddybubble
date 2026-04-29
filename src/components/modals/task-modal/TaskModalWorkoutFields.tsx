@@ -11,6 +11,7 @@ import { metadataFieldsFromParsed, type WorkoutExercise } from '@/lib/item-metad
 import type { WorkoutTemplate } from '@/hooks/use-workout-templates';
 import type { ItemType, UnitSystem } from '@/types/database';
 import { cn } from '@/lib/utils';
+import type { WorkoutIntakeWizardData } from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
 
 export type TaskModalWorkoutFieldsProps = {
   itemType: Extract<ItemType, 'workout' | 'workout_log'>;
@@ -18,7 +19,7 @@ export type TaskModalWorkoutFieldsProps = {
   taskId: string | null;
   aiWorkoutGenerating: boolean;
   aiWorkoutProgressIdx: number;
-  onAiGenerateWorkout: () => void | Promise<void>;
+  onAiGenerateWorkout: (wizardData?: WorkoutIntakeWizardData) => void | Promise<void>;
   workoutTemplates: WorkoutTemplate[];
   templatePickerOpen: boolean;
   onTemplatePickerOpenChange: (open: boolean) => void;
