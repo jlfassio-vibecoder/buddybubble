@@ -506,6 +506,8 @@ export function WorkoutPlayer({
   const inFlightAutosaveRef = useRef<Promise<void> | null>(null);
   const activeLogTaskIdRef = useRef<string | null>(null);
   const hasUserEditedRef = useRef(false);
+  /** Bumps only when `sourceTaskId` / `bubble` / exercise template identity actually changes, not on effect churn. */
+  const lastRecoveryIdentityRef = useRef<string | null>(null);
   const profileId = useUserProfileStore((s) => s.profile?.id);
 
   useEffect(() => {
@@ -561,7 +563,15 @@ export function WorkoutPlayer({
 
   // Reset / recover draft when player opens or when task / exercise content identity changes.
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      lastRecoveryIdentityRef.current = null;
+      return;
+    }
+    const identity = `${sourceTaskId ?? 'null'}:${bubbleId}:${exercisesStringDigest}`;
+    if (lastRecoveryIdentityRef.current !== identity) {
+      lastRecoveryIdentityRef.current = identity;
+      hasUserEditedRef.current = false;
+    }
     let cancelled = false;
     setView('simple');
     setElapsed(0);
@@ -569,7 +579,6 @@ export function WorkoutPlayer({
     setMobileUnifiedPane('workout');
 
     const recover = async () => {
-      hasUserEditedRef.current = false;
       if (!sourceTaskId) {
         if (!cancelled) {
           setLogs(exercises.map(makeSets));
