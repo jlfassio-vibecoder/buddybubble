@@ -1,5 +1,7 @@
 -- exercise_dictionary: pending rows visible to creator (authenticated) + trainer/admin; published for all.
 -- Reconciles local history with remote: column/index may already exist (idempotent).
+-- Copilot suggestion ignored: column+FK backfill was done in production (Step 1); idempotent add is enough for new envs; orphan columns without FK are an ops fix, not this migration.
+-- exercise_dictionary_select_anon stays broad (published + pending) for public SEO; authenticated SELECT is what scopes pending in this change.
 
 alter table public.exercise_dictionary
   add column if not exists created_by uuid references public.users (id) on delete set null;

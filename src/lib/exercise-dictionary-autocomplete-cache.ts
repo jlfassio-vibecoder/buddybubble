@@ -17,6 +17,8 @@ type CacheEntry = {
 };
 
 const cacheByUserId = new Map<string, CacheEntry>();
+/** Coalesce concurrent non-force fetches for the same userId. */
+const inFlightByUserId = new Map<string, Promise<ExerciseDictionaryAutocompleteRow[]>>();
 
 function narrowStatus(s: string): 'published' | 'pending' | null {
   if (s === 'published' || s === 'pending') return s;
@@ -36,39 +38,59 @@ export async function loadExerciseDictionaryForAutocomplete(
   const hit = cacheByUserId.get(userId);
   if (!force && hit && now - hit.loadedAt < TTL_MS) {
     const rows = hit.rows;
+    // Copilot suggestion ignored: [DEBUG] tripwires kept for post-merge manual QA; removed in a follow-up.
     console.log('[DEBUG][autocomplete-load]', { rows: rows.length, fromCache: true });
     return rows;
   }
 
-  const { data, error } = await supabase
-    .from('exercise_dictionary')
-    .select('id,name,slug,status')
-    .order('name')
-    .limit(limit);
-  if (error) {
-    const msg = supabaseClientErrorMessage(error);
-    throw new Error(msg);
+  if (!force) {
+    const pending = inFlightByUserId.get(userId);
+    if (pending) return pending;
   }
 
-  const rows: ExerciseDictionaryAutocompleteRow[] = [];
-  for (const r of data ?? []) {
-    const st = typeof r.status === 'string' ? narrowStatus(r.status) : null;
-    if (st == null) continue;
-    rows.push({
-      id: r.id,
-      name: r.name,
-      slug: r.slug,
-      status: st,
+  const work = (async (): Promise<ExerciseDictionaryAutocompleteRow[]> => {
+    const { data, error } = await supabase
+      .from('exercise_dictionary')
+      .select('id,name,slug,status')
+      .order('name')
+      .limit(limit);
+    if (error) {
+      const msg = supabaseClientErrorMessage(error);
+      throw new Error(msg);
+    }
+
+    const rows: ExerciseDictionaryAutocompleteRow[] = [];
+    for (const r of data ?? []) {
+      const st = typeof r.status === 'string' ? narrowStatus(r.status) : null;
+      if (st == null) continue;
+      rows.push({
+        id: r.id,
+        name: r.name,
+        slug: r.slug,
+        status: st,
+      });
+    }
+
+    const loadedAt = Date.now();
+    cacheByUserId.set(userId, { rows, loadedAt });
+    // Copilot suggestion ignored: [DEBUG] tripwires kept for post-merge manual QA; removed in a follow-up.
+    console.log('[DEBUG][autocomplete-load]', { rows: rows.length, fromCache: false });
+    return rows;
+  })();
+
+  if (!force) {
+    inFlightByUserId.set(userId, work);
+    void work.finally(() => {
+      inFlightByUserId.delete(userId);
     });
   }
 
-  cacheByUserId.set(userId, { rows, loadedAt: now });
-  console.log('[DEBUG][autocomplete-load]', { rows: rows.length, fromCache: false });
-  return rows;
+  return work;
 }
 
 export function clearExerciseDictionaryAutocompleteCache(): void {
   cacheByUserId.clear();
+  inFlightByUserId.clear();
 }
 
 /** @internal tests only */

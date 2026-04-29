@@ -89,7 +89,7 @@ export async function POST(req: Request) {
     };
 
     const result = await runGenerateWorkoutChain(chainBody, shouldLog, {
-      triggeredByUserId: user.id,
+      createdByUserId: user.id,
     });
     if (!result.ok) {
       const errText = await result.response.text();

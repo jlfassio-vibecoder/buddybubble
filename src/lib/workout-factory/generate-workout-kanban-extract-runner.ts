@@ -94,7 +94,7 @@ export async function runExtractAndEnrichChain(
   creds: VertexAICredentials,
   shouldLog: boolean,
   /** User who triggered generation (for RLS / created_by on pending cache rows; service_role insert). */
-  triggeredByUserId?: string | null,
+  createdByUserId?: string | null,
 ): Promise<{ ok: true; data: WorkoutChainGenerationResponse } | { ok: false; response: Response }> {
   if (!isVertexCreds(creds)) return { ok: false, response: creds.error };
 
@@ -241,7 +241,7 @@ Generate one coherent workout only.`;
           serviceClient,
           ex.exercise_name,
           en,
-          triggeredByUserId,
+          createdByUserId,
         );
       } catch (err) {
         if (shouldLog) {

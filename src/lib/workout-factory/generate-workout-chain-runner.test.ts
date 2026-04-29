@@ -39,7 +39,7 @@ describe('runGenerateWorkoutChain', () => {
     expect(out).toBe(success);
   });
 
-  it('forwards triggeredByUserId to runExtractAndEnrichChain', async () => {
+  it('forwards createdByUserId to runExtractAndEnrichChain', async () => {
     const chainRequest = { persona: { splitType: 'full_body' } };
     mockPrepare.mockResolvedValue({ ok: true, data: chainRequest });
     const creds = { projectId: 'p', region: 'r', accessToken: 't' };
@@ -48,7 +48,7 @@ describe('runGenerateWorkoutChain', () => {
     mockRunExtract.mockResolvedValue(success);
 
     const out = await runGenerateWorkoutChain({ foo: 'bar' }, false, {
-      triggeredByUserId: '9b2d0c4e-0e3e-4c5a-9a1a-0e3e4c5a9a1a',
+      createdByUserId: '9b2d0c4e-0e3e-4c5a-9a1a-0e3e4c5a9a1a',
     });
 
     expect(mockRunExtract).toHaveBeenCalledWith(

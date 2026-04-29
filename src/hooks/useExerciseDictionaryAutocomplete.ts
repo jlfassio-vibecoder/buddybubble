@@ -30,7 +30,10 @@ export function useExerciseDictionaryAutocomplete(): {
       const next = await loadExerciseDictionaryForAutocomplete(supabase, { userId, force: true });
       setRows(next);
     } catch (e) {
-      console.warn('[useExerciseDictionaryAutocomplete] refresh', e);
+      console.warn(
+        '[useExerciseDictionaryAutocomplete] Failed to load exercises:',
+        e instanceof Error ? e.message : 'Unknown error',
+      );
     } finally {
       setLoading(false);
     }
@@ -49,7 +52,10 @@ export function useExerciseDictionaryAutocomplete(): {
         if (!cancelled) setRows(r);
       })
       .catch((e) => {
-        console.warn('[useExerciseDictionaryAutocomplete] load', e);
+        console.warn(
+          '[useExerciseDictionaryAutocomplete] Failed to load exercises:',
+          e instanceof Error ? e.message : 'Unknown error',
+        );
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
