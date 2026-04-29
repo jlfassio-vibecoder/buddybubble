@@ -42,16 +42,6 @@ function isVertexCreds(
   return 'accessToken' in creds;
 }
 
-export function useKanbanExtractPipeline(persona: PreparedWorkoutChainRequest['persona']): boolean {
-  return (
-    !!persona.kanbanBriefAuthoritative &&
-    !!(persona.title?.trim() || persona.description?.trim()) &&
-    !persona.hiitMode &&
-    !persona.amrapDensityMode &&
-    !persona.tabataBalancedMode
-  );
-}
-
 async function resolveDictionarySplit(
   extracted: KanbanExtractBriefOutput,
   shouldLog: boolean,
@@ -108,17 +98,48 @@ export async function runExtractAndEnrichChain(
 
   const { projectId, region, accessToken } = creds;
   const { persona } = prepared;
+  const kanbanVertexModel = 'google/gemini-3.1-flash-lite-preview';
 
   if (shouldLog) console.warn('[generate-workout-chain] Kanban path: Extract (Step A)...');
   const extractPrompt = buildExtractWorkoutFromBriefPrompt(persona);
-  const extractSystem =
-    'You are a workout text extractor. Output ONLY valid JSON matching the user schema. Never invent exercises.';
+  const equipmentList = prepared.availableEquipment
+    .map((e) => (typeof e === 'string' ? e.trim() : ''))
+    .filter((e) => e.length > 0);
+  const extractUserPrompt =
+    equipmentList.length > 0
+      ? `${extractPrompt}
+
+=== RESOLVED AVAILABLE EQUIPMENT (AUTHORITATIVE) ===
+${equipmentList.map((item) => `- ${item}`).join('\n')}
+
+You must only prescribe exercises that can be performed with the equipment listed above (use bodyweight only if it is listed or clearly allowed by the brief).`
+      : extractPrompt;
+  const extractSystem = `You are an expert AI fitness coach and JSON generator.
+Output ONLY valid JSON matching the user-provided schema. No markdown, no commentary.
+
+HYBRID EXTRACTION / GENERATION POLICY:
+- If the user provides a detailed list of exercises, extract those exercises faithfully and preserve order.
+- If the user provides a sparse concept (for example: AMRAP, EMOM, Tabata, kettlebell complex, full-body strength, recovery session) alongside Daily check-in context and profile constraints, you MUST DESIGN the missing workout details: specific exercises, sections, prescriptions, and safe defaults.
+
+CRITICAL VALIDATION RULES:
+- The JSON schema requires every exercise in section "main" to include at least one of: sets, reps, or work_seconds.
+- NEVER output null for all three fields on a main exercise.
+- If sets/reps/work_seconds are not explicitly provided, invent safe standard defaults based on requested duration, readiness, sleep quality, target intensity, and workout style.
+
+CHECK-IN UTILIZATION:
+- Respect the equipment list exactly; do not choose unavailable equipment.
+- Avoid or reduce loading for sore muscle groups.
+- Scale total volume and intensity to durationMinutes, readiness, sleepQuality, and targetIntensity.
+- For time-based workouts, include work_seconds and useful reps targets where appropriate.
+
+Generate one coherent workout only.`;
   const extractResponse = await callVertexAI({
     systemPrompt: extractSystem,
-    userPrompt: extractPrompt,
+    userPrompt: extractUserPrompt,
     accessToken,
     projectId,
     region,
+    model: kanbanVertexModel,
     temperature: 0.1,
     maxTokens: 4096,
     logPrefix: '[generate-workout-chain][kanban-extract]',
@@ -163,6 +184,7 @@ export async function runExtractAndEnrichChain(
       accessToken,
       projectId,
       region,
+      model: kanbanVertexModel,
       temperature: 0.35,
       maxTokens: 8192,
       timeoutMs: 120000,

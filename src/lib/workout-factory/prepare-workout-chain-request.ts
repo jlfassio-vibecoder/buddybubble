@@ -45,10 +45,10 @@ export interface PreparedWorkoutChainRequest {
   /** Normalized balanced Tabata options when tabataBalancedMode is true. */
   tabataBalancedOptions: TabataBalancedOptions | undefined;
   zoneContext: WorkoutChainZoneContext | undefined;
-  /** Equipment list used in Step 3 (Coach); mirrors generate-workout-chain. */
+  /** Equipment list for context (e.g. equipment-aware prompts). */
   availableEquipment: string[];
   providedArchitect: WorkoutArchitectBlueprint | undefined;
-  /** When set, Step 1 uses this instead of buildWorkoutArchitectPrompt (only if no providedArchitect). */
+  /** Request override for prior architect flows; current extract+enrich pipeline does not use this. */
   step1UserPromptOverride: string | undefined;
 }
 

@@ -24,7 +24,7 @@ type RequestBody = {
 };
 
 /**
- * Authenticated 4-step workout generation (Vertex). Loads `fitness_profiles` for the user + workspace.
+ * Authenticated Kanban extract+enrich workout generation (Vertex). Loads `fitness_profiles` for the user + workspace.
  */
 export async function POST(req: Request) {
   const shouldLog = process.env.NODE_ENV === 'development';

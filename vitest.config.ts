@@ -2,6 +2,10 @@ import path from 'path';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  esbuild: {
+    // Align with Next/React 17+ JSX transform so `React` is not required in scope for tests.
+    jsx: 'automatic',
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

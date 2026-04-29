@@ -16,6 +16,16 @@ import {
 } from '@/lib/item-metadata';
 import type { WorkoutTemplate } from '@/hooks/use-workout-templates';
 
+/** Intake wizard payload forwarded to `postGenerateWorkoutChain` as `daily_checkin`. */
+export type WorkoutIntakeWizardData = {
+  readiness: number;
+  equipment: string[];
+  sleepQuality: number;
+  durationMinutes: number | 'Optimized for Goals';
+  soreness: string[];
+  targetIntensity: string;
+};
+
 export type UseTaskWorkoutAiArgs = {
   open: boolean;
   taskId: string | null;
@@ -95,56 +105,67 @@ export function useTaskWorkoutAi({
     return () => window.clearInterval(id);
   }, [aiWorkoutGenerating]);
 
-  const handleAiGenerateWorkout = useCallback(async () => {
-    if (!canWrite || !workspaceId || !isWorkoutItemType) return;
-    setAiWorkoutGenerating(true);
-    try {
-      const duration = parseInt(workoutDurationMin, 10);
-      const data = await postGenerateWorkoutChain({
-        workspace_id: workspaceId,
-        daily_checkin: null,
-        workout_brief_authoritative: title.trim().length > 0 && description.trim().length > 0,
-        persona: {
-          title: title.trim() || undefined,
-          description: description.trim() || undefined,
-          sessionDurationMinutes: !Number.isNaN(duration) && duration > 0 ? duration : 45,
-        },
-      });
-      setTitle((t) => (t.trim() ? t : data.suggestedTitle || t));
-      setDescription((d) => (d.trim() ? d : data.suggestedDescription || d));
-      setWorkoutExercises(data.taskExercises);
-      setWorkoutType((wt) => (wt.trim() ? wt : 'Generated'));
-      setMetadata((prev) => {
-        const o = parseTaskMetadata(prev) as Record<string, unknown>;
-        return {
-          ...o,
-          ai_workout_factory: {
-            generated_at: data.chain_metadata.generated_at,
-            model: data.chain_metadata.model_used,
-            workout_set: data.workoutSet,
-            chain_metadata: data.chain_metadata,
+  const handleAiGenerateWorkout = useCallback(
+    async (wizardData?: WorkoutIntakeWizardData) => {
+      if (!canWrite || !workspaceId || !isWorkoutItemType) return;
+      setAiWorkoutGenerating(true);
+      try {
+        const duration = parseInt(workoutDurationMin, 10);
+        const dailyCheckInPayload = wizardData
+          ? {
+              ...wizardData,
+              ...(typeof wizardData.durationMinutes === 'number'
+                ? { target_duration_min: wizardData.durationMinutes }
+                : {}),
+            }
+          : null;
+        const data = await postGenerateWorkoutChain({
+          workspace_id: workspaceId,
+          daily_checkin: dailyCheckInPayload,
+          workout_brief_authoritative: title.trim().length > 0 && description.trim().length > 0,
+          persona: {
+            title: title.trim() || undefined,
+            description: description.trim() || undefined,
+            sessionDurationMinutes: !Number.isNaN(duration) && duration > 0 ? duration : 45,
           },
-        } as unknown as Json;
-      });
-      toast.success('Workout generated — review exercises and save.');
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Generation failed');
-    } finally {
-      setAiWorkoutGenerating(false);
-    }
-  }, [
-    canWrite,
-    workspaceId,
-    isWorkoutItemType,
-    workoutDurationMin,
-    title,
-    description,
-    setTitle,
-    setDescription,
-    setWorkoutExercises,
-    setWorkoutType,
-    setMetadata,
-  ]);
+        });
+        setTitle((t) => (t.trim() ? t : data.suggestedTitle || t));
+        setDescription((d) => (d.trim() ? d : data.suggestedDescription || d));
+        setWorkoutExercises(data.taskExercises);
+        setWorkoutType((wt) => (wt.trim() ? wt : 'Generated'));
+        setMetadata((prev) => {
+          const o = parseTaskMetadata(prev) as Record<string, unknown>;
+          return {
+            ...o,
+            ai_workout_factory: {
+              generated_at: data.chain_metadata.generated_at,
+              model: data.chain_metadata.model_used,
+              workout_set: data.workoutSet,
+              chain_metadata: data.chain_metadata,
+            },
+          } as unknown as Json;
+        });
+        toast.success('Workout generated — review exercises and save.');
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Generation failed');
+      } finally {
+        setAiWorkoutGenerating(false);
+      }
+    },
+    [
+      canWrite,
+      workspaceId,
+      isWorkoutItemType,
+      workoutDurationMin,
+      title,
+      description,
+      setTitle,
+      setDescription,
+      setWorkoutExercises,
+      setWorkoutType,
+      setMetadata,
+    ],
+  );
 
   const viewerWorkoutSet = useMemo((): WorkoutSetTemplate | null => {
     const o = parseTaskMetadata(metadata) as Record<string, unknown>;

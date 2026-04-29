@@ -45,7 +45,10 @@ const SLUG_LITERAL_ALLOWLIST: ReadonlyArray<string> = [
   // Surface defaults: these files intentionally wire the "when there's no @mention,
   // fall back to Coach" behavior at the composer surface. Documented in Phase 2.
   'src/components/chat/ChatArea.tsx',
+  'src/components/chat/WorkoutCoachRail.tsx', // task-scoped Coach vs Buddy agent toggle + metadata defaults
   'src/components/modals/task-modal/TaskModalCommentsPanel.tsx',
+  'src/components/fitness/WorkoutPlayer.tsx', // mobile unified pane targets Coach rail
+  'src/lib/fitness/ensure-coach-bubble-binding.ts', // fitness bubble provisioning targets Coach slug
 
   // The resolver library IS the canonical home for slug-aware logic.
   'src/lib/agents/**',

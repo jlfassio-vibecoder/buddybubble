@@ -206,6 +206,7 @@ export interface VertexAICallOptions {
   accessToken: string;
   projectId: string;
   region: string;
+  model?: string;
   temperature?: number;
   maxTokens?: number;
   timeoutMs?: number;
@@ -244,7 +245,7 @@ export async function callVertexAI(options: VertexAICallOptions): Promise<string
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'deepseek-ai/deepseek-v3.2-maas',
+          model: options.model || 'deepseek-ai/deepseek-v3.2-maas',
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt },

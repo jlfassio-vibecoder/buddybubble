@@ -7,6 +7,6 @@ import type {
 export interface WorkoutChainGenerationResponse {
   workoutSet: WorkoutSetTemplate;
   chain_metadata: WorkoutChainMetadata;
-  /** Populated by Kanban extract path; legacy callers derive from `workoutSet`. */
+  /** Populated by the extract+enrich pipeline; callers can also derive from `workoutSet`. */
   taskExercises?: WorkoutExercise[];
 }

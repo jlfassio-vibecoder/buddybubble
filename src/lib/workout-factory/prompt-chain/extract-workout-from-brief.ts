@@ -25,6 +25,14 @@ export function buildExtractWorkoutFromBriefPrompt(persona: WorkoutPersona): str
     ]
       .filter(Boolean)
       .join('\n') || 'None stated';
+  const isTimeBased = !!(
+    persona.hiitMode ||
+    persona.amrapDensityMode ||
+    persona.tabataBalancedMode
+  );
+  const timeBasedInstructions = isTimeBased
+    ? "\nCRITICAL FORMATTING: This is a HIIT/Time-based workout (AMRAP, EMOM, Tabata). Do NOT omit 'reps'. For Tabata/intervals, include BOTH 'work_seconds' (e.g., 20) and a target for 'reps' (e.g., '15+'). For AMRAP circuits, provide the specific 'reps' required for each movement to complete one round. You can use 'work_seconds' to define the total time cap or interval length."
+    : '';
 
   return `=== WORKOUT BRIEF (AUTHORITATIVE) ===
 Title: ${title}
@@ -36,13 +44,14 @@ Safety context (do NOT change the prescription; use only if the brief is ambiguo
 ${med}
 
 === YOUR TASK ===
-Extract a SINGLE workout exactly as written in the Description. Do NOT invent exercises, substitute modalities, or split into multiple days/sessions.
+Produce exactly ONE session (one JSON object). Match the system policy: (A) **detailed brief** = extract faithfully; (B) **sparse brief** or check-in context = design the missing plan with safe, conservative defaults. Do not output multiple days/sessions.
 
-1. Classify each line or numbered item into section "warmup", "main", or "cooldown" using the brief's structure (e.g. headers "Warm-up", "Main", "Cool-down"). If unclear, put strength/circuit items in "main" and generic prep in "warmup".
-2. Preserve exercise ORDER as in the brief. Assign "order" as 1,2,3,... globally across all sections.
-3. For each exercise: copy the name as "exercise_name" (concise, as in the brief). Extract sets, reps, equipment, rest, RPE, work_seconds, rounds ONLY if explicitly stated or clearly implied next to that exercise.
+1. Prefer extraction when the Description lists specific exercises: preserve order, do not substitute other movements. Classify into section "warmup", "main", or "cooldown" (use brief headers; else strength/circuit in "main", prep in "warmup").
+2. If the brief is **sparse** (e.g. only a format like AMRAP/EMOM, or a high-level focus without a full list) *or* the text includes a daily check-in / readiness block, you MUST invent concrete exercises and prescriptions to fill one coherent session, obeying the brief's intent and the Equipment / CHECK-IN rules from the system prompt.
+3. Global "order": 1,2,3,... across all sections. For each exercise, set "exercise_name" (concise). Set sets, reps, equipment, rest, RPE, work_seconds, rounds from the text when present; in sparse mode, set sensible defaults that satisfy the schema.
 4. If reps are a time hold (e.g. "30-60 seconds"), put that text in "reps" and omit sets or use sets: 1.
-5. "equipment": short string (e.g. "Dumbbell", "Barbell", "Suspension trainer") inferred only from the brief for that movement.
+5. "equipment" per exercise: short label; must stay consistent with any equipment list appended after this brief in the same user message, and with any equipment implied in the Description.
+${timeBasedInstructions}
 
 === OUTPUT FORMAT ===
 Return ONLY valid JSON. No markdown, no explanations. Start with { and end with }.
