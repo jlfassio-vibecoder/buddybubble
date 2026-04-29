@@ -218,10 +218,4 @@ export async function insertExerciseDictionaryPendingFromEnrichment(
   const row = enrichedExerciseToDictionaryInsert(exerciseName, enriched, slug, createdByUserId);
   const { error } = await client.from('exercise_dictionary').insert(row);
   if (error) throw error;
-  // Copilot suggestion ignored: [DEBUG] tripwire kept for post-merge manual QA; removed in a follow-up.
-  console.log('[DEBUG][ai-pending-insert]', {
-    userId: createdByUserId,
-    name: exerciseName,
-    slug,
-  });
 }

@@ -10,8 +10,8 @@ import {
 import { useUserProfileStore } from '@/store/userProfileStore';
 
 /**
- * RLS-scoped `exercise_dictionary` for future RichMessageComposer `#` integration.
- * Not wired into composer parents in this PR — use `usePublishedExerciseDictionary` until then.
+ * RLS-scoped `exercise_dictionary` for RichMessageComposer `#` exercise autocomplete
+ * (ChatArea, WorkoutCoachRail, TaskModalCommentsPanel).
  */
 export function useExerciseDictionaryAutocomplete(): {
   rows: ExerciseDictionaryAutocompleteRow[];
