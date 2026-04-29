@@ -22,7 +22,7 @@ import { AgentTypingIndicator } from '@/components/chat/AgentTypingIndicator';
 import { logAgentRoutingEvent } from '@/lib/agents/agentRoutingLogger';
 import type { Json } from '@/types/database';
 import { useWorkspaceSessionSubject } from '@/context/WorkspaceSessionContext';
-import { useExerciseDictionaryAutocomplete } from '@/hooks/useExerciseDictionaryAutocomplete';
+import { usePublishedExerciseDictionary } from '@/hooks/usePublishedExerciseDictionary';
 import { metadataFieldsFromParsed } from '@/lib/item-metadata';
 import { parseExecutionPatchFromMetadata, type ExecutionPatch } from '@/types/execution-patch';
 
@@ -187,7 +187,7 @@ export function WorkoutCoachRail({
     exercises: dictExercises,
     loading: exerciseDictionaryLoading,
     error: exerciseDictionaryError,
-  } = useExerciseDictionaryAutocomplete();
+  } = usePublishedExerciseDictionary();
 
   const workoutExerciseNameList = useMemo(
     () => metadataFieldsFromParsed(workoutData ?? null).workoutExercises.map((e) => e.name),

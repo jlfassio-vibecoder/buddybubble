@@ -3,6 +3,7 @@ import type { ExerciseDictionaryRow } from '@/types/database';
 import { validateEnrichWorkoutBiomechanicsOutput } from '@/lib/workout-factory/prompt-chain/enrich-workout-biomechanics';
 import {
   dictionaryRowToEnrichedExercise,
+  enrichedExerciseToDictionaryInsert,
   mergeKanbanEnrichFromDictionaryAndVertex,
   slugifyExerciseName,
   splitExtractByDictionaryMatches,
@@ -16,6 +17,7 @@ function row(
     id: partial.id ?? '00000000-0000-4000-8000-000000000001',
     slug: partial.slug,
     name: partial.name,
+    created_by: partial.created_by ?? null,
     complexity_level: partial.complexity_level ?? null,
     kinetic_chain_type: partial.kinetic_chain_type ?? null,
     status: partial.status ?? 'published',
@@ -129,6 +131,29 @@ describe('dictionaryRowToEnrichedExercise', () => {
     expect(e.exercise_name).toBe('Custom Name');
     expect(e.detailed_instructions).toEqual(['A', 'B']);
     expect(e.injury_prevention_tips).toBe('Keep ribs down');
+  });
+});
+
+describe('enrichedExerciseToDictionaryInsert', () => {
+  it('sets created_by when triggered user id is provided', () => {
+    const uid = '9b2d0c4e-0e3e-4c5a-9a1a-0e3e4c5a9a1a';
+    const insert = enrichedExerciseToDictionaryInsert(
+      'Curl',
+      { order: 1, exercise_name: 'Curl', detailed_instructions: ['A'] },
+      'curl',
+      uid,
+    );
+    expect(insert.created_by).toBe(uid);
+    expect(insert.status).toBe('pending');
+  });
+
+  it('omits created_by when no user id is passed', () => {
+    const insert = enrichedExerciseToDictionaryInsert(
+      'Curl',
+      { order: 1, exercise_name: 'Curl', detailed_instructions: ['A'] },
+      'curl',
+    );
+    expect('created_by' in insert).toBe(false);
   });
 });
 

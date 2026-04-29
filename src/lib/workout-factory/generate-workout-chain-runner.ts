@@ -10,6 +10,7 @@ import type { WorkoutChainGenerationResponse } from '@/lib/workout-factory/worko
 export async function runGenerateWorkoutChain(
   rawBody: unknown,
   shouldLog: boolean,
+  options?: { triggeredByUserId?: string | null },
 ): Promise<{ ok: true; data: WorkoutChainGenerationResponse } | { ok: false; response: Response }> {
   const prepared = await prepareWorkoutChainRequest(rawBody, shouldLog);
   if (!prepared.ok) return { ok: false, response: prepared.response };
@@ -20,5 +21,5 @@ export async function runGenerateWorkoutChain(
   if (shouldLog) {
     console.warn('[generate-workout-chain] Using Kanban extract & enrich pipeline');
   }
-  return runExtractAndEnrichChain(prepared.data, creds, shouldLog);
+  return runExtractAndEnrichChain(prepared.data, creds, shouldLog, options?.triggeredByUserId);
 }

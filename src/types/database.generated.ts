@@ -696,6 +696,7 @@ export type Database = {
           biomechanics: Json;
           complexity_level: string | null;
           created_at: string;
+          created_by: string | null;
           id: string;
           instructions: Json;
           kinetic_chain_type: string | null;
@@ -709,6 +710,7 @@ export type Database = {
           biomechanics?: Json;
           complexity_level?: string | null;
           created_at?: string;
+          created_by?: string | null;
           id?: string;
           instructions?: Json;
           kinetic_chain_type?: string | null;
@@ -722,6 +724,7 @@ export type Database = {
           biomechanics?: Json;
           complexity_level?: string | null;
           created_at?: string;
+          created_by?: string | null;
           id?: string;
           instructions?: Json;
           kinetic_chain_type?: string | null;
@@ -731,7 +734,15 @@ export type Database = {
           status?: string;
           updated_at?: string;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: 'exercise_dictionary_created_by_fkey';
+            columns: ['created_by'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       fitness_profiles: {
         Row: {
@@ -2338,6 +2349,7 @@ export type Database = {
           biomechanics: Json;
           complexity_level: string | null;
           created_at: string;
+          created_by: string | null;
           id: string;
           instructions: Json;
           kinetic_chain_type: string | null;

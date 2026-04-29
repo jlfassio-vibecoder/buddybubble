@@ -153,6 +153,7 @@ export function enrichedExerciseToDictionaryInsert(
   exerciseName: string,
   enriched: KanbanEnrichedExercise,
   slug: string,
+  createdByUserId?: string | null,
 ): Database['public']['Tables']['exercise_dictionary']['Insert'] {
   const name = exerciseName.trim();
   const di = enriched.detailed_instructions;
@@ -173,7 +174,7 @@ export function enrichedExerciseToDictionaryInsert(
     biomechanics.injuryPreventionTips = enriched.injury_prevention_tips;
   }
 
-  return {
+  const row: Database['public']['Tables']['exercise_dictionary']['Insert'] = {
     slug,
     name,
     status: 'pending',
@@ -181,6 +182,10 @@ export function enrichedExerciseToDictionaryInsert(
     biomechanics: biomechanics as Json,
     media: {},
   };
+  if (createdByUserId) {
+    row.created_by = createdByUserId;
+  }
+  return row;
 }
 
 /** Resolves slug, then slug-2, slug-3, … until unused. */
@@ -207,9 +212,15 @@ export async function insertExerciseDictionaryPendingFromEnrichment(
   client: SupabaseClient,
   exerciseName: string,
   enriched: KanbanEnrichedExercise,
+  createdByUserId?: string | null,
 ): Promise<void> {
   const slug = await resolveUniqueExerciseDictionarySlug(client, exerciseName);
-  const row = enrichedExerciseToDictionaryInsert(exerciseName, enriched, slug);
+  const row = enrichedExerciseToDictionaryInsert(exerciseName, enriched, slug, createdByUserId);
   const { error } = await client.from('exercise_dictionary').insert(row);
   if (error) throw error;
+  console.log('[DEBUG][ai-pending-insert]', {
+    userId: createdByUserId,
+    name: exerciseName,
+    slug,
+  });
 }

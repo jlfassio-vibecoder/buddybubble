@@ -1,45 +1,55 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createClient } from '@utils/supabase/client';
 import {
-  getCachedPublishedExerciseDictionary,
-  loadPublishedExerciseDictionary,
+  clearExerciseDictionaryAutocompleteCache,
+  loadExerciseDictionaryForAutocomplete,
+  type ExerciseDictionaryAutocompleteRow,
 } from '@/lib/exercise-dictionary-autocomplete-cache';
-import type { RichMessageComposerExercise } from '@/components/chat/RichMessageComposer';
+import { useUserProfileStore } from '@/store/userProfileStore';
 
 /**
- * Published `exercise_dictionary` rows for RichMessageComposer `#` exercise autocomplete.
- * Uses a module-level in-memory cache + shared in-flight request (see
- * `exercise-dictionary-autocomplete-cache.ts`) so multiple composers do not re-fetch the catalog.
+ * RLS-scoped `exercise_dictionary` for future RichMessageComposer `#` integration.
+ * Not wired into composer parents in this PR — use `usePublishedExerciseDictionary` until then.
  */
-export function useExerciseDictionaryAutocomplete() {
-  const [exercises, setExercises] = useState<RichMessageComposerExercise[]>(
-    () => getCachedPublishedExerciseDictionary() ?? [],
-  );
-  const [loading, setLoading] = useState(() => getCachedPublishedExerciseDictionary() == null);
-  const [error, setError] = useState<string | null>(null);
+export function useExerciseDictionaryAutocomplete(): {
+  rows: ExerciseDictionaryAutocompleteRow[];
+  loading: boolean;
+  refresh: () => Promise<void>;
+} {
+  const userId = useUserProfileStore((s) => s.profile?.id ?? null);
+  const [rows, setRows] = useState<ExerciseDictionaryAutocompleteRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const supabase = useMemo(() => createClient(), []);
+
+  const refresh = useCallback(async () => {
+    if (!userId) return;
+    setLoading(true);
+    try {
+      const next = await loadExerciseDictionaryForAutocomplete(supabase, { userId, force: true });
+      setRows(next);
+    } catch (e) {
+      console.warn('[useExerciseDictionaryAutocomplete] refresh', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [supabase, userId]);
 
   useEffect(() => {
-    if (getCachedPublishedExerciseDictionary()) {
-      setExercises(getCachedPublishedExerciseDictionary()!);
+    if (!userId) {
+      setRows([]);
       setLoading(false);
       return;
     }
     let cancelled = false;
     setLoading(true);
-    setError(null);
-    void loadPublishedExerciseDictionary()
-      .then((rows) => {
-        if (!cancelled) {
-          setExercises(rows);
-          setError(null);
-        }
+    void loadExerciseDictionaryForAutocomplete(supabase, { userId })
+      .then((r) => {
+        if (!cancelled) setRows(r);
       })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setExercises([]);
-          setError(err instanceof Error ? err.message : 'Failed to load exercises');
-        }
+      .catch((e) => {
+        console.warn('[useExerciseDictionaryAutocomplete] load', e);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -47,7 +57,21 @@ export function useExerciseDictionaryAutocomplete() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [supabase, userId]);
 
-  return { exercises, loading, error };
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        clearExerciseDictionaryAutocompleteCache();
+        setRows([]);
+      }
+    });
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [supabase]);
+
+  return { rows, loading, refresh };
 }

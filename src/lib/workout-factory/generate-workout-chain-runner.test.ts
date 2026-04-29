@@ -35,7 +35,28 @@ describe('runGenerateWorkoutChain', () => {
 
     expect(mockPrepare).toHaveBeenCalledWith({ foo: 'bar' }, false);
     expect(mockGetCreds).toHaveBeenCalled();
-    expect(mockRunExtract).toHaveBeenCalledWith(chainRequest, creds, false);
+    expect(mockRunExtract).toHaveBeenCalledWith(chainRequest, creds, false, undefined);
+    expect(out).toBe(success);
+  });
+
+  it('forwards triggeredByUserId to runExtractAndEnrichChain', async () => {
+    const chainRequest = { persona: { splitType: 'full_body' } };
+    mockPrepare.mockResolvedValue({ ok: true, data: chainRequest });
+    const creds = { projectId: 'p', region: 'r', accessToken: 't' };
+    mockGetCreds.mockResolvedValue(creds);
+    const success = { ok: true, data: { workoutSet: {}, chain_metadata: {} } };
+    mockRunExtract.mockResolvedValue(success);
+
+    const out = await runGenerateWorkoutChain({ foo: 'bar' }, false, {
+      triggeredByUserId: '9b2d0c4e-0e3e-4c5a-9a1a-0e3e4c5a9a1a',
+    });
+
+    expect(mockRunExtract).toHaveBeenCalledWith(
+      chainRequest,
+      creds,
+      false,
+      '9b2d0c4e-0e3e-4c5a-9a1a-0e3e4c5a9a1a',
+    );
     expect(out).toBe(success);
   });
 
