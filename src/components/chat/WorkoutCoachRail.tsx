@@ -183,8 +183,11 @@ export function WorkoutCoachRail({
 
   const availableAgents = useMemo(() => [...agentsByAuthUserId.values()], [agentsByAuthUserId]);
 
-  const { rows: dictExercises, loading: exerciseDictionaryLoading } =
-    useExerciseDictionaryAutocomplete();
+  const {
+    rows: dictExercises,
+    loading: exerciseDictionaryLoading,
+    error: exerciseDictionaryError,
+  } = useExerciseDictionaryAutocomplete();
 
   const workoutExerciseNameList = useMemo(
     () => metadataFieldsFromParsed(workoutData ?? null).workoutExercises.map((e) => e.name),
@@ -516,6 +519,7 @@ export function WorkoutCoachRail({
           hashConfig={{
             exercises: hashExercises,
             isLoading: exerciseDictionaryLoading,
+            errorText: exerciseDictionaryError,
           }}
           features={{
             enableAtMentions: true,

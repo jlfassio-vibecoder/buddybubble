@@ -16,24 +16,26 @@ import { useUserProfileStore } from '@/store/userProfileStore';
 export function useExerciseDictionaryAutocomplete(): {
   rows: ExerciseDictionaryAutocompleteRow[];
   loading: boolean;
+  error: string | null;
   refresh: () => Promise<void>;
 } {
   const userId = useUserProfileStore((s) => s.profile?.id ?? null);
   const [rows, setRows] = useState<ExerciseDictionaryAutocompleteRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const supabase = useMemo(() => createClient(), []);
 
   const refresh = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
+    setError(null);
     try {
       const next = await loadExerciseDictionaryForAutocomplete(supabase, { userId, force: true });
       setRows(next);
     } catch (e) {
-      console.warn(
-        '[useExerciseDictionaryAutocomplete] Failed to load exercises:',
-        e instanceof Error ? e.message : 'Unknown error',
-      );
+      const msg = e instanceof Error ? e.message : 'Unknown error';
+      console.warn('[useExerciseDictionaryAutocomplete] Failed to load exercises:', msg);
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -43,19 +45,23 @@ export function useExerciseDictionaryAutocomplete(): {
     if (!userId) {
       setRows([]);
       setLoading(false);
+      setError(null);
       return;
     }
     let cancelled = false;
     setLoading(true);
+    setError(null);
     void loadExerciseDictionaryForAutocomplete(supabase, { userId })
       .then((r) => {
-        if (!cancelled) setRows(r);
+        if (!cancelled) {
+          setRows(r);
+          setError(null);
+        }
       })
       .catch((e) => {
-        console.warn(
-          '[useExerciseDictionaryAutocomplete] Failed to load exercises:',
-          e instanceof Error ? e.message : 'Unknown error',
-        );
+        const msg = e instanceof Error ? e.message : 'Failed to load exercises';
+        console.warn('[useExerciseDictionaryAutocomplete] Failed to load exercises:', msg);
+        if (!cancelled) setError(msg);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -72,6 +78,7 @@ export function useExerciseDictionaryAutocomplete(): {
       if (event === 'SIGNED_OUT') {
         clearExerciseDictionaryAutocompleteCache();
         setRows([]);
+        setError(null);
       }
     });
     return () => {
@@ -79,5 +86,5 @@ export function useExerciseDictionaryAutocomplete(): {
     };
   }, [supabase]);
 
-  return { rows, loading, refresh };
+  return { rows, loading, error, refresh };
 }

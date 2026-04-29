@@ -609,7 +609,6 @@ export function WorkoutPlayer({
       }
 
       let prefilledLogs = exercises.map(makeSets);
-      let mode: 'blank' | 'historicalLog' = 'blank';
 
       const { data: historical } = await supabase
         .from('tasks')
@@ -637,7 +636,6 @@ export function WorkoutPlayer({
             if (!byName.has(key)) byName.set(key, he);
           }
 
-          mode = 'historicalLog';
           prefilledLogs = exercises.map((ex) => {
             const base = makeSets(ex);
             const key = ex.name.toLowerCase().trim();
@@ -663,8 +661,6 @@ export function WorkoutPlayer({
 
       setLogs(prefilledLogs);
       setActiveLogTaskId(null);
-      // eslint-disable-next-line no-console
-      console.log('[DEBUG][WorkoutPlayer] prefill source:', { mode });
     };
 
     void recover();
@@ -797,6 +793,7 @@ export function WorkoutPlayer({
   );
 
   const handleApplyExecutionPatch = useCallback((patch: ExecutionPatch) => {
+    hasUserEditedRef.current = true;
     setLogs((prev) => {
       const next = prev.map((row) => row.map((c) => ({ ...c })));
       for (const { exerciseIndex: exIdx, setIndex: setIdx, weight, reps, rpe, done } of patch) {

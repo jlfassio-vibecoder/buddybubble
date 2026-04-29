@@ -137,7 +137,7 @@ There is no `status` filter. RLS decides which published and pending rows the us
 `useExerciseDictionaryAutocomplete()`:
 
 - Reads `userId` from `useUserProfileStore((s) => s.profile?.id ?? null)`.
-- Returns `{ rows, loading, refresh }`.
+- Returns `{ rows, loading, error, refresh }` (`error` is surfaced to composer `hashConfig.errorText`).
 - Calls `clearExerciseDictionaryAutocompleteCache()` on Supabase `SIGNED_OUT`.
 - Soft-fails on load errors: logs a sanitized message and preserves existing rows.
 

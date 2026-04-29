@@ -777,14 +777,18 @@ export function ChatArea({
 
   const richSlashConfig = useMemo(() => ({ tasks: allTasks }), [allTasks]);
 
-  const { rows: exerciseDictionaryForHash, loading: exerciseDictionaryLoading } =
-    useExerciseDictionaryAutocomplete();
+  const {
+    rows: exerciseDictionaryForHash,
+    loading: exerciseDictionaryLoading,
+    error: exerciseDictionaryError,
+  } = useExerciseDictionaryAutocomplete();
   const richHashConfig = useMemo(
     () => ({
       exercises: exerciseDictionaryForHash,
       isLoading: exerciseDictionaryLoading,
+      errorText: exerciseDictionaryError,
     }),
-    [exerciseDictionaryForHash, exerciseDictionaryLoading],
+    [exerciseDictionaryForHash, exerciseDictionaryLoading, exerciseDictionaryError],
   );
 
   const performSearch = useCallback(
