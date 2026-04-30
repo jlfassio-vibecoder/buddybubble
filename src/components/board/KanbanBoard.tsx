@@ -832,6 +832,19 @@ export function KanbanBoard({
     tz,
   ]);
 
+  const visibleBoardTasks = useMemo(
+    () => columnSlugs.flatMap((s) => visibleColumns[s] ?? []),
+    [columnSlugs, visibleColumns],
+  );
+  const visibleBoardShellIds = useMemo(
+    () => shellIdsInTaskList(visibleBoardTasks),
+    [visibleBoardTasks],
+  );
+  const visibleBoardChildTasksByShellId = useMemo(
+    () => buildChildTasksByShellId(visibleBoardTasks, visibleBoardShellIds),
+    [visibleBoardTasks, visibleBoardShellIds],
+  );
+
   const taskByIdBoard = useMemo(() => {
     const map = new Map<string, TaskRow>();
     for (const list of Object.values(columns)) {
@@ -1398,6 +1411,8 @@ export function KanbanBoard({
                     column={col}
                     tasks={visibleColumns[col.id] ?? []}
                     fullTaskCount={fullTaskCount}
+                    boardShellIds={visibleBoardShellIds}
+                    boardChildTasksByShellId={visibleBoardChildTasksByShellId}
                     collapsed={collapsedColumnIds.has(col.id)}
                     canWrite={canWrite}
                     dragDisabled={dragSortDisabled}
@@ -1611,6 +1626,8 @@ type ColumnProps = {
   tasks: TaskRow[];
   /** Tasks in this column before priority filter (for sort + menu). */
   fullTaskCount: number;
+  boardShellIds: Set<string>;
+  boardChildTasksByShellId: Map<string, TaskRow[]>;
   collapsed: boolean;
   canWrite: boolean;
   /** When true, cards are not draggable (e.g. priority filter is not "all"). */
@@ -1637,6 +1654,8 @@ function KanbanColumn({
   column,
   tasks,
   fullTaskCount,
+  boardShellIds,
+  boardChildTasksByShellId,
   collapsed,
   canWrite,
   dragDisabled,
@@ -1658,14 +1677,9 @@ function KanbanColumn({
   onToggleCollapse,
 }: ColumnProps) {
   const { setNodeRef } = useDroppable({ id: column.id });
-  const shellIds = useMemo(() => shellIdsInTaskList(tasks), [tasks]);
-  const childTasksByShellId = useMemo(
-    () => buildChildTasksByShellId(tasks, shellIds),
-    [tasks, shellIds],
-  );
   const renderTasks = useMemo(
-    () => topLevelTasksForShellGrouping(tasks, shellIds),
-    [tasks, shellIds],
+    () => topLevelTasksForShellGrouping(tasks, boardShellIds),
+    [tasks, boardShellIds],
   );
   const ids = useMemo(() => renderTasks.map((t) => t.id), [renderTasks]);
   const addDisabled = !boardReady || !onAddNew;
@@ -1725,7 +1739,7 @@ function KanbanColumn({
                         <SortableProgramShellCard
                           key={task.id}
                           shellTask={task}
-                          childTasks={childTasksByShellId.get(task.id) ?? []}
+                          childTasks={boardChildTasksByShellId.get(task.id) ?? []}
                           canWrite={canWrite}
                           dragDisabled={dragDisabled}
                           bubbles={bubbles}

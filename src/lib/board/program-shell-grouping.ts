@@ -26,7 +26,7 @@ export function getProgramShellParentId(task: TaskRow): string | null {
 }
 
 /**
- * True when this task belongs under a program shell that appears in the same column list.
+ * True when this task belongs under a program shell that appears in the supplied task scope.
  * Uses shell id set derived from `isProgramShellTask` so legacy `program_id` links to non-shell
  * parents are not grouped.
  */
@@ -59,7 +59,7 @@ export function buildChildTasksByShellId(
   return map;
 }
 
-/** Column tasks to render as top-level rows (hides children grouped under a shell in this list). */
+/** Tasks to render as top-level rows (hides children grouped under a shell in this scope). */
 export function topLevelTasksForShellGrouping(tasks: TaskRow[], shellIds: Set<string>): TaskRow[] {
   return tasks.filter((t) => !isProgramShellChildTask(t, shellIds));
 }

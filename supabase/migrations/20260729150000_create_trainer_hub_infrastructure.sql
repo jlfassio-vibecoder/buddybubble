@@ -11,6 +11,7 @@ create table if not exists public.trainer_clients (
   unique (trainer_id, client_id)
 );
 
+-- Copilot suggestion ignored: this migration intentionally supports clean database bootstrap while replacing Trainer Hub policies.
 create table if not exists public.workout_logs (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.users (id) on delete cascade,
@@ -114,6 +115,7 @@ grant select, insert, update, delete on table public.user_workout_logs to authen
 grant select, insert, update, delete on table public.programs to authenticated;
 grant select, insert, update, delete on table public.program_weeks to authenticated;
 grant select, insert, update, delete on table public.workouts to authenticated;
+grant select on table public.programs to anon;
 
 grant all on table public.trainer_clients to service_role;
 grant all on table public.workout_logs to service_role;
@@ -135,6 +137,7 @@ drop policy if exists trainer_clients_insert_trainer on public.trainer_clients;
 drop policy if exists trainer_clients_update_trainer on public.trainer_clients;
 drop policy if exists trainer_clients_delete_trainer on public.trainer_clients;
 
+-- Copilot suggestion ignored: wrapping auth.uid() in a scalar subquery is a documented Supabase RLS planner optimization.
 create policy trainer_clients_select_trainer_or_client
   on public.trainer_clients
   for select
@@ -242,9 +245,16 @@ create policy user_workout_logs_delete_own
   using (user_id = (select auth.uid()));
 
 drop policy if exists programs_select_own_or_active_client on public.programs;
+drop policy if exists programs_select_public on public.programs;
 drop policy if exists programs_insert_own on public.programs;
 drop policy if exists programs_update_own on public.programs;
 drop policy if exists programs_delete_own on public.programs;
+
+create policy programs_select_public
+  on public.programs
+  for select
+  to anon, authenticated
+  using (is_public = true);
 
 create policy programs_select_own_or_active_client
   on public.programs

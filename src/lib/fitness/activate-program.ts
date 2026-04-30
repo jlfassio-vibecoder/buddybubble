@@ -1,4 +1,4 @@
-import { addDays, format, parseISO } from 'date-fns';
+import { addDays, format, isValid, parseISO } from 'date-fns';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database, Json } from '@/types/database';
 
@@ -11,10 +11,25 @@ export function normalizeStartYmd(startDate: Date | string): string {
   if (typeof startDate === 'string') {
     const trimmed = startDate.trim();
     const ymd = trimmed.slice(0, 10);
-    if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return ymd;
-    return format(parseISO(trimmed), 'yyyy-MM-dd');
+    const parsed = /^\d{4}-\d{2}-\d{2}$/.test(ymd)
+      ? parseISO(`${ymd}T12:00:00`)
+      : parseISO(trimmed);
+    if (!isValid(parsed)) throw new Error('Invalid startDate.');
+    return format(parsed, 'yyyy-MM-dd');
   }
+  if (!isValid(startDate)) throw new Error('Invalid startDate.');
   return format(startDate, 'yyyy-MM-dd');
+}
+
+async function cleanupActivatedProgramDraft(
+  supabase: Client,
+  shellTaskId: string,
+  workoutTaskIds: string[] = [],
+): Promise<void> {
+  const taskIds = [shellTaskId, ...workoutTaskIds].filter(Boolean);
+  if (taskIds.length === 0) return;
+  await supabase.from('task_assignees').delete().in('task_id', taskIds);
+  await supabase.from('tasks').delete().in('id', taskIds);
 }
 
 /**
@@ -92,7 +107,12 @@ export async function activateProgram(
   if (!programId?.trim()) return { error: 'programId is required' };
   if (!userId?.trim()) return { error: 'userId is required' };
 
-  const startYmd = normalizeStartYmd(startDate);
+  let startYmd: string;
+  try {
+    startYmd = normalizeStartYmd(startDate);
+  } catch {
+    return { error: 'startDate is invalid' };
+  }
 
   const { data: bubble, error: bubbleErr } = await supabase
     .from('bubbles')
@@ -183,6 +203,7 @@ export async function activateProgram(
     user_id: userId,
   });
   if (shellAssignErr) {
+    await cleanupActivatedProgramDraft(supabase, shellTaskId);
     return { shellTaskId, error: shellAssignErr.message };
   }
 
@@ -194,7 +215,7 @@ export async function activateProgram(
     const sw = w.scheduled_week;
     const sd = w.scheduled_day;
     const scheduledOn = computeWorkoutScheduledOnYmd(startYmd, sw, sd);
-    const weekNum = sw == null || Number.isNaN(Number(sw)) ? 1 : Number(sw);
+    const weekNum = sw == null || Number.isNaN(Number(sw)) ? 1 : Math.max(1, Number(sw));
     const isLocked = weekNum > 1;
 
     const meta: Json = {
@@ -229,6 +250,7 @@ export async function activateProgram(
     .select('id');
 
   if (wInsErr || !insertedWorkouts?.length) {
+    await cleanupActivatedProgramDraft(supabase, shellTaskId);
     return {
       shellTaskId,
       error: wInsErr?.message ?? 'Failed to create workout tasks.',
@@ -240,6 +262,7 @@ export async function activateProgram(
 
   const { error: assignBulkErr } = await supabase.from('task_assignees').insert(assigneeRows);
   if (assignBulkErr) {
+    await cleanupActivatedProgramDraft(supabase, shellTaskId, workoutTaskIds);
     return { shellTaskId, workoutTaskIds, error: assignBulkErr.message };
   }
 

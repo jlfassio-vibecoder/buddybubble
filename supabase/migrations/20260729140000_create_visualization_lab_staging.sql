@@ -33,6 +33,10 @@ create index if not exists idx_generated_exercises_slug_status
   on public.generated_exercises (slug, status)
   where status = 'approved';
 
+create unique index if not exists idx_generated_exercises_approved_slug_unique
+  on public.generated_exercises (slug)
+  where status = 'approved';
+
 create index if not exists idx_generated_exercises_status_created
   on public.generated_exercises (status, created_at desc);
 
