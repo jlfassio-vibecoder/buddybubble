@@ -71,7 +71,14 @@ import {
   parseKanbanCardDensity,
   type KanbanCardDensity,
 } from '@/components/board/kanban-density';
+import { KanbanProgramShellCard } from '@/components/board/kanban-program-shell-card';
 import { KanbanTaskCard, KanbanTaskCardDragDecoration } from '@/components/board/kanban-task-card';
+import {
+  buildChildTasksByShellId,
+  isProgramShellTask,
+  shellIdsInTaskList,
+  topLevelTasksForShellGrouping,
+} from '@/lib/board/program-shell-grouping';
 import {
   CalendarRailChromeBar,
   type CalendarRailChromeBarProps,
@@ -825,6 +832,19 @@ export function KanbanBoard({
     tz,
   ]);
 
+  const visibleBoardTasks = useMemo(
+    () => columnSlugs.flatMap((s) => visibleColumns[s] ?? []),
+    [columnSlugs, visibleColumns],
+  );
+  const visibleBoardShellIds = useMemo(
+    () => shellIdsInTaskList(visibleBoardTasks),
+    [visibleBoardTasks],
+  );
+  const visibleBoardChildTasksByShellId = useMemo(
+    () => buildChildTasksByShellId(visibleBoardTasks, visibleBoardShellIds),
+    [visibleBoardTasks, visibleBoardShellIds],
+  );
+
   const taskByIdBoard = useMemo(() => {
     const map = new Map<string, TaskRow>();
     for (const list of Object.values(columns)) {
@@ -1391,6 +1411,8 @@ export function KanbanBoard({
                     column={col}
                     tasks={visibleColumns[col.id] ?? []}
                     fullTaskCount={fullTaskCount}
+                    boardShellIds={visibleBoardShellIds}
+                    boardChildTasksByShellId={visibleBoardChildTasksByShellId}
                     collapsed={collapsedColumnIds.has(col.id)}
                     canWrite={canWrite}
                     dragDisabled={dragSortDisabled}
@@ -1549,19 +1571,38 @@ export function KanbanBoard({
             }}
           >
             {activeTask ? (
-              <div className="w-64 cursor-grabbing opacity-95">
-                <KanbanTaskCard
-                  task={activeTask}
-                  canWrite={false}
-                  bubbles={[]}
-                  onMoveToBubble={() => {}}
-                  density={cardDensity}
-                  workspaceCategory={workspaceCategory}
-                  calendarTimezone={tz}
-                  isCompleted={taskColumnIsCompletionStatus(activeTask.status, columnDefs)}
-                  className="pointer-events-none shadow-lg"
-                  dragHandle={<KanbanTaskCardDragDecoration />}
-                />
+              <div className="w-64 cursor-grabbing opacity-95 pointer-events-none shadow-lg">
+                {isProgramShellTask(activeTask) ? (
+                  <KanbanProgramShellCard
+                    shellTask={activeTask}
+                    childTasks={[]}
+                    isDragging
+                    dragHandle={<KanbanTaskCardDragDecoration />}
+                    canWrite={false}
+                    bubbles={bubbles}
+                    boardColumnDefs={columnDefs}
+                    cardDensity={cardDensity}
+                    workspaceCategory={effectiveWorkspaceCategory}
+                    calendarTimezone={tz}
+                    commentUnreadByTaskId={commentUnreadByTaskId}
+                    commentLatestUnreadMessageIdByTaskId={commentLatestUnreadMessageIdByTaskId}
+                    onMoveToBubble={() => {}}
+                    bubbleUpPropsFor={bubbleUpPropsFor}
+                  />
+                ) : (
+                  <KanbanTaskCard
+                    task={activeTask}
+                    canWrite={false}
+                    bubbles={[]}
+                    onMoveToBubble={() => {}}
+                    density={cardDensity}
+                    workspaceCategory={workspaceCategory}
+                    calendarTimezone={tz}
+                    isCompleted={taskColumnIsCompletionStatus(activeTask.status, columnDefs)}
+                    className="shadow-lg"
+                    dragHandle={<KanbanTaskCardDragDecoration />}
+                  />
+                )}
               </div>
             ) : null}
           </DragOverlay>
@@ -1585,6 +1626,8 @@ type ColumnProps = {
   tasks: TaskRow[];
   /** Tasks in this column before priority filter (for sort + menu). */
   fullTaskCount: number;
+  boardShellIds: Set<string>;
+  boardChildTasksByShellId: Map<string, TaskRow[]>;
   collapsed: boolean;
   canWrite: boolean;
   /** When true, cards are not draggable (e.g. priority filter is not "all"). */
@@ -1611,6 +1654,8 @@ function KanbanColumn({
   column,
   tasks,
   fullTaskCount,
+  boardShellIds,
+  boardChildTasksByShellId,
   collapsed,
   canWrite,
   dragDisabled,
@@ -1632,7 +1677,11 @@ function KanbanColumn({
   onToggleCollapse,
 }: ColumnProps) {
   const { setNodeRef } = useDroppable({ id: column.id });
-  const ids = useMemo(() => tasks.map((t) => t.id), [tasks]);
+  const renderTasks = useMemo(
+    () => topLevelTasksForShellGrouping(tasks, boardShellIds),
+    [tasks, boardShellIds],
+  );
+  const ids = useMemo(() => renderTasks.map((t) => t.id), [renderTasks]);
   const addDisabled = !boardReady || !onAddNew;
 
   return (
@@ -1672,7 +1721,7 @@ function KanbanColumn({
           <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-0.5">
             <SortableContext items={ids} strategy={verticalListSortingStrategy}>
               <div className="pr-1.5">
-                {tasks.length === 0 ? (
+                {renderTasks.length === 0 ? (
                   onAddNew ? (
                     <KanbanColumnAdd
                       variant="empty"
@@ -1685,27 +1734,50 @@ function KanbanColumn({
                   )
                 ) : (
                   <>
-                    {tasks.map((task) => (
-                      <SortableTaskCard
-                        key={task.id}
-                        task={task}
-                        canWrite={canWrite}
-                        dragDisabled={dragDisabled}
-                        bubbles={bubbles}
-                        boardColumnDefs={boardColumnDefs}
-                        cardDensity={cardDensity}
-                        workspaceCategory={workspaceCategory}
-                        calendarTimezone={calendarTimezone}
-                        commentUnreadCount={commentUnreadByTaskId[task.id] ?? 0}
-                        commentLatestUnreadMessageId={
-                          commentLatestUnreadMessageIdByTaskId[task.id] ?? null
-                        }
-                        onMoveToBubble={onMoveToBubble}
-                        onOpenTask={onOpenTask}
-                        onStartWorkout={onStartWorkout}
-                        bubbleUp={bubbleUpPropsFor(task.id)}
-                      />
-                    ))}
+                    {renderTasks.map((task) =>
+                      isProgramShellTask(task) ? (
+                        <SortableProgramShellCard
+                          key={task.id}
+                          shellTask={task}
+                          childTasks={boardChildTasksByShellId.get(task.id) ?? []}
+                          canWrite={canWrite}
+                          dragDisabled={dragDisabled}
+                          bubbles={bubbles}
+                          boardColumnDefs={boardColumnDefs}
+                          cardDensity={cardDensity}
+                          workspaceCategory={workspaceCategory}
+                          calendarTimezone={calendarTimezone}
+                          commentUnreadByTaskId={commentUnreadByTaskId}
+                          commentLatestUnreadMessageIdByTaskId={
+                            commentLatestUnreadMessageIdByTaskId
+                          }
+                          onMoveToBubble={onMoveToBubble}
+                          onOpenTask={onOpenTask}
+                          onStartWorkout={onStartWorkout}
+                          bubbleUpPropsFor={bubbleUpPropsFor}
+                        />
+                      ) : (
+                        <SortableTaskCard
+                          key={task.id}
+                          task={task}
+                          canWrite={canWrite}
+                          dragDisabled={dragDisabled}
+                          bubbles={bubbles}
+                          boardColumnDefs={boardColumnDefs}
+                          cardDensity={cardDensity}
+                          workspaceCategory={workspaceCategory}
+                          calendarTimezone={calendarTimezone}
+                          commentUnreadCount={commentUnreadByTaskId[task.id] ?? 0}
+                          commentLatestUnreadMessageId={
+                            commentLatestUnreadMessageIdByTaskId[task.id] ?? null
+                          }
+                          onMoveToBubble={onMoveToBubble}
+                          onOpenTask={onOpenTask}
+                          onStartWorkout={onStartWorkout}
+                          bubbleUp={bubbleUpPropsFor(task.id)}
+                        />
+                      ),
+                    )}
                     {onAddNew ? (
                       <KanbanColumnAdd
                         variant="inline"
@@ -1741,6 +1813,105 @@ type CardProps = {
   onStartWorkout?: (task: TaskRow) => void;
   bubbleUp?: Omit<TaskBubbleUpControlProps, 'density'>;
 };
+
+type ProgramShellSortableProps = {
+  shellTask: TaskRow;
+  childTasks: TaskRow[];
+  canWrite: boolean;
+  dragDisabled: boolean;
+  bubbles: BubbleRow[];
+  boardColumnDefs: { id: string; label: string }[] | null;
+  cardDensity: KanbanCardDensity;
+  workspaceCategory: WorkspaceCategory | null;
+  calendarTimezone: string;
+  commentUnreadByTaskId: Record<string, number>;
+  commentLatestUnreadMessageIdByTaskId: Record<string, string | null>;
+  onMoveToBubble: (taskId: string, targetBubbleId: string) => void;
+  onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
+  onStartWorkout?: (task: TaskRow) => void;
+  bubbleUpPropsFor: (taskId: string) => Omit<TaskBubbleUpControlProps, 'density'> | undefined;
+};
+
+function SortableProgramShellCard({
+  shellTask,
+  childTasks,
+  canWrite,
+  dragDisabled,
+  bubbles,
+  boardColumnDefs,
+  cardDensity,
+  workspaceCategory,
+  calendarTimezone,
+  commentUnreadByTaskId,
+  commentLatestUnreadMessageIdByTaskId,
+  onMoveToBubble,
+  onOpenTask,
+  onStartWorkout,
+  bubbleUpPropsFor,
+}: ProgramShellSortableProps) {
+  const sortableDisabled = !canWrite || dragDisabled;
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: shellTask.id,
+    disabled: sortableDisabled,
+    transition: {
+      duration: 220,
+      easing: 'cubic-bezier(0.25, 1, 0.5, 1)',
+    },
+  });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  };
+
+  const draggable = canWrite && !dragDisabled;
+  const showDecorativeGrip = !draggable && canWrite && dragDisabled;
+
+  return (
+    <div ref={setNodeRef} style={style} className="mb-2">
+      <KanbanProgramShellCard
+        shellTask={shellTask}
+        childTasks={childTasks}
+        dragHandle={
+          draggable ? (
+            <button
+              type="button"
+              ref={setActivatorNodeRef}
+              className="cursor-grab touch-none active:cursor-grabbing"
+              aria-label="Drag to reorder card"
+              {...listeners}
+              {...attributes}
+            >
+              <GripVertical className="size-4" />
+            </button>
+          ) : showDecorativeGrip ? (
+            <KanbanTaskCardDragDecoration />
+          ) : null
+        }
+        canWrite={canWrite}
+        bubbles={bubbles}
+        boardColumnDefs={boardColumnDefs}
+        cardDensity={cardDensity}
+        workspaceCategory={workspaceCategory}
+        calendarTimezone={calendarTimezone}
+        commentUnreadByTaskId={commentUnreadByTaskId}
+        commentLatestUnreadMessageIdByTaskId={commentLatestUnreadMessageIdByTaskId}
+        onMoveToBubble={onMoveToBubble}
+        onOpenTask={onOpenTask}
+        onStartWorkout={onStartWorkout}
+        bubbleUpPropsFor={bubbleUpPropsFor}
+      />
+    </div>
+  );
+}
 
 function SortableTaskCard({
   task,

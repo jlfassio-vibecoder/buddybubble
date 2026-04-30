@@ -15,11 +15,13 @@ import {
   GripVertical,
   ListChecks,
   ListTree,
+  Lock,
   MessageCircle,
   Pencil,
   Play,
   Video,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { normalizeItemType } from '@/lib/item-types';
 import type { BubbleRow, TaskRow, WorkspaceCategory } from '@/types/database';
 import { getItemTypeVisual } from '@/lib/item-type-styles';
@@ -78,6 +80,12 @@ export type KanbanTaskCardProps = {
 };
 
 const KANBAN_HIDE_COVER_KEY = 'bb.kanban.hideCardCover';
+
+function isPaywallLockedTask(task: TaskRow): boolean {
+  const m = task.metadata;
+  if (!m || typeof m !== 'object' || Array.isArray(m)) return false;
+  return (m as Record<string, unknown>).is_locked === true;
+}
 
 function persistKanbanCoverHidden(taskId: string, hidden: boolean) {
   try {
@@ -267,6 +275,7 @@ function KanbanCardQuickActions({
   commentLatestUnreadMessageId,
   onOpenTask,
   onStartWorkout,
+  paywallLocked,
 }: {
   variant: 'cover' | 'default';
   task: TaskRow;
@@ -275,6 +284,7 @@ function KanbanCardQuickActions({
   commentLatestUnreadMessageId: string | null;
   onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
   onStartWorkout?: (task: TaskRow) => void;
+  paywallLocked?: boolean;
 }) {
   const cover = variant === 'cover';
   const base =
@@ -286,6 +296,13 @@ function KanbanCardQuickActions({
     ? 'text-white/85 hover:bg-white/15 hover:text-white'
     : 'text-muted-foreground hover:bg-muted hover:text-primary';
   const showQuickView = Boolean(onOpenTask && taskRowHasWorkoutViewerContent(task));
+  const guardOpen = (fn: () => void) => {
+    if (paywallLocked) {
+      toast.message('Upgrade to unlock this workout');
+      return;
+    }
+    fn();
+  };
 
   return (
     <div
@@ -302,13 +319,15 @@ function KanbanCardQuickActions({
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
-            onOpenTask?.(task.id, { viewMode: 'full', openWorkoutViewer: true });
+            guardOpen(() => onOpenTask?.(task.id, { viewMode: 'full', openWorkoutViewer: true }));
           }}
         >
           <ListTree className="size-4" aria-hidden />
         </button>
       ) : null}
-      {onStartWorkout && (task.item_type === 'workout' || task.item_type === 'workout_log') ? (
+      {onStartWorkout &&
+      !paywallLocked &&
+      (task.item_type === 'workout' || task.item_type === 'workout_log') ? (
         <button
           type="button"
           className={cn(base, play)}
@@ -333,7 +352,9 @@ function KanbanCardQuickActions({
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
-              onOpenTask(task.id, { tab: 'details', viewMode: 'full', autoEdit: true });
+              guardOpen(() =>
+                onOpenTask(task.id, { tab: 'details', viewMode: 'full', autoEdit: true }),
+              );
             }}
           >
             <Pencil className="size-4" aria-hidden />
@@ -350,10 +371,12 @@ function KanbanCardQuickActions({
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
-              const deepId = commentLatestUnreadMessageId?.trim();
-              const opts: OpenTaskOptions = { tab: 'comments', viewMode: 'comments-only' };
-              if (commentUnreadCount > 0 && deepId) opts.commentThreadMessageId = deepId;
-              onOpenTask(task.id, opts);
+              guardOpen(() => {
+                const deepId = commentLatestUnreadMessageId?.trim();
+                const opts: OpenTaskOptions = { tab: 'comments', viewMode: 'comments-only' };
+                if (commentUnreadCount > 0 && deepId) opts.commentThreadMessageId = deepId;
+                onOpenTask(task.id, opts);
+              });
             }}
           >
             <MessageCircle className="size-4" aria-hidden />
@@ -423,10 +446,23 @@ export function KanbanTaskCard({
     (density === 'full' || density === 'detailed') && canWrite && bubbles.length > 0;
   const showDetailedMeta = density === 'detailed';
   const commentCount = task.comment_count ?? 0;
+  const paywallLocked = isPaywallLockedTask(task);
 
-  const openTask = onOpenTask
+  const guardedOnOpenTask = useMemo(() => {
+    if (!onOpenTask) return undefined;
+    return (taskId: string, opts?: OpenTaskOptions) => {
+      if (taskId !== task.id) return;
+      if (paywallLocked) {
+        toast.message('Upgrade to unlock this workout');
+        return;
+      }
+      onOpenTask(taskId, opts);
+    };
+  }, [onOpenTask, paywallLocked, task.id]);
+
+  const openTask = guardedOnOpenTask
     ? () => {
-        onOpenTask(task.id, { viewMode: 'full' });
+        guardedOnOpenTask(task.id, { viewMode: 'full' });
       }
     : undefined;
 
@@ -511,6 +547,7 @@ export function KanbanTaskCard({
             typeVisual.leftBar,
             typeVisual.surface,
             isCompleted && 'opacity-[0.68]',
+            paywallLocked && 'opacity-90 grayscale',
             className,
           )}
           size="sm"
@@ -546,7 +583,7 @@ export function KanbanTaskCard({
                 </div>
               </div>
             </div>
-            {(liveInvite && !liveInvite.endedAt) || onOpenTask || bubbleUp ? (
+            {(liveInvite && !liveInvite.endedAt) || guardedOnOpenTask || bubbleUp ? (
               <div
                 className="mt-1 border-t border-border/60 pt-1"
                 data-kanban-no-open
@@ -562,10 +599,10 @@ export function KanbanTaskCard({
                     size="micro"
                   />
                 ) : null}
-                {onOpenTask || bubbleUp ? (
+                {guardedOnOpenTask || bubbleUp ? (
                   <CardTabStrip
                     taskId={task.id}
-                    onOpenTask={onOpenTask}
+                    onOpenTask={guardedOnOpenTask}
                     bubbleUp={bubbleUp}
                     bubblyDensity="micro"
                   />
@@ -574,6 +611,18 @@ export function KanbanTaskCard({
             ) : null}
           </CardContent>
         </Card>
+        {paywallLocked ? (
+          <>
+            <div
+              className="pointer-events-none absolute inset-0 z-[5] rounded-xl bg-background/35"
+              aria-hidden
+            />
+            <Lock
+              className="pointer-events-none absolute right-2 top-2 z-[6] size-3.5 text-foreground/85 drop-shadow-sm"
+              aria-hidden
+            />
+          </>
+        ) : null}
         {hasPeerPresence && primaryPeer ? (
           <div
             className="absolute -top-2.5 -right-2 z-10 max-w-[120px] truncate rounded-full px-2 py-0.5 text-[10px] font-bold text-white shadow-sm"
@@ -598,6 +647,7 @@ export function KanbanTaskCard({
           typeVisual.leftBar,
           typeVisual.surface,
           isCompleted && 'opacity-[0.68]',
+          paywallLocked && 'opacity-90 grayscale',
           className,
         )}
         size="sm"
@@ -640,6 +690,7 @@ export function KanbanTaskCard({
                       commentLatestUnreadMessageId={commentLatestUnreadMessageId}
                       onOpenTask={onOpenTask}
                       onStartWorkout={onStartWorkout}
+                      paywallLocked={paywallLocked}
                     />
                   </div>
                   <div
@@ -809,6 +860,7 @@ export function KanbanTaskCard({
                           commentLatestUnreadMessageId={commentLatestUnreadMessageId}
                           onOpenTask={onOpenTask}
                           onStartWorkout={onStartWorkout}
+                          paywallLocked={paywallLocked}
                         />
                       </div>
                       <div
@@ -967,7 +1019,7 @@ export function KanbanTaskCard({
             </div>
           )}
 
-          {(liveInvite && !liveInvite.endedAt) || onOpenTask || bubbleUp ? (
+          {(liveInvite && !liveInvite.endedAt) || guardedOnOpenTask || bubbleUp ? (
             <div
               className="mt-2 border-t border-border/60 pt-2"
               data-kanban-no-open
@@ -983,10 +1035,10 @@ export function KanbanTaskCard({
                   size="default"
                 />
               ) : null}
-              {onOpenTask || bubbleUp ? (
+              {guardedOnOpenTask || bubbleUp ? (
                 <CardTabStrip
                   taskId={task.id}
-                  onOpenTask={onOpenTask}
+                  onOpenTask={guardedOnOpenTask}
                   bubbleUp={bubbleUp}
                   bubblyDensity="default"
                 />
@@ -995,6 +1047,18 @@ export function KanbanTaskCard({
           ) : null}
         </CardContent>
       </Card>
+      {paywallLocked ? (
+        <>
+          <div
+            className="pointer-events-none absolute inset-0 z-[5] rounded-xl bg-background/35"
+            aria-hidden
+          />
+          <Lock
+            className="pointer-events-none absolute right-2 top-2 z-[6] size-4 text-foreground/85 drop-shadow-sm"
+            aria-hidden
+          />
+        </>
+      ) : null}
       {hasPeerPresence && primaryPeer ? (
         <div
           className="absolute -top-2.5 -right-2 z-10 max-w-[120px] truncate rounded-full px-2 py-0.5 text-[10px] font-bold text-white shadow-sm"
