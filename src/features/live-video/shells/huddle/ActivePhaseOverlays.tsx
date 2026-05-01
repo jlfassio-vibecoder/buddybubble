@@ -13,7 +13,6 @@ import {
 import { cn } from '@/lib/utils';
 
 /** Placeholder totals until block duration lives on session state (countdown display). */
-const PLACEHOLDER_AMRAP_TOTAL_MS = 20 * 60 * 1000;
 const PLACEHOLDER_TABATA_TOTAL_MS = 4 * 60 * 1000;
 
 export type ActivePhaseOverlaysProps = {
@@ -21,7 +20,7 @@ export type ActivePhaseOverlaysProps = {
 };
 
 function phaseShowsOverlays(phase: SessionState['phase']): boolean {
-  return phase === 'warmup' || phase === 'amrap' || phase === 'tabata';
+  return phase === 'warmup' || phase === 'tabata';
 }
 
 export function ActivePhaseOverlays({ state }: ActivePhaseOverlaysProps) {
@@ -32,12 +31,7 @@ export function ActivePhaseOverlays({ state }: ActivePhaseOverlaysProps) {
 
   const phase = state.phase;
   const formatMode: SessionTimeFormat = phase === 'warmup' ? 'count-up' : 'countdown-tenths';
-  const totalMs =
-    phase === 'amrap'
-      ? PLACEHOLDER_AMRAP_TOTAL_MS
-      : phase === 'tabata'
-        ? PLACEHOLDER_TABATA_TOTAL_MS
-        : undefined;
+  const totalMs = phase === 'tabata' ? PLACEHOLDER_TABATA_TOTAL_MS : undefined;
 
   useEffect(() => {
     if (!phaseShowsOverlays(phase)) return;
@@ -58,7 +52,7 @@ export function ActivePhaseOverlays({ state }: ActivePhaseOverlaysProps) {
     return null;
   }
 
-  const topLeftLabel = phase === 'warmup' ? 'WARM-UP' : phase === 'amrap' ? 'AMRAP' : 'TABATA';
+  const topLeftLabel = phase === 'warmup' ? 'WARM-UP' : 'TABATA';
 
   const showWarmupPill = phase === 'warmup';
 

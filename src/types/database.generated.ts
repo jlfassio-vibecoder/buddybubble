@@ -130,6 +130,114 @@ export type Database = {
           },
         ];
       };
+      amrap_participants: {
+        Row: {
+          amrap_session_id: string;
+          display_name: string;
+          id: string;
+          is_host: boolean;
+          joined_at: string;
+          user_id: string | null;
+        };
+        Insert: {
+          amrap_session_id: string;
+          display_name: string;
+          id?: string;
+          is_host?: boolean;
+          joined_at?: string;
+          user_id?: string | null;
+        };
+        Update: {
+          amrap_session_id?: string;
+          display_name?: string;
+          id?: string;
+          is_host?: boolean;
+          joined_at?: string;
+          user_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'amrap_participants_amrap_session_id_fkey';
+            columns: ['amrap_session_id'];
+            isOneToOne: false;
+            referencedRelation: 'amrap_sessions';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'amrap_participants_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      amrap_session_rounds: {
+        Row: {
+          amrap_session_id: string;
+          id: string;
+          logged_at: string;
+          participant_id: string;
+        };
+        Insert: {
+          amrap_session_id: string;
+          id?: string;
+          logged_at?: string;
+          participant_id: string;
+        };
+        Update: {
+          amrap_session_id?: string;
+          id?: string;
+          logged_at?: string;
+          participant_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'amrap_session_rounds_amrap_session_id_fkey';
+            columns: ['amrap_session_id'];
+            isOneToOne: false;
+            referencedRelation: 'amrap_sessions';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'amrap_session_rounds_participant_id_fkey';
+            columns: ['participant_id'];
+            isOneToOne: false;
+            referencedRelation: 'amrap_participants';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      amrap_sessions: {
+        Row: {
+          block_snapshot: Json | null;
+          created_at: string;
+          duration_seconds: number;
+          id: string;
+          live_session_id: string;
+          timer_phase: string;
+          work_started_at: string | null;
+        };
+        Insert: {
+          block_snapshot?: Json | null;
+          created_at?: string;
+          duration_seconds: number;
+          id?: string;
+          live_session_id: string;
+          timer_phase?: string;
+          work_started_at?: string | null;
+        };
+        Update: {
+          block_snapshot?: Json | null;
+          created_at?: string;
+          duration_seconds?: number;
+          id?: string;
+          live_session_id?: string;
+          timer_phase?: string;
+          work_started_at?: string | null;
+        };
+        Relationships: [];
+      };
       analytics_events: {
         Row: {
           created_at: string;
@@ -2314,6 +2422,24 @@ export type Database = {
         };
         Returns: Json;
       };
+      amrap_create_for_session: {
+        Args: {
+          p_block_snapshot?: Json;
+          p_duration_seconds?: number;
+          p_live_session_id: string;
+        };
+        Returns: string;
+      };
+      amrap_join_session: {
+        Args: { p_amrap_session_id: string; p_display_name: string };
+        Returns: string;
+      };
+      amrap_log_round: {
+        Args: { p_amrap_session_id: string; p_participant_id: string };
+        Returns: undefined;
+      };
+      amrap_reset_timer: { Args: { p_amrap_session_id: string }; Returns: undefined };
+      amrap_start_timer: { Args: { p_amrap_session_id: string }; Returns: undefined };
       apply_workout_draft: { Args: { p_message_id: string }; Returns: Json };
       approve_invitation_join_request: {
         Args: { p_join_request_id: string };
@@ -2367,14 +2493,43 @@ export type Database = {
         };
       };
       get_invite_preview: { Args: { p_token: string }; Returns: Json };
+      get_live_session_join_hints: { Args: { p_session_id: string }; Returns: Json };
       get_task_bubble_id: { Args: { p_task_id: string }; Returns: string };
       get_workspace_subscription_status: {
         Args: { p_workspace_id: string };
         Returns: string;
       };
+      host_attach_amrap_session: {
+        Args: { p_interval_wrapper_config?: Json; p_session_id: string };
+        Returns: Json;
+      };
+      host_detach_amrap_session: { Args: { p_session_id: string }; Returns: Json };
       is_workspace_admin: { Args: { _workspace_id: string }; Returns: boolean };
       is_workspace_guest: { Args: { _workspace_id: string }; Returns: boolean };
       is_workspace_member: { Args: { _workspace_id: string }; Returns: boolean };
+      live_session_create: {
+        Args: { p_agora_uid: string; p_display_name: string; p_session_id: string };
+        Returns: undefined;
+      };
+      live_session_list_participants: {
+        Args: { p_session_id: string };
+        Returns: {
+          id: string;
+          user_id: string | null;
+          display_name: string;
+          role: string;
+          agora_uid: string | null;
+        }[];
+      };
+      live_session_participant_join: {
+        Args: {
+          p_agora_uid: string;
+          p_display_name: string;
+          p_role: string;
+          p_session_id: string;
+        };
+        Returns: string;
+      };
       peek_invitation: { Args: { p_token: string }; Returns: Json };
       reject_invitation_join_request: {
         Args: { p_join_request_id: string };

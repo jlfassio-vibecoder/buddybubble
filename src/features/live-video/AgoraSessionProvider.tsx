@@ -365,6 +365,7 @@ export function AgoraSessionProvider({
 
   const value = useMemo(
     () => ({
+      channelId,
       isConnected,
       isConnecting,
       joinChannel,
@@ -379,6 +380,7 @@ export function AgoraSessionProvider({
       toggleCamera,
     }),
     [
+      channelId,
       isConnected,
       isConnecting,
       joinChannel,

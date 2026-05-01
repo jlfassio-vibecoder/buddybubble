@@ -30,6 +30,8 @@ export type BaseVideoHarnessProps = {
   floatingMediaExtras?: ReactNode;
   /** Absolute overlays above video tiles (e.g. AMRAP HUD); use `pointer-events-auto` on interactive nodes. */
   videoOverlays?: ReactNode;
+  /** When set, the tile for this Agora uid shows a placeholder instead of live video. */
+  excludeUidForTiles?: string | null;
 };
 
 /** Single function/class child → `type.name`; fragments, arrays, strings → `'none'` (blueprint). */
@@ -50,6 +52,9 @@ function childShellDebugName(children: ReactNode | undefined): string {
 const stagePreviewClass = 'absolute inset-0 h-full w-full min-h-0 min-w-0';
 const railTileClass =
   'relative w-full aspect-video shrink-0 overflow-hidden rounded-lg border border-border bg-black shadow-md';
+
+const videoHiddenPlaceholderClass =
+  'absolute inset-0 z-[1] flex items-center justify-center bg-black/80 text-xs text-muted-foreground';
 
 /** Unified rail entries for local PiP + remotes (future sortable leaderboard). */
 type RailParticipant =
@@ -91,6 +96,9 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
   const localRtcUid = agoraUidFromUuid(props.localUserId);
   const localIsHost = localRtcUid === hostRtcUid;
 
+  const exclude = props.excludeUidForTiles;
+  const localTileExcluded = exclude != null && String(localRtcUid) === String(exclude);
+
   const sortedRemotes = useMemo(
     () => [...remoteUsers].sort((a, b) => Number(a.uid) - Number(b.uid)),
     [remoteUsers],
@@ -100,6 +108,9 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
     () => sortedRemotes.find((u) => Number(u.uid) === hostRtcUid) ?? null,
     [sortedRemotes, hostRtcUid],
   );
+
+  const hostRemoteTileExcluded =
+    exclude != null && hostRemote != null && String(hostRemote.uid) === String(exclude);
 
   const railRemotes = useMemo(() => {
     if (localIsHost) return sortedRemotes;
@@ -179,24 +190,32 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
           >
             <div className="absolute inset-0 overflow-hidden rounded-xl bg-black">
               {localIsHost ? (
-                <>
-                  <LocalVideoPreview
-                    track={localVideoTrack}
-                    isMicMuted={isMicMuted}
-                    isCameraOff={isCameraOff}
-                    className={stagePreviewClass}
-                  />
-                  {localVideoTrack == null ? (
-                    <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center bg-muted/80 text-sm text-muted-foreground">
-                      {localIdleLabel}
-                    </div>
-                  ) : null}
-                </>
+                localTileExcluded ? (
+                  <div className={videoHiddenPlaceholderClass}>Video hidden</div>
+                ) : (
+                  <>
+                    <LocalVideoPreview
+                      track={localVideoTrack}
+                      isMicMuted={isMicMuted}
+                      isCameraOff={isCameraOff}
+                      className={stagePreviewClass}
+                    />
+                    {localVideoTrack == null ? (
+                      <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center bg-muted/80 text-sm text-muted-foreground">
+                        {localIdleLabel}
+                      </div>
+                    ) : null}
+                  </>
+                )
               ) : hostRemote != null ? (
-                <RemoteVideoPreview
-                  user={hostRemote}
-                  className={cn(stagePreviewClass, 'rounded-none border-0')}
-                />
+                hostRemoteTileExcluded ? (
+                  <div className={videoHiddenPlaceholderClass}>Video hidden</div>
+                ) : (
+                  <RemoteVideoPreview
+                    user={hostRemote}
+                    className={cn(stagePreviewClass, 'rounded-none border-0')}
+                  />
+                )
               ) : (
                 <div className="absolute inset-0 z-[1] flex items-center justify-center bg-muted/80 text-sm text-muted-foreground">
                   {joinError != null
@@ -235,24 +254,38 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
               {allRailParticipants.map((p) =>
                 p.kind === 'local' ? (
                   <div key={p.key} className={railTileClass}>
-                    <LocalVideoPreview
-                      track={localVideoTrack}
-                      isMicMuted={isMicMuted}
-                      isCameraOff={isCameraOff}
-                      className="absolute inset-0 h-full w-full min-h-0 min-w-0"
-                    />
-                    {localVideoTrack == null ? (
-                      <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center bg-black/70 text-[10px] text-muted-foreground">
-                        {localIdleLabel}
+                    {localTileExcluded ? (
+                      <div className={cn(videoHiddenPlaceholderClass, 'text-[10px]')}>
+                        Video hidden
                       </div>
-                    ) : null}
+                    ) : (
+                      <>
+                        <LocalVideoPreview
+                          track={localVideoTrack}
+                          isMicMuted={isMicMuted}
+                          isCameraOff={isCameraOff}
+                          className="absolute inset-0 h-full w-full min-h-0 min-w-0"
+                        />
+                        {localVideoTrack == null ? (
+                          <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center bg-black/70 text-[10px] text-muted-foreground">
+                            {localIdleLabel}
+                          </div>
+                        ) : null}
+                      </>
+                    )}
                   </div>
                 ) : (
                   <div key={p.key} className={railTileClass}>
-                    <RemoteVideoPreview
-                      user={p.user}
-                      className="absolute inset-0 h-full w-full min-h-0 min-w-0 rounded-none border-0"
-                    />
+                    {exclude != null && String(p.user.uid) === String(exclude) ? (
+                      <div className={cn(videoHiddenPlaceholderClass, 'text-[10px]')}>
+                        Video hidden
+                      </div>
+                    ) : (
+                      <RemoteVideoPreview
+                        user={p.user}
+                        className="absolute inset-0 h-full w-full min-h-0 min-w-0 rounded-none border-0"
+                      />
+                    )}
                   </div>
                 ),
               )}

@@ -4,6 +4,8 @@ import { createContext, useContext, type ReactNode } from 'react';
 import type { IAgoraRTCRemoteUser, ILocalVideoTrack } from 'agora-rtc-sdk-ng';
 
 export type AgoraSessionContextValue = {
+  /** Agora channel id; aligns with `public.live_sessions.id` when that row exists. */
+  channelId: string;
   isConnected: boolean;
   isConnecting: boolean;
   joinChannel: () => void;

@@ -1586,6 +1586,7 @@ function DashboardShellInner({
                                     <DashboardLiveVideoDock
                                       session={activeLiveVideoSession}
                                       localUserId={profile.id}
+                                      displayName={profile.full_name ?? profile.email ?? undefined}
                                       onLeaveSession={onLiveVideoLeaveSession}
                                       onHostEndLiveSessionForAll={onHostEndLiveSessionForAll}
                                       canWriteTasks={canWriteTasks}
@@ -1617,6 +1618,7 @@ function DashboardShellInner({
                                   <DashboardLiveVideoDock
                                     session={activeLiveVideoSession}
                                     localUserId={profile.id}
+                                    displayName={profile.full_name ?? profile.email ?? undefined}
                                     onLeaveSession={onLiveVideoLeaveSession}
                                     onHostEndLiveSessionForAll={onHostEndLiveSessionForAll}
                                     canWriteTasks={canWriteTasks}
@@ -1658,6 +1660,7 @@ function DashboardShellInner({
                                     <DashboardLiveVideoDock
                                       session={activeLiveVideoSession}
                                       localUserId={profile.id}
+                                      displayName={profile.full_name ?? profile.email ?? undefined}
                                       onLeaveSession={onLiveVideoLeaveSession}
                                       onHostEndLiveSessionForAll={onHostEndLiveSessionForAll}
                                       canWriteTasks={canWriteTasks}
