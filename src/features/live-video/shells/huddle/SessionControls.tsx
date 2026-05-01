@@ -2,6 +2,14 @@
 
 import type { SessionState } from '@/features/live-video/state/sessionStateMachine';
 import type { SessionActions } from '@/features/live-video/hooks/useSessionState';
+import {
+  pickActiveSnapshot,
+  buildAmrapBlockSnapshot,
+} from '@/features/amrap/utils/buildAmrapBlockSnapshot';
+import { useLiveSessionRuntime } from '@/features/live-video/theater/live-session-runtime-context';
+import { useWorkoutDeckSelectionOptional } from '@/features/live-video/shells/huddle/workout-deck-selection-context';
+import { useWrapperAttach } from '@/features/live-video/contexts/WrapperAttachContext';
+import type { Json } from '@/types/database';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { SessionClockMini } from '@/features/live-video/shells/huddle/SessionClockMini';
@@ -13,6 +21,11 @@ export type SessionControlsProps = {
   disableActions?: boolean;
   /** Host: runs after `actions.endSession()` (e.g. mark chat invite ended). */
   onHostEndLiveSessionForAll?: () => void | Promise<void>;
+  /**
+   * When false, defers the AMRAP / wrapper-attaching RPC because `live_sessions` may not exist yet
+   * (avoids the same connect-before-register race that produces 400s on join hints / list participants).
+   */
+  liveDbReady?: boolean;
   className?: string;
 };
 
@@ -25,11 +38,33 @@ export function SessionControls({
   actions,
   disableActions = false,
   onHostEndLiveSessionForAll,
+  liveDbReady = true,
   className,
 }: SessionControlsProps) {
+  const { supabase, sessionId: liveSessionRowId } = useLiveSessionRuntime();
+  const { setOverride } = useWrapperAttach();
+  const deckSel = useWorkoutDeckSelectionOptional();
+  const amrapAttachReady = !disableActions && liveDbReady && liveSessionRowId.trim().length > 0;
+
   const isIdle = state.status === 'idle';
 
   const handleEndSessionForAll = () => {
+    if (amrapAttachReady) {
+      void supabase
+        .rpc('host_detach_amrap_session', { p_session_id: liveSessionRowId.trim() })
+        .then(({ error }) => {
+          if (error) {
+            console.error(
+              '[SessionControls] host_detach_amrap_session',
+              error.message,
+              error.code,
+              error.details,
+              error.hint,
+            );
+          }
+        });
+    }
+    if (!disableActions) setOverride(null);
     actions.endSession();
     void onHostEndLiveSessionForAll?.();
   };
@@ -95,8 +130,37 @@ export function SessionControls({
                 state.phase === 'amrap' &&
                   'ring-2 ring-primary ring-offset-2 ring-offset-background',
               )}
-              disabled={phaseDisabled}
-              onClick={() => actions.transitionToPhase('amrap')}
+              disabled={phaseDisabled || (!disableActions && !liveDbReady)}
+              onClick={() => {
+                if (amrapAttachReady) {
+                  void (async () => {
+                    const snap = pickActiveSnapshot(
+                      deckSel?.deck ?? [],
+                      deckSel?.activeSnapshotId ?? null,
+                    );
+                    const blockPayload = buildAmrapBlockSnapshot(snap);
+                    const { data, error } = await supabase.rpc('amrap_create_for_session', {
+                      p_live_session_id: liveSessionRowId.trim(),
+                      p_duration_seconds: 600,
+                      p_block_snapshot: (blockPayload ?? null) as Json,
+                    });
+                    if (error) {
+                      console.error(
+                        '[SessionControls] amrap_create_for_session',
+                        error.message,
+                        error.code,
+                        error.details,
+                        error.hint,
+                      );
+                      return;
+                    }
+                    if (typeof data === 'string') {
+                      setOverride({ kind: 'amrap', config: { amrap_session_id: data } });
+                    }
+                  })();
+                }
+                actions.transitionToPhase('amrap');
+              }}
             >
               AMRAP block
             </Button>
@@ -148,7 +212,25 @@ export function SessionControls({
               variant="outline"
               className="font-medium"
               disabled={disableActions}
-              onClick={() => actions.transitionToPhase('lobby')}
+              onClick={() => {
+                if (amrapAttachReady) {
+                  void supabase
+                    .rpc('host_detach_amrap_session', { p_session_id: liveSessionRowId.trim() })
+                    .then(({ error }) => {
+                      if (error) {
+                        console.error(
+                          '[SessionControls] host_detach_amrap_session',
+                          error.message,
+                          error.code,
+                          error.details,
+                          error.hint,
+                        );
+                      }
+                    });
+                }
+                if (!disableActions) setOverride(null);
+                actions.transitionToPhase('lobby');
+              }}
             >
               Return to Huddle
             </Button>

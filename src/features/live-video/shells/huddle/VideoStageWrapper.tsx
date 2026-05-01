@@ -12,6 +12,8 @@ export type VideoStageWrapperProps = {
   onAfterLeave?: () => void;
   localUserId: string;
   hostUserId: string;
+  /** When set, that Agora uid’s tile shows a placeholder instead of live video (wrapper-driven). */
+  excludeUidForTiles?: string | null;
   /** Injected above video (`pointer-events-none` shell); cards use `pointer-events-auto`. */
   videoOverlays?: ReactNode;
 };
@@ -32,6 +34,7 @@ export function VideoStageWrapper({
   onAfterLeave,
   localUserId,
   hostUserId,
+  excludeUidForTiles,
   videoOverlays,
 }: VideoStageWrapperProps) {
   const runtime = useLiveSessionRuntime();
@@ -54,6 +57,7 @@ export function VideoStageWrapper({
           onAfterLeave={onAfterLeave}
           localUserId={localUserId}
           hostUserId={hostUserId}
+          excludeUidForTiles={excludeUidForTiles}
           videoOverlays={videoOverlays}
           aspectRatio={aspectRatio}
           className="w-full flex-1 min-h-0"

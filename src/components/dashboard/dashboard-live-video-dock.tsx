@@ -1,11 +1,12 @@
 'use client';
 
-import { useMemo, type ReactNode } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@utils/supabase/client';
 import { AgoraSessionProvider, LiveSessionView, useAgoraSession } from '@/features/live-video';
 import { PreJoinBuilder } from '@/features/live-video/shells/huddle/PreJoinBuilder';
 import { ParticipantPreJoinSummary } from '@/features/live-video/shells/ParticipantPreJoinSummary';
+import { agoraUidFromUuid } from '@/lib/live-video/agora-uid';
 import type { Database } from '@/types/database';
 import type { LiveVideoActiveSession } from '@/store/liveVideoStore';
 
@@ -18,11 +19,14 @@ export type DashboardLiveVideoDockProps = {
   onHostEndLiveSessionForAll?: () => void | Promise<void>;
   canWriteTasks?: boolean;
   onWorkoutDeckPersisted?: () => void;
+  /** Shown in live_session_participants / AMRAP roster; falls back to `localUserId`. */
+  displayName?: string;
 };
 
 type DockRouterProps = {
   session: LiveVideoActiveSession;
   localUserId: string;
+  displayName?: string;
   supabase: SupabaseClient<Database>;
   onLeaveSession: () => void;
   onHostEndLiveSessionForAll?: () => void | Promise<void>;
@@ -47,9 +51,96 @@ function DashboardLiveVideoDockRouter({
   onHostEndLiveSessionForAll,
   canWriteTasks,
   onWorkoutDeckPersisted,
+  displayName: displayNameProp,
 }: DockRouterProps) {
   const { isConnected, isConnecting, joinChannel, joinError } = useAgoraSession();
   const isHost = localUserId === session.hostUserId;
+  const resolvedDisplayName = displayNameProp?.trim() || localUserId;
+  const registeredLiveSessionIdRef = useRef<string | null>(null);
+  const [liveDbReady, setLiveDbReady] = useState(false);
+
+  useLayoutEffect(() => {
+    if (!isConnected) {
+      registeredLiveSessionIdRef.current = null;
+      setLiveDbReady(false);
+      return;
+    }
+
+    if (registeredLiveSessionIdRef.current === session.sessionId) {
+      setLiveDbReady(true);
+      return;
+    }
+
+    const agoraUid = String(agoraUidFromUuid(localUserId));
+
+    const liveSessionRowId = session.sessionId.trim();
+    if (!liveSessionRowId) {
+      console.error(
+        '[DashboardLiveVideoDockRouter] missing session.sessionId for live_session_create',
+      );
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      if (isHost) {
+        const { error } = await supabase.rpc('live_session_create', {
+          // DB row id is the invite workout session UUID, not the Agora channel string (bb-live-…).
+          p_session_id: liveSessionRowId,
+          p_display_name: resolvedDisplayName,
+          p_agora_uid: agoraUid,
+        });
+        if (cancelled) return;
+        if (error) {
+          console.error(
+            '[DashboardLiveVideoDockRouter] live_session_create',
+            error.message,
+            error.code,
+            error.details,
+            error.hint,
+          );
+          return;
+        }
+        registeredLiveSessionIdRef.current = session.sessionId;
+        setLiveDbReady(true);
+        return;
+      }
+
+      for (let attempt = 0; attempt < 24; attempt++) {
+        const { error } = await supabase.rpc('live_session_participant_join', {
+          p_session_id: liveSessionRowId,
+          p_display_name: resolvedDisplayName,
+          p_agora_uid: agoraUid,
+          p_role: 'participant',
+        });
+        if (cancelled) return;
+        if (!error) {
+          registeredLiveSessionIdRef.current = session.sessionId;
+          setLiveDbReady(true);
+          return;
+        }
+        if (process.env.NODE_ENV === 'development' && attempt % 4 === 0) {
+          console.warn(
+            '[DashboardLiveVideoDockRouter] live_session_participant_join retry',
+            attempt,
+            error,
+          );
+        }
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      if (!cancelled) {
+        console.error(
+          '[DashboardLiveVideoDockRouter] live_session_participant_join failed after retries',
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      registeredLiveSessionIdRef.current = null;
+    };
+  }, [isConnected, isHost, localUserId, resolvedDisplayName, session.sessionId, supabase]);
 
   if (process.env.NODE_ENV === 'development') {
     console.log(
@@ -99,6 +190,8 @@ function DashboardLiveVideoDockRouter({
         canWriteTasks={canWriteTasks}
         onWorkoutDeckPersisted={onWorkoutDeckPersisted}
         className="min-h-0 flex-1 px-0 py-0"
+        liveDbReady={liveDbReady}
+        displayName={resolvedDisplayName}
       />
     );
   }
@@ -125,6 +218,7 @@ export function DashboardLiveVideoDock({
   onHostEndLiveSessionForAll,
   canWriteTasks = false,
   onWorkoutDeckPersisted,
+  displayName,
 }: DashboardLiveVideoDockProps) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -142,6 +236,7 @@ export function DashboardLiveVideoDock({
             <DashboardLiveVideoDockRouter
               session={session}
               localUserId={localUserId}
+              displayName={displayName}
               supabase={supabase}
               onLeaveSession={onLeaveSession}
               onHostEndLiveSessionForAll={onHostEndLiveSessionForAll}
