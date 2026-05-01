@@ -1,5 +1,6 @@
 'use client';
 
+import type { IAgoraRTCRemoteUser } from 'agora-rtc-sdk-ng';
 import { isValidElement, useMemo, type ReactNode } from 'react';
 import { useAgoraSession } from '@/features/live-video/agora-session-context';
 import { LocalVideoPreview } from '@/features/live-video/LocalVideoPreview';
@@ -48,10 +49,15 @@ function childShellDebugName(children: ReactNode | undefined): string {
 
 const stagePreviewClass = 'absolute inset-0 h-full w-full min-h-0 min-w-0';
 const railTileClass =
-  'relative h-28 w-full shrink-0 overflow-hidden rounded-lg border border-border bg-black shadow-md';
+  'relative w-full aspect-video shrink-0 overflow-hidden rounded-lg border border-border bg-black shadow-md';
+
+/** Unified rail entries for local PiP + remotes (future sortable leaderboard). */
+type RailParticipant =
+  | { kind: 'local'; key: string }
+  | { kind: 'remote'; key: string | number; user: IAgoraRTCRemoteUser };
 
 /**
- * Theater layout: host fills the main stage; other participants stack in a right PiP rail.
+ * Theater layout: host fills the aspect-locked main stage; participants render in a sibling rail.
  */
 export function BaseVideoHarness(props: BaseVideoHarnessProps) {
   if (process.env.NODE_ENV === 'development') {
@@ -101,7 +107,17 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
   }, [localIsHost, sortedRemotes, hostRtcUid]);
 
   const railHasLocalPip = !localIsHost;
-  const railCount = railRemotes.length + (railHasLocalPip ? 1 : 0);
+
+  const allRailParticipants = useMemo((): RailParticipant[] => {
+    const list: RailParticipant[] = [];
+    if (railHasLocalPip) {
+      list.push({ kind: 'local', key: 'local-pip' });
+    }
+    for (const user of railRemotes) {
+      list.push({ kind: 'remote', key: user.uid, user });
+    }
+    return list;
+  }, [railHasLocalPip, railRemotes]);
 
   const aspectClass = (() => {
     switch (props.aspectRatio ?? '16:9') {
@@ -124,6 +140,13 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
           ? 'Connected (no local video)'
           : 'Idle';
 
+  if (process.env.NODE_ENV === 'development') {
+    console.log(
+      '[DEBUG] BaseVideoHarness Render - Unified Participants List Count:',
+      allRailParticipants.length,
+    );
+  }
+
   return (
     <div
       className={cn(
@@ -143,12 +166,13 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
          * Isolate the stage in its own flex-1 row so `h-full` resolves against a
          * real height (sibling Leave/Join row must not compete for the same %).
          */}
-        <div className="flex min-h-0 w-full flex-1 items-center justify-center">
+        <div className="flex min-h-0 w-full flex-1 flex-row items-stretch gap-4">
+          {/* Copilot suggestion ignored: flex-[3] + height-driven stage keeps the host/rail split; a wrapper-only aspect refactor is out of scope for this change. */}
           <div
             className={cn(
               // Height-driven frame inside the flex-1 slot: fill height, derive
               // width from `aspect-*`, clamp with `max-w-full` + `min-w-0`.
-              'relative m-auto block h-full max-h-full w-auto max-w-full min-w-0 overflow-hidden rounded-xl border border-border bg-muted shadow-sm transition-[aspect-ratio] duration-300',
+              'relative block h-full max-h-full flex-[3] min-w-0 overflow-hidden rounded-xl border border-border bg-muted shadow-sm transition-[aspect-ratio] duration-300',
               aspectClass,
             )}
             data-live-video-stage
@@ -184,37 +208,6 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
               )}
             </div>
 
-            {railCount > 0 ? (
-              <div
-                className="pointer-events-auto absolute top-4 right-4 z-40 flex max-h-[calc(100%-6rem)] w-48 flex-col gap-3 overflow-y-auto overscroll-contain rounded-lg border border-white/10 bg-black/30 p-2 shadow-lg backdrop-blur-sm"
-                aria-label="Participant thumbnails"
-              >
-                {railHasLocalPip ? (
-                  <div className={railTileClass}>
-                    <LocalVideoPreview
-                      track={localVideoTrack}
-                      isMicMuted={isMicMuted}
-                      isCameraOff={isCameraOff}
-                      className="absolute inset-0 h-full w-full min-h-0 min-w-0"
-                    />
-                    {localVideoTrack == null ? (
-                      <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center bg-black/70 text-[10px] text-muted-foreground">
-                        {localIdleLabel}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-                {railRemotes.map((user) => (
-                  <div key={user.uid} className={railTileClass}>
-                    <RemoteVideoPreview
-                      user={user}
-                      className="absolute inset-0 h-full w-full min-h-0 min-w-0 rounded-none border-0"
-                    />
-                  </div>
-                ))}
-              </div>
-            ) : null}
-
             {props.videoOverlays != null ? (
               <div className="pointer-events-none absolute inset-0 z-[43]">
                 {props.videoOverlays}
@@ -232,6 +225,39 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
               {props.floatingMediaExtras}
             </FloatingMediaBar>
           </div>
+
+          {allRailParticipants.length > 0 ? (
+            // Copilot suggestion ignored: responsive stack/smaller min-width deferred; theater shell already treats mobile sessions separately.
+            <div
+              className="flex h-full min-w-[240px] max-w-[400px] flex-[1] shrink-0 flex-col gap-3 overflow-y-auto overscroll-contain rounded-xl border border-border bg-card/70 p-2 shadow-sm"
+              aria-label="Participant thumbnails"
+            >
+              {allRailParticipants.map((p) =>
+                p.kind === 'local' ? (
+                  <div key={p.key} className={railTileClass}>
+                    <LocalVideoPreview
+                      track={localVideoTrack}
+                      isMicMuted={isMicMuted}
+                      isCameraOff={isCameraOff}
+                      className="absolute inset-0 h-full w-full min-h-0 min-w-0"
+                    />
+                    {localVideoTrack == null ? (
+                      <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center bg-black/70 text-[10px] text-muted-foreground">
+                        {localIdleLabel}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div key={p.key} className={railTileClass}>
+                    <RemoteVideoPreview
+                      user={p.user}
+                      className="absolute inset-0 h-full w-full min-h-0 min-w-0 rounded-none border-0"
+                    />
+                  </div>
+                ),
+              )}
+            </div>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center justify-center gap-2">
           {/*

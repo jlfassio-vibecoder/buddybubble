@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@utils/supabase/client';
 import { AgoraSessionProvider, LiveSessionView, useAgoraSession } from '@/features/live-video';
@@ -51,43 +51,67 @@ function DashboardLiveVideoDockRouter({
   const { isConnected, isConnecting, joinChannel, joinError } = useAgoraSession();
   const isHost = localUserId === session.hostUserId;
 
+  if (process.env.NODE_ENV === 'development') {
+    console.log(
+      '[DEBUG] DashboardLiveVideoDockRouter Render - Role:',
+      isHost ? 'Host' : 'Participant',
+      '| Connected:',
+      isConnected,
+    );
+  }
+
+  let routeContent: ReactNode;
+
   if (!isConnected && !isConnecting) {
     if (isHost) {
-      return (
+      routeContent = (
         <PreJoinBuilder
           workspaceId={session.workspaceId}
           supabase={supabase}
           canWriteTasks={canWriteTasks}
           onWorkoutDeckPersisted={onWorkoutDeckPersisted}
           onLeaveDock={onLeaveSession}
+          onEndSession={onHostEndLiveSessionForAll}
+          className="min-h-0 flex-1 px-0 py-0"
+        />
+      );
+    } else {
+      routeContent = (
+        <ParticipantPreJoinSummary
+          sessionId={session.sessionId}
+          localUserId={localUserId}
+          supabase={supabase}
+          onJoin={joinChannel}
+          joinError={joinError}
+          onLeaveDock={onLeaveSession}
           className="min-h-0 flex-1 px-0 py-0"
         />
       );
     }
-    return (
-      <ParticipantPreJoinSummary
-        sessionId={session.sessionId}
+  } else {
+    routeContent = (
+      <LiveSessionView
         localUserId={localUserId}
+        hostUserId={session.hostUserId}
+        onHostEndLiveSessionForAll={onHostEndLiveSessionForAll}
+        workspaceId={session.workspaceId}
         supabase={supabase}
-        onJoin={joinChannel}
-        joinError={joinError}
-        onLeaveDock={onLeaveSession}
+        canWriteTasks={canWriteTasks}
+        onWorkoutDeckPersisted={onWorkoutDeckPersisted}
         className="min-h-0 flex-1 px-0 py-0"
       />
     );
   }
 
   return (
-    <LiveSessionView
-      localUserId={localUserId}
-      hostUserId={session.hostUserId}
-      onHostEndLiveSessionForAll={onHostEndLiveSessionForAll}
-      workspaceId={session.workspaceId}
-      supabase={supabase}
-      canWriteTasks={canWriteTasks}
-      onWorkoutDeckPersisted={onWorkoutDeckPersisted}
-      className="min-h-0 flex-1 px-0 py-0"
-    />
+    <div
+      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/70 bg-background shadow-sm ring-1 ring-black/5"
+      data-live-video-dock-router
+      data-live-video-role={isHost ? 'host' : 'participant'}
+      data-live-video-connected={isConnected ? 'true' : 'false'}
+    >
+      {routeContent}
+    </div>
   );
 }
 
@@ -107,10 +131,14 @@ export function DashboardLiveVideoDock({
   if (session.mode !== 'workout') return null;
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 border-b border-border bg-background/95 px-2 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-      <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col">
+    <div className="relative isolate flex min-h-0 min-w-0 flex-1 overflow-hidden border-b border-border bg-background/95 px-2 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-primary/8 to-transparent"
+      />
+      <div className="relative z-0 flex min-h-0 w-full min-w-0 flex-1 flex-col">
         <AgoraSessionProvider channelId={session.channelId} workspaceId={session.workspaceId}>
-          <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col" data-live-video-dock-frame>
             <DashboardLiveVideoDockRouter
               session={session}
               localUserId={localUserId}
