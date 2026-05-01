@@ -273,7 +273,7 @@ export function ProfileCompletionModal({
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="relative flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl"
+        className="relative flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -285,8 +285,8 @@ export function ProfileCompletionModal({
           </p>
         </div>
 
-        {/* Scrollable body */}
-        <div className="max-h-[72vh] overflow-y-auto p-6">
+        {/* Scrollable body — flex-1 + min-h-0 so this region scrolls inside max-h-[90vh] card */}
+        <div className="min-h-0 flex-1 overflow-y-auto p-6">
           <div className="space-y-6">
             {error ? (
               <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">

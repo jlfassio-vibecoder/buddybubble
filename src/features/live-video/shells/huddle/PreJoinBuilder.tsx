@@ -1,5 +1,6 @@
 'use client';
 
+import { useCallback } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Button } from '@/components/ui/button';
 import { useAgoraSession } from '@/features/live-video/agora-session-context';
@@ -19,6 +20,8 @@ export type PreJoinBuilderProps = {
   canWriteTasks?: boolean;
   /** Bumps Kanban/task views after successful Supabase writes from the live workout player. */
   onWorkoutDeckPersisted?: () => void;
+  /** Host: marks chat/card/class invite ended in DB (same as `LiveSessionView` kill switch). */
+  onEndSession?: () => void | Promise<void>;
   /** Closes the live-video dock for this user only (does not end the shared session). */
   onLeaveDock?: () => void;
 };
@@ -34,14 +37,33 @@ export function PreJoinBuilder({
   supabase,
   canWriteTasks = false,
   onWorkoutDeckPersisted,
+  onEndSession,
   onLeaveDock,
 }: PreJoinBuilderProps) {
-  const { state } = useLiveSessionRuntime();
+  const { state, actions, isHost } = useLiveSessionRuntime();
   const { huddle } = useLiveTheaterLayoutPlanContext();
   const { isConnecting, joinChannel, joinError } = useAgoraSession();
 
   const deckSel = useWorkoutDeckSelectionOptional();
   const selectingFromBoard = Boolean(deckSel?.isSelectingFromBoard);
+
+  const handleExitWorkout = useCallback(async () => {
+    if (!isHost) {
+      onLeaveDock?.();
+      return;
+    }
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[DEBUG] PreJoinBuilder - Host triggered End Session');
+    }
+    actions.endSession();
+    try {
+      if (onEndSession) await onEndSession();
+    } catch (error) {
+      console.error('[DEBUG] Failed to end session in DB', error);
+    } finally {
+      onLeaveDock?.();
+    }
+  }, [actions, isHost, onEndSession, onLeaveDock]);
 
   return (
     <div
@@ -77,7 +99,7 @@ export function PreJoinBuilder({
             size="lg"
             variant="outline"
             className="font-semibold sm:mr-auto"
-            onClick={onLeaveDock}
+            onClick={() => void handleExitWorkout()}
           >
             Exit workout
           </Button>
