@@ -40,16 +40,21 @@ export function useAmrapParticipants(
 ) {
   const supabase = useMemo(() => createClient(), []);
   const [participants, setParticipants] = useState<AmrapParticipantRow[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const hasJoinedRef = useRef(false);
 
   useEffect(() => {
     if (hasJoinedRef.current || role === 'host') return;
     if (!amrapSessionId.trim()) return;
     hasJoinedRef.current = true;
-    void supabase.rpc('amrap_join_session', {
-      p_amrap_session_id: amrapSessionId,
-      p_display_name: displayName,
-    });
+    void supabase
+      .rpc('amrap_join_session', {
+        p_amrap_session_id: amrapSessionId,
+        p_display_name: displayName,
+      })
+      .then(({ error: rpcError }) => {
+        if (rpcError) setError(rpcError.message);
+      });
   }, [amrapSessionId, displayName, role, supabase]);
 
   useEffect(() => {
@@ -97,5 +102,5 @@ export function useAmrapParticipants(
     };
   }, [amrapSessionId, supabase]);
 
-  return { participants };
+  return { participants, error };
 }

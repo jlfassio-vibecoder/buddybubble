@@ -47,7 +47,12 @@ export function useAmrapSession(options: UseAmrapSessionOptions): AmrapSessionEn
   const supabase = useMemo(() => createClient(), []);
   const timerState = useAmrapTimerState(amrapSessionId);
   const { rows: amrapRoundRows } = useAmrapRounds(amrapSessionId);
-  const { participants } = useAmrapParticipants(amrapSessionId, authUserId, displayName, role);
+  const { participants, error: participantsError } = useAmrapParticipants(
+    amrapSessionId,
+    authUserId,
+    displayName,
+    role,
+  );
 
   const [showViewResultsModal, setShowViewResultsModal] = useState(false);
   const [copyResultsToast, setCopyResultsToast] = useState<'success' | 'error' | null>(null);
@@ -160,7 +165,7 @@ export function useAmrapSession(options: UseAmrapSessionOptions): AmrapSessionEn
     resetTimer: isHost ? resetTimer : null,
     logRound: selfParticipant ? logRound : null,
     loading: false,
-    error,
+    error: error ?? participantsError,
     slots: {
       chatDrawerLeaderboard: null,
       sessionDrawer: null,
