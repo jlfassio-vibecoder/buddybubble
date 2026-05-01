@@ -59,7 +59,7 @@ export function PreJoinBuilder({
     try {
       if (onEndSession) await onEndSession();
     } catch (error) {
-      console.error('[DEBUG] Failed to end session in DB', error);
+      console.error('Failed to end session in DB', error);
     } finally {
       onLeaveDock?.();
     }

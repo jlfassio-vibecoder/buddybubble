@@ -193,7 +193,7 @@ Relevant files:
 `BaseVideoHarness` is the reusable video stage. It renders:
 
 - the host as the main stage;
-- participant thumbnails in a floating rail;
+- participant thumbnails in a dedicated side rail beside the host stage;
 - local picture-in-picture for non-host users;
 - remote video tiles;
 - local/remote camera-off and mic-muted overlays;

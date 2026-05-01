@@ -167,6 +167,7 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
          * real height (sibling Leave/Join row must not compete for the same %).
          */}
         <div className="flex min-h-0 w-full flex-1 flex-row items-stretch gap-4">
+          {/* Copilot suggestion ignored: flex-[3] + height-driven stage keeps the host/rail split; a wrapper-only aspect refactor is out of scope for this change. */}
           <div
             className={cn(
               // Height-driven frame inside the flex-1 slot: fill height, derive
@@ -226,6 +227,7 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
           </div>
 
           {allRailParticipants.length > 0 ? (
+            // Copilot suggestion ignored: responsive stack/smaller min-width deferred; theater shell already treats mobile sessions separately.
             <div
               className="flex h-full min-w-[240px] max-w-[400px] flex-[1] shrink-0 flex-col gap-3 overflow-y-auto overscroll-contain rounded-xl border border-border bg-card/70 p-2 shadow-sm"
               aria-label="Participant thumbnails"
