@@ -127,19 +127,31 @@ export function ParticipantWorkoutLogger({ className }: ParticipantWorkoutLogger
 
     void refreshWorkoutLogs();
 
+    const sid = sessionId.trim();
+    const logChangeHandler = () => {
+      void refreshWorkoutLogs();
+    };
     const channel = supabase
-      .channel(`workout_exercise_logs:${sessionId}:${taskId}:${userId}`)
+      .channel(`workout_exercise_logs:${sid}:${taskId}:${userId}`)
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: 'INSERT',
           schema: 'public',
           table: 'workout_exercise_logs',
-          filter: `user_id=eq.${userId}`,
+          filter: `session_id=eq.${sid}`,
         },
-        () => {
-          void refreshWorkoutLogs();
+        logChangeHandler,
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'workout_exercise_logs',
+          filter: `session_id=eq.${sid}`,
         },
+        logChangeHandler,
       )
       .subscribe();
 

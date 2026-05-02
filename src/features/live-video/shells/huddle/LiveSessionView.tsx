@@ -452,6 +452,7 @@ function LiveSessionViewInner({
         ) : null}
         {!showWrapperBoardSplit && !selectingFromBoard && renderWrapper ? (
           entry?.inlineUi === false ? (
+            // Copilot suggestion ignored: sr-only keeps the minimal wrapper mounted for slots/overlays without a bordered card; engine errors flow to onWrapperError and minimal UI uses video overlays.
             <div className="sr-only">
               <WrapperErrorBoundary resetKey={effectiveWrapperKind}>
                 <ActiveIntervalWrapper {...wrapperProps} />

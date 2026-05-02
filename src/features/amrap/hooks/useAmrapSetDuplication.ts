@@ -42,7 +42,7 @@ async function fetchLogsForTask(
   userId: string,
   sessionId: string,
   taskId: string,
-): Promise<LogRow[]> {
+): Promise<{ logs: LogRow[]; error: Error | null }> {
   const { data, error } = await supabase
     .from('workout_exercise_logs')
     .select('*')
@@ -51,8 +51,10 @@ async function fetchLogsForTask(
     .eq('task_id', taskId.trim())
     .order('exercise_name', { ascending: true })
     .order('set_number', { ascending: true });
-  if (error) return [];
-  return (data ?? []) as LogRow[];
+  if (error) {
+    return { logs: [], error: new Error(error.message) };
+  }
+  return { logs: (data ?? []) as LogRow[], error: null };
 }
 
 /**
@@ -116,7 +118,21 @@ export function useAmrapSetDuplication(options: {
     void (async () => {
       const delta = current - prev;
       for (let step = 0; step < delta; step++) {
-        const freshLogs = await fetchLogsForTask(supabase, uid, sid, tid);
+        const { logs: freshLogs, error: fetchErr } = await fetchLogsForTask(
+          supabase,
+          uid,
+          sid,
+          tid,
+        );
+        if (fetchErr != null) {
+          if (process.env.NODE_ENV === 'development') {
+            console.warn(
+              '[useAmrapSetDuplication] fetch logs failed; skipping duplication',
+              fetchErr.message,
+            );
+          }
+          return;
+        }
         for (const ex of exercises) {
           const mine = freshLogs.filter((l) => l.exercise_name === ex.name);
           const maxSet = mine.reduce((m, l) => Math.max(m, l.set_number), 0);

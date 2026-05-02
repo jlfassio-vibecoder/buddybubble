@@ -523,13 +523,14 @@ Parallel entry point for the **same** `amrap_sessions` / `useAmrapSession` stack
 
 **What is omitted vs full AMRAP**
 
-- No **Who's here** session-drawer slot and no **Leaderboard / workout copy** chat-drawer slot (`AmrapMinimalWrapper` does not register those contexts).
-- No bordered inline wrapper card (`registry` `inlineUi: false`); the minimal wrapper still mounts for effects (overlays, host nav, `ViewResultsModal` for finished recap).
+- No **Who's here** session-drawer slot (`AmrapMinimalWrapper` does not register session-drawer context).
+- **Leaderboard** still mounts: `AmrapMinimalWrapper` registers `setChatDrawerLeaderboard(<AmrapResultsDrawer …/>)` and `LiveSessionView` renders that slot in a bordered card below session controls during `amrap_minimal` (same data as full AMRAP, without the large inline wrapper card).
+- No bordered **inline** AMRAP wrapper card (`registry` `inlineUi: false`); the minimal wrapper still mounts off-stage for effects (overlays, host nav, `ViewResultsModal` for finished recap).
 
 **Smoke test (host + participant)**
 
 1. Host: **Start Session** → **AMRAP Block 2** (not **AMRAP block**).
-2. Confirm both clients see timer + log round on video only (no Who's here / leaderboard cards).
+2. Confirm both clients see timer + log round on video, no Who's here card, and no **inline** bordered AMRAP wrapper card (leaderboard may still appear in the chat-drawer slot card below controls).
 3. Host **Start timer** → participant **Log round**; confirm rounds still sync via existing AMRAP RPCs.
 4. Host **Return to Huddle** → confirm wrapper clears (`host_detach_amrap_session` + phase lobby).
 
