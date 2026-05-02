@@ -1,3 +1,4 @@
+import type { APIContext, MiddlewareNext } from 'astro';
 import { defineMiddleware } from 'astro:middleware';
 import { createClient } from '@supabase/supabase-js';
 import { getPublicEnv } from './lib/public-env';
@@ -71,7 +72,7 @@ async function resolvePublicSlugForHost(hostname: string): Promise<string | null
   }
 }
 
-export const onRequest = defineMiddleware(async (context, next) => {
+export const onRequest = defineMiddleware(async (context: APIContext, next: MiddlewareNext) => {
   const hostname = context.url.hostname;
   if (shouldSkipCustomDomainLookup(hostname)) {
     return next();
