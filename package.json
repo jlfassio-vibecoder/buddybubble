@@ -6,7 +6,7 @@
     "apps/*"
   ],
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.19.0"
   },
   "scripts": {
     "preinstall": "npx only-allow pnpm",
@@ -85,7 +85,7 @@
     "@types/react-dom": "^19.0.0",
     "@vitest/coverage-v8": "^3.2.4",
     "eslint": "^9.39.4",
-    "eslint-config-next": "15.2.4",
+    "eslint-config-next": "^15.2.4",
     "happy-dom": "^16.7.3",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
