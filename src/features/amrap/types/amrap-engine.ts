@@ -8,10 +8,21 @@ export interface AmrapParticipantEngine {
   id: string;
   name: string;
   rounds: number;
+  /** Average lap duration in seconds (last_logged_at - workStartedAt) / rounds. Null when no rounds yet. */
+  avgLapSec: number | null;
   isHost: boolean;
   isSelf: boolean;
   /** Supabase auth.uid for the participant; null for guests without auth.uid(). */
   userId: string | null;
+}
+
+export type AmrapLapEntry = { round: number; durationLabel: string };
+
+export interface ParticipantRoundLapGroup {
+  participantId: string;
+  displayName: string;
+  isSelf: boolean;
+  entries: AmrapLapEntry[];
 }
 
 export interface AmrapSessionEngine {
@@ -27,6 +38,12 @@ export interface AmrapSessionEngine {
   startTimer: (() => Promise<void>) | null;
   resetTimer: (() => Promise<void>) | null;
   logRound: (() => Promise<void>) | null;
+
+  /** Lap splits for every participant (same clock: work start → first log, then between logs). */
+  participantRoundLaps: ParticipantRoundLapGroup[];
+
+  /** Convenience: `participantRoundLaps` entry for the current user only. */
+  roundLapEntries: AmrapLapEntry[];
 
   loading: boolean;
   error: string | null;

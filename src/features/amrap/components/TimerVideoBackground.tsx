@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 import type { ILocalVideoTrack, IRemoteVideoTrack } from 'agora-rtc-sdk-ng';
 
 import type { AmrapSessionEngine } from '@/features/amrap/types/amrap-engine';
+import { computeAmrapLeaderboard } from '@/features/amrap/utils/computeAmrapLeaderboard';
 import { useAgoraSession } from '@/features/live-video/agora-session-context';
 import { useTimerBackground } from '@/features/live-video/contexts/TimerBackgroundContext';
 import { agoraUidFromUuid } from '@/lib/live-video/agora-uid';
@@ -34,17 +35,13 @@ export default function TimerVideoBackground({
   const { localVideoTrack, remoteUsers } = useAgoraSession();
   const { setSpotlightParticipantId } = useTimerBackground();
 
-  const sortedParticipants = useMemo(
-    () =>
-      [...engine.participants].sort((a, b) => {
-        if (b.rounds !== a.rounds) return b.rounds - a.rounds;
-        return a.name.localeCompare(b.name);
-      }),
-    [engine.participants],
-  );
+  const leaderParticipant = useMemo(() => {
+    const groups = computeAmrapLeaderboard(engine.participants);
+    return groups[0]?.participants[0] ?? null;
+  }, [engine.participants]);
 
-  const leaderId = sortedParticipants[0]?.id ?? null;
-  const leaderUserId = sortedParticipants[0]?.userId ?? null;
+  const leaderId = leaderParticipant?.id ?? null;
+  const leaderUserId = leaderParticipant?.userId ?? null;
   const leaderAgoraUid = leaderUserId != null ? String(agoraUidFromUuid(leaderUserId)) : null;
   const leaderIsSelf = leaderAgoraUid != null && leaderAgoraUid === participantId;
 

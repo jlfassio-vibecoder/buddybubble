@@ -1,4 +1,4 @@
-export type IntervalWrapperKind = 'none' | 'simple_countdown' | 'amrap';
+export type IntervalWrapperKind = 'none' | 'simple_countdown' | 'amrap' | 'amrap_minimal';
 
 export type WrapperBaseProps = {
   intervalWrapperKind: IntervalWrapperKind;

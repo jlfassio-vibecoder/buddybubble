@@ -169,58 +169,128 @@ export function useSessionState(options: UseSessionStateOptions): UseSessionStat
       return;
     }
 
-    const channel = supabase.channel(topic, {
-      config: { broadcast: { ack: false } },
-    });
-    channelRef.current = channel;
-    syncRequestSentRef.current = false;
-    setConnectionStatus('connecting');
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const MAX_SUBSCRIBE_ATTEMPTS = 10;
 
-    channel.on('broadcast', { event: SESSION_STATE_BROADCAST_EVENT }, (message) => {
-      handleIncomingStateBroadcast(message.payload);
-    });
-
-    channel.on('broadcast', { event: SESSION_SYNC_REQUEST_EVENT }, (message) => {
-      handleIncomingSyncRequest(message.payload);
-    });
-
-    channel.subscribe((status, err) => {
-      if (status === 'SUBSCRIBED') {
-        connectedRef.current = true;
-        setConnectionStatus('connected');
-        epochOffsetMsRef.current = 0;
-        if (isHost) {
-          queueMicrotask(() => {
-            const ch = channelRef.current;
-            if (!ch || !connectedRef.current) return;
-            sendStateBroadcast(ch, stateRef.current, localUserId);
-          });
-        }
-        if (!isHost && !syncRequestSentRef.current) {
-          syncRequestSentRef.current = true;
-          const now = Date.now();
-          void channel.send({
-            type: 'broadcast',
-            event: SESSION_SYNC_REQUEST_EVENT,
-            payload: {
-              senderId: localUserId,
-              requestId: `${localUserId}-${now}`,
-            },
-          });
-        }
-        return;
-      }
-      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-        connectedRef.current = false;
-        console.error('[useSessionState] subscribe', status, err);
-        setConnectionStatus('error');
+    const {
+      data: { subscription: authSubscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      const token = session?.access_token;
+      if (token) {
+        void supabase.realtime.setAuth(token);
       }
     });
+
+    const tearDownChannel = async () => {
+      const ch = channelRef.current;
+      channelRef.current = null;
+      connectedRef.current = false;
+      if (ch) {
+        await supabase.removeChannel(ch);
+      }
+    };
+
+    const subscribeAttempt = async (attempt: number): Promise<void> => {
+      if (cancelled) return;
+
+      await tearDownChannel();
+      if (cancelled) return;
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (cancelled) return;
+      const token = session?.access_token;
+      if (token) {
+        await supabase.realtime.setAuth(token);
+      }
+      if (cancelled) return;
+
+      if (attempt > 0) {
+        syncRequestSentRef.current = false;
+      }
+
+      const channel = supabase.channel(topic, {
+        config: { broadcast: { ack: false } },
+      });
+      channelRef.current = channel;
+      setConnectionStatus('connecting');
+
+      channel.on('broadcast', { event: SESSION_STATE_BROADCAST_EVENT }, (message) => {
+        handleIncomingStateBroadcast(message.payload);
+      });
+
+      channel.on('broadcast', { event: SESSION_SYNC_REQUEST_EVENT }, (message) => {
+        handleIncomingSyncRequest(message.payload);
+      });
+
+      channel.subscribe((status, err) => {
+        if (cancelled) return;
+        if (status === 'SUBSCRIBED') {
+          connectedRef.current = true;
+          setConnectionStatus('connected');
+          epochOffsetMsRef.current = 0;
+          if (isHost) {
+            queueMicrotask(() => {
+              const ch = channelRef.current;
+              if (!ch || !connectedRef.current || cancelled) return;
+              sendStateBroadcast(ch, stateRef.current, localUserId);
+            });
+          }
+          if (!isHost && !syncRequestSentRef.current) {
+            syncRequestSentRef.current = true;
+            const now = Date.now();
+            void channel.send({
+              type: 'broadcast',
+              event: SESSION_SYNC_REQUEST_EVENT,
+              payload: {
+                senderId: localUserId,
+                requestId: `${localUserId}-${now}`,
+              },
+            });
+          }
+          return;
+        }
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          connectedRef.current = false;
+          if (process.env.NODE_ENV === 'development') {
+            if (attempt + 1 < MAX_SUBSCRIBE_ATTEMPTS) {
+              console.warn('[useSessionState] Realtime channel', status, err ?? '');
+            } else {
+              console.error('[useSessionState] Realtime channel exhausted retries', status, err);
+            }
+          }
+
+          void (async () => {
+            await tearDownChannel();
+            if (cancelled) return;
+
+            if (attempt + 1 < MAX_SUBSCRIBE_ATTEMPTS) {
+              const backoffMs = Math.min(30_000, 400 * 2 ** attempt);
+              if (retryTimer) clearTimeout(retryTimer);
+              retryTimer = setTimeout(() => {
+                retryTimer = undefined;
+                void subscribeAttempt(attempt + 1);
+              }, backoffMs);
+              setConnectionStatus('connecting');
+            } else {
+              setConnectionStatus('error');
+            }
+          })();
+        }
+      });
+    };
+
+    void subscribeAttempt(0);
 
     return () => {
-      connectedRef.current = false;
-      channelRef.current = null;
-      void supabase.removeChannel(channel);
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      authSubscription.unsubscribe();
+      void tearDownChannel();
+      syncRequestSentRef.current = false;
+      epochOffsetMsRef.current = 0;
       setConnectionStatus('disconnected');
     };
   }, [

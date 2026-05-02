@@ -120,7 +120,13 @@ function LiveSessionViewInner({
   const { hostNavActions } = useHostNavActions();
   const { sessionDrawerNode } = useSessionDrawer();
   const { chatDrawerLeaderboard } = useChatDrawer();
-  const { topLeftOverlay, topRightOverlay } = useVideoOverlaySlots();
+  const {
+    topLeftOverlay,
+    topRightOverlay,
+    stageBottomOverlay,
+    localRailPipOverlay,
+    renderRemoteRailBottomOverlay,
+  } = useVideoOverlaySlots();
 
   const { state, actions, isHost, sessionId: liveSessionRowId } = useLiveSessionRuntime();
 
@@ -167,9 +173,11 @@ function LiveSessionViewInner({
   const [wrapperConfig, setWrapperConfig] = useState<unknown>(null);
 
   const effectiveWrapperKind: IntervalWrapperKind =
-    override?.kind === 'amrap' ? 'amrap' : wrapperKind;
+    override?.kind === 'amrap' || override?.kind === 'amrap_minimal' ? override.kind : wrapperKind;
   const effectiveWrapperConfig: unknown =
-    override?.kind === 'amrap' ? override.config : wrapperConfig;
+    override?.kind === 'amrap' || override?.kind === 'amrap_minimal'
+      ? override.config
+      : wrapperConfig;
 
   useEffect(() => {
     if (!liveSessionRpcReady) return;
@@ -252,7 +260,10 @@ function LiveSessionViewInner({
 
   // P2: `videoDrawerDefaultOpen = !entry?.hasVideoBackground` is N/A here (no separate video drawer); use registry metadata when a drawer shell exists.
   const entry = getIntervalWrapper(effectiveWrapperKind);
-  const wrapperPhaseMatches = effectiveWrapperKind === 'amrap' && state.phase === 'amrap';
+  const wrapperPhaseMatches =
+    (effectiveWrapperKind === 'amrap' || effectiveWrapperKind === 'amrap_minimal') &&
+    state.phase === 'amrap';
+  const isAmrapMinimalActive = wrapperPhaseMatches && effectiveWrapperKind === 'amrap_minimal';
   const ActiveIntervalWrapper = wrapperPhaseMatches ? entry?.component : undefined;
   const renderWrapper = ActiveIntervalWrapper != null;
   const excludeUidForTiles = useExcludeUidForTiles(
@@ -306,6 +317,9 @@ function LiveSessionViewInner({
         hostUserId={hostUserId}
         excludeUidForTiles={excludeUidForTiles}
         videoOverlays={videoOverlays}
+        stageBottomOverlay={stageBottomOverlay}
+        localRailPipOverlay={localRailPipOverlay}
+        renderRemoteRailBottomOverlay={renderRemoteRailBottomOverlay}
       />
     ),
     [
@@ -318,6 +332,9 @@ function LiveSessionViewInner({
       hostUserId,
       excludeUidForTiles,
       videoOverlays,
+      stageBottomOverlay,
+      localRailPipOverlay,
+      renderRemoteRailBottomOverlay,
     ],
   );
 
@@ -434,13 +451,22 @@ function LiveSessionViewInner({
           </div>
         ) : null}
         {!showWrapperBoardSplit && !selectingFromBoard && renderWrapper ? (
-          <div className="shrink-0 rounded-lg border border-border bg-card/60 p-3 min-h-[120px]">
-            <WrapperErrorBoundary resetKey={effectiveWrapperKind}>
-              <ActiveIntervalWrapper {...wrapperProps} />
-            </WrapperErrorBoundary>
-          </div>
+          entry?.inlineUi === false ? (
+            // Copilot suggestion ignored: sr-only keeps the minimal wrapper mounted for slots/overlays without a bordered card; engine errors flow to onWrapperError and minimal UI uses video overlays.
+            <div className="sr-only">
+              <WrapperErrorBoundary resetKey={effectiveWrapperKind}>
+                <ActiveIntervalWrapper {...wrapperProps} />
+              </WrapperErrorBoundary>
+            </div>
+          ) : (
+            <div className="shrink-0 rounded-lg border border-border bg-card/60 p-3 min-h-[120px]">
+              <WrapperErrorBoundary resetKey={effectiveWrapperKind}>
+                <ActiveIntervalWrapper {...wrapperProps} />
+              </WrapperErrorBoundary>
+            </div>
+          )
         ) : null}
-        {!showWrapperBoardSplit && chatDrawerLeaderboard != null ? (
+        {!showWrapperBoardSplit && !isAmrapMinimalActive && chatDrawerLeaderboard != null ? (
           <div className="shrink-0 rounded-lg border border-border bg-card/60 p-3">
             {chatDrawerLeaderboard}
           </div>
@@ -455,7 +481,15 @@ function LiveSessionViewInner({
             className="shrink-0"
           />
         )}
-        {selectingFromBoard ? null : <SessionDeckBuilder state={state} className="shrink-0" />}
+        {selectingFromBoard ? null : isAmrapMinimalActive ? (
+          chatDrawerLeaderboard != null ? (
+            <div className="shrink-0 rounded-lg border border-border bg-card/60 p-3">
+              {chatDrawerLeaderboard}
+            </div>
+          ) : null
+        ) : (
+          <SessionDeckBuilder state={state} className="shrink-0" />
+        )}
       </div>
 
       {compact ? (

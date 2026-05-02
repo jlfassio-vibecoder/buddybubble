@@ -2427,6 +2427,7 @@ export type Database = {
           p_block_snapshot?: Json;
           p_duration_seconds?: number;
           p_live_session_id: string;
+          p_wrapper_kind?: string;
         };
         Returns: string;
       };

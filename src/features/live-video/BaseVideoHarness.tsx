@@ -30,6 +30,12 @@ export type BaseVideoHarnessProps = {
   floatingMediaExtras?: ReactNode;
   /** Absolute overlays above video tiles (e.g. AMRAP HUD); use `pointer-events-auto` on interactive nodes. */
   videoOverlays?: ReactNode;
+  /** Main stage bottom strip (e.g. AMRAP lap splits for the person on stage). */
+  stageBottomOverlay?: ReactNode;
+  /** Local PiP rail tile only (e.g. AMRAP lap splits for the local user). */
+  localRailPipOverlay?: ReactNode;
+  /** Remote rail tiles: lap UI for that tile’s user only (`agoraUidStr` = `String(remoteUser.uid)`). */
+  renderRemoteRailBottomOverlay?: (agoraUidStr: string) => ReactNode;
   /** When set, the tile for this Agora uid shows a placeholder instead of live video. */
   excludeUidForTiles?: string | null;
 };
@@ -233,6 +239,12 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
               </div>
             ) : null}
 
+            {props.stageBottomOverlay != null ? (
+              <div className="pointer-events-none absolute inset-0 z-[44] flex items-end justify-end px-3 pb-20">
+                {props.stageBottomOverlay}
+              </div>
+            ) : null}
+
             <FloatingMediaBar
               isMicMuted={isMicMuted}
               isCameraOff={isCameraOff}
@@ -271,6 +283,11 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
                             {localIdleLabel}
                           </div>
                         ) : null}
+                        {props.localRailPipOverlay != null ? (
+                          <div className="pointer-events-none absolute inset-0 z-[44] flex items-end justify-end p-2">
+                            {props.localRailPipOverlay}
+                          </div>
+                        ) : null}
                       </>
                     )}
                   </div>
@@ -281,10 +298,17 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
                         Video hidden
                       </div>
                     ) : (
-                      <RemoteVideoPreview
-                        user={p.user}
-                        className="absolute inset-0 h-full w-full min-h-0 min-w-0 rounded-none border-0"
-                      />
+                      <>
+                        <RemoteVideoPreview
+                          user={p.user}
+                          className="absolute inset-0 h-full w-full min-h-0 min-w-0 rounded-none border-0"
+                        />
+                        {props.renderRemoteRailBottomOverlay != null ? (
+                          <div className="pointer-events-none absolute inset-0 z-[44] flex items-end justify-end p-2">
+                            {props.renderRemoteRailBottomOverlay(String(p.user.uid))}
+                          </div>
+                        ) : null}
+                      </>
                     )}
                   </div>
                 ),
