@@ -16,7 +16,7 @@ export type StorefrontPublicEnvKey =
   | 'PUBLIC_TURNSTILE_SITE_KEY';
 
 export function getPublicEnv(key: StorefrontPublicEnvKey): string | undefined {
-  const fromMeta = (import.meta.env as Record<string, string | undefined>)[key];
+  const fromMeta = (import.meta.env as unknown as Record<string, string | undefined>)[key];
   const fromProcess = typeof process !== 'undefined' && process.env ? process.env[key] : undefined;
 
   const metaTrimmed = fromMeta?.trim();
