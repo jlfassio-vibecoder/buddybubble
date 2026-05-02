@@ -21,7 +21,7 @@
     "check:storefront": "npm run astro:check -w storefront",
     "build:storefront": "npm run build -w storefront",
     "verify:storefront": "npm run check:storefront && npm run build:storefront",
-    "check": "npm run format:check && npm run lint && npm run build && npm run check:storefront",
+    "check": "npm run format:check && npm run lint && npm run lint:eslint && npm run build && npm run check:storefront",
     "test": "tsx scripts/check-agent-coupling.ts && vitest run",
     "test:coverage": "tsx scripts/check-agent-coupling.ts && vitest run --coverage",
     "test:e2e": "playwright test",

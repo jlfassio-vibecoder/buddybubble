@@ -10,7 +10,7 @@ on:
 
 jobs:
   quality:
-    name: Format, types, and tests
+    name: Format, types, ESLint, and tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -35,6 +35,9 @@ jobs:
 
       - name: TypeScript check
         run: pnpm run lint
+
+      - name: Run ESLint
+        run: pnpm run lint:eslint
 
       - name: Tests
         env:
