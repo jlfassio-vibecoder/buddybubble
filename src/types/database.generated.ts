@@ -163,13 +163,6 @@ export type Database = {
             referencedRelation: 'amrap_sessions';
             referencedColumns: ['id'];
           },
-          {
-            foreignKeyName: 'amrap_participants_user_id_fkey';
-            columns: ['user_id'];
-            isOneToOne: false;
-            referencedRelation: 'users';
-            referencedColumns: ['id'];
-          },
         ];
       };
       amrap_session_rounds: {
@@ -214,7 +207,9 @@ export type Database = {
           created_at: string;
           duration_seconds: number;
           id: string;
+          leaderboard_snapshot: Json | null;
           live_session_id: string;
+          results_finalized_at: string | null;
           timer_phase: string;
           work_started_at: string | null;
         };
@@ -223,7 +218,9 @@ export type Database = {
           created_at?: string;
           duration_seconds: number;
           id?: string;
+          leaderboard_snapshot?: Json | null;
           live_session_id: string;
+          results_finalized_at?: string | null;
           timer_phase?: string;
           work_started_at?: string | null;
         };
@@ -232,11 +229,21 @@ export type Database = {
           created_at?: string;
           duration_seconds?: number;
           id?: string;
+          leaderboard_snapshot?: Json | null;
           live_session_id?: string;
+          results_finalized_at?: string | null;
           timer_phase?: string;
           work_started_at?: string | null;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: 'amrap_sessions_live_session_id_fkey';
+            columns: ['live_session_id'];
+            isOneToOne: true;
+            referencedRelation: 'live_sessions';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       analytics_events: {
         Row: {
@@ -852,6 +859,66 @@ export type Database = {
           },
         ];
       };
+      exercise_images: {
+        Row: {
+          anatomical_section: string | null;
+          created_at: string | null;
+          created_by: string;
+          exercise_id: string;
+          hidden: boolean | null;
+          id: string;
+          image_prompt: string | null;
+          image_url: string;
+          position: number | null;
+          role: string;
+          storage_path: string;
+          visual_style: string | null;
+        };
+        Insert: {
+          anatomical_section?: string | null;
+          created_at?: string | null;
+          created_by: string;
+          exercise_id: string;
+          hidden?: boolean | null;
+          id?: string;
+          image_prompt?: string | null;
+          image_url: string;
+          position?: number | null;
+          role: string;
+          storage_path: string;
+          visual_style?: string | null;
+        };
+        Update: {
+          anatomical_section?: string | null;
+          created_at?: string | null;
+          created_by?: string;
+          exercise_id?: string;
+          hidden?: boolean | null;
+          id?: string;
+          image_prompt?: string | null;
+          image_url?: string;
+          position?: number | null;
+          role?: string;
+          storage_path?: string;
+          visual_style?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'exercise_images_created_by_fkey';
+            columns: ['created_by'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'exercise_images_exercise_id_fkey';
+            columns: ['exercise_id'];
+            isOneToOne: false;
+            referencedRelation: 'generated_exercises';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       fitness_profiles: {
         Row: {
           biometrics: Json;
@@ -902,6 +969,105 @@ export type Database = {
             columns: ['workspace_id'];
             isOneToOne: false;
             referencedRelation: 'workspaces';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      generated_exercises: {
+        Row: {
+          biomechanics: Json | null;
+          complexity_level: string | null;
+          created_at: string | null;
+          deep_dive_html_content: string | null;
+          exercise_name: string;
+          generated_at: string | null;
+          generated_by: string;
+          id: string;
+          image_prompt: string | null;
+          image_url: string | null;
+          kinetic_chain_type: string | null;
+          main_workout_type: string | null;
+          rejected_at: string | null;
+          rejected_by: string | null;
+          rejection_reason: string | null;
+          slug: string;
+          sources: Json | null;
+          status: string;
+          storage_path: string | null;
+          suitable_blocks: string[] | null;
+          updated_at: string | null;
+          video_storage_path: string | null;
+          video_url: string | null;
+          videos: Json | null;
+          visual_style: string | null;
+        };
+        Insert: {
+          biomechanics?: Json | null;
+          complexity_level?: string | null;
+          created_at?: string | null;
+          deep_dive_html_content?: string | null;
+          exercise_name: string;
+          generated_at?: string | null;
+          generated_by: string;
+          id?: string;
+          image_prompt?: string | null;
+          image_url?: string | null;
+          kinetic_chain_type?: string | null;
+          main_workout_type?: string | null;
+          rejected_at?: string | null;
+          rejected_by?: string | null;
+          rejection_reason?: string | null;
+          slug: string;
+          sources?: Json | null;
+          status?: string;
+          storage_path?: string | null;
+          suitable_blocks?: string[] | null;
+          updated_at?: string | null;
+          video_storage_path?: string | null;
+          video_url?: string | null;
+          videos?: Json | null;
+          visual_style?: string | null;
+        };
+        Update: {
+          biomechanics?: Json | null;
+          complexity_level?: string | null;
+          created_at?: string | null;
+          deep_dive_html_content?: string | null;
+          exercise_name?: string;
+          generated_at?: string | null;
+          generated_by?: string;
+          id?: string;
+          image_prompt?: string | null;
+          image_url?: string | null;
+          kinetic_chain_type?: string | null;
+          main_workout_type?: string | null;
+          rejected_at?: string | null;
+          rejected_by?: string | null;
+          rejection_reason?: string | null;
+          slug?: string;
+          sources?: Json | null;
+          status?: string;
+          storage_path?: string | null;
+          suitable_blocks?: string[] | null;
+          updated_at?: string | null;
+          video_storage_path?: string | null;
+          video_url?: string | null;
+          videos?: Json | null;
+          visual_style?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'generated_exercises_generated_by_fkey';
+            columns: ['generated_by'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'generated_exercises_rejected_by_fkey';
+            columns: ['rejected_by'];
+            isOneToOne: false;
+            referencedRelation: 'users';
             referencedColumns: ['id'];
           },
         ];
@@ -1186,6 +1352,68 @@ export type Database = {
           },
         ];
       };
+      live_session_participants: {
+        Row: {
+          agora_uid: string | null;
+          display_name: string;
+          id: string;
+          joined_at: string;
+          role: string;
+          session_id: string;
+          user_id: string | null;
+        };
+        Insert: {
+          agora_uid?: string | null;
+          display_name: string;
+          id?: string;
+          joined_at?: string;
+          role: string;
+          session_id: string;
+          user_id?: string | null;
+        };
+        Update: {
+          agora_uid?: string | null;
+          display_name?: string;
+          id?: string;
+          joined_at?: string;
+          role?: string;
+          session_id?: string;
+          user_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'live_session_participants_session_id_fkey';
+            columns: ['session_id'];
+            isOneToOne: false;
+            referencedRelation: 'live_sessions';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      live_sessions: {
+        Row: {
+          created_at: string;
+          host_user_id: string;
+          id: string;
+          interval_wrapper_config: Json | null;
+          interval_wrapper_kind: string;
+        };
+        Insert: {
+          created_at?: string;
+          host_user_id: string;
+          id?: string;
+          interval_wrapper_config?: Json | null;
+          interval_wrapper_kind?: string;
+        };
+        Update: {
+          created_at?: string;
+          host_user_id?: string;
+          id?: string;
+          interval_wrapper_config?: Json | null;
+          interval_wrapper_kind?: string;
+        };
+        Relationships: [];
+      };
       messages: {
         Row: {
           attached_task_id: string | null;
@@ -1210,7 +1438,7 @@ export type Database = {
           metadata?: Json;
           parent_id?: string | null;
           target_task_id?: string | null;
-          thread_subject_user_id?: string;
+          thread_subject_user_id: string;
           user_id: string;
         };
         Update: {
@@ -1643,6 +1871,48 @@ export type Database = {
             columns: ['program_id'];
             isOneToOne: false;
             referencedRelation: 'tasks';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      trainer_clients: {
+        Row: {
+          client_id: string;
+          created_at: string | null;
+          id: string;
+          status: string;
+          trainer_id: string;
+          updated_at: string | null;
+        };
+        Insert: {
+          client_id: string;
+          created_at?: string | null;
+          id?: string;
+          status?: string;
+          trainer_id: string;
+          updated_at?: string | null;
+        };
+        Update: {
+          client_id?: string;
+          created_at?: string | null;
+          id?: string;
+          status?: string;
+          trainer_id?: string;
+          updated_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'trainer_clients_client_id_fkey';
+            columns: ['client_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'trainer_clients_trainer_id_fkey';
+            columns: ['trainer_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
             referencedColumns: ['id'];
           },
         ];
@@ -2431,6 +2701,10 @@ export type Database = {
         };
         Returns: string;
       };
+      amrap_finalize_session: {
+        Args: { p_amrap_session_id: string; p_snapshot: Json };
+        Returns: undefined;
+      };
       amrap_join_session: {
         Args: { p_amrap_session_id: string; p_display_name: string };
         Returns: string;
@@ -2439,8 +2713,14 @@ export type Database = {
         Args: { p_amrap_session_id: string; p_participant_id: string };
         Returns: undefined;
       };
-      amrap_reset_timer: { Args: { p_amrap_session_id: string }; Returns: undefined };
-      amrap_start_timer: { Args: { p_amrap_session_id: string }; Returns: undefined };
+      amrap_reset_timer: {
+        Args: { p_amrap_session_id: string };
+        Returns: undefined;
+      };
+      amrap_start_timer: {
+        Args: { p_amrap_session_id: string };
+        Returns: undefined;
+      };
       apply_workout_draft: { Args: { p_message_id: string }; Returns: Json };
       approve_invitation_join_request: {
         Args: { p_join_request_id: string };
@@ -2493,8 +2773,15 @@ export type Database = {
           isSetofReturn: true;
         };
       };
+      get_bubble_message_visibility: {
+        Args: { p_bubble_id: string };
+        Returns: string;
+      };
       get_invite_preview: { Args: { p_token: string }; Returns: Json };
-      get_live_session_join_hints: { Args: { p_session_id: string }; Returns: Json };
+      get_live_session_join_hints: {
+        Args: { p_session_id: string };
+        Returns: Json;
+      };
       get_task_bubble_id: { Args: { p_task_id: string }; Returns: string };
       get_workspace_subscription_status: {
         Args: { p_workspace_id: string };
@@ -2502,39 +2789,91 @@ export type Database = {
       };
       host_attach_amrap_session: {
         Args: { p_interval_wrapper_config?: Json; p_session_id: string };
-        Returns: Json;
+        Returns: {
+          created_at: string;
+          host_user_id: string;
+          id: string;
+          interval_wrapper_config: Json | null;
+          interval_wrapper_kind: string;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'live_sessions';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
       };
-      host_detach_amrap_session: { Args: { p_session_id: string }; Returns: Json };
+      host_detach_amrap_session: {
+        Args: { p_session_id: string };
+        Returns: {
+          created_at: string;
+          host_user_id: string;
+          id: string;
+          interval_wrapper_config: Json | null;
+          interval_wrapper_kind: string;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'live_sessions';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      is_live_session_participant: {
+        Args: { p_session_id: string };
+        Returns: boolean;
+      };
       is_workspace_admin: { Args: { _workspace_id: string }; Returns: boolean };
       is_workspace_guest: { Args: { _workspace_id: string }; Returns: boolean };
       is_workspace_member: { Args: { _workspace_id: string }; Returns: boolean };
       live_session_create: {
-        Args: { p_agora_uid: string; p_display_name: string; p_session_id: string };
+        Args: {
+          p_agora_uid: string;
+          p_display_name: string;
+          p_session_id: string;
+        };
         Returns: undefined;
       };
       live_session_list_participants: {
         Args: { p_session_id: string };
         Returns: {
-          id: string;
-          user_id: string | null;
+          agora_uid: string;
           display_name: string;
+          id: string;
           role: string;
-          agora_uid: string | null;
+          user_id: string;
         }[];
       };
       live_session_participant_join: {
         Args: {
           p_agora_uid: string;
           p_display_name: string;
-          p_role: string;
+          p_role?: string;
           p_session_id: string;
         };
         Returns: string;
+      };
+      organizer_create_reply_and_task: {
+        Args: {
+          p_bubble_id: string;
+          p_organizer_user_id: string;
+          p_parent_id: string;
+          p_reply_content: string;
+          p_task_assignee_user_id: string;
+          p_task_description: string;
+          p_task_due_on: string;
+          p_task_title: string;
+        };
+        Returns: Json;
       };
       peek_invitation: { Args: { p_token: string }; Returns: Json };
       reject_invitation_join_request: {
         Args: { p_join_request_id: string };
         Returns: Json;
+      };
+      set_fitness_profile_biometrics_public: {
+        Args: { p_show: boolean; p_workspace_id: string };
+        Returns: undefined;
       };
       set_workspace_member_show_email: {
         Args: { p_show: boolean; p_workspace_id: string };

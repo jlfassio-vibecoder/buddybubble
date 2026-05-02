@@ -11,8 +11,6 @@ export { useAmrapSession } from '@/features/amrap/hooks/useAmrapSession';
 export { default as AmrapSessionShell } from '@/features/amrap/components/AmrapSessionShell';
 export { default as AmrapEmbedExerciseSection } from '@/features/amrap/components/AmrapEmbedExerciseSection';
 export { default as ViewResultsModal } from '@/features/amrap/components/ViewResultsModal';
-export { default as AmrapWhosHere } from '@/features/amrap/components/AmrapWhosHere';
-export type { AmrapWhosHereProps } from '@/features/amrap/components/AmrapWhosHere';
 export { default as AmrapLeaderboard } from '@/features/amrap/components/AmrapLeaderboard';
 export type { AmrapLeaderboardProps } from '@/features/amrap/components/AmrapLeaderboard';
 export { default as AmrapHostActions } from '@/features/amrap/components/AmrapHostActions';

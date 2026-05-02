@@ -1,11 +1,20 @@
 'use client';
 
+/**
+ * Chat-drawer leaderboard: ranks, optional per-row lap times (hidden once results are locked),
+ * finished-state actions, and host **Lock & Save Results** (calls `amrap_finalize_session`).
+ * Does not repeat the workout exercise list — participants already see exercises in the main session UI.
+ */
+
 import { useMemo } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { AmrapParticipantAvatarPills } from '@/features/amrap/components/AmrapParticipantAvatarPills';
 import { useAmrapRounds } from '@/features/amrap/hooks/useAmrapRounds';
 import type { AmrapSessionEngine } from '@/features/amrap/types/amrap-engine';
+import { buildAmrapLeaderboardRowAriaLabel } from '@/features/amrap/utils/buildAmrapLeaderboardRowAriaLabel';
 import { computeAmrapLeaderboard } from '@/features/amrap/utils/computeAmrapLeaderboard';
+import { parseLeaderboardSnapshot } from '@/features/amrap/utils/parseLeaderboardSnapshot';
 
 function formatElapsedSec(s: number): string {
   const sec = Math.max(0, Math.round(s));
@@ -32,78 +41,74 @@ export default function AmrapResultsDrawer({
 }) {
   const { rows } = useAmrapRounds(amrapSessionId);
   const startedAt = engine.workStartedAt ? new Date(engine.workStartedAt).getTime() : null;
-  const leaderboardGroups = useMemo(
-    () => computeAmrapLeaderboard(engine.participants),
-    [engine.participants],
+  const frozenLeaderboard = useMemo(
+    () => parseLeaderboardSnapshot(engine.leaderboardSnapshotRaw),
+    [engine.leaderboardSnapshotRaw],
   );
+  const leaderboardGroups = useMemo(
+    () => frozenLeaderboard ?? computeAmrapLeaderboard(engine.participants),
+    [frozenLeaderboard, engine.participants],
+  );
+  const useFrozenLeaderboard = frozenLeaderboard != null;
 
   return (
     <div className="space-y-3 text-sm text-foreground">
-      {engine.blockSnapshot ? (
-        <div>
-          <div className="font-medium">{engine.blockSnapshot.title}</div>
-          {engine.blockSnapshot.workout_type ? (
-            <p className="text-xs text-muted-foreground">{engine.blockSnapshot.workout_type}</p>
-          ) : null}
-          <ol className="mt-1 list-inside list-decimal text-xs text-muted-foreground">
-            {engine.blockSnapshot.exercises.slice(0, 12).map((ex, i) => (
-              <li key={i}>
-                {typeof ex.sets === 'number' && ex.sets > 0 ? `${ex.sets}× ` : ''}
-                {ex.reps !== undefined && ex.reps !== null && String(ex.reps).trim() !== ''
-                  ? `${ex.reps} `
-                  : ''}
-                {ex.name}
-              </li>
-            ))}
-          </ol>
-        </div>
-      ) : null}
-
       <div>
         <div className="font-medium">Leaderboard</div>
         <ol className="mt-1 list-inside list-decimal space-y-1 text-muted-foreground">
           {leaderboardGroups.map((group) => {
-            const namesJoined = group.participants
-              .map((p) => `${p.name}${p.isSelf ? ' (you)' : ''}`)
-              .join(', ');
             const roundsVals = group.participants.map((p) => p.rounds);
             const allSameRounds = roundsVals.every((r) => r === roundsVals[0]);
-            const roundsLine = allSameRounds
-              ? `${roundsVals[0]} round${roundsVals[0] === 1 ? '' : 's'}`
-              : group.participants
-                  .map((p) => `${p.name}${p.isSelf ? ' (you)' : ''} (${p.rounds}r)`)
-                  .join(', ');
+            const roundsLineSame = `${roundsVals[0]} round${roundsVals[0] === 1 ? '' : 's'}`;
             const showAvg = group.avgLapSec != null && roundsVals.some((r) => r > 0);
+            const ariaLabel = buildAmrapLeaderboardRowAriaLabel(
+              group.participants,
+              allSameRounds,
+              group.avgLapSec,
+              showAvg,
+              formatAvgSec,
+            );
 
             return (
-              <li key={group.participants.map((p) => p.id).join('-')}>
+              <li key={group.participants.map((p) => p.id).join('-')} aria-label={ariaLabel}>
                 <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
-                  <span>{namesJoined}</span>
+                  <AmrapParticipantAvatarPills
+                    participants={group.participants}
+                    includeRoundsInTitle={!allSameRounds}
+                  />
                   {showAvg ? (
                     <span className="shrink-0 text-xs">avg {formatAvgSec(group.avgLapSec!)}</span>
                   ) : null}
                 </div>
-                <div>{roundsLine}</div>
-                {group.participants.map((p) => {
-                  const times =
-                    startedAt != null
-                      ? rows
-                          .filter((r) => r.participant_id === p.id)
-                          .map((r) =>
-                            Math.max(
-                              0,
-                              Math.round((new Date(r.logged_at).getTime() - startedAt) / 1000),
-                            ),
-                          )
-                      : [];
-                  if (times.length === 0) return null;
-                  return (
-                    <div key={p.id} className="ml-4 text-xs">
-                      <span className="font-medium text-muted-foreground">{p.name}: </span>
-                      {times.map((sec, i) => `R${i + 1} @ ${formatElapsedSec(sec)}`).join(' · ')}
-                    </div>
-                  );
-                })}
+                <div>
+                  {allSameRounds
+                    ? roundsLineSame
+                    : group.participants.map((p) => `${p.rounds}r`).join(' · ')}
+                </div>
+                {!useFrozenLeaderboard
+                  ? group.participants.map((p) => {
+                      const times =
+                        startedAt != null
+                          ? rows
+                              .filter((r) => r.participant_id === p.id)
+                              .map((r) =>
+                                Math.max(
+                                  0,
+                                  Math.round((new Date(r.logged_at).getTime() - startedAt) / 1000),
+                                ),
+                              )
+                          : [];
+                      if (times.length === 0) return null;
+                      return (
+                        <div key={p.id} className="ml-4 text-xs">
+                          <span className="font-medium text-muted-foreground">{p.name}: </span>
+                          {times
+                            .map((sec, i) => `R${i + 1} @ ${formatElapsedSec(sec)}`)
+                            .join(' · ')}
+                        </div>
+                      );
+                    })
+                  : null}
               </li>
             );
           })}
@@ -111,14 +116,21 @@ export default function AmrapResultsDrawer({
       </div>
 
       {engine.timerPhase === 'finished' ? (
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={() => engine.pageState.handleOpenViewResults()}
-        >
-          Open results
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {engine.finalizeSession ? (
+            <Button type="button" size="sm" onClick={() => void engine.finalizeSession?.()}>
+              Lock & Save Results
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => engine.pageState.handleOpenViewResults()}
+          >
+            Open results
+          </Button>
+        </div>
       ) : null}
     </div>
   );

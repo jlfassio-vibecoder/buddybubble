@@ -2,11 +2,17 @@
 
 import { useMemo } from 'react';
 
+import { AmrapParticipantAvatarPills } from '@/features/amrap/components/AmrapParticipantAvatarPills';
 import type { AmrapParticipantEngine } from '@/features/amrap/types/amrap-engine';
+import { buildAmrapLeaderboardRowAriaLabel } from '@/features/amrap/utils/buildAmrapLeaderboardRowAriaLabel';
 import { computeAmrapLeaderboard } from '@/features/amrap/utils/computeAmrapLeaderboard';
+import { parseLeaderboardSnapshot } from '@/features/amrap/utils/parseLeaderboardSnapshot';
+import type { Json } from '@/types/database';
 
 export interface AmrapLeaderboardProps {
   participants: AmrapParticipantEngine[];
+  /** When parseable, leaderboard rows render from this frozen JSON instead of live `computeAmrapLeaderboard`. */
+  leaderboardSnapshotRaw?: Json | null;
 }
 
 function formatAvgSec(sec: number): string {
@@ -16,8 +22,18 @@ function formatAvgSec(sec: number): string {
   return `${m}:${String(r).padStart(2, '0')}`;
 }
 
-export default function AmrapLeaderboard({ participants }: AmrapLeaderboardProps) {
-  const groups = useMemo(() => computeAmrapLeaderboard(participants), [participants]);
+export default function AmrapLeaderboard({
+  participants,
+  leaderboardSnapshotRaw = null,
+}: AmrapLeaderboardProps) {
+  const frozenGroups = useMemo(
+    () => parseLeaderboardSnapshot(leaderboardSnapshotRaw),
+    [leaderboardSnapshotRaw],
+  );
+  const groups = useMemo(
+    () => frozenGroups ?? computeAmrapLeaderboard(participants),
+    [frozenGroups, participants],
+  );
 
   return (
     <div className="space-y-2 text-sm text-foreground">
@@ -26,25 +42,38 @@ export default function AmrapLeaderboard({ participants }: AmrapLeaderboardProps
         {groups.map((group) => {
           const roundsVals = group.participants.map((p) => p.rounds);
           const allSameRounds = roundsVals.every((r) => r === roundsVals[0]);
-          const namesJoined = group.participants
-            .map((p) => `${p.name}${p.isSelf ? ' (you)' : ''}`)
-            .join(', ');
-          const mixedRoundsLine = group.participants
-            .map((p) => `${p.name}${p.isSelf ? ' (you)' : ''} (${p.rounds}r)`)
-            .join(', ');
           const showAvg = group.avgLapSec != null && roundsVals.some((r) => r > 0);
-          const body = allSameRounds
-            ? `${namesJoined} — ${roundsVals[0]} round${roundsVals[0] === 1 ? '' : 's'}`
-            : mixedRoundsLine;
-          const avgSuffix = showAvg
-            ? allSameRounds
-              ? ` (avg ${formatAvgSec(group.avgLapSec!)})`
-              : ` — avg ${formatAvgSec(group.avgLapSec!)}`
-            : '';
+          const n = roundsVals[0] ?? 0;
+          const ariaLabel = buildAmrapLeaderboardRowAriaLabel(
+            group.participants,
+            allSameRounds,
+            group.avgLapSec,
+            showAvg,
+            formatAvgSec,
+          );
+
           return (
-            <li key={group.participants.map((p) => p.id).join('-')}>
-              {body}
-              {avgSuffix}
+            <li key={group.participants.map((p) => p.id).join('-')} aria-label={ariaLabel}>
+              <div className="flex flex-col gap-0.5 text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <AmrapParticipantAvatarPills
+                    participants={group.participants}
+                    includeRoundsInTitle={!allSameRounds}
+                  />
+                  {allSameRounds ? (
+                    <span>
+                      — {n} round{n === 1 ? '' : 's'}
+                      {showAvg ? <span>{` (avg ${formatAvgSec(group.avgLapSec!)})`}</span> : null}
+                    </span>
+                  ) : null}
+                </div>
+                {!allSameRounds ? (
+                  <div className="text-xs">
+                    {group.participants.map((p) => `${p.rounds}r`).join(' · ')}
+                    {showAvg ? <span>{` — avg ${formatAvgSec(group.avgLapSec!)}`}</span> : null}
+                  </div>
+                ) : null}
+              </div>
             </li>
           );
         })}

@@ -132,7 +132,6 @@ export function SessionControls({
               variant={phaseButtonVariant(state.phase === 'amrap')}
               className={cn(
                 state.phase === 'amrap' &&
-                  override?.kind !== 'amrap_minimal' &&
                   'ring-2 ring-primary ring-offset-2 ring-offset-background',
               )}
               disabled={phaseDisabled || (!disableActions && !liveDbReady)}
@@ -172,53 +171,6 @@ export function SessionControls({
               }}
             >
               AMRAP block
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={phaseButtonVariant(state.phase === 'amrap')}
-              className={cn(
-                state.phase === 'amrap' &&
-                  override?.kind === 'amrap_minimal' &&
-                  'ring-2 ring-primary ring-offset-2 ring-offset-background',
-              )}
-              disabled={phaseDisabled || (!disableActions && !liveDbReady)}
-              onClick={() => {
-                if (!amrapAttachReady) return;
-                void (async () => {
-                  const snap = pickActiveSnapshot(
-                    deckSel?.deck ?? [],
-                    deckSel?.activeSnapshotId ?? null,
-                  );
-                  const blockPayload = buildAmrapBlockSnapshot(snap);
-                  const { data, error } = await supabase.rpc('amrap_create_for_session', {
-                    p_live_session_id: liveSessionRowId.trim(),
-                    p_duration_seconds: 600,
-                    p_block_snapshot: (blockPayload ?? null) as Json,
-                    p_wrapper_kind: 'amrap_minimal',
-                  });
-                  if (error) {
-                    if (process.env.NODE_ENV === 'development') {
-                      console.error(
-                        '[SessionControls] amrap_create_for_session (minimal)',
-                        error.message,
-                        error.code,
-                        error.details,
-                        error.hint,
-                      );
-                    } else {
-                      console.error('[SessionControls] amrap_create_for_session (minimal) failed');
-                    }
-                    return;
-                  }
-                  if (typeof data === 'string') {
-                    setOverride({ kind: 'amrap_minimal', config: { amrap_session_id: data } });
-                    actions.transitionToPhase('amrap');
-                  }
-                })();
-              }}
-            >
-              AMRAP Block 2
             </Button>
             <Button
               type="button"

@@ -4,7 +4,12 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { createClient } from '@utils/supabase/client';
-import { buildResultsText } from '@/features/amrap/utils/buildResultsText';
+import {
+  buildResultsText,
+  buildResultsTextFromGroups,
+} from '@/features/amrap/utils/buildResultsText';
+import { computeAmrapLeaderboard } from '@/features/amrap/utils/computeAmrapLeaderboard';
+import { parseLeaderboardSnapshot } from '@/features/amrap/utils/parseLeaderboardSnapshot';
 import type {
   AmrapLapEntry,
   AmrapParticipantEngine,
@@ -14,7 +19,7 @@ import type {
 import { useAmrapParticipants } from '@/features/amrap/hooks/useAmrapParticipants';
 import { useAmrapRounds } from '@/features/amrap/hooks/useAmrapRounds';
 import { useAmrapTimerState } from '@/features/amrap/hooks/useAmrapTimerState';
-import type { Database } from '@/types/database';
+import type { Database, Json } from '@/types/database';
 
 type AmrapParticipantRow = Database['public']['Tables']['amrap_participants']['Row'] & {
   rounds?: number;
@@ -188,7 +193,26 @@ export function useAmrapSession(options: UseAmrapSessionOptions): AmrapSessionEn
     if (rpcError) setError(rpcError.message);
   }, [amrapSessionId, selfParticipant, supabase]);
 
-  const viewResultsText = useMemo(() => buildResultsText(engineParticipants), [engineParticipants]);
+  const frozenLeaderboard = useMemo(
+    () => parseLeaderboardSnapshot(timerState.leaderboardSnapshotRaw),
+    [timerState.leaderboardSnapshotRaw],
+  );
+
+  const finalizeSession = useCallback(async () => {
+    const groups = computeAmrapLeaderboard(engineParticipants);
+    const { error: rpcError } = await supabase.rpc('amrap_finalize_session', {
+      p_amrap_session_id: amrapSessionId,
+      p_snapshot: JSON.parse(JSON.stringify(groups)) as Json,
+    });
+    if (rpcError) setError(rpcError.message);
+  }, [amrapSessionId, supabase, engineParticipants]);
+
+  const viewResultsText = useMemo(() => {
+    if (frozenLeaderboard != null) {
+      return buildResultsTextFromGroups(frozenLeaderboard);
+    }
+    return buildResultsText(engineParticipants);
+  }, [frozenLeaderboard, engineParticipants]);
 
   const copyResults = useCallback(async () => {
     try {
@@ -224,17 +248,23 @@ export function useAmrapSession(options: UseAmrapSessionOptions): AmrapSessionEn
     ],
   );
 
+  const canFinalize =
+    isHost && timerState.phase === 'finished' && timerState.resultsFinalizedAt == null;
+
   return {
     timerPhase: timerState.phase,
     remainingSec: timerState.remainingSec,
     totalSec: timerState.totalSec,
     workStartedAt: timerState.workStartedAt,
     blockSnapshot: timerState.blockSnapshot,
+    resultsFinalizedAt: timerState.resultsFinalizedAt,
+    leaderboardSnapshotRaw: timerState.leaderboardSnapshotRaw,
     participants: engineParticipants,
     selfParticipant,
     startTimer: isHost ? startTimer : null,
     resetTimer: isHost ? resetTimer : null,
     logRound: selfParticipant ? logRound : null,
+    finalizeSession: canFinalize ? finalizeSession : null,
     participantRoundLaps,
     roundLapEntries,
     loading: false,

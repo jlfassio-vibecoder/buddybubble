@@ -263,7 +263,6 @@ function LiveSessionViewInner({
   const wrapperPhaseMatches =
     (effectiveWrapperKind === 'amrap' || effectiveWrapperKind === 'amrap_minimal') &&
     state.phase === 'amrap';
-  const isAmrapMinimalActive = wrapperPhaseMatches && effectiveWrapperKind === 'amrap_minimal';
   const ActiveIntervalWrapper = wrapperPhaseMatches ? entry?.component : undefined;
   const renderWrapper = ActiveIntervalWrapper != null;
   const excludeUidForTiles = useExcludeUidForTiles(
@@ -452,7 +451,6 @@ function LiveSessionViewInner({
         ) : null}
         {!showWrapperBoardSplit && !selectingFromBoard && renderWrapper ? (
           entry?.inlineUi === false ? (
-            // Copilot suggestion ignored: sr-only keeps the minimal wrapper mounted for slots/overlays without a bordered card; engine errors flow to onWrapperError and minimal UI uses video overlays.
             <div className="sr-only">
               <WrapperErrorBoundary resetKey={effectiveWrapperKind}>
                 <ActiveIntervalWrapper {...wrapperProps} />
@@ -466,11 +464,6 @@ function LiveSessionViewInner({
             </div>
           )
         ) : null}
-        {!showWrapperBoardSplit && !isAmrapMinimalActive && chatDrawerLeaderboard != null ? (
-          <div className="shrink-0 rounded-lg border border-border bg-card/60 p-3">
-            {chatDrawerLeaderboard}
-          </div>
-        ) : null}
         {selectingFromBoard ? null : (
           <SessionControls
             state={state}
@@ -481,7 +474,7 @@ function LiveSessionViewInner({
             className="shrink-0"
           />
         )}
-        {selectingFromBoard ? null : isAmrapMinimalActive ? (
+        {selectingFromBoard ? null : wrapperPhaseMatches ? (
           chatDrawerLeaderboard != null ? (
             <div className="shrink-0 rounded-lg border border-border bg-card/60 p-3">
               {chatDrawerLeaderboard}
