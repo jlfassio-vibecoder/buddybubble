@@ -1,7 +1,9 @@
 export type {
+  AmrapLapEntry,
   AmrapSessionEngine,
   AmrapTimerPhase,
   AmrapParticipantEngine,
+  ParticipantRoundLapGroup,
 } from '@/features/amrap/types/amrap-engine';
 export type { UseAmrapSessionOptions } from '@/features/amrap/hooks/useAmrapSession';
 export { useAmrapSession } from '@/features/amrap/hooks/useAmrapSession';

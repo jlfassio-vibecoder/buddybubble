@@ -511,6 +511,28 @@ Check:
 3. Participant rejoins from the invite/card/class surface.
 4. Confirm join hints mount the AMRAP wrapper without requiring another host click.
 
+## AMRAP Block 2 (minimal)
+
+Parallel entry point for the **same** `amrap_sessions` / `useAmrapSession` stack, with `live_sessions.interval_wrapper_kind = 'amrap_minimal'`. Host chooses **AMRAP Block 2** in the huddle lobby; RPC is `amrap_create_for_session(..., p_wrapper_kind := 'amrap_minimal')`.
+
+**What everyone sees**
+
+- Video overlays only: **AMRAP** countdown (`AmrapTimerOverlay`) and **Log round** + round count (`AmrapLogRoundOverlay`).
+- Host header actions: **Start timer** / **Reset** (`AmrapHostActions`).
+- Host footer (same as full AMRAP while in block): **Pause Block** / **Resume Block** / **Return to Huddle** (`SessionControls`).
+
+**What is omitted vs full AMRAP**
+
+- No **Who's here** session-drawer slot and no **Leaderboard / workout copy** chat-drawer slot (`AmrapMinimalWrapper` does not register those contexts).
+- No bordered inline wrapper card (`registry` `inlineUi: false`); the minimal wrapper still mounts for effects (overlays, host nav, `ViewResultsModal` for finished recap).
+
+**Smoke test (host + participant)**
+
+1. Host: **Start Session** → **AMRAP Block 2** (not **AMRAP block**).
+2. Confirm both clients see timer + log round on video only (no Who's here / leaderboard cards).
+3. Host **Start timer** → participant **Log round**; confirm rounds still sync via existing AMRAP RPCs.
+4. Host **Return to Huddle** → confirm wrapper clears (`host_detach_amrap_session` + phase lobby).
+
 ## Contributor Notes
 
 - Treat `LiveSessionView` as the wrapper composition boundary. New interval wrappers should plug into the registry and should not duplicate the huddle shell.
@@ -530,7 +552,7 @@ These are intentionally not part of the current AMRAP display fix:
 - `AmrapResultsDrawer` calls `useAmrapRounds` even though the engine already derives round counts; this double-subscribes but currently works.
 - The huddle **Pause Block** / **Resume Block** controls update local shared state, not the AMRAP server-clock timer.
 - Moving from AMRAP directly to Warm-up or Tabata does not currently detach AMRAP server-side unless the host uses **Return to Huddle** or **End Session for All**.
-- `IntervalWrapperKind` includes `simple_countdown`, but the current `live_sessions.interval_wrapper_kind` DB check constraint only supports `none` and `amrap`.
+- `IntervalWrapperKind` includes `simple_countdown`; `live_sessions.interval_wrapper_kind` supports `none`, `amrap`, and `amrap_minimal` (see migration `20260803120000_amrap_minimal_wrapper.sql`).
 - AMRAP session duration is hard-coded to 600 seconds in `SessionControls`.
 
 ## Related Docs

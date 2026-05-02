@@ -16,6 +16,9 @@ export type VideoStageWrapperProps = {
   excludeUidForTiles?: string | null;
   /** Injected above video (`pointer-events-none` shell); cards use `pointer-events-auto`. */
   videoOverlays?: ReactNode;
+  stageBottomOverlay?: ReactNode;
+  localRailPipOverlay?: ReactNode;
+  renderRemoteRailBottomOverlay?: (agoraUidStr: string) => ReactNode;
 };
 
 const ASPECT_RATIO_OPTIONS: ReadonlyArray<{ id: '16:9' | '9:16' | '1:1'; label: string }> = [
@@ -36,6 +39,9 @@ export function VideoStageWrapper({
   hostUserId,
   excludeUidForTiles,
   videoOverlays,
+  stageBottomOverlay,
+  localRailPipOverlay,
+  renderRemoteRailBottomOverlay,
 }: VideoStageWrapperProps) {
   const runtime = useLiveSessionRuntime();
   const aspectRatio = runtime.aspectRatio;
@@ -59,6 +65,9 @@ export function VideoStageWrapper({
           hostUserId={hostUserId}
           excludeUidForTiles={excludeUidForTiles}
           videoOverlays={videoOverlays}
+          stageBottomOverlay={stageBottomOverlay}
+          localRailPipOverlay={localRailPipOverlay}
+          renderRemoteRailBottomOverlay={renderRemoteRailBottomOverlay}
           aspectRatio={aspectRatio}
           className="w-full flex-1 min-h-0"
         />

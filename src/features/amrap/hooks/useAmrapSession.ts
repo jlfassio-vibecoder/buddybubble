@@ -6,8 +6,10 @@ import { useCallback, useMemo, useState } from 'react';
 import { createClient } from '@utils/supabase/client';
 import { buildResultsText } from '@/features/amrap/utils/buildResultsText';
 import type {
+  AmrapLapEntry,
   AmrapParticipantEngine,
   AmrapSessionEngine,
+  ParticipantRoundLapGroup,
 } from '@/features/amrap/types/amrap-engine';
 import { useAmrapParticipants } from '@/features/amrap/hooks/useAmrapParticipants';
 import { useAmrapRounds } from '@/features/amrap/hooks/useAmrapRounds';
@@ -17,6 +19,35 @@ import type { Database } from '@/types/database';
 type AmrapParticipantRow = Database['public']['Tables']['amrap_participants']['Row'] & {
   rounds?: number;
 };
+
+function formatLapDurationMs(ms: number): string {
+  const sec = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+type AmrapRoundLogRow = { participant_id: string; logged_at: string };
+
+function computeLapEntriesForParticipant(
+  workStartedAt: string,
+  participantId: string,
+  rows: AmrapRoundLogRow[],
+): AmrapLapEntry[] {
+  const t0 = new Date(workStartedAt).getTime();
+  const mine = rows
+    .filter((r) => r.participant_id === participantId)
+    .map((r) => ({ t: new Date(r.logged_at).getTime() }))
+    .sort((a, b) => a.t - b.t);
+  const out: AmrapLapEntry[] = [];
+  let prev = t0;
+  for (let i = 0; i < mine.length; i++) {
+    const lapMs = Math.max(0, mine[i].t - prev);
+    prev = mine[i].t;
+    out.push({ round: i + 1, durationLabel: formatLapDurationMs(lapMs) });
+  }
+  return out;
+}
 
 export interface UseAmrapSessionOptions {
   amrapSessionId: string;
@@ -58,25 +89,41 @@ export function useAmrapSession(options: UseAmrapSessionOptions): AmrapSessionEn
   const [copyResultsToast, setCopyResultsToast] = useState<'success' | 'error' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const engineParticipants: AmrapParticipantEngine[] = useMemo(
-    () =>
-      [...participants]
-        .sort((a, b) => {
-          const ar = a.rounds ?? 0;
-          const br = b.rounds ?? 0;
-          if (br !== ar) return br - ar;
-          return a.display_name.localeCompare(b.display_name);
-        })
-        .map((p: AmrapParticipantRow) => ({
+  const engineParticipants: AmrapParticipantEngine[] = useMemo(() => {
+    const startedAtMs = timerState.workStartedAt
+      ? new Date(timerState.workStartedAt).getTime()
+      : null;
+    const lastLoggedAtMsByParticipant = new Map<string, number>();
+    for (const r of amrapRoundRows) {
+      const t = new Date(r.logged_at).getTime();
+      const cur = lastLoggedAtMsByParticipant.get(r.participant_id);
+      if (cur == null || t > cur) lastLoggedAtMsByParticipant.set(r.participant_id, t);
+    }
+    return [...participants]
+      .sort((a, b) => {
+        const ar = a.rounds ?? 0;
+        const br = b.rounds ?? 0;
+        if (br !== ar) return br - ar;
+        return a.display_name.localeCompare(b.display_name);
+      })
+      .map((p: AmrapParticipantRow) => {
+        const rounds = p.rounds ?? 0;
+        const lastLoggedAtMs = lastLoggedAtMsByParticipant.get(p.id) ?? null;
+        const avgLapSec =
+          startedAtMs != null && rounds > 0 && lastLoggedAtMs != null
+            ? Math.max(0, (lastLoggedAtMs - startedAtMs) / rounds / 1000)
+            : null;
+        return {
           id: p.id,
           name: p.display_name,
-          rounds: p.rounds ?? 0,
+          rounds,
+          avgLapSec,
           isHost: p.is_host,
           isSelf: p.user_id != null && p.user_id === authUserId,
           userId: p.user_id,
-        })),
-    [participants, authUserId],
-  );
+        };
+      });
+  }, [participants, authUserId, timerState.workStartedAt, amrapRoundRows]);
 
   const selfParticipant = useMemo(
     () => engineParticipants.find((p) => p.isSelf) ?? null,
@@ -91,6 +138,30 @@ export function useAmrapSession(options: UseAmrapSessionOptions): AmrapSessionEn
       .filter((r) => r.participant_id === selfParticipant.id)
       .map((r) => Math.max(0, Math.round((new Date(r.logged_at).getTime() - t0) / 1000)));
   }, [timerState.workStartedAt, selfParticipant, amrapRoundRows]);
+
+  const participantRoundLaps: ParticipantRoundLapGroup[] = useMemo(() => {
+    const started = timerState.workStartedAt;
+    const rows = amrapRoundRows as AmrapRoundLogRow[];
+    if (!started) {
+      return engineParticipants.map((p) => ({
+        participantId: p.id,
+        displayName: p.name,
+        isSelf: p.isSelf,
+        entries: [] as AmrapLapEntry[],
+      }));
+    }
+    return engineParticipants.map((p) => ({
+      participantId: p.id,
+      displayName: p.name,
+      isSelf: p.isSelf,
+      entries: computeLapEntriesForParticipant(started, p.id, rows),
+    }));
+  }, [timerState.workStartedAt, engineParticipants, amrapRoundRows]);
+
+  const roundLapEntries = useMemo(
+    () => participantRoundLaps.find((x) => x.isSelf)?.entries ?? [],
+    [participantRoundLaps],
+  );
 
   const isHost = role === 'host';
 
@@ -164,6 +235,8 @@ export function useAmrapSession(options: UseAmrapSessionOptions): AmrapSessionEn
     startTimer: isHost ? startTimer : null,
     resetTimer: isHost ? resetTimer : null,
     logRound: selfParticipant ? logRound : null,
+    participantRoundLaps,
+    roundLapEntries,
     loading: false,
     error: error ?? participantsError,
     slots: {
