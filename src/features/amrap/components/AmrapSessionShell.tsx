@@ -49,14 +49,21 @@ export default function AmrapSessionShell({
           </Button>
         ) : null}
         {engine.timerPhase === 'finished' && !recapDismissed ? (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => ps?.handleOpenViewResults()}
-          >
-            Open results
-          </Button>
+          <>
+            {engine.finalizeSession && !engine.resultsFinalizedAt ? (
+              <Button type="button" size="sm" onClick={() => void engine.finalizeSession?.()}>
+                Lock & Save Results
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => ps?.handleOpenViewResults()}
+            >
+              Open results
+            </Button>
+          </>
         ) : null}
       </div>
 

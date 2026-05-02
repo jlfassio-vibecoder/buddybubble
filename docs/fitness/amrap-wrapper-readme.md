@@ -160,18 +160,18 @@ If the phase is AMRAP but wrapper config is missing, the wrapper cannot safely m
 
 ### AMRAP UI components
 
-| Component              | Visible area                                                                     |
-| ---------------------- | -------------------------------------------------------------------------------- |
-| `AmrapTimerOverlay`    | Top-left video overlay.                                                          |
-| `AmrapLogRoundOverlay` | Top-right video overlay; participant/self round count and log button.            |
-| `AmrapHostActions`     | Host nav action slot; start/reset timer.                                         |
-| `AmrapWhosHere`        | Session drawer card; roster and round counts.                                    |
-| `AmrapResultsDrawer`   | Chat/leaderboard slot; block snapshot, leaderboard, round times, results button. |
-| `ViewResultsModal`     | Modal for copying final results.                                                 |
+| Component               | Visible area                                                                                        |
+| ----------------------- | --------------------------------------------------------------------------------------------------- |
+| `AmrapTimerOverlay`     | Top-left video overlay.                                                                             |
+| `AmrapLogRoundOverlay`  | Top-right video overlay; participant/self round count and log button.                               |
+| `AmrapHostActions`      | Host nav action slot; start/reset timer.                                                            |
+| `AmrapRoundLapsOverlay` | Lap chips on stage bottom / participant PiP / remote rail (when laps exist).                        |
+| `AmrapResultsDrawer`    | Chat/leaderboard slot; leaderboard, per-row lap times, results button (no duplicate exercise list). |
+| `ViewResultsModal`      | Modal for copying final results.                                                                    |
 
 ## Slot Rendering Contract
 
-`AmrapWrapper` is intentionally small. Its direct DOM output is mostly a modal host and a `data-region="interval-amrap"` marker. The actual visible UI is pushed up to `LiveSessionView` through context slots.
+`AmrapWrapper` is intentionally small: an `sr-only` mount with `ViewResultsModal` plus `data-region="interval-amrap"`. Timer, log round, lap overlays, host actions, and the chat-drawer leaderboard are registered on context slots consumed by `LiveSessionView` / `VideoStageWrapper`.
 
 ```mermaid
 flowchart LR
@@ -179,7 +179,7 @@ flowchart LR
   TimerSlot[VideoOverlaySlots.topLeft]
   LogSlot[VideoOverlaySlots.topRight]
   HostSlot[HostNavActions]
-  SessionSlot[SessionDrawer]
+  LapSlots[VideoOverlaySlots stage and pip]
   ChatSlot[ChatDrawerLeaderboard]
   Video[VideoStage]
   Header[SessionHeaderArea]
@@ -188,12 +188,12 @@ flowchart LR
   AmrapBody --> TimerSlot
   AmrapBody --> LogSlot
   AmrapBody --> HostSlot
-  AmrapBody --> SessionSlot
+  AmrapBody --> LapSlots
   AmrapBody --> ChatSlot
   TimerSlot --> Video
   LogSlot --> Video
   HostSlot --> Header
-  SessionSlot --> BodyCards
+  LapSlots --> Video
   ChatSlot --> BodyCards
 ```
 
@@ -202,7 +202,7 @@ This pattern avoids passing every AMRAP child through the huddle tree. The trade
 When debugging "nothing displays", always check:
 
 1. Did `state.phase` become `'amrap'`?
-2. Did `effectiveWrapperKind` become `'amrap'`?
+2. Did `effectiveWrapperKind` resolve to the AMRAP registry entry (`'amrap'` or legacy `'amrap_minimal'`)?
 3. Does `effectiveWrapperConfig` contain a valid `amrap_session_id`?
 4. Did `AmrapWrapper` mount, or did `WrapperErrorBoundary` show a fallback?
 5. Did `AmrapBody` effects populate slot contexts?
@@ -253,14 +253,16 @@ One AMRAP session per live session.
 
 Relevant columns:
 
-| Column             | Purpose                                                     |
-| ------------------ | ----------------------------------------------------------- |
-| `id`               | AMRAP session id passed in wrapper config.                  |
-| `live_session_id`  | References `live_sessions.id`; unique.                      |
-| `duration_seconds` | Timer duration. Current attach path uses 600 seconds.       |
-| `timer_phase`      | `idle`, `setup`, `work`, or `finished`.                     |
-| `work_started_at`  | Server timestamp used as the countdown clock source.        |
-| `block_snapshot`   | Optional snapshot of selected workout block at attach time. |
+| Column                 | Purpose                                                                            |
+| ---------------------- | ---------------------------------------------------------------------------------- |
+| `id`                   | AMRAP session id passed in wrapper config.                                         |
+| `live_session_id`      | References `live_sessions.id`; unique.                                             |
+| `duration_seconds`     | Timer duration. Current attach path uses 600 seconds.                              |
+| `timer_phase`          | `idle`, `setup`, `work`, or `finished`.                                            |
+| `work_started_at`      | Server timestamp used as the countdown clock source.                               |
+| `block_snapshot`       | Optional snapshot of selected workout block at attach time.                        |
+| `leaderboard_snapshot` | Optional frozen dense-rank leaderboard JSON; set once by `amrap_finalize_session`. |
+| `results_finalized_at` | When the host locked official results; idempotency anchor for finalize.            |
 
 ### `amrap_participants`
 
@@ -300,6 +302,7 @@ Relevant columns:
 | `amrap_start_timer(p_amrap_session_id)`                                             | Host                       | Sets timer phase to `work` and `work_started_at = now()`.                                                                      |
 | `amrap_reset_timer(p_amrap_session_id)`                                             | Host                       | Deletes rounds and resets timer to `idle`.                                                                                     |
 | `amrap_log_round(p_amrap_session_id, p_participant_id)`                             | Participant/host self      | Inserts one round for the caller's own AMRAP participant row.                                                                  |
+| `amrap_finalize_session(p_amrap_session_id, p_snapshot)`                            | Host                       | Idempotent: sets `timer_phase = finished`, `leaderboard_snapshot`, `results_finalized_at` once.                                |
 | `host_detach_amrap_session(p_session_id)`                                           | Host                       | Clears `live_sessions.interval_wrapper_kind/config`; leaves AMRAP rows intact.                                                 |
 
 Most AMRAP tables have RLS enabled. Writes happen through `security definer` RPCs and are gated by host ownership or live session membership.
@@ -371,6 +374,8 @@ AMRAP timer state comes from `amrap_sessions`:
 
 This gives every client the same server-clock origin without broadcasting timer ticks.
 
+After the block ends, the **host** can run **Lock & Save Results**, which calls `amrap_finalize_session` with a JSON payload from `computeAmrapLeaderboard`. The chat-drawer leaderboard and results text prefer that frozen snapshot when `leaderboard_snapshot` parses successfully; otherwise they fall back to live math (legacy sessions).
+
 ## Workout Block Snapshot
 
 When the host attaches AMRAP, `SessionControls` picks the active workout deck snapshot:
@@ -379,7 +384,7 @@ When the host attaches AMRAP, `SessionControls` picks the active workout deck sn
 2. Fall back to the first deck item.
 3. Build a compact `block_snapshot` with title, workout type, duration, and exercises.
 
-The snapshot is stored on first AMRAP session creation and shown in `AmrapResultsDrawer`. Because `amrap_sessions.live_session_id` is unique, later calls reuse the same AMRAP row and do not replace the snapshot.
+The snapshot is stored on first AMRAP session creation as JSON on `amrap_sessions.block_snapshot` and exposed on the session engine (`blockSnapshot`) for durable attach metadata. It is **not** rendered in the chat-drawer leaderboard (`AmrapResultsDrawer`), because participants already see the live workout exercises elsewhere in the huddle UI. Because `amrap_sessions.live_session_id` is unique, later calls reuse the same AMRAP row and do not replace the snapshot.
 
 ## Error Boundaries And Missing Config
 
@@ -511,28 +516,9 @@ Check:
 3. Participant rejoins from the invite/card/class surface.
 4. Confirm join hints mount the AMRAP wrapper without requiring another host click.
 
-## AMRAP Block 2 (minimal)
+## Legacy `amrap_minimal` in the database
 
-Parallel entry point for the **same** `amrap_sessions` / `useAmrapSession` stack, with `live_sessions.interval_wrapper_kind = 'amrap_minimal'`. Host chooses **AMRAP Block 2** in the huddle lobby; RPC is `amrap_create_for_session(..., p_wrapper_kind := 'amrap_minimal')`.
-
-**What everyone sees**
-
-- Video overlays only: **AMRAP** countdown (`AmrapTimerOverlay`) and **Log round** + round count (`AmrapLogRoundOverlay`).
-- Host header actions: **Start timer** / **Reset** (`AmrapHostActions`).
-- Host footer (same as full AMRAP while in block): **Pause Block** / **Resume Block** / **Return to Huddle** (`SessionControls`).
-
-**What is omitted vs full AMRAP**
-
-- No **Who's here** session-drawer slot (`AmrapMinimalWrapper` does not register session-drawer context).
-- **Leaderboard** still mounts: `AmrapMinimalWrapper` registers `setChatDrawerLeaderboard(<AmrapResultsDrawer …/>)` and `LiveSessionView` renders that slot in a bordered card below session controls during `amrap_minimal` (same data as full AMRAP, without the large inline wrapper card).
-- No bordered **inline** AMRAP wrapper card (`registry` `inlineUi: false`); the minimal wrapper still mounts off-stage for effects (overlays, host nav, `ViewResultsModal` for finished recap).
-
-**Smoke test (host + participant)**
-
-1. Host: **Start Session** → **AMRAP Block 2** (not **AMRAP block**).
-2. Confirm both clients see timer + log round on video, no Who's here card, and no **inline** bordered AMRAP wrapper card (leaderboard may still appear in the chat-drawer slot card below controls).
-3. Host **Start timer** → participant **Log round**; confirm rounds still sync via existing AMRAP RPCs.
-4. Host **Return to Huddle** → confirm wrapper clears (`host_detach_amrap_session` + phase lobby).
+Older sessions may still have `live_sessions.interval_wrapper_kind = 'amrap_minimal'`. The app maps that value to the same registry entry and `AmrapWrapper` component as `'amrap'` (`getIntervalWrapper`). New attaches from the huddle use `p_wrapper_kind: 'amrap'` only.
 
 ## Contributor Notes
 
@@ -553,7 +539,7 @@ These are intentionally not part of the current AMRAP display fix:
 - `AmrapResultsDrawer` calls `useAmrapRounds` even though the engine already derives round counts; this double-subscribes but currently works.
 - The huddle **Pause Block** / **Resume Block** controls update local shared state, not the AMRAP server-clock timer.
 - Moving from AMRAP directly to Warm-up or Tabata does not currently detach AMRAP server-side unless the host uses **Return to Huddle** or **End Session for All**.
-- `IntervalWrapperKind` includes `simple_countdown`; `live_sessions.interval_wrapper_kind` supports `none`, `amrap`, and `amrap_minimal` (see migration `20260803120000_amrap_minimal_wrapper.sql`).
+- `IntervalWrapperKind` includes `simple_countdown`; `live_sessions.interval_wrapper_kind` supports `none`, `amrap`, and legacy `amrap_minimal` (see migration `20260803120000_amrap_minimal_wrapper.sql`); UI resolves `amrap_minimal` to the single `amrap` wrapper.
 - AMRAP session duration is hard-coded to 600 seconds in `SessionControls`.
 
 ## Related Docs

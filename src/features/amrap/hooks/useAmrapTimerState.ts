@@ -5,7 +5,7 @@ import { createClient } from '@utils/supabase/client';
 import type { AmrapTimerPhase } from '@/features/amrap/types/amrap-engine';
 import type { AmrapBlockSnapshotPayload } from '@/features/amrap/utils/buildAmrapBlockSnapshot';
 import type { WorkoutExercise } from '@/lib/item-metadata';
-import type { Database } from '@/types/database';
+import type { Database, Json } from '@/types/database';
 
 type AmrapSessionRow = Database['public']['Tables']['amrap_sessions']['Row'];
 
@@ -32,6 +32,9 @@ export interface AmrapTimerState {
   totalSec: number;
   workStartedAt: string | null;
   blockSnapshot: AmrapBlockSnapshotPayload | null;
+  /** Raw `amrap_sessions.leaderboard_snapshot`; parse with `parseLeaderboardSnapshot` in session hook. */
+  leaderboardSnapshotRaw: Json | null;
+  resultsFinalizedAt: string | null;
 }
 
 export function useAmrapTimerState(amrapSessionId: string): AmrapTimerState {
@@ -119,5 +122,7 @@ export function useAmrapTimerState(amrapSessionId: string): AmrapTimerState {
     totalSec: sessionRow?.duration_seconds ?? 0,
     workStartedAt: sessionRow?.work_started_at ?? null,
     blockSnapshot,
+    leaderboardSnapshotRaw: sessionRow?.leaderboard_snapshot ?? null,
+    resultsFinalizedAt: sessionRow?.results_finalized_at ?? null,
   };
 }

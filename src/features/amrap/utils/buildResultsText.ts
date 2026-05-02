@@ -1,5 +1,8 @@
 import type { AmrapParticipantEngine } from '@/features/amrap/types/amrap-engine';
-import { computeAmrapLeaderboard } from '@/features/amrap/utils/computeAmrapLeaderboard';
+import {
+  computeAmrapLeaderboard,
+  type AmrapLeaderboardGroup,
+} from '@/features/amrap/utils/computeAmrapLeaderboard';
 
 function formatAvgSec(sec: number): string {
   const s = Math.round(sec);
@@ -8,7 +11,7 @@ function formatAvgSec(sec: number): string {
   return `${m}:${String(r).padStart(2, '0')}`;
 }
 
-function formatGroupLine(group: ReturnType<typeof computeAmrapLeaderboard>[number]): string {
+function formatGroupLine(group: AmrapLeaderboardGroup): string {
   const { rank, participants, avgLapSec } = group;
   const namesJoined = participants.map((p) => `${p.name}${p.isSelf ? ' (you)' : ''}`).join(', ');
   const roundsVals = participants.map((p) => p.rounds);
@@ -34,6 +37,17 @@ function formatGroupLine(group: ReturnType<typeof computeAmrapLeaderboard>[numbe
 }
 
 /**
+ * Plain-text leaderboard from frozen dense-rank groups (post-finalize).
+ */
+export function buildResultsTextFromGroups(groups: AmrapLeaderboardGroup[]): string {
+  if (groups.length === 0) {
+    return 'Leaderboard\n(no participants yet)';
+  }
+  const lines = groups.map((g) => formatGroupLine(g));
+  return ['Leaderboard', ...lines].join('\n');
+}
+
+/**
  * Plain-text leaderboard for clipboard + View Results modal.
  */
 export function buildResultsText(participants: AmrapParticipantEngine[]): string {
@@ -41,6 +55,5 @@ export function buildResultsText(participants: AmrapParticipantEngine[]): string
     return 'Leaderboard\n(no participants yet)';
   }
   const groups = computeAmrapLeaderboard(participants);
-  const lines = groups.map((g) => formatGroupLine(g));
-  return ['Leaderboard', ...lines].join('\n');
+  return buildResultsTextFromGroups(groups);
 }

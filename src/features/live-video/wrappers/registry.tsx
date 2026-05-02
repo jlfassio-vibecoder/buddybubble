@@ -1,6 +1,5 @@
 import type { ComponentType } from 'react';
 
-import AmrapMinimalWrapper from '@/features/live-video/wrappers/amrap/AmrapMinimalWrapper';
 import AmrapWrapper from '@/features/live-video/wrappers/amrap/AmrapWrapper';
 import { SimpleCountdownWrapper } from '@/features/live-video/wrappers/simple-countdown/SimpleCountdownWrapper';
 import type { ShellChromeKind } from '@/features/live-video/theater/live-theater-layout.types';
@@ -13,7 +12,7 @@ export type WrapperRegistryEntry = {
   label: string;
   /**
    * When false, LiveSessionView still mounts the wrapper for effects (overlays, etc.) but skips the
-   * bordered inline card (e.g. `amrap_minimal`).
+   * bordered inline card (AMRAP uses overlay + strip layout).
    */
   inlineUi?: boolean;
   /**
@@ -35,17 +34,14 @@ const REGISTRY: Partial<Record<IntervalWrapperKind, WrapperRegistryEntry>> = {
     hasVideoBackground: false,
     requiresAttach: true,
     label: 'AMRAP',
-  },
-  amrap_minimal: {
-    component: AmrapMinimalWrapper,
-    hasVideoBackground: false,
-    requiresAttach: true,
-    label: 'AMRAP (minimal)',
     inlineUi: false,
   },
 };
 
 export function getIntervalWrapper(kind: IntervalWrapperKind): WrapperRegistryEntry | undefined {
+  if (kind === 'amrap_minimal') {
+    return REGISTRY.amrap;
+  }
   return REGISTRY[kind];
 }
 

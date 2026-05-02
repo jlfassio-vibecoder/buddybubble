@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 
 import type { AmrapBlockSnapshotPayload } from '@/features/amrap/utils/buildAmrapBlockSnapshot';
+import type { Json } from '@/types/database';
 
 export type AmrapTimerPhase = 'idle' | 'setup' | 'work' | 'finished';
 
@@ -30,7 +31,12 @@ export interface AmrapSessionEngine {
   remainingSec: number;
   totalSec: number;
   workStartedAt: string | null;
+  /** Workout block metadata persisted on `amrap_sessions` (attach-time snapshot). Not shown in the chat-drawer leaderboard. */
   blockSnapshot: AmrapBlockSnapshotPayload | null;
+  /** When the host locked official results (`amrap_finalize_session`). Null for legacy / unfinalized sessions. */
+  resultsFinalizedAt: string | null;
+  /** Raw frozen leaderboard JSON from `amrap_sessions.leaderboard_snapshot`; UI parses for display when valid. */
+  leaderboardSnapshotRaw: Json | null;
 
   participants: AmrapParticipantEngine[];
   selfParticipant: AmrapParticipantEngine | null;
@@ -38,6 +44,8 @@ export interface AmrapSessionEngine {
   startTimer: (() => Promise<void>) | null;
   resetTimer: (() => Promise<void>) | null;
   logRound: (() => Promise<void>) | null;
+  /** Host-only: persists frozen leaderboard + server `finished` phase; null when unavailable or already finalized. */
+  finalizeSession: (() => Promise<void>) | null;
 
   /** Lap splits for every participant (same clock: work start → first log, then between logs). */
   participantRoundLaps: ParticipantRoundLapGroup[];
