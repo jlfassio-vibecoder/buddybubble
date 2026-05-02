@@ -26,9 +26,13 @@ export default function AmrapLeaderboard({
   participants,
   leaderboardSnapshotRaw = null,
 }: AmrapLeaderboardProps) {
+  const viewerAuthUserId = useMemo(
+    () => participants.find((p) => p.isSelf)?.userId ?? null,
+    [participants],
+  );
   const frozenGroups = useMemo(
-    () => parseLeaderboardSnapshot(leaderboardSnapshotRaw),
-    [leaderboardSnapshotRaw],
+    () => parseLeaderboardSnapshot(leaderboardSnapshotRaw, viewerAuthUserId),
+    [leaderboardSnapshotRaw, viewerAuthUserId],
   );
   const groups = useMemo(
     () => frozenGroups ?? computeAmrapLeaderboard(participants),

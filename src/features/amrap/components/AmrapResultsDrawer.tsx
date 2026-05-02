@@ -41,9 +41,13 @@ export default function AmrapResultsDrawer({
 }) {
   const { rows } = useAmrapRounds(amrapSessionId);
   const startedAt = engine.workStartedAt ? new Date(engine.workStartedAt).getTime() : null;
+  const viewerAuthUserId = useMemo(
+    () => engine.participants.find((p) => p.isSelf)?.userId ?? null,
+    [engine.participants],
+  );
   const frozenLeaderboard = useMemo(
-    () => parseLeaderboardSnapshot(engine.leaderboardSnapshotRaw),
-    [engine.leaderboardSnapshotRaw],
+    () => parseLeaderboardSnapshot(engine.leaderboardSnapshotRaw, viewerAuthUserId),
+    [engine.leaderboardSnapshotRaw, viewerAuthUserId],
   );
   const leaderboardGroups = useMemo(
     () => frozenLeaderboard ?? computeAmrapLeaderboard(engine.participants),

@@ -32,7 +32,7 @@ export interface AmrapTimerState {
   totalSec: number;
   workStartedAt: string | null;
   blockSnapshot: AmrapBlockSnapshotPayload | null;
-  /** Raw `amrap_sessions.leaderboard_snapshot`; parse with `parseLeaderboardSnapshot` in session hook. */
+  /** Raw `amrap_sessions.leaderboard_snapshot`; parse with `parseLeaderboardSnapshot(raw, authUserId)`. */
   leaderboardSnapshotRaw: Json | null;
   resultsFinalizedAt: string | null;
 }

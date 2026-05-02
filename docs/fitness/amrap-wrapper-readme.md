@@ -300,7 +300,7 @@ Relevant columns:
 | `amrap_create_for_session(p_live_session_id, p_duration_seconds, p_block_snapshot)` | Host                       | Ensures AMRAP session, upserts host AMRAP participant, attaches wrapper config on `live_sessions`, returns `amrap_session_id`. |
 | `amrap_join_session(p_amrap_session_id, p_display_name)`                            | Participant                | Upserts caller into AMRAP roster.                                                                                              |
 | `amrap_start_timer(p_amrap_session_id)`                                             | Host                       | Sets timer phase to `work` and `work_started_at = now()`.                                                                      |
-| `amrap_reset_timer(p_amrap_session_id)`                                             | Host                       | Deletes rounds and resets timer to `idle`.                                                                                     |
+| `amrap_reset_timer(p_amrap_session_id)`                                             | Host                       | Deletes rounds, resets timer to `idle`, and clears `leaderboard_snapshot` / `results_finalized_at`.                            |
 | `amrap_log_round(p_amrap_session_id, p_participant_id)`                             | Participant/host self      | Inserts one round for the caller's own AMRAP participant row.                                                                  |
 | `amrap_finalize_session(p_amrap_session_id, p_snapshot)`                            | Host                       | Idempotent: sets `timer_phase = finished`, `leaderboard_snapshot`, `results_finalized_at` once.                                |
 | `host_detach_amrap_session(p_session_id)`                                           | Host                       | Clears `live_sessions.interval_wrapper_kind/config`; leaves AMRAP rows intact.                                                 |
@@ -374,7 +374,7 @@ AMRAP timer state comes from `amrap_sessions`:
 
 This gives every client the same server-clock origin without broadcasting timer ticks.
 
-After the block ends, the **host** can run **Lock & Save Results**, which calls `amrap_finalize_session` with a JSON payload from `computeAmrapLeaderboard`. The chat-drawer leaderboard and results text prefer that frozen snapshot when `leaderboard_snapshot` parses successfully; otherwise they fall back to live math (legacy sessions).
+After the block ends, the **host** can run **Lock & Save Results**, which calls `amrap_finalize_session` with a viewer-agnostic JSON payload (dense-rank groups from `computeAmrapLeaderboard`, with `isSelf` stripped before persist). Each client re-applies `isSelf` when parsing via `parseLeaderboardSnapshot(raw, authUserId)`. The chat-drawer leaderboard and results text prefer that frozen snapshot when parsing succeeds; otherwise they fall back to live math (legacy sessions).
 
 ## Workout Block Snapshot
 
