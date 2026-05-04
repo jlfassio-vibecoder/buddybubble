@@ -353,18 +353,14 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
     setInfo(null);
     setIsGoogleLoading(true);
     const supabase = createClient();
-    const oauthRedirect =
-      typeof window !== 'undefined'
-        ? authCallbackAbsoluteUrl(window.location.origin, next, inviteToken)
-        : redirectTo;
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: oauthRedirect },
+      options: { redirectTo },
     });
+    setIsGoogleLoading(false);
     if (error) {
       console.error(error);
       toast.error('Failed to initialize Google login.');
-      setIsGoogleLoading(false);
       return;
     }
   }
