@@ -27,12 +27,14 @@ export function UpdatePasswordForm({ email }: Props) {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (password !== confirm) {
+    const trimmedPassword = password.trim();
+    const trimmedConfirm = confirm.trim();
+    if (trimmedPassword !== trimmedConfirm) {
       setError('Passwords do not match.');
       return;
     }
     setLoading(true);
-    const result = await updatePasswordAction(password);
+    const result = await updatePasswordAction(trimmedPassword);
     setLoading(false);
     if (!result.ok) {
       setError(result.error);
