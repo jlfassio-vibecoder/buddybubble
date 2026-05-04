@@ -13,7 +13,8 @@ import { safeNextPath } from '@/lib/safe-next-path';
 import { persistInviteHandoffToken } from '@/app/(dashboard)/onboarding/actions';
 import { reportInviteJourneyClient } from '@/lib/analytics/invite-journey-client';
 import { cn } from '@/lib/utils';
-import { checkUserIdentityAction } from '@/app/login/actions';
+import { checkUserIdentityAction, requestPasswordResetAction } from '@/app/login/actions';
+import { toast } from 'sonner';
 
 /** Prefer `/onboarding` when an invite handoff is waiting (sessionStorage or query). */
 function resolvePostLoginPath(next: string, inviteFromQuery?: string | null): string {
@@ -90,6 +91,7 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
   const [suppressServerAuthError, setSuppressServerAuthError] = useState(false);
 
   useLayoutEffect(() => {
@@ -318,6 +320,31 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
     }
     router.push(destination);
     router.refresh();
+  }
+
+  async function onForgotPassword() {
+    setError(null);
+    setInfo(null);
+    const trimmed = email.trim().toLowerCase();
+    if (!trimmed) {
+      setError('Enter your email address.');
+      return;
+    }
+    if (!isValidLoginEmail(trimmed)) {
+      setError('Enter a valid email address.');
+      return;
+    }
+    setForgotPasswordLoading(true);
+    const res = await requestPasswordResetAction({
+      email: trimmed,
+      inviteToken,
+    });
+    setForgotPasswordLoading(false);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    toast.success('Password reset link sent! Check your email.');
   }
 
   async function signInGoogle() {
@@ -606,6 +633,16 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
                       required
                       className={inputClass}
                     />
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      className="text-xs text-amber-700/80 underline decoration-amber-300/80 underline-offset-2 transition hover:text-amber-900 disabled:opacity-50"
+                      onClick={() => void onForgotPassword()}
+                      disabled={forgotPasswordLoading || loading}
+                    >
+                      {forgotPasswordLoading ? 'Sending…' : 'Forgot your password?'}
+                    </button>
                   </div>
                   <Button type="submit" className={primaryBtnClass} disabled={loading}>
                     {loading ? 'Signing in…' : 'Sign in'}
