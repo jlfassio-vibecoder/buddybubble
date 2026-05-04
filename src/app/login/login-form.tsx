@@ -91,6 +91,7 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
   const [suppressServerAuthError, setSuppressServerAuthError] = useState(false);
 
@@ -347,17 +348,25 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
     toast.success('Password reset link sent! Check your email.');
   }
 
-  async function signInGoogle() {
+  async function handleGoogleSignIn() {
     setError(null);
     setInfo(null);
-    setLoading(true);
+    setIsGoogleLoading(true);
     const supabase = createClient();
-    const { error: err } = await supabase.auth.signInWithOAuth({
+    const oauthRedirect =
+      typeof window !== 'undefined'
+        ? authCallbackAbsoluteUrl(window.location.origin, next, inviteToken)
+        : redirectTo;
+    const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo },
+      options: { redirectTo: oauthRedirect },
     });
-    setLoading(false);
-    if (err) setError(formatLoginAuthError(err, 'sign-in'));
+    if (error) {
+      console.error(error);
+      toast.error('Failed to initialize Google login.');
+      setIsGoogleLoading(false);
+      return;
+    }
   }
 
   async function signUpLegacy(e: React.FormEvent) {
@@ -498,10 +507,10 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
                     type="button"
                     variant="secondary"
                     className={secondaryBtnClass}
-                    onClick={() => void signInGoogle()}
-                    disabled={loading}
+                    onClick={() => void handleGoogleSignIn()}
+                    disabled={loading || isGoogleLoading}
                   >
-                    Continue with Google
+                    {isGoogleLoading ? 'Connecting…' : 'Continue with Google'}
                   </Button>
                 </div>
 
@@ -678,10 +687,10 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
                     type="button"
                     variant="secondary"
                     className={secondaryBtnClass}
-                    onClick={() => void signInGoogle()}
-                    disabled={loading}
+                    onClick={() => void handleGoogleSignIn()}
+                    disabled={loading || isGoogleLoading}
                   >
-                    Continue with Google
+                    {isGoogleLoading ? 'Connecting…' : 'Continue with Google'}
                   </Button>
                   <button
                     type="button"
@@ -702,10 +711,10 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
                     type="button"
                     variant="secondary"
                     className={secondaryBtnClass}
-                    onClick={() => void signInGoogle()}
-                    disabled={loading}
+                    onClick={() => void handleGoogleSignIn()}
+                    disabled={loading || isGoogleLoading}
                   >
-                    Continue with Google
+                    {isGoogleLoading ? 'Connecting…' : 'Continue with Google'}
                   </Button>
                 </div>
               ) : null}
