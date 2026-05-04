@@ -8,6 +8,7 @@ import { getClientIpFromHeaders } from '@/lib/client-ip';
 import { classifyAuthUserForLogin } from '@/lib/login-identity-classify';
 import { enforceLoginIdentityRateLimit } from '@/lib/login-identity-rate-limit';
 import { createServiceRoleClient } from '@/lib/supabase-service-role';
+import { createClient } from '@utils/supabase/server';
 
 const EMAIL_MAX_LEN = 254;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -17,6 +18,54 @@ export type CheckUserIdentityResult =
   | { ok: true; flow: 'check_email' }
   | { ok: true; flow: 'oauth_google' }
   | { ok: false; error: string };
+
+export type RequestPasswordResetResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * User-initiated password reset (e.g. from login password step).
+ * Uses anon Supabase client; same redirect pattern as `checkUserIdentityAction` recovery sends.
+ */
+export async function requestPasswordResetAction(input: {
+  email: string;
+  inviteToken?: string | null;
+}): Promise<RequestPasswordResetResult> {
+  const emailRaw = input.email.trim().toLowerCase();
+
+  if (!emailRaw) {
+    return { ok: false, error: 'Enter your email address.' };
+  }
+  if (emailRaw.length > EMAIL_MAX_LEN) {
+    return { ok: false, error: 'Email is too long.' };
+  }
+  if (!EMAIL_PATTERN.test(emailRaw)) {
+    return { ok: false, error: 'Enter a valid email address.' };
+  }
+
+  const h = await headers();
+  const clientIp = getClientIpFromHeaders(h) ?? 'unknown';
+  const limit = await enforceLoginIdentityRateLimit(clientIp);
+  if (!limit.ok) {
+    return { ok: true };
+  }
+
+  const invite = input.inviteToken?.trim() || null;
+  const origin = getCanonicalOrigin();
+  const redirectTo = authCallbackAbsoluteUrl(origin, '/update-password', invite);
+
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.auth.resetPasswordForEmail(emailRaw, { redirectTo });
+    if (error) {
+      console.error('[requestPasswordResetAction] resetPasswordForEmail', error.message);
+      return { ok: false, error: 'Could not send reset link. Try again shortly.' };
+    }
+    return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[requestPasswordResetAction]', msg);
+    return { ok: false, error: 'Could not send reset link. Try again shortly.' };
+  }
+}
 
 async function findAuthUserByEmail(
   admin: ReturnType<typeof createServiceRoleClient>,
