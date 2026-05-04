@@ -10,6 +10,7 @@ import {
   passwordSetupPendingCookieOptions,
 } from '@/lib/login-password-setup-cookie';
 import { safeNextPath } from '@/lib/safe-next-path';
+import { supabaseAuthCookieOptionsForUrl } from '@utils/supabase/auth-cookie-options';
 import { getSupabasePublishableKey, getSupabaseUrl } from '@utils/supabase/env';
 
 async function applyInviteHandoffCookie(
@@ -45,6 +46,7 @@ export async function GET(request: Request) {
 
   const cookieStore = await cookies();
   const supabase = createServerClient(supabaseUrl, supabaseKey, {
+    cookieOptions: supabaseAuthCookieOptionsForUrl(requestUrl),
     cookies: {
       getAll() {
         return cookieStore.getAll();

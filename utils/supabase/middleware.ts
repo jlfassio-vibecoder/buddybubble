@@ -3,6 +3,7 @@ import type { CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { BB_PASSWORD_SETUP_PENDING_COOKIE } from '@/lib/login-password-setup-cookie';
 import { safeNextPath } from '@/lib/safe-next-path';
+import { supabaseAuthCookieOptionsForUrl } from './auth-cookie-options';
 import { getSupabasePublishableKey, getSupabaseUrl } from './env';
 function copyCookies(from: NextResponse, to: NextResponse) {
   from.cookies.getAll().forEach((c) => {
@@ -26,6 +27,7 @@ export async function updateSession(request: NextRequest) {
   }
 
   const supabase = createServerClient(url, key, {
+    cookieOptions: supabaseAuthCookieOptionsForUrl(request.nextUrl),
     cookies: {
       getAll() {
         return request.cookies.getAll();

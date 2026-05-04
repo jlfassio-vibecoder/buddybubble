@@ -1,10 +1,12 @@
 import { createServerClient } from '@supabase/ssr';
 import type { CookieOptions } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
+import { supabaseAuthCookieOptionsForForwardedProto } from './auth-cookie-options';
 import { getSupabasePublishableKey, getSupabaseUrl } from './env';
 
 export async function createClient() {
   const cookieStore = await cookies();
+  const headerList = await headers();
   const url = getSupabaseUrl();
   const key = getSupabasePublishableKey();
   if (!url || !key) {
@@ -14,6 +16,7 @@ export async function createClient() {
   }
 
   return createServerClient(url, key, {
+    cookieOptions: supabaseAuthCookieOptionsForForwardedProto(headerList),
     cookies: {
       getAll() {
         return cookieStore.getAll();
