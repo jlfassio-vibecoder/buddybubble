@@ -2,11 +2,37 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Database } from '@/types/database';
+import type { Database, TaskRow } from '@/types/database';
+import {
+  cloneJsonMetadata,
+  mergeTaskMetadataOverlay,
+} from '@/features/live-video/shells/huddle/session-deck-snapshot';
 
 export type LiveSessionDeckRow = Database['public']['Tables']['live_session_deck_items']['Row'] & {
   tasks: Database['public']['Tables']['tasks']['Row'] | null;
 };
+
+/**
+ * Fresh row + task references for React; merges optional per-session metadata overlay
+ * (`live_session_deck_items.session_task_metadata`) over joined `tasks.metadata`.
+ */
+export function withSessionDeckDisplayTasks(row: LiveSessionDeckRow): LiveSessionDeckRow {
+  const { tasks, session_task_metadata, ...rest } = row;
+  if (!tasks) {
+    return { ...rest, tasks: null, session_task_metadata } as LiveSessionDeckRow;
+  }
+  const effectiveMeta =
+    session_task_metadata != null && typeof session_task_metadata === 'object'
+      ? cloneJsonMetadata(
+          mergeTaskMetadataOverlay(tasks.metadata, session_task_metadata as TaskRow['metadata']),
+        )
+      : cloneJsonMetadata(tasks.metadata);
+  return {
+    ...rest,
+    session_task_metadata,
+    tasks: { ...tasks, metadata: effectiveMeta },
+  } as LiveSessionDeckRow;
+}
 
 export type UseLiveSessionDeckOptions = {
   supabase: SupabaseClient<Database>;
@@ -60,7 +86,9 @@ export function useLiveSessionDeck(options: UseLiveSessionDeckOptions): UseLiveS
 
     const { data, error: qErr } = await supabase
       .from('live_session_deck_items')
-      .select('id, session_id, task_id, sort_order, created_at, updated_at, tasks(*)')
+      .select(
+        'id, session_id, task_id, sort_order, created_at, updated_at, session_task_metadata, tasks(*)',
+      )
       .eq('session_id', sid)
       .order('sort_order', { ascending: true })
       .order('created_at', { ascending: true });
@@ -73,10 +101,8 @@ export function useLiveSessionDeck(options: UseLiveSessionDeckOptions): UseLiveS
       setError(new Error(qErr.message));
       setRows([]);
     } else {
-      const next = (data ?? []) as LiveSessionDeckRow[];
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[DEBUG] Participant Hook: Fetched rows', next.length);
-      }
+      const raw = (data ?? []) as LiveSessionDeckRow[];
+      const next = raw.map((r) => withSessionDeckDisplayTasks(r));
       setRows(next);
     }
     setLoading(false);

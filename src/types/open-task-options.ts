@@ -22,4 +22,9 @@ export type OpenTaskOptions = {
    * ChatArea resolves this to a task-scoped `messages.id` before opening TaskModal.
    */
   taskCommentAnchorBubbleMessageId?: string | null;
+  /**
+   * When true, closing the task modal may refocus the Messages rail (dashboard layout).
+   * Kanban/board opens should omit this so closing a card does not collapse the board.
+   */
+  focusMessagesOnClose?: boolean;
 };

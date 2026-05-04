@@ -28,18 +28,30 @@ export function usePersistDeckSnapshot({
       }
       setBusy(true);
       try {
-        const { error } = await supabase
-          .from('tasks')
-          .update({
-            metadata: snap.task.metadata as TaskRow['metadata'],
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', snap.originTaskId);
+        const cardId = snap.originTaskId;
+        const updatePayload = {
+          metadata: snap.task.metadata as TaskRow['metadata'],
+        };
+        const { error } = await supabase.from('tasks').update(updatePayload).eq('id', cardId);
         if (error) {
           toast.error(formatUserFacingError(error));
           return false;
         }
-        toast.success('Original card updated');
+        if (snap.deckItemId) {
+          const { error: deckMetaErr } = await supabase
+            .from('live_session_deck_items')
+            .update({ session_task_metadata: null })
+            .eq('id', snap.deckItemId);
+          if (deckMetaErr) {
+            toast.error(
+              `Original card updated, but the live session queue could not clear its overlay: ${formatUserFacingError(deckMetaErr)}`,
+            );
+          } else {
+            toast.success('Original card updated');
+          }
+        } else {
+          toast.success('Original card updated');
+        }
         onSuccess?.();
         return true;
       } finally {
