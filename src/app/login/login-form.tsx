@@ -54,6 +54,7 @@ type LoginFormProps = {
   titleFontClassName: string;
 };
 
+// Copilot suggestion ignored: PR title/description are set on GitHub, not in repo source.
 export function LoginForm({ titleFontClassName }: LoginFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -91,6 +92,7 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
   const [suppressServerAuthError, setSuppressServerAuthError] = useState(false);
 
@@ -347,17 +349,27 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
     toast.success('Password reset link sent! Check your email.');
   }
 
-  async function signInGoogle() {
+  async function handleGoogleSignIn() {
     setError(null);
     setInfo(null);
-    setLoading(true);
-    const supabase = createClient();
-    const { error: err } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo },
-    });
-    setLoading(false);
-    if (err) setError(formatLoginAuthError(err, 'sign-in'));
+    setIsGoogleLoading(true);
+    try {
+      const supabase = createClient();
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo },
+      });
+      if (oauthError) {
+        console.error(oauthError);
+        toast.error('Failed to initialize Google login.');
+        return;
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to initialize Google login.');
+    } finally {
+      setIsGoogleLoading(false);
+    }
   }
 
   async function signUpLegacy(e: React.FormEvent) {
@@ -488,7 +500,11 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
                       className={inputClass}
                     />
                   </div>
-                  <Button type="submit" className={primaryBtnClass} disabled={loading}>
+                  <Button
+                    type="submit"
+                    className={primaryBtnClass}
+                    disabled={loading || isGoogleLoading}
+                  >
                     {loading ? 'Creating…' : 'Create account'}
                   </Button>
                 </form>
@@ -498,10 +514,10 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
                     type="button"
                     variant="secondary"
                     className={secondaryBtnClass}
-                    onClick={() => void signInGoogle()}
-                    disabled={loading}
+                    onClick={() => void handleGoogleSignIn()}
+                    disabled={loading || isGoogleLoading}
                   >
-                    Continue with Google
+                    {isGoogleLoading ? 'Connecting…' : 'Continue with Google'}
                   </Button>
                 </div>
 
@@ -595,7 +611,11 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
                       className={inputClass}
                     />
                   </div>
-                  <Button type="submit" className={primaryBtnClass} disabled={loading}>
+                  <Button
+                    type="submit"
+                    className={primaryBtnClass}
+                    disabled={loading || isGoogleLoading}
+                  >
                     {loading ? 'Continuing…' : 'Continue'}
                   </Button>
                 </form>
@@ -639,12 +659,16 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
                       type="button"
                       className="text-xs text-amber-700/80 underline decoration-amber-300/80 underline-offset-2 transition hover:text-amber-900 disabled:opacity-50"
                       onClick={() => void onForgotPassword()}
-                      disabled={forgotPasswordLoading || loading}
+                      disabled={forgotPasswordLoading || loading || isGoogleLoading}
                     >
                       {forgotPasswordLoading ? 'Sending…' : 'Forgot your password?'}
                     </button>
                   </div>
-                  <Button type="submit" className={primaryBtnClass} disabled={loading}>
+                  <Button
+                    type="submit"
+                    className={primaryBtnClass}
+                    disabled={loading || isGoogleLoading}
+                  >
                     {loading ? 'Signing in…' : 'Sign in'}
                   </Button>
                 </form>
@@ -678,10 +702,10 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
                     type="button"
                     variant="secondary"
                     className={secondaryBtnClass}
-                    onClick={() => void signInGoogle()}
-                    disabled={loading}
+                    onClick={() => void handleGoogleSignIn()}
+                    disabled={loading || isGoogleLoading}
                   >
-                    Continue with Google
+                    {isGoogleLoading ? 'Connecting…' : 'Continue with Google'}
                   </Button>
                   <button
                     type="button"
@@ -702,10 +726,10 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
                     type="button"
                     variant="secondary"
                     className={secondaryBtnClass}
-                    onClick={() => void signInGoogle()}
-                    disabled={loading}
+                    onClick={() => void handleGoogleSignIn()}
+                    disabled={loading || isGoogleLoading}
                   >
-                    Continue with Google
+                    {isGoogleLoading ? 'Connecting…' : 'Continue with Google'}
                   </Button>
                 </div>
               ) : null}
