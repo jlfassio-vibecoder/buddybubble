@@ -1,4 +1,5 @@
 import { createBrowserClient } from '@supabase/ssr';
+import { supabaseAuthCookieOptionsBrowser } from './auth-cookie-options';
 import { getSupabasePublishableKey, getSupabaseUrl } from './env';
 
 export function createClient() {
@@ -9,5 +10,7 @@ export function createClient() {
       'Missing NEXT_PUBLIC_SUPABASE_URL or a Supabase key (NEXT_PUBLIC_SUPABASE_ANON_KEY, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY)',
     );
   }
-  return createBrowserClient(url, key);
+  return createBrowserClient(url, key, {
+    cookieOptions: supabaseAuthCookieOptionsBrowser(),
+  });
 }
