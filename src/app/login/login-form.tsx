@@ -34,9 +34,6 @@ const inputClass =
 const primaryBtnClass =
   'h-11 w-full rounded-xl border-0 bg-amber-500 text-base font-semibold text-white shadow-lg shadow-amber-200/80 hover:bg-amber-600 focus-visible:ring-amber-500/40';
 
-const outlineBtnClass =
-  'h-11 w-full rounded-xl border border-amber-200 bg-white text-amber-950 hover:bg-amber-50 hover:text-amber-950';
-
 const secondaryBtnClass =
   'h-11 w-full rounded-xl border border-amber-200/80 bg-amber-100/90 text-amber-950 hover:bg-amber-100';
 

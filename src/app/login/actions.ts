@@ -43,7 +43,7 @@ async function findAuthUserByEmail(
   const { data: profile, error: profileErr } = await admin
     .from('users')
     .select('id, email')
-    .ilike('email', normalizedEmail)
+    .eq('email', normalizedEmail)
     .maybeSingle();
 
   if (profileErr) {
