@@ -108,6 +108,8 @@ if (tasksErr) {
 
 const crmLoginBase = `${resolveCrmOriginForStorefront(getPublicEnv('PUBLIC_APP_ORIGIN'), Astro.url.hostname)}/login`;
 const joinHref = `${crmLoginBase}?next=${encodeURIComponent(`/app/${ws.id}`)}`;
+/** Same post-login `next` as Join community; Log in is secondary CTA styling only. */
+const loginHref = joinHref;
 
 const pageTitle = `${ws.name} · BuddyBubble`;
 const heroImage = branding.hero_url?.trim() ?? '';
@@ -147,6 +149,7 @@ const heroImage = branding.hero_url?.trim() ?? '';
               workspaceId={ws.id}
               accentColor={accent}
               joinHref={joinHref}
+              loginHref={loginHref}
             />
           ) : (
             <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-6 px-4 py-8 sm:px-6 lg:py-10">
@@ -166,13 +169,21 @@ const heroImage = branding.hero_url?.trim() ?? '';
                   </h1>
                 </div>
               </div>
-              <a
-                href={joinHref}
-                class="inline-flex items-center justify-center rounded-xl px-6 py-3 text-base font-semibold text-white shadow-lg ring-2 ring-white/25 transition hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-                style={`background-color: ${accent}`}
-              >
-                Join community
-              </a>
+              <div class="flex shrink-0 items-center gap-4">
+                <a
+                  href={loginHref}
+                  class="text-sm font-medium text-white/80 underline decoration-white/30 underline-offset-4 transition hover:text-white hover:decoration-white/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                >
+                  Log in
+                </a>
+                <a
+                  href={joinHref}
+                  class="inline-flex items-center justify-center rounded-xl px-6 py-3 text-base font-semibold text-white shadow-lg ring-2 ring-white/25 transition hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                  style={`background-color: ${accent}`}
+                >
+                  Join community
+                </a>
+              </div>
             </div>
           )
         }

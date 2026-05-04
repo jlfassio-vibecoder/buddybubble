@@ -113,6 +113,7 @@ import { metadataFieldsFromParsed } from '@/lib/item-metadata';
 import { TrialBanner } from '@/components/subscription/trial-banner';
 import { ExpiredGate } from '@/components/subscription/expired-gate';
 import { StartTrialModal } from '@/components/subscription/start-trial-modal';
+import { LiveClassReminderModal } from '@/components/dashboard/LiveClassReminderModal';
 import { PremiumGate } from '@/components/subscription/premium-gate';
 import { AnalyticsProvider } from '@/components/analytics/analytics-provider';
 import type { Layout } from 'react-resizable-panels';
@@ -200,9 +201,11 @@ function DashboardShellInner({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const embedMode = searchParams.get('embed') === 'true';
+  const urlTab = searchParams.get('tab');
+  const urlView = searchParams.get('view');
   const narrowViewport = useIsNarrowBelowMd();
   const layoutMobile = !embedMode && narrowViewport;
-  const mobileTab = normalizeMobileTab(searchParams.get('tab'));
+  const mobileTab = normalizeMobileTab(urlTab);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const loadUserWorkspaces = useWorkspaceStore((s) => s.loadUserWorkspaces);
@@ -378,6 +381,8 @@ function DashboardShellInner({
   const taskCommentToastTitleByIdRef = useRef<Map<string, string>>(new Map());
   /** One-time desktop rail collapse per live session join (user can expand rails again). */
   const liveVideoTheaterRailsPrimedForSessionIdRef = useRef<string | null>(null);
+  /** One-time per workspace: after hydrate, force bubbles rail open on desktop when landing in Messages focus. */
+  const didDesktopMessagesBubbleForceRef = useRef(false);
 
   const activeBubbleIsPrivate = useMemo(() => {
     if (selectedBubbleId === ALL_BUBBLES_BUBBLE_ID) return false;
@@ -606,6 +611,15 @@ function DashboardShellInner({
     },
     [layoutCommands],
   );
+
+  const onDesktopSwitcherBeforeSelectChat = useCallback(() => {
+    setBubbleSidebarCollapsed(false);
+    try {
+      localStorage.setItem(bubbleSidebarCollapsedStorageKey(workspaceId), '0');
+    } catch {
+      /* ignore */
+    }
+  }, [workspaceId]);
 
   /** Clears the local live-video dock only (does not end the workout for others or mark the chat invite ended). */
   const onLiveVideoLeaveSession = useCallback(() => {
@@ -943,6 +957,9 @@ function DashboardShellInner({
   }, [workspaceId]);
 
   useEffect(() => {
+    const urlChatOverride =
+      !embedMode && (urlTab === 'chat' || urlView?.toLowerCase() === 'messages');
+
     try {
       const w = localStorage.getItem(workspaceRailCollapsedStorageKey(workspaceId));
       const b = localStorage.getItem(bubbleSidebarCollapsedStorageKey(workspaceId));
@@ -955,7 +972,19 @@ function DashboardShellInner({
       let k: boolean;
       let cal: boolean;
 
-      if (isFreshLayoutPrefs) {
+      if (urlChatOverride) {
+        /** Deep link: messages rail open, kanban collapsed, calendar strip expanded (ignore localStorage for these). */
+        chatOn = false;
+        k = true;
+        cal = false;
+        try {
+          localStorage.setItem(chatCollapsedStorageKey(workspaceId), '0');
+          localStorage.setItem(kanbanCollapsedStorageKey(workspaceId), '1');
+          localStorage.setItem(calendarCollapsedStorageKey(workspaceId), '0');
+        } catch {
+          /* ignore */
+        }
+      } else if (isFreshLayoutPrefs) {
         /** First visit: default to desktop "chat focus" — messages open, kanban collapsed, calendar expanded. */
         chatOn = false;
         k = true;
@@ -979,7 +1008,37 @@ function DashboardShellInner({
       /* ignore */
     }
     setLayoutHydrated(true);
+  }, [workspaceId, embedMode, urlTab, urlView]);
+
+  useEffect(() => {
+    didDesktopMessagesBubbleForceRef.current = false;
   }, [workspaceId]);
+
+  useEffect(() => {
+    if (!layoutHydrated) return;
+    if (embedMode) return;
+    if (typeof window === 'undefined') return;
+    const isDesktop = window.innerWidth >= 768;
+    if (!isDesktop) return;
+    const messagesFocus = !chatCollapsed && kanbanCollapsed;
+    if (!messagesFocus) return;
+    if (didDesktopMessagesBubbleForceRef.current) return;
+    didDesktopMessagesBubbleForceRef.current = true;
+    if (!bubbleSidebarCollapsed) return;
+    setBubbleSidebarCollapsed(false);
+    try {
+      localStorage.setItem(bubbleSidebarCollapsedStorageKey(workspaceId), '0');
+    } catch {
+      /* ignore */
+    }
+  }, [
+    layoutHydrated,
+    embedMode,
+    workspaceId,
+    chatCollapsed,
+    kanbanCollapsed,
+    bubbleSidebarCollapsed,
+  ]);
 
   useEffect(() => {
     if (!layoutHydrated) return;
@@ -1032,26 +1091,28 @@ function DashboardShellInner({
     }
   }, [workspaceId, calendarCollapsed, layoutHydrated]);
 
-  /** Mobile `?tab=`: single-pane chat / board / calendar (desktop ignores for layout). */
+  /**
+   * Mobile explicit `?tab=` / `?view=messages` only (narrow viewport).
+   * `?tab=chat` / `?view=messages` on all viewports is handled in the layout hydrate effect.
+   */
   useEffect(() => {
     if (!layoutHydrated || embedMode) return;
     const mq = window.matchMedia('(max-width: 767.98px)');
     if (!mq.matches) return;
-    const tab = normalizeMobileTab(searchParams.get('tab'));
-    if (tab === 'chat') {
+    const viewMessages = urlView?.toLowerCase() === 'messages';
+    if (urlTab === 'chat' || viewMessages) {
       setChatCollapsedState(false);
       setKanbanCollapsedState(true);
-      // Persist calendar as expanded while Kanban is hidden (matches hydrate guard: k && cal → cal false).
       setCalendarCollapsedState(false);
-    } else if (tab === 'board') {
+    } else if (urlTab === 'board') {
       setChatCollapsedState(true);
       setKanbanCollapsedState(false);
-    } else {
+    } else if (urlTab === 'calendar') {
       setChatCollapsedState(true);
       setKanbanCollapsedState(true);
       setCalendarCollapsedState(false);
     }
-  }, [layoutHydrated, embedMode, searchParams]);
+  }, [layoutHydrated, embedMode, urlTab, urlView]);
 
   const bubbleQueryParam = searchParams.get('bubble');
 
@@ -1541,6 +1602,7 @@ function DashboardShellInner({
                           {embedMode ? null : <ActiveUsersStack localUserId={profile?.id} />}
                           <DesktopViewSwitcher
                             activeMode={desktopFocusModeActive}
+                            onBeforeSelectChat={onDesktopSwitcherBeforeSelectChat}
                             onChange={applyDesktopFocusMode}
                             disabled={!layoutHydrated}
                           />
@@ -1886,6 +1948,10 @@ function DashboardShellInner({
                       categoryType={workspaceCategoryForUi}
                     />
                   ) : null}
+                  <LiveClassReminderModal
+                    workspaceId={workspaceId}
+                    enabled={!embedMode && workspaceCategoryForUi === 'fitness'}
+                  />
                   {commentAlert ? (
                     <div
                       className="pointer-events-auto fixed bottom-20 left-1/2 z-[100] flex max-w-md -translate-x-1/2 items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-lg md:bottom-6"
