@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
 
 const inputClass =
   'w-full rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-sm text-amber-950 outline-none transition placeholder:text-amber-400/80 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/25';
@@ -9,6 +9,36 @@ const primaryBtnClass =
 const mutedBtnClass =
   'inline-flex h-11 w-full items-center justify-center rounded-xl border border-amber-200/80 bg-amber-100/90 text-base font-semibold text-amber-950 transition hover:bg-amber-100';
 
+function getInviteTokenFromLocation() {
+  if (typeof window === 'undefined') return null;
+  return new URLSearchParams(window.location.search).get('invite_token')?.trim() || null;
+}
+
+/**
+ * Merge query params into the CRM login URL without throwing on a misconfigured base href.
+ *
+ * @param {string} baseHref
+ * @param {Record<string, string>} params
+ */
+function buildHandoffUrl(baseHref, params) {
+  try {
+    const u = new URL(baseHref);
+    for (const [k, v] of Object.entries(params)) {
+      if (v) u.searchParams.set(k, v);
+    }
+    return u.toString();
+  } catch {
+    console.error('[StorefrontHeroLogin] Invalid appLoginHref for handoff');
+    const sp = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v) sp.set(k, v);
+    }
+    const qs = sp.toString();
+    if (!qs) return baseHref;
+    return `${baseHref}${baseHref.includes('?') ? '&' : '?'}${qs}`;
+  }
+}
+
 /**
  * Email-first handoff to the Next.js app `/login` (no local Supabase auth).
  *
@@ -16,37 +46,34 @@ const mutedBtnClass =
  */
 export default function StorefrontHeroLogin({ appLoginHref }) {
   const [email, setEmail] = useState('');
-  const [inviteToken, setInviteToken] = useState(/** @type {string | null} */ (null));
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    setInviteToken(new URLSearchParams(window.location.search).get('invite_token')?.trim() || null);
-  }, []);
-
-  const signupHref = useMemo(() => {
-    const u = new URL(appLoginHref);
-    u.searchParams.set('signup', '1');
-    if (inviteToken) u.searchParams.set('invite_token', inviteToken);
-    return u.toString();
-  }, [appLoginHref, inviteToken]);
-
-  function appendInviteIfPresent(urlString) {
-    if (!inviteToken) return urlString;
-    const u = new URL(urlString);
-    u.searchParams.set('invite_token', inviteToken);
-    return u.toString();
-  }
 
   function onContinue(e) {
     e.preventDefault();
-    const u = new URL(appLoginHref);
-    u.searchParams.set('email', email.trim());
-    if (inviteToken) u.searchParams.set('invite_token', inviteToken);
-    window.location.assign(u.toString());
+    const invite = getInviteTokenFromLocation();
+    window.location.assign(
+      buildHandoffUrl(appLoginHref, {
+        email: email.trim(),
+        ...(invite ? { invite_token: invite } : {}),
+      }),
+    );
   }
 
+  // Copilot suggestion ignored: Google OAuth runs on the Next.js /login page after this handoff; label matches the app login.
   function onGoogle() {
-    window.location.assign(appendInviteIfPresent(appLoginHref));
+    const invite = getInviteTokenFromLocation();
+    window.location.assign(
+      invite ? buildHandoffUrl(appLoginHref, { invite_token: invite }) : appLoginHref,
+    );
+  }
+
+  function onSignup() {
+    const invite = getInviteTokenFromLocation();
+    window.location.assign(
+      buildHandoffUrl(appLoginHref, {
+        signup: '1',
+        ...(invite ? { invite_token: invite } : {}),
+      }),
+    );
   }
 
   return (
@@ -85,12 +112,13 @@ export default function StorefrontHeroLogin({ appLoginHref }) {
       </div>
 
       <p className="mt-6 text-center text-sm text-amber-800/90">
-        <a
-          href={signupHref}
+        <button
+          type="button"
           className="font-medium text-amber-900 underline decoration-amber-300 underline-offset-4 transition hover:text-amber-950 hover:decoration-amber-500"
+          onClick={onSignup}
         >
           New to BuddyBubble? Create an account
-        </a>
+        </button>
       </p>
     </div>
   );
