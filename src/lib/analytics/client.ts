@@ -107,6 +107,7 @@ async function postAnalyticsEventBatch(
 
     const res = await fetch('/api/analytics/event', {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       ...(useKeepalive ? { keepalive: true } : {}),
       body,
