@@ -19,6 +19,11 @@ export type LiveSessionWorkoutPlayerProps = {
   supabase: SupabaseClient;
   canWrite: boolean;
   onPersistSuccess?: () => void;
+  /**
+   * Live-session / pre-join host: run after layout guards pass and before persisting exercises
+   * (e.g. `focusBoard()` + tripwire logging from the parent).
+   */
+  onHostLayoutFocusBoard?: () => void;
 };
 
 function isWorkoutItemType(t: ItemType | string): boolean {
@@ -31,6 +36,7 @@ export function LiveSessionWorkoutPlayer({
   supabase,
   canWrite,
   onPersistSuccess,
+  onHostLayoutFocusBoard,
 }: LiveSessionWorkoutPlayerProps) {
   const ctx = useWorkoutDeckSelectionOptional();
   const profileId = useUserProfileStore((s) => s.profile?.id);
@@ -86,24 +92,27 @@ export function LiveSessionWorkoutPlayer({
 
   const handleApplySessionOnly = useCallback(() => {
     if (!ctx || !activeSnapshot?.dirty) return;
+    onHostLayoutFocusBoard?.();
     ctx.acceptSnapshotSessionOnly(activeSnapshot.snapshotId);
-  }, [activeSnapshot, ctx]);
+  }, [activeSnapshot, ctx, onHostLayoutFocusBoard]);
 
   const handleUpdateOriginal = useCallback(async () => {
     if (!ctx || !activeSnapshot) return;
+    onHostLayoutFocusBoard?.();
     const ok = await updateOriginalTask(activeSnapshot);
     if (ok) {
       ctx.acceptSnapshotSessionOnly(activeSnapshot.snapshotId);
     }
-  }, [activeSnapshot, ctx, updateOriginalTask]);
+  }, [activeSnapshot, ctx, onHostLayoutFocusBoard, updateOriginalTask]);
 
   const handleSaveAsNew = useCallback(async () => {
     if (!ctx || !activeSnapshot) return;
+    onHostLayoutFocusBoard?.();
     const newId = await insertTaskClone(activeSnapshot);
     if (newId) {
       ctx.rebindSnapshotOrigin(activeSnapshot.snapshotId, newId);
     }
-  }, [activeSnapshot, ctx, insertTaskClone]);
+  }, [activeSnapshot, ctx, insertTaskClone, onHostLayoutFocusBoard]);
 
   if (!ctx) return null;
 

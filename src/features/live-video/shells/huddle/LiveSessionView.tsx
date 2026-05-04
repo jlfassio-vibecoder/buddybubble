@@ -31,6 +31,7 @@ import { useLiveTheaterLayoutPlanContext } from '@/features/live-video/theater/l
 import { SessionHeader } from '@/features/live-video/shells/huddle/SessionHeader';
 import { SessionControls } from '@/features/live-video/shells/huddle/SessionControls';
 import { SessionDeckBuilder } from '@/features/live-video/shells/huddle/SessionDeckBuilder';
+import { Button } from '@/components/ui/button';
 import { LiveSessionWorkoutPlayer } from '@/features/live-video/shells/huddle/LiveSessionWorkoutPlayer';
 import { ParticipantWorkoutLogger } from '@/features/live-video/shells/ParticipantWorkoutLogger';
 import { ActivePhaseOverlays } from '@/features/live-video/shells/huddle/ActivePhaseOverlays';
@@ -46,6 +47,7 @@ import { useIsNarrowBelowMd } from '@/hooks/use-is-narrow-below-md';
 import { isUuidString } from '@/lib/is-uuid';
 import { agoraUidFromUuid } from '@/lib/live-video/agora-uid';
 import { cn } from '@/lib/utils';
+import { useLayoutCommands } from '@/components/layout/layout-command-context';
 
 const HUDDLE_EDITOR_PANEL_ID = 'huddle-editor';
 const HUDDLE_VIDEO_PANEL_ID = 'huddle-video';
@@ -129,6 +131,7 @@ function LiveSessionViewInner({
   } = useVideoOverlaySlots();
 
   const { state, actions, isHost, sessionId: liveSessionRowId } = useLiveSessionRuntime();
+  const { focusBoard } = useLayoutCommands();
 
   const deckSel = useWorkoutDeckSelectionOptional();
   const selectingFromBoard = Boolean(deckSel?.isSelectingFromBoard);
@@ -346,11 +349,12 @@ function LiveSessionViewInner({
           supabase={supabase}
           canWrite={canWriteTasks}
           onPersistSuccess={onWorkoutDeckPersisted}
+          onHostLayoutFocusBoard={focusBoard}
         />
       ) : (
         <ParticipantWorkoutLogger className={compact ? 'min-h-0 flex-1' : 'h-full min-h-0'} />
       ),
-    [isHost, compact, workspaceId, supabase, canWriteTasks, onWorkoutDeckPersisted],
+    [isHost, compact, workspaceId, supabase, canWriteTasks, onWorkoutDeckPersisted, focusBoard],
   );
 
   const handleSheetOpenChange = useCallback(
@@ -483,6 +487,19 @@ function LiveSessionViewInner({
         ) : (
           <SessionDeckBuilder state={state} className="shrink-0" />
         )}
+        {selectingFromBoard && deckSel ? (
+          <div className="flex shrink-0 justify-end border-t border-border pt-3">
+            <Button
+              type="button"
+              size="lg"
+              variant="default"
+              className="font-semibold"
+              onClick={() => deckSel.exitSelectionMode()}
+            >
+              Save to Workout
+            </Button>
+          </div>
+        ) : null}
       </div>
 
       {compact ? (

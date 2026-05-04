@@ -32,6 +32,7 @@ import { useWorkspaceStore } from '@/store/workspaceStore';
 import { createClient } from '@utils/supabase/client';
 import { cn } from '@/lib/utils';
 import type { WorkspaceCategory } from '@/types/database';
+import { useLayoutCommands } from '@/components/layout/layout-command-context';
 
 export type SessionDeckBuilderProps = {
   state: SessionState;
@@ -178,6 +179,7 @@ const stripContainerClass = (selectingFromBoard: boolean) =>
   );
 
 export function SessionDeckBuilder({ state, className }: SessionDeckBuilderProps) {
+  const { focusBoard } = useLayoutCommands();
   const runtime = useLiveSessionRuntimeOptional();
   /**
    * `LiveSessionRuntimeProvider` is always mounted in the dashboard with `sessionId: ''` when
@@ -237,11 +239,12 @@ export function SessionDeckBuilder({ state, className }: SessionDeckBuilderProps
     (snapshot: SessionDeckSnapshot) => {
       setActiveSnapshotId(snapshot.snapshotId);
       if (runtime?.isHost) {
+        focusBoard();
         /** Persisted `live_session_deck_items.id`; participants match on `row.id`. */
         runtime.actions.setActiveDeckItem(snapshot.deckItemId ?? null);
       }
     },
-    [runtime, setActiveSnapshotId],
+    [focusBoard, runtime, setActiveSnapshotId],
   );
 
   useEffect(() => {
@@ -375,6 +378,9 @@ export function SessionDeckBuilder({ state, className }: SessionDeckBuilderProps
                     : undefined
                 }
                 onClick={() => {
+                  if (runtime?.isHost) {
+                    focusBoard();
+                  }
                   if (selectingFromBoard) {
                     setActiveSnapshotId(null);
                     queueMicrotask(() => {

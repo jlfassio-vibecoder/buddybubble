@@ -1322,6 +1322,7 @@ export type Database = {
           created_at: string;
           id: string;
           session_id: string;
+          session_task_metadata: Json | null;
           sort_order: number;
           task_id: string;
           updated_at: string;
@@ -1330,6 +1331,7 @@ export type Database = {
           created_at?: string;
           id?: string;
           session_id: string;
+          session_task_metadata?: Json | null;
           sort_order?: number;
           task_id: string;
           updated_at?: string;
@@ -1338,6 +1340,7 @@ export type Database = {
           created_at?: string;
           id?: string;
           session_id?: string;
+          session_task_metadata?: Json | null;
           sort_order?: number;
           task_id?: string;
           updated_at?: string;

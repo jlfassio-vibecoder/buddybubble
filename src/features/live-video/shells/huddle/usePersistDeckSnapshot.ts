@@ -28,16 +28,20 @@ export function usePersistDeckSnapshot({
       }
       setBusy(true);
       try {
-        const { error } = await supabase
-          .from('tasks')
-          .update({
-            metadata: snap.task.metadata as TaskRow['metadata'],
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', snap.originTaskId);
+        const cardId = snap.originTaskId;
+        const updatePayload = {
+          metadata: snap.task.metadata as TaskRow['metadata'],
+        };
+        const { error } = await supabase.from('tasks').update(updatePayload).eq('id', cardId);
         if (error) {
           toast.error(formatUserFacingError(error));
           return false;
+        }
+        if (snap.deckItemId) {
+          await supabase
+            .from('live_session_deck_items')
+            .update({ session_task_metadata: null })
+            .eq('id', snap.deckItemId);
         }
         toast.success('Original card updated');
         onSuccess?.();

@@ -53,6 +53,9 @@ function rehydrateSnapshotFromDeckRow(row: LiveSessionDeckRow): SessionDeckSnaps
     clonedTask = JSON.parse(JSON.stringify(row.tasks)) as TaskRow;
   }
   clonedTask.id = row.id;
+  if (row.session_task_metadata != null && typeof row.session_task_metadata === 'object') {
+    clonedTask.metadata = cloneJsonMetadata(row.session_task_metadata as TaskRow['metadata']);
+  }
   return {
     deckRowKey: row.id,
     snapshotId: row.id,
@@ -195,7 +198,9 @@ export function WorkoutDeckSelectionProvider({
     void (async () => {
       const { data, error } = await supabase
         .from('live_session_deck_items')
-        .select('id, session_id, task_id, sort_order, created_at, updated_at, tasks(*)')
+        .select(
+          'id, session_id, task_id, sort_order, created_at, updated_at, session_task_metadata, tasks(*)',
+        )
         .eq('session_id', sidTrimmed)
         .order('sort_order', { ascending: true })
         .order('created_at', { ascending: true });
@@ -432,11 +437,35 @@ export function WorkoutDeckSelectionProvider({
     [supabase],
   );
 
-  const acceptSnapshotSessionOnly = useCallback((snapshotId: string) => {
-    setDeck((prev) =>
-      prev.map((s) => (s.snapshotId === snapshotId ? acceptSnapshotBaseline(s) : s)),
-    );
-  }, []);
+  const acceptSnapshotSessionOnly = useCallback(
+    (snapshotId: string) => {
+      let persistPayload: { deckItemId: string; metadata: TaskRow['metadata'] } | null = null;
+      setDeck((prev) =>
+        prev.map((s) => {
+          if (s.snapshotId !== snapshotId) return s;
+          const accepted = acceptSnapshotBaseline(s);
+          if (canPersistRef.current && accepted.deckItemId) {
+            persistPayload = {
+              deckItemId: accepted.deckItemId,
+              metadata: cloneJsonMetadata(accepted.task.metadata),
+            };
+          }
+          return accepted;
+        }),
+      );
+      queueMicrotask(() => {
+        if (!persistPayload || !sessionIdRef.current) return;
+        void supabase
+          .from('live_session_deck_items')
+          .update({ session_task_metadata: persistPayload.metadata })
+          .eq('id', persistPayload.deckItemId)
+          .then(({ error }) => {
+            if (error) logDeckWriteError('session_only_metadata', error);
+          });
+      });
+    },
+    [supabase],
+  );
 
   const rebindSnapshotOrigin = useCallback((snapshotId: string, newOriginTaskId: string) => {
     setDeck((prev) =>

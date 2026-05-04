@@ -11,6 +11,7 @@ import { SessionDeckBuilder } from '@/features/live-video/shells/huddle/SessionD
 import { LiveSessionWorkoutPlayer } from '@/features/live-video/shells/huddle/LiveSessionWorkoutPlayer';
 import { useWorkoutDeckSelectionOptional } from '@/features/live-video/shells/huddle/workout-deck-selection-context';
 import { cn } from '@/lib/utils';
+import { useLayoutCommands } from '@/components/layout/layout-command-context';
 
 export type PreJoinBuilderProps = {
   className?: string;
@@ -43,6 +44,7 @@ export function PreJoinBuilder({
   const { state, actions, isHost } = useLiveSessionRuntime();
   const { huddle } = useLiveTheaterLayoutPlanContext();
   const { isConnecting, joinChannel, joinError } = useAgoraSession();
+  const { focusBoard } = useLayoutCommands();
 
   const deckSel = useWorkoutDeckSelectionOptional();
   const selectingFromBoard = Boolean(deckSel?.isSelectingFromBoard);
@@ -85,6 +87,7 @@ export function PreJoinBuilder({
         supabase={supabase}
         canWrite={canWriteTasks}
         onPersistSuccess={onWorkoutDeckPersisted}
+        onHostLayoutFocusBoard={isHost ? focusBoard : undefined}
       />
 
       <div className="flex shrink-0 flex-col items-stretch gap-2 border-t border-border pt-3 sm:flex-row sm:items-center sm:justify-end">
@@ -104,13 +107,24 @@ export function PreJoinBuilder({
             Exit workout
           </Button>
         ) : null}
+        {selectingFromBoard && deckSel ? (
+          <Button
+            type="button"
+            size="lg"
+            variant="default"
+            className="font-semibold"
+            onClick={() => deckSel.exitSelectionMode()}
+          >
+            Save to Workout
+          </Button>
+        ) : null}
         <Button
           type="button"
           size="lg"
           variant="default"
           className="font-semibold"
           onClick={joinChannel}
-          disabled={isConnecting}
+          disabled={isConnecting || selectingFromBoard}
         >
           {isConnecting ? 'Connecting…' : 'Join video'}
         </Button>

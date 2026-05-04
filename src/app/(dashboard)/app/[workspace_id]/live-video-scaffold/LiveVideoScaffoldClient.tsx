@@ -12,6 +12,10 @@ import {
 import { PreJoinBuilder } from '@/features/live-video/shells/huddle/PreJoinBuilder';
 import { LiveSessionRuntimeProvider } from '@/features/live-video/theater/live-session-runtime-context';
 import { LiveVideoSessionShell } from '@/features/live-video/theater/live-video-session-shell';
+import {
+  LayoutCommandContext,
+  silentNoopLayoutCommands,
+} from '@/components/layout/layout-command-context';
 
 type AuthState =
   | { status: 'loading' }
@@ -92,33 +96,35 @@ export function LiveVideoScaffoldClient({ workspaceId }: { workspaceId: string }
 
   return (
     <div className="flex min-h-[70vh] w-full flex-col border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-      <AgoraSessionProvider channelId={channelId} workspaceId={workspaceId}>
-        <LiveSessionRuntimeProvider
-          workspaceId={workspaceId}
-          sessionId={`live-scaffold-${workspaceId}`}
-          localUserId={auth.userId}
-          hostUserId={auth.userId}
-          enabled
-        >
-          <LiveVideoSessionShell
-            theaterPlanDeps={{
-              hasLiveVideoSession: true,
-              isSelectingFromBoard: false,
-              layoutMobile: false,
-              embedMode: false,
-              layoutHydrated: true,
-            }}
+      <LayoutCommandContext.Provider value={silentNoopLayoutCommands}>
+        <AgoraSessionProvider channelId={channelId} workspaceId={workspaceId}>
+          <LiveSessionRuntimeProvider
+            workspaceId={workspaceId}
+            sessionId={`live-scaffold-${workspaceId}`}
+            localUserId={auth.userId}
+            hostUserId={auth.userId}
+            enabled
           >
-            <div className="flex min-h-0 flex-1 flex-col px-2 py-4">
-              <ScaffoldLiveSessionRouter
-                workspaceId={workspaceId}
-                userId={auth.userId}
-                supabase={supabase}
-              />
-            </div>
-          </LiveVideoSessionShell>
-        </LiveSessionRuntimeProvider>
-      </AgoraSessionProvider>
+            <LiveVideoSessionShell
+              theaterPlanDeps={{
+                hasLiveVideoSession: true,
+                isSelectingFromBoard: false,
+                layoutMobile: false,
+                embedMode: false,
+                layoutHydrated: true,
+              }}
+            >
+              <div className="flex min-h-0 flex-1 flex-col px-2 py-4">
+                <ScaffoldLiveSessionRouter
+                  workspaceId={workspaceId}
+                  userId={auth.userId}
+                  supabase={supabase}
+                />
+              </div>
+            </LiveVideoSessionShell>
+          </LiveSessionRuntimeProvider>
+        </AgoraSessionProvider>
+      </LayoutCommandContext.Provider>
     </div>
   );
 }
