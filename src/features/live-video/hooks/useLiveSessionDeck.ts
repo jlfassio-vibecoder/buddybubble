@@ -3,18 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database, TaskRow } from '@/types/database';
+import {
+  cloneJsonMetadata,
+  mergeTaskMetadataOverlay,
+} from '@/features/live-video/shells/huddle/session-deck-snapshot';
 
 export type LiveSessionDeckRow = Database['public']['Tables']['live_session_deck_items']['Row'] & {
   tasks: Database['public']['Tables']['tasks']['Row'] | null;
 };
-
-function cloneTaskMetadata(meta: TaskRow['metadata']): TaskRow['metadata'] {
-  try {
-    return structuredClone(meta) as TaskRow['metadata'];
-  } catch {
-    return JSON.parse(JSON.stringify(meta)) as TaskRow['metadata'];
-  }
-}
 
 /**
  * Fresh row + task references for React; merges optional per-session metadata overlay
@@ -27,8 +23,10 @@ export function withSessionDeckDisplayTasks(row: LiveSessionDeckRow): LiveSessio
   }
   const effectiveMeta =
     session_task_metadata != null && typeof session_task_metadata === 'object'
-      ? cloneTaskMetadata(session_task_metadata as TaskRow['metadata'])
-      : cloneTaskMetadata(tasks.metadata);
+      ? cloneJsonMetadata(
+          mergeTaskMetadataOverlay(tasks.metadata, session_task_metadata as TaskRow['metadata']),
+        )
+      : cloneJsonMetadata(tasks.metadata);
   return {
     ...rest,
     session_task_metadata,

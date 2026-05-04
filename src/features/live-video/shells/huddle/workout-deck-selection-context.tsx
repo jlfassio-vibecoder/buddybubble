@@ -23,10 +23,12 @@ import { useUserProfileStore } from '@/store/userProfileStore';
 import {
   acceptSnapshotBaseline,
   cloneJsonMetadata,
+  cloneSessionDeckSnapshot,
   createSessionDeckSnapshot,
+  mergeTaskMetadataOverlay,
+  type SessionDeckSnapshot,
   withSnapshotTask,
 } from '@/features/live-video/shells/huddle/session-deck-snapshot';
-import type { SessionDeckSnapshot } from '@/features/live-video/shells/huddle/session-deck-snapshot';
 import {
   setWorkoutDeckBoardAddTaskHandler,
   setWorkoutDeckBoardSelecting,
@@ -54,7 +56,9 @@ function rehydrateSnapshotFromDeckRow(row: LiveSessionDeckRow): SessionDeckSnaps
   }
   clonedTask.id = row.id;
   if (row.session_task_metadata != null && typeof row.session_task_metadata === 'object') {
-    clonedTask.metadata = cloneJsonMetadata(row.session_task_metadata as TaskRow['metadata']);
+    clonedTask.metadata = cloneJsonMetadata(
+      mergeTaskMetadataOverlay(row.tasks.metadata, row.session_task_metadata),
+    );
   }
   return {
     deckRowKey: row.id,
@@ -77,7 +81,10 @@ export type WorkoutDeckSelectionContextValue = {
   setDeckOrder: (next: SetStateAction<SessionDeckSnapshot[]>) => void;
   updateSnapshotTask: (snapshotId: string, task: TaskRow) => void;
   removeSnapshot: (snapshotId: string) => void;
-  acceptSnapshotSessionOnly: (snapshotId: string) => void;
+  acceptSnapshotSessionOnly: (
+    snapshotId: string,
+    options?: { persistSessionMetadata?: boolean },
+  ) => void;
   /** After “Save as new”, point persistence at the new `tasks.id` and clear dirty. */
   rebindSnapshotOrigin: (snapshotId: string, newOriginTaskId: string) => void;
   enterSelectionMode: () => void;
@@ -438,13 +445,16 @@ export function WorkoutDeckSelectionProvider({
   );
 
   const acceptSnapshotSessionOnly = useCallback(
-    (snapshotId: string) => {
+    (snapshotId: string, options?: { persistSessionMetadata?: boolean }) => {
+      const persistSessionMetadata = options?.persistSessionMetadata !== false;
       let persistPayload: { deckItemId: string; metadata: TaskRow['metadata'] } | null = null;
+      let revert: SessionDeckSnapshot | null = null;
       setDeck((prev) =>
         prev.map((s) => {
           if (s.snapshotId !== snapshotId) return s;
+          revert = cloneSessionDeckSnapshot(s);
           const accepted = acceptSnapshotBaseline(s);
-          if (canPersistRef.current && accepted.deckItemId) {
+          if (persistSessionMetadata && canPersistRef.current && accepted.deckItemId) {
             persistPayload = {
               deckItemId: accepted.deckItemId,
               metadata: cloneJsonMetadata(accepted.task.metadata),
@@ -454,14 +464,19 @@ export function WorkoutDeckSelectionProvider({
         }),
       );
       queueMicrotask(() => {
-        if (!persistPayload || !sessionIdRef.current) return;
-        void supabase
-          .from('live_session_deck_items')
-          .update({ session_task_metadata: persistPayload.metadata })
-          .eq('id', persistPayload.deckItemId)
-          .then(({ error }) => {
-            if (error) logDeckWriteError('session_only_metadata', error);
-          });
+        if (!persistPayload || !sessionIdRef.current || !persistSessionMetadata) return;
+        void (async () => {
+          const { error } = await supabase
+            .from('live_session_deck_items')
+            .update({ session_task_metadata: persistPayload.metadata })
+            .eq('id', persistPayload.deckItemId);
+          if (error) {
+            logDeckWriteError('session_only_metadata', error);
+            if (revert) {
+              setDeck((prev) => prev.map((x) => (x.snapshotId === snapshotId ? revert! : x)));
+            }
+          }
+        })();
       });
     },
     [supabase],

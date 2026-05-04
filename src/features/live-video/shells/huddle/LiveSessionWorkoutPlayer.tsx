@@ -101,7 +101,7 @@ export function LiveSessionWorkoutPlayer({
     onHostLayoutFocusBoard?.();
     const ok = await updateOriginalTask(activeSnapshot);
     if (ok) {
-      ctx.acceptSnapshotSessionOnly(activeSnapshot.snapshotId);
+      ctx.acceptSnapshotSessionOnly(activeSnapshot.snapshotId, { persistSessionMetadata: false });
     }
   }, [activeSnapshot, ctx, onHostLayoutFocusBoard, updateOriginalTask]);
 

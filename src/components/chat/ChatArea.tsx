@@ -243,7 +243,10 @@ export function ChatArea({
   /** Resolves bubble coach+embed anchor to task-scoped `commentThreadMessageId` when opening TaskModal. */
   const openTaskFromChat = useCallback(
     async (taskId: string, opts?: OpenTaskOptions) => {
-      const merged: OpenTaskOptions = { ...(opts ?? {}) };
+      const merged: OpenTaskOptions = {
+        ...(opts ?? {}),
+        focusMessagesOnClose: opts?.focusMessagesOnClose ?? true,
+      };
       const anchor = opts?.taskCommentAnchorBubbleMessageId?.trim();
       delete merged.taskCommentAnchorBubbleMessageId;
       if (anchor && !merged.commentThreadMessageId) {

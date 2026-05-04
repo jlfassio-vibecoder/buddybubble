@@ -42,6 +42,25 @@ export function cloneJsonMetadata(meta: TaskRow['metadata']): TaskRow['metadata'
   }
 }
 
+/** Shallow-merge overlay JSON over base task metadata (session row overlay wins on key collisions). */
+export function mergeTaskMetadataOverlay(
+  base: TaskRow['metadata'],
+  overlay: unknown,
+): TaskRow['metadata'] {
+  return {
+    ...(parseTaskMetadata(base) as Record<string, unknown>),
+    ...(parseTaskMetadata(overlay) as Record<string, unknown>),
+  } as TaskRow['metadata'];
+}
+
+export function cloneSessionDeckSnapshot(s: SessionDeckSnapshot): SessionDeckSnapshot {
+  try {
+    return structuredClone(s);
+  } catch {
+    return JSON.parse(JSON.stringify(s)) as SessionDeckSnapshot;
+  }
+}
+
 /** Stable comparison for dirty detection (workout-relevant metadata slice). */
 export function workoutMetadataSignature(meta: unknown): string {
   const f = metadataFieldsFromParsed(meta);

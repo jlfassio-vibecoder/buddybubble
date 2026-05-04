@@ -38,12 +38,20 @@ export function usePersistDeckSnapshot({
           return false;
         }
         if (snap.deckItemId) {
-          await supabase
+          const { error: deckMetaErr } = await supabase
             .from('live_session_deck_items')
             .update({ session_task_metadata: null })
             .eq('id', snap.deckItemId);
+          if (deckMetaErr) {
+            toast.error(
+              `Original card updated, but the live session queue could not clear its overlay: ${formatUserFacingError(deckMetaErr)}`,
+            );
+          } else {
+            toast.success('Original card updated');
+          }
+        } else {
+          toast.success('Original card updated');
         }
-        toast.success('Original card updated');
         onSuccess?.();
         return true;
       } finally {

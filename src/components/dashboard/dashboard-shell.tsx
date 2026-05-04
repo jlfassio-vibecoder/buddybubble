@@ -370,6 +370,7 @@ function DashboardShellInner({
 
   /** When set, `TaskModal` `onCreated` also runs this (chat: post message with `attached_task_id`). */
   const chatCardOnCreatedRef = useRef<((taskId: string) => void) | null>(null);
+  const taskModalFocusMessagesOnCloseRef = useRef(false);
   const taskModalForToastRef = useRef<{ open: boolean; taskId: string | null }>({
     open: false,
     taskId: null,
@@ -650,6 +651,7 @@ function DashboardShellInner({
   }, [workspaceId, profile?.id, joinLiveVideoSession]);
 
   const openTaskModal = useCallback((id: string, opts?: OpenTaskOptions) => {
+    taskModalFocusMessagesOnCloseRef.current = opts?.focusMessagesOnClose === true;
     chatCardOnCreatedRef.current = null;
     setTaskModalInitialCreateItemType(null);
     setTaskModalInitialCreateTitle(null);
@@ -681,7 +683,10 @@ function DashboardShellInner({
       classEditorInstanceId?: string | null;
       /** When true, do not clear `chatCardOnCreatedRef` (caller just set it for chat compose). */
       preserveChatCallback?: boolean;
+      /** When true, closing the modal may refocus Messages (e.g. chat compose). */
+      focusMessagesOnClose?: boolean;
     }) => {
+      taskModalFocusMessagesOnCloseRef.current = opts?.focusMessagesOnClose === true;
       if (!opts?.preserveChatCallback) {
         chatCardOnCreatedRef.current = null;
       }
@@ -707,7 +712,11 @@ function DashboardShellInner({
   const openChatComposeForTask = useCallback(
     (opts: { bubbleId: string | null; onTaskCreated: (taskId: string) => void }) => {
       chatCardOnCreatedRef.current = opts.onTaskCreated;
-      openCreateTaskModal({ bubbleId: opts.bubbleId, preserveChatCallback: true });
+      openCreateTaskModal({
+        bubbleId: opts.bubbleId,
+        preserveChatCallback: true,
+        focusMessagesOnClose: true,
+      });
     },
     [openCreateTaskModal],
   );
@@ -804,7 +813,10 @@ function DashboardShellInner({
     (open: boolean) => {
       setTaskModalOpen(open);
       if (!open) {
-        layoutCommands.focusMessages();
+        if (taskModalFocusMessagesOnCloseRef.current) {
+          layoutCommands.focusMessages();
+        }
+        taskModalFocusMessagesOnCloseRef.current = false;
         chatCardOnCreatedRef.current = null;
         setTaskModalTaskId(null);
         setTaskModalInitialStatus(null);
@@ -1800,7 +1812,6 @@ function DashboardShellInner({
                     <WorkoutPlayer
                       open
                       onClose={() => {
-                        layoutCommands.focusMessages();
                         setWorkoutPlayerLaunch(null);
                       }}
                       workspaceId={workspaceId}
@@ -1890,6 +1901,7 @@ function DashboardShellInner({
                             tab: 'comments',
                             viewMode: 'comments-only',
                             commentThreadMessageId: commentAlert.messageId || undefined,
+                            focusMessagesOnClose: true,
                           });
                           setCommentAlert(null);
                         }}
