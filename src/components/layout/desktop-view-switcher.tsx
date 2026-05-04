@@ -8,6 +8,8 @@ export type DesktopFocusMode = 'chat' | 'board' | 'calendar' | 'split';
 type Props = {
   activeMode: DesktopFocusMode | null;
   onChange: (mode: DesktopFocusMode) => void;
+  /** Runs before `onChange('chat')` when the Messages focus button is pressed (e.g. persist bubbles rail open). */
+  onBeforeSelectChat?: () => void;
   /** Avoid clicks before layout state is rehydrated from localStorage. */
   disabled?: boolean;
   className?: string;
@@ -21,7 +23,13 @@ const MODES: { id: DesktopFocusMode; label: string; Icon: typeof MessageSquare }
 ];
 
 /** Desktop-only macros for main-stage collapse; hidden below `md`. */
-export function DesktopViewSwitcher({ activeMode, onChange, disabled = false, className }: Props) {
+export function DesktopViewSwitcher({
+  activeMode,
+  onChange,
+  onBeforeSelectChat,
+  disabled = false,
+  className,
+}: Props) {
   return (
     <div
       className={cn(
@@ -39,7 +47,10 @@ export function DesktopViewSwitcher({ activeMode, onChange, disabled = false, cl
           aria-label={label}
           aria-pressed={activeMode === id}
           disabled={disabled}
-          onClick={() => onChange(id)}
+          onClick={() => {
+            if (id === 'chat') onBeforeSelectChat?.();
+            onChange(id);
+          }}
           className={cn(
             'rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40',
             activeMode === id && 'bg-background text-foreground shadow-sm',

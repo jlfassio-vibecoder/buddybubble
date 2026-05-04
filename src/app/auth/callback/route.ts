@@ -5,6 +5,10 @@ import { cookies } from 'next/headers';
 import type { EmailOtpType } from '@supabase/supabase-js';
 import { insertInviteJourneyByToken } from '@/lib/analytics/invite-journey-server';
 import { BB_INVITE_TOKEN_COOKIE, inviteTokenCookieOptions } from '@/lib/invite-cookies';
+import {
+  BB_PASSWORD_SETUP_PENDING_COOKIE,
+  passwordSetupPendingCookieOptions,
+} from '@/lib/login-password-setup-cookie';
 import { safeNextPath } from '@/lib/safe-next-path';
 import { getSupabasePublishableKey, getSupabaseUrl } from '@utils/supabase/env';
 
@@ -59,7 +63,11 @@ export async function GET(request: Request) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
       await applyInviteHandoffCookie(inviteHandoff, next, cookieStore);
-      return NextResponse.redirect(`${origin}${next}`);
+      const res = NextResponse.redirect(`${origin}${next}`);
+      if (next === '/update-password') {
+        res.cookies.set(BB_PASSWORD_SETUP_PENDING_COOKIE, '1', passwordSetupPendingCookieOptions());
+      }
+      return res;
     }
     return NextResponse.redirect(`${origin}/login?error=auth`);
   }
@@ -71,7 +79,11 @@ export async function GET(request: Request) {
     });
     if (!error) {
       await applyInviteHandoffCookie(inviteHandoff, next, cookieStore);
-      return NextResponse.redirect(`${origin}${next}`);
+      const res = NextResponse.redirect(`${origin}${next}`);
+      if (next === '/update-password') {
+        res.cookies.set(BB_PASSWORD_SETUP_PENDING_COOKIE, '1', passwordSetupPendingCookieOptions());
+      }
+      return res;
     }
     return NextResponse.redirect(`${origin}/login?error=auth`);
   }

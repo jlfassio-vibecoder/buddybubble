@@ -30,6 +30,7 @@ const MAX_STOREFRONT_PROFILE_JSON_BYTES = 100_000;
  *   workspaceId?: string;
  *   accentColor?: string;
  *   joinHref: string;
+ *   loginHref: string;
  * }} props
  */
 export default function StorefrontHero({
@@ -39,6 +40,7 @@ export default function StorefrontHero({
   workspaceId,
   accentColor,
   joinHref,
+  loginHref,
 }) {
   const slug = useMemo(() => (publicSlug || '').trim().toLowerCase(), [publicSlug]);
   const { phase, setPhase, forcePhase } = useHeroPhase(slug, categoryType);
@@ -207,7 +209,12 @@ export default function StorefrontHero({
     <div className={styles.heroWrap}>
       <div className={styles.radialGlow} aria-hidden="true" />
       {strongGlow ? <div className={styles.radialGlowStrong} aria-hidden="true" /> : null}
-      <HeroNav workspaceName={workspaceName} joinHref={joinHref} accentColor={accentColor} />
+      <HeroNav
+        workspaceName={workspaceName}
+        joinHref={joinHref}
+        loginHref={loginHref}
+        accentColor={accentColor}
+      />
       <HeroShell>{body}</HeroShell>
     </div>
   );
