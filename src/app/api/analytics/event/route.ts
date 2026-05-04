@@ -7,6 +7,9 @@
  *
  * Body: { events: AnalyticsEventPayload[] }
  * Response: { ok: true } | { error: string }
+ *
+ * Unauthenticated requests return { ok: true } (no 401): this endpoint is
+ * best-effort and must not surface auth failures in the browser console.
  */
 
 import { NextResponse } from 'next/server';
@@ -41,8 +44,11 @@ export async function POST(req: Request) {
       error: authError,
     } = await supabase.auth.getUser();
 
+    // Fire-and-forget client: never 401. Missing user happens when the tab is
+    // signed out, or when middleware just refreshed cookies on this response
+    // while this handler still sees the pre-refresh request cookies (same request).
     if (authError || !user) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+      return NextResponse.json({ ok: true });
     }
 
     let body: { events?: unknown[] };
