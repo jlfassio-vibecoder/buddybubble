@@ -493,7 +493,11 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
                       className={inputClass}
                     />
                   </div>
-                  <Button type="submit" className={primaryBtnClass} disabled={loading}>
+                  <Button
+                    type="submit"
+                    className={primaryBtnClass}
+                    disabled={loading || isGoogleLoading}
+                  >
                     {loading ? 'Creating…' : 'Create account'}
                   </Button>
                 </form>
@@ -600,7 +604,11 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
                       className={inputClass}
                     />
                   </div>
-                  <Button type="submit" className={primaryBtnClass} disabled={loading}>
+                  <Button
+                    type="submit"
+                    className={primaryBtnClass}
+                    disabled={loading || isGoogleLoading}
+                  >
                     {loading ? 'Continuing…' : 'Continue'}
                   </Button>
                 </form>
@@ -644,12 +652,16 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
                       type="button"
                       className="text-xs text-amber-700/80 underline decoration-amber-300/80 underline-offset-2 transition hover:text-amber-900 disabled:opacity-50"
                       onClick={() => void onForgotPassword()}
-                      disabled={forgotPasswordLoading || loading}
+                      disabled={forgotPasswordLoading || loading || isGoogleLoading}
                     >
                       {forgotPasswordLoading ? 'Sending…' : 'Forgot your password?'}
                     </button>
                   </div>
-                  <Button type="submit" className={primaryBtnClass} disabled={loading}>
+                  <Button
+                    type="submit"
+                    className={primaryBtnClass}
+                    disabled={loading || isGoogleLoading}
+                  >
                     {loading ? 'Signing in…' : 'Sign in'}
                   </Button>
                 </form>
