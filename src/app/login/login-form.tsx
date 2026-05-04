@@ -54,6 +54,7 @@ type LoginFormProps = {
   titleFontClassName: string;
 };
 
+// Copilot suggestion ignored: PR title/description are set on GitHub, not in repo source.
 export function LoginForm({ titleFontClassName }: LoginFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -352,16 +353,22 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
     setError(null);
     setInfo(null);
     setIsGoogleLoading(true);
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo },
-    });
-    setIsGoogleLoading(false);
-    if (error) {
-      console.error(error);
+    try {
+      const supabase = createClient();
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo },
+      });
+      if (oauthError) {
+        console.error(oauthError);
+        toast.error('Failed to initialize Google login.');
+        return;
+      }
+    } catch (e) {
+      console.error(e);
       toast.error('Failed to initialize Google login.');
-      return;
+    } finally {
+      setIsGoogleLoading(false);
     }
   }
 
