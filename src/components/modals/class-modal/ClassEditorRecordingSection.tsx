@@ -400,6 +400,9 @@ export function ClassEditorRecordingSection({
         onChange={(e) => {
           const f = e.target.files?.[0];
           if (f) void handleUploadFile(f);
+          // Reset immediately so the same file can be chosen again (including while an upload runs);
+          // the `File` reference is already captured by `handleUploadFile`.
+          e.target.value = '';
         }}
       />
     </div>
