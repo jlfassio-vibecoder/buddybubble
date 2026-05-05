@@ -55,23 +55,44 @@ function AsyncPlaybackShellInner({ classInstanceId, onClose, className }: AsyncP
 
   useEffect(() => {
     let cancelled = false;
-    void supabase
-      .from('class_instances')
-      .select('metadata')
-      .eq('id', classInstanceId)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        if (error) {
-          setRecordingLoadError(formatUserFacingError(error));
-          setRecordingRec(null);
-          return;
-        }
-        setRecordingLoadError(null);
-        setRecordingRec(parseClassRecordingFromInstanceMetadata(data?.metadata));
-      });
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const clearPoll = () => {
+      if (intervalId != null) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+
+    const fetchMetadata = async () => {
+      const { data, error } = await supabase
+        .from('class_instances')
+        .select('metadata')
+        .eq('id', classInstanceId)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        setRecordingLoadError(formatUserFacingError(error));
+        setRecordingRec(null);
+        clearPoll();
+        return;
+      }
+      setRecordingLoadError(null);
+      const rec = parseClassRecordingFromInstanceMetadata(data?.metadata);
+      setRecordingRec(rec);
+      clearPoll();
+      if (rec?.status === 'processing') {
+        intervalId = setInterval(() => {
+          void fetchMetadata();
+        }, 15_000);
+      }
+    };
+
+    void fetchMetadata();
+
     return () => {
       cancelled = true;
+      clearPoll();
     };
   }, [classInstanceId, supabase]);
 

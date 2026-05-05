@@ -98,6 +98,8 @@ export type ClassRecordingStatus = 'processing' | 'ready' | 'failed';
 export type ClassRecordingPayload = {
   type: 'class_recording';
   status: ClassRecordingStatus;
+  /** Track 1 (Agora) vs Track 2 (manual editor upload). */
+  provider?: 'agora' | 'manual';
   /**
    * Object path inside the `class-recordings` storage bucket (`{workspace_id}/{instance_id}/...`).
    * Preferred for new uploads; playback uses a fresh signed URL at read time.
@@ -163,9 +165,13 @@ export function parseClassRecordingFromInstanceMetadata(
         ? r.errorMessage
         : undefined;
 
+  const providerRaw = r.provider;
+  const provider = providerRaw === 'agora' || providerRaw === 'manual' ? providerRaw : undefined;
+
   return {
     type: 'class_recording',
     status,
+    ...(provider ? { provider } : {}),
     ...(playbackUrlRaw ? { playbackUrl: playbackUrlRaw } : {}),
     ...(storagePathRaw ? { storagePath: storagePathRaw } : {}),
     ...(createdAt !== undefined ? { createdAt } : {}),

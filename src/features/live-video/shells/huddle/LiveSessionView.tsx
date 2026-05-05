@@ -96,6 +96,8 @@ export type LiveSessionViewProps = {
   liveDbReady?: boolean;
   /** Shown in AMRAP roster / join RPC; defaults to `localUserId` when unset. */
   displayName?: string;
+  /** Host-only (from dock): `class_recording.status === 'processing'` for cloud recording UX. */
+  hostClassRecordingProcessing?: boolean;
 };
 
 /**
@@ -117,6 +119,7 @@ function LiveSessionViewInner({
   onHostEndLiveSessionForAll,
   liveDbReady = true,
   displayName: displayNameProp,
+  hostClassRecordingProcessing = false,
 }: LiveSessionViewProps) {
   const { override } = useWrapperAttach();
   const { hostNavActions } = useHostNavActions();
@@ -475,6 +478,7 @@ function LiveSessionViewInner({
             disableActions={!isHost}
             onHostEndLiveSessionForAll={isHost ? onHostEndLiveSessionForAll : undefined}
             liveDbReady={liveDbReady}
+            hostClassRecordingProcessing={isHost ? hostClassRecordingProcessing : false}
             className="shrink-0"
           />
         )}

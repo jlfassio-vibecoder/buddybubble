@@ -736,6 +736,24 @@ function DashboardShellInner({
     if (!uid || activeSession?.hostUserId !== uid) return;
 
     const supabase = createClient();
+    if (sourceInstanceId) {
+      try {
+        const { error: fnError, data } = await supabase.functions.invoke('agora-recording-stop', {
+          body: { classInstanceId: sourceInstanceId },
+        });
+        if (
+          fnError ||
+          (data &&
+            typeof data === 'object' &&
+            'ok' in data &&
+            (data as { ok?: boolean }).ok === false)
+        ) {
+          console.error('[Recording] Failed to stop Agora recording.');
+        }
+      } catch {
+        console.error('[Recording] Failed to stop Agora recording.');
+      }
+    }
     if (inviteMessageId) {
       await markLiveSessionInviteMessageEnded(supabase, inviteMessageId);
       return;
