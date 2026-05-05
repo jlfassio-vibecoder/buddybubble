@@ -411,7 +411,8 @@ export function ClassEditor({
           if (!okFollowUp) {
             setResolvedOfferingId(ids.offeringId);
             setResolvedInstanceId(ids.instanceId);
-            setRawInstanceMetadata(mergedInstanceMeta);
+            // Follow-up save failed: still show merged-after-create metadata so async/live toggles match user intent.
+            setRawInstanceMetadata(mergedAfterCreate);
             return;
           }
           setResolvedOfferingId(ids.offeringId);
