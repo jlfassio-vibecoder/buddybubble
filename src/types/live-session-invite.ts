@@ -91,3 +91,85 @@ export function parseAsyncSessionFromInstanceMetadata(
     ...(endedAt !== undefined ? { endedAt } : {}),
   };
 }
+
+/** Stored under `class_instances.metadata.class_recording` (manual upload + future Agora auto-attach). */
+export type ClassRecordingStatus = 'processing' | 'ready' | 'failed';
+
+export type ClassRecordingPayload = {
+  type: 'class_recording';
+  status: ClassRecordingStatus;
+  /**
+   * Object path inside the `class-recordings` storage bucket (`{workspace_id}/{instance_id}/...`).
+   * Preferred for new uploads; playback uses a fresh signed URL at read time.
+   */
+  storagePath?: string;
+  /**
+   * Direct playback URL (legacy rows, public CDN, or Agora callback). Optional when `storagePath` is set.
+   */
+  playbackUrl?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  errorMessage?: string;
+};
+
+export function parseClassRecordingFromInstanceMetadata(
+  metadata: unknown,
+): ClassRecordingPayload | null {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  const o = metadata as Record<string, unknown>;
+  const raw = o.class_recording;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  if (r.type !== 'class_recording') return null;
+
+  const playbackUrlRaw = typeof r.playbackUrl === 'string' ? r.playbackUrl.trim() : '';
+  const storagePathRaw = typeof r.storagePath === 'string' ? r.storagePath.trim() : '';
+
+  const statusRaw = r.status;
+  let status: ClassRecordingStatus;
+  if (statusRaw === 'processing') {
+    status = 'processing';
+  } else if (statusRaw === 'failed') {
+    status = 'failed';
+  } else if (statusRaw === 'ready') {
+    status = 'ready';
+  } else if (playbackUrlRaw) {
+    /** Legacy: only `playbackUrl` — treat as ready. */
+    status = 'ready';
+  } else {
+    return null;
+  }
+
+  if (status === 'ready' && !playbackUrlRaw && !storagePathRaw) {
+    return null;
+  }
+
+  const createdAt =
+    r.createdAt === null || r.createdAt === undefined
+      ? undefined
+      : typeof r.createdAt === 'string'
+        ? r.createdAt
+        : undefined;
+  const updatedAt =
+    r.updatedAt === null || r.updatedAt === undefined
+      ? undefined
+      : typeof r.updatedAt === 'string'
+        ? r.updatedAt
+        : undefined;
+  const errorMessage =
+    r.errorMessage === null || r.errorMessage === undefined
+      ? undefined
+      : typeof r.errorMessage === 'string'
+        ? r.errorMessage
+        : undefined;
+
+  return {
+    type: 'class_recording',
+    status,
+    ...(playbackUrlRaw ? { playbackUrl: playbackUrlRaw } : {}),
+    ...(storagePathRaw ? { storagePath: storagePathRaw } : {}),
+    ...(createdAt !== undefined ? { createdAt } : {}),
+    ...(updatedAt !== undefined ? { updatedAt } : {}),
+    ...(errorMessage !== undefined ? { errorMessage } : {}),
+  };
+}

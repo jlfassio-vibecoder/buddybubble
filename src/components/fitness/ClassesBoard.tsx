@@ -1,13 +1,16 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   CalendarDays,
   CheckCircle2,
   Clock,
   History,
+  ListOrdered,
   MapPin,
   Pencil,
+  Play,
   Users,
   Video,
 } from 'lucide-react';
@@ -19,7 +22,12 @@ import type { ItemType } from '@/types/database';
 import { DEFAULT_CLASS_PROVIDER, type ClassInstance } from '@/lib/fitness/class-providers';
 import { useLiveVideoStore } from '@/store/liveVideoStore';
 import { useUserProfileStore } from '@/store/userProfileStore';
-import { parseLiveSessionInviteFromMessageMetadata } from '@/types/live-session-invite';
+import {
+  parseAsyncSessionFromInstanceMetadata,
+  parseClassRecordingFromInstanceMetadata,
+  parseLiveSessionInviteFromMessageMetadata,
+} from '@/types/live-session-invite';
+import { classRecordingMemberCta } from '@/lib/class-recording-metadata';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -122,6 +130,10 @@ function ClassCard({
   canManageClasses = false,
   onOpenClassEditor,
 }: ClassCardProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const liveDockActive = useLiveVideoStore((s) => s.activeSession);
   const { offering } = instance;
   const enrolled = instance.my_enrollment_status === 'enrolled';
   const waitlisted = instance.my_enrollment_status === 'waitlisted';
@@ -135,6 +147,15 @@ function ClassCard({
     () => parseLiveSessionInviteFromMessageMetadata(instance.metadata),
     [instance.metadata],
   );
+  const asyncDeckMeta = useMemo(
+    () => parseAsyncSessionFromInstanceMetadata(instance.metadata),
+    [instance.metadata],
+  );
+  const classRecordingMeta = useMemo(
+    () => parseClassRecordingFromInstanceMetadata(instance.metadata),
+    [instance.metadata],
+  );
+  const recordingCta = classRecordingMemberCta(classRecordingMeta);
   const activeLiveSession = useLiveVideoStore((s) => s.activeSession);
   const currentUserId = useUserProfileStore((s) => s.profile?.id ?? null);
   const inLiveSession = useMemo(() => {
@@ -196,44 +217,88 @@ function ClassCard({
         </p>
       )}
 
-      {!isPast &&
-      ((liveInvite && !liveInvite.endedAt) || (canManageClasses && onOpenClassEditor)) ? (
+      {!isPast && canManageClasses && onOpenClassEditor ? (
         <div className="mt-3 flex flex-col gap-2">
-          {canManageClasses && onOpenClassEditor ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="h-8 w-full gap-2 text-xs shadow-sm"
+            onClick={() => onOpenClassEditor(instance.id)}
+          >
+            <Pencil className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            Edit
+          </Button>
+          {!liveDockActive ? (
             <Button
               type="button"
               size="sm"
               variant="secondary"
               className="h-8 w-full gap-2 text-xs shadow-sm"
-              onClick={() => onOpenClassEditor(instance.id)}
-            >
-              <Pencil className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              Edit
-            </Button>
-          ) : null}
-          {liveInvite && !liveInvite.endedAt ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-8 w-full gap-2 text-xs shadow-sm"
-              disabled={inLiveSession || !currentUserId}
               onClick={() => {
-                if (inLiveSession || !currentUserId || !liveInvite) return;
-                useLiveVideoStore.getState().joinSession({
-                  workspaceId: liveInvite.workspaceId,
-                  sessionId: liveInvite.sessionId,
-                  channelId: liveInvite.channelId,
-                  hostUserId: liveInvite.hostUserId,
-                  mode: liveInvite.mode,
-                  sourceInstanceId: instance.id,
-                });
+                const q = new URLSearchParams(searchParams.toString());
+                q.set('class_deck_builder', instance.id);
+                router.replace(`${pathname}?${q.toString()}`, { scroll: false });
               }}
             >
-              <Video className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              {inLiveSession ? 'Joined' : !currentUserId ? 'Sign in to join' : 'Join live session'}
+              <ListOrdered className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              Workout Builder
             </Button>
           ) : null}
+        </div>
+      ) : null}
+      {!isPast && liveInvite && !liveInvite.endedAt ? (
+        <div className="mt-3 flex flex-col gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8 w-full gap-2 text-xs shadow-sm"
+            disabled={inLiveSession || !currentUserId}
+            onClick={() => {
+              if (inLiveSession || !currentUserId || !liveInvite) return;
+              useLiveVideoStore.getState().joinSession({
+                workspaceId: liveInvite.workspaceId,
+                sessionId: liveInvite.sessionId,
+                channelId: liveInvite.channelId,
+                hostUserId: liveInvite.hostUserId,
+                mode: liveInvite.mode,
+                sourceInstanceId: instance.id,
+              });
+            }}
+          >
+            <Video className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            {inLiveSession ? 'Joined' : !currentUserId ? 'Sign in to join' : 'Join live session'}
+          </Button>
+        </div>
+      ) : null}
+
+      {!isPast && asyncDeckMeta && !liveDockActive ? (
+        <div className="mt-3 flex flex-col gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="h-8 w-full gap-2 text-xs shadow-sm"
+            disabled={!currentUserId || recordingCta === 'processing'}
+            onClick={() => {
+              if (!currentUserId || recordingCta === 'processing') {
+                return;
+              }
+              const q = new URLSearchParams(searchParams.toString());
+              q.set('class_async_player', instance.id);
+              router.replace(`${pathname}?${q.toString()}`, { scroll: false });
+            }}
+          >
+            <Play className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            {!currentUserId
+              ? 'Sign in to play'
+              : recordingCta === 'processing'
+                ? 'Recording processing…'
+                : recordingCta === 'failed'
+                  ? 'Open workout'
+                  : 'Play Workout'}
+          </Button>
         </div>
       ) : null}
 

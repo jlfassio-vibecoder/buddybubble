@@ -96,13 +96,13 @@ Canonical UI rules live in [permissions.ts](../../src/lib/permissions.ts) (pure 
 
 ## Per-channel docs
 
-| Bubble    | Main board       | Channel doc                  | Component deep-dive                                             |
-| --------- | ---------------- | ---------------------------- | --------------------------------------------------------------- |
-| Programs  | `ProgramsBoard`  | [programs.md](programs.md)   | [programs-board.md](../programs-board.md)                       |
-| Workouts  | `KanbanBoard`    | [workouts.md](workouts.md)   | [workout-player.md](../workout-player.md) (playback from board) |
-| Classes   | `ClassesBoard`   | [classes.md](classes.md)     | [classes-board.md](../classes-board.md)                         |
-| Trainer   | `KanbanBoard`    | [trainer.md](trainer.md)     | (no dedicated fitness component)                                |
-| Analytics | `AnalyticsBoard` | [analytics.md](analytics.md) | [analytics-board.md](../analytics-board.md)                     |
+| Bubble    | Main board       | Channel doc                            | Component deep-dive                                             |
+| --------- | ---------------- | -------------------------------------- | --------------------------------------------------------------- |
+| Programs  | `ProgramsBoard`  | [programs.md](programs.md)             | [programs-board.md](../programs-board.md)                       |
+| Workouts  | `KanbanBoard`    | [workouts.md](workouts.md)             | [workout-player.md](../workout-player.md) (playback from board) |
+| Classes   | `ClassesBoard`   | [classes/README.md](classes/README.md) | [classes-board.md](../classes-board.md)                         |
+| Trainer   | `KanbanBoard`    | [trainer.md](trainer.md)               | (no dedicated fitness component)                                |
+| Analytics | `AnalyticsBoard` | [analytics.md](analytics.md)           | [analytics-board.md](../analytics-board.md)                     |
 
 ## Cross-cutting UI (not per-bubble)
 
