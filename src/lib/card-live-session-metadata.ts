@@ -1,5 +1,9 @@
 import type { Json } from '@/types/database';
 import {
+  CLASS_DECK_BUILDER_SESSION_PREFIX,
+  classDeckBuilderSessionId,
+} from '@/lib/fitness/class-deck-builder-session-id';
+import {
   parseAsyncSessionFromInstanceMetadata,
   parseLiveSessionInviteFromMessageMetadata,
 } from '@/types/live-session-invite';
@@ -58,9 +62,14 @@ export function mergeJsonWithLiveSessionToggle(
 }
 
 /**
- * Mutually exclusive live vs async class deck sessions on `class_instances.metadata`.
- * Preserves a single `sessionId` when toggling between `live_session` and `async_session`
- * so `live_session_deck_items` rows stay attached.
+ * Class delivery: **live video** (`metadata.live_session`) and **async / recorded deck**
+ * (`metadata.async_session`) are **independent** toggles; both may be enabled at once.
+ *
+ * - Live uses its own invite `sessionId` + `channelId` for WebRTC.
+ * - When async is enabled and `classInstanceId` is known, `async_session.sessionId` is pinned to
+ *   `bb-class-deck:<classInstanceId>` (stable namespace for `live_session_deck_items`).
+ * - Omit `classInstanceId` on the first create pass before an instance row exists; async metadata
+ *   is applied on a follow-up save once the id is known.
  */
 export function mergeClassInstanceDeckSessionMetadata(
   metadata: unknown,
@@ -69,14 +78,19 @@ export function mergeClassInstanceDeckSessionMetadata(
     asyncEnabled: boolean;
     workspaceId: string;
     hostUserId: string | null;
+    /** Required to persist `async_session` when async is enabled (after `class_instances` exists). */
+    classInstanceId?: string | null;
   },
 ): Json {
   const liveParsed = parseLiveSessionInviteFromMessageMetadata(metadata);
   const asyncParsed = parseAsyncSessionFromInstanceMetadata(metadata);
-  const existingDeckSessionId =
-    (liveParsed?.sessionId?.trim() ? liveParsed.sessionId.trim() : '') ||
-    (asyncParsed?.sessionId?.trim() ? asyncParsed.sessionId.trim() : '') ||
-    '';
+
+  /** Never reuse a class-draft deck id (`bb-class-deck:…`) as the live WebRTC session id. */
+  const trimmedLiveSid = liveParsed?.sessionId?.trim() ?? '';
+  const liveReuseOnlyInvite =
+    trimmedLiveSid.length > 0 && !trimmedLiveSid.startsWith(CLASS_DECK_BUILDER_SESSION_PREFIX)
+      ? trimmedLiveSid
+      : null;
 
   const base =
     metadata && typeof metadata === 'object' && !Array.isArray(metadata)
@@ -92,34 +106,42 @@ export function mergeClassInstanceDeckSessionMetadata(
     });
   }
 
+  let next: Record<string, unknown> = { ...base };
+
   if (opts.liveEnabled && opts.hostUserId) {
-    delete base.async_session;
-    return mergeJsonWithLiveSessionToggle(base, {
+    next = mergeJsonWithLiveSessionToggle(next, {
       enabled: true,
       workspaceId: opts.workspaceId,
       hostUserId: opts.hostUserId,
-      reuseSessionId: existingDeckSessionId || null,
-    });
+      reuseSessionId: liveReuseOnlyInvite,
+    }) as Record<string, unknown>;
+  } else {
+    next = mergeJsonWithLiveSessionToggle(next, {
+      enabled: false,
+      workspaceId: opts.workspaceId,
+      hostUserId: opts.hostUserId,
+    }) as Record<string, unknown>;
   }
-
-  /** Async-only path (live off). */
-  let next = mergeJsonWithLiveSessionToggle(base, {
-    enabled: false,
-    workspaceId: opts.workspaceId,
-    hostUserId: opts.hostUserId,
-  }) as Record<string, unknown>;
 
   if (opts.asyncEnabled && opts.hostUserId) {
-    const sessionId = existingDeckSessionId || crypto.randomUUID();
-    next.async_session = {
-      type: 'async_session',
-      sessionId,
-      createdAt: new Date().toISOString(),
-      hostUserId: opts.hostUserId,
-    };
-    return next as Json;
+    const cid = opts.classInstanceId?.trim() ?? '';
+    if (cid.length > 0) {
+      const createdAt =
+        typeof asyncParsed?.createdAt === 'string' && asyncParsed.createdAt.length > 0
+          ? asyncParsed.createdAt
+          : new Date().toISOString();
+      next.async_session = {
+        type: 'async_session',
+        sessionId: classDeckBuilderSessionId(cid),
+        createdAt,
+        hostUserId: opts.hostUserId,
+      };
+    } else {
+      delete next.async_session;
+    }
+  } else {
+    delete next.async_session;
   }
 
-  delete next.async_session;
   return next as Json;
 }

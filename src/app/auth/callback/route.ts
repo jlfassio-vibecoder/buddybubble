@@ -9,6 +9,7 @@ import {
   BB_PASSWORD_SETUP_PENDING_COOKIE,
   passwordSetupPendingCookieOptions,
 } from '@/lib/login-password-setup-cookie';
+import { withDefaultDashboardChatView } from '@/lib/default-dashboard-chat-view';
 import { safeNextPath } from '@/lib/safe-next-path';
 import { supabaseAuthCookieOptionsForUrl } from '@utils/supabase/auth-cookie-options';
 import { getSupabasePublishableKey, getSupabaseUrl } from '@utils/supabase/env';
@@ -35,7 +36,7 @@ export async function GET(request: Request) {
   const code = searchParams.get('code');
   const token_hash = searchParams.get('token_hash');
   const typeRaw = searchParams.get('type');
-  const next = safeNextPath(searchParams.get('next')) ?? '/app';
+  const next = withDefaultDashboardChatView(safeNextPath(searchParams.get('next')) ?? '/app');
   const inviteHandoff = searchParams.get('invite_handoff')?.trim() ?? '';
 
   const supabaseUrl = getSupabaseUrl();

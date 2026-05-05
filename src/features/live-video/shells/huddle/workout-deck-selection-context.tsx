@@ -47,7 +47,17 @@ function logDeckWriteError(scope: string, err: unknown) {
 }
 
 function rehydrateSnapshotFromDeckRow(row: LiveSessionDeckRow): SessionDeckSnapshot | null {
-  if (!row.tasks) return null;
+  if (!row.tasks) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(
+        '[Deck Hydration] Orphaned deck item: task row missing or not visible (RLS/deleted). task_id=',
+        row.task_id,
+        'deck_item_id=',
+        row.id,
+      );
+    }
+    return null;
+  }
   let clonedTask: TaskRow;
   try {
     clonedTask = structuredClone(row.tasks);
@@ -85,6 +95,11 @@ export type WorkoutDeckSelectionContextValue = {
     snapshotId: string,
     options?: { persistSessionMetadata?: boolean },
   ) => void;
+  /**
+   * Persist every dirty snapshot’s `session_task_metadata` (same as “Apply to session only”),
+   * then clear dirty locally. Awaitable for explicit Save flows.
+   */
+  flushDirtySessionMetadata: () => Promise<boolean>;
   /** After “Save as new”, point persistence at the new `tasks.id` and clear dirty. */
   rebindSnapshotOrigin: (snapshotId: string, newOriginTaskId: string) => void;
   enterSelectionMode: () => void;
@@ -139,6 +154,8 @@ export function WorkoutDeckSelectionProvider({
   const canPersist = Boolean(
     sidTrimmed && localUserId && effectiveHostUserId && localUserId === effectiveHostUserId,
   );
+  /** Signed-in reads; RLS decides row visibility. Avoid gating hydration on `canPersist` so deck reloads after dependency churn / remounts. */
+  const allowDeckHydration = Boolean(sidTrimmed && localUserId);
 
   const bridgeSelecting = useSyncExternalStore(
     subscribeWorkoutDeckBoardSelecting,
@@ -190,13 +207,31 @@ export function WorkoutDeckSelectionProvider({
     setDeck((prev) => prev.map((s) => ({ ...s, deckItemId: null })));
   }, [sidTrimmed]);
 
+  /** Namespaced class draft (`sessionIdOverride`): clear module-level anchors when this nested provider unmounts so reopening resets layout + flush state (root provider does not always re-run layout). */
+  const overrideSid = useMemo(() => {
+    if (sessionIdOverride === undefined || sessionIdOverride === null) return '';
+    return String(sessionIdOverride).trim();
+  }, [sessionIdOverride]);
+
+  useEffect(() => {
+    if (!overrideSid) return;
+    return () => {
+      if (moduleLastDeckAnchorSessionId === overrideSid) {
+        moduleLastDeckAnchorSessionId = null;
+      }
+      if (moduleDeckFlushCompletedSessionId === overrideSid) {
+        moduleDeckFlushCompletedSessionId = null;
+      }
+    };
+  }, [overrideSid]);
+
   /** Host revisit: repopulate the local deck from the persisted live session deck once per session. */
   useEffect(() => {
     if (!sidTrimmed) {
       hydratedSessionIdRef.current = null;
       return;
     }
-    if (!canPersist) return;
+    if (!allowDeckHydration) return;
     if (hydratedSessionIdRef.current === sidTrimmed) return;
 
     hydratedSessionIdRef.current = sidTrimmed;
@@ -232,8 +267,10 @@ export function WorkoutDeckSelectionProvider({
 
     return () => {
       cancelled = true;
+      /** Allow a follow-up effect run (Strict Mode, `supabase` identity, etc.) to fetch again. */
+      hydratedSessionIdRef.current = null;
     };
-  }, [sidTrimmed, canPersist, supabase]);
+  }, [sidTrimmed, allowDeckHydration, supabase]);
 
   /** Host: persist any in-memory deck rows once per session id (pre-session queue). */
   useEffect(() => {
@@ -482,6 +519,57 @@ export function WorkoutDeckSelectionProvider({
     [supabase],
   );
 
+  const flushDirtySessionMetadata = useCallback(async (): Promise<boolean> => {
+    if (!canPersistRef.current || !sessionIdRef.current) {
+      toast.error('Cannot save the workout deck right now.');
+      return false;
+    }
+
+    const deadline = Date.now() + 4000;
+    while (Date.now() < deadline) {
+      const live = deckRef.current;
+      const stuck = live.filter((s) => s.dirty && !s.deckItemId);
+      if (stuck.length === 0) break;
+      await new Promise((r) => setTimeout(r, 120));
+    }
+
+    const live = deckRef.current;
+    const stuck = live.filter((s) => s.dirty && !s.deckItemId);
+    if (stuck.length > 0) {
+      toast.error(
+        'Some cards are still attaching to the queue. Wait a moment, then try Save Workouts again.',
+      );
+      return false;
+    }
+
+    const dirtyRows = live.filter((s) => s.dirty && s.deckItemId);
+    if (dirtyRows.length === 0) return true;
+
+    const clearedIds = new Set<string>();
+    for (const s of dirtyRows) {
+      const meta = cloneJsonMetadata(s.task.metadata);
+      const { error } = await supabase
+        .from('live_session_deck_items')
+        .update({ session_task_metadata: meta })
+        .eq('id', s.deckItemId!);
+      if (error) {
+        logDeckWriteError('flush_dirty_session_metadata', error);
+        if (clearedIds.size > 0) {
+          setDeck((prev) =>
+            prev.map((x) => (clearedIds.has(x.snapshotId) ? acceptSnapshotBaseline(x) : x)),
+          );
+        }
+        return false;
+      }
+      clearedIds.add(s.snapshotId);
+    }
+
+    setDeck((prev) =>
+      prev.map((x) => (clearedIds.has(x.snapshotId) ? acceptSnapshotBaseline(x) : x)),
+    );
+    return true;
+  }, [supabase]);
+
   const rebindSnapshotOrigin = useCallback((snapshotId: string, newOriginTaskId: string) => {
     setDeck((prev) =>
       prev.map((s) => {
@@ -509,6 +597,7 @@ export function WorkoutDeckSelectionProvider({
       updateSnapshotTask,
       removeSnapshot,
       acceptSnapshotSessionOnly,
+      flushDirtySessionMetadata,
       rebindSnapshotOrigin,
       enterSelectionMode,
       exitSelectionMode,
@@ -523,6 +612,7 @@ export function WorkoutDeckSelectionProvider({
       updateSnapshotTask,
       removeSnapshot,
       acceptSnapshotSessionOnly,
+      flushDirtySessionMetadata,
       rebindSnapshotOrigin,
       enterSelectionMode,
       exitSelectionMode,

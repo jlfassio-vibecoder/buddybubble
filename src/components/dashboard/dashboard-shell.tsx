@@ -98,6 +98,11 @@ import {
   dispatchWorkoutDeckTaskFromBoard,
   useWorkoutDeckBoardSelecting,
 } from '@/features/live-video/shells/huddle/workout-deck-board-bridge';
+import {
+  StandaloneClassDeckBuilder,
+  isValidClassInstanceIdForDeckBuilder,
+} from '@/features/live-video/shells/huddle/StandaloneClassDeckBuilder';
+import { AsyncPlaybackShell } from '@/features/live-video/shells/AsyncPlaybackShell';
 import { TrialPaywallGuard } from '@/components/subscription/trial-paywall-guard';
 import { LiveSessionRuntimeProvider } from '@/features/live-video/theater/live-session-runtime-context';
 import { useLiveTheaterLayoutPlanContext } from '@/features/live-video/theater/live-theater-layout-context';
@@ -491,6 +496,22 @@ function DashboardShellInner({
   const activeLiveVideoSession = useLiveVideoStore((s) => s.activeSession);
   const joinLiveVideoSession = useLiveVideoStore((s) => s.joinSession);
 
+  const classDeckBuilderParam = searchParams.get('class_deck_builder')?.trim() ?? '';
+  const showClassDeckBuilder =
+    !embedMode &&
+    !activeLiveVideoSession &&
+    canManageWorkspaceClasses &&
+    isValidClassInstanceIdForDeckBuilder(classDeckBuilderParam);
+
+  const classAsyncPlayerParam = searchParams.get('class_async_player')?.trim() ?? '';
+  /** Profile optional here so the query param survives auth hydration; shell shows a sign-in prompt if needed. */
+  const showClassAsyncPlayerBase =
+    !embedMode &&
+    !activeLiveVideoSession &&
+    isValidClassInstanceIdForDeckBuilder(classAsyncPlayerParam);
+  /** Admin class deck builder takes precedence when both query params are present. */
+  const showClassAsyncPlayer = showClassAsyncPlayerBase && !showClassDeckBuilder;
+
   useEffect(() => {
     if (activeLiveVideoSession && activeLiveVideoSession.workspaceId !== workspaceId) {
       workoutDeckSelection.exitSelectionMode();
@@ -589,6 +610,82 @@ function DashboardShellInner({
       },
     };
   }, [embedMode, layoutHydrated, layoutMobile, pathname, router, searchParams]);
+
+  const clearClassDeckBuilder = useCallback(() => {
+    workoutDeckSelection.exitSelectionMode();
+    const q = new URLSearchParams(searchParams.toString());
+    q.delete('class_deck_builder');
+    const qs = q.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [pathname, router, searchParams, workoutDeckSelection]);
+
+  const clearClassAsyncPlayer = useCallback(() => {
+    workoutDeckSelection.exitSelectionMode();
+    const q = new URLSearchParams(searchParams.toString());
+    q.delete('class_async_player');
+    const qs = q.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [pathname, router, searchParams, workoutDeckSelection]);
+
+  useEffect(() => {
+    if (!classDeckBuilderParam) return;
+    const allowed =
+      !embedMode &&
+      canManageWorkspaceClasses &&
+      !activeLiveVideoSession &&
+      isValidClassInstanceIdForDeckBuilder(classDeckBuilderParam);
+    if (allowed) return;
+    const q = new URLSearchParams(searchParams.toString());
+    if (!q.has('class_deck_builder')) return;
+    q.delete('class_deck_builder');
+    const qs = q.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [
+    activeLiveVideoSession,
+    canManageWorkspaceClasses,
+    classDeckBuilderParam,
+    embedMode,
+    pathname,
+    router,
+    searchParams,
+  ]);
+
+  useEffect(() => {
+    if (!classAsyncPlayerParam) return;
+    if (showClassAsyncPlayer) return;
+    const q = new URLSearchParams(searchParams.toString());
+    if (!q.has('class_async_player')) return;
+    q.delete('class_async_player');
+    const qs = q.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [
+    classAsyncPlayerParam,
+    embedMode,
+    activeLiveVideoSession,
+    pathname,
+    router,
+    searchParams,
+    showClassAsyncPlayer,
+    showClassDeckBuilder,
+  ]);
+
+  /** Class deck builder replaces the main stage; on mobile the board tab must be active to show it. */
+  useEffect(() => {
+    if (!showClassDeckBuilder || !layoutMobile || embedMode) return;
+    const q = new URLSearchParams(searchParams.toString());
+    if (q.get('tab') === 'board') return;
+    q.set('tab', 'board');
+    router.replace(`${pathname}?${q.toString()}`, { scroll: false });
+  }, [embedMode, layoutMobile, pathname, router, searchParams, showClassDeckBuilder]);
+
+  /** Async playback shell uses the same main-stage slot as the deck builder. */
+  useEffect(() => {
+    if (!showClassAsyncPlayer || !layoutMobile || embedMode) return;
+    const q = new URLSearchParams(searchParams.toString());
+    if (q.get('tab') === 'board') return;
+    q.set('tab', 'board');
+    router.replace(`${pathname}?${q.toString()}`, { scroll: false });
+  }, [embedMode, layoutMobile, pathname, router, searchParams, showClassAsyncPlayer]);
 
   const applyDesktopFocusMode = useCallback(
     (mode: DesktopFocusMode) => {
@@ -1404,7 +1501,35 @@ function DashboardShellInner({
 
   const workspaceBoardEl = useMemo(
     () =>
-      isAnalyticsBubble ? (
+      showClassDeckBuilder ? (
+        <StandaloneClassDeckBuilder
+          classInstanceId={classDeckBuilderParam}
+          workspaceId={workspaceId}
+          bubbles={bubbles}
+          selectedBubbleId={selectedBubbleId}
+          setSelectedBubbleId={setSelectedBubbleId}
+          canWriteTasks={canWriteTasks}
+          onWorkoutDeckPersisted={bumpTaskViews}
+          onClose={clearClassDeckBuilder}
+          onOpenTask={openTaskModal}
+          onOpenCreateTask={openCreateTaskModal}
+          onStartWorkout={handleStartWorkout}
+          workspaceCategory={effectiveKanbanCategory}
+          calendarTimezone={workspaceCalendarTz}
+          boardStripExpandNonce={boardStripExpandNonce}
+          calendarStripCollapsed={calendarRailIsCollapsed}
+          onExpandCalendarWhenKanbanStripCollapse={() => setCalendarCollapsed(false)}
+          onRetractKanbanPanel={() => setKanbanCollapsed(true)}
+          buddyBubbleTitle={buddyBubbleTitle}
+          workspaceMemberRole={effectiveWorkspaceRole}
+          guestTaskUserId={profile?.id ?? null}
+        />
+      ) : showClassAsyncPlayer ? (
+        <AsyncPlaybackShell
+          classInstanceId={classAsyncPlayerParam}
+          onClose={clearClassAsyncPlayer}
+        />
+      ) : isAnalyticsBubble ? (
         <PremiumGate feature="analytics" className="flex-1 min-h-0">
           <AnalyticsBoard workspaceId={workspaceId} calendarTimezone={workspaceCalendarTz} />
         </PremiumGate>
@@ -1458,12 +1583,20 @@ function DashboardShellInner({
         />
       ),
     [
+      showClassDeckBuilder,
+      classDeckBuilderParam,
+      clearClassDeckBuilder,
+      showClassAsyncPlayer,
+      classAsyncPlayerParam,
+      clearClassAsyncPlayer,
+      bumpTaskViews,
       isAnalyticsBubble,
       isClassesBubble,
       isProgramsBubble,
       workspaceId,
       workspaceCalendarTz,
       selectedBubbleId,
+      setSelectedBubbleId,
       bubbles,
       effectiveKanbanCategory,
       taskViewsNonce,

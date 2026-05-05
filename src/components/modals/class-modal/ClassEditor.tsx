@@ -15,6 +15,7 @@ import {
   type ClassSavePayload,
 } from '@/components/modals/class-modal/hooks/useClassSaveAndCreate';
 import { PrivacyToggle } from '@/components/ui/privacy-toggle';
+import { classDeckBuilderSessionId } from '@/lib/fitness/class-deck-builder-session-id';
 import { mergeClassInstanceDeckSessionMetadata } from '@/lib/card-live-session-metadata';
 import {
   parseAsyncSessionFromInstanceMetadata,
@@ -28,6 +29,8 @@ import { SessionDeckBuilder } from '@/features/live-video/shells/huddle/SessionD
 import { LiveSessionWorkoutPlayer } from '@/features/live-video/shells/huddle/LiveSessionWorkoutPlayer';
 import { initialSessionState } from '@/features/live-video/state/sessionStateMachine';
 import { ClassEditorWorkoutPicker } from '@/components/modals/class-modal/ClassEditorWorkoutPicker';
+import { ClassEditorRecordingSection } from '@/components/modals/class-modal/ClassEditorRecordingSection';
+import { useUserProfileStore } from '@/store/userProfileStore';
 
 type ClassEditorLiveDeckInnerProps = {
   workspaceId: string;
@@ -211,6 +214,7 @@ export function ClassEditor({
   const [liveStreamEnabled, setLiveStreamEnabled] = useState(false);
   const [asyncWorkoutEnabled, setAsyncWorkoutEnabled] = useState(false);
   const classWorkoutDeckScrollRef = useRef<HTMLDivElement>(null);
+  const profileId = useUserProfileStore((s) => s.profile?.id ?? null);
 
   const { createClass, saveClass } = useClassSaveAndCreate({
     setError,
@@ -262,16 +266,8 @@ export function ClassEditor({
       setRawInstanceMetadata(instMeta);
       const liveInv = parseLiveSessionInviteFromMessageMetadata(instMeta);
       const asyncInv = parseAsyncSessionFromInstanceMetadata(instMeta);
-      if (liveInv && !liveInv.endedAt) {
-        setLiveStreamEnabled(true);
-        setAsyncWorkoutEnabled(false);
-      } else if (asyncInv) {
-        setLiveStreamEnabled(false);
-        setAsyncWorkoutEnabled(true);
-      } else {
-        setLiveStreamEnabled(false);
-        setAsyncWorkoutEnabled(false);
-      }
+      setLiveStreamEnabled(Boolean(liveInv && !liveInv.endedAt));
+      setAsyncWorkoutEnabled(Boolean(asyncInv));
 
       const { intensity: intFromMeta, targetedFocus: tf } = parseFitnessFromOfferingMetadata(
         offering.metadata,
@@ -382,11 +378,13 @@ export function ClassEditor({
     const {
       data: { user: authUser },
     } = await supabase.auth.getUser();
+    const instanceIdForMerge = mode === 'edit' ? (resolvedInstanceId ?? instanceId ?? null) : null;
     const mergedInstanceMeta = mergeClassInstanceDeckSessionMetadata(payload.instance.metadata, {
       liveEnabled: liveStreamEnabled,
       asyncEnabled: asyncWorkoutEnabled,
       workspaceId,
       hostUserId: authUser?.id ?? null,
+      classInstanceId: instanceIdForMerge,
     });
     const finalPayload: ClassSavePayload = {
       ...payload,
@@ -396,6 +394,31 @@ export function ClassEditor({
     if (mode === 'create') {
       const ids = await createClass(finalPayload);
       if (ids) {
+        const mergedAfterCreate = mergeClassInstanceDeckSessionMetadata(mergedInstanceMeta, {
+          liveEnabled: liveStreamEnabled,
+          asyncEnabled: asyncWorkoutEnabled,
+          workspaceId,
+          hostUserId: authUser?.id ?? null,
+          classInstanceId: ids.instanceId,
+        });
+        const metadataChanged =
+          JSON.stringify(mergedAfterCreate) !== JSON.stringify(mergedInstanceMeta);
+        if (metadataChanged) {
+          const okFollowUp = await saveClass(ids.offeringId, ids.instanceId, {
+            ...finalPayload,
+            instance: { ...finalPayload.instance, metadata: mergedAfterCreate },
+          });
+          if (!okFollowUp) {
+            setResolvedOfferingId(ids.offeringId);
+            setResolvedInstanceId(ids.instanceId);
+            setRawInstanceMetadata(mergedInstanceMeta);
+            return;
+          }
+          setResolvedOfferingId(ids.offeringId);
+          setResolvedInstanceId(ids.instanceId);
+          setRawInstanceMetadata(mergedAfterCreate);
+          return;
+        }
         setResolvedOfferingId(ids.offeringId);
         setResolvedInstanceId(ids.instanceId);
         setRawInstanceMetadata(mergedInstanceMeta);
@@ -447,6 +470,19 @@ export function ClassEditor({
   );
 
   const resolvedDeckSession = useMemo(() => {
+    const iid = resolvedInstanceId ?? instanceId ?? null;
+    if (asyncWorkoutEnabled && iid) {
+      const hid =
+        asyncSessionForDeck?.hostUserId?.trim() ||
+        liveInviteForDeck?.hostUserId?.trim() ||
+        profileId;
+      if (!hid) return null;
+      return {
+        kind: 'async' as const,
+        sessionId: classDeckBuilderSessionId(iid),
+        hostUserId: hid,
+      };
+    }
     if (
       liveStreamEnabled &&
       liveInviteForDeck &&
@@ -467,7 +503,15 @@ export function ClassEditor({
       };
     }
     return null;
-  }, [liveStreamEnabled, asyncWorkoutEnabled, liveInviteForDeck, asyncSessionForDeck]);
+  }, [
+    asyncSessionForDeck,
+    asyncWorkoutEnabled,
+    instanceId,
+    liveInviteForDeck,
+    liveStreamEnabled,
+    profileId,
+    resolvedInstanceId,
+  ]);
 
   const showClassWorkoutDeck = mode === 'edit' && resolvedDeckSession != null;
 
@@ -668,6 +712,17 @@ export function ClassEditor({
                 />
               </div>
 
+              {mode === 'edit' && resolvedInstanceId ? (
+                <ClassEditorRecordingSection
+                  workspaceId={workspaceId}
+                  classInstanceId={resolvedInstanceId}
+                  canWrite={canWrite}
+                  disabledForm={disabledForm}
+                  rawInstanceMetadata={rawInstanceMetadata}
+                  setRawInstanceMetadata={setRawInstanceMetadata}
+                />
+              ) : null}
+
               <PrivacyToggle
                 id="class-live-stream"
                 title="Enable live video stream"
@@ -676,19 +731,17 @@ export function ClassEditor({
                 disabled={disabledForm}
                 onCheckedChange={(checked) => {
                   setLiveStreamEnabled(checked);
-                  if (checked) setAsyncWorkoutEnabled(false);
                 }}
               />
 
               <PrivacyToggle
                 id="class-async-workout"
                 title="Enable asynchronous workout"
-                description="Adds a shared workout queue for this class without live video. Members complete workouts on their own schedule."
+                description="Adds a shared workout queue for this class (recorded / on-demand). You can also enable live video; both can be on at once."
                 checked={asyncWorkoutEnabled}
                 disabled={disabledForm}
                 onCheckedChange={(checked) => {
                   setAsyncWorkoutEnabled(checked);
-                  if (checked) setLiveStreamEnabled(false);
                 }}
               />
 

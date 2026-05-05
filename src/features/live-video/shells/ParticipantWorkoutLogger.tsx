@@ -1,20 +1,36 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createClient } from '@utils/supabase/client';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useLiveSessionDeck } from '@/features/live-video/hooks/useLiveSessionDeck';
 import { useWorkoutLogs } from '@/features/live-video/hooks/useWorkoutLogs';
+import type { SessionPhase } from '@/features/live-video/state/sessionStateMachine';
 import { useLiveSessionRuntime } from '@/features/live-video/theater/live-session-runtime-context';
 import { formatUserFacingError } from '@/lib/format-error';
 import { metadataFieldsFromParsed } from '@/lib/item-metadata';
 import type { WorkoutExercise } from '@/lib/item-metadata';
 import { cn } from '@/lib/utils';
+import type { Database } from '@/types/database';
 import { useUserProfileStore } from '@/store/userProfileStore';
 import { toast } from 'sonner';
 
 export type ParticipantWorkoutLoggerProps = {
   className?: string;
+};
+
+export type ParticipantWorkoutLoggerCoreProps = {
+  className?: string;
+  sessionId: string;
+  supabase: SupabaseClient<Database>;
+  isHost: boolean;
+  phase: SessionPhase;
+  activeDeckItemId: string | null;
+  userId: string | null;
+  /** Copy when no queue card is active (async members pick their own card). */
+  noActiveSelectionMessage?: string;
 };
 
 function maxLoggedSetNumber(
@@ -64,18 +80,23 @@ function draftKey(exerciseName: string, setNumber: number): DraftKey {
   return `${exerciseName}\0${setNumber}`;
 }
 
-export function ParticipantWorkoutLogger({ className }: ParticipantWorkoutLoggerProps) {
-  const { state, sessionId, supabase, isHost } = useLiveSessionRuntime();
-  const isAmrapPhase = state.phase === 'amrap';
-  const userId = useUserProfileStore((s) => s.profile?.id ?? null);
+export function ParticipantWorkoutLoggerCore({
+  className,
+  sessionId,
+  supabase,
+  isHost,
+  phase,
+  activeDeckItemId,
+  userId,
+  noActiveSelectionMessage = 'Waiting for Host to select a workout…',
+}: ParticipantWorkoutLoggerCoreProps) {
+  const isAmrapPhase = phase === 'amrap';
 
   const deck = useLiveSessionDeck({
     supabase,
     sessionId,
     enabled: !isHost && Boolean(sessionId.trim()),
   });
-
-  const activeDeckItemId = state.activeDeckItemId;
 
   const activeRow = useMemo(
     () => deck.rows.find((r) => r.id === activeDeckItemId) ?? null,
@@ -113,13 +134,13 @@ export function ParticipantWorkoutLogger({ className }: ParticipantWorkoutLogger
     setDrafts({});
   }, [taskId]);
 
-  const prevPhaseRef = useRef(state.phase);
+  const prevPhaseRef = useRef(phase);
   useEffect(() => {
-    if (prevPhaseRef.current === 'amrap' && state.phase !== 'amrap') {
+    if (prevPhaseRef.current === 'amrap' && phase !== 'amrap') {
       void refreshWorkoutLogs();
     }
-    prevPhaseRef.current = state.phase;
-  }, [state.phase, refreshWorkoutLogs]);
+    prevPhaseRef.current = phase;
+  }, [phase, refreshWorkoutLogs]);
 
   /** Duplication runs in the AMRAP wrapper with a separate `useWorkoutLogs` instance — refresh on log inserts. */
   useEffect(() => {
@@ -255,7 +276,7 @@ export function ParticipantWorkoutLogger({ className }: ParticipantWorkoutLogger
           className,
         )}
       >
-        Waiting for Host to select a workout…
+        {noActiveSelectionMessage}
       </div>
     );
   }
@@ -281,7 +302,7 @@ export function ParticipantWorkoutLogger({ className }: ParticipantWorkoutLogger
           className,
         )}
       >
-        Waiting for Host to select a workout…
+        {noActiveSelectionMessage}
       </div>
     );
   }
@@ -514,5 +535,49 @@ export function ParticipantWorkoutLogger({ className }: ParticipantWorkoutLogger
         })}
       </div>
     </div>
+  );
+}
+
+export function ParticipantWorkoutLogger({ className }: ParticipantWorkoutLoggerProps) {
+  const { state, sessionId, supabase, isHost } = useLiveSessionRuntime();
+  const userId = useUserProfileStore((s) => s.profile?.id ?? null);
+
+  return (
+    <ParticipantWorkoutLoggerCore
+      className={className}
+      sessionId={sessionId}
+      supabase={supabase}
+      isHost={isHost}
+      phase={state.phase}
+      activeDeckItemId={state.activeDeckItemId}
+      userId={userId}
+    />
+  );
+}
+
+/** Async class playback: logs against the class draft deck session id with locally selected active card. */
+export function AsyncPlaybackWorkoutLogger({
+  className,
+  sessionId,
+  activeDeckItemId,
+}: {
+  className?: string;
+  sessionId: string;
+  activeDeckItemId: string | null;
+}) {
+  const supabase = useMemo(() => createClient(), []);
+  const userId = useUserProfileStore((s) => s.profile?.id ?? null);
+
+  return (
+    <ParticipantWorkoutLoggerCore
+      className={className}
+      sessionId={sessionId}
+      supabase={supabase}
+      isHost={false}
+      phase="warmup"
+      activeDeckItemId={activeDeckItemId}
+      userId={userId}
+      noActiveSelectionMessage="Select a workout card from the queue below."
+    />
   );
 }

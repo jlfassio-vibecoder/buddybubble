@@ -9,6 +9,7 @@ import { getAuthAppOrigin } from '@/lib/auth-app-origin';
 import { authCallbackAbsoluteUrl } from '@/lib/auth-callback-url';
 import { formatLoginAuthError, formatUserFacingError } from '@/lib/format-error';
 import { BB_INVITE_HANDOFF_SESSION_KEY } from '@/lib/invite-handoff-storage';
+import { withDefaultDashboardChatView } from '@/lib/default-dashboard-chat-view';
 import { safeNextPath } from '@/lib/safe-next-path';
 import { persistInviteHandoffToken } from '@/app/(dashboard)/onboarding/actions';
 import { reportInviteJourneyClient } from '@/lib/analytics/invite-journey-client';
@@ -58,7 +59,7 @@ type LoginFormProps = {
 export function LoginForm({ titleFontClassName }: LoginFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = safeNextPath(searchParams.get('next')) ?? '/app';
+  const next = withDefaultDashboardChatView(safeNextPath(searchParams.get('next')) ?? '/app');
   const inviteToken = searchParams.get('invite_token')?.trim() || null;
   const pkceCode = searchParams.get('code')?.trim() || null;
   const signupMode = searchParams.get('signup') === '1';

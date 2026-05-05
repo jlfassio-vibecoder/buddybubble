@@ -2829,6 +2829,10 @@ export type Database = {
       is_workspace_admin: { Args: { _workspace_id: string }; Returns: boolean };
       is_workspace_guest: { Args: { _workspace_id: string }; Returns: boolean };
       is_workspace_member: { Args: { _workspace_id: string }; Returns: boolean };
+      copy_class_deck_to_live_session: {
+        Args: { p_class_instance_id: string; p_live_session_id: string };
+        Returns: number;
+      };
       live_session_create: {
         Args: {
           p_agora_uid: string;

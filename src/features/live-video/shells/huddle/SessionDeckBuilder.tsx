@@ -37,6 +37,15 @@ import { useLayoutCommands } from '@/components/layout/layout-command-context';
 export type SessionDeckBuilderProps = {
   state: SessionState;
   className?: string;
+  /**
+   * Class async playback: show the hydrated draft deck as read-only tiles; clicking selects the
+   * active card for `ParticipantWorkoutLogger` (no reorder/remove).
+   */
+  asyncMemberReadOnlyQueue?: boolean;
+  /** Required when `asyncMemberReadOnlyQueue` — `bb-class-deck:<classInstanceId>`. */
+  asyncQueueSessionId?: string | null;
+  selectedAsyncDeckItemId?: string | null;
+  onAsyncSelectDeckItem?: (deckItemId: string | null) => void;
 };
 
 function ReadonlyDeckTile({
@@ -46,6 +55,7 @@ function ReadonlyDeckTile({
   isCompleted,
   tallCardChrome,
   isActive,
+  onSelect,
 }: {
   snapshot: SessionDeckSnapshot;
   workspaceCategory: WorkspaceCategory | null;
@@ -53,11 +63,14 @@ function ReadonlyDeckTile({
   isCompleted: boolean;
   tallCardChrome?: boolean;
   isActive?: boolean;
+  /** When set, tile is a button (async member picks active card for logging). */
+  onSelect?: () => void;
 }) {
-  return (
+  const card = (
     <div
       className={cn(
-        'relative w-64 shrink-0 cursor-default select-none rounded-xl transition-[box-shadow]',
+        'relative w-64 shrink-0 rounded-xl transition-[box-shadow]',
+        onSelect ? 'cursor-pointer select-none' : 'cursor-default select-none',
         isActive && 'ring-2 ring-primary ring-offset-2 ring-offset-background',
       )}
     >
@@ -79,6 +92,20 @@ function ReadonlyDeckTile({
       </div>
     </div>
   );
+
+  if (onSelect) {
+    return (
+      <button
+        type="button"
+        className="relative shrink-0 rounded-xl border-0 bg-transparent p-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={onSelect}
+      >
+        {card}
+      </button>
+    );
+  }
+
+  return card;
 }
 
 function SortableDeckTile({
@@ -178,7 +205,14 @@ const stripContainerClass = (selectingFromBoard: boolean) =>
     selectingFromBoard ? 'min-h-[min(200px,28vh)]' : 'min-h-[120px]',
   );
 
-export function SessionDeckBuilder({ state, className }: SessionDeckBuilderProps) {
+export function SessionDeckBuilder({
+  state,
+  className,
+  asyncMemberReadOnlyQueue = false,
+  asyncQueueSessionId = null,
+  selectedAsyncDeckItemId = null,
+  onAsyncSelectDeckItem,
+}: SessionDeckBuilderProps) {
   const { focusBoard } = useLayoutCommands();
   const runtime = useLiveSessionRuntimeOptional();
   /**
@@ -190,12 +224,24 @@ export function SessionDeckBuilder({ state, className }: SessionDeckBuilderProps
   const isLiveSessionParticipant = Boolean(runtime && liveSessionActive && !runtime.isHost);
   /** Editable host queue (DnD + board picker): not a joined non-host participant. */
   const isDeckHostUi = !isLiveSessionParticipant;
+  const isAsyncMemberQueue = Boolean(
+    asyncMemberReadOnlyQueue && (asyncQueueSessionId?.trim() ?? '').length > 0,
+  );
+  /** Host builder / live host strip — never async member playback strip. */
+  const showHostDeckUi = isDeckHostUi && !isAsyncMemberQueue;
   const fallbackSupabase = useMemo(() => createClient(), []);
 
   const participantDeck = useLiveSessionDeck({
     supabase: runtime?.supabase ?? fallbackSupabase,
     sessionId: runtime?.sessionId ?? '',
     enabled: Boolean(runtime && !runtime.isHost && runtime.sessionId.trim()),
+  });
+
+  // Copilot suggestion ignored: async member tiles come from provider-hydrated deck; this hook only supplies loading/error for the same session id—merging into one source would be a larger refactor.
+  const asyncQueueDeck = useLiveSessionDeck({
+    supabase: runtime?.supabase ?? fallbackSupabase,
+    sessionId: asyncQueueSessionId?.trim() ?? '',
+    enabled: isAsyncMemberQueue,
   });
 
   const participantSnapshots = useMemo((): SessionDeckSnapshot[] => {
@@ -216,9 +262,10 @@ export function SessionDeckBuilder({ state, className }: SessionDeckBuilderProps
   const [scaffoldDeck, setScaffoldDeck] = useState<SessionDeckSnapshot[]>([]);
 
   const deckToRender = useMemo(() => {
+    if (isAsyncMemberQueue) return deckContext?.deck ?? [];
     if (!isDeckHostUi) return participantSnapshots;
     return deckContext !== null ? deckContext.deck : scaffoldDeck;
-  }, [isDeckHostUi, participantSnapshots, deckContext, scaffoldDeck]);
+  }, [isAsyncMemberQueue, deckContext, isDeckHostUi, participantSnapshots, scaffoldDeck]);
 
   const applyDeckOrder = useCallback(
     (updater: (prev: SessionDeckSnapshot[]) => SessionDeckSnapshot[]) => {
@@ -248,6 +295,7 @@ export function SessionDeckBuilder({ state, className }: SessionDeckBuilderProps
   );
 
   useEffect(() => {
+    if (isAsyncMemberQueue) return;
     if (!runtime?.isHost) return;
     if (!activeSnapshotId) {
       runtime.actions.setActiveDeckItem(null);
@@ -255,10 +303,10 @@ export function SessionDeckBuilder({ state, className }: SessionDeckBuilderProps
     }
     const snap = deckToRender.find((s) => s.snapshotId === activeSnapshotId);
     runtime.actions.setActiveDeckItem(snap?.deckItemId ?? null);
-  }, [runtime, activeSnapshotId, deckToRender]);
+  }, [isAsyncMemberQueue, runtime, activeSnapshotId, deckToRender]);
 
   const enterSelectionMode = deckContext?.enterSelectionMode ?? (() => {});
-  const selectingFromBoard = Boolean(isDeckHostUi && deckContext?.isSelectingFromBoard);
+  const selectingFromBoard = Boolean(showHostDeckUi && deckContext?.isSelectingFromBoard);
 
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
   const workspaceId = activeWorkspace?.id ?? null;
@@ -297,19 +345,19 @@ export function SessionDeckBuilder({ state, className }: SessionDeckBuilderProps
 
   const ids = useMemo(() => deckToRender.map((s) => s.deckRowKey), [deckToRender]);
 
-  const participantStatus = !isDeckHostUi ? (
+  const participantStatus = !showHostDeckUi ? (
     <div className="px-0.5">
-      {participantDeck.loading ? (
+      {(isAsyncMemberQueue ? asyncQueueDeck.loading : participantDeck.loading) ? (
         <p className="text-xs text-muted-foreground">Loading queue…</p>
-      ) : participantDeck.error ? (
+      ) : (isAsyncMemberQueue ? asyncQueueDeck.error : participantDeck.error) ? (
         <p className="text-xs text-destructive" role="alert">
-          {participantDeck.error.message}
+          {(isAsyncMemberQueue ? asyncQueueDeck.error : participantDeck.error)?.message}
         </p>
       ) : null}
     </div>
   ) : null;
 
-  if (!isDeckHostUi) {
+  if (!showHostDeckUi) {
     return (
       <div className={cn('flex w-full min-h-0 shrink-0 flex-col gap-2', className)}>
         <div className="flex shrink-0 items-baseline justify-between gap-2 px-0.5">
@@ -329,7 +377,16 @@ export function SessionDeckBuilder({ state, className }: SessionDeckBuilderProps
                 isCompleted={taskColumnIsCompletionStatus(snapshot.task.status, columnDefs)}
                 tallCardChrome={false}
                 isActive={
-                  state.activeDeckItemId != null && state.activeDeckItemId === snapshot.snapshotId
+                  isAsyncMemberQueue
+                    ? selectedAsyncDeckItemId != null &&
+                      selectedAsyncDeckItemId === snapshot.snapshotId
+                    : state.activeDeckItemId != null &&
+                      state.activeDeckItemId === snapshot.snapshotId
+                }
+                onSelect={
+                  isAsyncMemberQueue
+                    ? () => onAsyncSelectDeckItem?.(snapshot.deckItemId ?? snapshot.snapshotId)
+                    : undefined
                 }
               />
             ))}

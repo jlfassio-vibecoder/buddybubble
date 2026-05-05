@@ -9,6 +9,7 @@ import { ParticipantPreJoinSummary } from '@/features/live-video/shells/Particip
 import { agoraUidFromUuid } from '@/lib/live-video/agora-uid';
 import type { Database } from '@/types/database';
 import type { LiveVideoActiveSession } from '@/store/liveVideoStore';
+import { copyClassDeckToLiveSession } from '@/features/live-video/shells/huddle/live-deck-merge';
 
 export type DashboardLiveVideoDockProps = {
   session: LiveVideoActiveSession;
@@ -57,6 +58,8 @@ function DashboardLiveVideoDockRouter({
   const isHost = localUserId === session.hostUserId;
   const resolvedDisplayName = displayNameProp?.trim() || localUserId;
   const registeredLiveSessionIdRef = useRef<string | null>(null);
+  /** Avoid duplicate class-deck merge RPC attempts for the same live session in one mount. */
+  const classDeckMergeAttemptedForSessionRef = useRef<string | null>(null);
   const [liveDbReady, setLiveDbReady] = useState(false);
 
   useLayoutEffect(() => {
@@ -102,6 +105,23 @@ function DashboardLiveVideoDockRouter({
           );
           return;
         }
+        // After durable `live_sessions` registration, merge class draft deck (bb-class-deck:…)
+        // into this live session id so host/participant deck hooks see rows (RPC is idempotent).
+        const sourceInstanceId = session.sourceInstanceId?.trim() ?? '';
+        if (sourceInstanceId && classDeckMergeAttemptedForSessionRef.current !== liveSessionRowId) {
+          const mergeResult = await copyClassDeckToLiveSession(
+            supabase,
+            sourceInstanceId,
+            liveSessionRowId,
+          );
+          if (!mergeResult.ok) {
+            if (process.env.NODE_ENV === 'development') {
+              console.warn('[Live Merge] copyClassDeckToLiveSession failed:', mergeResult.reason);
+            }
+          }
+          classDeckMergeAttemptedForSessionRef.current = liveSessionRowId;
+        }
+        if (cancelled) return;
         registeredLiveSessionIdRef.current = session.sessionId;
         setLiveDbReady(true);
         return;
@@ -139,8 +159,17 @@ function DashboardLiveVideoDockRouter({
     return () => {
       cancelled = true;
       registeredLiveSessionIdRef.current = null;
+      classDeckMergeAttemptedForSessionRef.current = null;
     };
-  }, [isConnected, isHost, localUserId, resolvedDisplayName, session.sessionId, supabase]);
+  }, [
+    isConnected,
+    isHost,
+    localUserId,
+    resolvedDisplayName,
+    session.sessionId,
+    session.sourceInstanceId,
+    supabase,
+  ]);
 
   if (process.env.NODE_ENV === 'development') {
     console.log(
