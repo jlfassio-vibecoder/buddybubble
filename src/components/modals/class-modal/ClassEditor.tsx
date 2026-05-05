@@ -411,8 +411,13 @@ export function ClassEditor({
           if (!okFollowUp) {
             setResolvedOfferingId(ids.offeringId);
             setResolvedInstanceId(ids.instanceId);
-            // Follow-up save failed: still show merged-after-create metadata so async/live toggles match user intent.
-            setRawInstanceMetadata(mergedAfterCreate);
+            // Follow-up save failed: instance row still has insert-time metadata only.
+            // Keep UI aligned with DB (avoid showing async_session that never persisted).
+            setRawInstanceMetadata(mergedInstanceMeta);
+            const liveInv = parseLiveSessionInviteFromMessageMetadata(mergedInstanceMeta);
+            const asyncInv = parseAsyncSessionFromInstanceMetadata(mergedInstanceMeta);
+            setLiveStreamEnabled(Boolean(liveInv && !liveInv.endedAt));
+            setAsyncWorkoutEnabled(Boolean(asyncInv));
             return;
           }
           setResolvedOfferingId(ids.offeringId);
