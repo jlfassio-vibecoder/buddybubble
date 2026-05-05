@@ -361,12 +361,15 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
         options: { redirectTo },
       });
       if (oauthError) {
-        console.error(oauthError);
+        console.error(
+          'Login error:',
+          oauthError instanceof Error ? oauthError.message : 'Unknown error',
+        );
         toast.error('Failed to initialize Google login.');
         return;
       }
     } catch (e) {
-      console.error(e);
+      console.error('Login error:', e instanceof Error ? e.message : 'Unknown error');
       toast.error('Failed to initialize Google login.');
     } finally {
       setIsGoogleLoading(false);

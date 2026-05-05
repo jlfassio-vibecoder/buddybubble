@@ -19,6 +19,7 @@ import {
 } from '@/types/live-session-invite';
 import { toast } from 'sonner';
 
+// Copilot suggestion ignored: PR title and scope are edited on GitHub, not in application source.
 const CLASS_RECORDING_MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024;
 
 export type ClassEditorRecordingSectionProps = {
@@ -28,6 +29,8 @@ export type ClassEditorRecordingSectionProps = {
   disabledForm: boolean;
   rawInstanceMetadata: Json;
   setRawInstanceMetadata: (next: Json) => void;
+  /** After a successful instance metadata write, sync `class_recording` into parent form state (avoids stale main Save). */
+  onRecordingMetadataUpdated?: (newRecordingPayload: ClassRecordingPayload | null) => void;
 };
 
 function statusLabel(rec: ClassRecordingPayload | null): string {
@@ -53,6 +56,7 @@ export function ClassEditorRecordingSection({
   disabledForm,
   rawInstanceMetadata,
   setRawInstanceMetadata,
+  onRecordingMetadataUpdated,
 }: ClassEditorRecordingSectionProps) {
   const supabase = useMemo(() => createClient(), []);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -92,9 +96,14 @@ export function ClassEditorRecordingSection({
         .update({ metadata: nextMeta })
         .eq('id', classInstanceId);
       if (error) throw error;
-      setRawInstanceMetadata(nextMeta);
+      const recordingPayload = parseClassRecordingFromInstanceMetadata(nextMeta);
+      if (onRecordingMetadataUpdated) {
+        onRecordingMetadataUpdated(recordingPayload);
+      } else {
+        setRawInstanceMetadata(nextMeta);
+      }
     },
-    [classInstanceId, setRawInstanceMetadata, supabase],
+    [classInstanceId, onRecordingMetadataUpdated, setRawInstanceMetadata, supabase],
   );
 
   const removeOldStorageObject = useCallback(
@@ -133,11 +142,7 @@ export function ClassEditorRecordingSection({
         }
 
         setUploading(true);
-        const ext =
-          file.name.includes('.') && /\.[a-z0-9]+$/i.test(file.name)
-            ? file.name.slice(file.name.lastIndexOf('.'))
-            : '.mp4';
-        const objectName = `recording-${Date.now()}${ext}`;
+        const objectName = `recording-${Date.now()}.mp4`;
         const storagePath = buildClassRecordingObjectPath(workspaceId, classInstanceId, objectName);
 
         const now = new Date().toISOString();
@@ -161,7 +166,7 @@ export function ClassEditorRecordingSection({
             .upload(storagePath, file, {
               upsert: true,
               cacheControl: '3600',
-              contentType: file.type || 'video/mp4',
+              contentType: 'video/mp4',
             });
 
           if (upErr) {

@@ -20,6 +20,7 @@ import { mergeClassInstanceDeckSessionMetadata } from '@/lib/card-live-session-m
 import {
   parseAsyncSessionFromInstanceMetadata,
   parseLiveSessionInviteFromMessageMetadata,
+  type ClassRecordingPayload,
 } from '@/types/live-session-invite';
 import {
   WorkoutDeckSelectionProvider,
@@ -30,6 +31,7 @@ import { LiveSessionWorkoutPlayer } from '@/features/live-video/shells/huddle/Li
 import { initialSessionState } from '@/features/live-video/state/sessionStateMachine';
 import { ClassEditorWorkoutPicker } from '@/components/modals/class-modal/ClassEditorWorkoutPicker';
 import { ClassEditorRecordingSection } from '@/components/modals/class-modal/ClassEditorRecordingSection';
+import { mergeClassRecordingIntoInstanceMetadata } from '@/lib/class-recording-metadata';
 import { useUserProfileStore } from '@/store/userProfileStore';
 
 type ClassEditorLiveDeckInnerProps = {
@@ -222,6 +224,10 @@ export function ClassEditor({
     onCreated,
     onSaved,
   });
+
+  const onRecordingMetadataUpdated = useCallback((payload: ClassRecordingPayload | null) => {
+    setRawInstanceMetadata((prev) => mergeClassRecordingIntoInstanceMetadata(prev, payload));
+  }, []);
 
   useEffect(() => {
     if (mode !== 'edit' || !instanceId) {
@@ -726,6 +732,7 @@ export function ClassEditor({
                   disabledForm={disabledForm}
                   rawInstanceMetadata={rawInstanceMetadata}
                   setRawInstanceMetadata={setRawInstanceMetadata}
+                  onRecordingMetadataUpdated={onRecordingMetadataUpdated}
                 />
               ) : null}
 
