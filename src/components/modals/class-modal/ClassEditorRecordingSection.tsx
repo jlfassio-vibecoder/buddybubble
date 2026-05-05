@@ -119,7 +119,8 @@ export function ClassEditorRecordingSection({
       if (!canWrite || disabledForm || uploading) return;
 
       try {
-        if (file.type !== 'video/mp4') {
+        const hasMp4Extension = /\.mp4$/i.test(file.name);
+        if (file.type !== 'video/mp4' && !hasMp4Extension) {
           toast.error(
             'Please upload an MP4 file. (.mov and other formats are not supported for web playback).',
           );
