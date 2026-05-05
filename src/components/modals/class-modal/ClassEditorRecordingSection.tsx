@@ -118,97 +118,99 @@ export function ClassEditorRecordingSection({
     async (file: File) => {
       if (!canWrite || disabledForm || uploading) return;
 
-      if (file.type !== 'video/mp4') {
-        toast.error(
-          'Please upload an MP4 file. (.mov and other formats are not supported for web playback).',
-        );
-        clearFileInput();
-        return;
-      }
-
-      if (file.size > CLASS_RECORDING_MAX_FILE_BYTES) {
-        toast.error('File exceeds the 2GB limit. Please compress your video.');
-        clearFileInput();
-        return;
-      }
-
-      setUploading(true);
-      const ext =
-        file.name.includes('.') && /\.[a-z0-9]+$/i.test(file.name)
-          ? file.name.slice(file.name.lastIndexOf('.'))
-          : '.mp4';
-      const objectName = `recording-${Date.now()}${ext}`;
-      const storagePath = buildClassRecordingObjectPath(workspaceId, classInstanceId, objectName);
-
-      const now = new Date().toISOString();
-      let meta: Json = rawInstanceMetadata;
-      const prev = parseClassRecordingFromInstanceMetadata(meta);
-
-      const processingPayload: ClassRecordingPayload = {
-        type: 'class_recording',
-        status: 'processing',
-        storagePath,
-        ...(prev?.createdAt ? { createdAt: prev.createdAt } : { createdAt: now }),
-        updatedAt: now,
-      };
-
       try {
-        meta = mergeClassRecordingIntoInstanceMetadata(meta, processingPayload);
-        await persistMetadata(meta);
-
-        const { error: upErr } = await supabase.storage
-          .from(CLASS_RECORDINGS_BUCKET)
-          .upload(storagePath, file, {
-            upsert: true,
-            cacheControl: '3600',
-            contentType: file.type || 'video/mp4',
-          });
-
-        if (upErr) {
-          meta = mergeClassRecordingIntoInstanceMetadata(meta, {
-            type: 'class_recording',
-            status: 'failed',
-            storagePath,
-            createdAt: processingPayload.createdAt,
-            updatedAt: new Date().toISOString(),
-            errorMessage: formatUserFacingError(upErr),
-          });
-          await persistMetadata(meta);
-          toast.error(formatUserFacingError(upErr));
+        if (file.type !== 'video/mp4') {
+          toast.error(
+            'Please upload an MP4 file. (.mov and other formats are not supported for web playback).',
+          );
           return;
         }
 
-        await removeOldStorageObject(
-          prev?.storagePath && prev.storagePath !== storagePath ? prev.storagePath : undefined,
-        );
+        if (file.size > CLASS_RECORDING_MAX_FILE_BYTES) {
+          toast.error('File exceeds the 2GB limit. Please compress your video.');
+          return;
+        }
 
-        meta = mergeClassRecordingIntoInstanceMetadata(meta, {
+        setUploading(true);
+        const ext =
+          file.name.includes('.') && /\.[a-z0-9]+$/i.test(file.name)
+            ? file.name.slice(file.name.lastIndexOf('.'))
+            : '.mp4';
+        const objectName = `recording-${Date.now()}${ext}`;
+        const storagePath = buildClassRecordingObjectPath(workspaceId, classInstanceId, objectName);
+
+        const now = new Date().toISOString();
+        let meta: Json = rawInstanceMetadata;
+        const prev = parseClassRecordingFromInstanceMetadata(meta);
+
+        const processingPayload: ClassRecordingPayload = {
           type: 'class_recording',
-          status: 'ready',
+          status: 'processing',
           storagePath,
-          createdAt: processingPayload.createdAt,
-          updatedAt: new Date().toISOString(),
-        });
-        await persistMetadata(meta);
-        toast.success('Recording uploaded');
-      } catch (e) {
-        const msg = formatUserFacingError(e);
+          ...(prev?.createdAt ? { createdAt: prev.createdAt } : { createdAt: now }),
+          updatedAt: now,
+        };
+
         try {
+          meta = mergeClassRecordingIntoInstanceMetadata(meta, processingPayload);
+          await persistMetadata(meta);
+
+          const { error: upErr } = await supabase.storage
+            .from(CLASS_RECORDINGS_BUCKET)
+            .upload(storagePath, file, {
+              upsert: true,
+              cacheControl: '3600',
+              contentType: file.type || 'video/mp4',
+            });
+
+          if (upErr) {
+            meta = mergeClassRecordingIntoInstanceMetadata(meta, {
+              type: 'class_recording',
+              status: 'failed',
+              storagePath,
+              createdAt: processingPayload.createdAt,
+              updatedAt: new Date().toISOString(),
+              errorMessage: formatUserFacingError(upErr),
+            });
+            await persistMetadata(meta);
+            toast.error(formatUserFacingError(upErr));
+            return;
+          }
+
+          await removeOldStorageObject(
+            prev?.storagePath && prev.storagePath !== storagePath ? prev.storagePath : undefined,
+          );
+
           meta = mergeClassRecordingIntoInstanceMetadata(meta, {
             type: 'class_recording',
-            status: 'failed',
+            status: 'ready',
             storagePath,
             createdAt: processingPayload.createdAt,
             updatedAt: new Date().toISOString(),
-            errorMessage: msg,
           });
           await persistMetadata(meta);
-        } catch {
-          /* ignore secondary failure */
+          toast.success('Recording uploaded');
+        } catch (e) {
+          const msg = formatUserFacingError(e);
+          try {
+            meta = mergeClassRecordingIntoInstanceMetadata(meta, {
+              type: 'class_recording',
+              status: 'failed',
+              storagePath,
+              createdAt: processingPayload.createdAt,
+              updatedAt: new Date().toISOString(),
+              errorMessage: msg,
+            });
+            await persistMetadata(meta);
+          } catch {
+            /* ignore secondary failure */
+          }
+          toast.error(msg);
+        } finally {
+          setUploading(false);
         }
-        toast.error(msg);
       } finally {
-        setUploading(false);
+        clearFileInput();
       }
     },
     [
@@ -263,7 +265,7 @@ export function ClassEditorRecordingSection({
       <div className="space-y-1">
         <Label>Status</Label>
         <p className="text-sm text-foreground">{statusLabel(recording)}</p>
-        {recording?.playbackUrl && !recording.storagePath && !showAttachedRecordingCard ? (
+        {recording?.playbackUrl && !recording.storagePath ? (
           <p className="break-all text-[11px] text-muted-foreground">
             External URL (legacy): {recording.playbackUrl}
           </p>
@@ -397,7 +399,6 @@ export function ClassEditorRecordingSection({
         onChange={(e) => {
           const f = e.target.files?.[0];
           if (f) void handleUploadFile(f);
-          e.target.value = '';
         }}
       />
     </div>
