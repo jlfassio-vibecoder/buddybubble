@@ -42,7 +42,7 @@ let moduleLastDeckAnchorSessionId: string | null = null;
 let moduleDeckFlushCompletedSessionId: string | null = null;
 
 function logDeckWriteError(scope: string, err: unknown) {
-  console.error(`[live_session_deck] ${scope}`, err);
+  console.error('[Deck Selection]', scope, err instanceof Error ? err.message : 'Unknown error');
   toast.error(formatUserFacingError(err));
 }
 
