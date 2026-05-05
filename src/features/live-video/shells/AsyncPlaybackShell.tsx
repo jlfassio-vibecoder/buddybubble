@@ -34,7 +34,7 @@ function AsyncPlaybackShellInner({ classInstanceId, onClose, className }: AsyncP
     [classInstanceId],
   );
   const [isPlaying, setIsPlaying] = useState(false);
-  const [selectedDeckItemId, setSelectedDeckItemId] = useState<string | null>(null);
+  const [localActiveDeckItemId, setLocalActiveDeckItemId] = useState<string | null>(null);
   const [recordingRec, setRecordingRec] = useState<ClassRecordingPayload | null>(null);
   const [resolvedVideoUrl, setResolvedVideoUrl] = useState<string | null>(null);
   const [recordingLoadError, setRecordingLoadError] = useState<string | null>(null);
@@ -113,12 +113,11 @@ function AsyncPlaybackShellInner({ classInstanceId, onClose, className }: AsyncP
   }, [recordingRec, supabase]);
 
   useEffect(() => {
-    if (selectedDeckItemId != null) return;
+    if (localActiveDeckItemId) return;
+    if (deckCtx.deck.length === 0) return;
     const first = deckCtx.deck[0];
-    if (first) {
-      setSelectedDeckItemId(first.deckItemId ?? first.snapshotId);
-    }
-  }, [deckCtx.deck, selectedDeckItemId]);
+    setLocalActiveDeckItemId(first.deckItemId ?? first.snapshotId);
+  }, [deckCtx.deck, localActiveDeckItemId]);
 
   const recordingProcessing = recordingRec?.status === 'processing';
   const recordingFailed = recordingRec?.status === 'failed';
@@ -135,8 +134,8 @@ function AsyncPlaybackShellInner({ classInstanceId, onClose, className }: AsyncP
   const queueProps = {
     asyncMemberReadOnlyQueue: true as const,
     asyncQueueSessionId: deckSessionId,
-    selectedAsyncDeckItemId: selectedDeckItemId,
-    onAsyncSelectDeckItem: setSelectedDeckItemId,
+    selectedAsyncDeckItemId: localActiveDeckItemId,
+    onAsyncSelectDeckItem: (itemId: string | null) => setLocalActiveDeckItemId(itemId),
   };
 
   return (
@@ -149,7 +148,7 @@ function AsyncPlaybackShellInner({ classInstanceId, onClose, className }: AsyncP
           subtitleOverride={
             isPlaying
               ? 'Log your sets alongside the recording. Tap a card in the queue to switch workouts.'
-              : 'Review the workout queue, then play the class recording when it’s available.'
+              : 'Review exercises for each queue card below, then play the class recording when it’s available.'
           }
         />
         <Button type="button" size="sm" variant="outline" className="shrink-0" onClick={onClose}>
@@ -158,53 +157,62 @@ function AsyncPlaybackShellInner({ classInstanceId, onClose, className }: AsyncP
       </div>
 
       {!isPlaying ? (
-        <>
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+          <div className="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row">
+            <div className="flex min-h-[220px] min-w-0 flex-1 flex-col lg:max-w-md">
+              <AsyncPlaybackWorkoutLogger
+                className="min-h-0 flex-1 rounded-lg border border-border bg-muted/10 p-2"
+                sessionId={deckSessionId}
+                activeDeckItemId={localActiveDeckItemId}
+              />
+            </div>
+            <div className="flex min-h-0 min-w-0 flex-[1.4] flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-border bg-muted/10 px-4 py-8">
+              {recordingLoadError ? (
+                <p className="max-w-md text-center text-sm text-destructive" role="alert">
+                  {recordingLoadError}
+                </p>
+              ) : null}
+              {recordingProcessing && !recordingLoadError ? (
+                <p className="max-w-md text-center text-sm text-muted-foreground" role="status">
+                  Recording is processing — check back shortly. You can still review the workout
+                  queue.
+                </p>
+              ) : null}
+              {recordingFailed && !recordingLoadError ? (
+                <p className="max-w-md text-center text-sm text-destructive" role="alert">
+                  {recordingRec?.errorMessage?.trim()
+                    ? recordingRec.errorMessage.trim()
+                    : 'Recording failed or is unavailable.'}
+                </p>
+              ) : null}
+              {!recordingProcessing &&
+              !recordingFailed &&
+              !recordingReadyToPlay &&
+              !recordingLoadError ? (
+                <p className="max-w-md text-center text-sm text-muted-foreground">
+                  {recordingRec?.status === 'ready'
+                    ? 'Preparing playback link…'
+                    : 'Class recording isn’t available yet. You can still review exercises and the queue below.'}
+                </p>
+              ) : null}
+              <Button
+                type="button"
+                size="lg"
+                className="gap-2 shadow-md"
+                disabled={!canStartTheater}
+                onClick={() => setIsPlaying(true)}
+              >
+                <Play className="size-4 shrink-0" aria-hidden />
+                Play
+              </Button>
+            </div>
+          </div>
           <SessionDeckBuilder
             className="min-h-0 min-w-0 shrink-0"
             state={initialSessionState}
             {...queueProps}
           />
-          <div className="flex flex-col items-center justify-center gap-3 py-6">
-            {recordingLoadError ? (
-              <p className="max-w-md text-center text-sm text-destructive" role="alert">
-                {recordingLoadError}
-              </p>
-            ) : null}
-            {recordingProcessing && !recordingLoadError ? (
-              <p className="max-w-md text-center text-sm text-muted-foreground" role="status">
-                Recording is processing — check back shortly. You can still review the workout
-                queue.
-              </p>
-            ) : null}
-            {recordingFailed && !recordingLoadError ? (
-              <p className="max-w-md text-center text-sm text-destructive" role="alert">
-                {recordingRec?.errorMessage?.trim()
-                  ? recordingRec.errorMessage.trim()
-                  : 'Recording failed or is unavailable.'}
-              </p>
-            ) : null}
-            {!recordingProcessing &&
-            !recordingFailed &&
-            !recordingReadyToPlay &&
-            !recordingLoadError ? (
-              <p className="max-w-md text-center text-sm text-muted-foreground">
-                {recordingRec?.status === 'ready'
-                  ? 'Preparing playback link…'
-                  : 'Class recording isn’t available yet. You can still review the workout queue below.'}
-              </p>
-            ) : null}
-            <Button
-              type="button"
-              size="lg"
-              className="gap-2"
-              disabled={!canStartTheater}
-              onClick={() => setIsPlaying(true)}
-            >
-              <Play className="size-4 shrink-0" aria-hidden />
-              Play
-            </Button>
-          </div>
-        </>
+        </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
           <div className="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row">
@@ -212,7 +220,7 @@ function AsyncPlaybackShellInner({ classInstanceId, onClose, className }: AsyncP
               <AsyncPlaybackWorkoutLogger
                 className="min-h-0 flex-1 rounded-lg border border-border bg-muted/10 p-2"
                 sessionId={deckSessionId}
-                activeDeckItemId={selectedDeckItemId}
+                activeDeckItemId={localActiveDeckItemId}
               />
             </div>
             <div className="flex min-h-0 min-w-0 flex-[1.4] flex-col justify-center">
