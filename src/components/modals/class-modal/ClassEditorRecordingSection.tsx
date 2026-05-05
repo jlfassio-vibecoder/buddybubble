@@ -116,9 +116,9 @@ export function ClassEditorRecordingSection({
 
   const handleUploadFile = useCallback(
     async (file: File) => {
-      if (!canWrite || disabledForm || uploading) return;
-
       try {
+        if (!canWrite || disabledForm || uploading) return;
+
         const hasMp4Extension = /\.mp4$/i.test(file.name);
         if (file.type !== 'video/mp4' && !hasMp4Extension) {
           toast.error(
