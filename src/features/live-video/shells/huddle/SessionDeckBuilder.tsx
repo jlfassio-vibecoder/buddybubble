@@ -237,6 +237,7 @@ export function SessionDeckBuilder({
     enabled: Boolean(runtime && !runtime.isHost && runtime.sessionId.trim()),
   });
 
+  // Copilot suggestion ignored: async member tiles come from provider-hydrated deck; this hook only supplies loading/error for the same session id—merging into one source would be a larger refactor.
   const asyncQueueDeck = useLiveSessionDeck({
     supabase: runtime?.supabase ?? fallbackSupabase,
     sessionId: asyncQueueSessionId?.trim() ?? '',

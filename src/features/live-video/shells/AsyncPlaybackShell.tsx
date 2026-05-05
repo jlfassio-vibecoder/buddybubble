@@ -271,7 +271,6 @@ export function AsyncPlaybackShell({
     <WorkoutDeckSelectionProvider
       key={deckSessionId}
       sessionIdOverride={deckSessionId}
-      hostUserIdOverride={profileId}
       disableGlobalBoardBridge
     >
       <AsyncPlaybackShellInner

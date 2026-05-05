@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr';
 import type { CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { BB_PASSWORD_SETUP_PENDING_COOKIE } from '@/lib/login-password-setup-cookie';
+import { withDefaultDashboardChatView } from '@/lib/default-dashboard-chat-view';
 import { safeNextPath } from '@/lib/safe-next-path';
 import { supabaseAuthCookieOptionsForUrl } from './auth-cookie-options';
 import { getSupabasePublishableKey, getSupabaseUrl } from './env';
@@ -89,7 +90,7 @@ export async function updateSession(request: NextRequest) {
       copyCookies(supabaseResponse, redirectResponse);
       return redirectResponse;
     }
-    const targetPath = safe ?? '/app';
+    const targetPath = withDefaultDashboardChatView(safe ?? '/app');
     const target = new URL(targetPath, request.url);
     const redirectResponse = NextResponse.redirect(target);
     copyCookies(supabaseResponse, redirectResponse);

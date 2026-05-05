@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@utils/supabase/client';
 import { Button } from '@/components/ui/button';
 import { KanbanBoard } from '@/components/board/KanbanBoard';
@@ -93,7 +93,7 @@ function StandaloneClassDeckBuilderInner({
   guestTaskUserId,
   className,
 }: StandaloneClassDeckBuilderProps) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const { focusBoard } = useLayoutCommands();
   const deckCtx = useWorkoutDeckSelection();
   const profileId = useUserProfileStore((s) => s.profile?.id ?? null);
