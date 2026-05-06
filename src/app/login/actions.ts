@@ -8,7 +8,6 @@ import { getClientIpFromHeaders } from '@/lib/client-ip';
 import { classifyAuthUserForLogin } from '@/lib/login-identity-classify';
 import { enforceLoginIdentityRateLimit } from '@/lib/login-identity-rate-limit';
 import { createServiceRoleClient } from '@/lib/supabase-service-role';
-import { createClient } from '@utils/supabase/server';
 
 const EMAIL_MAX_LEN = 254;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -23,7 +22,9 @@ export type RequestPasswordResetResult = { ok: true } | { ok: false; error: stri
 
 /**
  * User-initiated password reset (e.g. from login password step).
- * Uses anon Supabase client; same redirect pattern as `checkUserIdentityAction` recovery sends.
+ * Service-role `generateLink({ type: 'recovery' })` plus Resend — same redirect contract as
+ * `checkUserIdentityAction` recovery fallback; avoids PKCE verifier coupling from
+ * `resetPasswordForEmail`.
  */
 export async function requestPasswordResetAction(input: {
   email: string;
@@ -52,19 +53,46 @@ export async function requestPasswordResetAction(input: {
   const origin = getCanonicalOrigin();
   const redirectTo = authCallbackAbsoluteUrl(origin, '/update-password', invite);
 
+  let admin: ReturnType<typeof createServiceRoleClient>;
   try {
-    const supabase = await createClient();
-    const { error } = await supabase.auth.resetPasswordForEmail(emailRaw, { redirectTo });
-    if (error) {
-      console.error('[requestPasswordResetAction] resetPasswordForEmail', error.message);
-      return { ok: false, error: 'Could not send reset link. Try again shortly.' };
-    }
-    return { ok: true };
+    admin = createServiceRoleClient();
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error('[requestPasswordResetAction]', msg);
+    console.error('[requestPasswordResetAction] service role client:', msg);
     return { ok: false, error: 'Could not send reset link. Try again shortly.' };
   }
+
+  const user = await findAuthUserByEmail(admin, emailRaw);
+  if (!user) {
+    return { ok: true };
+  }
+
+  const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+    type: 'recovery',
+    email: emailRaw,
+    options: { redirectTo },
+  });
+  if (linkErr || !linkData?.properties?.action_link) {
+    console.error('[requestPasswordResetAction] generateLink recovery', linkErr?.message);
+    return { ok: false, error: 'Could not send reset link. Try again shortly.' };
+  }
+  const actionLink = linkData.properties.action_link;
+  try {
+    const { sendAccountRecoveryLoginEmail } = await import('@/lib/account-recovery-login-email');
+    const dup = await sendAccountRecoveryLoginEmail({
+      to: emailRaw,
+      recoveryLinkUrl: actionLink,
+    });
+    if (dup.error) {
+      console.error('[requestPasswordResetAction] recovery email', dup.error);
+      return { ok: false, error: 'Could not send reset link. Try again shortly.' };
+    }
+  } catch (e) {
+    console.error('[requestPasswordResetAction] recovery email send', e);
+    return { ok: false, error: 'Could not send reset link. Try again shortly.' };
+  }
+
+  return { ok: true };
 }
 
 async function findAuthUserByEmail(
