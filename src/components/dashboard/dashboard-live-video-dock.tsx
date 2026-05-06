@@ -1,6 +1,14 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { toast } from 'sonner';
 import { createClient } from '@utils/supabase/client';
@@ -62,9 +70,7 @@ function DashboardLiveVideoDockRouter({
   const registeredLiveSessionIdRef = useRef<string | null>(null);
   /** Avoid duplicate class-deck merge RPC attempts for the same live session in one mount. */
   const classDeckMergeAttemptedForSessionRef = useRef<string | null>(null);
-  /** One `agora-recording-start` dispatch per live session row after host DB registration (cleared on disconnect cleanup). */
-  const recordingCloudStartSentForSessionRef = useRef<string | null>(null);
-  /** At most one host toast per live session when `agora-recording-start` fails. */
+  /** At most one host toast per live session when manual `agora-recording-start` fails. */
   const recordingStartFailureToastForSessionRef = useRef<string | null>(null);
   const [liveDbReady, setLiveDbReady] = useState(false);
   /** Host-only: `class_instances.metadata.class_recording.status === 'processing'` for async pipeline UX. */
@@ -120,10 +126,64 @@ function DashboardLiveVideoDockRouter({
     };
   }, [isHost, classInstanceIdForRecording, supabase]);
 
+  const handleStartRecording = useCallback(() => {
+    if (!isHost) return;
+    const classInstanceForRecording = session.sourceInstanceId?.trim() ?? '';
+    if (!classInstanceForRecording) return;
+    const liveSessionRowId = session.sessionId.trim();
+    if (!liveSessionRowId) return;
+
+    void supabase.functions
+      .invoke('agora-recording-start', {
+        body: {
+          classInstanceId: classInstanceForRecording,
+          channelName: session.channelId,
+          workspaceId: session.workspaceId,
+        },
+      })
+      .then(({ error: fnError, data }) => {
+        const toastKey = liveSessionRowId;
+        if (fnError) {
+          console.error('[Recording] Failed to start Agora recording.');
+          if (recordingStartFailureToastForSessionRef.current !== toastKey) {
+            recordingStartFailureToastForSessionRef.current = toastKey;
+            toast.error(
+              'Cloud recording could not start. You can upload a recording manually from the class editor later.',
+            );
+          }
+          return;
+        }
+        if (
+          data &&
+          typeof data === 'object' &&
+          'ok' in data &&
+          (data as { ok?: boolean }).ok === false
+        ) {
+          console.error('[Recording] Failed to start Agora recording.');
+          if (recordingStartFailureToastForSessionRef.current !== toastKey) {
+            recordingStartFailureToastForSessionRef.current = toastKey;
+            toast.error(
+              'Cloud recording could not start. You can upload a recording manually from the class editor later.',
+            );
+          }
+        }
+      })
+      .catch(() => {
+        console.error('[Recording] Failed to start Agora recording.');
+      });
+  }, [
+    isHost,
+    session.sourceInstanceId,
+    session.sessionId,
+    session.channelId,
+    session.workspaceId,
+    supabase,
+  ]);
+
   useLayoutEffect(() => {
     if (!isConnected) {
       registeredLiveSessionIdRef.current = null;
-      recordingCloudStartSentForSessionRef.current = null;
+      recordingStartFailureToastForSessionRef.current = null;
       setLiveDbReady(false);
       return;
     }
@@ -163,51 +223,6 @@ function DashboardLiveVideoDockRouter({
             error.hint,
           );
           return;
-        }
-        const classInstanceForRecording = session.sourceInstanceId?.trim() ?? '';
-        if (
-          classInstanceForRecording &&
-          recordingCloudStartSentForSessionRef.current !== liveSessionRowId
-        ) {
-          recordingCloudStartSentForSessionRef.current = liveSessionRowId;
-          void supabase.functions
-            .invoke('agora-recording-start', {
-              body: {
-                classInstanceId: classInstanceForRecording,
-                channelName: session.channelId,
-                workspaceId: session.workspaceId,
-              },
-            })
-            .then(({ error: fnError, data }) => {
-              const toastKey = liveSessionRowId;
-              if (fnError) {
-                console.error('[Recording] Failed to start Agora recording.');
-                if (recordingStartFailureToastForSessionRef.current !== toastKey) {
-                  recordingStartFailureToastForSessionRef.current = toastKey;
-                  toast.error(
-                    'Cloud recording could not start. You can upload a recording manually from the class editor later.',
-                  );
-                }
-                return;
-              }
-              if (
-                data &&
-                typeof data === 'object' &&
-                'ok' in data &&
-                (data as { ok?: boolean }).ok === false
-              ) {
-                console.error('[Recording] Failed to start Agora recording.');
-                if (recordingStartFailureToastForSessionRef.current !== toastKey) {
-                  recordingStartFailureToastForSessionRef.current = toastKey;
-                  toast.error(
-                    'Cloud recording could not start. You can upload a recording manually from the class editor later.',
-                  );
-                }
-              }
-            })
-            .catch(() => {
-              console.error('[Recording] Failed to start Agora recording.');
-            });
         }
         // After durable `live_sessions` registration, merge class draft deck (bb-class-deck:…)
         // into this live session id so host/participant deck hooks see rows (RPC is idempotent).
@@ -264,7 +279,6 @@ function DashboardLiveVideoDockRouter({
       cancelled = true;
       registeredLiveSessionIdRef.current = null;
       classDeckMergeAttemptedForSessionRef.current = null;
-      recordingCloudStartSentForSessionRef.current = null;
       recordingStartFailureToastForSessionRef.current = null;
     };
   }, [
@@ -274,8 +288,6 @@ function DashboardLiveVideoDockRouter({
     resolvedDisplayName,
     session.sessionId,
     session.sourceInstanceId,
-    session.channelId,
-    session.workspaceId,
     supabase,
   ]);
 
@@ -330,6 +342,7 @@ function DashboardLiveVideoDockRouter({
         liveDbReady={liveDbReady}
         displayName={resolvedDisplayName}
         hostClassRecordingProcessing={hostClassRecordingProcessing}
+        onHostStartRecording={isHost ? handleStartRecording : undefined}
       />
     );
   }

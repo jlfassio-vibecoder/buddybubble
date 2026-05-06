@@ -88,6 +88,8 @@ export type LiveSessionViewProps = {
   onWorkoutDeckPersisted?: () => void;
   /** Host: invoked after `actions.endSession()` (e.g. mark chat invite ended). */
   onHostEndLiveSessionForAll?: () => void | Promise<void>;
+  /** Host: invoked with Start Session to begin Agora cloud recording (manual trigger). */
+  onHostStartRecording?: () => void | Promise<void>;
   /**
    * When false, skips `get_live_session_join_hints` / `live_session_list_participants` until the
    * dashboard dock has finished `live_session_create` / `live_session_participant_join` so the
@@ -117,6 +119,7 @@ function LiveSessionViewInner({
   canWriteTasks,
   onWorkoutDeckPersisted,
   onHostEndLiveSessionForAll,
+  onHostStartRecording,
   liveDbReady = true,
   displayName: displayNameProp,
   hostClassRecordingProcessing = false,
@@ -477,6 +480,7 @@ function LiveSessionViewInner({
             actions={actions}
             disableActions={!isHost}
             onHostEndLiveSessionForAll={isHost ? onHostEndLiveSessionForAll : undefined}
+            onHostStartRecording={isHost ? onHostStartRecording : undefined}
             liveDbReady={liveDbReady}
             hostClassRecordingProcessing={isHost ? hostClassRecordingProcessing : false}
             className="shrink-0"

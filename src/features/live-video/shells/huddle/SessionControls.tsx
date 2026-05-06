@@ -21,6 +21,8 @@ export type SessionControlsProps = {
   disableActions?: boolean;
   /** Host: runs after `actions.endSession()` (e.g. mark chat invite ended). */
   onHostEndLiveSessionForAll?: () => void | Promise<void>;
+  /** Host: runs with Start Session to begin cloud recording. */
+  onHostStartRecording?: () => void | Promise<void>;
   /**
    * When false, defers the AMRAP / wrapper-attaching RPC because `live_sessions` may not exist yet
    * (avoids the same connect-before-register race that produces 400s on join hints / list participants).
@@ -40,6 +42,7 @@ export function SessionControls({
   actions,
   disableActions = false,
   onHostEndLiveSessionForAll,
+  onHostStartRecording,
   liveDbReady = true,
   hostClassRecordingProcessing = false,
   className,
@@ -111,7 +114,10 @@ export function SessionControls({
             variant="secondary"
             className="font-medium"
             disabled={disableActions}
-            onClick={actions.startSession}
+            onClick={() => {
+              actions.startSession();
+              void onHostStartRecording?.();
+            }}
           >
             Start Session
           </Button>
