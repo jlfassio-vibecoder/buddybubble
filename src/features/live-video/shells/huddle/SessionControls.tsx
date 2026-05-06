@@ -21,11 +21,15 @@ export type SessionControlsProps = {
   disableActions?: boolean;
   /** Host: runs after `actions.endSession()` (e.g. mark chat invite ended). */
   onHostEndLiveSessionForAll?: () => void | Promise<void>;
+  /** Host: runs with Start Session to begin cloud recording. */
+  onHostStartRecording?: () => void | Promise<void>;
   /**
    * When false, defers the AMRAP / wrapper-attaching RPC because `live_sessions` may not exist yet
    * (avoids the same connect-before-register race that produces 400s on join hints / list participants).
    */
   liveDbReady?: boolean;
+  /** Host: show recording pipeline indicator when class metadata is `processing`. */
+  hostClassRecordingProcessing?: boolean;
   className?: string;
 };
 
@@ -38,7 +42,9 @@ export function SessionControls({
   actions,
   disableActions = false,
   onHostEndLiveSessionForAll,
+  onHostStartRecording,
   liveDbReady = true,
+  hostClassRecordingProcessing = false,
   className,
 }: SessionControlsProps) {
   const { supabase, sessionId: liveSessionRowId } = useLiveSessionRuntime();
@@ -88,6 +94,19 @@ export function SessionControls({
       <SessionClockMini state={state} className="min-w-0 shrink-0 sm:mr-2" />
 
       <div className="flex min-w-0 flex-1 flex-wrap items-center justify-center gap-2 sm:justify-end">
+        {hostClassRecordingProcessing && !disableActions ? (
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full border border-red-500/45 bg-red-500/10 px-2.5 py-0.5 text-xs font-medium text-red-700 dark:text-red-400"
+            role="status"
+            aria-live="polite"
+          >
+            <span
+              className="inline-block h-2 w-2 shrink-0 rounded-full bg-red-600 animate-pulse dark:bg-red-500"
+              aria-hidden
+            />
+            Recording
+          </span>
+        ) : null}
         {isIdle ? (
           <Button
             type="button"
@@ -95,7 +114,10 @@ export function SessionControls({
             variant="secondary"
             className="font-medium"
             disabled={disableActions}
-            onClick={actions.startSession}
+            onClick={() => {
+              actions.startSession();
+              void onHostStartRecording?.();
+            }}
           >
             Start Session
           </Button>

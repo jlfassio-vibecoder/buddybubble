@@ -1,7 +1,16 @@
 'use client';
 
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { toast } from 'sonner';
 import { createClient } from '@utils/supabase/client';
 import { AgoraSessionProvider, LiveSessionView, useAgoraSession } from '@/features/live-video';
 import { PreJoinBuilder } from '@/features/live-video/shells/huddle/PreJoinBuilder';
@@ -10,6 +19,7 @@ import { agoraUidFromUuid } from '@/lib/live-video/agora-uid';
 import type { Database } from '@/types/database';
 import type { LiveVideoActiveSession } from '@/store/liveVideoStore';
 import { copyClassDeckToLiveSession } from '@/features/live-video/shells/huddle/live-deck-merge';
+import { parseClassRecordingFromInstanceMetadata } from '@/types/live-session-invite';
 
 export type DashboardLiveVideoDockProps = {
   session: LiveVideoActiveSession;
@@ -60,11 +70,120 @@ function DashboardLiveVideoDockRouter({
   const registeredLiveSessionIdRef = useRef<string | null>(null);
   /** Avoid duplicate class-deck merge RPC attempts for the same live session in one mount. */
   const classDeckMergeAttemptedForSessionRef = useRef<string | null>(null);
+  /** At most one host toast per live session when manual `agora-recording-start` fails. */
+  const recordingStartFailureToastForSessionRef = useRef<string | null>(null);
   const [liveDbReady, setLiveDbReady] = useState(false);
+  /** Host-only: `class_instances.metadata.class_recording.status === 'processing'` for async pipeline UX. */
+  const [hostClassRecordingProcessing, setHostClassRecordingProcessing] = useState(false);
+
+  const classInstanceIdForRecording = session.sourceInstanceId?.trim() ?? '';
+
+  useEffect(() => {
+    if (!isHost || !classInstanceIdForRecording) {
+      setHostClassRecordingProcessing(false);
+      return;
+    }
+
+    let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const fetchRecordingStatus = async () => {
+      const { data, error } = await supabase
+        .from('class_instances')
+        .select('metadata')
+        .eq('id', classInstanceIdForRecording)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(
+            '[DashboardLiveVideoDockRouter] class_recording metadata read',
+            error.message,
+          );
+        }
+        setHostClassRecordingProcessing(false);
+        return;
+      }
+      const rec = parseClassRecordingFromInstanceMetadata(data?.metadata);
+      const processing = rec?.status === 'processing';
+      setHostClassRecordingProcessing(processing);
+      if (intervalId != null) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+      if (processing) {
+        intervalId = setInterval(() => {
+          void fetchRecordingStatus();
+        }, 15_000);
+      }
+    };
+
+    void fetchRecordingStatus();
+
+    return () => {
+      cancelled = true;
+      if (intervalId != null) clearInterval(intervalId);
+    };
+  }, [isHost, classInstanceIdForRecording, supabase]);
+
+  const handleStartRecording = useCallback(() => {
+    if (!isHost) return;
+    const classInstanceForRecording = session.sourceInstanceId?.trim() ?? '';
+    if (!classInstanceForRecording) return;
+    const liveSessionRowId = session.sessionId.trim();
+    if (!liveSessionRowId) return;
+
+    void supabase.functions
+      .invoke('agora-recording-start', {
+        body: {
+          classInstanceId: classInstanceForRecording,
+          channelName: session.channelId,
+          workspaceId: session.workspaceId,
+        },
+      })
+      .then(({ error: fnError, data }) => {
+        const toastKey = liveSessionRowId;
+        if (fnError) {
+          console.error('[Recording] Failed to start Agora recording.');
+          if (recordingStartFailureToastForSessionRef.current !== toastKey) {
+            recordingStartFailureToastForSessionRef.current = toastKey;
+            toast.error(
+              'Cloud recording could not start. You can upload a recording manually from the class editor later.',
+            );
+          }
+          return;
+        }
+        if (
+          data &&
+          typeof data === 'object' &&
+          'ok' in data &&
+          (data as { ok?: boolean }).ok === false
+        ) {
+          console.error('[Recording] Failed to start Agora recording.');
+          if (recordingStartFailureToastForSessionRef.current !== toastKey) {
+            recordingStartFailureToastForSessionRef.current = toastKey;
+            toast.error(
+              'Cloud recording could not start. You can upload a recording manually from the class editor later.',
+            );
+          }
+        }
+      })
+      .catch(() => {
+        console.error('[Recording] Failed to start Agora recording.');
+      });
+  }, [
+    isHost,
+    session.sourceInstanceId,
+    session.sessionId,
+    session.channelId,
+    session.workspaceId,
+    supabase,
+  ]);
 
   useLayoutEffect(() => {
     if (!isConnected) {
       registeredLiveSessionIdRef.current = null;
+      recordingStartFailureToastForSessionRef.current = null;
       setLiveDbReady(false);
       return;
     }
@@ -160,6 +279,7 @@ function DashboardLiveVideoDockRouter({
       cancelled = true;
       registeredLiveSessionIdRef.current = null;
       classDeckMergeAttemptedForSessionRef.current = null;
+      recordingStartFailureToastForSessionRef.current = null;
     };
   }, [
     isConnected,
@@ -221,6 +341,8 @@ function DashboardLiveVideoDockRouter({
         className="min-h-0 flex-1 px-0 py-0"
         liveDbReady={liveDbReady}
         displayName={resolvedDisplayName}
+        hostClassRecordingProcessing={hostClassRecordingProcessing}
+        onHostStartRecording={isHost ? handleStartRecording : undefined}
       />
     );
   }

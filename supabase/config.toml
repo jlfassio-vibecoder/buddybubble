@@ -371,6 +371,21 @@ deno_version = 2
 [functions.generate-message-video-poster]
 verify_jwt = true
 
+[functions.agora-recording-start]
+verify_jwt = true
+
+[functions.agora-recording-stop]
+verify_jwt = true
+
+# Authentication: AGORA_WEBHOOK_SECRET — verify `Agora-Signature` (HMAC-SHA1 of raw body), not Supabase JWT.
+[functions.agora-recording-webhook]
+verify_jwt = false
+
+# Authentication: CRON_SECRET — verify `Authorization: Bearer`, not Supabase JWT. Invoked by pg_cron + pg_net (Vault).
+# Env: CRON_SECRET, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, AGORA_APP_ID, AGORA_CUSTOMER_ID, AGORA_CUSTOMER_SECRET, optional AGORA_RESTAPI_BASE.
+[functions.agora-recording-reconciler]
+verify_jwt = false
+
 [functions.bubble-agent-dispatch]
 verify_jwt = false
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AsyncPlaybackWorkoutLogger } from '@/features/live-video/shells/ParticipantWorkoutLogger';
@@ -41,6 +41,8 @@ function AsyncPlaybackShellInner({ classInstanceId, onClose, className }: AsyncP
 
   const supabase = useMemo(() => createClient(), []);
   const deckCtx = useWorkoutDeckSelection();
+  /** Last successful parse of `class_recording.status` — used to keep polling after transient read errors while processing. */
+  const lastRecordingStatusRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (process.env.NODE_ENV === 'development') {
@@ -55,23 +57,55 @@ function AsyncPlaybackShellInner({ classInstanceId, onClose, className }: AsyncP
 
   useEffect(() => {
     let cancelled = false;
-    void supabase
-      .from('class_instances')
-      .select('metadata')
-      .eq('id', classInstanceId)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        if (error) {
-          setRecordingLoadError(formatUserFacingError(error));
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const clearPoll = () => {
+      if (intervalId != null) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+
+    const schedulePoll = () => {
+      intervalId = setInterval(() => {
+        void fetchMetadata();
+      }, 15_000);
+    };
+
+    const fetchMetadata = async () => {
+      const { data, error } = await supabase
+        .from('class_instances')
+        .select('metadata')
+        .eq('id', classInstanceId)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        setRecordingLoadError(formatUserFacingError(error));
+        if (lastRecordingStatusRef.current !== 'processing') {
           setRecordingRec(null);
-          return;
         }
-        setRecordingLoadError(null);
-        setRecordingRec(parseClassRecordingFromInstanceMetadata(data?.metadata));
-      });
+        clearPoll();
+        if (lastRecordingStatusRef.current === 'processing') {
+          schedulePoll();
+        }
+        return;
+      }
+      setRecordingLoadError(null);
+      const rec = parseClassRecordingFromInstanceMetadata(data?.metadata);
+      lastRecordingStatusRef.current = rec?.status ?? null;
+      setRecordingRec(rec);
+      clearPoll();
+      if (rec?.status === 'processing') {
+        schedulePoll();
+      }
+    };
+
+    lastRecordingStatusRef.current = null;
+    void fetchMetadata();
+
     return () => {
       cancelled = true;
+      clearPoll();
     };
   }, [classInstanceId, supabase]);
 

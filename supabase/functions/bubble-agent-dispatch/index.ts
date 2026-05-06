@@ -1465,7 +1465,7 @@ Deno.serve(async (req) => {
   const geminiModel =
     Deno.env.get('GEMINI_MODEL')?.trim() ||
     Deno.env.get('VERTEX_GEMINI_MODEL')?.trim() ||
-    'gemini-2.0-flash';
+    'gemini-2.5-flash';
 
   if (!geminiApiKey) {
     console.error('[bubble-agent-dispatch] missing GEMINI_API_KEY');
@@ -1725,9 +1725,11 @@ Deno.serve(async (req) => {
     }
   } catch (e) {
     console.error('[DEBUG-GEMINI-CRASH] Edge Function Failed:', e);
-    console.error('[bubble-agent-dispatch] gemini', String(e), {
+    const geminiErrorMessage = e instanceof Error ? e.message : String(e);
+    console.error('[bubble-agent-dispatch] gemini', geminiErrorMessage, {
       message_id: record.id,
       slug: resolvedSlug,
+      model: geminiModel,
     });
     if (
       isGeminiRelatedDispatchError(e) &&

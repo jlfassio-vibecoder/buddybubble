@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import type { CookieOptions } from '@supabase/ssr';
 import { cookies } from 'next/headers';
@@ -30,14 +30,26 @@ async function applyInviteHandoffCookie(
  * Supabase auth return URL (PKCE `code`, email `token_hash`+`type`, or implicit hash — see below).
  * @see https://supabase.com/docs/guides/auth/server-side/nextjs
  */
-export async function GET(request: Request) {
-  const requestUrl = new URL(request.url);
-  const { searchParams, origin } = requestUrl;
+export async function GET(request: NextRequest) {
+  console.log('[DEBUG] [Auth Callback] Initiated for URL:', request.url);
+
+  const searchParams = request.nextUrl.searchParams;
   const code = searchParams.get('code');
   const token_hash = searchParams.get('token_hash');
   const typeRaw = searchParams.get('type');
   const next = withDefaultDashboardChatView(safeNextPath(searchParams.get('next')) ?? '/app');
   const inviteHandoff = searchParams.get('invite_handoff')?.trim() ?? '';
+
+  console.log('[DEBUG] [Auth Callback] Params:', {
+    code: !!code,
+    token_hash: !!token_hash,
+    type: typeRaw,
+    error: searchParams.get('error'),
+    error_description: searchParams.get('error_description'),
+  });
+
+  const requestUrl = new URL(request.url);
+  const { origin } = requestUrl;
 
   const supabaseUrl = getSupabaseUrl();
   const supabaseKey = getSupabasePublishableKey();
@@ -66,12 +78,14 @@ export async function GET(request: Request) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
       await applyInviteHandoffCookie(inviteHandoff, next, cookieStore);
+      console.log('[DEBUG] [Auth Callback] Token exchange successful, redirecting to:', next);
       const res = NextResponse.redirect(`${origin}${next}`);
       if (next === '/update-password') {
         res.cookies.set(BB_PASSWORD_SETUP_PENDING_COOKIE, '1', passwordSetupPendingCookieOptions());
       }
       return res;
     }
+    console.error('[DEBUG] [Auth Callback] Supabase Auth Error:', error.message, error.status);
     return NextResponse.redirect(`${origin}/login?error=auth`);
   }
 
@@ -82,12 +96,14 @@ export async function GET(request: Request) {
     });
     if (!error) {
       await applyInviteHandoffCookie(inviteHandoff, next, cookieStore);
+      console.log('[DEBUG] [Auth Callback] Token exchange successful, redirecting to:', next);
       const res = NextResponse.redirect(`${origin}${next}`);
       if (next === '/update-password') {
         res.cookies.set(BB_PASSWORD_SETUP_PENDING_COOKIE, '1', passwordSetupPendingCookieOptions());
       }
       return res;
     }
+    console.error('[DEBUG] [Auth Callback] Supabase Auth Error:', error.message, error.status);
     return NextResponse.redirect(`${origin}/login?error=auth`);
   }
 
