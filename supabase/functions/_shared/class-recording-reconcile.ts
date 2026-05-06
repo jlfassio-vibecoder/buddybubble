@@ -102,19 +102,6 @@ export async function markSessionRecordingReady(
     return { ok: false, error: 'invalid_workspace_or_instance_uuid_for_storage_path' };
   }
 
-  const { error: se } = await supabase
-    .from('class_recording_sessions')
-    .update({
-      status: 'ready',
-      error_message: null,
-    })
-    .eq('id', sessionRowId);
-
-  if (se) {
-    console.error(`${prefix} session_ready_update`, se.message);
-    return { ok: false, error: 'session_update_failed' };
-  }
-
   const nowIso = new Date().toISOString();
   const createdAt = (await prevClassRecordingCreatedAt(supabase, classInstanceId)) ?? nowIso;
 
@@ -128,6 +115,19 @@ export async function markSessionRecordingReady(
   });
 
   if (!okMeta) return { ok: false, error: 'metadata_update_failed' };
+
+  const { error: se } = await supabase
+    .from('class_recording_sessions')
+    .update({
+      status: 'ready',
+      error_message: null,
+    })
+    .eq('id', sessionRowId);
+
+  if (se) {
+    console.error(`${prefix} session_ready_update`, se.message);
+    return { ok: false, error: 'session_update_failed' };
+  }
 
   const sidLog = agoraSid ? ` SID: ${agoraSid}` : '';
   console.log(`${prefix} Ready transition${sidLog}, storagePath: ${storagePath}`);
@@ -152,6 +152,20 @@ export async function markSessionRecordingFailed(
   const prefix = logPrefix ?? '[class-recording-reconcile]';
   const msg = truncateMessage(reason);
 
+  const nowIso = new Date().toISOString();
+  const createdAt = (await prevClassRecordingCreatedAt(supabase, classInstanceId)) ?? nowIso;
+
+  const okMeta = await persistClassRecordingMetadata(supabase, classInstanceId, {
+    type: 'class_recording',
+    status: 'failed',
+    provider: 'agora',
+    createdAt,
+    updatedAt: nowIso,
+    errorMessage: msg,
+  });
+
+  if (!okMeta) return { ok: false, error: 'metadata_update_failed' };
+
   const sessionUpdate: Record<string, unknown> = {
     status: 'failed',
     error_message: msg,
@@ -169,20 +183,6 @@ export async function markSessionRecordingFailed(
     console.error(`${prefix} session_fail_update`, se.message);
     return { ok: false, error: 'session_update_failed' };
   }
-
-  const nowIso = new Date().toISOString();
-  const createdAt = (await prevClassRecordingCreatedAt(supabase, classInstanceId)) ?? nowIso;
-
-  const okMeta = await persistClassRecordingMetadata(supabase, classInstanceId, {
-    type: 'class_recording',
-    status: 'failed',
-    provider: 'agora',
-    createdAt,
-    updatedAt: nowIso,
-    errorMessage: msg,
-  });
-
-  if (!okMeta) return { ok: false, error: 'metadata_update_failed' };
 
   const sidLog = agoraSid ? ` SID: ${agoraSid}` : '';
   console.log(`${prefix} Failed transition${sidLog}, reason: ${msg}`);

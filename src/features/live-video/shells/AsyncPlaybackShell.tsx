@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AsyncPlaybackWorkoutLogger } from '@/features/live-video/shells/ParticipantWorkoutLogger';
@@ -41,6 +41,8 @@ function AsyncPlaybackShellInner({ classInstanceId, onClose, className }: AsyncP
 
   const supabase = useMemo(() => createClient(), []);
   const deckCtx = useWorkoutDeckSelection();
+  /** Last successful parse of `class_recording.status` — used to keep polling after transient read errors while processing. */
+  const lastRecordingStatusRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (process.env.NODE_ENV === 'development') {
@@ -64,6 +66,12 @@ function AsyncPlaybackShellInner({ classInstanceId, onClose, className }: AsyncP
       }
     };
 
+    const schedulePoll = () => {
+      intervalId = setInterval(() => {
+        void fetchMetadata();
+      }, 15_000);
+    };
+
     const fetchMetadata = async () => {
       const { data, error } = await supabase
         .from('class_instances')
@@ -73,21 +81,26 @@ function AsyncPlaybackShellInner({ classInstanceId, onClose, className }: AsyncP
       if (cancelled) return;
       if (error) {
         setRecordingLoadError(formatUserFacingError(error));
-        setRecordingRec(null);
+        if (lastRecordingStatusRef.current !== 'processing') {
+          setRecordingRec(null);
+        }
         clearPoll();
+        if (lastRecordingStatusRef.current === 'processing') {
+          schedulePoll();
+        }
         return;
       }
       setRecordingLoadError(null);
       const rec = parseClassRecordingFromInstanceMetadata(data?.metadata);
+      lastRecordingStatusRef.current = rec?.status ?? null;
       setRecordingRec(rec);
       clearPoll();
       if (rec?.status === 'processing') {
-        intervalId = setInterval(() => {
-          void fetchMetadata();
-        }, 15_000);
+        schedulePoll();
       }
     };
 
+    lastRecordingStatusRef.current = null;
     void fetchMetadata();
 
     return () => {

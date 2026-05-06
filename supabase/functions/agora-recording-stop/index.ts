@@ -9,6 +9,7 @@
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { markSessionRecordingFailed } from '../_shared/class-recording-reconcile.ts';
 import { parseLiveSessionInviteFromInstanceMetadata } from '../_shared/live-session-invite.ts';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -113,7 +114,11 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: 'invalid_json' }, 400);
   }
 
-  const classInstanceId = body.classInstanceId?.trim() ?? '';
+  const rawClassId = body.classInstanceId;
+  if (typeof rawClassId !== 'string') {
+    return json({ ok: false, error: 'missing_fields' }, 400);
+  }
+  const classInstanceId = rawClassId.trim();
   if (!classInstanceId) {
     return json({ ok: false, error: 'missing_fields' }, 400);
   }
@@ -204,15 +209,17 @@ Deno.serve(async (req) => {
   const botUid = latest.agora_uid as number;
 
   if (!resourceId || !sid) {
-    const { error: fe } = await supabase
-      .from('class_recording_sessions')
-      .update({
-        status: 'failed',
-        error_message: 'missing_resource_or_sid_for_stop',
-        stopped_at: new Date().toISOString(),
-      })
-      .eq('id', latest.id);
-    if (fe) console.error('[agora-recording-stop] fail missing ids', fe.message);
+    const stoppedAt = new Date().toISOString();
+    const r = await markSessionRecordingFailed(supabase, {
+      sessionRowId: latest.id as string,
+      classInstanceId,
+      reason: 'missing_resource_or_sid_for_stop',
+      logPrefix: '[agora-recording-stop]',
+      stoppedAt,
+    });
+    if (!r.ok) {
+      console.error('[Recording] Failed to stop Agora recording.');
+    }
     return json({ ok: false, error: 'invalid_session_state' }, 500);
   }
 
@@ -275,17 +282,15 @@ Deno.serve(async (req) => {
   }
 
   const detail = stopRes.text || `http_${stopRes.status}`;
-  const { error: failErr } = await supabase
-    .from('class_recording_sessions')
-    .update({
-      status: 'failed',
-      error_message: truncateMessage(`agora_stop_failed: ${detail}`),
-      stopped_at: stoppedAt,
-    })
-    .eq('id', latest.id);
-
-  if (failErr) {
-    console.error('[agora-recording-stop] set failed', failErr.message);
+  const r = await markSessionRecordingFailed(supabase, {
+    sessionRowId: latest.id as string,
+    classInstanceId,
+    reason: truncateMessage(`agora_stop_failed: ${detail}`),
+    logPrefix: '[agora-recording-stop]',
+    stoppedAt,
+  });
+  if (!r.ok) {
+    console.error('[Recording] Failed to stop Agora recording.');
   }
 
   return json({ ok: false, error: 'agora_stop_failed' }, 500);

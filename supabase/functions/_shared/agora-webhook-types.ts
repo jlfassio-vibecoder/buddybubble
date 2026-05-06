@@ -37,6 +37,7 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return Boolean(v) && typeof v === 'object' && !Array.isArray(v);
 }
 
+// Copilot suggestion ignored: dedicated unit tests for NCS coercions/fileList variants are deferred; query-response parser tests cover the parallel filename extraction paths for reconciler.
 export function parseAgoraNcsEnvelope(raw: unknown): AgoraNcsEnvelope | null {
   if (!isRecord(raw)) return null;
   const noticeId = typeof raw.noticeId === 'string' ? raw.noticeId.trim() : '';

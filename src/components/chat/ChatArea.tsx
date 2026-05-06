@@ -345,10 +345,16 @@ export function ChatArea({
     onPeerThreadReplyInsert: handlePeerThreadReplyInsert,
   });
 
-  const agentScopeRootMessages = useMemo(
-    () => messages.filter((m) => m.parent_id == null || m.parent_id === ''),
-    [messages],
-  );
+  /** Root posts plus Slack-thread replies whose `parent_id` is a root message (matches `agent_create_card_and_reply` threading). */
+  const agentScopeRootAndSlackThreadReplies = useMemo(() => {
+    const rootIds = new Set(
+      messages.filter((m) => m.parent_id == null || m.parent_id === '').map((m) => m.id),
+    );
+    return messages.filter(
+      (m) => m.parent_id == null || m.parent_id === '' || rootIds.has(m.parent_id),
+    );
+  }, [messages]);
+
   const agentScopeThreadMessages = useMemo(() => {
     const pid = activeThreadParent?.id;
     if (!pid) return [];
@@ -365,7 +371,7 @@ export function ChatArea({
   const bubbleIdForTelemetry = activeBubble?.id ?? null;
 
   const waitMain = useAgentResponseWait({
-    messages: agentScopeRootMessages,
+    messages: agentScopeRootAndSlackThreadReplies,
     myUserId: workspaceSessionSubjectUserId ?? myProfile?.id ?? null,
     agentsByAuthUserId,
     callbacks: {

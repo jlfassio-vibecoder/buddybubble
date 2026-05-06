@@ -23,6 +23,7 @@ const CHANNEL_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const RECORDING_TOKEN_TTL_SEC = 86400 + 7200; // 26h — must exceed expected recording + Agora guidance
+const AGORA_HTTP_TIMEOUT_MS = 120_000;
 
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -57,6 +58,7 @@ async function agoraPostJson(
   url: string,
   authHeader: string,
   body: unknown,
+  signal?: AbortSignal,
 ): Promise<{ ok: boolean; status: number; json: unknown; text: string }> {
   const res = await fetch(url, {
     method: 'POST',
@@ -65,6 +67,7 @@ async function agoraPostJson(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(body),
+    signal,
   });
   const text = await res.text();
   let parsed: unknown = null;
@@ -74,6 +77,35 @@ async function agoraPostJson(
     parsed = null;
   }
   return { ok: res.ok, status: res.status, json: parsed, text };
+}
+
+async function agoraStopMixBestEffort(
+  restBase: string,
+  appId: string,
+  authz: string,
+  resourceId: string,
+  sid: string,
+  channelName: string,
+  botUidStr: string,
+): Promise<void> {
+  const stopUrl = `${restBase}/v1/apps/${appId}/cloud_recording/resourceid/${encodeURIComponent(resourceId)}/sid/${encodeURIComponent(sid)}/mode/mix/stop`;
+  try {
+    await fetch(stopUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: authz,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        cname: channelName,
+        uid: botUidStr,
+        clientRequest: { async_stop: false },
+      }),
+      signal: AbortSignal.timeout(AGORA_HTTP_TIMEOUT_MS),
+    });
+  } catch {
+    /* best-effort — row cleanup must still proceed */
+  }
 }
 
 Deno.serve(async (req) => {
@@ -139,9 +171,15 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: 'invalid_json' }, 400);
   }
 
-  const classInstanceId = body.classInstanceId?.trim() ?? '';
-  const channelName = body.channelName?.trim() ?? '';
-  const workspaceId = body.workspaceId?.trim() ?? '';
+  const rawClass = body.classInstanceId;
+  const rawChannel = body.channelName;
+  const rawWs = body.workspaceId;
+  if (typeof rawClass !== 'string' || typeof rawChannel !== 'string' || typeof rawWs !== 'string') {
+    return json({ ok: false, error: 'missing_fields' }, 400);
+  }
+  const classInstanceId = rawClass.trim();
+  const channelName = rawChannel.trim();
+  const workspaceId = rawWs.trim();
   if (!classInstanceId || !channelName || !workspaceId) {
     return json({ ok: false, error: 'missing_fields' }, 400);
   }
@@ -267,7 +305,12 @@ Deno.serve(async (req) => {
       },
     };
 
-    const acquireRes = await agoraPostJson(acquireUrl, authz, acquireBody);
+    const acquireRes = await agoraPostJson(
+      acquireUrl,
+      authz,
+      acquireBody,
+      AbortSignal.timeout(AGORA_HTTP_TIMEOUT_MS),
+    );
     if (!acquireRes.ok || !acquireRes.json || typeof acquireRes.json !== 'object') {
       const detail = acquireRes.text || `http_${acquireRes.status}`;
       await failSession(`acquire_failed: ${detail}`);
@@ -345,7 +388,12 @@ Deno.serve(async (req) => {
       },
     };
 
-    const startRes = await agoraPostJson(startUrl, authz, startBody);
+    const startRes = await agoraPostJson(
+      startUrl,
+      authz,
+      startBody,
+      AbortSignal.timeout(AGORA_HTTP_TIMEOUT_MS),
+    );
     if (!startRes.ok || !startRes.json || typeof startRes.json !== 'object') {
       const detail = startRes.text || `http_${startRes.status}`;
       await failSession(`start_failed: ${detail}`);
@@ -370,12 +418,25 @@ Deno.serve(async (req) => {
       .eq('id', sessionRowId);
 
     if (upRecErr) {
+      await agoraStopMixBestEffort(restBase, appId, authz, resourceId, sid, channelName, botUidStr);
       await failSession(upRecErr.message);
       return json({ ok: false, error: 'control_plane_error' }, 500);
     }
 
     const nowIso = new Date().toISOString();
-    const prevRecording = (instance.metadata as Record<string, unknown>)?.class_recording;
+    const { data: freshInst, error: freshErr } = await supabase
+      .from('class_instances')
+      .select('metadata')
+      .eq('id', classInstanceId)
+      .maybeSingle();
+
+    if (freshErr || !freshInst) {
+      await agoraStopMixBestEffort(restBase, appId, authz, resourceId, sid, channelName, botUidStr);
+      await failSession('class_instance_refresh_failed');
+      return json({ ok: false, error: 'control_plane_error' }, 500);
+    }
+
+    const prevRecording = (freshInst.metadata as Record<string, unknown>)?.class_recording;
     const prevCreated =
       prevRecording &&
       typeof prevRecording === 'object' &&
@@ -392,7 +453,7 @@ Deno.serve(async (req) => {
       updatedAt: nowIso,
     };
 
-    const nextMeta = mergeClassRecordingIntoInstanceMetadata(instance.metadata, recordingPayload);
+    const nextMeta = mergeClassRecordingIntoInstanceMetadata(freshInst.metadata, recordingPayload);
 
     const { error: metaErr } = await supabase
       .from('class_instances')
@@ -404,6 +465,7 @@ Deno.serve(async (req) => {
 
     if (metaErr) {
       console.error('[agora-recording-start] metadata update', metaErr.message);
+      await agoraStopMixBestEffort(restBase, appId, authz, resourceId, sid, channelName, botUidStr);
       await failSession(`metadata_update_failed: ${metaErr.message}`);
       return json({ ok: false, error: 'metadata_update_failed' }, 500);
     }

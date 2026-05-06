@@ -270,6 +270,10 @@ Deno.serve(async (req) => {
         `[agora-recording-reconciler] active_or_unresolved sid=${sid} session=${row.id} serverStatus=${srvSt}`,
       );
       summary.ignored++;
+      await supabase
+        .from('class_recording_sessions')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', row.id);
     } catch (e) {
       console.error(
         `[agora-recording-reconciler] session_loop_error session=${row.id}`,
