@@ -78,6 +78,12 @@ const SLUG_LITERAL_ALLOWLIST: ReadonlyArray<string> = [
   'supabase/functions/buddy-agent-dispatch/**',
   'supabase/functions/organizer-agent-dispatch/**',
 
+  // Phase 2 consolidated dispatcher: each per-strategy folder owns ONE slug, and the
+  // shared dispatcher entry never branches on slug — it iterates the registry. The
+  // hardcoded literal lives in `agents/<slug>/config.ts` plus the registry header.
+  'supabase/functions/agent-dispatch-v2/**',
+  'supabase/functions/agents/**',
+
   // Provisioning / audit scripts need the slug list by design.
   'scripts/provision-agents.ts',
   'scripts/audit-agent-avatars.ts',

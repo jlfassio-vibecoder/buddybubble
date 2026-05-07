@@ -400,6 +400,11 @@ verify_jwt = false
 [functions.organizer-agent-dispatch]
 verify_jwt = false
 
+# Authentication: AGENT_WEBHOOK_SECRET in the function (Bearer or x-agent-secret).
+# Phase 1 reservation: function folder lands in Phase 2 (parallel deploy alongside legacy *-agent-dispatch).
+[functions.agent-dispatch-v2]
+verify_jwt = false
+
 # Authentication: LEAD_SMS_ALERT_WEBHOOK_SECRET in the function (Bearer or x-lead-sms-alert-secret), not Supabase JWT.
 [functions.lead-sms-alert]
 verify_jwt = false

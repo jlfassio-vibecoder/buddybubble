@@ -7,6 +7,7 @@ This document describes the **current** BuddyBubble **Coach** (`slug: coach`) en
 - [`docs/refactor/agent-routing-audit.md`](../../refactor/agent-routing-audit.md) — resolver / typing-indicator refactor notes (aligned with `resolveTargetAgent` + `useAgentResponseWait`).
 - [`docs/agents/adding-an-organizer-variant.md`](../adding-an-organizer-variant.md) — Organizer is a **separate** dispatcher; not covered here.
 - [`docs/agents/coach/ARCHITECTURE_ASSESSMENT.md`](./ARCHITECTURE_ASSESSMENT.md) — gap analysis and recommendations against the implementation described here.
+- [`docs/agents/vertex-setup.md`](../vertex-setup.md) — GCP project, Service Account, IAM, key rotation, quotas, and monitoring for the consolidated `agent-dispatch-v2` Edge Function (Phase 2 onward). The legacy `bubble-agent-dispatch` function described below continues to use `GEMINI_API_KEY` until Phase 3 cuts the webhook over to `agent-dispatch-v2`.
 
 When in doubt, **trust the code** paths cited here.
 
