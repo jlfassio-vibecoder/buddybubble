@@ -52,8 +52,6 @@ import { REGISTRY_ITERATION_ORDER, getStrategy } from '../agents/index.ts';
 import { buildDispatchContext } from './build-context.ts';
 import { resolveAgent } from './resolve.ts';
 
-const ENV = readDispatcherEnv();
-
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -141,13 +139,25 @@ async function runShortCircuit(
 }
 
 Deno.serve(async (req) => {
-  const verify = await verifyAndParseWebhook(req, ENV.AGENT_WEBHOOK_SECRET);
+  let env: ReturnType<typeof readDispatcherEnv>;
+  try {
+    env = readDispatcherEnv();
+  } catch (err) {
+    const requestId = crypto.randomUUID();
+    log('error', 'dispatcher env invalid', {
+      request_id: requestId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return jsonResponse({ ok: false, error: 'server_misconfigured' }, 500);
+  }
+
+  const verify = await verifyAndParseWebhook(req, env.AGENT_WEBHOOK_SECRET);
   if (!verify.ok) return verify.response;
 
   const { record, requestId } = verify;
   log('info', 'webhook received', baseFields(requestId, record, null, 'received'));
 
-  const supabase: SupabaseClient = createClient(ENV.SUPABASE_URL, ENV.SUPABASE_SERVICE_ROLE_KEY, {
+  const supabase: SupabaseClient = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   }) as unknown as SupabaseClient;
 
@@ -195,7 +205,7 @@ Deno.serve(async (req) => {
     message: record,
     agent: resolution.agent,
     requestId,
-    llmTimeoutMs: ENV.LLM_TIMEOUT_MS,
+    llmTimeoutMs: env.LLM_TIMEOUT_MS,
     history: resolution.history,
   });
 
@@ -234,8 +244,8 @@ Deno.serve(async (req) => {
     });
     const startedAt = Date.now();
     const response = await generateContent({
-      project: ENV.GCP_PROJECT_ID,
-      location: ENV.GCP_LOCATION,
+      project: env.GCP_PROJECT_ID,
+      location: env.GCP_LOCATION,
       model: strategy.model,
       systemPrompt,
       contents,
@@ -245,9 +255,9 @@ Deno.serve(async (req) => {
         responseMimeType: 'application/json',
         responseSchema: strategy.responseSchema,
       },
-      timeoutMs: ENV.LLM_TIMEOUT_MS,
+      timeoutMs: env.LLM_TIMEOUT_MS,
       signal: ctx.signal,
-      env: { GCP_SERVICE_ACCOUNT_JSON: ENV.GCP_SERVICE_ACCOUNT_JSON },
+      env: { GCP_SERVICE_ACCOUNT_JSON: env.GCP_SERVICE_ACCOUNT_JSON },
     });
     log('info', 'llm done', {
       ...baseFields(requestId, record, strategy.slug, 'llm_done'),

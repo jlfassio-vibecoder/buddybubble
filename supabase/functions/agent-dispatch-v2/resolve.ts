@@ -118,6 +118,7 @@ export async function resolveAgent(
     return null;
   }
 
+  // Copilot suggestion ignored: v2 is Coach-only in this PR; global/unbound strategy lookup belongs to the Buddy port so this resolver does not ship Phase 5 behavior early.
   const table = supabase.from('bubble_agent_bindings') as unknown as BindingsTable;
   const result = await table
     .select(

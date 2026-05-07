@@ -22,11 +22,12 @@ Enable the following on the project:
 
 ```bash
 gcloud services enable aiplatform.googleapis.com --project="$PROJECT_ID"
-gcloud services enable iamcredentials.googleapis.com --project="$PROJECT_ID"
 ```
 
-`iamcredentials.googleapis.com` is required for the dispatcher's RS256 JWT exchange
-flow (see [`supabase/functions/_shared/llm/vertex-auth.ts`](../../supabase/functions/_shared/llm/vertex-auth.ts)).
+The dispatcher signs the RS256 JWT locally with WebCrypto and exchanges it directly
+against Google's OAuth token endpoint (see
+[`supabase/functions/_shared/llm/vertex-auth.ts`](../../supabase/functions/_shared/llm/vertex-auth.ts)).
+It does not call the IAM Credentials API.
 
 ## 2. Service account + IAM
 
