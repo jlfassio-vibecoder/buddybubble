@@ -81,9 +81,13 @@ async function loadRootBubbleHistory(ctx: DispatchContext): Promise<HistoryRow[]
   if (!ctx.message.bubble_id) return [];
 
   const table = ctx.supabase.from('messages') as MessagesTable;
+  // Exclude the trigger row so `buildBuddyContents` does not push it twice (once
+  // as part of `history`, then again as the dedicated trigger user turn). Mirrors
+  // the established pattern in `_shared/dispatch/history.ts:45` (`buildBaseQuery`).
   const result = await table
     .select(BUDDY_HISTORY_COLUMNS)
     .eq('bubble_id', ctx.message.bubble_id)
+    .neq('id', ctx.message.id)
     .order('created_at', { ascending: false })
     .limit(BUDDY_BUBBLE_HISTORY_LIMIT);
 

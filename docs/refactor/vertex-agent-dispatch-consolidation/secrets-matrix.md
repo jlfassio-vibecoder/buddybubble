@@ -232,7 +232,7 @@ Implications for this matrix:
   `agent_definitions` row — no `BUDDY_*` env var is migrated to v2; the
   legacy ones remain only because the legacy dispatcher is still deployed.
 
-Operational state, per-trigger validation, induced-failure procedure (sentinel
-
-- Coach-mention exclusion), and the final cut-over / roll-back decision are
-  recorded in [`./soak-log-buddy.md`](./soak-log-buddy.md).
+Operational state, per-trigger validation, induced-failure procedure
+(onboarding sentinel + Coach-mention exclusion), and the final cut-over /
+roll-back decision are recorded in
+[`./soak-log-buddy.md`](./soak-log-buddy.md).
