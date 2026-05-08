@@ -56,6 +56,12 @@ export type GenerateContentArgs = {
    * key from `_shared/obs/log.ts`).
    */
   slug?: string;
+  /**
+   * Optional dispatcher request id. Threaded onto debug log lines so a single
+   * failing attempt can be correlated to its surrounding dispatch trace
+   * (matches the `LogFields.request_id` key from `_shared/obs/log.ts`).
+   */
+  requestId?: string;
 };
 
 const RETRY_DELAYS_MS: ReadonlyArray<number> = [200, 700];
@@ -178,9 +184,10 @@ export async function generateContent(args: GenerateContentArgs): Promise<Vertex
 
   if (args.debug) {
     log('debug', 'LLM request payload', {
+      request_id: args.requestId,
       slug: args.slug,
       model: args.model,
-      body: serializedBody,
+      body: requestBody,
     });
   }
 
@@ -220,6 +227,7 @@ export async function generateContent(args: GenerateContentArgs): Promise<Vertex
         const text = await response.text().catch(() => '');
         if (args.debug) {
           log('debug', 'LLM error response', {
+            request_id: args.requestId,
             slug: args.slug,
             model: args.model,
             http_status: response.status,

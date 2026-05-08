@@ -177,10 +177,14 @@ For a **new** agent slug (e.g. another vertical), follow the operational steps i
 The consolidated `agent-dispatch` function emits one structured JSON line per
 phase (`received` → `routed` → `preflight` → `llm_call` → `llm_done` →
 `parsed` → `guarded` → `persisted` → `done`, plus `fallback` on recovered
-errors). Every line carries `request_id`, `slug`, `message_id`, and
-`bubble_id`; the `llm done` and `dispatch done` lines also carry
-`latency_ms`, and `llm done` carries `token_in` / `token_out` when Vertex
-returns `usageMetadata`.
+errors). `request_id` is present on every line emitted after the webhook is
+parsed; `slug`, `message_id`, and `bubble_id` are attached starting with the
+`routed` phase (once routing has resolved a strategy). The `llm done` and
+`dispatch done` lines also carry `latency_ms`, and `llm done` carries
+`token_in` / `token_out` when Vertex returns `usageMetadata`. Pre-routing
+lines (`webhook received`, `dispatcher env invalid`) intentionally lack
+`slug`; see [`docs/agents/observability.md`](../observability.md) §1 for the
+full per-`msg` field guarantees.
 
 Copy-paste Supabase Logs queries for the four operational questions —
 **error budget**, **latency** (Vertex round-trip and end-to-end),

@@ -128,7 +128,6 @@ SELECT
   JSON_VALUE(event_message, '$.http_status') AS http_status,
   COUNT(*)                                   AS events
 FROM edge_logs
-CROSS JOIN UNNEST(metadata) AS m
 WHERE JSON_VALUE(event_message, '$.ns')         = 'agent-dispatch'
   AND JSON_VALUE(event_message, '$.error_kind') IS NOT NULL
   AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR)

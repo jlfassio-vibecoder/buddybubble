@@ -261,6 +261,7 @@ Deno.serve(async (req) => {
       env: { GCP_SERVICE_ACCOUNT_JSON: env.GCP_SERVICE_ACCOUNT_JSON },
       debug: env.LLM_DEBUG,
       slug: strategy.slug,
+      requestId,
     });
     log('info', 'llm done', {
       ...baseFields(requestId, record, strategy.slug, 'llm_done'),
