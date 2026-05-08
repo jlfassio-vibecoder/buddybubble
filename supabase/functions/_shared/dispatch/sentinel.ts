@@ -80,3 +80,13 @@ export function shouldExcludeWorkoutSentinelFromHistory(
 export function shouldExcludeBuddyOnboardingFromHistory(row: Pick<HistoryRow, 'content'>): boolean {
   return isExactSentinel(row, ONBOARDING_SYSTEM_EVENT);
 }
+
+/**
+ * `RoutingDescriptor.implicitTrigger` predicate for Buddy. Returns true when the
+ * trigger row IS the onboarding sentinel that the frontend silently inserts when a
+ * user lands on a chat-forward feature for the first time. Wired into
+ * `BuddyStrategy.routing.implicitTrigger`; mirrors `isWorkoutContextSentinel`'s shape.
+ */
+export function isBuddyOnboardingSentinel(message: Pick<NormalizedMessage, 'content'>): boolean {
+  return isExactSentinel(message, ONBOARDING_SYSTEM_EVENT);
+}

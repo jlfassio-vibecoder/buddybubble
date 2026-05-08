@@ -4,18 +4,34 @@
  * Walks the registered strategies in deterministic order and returns the first one that
  * matches the trigger via:
  *   1. `routing.implicitTrigger(message)` — slug-agnostic sentinel match (e.g. Coach
- *      workout-context). Mirrors `bubble-agent-dispatch/index.ts:1479-1544`.
- *   2. `routing.acceptMention` + `findFirstMentionedAgent` over the strategies' bound
+ *      workout-context, Buddy onboarding). Mirrors `bubble-agent-dispatch/index.ts:1479-1544`.
+ *   2. `routing.acceptMention` + `findFirstMentionedAgent` over the strategies'
  *      `agent_definitions.mention_handle`. Mirrors `bubble-agent-dispatch/index.ts:1376-1391`.
  *   3. `routing.acceptRootDefault` + `parseRootDefaultAgentSlug(message)` (only when
  *      `parent_id == null`). Mirrors `bubble-agent-dispatch/index.ts:1393-1404`.
- *   4. `routing.acceptThreadContinuation` via `findAuthoringAgentInThread` (lazy thread
- *      load). Mirrors `bubble-agent-dispatch/index.ts:1442-1459`.
+ *   4. `routing.acceptThreadContinuation`:
+ *      - `parent_id != null` → thread-history walk via `findAuthoringAgentInThread`. Mirrors
+ *        `bubble-agent-dispatch/index.ts:1442-1459`.
+ *      - `parent_id == null` AND `continuationLookback === 'bubble'` → single bubble-scoped
+ *        lookup of the immediate prior message; matches if the prior author is this
+ *        strategy's agent. Mirrors `buddy-agent-dispatch/index.ts:170-186`.
  *
- * `requireBubbleBinding: true` strategies are filtered against the loaded
- * `bubble_agent_bindings` rows — strategies whose slug is not bound to the bubble do
- * not match. Returns the loaded `history` rows alongside the resolution so
- * `buildDispatchContext` does not double-query.
+ * Phase 5 single-query split:
+ *
+ *   Query A (`agent_definitions`): selects every registered-slug definition row, no
+ *   `bubble_agent_bindings` join. Workspace-global agents (Buddy) and exclusion-only
+ *   agents (Coach when not bound to the bubble) both land here, so `excludeOnMentionOf`
+ *   can always look up another strategy's mention handle.
+ *
+ *   Query B (`bubble_agent_bindings`): selects `sort_order` + slug only. Builds the
+ *   `boundSortOrder` map. Strategies whose `routing.requireBubbleBinding === true` are
+ *   gated on `boundSortOrder.has(slug)`; `requireBubbleBinding === false` strategies
+ *   (Buddy) match without the gate.
+ *
+ *   Iteration order: bound strategies in `bindings.sort_order` ASC; unbound strategies
+ *   in `REGISTRY_ITERATION_ORDER` declared order. Buddy is unbound and trails Coach +
+ *   Organizer, matching the implicit "fitness bubble Coach > Organizer > Buddy" priority
+ *   and keeping mention/continuation walks deterministic across deploys.
  */
 
 import { loadThreadHistoryByParent } from '../_shared/dispatch/history.ts';
@@ -34,7 +50,7 @@ import type {
   SupabaseClient,
 } from '../_shared/dispatch/types.ts';
 
-type AgentDefEmbed = {
+type AgentDefRow = {
   slug: string;
   display_name: string;
   mention_handle: string;
@@ -42,9 +58,26 @@ type AgentDefEmbed = {
   is_active: boolean;
 };
 
-type BindingRow = {
+type AgentDefinitionsTable = {
+  select: (columns: string) => {
+    in: (
+      column: string,
+      values: unknown[],
+    ) => {
+      eq: (
+        column: string,
+        value: unknown,
+      ) => Promise<{
+        data: AgentDefRow[] | null;
+        error: { message: string } | null;
+      }>;
+    };
+  };
+};
+
+type BindingsRow = {
   sort_order: number;
-  agent_definitions: AgentDefEmbed | AgentDefEmbed[] | null;
+  agent_definitions: { slug: string } | { slug: string }[] | null;
 };
 
 type BindingsTable = {
@@ -65,7 +98,7 @@ type BindingsTable = {
             column: string,
             options: { ascending: boolean },
           ) => Promise<{
-            data: BindingRow[] | null;
+            data: BindingsRow[] | null;
             error: { message: string } | null;
           }>;
         };
@@ -74,12 +107,38 @@ type BindingsTable = {
   };
 };
 
-function unwrapDef(row: BindingRow): AgentDefEmbed | null {
+type PriorMessageRow = { id: string; user_id: string };
+
+type PriorBubbleMessageTable = {
+  select: (columns: string) => {
+    eq: (
+      column: string,
+      value: unknown,
+    ) => {
+      neq: (
+        column: string,
+        value: unknown,
+      ) => {
+        order: (
+          column: string,
+          options: { ascending: boolean },
+        ) => {
+          limit: (n: number) => Promise<{
+            data: PriorMessageRow[] | null;
+            error: { message: string } | null;
+          }>;
+        };
+      };
+    };
+  };
+};
+
+function unwrapBindingSlug(row: BindingsRow): string | null {
   const d = row.agent_definitions;
   const o = Array.isArray(d) ? d[0] : d;
   if (!o || typeof o !== 'object') return null;
-  if (!o.auth_user_id || !o.display_name) return null;
-  return o as AgentDefEmbed;
+  if (typeof o.slug !== 'string' || !o.slug) return null;
+  return o.slug;
 }
 
 export type ResolveAgentInput = {
@@ -118,45 +177,87 @@ export async function resolveAgent(
     return null;
   }
 
-  // Copilot suggestion ignored: v2 is Coach-only in this PR; global/unbound strategy lookup belongs to the Buddy port so this resolver does not ship Phase 5 behavior early.
-  const table = supabase.from('bubble_agent_bindings') as unknown as BindingsTable;
-  const result = await table
-    .select(
-      'sort_order, agent_definitions ( slug, display_name, mention_handle, auth_user_id, is_active )',
-    )
+  // ---- Query A: every registered-slug definition (no bindings join). --------------
+  // Required so Buddy (workspace-global, no bindings rows) and `excludeOnMentionOf`
+  // targets that may not be bound to this bubble (e.g. Coach in a non-fitness bubble
+  // where Buddy still wants to defer on `@Coach`) both have entries in `defBySlug`.
+  const defsTable = supabase.from('agent_definitions') as unknown as AgentDefinitionsTable;
+  const defsResult = await defsTable
+    .select('slug, display_name, mention_handle, auth_user_id, is_active')
+    .in('slug', registeredSlugs)
+    .eq('is_active', true);
+  if (defsResult.error) {
+    log('error', 'agent_definitions query failed', {
+      request_id: requestId,
+      bubble_id: message.bubble_id,
+      error: defsResult.error.message,
+    });
+    return { skipped: true, reason: 'agent_definitions_query_failed' };
+  }
+
+  const defBySlug = new Map<string, AgentDef>();
+  for (const row of defsResult.data ?? []) {
+    if (!row.is_active || !row.auth_user_id || !row.slug) continue;
+    if (defBySlug.has(row.slug)) continue;
+    defBySlug.set(row.slug, {
+      slug: row.slug,
+      auth_user_id: row.auth_user_id,
+      mention_handle: row.mention_handle,
+      display_name: row.display_name,
+      is_active: row.is_active,
+    });
+  }
+
+  // ---- Query B: bubble_agent_bindings (slug + sort_order only). -------------------
+  // Builds the `boundSortOrder` map used both for the iteration walk order and for
+  // gating `requireBubbleBinding === true` strategies.
+  const bindingsTable = supabase.from('bubble_agent_bindings') as unknown as BindingsTable;
+  const bindingsResult = await bindingsTable
+    .select('sort_order, agent_definitions ( slug )')
     .eq('bubble_id', message.bubble_id)
     .eq('enabled', true)
     .in('agent_definitions.slug', registeredSlugs)
     .order('sort_order', { ascending: true });
 
-  if (result.error) {
+  if (bindingsResult.error) {
     log('error', 'bindings query failed', {
       request_id: requestId,
       bubble_id: message.bubble_id,
-      error: result.error.message,
+      error: bindingsResult.error.message,
     });
     return { skipped: true, reason: 'bindings_query_failed' };
   }
 
-  const seenAuthIds = new Set<string>();
-  const orderedDefs: AgentDef[] = [];
-  for (const raw of result.data ?? []) {
-    const def = unwrapDef(raw);
-    if (!def?.is_active || !def.auth_user_id) continue;
-    if (seenAuthIds.has(def.auth_user_id)) continue;
-    seenAuthIds.add(def.auth_user_id);
-    orderedDefs.push({
-      slug: def.slug,
-      auth_user_id: def.auth_user_id,
-      mention_handle: def.mention_handle,
-      display_name: def.display_name,
-      is_active: def.is_active,
-    });
+  /** Bound strategies in `bindings.sort_order` ASC. Gates `requireBubbleBinding`. */
+  const boundSlugsInOrder: string[] = [];
+  const boundSlugSet = new Set<string>();
+  for (const raw of bindingsResult.data ?? []) {
+    const slug = unwrapBindingSlug(raw);
+    if (!slug) continue;
+    if (boundSlugSet.has(slug)) continue;
+    if (!defBySlug.has(slug)) continue;
+    boundSlugSet.add(slug);
+    boundSlugsInOrder.push(slug);
   }
 
-  // Cross-index strategies + their bound AgentDef rows so the per-rule walks below can
-  // skip strategies that require a binding when one is missing.
-  const defBySlug = new Map(orderedDefs.map((d) => [d.slug, d]));
+  // ---- Build the iteration order. ------------------------------------------------
+  // Bound strategies first (sort_order ASC), then unbound strategies in registry order.
+  const strategyBySlug = new Map<string, AgentStrategy<unknown>>(registry.map((s) => [s.slug, s]));
+  const iterationOrder: AgentStrategy<unknown>[] = [];
+  for (const slug of boundSlugsInOrder) {
+    const strat = strategyBySlug.get(slug);
+    if (strat) iterationOrder.push(strat);
+  }
+  for (const strat of registry) {
+    if (boundSlugSet.has(strat.slug)) continue;
+    iterationOrder.push(strat);
+  }
+
+  /** True iff the strategy passes its `requireBubbleBinding` gate against this bubble. */
+  const passesBindingGate = (strategy: AgentStrategy<unknown>): boolean => {
+    if (!strategy.routing?.requireBubbleBinding) return true;
+    return boundSlugSet.has(strategy.slug);
+  };
 
   const buildResolved = (def: AgentDef): ResolvedAgent => ({
     slug: def.slug,
@@ -166,10 +267,10 @@ export async function resolveAgent(
   });
 
   // Rule 1: implicit trigger.
-  for (const strategy of registry) {
+  for (const strategy of iterationOrder) {
     if (!strategy.routing?.implicitTrigger) continue;
     if (!strategy.routing.implicitTrigger(message)) continue;
-    if (strategy.routing.requireBubbleBinding && !defBySlug.has(strategy.slug)) continue;
+    if (!passesBindingGate(strategy)) continue;
     const def = defBySlug.get(strategy.slug);
     if (!def) continue;
     return { slug: strategy.slug, agent: buildResolved(def), history: null };
@@ -178,14 +279,11 @@ export async function resolveAgent(
   // Rule 2: mention.
   const mentionableAgents: AgentDef[] = [];
   const mentionStrategiesBySlug = new Map<string, AgentStrategy<unknown>>();
-  for (const strategy of registry) {
+  for (const strategy of iterationOrder) {
     if (!strategy.routing?.acceptMention) continue;
+    if (!passesBindingGate(strategy)) continue;
     const def = defBySlug.get(strategy.slug);
-    if (!def) {
-      if (strategy.routing.requireBubbleBinding) continue;
-      // Strategy doesn't require binding but still has no def → skip; no handle to match.
-      continue;
-    }
+    if (!def) continue;
     mentionableAgents.push(def);
     mentionStrategiesBySlug.set(strategy.slug, strategy);
   }
@@ -193,13 +291,15 @@ export async function resolveAgent(
   if (mention) {
     const strategy = mentionStrategiesBySlug.get(mention.slug);
     const exclude = strategy?.routing?.excludeOnMentionOf;
+    // Exclusion lookup uses `defBySlug` (always present for any registered slug),
+    // NOT `boundSlugSet` — Buddy must still defer on `@Coach` even when Coach is not
+    // bound to this bubble. Mirrors `buddy-agent-dispatch/index.ts:391-397`.
     if (
       !exclude ||
-      !exclude.some((slug) =>
-        defBySlug.get(slug)
-          ? findFirstMentionedAgent(message.content, [defBySlug.get(slug)!]) != null
-          : false,
-      )
+      !exclude.some((slug) => {
+        const otherDef = defBySlug.get(slug);
+        return otherDef ? findFirstMentionedAgent(message.content, [otherDef]) != null : false;
+      })
     ) {
       return { slug: mention.slug, agent: buildResolved(mention), history: null };
     }
@@ -209,9 +309,10 @@ export async function resolveAgent(
   if (message.parent_id == null) {
     const slug = parseRootDefaultAgentSlug(message);
     if (slug) {
-      for (const strategy of registry) {
+      for (const strategy of iterationOrder) {
         if (strategy.slug !== slug) continue;
         if (!strategy.routing?.acceptRootDefault) continue;
+        if (!passesBindingGate(strategy)) continue;
         const def = defBySlug.get(strategy.slug);
         if (!def) continue;
         return { slug: strategy.slug, agent: buildResolved(def), history: null };
@@ -219,8 +320,9 @@ export async function resolveAgent(
     }
   }
 
-  // Rule 4: thread continuation. Load history once, share with the caller.
+  // Rule 4: thread continuation.
   if (message.parent_id != null) {
+    // 4a: parent_id present → walk the loaded thread history.
     const threadId = message.parent_id;
     const historyResult = await loadThreadHistoryByParent(
       supabase,
@@ -237,8 +339,9 @@ export async function resolveAgent(
       });
     }
     const rows = historyResult.rows;
-    for (const strategy of registry) {
+    for (const strategy of iterationOrder) {
       if (!strategy.routing?.acceptThreadContinuation) continue;
+      if (!passesBindingGate(strategy)) continue;
       const def = defBySlug.get(strategy.slug);
       if (!def) continue;
       const agentAuthIds = new Set([def.auth_user_id]);
@@ -248,6 +351,44 @@ export async function resolveAgent(
       }
     }
     return { skipped: true, reason: 'no_strategy_matched' };
+  }
+
+  // 4b: parent_id == null → strategies opting into `continuationLookback === 'bubble'`
+  // get a single bubble-scoped lookup of the immediate prior message. Memoized so
+  // multiple opt-in strategies share the same query.
+  let priorAuthorId: string | null | undefined; // undefined = not fetched yet
+  for (const strategy of iterationOrder) {
+    if (!strategy.routing?.acceptThreadContinuation) continue;
+    if (strategy.routing.continuationLookback !== 'bubble') continue;
+    if (!passesBindingGate(strategy)) continue;
+    const def = defBySlug.get(strategy.slug);
+    if (!def) continue;
+
+    if (priorAuthorId === undefined) {
+      const priorTable = supabase.from('messages') as unknown as PriorBubbleMessageTable;
+      const priorResult = await priorTable
+        .select('id, user_id')
+        .eq('bubble_id', message.bubble_id)
+        .neq('id', message.id)
+        .order('created_at', { ascending: false })
+        .limit(2);
+      if (priorResult.error) {
+        log('warn', 'bubble continuation prior message lookup failed', {
+          request_id: requestId,
+          bubble_id: message.bubble_id,
+          message_id: message.id,
+          error: priorResult.error.message,
+        });
+        priorAuthorId = null;
+      } else {
+        const prev = (priorResult.data ?? [])[0];
+        priorAuthorId = prev?.user_id ?? null;
+      }
+    }
+
+    if (priorAuthorId && priorAuthorId === def.auth_user_id) {
+      return { slug: strategy.slug, agent: buildResolved(def), history: null };
+    }
   }
 
   return { skipped: true, reason: 'no_strategy_matched' };

@@ -1,6 +1,6 @@
 # Vertex Agent Dispatch Secrets Matrix
 
-Last updated: 2026-05-07 (Phase 4 cutover note appended)
+Last updated: 2026-05-08 (Phase 5 cutover note appended)
 
 This file is the migration ledger for agent-dispatch secrets. Its purpose is to
 prevent accidental secret deletion while `bubble-agent-dispatch`,
@@ -189,3 +189,50 @@ boolean` on `DispatcherEnv`, with the same `=== '1'` semantic the legacy
 Operational state, per-trigger validation, induced-failure procedure
 (`ORGANIZER_WRITES_ENABLED=1` toggle), and the final cut-over / roll-back
 decision are recorded in [`./soak-log-organizer.md`](./soak-log-organizer.md).
+
+## Phase 5 cutover state
+
+Phase 5 registers Buddy in `agent-dispatch-v2` and **disables** the legacy
+`buddy_dispatch_webhook` in the same Dashboard session. Like Phase 4 and unlike
+Phase 3, this is a hard cutover — no parallel soak window. The reason is the
+same idempotency gap:
+
+- `public.buddy_create_onboarding_reply` (Buddy) has **no** `agent_message_runs`
+  dedupe and **no** advisory lock (see
+  `supabase/migrations/20260701140000_buddy_rpc.sql`). The RPC takes neither a
+  `p_trigger_message_id` nor any unique-key arg, so two webhooks firing in
+  parallel would produce two visible Buddy replies — and Buddy fires on every
+  onboarding event, making duplicate replies user-visible immediately.
+- Buddy is also workspace-global (no `bubble_agent_bindings` rows; see
+  `supabase/migrations/20260701150000_buddy_agent_rls_workspace_global.sql`),
+  so a parallel soak would touch every workspace's onboarding flow at once.
+
+Implications for this matrix:
+
+- **Active webhooks after Phase 5**: `bubble_agent_webhook` (legacy Coach,
+  retained per the Phase 3 dual-soak), `agent_dispatch_webhook_v2` (Coach +
+  Organizer + Buddy via `REGISTRY_ITERATION_ORDER`). The Buddy-only
+  `buddy_dispatch_webhook` is **disabled** but not deleted; rollback flips it
+  back on. The Organizer-only `organizer_dispatch_webhook` remains disabled
+  per Phase 4.
+- **No legacy secret is deleted in Phase 5.** `BUDDY_AGENT_WEBHOOK_SECRET`,
+  `BUDDY_GEMINI_MODEL`, `BUDDY_GEMINI_FETCH_TIMEOUT_MS`, `BUDDY_AGENT_DEBUG`,
+  `GEMINI_API_KEY`, and `GEMINI_MODEL` remain live consumers of the
+  deployed-but-idle `buddy-agent-dispatch` function until Phase 6 deletes the
+  legacy directory (per the table's "Phase 6 status" column).
+- **Resolver behavior change is workspace-wide.** Phase 5 rewrites
+  `agent-dispatch-v2/resolve.ts` from a single bindings-joined query to a
+  two-query split (`agent_definitions` for all registered slugs +
+  `bubble_agent_bindings` for sort_order). Every Coach and Organizer turn now
+  flows through this new path. Spot-check 5 known Coach + 5 known Organizer
+  turns in the first hour of the soak per `soak-log-buddy.md` §rollback.
+- **No new env var is introduced.** Buddy reads only the shared Phase 1
+  variables (`GCP_PROJECT_ID`, `GCP_LOCATION`, `GCP_SERVICE_ACCOUNT_JSON`,
+  `LLM_TIMEOUT_MS`, `AGENT_WEBHOOK_SECRET`) plus the `is_active` flag on its
+  `agent_definitions` row — no `BUDDY_*` env var is migrated to v2; the
+  legacy ones remain only because the legacy dispatcher is still deployed.
+
+Operational state, per-trigger validation, induced-failure procedure
+(onboarding sentinel + Coach-mention exclusion), and the final cut-over /
+roll-back decision are recorded in
+[`./soak-log-buddy.md`](./soak-log-buddy.md).
