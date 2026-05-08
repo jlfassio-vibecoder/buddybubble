@@ -386,23 +386,8 @@ verify_jwt = false
 [functions.agora-recording-reconciler]
 verify_jwt = false
 
-[functions.bubble-agent-dispatch]
-verify_jwt = false
-
-# Authentication: BUDDY_AGENT_WEBHOOK_SECRET in the function (Bearer or x-buddy-agent-secret), not Supabase JWT.
-# Buddy is the general-purpose onboarding/guidance agent; intentionally isolated from bubble-agent-dispatch.
-[functions.buddy-agent-dispatch]
-verify_jwt = false
-
-# Authentication: ORGANIZER_AGENT_WEBHOOK_SECRET in the function (Bearer or x-organizer-agent-secret), not Supabase JWT.
-# Organizer is the meeting/calendar coordinator agent; intentionally isolated from bubble-agent-dispatch
-# (the @Coach fitness pipeline) and from buddy-agent-dispatch.
-[functions.organizer-agent-dispatch]
-verify_jwt = false
-
 # Authentication: AGENT_WEBHOOK_SECRET in the function (Bearer or x-agent-secret).
-# Phase 1 reservation: function folder lands in Phase 2 (parallel deploy alongside legacy *-agent-dispatch).
-[functions.agent-dispatch-v2]
+[functions.agent-dispatch]
 verify_jwt = false
 
 # Authentication: LEAD_SMS_ALERT_WEBHOOK_SECRET in the function (Bearer or x-lead-sms-alert-secret), not Supabase JWT.

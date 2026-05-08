@@ -16,8 +16,8 @@
  * pure (no Deno globals, no fetch, no DB clients) so Vitest can exercise it.
  *
  * If you change anything here, update the byte-for-byte mirror at
- * `supabase/functions/agents/buddy/parse.ts`. Phase 7 will add a drift-detection
- * lint to enforce parity.
+ * `supabase/functions/agents/buddy/parse.ts`. Run `pnpm check:agent-mirror` to
+ * verify parity.
  */
 
 export type BuddyCreateCard = {

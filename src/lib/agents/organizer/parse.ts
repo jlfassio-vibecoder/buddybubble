@@ -13,8 +13,8 @@
  * of the directory.
  *
  * If you change anything here, update the byte-for-byte mirror at
- * `supabase/functions/agents/organizer/parse.ts`. Phase 7 will add a drift-detection
- * lint to enforce parity.
+ * `supabase/functions/agents/organizer/parse.ts`. Run `pnpm check:agent-mirror` to
+ * verify parity.
  */
 
 export function escapeRegExpLiteral(s: string): string {

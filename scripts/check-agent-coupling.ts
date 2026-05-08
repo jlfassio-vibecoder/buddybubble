@@ -73,15 +73,10 @@ const SLUG_LITERAL_ALLOWLIST: ReadonlyArray<string> = [
   // and the Phase 4 swap / uniqueness / webhook migrations).
   'supabase/migrations/**',
 
-  // Edge functions need to know which agent they serve.
-  'supabase/functions/bubble-agent-dispatch/**',
-  'supabase/functions/buddy-agent-dispatch/**',
-  'supabase/functions/organizer-agent-dispatch/**',
-
-  // Phase 2 consolidated dispatcher: each per-strategy folder owns ONE slug, and the
+  // Consolidated dispatcher: each per-strategy folder owns ONE slug, and the
   // shared dispatcher entry never branches on slug — it iterates the registry. The
   // hardcoded literal lives in `agents/<slug>/config.ts` plus the registry header.
-  'supabase/functions/agent-dispatch-v2/**',
+  'supabase/functions/agent-dispatch/**',
   'supabase/functions/agents/**',
 
   // Provisioning / audit scripts need the slug list by design.
@@ -91,6 +86,10 @@ const SLUG_LITERAL_ALLOWLIST: ReadonlyArray<string> = [
   // Smoke fixture: --target coach|organizer is a CLI enum that intentionally
   // mirrors registered strategy slugs so the script can pick per-target env vars.
   'scripts/smoke-agent-dispatch-v2.ts',
+  // Phase 7a lint registry: each Contract pins a slug to a (schema, prompt, parser)
+  // triple so violation output names the agent. Allowlist needed for the same reason
+  // as the smoke fixture above.
+  'scripts/check-agent-prompt-schema-drift.ts',
 
   // Markdown documentation: reference slugs in architecture notes / worked examples.
   'docs/**',

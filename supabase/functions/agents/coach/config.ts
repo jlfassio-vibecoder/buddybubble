@@ -2,8 +2,8 @@
  * MIRROR FILE — canonical lives at `src/lib/agents/coach/config.ts`.
  *
  * Body below is byte-for-byte identical to the canonical Vitest-side file (excluding
- * this header). Any change must be hand-mirrored. Phase 7 will add a drift-detection
- * lint to enforce parity. The canonical file includes Vitest unit-test coverage for
+ * this header). Any change must be hand-mirrored — run `pnpm check:agent-mirror` to
+ * verify parity. The canonical file includes Vitest unit-test coverage for
  * the constants that get exercised in `parse.ts` / `server-guards.ts`.
  *
  * No relative imports → import paths are identical between Node and Deno builds for

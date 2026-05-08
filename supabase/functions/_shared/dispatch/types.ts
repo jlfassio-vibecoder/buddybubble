@@ -5,8 +5,8 @@
  * `DispatchContext`, `RoutingDescriptor`, `PreflightAction`, and the supporting
  * payload types. A byte-for-byte mirror lives at
  * `src/lib/agents/_shared/dispatch/types.ts` so Vitest can compile against the same
- * contract; any change here MUST be mirrored there. A drift-detection lint is planned
- * for Phase 7 — until then, mirror by hand.
+ * contract; any change here MUST be mirrored there. Run `pnpm check:agent-mirror` to
+ * verify parity.
  *
  * Pure types only. No runtime, no Deno globals, no `import type` from runtime-specific
  * packages. `SupabaseClient` is declared as a structural placeholder: both the real

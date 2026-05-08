@@ -3,8 +3,8 @@
  *
  * Body below is byte-for-byte identical to the canonical Vitest-side file (excluding
  * this header) EXCEPT for the import path of `./config` which uses the explicit `.ts`
- * extension required by Deno. Any change must be hand-mirrored. Phase 7 will add a
- * drift-detection lint to enforce parity for the body content.
+ * extension required by Deno. Any change must be hand-mirrored — run
+ * `pnpm check:agent-mirror` to verify body parity.
  */
 
 import {

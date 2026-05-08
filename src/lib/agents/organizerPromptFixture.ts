@@ -10,7 +10,7 @@
  *
  * The Deno mirror that powers the runtime lives at
  * `supabase/functions/agents/organizer/prompts.ts`, which is byte-for-byte identical
- * to the canonical. Phase 7 will add a drift-detection lint to enforce parity.
+ * to the canonical. Run `pnpm check:agent-mirror` to verify parity.
  */
 
 export { organizerSystemPrompt as organizerSystemPromptMirror } from './organizer/prompts';
