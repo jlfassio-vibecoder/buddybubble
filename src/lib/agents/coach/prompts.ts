@@ -16,8 +16,8 @@
  *     `CURRENT_USER_CONTEXT_HEADER` — header constants reused by the strategy and the
  *     Deno-only `context.ts` module.
  *
- * A byte-for-byte mirror lives at `supabase/functions/agents/coach/prompts.ts`. Phase 7
- * adds drift detection; until then, mirror by hand.
+ * A byte-for-byte mirror lives at `supabase/functions/agents/coach/prompts.ts`. Run
+ * `pnpm check:agent-mirror` to verify parity.
  *
  * Pure module: only depends on `./config`. No DB clients, no Deno globals.
  */

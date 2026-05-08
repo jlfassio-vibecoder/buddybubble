@@ -4,8 +4,8 @@
  * Lifted verbatim from `supabase/functions/buddy-agent-dispatch/index.ts:33-66`.
  * Mirrored byte-for-byte at `supabase/functions/agents/buddy/schema.ts`.
  *
- * Phase 7 will add a drift-detection lint to enforce parity between this file and
- * the Deno mirror. Until then, mirror by hand.
+ * Run `pnpm check:agent-mirror` to verify parity between this file and the Deno
+ * mirror.
  */
 
 export const BUDDY_RESPONSE_SCHEMA = {

@@ -28,6 +28,7 @@ agent can confirm prerequisites before starting work.
 | 5   | [`phase-5-buddy-strategy-port.md`](./phase-5-buddy-strategy-port.md)                   | Port Buddy (onboarding sentinel, thread continuation, Coach-mention exclusion); cut over and soak.                          |
 | 6   | [`phase-6-cutover-deletion-and-rename.md`](./phase-6-cutover-deletion-and-rename.md)   | Delete the three legacy functions and their secrets; rename `agent-dispatch-v2` → `agent-dispatch`.                         |
 | 7   | [`phase-7-observability-tests-and-docs.md`](./phase-7-observability-tests-and-docs.md) | Structured-log query playbook, schema-vs-prompt lint, integration tests, doc updates.                                       |
+| 7a  | [`phase-7a-schema-drift-linter.md`](./phase-7a-schema-drift-linter.md)                 | Schema/prompt/parser drift linter + mirror-parity linter (modular Phase 7 deliverable, independent of Phase 6).             |
 
 ---
 
@@ -137,7 +138,8 @@ corrections so the phased work below does not regress production behavior.
    helpers (parsers, schema validators, prompt builders) have **no Deno globals** and can
    be imported into both `supabase/functions/...` (Deno) and `src/...` (Node + Vitest).
    The dispatcher entry, `vertex-auth.ts`, and `vertex-gemini.ts` may use Deno-only
-   primitives. See Phase 7 for the drift-detection lint to add to CI.
+   primitives. The Phase 7a `pnpm check:agent-mirror` lint enforces parity between
+   canonical and mirror in CI.
 
 9. **`config.toml` requires an explicit function block.** Each Edge Function needs a
    `[functions.<name>] verify_jwt = false` entry

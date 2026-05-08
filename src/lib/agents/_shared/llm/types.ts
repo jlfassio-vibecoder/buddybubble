@@ -5,7 +5,7 @@
  * `src/lib/agents/_shared/dispatch/types.ts`) can import `GeminiContent` and
  * `VertexResponseSchema` from a relative path that resolves under both Deno (Supabase
  * Edge runtime) and Node/Vitest. Any change here MUST be mirrored on the Deno side.
- * Phase 7 will add a drift-detection lint; until then, mirror by hand.
+ * Run `pnpm check:agent-mirror` to verify parity.
  *
  * Pure types only. Body below is byte-identical to the canonical Deno file (excluding
  * this header).
@@ -65,6 +65,12 @@ export type VertexGenerateResponse = {
 /**
  * Discriminator the dispatcher uses to decide whether to insert a safe-reply or surface
  * the error as HTTP 500.
+ *
+ * - `http`    Vertex returned a non-retriable HTTP error (400/401/403/404 etc.).
+ * - `parse`   Response was not valid JSON (or the candidate was empty).
+ * - `shape`   Response was valid JSON but did not satisfy the strategy's parser.
+ * - `timeout` `AbortSignal.timeout` fired before any response.
+ * - `auth`    OAuth token exchange with Google failed; operationally distinct from `http`.
  */
 export type VertexErrorKind = 'http' | 'parse' | 'shape' | 'timeout' | 'auth';
 

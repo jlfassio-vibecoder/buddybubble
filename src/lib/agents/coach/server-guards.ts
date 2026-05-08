@@ -24,7 +24,7 @@
  * focused unit tests can compose fragments freely.
  *
  * A byte-for-byte mirror lives at `supabase/functions/agents/coach/server-guards.ts`.
- * Phase 7 adds drift detection; until then, mirror by hand.
+ * Run `pnpm check:agent-mirror` to verify parity.
  *
  * Pure module: only depends on `./parse` for the `CoachGeminiJsonResponse` type. No DB,
  * no Deno globals.

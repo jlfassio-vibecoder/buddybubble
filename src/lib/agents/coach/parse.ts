@@ -25,8 +25,8 @@
  * or `Error('gemini_invalid_json_shape')` to match the legacy contract; the dispatcher
  * catches and classifies these via `_shared/llm/vertex-gemini.classifyError`.
  *
- * A byte-for-byte mirror lives at `supabase/functions/agents/coach/parse.ts`. Phase 7
- * adds drift detection; until then, mirror by hand.
+ * A byte-for-byte mirror lives at `supabase/functions/agents/coach/parse.ts`. Run
+ * `pnpm check:agent-mirror` to verify parity.
  *
  * Pure module: only depends on `./config`. No DB, no Deno globals, no logging.
  */

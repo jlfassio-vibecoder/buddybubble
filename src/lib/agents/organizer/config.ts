@@ -12,6 +12,7 @@
  *     is fallback-eligible per `_shared/llm/vertex-gemini.ts:classifyError`).
  */
 
+/** Stable agent slug. Strategy modules are the only files allowed to hard-code this. */
 export const ORGANIZER_SLUG = 'organizer' as const;
 
 export const ORGANIZER_MODEL_DEFAULT = 'gemini-2.5-flash' as const;

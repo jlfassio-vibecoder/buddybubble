@@ -4,8 +4,8 @@
  * Lifted verbatim from `supabase/functions/organizer-agent-dispatch/index.ts:43-83`.
  * Mirrored byte-for-byte at `supabase/functions/agents/organizer/schema.ts`.
  *
- * Phase 7 will add a drift-detection lint to enforce parity between this file and
- * the Deno mirror. Until then, mirror by hand.
+ * Run `pnpm check:agent-mirror` to verify parity between this file and the Deno
+ * mirror.
  */
 
 export const ORGANIZER_RESPONSE_SCHEMA = {

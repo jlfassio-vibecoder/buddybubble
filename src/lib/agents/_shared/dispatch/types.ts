@@ -4,8 +4,8 @@
  * The Deno copy is the source of truth for `AgentStrategy<TParsed>`, `DispatchContext`,
  * `RoutingDescriptor`, `PreflightAction`, and the supporting payload types. This mirror
  * exists so Vitest can compile against the same contract. Any change here MUST be
- * mirrored on the Deno side; Phase 7 adds a drift-detection lint. Until then, mirror by
- * hand. See `docs/refactor/vertex-agent-dispatch-consolidation/phase-1-shared-foundations.md`.
+ * mirrored on the Deno side. Run `pnpm check:agent-mirror` to verify parity. See
+ * `docs/refactor/vertex-agent-dispatch-consolidation/phase-1-shared-foundations.md`.
  *
  * Pure types only. The body below is byte-identical to the canonical Deno file
  * (excluding this header).

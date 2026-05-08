@@ -9,8 +9,8 @@
  * documented in `docs/refactor/phase4-deviation-log.md:39-50`.
  *
  * The mirror that powers the Deno runtime lives at
- * `supabase/functions/agents/organizer/parse.ts`. Phase 7 will add a drift-detection
- * lint to enforce parity between the canonical and the mirror.
+ * `supabase/functions/agents/organizer/parse.ts`. Run `pnpm check:agent-mirror` to
+ * verify parity between the canonical and the mirror.
  */
 
 export {

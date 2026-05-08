@@ -8,7 +8,7 @@
  *
  * If you change the prompt body, the byte-for-byte mirror at
  * `supabase/functions/agents/buddy/prompts.ts` must be updated in lockstep.
- * Phase 7 will add a drift-detection lint.
+ * Run `pnpm check:agent-mirror` to verify parity.
  */
 
 export const buddySystemPrompt = `You are Buddy, the built-in onboarding and guidance assistant inside BuddyBubble, a local-community app built around chat bubbles (rooms) and a shared Kanban board called the Bubbleboard.

@@ -13,7 +13,7 @@
  *
  * If you change the prompt body, the byte-for-byte mirror at
  * `supabase/functions/agents/organizer/prompts.ts` must be updated in lockstep.
- * Phase 7 will add a drift-detection lint.
+ * Run `pnpm check:agent-mirror` to verify parity.
  */
 
 /** Sentinel owned by the Buddy onboarding frontend; Organizer ignores it in history. */

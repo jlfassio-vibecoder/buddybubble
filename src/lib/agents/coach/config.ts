@@ -4,8 +4,8 @@
  * This file is the single source of truth for Coach's slug, model defaults, generation
  * params, prompt-side directives, and intake-phase / category enums. A byte-for-byte
  * mirror lives at `supabase/functions/agents/coach/config.ts` so the Deno runtime can
- * import the same constants without cross-runtime imports. Phase 7 will add a drift
- * lint; until then, mirror by hand.
+ * import the same constants without cross-runtime imports. Run `pnpm check:agent-mirror`
+ * to verify parity.
  *
  * Lifted from the legacy single-file Coach implementation:
  *   - `COACH_TASK_NOTES_MAX_CHARS`, `COACH_TASK_SEED_CTA`:

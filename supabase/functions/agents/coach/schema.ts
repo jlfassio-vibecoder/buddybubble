@@ -7,8 +7,8 @@
  *     `../_shared/llm/types` (Node bundler) on the canonical side.
  *   - `INTAKE_*` constants are imported from `./config.ts` (Deno) vs `./config` (Node).
  *
- * Any change must be hand-mirrored. Phase 7 will add a drift-detection lint to enforce
- * parity for the body content.
+ * Any change must be hand-mirrored — run `pnpm check:agent-mirror` to verify body
+ * parity.
  */
 
 import type { VertexResponseSchema } from '../../_shared/llm/types.ts';
