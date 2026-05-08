@@ -21,6 +21,14 @@ export type DispatcherEnv = {
   LLM_TIMEOUT_MS: number;
   /** When true, dispatcher is allowed to log additional debug fields. */
   LLM_DEBUG: boolean;
+  /**
+   * Phase 4 Organizer write-gating flag. When true, Organizer's `proposedWrite`
+   * payload is honored and the `organizer_create_reply_and_task` RPC inserts a
+   * task row alongside the reply. When false (the default, matching legacy at
+   * `organizer-agent-dispatch/index.ts:596`), the RPC inserts the reply only and
+   * the strategy still surfaces the un-gated `proposedWrite` in the structured log.
+   */
+  ORGANIZER_WRITES_ENABLED: boolean;
 };
 
 const REQUIRED_STRING_KEYS: ReadonlyArray<keyof DispatcherEnv> = [
@@ -91,5 +99,8 @@ export function readDispatcherEnv(): DispatcherEnv {
     GCP_SERVICE_ACCOUNT_JSON: values.GCP_SERVICE_ACCOUNT_JSON!,
     LLM_TIMEOUT_MS: llmTimeoutMs,
     LLM_DEBUG: readString('LLM_DEBUG') === '1',
+    // Mirrors `organizer-agent-dispatch/index.ts:596` — strict `=== '1'` semantic
+    // so an accidental `ORGANIZER_WRITES_ENABLED=true` or `=yes` reads as false.
+    ORGANIZER_WRITES_ENABLED: readString('ORGANIZER_WRITES_ENABLED') === '1',
   };
 }

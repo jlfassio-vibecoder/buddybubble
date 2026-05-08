@@ -2,21 +2,26 @@
  * Agent strategy registry — Deno-only.
  *
  * The dispatcher (`agent-dispatch-v2/index.ts`) imports `REGISTRY` and `getStrategy`
- * exclusively. Each strategy lives under its own slug-namespaced subfolder so future
- * Phase 4 / Phase 5 work (Buddy, Organizer) can register without touching this file
- * beyond a single new entry.
+ * exclusively. Each strategy lives under its own slug-namespaced subfolder so the
+ * remaining Phase 5 work (Buddy) can register without touching this file beyond a
+ * single new entry.
  *
  * Iteration order matches the Phase 1 ordering contract from
- * `src/lib/agents/sortAgentEntries.ts` (sort_order ASC, slug ASC tiebreaker). Today
- * Coach is the sole entry, so the order is trivially `['coach']`.
+ * `src/lib/agents/sortAgentEntries.ts` (sort_order ASC, slug ASC tiebreaker), which
+ * is also what the resolver applies via `bubble_agent_bindings.sort_order` in
+ * `agent-dispatch-v2/resolve.ts:130`. Coach lists first because production
+ * `bubble_agent_bindings.sort_order` puts Coach ahead of Organizer in fitness
+ * bubbles where both are bound; Organizer-only bubbles are unaffected by the order.
  */
 
 import type { AgentStrategy } from '../_shared/dispatch/types.ts';
 
 import { CoachStrategy } from './coach/strategy.ts';
+import { OrganizerStrategy } from './organizer/strategy.ts';
 
 export const REGISTRY = {
   [CoachStrategy.slug]: CoachStrategy,
+  [OrganizerStrategy.slug]: OrganizerStrategy,
 } as const;
 
 export type RegistryKey = keyof typeof REGISTRY;
@@ -28,6 +33,7 @@ export type RegistryKey = keyof typeof REGISTRY;
  */
 export const REGISTRY_ITERATION_ORDER: ReadonlyArray<AgentStrategy<unknown>> = [
   CoachStrategy as unknown as AgentStrategy<unknown>,
+  OrganizerStrategy as unknown as AgentStrategy<unknown>,
 ];
 
 /**
