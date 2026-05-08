@@ -115,7 +115,10 @@ async function buildOrganizerContents(ctx: DispatchContext): Promise<GeminiConte
     const role: 'user' | 'model' = agentAuthIds.has(row.user_id) ? 'model' : 'user';
     out.push({ role, parts: [{ text }] });
   }
-  out.push({ role: 'user', parts: [{ text: (ctx.message.content ?? '').trim() }] });
+  const triggerText = (ctx.message.content ?? '').trim();
+  if (triggerText) {
+    out.push({ role: 'user', parts: [{ text: triggerText }] });
+  }
   return out;
 }
 

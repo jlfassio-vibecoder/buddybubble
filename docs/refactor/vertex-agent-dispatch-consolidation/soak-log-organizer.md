@@ -100,10 +100,11 @@ After deploy:
 
 - Confirm in Dashboard → Edge Functions → `agent-dispatch-v2` that the version
   bumped to the deploy timestamp captured above.
-- Filter Supabase Edge Function logs for the next ~60 seconds with
-  `slug = "organizer"` — there should be **zero** Organizer hits yet because
-  the v2 webhook will not route Organizer traffic to the new strategy until
-  the registry change is live AND the legacy webhook is still capturing first.
+- Move immediately to Step 2. `agent_dispatch_webhook_v2` still fires on every
+  `messages` INSERT, so once this registry deploy is live, any `@Organizer`
+  turn during the Step 1 → Step 2 window can route to v2 and duplicate the
+  legacy reply. The goal is not a zero-hit observation window; the goal is to
+  keep the dual-active interval to the manual-toggle minimum.
 
 > Coach traffic is unaffected by this step. The dispatcher's
 > `REGISTRY_ITERATION_ORDER` puts Coach first
@@ -306,14 +307,14 @@ Operator fills these in during/after the soak. Add rows as needed.
 
 **Final outcome:** _to be recorded once._
 
-| Field      | Value                                      |
-| ---------- | ------------------------------------------ |
-| Decision   | `soak_complete` / `roll_back` (circle one) |
-| Decided by |                                            |
-| Date       |                                            |
-| Rationale  |                                            |
+| Field      | Value                                        |
+| ---------- | -------------------------------------------- |
+| Decision   | `soak_complete` / `rolled_back` (circle one) |
+| Decided by |                                              |
+| Date       |                                              |
+| Rationale  |                                              |
 
-If `soak_complete`, proceed to Phase 5 (Buddy port). If `roll_back`, follow
+If `soak_complete`, proceed to Phase 5 (Buddy port). If `rolled_back`, follow
 the procedure below and document the root cause in the "User-visible
 regressions" table.
 
