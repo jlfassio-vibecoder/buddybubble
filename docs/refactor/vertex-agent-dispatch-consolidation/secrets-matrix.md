@@ -1,6 +1,6 @@
 # Vertex Agent Dispatch Secrets Matrix
 
-Last updated: 2026-05-07 (Phase 3 parallel-run note appended)
+Last updated: 2026-05-07 (Phase 4 cutover note appended)
 
 This file is the migration ledger for agent-dispatch secrets. Its purpose is to
 prevent accidental secret deletion while `bubble-agent-dispatch`,
@@ -147,3 +147,45 @@ Implications for this matrix:
 Operational state, per-trigger validation, induced-failure procedure, and the
 final cut-over / roll-back decision are recorded in
 [`./soak-log-coach.md`](./soak-log-coach.md).
+
+## Phase 4 cutover state
+
+Phase 4 registers Organizer in `agent-dispatch-v2` and **disables** the legacy
+`organizer_dispatch_webhook` in the same Dashboard session. Unlike Phase 3,
+this is a hard cutover, not a parallel soak. The reason is structural:
+
+- `public.agent_create_card_and_reply` (Coach) holds an advisory lock and a
+  unique key on `agent_message_runs (trigger_message_id, agent_auth_user_id)`,
+  so dual-firing collapses into one reply (see `supabase/migrations/20260729120000_agent_rpcs_persist_execution_patch.sql`).
+- `public.organizer_create_reply_and_task` (Organizer) has **no** equivalent
+  idempotency layer (see `supabase/migrations/20260723140000_organizer_rpc.sql`):
+  no `p_trigger_message_id` arg, no advisory lock, no `agent_message_runs` row.
+  Two webhooks firing in parallel would produce two visible Organizer replies.
+
+Phase 4 chooses Phase 4 spec option (b) — disable the legacy webhook the moment
+v2 picks Organizer up — rather than retro-adding an idempotency table to the
+Organizer RPC, because Organizer traffic is low and rollback is one Dashboard
+toggle (re-enable `organizer_dispatch_webhook`).
+
+Implications for this matrix:
+
+- **Active webhooks after Phase 4**: `bubble_agent_webhook` (legacy Coach,
+  retained per Phase 3 dual-soak — see prior section), `agent_dispatch_webhook_v2`
+  (Coach + Organizer via `REGISTRY_ITERATION_ORDER`). The Organizer-only
+  `organizer_dispatch_webhook` is **disabled** but not deleted; rollback flips it
+  back on.
+- **No legacy secret is deleted in Phase 4.** `ORGANIZER_AGENT_WEBHOOK_SECRET`,
+  `GEMINI_API_KEY`, `ORGANIZER_GEMINI_MODEL`, `GEMINI_MODEL`,
+  `ORGANIZER_GEMINI_FETCH_TIMEOUT_MS`, and `ORGANIZER_AGENT_DEBUG` remain live
+  consumers of the deployed-but-idle `organizer-agent-dispatch` function until
+  Phase 6 deletes the legacy directory (per the table's "Phase 6 status" column).
+- **`ORGANIZER_WRITES_ENABLED` is now read by `agent-dispatch-v2`** via
+  `_shared/env.ts:readDispatcherEnv()` — typed as `ORGANIZER_WRITES_ENABLED:
+boolean` on `DispatcherEnv`, with the same `=== '1'` semantic the legacy
+  function uses at `organizer-agent-dispatch/index.ts:596`. Set the same value on
+  both functions during the Phase 4 deploy window so a rollback to the legacy
+  webhook does not flip the writes-gating flag implicitly.
+
+Operational state, per-trigger validation, induced-failure procedure
+(`ORGANIZER_WRITES_ENABLED=1` toggle), and the final cut-over / roll-back
+decision are recorded in [`./soak-log-organizer.md`](./soak-log-organizer.md).

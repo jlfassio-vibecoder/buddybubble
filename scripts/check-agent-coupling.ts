@@ -88,6 +88,9 @@ const SLUG_LITERAL_ALLOWLIST: ReadonlyArray<string> = [
   'scripts/provision-agents.ts',
   'scripts/audit-agent-avatars.ts',
   'scripts/check-agent-coupling.ts', // this file references slugs in the allowlist itself
+  // Smoke fixture: --target coach|organizer is a CLI enum that intentionally
+  // mirrors registered strategy slugs so the script can pick per-target env vars.
+  'scripts/smoke-agent-dispatch-v2.ts',
 
   // Markdown documentation: reference slugs in architecture notes / worked examples.
   'docs/**',
