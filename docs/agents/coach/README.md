@@ -7,7 +7,8 @@ This document describes the **current** BuddyBubble **Coach** (`slug: coach`) en
 - [`docs/refactor/agent-routing-audit.md`](../../refactor/agent-routing-audit.md) — resolver / typing-indicator refactor notes (aligned with `resolveTargetAgent` + `useAgentResponseWait`).
 - [`docs/agents/adding-an-organizer-variant.md`](../adding-an-organizer-variant.md) — Organizer is a **separate** dispatcher; not covered here.
 - [`docs/agents/coach/ARCHITECTURE_ASSESSMENT.md`](./ARCHITECTURE_ASSESSMENT.md) — gap analysis and recommendations against the implementation described here.
-- [`docs/agents/vertex-setup.md`](../vertex-setup.md) — GCP project, Service Account, IAM, key rotation, quotas, and monitoring for the consolidated `agent-dispatch-v2` Edge Function (Phase 2 onward). The legacy `bubble-agent-dispatch` function described below continues to use `GEMINI_API_KEY` until Phase 3 cuts the webhook over to `agent-dispatch-v2`.
+- [`docs/agents/vertex-setup.md`](../vertex-setup.md) — GCP project, Service Account, IAM, key rotation, and quotas for the consolidated `agent-dispatch` Edge Function (the only agent dispatcher post-Phase 6).
+- [`docs/agents/observability.md`](../observability.md) — copy-paste Supabase Logs queries for error budget, latency (LLM and end-to-end), fallback rate, and Vertex token usage.
 
 When in doubt, **trust the code** paths cited here.
 
@@ -37,8 +38,8 @@ It is **not** the Organizer (community) agent or the Buddy (general / app help) 
 ## Dispatch: webhook → Edge Function
 
 1. **Trigger:** Supabase **database webhook** on `public.messages` **INSERT** (payload filtered to `schema=public`, `table=messages`, `type=INSERT` in code).
-2. **Handler:** [`supabase/functions/bubble-agent-dispatch/index.ts`](../../../supabase/functions/bubble-agent-dispatch/index.ts) (service role + shared secret, `verify_jwt: false` — see `supabase/config.toml`).
-3. **Secrets:** `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `BUBBLE_AGENT_WEBHOOK_SECRET`, `GEMINI_API_KEY`; optional `GEMINI_MODEL` / `VERTEX_GEMINI_MODEL`, `GEMINI_FETCH_TIMEOUT_MS`.
+2. **Handler:** [`supabase/functions/agent-dispatch/index.ts`](../../../supabase/functions/agent-dispatch/index.ts) routes to the per-slug strategy at [`supabase/functions/agents/coach/strategy.ts`](../../../supabase/functions/agents/coach/strategy.ts) (service role + shared secret, `verify_jwt: false` — see `supabase/config.toml`).
+3. **Secrets** (consolidated Phase 1 bundle): `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `AGENT_WEBHOOK_SECRET`, `GCP_PROJECT_ID`, `GCP_LOCATION`, `GCP_SERVICE_ACCOUNT_JSON`, `LLM_TIMEOUT_MS`. The legacy `BUBBLE_AGENT_WEBHOOK_SECRET` / `GEMINI_API_KEY` / `GEMINI_MODEL` / `VERTEX_GEMINI_MODEL` / `GEMINI_FETCH_TIMEOUT_MS` envs were retired in Phase 6 — see [`secrets-matrix.md`](../../refactor/vertex-agent-dispatch-consolidation/secrets-matrix.md).
 
 **Not handled here**
 
@@ -143,13 +144,13 @@ The architecture plan does **not** list these fields; the **file header** and `C
 
 ## File map (Coach-related)
 
-| Area                            | Path                                                                                              |
-| ------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Edge dispatch                   | `supabase/functions/bubble-agent-dispatch/index.ts`                                               |
-| Workout rail UI                 | `src/components/chat/WorkoutCoachRail.tsx`                                                        |
-| Draft card + finalize           | `src/components/chat/CoachDraftCard.tsx`, `src/types/coach-draft.ts`                              |
-| Live player patch types / apply | `src/types/execution-patch.ts`, `src/components/fitness/WorkoutPlayer.tsx`                        |
-| Default Coach in main/task chat | `src/components/chat/ChatArea.tsx`, `src/components/modals/task-modal/TaskModalCommentsPanel.tsx` |
+| Area                            | Path                                                                                                           |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Edge dispatch                   | `supabase/functions/agent-dispatch/index.ts` + Coach strategy at `supabase/functions/agents/coach/strategy.ts` |
+| Workout rail UI                 | `src/components/chat/WorkoutCoachRail.tsx`                                                                     |
+| Draft card + finalize           | `src/components/chat/CoachDraftCard.tsx`, `src/types/coach-draft.ts`                                           |
+| Live player patch types / apply | `src/types/execution-patch.ts`, `src/components/fitness/WorkoutPlayer.tsx`                                     |
+| Default Coach in main/task chat | `src/components/chat/ChatArea.tsx`, `src/components/modals/task-modal/TaskModalCommentsPanel.tsx`              |
 
 ---
 
@@ -171,4 +172,34 @@ For a **new** agent slug (e.g. another vertical), follow the operational steps i
 
 ---
 
-_Last reviewed against the repository layout and `bubble-agent-dispatch` implementation as of the document’s author date; when behavior shifts, update this file and prefer linking migrations by filename from `supabase/migrations/`._
+## Observability
+
+The consolidated `agent-dispatch` function emits one structured JSON line per
+phase (`received` → `routed` → `preflight` → `llm_call` → `llm_done` →
+`parsed` → `guarded` → `persisted` → `done`, plus `fallback` on recovered
+errors). `request_id` is present on every line emitted after the webhook is
+parsed; `slug`, `message_id`, and `bubble_id` are attached starting with the
+`routed` phase (once routing has resolved a strategy). The `llm done` and
+`dispatch done` lines also carry `latency_ms`, and `llm done` carries
+`token_in` / `token_out` when Vertex returns `usageMetadata`. Pre-routing
+lines (`webhook received`, `dispatcher env invalid`) intentionally lack
+`slug`; see [`docs/agents/observability.md`](../observability.md) §1 for the
+full per-`msg` field guarantees.
+
+Copy-paste Supabase Logs queries for the four operational questions —
+**error budget**, **latency** (Vertex round-trip and end-to-end),
+**fallback rate**, and **token usage / GCP cost projection** — live in
+[`docs/agents/observability.md`](../observability.md). When the queries
+return surprising numbers, that doc also shows how to trace a single
+`request_id` across all of its phase log lines.
+
+For deep-dive debugging, set `LLM_DEBUG=1` in the function's Edge secrets to
+raise the shared LLM modules to debug-level emission (full Vertex request
+bodies, retry deltas). Unset it once the investigation is finished — the
+volume is high and the request bodies contain prompts. This single flag
+replaces the legacy per-agent `BUDDY_AGENT_DEBUG` and `ORGANIZER_AGENT_DEBUG`
+toggles, which were retired with the legacy dispatcher functions in Phase 6.
+
+---
+
+_Last reviewed against the repository layout, the consolidated `agent-dispatch` function, and the Coach strategy at `supabase/functions/agents/coach/strategy.ts` on the Phase 7b PR; when behavior shifts, update this file and prefer linking migrations by filename from `supabase/migrations/`._
