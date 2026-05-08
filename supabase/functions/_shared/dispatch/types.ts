@@ -40,6 +40,19 @@ export type RpcEnvelope<T = Record<string, unknown>> = {
   data?: T;
 };
 
+/**
+ * Uniform classifier-friendly result the typed RPC wrappers in `_shared/dispatch/rpc.ts`
+ * produce. Hoisted from `rpc.ts` to `types.ts` in Phase 5 so the `AgentStrategy.safeReplyInsert`
+ * hook can reference it from inside the strategy contract without importing `rpc.ts`
+ * (which would create a circular dependency: rpc.ts already imports from types.ts).
+ *
+ * `rpc.ts` re-exports this type so existing import sites (`fallback.ts`, strategies) keep
+ * working unchanged.
+ */
+export type RpcResult<T extends Record<string, unknown> = Record<string, unknown>> =
+  | { ok: true; data: T; raw: unknown }
+  | { ok: false; error: string; code?: string; raw?: unknown };
+
 /** Definition row pulled from `agent_definitions` plus joined identity fields. */
 export interface AgentDef {
   slug: AgentSlug;
@@ -109,6 +122,18 @@ export interface RoutingDescriptor {
   excludeOnMentionOf?: AgentSlug[];
   implicitTrigger?: (msg: NormalizedMessage) => boolean;
   requireBubbleBinding: boolean;
+  /**
+   * How `acceptThreadContinuation` should source the "is this an active conversation?"
+   * signal when the trigger row has NO `parent_id` (root message):
+   *
+   *   - `'thread'` (default): the resolver only walks `parent_id != null` history, so a
+   *     root message NEVER counts as a continuation. Coach + Organizer behavior.
+   *   - `'bubble'`: when `parent_id == null`, the resolver runs a single bubble-scoped
+   *     lookup of the immediate prior message and matches if it was authored by this
+   *     strategy's agent. Mirrors Buddy's legacy "previous bubble message authored by
+   *     me" continuation at `buddy-agent-dispatch/index.ts:170-186`.
+   */
+  continuationLookback?: 'thread' | 'bubble';
 }
 
 /** Context handed to every `AgentStrategy` method for a single dispatch attempt. */
@@ -146,6 +171,17 @@ export interface AgentStrategy<TParsed> {
   parse(json: unknown, ctx: DispatchContext): TParsed;
   applyServerGuards?(parsed: TParsed, ctx: DispatchContext): TParsed;
   persist(parsed: TParsed, ctx: DispatchContext): Promise<RpcEnvelope>;
+
+  /**
+   * Optional override for the dispatcher's universal `insertSafeReply` fallback path.
+   * When defined, the dispatcher prefers this hook over `_shared/dispatch/fallback.ts`
+   * for fallback-eligible LLM failures. Buddy uses this to land its safe reply via
+   * `buddy_create_onboarding_reply` (with `p_card_*: null`); Coach + Organizer leave
+   * the field unset and fall through to `agent_create_card_and_reply`.
+   *
+   * Return shape matches `RpcResult` so the dispatcher's logging path is uniform.
+   */
+  safeReplyInsert?(ctx: DispatchContext, text: string): Promise<RpcResult>;
 
   routing?: RoutingDescriptor;
   safeReplyText: string;

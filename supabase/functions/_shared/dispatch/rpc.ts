@@ -26,11 +26,12 @@
  * as errors so the dispatcher can classify them uniformly.
  */
 
-import type { RpcEnvelope, SupabaseClient } from './types.ts';
+import type { RpcEnvelope, RpcResult, SupabaseClient } from './types.ts';
 
-export type RpcResult<T = Record<string, unknown>> =
-  | { ok: true; data: T; raw: unknown }
-  | { ok: false; error: string; code?: string; raw?: unknown };
+// Re-export RpcResult so existing import sites keep working unchanged. The canonical
+// definition was hoisted to `./types.ts` in Phase 5 so `AgentStrategy.safeReplyInsert`
+// can reference it without creating a circular dependency.
+export type { RpcResult } from './types.ts';
 
 export type AgentCreateCardArgs = {
   p_trigger_message_id: string;

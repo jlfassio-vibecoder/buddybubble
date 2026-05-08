@@ -321,7 +321,14 @@ Deno.serve(async (req) => {
     }
 
     if (isFallbackEligible(kind)) {
-      const fallback = await insertSafeReply(ctx, strategy.safeReplyText);
+      // Phase 5: prefer the strategy's own `safeReplyInsert` hook when defined so
+      // strategies whose `auth_user_id` is not provisioned for `agent_create_card_and_reply`
+      // (e.g. Buddy → `buddy_create_onboarding_reply`) can land their fallback
+      // reply via the correct RPC. Coach + Organizer leave the field undefined and
+      // fall through to the universal `insertSafeReply` path.
+      const fallback = strategy.safeReplyInsert
+        ? await strategy.safeReplyInsert(ctx, strategy.safeReplyText)
+        : await insertSafeReply(ctx, strategy.safeReplyText);
       log(fallback.ok ? 'info' : 'error', 'fallback insertion', {
         ...baseFields(requestId, record, strategy.slug, 'fallback'),
         error_kind: kind,
