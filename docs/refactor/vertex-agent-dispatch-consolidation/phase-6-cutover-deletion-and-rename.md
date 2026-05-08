@@ -1,17 +1,21 @@
 # Phase 6 — Delete legacy functions + secrets and rename `agent-dispatch-v2` → `agent-dispatch`
 
-> Single PR. The only **destructive** phase in the consolidation. After this phase,
-> the only Edge Function for agent dispatch is `agent-dispatch`, with one webhook
-> and one secret bundle.
+> Single cutover. The only **destructive** phase in the consolidation. May land
+> across focused PRs (e.g. doc + folder rename first, legacy-folder deletion +
+> secret cleanup second); each PR must state which steps from this runbook it
+> actually performs. After the cutover the only Edge Function for agent dispatch
+> is `agent-dispatch`, with one webhook and one secret bundle.
 
 ## 1. Why this phase exists
 
 After Phases 2–5, all three agents (Coach, Organizer, Buddy) run on
 `agent-dispatch-v2`. The three legacy Edge Functions still exist on disk
 (`bubble-agent-dispatch`, `buddy-agent-dispatch`, `organizer-agent-dispatch`)
-with their Database Webhooks **disabled but not deleted**. Phase 6 is the single
-PR that removes that surface entirely and renames `agent-dispatch-v2` →
-`agent-dispatch`.
+with their Database Webhooks **disabled but not deleted**. Phase 6 is the
+cutover that removes that surface entirely and renames `agent-dispatch-v2` →
+`agent-dispatch`. The cutover is allowed to land across focused PRs — until
+every step in §4–§7 has merged, treat the legacy folders, webhooks, and secrets
+as still present in `main`.
 
 ## 2. Inputs
 
