@@ -78,6 +78,7 @@ const SLUG_LITERAL_ALLOWLIST: ReadonlyArray<string> = [
   // hardcoded literal lives in `agents/<slug>/config.ts` plus the registry header.
   'supabase/functions/agent-dispatch/**',
   'supabase/functions/agents/**',
+  'supabase/functions/_shared/test-helpers/**',
 
   // Provisioning / audit scripts need the slug list by design.
   'scripts/provision-agents.ts',

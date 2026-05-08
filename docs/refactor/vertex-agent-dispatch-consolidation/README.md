@@ -29,6 +29,7 @@ agent can confirm prerequisites before starting work.
 | 6   | [`phase-6-cutover-deletion-and-rename.md`](./phase-6-cutover-deletion-and-rename.md)   | Delete the three legacy functions and their secrets; rename `agent-dispatch-v2` → `agent-dispatch`.                         |
 | 7   | [`phase-7-observability-tests-and-docs.md`](./phase-7-observability-tests-and-docs.md) | Structured-log query playbook, schema-vs-prompt lint, integration tests, doc updates.                                       |
 | 7a  | [`phase-7a-schema-drift-linter.md`](./phase-7a-schema-drift-linter.md)                 | Schema/prompt/parser drift linter + mirror-parity linter (modular Phase 7 deliverable, independent of Phase 6).             |
+| 7c  | [`phase-7c-deno-integration-tests.md`](./phase-7c-deno-integration-tests.md)           | Deno integration tests for retry, fallback, parse/shape, auth, and per-agent persistence paths (final Phase 7 deliverable). |
 
 ---
 
