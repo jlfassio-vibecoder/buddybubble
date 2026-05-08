@@ -19,7 +19,7 @@ The Coach implementation is **substantially more sophisticated than the original
 3. **Replace the `agent_create_card_and_reply` “orphan reply” reuse branch** with a more conservative dedupe key, or document its semantics explicitly. (#3.1)
 4. **Server-side Coach-vs-other-agent dispatch guard** (right now only `organizer` is excluded). (#4.1)
 
-_Resolved: #3.2 (`execution_patch` on initial RPC insert + rail dedupe) — `20260729120000_agent_rpcs_persist_execution_patch.sql`. Resolved: #3.4 metadata-first workout sentinel detection. Resolved: #4.1 strict Coach-only dispatcher guard (`skipped: 'not_handled_by_coach_dispatcher'`). Resolved: #5.5 (`tasks.metadata` fallback in `resolveCurrentWorkoutContextJsonFromThread` when history lacks `workoutContext`). Resolved: task-scoped history loading for live workout rail turns (`target_task_id` before thread fallback)._
+_Resolved: #3.2 (`execution_patch` on initial RPC insert + rail dedupe) — `20260729120000_agent_rpcs_persist_execution_patch.sql`. Resolved: #3.4 metadata-first workout sentinel detection. Resolved: #4.1 strict Coach-only dispatcher guard (`skipped: 'not_handled_by_coach_dispatcher'`). Resolved: #5.5 (`tasks.metadata` fallback in `resolveCurrentWorkoutContextJsonFromThread` when history lacks `workoutContext`). Resolved: task-scoped history loading for live workout rail turns (`target_task_id` before thread fallback). Resolved: #6.5 structured telemetry at every dispatch phase (`agent-dispatch` log envelope + [observability playbook](../observability.md))._
 
 ---
 
@@ -240,11 +240,11 @@ The base Coach prompt is concatenated string literals across ~25 lines (dispatch
 
 - **Remediation:** if multiple coach verticals are likely, factor the fitness specialization behind a per-slug “coach profile” and parameterize task type, prompt module, and context loader.
 
-### 6.5 No telemetry beyond `console.error`
+### 6.5 No telemetry beyond `console.error` — **RESOLVED**
 
-There is no structured emission to Sentry/PostHog/Datadog from the function. Questions like “What % of Coach turns produce a card vs draft vs none?”, “p95 Gemini latency?”, “How often does Layer B fire?” are unanswerable today without log scraping.
+**Fix (in repo):** the consolidated [`supabase/functions/agent-dispatch/index.ts`](../../../supabase/functions/agent-dispatch/index.ts) emits one structured JSON line per dispatch phase via [`_shared/obs/log.ts`](../../../supabase/functions/_shared/obs/log.ts), carrying `request_id`, `slug`, `phase` (`received` → `routed` → `preflight` → `llm_call` → `llm_done` → `parsed` → `guarded` → `persisted` → `done`, plus `fallback`), `latency_ms` (LLM round-trip on `llm done`, end-to-end on `dispatch done`), `token_in` / `token_out` (when Vertex returns `usageMetadata`), `error_kind` (`http` | `parse` | `shape` | `timeout` | `auth`), and `fallback_ok`. Strategies (Coach, Organizer, Buddy) attach typed extension fields (`proposed_write_kind`, `created_task_id`, `has_card`, etc.) on their persistence log lines.
 
-- **Remediation:** emit structured events at every branch boundary (`agent.turn.start`, `agent.turn.gemini_done`, `agent.turn.layerb_fired`, `agent.turn.rpc_done`, `agent.turn.execution_patch_on_insert`, etc.) with stable property names.
+Copy-paste Supabase Logs queries answering "p95 Vertex latency", "fallback rate", and "GCP token spend projection" live in [`docs/agents/observability.md`](../observability.md). Per-flow-mode counts (card vs draft vs none) are inferable from the per-strategy persistence log fields where present, but Layer B firing is **not** captured today — adding a `layer_b_reason` field to the Coach `persisted` log line is the smallest follow-up if that metric becomes operationally important.
 
 ---
 
@@ -344,7 +344,7 @@ A pragmatic order, optimized for **risk reduction first, then leverage**.
 11. **Webhook fast-reject filter** (DB-level condition or in-function early-out). (#5.1)
 12. **Cache `fetchUserContext` per thread**, keyed on (user_id, bubble_id). (#5.2)
 13. **Per-user / per-bubble Coach turn rate limit**. (#5.3)
-14. **Telemetry events** at every state-machine boundary. (#6.5)
+14. ~~**Telemetry events** at every state-machine boundary. (#6.5)~~ — done; see [`docs/agents/observability.md`](../observability.md).
 15. **Lenient `execution_patch` parsing** (skip invalid items, log). (#3.7)
 
 ### Tier D — strategic
@@ -362,6 +362,8 @@ A pragmatic order, optimized for **risk reduction first, then leverage**.
 3. **Will Coach stay the only agent on `bubble-agent-dispatch`?** This determines whether the dispatcher should be renamed/specialized or generalized with per-slug handlers.
 4. **Should drafts auto-supersede when Coach proposes a newer one in the same task?** Today nothing flips an old `pending` draft to `superseded` — two pending drafts in the same task is reachable.
 5. **Should the sentinel’s greeting persist in the timeline?** It currently does (it’s a real `messages` row); this preserves history but also clutters task chats with a Coach greeting per workout open.
+
+> **Operability note:** the “unanswerable today without log scraping” questions in §6.5 are now answerable from the [observability playbook](../observability.md) — Vertex p95, fallback rate by slug, GCP token spend, and full-`request_id` traces.
 
 ---
 

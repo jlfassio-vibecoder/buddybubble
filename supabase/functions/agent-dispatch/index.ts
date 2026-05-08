@@ -139,6 +139,7 @@ async function runShortCircuit(
 }
 
 Deno.serve(async (req) => {
+  const dispatchStartedAt = Date.now();
   let env: ReturnType<typeof readDispatcherEnv>;
   try {
     env = readDispatcherEnv();
@@ -258,6 +259,8 @@ Deno.serve(async (req) => {
       timeoutMs: env.LLM_TIMEOUT_MS,
       signal: ctx.signal,
       env: { GCP_SERVICE_ACCOUNT_JSON: env.GCP_SERVICE_ACCOUNT_JSON },
+      debug: env.LLM_DEBUG,
+      slug: strategy.slug,
     });
     log('info', 'llm done', {
       ...baseFields(requestId, record, strategy.slug, 'llm_done'),
@@ -279,7 +282,10 @@ Deno.serve(async (req) => {
     const persistResult = await (strategy as AgentStrategy<unknown>).persist(guarded, ctx);
     log('info', 'persisted', baseFields(requestId, record, strategy.slug, 'persisted'));
 
-    log('info', 'dispatch done', baseFields(requestId, record, strategy.slug, 'done'));
+    log('info', 'dispatch done', {
+      ...baseFields(requestId, record, strategy.slug, 'done'),
+      latency_ms: Date.now() - dispatchStartedAt,
+    });
     return jsonResponse({ ok: true, result: persistResult }, 200);
   } catch (err: unknown) {
     const kind = classifyError(err);

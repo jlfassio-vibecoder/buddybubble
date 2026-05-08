@@ -15,6 +15,7 @@
  */
 
 import { getVertexAccessToken, type VertexAuthEnv } from './vertex-auth.ts';
+import { log } from '../obs/log.ts';
 import type {
   GeminiContent,
   VertexClassifiedError,
@@ -42,6 +43,19 @@ export type GenerateContentArgs = {
   signal?: AbortSignal;
   /** Overrides used for testing the auth token retrieval. */
   env: VertexAuthEnv;
+  /**
+   * When true, emits `level: 'debug'` log lines with the full Vertex request
+   * payload and any non-2xx response body (per attempt). Wired from the
+   * dispatcher's `LLM_DEBUG=1` env flag. High-volume; use only during incident
+   * response, never as the steady-state setting.
+   */
+  debug?: boolean;
+  /**
+   * Optional agent slug attached to debug log lines so they can be filtered
+   * alongside the rest of the dispatch trace (matches the `LogFields.slug`
+   * key from `_shared/obs/log.ts`).
+   */
+  slug?: string;
 };
 
 const RETRY_DELAYS_MS: ReadonlyArray<number> = [200, 700];
@@ -162,6 +176,14 @@ export async function generateContent(args: GenerateContentArgs): Promise<Vertex
   };
   const serializedBody = JSON.stringify(requestBody);
 
+  if (args.debug) {
+    log('debug', 'LLM request payload', {
+      slug: args.slug,
+      model: args.model,
+      body: serializedBody,
+    });
+  }
+
   const timeoutController = new AbortController();
   const timeoutHandle = setTimeout(() => timeoutController.abort(), args.timeoutMs);
 
@@ -196,6 +218,15 @@ export async function generateContent(args: GenerateContentArgs): Promise<Vertex
 
       if (!response.ok) {
         const text = await response.text().catch(() => '');
+        if (args.debug) {
+          log('debug', 'LLM error response', {
+            slug: args.slug,
+            model: args.model,
+            http_status: response.status,
+            attempt,
+            body: text,
+          });
+        }
         if (RETRYABLE_STATUSES.has(response.status) && attempt < RETRY_DELAYS_MS.length) {
           lastErr = classifiedHttp(response.status, text);
           await delay(jitter(RETRY_DELAYS_MS[attempt]), timeoutController.signal);
