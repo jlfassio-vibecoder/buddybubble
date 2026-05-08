@@ -1,7 +1,8 @@
 #!/usr/bin/env tsx
 /**
- * Smoke test for `agent-dispatch-v2` — Phase 2 (Coach), extended in Phase 4 (Organizer)
- * and Phase 5 (Buddy).
+ * Smoke test for `agent-dispatch` — Phase 2 (Coach), extended in Phase 4 (Organizer)
+ * and Phase 5 (Buddy). Filename keeps the `-v2` suffix until the Phase 7
+ * doc/test rename pass (see phase-6-cutover-deletion-and-rename.md §6).
  *
  * Posts a synthetic Supabase Database webhook payload (a `messages` INSERT row for the
  * target agent) to the dispatcher and then polls the public REST endpoint until the
@@ -9,11 +10,11 @@
  *
  * Usage:
  *   1. Start the function locally:
- *        supabase functions serve agent-dispatch-v2 --env-file .env.local
+ *        supabase functions serve agent-dispatch --env-file .env.local
  *   2. Export the env vars below (read from process.env):
  *        # Shared
  *        SMOKE_AGENT_SECRET            — must equal AGENT_WEBHOOK_SECRET
- *        SMOKE_FUNCTION_URL            — defaults to http://localhost:54321/functions/v1/agent-dispatch-v2
+ *        SMOKE_FUNCTION_URL            — defaults to http://localhost:54321/functions/v1/agent-dispatch
  *        SMOKE_SUPABASE_URL            — defaults to http://localhost:54321
  *        SMOKE_SUPABASE_ANON_KEY       — public anon key for the polling REST query
  *        # When --target coach (default)
@@ -180,8 +181,7 @@ function readEnv(cli: Cli): Env {
   const userId = required(userEnv);
   const agentSecret = required('SMOKE_AGENT_SECRET');
   const functionUrl =
-    process.env.SMOKE_FUNCTION_URL?.trim() ??
-    'http://localhost:54321/functions/v1/agent-dispatch-v2';
+    process.env.SMOKE_FUNCTION_URL?.trim() ?? 'http://localhost:54321/functions/v1/agent-dispatch';
   const supabaseUrl = process.env.SMOKE_SUPABASE_URL?.trim() ?? 'http://localhost:54321';
   const supabaseAnonKey = required('SMOKE_SUPABASE_ANON_KEY');
 
