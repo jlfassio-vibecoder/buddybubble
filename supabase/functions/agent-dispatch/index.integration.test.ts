@@ -1,8 +1,8 @@
 /**
  * End-to-end dispatcher tests with mocked PostgREST, OAuth, and Vertex fetches.
  *
- * Run:
- *   deno test --allow-env --allow-read --no-check supabase/functions/agent-dispatch/*.integration.test.ts
+ * Run (from repo root; `supabase/deno.json` + `supabase/deno.lock`, `--node-modules-dir=none`):
+ *   pnpm run test:deno-integration
  */
 
 import { assertEquals, assertExists } from 'jsr:@std/assert@1';

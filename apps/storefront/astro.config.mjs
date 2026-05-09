@@ -13,9 +13,6 @@ export default defineConfig({
   integrations: [react()],
 
   vite: {
-    plugins: [
-      // @ts-expect-error - Astro/Vite plugin type mismatch in monorepo (@tailwindcss/vite vs Astro's nested Vite)
-      tailwindcss(),
-    ],
+    plugins: [tailwindcss()],
   },
 });
