@@ -50,7 +50,7 @@ If any of those regress, this suite catches it before deploy.
 | `supabase/functions/_shared/test-helpers/postgrest-fixtures.ts` (NEW)                               | Canned PostgREST responses for `agent_definitions`, `bubble_agent_bindings`, `messages`, plus an RPC capture/replay shim. ~200 lines.                                                          |
 | `supabase/functions/_shared/test-helpers/vertex-fixtures.ts` (NEW)                                  | Canned `generateContent` responses (200-happy, 429-then-200, 500/500/500, malformed-JSON, shape-violating-JSON) and a stub for the Google OAuth token endpoint. ~120 lines.                    |
 | `supabase/functions/_shared/test-helpers/log-capture.ts` (NEW)                                      | Swap `console.log`; parse each emitted JSON line; expose `findLog(predicate)` + `phaseSequence()`. ~60 lines.                                                                                  |
-| [`package.json`](../../../package.json)                                                             | New `test:deno-integration` script (runs `deno test --allow-env --allow-net=127.0.0.1 --no-check supabase/functions/**/*.integration.test.ts`). Chained into `pnpm check` after CRM build.     |
+| [`package.json`](../../../package.json)                                                             | New `test:deno-integration` script (runs `deno test --allow-env --allow-read --no-check supabase/functions/agent-dispatch/*.integration.test.ts`). Chained into `pnpm check` after ESLint.     |
 | [`docs/refactor/vertex-agent-dispatch-consolidation/README.md`](./README.md)                        | Add `phase-7c-deno-integration-tests.md` to the index.                                                                                                                                         |
 
 **Total surface:** 2 production files touched (`index.ts` slimmed to a Deno
@@ -290,16 +290,17 @@ update:
 ```json
 {
   "scripts": {
-    "test:deno-integration": "deno test --allow-env --allow-net=127.0.0.1 --allow-read --no-check supabase/functions/agent-dispatch/*.integration.test.ts",
+    "test:deno-integration": "deno test --allow-env --allow-read --no-check supabase/functions/agent-dispatch/*.integration.test.ts",
     "check": "pnpm format:check && pnpm lint && pnpm check:agent-coupling && pnpm check:agent-prompts && pnpm check:agent-mirror && pnpm test:deno-integration && pnpm build && pnpm check:storefront"
   }
 }
 ```
 
-`pnpm test` (Vitest) is **unchanged** — Deno integration tests run only via
-the dedicated script + `pnpm check`. Rationale: Vitest invokes Node and cannot
-load the dispatcher's `jsr:` / `https:` imports; conversely, Deno cannot run
-the React component tests. Two commands, two runtimes, deterministic.
+`pnpm test` (Vitest) is **unchanged** — Deno integration tests run via the
+dedicated script, `pnpm check`, and the GitHub Actions CI workflow. Rationale:
+Vitest invokes Node and cannot load the dispatcher's `jsr:` / `https:` imports;
+conversely, Deno cannot run the React component tests. Two commands, two
+runtimes, deterministic.
 
 The `--no-check` flag is intentional: parity with how the function deploys
 (Supabase doesn't run `deno check` either; it just bundles + serves).
@@ -324,7 +325,7 @@ When porting a new strategy or wiring a new failure path:
 Run all four locally before opening the PR:
 
 ```bash
-pnpm test:deno-integration         # 8 scenarios pass
+pnpm test:deno-integration         # 10 scenarios pass
 pnpm test                          # Vitest still green (no overlap)
 pnpm check                         # full chain incl. build + storefront
 deno check supabase/functions/agent-dispatch/index.ts  # type-clean from the Deno side too
@@ -336,7 +337,7 @@ deno check supabase/functions/agent-dispatch/index.ts  # type-clean from the Den
   branch in `_shared/llm/vertex-gemini.ts` → scenario 4 (`429 then 200`)
   fails because Vertex is now called only once and the test sees a 500-style
   fallback path.
-- Change the fallback eligibility predicate in `index.ts` from
+- Change the fallback eligibility predicate in `handler.ts` from
   `kind === 'http'` to `kind !== 'http'` → scenarios 5–7 now return HTTP 500
   with `error: 'dispatch_failed'` instead of falling back; the matrix rows
   fail loudly.

@@ -25,6 +25,11 @@ jobs:
           node-version: 20.19.0
           cache: pnpm
 
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -42,3 +47,6 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
           NEXT_PUBLIC_SUPABASE_ANON_KEY: dummy
         run: pnpm test
+
+      - name: Deno integration tests
+        run: pnpm run test:deno-integration

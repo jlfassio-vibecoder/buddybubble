@@ -69,6 +69,68 @@ function selectParam(raw: string): string {
   return urlOf(raw).searchParams.get('select') ?? '';
 }
 
+function hasQueryParam(raw: string, name: string): boolean {
+  return urlOf(raw).searchParams.has(name);
+}
+
+function queryParam(raw: string, name: string): string {
+  return urlOf(raw).searchParams.get(name) ?? '';
+}
+
+function isMessagesHistoryBase(raw: string): boolean {
+  return (
+    isRestPath(raw, 'messages') &&
+    hasQueryParam(raw, 'bubble_id') &&
+    hasQueryParam(raw, 'id') &&
+    queryParam(raw, 'order') === 'created_at.desc'
+  );
+}
+
+function isThreadHistoryQuery(raw: string): boolean {
+  return (
+    isMessagesHistoryBase(raw) &&
+    selectParam(raw) ===
+      'id, user_id, content, created_at, parent_id, target_task_id, attached_task_id, metadata' &&
+    hasQueryParam(raw, 'or') &&
+    queryParam(raw, 'limit') === '50'
+  );
+}
+
+function isTargetTaskHistoryQuery(raw: string): boolean {
+  return (
+    isMessagesHistoryBase(raw) &&
+    selectParam(raw) ===
+      'id, user_id, content, created_at, parent_id, target_task_id, attached_task_id, metadata' &&
+    hasQueryParam(raw, 'target_task_id') &&
+    queryParam(raw, 'limit') === '50'
+  );
+}
+
+function isPriorBubbleMessageQuery(raw: string): boolean {
+  return (
+    isMessagesHistoryBase(raw) &&
+    selectParam(raw) === 'id, user_id' &&
+    queryParam(raw, 'limit') === '2'
+  );
+}
+
+function isOrganizerRootHistoryQuery(raw: string): boolean {
+  return (
+    isMessagesHistoryBase(raw) &&
+    selectParam(raw) ===
+      'id, user_id, content, created_at, parent_id, target_task_id, attached_task_id, metadata' &&
+    queryParam(raw, 'limit') === '10'
+  );
+}
+
+function isBuddyRootHistoryQuery(raw: string): boolean {
+  return (
+    isMessagesHistoryBase(raw) &&
+    selectParam(raw) === 'id, user_id, content, created_at, parent_id' &&
+    queryParam(raw, 'limit') === '12'
+  );
+}
+
 function agentDefinitionRows() {
   return [
     {
@@ -143,8 +205,28 @@ export function installPostgrestRoutes(
       () => jsonResponse(bindingRows(boundSlugs)),
     )
     .route(
-      'postgrest:messages-history',
-      (_req, call) => call.method === 'GET' && isRestPath(call.url, 'messages'),
+      'postgrest:messages-thread-history',
+      (_req, call) => call.method === 'GET' && isThreadHistoryQuery(call.url),
+      () => jsonResponse(rootHistoryRows),
+    )
+    .route(
+      'postgrest:messages-target-task-history',
+      (_req, call) => call.method === 'GET' && isTargetTaskHistoryQuery(call.url),
+      () => jsonResponse(rootHistoryRows),
+    )
+    .route(
+      'postgrest:messages-prior-bubble-author',
+      (_req, call) => call.method === 'GET' && isPriorBubbleMessageQuery(call.url),
+      () => jsonResponse(rootHistoryRows),
+    )
+    .route(
+      'postgrest:messages-organizer-root-history',
+      (_req, call) => call.method === 'GET' && isOrganizerRootHistoryQuery(call.url),
+      () => jsonResponse(rootHistoryRows),
+    )
+    .route(
+      'postgrest:messages-buddy-root-history',
+      (_req, call) => call.method === 'GET' && isBuddyRootHistoryQuery(call.url),
       () => jsonResponse(rootHistoryRows),
     )
     .route(
