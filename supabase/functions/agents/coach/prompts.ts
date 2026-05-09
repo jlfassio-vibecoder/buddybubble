@@ -52,7 +52,9 @@ export function buildBaseCoachPrompt(currentDate: string): string {
     'LIVE SESSION vs CARD DRAFT: If CURRENT WORKOUT CONTEXT is present and the user wants to adjust the live log (weights, reps, RPE, set done), set execution_patch, keep update_existing_task false, and keep proposed_workout_metadata null. Use update_existing_task and proposed_workout_metadata only when the user explicitly wants a permanent rewrite of the task or card (e.g. restructure the whole program or replace the written workout in the task). ' +
     "EXECUTION PATCH (live player): When CURRENT WORKOUT CONTEXT is present and the user mentions specific equipment (e.g. 'I have 60lb kettlebells') or asks for specific changes to the current workout session (workoutContext JSON under CURRENT WORKOUT CONTEXT), you MUST compute the appropriate weights, reps, RPE, and/or set completion and include them in the execution_patch field. " +
     'Do not only describe numbers in reply_content; you must also provide the JSON execution_patch so the app can update the live grid. You may list multiple sets and multiple exercises in one patch. String fields (weight, reps, rpe) must be pure numeric strings only, with no ranges, units, or extra text (e.g. "60", "8", "7.5"). Set execution_patch to null when you are not changing the live log. ' +
-    'Return ONLY a raw JSON object (no markdown, no code fences) with keys: reply_content, create_card, task_title, task_description, update_existing_task, updated_task_title, updated_task_description, proposed_workout_metadata, execution_patch, intake_phase, session_readiness_score, missing_intake_categories, user_requested_immediate_card, session_request, coach_task_notes. ' +
+    'PERSONAL CUES: When the user wants instructions, form cues, tips, or injury notes saved for catalog exercises, emit personal_cues_patch (one entry per exerciseIndex from EXERCISE_INDEX_MAP; only [dict:...] rows persist); you may combine it with execution_patch in one response. ' +
+    'TRUTHFULNESS: If reply_content claims you wrote or applied something, include non-null execution_patch, personal_cues_patch, or create_card/update_existing_task in the same JSON. ' +
+    'Return ONLY a raw JSON object (no markdown, no code fences) with keys: reply_content, create_card, task_title, task_description, update_existing_task, updated_task_title, updated_task_description, proposed_workout_metadata, execution_patch, personal_cues_patch, intake_phase, session_readiness_score, missing_intake_categories, user_requested_immediate_card, session_request, coach_task_notes. ' +
     'You MUST respond in valid JSON matching the provided schema. Do not output markdown, plain text, or conversational filler outside of the JSON object.'
   );
 }
@@ -110,4 +112,66 @@ export function buildCurrentTaskContextBlock(title: string, description: string 
     `Description:\n${desc}\n` +
     'PRE-DRAFT CONFIRMATION: Do not populate proposed_workout_metadata until the user has given clear affirmative consent to draft or revise this card (or user_requested_immediate_card). On a confirmation-only turn, set update_existing_task to false and proposed_workout_metadata to null. When they confirm, set update_existing_task to true and provide updated_task_title and/or updated_task_description with the full revised text, and/or proposed_workout_metadata with structured exercises (and workout_type, duration_min as appropriate). The user must finalize changes on the card — do not assume the database updates immediately.'
   );
+}
+
+/** Appended after `CURRENT WORKOUT CONTEXT` JSON when parseable `exercises[]` exists. */
+export const EXERCISE_INDEX_MAP_HEADER = '--- EXERCISE_INDEX_MAP ---';
+
+/** Server-resolved catalog row for one workout exercise index (prompt + parse). */
+export type ExerciseDictionaryIndexEntry = { dictionary_id: string; slug: string | null };
+
+/**
+ * Legacy label for personal_cues_patch (not injected into the system prompt; base prompt covers it).
+ *
+ * @deprecated Kept for imports/tests only. Strategy no longer appends this block.
+ */
+export const PERSONAL_CUES_PATCH_GUIDE =
+  'Use personal_cues_patch for saved personal cues per EXERCISE_INDEX_MAP ([dict:...] only), optionally alongside execution_patch.';
+
+/**
+ * Builds a deterministic exerciseIndex roster from stringified workout context JSON.
+ * Returns null when JSON is invalid, truncated, or has no `exercises` array.
+ * When `dictionaryByIndex` is provided, each line is suffixed with [dict:uuid] or [custom].
+ */
+export function formatExerciseIndexMap(
+  workoutContextJson: string,
+  dictionaryByIndex?: Readonly<Record<number, ExerciseDictionaryIndexEntry | null>> | null,
+): string | null {
+  const trimmed = workoutContextJson.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    let ex: unknown[];
+    if (Array.isArray(parsed)) {
+      ex = parsed;
+    } else if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const raw = (parsed as Record<string, unknown>).exercises;
+      ex = Array.isArray(raw) ? raw : [];
+    } else {
+      return null;
+    }
+    if (ex.length === 0) return null;
+    const lines: string[] = [];
+    for (let i = 0; i < ex.length; i++) {
+      const el = ex[i];
+      let label = '(unnamed)';
+      if (el && typeof el === 'object' && !Array.isArray(el)) {
+        const n = (el as Record<string, unknown>).name;
+        if (typeof n === 'string' && n.trim()) label = n.trim();
+      }
+      let suffix = '';
+      if (dictionaryByIndex != null && Object.prototype.hasOwnProperty.call(dictionaryByIndex, i)) {
+        const ent = dictionaryByIndex[i];
+        suffix = ent != null ? ` [dict:${ent.dictionary_id}]` : ' [custom]';
+      }
+      lines.push(`${i}: ${label}${suffix}`);
+    }
+    return (
+      `\n\n${EXERCISE_INDEX_MAP_HEADER}\n` +
+      lines.join('\n') +
+      '\n\nUse this index for execution_patch.exerciseIndex (live grid; setIndex is 0-based) and personal_cues_patch[].exerciseIndex (only [dict:...] rows persist).'
+    );
+  } catch {
+    return null;
+  }
 }

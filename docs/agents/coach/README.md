@@ -98,11 +98,18 @@ The architecture plan’s “one tool / create card” model is **narrower** tha
 - **`agent_create_card_and_reply`** and **`agent_insert_coach_workout_draft_reply`** accept `p_execution_patch` and write `messages.metadata.execution_patch` on the **same INSERT** as the agent reply (migration `20260729120000_agent_rpcs_persist_execution_patch.sql`) — a single `postgres_changes` event for clients.
 - The client does **not** re-fetch exercises from this alone: [`WorkoutCoachRail`](../../../src/components/chat/WorkoutCoachRail.tsx) watches the **latest** Coach message and, if valid, calls `onApplyExecutionPatch` → [`WorkoutPlayer`](../../../src/components/fitness/WorkoutPlayer.tsx) `handleApplyExecutionPatch` updates the **local** set grid.
 
+### 5) **personal_cues_patch** (saved cues — user + catalog exercise)
+
+- Mid-workout (and other turns), the model may return **`personal_cues_patch`**: short text keyed by **`exerciseIndex`** (same roster as `execution_patch`). The dispatcher resolves each index to an **`exercise_dictionary`** id once per request (`loadExerciseDictionaryByIndex`); **custom** exercises without a catalog match are dropped server-side (see `cue_unanchored` logging).
+- Parsed rows are passed as **`p_personal_cues`** into the same agent RPCs as replies; Postgres runs **`apply_personal_cues_for_user`** to upsert **`public.user_exercise_notes`** (`user_id`, `exercise_dictionary_id`) with append/replace semantics. **`tasks.metadata.exercises`** is not modified — this avoids the shallow JSON merge in **`apply_workout_draft`** wiping enrichment fields (known limitation for the **draft-card** path only; personal cues never go through that merge).
+- Reply metadata can include the patch for observability (`personal_cues_patch` / related keys depending on RPC). The **WorkoutPlayer** loads notes via [`useUserExerciseNotes`](../../../src/hooks/useUserExerciseNotes.ts) (dictionary lookup + Realtime on `user_exercise_notes`).
+- **`assertCoachReplySelfAttestation`** rejects replies whose **`reply_content`** claims a write without a matching structured field (`execution_patch`, **`personal_cues_resolved`**, card/draft fields) → fallback-eligible **`self_attestation_mismatch`**.
+
 ---
 
 ## Gemini: structured JSON (not in the old plan)
 
-Coach uses the **Generative Language API** with `responseMimeType: application/json` and a **large `responseSchema`** (object with required fields such as `reply_content`, `create_card`, `intake_phase`, `session_readiness_score`, `missing_intake_categories`, `user_requested_immediate_card`, `session_request`, pre-draft confirmation rules, `proposed_workout_metadata`, `execution_patch`, etc.).
+Coach uses the **Generative Language API** with `responseMimeType: application/json` and a **large `responseSchema`** (object with required fields such as `reply_content`, `create_card`, `intake_phase`, `session_readiness_score`, `missing_intake_categories`, `user_requested_immediate_card`, `session_request`, pre-draft confirmation rules, `proposed_workout_metadata`, `execution_patch`, `personal_cues_patch`, etc.).
 
 Notable **schema / prompt concepts** (see `geminiGenerateJson` and `baseCoachPrompt` in `bubble-agent-dispatch`):
 
@@ -116,11 +123,15 @@ The architecture plan does **not** list these fields; the **file header** and `C
 
 ## Postgres RPCs
 
-| RPC                                      | Who invokes                            | Role                                                                                                                                                                                                                               |
-| ---------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent_create_card_and_reply`            | `bubble-agent-dispatch` (service role) | Atomic: insert Coach reply; optionally create `workout` task; optional task-comment seed; optional `p_execution_patch` on reply metadata. See `20260729120000_agent_rpcs_persist_execution_patch.sql` and earlier card migrations. |
-| `agent_insert_coach_workout_draft_reply` | `bubble-agent-dispatch` (service role) | Insert reply with `metadata.coach_draft` (and optional `execution_patch` on the same row); no direct `tasks` update. Migrations: `20260623120000_…`, `20260729120000_…`.                                                           |
-| `apply_workout_draft`                    | Authenticated user (client)            | Merge `coach_draft` into the task; update draft state. Same migration file.                                                                                                                                                        |
+| RPC                                      | Who invokes                     | Role                                                                                                                                                                                                                                                                                                                         |
+| ---------------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent_create_card_and_reply`            | `agent-dispatch` (service role) | Atomic: insert Coach reply; optionally create `workout` task; optional task-comment seed; optional `p_execution_patch` and **`p_personal_cues`** on reply metadata; applies personal cues via **`apply_personal_cues_for_user`**. See `20260813120000_user_exercise_notes_and_personal_cues_rpc.sql` and earlier migrations. |
+| `agent_insert_coach_workout_draft_reply` | `agent-dispatch` (service role) | Insert reply with `metadata.coach_draft` (and optional `execution_patch` / **`p_personal_cues`** on the same row); no direct `tasks` update.                                                                                                                                                                                 |
+| `apply_workout_draft`                    | Authenticated user (client)     | Merge `coach_draft` into the task; update draft state. Same migration file.                                                                                                                                                                                                                                                  |
+| `exercise_dictionary_lookup_by_names`    | Authenticated + service role    | Resolves exercise **names** → dictionary ids (used by WorkoutPlayer hook and Coach dispatch). **`authenticated` execute** granted in `20260813120200_grant_exercise_dictionary_lookup_authenticated.sql`.                                                                                                                    |
+| `apply_personal_cues_for_user`           | Service (internal)              | **`security definer`**: merge **`p_personal_cues`** jsonb into **`user_exercise_notes`** for a user; invoked from agent RPCs above.                                                                                                                                                                                          |
+
+**Known issue (`apply_workout_draft`):** shallow JSONB merge can drop nested enrichment on `tasks.metadata.exercises`. Unrelated to personal cues; track as a follow-up.
 
 ---
 
@@ -150,6 +161,7 @@ The architecture plan does **not** list these fields; the **file header** and `C
 | Workout rail UI                 | `src/components/chat/WorkoutCoachRail.tsx`                                                                     |
 | Draft card + finalize           | `src/components/chat/CoachDraftCard.tsx`, `src/types/coach-draft.ts`                                           |
 | Live player patch types / apply | `src/types/execution-patch.ts`, `src/components/fitness/WorkoutPlayer.tsx`                                     |
+| Personal cues hook + storage    | `src/hooks/useUserExerciseNotes.ts`, `public.user_exercise_notes`                                              |
 | Default Coach in main/task chat | `src/components/chat/ChatArea.tsx`, `src/components/modals/task-modal/TaskModalCommentsPanel.tsx`              |
 
 ---

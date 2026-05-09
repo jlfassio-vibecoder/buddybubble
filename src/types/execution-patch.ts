@@ -2,6 +2,9 @@
  * Coach-authored structured updates for live `WorkoutPlayer` `logs` (set grid).
  * Carried on `messages.metadata.execution_patch` (JSON) — applied client-side only.
  */
+
+import { coerceExecutionPatchNumericField } from '@/lib/agents/coach/execution-patch-numeric';
+
 export type ExecutionPatchItem = {
   exerciseIndex: number;
   setIndex: number;
@@ -33,19 +36,18 @@ export function parseExecutionPatchFromMetadata(raw: unknown): ExecutionPatch | 
       setIndex: o.setIndex,
     };
     if (o.weight !== undefined) {
-      if (typeof o.weight !== 'string') return null;
-      item.weight = o.weight;
+      const s = coerceExecutionPatchNumericField(o.weight);
+      if (s !== null) item.weight = s;
     }
     if (o.reps !== undefined) {
-      if (typeof o.reps !== 'string') return null;
-      item.reps = o.reps;
+      const s = coerceExecutionPatchNumericField(o.reps);
+      if (s !== null) item.reps = s;
     }
     if (o.rpe !== undefined) {
-      if (typeof o.rpe !== 'string') return null;
-      item.rpe = o.rpe;
+      const s = coerceExecutionPatchNumericField(o.rpe);
+      if (s !== null) item.rpe = s;
     }
-    if (o.done !== undefined) {
-      if (typeof o.done !== 'boolean') return null;
+    if (o.done !== undefined && typeof o.done === 'boolean') {
       item.done = o.done;
     }
     out.push(item);

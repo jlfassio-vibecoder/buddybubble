@@ -46,7 +46,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { readDispatcherEnv } from '../_shared/env.ts';
 import { log, type DispatchPhase, type LogFields } from '../_shared/obs/log.ts';
 import { CORS_HEADERS, verifyAndParseWebhook } from '../_shared/dispatch/webhook.ts';
-import { classifyError, generateContent } from '../_shared/llm/vertex-gemini.ts';
+import { classifyError, extractGeminiText, generateContent } from '../_shared/llm/vertex-gemini.ts';
 import { agentCreateCardAndReply } from '../_shared/dispatch/rpc.ts';
 import { insertSafeReply } from '../_shared/dispatch/fallback.ts';
 import type {
@@ -56,8 +56,9 @@ import type {
   PreflightAction,
   SupabaseClient,
 } from '../_shared/dispatch/types.ts';
-import type { VertexErrorKind } from '../_shared/llm/types.ts';
+import type { VertexClassifiedError, VertexErrorKind } from '../_shared/llm/types.ts';
 
+import { COACH_SELF_ATTESTATION_SAFE_REPLY, COACH_SLUG } from '../agents/coach/config.ts';
 import { REGISTRY_ITERATION_ORDER, getStrategy } from '../agents/index.ts';
 import { buildDispatchContext } from './build-context.ts';
 import { resolveAgent } from './resolve.ts';
@@ -114,7 +115,13 @@ async function isAuthorAnAgent(
 
 function isFallbackEligible(kind: VertexErrorKind): boolean {
   return (
-    kind === 'http' || kind === 'parse' || kind === 'shape' || kind === 'timeout' || kind === 'auth'
+    kind === 'http' ||
+    kind === 'parse' ||
+    kind === 'shape' ||
+    kind === 'timeout' ||
+    kind === 'auth' ||
+    kind === 'truncated' ||
+    kind === 'self_attestation_mismatch'
   );
 }
 
@@ -218,6 +225,11 @@ export async function handleDispatchRequest(req: Request): Promise<Response> {
     requestId,
     llmTimeoutMs: env.LLM_TIMEOUT_MS,
     history: resolution.history,
+    // Per-strategy override for the LLM-input history window. Coach uses this
+    // (`COACH_HISTORY_LIMIT = 15`) to keep the Vertex `contents` array bounded
+    // as a workout thread accumulates turns. Undefined for other strategies →
+    // `_shared/dispatch/history.ts:DEFAULT_HISTORY_LIMIT` (50) is used.
+    historyLimit: strategy.historyLimit,
   });
 
   // Preflight.
@@ -273,13 +285,25 @@ export async function handleDispatchRequest(req: Request): Promise<Response> {
       slug: strategy.slug,
       requestId,
     });
+    const finishReason = response.candidates?.[0]?.finishReason;
+    const thoughtsTokenCount = response.usageMetadata?.thoughtsTokenCount;
     log('info', 'llm done', {
       ...baseFields(requestId, record, strategy.slug, 'llm_done'),
       model: strategy.model,
       latency_ms: Date.now() - startedAt,
       token_in: response.usageMetadata?.promptTokenCount,
       token_out: response.usageMetadata?.candidatesTokenCount,
+      thoughts_token_count: thoughtsTokenCount,
+      finish_reason: finishReason,
     });
+
+    if (finishReason === 'MAX_TOKENS') {
+      const partial = extractGeminiText(response.candidates?.[0]);
+      throw {
+        kind: 'truncated',
+        body: partial.slice(0, 800),
+      } as VertexClassifiedError;
+    }
 
     const parsed = (strategy as AgentStrategy<unknown>).parse(response, ctx);
     log('info', 'parsed', baseFields(requestId, record, strategy.slug, 'parsed'));
@@ -338,14 +362,18 @@ export async function handleDispatchRequest(req: Request): Promise<Response> {
     }
 
     if (isFallbackEligible(kind)) {
+      const fallbackText =
+        kind === 'self_attestation_mismatch' && strategy.slug === COACH_SLUG
+          ? COACH_SELF_ATTESTATION_SAFE_REPLY
+          : strategy.safeReplyText;
       // Phase 5: prefer the strategy's own `safeReplyInsert` hook when defined so
       // strategies whose `auth_user_id` is not provisioned for `agent_create_card_and_reply`
       // (e.g. Buddy → `buddy_create_onboarding_reply`) can land their fallback
       // reply via the correct RPC. Coach + Organizer leave the field undefined and
       // fall through to the universal `insertSafeReply` path.
       const fallback = strategy.safeReplyInsert
-        ? await strategy.safeReplyInsert(ctx, strategy.safeReplyText)
-        : await insertSafeReply(ctx, strategy.safeReplyText);
+        ? await strategy.safeReplyInsert(ctx, fallbackText)
+        : await insertSafeReply(ctx, fallbackText);
       log(fallback.ok ? 'info' : 'error', 'fallback insertion', {
         ...baseFields(requestId, record, strategy.slug, 'fallback'),
         error_kind: kind,

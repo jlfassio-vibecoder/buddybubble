@@ -28,6 +28,8 @@ function makeParsed(overrides: Partial<CoachGeminiJsonResponse> = {}): CoachGemi
     coach_task_notes: null,
     proposed_workout_metadata: null,
     execution_patch: null,
+    personal_cues_resolved: null,
+    personal_cues_dropped_unanchored: 0,
     ...overrides,
   };
 }
@@ -162,6 +164,9 @@ describe('applyCoachServerGuards — Active-workout clamp', () => {
       updated_task_description: 'updated desc',
       proposed_workout_metadata: { workout_type: 'AMRAP' },
       execution_patch: [{ exerciseIndex: 0, setIndex: 0, weight: '60' }],
+      personal_cues_resolved: [
+        { exercise_dictionary_id: 'd1', mode: 'append', form_cues: 'brace hard' },
+      ],
     });
     const out = applyCoachServerGuards(parsed, {
       ...NO_TASK_FRAGMENT,
@@ -175,8 +180,15 @@ describe('applyCoachServerGuards — Active-workout clamp', () => {
     expect(out.updated_task_title).toBeNull();
     expect(out.updated_task_description).toBeNull();
     expect(out.proposed_workout_metadata).toBeNull();
-    // execution_patch survives — it's the only legitimate live-session output.
+    // execution_patch + personal_cues survive live-session output.
     expect(out.execution_patch).toEqual([{ exerciseIndex: 0, setIndex: 0, weight: '60' }]);
+    expect(out.personal_cues_resolved).toEqual([
+      {
+        exercise_dictionary_id: 'd1',
+        mode: 'append',
+        form_cues: 'brace hard',
+      },
+    ]);
   });
 
   it('does not mutate the input payload', () => {
@@ -193,5 +205,30 @@ describe('applyCoachServerGuards — Active-workout clamp', () => {
       currentWorkoutContextJson: '{}',
     });
     expect(parsed).toEqual(snapshot);
+  });
+});
+
+describe('applyCoachServerGuards — Self-attestation', () => {
+  it('throws when reply_content claims an update without structured writes', () => {
+    const parsed = makeParsed({
+      reply_content: "I've updated your workout card with new cues for every exercise.",
+    });
+    try {
+      applyCoachServerGuards(parsed, NO_TASK_FRAGMENT);
+      expect.fail('expected self_attestation_mismatch');
+    } catch (e) {
+      expect(e).toEqual({ kind: 'self_attestation_mismatch' });
+    }
+  });
+
+  it('allows narrative update when personal_cues_resolved is present', () => {
+    const parsed = makeParsed({
+      reply_content: "I've saved your new form cues.",
+      personal_cues_resolved: [
+        { exercise_dictionary_id: 'uuid', mode: 'append', form_cues: 'knees out' },
+      ],
+    });
+    const out = applyCoachServerGuards(parsed, NO_TASK_FRAGMENT);
+    expect(out.reply_content).toContain('saved');
   });
 });

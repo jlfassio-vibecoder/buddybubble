@@ -10,7 +10,11 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { COACH_TASK_NOTES_MAX_CHARS, COACH_TASK_SEED_CTA } from './config';
+import {
+  COACH_TASK_NOTES_MAX_CHARS,
+  COACH_TASK_SEED_CTA,
+  PERSONAL_CUES_FIELD_MAX_CHARS,
+} from './config';
 import {
   coalesceTaskDescription,
   coalesceUpdatedTaskDescription,
@@ -19,6 +23,7 @@ import {
   parseExecutionPatchFromGemini,
   parseIntakePhase,
   parseMissingIntakeCategories,
+  parsePersonalCuesPatchFromGemini,
   parseProposedWorkoutMetadata,
   parseSessionReadinessScore,
   stripMarkdownCodeFences,
@@ -168,10 +173,17 @@ describe('parseExecutionPatchFromGemini', () => {
     expect(out).toEqual([{ exerciseIndex: 0, setIndex: 1 }]);
   });
 
-  it('returns null when done is not a real boolean', () => {
+  it('coerces numeric weight, reps, and rpe from JSON numbers', () => {
+    const out = parseExecutionPatchFromGemini([
+      { exerciseIndex: 1, setIndex: 2, weight: 135, reps: 8, rpe: 7.5 },
+    ]);
+    expect(out).toEqual([{ exerciseIndex: 1, setIndex: 2, weight: '135', reps: '8', rpe: '7.5' }]);
+  });
+
+  it('omits done when not a real boolean but preserves the patch', () => {
     expect(
       parseExecutionPatchFromGemini([{ exerciseIndex: 0, setIndex: 0, done: 'true' }]),
-    ).toBeNull();
+    ).toEqual([{ exerciseIndex: 0, setIndex: 0 }]);
   });
 
   it('returns null on empty input or bad shape', () => {
@@ -240,6 +252,75 @@ describe('stripMarkdownCodeFences', () => {
   });
 });
 
+const DICT_0 = { dictionary_id: '11111111-1111-4111-8111-111111111111', slug: 'deadlift' as const };
+
+describe('parsePersonalCuesPatchFromGemini', () => {
+  const byIndex = { 0: DICT_0, 1: null } as const;
+
+  it('maps valid patch entries to RPC rows', () => {
+    const raw = [
+      {
+        exerciseIndex: 0,
+        form_cues: '  brace hard  ',
+        tips: 'reset between reps',
+        mode: 'append',
+      },
+    ];
+    const out = parsePersonalCuesPatchFromGemini(raw, byIndex);
+    expect(out.droppedUnanchored).toBe(0);
+    expect(out.entries).toEqual([
+      {
+        exercise_dictionary_id: DICT_0.dictionary_id,
+        mode: 'append',
+        form_cues: 'brace hard',
+        tips: 'reset between reps',
+      },
+    ]);
+  });
+
+  it('defaults mode to append when omitted or unknown', () => {
+    const raw = [{ exerciseIndex: 0, instructions: 'x' }];
+    expect(parsePersonalCuesPatchFromGemini(raw, byIndex).entries[0]?.mode).toBe('append');
+    expect(
+      parsePersonalCuesPatchFromGemini(
+        [{ exerciseIndex: 0, instructions: 'x', mode: 'nope' }],
+        byIndex,
+      ).entries[0]?.mode,
+    ).toBe('append');
+  });
+
+  it('uses replace mode when explicitly requested', () => {
+    const raw = [{ exerciseIndex: 0, instructions: 'new', mode: 'REPLACE' }];
+    expect(parsePersonalCuesPatchFromGemini(raw, byIndex).entries[0]?.mode).toBe('replace');
+  });
+
+  it('drops unanchored indices and increments counter', () => {
+    const raw = [{ exerciseIndex: 1, form_cues: 'should not persist' }];
+    const out = parsePersonalCuesPatchFromGemini(raw, byIndex);
+    expect(out.entries).toEqual([]);
+    expect(out.droppedUnanchored).toBe(1);
+  });
+
+  it('drops all entries when dictionary map is missing', () => {
+    const raw = [{ exerciseIndex: 0, form_cues: 'x' }];
+    const out = parsePersonalCuesPatchFromGemini(raw, undefined);
+    expect(out.entries).toEqual([]);
+    expect(out.droppedUnanchored).toBe(1);
+  });
+
+  it('caps long text fields', () => {
+    const long = 'a'.repeat(PERSONAL_CUES_FIELD_MAX_CHARS + 50);
+    const out = parsePersonalCuesPatchFromGemini([{ exerciseIndex: 0, tips: long }], byIndex);
+    expect(out.entries[0]?.tips?.length).toBe(PERSONAL_CUES_FIELD_MAX_CHARS);
+    expect(out.entries[0]?.tips?.endsWith('...')).toBe(true);
+  });
+
+  it('skips entries with no text fields after trim', () => {
+    const out = parsePersonalCuesPatchFromGemini([{ exerciseIndex: 0, form_cues: '   ' }], byIndex);
+    expect(out.entries).toEqual([]);
+  });
+});
+
 describe('parseCoachJson', () => {
   it('throws gemini_invalid_json_shape when create_card true but task_title is empty', () => {
     const text = JSON.stringify(
@@ -293,5 +374,21 @@ describe('parseCoachJson', () => {
     const body = makeReplyOnlyPayload({ reply_content: 'wrapped ok' });
     const text = '```json\n' + JSON.stringify(body) + '\n```';
     expect(parseCoachJson(text).reply_content).toBe('wrapped ok');
+  });
+
+  it('resolves personal_cues_patch when exercise dictionary map is provided', () => {
+    const body = makeReplyOnlyPayload({
+      personal_cues_patch: [{ exerciseIndex: 0, form_cues: 'hips high' }],
+    });
+    const dict = { 0: DICT_0 };
+    const out = parseCoachJson(JSON.stringify(body), dict);
+    expect(out.personal_cues_resolved).toEqual([
+      {
+        exercise_dictionary_id: DICT_0.dictionary_id,
+        mode: 'append',
+        form_cues: 'hips high',
+      },
+    ]);
+    expect(out.personal_cues_dropped_unanchored).toBe(0);
   });
 });

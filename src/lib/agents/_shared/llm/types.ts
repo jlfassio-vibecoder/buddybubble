@@ -59,6 +59,8 @@ export type VertexGenerateResponse = {
     promptTokenCount?: number;
     candidatesTokenCount?: number;
     totalTokenCount?: number;
+    /** Gemini 2.5+ thinking tokens (when present); counted against `maxOutputTokens`. */
+    thoughtsTokenCount?: number;
   };
 };
 
@@ -71,8 +73,19 @@ export type VertexGenerateResponse = {
  * - `shape`   Response was valid JSON but did not satisfy the strategy's parser.
  * - `timeout` `AbortSignal.timeout` fired before any response.
  * - `auth`    OAuth token exchange with Google failed; operationally distinct from `http`.
+ * - `truncated` Vertex candidate `finishReason` is `MAX_TOKENS`; output incomplete.
+ * - `self_attestation_mismatch` Coach reply_content claimed a write without structured fields.
+ * - `cue_unanchored` Coach emitted personal_cues_patch rows with no catalog dictionary id (logged / classified when thrown).
  */
-export type VertexErrorKind = 'http' | 'parse' | 'shape' | 'timeout' | 'auth';
+export type VertexErrorKind =
+  | 'http'
+  | 'parse'
+  | 'shape'
+  | 'timeout'
+  | 'auth'
+  | 'truncated'
+  | 'self_attestation_mismatch'
+  | 'cue_unanchored';
 
 /** Discriminated error union thrown by `vertex-gemini.ts` and `vertex-auth.ts`. */
 export type VertexClassifiedError =
@@ -80,4 +93,7 @@ export type VertexClassifiedError =
   | { kind: 'parse'; body: string }
   | { kind: 'shape'; detail: string }
   | { kind: 'timeout' }
-  | { kind: 'auth'; status?: number; body?: string };
+  | { kind: 'auth'; status?: number; body?: string }
+  | { kind: 'truncated'; body?: string }
+  | { kind: 'self_attestation_mismatch' }
+  | { kind: 'cue_unanchored' };

@@ -24,10 +24,38 @@ import type { Json } from '@/types/database';
 import { useWorkspaceSessionSubject } from '@/context/WorkspaceSessionContext';
 import { useExerciseDictionaryAutocomplete } from '@/hooks/useExerciseDictionaryAutocomplete';
 import { metadataFieldsFromParsed } from '@/lib/item-metadata';
+import type { ExerciseMentionClientPayload } from '@/lib/agents/coach/exercise-mentions';
 import { parseExecutionPatchFromMetadata, type ExecutionPatch } from '@/types/execution-patch';
 
+function normMentionName(s: string): string {
+  return s.trim().toLowerCase();
+}
+
+/** Keep only mentions still in the outgoing text; refresh `workout_exercise_index` from current workout order. */
+function finalizeExerciseMentionsForSend(
+  pending: ExerciseMentionClientPayload[],
+  messageText: string,
+  workoutNames: string[],
+): ExerciseMentionClientPayload[] | null {
+  const names = workoutNames.map((n) => n.trim());
+  const filtered = pending.filter((m) => messageText.includes(m.token));
+  if (filtered.length === 0) return null;
+  return filtered.map((m) => {
+    const idx = names.findIndex((n) => normMentionName(n) === normMentionName(m.name));
+    const row: ExerciseMentionClientPayload = {
+      token: m.token,
+      name: m.name,
+      source: m.source,
+    };
+    if (m.dictionary_id) row.dictionary_id = m.dictionary_id;
+    if (m.dictionary_slug) row.dictionary_slug = m.dictionary_slug;
+    if (idx >= 0) row.workout_exercise_index = idx;
+    return row;
+  });
+}
+
 const CHAT_AREA_DEFAULT_AGENT_SLUG = 'coach';
-/** Persisted on `messages.metadata` for root inserts; `bubble-agent-dispatch` reads this key. */
+/** Persisted on `messages.metadata` for root inserts; `agent-dispatch` reads this key. */
 const MESSAGE_METADATA_DEFAULT_AGENT_SLUG_KEY = 'default_agent_slug' as const;
 /** User-visible body for the workout open sentinel; routing uses `metadata.is_silent_sentinel` (see Edge Function). */
 const WORKOUT_COACH_SENTINEL_DISPLAY_TEXT = 'Started a workout session.';
@@ -36,7 +64,7 @@ const WORKOUT_COACH_SENTINEL_DISPLAY_TEXT = 'Started a workout session.';
  * Do not use for new sends — prefer `isWorkoutPlayerSilentSentinelMessage`.
  */
 const WORKOUT_COACH_SENTINEL_LEGACY_CONTENT = '[SYSTEM_EVENT: WORKOUT_CONTEXT]';
-/** Server reads this for the opening greeting copy (bubble-agent-dispatch). */
+/** Server reads this for the opening greeting copy (`agent-dispatch`). */
 const MESSAGE_METADATA_WORKOUT_TASK_TITLE_KEY = 'workout_task_title' as const;
 
 type MessageRowForSentinel = { content?: string | null; metadata?: Json | null };
@@ -75,14 +103,27 @@ function resolveWorkoutContextForSentinel(
   workoutData: Json | undefined,
   workoutTitle: string,
 ): Json {
-  if (workoutData != null && isPopulatedWorkoutDataJson(workoutData)) {
+  const title = workoutTitle.trim() || 'this workout';
+  if (workoutData == null || !isPopulatedWorkoutDataJson(workoutData)) {
+    return { exercises: [], workout_task_title: title };
+  }
+  // `WorkoutPlayer` often passes `metadataFieldsFromParsed(...).workoutExercises` — a bare array.
+  // Coach `formatExerciseIndexMap` / `parseExerciseNamesFromWorkoutContextJson` expect `{ exercises }`.
+  if (Array.isArray(workoutData)) {
+    return { exercises: workoutData as Json[], workout_task_title: title };
+  }
+  if (typeof workoutData === 'object' && workoutData !== null && !Array.isArray(workoutData)) {
+    const o = workoutData as Record<string, unknown>;
+    if (Array.isArray(o.exercises)) {
+      const wt =
+        typeof o.workout_task_title === 'string' && o.workout_task_title.trim()
+          ? o.workout_task_title.trim()
+          : title;
+      return { ...o, exercises: o.exercises, workout_task_title: wt } as Json;
+    }
     return workoutData;
   }
-  const title = workoutTitle.trim() || 'this workout';
-  return {
-    exercises: [],
-    workout_task_title: title,
-  };
+  return { exercises: [], workout_task_title: title };
 }
 
 export type WorkoutCoachRailProps = {
@@ -269,8 +310,11 @@ export function WorkoutCoachRail({
 
   /** Coach message ids for which we applied a patch or confirmed there is nothing to apply (stops effect churn). */
   const coachExecutionHandledMessageIdsRef = useRef<Set<string>>(new Set());
+  /** Pending `#` exercise picks for the next Coach send (`metadata.exercise_mentions`). Cleared after successful send. */
+  const exerciseMentionsPendingRef = useRef<ExerciseMentionClientPayload[]>([]);
   useEffect(() => {
     coachExecutionHandledMessageIdsRef.current.clear();
+    exerciseMentionsPendingRef.current = [];
   }, [taskId]);
 
   useEffect(() => {
@@ -329,36 +373,41 @@ export function WorkoutCoachRail({
     waitMainClear,
   ]);
 
-  // `execution_patch` is present on the agent reply row at INSERT (no follow-up UPDATE). We mark
-  // a message id handled only after a successful parse: no patch (done) or patch applied. Parse
-  // throws are not marked so a transient error can be retried on a later render.
+  // `execution_patch` is on the agent reply row at INSERT. Apply every unhandled Coach message
+  // in chronological order (later patches win on overlapping cells). Do not require Coach to be
+  // the terminal thread message. Parse throws are not marked so a transient error can retry.
   useEffect(() => {
     if (isLoading) return;
     if (messages.length === 0) return;
-    const last = messages[messages.length - 1];
-    if (!last.id) return;
-    if (shouldHideWorkoutCoachSentinelFromRail(last)) return;
     const coachAuthUserId = availableAgents.find((a) => a.slug === 'coach')?.auth_user_id;
     if (!coachAuthUserId) return;
-    if (last.user_id !== coachAuthUserId) return;
-    if (coachExecutionHandledMessageIdsRef.current.has(last.id)) return;
-    const meta = last.metadata;
-    const raw =
-      meta != null && typeof meta === 'object' && !Array.isArray(meta)
-        ? (meta as { execution_patch?: unknown }).execution_patch
-        : undefined;
-    let patch: ExecutionPatch | null = null;
-    try {
-      patch = parseExecutionPatchFromMetadata(raw);
-    } catch {
-      return;
+
+    const coachRows = messages.filter(
+      (m) => m.user_id === coachAuthUserId && m.id && !shouldHideWorkoutCoachSentinelFromRail(m),
+    );
+
+    for (const row of coachRows) {
+      const id = row.id;
+      if (!id) continue;
+      if (coachExecutionHandledMessageIdsRef.current.has(id)) continue;
+      const meta = row.metadata;
+      const raw =
+        meta != null && typeof meta === 'object' && !Array.isArray(meta)
+          ? (meta as { execution_patch?: unknown }).execution_patch
+          : undefined;
+      let patch: ExecutionPatch | null = null;
+      try {
+        patch = parseExecutionPatchFromMetadata(raw);
+      } catch {
+        return;
+      }
+      if (!patch) {
+        coachExecutionHandledMessageIdsRef.current.add(id);
+        continue;
+      }
+      onApplyExecutionPatch(patch);
+      coachExecutionHandledMessageIdsRef.current.add(id);
     }
-    if (!patch) {
-      coachExecutionHandledMessageIdsRef.current.add(last.id);
-      return;
-    }
-    onApplyExecutionPatch(patch);
-    coachExecutionHandledMessageIdsRef.current.add(last.id);
   }, [availableAgents, isLoading, messages, onApplyExecutionPatch]);
 
   const bubbleName = bubbleRow?.name ?? 'Coach';
@@ -385,6 +434,28 @@ export function WorkoutCoachRail({
     }, 50);
     return () => clearTimeout(id);
   }, [allMessages, waitMain.pending]);
+
+  const onExerciseHashInserted = useCallback(
+    (ex: RichMessageComposerExercise) => {
+      const names = workoutExerciseNameList.map((n) => n.trim());
+      const isWorkout = ex.id.startsWith('workout:');
+      const name = ex.name.trim();
+      const token = `#${name} `;
+      const idx = names.findIndex((n) => normMentionName(n) === normMentionName(name));
+      const row: ExerciseMentionClientPayload = {
+        token,
+        name,
+        source: isWorkout ? 'workout' : 'dictionary',
+      };
+      if (idx >= 0) row.workout_exercise_index = idx;
+      if (!isWorkout) {
+        if (ex.id) row.dictionary_id = ex.id;
+        if (ex.slug) row.dictionary_slug = ex.slug;
+      }
+      exerciseMentionsPendingRef.current = [...exerciseMentionsPendingRef.current, row];
+    },
+    [workoutExerciseNameList],
+  );
 
   const handleSubmitIntent = useCallback(() => {
     const draft = applyAgentPrefix(input);
@@ -421,6 +492,15 @@ export function WorkoutCoachRail({
         availableAgents,
         contextDefaultAgentSlug: CHAT_AREA_DEFAULT_AGENT_SLUG,
       });
+      const exerciseMentions =
+        activeAgent === 'coach'
+          ? finalizeExerciseMentionsForSend(
+              exerciseMentionsPendingRef.current,
+              finalMessageText,
+              workoutExerciseNameList,
+            )
+          : null;
+
       const sent = await sendMessage(
         finalMessageText,
         undefined,
@@ -429,11 +509,15 @@ export function WorkoutCoachRail({
           ? {
               metadata: {
                 [MESSAGE_METADATA_DEFAULT_AGENT_SLUG_KEY]: CHAT_AREA_DEFAULT_AGENT_SLUG,
+                ...(exerciseMentions && exerciseMentions.length > 0
+                  ? { exercise_mentions: exerciseMentions as unknown as Json }
+                  : {}),
               } satisfies Json,
             }
           : undefined,
       );
       if (!sent) return false;
+      exerciseMentionsPendingRef.current = [];
       setInput('');
       setPendingFiles([]);
       if (routingResult) {
@@ -441,7 +525,15 @@ export function WorkoutCoachRail({
       }
       return true;
     },
-    [activeAgent, applyAgentPrefix, availableAgents, sendMessage, sending, waitMain],
+    [
+      activeAgent,
+      applyAgentPrefix,
+      availableAgents,
+      sendMessage,
+      sending,
+      waitMain,
+      workoutExerciseNameList,
+    ],
   );
 
   return (
@@ -500,6 +592,7 @@ export function WorkoutCoachRail({
           value={input}
           onChange={(next) => setInput(next)}
           onSubmitIntent={handleSubmitIntent}
+          onExerciseHashInserted={onExerciseHashInserted}
           onSubmit={handleSubmit}
           pendingFiles={pendingFiles}
           onPendingFilesChange={setPendingFiles}

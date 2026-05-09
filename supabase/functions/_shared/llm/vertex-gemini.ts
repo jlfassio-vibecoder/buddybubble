@@ -19,11 +19,12 @@ import { log } from '../obs/log.ts';
 import type {
   GeminiContent,
   VertexClassifiedError,
-  VertexErrorKind,
   VertexGenerateRequest,
   VertexGenerateResponse,
   VertexResponseSchema,
 } from './types.ts';
+
+export { classifyError } from './classify-error.ts';
 
 export type GenerateContentArgs = {
   project: string;
@@ -144,24 +145,6 @@ export function extractGeminiText(
   const parts = candidate?.content?.parts;
   if (!Array.isArray(parts)) return '';
   return parts.map((p) => (typeof p?.text === 'string' ? p.text : '')).join('');
-}
-
-/** Map an unknown error to the dispatcher's fallback-decision discriminator. */
-export function classifyError(err: unknown): VertexErrorKind {
-  if (err && typeof err === 'object' && 'kind' in err) {
-    const kind = (err as { kind?: unknown }).kind;
-    if (
-      kind === 'http' ||
-      kind === 'parse' ||
-      kind === 'shape' ||
-      kind === 'timeout' ||
-      kind === 'auth'
-    ) {
-      return kind;
-    }
-  }
-  if (isAbortError(err)) return 'timeout';
-  return 'http';
 }
 
 /**

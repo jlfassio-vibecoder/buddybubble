@@ -9,6 +9,32 @@
 
 import type { CoachGeminiJsonResponse } from './parse.ts';
 
+/** Tight English phrase set: model claimed a write without structured output → fallback. */
+const SELF_ATTESTATION_PHRASE_RE =
+  /\b(i['']?ve\s+(updated|added|now\s+updated)|i\s+added|applied\s+to\s+your\s+card|written\s+to\s+your\s+card|pushed\s+(those\s+)?changes\s+to\s+(the\s+)?card|saved\s+(it|them)\s+to\s+your\s+(card|workout)|finalize(d)?\s+(the\s+)?(card|workout)\s+update)\b/i;
+
+/**
+ * Throws `{ kind: 'self_attestation_mismatch' }` when reply_content narrates a persisted
+ * update but no structured write field is present.
+ */
+export function assertCoachReplySelfAttestation(parsed: CoachGeminiJsonResponse): void {
+  if (!SELF_ATTESTATION_PHRASE_RE.test(parsed.reply_content)) return;
+  const hasExecution = parsed.execution_patch != null && parsed.execution_patch.length > 0;
+  const hasPersonal =
+    parsed.personal_cues_resolved != null && parsed.personal_cues_resolved.length > 0;
+  const meta = parsed.proposed_workout_metadata;
+  const hasProposed = meta != null && typeof meta === 'object' && Object.keys(meta).length > 0;
+  const hasCard =
+    parsed.create_card ||
+    (parsed.update_existing_task &&
+      (Boolean(parsed.updated_task_title?.trim()) ||
+        Boolean(parsed.updated_task_description?.trim()) ||
+        hasProposed));
+  if (!hasExecution && !hasPersonal && !hasCard) {
+    throw { kind: 'self_attestation_mismatch' as const };
+  }
+}
+
 /**
  * Request-scoped fragment the strategy assembles before applying guards. The Coach
  * strategy stashes these on `DispatchContext.extras.coach` during `buildSystemPrompt`
@@ -86,7 +112,7 @@ export function applyCoachServerGuards(
     proposedWorkoutMetadata = null;
   }
 
-  return {
+  const out: CoachGeminiJsonResponse = {
     ...parsed,
     create_card: createCard,
     task_title: taskTitle,
@@ -97,4 +123,6 @@ export function applyCoachServerGuards(
     updated_task_description: updatedTaskDescription,
     proposed_workout_metadata: proposedWorkoutMetadata,
   };
+  assertCoachReplySelfAttestation(out);
+  return out;
 }

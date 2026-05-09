@@ -185,4 +185,20 @@ export interface AgentStrategy<TParsed> {
 
   routing?: RoutingDescriptor;
   safeReplyText: string;
+
+  /**
+   * Optional cap on the number of prior `messages` rows the dispatcher includes
+   * as Vertex `contents` for this strategy. When set, `buildDispatchContext`
+   * passes the value to `loadThreadHistoryByTargetTask` /
+   * `loadThreadHistoryByParent` AND slices any pre-loaded history (e.g. rows
+   * the resolver fetched while discovering the authoring agent in
+   * `agent-dispatch/resolve.ts`) to the same tail length. Leave undefined to
+   * use the shared `_shared/dispatch/history.ts:DEFAULT_HISTORY_LIMIT` (50).
+   *
+   * Coach sets this to `COACH_HISTORY_LIMIT` so a single workout thread does
+   * not grow the input window unboundedly across turns (each user reply +
+   * Coach reply + any safe-reply fallback is otherwise replayed on every
+   * dispatch).
+   */
+  historyLimit?: number;
 }

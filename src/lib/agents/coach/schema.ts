@@ -102,7 +102,7 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
       type: 'OBJECT',
       nullable: true,
       description:
-        'When update_existing_task is true: structured workout fields to merge into tasks.metadata on user finalize (exercises array with name, sets, reps; workout_type; duration_min). MUST be null on pre_draft_confirmation turns and until the user confirms drafting or user_requested_immediate_card. MUST be null when you are only updating the live grid via execution_patch (use execution_patch, not this object). Use null if only updating title/description text.',
+        'When update_existing_task is true: structured workout fields to merge into tasks.metadata on user finalize (exercises array with name, sets, reps; workout_type; duration_min). MUST be null on pre_draft_confirmation turns and until the user confirms drafting or user_requested_immediate_card. MUST be null when you are only updating the live grid via execution_patch OR saving personal form cues via personal_cues_patch (never use this object for mid-workout cue persistence). Use null if only updating title/description text.',
       properties: {
         exercises: {
           type: 'ARRAY',
@@ -125,14 +125,14 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
       type: 'ARRAY',
       nullable: true,
       description:
-        'Optional. Omit or null when not updating the live player. When the user asks for load or rep targets: you must compute and put the values here—do not ask the user to type the numbers for you. exerciseIndex and setIndex are 0-based and must match workoutContext (see CURRENT WORKOUT CONTEXT).',
+        'Optional. Live WorkoutPlayer set grid only (weight, reps, RPE, done). Omit or null when not updating the live player. When the user asks for load or rep targets: you must compute and put the values here—do not ask the user to type the numbers for you. exerciseIndex and setIndex are 0-based and must match workoutContext (see CURRENT WORKOUT CONTEXT). For saved personal instructions/form cues use personal_cues_patch, not this field.',
       items: {
         type: 'OBJECT',
         properties: {
           exerciseIndex: {
             type: 'INTEGER',
             description:
-              '0-based index of the exercise in workoutContext (same ordering as the live player).',
+              '0-based index of the exercise in workoutContext (same ordering as the live player). When TAGGED_EXERCISE_REFS is present, exerciseIndex MUST come from a resolved entry there. Otherwise when EXERCISE_INDEX_MAP appears below CURRENT WORKOUT CONTEXT, use that map row index. Never infer exerciseIndex only from literal # text in the user message when TAGGED_EXERCISE_REFS lists a resolved index.',
           },
           setIndex: {
             type: 'INTEGER',
@@ -159,6 +159,32 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
           done: { type: 'BOOLEAN', nullable: true },
         },
         required: ['exerciseIndex', 'setIndex'],
+      },
+    },
+    personal_cues_patch: {
+      type: 'ARRAY',
+      nullable: true,
+      description:
+        'Optional. When CURRENT WORKOUT CONTEXT is present, save personal instructions/form cues/tips/injury notes per exercise. Indices come from EXERCISE_INDEX_MAP and must be marked [dict:...]; default mode append. Omit or null when not persisting cues.',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          exerciseIndex: {
+            type: 'INTEGER',
+            description:
+              '0-based index in workoutContext.exercises (same as execution_patch). Must match EXERCISE_INDEX_MAP and have a dictionary id when saving.',
+          },
+          instructions: { type: 'STRING', nullable: true },
+          form_cues: { type: 'STRING', nullable: true },
+          tips: { type: 'STRING', nullable: true },
+          injury_prevention_tips: { type: 'STRING', nullable: true },
+          mode: {
+            type: 'STRING',
+            nullable: true,
+            description: 'append (default) or replace.',
+          },
+        },
+        required: ['exerciseIndex'],
       },
     },
   },

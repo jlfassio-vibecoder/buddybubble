@@ -2,9 +2,9 @@
  * MIRROR FILE — canonical lives at `src/lib/agents/coach/parse.ts`.
  *
  * Body below is byte-for-byte identical to the canonical Vitest-side file (excluding
- * this header) EXCEPT for the import path of `./config` which uses the explicit `.ts`
- * extension required by Deno. Any change must be hand-mirrored — run
- * `pnpm check:agent-mirror` to verify body parity.
+ * this header) EXCEPT for relative imports that use the explicit `.ts` extension
+ * required by Deno (`./config.ts`, `./execution-patch-numeric.ts`). Any change must be
+ * hand-mirrored — run `pnpm check:agent-mirror` to verify body parity.
  */
 
 import {
@@ -12,9 +12,15 @@ import {
   COACH_TASK_SEED_CTA,
   INTAKE_CATEGORIES,
   INTAKE_PHASES,
+  PERSONAL_CUES_FIELD_MAX_CHARS,
   type IntakeCategory,
   type IntakePhase,
 } from './config.ts';
+import type { ExerciseDictionaryIndexEntry } from './prompts.ts';
+import {
+  coerceExecutionPatchNumericField,
+  sanitizeNumericStringForPatch,
+} from './execution-patch-numeric.ts';
 
 /**
  * Normalized Coach response shape. Lifted verbatim from
@@ -52,6 +58,22 @@ export type CoachGeminiJsonResponse = {
     rpe?: string;
     done?: boolean;
   }> | null;
+  /**
+   * Resolved personal cues for RPC (`exercise_dictionary_id`); null when nothing to persist.
+   */
+  personal_cues_resolved: PersonalCueResolvedForRpc[] | null;
+  /** Count of patch entries dropped because the exercise index had no catalog match. */
+  personal_cues_dropped_unanchored: number;
+};
+
+/** Payload for `p_personal_cues` on agent RPCs (matches `apply_personal_cues_for_user`). */
+export type PersonalCueResolvedForRpc = {
+  exercise_dictionary_id: string;
+  mode: 'append' | 'replace';
+  instructions?: string;
+  form_cues?: string;
+  tips?: string;
+  injury_prevention_tips?: string;
 };
 
 /**
@@ -201,11 +223,66 @@ export function ensureCoachTaskNotesCta(notes: string | null): string | null {
  * Returns null if no valid token or not parseable; does not throw.
  */
 export function sanitizeNumericString(raw: string): string | null {
-  const match = raw.match(/[0-9]+(?:\.[0-9]+)?/);
-  if (!match) return null;
-  const n = Number(match[0]);
-  if (!Number.isFinite(n)) return null;
-  return match[0];
+  return sanitizeNumericStringForPatch(raw);
+}
+
+function capPersonalCueField(s: string): string {
+  if (s.length <= PERSONAL_CUES_FIELD_MAX_CHARS) return s;
+  return s.slice(0, PERSONAL_CUES_FIELD_MAX_CHARS - 3) + '...';
+}
+
+/**
+ * Map Gemini `personal_cues_patch` to RPC rows using server-resolved dictionary ids per index.
+ */
+export function parsePersonalCuesPatchFromGemini(
+  raw: unknown,
+  dictionaryByIndex: Readonly<Record<number, ExerciseDictionaryIndexEntry | null>> | undefined,
+): { entries: PersonalCueResolvedForRpc[]; droppedUnanchored: number } {
+  const entries: PersonalCueResolvedForRpc[] = [];
+  let droppedUnanchored = 0;
+  if (raw == null || !Array.isArray(raw) || raw.length === 0) {
+    return { entries, droppedUnanchored };
+  }
+  if (!dictionaryByIndex) {
+    return { entries, droppedUnanchored: raw.length };
+  }
+  for (const el of raw) {
+    if (el == null || typeof el !== 'object' || Array.isArray(el)) continue;
+    const o = el as Record<string, unknown>;
+    const ex = o.exerciseIndex;
+    if (typeof ex !== 'number' || !Number.isInteger(ex) || ex < 0) continue;
+    const row = dictionaryByIndex[ex];
+    if (row == null) {
+      droppedUnanchored += 1;
+      continue;
+    }
+    const modeRaw = o.mode;
+    const mode: 'append' | 'replace' =
+      typeof modeRaw === 'string' && modeRaw.trim().toLowerCase() === 'replace'
+        ? 'replace'
+        : 'append';
+    const pick = (key: string): string | undefined => {
+      const v = o[key];
+      if (typeof v !== 'string') return undefined;
+      const t = v.trim();
+      if (!t) return undefined;
+      return capPersonalCueField(t);
+    };
+    const instructions = pick('instructions');
+    const form_cues = pick('form_cues');
+    const tips = pick('tips');
+    const injury_prevention_tips = pick('injury_prevention_tips');
+    if (!instructions && !form_cues && !tips && !injury_prevention_tips) continue;
+    entries.push({
+      exercise_dictionary_id: row.dictionary_id,
+      mode,
+      ...(instructions ? { instructions } : {}),
+      ...(form_cues ? { form_cues } : {}),
+      ...(tips ? { tips } : {}),
+      ...(injury_prevention_tips ? { injury_prevention_tips } : {}),
+    });
+  }
+  return { entries, droppedUnanchored };
 }
 
 export function parseExecutionPatchFromGemini(
@@ -227,26 +304,18 @@ export function parseExecutionPatchFromGemini(
         setIndex: st,
       };
       if (o.weight !== undefined) {
-        if (typeof o.weight === 'string') {
-          const s = sanitizeNumericString(o.weight);
-          if (s !== null) item.weight = s;
-        }
-        // non-string or sanitize failure: omit field, do not drop the whole patch
+        const s = coerceExecutionPatchNumericField(o.weight);
+        if (s !== null) item.weight = s;
       }
       if (o.reps !== undefined) {
-        if (typeof o.reps === 'string') {
-          const s = sanitizeNumericString(o.reps);
-          if (s !== null) item.reps = s;
-        }
+        const s = coerceExecutionPatchNumericField(o.reps);
+        if (s !== null) item.reps = s;
       }
       if (o.rpe !== undefined) {
-        if (typeof o.rpe === 'string') {
-          const s = sanitizeNumericString(o.rpe);
-          if (s !== null) item.rpe = s;
-        }
+        const s = coerceExecutionPatchNumericField(o.rpe);
+        if (s !== null) item.rpe = s;
       }
-      if (o.done !== undefined) {
-        if (typeof o.done !== 'boolean') return null;
+      if (o.done !== undefined && typeof o.done === 'boolean') {
         item.done = o.done;
       }
       out.push(item);
@@ -264,7 +333,10 @@ export function parseExecutionPatchFromGemini(
  * empty. Preserves the legacy contract — see
  * `_shared/llm/vertex-gemini.classifyError` for the dispatcher's mapping.
  */
-export function parseCoachJson(text: string): CoachGeminiJsonResponse {
+export function parseCoachJson(
+  text: string,
+  exerciseDictionaryByIndex?: Readonly<Record<number, ExerciseDictionaryIndexEntry | null>>,
+): CoachGeminiJsonResponse {
   const cleanText = stripMarkdownCodeFences(text);
   let parsed: Record<string, unknown>;
   try {
@@ -322,6 +394,13 @@ export function parseCoachJson(text: string): CoachGeminiJsonResponse {
     execution_patch = null;
   }
 
+  const cuesResult = parsePersonalCuesPatchFromGemini(
+    (parsed as Record<string, unknown>).personal_cues_patch,
+    exerciseDictionaryByIndex,
+  );
+  const personal_cues_resolved = cuesResult.entries.length > 0 ? cuesResult.entries : null;
+  const personal_cues_dropped_unanchored = cuesResult.droppedUnanchored;
+
   if (createCard) {
     const titleTrimmed = typeof rawTitle === 'string' ? rawTitle.trim() : '';
     if (!titleTrimmed) {
@@ -335,6 +414,8 @@ export function parseCoachJson(text: string): CoachGeminiJsonResponse {
       coach_task_notes: ensureCoachTaskNotesCta(parseCoachTaskNotes(parsed.coach_task_notes)),
       proposed_workout_metadata: null,
       execution_patch,
+      personal_cues_resolved,
+      personal_cues_dropped_unanchored,
       ...intakeTail,
       ...updateTail,
     };
@@ -348,6 +429,8 @@ export function parseCoachJson(text: string): CoachGeminiJsonResponse {
     coach_task_notes: null,
     proposed_workout_metadata: proposedMetaOrNull,
     execution_patch,
+    personal_cues_resolved,
+    personal_cues_dropped_unanchored,
     ...intakeTail,
     ...updateTail,
   };
@@ -359,4 +442,19 @@ export function executionPatchForRpc(
 ): unknown | null {
   if (patch == null || patch.length === 0) return null;
   return patch;
+}
+
+/** JSON array for `p_personal_cues` on agent RPCs (or null when empty). */
+export function personalCuesPatchForRpc(
+  resolved: PersonalCueResolvedForRpc[] | null,
+): unknown | null {
+  if (resolved == null || resolved.length === 0) return null;
+  return resolved.map((e) => ({
+    exercise_dictionary_id: e.exercise_dictionary_id,
+    mode: e.mode,
+    instructions: e.instructions ?? null,
+    form_cues: e.form_cues ?? null,
+    tips: e.tips ?? null,
+    injury_prevention_tips: e.injury_prevention_tips ?? null,
+  }));
 }

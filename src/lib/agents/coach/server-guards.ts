@@ -17,8 +17,8 @@
  *   3. Active-workout clamp — when CURRENT WORKOUT CONTEXT is present, the user is in
  *      live execution. Clear `create_card`, `task_title`, `task_description`,
  *      `coach_task_notes`, `update_existing_task`, `updated_task_title`,
- *      `updated_task_description`, `proposed_workout_metadata`. Only `execution_patch`
- *      survives.
+ *      `updated_task_description`, `proposed_workout_metadata`. `execution_patch` and
+ *      `personal_cues_resolved` survive (live grid + saved personal cues).
  *
  * Returns a new object — never mutates the caller's `parsed` argument — so guards-
  * focused unit tests can compose fragments freely.
@@ -31,6 +31,32 @@
  */
 
 import type { CoachGeminiJsonResponse } from './parse';
+
+/** Tight English phrase set: model claimed a write without structured output → fallback. */
+const SELF_ATTESTATION_PHRASE_RE =
+  /\b(i['']?ve\s+(updated|added|now\s+updated)|i\s+added|applied\s+to\s+your\s+card|written\s+to\s+your\s+card|pushed\s+(those\s+)?changes\s+to\s+(the\s+)?card|saved\s+(it|them)\s+to\s+your\s+(card|workout)|finalize(d)?\s+(the\s+)?(card|workout)\s+update)\b/i;
+
+/**
+ * Throws `{ kind: 'self_attestation_mismatch' }` when reply_content narrates a persisted
+ * update but no structured write field is present.
+ */
+export function assertCoachReplySelfAttestation(parsed: CoachGeminiJsonResponse): void {
+  if (!SELF_ATTESTATION_PHRASE_RE.test(parsed.reply_content)) return;
+  const hasExecution = parsed.execution_patch != null && parsed.execution_patch.length > 0;
+  const hasPersonal =
+    parsed.personal_cues_resolved != null && parsed.personal_cues_resolved.length > 0;
+  const meta = parsed.proposed_workout_metadata;
+  const hasProposed = meta != null && typeof meta === 'object' && Object.keys(meta).length > 0;
+  const hasCard =
+    parsed.create_card ||
+    (parsed.update_existing_task &&
+      (Boolean(parsed.updated_task_title?.trim()) ||
+        Boolean(parsed.updated_task_description?.trim()) ||
+        hasProposed));
+  if (!hasExecution && !hasPersonal && !hasCard) {
+    throw { kind: 'self_attestation_mismatch' as const };
+  }
+}
 
 /**
  * Request-scoped fragment the strategy assembles before applying guards. The Coach
@@ -109,7 +135,7 @@ export function applyCoachServerGuards(
     proposedWorkoutMetadata = null;
   }
 
-  return {
+  const out: CoachGeminiJsonResponse = {
     ...parsed,
     create_card: createCard,
     task_title: taskTitle,
@@ -120,4 +146,6 @@ export function applyCoachServerGuards(
     updated_task_description: updatedTaskDescription,
     proposed_workout_metadata: proposedWorkoutMetadata,
   };
+  assertCoachReplySelfAttestation(out);
+  return out;
 }

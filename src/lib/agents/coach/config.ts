@@ -29,14 +29,41 @@ export const COACH_MODEL_DEFAULT = 'gemini-2.5-flash' as const;
 
 /** Generation params for the main Coach JSON-mode call. */
 export const COACH_TEMPERATURE = 0.2 as const;
-export const COACH_MAX_OUTPUT_TOKENS = 8192 as const;
+/**
+ * Upper cap for Coach's main JSON-mode reply (visible JSON + Gemini 2.5 Flash
+ * thinking share this budget per Vertex docs). Covers a fully-detailed ~90 min
+ * workout rewrite (instructions + form cues for ~12–15 exercises) plus adaptive
+ * thinking; the model only emits what it needs per turn — this is the cap, not a
+ * target.
+ */
+export const COACH_MAX_OUTPUT_TOKENS = 32768 as const;
 
 /** Generation params for the workout-open silent-greeting preflight sub-call. */
 export const COACH_WORKOUT_GREETING_TEMPERATURE = 0.35 as const;
 export const COACH_WORKOUT_GREETING_MAX_OUTPUT_TOKENS = 512 as const;
 
+/**
+ * Coach-specific override for the dispatcher's thread-history loader. Caps the
+ * number of prior messages included as Vertex `contents` so the input window
+ * stays bounded as a single workout thread accumulates turns (each user reply
+ * + Coach reply + any safe-reply fallbacks all live in `messages` and would
+ * otherwise be replayed on every dispatch).
+ *
+ * Plumbed through `AgentStrategy.historyLimit` → `buildDispatchContext` so the
+ * resolver's `_shared/dispatch/history.ts:DEFAULT_HISTORY_LIMIT` (50) keeps
+ * working for thread-continuation agent discovery (`agent-dispatch/resolve.ts`).
+ */
+export const COACH_HISTORY_LIMIT = 15 as const;
+
 /** Max length for the seed task comment passed to Postgres (matches RPC). */
 export const COACH_TASK_NOTES_MAX_CHARS = 8000 as const;
+
+/** Max length per text field in `personal_cues_patch` before RPC merge (matches parse cap). */
+export const PERSONAL_CUES_FIELD_MAX_CHARS = 2000 as const;
+
+/** Fallback reply when the model claims a write without emitting structured fields (server guard). */
+export const COACH_SELF_ATTESTATION_SAFE_REPLY =
+  "I noticed I described an update I didn't actually save. Tell me which exercise to add cues for, and I'll save them to your personal notes.";
 
 /** Appended server-side if the model omits it (matches the system-prompt contract). */
 export const COACH_TASK_SEED_CTA =

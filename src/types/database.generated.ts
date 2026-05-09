@@ -1959,6 +1959,60 @@ export type Database = {
           },
         ];
       };
+      user_exercise_notes: {
+        Row: {
+          id: string;
+          user_id: string;
+          exercise_dictionary_id: string;
+          instructions: string | null;
+          form_cues: string | null;
+          tips: string | null;
+          injury_prevention_tips: string | null;
+          updated_by_agent_user_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          exercise_dictionary_id: string;
+          instructions?: string | null;
+          form_cues?: string | null;
+          tips?: string | null;
+          injury_prevention_tips?: string | null;
+          updated_by_agent_user_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          exercise_dictionary_id?: string;
+          instructions?: string | null;
+          form_cues?: string | null;
+          tips?: string | null;
+          injury_prevention_tips?: string | null;
+          updated_by_agent_user_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'user_exercise_notes_exercise_dictionary_id_fkey';
+            columns: ['exercise_dictionary_id'];
+            isOneToOne: false;
+            referencedRelation: 'exercise_dictionary';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'user_exercise_notes_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       user_programs: {
         Row: {
           created_at: string | null;
@@ -2656,6 +2710,7 @@ export type Database = {
           p_create_card?: boolean;
           p_execution_patch?: Json;
           p_invoker_user_id: string;
+          p_personal_cues?: Json;
           p_reply_text: string;
           p_seed_task_comment_text?: string;
           p_task_description?: string;
@@ -2672,6 +2727,7 @@ export type Database = {
           p_agent_auth_user_id: string;
           p_execution_patch?: Json;
           p_invoker_user_id: string;
+          p_personal_cues?: Json;
           p_proposed_description?: string;
           p_proposed_metadata?: Json;
           p_proposed_title?: string;
