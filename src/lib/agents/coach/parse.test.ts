@@ -168,10 +168,17 @@ describe('parseExecutionPatchFromGemini', () => {
     expect(out).toEqual([{ exerciseIndex: 0, setIndex: 1 }]);
   });
 
-  it('returns null when done is not a real boolean', () => {
+  it('coerces numeric weight, reps, and rpe from JSON numbers', () => {
+    const out = parseExecutionPatchFromGemini([
+      { exerciseIndex: 1, setIndex: 2, weight: 135, reps: 8, rpe: 7.5 },
+    ]);
+    expect(out).toEqual([{ exerciseIndex: 1, setIndex: 2, weight: '135', reps: '8', rpe: '7.5' }]);
+  });
+
+  it('omits done when not a real boolean but preserves the patch', () => {
     expect(
       parseExecutionPatchFromGemini([{ exerciseIndex: 0, setIndex: 0, done: 'true' }]),
-    ).toBeNull();
+    ).toEqual([{ exerciseIndex: 0, setIndex: 0 }]);
   });
 
   it('returns null on empty input or bad shape', () => {

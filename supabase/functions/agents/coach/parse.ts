@@ -2,9 +2,9 @@
  * MIRROR FILE — canonical lives at `src/lib/agents/coach/parse.ts`.
  *
  * Body below is byte-for-byte identical to the canonical Vitest-side file (excluding
- * this header) EXCEPT for the import path of `./config` which uses the explicit `.ts`
- * extension required by Deno. Any change must be hand-mirrored — run
- * `pnpm check:agent-mirror` to verify body parity.
+ * this header) EXCEPT for relative imports that use the explicit `.ts` extension
+ * required by Deno (`./config.ts`, `./execution-patch-numeric.ts`). Any change must be
+ * hand-mirrored — run `pnpm check:agent-mirror` to verify body parity.
  */
 
 import {
@@ -15,6 +15,10 @@ import {
   type IntakeCategory,
   type IntakePhase,
 } from './config.ts';
+import {
+  coerceExecutionPatchNumericField,
+  sanitizeNumericStringForPatch,
+} from './execution-patch-numeric.ts';
 
 /**
  * Normalized Coach response shape. Lifted verbatim from
@@ -201,11 +205,7 @@ export function ensureCoachTaskNotesCta(notes: string | null): string | null {
  * Returns null if no valid token or not parseable; does not throw.
  */
 export function sanitizeNumericString(raw: string): string | null {
-  const match = raw.match(/[0-9]+(?:\.[0-9]+)?/);
-  if (!match) return null;
-  const n = Number(match[0]);
-  if (!Number.isFinite(n)) return null;
-  return match[0];
+  return sanitizeNumericStringForPatch(raw);
 }
 
 export function parseExecutionPatchFromGemini(
@@ -227,26 +227,18 @@ export function parseExecutionPatchFromGemini(
         setIndex: st,
       };
       if (o.weight !== undefined) {
-        if (typeof o.weight === 'string') {
-          const s = sanitizeNumericString(o.weight);
-          if (s !== null) item.weight = s;
-        }
-        // non-string or sanitize failure: omit field, do not drop the whole patch
+        const s = coerceExecutionPatchNumericField(o.weight);
+        if (s !== null) item.weight = s;
       }
       if (o.reps !== undefined) {
-        if (typeof o.reps === 'string') {
-          const s = sanitizeNumericString(o.reps);
-          if (s !== null) item.reps = s;
-        }
+        const s = coerceExecutionPatchNumericField(o.reps);
+        if (s !== null) item.reps = s;
       }
       if (o.rpe !== undefined) {
-        if (typeof o.rpe === 'string') {
-          const s = sanitizeNumericString(o.rpe);
-          if (s !== null) item.rpe = s;
-        }
+        const s = coerceExecutionPatchNumericField(o.rpe);
+        if (s !== null) item.rpe = s;
       }
-      if (o.done !== undefined) {
-        if (typeof o.done !== 'boolean') return null;
+      if (o.done !== undefined && typeof o.done === 'boolean') {
         item.done = o.done;
       }
       out.push(item);

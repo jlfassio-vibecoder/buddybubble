@@ -132,7 +132,7 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
           exerciseIndex: {
             type: 'INTEGER',
             description:
-              '0-based index of the exercise in workoutContext (same ordering as the live player).',
+              '0-based index of the exercise in workoutContext (same ordering as the live player). When EXERCISE_INDEX_MAP appears below CURRENT WORKOUT CONTEXT, use that map row index — do not guess from memory.',
           },
           setIndex: {
             type: 'INTEGER',

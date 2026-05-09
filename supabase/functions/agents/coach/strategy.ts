@@ -75,6 +75,7 @@ import {
   buildBaseCoachPrompt,
   buildWorkoutOpenGreetingPrompt,
   buildWorkoutOpenGreetingUserText,
+  formatExerciseIndexMap,
   WORKOUT_CONTEXT_HEADER,
 } from './prompts.ts';
 import { COACH_RESPONSE_SCHEMA, COACH_WORKOUT_GREETING_SCHEMA } from './schema.ts';
@@ -284,7 +285,10 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
     const today = new Date().toISOString().split('T')[0];
     const parts: string[] = [buildBaseCoachPrompt(today)];
     if (currentWorkoutContextJson) {
-      parts.push(`${WORKOUT_CONTEXT_HEADER}\n${currentWorkoutContextJson}`);
+      let workoutCtxBlock = `${WORKOUT_CONTEXT_HEADER}\n${currentWorkoutContextJson}`;
+      const indexMap = formatExerciseIndexMap(currentWorkoutContextJson);
+      if (indexMap) workoutCtxBlock += indexMap;
+      parts.push(workoutCtxBlock);
       parts.push(MID_WORKOUT_SUPPORT_MODE_DIRECTIVE);
       parts.push(ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE);
     }

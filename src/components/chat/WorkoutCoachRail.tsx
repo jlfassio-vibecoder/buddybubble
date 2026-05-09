@@ -329,36 +329,41 @@ export function WorkoutCoachRail({
     waitMainClear,
   ]);
 
-  // `execution_patch` is present on the agent reply row at INSERT (no follow-up UPDATE). We mark
-  // a message id handled only after a successful parse: no patch (done) or patch applied. Parse
-  // throws are not marked so a transient error can be retried on a later render.
+  // `execution_patch` is on the agent reply row at INSERT. Apply every unhandled Coach message
+  // in chronological order (later patches win on overlapping cells). Do not require Coach to be
+  // the terminal thread message. Parse throws are not marked so a transient error can retry.
   useEffect(() => {
     if (isLoading) return;
     if (messages.length === 0) return;
-    const last = messages[messages.length - 1];
-    if (!last.id) return;
-    if (shouldHideWorkoutCoachSentinelFromRail(last)) return;
     const coachAuthUserId = availableAgents.find((a) => a.slug === 'coach')?.auth_user_id;
     if (!coachAuthUserId) return;
-    if (last.user_id !== coachAuthUserId) return;
-    if (coachExecutionHandledMessageIdsRef.current.has(last.id)) return;
-    const meta = last.metadata;
-    const raw =
-      meta != null && typeof meta === 'object' && !Array.isArray(meta)
-        ? (meta as { execution_patch?: unknown }).execution_patch
-        : undefined;
-    let patch: ExecutionPatch | null = null;
-    try {
-      patch = parseExecutionPatchFromMetadata(raw);
-    } catch {
-      return;
+
+    const coachRows = messages.filter(
+      (m) => m.user_id === coachAuthUserId && m.id && !shouldHideWorkoutCoachSentinelFromRail(m),
+    );
+
+    for (const row of coachRows) {
+      const id = row.id;
+      if (!id) continue;
+      if (coachExecutionHandledMessageIdsRef.current.has(id)) continue;
+      const meta = row.metadata;
+      const raw =
+        meta != null && typeof meta === 'object' && !Array.isArray(meta)
+          ? (meta as { execution_patch?: unknown }).execution_patch
+          : undefined;
+      let patch: ExecutionPatch | null = null;
+      try {
+        patch = parseExecutionPatchFromMetadata(raw);
+      } catch {
+        return;
+      }
+      if (!patch) {
+        coachExecutionHandledMessageIdsRef.current.add(id);
+        continue;
+      }
+      onApplyExecutionPatch(patch);
+      coachExecutionHandledMessageIdsRef.current.add(id);
     }
-    if (!patch) {
-      coachExecutionHandledMessageIdsRef.current.add(last.id);
-      return;
-    }
-    onApplyExecutionPatch(patch);
-    coachExecutionHandledMessageIdsRef.current.add(last.id);
   }, [availableAgents, isLoading, messages, onApplyExecutionPatch]);
 
   const bubbleName = bubbleRow?.name ?? 'Coach';

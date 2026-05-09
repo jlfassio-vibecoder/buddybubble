@@ -14,7 +14,7 @@
  *   - `parseSessionRequest`                   — index.ts:482-484
  *   - `parseCoachTaskNotes`                   — index.ts:486-492
  *   - `ensureCoachTaskNotesCta`               — index.ts:220-228
- *   - `sanitizeNumericString`                 — index.ts:498-504
+ *   - `sanitizeNumericString`                 — delegates to `execution-patch-numeric.ts`
  *   - `parseExecutionPatchFromGemini`         — index.ts:506-554
  *   - `parseCoachJson` (was `parseGeminiJsonText`) — index.ts:556-648
  *   - `executionPatchForRpc`                  — index.ts:650-653
@@ -39,6 +39,10 @@ import {
   type IntakeCategory,
   type IntakePhase,
 } from './config';
+import {
+  coerceExecutionPatchNumericField,
+  sanitizeNumericStringForPatch,
+} from './execution-patch-numeric';
 
 /**
  * Normalized Coach response shape. Lifted verbatim from
@@ -225,11 +229,7 @@ export function ensureCoachTaskNotesCta(notes: string | null): string | null {
  * Returns null if no valid token or not parseable; does not throw.
  */
 export function sanitizeNumericString(raw: string): string | null {
-  const match = raw.match(/[0-9]+(?:\.[0-9]+)?/);
-  if (!match) return null;
-  const n = Number(match[0]);
-  if (!Number.isFinite(n)) return null;
-  return match[0];
+  return sanitizeNumericStringForPatch(raw);
 }
 
 export function parseExecutionPatchFromGemini(
@@ -251,26 +251,18 @@ export function parseExecutionPatchFromGemini(
         setIndex: st,
       };
       if (o.weight !== undefined) {
-        if (typeof o.weight === 'string') {
-          const s = sanitizeNumericString(o.weight);
-          if (s !== null) item.weight = s;
-        }
-        // non-string or sanitize failure: omit field, do not drop the whole patch
+        const s = coerceExecutionPatchNumericField(o.weight);
+        if (s !== null) item.weight = s;
       }
       if (o.reps !== undefined) {
-        if (typeof o.reps === 'string') {
-          const s = sanitizeNumericString(o.reps);
-          if (s !== null) item.reps = s;
-        }
+        const s = coerceExecutionPatchNumericField(o.reps);
+        if (s !== null) item.reps = s;
       }
       if (o.rpe !== undefined) {
-        if (typeof o.rpe === 'string') {
-          const s = sanitizeNumericString(o.rpe);
-          if (s !== null) item.rpe = s;
-        }
+        const s = coerceExecutionPatchNumericField(o.rpe);
+        if (s !== null) item.rpe = s;
       }
-      if (o.done !== undefined) {
-        if (typeof o.done !== 'boolean') return null;
+      if (o.done !== undefined && typeof o.done === 'boolean') {
         item.done = o.done;
       }
       out.push(item);

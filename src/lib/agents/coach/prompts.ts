@@ -126,3 +126,38 @@ export function buildCurrentTaskContextBlock(title: string, description: string 
     'PRE-DRAFT CONFIRMATION: Do not populate proposed_workout_metadata until the user has given clear affirmative consent to draft or revise this card (or user_requested_immediate_card). On a confirmation-only turn, set update_existing_task to false and proposed_workout_metadata to null. When they confirm, set update_existing_task to true and provide updated_task_title and/or updated_task_description with the full revised text, and/or proposed_workout_metadata with structured exercises (and workout_type, duration_min as appropriate). The user must finalize changes on the card — do not assume the database updates immediately.'
   );
 }
+
+/** Appended after `CURRENT WORKOUT CONTEXT` JSON when parseable `exercises[]` exists. */
+export const EXERCISE_INDEX_MAP_HEADER = '--- EXERCISE_INDEX_MAP ---';
+
+/**
+ * Builds a deterministic exerciseIndex roster from stringified workout context JSON.
+ * Returns null when JSON is invalid, truncated, or has no `exercises` array.
+ */
+export function formatExerciseIndexMap(workoutContextJson: string): string | null {
+  const trimmed = workoutContextJson.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    const ex = (parsed as Record<string, unknown>).exercises;
+    if (!Array.isArray(ex) || ex.length === 0) return null;
+    const lines: string[] = [];
+    for (let i = 0; i < ex.length; i++) {
+      const el = ex[i];
+      let label = '(unnamed)';
+      if (el && typeof el === 'object' && !Array.isArray(el)) {
+        const n = (el as Record<string, unknown>).name;
+        if (typeof n === 'string' && n.trim()) label = n.trim();
+      }
+      lines.push(`${i}: ${label}`);
+    }
+    return (
+      `\n\n${EXERCISE_INDEX_MAP_HEADER}\n` +
+      lines.join('\n') +
+      "\n\nexecution_patch.exerciseIndex MUST match a row index from this map (same order as the live player). execution_patch.setIndex is 0-based within that exercise's set grid."
+    );
+  } catch {
+    return null;
+  }
+}
