@@ -47,6 +47,8 @@ export type AgentCreateCardArgs = {
   p_task_description?: string | null;
   p_seed_task_comment_text?: string | null;
   p_execution_patch?: unknown;
+  /** Resolved personal cues for `apply_personal_cues_for_user` + message metadata. */
+  p_personal_cues?: unknown;
 };
 
 export type AgentInsertCoachDraftArgs = {
@@ -60,6 +62,7 @@ export type AgentInsertCoachDraftArgs = {
   p_proposed_description: string | null;
   p_proposed_metadata: Record<string, unknown>;
   p_execution_patch?: unknown;
+  p_personal_cues?: unknown;
 };
 
 export type BuddyCreateOnboardingReplyArgs = {

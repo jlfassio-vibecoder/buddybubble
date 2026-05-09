@@ -19,4 +19,11 @@ describe('formatExerciseIndexMap', () => {
     expect(out).toContain('1: Kettlebell Goblet Squat');
     expect(out).toContain('2: (unnamed)');
   });
+
+  it('accepts a root-level exercises array (sentinel / rail payload shape)', () => {
+    const json = JSON.stringify([{ name: 'Dumbbell Bench Press' }, { name: 'Row' }]);
+    const out = formatExerciseIndexMap(json);
+    expect(out).toContain('0: Dumbbell Bench Press');
+    expect(out).toContain('1: Row');
+  });
 });

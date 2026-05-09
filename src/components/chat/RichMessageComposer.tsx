@@ -85,6 +85,12 @@ export type RichMessageComposerProps = {
   onSubmit: (payload: { text: string; files: File[] }) => boolean | Promise<boolean>;
 
   /**
+   * When the user picks an exercise from the `#` popover, fires with the full row (id, name, slug).
+   * Used by WorkoutCoachRail to attach `metadata.exercise_mentions` on send.
+   */
+  onExerciseHashInserted?: (exercise: RichMessageComposerExercise) => void;
+
+  /**
    * Fires on every `<form>` submit (Enter or send button), immediately after `preventDefault`,
    * **before** the internal `canSubmit` / `isSending` guard. Use for optimistic UI when the parent
    * `onSubmit` would otherwise never run due to that guard.
@@ -143,6 +149,7 @@ export function RichMessageComposer({
   value,
   onChange,
   onSubmit,
+  onExerciseHashInserted,
   onSubmitIntent,
   pendingFiles,
   onPendingFilesChange,
@@ -331,7 +338,8 @@ export function RichMessageComposer({
   );
 
   const insertExerciseHash = useCallback(
-    (exerciseName: string) => {
+    (exercise: RichMessageComposerExercise) => {
+      const exerciseName = exercise.name;
       const cursorPosition = inputRef.current?.selectionStart || 0;
       const textBeforeCursor = value.substring(0, cursorPosition);
       const textAfterCursor = value.substring(cursorPosition);
@@ -341,10 +349,11 @@ export function RichMessageComposer({
       const insertedExerciseHash = `#${exerciseName} `;
       const newValue = textBeforeHash + insertedExerciseHash + textAfterCursor;
       onChange(newValue, { selectionStart: (textBeforeHash + insertedExerciseHash).length });
+      onExerciseHashInserted?.(exercise);
       setShowHashMentions(false);
       inputRef.current?.focus();
     },
-    [onChange, value],
+    [onChange, onExerciseHashInserted, value],
   );
 
   const handleAttachmentPick = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -413,7 +422,7 @@ export function RichMessageComposer({
         } else if (e.key === 'Enter' || e.key === 'Tab') {
           e.preventDefault();
           if (filtered[hashMentionIndex]) {
-            insertExerciseHash(filtered[hashMentionIndex].name);
+            insertExerciseHash(filtered[hashMentionIndex]);
           }
         }
       }
@@ -602,7 +611,7 @@ export function RichMessageComposer({
                 <button
                   key={ex.id}
                   type="button"
-                  onClick={() => insertExerciseHash(ex.name)}
+                  onClick={() => insertExerciseHash(ex)}
                   className={cn(
                     'flex w-full min-w-0 items-center gap-3 px-4 py-2.5 text-left transition-colors',
                     idx === hashMentionIndex

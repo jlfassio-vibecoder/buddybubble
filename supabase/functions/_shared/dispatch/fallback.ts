@@ -30,5 +30,6 @@ export async function insertSafeReply(ctx: DispatchContext, text: string): Promi
     p_task_type: 'workout',
     p_task_status: 'todo',
     p_execution_patch: null,
+    p_personal_cues: null,
   });
 }

@@ -21,6 +21,16 @@ Full-screen modal (**desktop**: centered Radix dialog; **mobile**: bottom sheet)
 
 Loads `unit_system` from **`fitness_profiles`** for `(workspace_id, user_id)` via [Supabase client](../../utils/supabase/client.ts). Display uses **kg** vs **lbs** for target lines; logged set values follow what the user typed in the session UI.
 
+## Personal cues from your coach (detailed view)
+
+When the player is in **detailed** view, each exercise can show a second block below the catalog **Instructions / Form cues / Tips / Coach notes** content:
+
+- **Header:** “Personal cues from your coach” — text comes from **`public.user_exercise_notes`** for the signed-in user and the exercise’s **`exercise_dictionary`** row.
+- **Hydration:** [`useUserExerciseNotes`](../../src/hooks/useUserExerciseNotes.ts) calls **`exercise_dictionary_lookup_by_names`** once for the workout’s exercise names, then selects matching **`user_exercise_notes`** rows.
+- **Realtime:** the hook subscribes to **`postgres_changes`** on **`user_exercise_notes`** filtered by **`user_id`**, so new Coach-written cues appear without closing the player.
+
+Catalog copy in **`tasks.metadata`** is unchanged; personal cues are additive and user-scoped.
+
 ## Finish flow (`handleFinish`)
 
 1. Builds `exercisePayload` from exercises plus **completed** sets only (`done === true`), including `set_logs` with parsed numbers.

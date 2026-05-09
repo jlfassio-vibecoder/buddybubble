@@ -28,6 +28,7 @@ import { useUserProfileStore } from '@/store/userProfileStore';
 import { replaceTaskAssigneesWithUserIds } from '@/lib/task-assignees-db';
 import { WorkoutCoachRail } from '@/components/chat/WorkoutCoachRail';
 import type { ExecutionPatch } from '@/types/execution-patch';
+import { useUserExerciseNotes, type UserExerciseNotesRow } from '@/hooks/useUserExerciseNotes';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -146,6 +147,7 @@ type ExercisePanelProps = {
   sets: SetDraft[];
   view: 'simple' | 'detailed';
   unit: string;
+  personalNotes: UserExerciseNotesRow | null;
   onSetChange: (setIdx: number, field: 'weight' | 'reps' | 'rpe', value: string) => void;
   onToggleDone: (setIdx: number) => void;
   onAddSet: () => void;
@@ -157,6 +159,7 @@ function ExercisePanel({
   sets,
   view,
   unit,
+  personalNotes,
   onSetChange,
   onToggleDone,
   onAddSet,
@@ -192,38 +195,88 @@ function ExercisePanel({
             const tipsParagraph = tipsT && tipsT !== instructionText ? tipsT : null;
             const coachParagraph =
               coachT && coachT !== instructionText && coachT !== tipsT ? coachT : null;
-            if (!instructionText && !formCuesText && !tipsParagraph && !coachParagraph) return null;
+            const personalInstr = trimNonEmpty(personalNotes?.instructions ?? undefined);
+            const personalForm = trimNonEmpty(personalNotes?.form_cues ?? undefined);
+            const personalTips = trimNonEmpty(personalNotes?.tips ?? undefined);
+            const personalInjury = trimNonEmpty(personalNotes?.injury_prevention_tips ?? undefined);
+            const hasPersonal = Boolean(
+              personalInstr || personalForm || personalTips || personalInjury,
+            );
+            const hasCatalog = Boolean(
+              instructionText || formCuesText || tipsParagraph || coachParagraph,
+            );
+            if (!hasCatalog && !hasPersonal) return null;
             return (
-              <div className="mt-2 space-y-2 rounded-md border border-border/60 bg-muted/40 px-3 py-2.5">
-                <div className="flex gap-2">
-                  <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                  <div className="min-w-0 flex-1 space-y-2 text-xs leading-relaxed text-muted-foreground">
-                    {instructionText && (
-                      <div>
-                        <p className="font-medium text-foreground/80">Instructions</p>
-                        <p className="mt-0.5 whitespace-pre-wrap">{instructionText}</p>
+              <div className="mt-2 space-y-2">
+                {hasCatalog && (
+                  <div className="rounded-md border border-border/60 bg-muted/40 px-3 py-2.5">
+                    <div className="flex gap-2">
+                      <Info
+                        className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                        aria-hidden
+                      />
+                      <div className="min-w-0 flex-1 space-y-2 text-xs leading-relaxed text-muted-foreground">
+                        {instructionText && (
+                          <div>
+                            <p className="font-medium text-foreground/80">Instructions</p>
+                            <p className="mt-0.5 whitespace-pre-wrap">{instructionText}</p>
+                          </div>
+                        )}
+                        {formCuesText && (
+                          <div>
+                            <p className="font-medium text-foreground/80">Form cues</p>
+                            <p className="mt-0.5 whitespace-pre-wrap">{formCuesText}</p>
+                          </div>
+                        )}
+                        {tipsParagraph && (
+                          <div>
+                            <p className="font-medium text-foreground/80">Tips</p>
+                            <p className="mt-0.5 whitespace-pre-wrap">{tipsParagraph}</p>
+                          </div>
+                        )}
+                        {coachParagraph && (
+                          <div>
+                            <p className="font-medium text-foreground/80">Coach notes</p>
+                            <p className="mt-0.5 whitespace-pre-wrap">{coachParagraph}</p>
+                          </div>
+                        )}
                       </div>
-                    )}
-                    {formCuesText && (
-                      <div>
-                        <p className="font-medium text-foreground/80">Form cues</p>
-                        <p className="mt-0.5 whitespace-pre-wrap">{formCuesText}</p>
-                      </div>
-                    )}
-                    {tipsParagraph && (
-                      <div>
-                        <p className="font-medium text-foreground/80">Tips</p>
-                        <p className="mt-0.5 whitespace-pre-wrap">{tipsParagraph}</p>
-                      </div>
-                    )}
-                    {coachParagraph && (
-                      <div>
-                        <p className="font-medium text-foreground/80">Coach notes</p>
-                        <p className="mt-0.5 whitespace-pre-wrap">{coachParagraph}</p>
-                      </div>
-                    )}
+                    </div>
                   </div>
-                </div>
+                )}
+                {hasPersonal && (
+                  <div className="rounded-md border-y border-r border-border/60 border-l-4 border-l-primary/50 bg-muted/30 px-3 py-2.5">
+                    <p className="text-xs font-semibold text-foreground">
+                      Personal cues from your coach
+                    </p>
+                    <div className="mt-2 space-y-2 text-xs leading-relaxed text-muted-foreground">
+                      {personalInstr && (
+                        <div>
+                          <p className="font-medium text-foreground/80">Instructions</p>
+                          <p className="mt-0.5 whitespace-pre-wrap">{personalInstr}</p>
+                        </div>
+                      )}
+                      {personalForm && (
+                        <div>
+                          <p className="font-medium text-foreground/80">Form cues</p>
+                          <p className="mt-0.5 whitespace-pre-wrap">{personalForm}</p>
+                        </div>
+                      )}
+                      {personalTips && (
+                        <div>
+                          <p className="font-medium text-foreground/80">Tips</p>
+                          <p className="mt-0.5 whitespace-pre-wrap">{personalTips}</p>
+                        </div>
+                      )}
+                      {personalInjury && (
+                        <div>
+                          <p className="font-medium text-foreground/80">Injury prevention</p>
+                          <p className="mt-0.5 whitespace-pre-wrap">{personalInjury}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })()}
@@ -340,6 +393,8 @@ type PlayerBodyProps = {
   onAddSet: (exIdx: number) => void;
   onFinish: () => void;
   onClose: () => void;
+  /** Per-exercise rows from `user_exercise_notes` (by catalog id), aligned with `exercises`. */
+  personalNotesByExerciseIndex: (UserExerciseNotesRow | null)[];
   /** When true (mobile sheet), footer gets bottom safe-area padding. */
   footerSafeArea?: boolean;
 };
@@ -358,6 +413,7 @@ function PlayerBody({
   onAddSet,
   onFinish,
   onClose,
+  personalNotesByExerciseIndex,
   footerSafeArea = false,
 }: PlayerBodyProps) {
   const doneCount = logs.reduce((acc, ex) => acc + ex.filter((s) => s.done).length, 0);
@@ -441,6 +497,7 @@ function PlayerBody({
                   sets={logs[i] ?? []}
                   view={view}
                   unit={unit}
+                  personalNotes={personalNotesByExerciseIndex[i] ?? null}
                   onSetChange={(si, f, v) => onSetChange(i, si, f, v)}
                   onToggleDone={(si) => onToggleDone(i, si)}
                   onAddSet={() => onAddSet(i)}
@@ -521,6 +578,29 @@ export function WorkoutPlayer({
   }, [metadataDigest]);
   const exercisesStringDigest = useMemo(() => JSON.stringify(exercises), [exercises]);
 
+  const exerciseNamesForNotes = useMemo(() => exercises.map((e) => e.name), [exercises]);
+  const { dictIdByExerciseIndex, notesByDictId } = useUserExerciseNotes({
+    enabled: open && Boolean(profileId),
+    userId: profileId ?? null,
+    exerciseNames: exerciseNamesForNotes,
+  });
+  const personalNotesByExerciseIndex = useMemo(
+    () =>
+      exercises.map((_, i) => {
+        const id = dictIdByExerciseIndex[i];
+        if (!id) return null;
+        return notesByDictId.get(id) ?? null;
+      }),
+    [exercises, dictIdByExerciseIndex, notesByDictId],
+  );
+
+  /** Coach rail + sentinel: same exercise list as the live grid (metadata can update after open). */
+  const coachWorkoutDataForRail = useMemo(() => {
+    const parsed = JSON.parse(metadataDigest) as unknown;
+    const rows = metadataFieldsFromParsed(parsed).workoutExercises;
+    return rows.length > 0 ? (rows as unknown as Json) : undefined;
+  }, [metadataDigest]);
+
   useLayoutEffect(() => {
     if (mode === 'desktop' || mode === 'mobile') {
       setResolvedMode(mode);
@@ -530,19 +610,6 @@ export function WorkoutPlayer({
     const mobile = window.matchMedia('(max-width: 768px)').matches;
     setResolvedMode(mobile ? 'mobile' : 'desktop');
   }, [open, mode]);
-
-  // Dev-only: log once per open / identity change — not on every render (elapsed timer would spam).
-  useEffect(() => {
-    if (!open) return;
-    if (process.env.NODE_ENV === 'production') return;
-    // eslint-disable-next-line no-console
-    console.log('[DEBUG] WorkoutPlayer open. Session props:', {
-      sessionId,
-      class_instance_id,
-      bubbleId,
-      isMemberView,
-    });
-  }, [open, sessionId, class_instance_id, bubbleId, isMemberView]);
 
   // Load unit system from fitness profile (scoped to active workspace)
   useEffect(() => {
@@ -1042,6 +1109,7 @@ export function WorkoutPlayer({
     onAddSet: addSet,
     onFinish: () => void handleFinish(),
     onClose,
+    personalNotesByExerciseIndex,
     footerSafeArea: resolvedMode === 'mobile',
   };
 
@@ -1099,7 +1167,7 @@ export function WorkoutPlayer({
           class_instance_id={class_instance_id}
           isMemberView={isMemberView}
           workoutTitle={workoutTitle}
-          workoutData={workoutData}
+          workoutData={coachWorkoutDataForRail ?? workoutData}
           onApplyExecutionPatch={handleApplyExecutionPatch}
         />
       </div>

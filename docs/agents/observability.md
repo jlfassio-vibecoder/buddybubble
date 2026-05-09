@@ -35,7 +35,9 @@ The envelope:
   "http_status": 503,
   "token_in": 1052,
   "token_out": 318,
-  "error_kind": "http" | "parse" | "shape" | "timeout" | "auth"
+  "thoughts_token_count": 1204,
+  "finish_reason": "STOP",
+  "error_kind": "http" | "parse" | "shape" | "timeout" | "auth" | "truncated" | "self_attestation_mismatch" | "cue_unanchored"
 }
 ```
 
@@ -74,30 +76,31 @@ Three terminal lines exist per dispatch attempt — one of:
 
 ### Stable `msg` strings (use as exact-match filters)
 
-| `msg`                                 | level         | `phase`     | Most useful pivot fields                                           |
-| ------------------------------------- | ------------- | ----------- | ------------------------------------------------------------------ |
-| `webhook received`                    | info          | `received`  | `request_id`, `message_id`, `bubble_id`                            |
-| `loop guard skip (author is agent)`   | info          | —           | `request_id`, `message_id`                                         |
-| `routing skip`                        | info          | `routed`    | `skip_reason`                                                      |
-| `routed to strategy`                  | info          | `routed`    | `slug`                                                             |
-| `preflight skip`                      | info          | `preflight` | `slug`, `skip_reason`                                              |
-| `preflight short-circuit ok`          | info          | `preflight` | `slug`, `latency_ms`                                               |
-| `preflight short-circuit RPC failed`  | error         | `preflight` | `slug`                                                             |
-| `strategy preflight threw`            | error         | `preflight` | `slug`, `error`                                                    |
-| `llm call begin`                      | info          | `llm_call`  | `slug`, `model`                                                    |
-| `llm done`                            | info          | `llm_done`  | `slug`, `model`, `latency_ms`, `token_in`, `token_out`             |
-| `parsed`                              | info          | `parsed`    | `slug`                                                             |
-| `guarded`                             | info          | `guarded`   | `slug`                                                             |
-| `persisted`                           | info          | `persisted` | `slug`                                                             |
-| `dispatch done`                       | info          | `done`      | `slug`, `latency_ms` (end-to-end, Phase 7b)                        |
-| `vertex auth failed`                  | error         | —           | `slug`, `error_kind`, `error`, `http_status`                       |
-| `dispatch failed`                     | warn          | —           | `slug`, `error_kind`, `error`, `http_status`                       |
-| `fallback insertion`                  | info or error | `fallback`  | `slug`, `error_kind`, `fallback_ok`                                |
-| `buddy persisted`                     | info          | `persisted` | `slug`, `has_card`, `action_type`, `created_task_id`               |
-| `organizer write intent`              | info          | `persisted` | `slug`, `writes_enabled`, `proposed_write_kind`, `created_task_id` |
-| `dispatcher env invalid`              | error         | —           | `request_id`, `error`                                              |
-| `agent self lookup failed`            | error         | `received`  | `error`                                                            |
-| `resolved slug missing from registry` | error         | `routed`    | `slug`                                                             |
+| `msg`                                  | level         | `phase`     | Most useful pivot fields                                                                                                                               |
+| -------------------------------------- | ------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `webhook received`                     | info          | `received`  | `request_id`, `message_id`, `bubble_id`                                                                                                                |
+| `loop guard skip (author is agent)`    | info          | —           | `request_id`, `message_id`                                                                                                                             |
+| `routing skip`                         | info          | `routed`    | `skip_reason`                                                                                                                                          |
+| `routed to strategy`                   | info          | `routed`    | `slug`                                                                                                                                                 |
+| `preflight skip`                       | info          | `preflight` | `slug`, `skip_reason`                                                                                                                                  |
+| `preflight short-circuit ok`           | info          | `preflight` | `slug`, `latency_ms`                                                                                                                                   |
+| `preflight short-circuit RPC failed`   | error         | `preflight` | `slug`                                                                                                                                                 |
+| `strategy preflight threw`             | error         | `preflight` | `slug`, `error`                                                                                                                                        |
+| `llm call begin`                       | info          | `llm_call`  | `slug`, `model`                                                                                                                                        |
+| `llm done`                             | info          | `llm_done`  | `slug`, `model`, `latency_ms`, `token_in`, `token_out`, `thoughts_token_count` (Gemini 2.5+ when present), `finish_reason` (e.g. `STOP`, `MAX_TOKENS`) |
+| `parsed`                               | info          | `parsed`    | `slug`                                                                                                                                                 |
+| `guarded`                              | info          | `guarded`   | `slug`                                                                                                                                                 |
+| `persisted`                            | info          | `persisted` | `slug`                                                                                                                                                 |
+| `dispatch done`                        | info          | `done`      | `slug`, `latency_ms` (end-to-end, Phase 7b)                                                                                                            |
+| `vertex auth failed`                   | error         | —           | `slug`, `error_kind`, `error`, `http_status`                                                                                                           |
+| `dispatch failed`                      | warn          | —           | `slug`, `error_kind`, `error`, `http_status`                                                                                                           |
+| `fallback insertion`                   | info or error | `fallback`  | `slug`, `error_kind`, `fallback_ok`                                                                                                                    |
+| `buddy persisted`                      | info          | `persisted` | `slug`, `has_card`, `action_type`, `created_task_id`                                                                                                   |
+| `organizer write intent`               | info          | `persisted` | `slug`, `writes_enabled`, `proposed_write_kind`, `created_task_id`                                                                                     |
+| `coach personal_cues unanchored drops` | warn          | `parsed`    | `slug`, `error_kind` (`cue_unanchored`), `dropped`                                                                                                     |
+| `dispatcher env invalid`               | error         | —           | `request_id`, `error`                                                                                                                                  |
+| `agent self lookup failed`             | error         | `received`  | `error`                                                                                                                                                |
+| `resolved slug missing from registry`  | error         | `routed`    | `slug`                                                                                                                                                 |
 
 For the routing / context / strategy warnings (e.g. `agent_definitions query
 failed`, `bindings query failed`, `failed to fetch root bubble history for
@@ -136,8 +139,9 @@ ORDER BY minute_bucket DESC, events DESC
 ```
 
 **Distinct `error_kind` values** (from
-[`_shared/llm/vertex-gemini.ts`](../../supabase/functions/_shared/llm/vertex-gemini.ts)
-`classifyError`):
+[`_shared/llm/classify-error.ts`](../../supabase/functions/_shared/llm/classify-error.ts)
+`classifyError`, re-exported by
+[`_shared/llm/vertex-gemini.ts`](../../supabase/functions/_shared/llm/vertex-gemini.ts)):
 
 - `http` — Vertex returned a non-2xx; check `http_status` and `error` (Vertex
   response body).
@@ -150,6 +154,36 @@ ORDER BY minute_bucket DESC, events DESC
   [`_shared/llm/vertex-auth.ts`](../../supabase/functions/_shared/llm/vertex-auth.ts);
   rotate the GCP Service Account key (see
   [`docs/agents/vertex-setup.md`](./vertex-setup.md)).
+- `truncated` — Vertex candidate `finish_reason` was `MAX_TOKENS` (output hit
+  `maxOutputTokens`, including thinking + visible JSON for Gemini 2.5). Raise
+  the strategy's `maxOutputTokens` (e.g. `COACH_MAX_OUTPUT_TOKENS`) and/or cap
+  thinking via `thinkingConfig.thinkingBudget` if needed. Check `llm done`
+  `thoughts_token_count` and `finish_reason` on the same `request_id`.
+- `self_attestation_mismatch` — Coach **`reply_content`** claimed a persisted update
+  without **`execution_patch`**, **`personal_cues_patch`**, card creation, or draft
+  fields; dispatcher inserts a safe fallback reply (Coach-specific).
+- `cue_unanchored` — reserved classifier for Coach **`personal_cues_patch`** entries
+  that could not be tied to a catalog exercise; the strategy logs
+  **`coach personal_cues unanchored drops`** with `error_kind: "cue_unanchored"` and
+  a **`dropped`** count (non-fatal).
+
+**Example — personal cue drops (Logs Explorer / SQL):**
+
+```text
+event_message:"\"msg\":\"coach personal_cues unanchored drops\""
+```
+
+```sql
+SELECT
+  timestamp,
+  JSON_VALUE(event_message, '$.request_id') AS request_id,
+  JSON_VALUE(event_message, '$.dropped') AS personal_cues_dropped
+FROM edge_logs
+WHERE JSON_VALUE(event_message, '$.msg') = 'coach personal_cues unanchored drops'
+  AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
+ORDER BY timestamp DESC
+LIMIT 100;
+```
 
 **Alert hint:** raise an alarm when
 `error_kind = "http" AND http_status >= 500` exceeds **5 events / 5-minute
@@ -305,7 +339,10 @@ join collapses into a single bucket.
 `error_kind IN ('parse', 'shape')` — if those dominate, Vertex output drift
 broke the strategy parser; rerun the [schema-drift
 linter](../refactor/vertex-agent-dispatch-consolidation/phase-7a-schema-drift-linter.md)
-locally and check for new prompt-key/schema mismatches.
+locally and check for new prompt-key/schema mismatches. If `truncated`
+dominates, correlate to `llm done` lines with `finish_reason = "MAX_TOKENS"`
+and high `thoughts_token_count` — raise `maxOutputTokens` or reduce thinking
+budget.
 
 ---
 

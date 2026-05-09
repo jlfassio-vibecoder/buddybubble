@@ -19,6 +19,7 @@
  *     priorUserMessageCount: number;        // computed in applyServerGuards
  *     currentWorkoutContextJson: string | null;
  *     taskMetadataForContext: unknown | null;
+ *     exerciseDictionaryByIndex: Record<number, { dictionary_id; slug } | null> | null;
  *   }
  */
 
@@ -47,6 +48,7 @@ import {
 
 import {
   ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE,
+  COACH_HISTORY_LIMIT,
   COACH_MAX_OUTPUT_TOKENS,
   COACH_MODEL_DEFAULT,
   COACH_SAFE_REPLY_TEXT,
@@ -69,14 +71,22 @@ import {
   CoachGeminiJsonResponse,
   executionPatchForRpc,
   parseCoachJson,
+  personalCuesPatchForRpc,
   stripMarkdownCodeFences,
 } from './parse.ts';
+import {
+  formatTaggedExerciseRefsPromptBlock,
+  parseExerciseMentionsFromMetadata,
+  resolveExerciseMentionLines,
+} from './exercise-mentions.ts';
+import { loadExerciseDictionaryByIndex } from './exercise-dictionary-by-index.ts';
 import {
   buildBaseCoachPrompt,
   buildWorkoutOpenGreetingPrompt,
   buildWorkoutOpenGreetingUserText,
   formatExerciseIndexMap,
   WORKOUT_CONTEXT_HEADER,
+  type ExerciseDictionaryIndexEntry,
 } from './prompts.ts';
 import { COACH_RESPONSE_SCHEMA, COACH_WORKOUT_GREETING_SCHEMA } from './schema.ts';
 import { applyCoachServerGuards, type CoachGuardsFragment } from './server-guards.ts';
@@ -86,6 +96,7 @@ type CoachExtras = {
   knownTargetTaskId: string | null;
   currentWorkoutContextJson: string | null;
   taskMetadataForContext: unknown | null;
+  exerciseDictionaryByIndex: Record<number, ExerciseDictionaryIndexEntry | null> | null;
 };
 
 const FALLBACK_WORKOUT_GREETING = "Good to see you back in the gym! Let's get to work.";
@@ -97,6 +108,10 @@ function readCoachExtras(ctx: DispatchContext): CoachExtras {
     currentWorkoutContextJson:
       typeof raw.currentWorkoutContextJson === 'string' ? raw.currentWorkoutContextJson : null,
     taskMetadataForContext: raw.taskMetadataForContext ?? null,
+    exerciseDictionaryByIndex:
+      raw.exerciseDictionaryByIndex != null && typeof raw.exerciseDictionaryByIndex === 'object'
+        ? (raw.exerciseDictionaryByIndex as Record<number, ExerciseDictionaryIndexEntry | null>)
+        : null,
   };
 }
 
@@ -125,6 +140,14 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
   maxOutputTokens: COACH_MAX_OUTPUT_TOKENS,
   responseSchema: COACH_RESPONSE_SCHEMA,
   safeReplyText: COACH_SAFE_REPLY_TEXT,
+  // Cap the LLM-input thread history at the most recent COACH_HISTORY_LIMIT
+  // rows. The dispatcher (`agent-dispatch/handler.ts`) forwards this to
+  // `buildDispatchContext`, which both bounds the DB query AND tail-slices any
+  // pre-loaded resolver history. The shared
+  // `_shared/dispatch/history.ts:DEFAULT_HISTORY_LIMIT` (50) remains in force
+  // for `agent-dispatch/resolve.ts:327` so authoring-agent discovery in long
+  // threads is unaffected.
+  historyLimit: COACH_HISTORY_LIMIT,
 
   routing: {
     acceptMention: true,
@@ -225,6 +248,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
         p_task_type: 'workout',
         p_task_status: 'todo',
         p_execution_patch: null,
+        p_personal_cues: null,
       },
     };
   },
@@ -276,21 +300,53 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       taskMetadataForContext,
     );
 
+    let exerciseDictionaryByIndex: Record<number, ExerciseDictionaryIndexEntry | null> | null =
+      null;
+    if (currentWorkoutContextJson) {
+      try {
+        exerciseDictionaryByIndex = await loadExerciseDictionaryByIndex(
+          ctx.supabase as unknown as Parameters<typeof loadExerciseDictionaryByIndex>[0],
+          currentWorkoutContextJson,
+          ctx.requestId,
+        );
+      } catch (err) {
+        log('warn', 'coach loadExerciseDictionaryByIndex failed', {
+          request_id: ctx.requestId,
+          slug: COACH_SLUG,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        exerciseDictionaryByIndex = null;
+      }
+    }
+
     writeCoachExtras(ctx, {
       knownTargetTaskId,
       currentWorkoutContextJson,
       taskMetadataForContext,
+      exerciseDictionaryByIndex,
     });
 
     const today = new Date().toISOString().split('T')[0];
     const parts: string[] = [buildBaseCoachPrompt(today)];
+    const exerciseMentions = parseExerciseMentionsFromMetadata(ctx.message.metadata);
+
     if (currentWorkoutContextJson) {
       let workoutCtxBlock = `${WORKOUT_CONTEXT_HEADER}\n${currentWorkoutContextJson}`;
-      const indexMap = formatExerciseIndexMap(currentWorkoutContextJson);
+      const indexMap = formatExerciseIndexMap(
+        currentWorkoutContextJson,
+        exerciseDictionaryByIndex ?? undefined,
+      );
       if (indexMap) workoutCtxBlock += indexMap;
+      const tagLines = resolveExerciseMentionLines(exerciseMentions, currentWorkoutContextJson);
+      const tagBlock = formatTaggedExerciseRefsPromptBlock(tagLines);
+      if (tagBlock) workoutCtxBlock += tagBlock;
       parts.push(workoutCtxBlock);
       parts.push(MID_WORKOUT_SUPPORT_MODE_DIRECTIVE);
       parts.push(ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE);
+    } else if (exerciseMentions?.length) {
+      const tagLines = resolveExerciseMentionLines(exerciseMentions, null);
+      const tagBlock = formatTaggedExerciseRefsPromptBlock(tagLines);
+      if (tagBlock) parts.push(tagBlock.trimStart());
     }
     if (currentTaskContextBlock) parts.push(currentTaskContextBlock);
     if (userContextBlock) parts.push(userContextBlock);
@@ -315,13 +371,23 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
     return Promise.resolve(out);
   },
 
-  parse(json) {
+  parse(json, ctx) {
     const response = json as VertexGenerateResponse;
     const text = extractGeminiText(response.candidates?.[0]);
     if (typeof text !== 'string' || !text.trim()) {
       throw new Error('gemini_empty_response');
     }
-    return parseCoachJson(text);
+    const dict = readCoachExtras(ctx).exerciseDictionaryByIndex ?? undefined;
+    const out = parseCoachJson(text, dict ?? undefined);
+    if (out.personal_cues_dropped_unanchored > 0) {
+      log('warn', 'coach personal_cues unanchored drops', {
+        request_id: ctx.requestId,
+        slug: COACH_SLUG,
+        error_kind: 'cue_unanchored',
+        dropped: out.personal_cues_dropped_unanchored,
+      });
+    }
+    return out;
   },
 
   applyServerGuards(parsed, ctx) {
@@ -350,6 +416,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
 
     const supabase: SharedSupabaseClient = ctx.supabase;
     const patchParam = executionPatchForRpc(parsed.execution_patch);
+    const personalCuesParam = personalCuesPatchForRpc(parsed.personal_cues_resolved);
 
     if (shouldInsertDraft) {
       const draft = await agentInsertCoachWorkoutDraftReply(supabase, {
@@ -363,6 +430,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
         p_proposed_description: trimmedNewDesc.length > 0 ? trimmedNewDesc : null,
         p_proposed_metadata: hasProposedMeta ? parsed.proposed_workout_metadata! : {},
         p_execution_patch: patchParam,
+        p_personal_cues: personalCuesParam,
       });
       if (!draft.ok) {
         log('error', 'coach persist draft rpc failed', {
@@ -389,6 +457,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       p_task_description?: string | null;
       p_seed_task_comment_text?: string | null;
       p_execution_patch?: unknown;
+      p_personal_cues?: unknown;
     } = {
       p_trigger_message_id: ctx.message.id,
       p_thread_id: ctx.threadId,
@@ -405,6 +474,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       rpcArgs.p_seed_task_comment_text = parsed.coach_task_notes ?? null;
     }
     rpcArgs.p_execution_patch = patchParam;
+    rpcArgs.p_personal_cues = personalCuesParam;
 
     const card = await agentCreateCardAndReply(supabase, rpcArgs);
     if (!card.ok) {
