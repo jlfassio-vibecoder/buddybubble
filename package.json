@@ -24,7 +24,7 @@
     "check": "npm run format:check && npm run lint && npm run check:agent-coupling && npm run check:agent-prompts && npm run check:agent-mirror && npm run lint:eslint && npm run test:deno-integration && npm run build && npm run check:storefront",
     "test": "tsx scripts/check-agent-coupling.ts && tsx scripts/check-agent-prompt-schema-drift.ts && tsx scripts/check-agent-mirror-parity.ts && vitest run",
     "test:coverage": "tsx scripts/check-agent-coupling.ts && tsx scripts/check-agent-prompt-schema-drift.ts && tsx scripts/check-agent-mirror-parity.ts && vitest run --coverage",
-    "test:deno-integration": "deno test --allow-env --allow-read --no-check supabase/functions/agent-dispatch/*.integration.test.ts",
+    "test:deno-integration": "deno test --allow-env --allow-read --node-modules-dir=auto --no-check supabase/functions/agent-dispatch/*.integration.test.ts",
     "test:e2e": "playwright test",
     "check:agent-coupling": "tsx scripts/check-agent-coupling.ts",
     "check:agent-prompts": "tsx scripts/check-agent-prompt-schema-drift.ts",

@@ -41,17 +41,17 @@ If any of those regress, this suite catches it before deploy.
 
 ## Deliverables
 
-| File                                                                                                | Purpose                                                                                                                                                                                        |
-| --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`supabase/functions/agent-dispatch/index.ts`](../../../supabase/functions/agent-dispatch/index.ts) | **Production entry**: slimmed down to `import { handleDispatchRequest } from './handler.ts'; Deno.serve(handleDispatchRequest);` so the deploy contract is "import + serve" with no guards.    |
-| `supabase/functions/agent-dispatch/handler.ts` (NEW)                                                | **Surgical extraction**: holds the entire dispatch pipeline as an exported `handleDispatchRequest(req): Promise<Response>`. Imported by both `index.ts` (production) and the integration test. |
-| `supabase/functions/agent-dispatch/index.integration.test.ts` (NEW)                                 | The 10 integration scenarios (8 dispatcher branches + Organizer + Buddy happy paths) + log-envelope assertions; ~700 lines.                                                                    |
-| `supabase/functions/_shared/test-helpers/fetch-router.ts` (NEW)                                     | Deno-only `MockFetchRouter` — registers URL-pattern handlers, swaps `globalThis.fetch`, records call ledger. ~150 lines.                                                                       |
-| `supabase/functions/_shared/test-helpers/postgrest-fixtures.ts` (NEW)                               | Canned PostgREST responses for `agent_definitions`, `bubble_agent_bindings`, `messages`, plus an RPC capture/replay shim. ~200 lines.                                                          |
-| `supabase/functions/_shared/test-helpers/vertex-fixtures.ts` (NEW)                                  | Canned `generateContent` responses (200-happy, 429-then-200, 500/500/500, malformed-JSON, shape-violating-JSON) and a stub for the Google OAuth token endpoint. ~120 lines.                    |
-| `supabase/functions/_shared/test-helpers/log-capture.ts` (NEW)                                      | Swap `console.log`; parse each emitted JSON line; expose `findLog(predicate)` + `phaseSequence()`. ~60 lines.                                                                                  |
-| [`package.json`](../../../package.json)                                                             | New `test:deno-integration` script (runs `deno test --allow-env --allow-read --no-check supabase/functions/agent-dispatch/*.integration.test.ts`). Chained into `pnpm check` after ESLint.     |
-| [`docs/refactor/vertex-agent-dispatch-consolidation/README.md`](./README.md)                        | Add `phase-7c-deno-integration-tests.md` to the index.                                                                                                                                         |
+| File                                                                                                | Purpose                                                                                                                                                                                                            |
+| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`supabase/functions/agent-dispatch/index.ts`](../../../supabase/functions/agent-dispatch/index.ts) | **Production entry**: slimmed down to `import { handleDispatchRequest } from './handler.ts'; Deno.serve(handleDispatchRequest);` so the deploy contract is "import + serve" with no guards.                        |
+| `supabase/functions/agent-dispatch/handler.ts` (NEW)                                                | **Surgical extraction**: holds the entire dispatch pipeline as an exported `handleDispatchRequest(req): Promise<Response>`. Imported by both `index.ts` (production) and the integration test.                     |
+| `supabase/functions/agent-dispatch/index.integration.test.ts` (NEW)                                 | The 10 integration scenarios (8 dispatcher branches + Organizer + Buddy happy paths) + log-envelope assertions; ~700 lines.                                                                                        |
+| `supabase/functions/_shared/test-helpers/fetch-router.ts` (NEW)                                     | Deno-only `MockFetchRouter` — registers URL-pattern handlers, swaps `globalThis.fetch`, records call ledger. ~150 lines.                                                                                           |
+| `supabase/functions/_shared/test-helpers/postgrest-fixtures.ts` (NEW)                               | Canned PostgREST responses for `agent_definitions`, `bubble_agent_bindings`, `messages`, plus an RPC capture/replay shim. ~200 lines.                                                                              |
+| `supabase/functions/_shared/test-helpers/vertex-fixtures.ts` (NEW)                                  | Canned `generateContent` responses (200-happy, 429-then-200, 500/500/500, malformed-JSON, shape-violating-JSON) and a stub for the Google OAuth token endpoint. ~120 lines.                                        |
+| `supabase/functions/_shared/test-helpers/log-capture.ts` (NEW)                                      | Swap `console.log`; parse each emitted JSON line; expose `findLog(predicate)` + `phaseSequence()`. ~60 lines.                                                                                                      |
+| [`package.json`](../../../package.json)                                                             | New `test:deno-integration` script (runs `deno test --allow-env --allow-read --node-modules-dir=auto --no-check supabase/functions/agent-dispatch/*.integration.test.ts`). Chained into `pnpm check` after ESLint. |
+| [`docs/refactor/vertex-agent-dispatch-consolidation/README.md`](./README.md)                        | Add `phase-7c-deno-integration-tests.md` to the index.                                                                                                                                                             |
 
 **Total surface:** 2 production files touched (`index.ts` slimmed to a Deno
 serve entry; new `handler.ts` holds the dispatch pipeline — export-only, no
@@ -290,7 +290,7 @@ update:
 ```json
 {
   "scripts": {
-    "test:deno-integration": "deno test --allow-env --allow-read --no-check supabase/functions/agent-dispatch/*.integration.test.ts",
+    "test:deno-integration": "deno test --allow-env --allow-read --node-modules-dir=auto --no-check supabase/functions/agent-dispatch/*.integration.test.ts",
     "check": "pnpm format:check && pnpm lint && pnpm check:agent-coupling && pnpm check:agent-prompts && pnpm check:agent-mirror && pnpm test:deno-integration && pnpm build && pnpm check:storefront"
   }
 }
