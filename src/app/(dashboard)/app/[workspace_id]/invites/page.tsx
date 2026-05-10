@@ -2,7 +2,7 @@ import { Suspense } from 'react';
 import { redirect } from 'next/navigation';
 import { createClient } from '@utils/supabase/server';
 import { InvitesClient } from './invites-client';
-import { loadInvitesDataCached } from './load-invites-data';
+import { loadInvitesDataCached, type InvitesPageData } from './load-invites-data';
 
 export default async function InvitesPage({
   params,
@@ -40,7 +40,7 @@ export default async function InvitesPage({
     redirect('/login');
   }
 
-  let pageData;
+  let pageData: InvitesPageData;
   try {
     pageData = await loadInvitesDataCached(workspace_id, session.access_token);
   } catch (e) {

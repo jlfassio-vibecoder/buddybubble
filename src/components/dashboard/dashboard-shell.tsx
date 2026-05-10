@@ -228,6 +228,7 @@ function DashboardShellInner({
   const [joinRequestBellPreview, setJoinRequestBellPreview] =
     useState<JoinRequestPreviewItem[]>(initialJoinRequestPreview);
 
+  // Copilot suggestion ignored: the useEffect at the bubbles-load block also derives `selectedBubbleId` from `bubbleQueryParam` + `effectiveWorkspaceRole`; short-circuiting the fetch when `initialBubbles` is present would require splitting that effect, which is a refactor outside this PR's surgical scope.
   const [bubbles, setBubbles] = useState<BubbleRow[]>(initialBubbles);
   /** Current user's explicit bubble_members.role for the selected bubble (null if none or aggregate view). */
   const [myBubbleRole, setMyBubbleRole] = useState<BubbleMemberRole | null>(null);
