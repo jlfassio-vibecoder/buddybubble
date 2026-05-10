@@ -56,7 +56,7 @@ async function requireWorkspaceWriter(
   if (role !== 'owner' && role !== 'admin' && role !== 'member' && role !== 'trialing') {
     return {
       ok: false,
-      error: 'Only socialspace owners, admins, and members can create bubbles.',
+      error: 'Only socialspace owners, admins, members, and trialing members can create bubbles.',
     };
   }
   return { ok: true };
