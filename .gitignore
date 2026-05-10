@@ -18,3 +18,4 @@ supabase/.temp/
 
 # Local symlink to agent skills (see skills-lock.json); not portable
 skills/
+next-env.d.ts
