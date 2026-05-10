@@ -4,6 +4,7 @@ import { fetchPendingJoinRequestCountAndPreview } from '@/lib/workspace-join-req
 import { parseMemberRole } from '@/lib/permissions';
 import { createClient } from '@utils/supabase/server';
 import { DashboardShell } from '@/components/dashboard/dashboard-shell';
+import { loadBubblesDataCached, type BubblesPageData } from './load-bubbles-data';
 
 /** Placeholder while `DashboardShell` (uses `useSearchParams`) resolves — avoids SSR/client tree skew and useId mismatches. */
 function DashboardRouteFallback() {
@@ -58,6 +59,21 @@ export default async function WorkspaceLayout({
     initialJoinRequestPreview = jr.preview;
   }
 
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    redirect('/login');
+  }
+
+  let initialBubbles: BubblesPageData['initialBubbles'] = [];
+  try {
+    ({ initialBubbles } = await loadBubblesDataCached(workspace_id, user.id, session.access_token));
+  } catch {
+    // Non-fatal: shell will fall back to its existing client-side fetch.
+    initialBubbles = [];
+  }
+
   return (
     <Suspense fallback={<DashboardRouteFallback />}>
       <DashboardShell
@@ -65,6 +81,7 @@ export default async function WorkspaceLayout({
         initialRole={role}
         initialPendingJoinRequestCount={initialPendingJoinRequestCount}
         initialJoinRequestPreview={initialJoinRequestPreview}
+        initialBubbles={initialBubbles}
       >
         {children}
       </DashboardShell>

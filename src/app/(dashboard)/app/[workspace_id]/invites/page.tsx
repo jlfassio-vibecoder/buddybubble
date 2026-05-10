@@ -1,9 +1,8 @@
 import { Suspense } from 'react';
 import { redirect } from 'next/navigation';
-import { inviteUrlForToken } from '@/lib/app-url';
-import { normalizeWaitingRoomRows } from '@/lib/waiting-room-rows';
 import { createClient } from '@utils/supabase/server';
-import { InvitesClient, type InviteListItem } from './invites-client';
+import { InvitesClient } from './invites-client';
+import { loadInvitesDataCached, type InvitesPageData } from './load-invites-data';
 
 export default async function InvitesPage({
   params,
@@ -34,84 +33,27 @@ export default async function InvitesPage({
     redirect(`/app/${workspace_id}`);
   }
 
-  const { data: ws } = await supabase
-    .from('workspaces')
-    .select('name, category_type')
-    .eq('id', workspace_id)
-    .maybeSingle();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    redirect('/login');
+  }
 
-  const workspaceName = (ws as { name?: string } | null)?.name?.trim() || 'this socialspace';
-  const categoryType = (ws as { category_type?: string } | null)?.category_type;
-  const showFamilyNames = categoryType === 'kids' || categoryType === 'community';
-
-  const { data: rows, error } = await supabase
-    .from('invitations')
-    .select('*')
-    .eq('workspace_id', workspace_id)
-    .is('revoked_at', null)
-    .order('created_at', { ascending: false });
-
-  if (error) {
+  let pageData: InvitesPageData;
+  try {
+    pageData = await loadInvitesDataCached(workspace_id, session.access_token);
+  } catch (e) {
     return (
       <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-50 p-4">
-        <p className="text-sm text-destructive">{error.message}</p>
+        <p className="text-sm text-destructive">
+          {e instanceof Error ? e.message : 'Failed to load invites.'}
+        </p>
       </div>
     );
   }
 
-  const { data: joinData, error: joinError } = await supabase
-    .from('invitation_join_requests')
-    .select(
-      `
-      id,
-      created_at,
-      invitation_id,
-      user_id,
-      users ( full_name, email ),
-      invitations ( label, invite_type, max_uses, uses_count )
-    `,
-    )
-    .eq('workspace_id', workspace_id)
-    .eq('status', 'pending')
-    .order('created_at', { ascending: false });
-
-  if (joinError) {
-    return (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-50 p-4">
-        <p className="text-sm text-destructive">{joinError.message}</p>
-      </div>
-    );
-  }
-
-  const initialWaitingRows = normalizeWaitingRoomRows(joinData);
-
-  const initialInvites: InviteListItem[] = (rows ?? []).map((r) => {
-    const row = r as {
-      id: string;
-      token: string;
-      invite_type: string;
-      label: string | null;
-      max_uses: number;
-      uses_count: number;
-      expires_at: string;
-      revoked_at: string | null;
-      target_identity: string | null;
-      created_at: string;
-    };
-    return {
-      id: row.id,
-      token: row.token,
-      invite_type: row.invite_type,
-      label: row.label,
-      max_uses: row.max_uses,
-      uses_count: row.uses_count,
-      expires_at: row.expires_at,
-      revoked_at: row.revoked_at,
-      target_identity: row.target_identity,
-      created_at: row.created_at,
-      inviteUrl: inviteUrlForToken(row.token),
-    };
-  });
+  const { workspaceName, showFamilyNames, initialInvites, initialWaitingRows } = pageData;
 
   return (
     <Suspense

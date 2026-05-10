@@ -1,7 +1,8 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidateTag } from 'next/cache';
 import { createClient } from '@utils/supabase/server';
+import { bubblesCacheTag } from './load-bubbles-data';
 import type { BubbleMemberRole } from '@/types/database';
 
 export type WorkspaceBubbleSummary = {
@@ -93,7 +94,7 @@ export async function updateBubbleAction(input: {
 
   if (error) return { error: error.message };
 
-  revalidatePath(`/app/${check.workspaceId}`);
+  revalidateTag(bubblesCacheTag(check.workspaceId), 'max');
   return { ok: true };
 }
 
@@ -185,7 +186,7 @@ export async function addBubbleMemberAction(input: {
 
   if (error) return { error: error.message };
 
-  revalidatePath(`/app/${check.workspaceId}`);
+  revalidateTag(bubblesCacheTag(check.workspaceId), 'max');
   return { ok: true };
 }
 
@@ -212,7 +213,7 @@ export async function updateBubbleMemberRoleAction(input: {
 
   if (error) return { error: error.message };
 
-  revalidatePath(`/app/${check.workspaceId}`);
+  revalidateTag(bubblesCacheTag(check.workspaceId), 'max');
   return { ok: true };
 }
 
@@ -238,7 +239,7 @@ export async function removeBubbleMemberAction(input: {
 
   if (error) return { error: error.message };
 
-  revalidatePath(`/app/${check.workspaceId}`);
+  revalidateTag(bubblesCacheTag(check.workspaceId), 'max');
   return { ok: true };
 }
 
@@ -364,6 +365,6 @@ export async function revokeBubbleAccessAction(input: {
 
   if (error) return { error: error.message };
 
-  revalidatePath(`/app/${check.workspaceId}`);
+  revalidateTag(bubblesCacheTag(check.workspaceId), 'max');
   return { ok: true };
 }
