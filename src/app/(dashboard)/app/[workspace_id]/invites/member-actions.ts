@@ -1,7 +1,8 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidateTag } from 'next/cache';
 import { createClient } from '@utils/supabase/server';
+import { invitesCacheTag } from './load-invites-data';
 import type { MemberRole } from '@/types/database';
 
 export type ActionResult<T extends Record<string, unknown> = Record<never, never>> =
@@ -119,7 +120,7 @@ export async function updateMemberRoleAction(input: {
 
   if (error) return { error: error.message };
 
-  revalidatePath(`/app/${input.workspaceId}/invites`);
+  revalidateTag(invitesCacheTag(input.workspaceId), 'max');
   return { ok: true };
 }
 
@@ -160,6 +161,6 @@ export async function removeMemberAction(input: {
 
   if (error) return { error: error.message };
 
-  revalidatePath(`/app/${input.workspaceId}/invites`);
+  revalidateTag(invitesCacheTag(input.workspaceId), 'max');
   return { ok: true };
 }

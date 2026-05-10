@@ -1,12 +1,13 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidateTag } from 'next/cache';
 import { inviteUrlForToken } from '@/lib/app-url';
 import { generateInviteToken } from '@/lib/invite-token';
 import { sendInviteEmail } from '@/lib/resend-invite';
 import { sendInviteSms } from '@/lib/twilio-sms';
 import { insertInviteJourneyByToken } from '@/lib/analytics/invite-journey-server';
 import { createClient } from '@utils/supabase/server';
+import { invitesCacheTag } from './load-invites-data';
 
 export type ActionResult<T extends Record<string, unknown> = Record<never, never>> =
   | { error: string }
@@ -87,7 +88,7 @@ export async function createInviteAction(input: {
     { userId: user.id },
   );
 
-  revalidatePath(`/app/${input.workspaceId}/invites`);
+  revalidateTag(invitesCacheTag(input.workspaceId), 'max');
   return { ok: true, inviteUrl: inviteUrlForToken(token), token, id: row.id };
 }
 
@@ -115,7 +116,7 @@ export async function revokeInviteAction(input: {
     return { error: error.message };
   }
 
-  revalidatePath(`/app/${input.workspaceId}/invites`);
+  revalidateTag(invitesCacheTag(input.workspaceId), 'max');
   return { ok: true };
 }
 
@@ -177,7 +178,7 @@ export async function createEmailInviteAction(input: {
     return { error: `Invite created but email failed: ${send.error}` };
   }
 
-  revalidatePath(`/app/${input.workspaceId}/invites`);
+  revalidateTag(invitesCacheTag(input.workspaceId), 'max');
   return { ok: true };
 }
 
@@ -243,6 +244,6 @@ export async function createSmsInviteAction(input: {
     return { error: `Invite created but SMS failed: ${send.error}` };
   }
 
-  revalidatePath(`/app/${input.workspaceId}/invites`);
+  revalidateTag(invitesCacheTag(input.workspaceId), 'max');
   return { ok: true };
 }

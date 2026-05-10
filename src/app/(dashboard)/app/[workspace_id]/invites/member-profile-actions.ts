@@ -1,7 +1,8 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidateTag } from 'next/cache';
 import { createClient } from '@utils/supabase/server';
+import { invitesCacheTag } from './load-invites-data';
 import type { MemberRole } from '@/types/database';
 import type { ActionResult } from './member-actions';
 
@@ -180,6 +181,6 @@ export async function upsertWorkspaceMemberNoteAction(input: {
 
   if (error) return { error: error.message };
 
-  revalidatePath(`/app/${input.workspaceId}/invites`);
+  revalidateTag(invitesCacheTag(input.workspaceId), 'max');
   return { ok: true };
 }
