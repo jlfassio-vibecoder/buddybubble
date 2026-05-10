@@ -72,54 +72,33 @@ async function createWorkspaceCore(name: string, categoryType: string): Promise<
 
   const seed = WORKSPACE_SEED_BY_CATEGORY[categoryType as ValidCategory];
 
-  const bubbleRows = seed.bubbles.map((b) => ({
-    workspace_id: workspaceId,
-    name: b.name,
-    icon: 'Hash',
-  }));
+  const { data: seededBubbleIds, error: seedError } = await supabase.rpc(
+    'seed_workspace_template',
+    {
+      _workspace_id: workspaceId,
+      _bubbles: seed.bubbles.map((b) => ({ name: b.name, icon: 'Hash' })),
+      _columns: seed.columns.map((c) => ({
+        name: c.name,
+        slug: c.slug,
+        position: c.position,
+      })),
+      _category_type: categoryType,
+    },
+  );
 
-  const { data: insertedBubbles, error: bubblesError } = await supabase
-    .from('bubbles')
-    .insert(bubbleRows)
-    .select('id');
-
-  if (bubblesError) {
+  if (seedError) {
     await supabase.from('workspaces').delete().eq('id', workspaceId);
-    return { error: formatUserFacingError(bubblesError) };
+    return { error: formatUserFacingError(seedError) };
   }
 
-  if (categoryType === 'fitness' && insertedBubbles && insertedBubbles.length > 0) {
-    const coachBind = await ensureCoachBubbleBindings(
-      supabase,
-      insertedBubbles.map((b) => b.id as string),
-    );
+  const bubbleIdsForCoach = (seededBubbleIds ?? []) as string[];
+
+  if (categoryType === 'fitness' && bubbleIdsForCoach.length > 0) {
+    const coachBind = await ensureCoachBubbleBindings(supabase, bubbleIdsForCoach);
     if (!coachBind.ok) {
       await supabase.from('workspaces').delete().eq('id', workspaceId);
       return { error: coachBind.error };
     }
-    const { error: workoutsVisErr } = await supabase
-      .from('bubbles')
-      .update({ message_visibility: 'subject_threads' })
-      .eq('workspace_id', workspaceId)
-      .eq('name', 'Workouts');
-    if (workoutsVisErr) {
-      await supabase.from('workspaces').delete().eq('id', workspaceId);
-      return { error: formatUserFacingError(workoutsVisErr) };
-    }
-  }
-
-  const columnRows = seed.columns.map((c) => ({
-    workspace_id: workspaceId,
-    name: c.name,
-    slug: c.slug,
-    position: c.position,
-  }));
-
-  const { error: columnsError } = await supabase.from('board_columns').insert(columnRows);
-
-  if (columnsError) {
-    await supabase.from('workspaces').delete().eq('id', workspaceId);
-    return { error: formatUserFacingError(columnsError) };
   }
 
   return { workspaceId };
