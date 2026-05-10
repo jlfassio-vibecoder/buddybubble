@@ -335,6 +335,10 @@ We treat this as a **single, atomic cutover** with two reversal levels:
 
 If all four pass at T+24h, we close the epic. Phase 5 enhancement tickets are then opened independently.
 
+### Runtime versions (Node 22 floor)
+
+After the migration cutover, the workspace requires **Node.js >=22.12.0** (see root `.nvmrc` and `engines` in both package manifests). CI reads `.nvmrc`; Vercel project settings must be set to Node 22.x separately. See [`docs/operations/runtime-versions.md`](../operations/runtime-versions.md).
+
 ---
 
 ## Appendix A — Files Touched by This Epic
