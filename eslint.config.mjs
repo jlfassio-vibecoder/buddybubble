@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 
 /** Mirrors legacy `.eslintrc.json` extends: `next/core-web-vitals` (flat config). */
+// Copilot suggestion ignored: flat config already preserves `eslint-config-next/core-web-vitals` (see block comment above); fix stale GitHub PR description, not this file.
 const eslintConfig = [
   ...require('eslint-config-next/core-web-vitals'),
   {

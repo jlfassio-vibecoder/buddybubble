@@ -244,7 +244,7 @@ Tasks:
 
 Acceptance criteria:
 
-- [ ] `proxy.ts` exists at the project root; `middleware.ts` is removed.
+- [ ] `src/proxy.ts` exists next to `src/app/` (see `docs/refactor/next16-proxy-rename.md`); root `middleware.ts` is removed.
 - [ ] `pnpm dev` shows no "deprecated middleware convention" warning.
 - [ ] Auth E2E (Playwright `e2e/`) passes:
   - Cold-load `/app` while unauthenticated → redirects to `/login?next=/app`.
