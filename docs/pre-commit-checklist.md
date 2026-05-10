@@ -98,6 +98,7 @@ Then re-run `pnpm run format:check`.
 - Run `pnpm run dev` from **`apps/storefront`** (or your usual storefront command) and smoke-test marketing pages you touched.
 - If those files are in **`apps/storefront/`**, run **`pnpm run verify:storefront`** before **`git push`**.
 - After pulling or rebasing, run `pnpm run check` again before pushing.
+- When editing `proxy.ts`, run the auth E2E flow.
 
 ---
 

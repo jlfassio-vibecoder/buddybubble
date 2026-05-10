@@ -1,9 +1,9 @@
 import { type NextRequest } from 'next/server';
 import { BB_INVITE_TOKEN_COOKIE, inviteTokenCookieOptions } from '@/lib/invite-cookies';
 import { isPlausibleInviteTokenForCookie } from '@/lib/invite-token';
-import { updateSession } from '@utils/supabase/middleware';
+import { updateSession } from '@utils/supabase/proxy';
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const response = await updateSession(request);
   const pathname = request.nextUrl.pathname;
   const inviteMatch = pathname.match(/^\/invite\/([^/]+)/);
