@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Hash, Lock, PanelLeftClose, Settings, Settings2, Sparkles, Users } from 'lucide-react';
-import { createClient } from '@utils/supabase/client';
 import type { BubbleRow } from '@/types/database';
 import { ALL_BUBBLES_BUBBLE_ID, ALL_BUBBLES_LABEL } from '@/lib/all-bubbles';
+import { createBubbleAction } from '@/app/(dashboard)/app/[workspace_id]/bubble-actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -14,7 +14,6 @@ import {
   CollapsedColumnStrip,
 } from '@/components/layout/collapsed-column-strip';
 import { BubbleSettingsModal } from '@/components/modals/BubbleSettingsModal';
-import { ensureCoachBubbleBindings } from '@/lib/fitness/ensure-coach-bubble-binding';
 import { usePresenceStore, type UserPresence } from '@/store/presenceStore';
 import { useUserProfileStore } from '@/store/userProfileStore';
 
@@ -124,27 +123,18 @@ export function BubbleSidebar({
     e.preventDefault();
     if (!name.trim() || !canCreateWorkspaceBubble) return;
     setAdding(true);
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from('bubbles')
-      .insert({
-        workspace_id: workspaceId,
-        name: name.trim(),
-        icon: null,
-      })
-      .select('*')
-      .single();
+    const result = await createBubbleAction({
+      workspaceId,
+      name: name.trim(),
+      workspaceCategory,
+    });
     setAdding(false);
-    if (!error && data) {
-      if (workspaceCategory === 'fitness') {
-        const coachBind = await ensureCoachBubbleBindings(supabase, [data.id as string]);
-        if (!coachBind.ok) {
-          console.error('[BubbleSidebar] Coach binding failed:', coachBind.error);
-        }
-      }
-      onBubblesChange([...bubbles, data as BubbleRow]);
-      onSelectBubble((data as BubbleRow).id);
+    if ('ok' in result && result.ok) {
+      onBubblesChange([...bubbles, result.bubble]);
+      onSelectBubble(result.bubble.id);
       setName('');
+    } else if ('error' in result) {
+      console.error('[BubbleSidebar] createBubbleAction failed:', result.error);
     }
   }
 

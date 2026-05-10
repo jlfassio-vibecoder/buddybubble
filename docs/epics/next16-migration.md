@@ -292,6 +292,13 @@ These are **explicitly out of scope** for the v15 → v16 cutover but become ava
 
 Each of these gets its own ticket and acceptance criteria.
 
+#### Phase 5 architectural decisions (post-PR #96)
+
+Two decisions were recorded during the Phase 5 cache pilots and are intentionally **not** follow-up work. See [`docs/refactor/next16-phase5-completion.md`](../refactor/next16-phase5-completion.md) for the full plan.
+
+- **`bubble_members` reads stay client-side.** Both lookups in [`dashboard-shell.tsx`](../../src/components/dashboard/dashboard-shell.tsx) (`myBubbleRole` derivation and the fitness 1-to-1 `fitnessProfileTargetUserId`) are selection-dependent (re-fire on every `selectedBubbleId` change) and per-user, so an `unstable_cache` key would have to include `(workspaceId, userId, bubbleId)` and a `bubble-${bubbleId}` tag. The reads are 1–N row `maybeSingle()` lookups under RLS — well within the latency budget — so adding a cache layer would be net negative on complexity. RLS remains the source of truth.
+- **`unstable_cache` invariants (token-pass-through only).** Across both pilots (`invites/*` and `bubbles`), every cached loader follows the same shape: read `session.access_token` outside the cache, pass it into the closure, instantiate `@supabase/supabase-js` with `Authorization: Bearer ${token}`, and tag the result with `workspace-${workspaceId}-{invites|bubbles}`. **No `SUPABASE_SERVICE_ROLE_KEY`** (would bypass RLS) and **no `cookies()` / `headers()`** (forbidden by Next 16 inside cached scopes) are permitted in any future cached loader.
+
 ---
 
 ## 4. Risks, Gotchas, and Rollback Strategy

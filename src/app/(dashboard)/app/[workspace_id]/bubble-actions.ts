@@ -1,9 +1,10 @@
 'use server';
 
 import { revalidateTag } from 'next/cache';
+import { ensureCoachBubbleBindings } from '@/lib/fitness/ensure-coach-bubble-binding';
 import { createClient } from '@utils/supabase/server';
 import { bubblesCacheTag } from './load-bubbles-data';
-import type { BubbleMemberRole } from '@/types/database';
+import type { BubbleMemberRole, BubbleRow } from '@/types/database';
 
 export type WorkspaceBubbleSummary = {
   id: string;
@@ -39,6 +40,28 @@ async function requireWorkspaceAdmin(
   return { ok: true };
 }
 
+/** Mirrors `public.can_write_workspace` (owner/admin/member/trialing — not guest). */
+async function requireWorkspaceWriter(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  workspaceId: string,
+  userId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { data } = await supabase
+    .from('workspace_members')
+    .select('role')
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', userId)
+    .maybeSingle();
+  const role = (data as { role?: string } | null)?.role;
+  if (role !== 'owner' && role !== 'admin' && role !== 'member' && role !== 'trialing') {
+    return {
+      ok: false,
+      error: 'Only socialspace owners, admins, and members can create bubbles.',
+    };
+  }
+  return { ok: true };
+}
+
 async function requireBubbleAdmin(
   supabase: Awaited<ReturnType<typeof createClient>>,
   bubbleId: string,
@@ -67,6 +90,48 @@ async function requireBubbleAdmin(
   }
 
   return { ok: true, workspaceId: ws.workspace_id };
+}
+
+export async function createBubbleAction(input: {
+  workspaceId: string;
+  name: string;
+  workspaceCategory?: string | null;
+}): Promise<ActionResult<{ bubble: BubbleRow }>> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: 'Not signed in.' };
+
+  const auth = await requireWorkspaceWriter(supabase, input.workspaceId, user.id);
+  if (!auth.ok) return { error: auth.error };
+
+  const trimmed = input.name.trim();
+  if (!trimmed) return { error: 'Bubble name is required.' };
+
+  const { data, error } = await supabase
+    .from('bubbles')
+    .insert({
+      workspace_id: input.workspaceId,
+      name: trimmed,
+      icon: null,
+    })
+    .select('*')
+    .single();
+
+  if (error) return { error: error.message };
+
+  const bubble = data as BubbleRow;
+
+  if (input.workspaceCategory === 'fitness') {
+    const coachBind = await ensureCoachBubbleBindings(supabase, [bubble.id]);
+    if (!coachBind.ok) {
+      console.error('[createBubbleAction] Coach binding failed:', coachBind.error);
+    }
+  }
+
+  revalidateTag(bubblesCacheTag(input.workspaceId), 'max');
+  return { ok: true, bubble };
 }
 
 export async function updateBubbleAction(input: {
