@@ -192,6 +192,7 @@ type Props = {
   initialRole: MemberRole;
   initialPendingJoinRequestCount?: number;
   initialJoinRequestPreview?: JoinRequestPreviewItem[];
+  initialBubbles?: BubbleRow[];
   children: React.ReactNode;
 };
 
@@ -200,6 +201,7 @@ function DashboardShellInner({
   initialRole,
   initialPendingJoinRequestCount = 0,
   initialJoinRequestPreview = [],
+  initialBubbles = [],
   children,
 }: Props) {
   const router = useRouter();
@@ -226,7 +228,7 @@ function DashboardShellInner({
   const [joinRequestBellPreview, setJoinRequestBellPreview] =
     useState<JoinRequestPreviewItem[]>(initialJoinRequestPreview);
 
-  const [bubbles, setBubbles] = useState<BubbleRow[]>([]);
+  const [bubbles, setBubbles] = useState<BubbleRow[]>(initialBubbles);
   /** Current user's explicit bubble_members.role for the selected bubble (null if none or aggregate view). */
   const [myBubbleRole, setMyBubbleRole] = useState<BubbleMemberRole | null>(null);
   const [selectedBubbleId, setSelectedBubbleId] = useState<string | null>(ALL_BUBBLES_BUBBLE_ID);
