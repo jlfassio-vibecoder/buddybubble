@@ -22,6 +22,7 @@ import { formatUserFacingError } from '@/lib/format-error';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { metadataFieldsFromParsed } from '@/lib/item-metadata';
+import { NARROW_MAX_QUERY } from '@/lib/viewport';
 import type { WorkoutExercise } from '@/lib/item-metadata';
 import type { Json, UnitSystem } from '@/types/database';
 import { useUserProfileStore } from '@/store/userProfileStore';
@@ -44,7 +45,7 @@ export type WorkoutPlayerProps = {
   onClose: () => void;
   /**
    * 'desktop' | 'mobile' forces that chrome. Omit to auto-pick from viewport when opened
-   * (`max-width: 768px` → mobile bottom sheet).
+   * (matches `NARROW_MAX_QUERY` from `@/lib/viewport` → mobile bottom sheet).
    */
   mode?: 'desktop' | 'mobile';
   /** Used to load `fitness_profiles.unit_system` for the active workspace (not cross-workspace). */
@@ -607,7 +608,7 @@ export function WorkoutPlayer({
       return;
     }
     if (!open || typeof window === 'undefined') return;
-    const mobile = window.matchMedia('(max-width: 768px)').matches;
+    const mobile = window.matchMedia(NARROW_MAX_QUERY).matches;
     setResolvedMode(mobile ? 'mobile' : 'desktop');
   }, [open, mode]);
 

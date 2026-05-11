@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactElement,
   type ReactNode,
 } from 'react';
@@ -20,7 +21,7 @@ import {
   makeAllBubblesBubbleRow,
   resolveBuddyBubbleDisplayTitle,
 } from '@/lib/all-bubbles';
-import { normalizeMobileTab } from '@/lib/mobile-crm-tab';
+import { NARROW_MAX_QUERY } from '@/lib/viewport';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { WorkspaceRail } from '@/components/layout/WorkspaceRail';
 import { BubbleSidebar } from './bubble-sidebar';
@@ -71,8 +72,10 @@ import {
 import { ThemeScope } from '@/components/theme/ThemeScope';
 import { resolveEffectiveCategory, useThemeOverride } from '@/hooks/use-theme-override';
 import { useIsNarrowBelowMd } from '@/hooks/use-is-narrow-below-md';
+import { MobileShellProvider, useMobileShellState } from '@/hooks/use-mobile-shell-state';
 import { MobileHeader } from '@/components/layout/MobileHeader';
 import { MobileSidebarSheet } from '@/components/layout/MobileSidebarSheet';
+import { MobileWorkspaceStrip } from '@/components/layout/MobileWorkspaceStrip';
 import { MobileTabBar } from '@/components/layout/MobileTabBar';
 import {
   DesktopViewSwitcher,
@@ -212,8 +215,10 @@ function DashboardShellInner({
   const urlView = searchParams.get('view');
   const narrowViewport = useIsNarrowBelowMd();
   const layoutMobile = !embedMode && narrowViewport;
-  const mobileTab = normalizeMobileTab(urlTab);
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const mobileShell = useMobileShellState();
+  const mobileTab = mobileShell.tab;
+  const mobileNavOpen = mobileShell.drawerOpen;
+  const setMobileNavOpen = mobileShell.setDrawerOpen;
 
   const loadUserWorkspaces = useWorkspaceStore((s) => s.loadUserWorkspaces);
   const syncActiveFromRoute = useWorkspaceStore((s) => s.syncActiveFromRoute);
@@ -304,7 +309,7 @@ function DashboardShellInner({
   const openPeopleInvites = useCallback(() => {
     setPeopleInvitesOpen(true);
     if (layoutMobile) setMobileNavOpen(false);
-  }, [layoutMobile]);
+  }, [layoutMobile, setMobileNavOpen]);
 
   const openCreateWorkspace = useCallback(() => {
     setCreateWorkspaceOpen(true);
@@ -560,17 +565,11 @@ function DashboardShellInner({
   }, [layoutHydrated, workoutBoardSelecting, setKanbanCollapsed]);
 
   const layoutCommands = useMemo((): LayoutCommands => {
-    const setTabMobile = (tab: 'chat' | 'board' | 'calendar') => {
-      const q = new URLSearchParams(searchParams.toString());
-      q.set('tab', tab);
-      router.replace(`${pathname}?${q.toString()}`, { scroll: false });
-    };
-
     return {
       focusMessages: () => {
         if (!layoutHydrated || embedMode) return;
         if (layoutMobile) {
-          setTabMobile('chat');
+          mobileShell.setTab('chat');
           return;
         }
         setChatCollapsedState(false);
@@ -581,7 +580,7 @@ function DashboardShellInner({
       focusBoard: () => {
         if (!layoutHydrated || embedMode) return;
         if (layoutMobile) {
-          setTabMobile('board');
+          mobileShell.setTab('board');
           return;
         }
         setChatCollapsedState(true);
@@ -592,7 +591,7 @@ function DashboardShellInner({
       focusCalendar: () => {
         if (!layoutHydrated || embedMode) return;
         if (layoutMobile) {
-          setTabMobile('calendar');
+          mobileShell.setTab('calendar');
           return;
         }
         setChatCollapsedState(true);
@@ -603,7 +602,7 @@ function DashboardShellInner({
         if (!layoutHydrated || embedMode) return;
         if (layoutMobile) {
           /** No split tab on mobile; board is the closest multi-pane surface. */
-          setTabMobile('board');
+          mobileShell.setTab('board');
           return;
         }
         setChatCollapsedState(false);
@@ -612,7 +611,7 @@ function DashboardShellInner({
         setBoardStripExpandNonce((n) => n + 1);
       },
     };
-  }, [embedMode, layoutHydrated, layoutMobile, pathname, router, searchParams]);
+  }, [embedMode, layoutHydrated, layoutMobile, mobileShell]);
 
   const clearClassDeckBuilder = useCallback(() => {
     workoutDeckSelection.exitSelectionMode();
@@ -675,20 +674,16 @@ function DashboardShellInner({
   /** Class deck builder replaces the main stage; on mobile the board tab must be active to show it. */
   useEffect(() => {
     if (!showClassDeckBuilder || !layoutMobile || embedMode) return;
-    const q = new URLSearchParams(searchParams.toString());
-    if (q.get('tab') === 'board') return;
-    q.set('tab', 'board');
-    router.replace(`${pathname}?${q.toString()}`, { scroll: false });
-  }, [embedMode, layoutMobile, pathname, router, searchParams, showClassDeckBuilder]);
+    if (searchParams.get('tab') === 'board') return;
+    mobileShell.setTab('board');
+  }, [embedMode, layoutMobile, mobileShell, searchParams, showClassDeckBuilder]);
 
   /** Async playback shell uses the same main-stage slot as the deck builder. */
   useEffect(() => {
     if (!showClassAsyncPlayer || !layoutMobile || embedMode) return;
-    const q = new URLSearchParams(searchParams.toString());
-    if (q.get('tab') === 'board') return;
-    q.set('tab', 'board');
-    router.replace(`${pathname}?${q.toString()}`, { scroll: false });
-  }, [embedMode, layoutMobile, pathname, router, searchParams, showClassAsyncPlayer]);
+    if (searchParams.get('tab') === 'board') return;
+    mobileShell.setTab('board');
+  }, [embedMode, layoutMobile, mobileShell, searchParams, showClassAsyncPlayer]);
 
   const applyDesktopFocusMode = useCallback(
     (mode: DesktopFocusMode) => {
@@ -1215,7 +1210,7 @@ function DashboardShellInner({
    */
   useEffect(() => {
     if (!layoutHydrated || embedMode) return;
-    const mq = window.matchMedia('(max-width: 767.98px)');
+    const mq = window.matchMedia(NARROW_MAX_QUERY);
     if (!mq.matches) return;
     const viewMessages = urlView?.toLowerCase() === 'messages';
     if (urlTab === 'chat' || viewMessages) {
@@ -1390,14 +1385,12 @@ function DashboardShellInner({
       setSelectedBubbleId(id);
       setMobileNavOpen(false);
       if (embedMode) return;
-      const mq = window.matchMedia('(max-width: 767.98px)');
+      const mq = window.matchMedia(NARROW_MAX_QUERY);
       if (mq.matches) {
-        const q = new URLSearchParams(searchParams.toString());
-        q.set('tab', 'chat');
-        router.replace(`${pathname}?${q.toString()}`, { scroll: false });
+        mobileShell.setTab('chat');
       }
     },
-    [embedMode, pathname, router, searchParams],
+    [embedMode, mobileShell, setMobileNavOpen],
   );
 
   const buddyBubbleTitle = useMemo(
@@ -1461,11 +1454,18 @@ function DashboardShellInner({
     workspaceCategory: workspaceCategoryForUi,
   };
 
-  const drawerRailProps = {
-    ...workspaceRailProps,
-    collapsed: false,
-    onCollapsedChange: () => {},
-    hideRailCollapseButton: true,
+  const drawerStripProps = {
+    workspaceId,
+    pendingJoinRequestCount: isAdmin ? pendingJoinRequestCount : 0,
+    profileAvatarUrl: profile?.avatar_url ?? null,
+    profileName: profile?.full_name ?? profile?.email ?? null,
+    onOpenProfile: embedMode ? undefined : () => setProfileModalOpen(true),
+    onOpenPeopleInvites: embedMode ? undefined : openPeopleInvites,
+    onOpenCreateWorkspace: embedMode ? undefined : openCreateWorkspace,
+    onOpenFitnessProfile:
+      !embedMode && workspaceCategoryForUi === 'fitness'
+        ? () => setFitnessProfileOpen(true)
+        : undefined,
   };
 
   const drawerBubbleProps = {
@@ -1758,7 +1758,14 @@ function DashboardShellInner({
               }}
             >
               <ThemeScope category={effectiveThemeCategory}>
-                <div className="flex h-screen min-h-0 flex-col bg-background md:flex-row md:overflow-hidden">
+                <div
+                  className="flex h-[100dvh] min-h-0 flex-col bg-background md:flex-row md:overflow-hidden"
+                  style={
+                    {
+                      '--mobile-tab-bar-h': 'calc(4rem + env(safe-area-inset-bottom, 0px))',
+                    } as CSSProperties
+                  }
+                >
                   {layoutMobile ? (
                     <MobileHeader
                       title={buddyBubbleTitle}
@@ -1767,12 +1774,12 @@ function DashboardShellInner({
                   ) : null}
                   {layoutMobile ? (
                     <MobileSidebarSheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-                      <WorkspaceRail {...drawerRailProps} />
-                      <BubbleSidebar {...drawerBubbleProps} />
+                      <MobileWorkspaceStrip {...drawerStripProps} />
+                      <BubbleSidebar {...drawerBubbleProps} hideWorkspaceTitle isMobileDrawerMode />
                     </MobileSidebarSheet>
                   ) : null}
 
-                  <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-0">
+                  <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pb-[var(--mobile-tab-bar-h)] md:pb-0">
                     {!embedMode ? (
                       <div className="max-md:hidden flex h-11 shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-4">
                         <span
@@ -2014,9 +2021,7 @@ function DashboardShellInner({
                     </div>
                   </div>
 
-                  {layoutMobile ? (
-                    <MobileTabBar onOpenNavigation={() => setMobileNavOpen(true)} />
-                  ) : null}
+                  {layoutMobile ? <MobileTabBar /> : null}
 
                   <TaskModal
                     open={taskModalOpen}
@@ -2139,7 +2144,7 @@ function DashboardShellInner({
                   />
                   {commentAlert ? (
                     <div
-                      className="pointer-events-auto fixed bottom-20 left-1/2 z-[100] flex max-w-md -translate-x-1/2 items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-lg md:bottom-6"
+                      className="pointer-events-auto fixed bottom-[calc(var(--mobile-tab-bar-h)+0.5rem)] left-1/2 z-[100] flex max-w-md -translate-x-1/2 items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-lg md:bottom-6"
                       role="status"
                     >
                       <p className="min-w-0 flex-1 text-sm text-foreground">
@@ -2173,7 +2178,7 @@ function DashboardShellInner({
                     <Button
                       type="button"
                       variant="secondary"
-                      className="fixed bottom-24 left-4 z-[200] shadow-md md:bottom-6 md:left-6"
+                      className="fixed bottom-[calc(var(--mobile-tab-bar-h)+0.5rem)] left-4 z-[200] shadow-md md:bottom-6 md:left-6"
                       onClick={() => workoutDeckSelection.exitSelectionMode()}
                     >
                       Exit selection mode
@@ -2193,7 +2198,9 @@ function DashboardShellInner({
 export function DashboardShell(props: Props) {
   return (
     <WorkoutDeckSelectionProvider>
-      <DashboardShellInner {...props} />
+      <MobileShellProvider>
+        <DashboardShellInner {...props} />
+      </MobileShellProvider>
     </WorkoutDeckSelectionProvider>
   );
 }

@@ -16,6 +16,7 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
+  TouchSensor,
   closestCorners,
   defaultDropAnimation,
   type DragEndEvent,
@@ -909,6 +910,9 @@ export function KanbanBoard({
     useSensor(PointerSensor, {
       activationConstraint: { distance: 8 },
     }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 250, tolerance: 5 },
+    }),
   );
 
   const persistColumns = useCallback(
@@ -1334,7 +1338,7 @@ export function KanbanBoard({
         <div
           className={cn(
             'min-h-0 flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain',
-            'max-md:snap-x max-md:snap-mandatory max-md:[scrollbar-width:none] max-md:[&::-webkit-scrollbar]:hidden',
+            'max-md:snap-x max-md:snap-proximity max-md:[scrollbar-width:none] max-md:[&::-webkit-scrollbar]:hidden',
           )}
         >
           <div className="relative flex h-full min-h-0 gap-3 p-3">

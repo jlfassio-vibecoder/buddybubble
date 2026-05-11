@@ -10,7 +10,7 @@ import { loadBubblesDataCached, type BubblesPageData } from './load-bubbles-data
 function DashboardRouteFallback() {
   return (
     <div
-      className="flex h-screen min-h-0 flex-col bg-background md:flex-row md:overflow-hidden"
+      className="flex h-[100dvh] min-h-0 flex-col bg-background md:flex-row md:overflow-hidden"
       aria-busy="true"
       aria-label="Loading workspace"
     >
