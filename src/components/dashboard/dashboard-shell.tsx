@@ -308,7 +308,16 @@ function DashboardShellInner({
 
   const openPeopleInvites = useCallback(() => {
     setPeopleInvitesOpen(true);
-    if (layoutMobile) setMobileNavOpen(false);
+    if (layoutMobile) {
+      mobileShell.setDrawerOpen(false);
+    }
+  }, [layoutMobile, mobileShell]);
+
+  /** Drawer is mobile-only chrome; clear open state when leaving narrow layout so it cannot reopen spuriously. */
+  useEffect(() => {
+    if (!layoutMobile) {
+      setMobileNavOpen(false);
+    }
   }, [layoutMobile, setMobileNavOpen]);
 
   const openCreateWorkspace = useCallback(() => {
@@ -1383,14 +1392,14 @@ function DashboardShellInner({
   const onSelectBubble = useCallback(
     (id: string) => {
       setSelectedBubbleId(id);
-      setMobileNavOpen(false);
+      mobileShell.setDrawerOpen(false);
       if (embedMode) return;
       const mq = window.matchMedia(NARROW_MAX_QUERY);
       if (mq.matches) {
         mobileShell.setTab('chat');
       }
     },
-    [embedMode, mobileShell, setMobileNavOpen],
+    [embedMode, mobileShell],
   );
 
   const buddyBubbleTitle = useMemo(
