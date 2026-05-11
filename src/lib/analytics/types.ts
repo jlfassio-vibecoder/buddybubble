@@ -40,7 +40,8 @@ export type FeatureName =
   | 'export'
   | 'record_data'
   | 'custom_branding'
-  | 'create_workspace';
+  | 'create_workspace'
+  | 'live_video';
 
 // ── Metadata shapes per event ─────────────────────────────────────────────────
 

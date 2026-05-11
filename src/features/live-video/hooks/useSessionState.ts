@@ -117,6 +117,19 @@ export function useSessionState(options: UseSessionStateOptions): UseSessionStat
     (raw: unknown) => {
       const parsed = parseSessionStateBroadcastPayload(raw);
       if (!parsed) return;
+
+      // Copilot suggestion ignored: generation-enforcer logs stay unconditional so stale-drop reordering remains visible in production.
+      const incomingGeneration = parsed.state.generation ?? 0;
+      const currentGeneration = stateRef.current.generation ?? 0;
+      console.log('[DEBUG][LiveVideo State] Evaluating broadcast generation:', {
+        incoming: incomingGeneration,
+        current: currentGeneration,
+      });
+      if (incomingGeneration < currentGeneration) {
+        console.log('[DEBUG][LiveVideo State] Dropped stale out-of-order broadcast.');
+        return;
+      }
+
       if (parsed.senderId !== hostUserId) return;
       if (isHost && parsed.senderId === localUserId) return;
       if (process.env.NODE_ENV === 'development') {

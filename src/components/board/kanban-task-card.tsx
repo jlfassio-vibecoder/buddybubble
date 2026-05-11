@@ -29,6 +29,7 @@ import { normalizeTaskPriority, type TaskPriority } from '@/lib/task-priority';
 import type { OpenTaskOptions } from '@/components/modals/TaskModal';
 import { metadataFieldsFromParsed, parseTaskMetadata } from '@/lib/item-metadata';
 import type { KanbanCardDensity } from '@/components/board/kanban-density';
+import { PremiumGate } from '@/components/subscription/premium-gate';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarGroup, AvatarImage } from '@/components/ui/avatar';
@@ -126,28 +127,47 @@ function KanbanCardLiveJoinRow({
   const label = inLiveSession ? 'Joined' : !currentUserId ? 'Sign in to join' : 'Join live session';
   return (
     <div className={size === 'micro' ? 'mb-1' : 'mb-2'}>
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        className={cn('w-full gap-1.5 shadow-sm', size === 'micro' && 'h-7 text-[10px]')}
-        disabled={joinDisabled}
-        onClick={(e) => {
-          e.stopPropagation();
-          if (joinDisabled) return;
-          useLiveVideoStore.getState().joinSession({
-            workspaceId: liveInvite.workspaceId,
-            sessionId: liveInvite.sessionId,
-            channelId: liveInvite.channelId,
-            hostUserId: liveInvite.hostUserId,
-            mode: liveInvite.mode,
-            sourceTaskId: taskId,
-          });
-        }}
-      >
-        <Video className={cn('shrink-0', size === 'micro' ? 'size-3' : 'size-3.5')} aria-hidden />
-        {label}
-      </Button>
+      {joinDisabled ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className={cn('w-full gap-1.5 shadow-sm', size === 'micro' && 'h-7 text-[10px]')}
+          disabled
+          onClick={(e) => {
+            e.stopPropagation();
+          }}
+        >
+          <Video className={cn('shrink-0', size === 'micro' ? 'size-3' : 'size-3.5')} aria-hidden />
+          {label}
+        </Button>
+      ) : (
+        <PremiumGate feature="live_video">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className={cn('w-full gap-1.5 shadow-sm', size === 'micro' && 'h-7 text-[10px]')}
+            onClick={(e) => {
+              e.stopPropagation();
+              useLiveVideoStore.getState().joinSession({
+                workspaceId: liveInvite.workspaceId,
+                sessionId: liveInvite.sessionId,
+                channelId: liveInvite.channelId,
+                hostUserId: liveInvite.hostUserId,
+                mode: liveInvite.mode,
+                sourceTaskId: taskId,
+              });
+            }}
+          >
+            <Video
+              className={cn('shrink-0', size === 'micro' ? 'size-3' : 'size-3.5')}
+              aria-hidden
+            />
+            {label}
+          </Button>
+        </PremiumGate>
+      )}
     </div>
   );
 }

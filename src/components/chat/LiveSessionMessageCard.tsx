@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import { Video } from 'lucide-react';
 
+import { PremiumGate } from '@/components/subscription/premium-gate';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useLiveVideoStore } from '@/store/liveVideoStore';
@@ -66,25 +67,33 @@ export function LiveSessionMessageCard({
         </div>
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
-        <Button
-          type="button"
-          size="sm"
-          disabled={joinDisabled}
-          onClick={() => {
-            if (joinDisabled) return;
-            const isInviteAuthor = Boolean(currentUserId && currentUserId === invite.hostUserId);
-            useLiveVideoStore.getState().joinSession({
-              workspaceId: invite.workspaceId,
-              sessionId: invite.sessionId,
-              channelId: invite.channelId,
-              hostUserId: invite.hostUserId,
-              mode: invite.mode,
-              ...(isInviteAuthor ? { inviteMessageId: messageId } : {}),
-            });
-          }}
-        >
-          {ended ? 'Session ended' : inThisSession ? 'Joined' : 'Join session'}
-        </Button>
+        {joinDisabled ? (
+          <Button type="button" size="sm" disabled>
+            {ended ? 'Session ended' : inThisSession ? 'Joined' : 'Join session'}
+          </Button>
+        ) : (
+          <PremiumGate feature="live_video">
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                const isInviteAuthor = Boolean(
+                  currentUserId && currentUserId === invite.hostUserId,
+                );
+                useLiveVideoStore.getState().joinSession({
+                  workspaceId: invite.workspaceId,
+                  sessionId: invite.sessionId,
+                  channelId: invite.channelId,
+                  hostUserId: invite.hostUserId,
+                  mode: invite.mode,
+                  ...(isInviteAuthor ? { inviteMessageId: messageId } : {}),
+                });
+              }}
+            >
+              Join session
+            </Button>
+          </PremiumGate>
+        )}
       </div>
     </div>
   );

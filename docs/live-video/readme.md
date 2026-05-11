@@ -67,7 +67,7 @@ Relevant files:
 
 ## Architecture
 
-The feature has three independent state layers.
+The feature has three independent state layers, plus a durable Postgres session registry (see "Durable Session Registry" below) that gates wrapper-bearing phases (AMRAP, etc.) and provides the participant roster.
 
 ### 1. Dashboard Session Pointer
 
@@ -160,6 +160,38 @@ Relevant files:
 - `src/features/live-video/hooks/useSessionState.ts`
 - `src/features/live-video/state/sessionStateMachine.ts`
 - `src/features/live-video/state/session-sync.types.ts`
+
+### 4. Durable Session Registry
+
+Beyond the three transient layers above, the dock writes a durable Postgres row per session into `public.live_sessions` and a row per joined user into `public.live_session_participants`. This registry is what wrapper-bearing phases (AMRAP today, future kinds) read at runtime.
+
+`DashboardLiveVideoDockRouter` calls one of two RPCs the first time Agora connects for a given `sessionId`:
+
+- Host: `live_session_create(p_session_id, p_display_name, p_agora_uid, p_workspace_id)` (idempotent: upserts both the `live_sessions` row and the host `live_session_participants` row; requires caller membership in `p_workspace_id`).
+- Participant: `live_session_participant_join(p_session_id, p_display_name, p_agora_uid, p_role)` (retried up to 24 times at 150 ms while waiting for the host's `live_sessions` row to appear).
+
+Once registration succeeds the dock flips an internal `liveDbReady` flag. `LiveSessionView` blocks `get_live_session_join_hints` and `live_session_list_participants` reads until `liveDbReady === true` to avoid a connect-before-register race.
+
+Schema highlights:
+
+- `public.live_sessions (id uuid pk, host_user_id, interval_wrapper_kind, interval_wrapper_config jsonb, created_at)`.
+- `public.live_session_participants (id uuid pk, session_id, user_id, display_name, role, agora_uid text, joined_at)`.
+- `is_live_session_participant(uuid)` SECURITY DEFINER helper used by RLS.
+- `host_attach_amrap_session(p_session_id, p_interval_wrapper_config)` host-only RPC that flips `interval_wrapper_kind = 'amrap'` and writes the wrapper config.
+- `get_live_session_join_hints(p_session_id)` — public-readable JSON of `interval_wrapper_kind` + config so clients can pick the correct wrapper UI before they have full row read access.
+- `live_session_list_participants(p_session_id)` — gated on caller membership; returns ids, display names, role, and `agora_uid` for tile identity.
+- `supabase_realtime` publication includes `live_sessions` so wrapper changes propagate via `postgres_changes`.
+
+`live_sessions.id` IS the durable app session UUID (the same value as `liveVideoStore.activeSession.sessionId`). It is **not** the Agora `channelId` — see the Identifier Model section below.
+
+Relevant files:
+
+- `src/components/dashboard/dashboard-live-video-dock.tsx`
+- `src/features/live-video/shells/huddle/LiveSessionView.tsx`
+- `supabase/migrations/20260730120000_create_live_sessions_and_participants.sql`
+- `supabase/migrations/20260730120100_live_session_join_hints.sql`
+- `supabase/migrations/20260731120000_live_session_lifecycle_rpcs.sql`
+- `supabase/migrations/20260802120000_live_sessions_realtime.sql`
 
 ## Dashboard Integration
 
@@ -301,6 +333,137 @@ Relevant files:
 - `supabase/migrations/20260625120000_assign_user_to_session_deck_rpc.sql`
 - `supabase/migrations/20260626120000_live_session_deck_allow_duplicates.sql`
 
+## Interval Wrappers
+
+`LiveSessionView` mounts an optional "interval wrapper" inside the connected huddle. Wrappers are pluggable UIs that drive their own timing model on top of (or alongside) the base session state.
+
+Registry:
+
+- `IntervalWrapperKind = 'none' | 'simple_countdown' | 'amrap' | 'amrap_minimal'`.
+- `getIntervalWrapper(kind)` returns `{ component, hasVideoBackground, requiresAttach, label, inlineUi?, preferredShell? }`.
+- `WrapperBaseProps` is the contract every wrapper consumes (kind, config, host participant id, video tile exclude uid, `liveSessionId`, `participantId`, role, display name, auth user id, error reporter).
+- `WrapperErrorBoundary` catches wrapper render errors so the rest of the huddle keeps working.
+- `WrapperAttachContext` lets a wrapper temporarily override the active wrapper kind/config without touching `live_sessions` (used during attach/edit flows).
+
+Selection flow:
+
+1. Dock connects, registers the durable session row, and flips `liveDbReady`.
+2. `LiveSessionView` reads `get_live_session_join_hints(sessionId)` to pick `interval_wrapper_kind` + `interval_wrapper_config`.
+3. Subscribes to `postgres_changes` on `live_sessions` filtered by `id=eq.<sessionId>` so wrapper changes (via `host_attach_amrap_session` or future host RPCs) propagate.
+4. When `state.phase` matches the wrapper kind (e.g. `phase === 'amrap'` and kind `amrap`/`amrap_minimal`), the wrapper component renders.
+5. `entry.preferredShell === 'theater_board_split'` switches the huddle into a video|board resizable split for that wrapper.
+
+Relevant files:
+
+- `src/features/live-video/wrappers/registry.tsx`
+- `src/features/live-video/wrappers/types.ts`
+- `src/features/live-video/wrappers/parseWrapperConfig.ts`
+- `src/features/live-video/wrappers/WrapperErrorBoundary.tsx`
+- `src/features/live-video/contexts/WrapperAttachContext.tsx`
+- `src/features/live-video/shells/huddle/LiveSessionView.tsx`
+
+## AMRAP Feature Module
+
+AMRAP (As Many Rounds As Possible) is a fully separate feature module that plugs into live video through the Interval Wrappers registry. It is the only non-trivial wrapper today and is large enough to warrant its own folder.
+
+The `amrap` and `amrap_minimal` registry entries delegate rendering to `AmrapWrapper`, which composes UI from `src/features/amrap/**`:
+
+- Engine: `src/features/amrap/types/amrap-engine.ts`, `src/features/amrap/utils/buildAmrapBlockSnapshot.ts`, `src/features/amrap/utils/computeAmrapLeaderboard.ts`.
+- Hooks: `useAmrapSession`, `useAmrapTimerState`, `useAmrapParticipants`, `useAmrapRounds`, `useAmrapSetDuplication`.
+- UI: `AmrapTimerOverlay`, `AmrapRoundLapsOverlay`, `AmrapLogRoundOverlay`, `AmrapResultsDrawer`, `AmrapLeaderboard`, `AmrapHostActions`, `MeLeaderToggle`, `TimerVideoBackground`, `ViewResultsModal`, `AmrapSessionShell`, `AmrapEmbedExerciseSection`.
+
+Database surface for AMRAP lives in:
+
+- `supabase/migrations/20260801120000_amrap_session_tables_and_rpcs.sql`
+- `supabase/migrations/20260801130000_host_detach_amrap_session.sql`
+- `supabase/migrations/20260801140000_amrap_block_snapshot.sql`
+- `supabase/migrations/20260803120000_amrap_minimal_wrapper.sql`
+- `supabase/migrations/20260804120000_amrap_session_leaderboard_snapshot.sql`
+- `supabase/migrations/20260805120000_fix_amrap_reset_timer.sql`
+
+The host attaches AMRAP to the active live session by calling `host_attach_amrap_session` (or the wrapper's equivalent attach path) which flips `live_sessions.interval_wrapper_kind = 'amrap'` and writes a wrapper config; the dock's wrapper subscriber notices the UPDATE and switches in the AMRAP UI.
+
+## Cloud Recording
+
+Class-mode live sessions can be recorded into Supabase Storage via Agora Cloud Recording. The control plane is intentionally service-role only; the browser only triggers start/stop and reads a status field on `class_instances.metadata.class_recording`.
+
+Trigger surface (browser):
+
+- Host clicks Start Session inside a class-instance live session → `DashboardLiveVideoDockRouter.handleStartRecording` invokes the `agora-recording-start` Edge Function with `{ classInstanceId, channelName, workspaceId }`.
+- Host ends the session → `dashboard-shell.tsx onHostEndLiveSessionForAll` invokes `agora-recording-stop` with `{ classInstanceId }`.
+- The dock polls `class_instances.metadata.class_recording.status` every 15 s while `'processing'` and propagates `hostClassRecordingProcessing` into `LiveSessionView` for status UI.
+
+Edge Functions:
+
+- `supabase/functions/agora-recording-start/index.ts` — verifies the caller is the live-session host (via `parseLiveSessionInviteFromInstanceMetadata`), acquires a recording resource from Agora, mints a long-lived RTC token for the recording bot uid, starts mix mode recording with HLS + MP4 output to S3-compatible storage, and writes a `class_recording_sessions` row.
+- `supabase/functions/agora-recording-stop/index.ts` — stops the active recording.
+- `supabase/functions/agora-recording-webhook/index.ts` — receives Agora callbacks (uploaded, failed, etc.) and updates `class_recording_sessions.status` + `class_instances.metadata.class_recording`.
+- `supabase/functions/agora-recording-reconciler/index.ts` — periodic sweep that catches sessions stuck in non-terminal states.
+
+Database:
+
+- `public.class_recording_sessions` — control-plane state machine (`acquiring → starting → recording → stopping → stopped → uploading → ready | failed`). RLS is enabled with no policies; only service_role writes.
+- Storage bucket `class-recordings` (set up under `supabase/migrations/2026080{8,9}120000_class_recordings_storage_*.sql`).
+- Public-facing UX reads `class_instances.metadata.class_recording` (parsed by `parseClassRecordingFromInstanceMetadata` in `src/types/live-session-invite.ts`).
+
+Required server-only env vars (in addition to `AGORA_APP_ID` / `AGORA_APP_CERTIFICATE`):
+
+```bash
+AGORA_CUSTOMER_ID=
+AGORA_CUSTOMER_SECRET=
+AGORA_RESTAPI_BASE=        # optional; default https://api.sd-rtn.com
+AGORA_STORAGE_REGION=      # optional integer string; default 0
+SUPABASE_S3_BUCKET=
+SUPABASE_S3_ENDPOINT=
+SUPABASE_S3_ACCESS_KEY_ID=
+SUPABASE_S3_SECRET_ACCESS_KEY=
+```
+
+Relevant files:
+
+- `src/components/dashboard/dashboard-live-video-dock.tsx` (start trigger + status polling)
+- `src/components/dashboard/dashboard-shell.tsx` (stop trigger on host end)
+- `src/features/live-video/shells/AsyncPlaybackShell.tsx` (consumes the resulting recording for replay)
+- `src/types/live-session-invite.ts` (`parseClassRecordingFromInstanceMetadata`)
+- `supabase/migrations/20260810120000_create_class_recording_sessions.sql`
+- `supabase/migrations/20260812120000_class_recording_sessions_reconciler_index.sql`
+
+## Class Draft-Deck Merge
+
+Class instances support an editor "draft deck" that is authored before any live session exists. The draft is stored in `live_session_deck_items` under the synthetic `session_id = bb-class-deck:<class_instance_id>` namespace.
+
+When the host enters a class-started live session, `DashboardLiveVideoDockRouter` (after a successful `live_session_create`) calls `copy_class_deck_to_live_session(p_class_instance_id, p_live_session_id)` once per dock mount. The RPC:
+
+- Holds an advisory transaction lock keyed on the live session id to serialize concurrent host retries.
+- Returns `-1` if the live session already has any deck rows (idempotent skip), so the merge is safe to call repeatedly.
+- Otherwise copies `task_id`, `sort_order`, and `session_task_metadata` from the draft into the live session.
+- Runs as `SECURITY INVOKER`; bubble-derived RLS on `live_session_deck_items` governs who may read/write.
+
+Relevant files:
+
+- `src/features/live-video/shells/huddle/live-deck-merge.ts`
+- `src/components/dashboard/dashboard-live-video-dock.tsx`
+- `src/lib/fitness/class-deck-builder-session-id.ts`
+- `supabase/migrations/20260807120000_copy_class_deck_to_live_session_rpc.sql`
+
+## Identifier Model
+
+The deployed system carries four distinct ids on the live-video hot path. Treat them as separate concepts; do not assume any pair of them are interchangeable.
+
+| Identifier    | Shape                                                                      | Created by                                                         | Used as                                                                                                                                                                                                        |
+| ------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sessionId`   | UUID v4 (`crypto.randomUUID()`)                                            | `ChatArea.tsx` (chat invite path), card / class metadata otherwise | `liveVideoStore.activeSession.sessionId`, `live_sessions.id`, `live_session_deck_items.session_id`, Supabase Realtime topic `room-session:${workspaceId}:${sessionId}`, `LiveSessionRuntimeProvider.sessionId` |
+| `channelId`   | `bb-live-${workspaceId}-${shortId}` (validated by `^[a-zA-Z0-9_-]{1,64}$`) | `ChatArea.tsx` (`shortId` is 8 hex chars derived from `sessionId`) | Agora `client.join`, `/api/live-video/token` channelId field, never used as a Postgres id                                                                                                                      |
+| Agora `uid`   | Unsigned 32-bit int from `agoraUidFromUuid(auth.uid)`                      | `src/lib/live-video/agora-uid.ts`                                  | Agora token mint, Agora tile identity, `live_session_participants.agora_uid` (string-coerced)                                                                                                                  |
+| Deck row `id` | UUID                                                                       | DB default on `live_session_deck_items`                            | `state.activeDeckItemId` broadcast value, `WorkoutDeckSelectionProvider` snapshot key, participant overlay match                                                                                               |
+
+Key invariants:
+
+- `live_sessions.id === sessionId` (UUID), **not** the Agora channel id.
+- `live_session_deck_items.session_id === sessionId` (text-typed but holds the same UUID, plus the `bb-class-deck:<class_instance_id>` synthetic value for class drafts).
+- `channelId` is opaque to Postgres; the durable session registry never stores it.
+- `agora_uid` is the only id that appears in Agora's RTC events; map back to `auth.uid()` via the participant row, not by re-computing the hash on the client.
+
 ## Invite Metadata
 
 Live session invites are stored as JSON under `metadata.live_session` on chat messages, tasks, and class instances.
@@ -372,6 +535,7 @@ Server validation:
 - `channelId` must match `^[a-zA-Z0-9_-]{1,64}$`.
 - `role` must be `publisher` or `subscriber`.
 - if `workspaceId` is present, the user must have a `workspace_members` row for that workspace.
+- if `sessionId` is present, `workspaceId` is required and must match `live_sessions.workspace_id` when that column is set (legacy rows may still have a null `workspace_id`).
 
 The route derives a deterministic 32-bit Agora UID from the Supabase auth user id with `agoraUidFromUuid`.
 
@@ -382,7 +546,7 @@ Relevant files:
 - `src/app/api/live-video/token/route.ts`
 - `src/lib/live-video/agora-uid.ts`
 
-Current authorization is workspace-level. The token route does not prove that the user was invited to a specific `sessionId`; it assumes session discovery is controlled by workspace-visible chat/card/class surfaces and RLS.
+When the client sends **`sessionId`**, it must also send **`workspaceId`**. The token route enforces **Tier C**: the user must pass `public.can_join_live_session` (durable `live_sessions` row, host or `live_session_participants`, and for participants a **valid workspace subscription** on paid categories — `trialing` / `active` — via `get_workspace_subscription_status`; participants are not admitted when the session row has a null `workspace_id`). Without `sessionId`, behavior stays workspace-membership + channel validation only (e.g. dev scaffold).
 
 ## Environment
 
@@ -425,16 +589,28 @@ The deck persistence and assignment flow relies on:
 
 ## Debug Logging
 
-Several live video tripwire logs are intentionally still present:
+Several live video tripwire logs are intentionally still present. The table below tracks which gating each log uses today; future cleanup should converge them all on `process.env.NODE_ENV === 'development'` or remove them.
 
-- `[DEBUG] AgoraSessionProvider Mounted - Initializing connection bounds`
-- `[DEBUG] AgoraSessionProvider Unmounted - TRIPPING DISCONNECT / Cleanup`
-- `[DEBUG] BaseVideoHarness Rendered with child shell:`
-- `[DEBUG] Token API hit for channel:`
-- `[DEBUG] Token fetched successfully`
-- `[DEBUG] Toggling media: type=audio|video, newState=enabled|disabled`
+| Log string                                                                 | File                                                                                 | Gated to dev?                          |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------- |
+| `[DEBUG] AgoraSessionProvider Mounted - Initializing connection bounds`    | `src/features/live-video/AgoraSessionProvider.tsx` (mount effect)                    | No (unconditional)                     |
+| `[DEBUG] AgoraSessionProvider Unmounted - TRIPPING DISCONNECT / Cleanup`   | `src/features/live-video/AgoraSessionProvider.tsx` (`leaveChannel`)                  | No (unconditional)                     |
+| `[DEBUG] Toggling media` (audio or video, enabled or disabled)             | `src/features/live-video/AgoraSessionProvider.tsx` (`toggleMic` / `toggleCamera`)    | No (unconditional)                     |
+| `[DEBUG] Token fetched successfully`                                       | `src/features/live-video/AgoraSessionProvider.tsx` (`joinChannel` after token parse) | No (unconditional)                     |
+| `[DEBUG] BaseVideoHarness Rendered with child shell:`                      | `src/features/live-video/BaseVideoHarness.tsx`                                       | No (unconditional)                     |
+| `[DEBUG] DashboardLiveVideoDockRouter Render - Role: …`                    | `src/components/dashboard/dashboard-live-video-dock.tsx`                             | Dev only                               |
+| `[DEBUG] LiveVideoSessionShell Rendered - Layout Plan applied`             | `src/features/live-video/theater/live-video-session-shell.tsx`                       | Dev only                               |
+| `[DEBUG] Token API hit for channel:`                                       | `src/app/api/live-video/token/route.ts`                                              | Dev only                               |
+| `[DEBUG][API] Tier C:` (session 404, forbidden, channel-binding tripwires) | `src/app/api/live-video/token/route.ts`                                              | Dev only                               |
+| `[DEBUG][LiveVideo Token] 404 from token API; retrying…`                   | `src/features/live-video/AgoraSessionProvider.tsx`                                   | Dev only                               |
+| `[DEBUG] useSessionState broadcast received: …`                            | `src/features/live-video/hooks/useSessionState.ts` (incoming broadcast)              | Dev only                               |
+| `[DEBUG] Participant received active item:`                                | `src/features/live-video/hooks/useSessionState.ts` (incoming broadcast, participant) | Dev only                               |
+| `[DEBUG] useSessionState setAspectRatio (host): ratio=…`                   | `src/features/live-video/hooks/useSessionState.ts` (host setter)                     | Dev only                               |
+| `[DEBUG] Host broadcast active item:`                                      | `src/features/live-video/hooks/useSessionState.ts` (host setter)                     | Dev only                               |
+| `[DEBUG][LiveVideo State] Evaluating broadcast generation: …`              | `src/features/live-video/hooks/useSessionState.ts` (incoming broadcast)              | No (unconditional generation tripwire) |
+| `[DEBUG][LiveVideo State] Dropped stale out-of-order broadcast.`           | `src/features/live-video/hooks/useSessionState.ts` (incoming broadcast)              | No (unconditional generation tripwire) |
 
-Some are gated to development and some are still unconditional. Keep them stable while debugging lifecycle behavior; gate or remove them once the feature is stable.
+Keep them stable while debugging lifecycle behavior; the generation-enforcer tripwires in particular are intentionally unconditional so out-of-order drops are visible without rebuilding.
 
 ## Manual QA
 
@@ -487,13 +663,17 @@ Not currently covered by automated tests:
 
 ## Known Limitations
 
-- Authorization for Agora tokens is workspace-level, not session-level.
+- **Tier C (when `sessionId` is sent):** the request must include `workspaceId`, which must match a non-null `live_sessions.workspace_id` when present. Token issuance requires an existing `live_sessions` row and a passing `can_join_live_session` check (host always, including legacy rows with null `workspace_id`; participants must be in `live_session_participants`, the session must have a non-null `workspace_id`, and on paid workspace categories the workspace subscription must be `trialing` or `active`). **`channelId` binding to the session is still a logged tripwire only** until `live_sessions` stores a canonical channel id.
 - Supabase Realtime broadcasts are best-effort (`ack: false`); participants request sync on subscribe, but delivery ordering is still eventual.
+- `SessionState.generation` is now compared on incoming broadcasts to drop strictly older payloads (see `useSessionState.handleIncomingStateBroadcast`), but it is still only incremented inside `endSession`. Other transitions reuse the previous generation, so the check protects against full-session-reset reordering only — not against intra-session pause/resume or active-deck-item reordering.
 - Participant clocks are approximate and use host broadcast timestamps, not NTP-grade synchronization.
 - `agora-access-token` is still used for server token generation, with a code comment noting a future migration to `agora-token`.
 - Media connection state and workout session state are deliberately separate; leaving Agora video does not necessarily end the shared workout or mark invite metadata ended.
-- Only the `workout` mode is implemented.
-- Debug logging remains in live paths while the feature stabilizes.
+- Only the `workout` mode is implemented at the `liveVideoStore` / invite-metadata level. Wrapper kinds (`amrap`, `amrap_minimal`, `simple_countdown`) are layered on top via `live_sessions.interval_wrapper_kind`.
+- The durable `live_sessions` and `live_session_participants` rows have no `closed_at` column and no reaper; they accumulate indefinitely.
+- Participant `live_session_participant_join` retries up to 24 times at 150 ms before silently giving up; if the host has not yet executed `live_session_create`, the participant will see no error surface and must leave/rejoin.
+- Cloud recording start/stop is host-triggered without an explicit consent UX for participants.
+- Debug logging remains in live paths while the feature stabilizes; see the Debug Logging table for current gating per log line.
 
 ## Extension Notes
 

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Clock, Video } from 'lucide-react';
+import { PremiumGate } from '@/components/subscription/premium-gate';
 import { Button } from '@/components/ui/button';
 import { DEFAULT_CLASS_PROVIDER, type ClassInstance } from '@/lib/fitness/class-providers';
 import { useLiveVideoStore } from '@/store/liveVideoStore';
@@ -130,26 +131,28 @@ export function ActiveClassBanner({ workspaceId }: Props) {
         </div>
         <div className="flex w-full shrink-0 flex-col items-stretch gap-2 sm:w-auto sm:items-end">
           {showJoin ? (
-            <Button
-              type="button"
-              size="default"
-              variant="default"
-              className="h-10 w-full gap-2 font-semibold shadow-sm sm:w-auto sm:min-w-[10rem]"
-              onClick={() => {
-                if (inLiveSession || !currentUserId || !liveInvite) return;
-                useLiveVideoStore.getState().joinSession({
-                  workspaceId: liveInvite.workspaceId,
-                  sessionId: liveInvite.sessionId,
-                  channelId: liveInvite.channelId,
-                  hostUserId: liveInvite.hostUserId,
-                  mode: liveInvite.mode,
-                  sourceInstanceId: activeInstance.id,
-                });
-              }}
-            >
-              <Video className="h-4 w-4 shrink-0" aria-hidden />
-              Join live session
-            </Button>
+            <PremiumGate feature="live_video">
+              <Button
+                type="button"
+                size="default"
+                variant="default"
+                className="h-10 w-full gap-2 font-semibold shadow-sm sm:w-auto sm:min-w-[10rem]"
+                onClick={() => {
+                  if (inLiveSession || !currentUserId || !liveInvite) return;
+                  useLiveVideoStore.getState().joinSession({
+                    workspaceId: liveInvite.workspaceId,
+                    sessionId: liveInvite.sessionId,
+                    channelId: liveInvite.channelId,
+                    hostUserId: liveInvite.hostUserId,
+                    mode: liveInvite.mode,
+                    sourceInstanceId: activeInstance.id,
+                  });
+                }}
+              >
+                <Video className="h-4 w-4 shrink-0" aria-hidden />
+                Join live session
+              </Button>
+            </PremiumGate>
           ) : liveInvite && !liveInvite.endedAt && inLiveSession ? (
             <span className="text-center text-sm font-semibold text-primary sm:text-right">
               Joined

@@ -68,6 +68,33 @@ async function releaseClientAndTracks(
 }
 
 /**
+ * Token-fetch retry loop tuning: absorbs the host `live_session_create` /
+ * `live_session_participant_join` race window where a participant can request a
+ * token milliseconds before the durable `live_sessions` row exists.
+ */
+const TOKEN_FETCH_MAX_ATTEMPTS = 10;
+const TOKEN_FETCH_RETRY_DELAY_MS = 500;
+
+/** Resolves after `ms` or immediately when `signal` aborts; never rejects. */
+function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+/**
  * RTC session: server token + Agora Web SDK (`join` / `publish` / strict `leave` cleanup).
  * Certificate never leaves the server; see POST /api/live-video/token.
  */
@@ -75,6 +102,7 @@ export function AgoraSessionProvider({
   children,
   channelId,
   workspaceId,
+  sessionId,
   role = 'publisher',
 }: AgoraSessionProviderProps) {
   const [isConnected, setIsConnected] = useState(false);
@@ -187,42 +215,84 @@ export function AgoraSessionProvider({
       let published = false;
 
       try {
-        const res = await fetch('/api/live-video/token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: ac.signal,
-          body: JSON.stringify({
-            channelId,
-            role,
-            ...(workspaceId !== undefined ? { workspaceId } : {}),
-          }),
-        });
+        // Retry loop: a 404 from the route means the host has not yet committed the
+        // `live_sessions` row (Tier C race). 403 / other non-OK responses are explicit
+        // denials and break immediately. 200 with a valid credentials payload also breaks.
+        let payload: unknown = null;
+        let lastErrorMsg: string | null = null;
 
-        let payload: unknown;
-        try {
-          payload = await res.json();
-        } catch {
-          payload = null;
-        }
+        for (let attempt = 0; attempt < TOKEN_FETCH_MAX_ATTEMPTS; attempt++) {
+          const res = await fetch('/api/live-video/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: ac.signal,
+            body: JSON.stringify({
+              channelId,
+              role,
+              ...(workspaceId !== undefined ? { workspaceId } : {}),
+              ...(sessionId !== undefined ? { sessionId } : {}),
+            }),
+          });
 
-        if (joinSeqRef.current !== seq) return;
+          if (joinSeqRef.current !== seq || ac.signal.aborted) return;
 
-        if (!res.ok) {
-          const msg =
-            payload &&
-            typeof payload === 'object' &&
-            typeof (payload as { error?: unknown }).error === 'string'
-              ? (payload as { error: string }).error
-              : 'Token request failed';
-          console.error('[AgoraSessionProvider] token API', res.status, msg);
-          setJoinError(msg);
-          setIsConnecting(false);
-          return;
+          let body: unknown;
+          try {
+            body = await res.json();
+          } catch {
+            body = null;
+          }
+
+          if (joinSeqRef.current !== seq || ac.signal.aborted) return;
+
+          const errorMsg =
+            body &&
+            typeof body === 'object' &&
+            typeof (body as { error?: unknown }).error === 'string'
+              ? (body as { error: string }).error
+              : null;
+
+          // 404: race with host `live_session_create` / participant `live_session_participant_join`.
+          // Retry after a short backoff; do not surface as an error until we exhaust attempts.
+          if (res.status === 404) {
+            if (process.env.NODE_ENV === 'development') {
+              console.log(
+                '[DEBUG][LiveVideo Token] 404 from token API; retrying for session-create race',
+                { attempt: attempt + 1, maxAttempts: TOKEN_FETCH_MAX_ATTEMPTS },
+              );
+            }
+            lastErrorMsg = errorMsg ?? 'Live session not ready';
+            if (attempt + 1 >= TOKEN_FETCH_MAX_ATTEMPTS) break;
+            await abortableSleep(TOKEN_FETCH_RETRY_DELAY_MS, ac.signal);
+            if (joinSeqRef.current !== seq || ac.signal.aborted) return;
+            continue;
+          }
+
+          // Any other non-OK status (403, 401, 400, 5xx) is an explicit decision —
+          // do not retry, surface immediately.
+          if (!res.ok) {
+            const msg = errorMsg ?? 'Token request failed';
+            console.error('[AgoraSessionProvider] token API', res.status, msg);
+            setJoinError(msg);
+            setIsConnecting(false);
+            return;
+          }
+
+          if (!isRtcCredentials(body)) {
+            console.error('[AgoraSessionProvider] invalid token response shape');
+            setJoinError('Invalid token response');
+            setIsConnecting(false);
+            return;
+          }
+
+          payload = body;
+          break;
         }
 
         if (!isRtcCredentials(payload)) {
-          console.error('[AgoraSessionProvider] invalid token response shape');
-          setJoinError('Invalid token response');
+          // Exhausted retries on 404 (or never produced a valid payload).
+          console.error('[AgoraSessionProvider] token API exhausted retries on 404');
+          setJoinError(lastErrorMsg ?? 'Live session not ready. Try again in a moment.');
           setIsConnecting(false);
           return;
         }
@@ -354,7 +424,7 @@ export function AgoraSessionProvider({
         }
       }
     })();
-  }, [channelId, workspaceId, role, detachRemoteListeners]);
+  }, [channelId, workspaceId, sessionId, role, detachRemoteListeners]);
 
   useEffect(() => {
     console.log('[DEBUG] AgoraSessionProvider Mounted - Initializing connection bounds');

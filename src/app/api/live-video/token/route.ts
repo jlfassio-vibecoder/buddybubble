@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server';
 // in a follow-up PR after validating API parity and token correctness end-to-end.
 import { RtcRole, RtcTokenBuilder } from 'agora-access-token';
 import { agoraUidFromUuid } from '@/lib/live-video/agora-uid';
+import { isUuidString } from '@/lib/is-uuid';
+import { createServiceRoleClient } from '@/lib/supabase-service-role';
 import { createClient } from '@utils/supabase/server';
 
 const TOKEN_TTL_SECONDS = 3600;
@@ -83,6 +85,101 @@ export async function POST(req: Request) {
     }
     if (!membership) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+  }
+
+  // Tier C: session-scoped authorization. Layered ON TOP of the existing workspace
+  // check so the previous behaviour for callers without a `sessionId` (e.g. dev
+  // scaffold route) is preserved. We disambiguate "session does not exist yet"
+  // (404 → client retries) from "session exists but user is not authorized"
+  // (403 → client gives up) by reading `live_sessions` with the service role.
+  const sessionIdRaw = (body as { sessionId?: unknown }).sessionId;
+  if (sessionIdRaw !== undefined) {
+    if (typeof sessionIdRaw !== 'string' || sessionIdRaw.trim() === '') {
+      return NextResponse.json({ error: 'Invalid sessionId' }, { status: 400 });
+    }
+    const sessionId = sessionIdRaw.trim();
+    if (!isUuidString(sessionId)) {
+      return NextResponse.json({ error: 'Invalid sessionId' }, { status: 400 });
+    }
+
+    if (typeof workspaceIdRaw !== 'string' || workspaceIdRaw.trim() === '') {
+      return NextResponse.json(
+        { error: 'workspaceId is required when sessionId is provided' },
+        { status: 400 },
+      );
+    }
+    const tierWorkspaceId = workspaceIdRaw.trim();
+
+    let admin;
+    try {
+      admin = createServiceRoleClient();
+    } catch (e) {
+      console.error('[live-video/token] Tier C: service-role client unavailable', e);
+      return NextResponse.json({ error: 'Tier C authorization unavailable' }, { status: 500 });
+    }
+
+    const { data: sessionRow, error: sessionErr } = await admin
+      .from('live_sessions')
+      .select('id, host_user_id, workspace_id')
+      .eq('id', sessionId)
+      .maybeSingle();
+
+    if (sessionErr) {
+      console.error('[live-video/token] Tier C: live_sessions lookup', sessionErr);
+      return NextResponse.json({ error: 'Tier C lookup failed' }, { status: 500 });
+    }
+
+    if (!sessionRow) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[DEBUG][API] Tier C: Session not found yet, returning 404 for retry.', {
+          sessionId,
+        });
+      }
+      return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    }
+
+    const boundWorkspaceId = sessionRow.workspace_id;
+    if (
+      typeof boundWorkspaceId === 'string' &&
+      boundWorkspaceId.trim() !== '' &&
+      boundWorkspaceId !== tierWorkspaceId
+    ) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const { data: canJoin, error: gateErr } = await supabase.rpc('can_join_live_session', {
+      p_session_id: sessionId,
+    });
+    if (gateErr) {
+      console.error('[live-video/token] Tier C: can_join_live_session', gateErr);
+      return NextResponse.json({ error: 'Tier C authorization failed' }, { status: 500 });
+    }
+    if (canJoin !== true) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[DEBUG][API] Tier C: User not authorized for session', {
+          sessionId,
+          userId: user.id,
+        });
+      }
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    // Channel binding: `live_sessions` does not store `channel_id` today. The chat-flow
+    // derivation is `bb-live-${workspaceId}-${shortId}` where `shortId` is `sessionId`
+    // with dashes stripped, first 8 chars. We reconstruct + log a tripwire for telemetry,
+    // but do NOT reject on mismatch yet — card / class / future flows may use other
+    // derivations. Strict enforcement waits for a follow-up that adds `channel_id` to
+    // `live_sessions` (or a server-derivation table) so all code paths agree.
+    if (process.env.NODE_ENV === 'development') {
+      const expectedShortId = sessionId.replace(/-/g, '').slice(0, 8);
+      const expectedChannelId = `bb-live-${tierWorkspaceId}-${expectedShortId}`;
+      console.log('[DEBUG][API] Tier C: Channel binding validation pending', {
+        sessionId,
+        requestedChannelId: channelId,
+        expectedChannelId,
+        match: expectedChannelId === channelId,
+      });
     }
   }
 

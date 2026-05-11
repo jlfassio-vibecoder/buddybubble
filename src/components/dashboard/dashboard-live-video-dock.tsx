@@ -212,6 +212,7 @@ function DashboardLiveVideoDockRouter({
           p_session_id: liveSessionRowId,
           p_display_name: resolvedDisplayName,
           p_agora_uid: agoraUid,
+          p_workspace_id: session.workspaceId,
         });
         if (cancelled) return;
         if (error) {
@@ -288,6 +289,7 @@ function DashboardLiveVideoDockRouter({
     resolvedDisplayName,
     session.sessionId,
     session.sourceInstanceId,
+    session.workspaceId,
     supabase,
   ]);
 
@@ -382,7 +384,11 @@ export function DashboardLiveVideoDock({
         className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-primary/8 to-transparent"
       />
       <div className="relative z-0 flex min-h-0 w-full min-w-0 flex-1 flex-col">
-        <AgoraSessionProvider channelId={session.channelId} workspaceId={session.workspaceId}>
+        <AgoraSessionProvider
+          channelId={session.channelId}
+          workspaceId={session.workspaceId}
+          sessionId={session.sessionId}
+        >
           <div className="flex min-h-0 flex-1 flex-col" data-live-video-dock-frame>
             <DashboardLiveVideoDockRouter
               session={session}

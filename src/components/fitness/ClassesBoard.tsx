@@ -15,6 +15,7 @@ import {
   Video,
 } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
+import { PremiumGate } from '@/components/subscription/premium-gate';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { KanbanColumnAdd } from '@/components/board/kanban-column-add';
@@ -249,27 +250,41 @@ function ClassCard({
       ) : null}
       {!isPast && liveInvite && !liveInvite.endedAt ? (
         <div className="mt-3 flex flex-col gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-8 w-full gap-2 text-xs shadow-sm"
-            disabled={inLiveSession || !currentUserId}
-            onClick={() => {
-              if (inLiveSession || !currentUserId || !liveInvite) return;
-              useLiveVideoStore.getState().joinSession({
-                workspaceId: liveInvite.workspaceId,
-                sessionId: liveInvite.sessionId,
-                channelId: liveInvite.channelId,
-                hostUserId: liveInvite.hostUserId,
-                mode: liveInvite.mode,
-                sourceInstanceId: instance.id,
-              });
-            }}
-          >
-            <Video className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            {inLiveSession ? 'Joined' : !currentUserId ? 'Sign in to join' : 'Join live session'}
-          </Button>
+          {inLiveSession || !currentUserId ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 w-full gap-2 text-xs shadow-sm"
+              disabled
+            >
+              <Video className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              {inLiveSession ? 'Joined' : !currentUserId ? 'Sign in to join' : 'Join live session'}
+            </Button>
+          ) : (
+            <PremiumGate feature="live_video">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 w-full gap-2 text-xs shadow-sm"
+                onClick={() => {
+                  if (!liveInvite) return;
+                  useLiveVideoStore.getState().joinSession({
+                    workspaceId: liveInvite.workspaceId,
+                    sessionId: liveInvite.sessionId,
+                    channelId: liveInvite.channelId,
+                    hostUserId: liveInvite.hostUserId,
+                    mode: liveInvite.mode,
+                    sourceInstanceId: instance.id,
+                  });
+                }}
+              >
+                <Video className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                Join live session
+              </Button>
+            </PremiumGate>
+          )}
         </div>
       ) : null}
 

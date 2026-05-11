@@ -18,6 +18,7 @@ import {
   Zap,
 } from 'lucide-react';
 
+import { PremiumGate } from '@/components/subscription/premium-gate';
 import { cn } from '@/lib/utils';
 import {
   lastExerciseHashIndex,
@@ -699,19 +700,32 @@ export function RichMessageComposer({
           </button>
         ) : null}
         {features.enableStartLiveWorkout && onRequestStartLiveWorkout ? (
-          <button
-            type="button"
-            className={attachBtnClass}
-            disabled={startLiveWorkoutDisabled ?? disabled}
-            title="Start live workout"
-            aria-label="Start live workout"
-            onClick={(e) => {
-              e.preventDefault();
-              onRequestStartLiveWorkout();
-            }}
-          >
-            <Video className={videoIcon} aria-hidden />
-          </button>
+          (startLiveWorkoutDisabled ?? disabled) ? (
+            <button
+              type="button"
+              className={attachBtnClass}
+              disabled
+              title="Start live workout"
+              aria-label="Start live workout"
+            >
+              <Video className={videoIcon} aria-hidden />
+            </button>
+          ) : (
+            <PremiumGate feature="live_video" inline>
+              <button
+                type="button"
+                className={attachBtnClass}
+                title="Start live workout"
+                aria-label="Start live workout"
+                onClick={(e) => {
+                  e.preventDefault();
+                  onRequestStartLiveWorkout();
+                }}
+              >
+                <Video className={videoIcon} aria-hidden />
+              </button>
+            </PremiumGate>
+          )
         ) : null}
         <div className="relative min-w-0 flex-1">
           <input
