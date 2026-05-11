@@ -283,18 +283,12 @@ export function LiveClassReminderModal({ workspaceId, enabled = true }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onDialogOpenChange}>
-      <DialogContent
-        className="max-w-md gap-4 sm:max-w-lg"
-        aria-describedby="live-class-reminder-desc"
-      >
+      <DialogContent className="max-w-md gap-4 sm:max-w-lg">
         <DialogHeader className="space-y-2 text-left">
           <DialogTitle className="text-xl font-bold">
             {payload?.window === '5m' ? 'Class starting soon' : 'Class reminder'}
           </DialogTitle>
-          <DialogDescription id="live-class-reminder-desc" className="sr-only">
-            Reminder for an upcoming live class. You can join, dismiss this reminder, or stop future
-            reminders for this class.
-          </DialogDescription>
+          <DialogDescription className="sr-only">Class reminder details</DialogDescription>
         </DialogHeader>
 
         {inst ? (
@@ -320,23 +314,25 @@ export function LiveClassReminderModal({ workspaceId, enabled = true }: Props) {
           </div>
         ) : null}
 
-        <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end sm:gap-2">
+        <DialogFooter className="relative z-10 flex-col gap-2 sm:flex-row sm:justify-end sm:gap-2">
           {canJoinLive ? (
-            <PremiumGate feature="live_video">
-              <Button
-                type="button"
-                className="w-full gap-2 font-semibold sm:w-auto"
-                onClick={handleJoin}
-              >
-                <Video className="h-4 w-4 shrink-0" aria-hidden />
-                Join live session
-              </Button>
-            </PremiumGate>
+            <div className="relative z-0 shrink-0">
+              <PremiumGate feature="live_video">
+                <Button
+                  type="button"
+                  className="w-full gap-2 font-semibold sm:w-auto"
+                  onClick={handleJoin}
+                >
+                  <Video className="h-4 w-4 shrink-0" aria-hidden />
+                  Join live session
+                </Button>
+              </PremiumGate>
+            </div>
           ) : null}
           <Button
             type="button"
             variant="secondary"
-            className="w-full sm:w-auto"
+            className="relative z-10 w-full sm:w-auto"
             onClick={handleClose}
           >
             Close
@@ -344,7 +340,7 @@ export function LiveClassReminderModal({ workspaceId, enabled = true }: Props) {
           <Button
             type="button"
             variant="ghost"
-            className="w-full text-muted-foreground hover:text-foreground sm:w-auto"
+            className="relative z-10 w-full text-muted-foreground hover:text-foreground sm:w-auto"
             onClick={handleDoNotShowAgain}
           >
             Do not see again
