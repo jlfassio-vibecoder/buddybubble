@@ -1222,19 +1222,19 @@ function DashboardShellInner({
     const mq = window.matchMedia(NARROW_MAX_QUERY);
     if (!mq.matches) return;
     const viewMessages = urlView?.toLowerCase() === 'messages';
-    if (urlTab === 'chat' || viewMessages) {
+    if (mobileTab === 'chat' || viewMessages) {
       setChatCollapsedState(false);
       setKanbanCollapsedState(true);
       setCalendarCollapsedState(false);
-    } else if (urlTab === 'board') {
+    } else if (mobileTab === 'board') {
       setChatCollapsedState(true);
       setKanbanCollapsedState(false);
-    } else if (urlTab === 'calendar') {
+    } else if (mobileTab === 'calendar') {
       setChatCollapsedState(true);
       setKanbanCollapsedState(true);
       setCalendarCollapsedState(false);
     }
-  }, [layoutHydrated, embedMode, urlTab, urlView]);
+  }, [layoutHydrated, embedMode, mobileTab, urlView]);
 
   const bubbleQueryParam = searchParams.get('bubble');
 
@@ -1788,7 +1788,13 @@ function DashboardShellInner({
                     </MobileSidebarSheet>
                   ) : null}
 
-                  <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pb-[var(--mobile-tab-bar-h)] md:pb-0">
+                  <div
+                    className={cn(
+                      'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden',
+                      layoutMobile && 'max-md:pb-[var(--mobile-tab-bar-h)]',
+                      'md:pb-0',
+                    )}
+                  >
                     {!embedMode ? (
                       <div className="max-md:hidden flex h-11 shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-4">
                         <span
@@ -2153,7 +2159,12 @@ function DashboardShellInner({
                   />
                   {commentAlert ? (
                     <div
-                      className="pointer-events-auto fixed bottom-[calc(var(--mobile-tab-bar-h)+0.5rem)] left-1/2 z-[100] flex max-w-md -translate-x-1/2 items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-lg md:bottom-6"
+                      className={cn(
+                        'pointer-events-auto fixed left-1/2 z-[100] flex max-w-md -translate-x-1/2 items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-lg md:bottom-6',
+                        layoutMobile
+                          ? 'bottom-[calc(var(--mobile-tab-bar-h)+0.5rem)]'
+                          : 'bottom-20 max-md:bottom-20',
+                      )}
                       role="status"
                     >
                       <p className="min-w-0 flex-1 text-sm text-foreground">
@@ -2187,7 +2198,12 @@ function DashboardShellInner({
                     <Button
                       type="button"
                       variant="secondary"
-                      className="fixed bottom-[calc(var(--mobile-tab-bar-h)+0.5rem)] left-4 z-[200] shadow-md md:bottom-6 md:left-6"
+                      className={cn(
+                        'fixed left-4 z-[200] shadow-md md:bottom-6 md:left-6',
+                        layoutMobile
+                          ? 'bottom-[calc(var(--mobile-tab-bar-h)+0.5rem)]'
+                          : 'bottom-24 max-md:bottom-24',
+                      )}
                       onClick={() => workoutDeckSelection.exitSelectionMode()}
                     >
                       Exit selection mode

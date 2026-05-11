@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MobileShellProvider } from '@/hooks/use-mobile-shell-state';
 import { MobileHeader } from '@/components/layout/MobileHeader';
@@ -33,6 +33,16 @@ vi.mock('next/link', () => ({
 }));
 
 describe('mobile chrome smoke', () => {
+  let userWorkspacesSnapshot: ReturnType<typeof useWorkspaceStore.getState>['userWorkspaces'];
+
+  beforeEach(() => {
+    userWorkspacesSnapshot = useWorkspaceStore.getState().userWorkspaces;
+  });
+
+  afterEach(() => {
+    useWorkspaceStore.setState({ userWorkspaces: userWorkspacesSnapshot });
+  });
+
   it('mounts MobileHeader', () => {
     render(<MobileHeader title="Test Bubble" />);
     expect(screen.getByRole('heading', { name: 'Test Bubble' })).toBeTruthy();

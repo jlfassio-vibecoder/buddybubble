@@ -16,6 +16,7 @@ export function MobileTabBar() {
 
   return (
     <nav
+      // Copilot suggestion ignored: --mobile-tab-bar-h is owned by DashboardShell; duplicating calc in a var() fallback would drift from the single shell contract and tests mount inside MobileShellProvider.
       className="fixed bottom-0 left-0 right-0 z-[90] flex h-[var(--mobile-tab-bar-h)] items-stretch border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden"
       aria-label="Primary socialspace views"
     >

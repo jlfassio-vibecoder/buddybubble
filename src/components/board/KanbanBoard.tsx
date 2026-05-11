@@ -910,6 +910,7 @@ export function KanbanBoard({
     useSensor(PointerSensor, {
       activationConstraint: { distance: 8 },
     }),
+    // Copilot suggestion ignored: PointerSensor covers pointer/touch, but TouchSensor adds delayed touch activation for horizontal scroll vs drag; MouseSensor-only split is a larger interaction change.
     useSensor(TouchSensor, {
       activationConstraint: { delay: 250, tolerance: 5 },
     }),

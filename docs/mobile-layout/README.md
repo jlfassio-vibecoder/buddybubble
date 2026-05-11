@@ -368,13 +368,13 @@ The drawer open flag comes from **`useMobileShellState()`** (same provider as th
 `DashboardShell` reads `useLayoutEffect` for the breakpoint and gates the column behavior on a separate `layoutHydrated` flag (set after the layout-preferences effect reads localStorage). This matters on mobile in two ways:
 
 1. The `LayoutCommands.focusMessages|focusBoard|focusCalendar|focusSplit` macros are **no-ops while `!layoutHydrated`**, so an early click on the tab bar will not race the hydration write to localStorage. The tab bar's own `?tab=` mutation still works (it does not depend on `layoutHydrated`), but the underlying collapse flags are reconciled by the deep-link effect once hydration completes.
-2. The `Suspense` fallback in `src/app/(dashboard)/app/[workspace_id]/layout.tsx` renders a column shell with `flex-col bg-background md:flex-row md:overflow-hidden` so the SSR placeholder is a neutral skeleton (the live shell uses **`h-[100dvh]`** on the dashboard root, not this fallback’s `h-screen`):
+2. The `Suspense` fallback in `src/app/(dashboard)/app/[workspace_id]/layout.tsx` renders a column shell with `flex-col bg-background md:flex-row md:overflow-hidden` and **`h-[100dvh]`** so the SSR placeholder height matches the hydrated dashboard shell (avoids iOS URL-bar jitter).
 
    ```10:20:src/app/(dashboard)/app/[workspace_id]/layout.tsx
    function DashboardRouteFallback() {
      return (
        <div
-         className="flex h-screen min-h-0 flex-col bg-background md:flex-row md:overflow-hidden"
+         className="flex h-[100dvh] min-h-0 flex-col bg-background md:flex-row md:overflow-hidden"
          aria-busy="true"
          aria-label="Loading workspace"
        >
