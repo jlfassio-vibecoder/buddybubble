@@ -1268,6 +1268,21 @@ function DashboardShellInner({
       .on(
         'postgres_changes',
         {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'bubbles',
+          filter: `workspace_id=eq.${workspaceId}`,
+        },
+        (payload) => {
+          const row = payload.new as BubbleRow | null;
+          if (!row?.id) return;
+          // Dedupe against optimistic appends from the originating tab.
+          setBubbles((prev) => (prev.some((b) => b.id === row.id) ? prev : [...prev, row]));
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
           event: 'UPDATE',
           schema: 'public',
           table: 'bubbles',
@@ -1277,6 +1292,22 @@ function DashboardShellInner({
           const next = payload.new as BubbleRow | null;
           if (!next?.id) return;
           setBubbles((prev) => prev.map((b) => (b.id === next.id ? { ...b, ...next } : b)));
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'bubbles',
+          filter: `workspace_id=eq.${workspaceId}`,
+        },
+        (payload) => {
+          const row = payload.old as { id?: string } | null;
+          if (!row?.id) return;
+          setBubbles((prev) => prev.filter((b) => b.id !== row.id));
+          // If the deleted bubble was active, fall back to the aggregate view.
+          setSelectedBubbleId((prev) => (prev === row.id ? ALL_BUBBLES_BUBBLE_ID : prev));
         },
       )
       .subscribe();

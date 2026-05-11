@@ -2934,6 +2934,15 @@ export type Database = {
         Args: { p_join_request_id: string };
         Returns: Json;
       };
+      seed_workspace_template: {
+        Args: {
+          _bubbles: Json;
+          _category_type?: string | null;
+          _columns: Json;
+          _workspace_id: string;
+        };
+        Returns: string[];
+      };
       set_fitness_profile_biometrics_public: {
         Args: { p_show: boolean; p_workspace_id: string };
         Returns: undefined;
