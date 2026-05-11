@@ -1400,6 +1400,7 @@ export type Database = {
           id: string;
           interval_wrapper_config: Json | null;
           interval_wrapper_kind: string;
+          workspace_id: string | null;
         };
         Insert: {
           created_at?: string;
@@ -1407,6 +1408,7 @@ export type Database = {
           id?: string;
           interval_wrapper_config?: Json | null;
           interval_wrapper_kind?: string;
+          workspace_id?: string | null;
         };
         Update: {
           created_at?: string;
@@ -1414,6 +1416,7 @@ export type Database = {
           id?: string;
           interval_wrapper_config?: Json | null;
           interval_wrapper_kind?: string;
+          workspace_id?: string | null;
         };
         Relationships: [];
       };
@@ -2878,6 +2881,10 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      can_join_live_session: {
+        Args: { p_session_id: string };
+        Returns: boolean;
+      };
       is_live_session_participant: {
         Args: { p_session_id: string };
         Returns: boolean;
@@ -2894,6 +2901,7 @@ export type Database = {
           p_agora_uid: string;
           p_display_name: string;
           p_session_id: string;
+          p_workspace_id?: string | null;
         };
         Returns: undefined;
       };

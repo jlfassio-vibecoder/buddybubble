@@ -41,7 +41,8 @@ export type PremiumFeature =
   | 'export'
   | 'record_data'
   | 'custom_branding'
-  | 'create_workspace';
+  | 'create_workspace'
+  | 'live_video';
 
 const FEATURE_LABELS: Record<PremiumFeature, string> = {
   ai: 'AI generation',
@@ -50,6 +51,7 @@ const FEATURE_LABELS: Record<PremiumFeature, string> = {
   record_data: 'Recording data',
   custom_branding: 'Custom branding',
   create_workspace: 'Creating socialspaces',
+  live_video: 'Live video sessions',
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -101,7 +103,9 @@ export function PremiumGate({ feature, children, className, inline = false }: Pr
               ? perms.canCustomizeBranding
               : feature === 'create_workspace'
                 ? perms.canCreatePaidWorkspace
-                : false;
+                : feature === 'live_video'
+                  ? perms.canJoinLiveVideo
+                  : false;
 
   if (allowed) return <>{children}</>;
 

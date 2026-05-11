@@ -38,6 +38,8 @@ export interface SubscriptionPermissions {
   canCustomizeBranding: boolean;
   /** Create a new paid workspace (blocked while current workspace is unpaid). */
   canCreatePaidWorkspace: boolean;
+  /** Join or start live video sessions (Agora / durable live_sessions). */
+  canJoinLiveVideo: boolean;
   /** Whether this workspace is currently in trial. */
   isTrialing: boolean;
   /** True for both trialing and active — "all premium features available". */
@@ -62,6 +64,7 @@ const FULL_ACCESS: SubscriptionPermissions = {
   canRecordNewData: true,
   canCustomizeBranding: true,
   canCreatePaidWorkspace: true,
+  canJoinLiveVideo: true,
   isTrialing: false,
   isPremiumActive: true,
   requiresUpgrade: false,
@@ -78,6 +81,7 @@ const NO_ACCESS: Omit<
   canRecordNewData: false,
   canCustomizeBranding: false,
   canCreatePaidWorkspace: false,
+  canJoinLiveVideo: false,
 };
 
 // ── Main resolver ─────────────────────────────────────────────────────────────
@@ -110,6 +114,7 @@ export function resolveSubscriptionPermissions(
       canRecordNewData: true,
       canCustomizeBranding: true,
       canCreatePaidWorkspace: true,
+      canJoinLiveVideo: true,
       isTrialing,
       isPremiumActive: true,
       requiresUpgrade: false,

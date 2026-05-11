@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { PremiumGate } from '@/components/subscription/premium-gate';
 import { Button } from '@/components/ui/button';
 import { DEFAULT_CLASS_PROVIDER, type ClassInstance } from '@/lib/fitness/class-providers';
 import {
@@ -321,14 +322,16 @@ export function LiveClassReminderModal({ workspaceId, enabled = true }: Props) {
 
         <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end sm:gap-2">
           {canJoinLive ? (
-            <Button
-              type="button"
-              className="w-full gap-2 font-semibold sm:w-auto"
-              onClick={handleJoin}
-            >
-              <Video className="h-4 w-4 shrink-0" aria-hidden />
-              Join live session
-            </Button>
+            <PremiumGate feature="live_video">
+              <Button
+                type="button"
+                className="w-full gap-2 font-semibold sm:w-auto"
+                onClick={handleJoin}
+              >
+                <Video className="h-4 w-4 shrink-0" aria-hidden />
+                Join live session
+              </Button>
+            </PremiumGate>
           ) : null}
           <Button
             type="button"
