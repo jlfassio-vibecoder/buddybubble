@@ -134,7 +134,7 @@ The bar uses **`pb-[env(safe-area-inset-bottom,0px)]`** plus **`h-[var(--mobile-
 
 A left-edge **off-canvas drawer** that wraps **[`MobileWorkspaceStrip`](../../src/components/layout/MobileWorkspaceStrip.tsx)** + **[`BubbleSidebar`](../../src/components/dashboard/bubble-sidebar.tsx)** (not the desktop `WorkspaceRail`) so the user can switch BuddyBubble or bubble without leaving the active tab.
 
-The inner content wrapper is **`flex-col`** with **`pt-[max(3rem,env(safe-area-inset-top))]`** and **`pb-[env(safe-area-inset-bottom,0px)]]`** so Radix’s close control and iOS safe areas clear correctly.
+The inner content wrapper is **`flex-col`** with **`pt-[max(3rem,env(safe-area-inset-top))]`** and **`pb-[env(safe-area-inset-bottom,0px)]`** so Radix’s close control and iOS safe areas clear correctly.
 
 Key points:
 
