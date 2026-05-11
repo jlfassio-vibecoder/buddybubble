@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, type ReactNode } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Button } from '@/components/ui/button';
 import { useAgoraSession } from '@/features/live-video/agora-session-context';
@@ -9,6 +9,7 @@ import { useLiveTheaterLayoutPlanContext } from '@/features/live-video/theater/l
 import { SessionHeader } from '@/features/live-video/shells/huddle/SessionHeader';
 import { SessionDeckBuilder } from '@/features/live-video/shells/huddle/SessionDeckBuilder';
 import { LiveSessionWorkoutPlayer } from '@/features/live-video/shells/huddle/LiveSessionWorkoutPlayer';
+import { LiveDeckExerciseInjector } from '@/features/live-video/shells/huddle/LiveDeckExerciseInjector';
 import { useWorkoutDeckSelectionOptional } from '@/features/live-video/shells/huddle/workout-deck-selection-context';
 import { cn } from '@/lib/utils';
 import { useLayoutCommands } from '@/components/layout/layout-command-context';
@@ -25,6 +26,10 @@ export type PreJoinBuilderProps = {
   onEndSession?: () => void | Promise<void>;
   /** Closes the live-video dock for this user only (does not end the shared session). */
   onLeaveDock?: () => void;
+  /** Host deck pick mode: embedded Workouts Kanban (from `dashboard-shell` via dock). */
+  boardSelectionPanel?: ReactNode;
+  /** Workouts bubble id for custom exercise injector (from `dashboard-shell`). */
+  workoutsBubbleId?: string | null;
 };
 
 /**
@@ -40,6 +45,8 @@ export function PreJoinBuilder({
   onWorkoutDeckPersisted,
   onEndSession,
   onLeaveDock,
+  boardSelectionPanel,
+  workoutsBubbleId,
 }: PreJoinBuilderProps) {
   const { state, actions, isHost } = useLiveSessionRuntime();
   const { huddle } = useLiveTheaterLayoutPlanContext();
@@ -81,53 +88,71 @@ export function PreJoinBuilder({
 
       <SessionDeckBuilder className="min-h-0 min-w-0 shrink-0" state={state} />
 
-      <LiveSessionWorkoutPlayer
-        className="min-h-0 min-w-0 flex-1"
-        workspaceId={workspaceId}
-        supabase={supabase}
-        canWrite={canWriteTasks}
-        onPersistSuccess={onWorkoutDeckPersisted}
-        onHostLayoutFocusBoard={isHost ? focusBoard : undefined}
-      />
+      {selectingFromBoard && boardSelectionPanel ? (
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          {boardSelectionPanel}
+        </div>
+      ) : (
+        <LiveSessionWorkoutPlayer
+          className="min-h-0 min-w-0 flex-1"
+          workspaceId={workspaceId}
+          supabase={supabase}
+          canWrite={canWriteTasks}
+          onPersistSuccess={onWorkoutDeckPersisted}
+          onHostLayoutFocusBoard={isHost ? focusBoard : undefined}
+        />
+      )}
 
-      <div className="flex shrink-0 flex-col items-stretch gap-2 border-t border-border pt-3 sm:flex-row sm:items-center sm:justify-end">
-        {joinError ? (
-          <p className="text-xs text-destructive sm:mr-auto" role="alert">
-            {joinError}
-          </p>
-        ) : null}
-        {onLeaveDock ? (
-          <Button
-            type="button"
-            size="lg"
-            variant="outline"
-            className="font-semibold sm:mr-auto"
-            onClick={() => void handleExitWorkout()}
-          >
-            Exit workout
-          </Button>
-        ) : null}
-        {selectingFromBoard && deckSel ? (
+      <div className="flex shrink-0 flex-col items-stretch gap-2 border-t border-border pt-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          {joinError ? (
+            <p className="text-xs text-destructive" role="alert">
+              {joinError}
+            </p>
+          ) : null}
+          {onLeaveDock ? (
+            <Button
+              type="button"
+              size="lg"
+              variant="outline"
+              className="font-semibold"
+              onClick={() => void handleExitWorkout()}
+            >
+              Exit workout
+            </Button>
+          ) : null}
+          {isHost ? (
+            <LiveDeckExerciseInjector
+              workspaceId={workspaceId}
+              workoutsBubbleId={workoutsBubbleId ?? null}
+              canWrite={Boolean(canWriteTasks)}
+              disabled={selectingFromBoard}
+            />
+          ) : null}
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {selectingFromBoard && deckSel ? (
+            <Button
+              type="button"
+              size="lg"
+              variant="default"
+              className="font-semibold"
+              onClick={() => deckSel.exitSelectionMode()}
+            >
+              Save to Workout
+            </Button>
+          ) : null}
           <Button
             type="button"
             size="lg"
             variant="default"
             className="font-semibold"
-            onClick={() => deckSel.exitSelectionMode()}
+            onClick={joinChannel}
+            disabled={isConnecting || selectingFromBoard}
           >
-            Save to Workout
+            {isConnecting ? 'Connecting…' : 'Join video'}
           </Button>
-        ) : null}
-        <Button
-          type="button"
-          size="lg"
-          variant="default"
-          className="font-semibold"
-          onClick={joinChannel}
-          disabled={isConnecting || selectingFromBoard}
-        >
-          {isConnecting ? 'Connecting…' : 'Join video'}
-        </Button>
+        </div>
       </div>
     </div>
   );

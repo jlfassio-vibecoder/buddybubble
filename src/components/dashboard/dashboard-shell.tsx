@@ -13,6 +13,7 @@ import {
   type ReactNode,
 } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { toast } from 'sonner';
 import { Dumbbell, X } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
 import type { BubbleMemberRole, BubbleRow, ItemType, Json, TaskRow } from '@/types/database';
@@ -92,7 +93,10 @@ import { useUpdatePresence } from '@/hooks/use-update-presence';
 import { ActiveUsersStack } from '@/components/presence/ActiveUsersStack';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
 import { useLiveVideoStore } from '@/store/liveVideoStore';
-import { DashboardLiveVideoDock } from '@/components/dashboard/dashboard-live-video-dock';
+import {
+  DashboardLiveVideoDockBody,
+  DashboardLiveVideoDockProvider,
+} from '@/components/dashboard/dashboard-live-video-dock';
 import {
   WorkoutDeckSelectionProvider,
   useWorkoutDeckSelection,
@@ -111,6 +115,8 @@ import { LiveSessionRuntimeProvider } from '@/features/live-video/theater/live-s
 import { useLiveTheaterLayoutPlanContext } from '@/features/live-video/theater/live-theater-layout-context';
 import type { LiveTheaterLayoutPlan } from '@/features/live-video/theater/live-theater-layout.types';
 import { LiveVideoSessionShell } from '@/features/live-video/theater/live-video-session-shell';
+import { useAgoraSession } from '@/features/live-video/agora-session-context';
+import { FloatingMediaBar } from '@/features/live-video/ui/FloatingMediaBar';
 import { isDashboardProfileComplete } from '@/lib/profile-helpers';
 import { useStorefrontTrialWorkoutAutoOpen } from '@/hooks/use-storefront-trial-workout-auto-open';
 import {
@@ -198,6 +204,20 @@ type Props = {
   initialBubbles?: BubbleRow[];
   children: React.ReactNode;
 };
+
+/** Mic/camera for host live-deck pick mode; must render under hoisted `AgoraSessionProvider`. */
+function LiveDeckBoardSelectionMediaBar() {
+  const { isMicMuted, isCameraOff, toggleMic, toggleCamera } = useAgoraSession();
+  return (
+    <FloatingMediaBar
+      isMicMuted={isMicMuted}
+      isCameraOff={isCameraOff}
+      onToggleMic={toggleMic}
+      onToggleCamera={toggleCamera}
+      className="relative bottom-auto left-auto mx-auto translate-x-0"
+    />
+  );
+}
 
 function DashboardShellInner({
   workspaceId,
@@ -1746,6 +1766,88 @@ function DashboardShellInner({
     </div>
   );
 
+  const workoutsBubbleForLiveDeck = useMemo(
+    () => bubbles.find((b) => b.name === 'Workouts') ?? null,
+    [bubbles],
+  );
+
+  const liveDeckBoardSelectionPanel = useMemo(() => {
+    if (!workoutsBubbleForLiveDeck) return null;
+    return (
+      <KanbanBoard
+        key="live-selection-kanban"
+        canWrite={canWriteTasks}
+        bubbles={bubbles}
+        bubbleOverride={workoutsBubbleForLiveDeck}
+        onOpenTask={openTaskModal}
+        onOpenCreateTask={openCreateTaskModal}
+        onStartWorkout={handleStartWorkout}
+        workspaceCategory={effectiveKanbanCategory}
+        calendarTimezone={workspaceCalendarTz}
+        boardStripExpandNonce={boardStripExpandNonce}
+        calendarStripCollapsed={calendarRailIsCollapsed}
+        onExpandCalendarWhenKanbanStripCollapse={() => setCalendarCollapsed(false)}
+        onRetractKanbanPanel={() => setKanbanCollapsed(true)}
+        buddyBubbleTitle={buddyBubbleTitle}
+        workspaceMemberRole={effectiveWorkspaceRole}
+        guestTaskUserId={profile?.id ?? null}
+        workoutSelectionMode={workoutBoardSelecting}
+        onTaskSelectedForWorkoutDeck={(task) =>
+          dispatchWorkoutDeckTaskFromBoard(task, workoutDeckSelection.addTaskToDeck)
+        }
+      />
+    );
+  }, [
+    workoutsBubbleForLiveDeck,
+    canWriteTasks,
+    bubbles,
+    openTaskModal,
+    openCreateTaskModal,
+    handleStartWorkout,
+    effectiveKanbanCategory,
+    workspaceCalendarTz,
+    boardStripExpandNonce,
+    calendarRailIsCollapsed,
+    buddyBubbleTitle,
+    effectiveWorkspaceRole,
+    profile?.id,
+    workoutBoardSelecting,
+    workoutDeckSelection.addTaskToDeck,
+    setCalendarCollapsed,
+    setKanbanCollapsed,
+  ]);
+
+  const liveDeckSelectionMediaBarEl = useMemo(
+    () => <LiveDeckBoardSelectionMediaBar key="live-deck-media" />,
+    [],
+  );
+
+  const liveVideoDockBoardSlots = useMemo(() => {
+    if (!activeLiveVideoSession || !workoutBoardSelecting) return {};
+    return {
+      boardSelectionPanel: liveDeckBoardSelectionPanel,
+      selectionFloatingMediaBar: liveDeckSelectionMediaBarEl,
+    };
+  }, [
+    activeLiveVideoSession,
+    workoutBoardSelecting,
+    liveDeckBoardSelectionPanel,
+    liveDeckSelectionMediaBarEl,
+  ]);
+
+  const prevWorkoutBoardSelecting = useRef(false);
+  useEffect(() => {
+    if (
+      activeLiveVideoSession &&
+      workoutBoardSelecting &&
+      !prevWorkoutBoardSelecting.current &&
+      !workoutsBubbleForLiveDeck
+    ) {
+      toast.error('Add a "Workouts" channel to pick workout cards from the board.');
+    }
+    prevWorkoutBoardSelecting.current = workoutBoardSelecting;
+  }, [activeLiveVideoSession, workoutBoardSelecting, workoutsBubbleForLiveDeck]);
+
   return (
     <LayoutCommandContext.Provider value={layoutCommands}>
       <WorkspaceSessionProvider subjectUserId={workspaceSessionSubjectUserId}>
@@ -1902,113 +2004,79 @@ function DashboardShellInner({
                           </div>
                         ) : null}
                         {activeLiveVideoSession && profile?.id ? (
-                          <LiveTheaterPlanBranch>
-                            {(plan) => {
-                              const shellKind =
-                                plan.shell.kind !== 'inactive'
-                                  ? plan.shell.kind
-                                  : layoutMobile || embedMode
-                                    ? 'vertical_compact_session'
-                                    : 'vertical_planning';
+                          /* Copilot suggestion ignored: Wrapping LiveTheaterPlanBranch keeps Agora mounted across shellKind transitions; narrowing the provider would reintroduce disconnect-on-layout churn without a portal/slot refactor. */
+                          <DashboardLiveVideoDockProvider session={activeLiveVideoSession}>
+                            <LiveTheaterPlanBranch>
+                              {(plan) => {
+                                const shellKind =
+                                  workoutBoardSelecting &&
+                                  activeLiveVideoSession &&
+                                  plan.shell.kind !== 'inactive'
+                                    ? 'theater_focus'
+                                    : plan.shell.kind !== 'inactive'
+                                      ? plan.shell.kind
+                                      : layoutMobile || embedMode
+                                        ? 'vertical_compact_session'
+                                        : 'vertical_planning';
 
-                              if (
-                                shellKind === 'vertical_planning' ||
-                                shellKind === 'vertical_compact_session'
-                              ) {
-                                return (
-                                  <ResizablePanelGroup
-                                    key={`${workspaceId}-lv-plan`}
-                                    direction="vertical"
-                                    groupRef={dockWorkspaceGroupRef}
-                                    id={`dock-workspace-split-${workspaceId}`}
-                                    defaultLayout={dockWorkspaceDefaultLayout}
-                                    onLayoutChanged={onPlanningVerticalLayoutChanged}
-                                    disabled={layoutMobile || embedMode}
-                                    className="flex min-h-0 min-w-0 flex-1 flex-col"
-                                  >
-                                    <ResizablePanel
-                                      id={DASH_DOCK_PANEL_ID}
-                                      minSize={200}
-                                      maxSize="75%"
-                                      className="flex min-h-0 min-w-0 flex-col overflow-hidden"
-                                    >
-                                      <DashboardLiveVideoDock
-                                        session={activeLiveVideoSession}
-                                        localUserId={profile.id}
-                                        displayName={
-                                          profile.full_name ?? profile.email ?? undefined
-                                        }
-                                        onLeaveSession={onLiveVideoLeaveSession}
-                                        onHostEndLiveSessionForAll={onHostEndLiveSessionForAll}
-                                        canWriteTasks={canWriteTasks}
-                                        onWorkoutDeckPersisted={bumpTaskViews}
-                                      />
-                                    </ResizablePanel>
-                                    <ResizableHandle
+                                if (
+                                  shellKind === 'vertical_planning' ||
+                                  shellKind === 'vertical_compact_session'
+                                ) {
+                                  return (
+                                    <ResizablePanelGroup
+                                      key={`${workspaceId}-lv-plan`}
                                       direction="vertical"
-                                      withHandle
-                                      className="z-20 shrink-0"
-                                    />
-                                    <ResizablePanel
-                                      id={DASH_WORKSPACE_PANEL_ID}
-                                      minSize={300}
-                                      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+                                      groupRef={dockWorkspaceGroupRef}
+                                      id={`dock-workspace-split-${workspaceId}`}
+                                      defaultLayout={dockWorkspaceDefaultLayout}
+                                      onLayoutChanged={onPlanningVerticalLayoutChanged}
+                                      disabled={layoutMobile || embedMode}
+                                      className="flex min-h-0 min-w-0 flex-1 flex-col"
                                     >
-                                      {workspaceStage}
-                                    </ResizablePanel>
-                                  </ResizablePanelGroup>
-                                );
-                              }
+                                      <ResizablePanel
+                                        id={DASH_DOCK_PANEL_ID}
+                                        minSize={200}
+                                        maxSize="75%"
+                                        className="flex min-h-0 min-w-0 flex-col overflow-hidden"
+                                      >
+                                        <DashboardLiveVideoDockBody
+                                          session={activeLiveVideoSession}
+                                          localUserId={profile.id}
+                                          displayName={
+                                            profile.full_name ?? profile.email ?? undefined
+                                          }
+                                          onLeaveSession={onLiveVideoLeaveSession}
+                                          onHostEndLiveSessionForAll={onHostEndLiveSessionForAll}
+                                          canWriteTasks={canWriteTasks}
+                                          onWorkoutDeckPersisted={bumpTaskViews}
+                                          workoutsBubbleId={workoutsBubbleForLiveDeck?.id ?? null}
+                                          {...liveVideoDockBoardSlots}
+                                        />
+                                      </ResizablePanel>
+                                      <ResizableHandle
+                                        direction="vertical"
+                                        withHandle
+                                        className="z-20 shrink-0"
+                                      />
+                                      <ResizablePanel
+                                        id={DASH_WORKSPACE_PANEL_ID}
+                                        minSize={300}
+                                        className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+                                      >
+                                        {workspaceStage}
+                                      </ResizablePanel>
+                                    </ResizablePanelGroup>
+                                  );
+                                }
 
-                              if (shellKind === 'theater_focus') {
-                                return (
-                                  <div
-                                    key={`${workspaceId}-lv-theater-focus`}
-                                    className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
-                                  >
-                                    <DashboardLiveVideoDock
-                                      session={activeLiveVideoSession}
-                                      localUserId={profile.id}
-                                      displayName={profile.full_name ?? profile.email ?? undefined}
-                                      onLeaveSession={onLiveVideoLeaveSession}
-                                      onHostEndLiveSessionForAll={onHostEndLiveSessionForAll}
-                                      canWriteTasks={canWriteTasks}
-                                      onWorkoutDeckPersisted={bumpTaskViews}
-                                    />
-                                  </div>
-                                );
-                              }
-
-                              if (shellKind === 'theater_board_split') {
-                                return (
-                                  <ResizablePanelGroup
-                                    key={`${workspaceId}-lv-theater-board-dock`}
-                                    direction="horizontal"
-                                    groupRef={dockWorkspaceGroupRef}
-                                    id={`theater-board-dock-${workspaceId}`}
-                                    defaultLayout={theaterBoardDockDefaultLayout}
-                                    onLayoutChanged={onTheaterBoardDockLayoutChanged}
-                                    className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row"
-                                  >
-                                    <ResizablePanel
-                                      id={THEATER_BOARD_PANEL_ID}
-                                      minSize={280}
-                                      maxSize="70%"
+                                if (shellKind === 'theater_focus') {
+                                  return (
+                                    <div
+                                      key={`${workspaceId}-lv-theater-focus`}
                                       className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
                                     >
-                                      {workspaceBoardHorizontalStage}
-                                    </ResizablePanel>
-                                    <ResizableHandle
-                                      direction="horizontal"
-                                      withHandle
-                                      className="z-20 shrink-0"
-                                    />
-                                    <ResizablePanel
-                                      id={THEATER_DOCK_PANEL_ID}
-                                      minSize={200}
-                                      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
-                                    >
-                                      <DashboardLiveVideoDock
+                                      <DashboardLiveVideoDockBody
                                         session={activeLiveVideoSession}
                                         localUserId={profile.id}
                                         displayName={
@@ -2018,15 +2086,64 @@ function DashboardShellInner({
                                         onHostEndLiveSessionForAll={onHostEndLiveSessionForAll}
                                         canWriteTasks={canWriteTasks}
                                         onWorkoutDeckPersisted={bumpTaskViews}
+                                        workoutsBubbleId={workoutsBubbleForLiveDeck?.id ?? null}
+                                        {...liveVideoDockBoardSlots}
                                       />
-                                    </ResizablePanel>
-                                  </ResizablePanelGroup>
-                                );
-                              }
+                                    </div>
+                                  );
+                                }
 
-                              return null;
-                            }}
-                          </LiveTheaterPlanBranch>
+                                if (shellKind === 'theater_board_split') {
+                                  return (
+                                    <ResizablePanelGroup
+                                      key={`${workspaceId}-lv-theater-board-dock`}
+                                      direction="horizontal"
+                                      groupRef={dockWorkspaceGroupRef}
+                                      id={`theater-board-dock-${workspaceId}`}
+                                      defaultLayout={theaterBoardDockDefaultLayout}
+                                      onLayoutChanged={onTheaterBoardDockLayoutChanged}
+                                      className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row"
+                                    >
+                                      <ResizablePanel
+                                        id={THEATER_BOARD_PANEL_ID}
+                                        minSize={280}
+                                        maxSize="70%"
+                                        className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+                                      >
+                                        {workspaceBoardHorizontalStage}
+                                      </ResizablePanel>
+                                      <ResizableHandle
+                                        direction="horizontal"
+                                        withHandle
+                                        className="z-20 shrink-0"
+                                      />
+                                      <ResizablePanel
+                                        id={THEATER_DOCK_PANEL_ID}
+                                        minSize={200}
+                                        className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+                                      >
+                                        <DashboardLiveVideoDockBody
+                                          session={activeLiveVideoSession}
+                                          localUserId={profile.id}
+                                          displayName={
+                                            profile.full_name ?? profile.email ?? undefined
+                                          }
+                                          onLeaveSession={onLiveVideoLeaveSession}
+                                          onHostEndLiveSessionForAll={onHostEndLiveSessionForAll}
+                                          canWriteTasks={canWriteTasks}
+                                          onWorkoutDeckPersisted={bumpTaskViews}
+                                          workoutsBubbleId={workoutsBubbleForLiveDeck?.id ?? null}
+                                          {...liveVideoDockBoardSlots}
+                                        />
+                                      </ResizablePanel>
+                                    </ResizablePanelGroup>
+                                  );
+                                }
+
+                                return null;
+                              }}
+                            </LiveTheaterPlanBranch>
+                          </DashboardLiveVideoDockProvider>
                         ) : (
                           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
                             {workspaceStage}

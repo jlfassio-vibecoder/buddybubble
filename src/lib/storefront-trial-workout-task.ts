@@ -4,6 +4,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { resolveFirstBoardColumnSlug } from '@/lib/fitness/resolve-first-board-column-slug';
 import type { WorkoutExercise } from '@/lib/item-metadata';
 import type { Json } from '@/types/database';
 import { storefrontPreviewExerciseToWorkoutExercise } from '@/lib/workout-factory/storefront-preview-exercise-detail';
@@ -22,25 +23,6 @@ export type BubbleWorkoutGenerationState = {
 
 const MAX_ERROR_MESSAGE_LEN = 500;
 
-async function resolveFirstBoardColumnSlug(
-  db: SupabaseClient,
-  workspaceId: string,
-): Promise<string> {
-  const { data, error } = await db
-    .from('board_columns')
-    .select('slug')
-    .eq('workspace_id', workspaceId)
-    .order('position', { ascending: true })
-    .limit(1);
-
-  if (error) {
-    console.error('[storefront-trial-workout-task] board_columns', error);
-    return 'planned';
-  }
-  const slug = data?.[0]?.slug;
-  return typeof slug === 'string' && slug.trim() ? slug.trim() : 'planned';
-}
-
 /**
  * Insert a workout `tasks` row from a validated storefront-style preview (Vertex single-call).
  * Used for storefront trial, async trial job, and in-app “quick workout” from the fitness profile.
@@ -54,7 +36,6 @@ export async function insertWorkoutTaskFromStorefrontPreview(
     preview: StorefrontPreviewPayload;
   },
 ): Promise<boolean> {
-  console.log('[DEBUG] Fetching tasks with updated multi-assignee filter. User ID:', args.userId);
   const p = args.preview;
   const exercises: WorkoutExercise[] = p.main_exercises.map((e) =>
     storefrontPreviewExerciseToWorkoutExercise(e.name, e.detail),
