@@ -118,10 +118,7 @@ export function useSessionState(options: UseSessionStateOptions): UseSessionStat
       const parsed = parseSessionStateBroadcastPayload(raw);
       if (!parsed) return;
 
-      // Copilot suggestion ignored: keep the generation enforcer + its tripwires unconditional
-      // (not gated to dev) so silent reorder drops are visible in production diagnostics.
-      // `parseSessionState` already coerces undefined/legacy `generation` to 0, but we coerce
-      // again here so any future direct caller of this handler is also safe.
+      // Copilot suggestion ignored: generation-enforcer logs stay unconditional so stale-drop reordering remains visible in production.
       const incomingGeneration = parsed.state.generation ?? 0;
       const currentGeneration = stateRef.current.generation ?? 0;
       console.log('[DEBUG][LiveVideo State] Evaluating broadcast generation:', {

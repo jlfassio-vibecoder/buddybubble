@@ -711,7 +711,7 @@ export function RichMessageComposer({
               <Video className={videoIcon} aria-hidden />
             </button>
           ) : (
-            <PremiumGate feature="live_video">
+            <PremiumGate feature="live_video" inline>
               <button
                 type="button"
                 className={attachBtnClass}

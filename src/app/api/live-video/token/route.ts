@@ -103,6 +103,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid sessionId' }, { status: 400 });
     }
 
+    if (typeof workspaceIdRaw !== 'string' || workspaceIdRaw.trim() === '') {
+      return NextResponse.json(
+        { error: 'workspaceId is required when sessionId is provided' },
+        { status: 400 },
+      );
+    }
+    const tierWorkspaceId = workspaceIdRaw.trim();
+
     let admin;
     try {
       admin = createServiceRoleClient();
@@ -113,7 +121,7 @@ export async function POST(req: Request) {
 
     const { data: sessionRow, error: sessionErr } = await admin
       .from('live_sessions')
-      .select('id, host_user_id')
+      .select('id, host_user_id, workspace_id')
       .eq('id', sessionId)
       .maybeSingle();
 
@@ -129,6 +137,15 @@ export async function POST(req: Request) {
         });
       }
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    }
+
+    const boundWorkspaceId = sessionRow.workspace_id;
+    if (
+      typeof boundWorkspaceId === 'string' &&
+      boundWorkspaceId.trim() !== '' &&
+      boundWorkspaceId !== tierWorkspaceId
+    ) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const { data: canJoin, error: gateErr } = await supabase.rpc('can_join_live_session', {
@@ -154,26 +171,15 @@ export async function POST(req: Request) {
     // but do NOT reject on mismatch yet — card / class / future flows may use other
     // derivations. Strict enforcement waits for a follow-up that adds `channel_id` to
     // `live_sessions` (or a server-derivation table) so all code paths agree.
-    const wsForBinding =
-      typeof workspaceIdRaw === 'string' && workspaceIdRaw.trim() !== ''
-        ? workspaceIdRaw.trim()
-        : null;
     if (process.env.NODE_ENV === 'development') {
-      if (wsForBinding) {
-        const expectedShortId = sessionId.replace(/-/g, '').slice(0, 8);
-        const expectedChannelId = `bb-live-${wsForBinding}-${expectedShortId}`;
-        console.log('[DEBUG][API] Tier C: Channel binding validation pending', {
-          sessionId,
-          requestedChannelId: channelId,
-          expectedChannelId,
-          match: expectedChannelId === channelId,
-        });
-      } else {
-        console.log(
-          '[DEBUG][API] Tier C: Channel binding validation pending (no workspaceId in payload)',
-          { sessionId, requestedChannelId: channelId },
-        );
-      }
+      const expectedShortId = sessionId.replace(/-/g, '').slice(0, 8);
+      const expectedChannelId = `bb-live-${tierWorkspaceId}-${expectedShortId}`;
+      console.log('[DEBUG][API] Tier C: Channel binding validation pending', {
+        sessionId,
+        requestedChannelId: channelId,
+        expectedChannelId,
+        match: expectedChannelId === channelId,
+      });
     }
   }
 

@@ -167,7 +167,7 @@ Beyond the three transient layers above, the dock writes a durable Postgres row 
 
 `DashboardLiveVideoDockRouter` calls one of two RPCs the first time Agora connects for a given `sessionId`:
 
-- Host: `live_session_create(p_session_id, p_display_name, p_agora_uid)` (idempotent: upserts both the `live_sessions` row and the host `live_session_participants` row).
+- Host: `live_session_create(p_session_id, p_display_name, p_agora_uid, p_workspace_id)` (idempotent: upserts both the `live_sessions` row and the host `live_session_participants` row; requires caller membership in `p_workspace_id`).
 - Participant: `live_session_participant_join(p_session_id, p_display_name, p_agora_uid, p_role)` (retried up to 24 times at 150 ms while waiting for the host's `live_sessions` row to appear).
 
 Once registration succeeds the dock flips an internal `liveDbReady` flag. `LiveSessionView` blocks `get_live_session_join_hints` and `live_session_list_participants` reads until `liveDbReady === true` to avoid a connect-before-register race.
@@ -535,6 +535,7 @@ Server validation:
 - `channelId` must match `^[a-zA-Z0-9_-]{1,64}$`.
 - `role` must be `publisher` or `subscriber`.
 - if `workspaceId` is present, the user must have a `workspace_members` row for that workspace.
+- if `sessionId` is present, `workspaceId` is required and must match `live_sessions.workspace_id` when that column is set (legacy rows may still have a null `workspace_id`).
 
 The route derives a deterministic 32-bit Agora UID from the Supabase auth user id with `agoraUidFromUuid`.
 
@@ -545,7 +546,7 @@ Relevant files:
 - `src/app/api/live-video/token/route.ts`
 - `src/lib/live-video/agora-uid.ts`
 
-When the client sends **`sessionId`** with **`workspaceId`**, the token route enforces **Tier C**: the user must pass `public.can_join_live_session` (durable `live_sessions` row, host or `live_session_participants`, and for participants a **valid workspace subscription** on paid categories — `trialing` / `active` — via `get_workspace_subscription_status`). Without `sessionId`, behavior stays workspace-membership + channel validation only (e.g. dev scaffold).
+When the client sends **`sessionId`**, it must also send **`workspaceId`**. The token route enforces **Tier C**: the user must pass `public.can_join_live_session` (durable `live_sessions` row, host or `live_session_participants`, and for participants a **valid workspace subscription** on paid categories — `trialing` / `active` — via `get_workspace_subscription_status`; participants are not admitted when the session row has a null `workspace_id`). Without `sessionId`, behavior stays workspace-membership + channel validation only (e.g. dev scaffold).
 
 ## Environment
 
@@ -590,24 +591,24 @@ The deck persistence and assignment flow relies on:
 
 Several live video tripwire logs are intentionally still present. The table below tracks which gating each log uses today; future cleanup should converge them all on `process.env.NODE_ENV === 'development'` or remove them.
 
-| Log string                                                                     | File                                                                                 | Gated to dev?                                     |
-| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------ |
-| `[DEBUG] AgoraSessionProvider Mounted - Initializing connection bounds`        | `src/features/live-video/AgoraSessionProvider.tsx` (mount effect)                    | No (unconditional)                                |
-| `[DEBUG] AgoraSessionProvider Unmounted - TRIPPING DISCONNECT / Cleanup`       | `src/features/live-video/AgoraSessionProvider.tsx` (`leaveChannel`)                  | No (unconditional)                                |
-| `[DEBUG] Toggling media: type=audio                                            | video, newState=enabled                                                              | disabled`                                         | `src/features/live-video/AgoraSessionProvider.tsx` (`toggleMic` / `toggleCamera`) | No (unconditional) |
-| `[DEBUG] Token fetched successfully`                                           | `src/features/live-video/AgoraSessionProvider.tsx` (`joinChannel` after token parse) | No (unconditional)                                |
-| `[DEBUG] BaseVideoHarness Rendered with child shell:`                          | `src/features/live-video/BaseVideoHarness.tsx`                                       | No (unconditional)                                |
-| `[DEBUG] DashboardLiveVideoDockRouter Render - Role: …`                        | `src/components/dashboard/dashboard-live-video-dock.tsx`                             | Dev only                                          |
-| `[DEBUG] LiveVideoSessionShell Rendered - Layout Plan applied`                 | `src/features/live-video/theater/live-video-session-shell.tsx`                       | Dev only                                          |
-| `[DEBUG] Token API hit for channel:`                                           | `src/app/api/live-video/token/route.ts`                                              | Dev only                                          |
-| `[DEBUG][API] Tier C: …` (session 404 / forbidden / channel-binding tripwires) | `src/app/api/live-video/token/route.ts`                                              | Dev only                                          |
-| `[DEBUG][LiveVideo Token] 404 from token API; retrying…`                       | `src/features/live-video/AgoraSessionProvider.tsx`                                   | Dev only                                          |
-| `[DEBUG] useSessionState broadcast received: …`                                | `src/features/live-video/hooks/useSessionState.ts` (incoming broadcast)              | Dev only                                          |
-| `[DEBUG] Participant received active item:`                                    | `src/features/live-video/hooks/useSessionState.ts` (incoming broadcast, participant) | Dev only                                          |
-| `[DEBUG] useSessionState setAspectRatio (host): ratio=…`                       | `src/features/live-video/hooks/useSessionState.ts` (host setter)                     | Dev only                                          |
-| `[DEBUG] Host broadcast active item:`                                          | `src/features/live-video/hooks/useSessionState.ts` (host setter)                     | Dev only                                          |
-| `[DEBUG][LiveVideo State] Evaluating broadcast generation: …`                  | `src/features/live-video/hooks/useSessionState.ts` (incoming broadcast)              | No (unconditional — generation enforcer tripwire) |
-| `[DEBUG][LiveVideo State] Dropped stale out-of-order broadcast.`               | `src/features/live-video/hooks/useSessionState.ts` (incoming broadcast)              | No (unconditional — generation enforcer tripwire) |
+| Log string                                                                 | File                                                                                 | Gated to dev?                          |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------- |
+| `[DEBUG] AgoraSessionProvider Mounted - Initializing connection bounds`    | `src/features/live-video/AgoraSessionProvider.tsx` (mount effect)                    | No (unconditional)                     |
+| `[DEBUG] AgoraSessionProvider Unmounted - TRIPPING DISCONNECT / Cleanup`   | `src/features/live-video/AgoraSessionProvider.tsx` (`leaveChannel`)                  | No (unconditional)                     |
+| `[DEBUG] Toggling media` (audio or video, enabled or disabled)             | `src/features/live-video/AgoraSessionProvider.tsx` (`toggleMic` / `toggleCamera`)    | No (unconditional)                     |
+| `[DEBUG] Token fetched successfully`                                       | `src/features/live-video/AgoraSessionProvider.tsx` (`joinChannel` after token parse) | No (unconditional)                     |
+| `[DEBUG] BaseVideoHarness Rendered with child shell:`                      | `src/features/live-video/BaseVideoHarness.tsx`                                       | No (unconditional)                     |
+| `[DEBUG] DashboardLiveVideoDockRouter Render - Role: …`                    | `src/components/dashboard/dashboard-live-video-dock.tsx`                             | Dev only                               |
+| `[DEBUG] LiveVideoSessionShell Rendered - Layout Plan applied`             | `src/features/live-video/theater/live-video-session-shell.tsx`                       | Dev only                               |
+| `[DEBUG] Token API hit for channel:`                                       | `src/app/api/live-video/token/route.ts`                                              | Dev only                               |
+| `[DEBUG][API] Tier C:` (session 404, forbidden, channel-binding tripwires) | `src/app/api/live-video/token/route.ts`                                              | Dev only                               |
+| `[DEBUG][LiveVideo Token] 404 from token API; retrying…`                   | `src/features/live-video/AgoraSessionProvider.tsx`                                   | Dev only                               |
+| `[DEBUG] useSessionState broadcast received: …`                            | `src/features/live-video/hooks/useSessionState.ts` (incoming broadcast)              | Dev only                               |
+| `[DEBUG] Participant received active item:`                                | `src/features/live-video/hooks/useSessionState.ts` (incoming broadcast, participant) | Dev only                               |
+| `[DEBUG] useSessionState setAspectRatio (host): ratio=…`                   | `src/features/live-video/hooks/useSessionState.ts` (host setter)                     | Dev only                               |
+| `[DEBUG] Host broadcast active item:`                                      | `src/features/live-video/hooks/useSessionState.ts` (host setter)                     | Dev only                               |
+| `[DEBUG][LiveVideo State] Evaluating broadcast generation: …`              | `src/features/live-video/hooks/useSessionState.ts` (incoming broadcast)              | No (unconditional generation tripwire) |
+| `[DEBUG][LiveVideo State] Dropped stale out-of-order broadcast.`           | `src/features/live-video/hooks/useSessionState.ts` (incoming broadcast)              | No (unconditional generation tripwire) |
 
 Keep them stable while debugging lifecycle behavior; the generation-enforcer tripwires in particular are intentionally unconditional so out-of-order drops are visible without rebuilding.
 
@@ -662,7 +663,7 @@ Not currently covered by automated tests:
 
 ## Known Limitations
 
-- **Tier C (when `sessionId` is sent):** token issuance requires an existing `live_sessions` row and a passing `can_join_live_session` check (host always; participants must be in `live_session_participants` and, on paid workspace categories, the workspace subscription must be `trialing` or `active`). **`channelId` binding to the session is still a logged tripwire only** until `live_sessions` stores a canonical channel id.
+- **Tier C (when `sessionId` is sent):** the request must include `workspaceId`, which must match a non-null `live_sessions.workspace_id` when present. Token issuance requires an existing `live_sessions` row and a passing `can_join_live_session` check (host always, including legacy rows with null `workspace_id`; participants must be in `live_session_participants`, the session must have a non-null `workspace_id`, and on paid workspace categories the workspace subscription must be `trialing` or `active`). **`channelId` binding to the session is still a logged tripwire only** until `live_sessions` stores a canonical channel id.
 - Supabase Realtime broadcasts are best-effort (`ack: false`); participants request sync on subscribe, but delivery ordering is still eventual.
 - `SessionState.generation` is now compared on incoming broadcasts to drop strictly older payloads (see `useSessionState.handleIncomingStateBroadcast`), but it is still only incremented inside `endSession`. Other transitions reuse the previous generation, so the check protects against full-session-reset reordering only — not against intra-session pause/resume or active-deck-item reordering.
 - Participant clocks are approximate and use host broadcast timestamps, not NTP-grade synchronization.

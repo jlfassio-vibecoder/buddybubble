@@ -38,6 +38,30 @@ begin
     raise exception 'not authenticated';
   end if;
 
+  if p_workspace_id is null then
+    raise exception 'p_workspace_id required';
+  end if;
+
+  if not exists (
+    select 1
+    from public.workspace_members wm
+    where wm.workspace_id = p_workspace_id
+      and wm.user_id = auth.uid()
+      and wm.role in ('owner', 'admin', 'member', 'guest', 'trialing')
+  ) then
+    raise exception 'not a member of workspace';
+  end if;
+
+  if exists (
+    select 1
+    from public.live_sessions ls
+    where ls.id = p_session_id
+      and ls.workspace_id is not null
+      and ls.workspace_id is distinct from p_workspace_id
+  ) then
+    raise exception 'session workspace may not be changed';
+  end if;
+
   insert into public.live_sessions (id, host_user_id, workspace_id)
   values (p_session_id, auth.uid(), p_workspace_id)
   on conflict (id) do update
@@ -52,8 +76,8 @@ end;
 $$;
 
 comment on function public.live_session_create(uuid, text, text, uuid) is
-  'Host-only idempotent create: ensures live_sessions row exists (with optional workspace_id), '
-  'and upserts host live_session_participants with agora_uid.';
+  'Host-only idempotent create: requires p_workspace_id and workspace_membership(auth.uid()); '
+  'refuses to change an existing non-null workspace_id; upserts host live_session_participants.';
 
 revoke all on function public.live_session_create(uuid, text, text, uuid) from public;
 grant execute on function public.live_session_create(uuid, text, text, uuid) to authenticated;
@@ -82,9 +106,9 @@ as $$
       (select host_user_id from sess) = auth.uid()
       or (
         public.is_live_session_participant(p_session_id)
+        and (select workspace_id from sess) is not null
         and (
-          (select workspace_id from sess) is null
-          or not public.workspace_requires_subscription((select workspace_id from sess))
+          not public.workspace_requires_subscription((select workspace_id from sess))
           or public.get_workspace_subscription_status((select workspace_id from sess))
                in ('trialing', 'active')
         )
@@ -93,9 +117,9 @@ as $$
 $$;
 
 comment on function public.can_join_live_session(uuid) is
-  'Tier C gate for live-video token issuance: host always allowed; otherwise must be '
-  'live_session_participants AND workspace must be free-category OR have trialing/active '
-  'subscription. Legacy live_sessions rows (workspace_id null) fall back to participant-only.';
+  'Tier C gate for live-video token issuance: host always allowed (including legacy rows '
+  'with null workspace_id). Participants require non-null workspace_id and free-category '
+  'OR trialing/active subscription.';
 
 revoke all on function public.can_join_live_session(uuid) from public;
 grant execute on function public.can_join_live_session(uuid) to authenticated;
