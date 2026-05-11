@@ -78,6 +78,44 @@ function DashboardLiveVideoDockRouter({
 
   const classInstanceIdForRecording = session.sourceInstanceId?.trim() ?? '';
 
+  /**
+   * Host: register `live_sessions` before Agora `joinChannel` requests `/api/live-video/token`.
+   * Tier C returns 404 until this row exists; the post-connect effect below used to run only
+   * after `isConnected`, which deadlocked token minting for the host.
+   */
+  useEffect(() => {
+    if (!isHost) return;
+    const liveSessionRowId = session.sessionId.trim();
+    const workspaceId = session.workspaceId.trim();
+    if (!liveSessionRowId || !workspaceId) return;
+
+    const agoraUid = String(agoraUidFromUuid(localUserId));
+    let cancelled = false;
+
+    void (async () => {
+      const { error } = await supabase.rpc('live_session_create', {
+        p_session_id: liveSessionRowId,
+        p_display_name: resolvedDisplayName,
+        p_agora_uid: agoraUid,
+        p_workspace_id: workspaceId,
+      });
+      if (cancelled) return;
+      if (error) {
+        console.error(
+          '[DashboardLiveVideoDockRouter] pre-connect live_session_create',
+          error.message,
+          error.code,
+          error.details,
+          error.hint,
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isHost, localUserId, resolvedDisplayName, session.sessionId, session.workspaceId, supabase]);
+
   useEffect(() => {
     if (!isHost || !classInstanceIdForRecording) {
       setHostClassRecordingProcessing(false);
