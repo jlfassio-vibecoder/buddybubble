@@ -208,6 +208,15 @@ export function ParticipantPreJoinSummary({
       </div>
 
       <div className="flex shrink-0 flex-col items-stretch gap-2 border-t border-border pt-3 sm:flex-row sm:items-center sm:justify-end">
+        {waitingForHost ? (
+          <p
+            className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-foreground sm:mr-auto"
+            role="status"
+          >
+            The host session is still starting. Wait a few seconds, then tap Join video to try
+            again.
+          </p>
+        ) : null}
         {joinError ? (
           <p className="text-xs text-destructive sm:mr-auto" role="alert">
             {joinError}

@@ -2004,6 +2004,7 @@ function DashboardShellInner({
                           </div>
                         ) : null}
                         {activeLiveVideoSession && profile?.id ? (
+                          /* Copilot suggestion ignored: Wrapping LiveTheaterPlanBranch keeps Agora mounted across shellKind transitions; narrowing the provider would reintroduce disconnect-on-layout churn without a portal/slot refactor. */
                           <DashboardLiveVideoDockProvider session={activeLiveVideoSession}>
                             <LiveTheaterPlanBranch>
                               {(plan) => {

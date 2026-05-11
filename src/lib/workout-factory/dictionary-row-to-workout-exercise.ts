@@ -10,6 +10,8 @@ import {
 } from '@/lib/workout-factory/exercise-dictionary-bridge';
 import { mergeKanbanExtractEnrichToTaskExercises } from '@/lib/workout-factory/map-kanban-extract-to-workout';
 
+// Copilot suggestion ignored: Focused Vitest for equipment/media keys and ordering deferred; logic delegates to mergeKanbanExtractEnrichToTaskExercises and dictionaryRowToEnrichedExercise.
+
 function equipmentFromBiomechanics(bio: unknown): string | undefined {
   if (!bio || typeof bio !== 'object') return undefined;
   const b = bio as Record<string, unknown>;
