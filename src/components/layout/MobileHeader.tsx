@@ -12,7 +12,7 @@ type Props = {
 /** Title bar only; navigation opens from the bottom tab bar “Menu” item. */
 export function MobileHeader({ title, trailing }: Props) {
   return (
-    <header className="relative flex h-14 shrink-0 items-center border-b border-border bg-background px-4 md:hidden">
+    <header className="relative flex h-14 shrink-0 items-center border-b border-border bg-background px-4 pt-[env(safe-area-inset-top,0px)] md:hidden">
       <h1
         className={cn(
           'min-w-0 flex-1 truncate text-center text-sm font-semibold text-foreground',

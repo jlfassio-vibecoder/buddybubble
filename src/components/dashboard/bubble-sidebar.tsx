@@ -40,6 +40,10 @@ type Props = {
   workspaceTitle?: string;
   /** When `fitness`, new bubbles get a `bubble_agent_bindings` row for Coach. */
   workspaceCategory?: string | null;
+  /** Mobile drawer: hide the centered workspace title above "Bubbles" (strip shows context). */
+  hideWorkspaceTitle?: boolean;
+  /** Mobile drawer: full-width flexible column instead of fixed `w-[302px]`. */
+  isMobileDrawerMode?: boolean;
 };
 
 export function BubbleSidebar({
@@ -57,6 +61,8 @@ export function BubbleSidebar({
   hideSidebarCollapseButton = false,
   workspaceTitle,
   workspaceCategory = null,
+  hideWorkspaceTitle = false,
+  isMobileDrawerMode = false,
 }: Props) {
   const [activeTab, setActiveTab] = useState<BubbleTab>('main');
   const initialTabSyncDoneRef = useRef(false);
@@ -145,7 +151,9 @@ export function BubbleSidebar({
           /* Do not use overflow-hidden here — it clips the header workspace-settings control on the right. */
           'flex min-h-0 flex-col transition-[width] duration-200 ease-out motion-reduce:transition-none',
           !collapsed &&
-            'h-full w-[302px] shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground',
+            (isMobileDrawerMode
+              ? 'h-full w-full min-w-0 flex-1 border-0 bg-sidebar text-sidebar-foreground'
+              : 'h-full w-[302px] shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground'),
           isCollapsedStrip &&
             cn(
               'h-full shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground',
@@ -167,7 +175,7 @@ export function BubbleSidebar({
         ) : (
           <>
             <div className="border-b border-sidebar-border p-3">
-              {workspaceTitle ? (
+              {!hideWorkspaceTitle && workspaceTitle ? (
                 <p
                   className="mb-2 truncate px-1 text-center text-xs font-semibold text-sidebar-foreground"
                   title={workspaceTitle}
