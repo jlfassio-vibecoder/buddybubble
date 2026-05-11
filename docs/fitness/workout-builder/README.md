@@ -2,6 +2,14 @@
 
 This document identifies the **trainer authoring surface** for workout “cards” in the **live video huddle**, the **participant logging UI**, the **persistence model**, and **data flow**. It reflects the current codebase (no proposed changes).
 
+## Unified layout architecture (trifecta)
+
+Host-facing **Class Builder**, **Pre-Live Builder**, and **Active Live Builder** share a single layout standard (flex hierarchy, Agora hoist, Workouts `KanbanBoard` override, and live-only media bar). See **[Unified workout builder layout](./unified-builder-layout.md)** before changing those surfaces.
+
+## Custom live workout builder (inline exercise injection)
+
+Architectural blueprint for the **+ Add custom** flow that lets the host search `exercise_dictionary` inline and inject rich exercises into the active live deck card without leaving the live shell. See **[Custom live builder architecture (ADR)](./custom-live-builder-architecture.md)**.
+
 ## Summary
 
 | Concern                                                  | Primary files                                                                                                                                                                                                                          |

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Layout } from 'react-resizable-panels';
 import { useGroupRef } from 'react-resizable-panels';
@@ -33,6 +33,7 @@ import { SessionControls } from '@/features/live-video/shells/huddle/SessionCont
 import { SessionDeckBuilder } from '@/features/live-video/shells/huddle/SessionDeckBuilder';
 import { Button } from '@/components/ui/button';
 import { LiveSessionWorkoutPlayer } from '@/features/live-video/shells/huddle/LiveSessionWorkoutPlayer';
+import { LiveDeckExerciseInjector } from '@/features/live-video/shells/huddle/LiveDeckExerciseInjector';
 import { ParticipantWorkoutLogger } from '@/features/live-video/shells/ParticipantWorkoutLogger';
 import { ActivePhaseOverlays } from '@/features/live-video/shells/huddle/ActivePhaseOverlays';
 import { VideoStageWrapper } from '@/features/live-video/shells/huddle/VideoStageWrapper';
@@ -100,6 +101,12 @@ export type LiveSessionViewProps = {
   displayName?: string;
   /** Host-only (from dock): `class_recording.status === 'processing'` for cloud recording UX. */
   hostClassRecordingProcessing?: boolean;
+  /** Host deck pick mode: embedded Workouts Kanban from `dashboard-shell` (below deck strip). */
+  boardSelectionPanel?: ReactNode;
+  /** Host deck pick mode: mic/camera controls pinned above the selection footer. */
+  selectionFloatingMediaBar?: ReactNode;
+  /** Workouts bubble id for custom exercise injector (from `dashboard-shell`). */
+  workoutsBubbleId?: string | null;
 };
 
 /**
@@ -123,6 +130,9 @@ function LiveSessionViewInner({
   liveDbReady = true,
   displayName: displayNameProp,
   hostClassRecordingProcessing = false,
+  boardSelectionPanel,
+  selectionFloatingMediaBar,
+  workoutsBubbleId,
 }: LiveSessionViewProps) {
   const { override } = useWrapperAttach();
   const { hostNavActions } = useHostNavActions();
@@ -372,6 +382,8 @@ function LiveSessionViewInner({
     [deckSel, isHost],
   );
 
+  const showEmbeddedBoardSelection = Boolean(selectingFromBoard && boardSelectionPanel != null);
+
   return (
     <>
       <div
@@ -397,11 +409,14 @@ function LiveSessionViewInner({
             ) : null}
           </div>
         </div>
-        {/*
-         * Wide + selected card: resizable editor | video. Otherwise video fills
-         * the flex row. Aspect ratio lock stays inside VideoStageWrapper.
-         */}
-        {showSideEditor || showWrapperBoardSplit ? (
+
+        <SessionDeckBuilder state={state} className="min-h-0 min-w-0 shrink-0" />
+
+        {showEmbeddedBoardSelection ? (
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            {boardSelectionPanel}
+          </div>
+        ) : showSideEditor || showWrapperBoardSplit ? (
           <ResizablePanelGroup
             direction="horizontal"
             groupRef={huddleSplitGroupRef}
@@ -454,7 +469,7 @@ function LiveSessionViewInner({
         ) : (
           videoStage
         )}
-        {!showWrapperBoardSplit && sessionDrawerNode != null ? (
+        {!showWrapperBoardSplit && !selectingFromBoard && sessionDrawerNode != null ? (
           <div className="shrink-0 rounded-lg border border-border bg-card/60 p-3">
             {sessionDrawerNode}
           </div>
@@ -475,37 +490,49 @@ function LiveSessionViewInner({
           )
         ) : null}
         {selectingFromBoard ? null : (
-          <SessionControls
-            state={state}
-            actions={actions}
-            disableActions={!isHost}
-            onHostEndLiveSessionForAll={isHost ? onHostEndLiveSessionForAll : undefined}
-            onHostStartRecording={isHost ? onHostStartRecording : undefined}
-            liveDbReady={liveDbReady}
-            hostClassRecordingProcessing={isHost ? hostClassRecordingProcessing : false}
-            className="shrink-0"
-          />
+          <div className="flex shrink-0 flex-col gap-2">
+            {isHost && canWriteTasks ? (
+              <div className="flex justify-start">
+                <LiveDeckExerciseInjector
+                  workspaceId={workspaceId}
+                  workoutsBubbleId={workoutsBubbleId ?? null}
+                  canWrite={canWriteTasks}
+                />
+              </div>
+            ) : null}
+            <SessionControls
+              state={state}
+              actions={actions}
+              disableActions={!isHost}
+              onHostEndLiveSessionForAll={isHost ? onHostEndLiveSessionForAll : undefined}
+              onHostStartRecording={isHost ? onHostStartRecording : undefined}
+              liveDbReady={liveDbReady}
+              hostClassRecordingProcessing={isHost ? hostClassRecordingProcessing : false}
+              className="shrink-0"
+            />
+          </div>
         )}
-        {selectingFromBoard ? null : wrapperPhaseMatches ? (
-          chatDrawerLeaderboard != null ? (
-            <div className="shrink-0 rounded-lg border border-border bg-card/60 p-3">
-              {chatDrawerLeaderboard}
-            </div>
-          ) : null
-        ) : (
-          <SessionDeckBuilder state={state} className="shrink-0" />
-        )}
+        {!selectingFromBoard && wrapperPhaseMatches && chatDrawerLeaderboard != null ? (
+          <div className="shrink-0 rounded-lg border border-border bg-card/60 p-3">
+            {chatDrawerLeaderboard}
+          </div>
+        ) : null}
         {selectingFromBoard && deckSel ? (
-          <div className="flex shrink-0 justify-end border-t border-border pt-3">
-            <Button
-              type="button"
-              size="lg"
-              variant="default"
-              className="font-semibold"
-              onClick={() => deckSel.exitSelectionMode()}
-            >
-              Save to Workout
-            </Button>
+          <div className="flex shrink-0 flex-col gap-2 border-t border-border pt-3">
+            {selectionFloatingMediaBar != null ? (
+              <div className="flex shrink-0 justify-center">{selectionFloatingMediaBar}</div>
+            ) : null}
+            <div className="flex shrink-0 justify-end">
+              <Button
+                type="button"
+                size="lg"
+                variant="default"
+                className="font-semibold"
+                onClick={() => deckSel.exitSelectionMode()}
+              >
+                Save to Workout
+              </Button>
+            </div>
           </div>
         ) : null}
       </div>

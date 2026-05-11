@@ -32,7 +32,36 @@ export type DashboardLiveVideoDockProps = {
   onWorkoutDeckPersisted?: () => void;
   /** Shown in live_session_participants / AMRAP roster; falls back to `localUserId`. */
   displayName?: string;
+  /** Host deck pick mode: embedded Workouts Kanban (from `dashboard-shell`). */
+  boardSelectionPanel?: ReactNode;
+  /** Host deck pick mode: mic/camera bar above selection footer. */
+  selectionFloatingMediaBar?: ReactNode;
+  /** Workouts bubble id for custom exercise injector (`tasks.insert` seed when deck empty). */
+  workoutsBubbleId?: string | null;
 };
+
+/** Hoist above `LiveTheaterPlanBranch` so Agora survives `shellKind` transitions (e.g. deck selection). */
+export type DashboardLiveVideoDockProviderProps = {
+  session: LiveVideoActiveSession;
+  children: ReactNode;
+};
+
+export function DashboardLiveVideoDockProvider({
+  session,
+  children,
+}: DashboardLiveVideoDockProviderProps) {
+  if (session.mode !== 'workout') return <>{children}</>;
+
+  return (
+    <AgoraSessionProvider
+      channelId={session.channelId}
+      workspaceId={session.workspaceId}
+      sessionId={session.sessionId}
+    >
+      {children}
+    </AgoraSessionProvider>
+  );
+}
 
 type DockRouterProps = {
   session: LiveVideoActiveSession;
@@ -43,6 +72,9 @@ type DockRouterProps = {
   onHostEndLiveSessionForAll?: () => void | Promise<void>;
   canWriteTasks: boolean;
   onWorkoutDeckPersisted?: () => void;
+  boardSelectionPanel?: ReactNode;
+  selectionFloatingMediaBar?: ReactNode;
+  workoutsBubbleId?: string | null;
 };
 
 /**
@@ -63,6 +95,9 @@ function DashboardLiveVideoDockRouter({
   canWriteTasks,
   onWorkoutDeckPersisted,
   displayName: displayNameProp,
+  boardSelectionPanel,
+  selectionFloatingMediaBar,
+  workoutsBubbleId,
 }: DockRouterProps) {
   const { isConnected, isConnecting, joinChannel, joinError } = useAgoraSession();
   const isHost = localUserId === session.hostUserId;
@@ -285,33 +320,10 @@ function DashboardLiveVideoDockRouter({
         return;
       }
 
-      for (let attempt = 0; attempt < 24; attempt++) {
-        const { error } = await supabase.rpc('live_session_participant_join', {
-          p_session_id: liveSessionRowId,
-          p_display_name: resolvedDisplayName,
-          p_agora_uid: agoraUid,
-          p_role: 'participant',
-        });
-        if (cancelled) return;
-        if (!error) {
-          registeredLiveSessionIdRef.current = session.sessionId;
-          setLiveDbReady(true);
-          return;
-        }
-        if (process.env.NODE_ENV === 'development' && attempt % 4 === 0) {
-          console.warn(
-            '[DashboardLiveVideoDockRouter] live_session_participant_join retry',
-            attempt,
-            error,
-          );
-        }
-        await new Promise((r) => setTimeout(r, 150));
-      }
-      if (!cancelled) {
-        console.error(
-          '[DashboardLiveVideoDockRouter] live_session_participant_join failed after retries',
-        );
-      }
+      // Participant: `live_session_participant_join` runs in ParticipantPreJoinSummary before
+      // `joinChannel` / Tier C token. If we reached `isConnected`, the row exists — flip readiness.
+      registeredLiveSessionIdRef.current = session.sessionId;
+      setLiveDbReady(true);
     })();
 
     return () => {
@@ -353,6 +365,8 @@ function DashboardLiveVideoDockRouter({
           onLeaveDock={onLeaveSession}
           onEndSession={onHostEndLiveSessionForAll}
           className="min-h-0 flex-1 px-0 py-0"
+          boardSelectionPanel={boardSelectionPanel}
+          workoutsBubbleId={workoutsBubbleId}
         />
       );
     } else {
@@ -360,6 +374,7 @@ function DashboardLiveVideoDockRouter({
         <ParticipantPreJoinSummary
           sessionId={session.sessionId}
           localUserId={localUserId}
+          displayName={resolvedDisplayName}
           supabase={supabase}
           onJoin={joinChannel}
           joinError={joinError}
@@ -383,6 +398,9 @@ function DashboardLiveVideoDockRouter({
         displayName={resolvedDisplayName}
         hostClassRecordingProcessing={hostClassRecordingProcessing}
         onHostStartRecording={isHost ? handleStartRecording : undefined}
+        boardSelectionPanel={boardSelectionPanel}
+        selectionFloatingMediaBar={selectionFloatingMediaBar}
+        workoutsBubbleId={workoutsBubbleId}
       />
     );
   }
@@ -400,9 +418,10 @@ function DashboardLiveVideoDockRouter({
 }
 
 /**
- * Full-width live-video strip above `WorkspaceMainSplit`. Must stay under dashboard `ThemeScope`.
+ * Dock chrome + router only. Must render under `DashboardLiveVideoDockProvider` (or legacy
+ * `DashboardLiveVideoDock`) so `useAgoraSession` resolves.
  */
-export function DashboardLiveVideoDock({
+export function DashboardLiveVideoDockBody({
   session,
   localUserId,
   onLeaveSession,
@@ -410,6 +429,9 @@ export function DashboardLiveVideoDock({
   canWriteTasks = false,
   onWorkoutDeckPersisted,
   displayName,
+  boardSelectionPanel,
+  selectionFloatingMediaBar,
+  workoutsBubbleId,
 }: DashboardLiveVideoDockProps) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -422,25 +444,37 @@ export function DashboardLiveVideoDock({
         className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-primary/8 to-transparent"
       />
       <div className="relative z-0 flex min-h-0 w-full min-w-0 flex-1 flex-col">
-        <AgoraSessionProvider
-          channelId={session.channelId}
-          workspaceId={session.workspaceId}
-          sessionId={session.sessionId}
-        >
-          <div className="flex min-h-0 flex-1 flex-col" data-live-video-dock-frame>
-            <DashboardLiveVideoDockRouter
-              session={session}
-              localUserId={localUserId}
-              displayName={displayName}
-              supabase={supabase}
-              onLeaveSession={onLeaveSession}
-              onHostEndLiveSessionForAll={onHostEndLiveSessionForAll}
-              canWriteTasks={canWriteTasks}
-              onWorkoutDeckPersisted={onWorkoutDeckPersisted}
-            />
-          </div>
-        </AgoraSessionProvider>
+        <div className="flex min-h-0 flex-1 flex-col" data-live-video-dock-frame>
+          <DashboardLiveVideoDockRouter
+            session={session}
+            localUserId={localUserId}
+            displayName={displayName}
+            supabase={supabase}
+            onLeaveSession={onLeaveSession}
+            onHostEndLiveSessionForAll={onHostEndLiveSessionForAll}
+            canWriteTasks={canWriteTasks}
+            onWorkoutDeckPersisted={onWorkoutDeckPersisted}
+            boardSelectionPanel={boardSelectionPanel}
+            selectionFloatingMediaBar={selectionFloatingMediaBar}
+            workoutsBubbleId={workoutsBubbleId}
+          />
+        </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Full-width live-video strip above `WorkspaceMainSplit`. Must stay under dashboard `ThemeScope`.
+ * Prefer `DashboardLiveVideoDockProvider` + `DashboardLiveVideoDockBody` in `dashboard-shell` when
+ * the dock subtree may remount across theater shell kinds.
+ */
+export function DashboardLiveVideoDock(props: DashboardLiveVideoDockProps) {
+  if (props.session.mode !== 'workout') return null;
+
+  return (
+    <DashboardLiveVideoDockProvider session={props.session}>
+      <DashboardLiveVideoDockBody {...props} />
+    </DashboardLiveVideoDockProvider>
   );
 }

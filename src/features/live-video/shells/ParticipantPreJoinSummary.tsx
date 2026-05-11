@@ -7,8 +7,28 @@ import { Button } from '@/components/ui/button';
 import { useLiveSessionDeck } from '@/features/live-video/hooks/useLiveSessionDeck';
 import { metadataFieldsFromParsed, type WorkoutExercise } from '@/lib/item-metadata';
 import { formatUserFacingError } from '@/lib/format-error';
+import { agoraUidFromUuid } from '@/lib/live-video/agora-uid';
 import type { Database } from '@/types/database';
 import { cn } from '@/lib/utils';
+
+const LIVE_SESSION_JOIN_MAX_ATTEMPTS = 8;
+const LIVE_SESSION_JOIN_RETRY_MS = 500;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+/** Host has not created `live_sessions` yet — `live_session_participants.session_id` FK. */
+function isLiveSessionForeignKeyViolation(
+  err: { code?: string; message?: string } | null,
+): boolean {
+  if (!err) return false;
+  if (err.code === '23503') return true;
+  const m = (err.message ?? '').toLowerCase();
+  return m.includes('foreign key') && m.includes('live_session');
+}
 
 function formatExerciseLine(ex: WorkoutExercise): string | null {
   const name = ex.name?.trim();
@@ -29,6 +49,8 @@ export type ParticipantPreJoinSummaryProps = {
   className?: string;
   sessionId: string;
   localUserId: string;
+  /** Display name stored on `live_session_participants` (matches dock `resolvedDisplayName`). */
+  displayName: string;
   supabase: SupabaseClient<Database>;
   /** Agora `joinChannel` after successful deck assignment RPC. */
   onJoin: () => void | Promise<void>;
@@ -46,6 +68,7 @@ export function ParticipantPreJoinSummary({
   className,
   sessionId,
   localUserId,
+  displayName,
   supabase,
   onJoin,
   joinError = null,
@@ -62,14 +85,47 @@ export function ParticipantPreJoinSummary({
   });
 
   const [assigning, setAssigning] = useState(false);
+  const [registering, setRegistering] = useState(false);
+  const [waitingForHost, setWaitingForHost] = useState(false);
 
   const handleJoin = useCallback(async () => {
     if (!localUserId.trim() || !sessionId.trim()) {
       toast.error('Missing session or user.');
       return;
     }
-    setAssigning(true);
+    const name = displayName.trim() || localUserId;
+    setWaitingForHost(false);
+    setRegistering(true);
     try {
+      const agoraUid = String(agoraUidFromUuid(localUserId));
+      for (let attempt = 0; attempt < LIVE_SESSION_JOIN_MAX_ATTEMPTS; attempt++) {
+        const { error: joinErr } = await supabase.rpc('live_session_participant_join', {
+          p_session_id: sessionId,
+          p_display_name: name,
+          p_agora_uid: agoraUid,
+          p_role: 'participant',
+        });
+        if (!joinErr) {
+          break;
+        }
+        const retryable =
+          isLiveSessionForeignKeyViolation(joinErr) && attempt < LIVE_SESSION_JOIN_MAX_ATTEMPTS - 1;
+        if (retryable) {
+          await sleep(LIVE_SESSION_JOIN_RETRY_MS);
+          continue;
+        }
+        if (
+          isLiveSessionForeignKeyViolation(joinErr) &&
+          attempt === LIVE_SESSION_JOIN_MAX_ATTEMPTS - 1
+        ) {
+          setWaitingForHost(true);
+          return;
+        }
+        toast.error(formatUserFacingError(joinErr));
+        return;
+      }
+
+      setAssigning(true);
       const { error: rpcError } = await supabase.rpc('assign_user_to_session_deck', {
         p_session_id: sessionId,
         p_user_id: localUserId,
@@ -83,10 +139,11 @@ export function ParticipantPreJoinSummary({
       toast.error(formatUserFacingError(e));
     } finally {
       setAssigning(false);
+      setRegistering(false);
     }
-  }, [localUserId, onJoin, sessionId, supabase]);
+  }, [displayName, localUserId, onJoin, sessionId, supabase]);
 
-  const busy = assigning;
+  const busy = assigning || registering;
 
   return (
     <div className={cn('flex h-full min-h-0 w-full flex-1 flex-col gap-4 p-4', className)}>
@@ -175,7 +232,7 @@ export function ParticipantPreJoinSummary({
           onClick={() => void handleJoin()}
           disabled={busy || loading || Boolean(deckError)}
         >
-          {assigning ? 'Saving…' : 'Join video'}
+          {registering ? 'Joining…' : assigning ? 'Saving…' : 'Join video'}
         </Button>
       </div>
     </div>

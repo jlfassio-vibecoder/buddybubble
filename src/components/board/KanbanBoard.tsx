@@ -370,6 +370,11 @@ type Props = {
    */
   workoutSelectionMode?: boolean;
   onTaskSelectedForWorkoutDeck?: (task: TaskRow) => void;
+  /**
+   * When set, the board loads this bubble's tasks instead of `workspaceStore.activeBubble`
+   * (sidebar selection unchanged). Used for embedded live-deck pickers.
+   */
+  bubbleOverride?: BubbleRow | null;
   /** When set with `guestTaskUserId`, task lists add an assigned-to / unassigned filter (guest isolation). */
   workspaceMemberRole?: MemberRole | null;
   guestTaskUserId?: string | null;
@@ -392,6 +397,7 @@ export function KanbanBoard({
   onStartWorkout,
   workoutSelectionMode = false,
   onTaskSelectedForWorkoutDeck,
+  bubbleOverride = null,
   workspaceMemberRole = null,
   guestTaskUserId = null,
 }: Props) {
@@ -509,9 +515,10 @@ export function KanbanBoard({
   const columnDefs = useBoardColumnDefs(activeWorkspace?.id ?? null);
   const columnSlugs = useMemo(() => (columnDefs ?? []).map((c) => c.id), [columnDefs]);
 
-  const activeBubble = useWorkspaceStore((s) => s.activeBubble);
-  /** Primitive for deps / fetch identity — avoids `activeBubble` object reference churn in `loadTasks`. */
-  const activeBubbleId = activeBubble?.id ?? null;
+  const activeBubbleFromStore = useWorkspaceStore((s) => s.activeBubble);
+  const effectiveActiveBubble = bubbleOverride ?? activeBubbleFromStore;
+  /** Primitive for deps / fetch identity — avoids bubble object reference churn in `loadTasks`. */
+  const activeBubbleId = effectiveActiveBubble?.id ?? null;
   const bubbleId = activeBubbleId;
   const personalizedBubbleIds = useMemo(
     () =>
@@ -1123,14 +1130,14 @@ export function KanbanBoard({
   const effectiveWorkspaceCategory = workspaceCategory ?? activeWorkspace?.category_type ?? null;
 
   const trialWorkoutGen = useMemo(
-    () => parseWorkoutGenerationFromBubbleMetadata(activeBubble?.metadata),
-    [activeBubble?.metadata],
+    () => parseWorkoutGenerationFromBubbleMetadata(effectiveActiveBubble?.metadata),
+    [effectiveActiveBubble?.metadata],
   );
 
   const trialFitnessBoardContext =
     boardReady &&
     Boolean(bubbleId && bubbleId !== ALL_BUBBLES_BUBBLE_ID) &&
-    activeBubble?.bubble_type === 'trial' &&
+    effectiveActiveBubble?.bubble_type === 'trial' &&
     effectiveWorkspaceCategory === 'fitness' &&
     !tasksBoardLoading;
 
