@@ -177,3 +177,4 @@ Example structure (current intent):
 3. **Join does nothing:** Confirm `joinSession` payload has non-empty `workspaceId` (store rejects empty workspace id).
 4. **Footer buttons frozen:** Inspect for **non-inline `PremiumGate`** or extra **absolute** layers in the footer; restore **`inline`** on the Join gate.
 5. **Radix description warnings:** Confirm **`DialogTitle`** / **`DialogDescription`** are direct children of **`DialogContent`** on first paint when `open` becomes true.
+6. **Modal closes and instantly reopens:** Ensure dismiss paths bump **`dismissNonce`** immediately after writing the `reminded*` / `ignoreClass` localStorage flags (`dismissWithReminded` / `setIgnoreForPayload`), and that the consolidated effect lists **`dismissNonce`** in its dependency array. Without the nonce bump, `pickReminderCandidate` is not re-evaluated in the same turn and the dialog can reopen using a stale candidate.

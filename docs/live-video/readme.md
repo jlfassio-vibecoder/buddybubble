@@ -412,11 +412,11 @@ Required server-only env vars (in addition to `AGORA_APP_ID` / `AGORA_APP_CERTIF
 AGORA_CUSTOMER_ID=
 AGORA_CUSTOMER_SECRET=
 AGORA_RESTAPI_BASE=        # optional; default https://api.sd-rtn.com
-AGORA_STORAGE_REGION=      # optional integer string; default 0
-SUPABASE_S3_BUCKET=
-SUPABASE_S3_ENDPOINT=
-SUPABASE_S3_ACCESS_KEY_ID=
-SUPABASE_S3_SECRET_ACCESS_KEY=
+S3_REGION=                 # Agora vendor 11 region code as integer string (e.g. 0); not an AWS name
+S3_BUCKET=
+S3_ENDPOINT=
+S3_ACCESS_KEY_ID=
+S3_SECRET_ACCESS_KEY=
 ```
 
 Relevant files:

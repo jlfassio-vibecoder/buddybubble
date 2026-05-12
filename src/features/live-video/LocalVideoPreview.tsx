@@ -10,6 +10,11 @@ export type LocalVideoPreviewProps = {
   className?: string;
   isMicMuted?: boolean;
   isCameraOff?: boolean;
+  /**
+   * Agora `track.play` fit. Default `contain` (no crop). Use `cover` when the host
+   * frames a non-camera AR (e.g. 9:16 / 1:1) so the preview matches the recording crop.
+   */
+  fit?: 'contain' | 'cover';
 };
 
 /**
@@ -21,6 +26,7 @@ export function LocalVideoPreview({
   className,
   isMicMuted = false,
   isCameraOff = false,
+  fit = 'contain',
 }: LocalVideoPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
@@ -40,11 +46,11 @@ export function LocalVideoPreview({
   useEffect(() => {
     const el = containerRef.current;
     if (!track || !el) return;
-    track.play(el, { fit: 'cover', mirror: true });
+    track.play(el, { fit, mirror: true });
     return () => {
       track.stop();
     };
-  }, [track]);
+  }, [track, fit]);
 
   return (
     <div className={cn('group relative h-full w-full bg-black', className)}>

@@ -128,6 +128,7 @@ export function LiveClassReminderModal({ workspaceId, enabled = true }: Props) {
   const [instances, setInstances] = useState<ClassInstance[]>([]);
   const [open, setOpen] = useState(false);
   const [payload, setPayload] = useState<ReminderPayload | null>(null);
+  const [dismissNonce, setDismissNonce] = useState(0);
   const payloadRef = useRef<ReminderPayload | null>(null);
   const skipRemindedOnDismissRef = useRef(false);
 
@@ -161,20 +162,8 @@ export function LiveClassReminderModal({ workspaceId, enabled = true }: Props) {
     return () => window.clearInterval(id);
   }, [enabled]);
 
-  const [nextCandidate, setNextCandidate] = useState<ReminderPayload | null>(null);
-
   useEffect(() => {
     if (!enabled || !userId) {
-      setNextCandidate(null);
-      return;
-    }
-    setNextCandidate(pickReminderCandidate(instances, new Date(), workspaceId));
-  }, [enabled, userId, instances, workspaceId, tick]);
-
-  useEffect(() => {
-    if (!enabled || !userId) return;
-
-    if (!nextCandidate) {
       if (open) {
         setOpen(false);
         setPayload(null);
@@ -182,21 +171,34 @@ export function LiveClassReminderModal({ workspaceId, enabled = true }: Props) {
       return;
     }
 
-    if (!open) {
-      setPayload(nextCandidate);
-      setOpen(true);
-      return;
-    }
+    const candidate = pickReminderCandidate(instances, new Date(), workspaceId);
 
-    const current = payloadRef.current;
-    if (current?.instance.id === nextCandidate.instance.id) {
-      if (current.window !== nextCandidate.window) {
-        setPayload(nextCandidate);
+    if (!candidate) {
+      if (open) {
+        setOpen(false);
+        setPayload(null);
       }
       return;
     }
-    setPayload(nextCandidate);
-  }, [enabled, userId, nextCandidate, open]);
+
+    const sameInstance = payload?.instance.id === candidate.instance.id;
+    const sameWindow = payload?.window === candidate.window;
+
+    if (!open || !sameInstance || !sameWindow) {
+      setPayload(candidate);
+      setOpen(true);
+    }
+  }, [
+    enabled,
+    userId,
+    instances,
+    workspaceId,
+    tick,
+    dismissNonce,
+    open,
+    payload?.instance.id,
+    payload?.window,
+  ]);
 
   const liveInvite = useMemo(
     () => (payload ? parseLiveSessionInviteFromMessageMetadata(payload.instance.metadata) : null),
@@ -222,12 +224,14 @@ export function LiveClassReminderModal({ workspaceId, enabled = true }: Props) {
         ? reminded15mStorageKey(workspaceId, p.instance.id)
         : reminded5mStorageKey(workspaceId, p.instance.id);
     writeFlag(key, true);
+    setDismissNonce((prev) => prev + 1);
   }, [workspaceId]);
 
   const setIgnoreForPayload = useCallback(() => {
     const p = payloadRef.current;
     if (!p) return;
     writeFlag(ignoreClassReminderStorageKey(workspaceId, p.instance.id), true);
+    setDismissNonce((prev) => prev + 1);
   }, [workspaceId]);
 
   const handleJoin = useCallback(() => {
