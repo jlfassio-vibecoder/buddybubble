@@ -11,6 +11,10 @@
  * S3_REGION (optional; accepts Agora vendor numeric code as a string, e.g. "0". Non-numeric values
  * like AWS region names ("us-east-1") fall back to 0, which is the safe default for vendor 11 since
  * the endpoint URL is authoritative).
+ *
+ * Endpoint: Agora vendor 11 expects `extensionParams.endpoint` without a scheme (host[/path]).
+ * Supabase S3 is at `/storage/v1/s3`; we normalize legacy `*.supabase.co` hosts to
+ * `*.storage.supabase.co` per Supabase docs for S3-compatible clients.
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
@@ -60,6 +64,47 @@ function missingEnvKeys(pairs: ReadonlyArray<[string, string | undefined | null]
 function truncateMessage(msg: string, max = 4000): string {
   const t = msg.trim();
   return t.length <= max ? t : `${t.slice(0, max)}…`;
+}
+
+/** Agora `fileNamePrefix` segments must be alphanumeric only (no hyphens). */
+function agoraSafePrefixSegment(id: string): string {
+  return id.replace(/-/g, '').toLowerCase();
+}
+
+/**
+ * S3 endpoint without scheme, for Agora `extensionParams.endpoint`.
+ * - Strips `http(s)://` and trailing slashes.
+ * For Supabase only: rewrites `ref.supabase.co` → `ref.storage.supabase.co` and ensures
+ * `/storage/v1/s3` is present. Other hosts are left unchanged (ops must supply the correct path).
+ */
+function normalizeS3EndpointForAgora(raw: string): string {
+  let s = raw
+    .trim()
+    .replace(/^https?:\/\//i, '')
+    .replace(/\/+$/, '');
+  if (!s) return s;
+
+  const storagePath = '/storage/v1/s3';
+  const ensureSupabaseS3Path = (hostAndPath: string) => {
+    if (hostAndPath.toLowerCase().includes('/storage/v1/s3')) return hostAndPath;
+    return `${hostAndPath.replace(/\/+$/, '')}${storagePath}`;
+  };
+
+  const legacy = /^([a-z0-9]+)\.supabase\.co(\/.*)?$/i.exec(s);
+  if (legacy) {
+    const tail = legacy[2] ?? '';
+    s = ensureSupabaseS3Path(`${legacy[1]}.storage.supabase.co${tail || ''}`);
+    return s;
+  }
+
+  const direct = /^([a-z0-9]+)\.storage\.supabase\.co(\/.*)?$/i.exec(s);
+  if (direct) {
+    const tail = direct[2] ?? '';
+    s = ensureSupabaseS3Path(`${direct[1]}.storage.supabase.co${tail || ''}`);
+    return s;
+  }
+
+  return s;
 }
 
 // Authenticated workspace host endpoint: surface step + DB detail so the caller does not have to
@@ -434,7 +479,11 @@ Deno.serve(async (req) => {
             bucket: s3Bucket,
             accessKey: s3AccessKey,
             secretKey: s3SecretKey,
-            fileNamePrefix: [workspaceId, classInstanceId],
+            // Each segment must be [a-zA-Z0-9] only per Agora docs; UUIDs need hyphen stripping.
+            fileNamePrefix: [
+              agoraSafePrefixSegment(workspaceId),
+              agoraSafePrefixSegment(classInstanceId),
+            ],
             extensionParams: {
               endpoint: s3EndpointForAgora,
             },
