@@ -18,6 +18,8 @@ import {
 } from '@/types/live-session-invite';
 import type { ClassEnrollmentStatus } from '@/types/database';
 
+// Copilot suggestion ignored: [DEBUG] console logs in this file are intentional enrollment-gate tripwires until replaced by product telemetry.
+
 function getLocalYmd(dateInput: string | number | Date): string {
   const d = new Date(dateInput);
   const year = d.getFullYear();

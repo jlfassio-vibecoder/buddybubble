@@ -2,6 +2,9 @@
 -- Allow users with public.users.role in ('trainer', 'admin') to INSERT and DELETE
 -- enrollment rows for any user_id in the same workspace, without dropping the
 -- existing self-serve policies (Postgres OR-combines RLS policies per action).
+--
+-- Copilot suggestion ignored: Extending policies with class_instances + enroll-target
+-- workspace_members checks is deferred; follow up with a migration if cross-row consistency must be enforced at RLS.
 
 do $$
 begin

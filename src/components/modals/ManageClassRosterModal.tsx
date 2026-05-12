@@ -71,9 +71,14 @@ export function ManageClassRosterModal({
     }
   }, [open]);
 
+  const enrolledCount = useMemo(
+    () => enrollments.filter((e) => e.status === 'enrolled').length,
+    [enrollments],
+  );
+
   const isFull = useMemo(
-    () => capacity !== null && enrollments.length >= capacity,
-    [capacity, enrollments.length],
+    () => capacity !== null && enrolledCount >= capacity,
+    [capacity, enrolledCount],
   );
 
   const addDisabled =
@@ -87,7 +92,7 @@ export function ManageClassRosterModal({
             <div className="min-w-0 flex-1">
               <DialogTitle>Manage Roster</DialogTitle>
               <DialogDescription>
-                Enrolled: {enrollments.length}
+                Enrolled: {enrolledCount}
                 {capacity != null ? ` / ${capacity}` : ''}
               </DialogDescription>
             </div>

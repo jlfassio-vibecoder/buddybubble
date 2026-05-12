@@ -427,6 +427,8 @@ function DashboardShellInner({
   const liveVideoTheaterRailsPrimedForSessionIdRef = useRef<string | null>(null);
   /** One-time per workspace: after hydrate, force bubbles rail open on desktop when landing in Messages focus. */
   const didDesktopMessagesBubbleForceRef = useRef(false);
+  /** Prevents overlapping `join_live_class` deep-link handlers (e.g. React Strict Mode double mount). */
+  const joinLiveClassDeepLinkInFlightRef = useRef(false);
 
   const activeBubbleIsPrivate = useMemo(() => {
     if (selectedBubbleId === ALL_BUBBLES_BUBBLE_ID) return false;
@@ -721,41 +723,49 @@ function DashboardShellInner({
       return;
     }
 
+    if (joinLiveClassDeepLinkInFlightRef.current) return;
+    joinLiveClassDeepLinkInFlightRef.current = true;
+
     let cancelled = false;
     void (async () => {
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from('class_instances')
-        .select('id, workspace_id, metadata')
-        .eq('id', instanceId)
-        .maybeSingle();
+      try {
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from('class_instances')
+          .select('id, workspace_id, metadata')
+          .eq('id', instanceId)
+          .maybeSingle();
 
-      if (cancelled) return;
-      if (error || !data) {
+        if (cancelled) return;
+        if (error || !data) {
+          stripJoinLiveClassParam();
+          return;
+        }
+        const row = data as { id: string; workspace_id?: string | null; metadata?: unknown };
+        if (row.workspace_id !== workspaceId) {
+          stripJoinLiveClassParam();
+          return;
+        }
+        const invite = parseLiveSessionInviteFromMessageMetadata(row.metadata);
+        if (invite && !invite.endedAt && invite.workspaceId === workspaceId) {
+          joinLiveVideoSession({
+            workspaceId: invite.workspaceId,
+            sessionId: invite.sessionId,
+            channelId: invite.channelId,
+            hostUserId: invite.hostUserId,
+            mode: invite.mode,
+            sourceInstanceId: row.id,
+          });
+        }
         stripJoinLiveClassParam();
-        return;
+      } finally {
+        joinLiveClassDeepLinkInFlightRef.current = false;
       }
-      const row = data as { id: string; workspace_id?: string | null; metadata?: unknown };
-      if (row.workspace_id !== workspaceId) {
-        stripJoinLiveClassParam();
-        return;
-      }
-      const invite = parseLiveSessionInviteFromMessageMetadata(row.metadata);
-      if (invite && !invite.endedAt && invite.workspaceId === workspaceId) {
-        joinLiveVideoSession({
-          workspaceId: invite.workspaceId,
-          sessionId: invite.sessionId,
-          channelId: invite.channelId,
-          hostUserId: invite.hostUserId,
-          mode: invite.mode,
-          sourceInstanceId: row.id,
-        });
-      }
-      stripJoinLiveClassParam();
     })();
 
     return () => {
       cancelled = true;
+      joinLiveClassDeepLinkInFlightRef.current = false;
     };
   }, [searchParams, workspaceId, joinLiveVideoSession]);
 

@@ -20,7 +20,7 @@ export function useWorkspaceInstructors(workspaceId: string): {
   instructors: WorkspaceInstructor[];
   loading: boolean;
   error: string | null;
-  refetch: () => void;
+  refetch: () => Promise<void>;
 } {
   const [instructors, setInstructors] = useState<WorkspaceInstructor[]>([]);
   const [loading, setLoading] = useState(false);
@@ -65,7 +65,6 @@ export function useWorkspaceInstructors(workspaceId: string): {
       a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }),
     );
     setInstructors(list);
-    console.log('[DEBUG] Workspace instructors fetched, count:', list.length);
     setLoading(false);
   }, [workspaceId]);
 

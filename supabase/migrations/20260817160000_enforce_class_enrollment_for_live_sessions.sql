@@ -66,7 +66,11 @@ begin
   )
   into v_is_host;
 
-  if p_role <> 'host' and not v_is_host then
+  if p_role = 'host' and not v_is_host then
+    raise exception 'cannot claim host role';
+  end if;
+
+  if not v_is_host then
     v_instance_id := public.live_session_class_instance_id(p_session_id);
     if v_instance_id is not null then
       if not exists (

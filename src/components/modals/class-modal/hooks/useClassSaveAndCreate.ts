@@ -89,10 +89,6 @@ export function useClassSaveAndCreate({
 
       const offeringId = offeringRow.id as string;
 
-      console.log(
-        '[DEBUG] Saving class instance with instructor_id:',
-        payload.instance.instructor_id,
-      );
       const { data: instRow, error: iErr } = await supabase
         .from('class_instances')
         .insert({
@@ -153,10 +149,6 @@ export function useClassSaveAndCreate({
         return false;
       }
 
-      console.log(
-        '[DEBUG] Saving class instance with instructor_id:',
-        payload.instance.instructor_id,
-      );
       const { error: iErr } = await supabase
         .from('class_instances')
         .update({
