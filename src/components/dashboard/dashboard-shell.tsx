@@ -110,6 +110,7 @@ import {
   isValidClassInstanceIdForDeckBuilder,
 } from '@/features/live-video/shells/huddle/StandaloneClassDeckBuilder';
 import { AsyncPlaybackShell } from '@/features/live-video/shells/AsyncPlaybackShell';
+import { parseLiveSessionInviteFromMessageMetadata } from '@/types/live-session-invite';
 import { TrialPaywallGuard } from '@/components/subscription/trial-paywall-guard';
 import { LiveSessionRuntimeProvider } from '@/features/live-video/theater/live-session-runtime-context';
 import { useLiveTheaterLayoutPlanContext } from '@/features/live-video/theater/live-theater-layout-context';
@@ -117,6 +118,7 @@ import type { LiveTheaterLayoutPlan } from '@/features/live-video/theater/live-t
 import { LiveVideoSessionShell } from '@/features/live-video/theater/live-video-session-shell';
 import { useAgoraSession } from '@/features/live-video/agora-session-context';
 import { FloatingMediaBar } from '@/features/live-video/ui/FloatingMediaBar';
+import { JOIN_LIVE_CLASS_PARAM } from '@/lib/class-links';
 import { isDashboardProfileComplete } from '@/lib/profile-helpers';
 import { useStorefrontTrialWorkoutAutoOpen } from '@/hooks/use-storefront-trial-workout-auto-open';
 import {
@@ -425,6 +427,8 @@ function DashboardShellInner({
   const liveVideoTheaterRailsPrimedForSessionIdRef = useRef<string | null>(null);
   /** One-time per workspace: after hydrate, force bubbles rail open on desktop when landing in Messages focus. */
   const didDesktopMessagesBubbleForceRef = useRef(false);
+  /** Prevents overlapping `join_live_class` deep-link handlers (e.g. React Strict Mode double mount). */
+  const joinLiveClassDeepLinkInFlightRef = useRef(false);
 
   const activeBubbleIsPrivate = useMemo(() => {
     if (selectedBubbleId === ALL_BUBBLES_BUBBLE_ID) return false;
@@ -699,6 +703,71 @@ function DashboardShellInner({
     showClassAsyncPlayer,
     showClassDeckBuilder,
   ]);
+
+  /** Deep link: ?join_live_class= — fetch instance metadata, dispatch live join, strip param via history (avoids stale router/searchParams after await). */
+  useEffect(() => {
+    const instanceId = searchParams.get(JOIN_LIVE_CLASS_PARAM)?.trim() ?? '';
+    if (!instanceId) return;
+
+    const stripJoinLiveClassParam = () => {
+      if (typeof window === 'undefined') return;
+      const u = new URL(window.location.href);
+      if (!u.searchParams.has(JOIN_LIVE_CLASS_PARAM)) return;
+      u.searchParams.delete(JOIN_LIVE_CLASS_PARAM);
+      const next = `${u.pathname}${u.search}${u.hash}`;
+      window.history.replaceState(window.history.state, '', next);
+    };
+
+    if (!isValidClassInstanceIdForDeckBuilder(instanceId)) {
+      stripJoinLiveClassParam();
+      return;
+    }
+
+    if (joinLiveClassDeepLinkInFlightRef.current) return;
+    joinLiveClassDeepLinkInFlightRef.current = true;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from('class_instances')
+          .select('id, workspace_id, metadata')
+          .eq('id', instanceId)
+          .maybeSingle();
+
+        if (cancelled) return;
+        if (error || !data) {
+          stripJoinLiveClassParam();
+          return;
+        }
+        const row = data as { id: string; workspace_id?: string | null; metadata?: unknown };
+        if (row.workspace_id !== workspaceId) {
+          stripJoinLiveClassParam();
+          return;
+        }
+        const invite = parseLiveSessionInviteFromMessageMetadata(row.metadata);
+        if (invite && !invite.endedAt && invite.workspaceId === workspaceId) {
+          joinLiveVideoSession({
+            workspaceId: invite.workspaceId,
+            sessionId: invite.sessionId,
+            channelId: invite.channelId,
+            hostUserId: invite.hostUserId,
+            mode: invite.mode,
+            sourceInstanceId: row.id,
+          });
+        }
+        stripJoinLiveClassParam();
+      } finally {
+        joinLiveClassDeepLinkInFlightRef.current = false;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      joinLiveClassDeepLinkInFlightRef.current = false;
+    };
+  }, [searchParams, workspaceId, joinLiveVideoSession]);
 
   /** Class deck builder replaces the main stage; on mobile the board tab must be active to show it. */
   useEffect(() => {

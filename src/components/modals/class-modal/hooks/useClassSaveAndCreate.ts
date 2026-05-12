@@ -20,6 +20,7 @@ export type ClassInstanceSavePart = {
   workspace_id: string;
   scheduled_at: string;
   capacity: number | null;
+  instructor_id: string | null;
   instructor_notes: string | null;
   metadata: Json;
 };
@@ -95,6 +96,7 @@ export function useClassSaveAndCreate({
           offering_id: offeringId,
           scheduled_at: payload.instance.scheduled_at,
           capacity: payload.instance.capacity,
+          instructor_id: payload.instance.instructor_id,
           instructor_notes: payload.instance.instructor_notes,
           metadata: payload.instance.metadata,
         })
@@ -152,6 +154,7 @@ export function useClassSaveAndCreate({
         .update({
           scheduled_at: payload.instance.scheduled_at,
           capacity: payload.instance.capacity,
+          instructor_id: payload.instance.instructor_id,
           instructor_notes: payload.instance.instructor_notes,
           metadata: payload.instance.metadata,
           updated_at: now,

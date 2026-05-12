@@ -652,6 +652,7 @@ export type Database = {
           capacity: number | null;
           created_at: string;
           id: string;
+          instructor_id: string | null;
           instructor_notes: string | null;
           metadata: Json;
           offering_id: string;
@@ -664,6 +665,7 @@ export type Database = {
           capacity?: number | null;
           created_at?: string;
           id?: string;
+          instructor_id?: string | null;
           instructor_notes?: string | null;
           metadata?: Json;
           offering_id: string;
@@ -676,6 +678,7 @@ export type Database = {
           capacity?: number | null;
           created_at?: string;
           id?: string;
+          instructor_id?: string | null;
           instructor_notes?: string | null;
           metadata?: Json;
           offering_id?: string;
@@ -685,6 +688,13 @@ export type Database = {
           workspace_id?: string;
         };
         Relationships: [
+          {
+            foreignKeyName: 'class_instances_instructor_id_fkey';
+            columns: ['instructor_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
           {
             foreignKeyName: 'class_instances_offering_id_fkey';
             columns: ['offering_id'];
