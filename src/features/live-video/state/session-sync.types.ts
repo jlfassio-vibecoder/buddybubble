@@ -94,3 +94,45 @@ export function parseSessionSyncRequestPayload(raw: unknown): SessionSyncRequest
   if (typeof requestId !== 'string' || requestId.length === 0) return null;
   return { senderId, requestId };
 }
+
+export const ROSTER_COMMAND_EVENT = 'ROSTER_COMMAND' as const;
+
+export type RosterCommandPayload = {
+  type: 'REMOTE_MUTE';
+  targetUid: number;
+  senderId: string;
+};
+
+export function parseRosterCommandPayload(raw: unknown): RosterCommandPayload | null {
+  if (!isRecord(raw)) return null;
+  if (raw.type !== 'REMOTE_MUTE') return null;
+  const senderId = raw.senderId;
+  if (typeof senderId !== 'string' || senderId.length === 0) return null;
+  const rawTarget = raw.targetUid;
+  const targetUid =
+    typeof rawTarget === 'number'
+      ? rawTarget
+      : typeof rawTarget === 'string'
+        ? Number(rawTarget)
+        : NaN;
+  if (!Number.isFinite(targetUid)) return null;
+  return { type: 'REMOTE_MUTE', targetUid, senderId };
+}
+
+export const SESSION_COMMAND_EVENT = 'SESSION_COMMAND' as const;
+
+export type SessionCommandPayload = {
+  type: 'SESSION_TERMINATED';
+  senderId: string;
+  sessionId: string;
+};
+
+export function parseSessionCommandPayload(raw: unknown): SessionCommandPayload | null {
+  if (!isRecord(raw)) return null;
+  if (raw.type !== 'SESSION_TERMINATED') return null;
+  const senderId = raw.senderId;
+  const sessionId = raw.sessionId;
+  if (typeof senderId !== 'string' || senderId.length === 0) return null;
+  if (typeof sessionId !== 'string' || sessionId.length === 0) return null;
+  return { type: 'SESSION_TERMINATED', senderId, sessionId };
+}

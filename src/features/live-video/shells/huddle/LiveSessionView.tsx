@@ -25,7 +25,10 @@ import {
   VideoOverlaySlotsProvider,
   useVideoOverlaySlots,
 } from '@/features/live-video/contexts/VideoOverlaySlotsContext';
+import { useAgoraSession } from '@/features/live-video/agora-session-context';
 import { useExcludeUidForTiles } from '@/features/live-video/hooks/useExcludeUidForTiles';
+import { useLiveSessionRoster } from '@/features/live-video/hooks/useLiveSessionRoster';
+import { useSessionTeardown } from '@/features/live-video/hooks/useSessionTeardown';
 import { useLiveSessionRuntime } from '@/features/live-video/theater/live-session-runtime-context';
 import { useLiveTheaterLayoutPlanContext } from '@/features/live-video/theater/live-theater-layout-context';
 import { SessionHeader } from '@/features/live-video/shells/huddle/SessionHeader';
@@ -36,6 +39,9 @@ import { LiveSessionWorkoutPlayer } from '@/features/live-video/shells/huddle/Li
 import { LiveDeckExerciseInjector } from '@/features/live-video/shells/huddle/LiveDeckExerciseInjector';
 import { ParticipantWorkoutLogger } from '@/features/live-video/shells/ParticipantWorkoutLogger';
 import { ActivePhaseOverlays } from '@/features/live-video/shells/huddle/ActivePhaseOverlays';
+import { PostSessionSummary } from '@/features/live-video/shells/PostSessionSummary';
+import { RosterDrawer } from '@/features/live-video/shells/RosterDrawer';
+import { RosterDrawerTrigger } from '@/features/live-video/shells/RosterDrawerTrigger';
 import { VideoStageWrapper } from '@/features/live-video/shells/huddle/VideoStageWrapper';
 import type { IntervalWrapperKind, WrapperBaseProps } from '@/features/live-video/wrappers/types';
 import { WrapperErrorBoundary } from '@/features/live-video/wrappers/WrapperErrorBoundary';
@@ -43,12 +49,14 @@ import { getIntervalWrapper } from '@/features/live-video/wrappers/registry';
 import { useWorkoutDeckSelectionOptional } from '@/features/live-video/shells/huddle/workout-deck-selection-context';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
+import { toast } from 'sonner';
 import { huddleEditorVideoSplitStorageKey } from '@/lib/layout-collapse-keys';
 import { useIsNarrowBelowMd } from '@/hooks/use-is-narrow-below-md';
 import { isUuidString } from '@/lib/is-uuid';
 import { agoraUidFromUuid } from '@/lib/live-video/agora-uid';
 import { cn } from '@/lib/utils';
 import { useLayoutCommands } from '@/components/layout/layout-command-context';
+import { useLiveVideoStore } from '@/store/liveVideoStore';
 
 const HUDDLE_EDITOR_PANEL_ID = 'huddle-editor';
 const HUDDLE_VIDEO_PANEL_ID = 'huddle-video';
@@ -146,7 +154,47 @@ function LiveSessionViewInner({
     renderRemoteRailBottomOverlay,
   } = useVideoOverlaySlots();
 
-  const { state, actions, isHost, sessionId: liveSessionRowId } = useLiveSessionRuntime();
+  const {
+    state,
+    actions,
+    isHost,
+    sessionId: liveSessionRowId,
+    realtimeChannel,
+    hostUserId: runtimeHostUserId,
+    supabase: supabaseFromRuntime,
+  } = useLiveSessionRuntime();
+  const liveSessionId = liveSessionRowId.trim();
+  const liveSessionRpcReady = Boolean(liveSessionId) && isUuidString(liveSessionId) && liveDbReady;
+
+  const { client, leaveChannel, isMicMuted, isCameraOff, toggleMic } = useAgoraSession();
+
+  const onRosterLocalMuteRequested = useCallback(() => {
+    if (!isMicMuted) {
+      toggleMic();
+    }
+    toast('Microphone muted', {
+      description: 'The host has muted your microphone.',
+    });
+  }, [isMicMuted, toggleMic]);
+
+  const { participants: rosterParticipants, sendRemoteMute } = useLiveSessionRoster({
+    sessionId: liveSessionId,
+    localUserId,
+    hostUserId: runtimeHostUserId,
+    supabase: supabaseFromRuntime,
+    client,
+    channel: realtimeChannel,
+    localMediaState: { hasAudio: !isMicMuted, hasVideo: !isCameraOff },
+    onLocalMuteRequested: onRosterLocalMuteRequested,
+  });
+
+  const { isSessionEnded, endedAt } = useSessionTeardown({
+    realtimeChannel,
+    hostUserId: runtimeHostUserId,
+    sessionId: liveSessionId.length > 0 ? liveSessionId : null,
+    leaveAgoraChannel: leaveChannel,
+  });
+
   const { focusBoard } = useLayoutCommands();
 
   const deckSel = useWorkoutDeckSelectionOptional();
@@ -169,6 +217,8 @@ function LiveSessionViewInner({
     [HUDDLE_VIDEO_PANEL_ID]: 65,
   }));
 
+  const [rosterOpen, setRosterOpen] = useState(false);
+
   useEffect(() => {
     setHuddleDefaultLayout(readHuddleEditorVideoLayout(workspaceId));
   }, [workspaceId]);
@@ -185,9 +235,6 @@ function LiveSessionViewInner({
   );
 
   /** Matches `public.live_sessions.id` (invite `sessionId` UUID), not Agora `channelId`. */
-  const liveSessionId = liveSessionRowId.trim();
-  const liveSessionRpcReady = Boolean(liveSessionId) && isUuidString(liveSessionId) && liveDbReady;
-
   const [wrapperKind, setWrapperKind] = useState<IntervalWrapperKind>('none');
   const [wrapperConfig, setWrapperConfig] = useState<unknown>(null);
 
@@ -326,6 +373,17 @@ function LiveSessionViewInner({
     [state, topLeftOverlay, topRightOverlay],
   );
 
+  const rosterFloatingTrigger = useMemo(
+    () => (
+      <RosterDrawerTrigger
+        count={rosterParticipants.length}
+        isOpen={rosterOpen}
+        onOpen={() => setRosterOpen((v) => !v)}
+      />
+    ),
+    [rosterParticipants.length, rosterOpen],
+  );
+
   const videoStage = useMemo(
     () => (
       <VideoStageWrapper
@@ -338,6 +396,7 @@ function LiveSessionViewInner({
         stageBottomOverlay={stageBottomOverlay}
         localRailPipOverlay={localRailPipOverlay}
         renderRemoteRailBottomOverlay={renderRemoteRailBottomOverlay}
+        floatingMediaExtras={rosterFloatingTrigger}
       />
     ),
     [
@@ -353,6 +412,7 @@ function LiveSessionViewInner({
       stageBottomOverlay,
       localRailPipOverlay,
       renderRemoteRailBottomOverlay,
+      rosterFloatingTrigger,
     ],
   );
 
@@ -383,6 +443,23 @@ function LiveSessionViewInner({
   );
 
   const showEmbeddedBoardSelection = Boolean(selectingFromBoard && boardSelectionPanel != null);
+
+  if (isSessionEnded) {
+    const durationMs =
+      endedAt != null && state.globalStartedAt != null
+        ? endedAt - state.globalStartedAt
+        : undefined;
+    return (
+      <>
+        <PostSessionSummary
+          stats={{ durationMs, participantCount: rosterParticipants.length }}
+          isHost={isHost}
+          onReturnToDashboard={() => useLiveVideoStore.getState().leaveSession()}
+          className={className}
+        />
+      </>
+    );
+  }
 
   return (
     <>
@@ -549,6 +626,13 @@ function LiveSessionViewInner({
           </SheetContent>
         </Sheet>
       ) : null}
+
+      <RosterDrawer
+        localUserId={localUserId}
+        open={rosterOpen}
+        onOpenChange={setRosterOpen}
+        managedRoster={{ participants: rosterParticipants, sendRemoteMute }}
+      />
     </>
   );
 }

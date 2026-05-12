@@ -19,6 +19,8 @@ export type VideoStageWrapperProps = {
   stageBottomOverlay?: ReactNode;
   localRailPipOverlay?: ReactNode;
   renderRemoteRailBottomOverlay?: (agoraUidStr: string) => ReactNode;
+  /** Shown in `FloatingMediaBar` after mic/camera (e.g. roster trigger). */
+  floatingMediaExtras?: ReactNode;
 };
 
 const ASPECT_RATIO_OPTIONS: ReadonlyArray<{ id: '16:9' | '9:16' | '1:1'; label: string }> = [
@@ -42,18 +44,10 @@ export function VideoStageWrapper({
   stageBottomOverlay,
   localRailPipOverlay,
   renderRemoteRailBottomOverlay,
+  floatingMediaExtras,
 }: VideoStageWrapperProps) {
   const runtime = useLiveSessionRuntime();
   const aspectRatio = runtime.aspectRatio;
-
-  if (process.env.NODE_ENV === 'development') {
-    console.log(
-      '[DEBUG] VideoStageWrapper render: aspectRatio=%s isHost=%s connection=%s',
-      aspectRatio,
-      runtime.isHost,
-      runtime.connectionStatus,
-    );
-  }
 
   return (
     <div className={cn('flex min-h-0 w-full flex-col items-center overflow-hidden', className)}>
@@ -68,6 +62,7 @@ export function VideoStageWrapper({
           stageBottomOverlay={stageBottomOverlay}
           localRailPipOverlay={localRailPipOverlay}
           renderRemoteRailBottomOverlay={renderRemoteRailBottomOverlay}
+          floatingMediaExtras={floatingMediaExtras}
           aspectRatio={aspectRatio}
           className="w-full flex-1 min-h-0"
         />

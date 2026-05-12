@@ -14,10 +14,6 @@ export function LiveVideoSessionShell({
   theaterPlanDeps: Omit<LiveTheaterLayoutInputs, 'sessionUiKind'>;
   children: ReactNode;
 }) {
-  if (process.env.NODE_ENV === 'development') {
-    console.log('[DEBUG] LiveVideoSessionShell Rendered - Layout Plan applied');
-  }
-
   const runtime = useLiveSessionRuntimeOptional();
   const theaterPlan = useLiveTheaterLayoutPlan({
     ...theaterPlanDeps,

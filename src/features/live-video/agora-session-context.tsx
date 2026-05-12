@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, type ReactNode } from 'react';
-import type { IAgoraRTCRemoteUser, ILocalVideoTrack } from 'agora-rtc-sdk-ng';
+import type { IAgoraRTCClient, IAgoraRTCRemoteUser, ILocalVideoTrack } from 'agora-rtc-sdk-ng';
 
 export type AgoraSessionContextValue = {
   /**
@@ -20,6 +20,11 @@ export type AgoraSessionContextValue = {
   joinError: string | null;
   /** Remote participants (mutable SDK objects; array reference updates on subscribe/unpublish/leave). */
   remoteUsers: IAgoraRTCRemoteUser[];
+  /**
+   * Joined RTC client; null when not connected. Useful for read-only consumers like the roster
+   * (`useLiveSessionRoster`); do not replace join/leave lifecycle owned by this provider.
+   */
+  client: IAgoraRTCClient | null;
   /** Join role from provider props (controls whether local publish / media toggles apply). */
   role: 'publisher' | 'subscriber';
   /** Local mic is muted (`setEnabled(false)` on audio track). */

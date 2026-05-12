@@ -1,7 +1,7 @@
 'use client';
 
 import type { IAgoraRTCRemoteUser } from 'agora-rtc-sdk-ng';
-import { isValidElement, useMemo, type ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { useAgoraSession } from '@/features/live-video/agora-session-context';
 import { LocalVideoPreview } from '@/features/live-video/LocalVideoPreview';
 import { RemoteVideoPreview } from '@/features/live-video/RemoteVideoPreview';
@@ -40,21 +40,6 @@ export type BaseVideoHarnessProps = {
   excludeUidForTiles?: string | null;
 };
 
-/** Single function/class child → `type.name`; fragments, arrays, strings → `'none'` (blueprint). */
-function childShellDebugName(children: ReactNode | undefined): string {
-  if (!isValidElement(children)) return 'none';
-  const t = children.type;
-  if (typeof t === 'function') {
-    const n = t.name;
-    return typeof n === 'string' && n.length > 0 ? n : 'none';
-  }
-  if (typeof t === 'object' && t !== null && 'name' in t) {
-    const n = (t as { name?: string }).name;
-    return typeof n === 'string' && n.length > 0 ? n : 'none';
-  }
-  return 'none';
-}
-
 const stagePreviewClass = 'absolute inset-0 h-full w-full min-h-0 min-w-0';
 const railTileClass =
   'relative w-full aspect-video shrink-0 overflow-hidden rounded-lg border border-border bg-black shadow-md';
@@ -71,13 +56,6 @@ type RailParticipant =
  * Theater layout: host fills the aspect-locked main stage; participants render in a sibling rail.
  */
 export function BaseVideoHarness(props: BaseVideoHarnessProps) {
-  if (process.env.NODE_ENV === 'development') {
-    console.log(
-      '[DEBUG] BaseVideoHarness Rendered with child shell:',
-      childShellDebugName(props.children),
-    );
-  }
-
   const fullWidth = Boolean(props.fullWidth);
 
   const {
@@ -156,13 +134,6 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
         : isConnected
           ? 'Connected (no local video)'
           : 'Idle';
-
-  if (process.env.NODE_ENV === 'development') {
-    console.log(
-      '[DEBUG] BaseVideoHarness Render - Unified Participants List Count:',
-      allRailParticipants.length,
-    );
-  }
 
   return (
     <div

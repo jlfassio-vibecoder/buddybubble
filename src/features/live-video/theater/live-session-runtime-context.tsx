@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@utils/supabase/client';
 import { useSessionState, type SessionActions } from '@/features/live-video/hooks/useSessionState';
 import type { SessionState } from '@/features/live-video/state/sessionStateMachine';
@@ -13,6 +13,12 @@ export type LiveSessionRuntimeValue = {
   state: SessionState;
   actions: SessionActions;
   isHost: boolean;
+  /** Authenticated Supabase user id for this runtime (same as provider `localUserId`). */
+  localUserId: string;
+  hostUserId: string;
+  workspaceId: string;
+  /** Shared `room-session:` Realtime channel from `useSessionState`; null when disconnected. */
+  realtimeChannel: RealtimeChannel | null;
   sessionId: string;
   supabase: SupabaseClient<Database>;
   /** Host-synced global aspect ratio for the video stage. */
@@ -59,6 +65,10 @@ export function LiveSessionRuntimeProvider({
       state: result.state,
       actions: result.actions,
       isHost: result.isHost,
+      localUserId,
+      hostUserId,
+      workspaceId,
+      realtimeChannel: result.realtimeChannel,
       sessionId,
       supabase,
       aspectRatio: result.state.aspectRatio,
@@ -71,8 +81,12 @@ export function LiveSessionRuntimeProvider({
       result.connectionStatus,
       result.getElapsedMs,
       result.isHost,
+      result.realtimeChannel,
       result.state,
       result.subscribeTick,
+      localUserId,
+      hostUserId,
+      workspaceId,
       sessionId,
       supabase,
     ],

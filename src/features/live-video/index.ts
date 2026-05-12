@@ -36,6 +36,16 @@ export {
   LiveSessionView,
   type LiveSessionViewProps,
 } from '@/features/live-video/shells/huddle/LiveSessionView';
+export { RosterDrawer, type RosterDrawerProps } from '@/features/live-video/shells/RosterDrawer';
+export {
+  PostSessionSummary,
+  type PostSessionSummaryProps,
+  type SessionStats,
+} from '@/features/live-video/shells/PostSessionSummary';
+export {
+  RosterDrawerTrigger,
+  type RosterDrawerTriggerProps,
+} from '@/features/live-video/shells/RosterDrawerTrigger';
 export {
   PreJoinBuilder,
   type PreJoinBuilderProps,
@@ -46,6 +56,10 @@ export {
   type UseSessionStateOptions,
   type UseSessionStateResult,
 } from '@/features/live-video/hooks/useSessionState';
+export {
+  useSessionTeardown,
+  type UseSessionTeardownArgs,
+} from '@/features/live-video/hooks/useSessionTeardown';
 export {
   LiveSessionRuntimeProvider,
   useLiveSessionRuntime,
@@ -73,10 +87,13 @@ export {
   parseSessionState,
   parseSessionStateBroadcastPayload,
   parseSessionSyncRequestPayload,
+  parseSessionCommandPayload,
   SESSION_STATE_BROADCAST_EVENT,
   SESSION_SYNC_REQUEST_EVENT,
+  SESSION_COMMAND_EVENT,
   type SessionStateBroadcastPayload,
   type SessionSyncRequestPayload,
+  type SessionCommandPayload,
 } from '@/features/live-video/state/session-sync.types';
 export {
   endSession,
