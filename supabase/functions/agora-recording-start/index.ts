@@ -6,15 +6,14 @@
  * Secrets: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY,
  * AGORA_APP_ID, AGORA_CUSTOMER_ID, AGORA_CUSTOMER_SECRET, AGORA_APP_CERTIFICATE,
  * optional AGORA_RESTAPI_BASE (default https://api.sd-rtn.com),
- * S3_BUCKET, S3_ENDPOINT (may include https://; stripped for Agora vendor 11),
+ * S3_BUCKET, S3_ENDPOINT (trimmed; optional `http(s)://` prefix removed for Agora — no other mutation),
  * S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY,
  * S3_REGION (optional; accepts Agora vendor numeric code as a string, e.g. "0". Non-numeric values
  * like AWS region names ("us-east-1") fall back to 0, which is the safe default for vendor 11 since
  * the endpoint URL is authoritative).
  *
- * Endpoint: Agora vendor 11 expects `extensionParams.endpoint` without a scheme (host[/path]).
- * Supabase S3 is at `/storage/v1/s3`; we normalize legacy `*.supabase.co` hosts to
- * `*.storage.supabase.co` per Supabase docs for S3-compatible clients.
+ * Endpoint: Agora vendor 11 `extensionParams.endpoint` is the raw `S3_ENDPOINT` value with only
+ * an optional `http(s)://` prefix removed — no host rewriting and no path appending.
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
@@ -69,42 +68,6 @@ function truncateMessage(msg: string, max = 4000): string {
 /** Agora `fileNamePrefix` segments must be alphanumeric only (no hyphens). */
 function agoraSafePrefixSegment(id: string): string {
   return id.replace(/-/g, '').toLowerCase();
-}
-
-/**
- * S3 endpoint without scheme, for Agora `extensionParams.endpoint`.
- * - Strips `http(s)://` and trailing slashes.
- * For Supabase only: rewrites `ref.supabase.co` → `ref.storage.supabase.co` and ensures
- * `/storage/v1/s3` is present. Other hosts are left unchanged (ops must supply the correct path).
- */
-function normalizeS3EndpointForAgora(raw: string): string {
-  let s = raw
-    .trim()
-    .replace(/^https?:\/\//i, '')
-    .replace(/\/+$/, '');
-  if (!s) return s;
-
-  const storagePath = '/storage/v1/s3';
-  const ensureSupabaseS3Path = (hostAndPath: string) => {
-    if (hostAndPath.toLowerCase().includes('/storage/v1/s3')) return hostAndPath;
-    return `${hostAndPath.replace(/\/+$/, '')}${storagePath}`;
-  };
-
-  const legacy = /^([a-z0-9]+)\.supabase\.co(\/.*)?$/i.exec(s);
-  if (legacy) {
-    const tail = legacy[2] ?? '';
-    s = ensureSupabaseS3Path(`${legacy[1]}.storage.supabase.co${tail || ''}`);
-    return s;
-  }
-
-  const direct = /^([a-z0-9]+)\.storage\.supabase\.co(\/.*)?$/i.exec(s);
-  if (direct) {
-    const tail = direct[2] ?? '';
-    s = ensureSupabaseS3Path(`${direct[1]}.storage.supabase.co${tail || ''}`);
-    return s;
-  }
-
-  return s;
 }
 
 // Authenticated workspace host endpoint: surface step + DB detail so the caller does not have to
@@ -208,8 +171,8 @@ Deno.serve(async (req) => {
     }
     const s3Bucket = Deno.env.get('S3_BUCKET')?.trim();
     const s3Endpoint = Deno.env.get('S3_ENDPOINT')?.trim();
-    // Agora custom S3 (vendor 11) expects host/path only; Supabase secrets often use https:// prefix.
-    const s3EndpointForAgora = (s3Endpoint ?? '').replace(/^https?:\/\//, '');
+    // Vendor 11: pass through `S3_ENDPOINT` exactly (trimmed); strip scheme only — no path mutation.
+    const s3EndpointForAgora = (s3Endpoint ?? '').replace(/^https?:\/\//i, '');
     const s3AccessKey = Deno.env.get('S3_ACCESS_KEY_ID')?.trim();
     const s3SecretKey = Deno.env.get('S3_SECRET_ACCESS_KEY')?.trim();
 
