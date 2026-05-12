@@ -65,7 +65,8 @@ export function useAmrapTimerState(amrapSessionId: string): AmrapTimerState {
   }, [fetchSessionRow]);
 
   useEffect(() => {
-    const seenSubscribedRef = { current: false };
+    /** Stays true after the first `SUBSCRIBED` so a later resubscribe still triggers `fetchSessionRow`. */
+    const hadEverSubscribedRef = { current: false };
     const channel = supabase
       .channel(`amrap_session:${amrapSessionId}`)
       .on(
@@ -82,16 +83,13 @@ export function useAmrapTimerState(amrapSessionId: string): AmrapTimerState {
       )
       .subscribe((status) => {
         if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          if (seenSubscribedRef.current) {
-            seenSubscribedRef.current = false;
-          }
           return;
         }
         if (status === 'SUBSCRIBED') {
-          if (seenSubscribedRef.current) {
+          if (hadEverSubscribedRef.current) {
             void fetchSessionRow();
           }
-          seenSubscribedRef.current = true;
+          hadEverSubscribedRef.current = true;
         }
       });
 
