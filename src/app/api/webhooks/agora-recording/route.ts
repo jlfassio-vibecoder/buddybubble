@@ -39,21 +39,23 @@ function json(data: unknown, status = 200) {
   return NextResponse.json(data, { status, headers: corsHeaders });
 }
 
+type VerifyResult = { ok: boolean; expectedHex: string };
+
 function verifyAgoraSignatureHex(
   secret: string,
   rawBody: string,
   signatureHeader: string,
-): boolean {
+): VerifyResult {
   const expectedHex = createHmac('sha1', secret).update(rawBody, 'utf8').digest('hex');
   const sig = signatureHeader.trim().toLowerCase().replace(/\s+/g, '');
-  if (!/^[0-9a-f]+$/.test(sig) || sig.length % 2 !== 0) return false;
+  if (!/^[0-9a-f]+$/.test(sig) || sig.length % 2 !== 0) return { ok: false, expectedHex };
   try {
     const a = Buffer.from(expectedHex, 'hex');
     const b = Buffer.from(sig, 'hex');
-    if (a.length !== b.length) return false;
-    return timingSafeEqual(a, b);
+    if (a.length !== b.length) return { ok: false, expectedHex };
+    return { ok: timingSafeEqual(a, b), expectedHex };
   } catch {
-    return false;
+    return { ok: false, expectedHex };
   }
 }
 
@@ -91,7 +93,13 @@ export async function POST(req: Request) {
     });
   }
 
-  if (!verifyAgoraSignatureHex(webhookSecret, rawBody, signatureHeader)) {
+  const verifyResult = verifyAgoraSignatureHex(webhookSecret, rawBody, signatureHeader);
+  if (!verifyResult.ok) {
+    // Diagnostics only on the mismatch path. Logs the calculated/received hashes, never the secret.
+    console.log('[agora-webhook] Signature mismatch detected.');
+    console.log('[agora-webhook] Secret is defined:', !!process.env.AGORA_WEBHOOK_SECRET);
+    console.log('[agora-webhook] Expected (calculated):', verifyResult.expectedHex);
+    console.log('[agora-webhook] Received (header):', signatureHeader);
     return json({ ok: false, error: 'unauthorized' }, 401);
   }
 
