@@ -40,7 +40,9 @@ export type BaseVideoHarnessProps = {
   excludeUidForTiles?: string | null;
 };
 
-const stagePreviewClass = 'absolute inset-0 h-full w-full min-h-0 min-w-0';
+/** Stage tiles: match shell background so `fit: 'contain'` letterboxing blends with the dock. */
+const stagePreviewClass =
+  'absolute inset-0 h-full w-full min-h-0 min-w-0 bg-background [&_.agora_video_player]:bg-background [&_video]:bg-background';
 const railTileClass =
   'relative w-full aspect-video shrink-0 overflow-hidden rounded-lg border border-border bg-black shadow-md';
 
@@ -126,6 +128,9 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
     }
   })();
 
+  const previewStageFit: 'contain' | 'cover' =
+    (props.aspectRatio ?? '16:9') === '16:9' ? 'contain' : 'cover';
+
   const localIdleLabel =
     joinError != null
       ? joinError
@@ -155,77 +160,84 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
          * real height (sibling Leave/Join row must not compete for the same %).
          */}
         <div className="flex min-h-0 w-full flex-1 flex-row items-stretch gap-4">
-          {/* Copilot suggestion ignored: flex-[3] + height-driven stage keeps the host/rail split; a wrapper-only aspect refactor is out of scope for this change. */}
-          <div
-            className={cn(
-              // Height-driven frame inside the flex-1 slot: fill height, derive
-              // width from `aspect-*`, clamp with `max-w-full` + `min-w-0`.
-              'relative block h-full max-h-full flex-[3] min-w-0 overflow-hidden rounded-xl border border-border bg-muted shadow-sm transition-[aspect-ratio] duration-300',
-              aspectClass,
-            )}
-            data-live-video-stage
-          >
-            <div className="absolute inset-0 overflow-hidden rounded-xl bg-black">
-              {localIsHost ? (
-                localTileExcluded ? (
-                  <div className={videoHiddenPlaceholderClass}>Video hidden</div>
-                ) : (
-                  <>
-                    <LocalVideoPreview
-                      track={localVideoTrack}
-                      isMicMuted={isMicMuted}
-                      isCameraOff={isCameraOff}
-                      className={stagePreviewClass}
-                    />
-                    {localVideoTrack == null ? (
-                      <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center bg-muted/80 text-sm text-muted-foreground">
-                        {localIdleLabel}
-                      </div>
-                    ) : null}
-                  </>
-                )
-              ) : hostRemote != null ? (
-                hostRemoteTileExcluded ? (
-                  <div className={videoHiddenPlaceholderClass}>Video hidden</div>
-                ) : (
-                  <RemoteVideoPreview
-                    user={hostRemote}
-                    className={cn(stagePreviewClass, 'rounded-none border-0')}
-                  />
-                )
-              ) : (
-                <div className="absolute inset-0 z-[1] flex items-center justify-center bg-muted/80 text-sm text-muted-foreground">
-                  {joinError != null
-                    ? joinError
-                    : isConnecting
-                      ? 'Connecting…'
-                      : 'Waiting for host video…'}
-                </div>
+          {/*
+           * Row flex + items-center vertically centers children and prevents stretch,
+           * so an aspect-ratio box with only max-* caps collapses to ~0 height and
+           * Agora has no pixels to paint. Use stretch + justify-center so height is
+           * definite and width follows aspect (w-auto), centered on the main axis.
+           */}
+          <div className="flex min-h-0 min-w-0 h-full w-full flex-1 flex-row items-stretch justify-center">
+            <div
+              className={cn(
+                'relative w-auto max-w-full min-h-0 shrink-0 overflow-hidden rounded-xl bg-transparent transition-[aspect-ratio] duration-300',
+                aspectClass,
               )}
-            </div>
-
-            {props.videoOverlays != null ? (
-              <div className="pointer-events-none absolute inset-0 z-[43]">
-                {props.videoOverlays}
-              </div>
-            ) : null}
-
-            {props.stageBottomOverlay != null ? (
-              <div className="pointer-events-none absolute inset-0 z-[44] flex items-end justify-end px-3 pb-20">
-                {props.stageBottomOverlay}
-              </div>
-            ) : null}
-
-            <FloatingMediaBar
-              isMicMuted={isMicMuted}
-              isCameraOff={isCameraOff}
-              onToggleMic={toggleMic}
-              onToggleCamera={toggleCamera}
-              micDisabled={!mediaControlsEnabled}
-              cameraDisabled={!mediaControlsEnabled}
+              data-live-video-stage
             >
-              {props.floatingMediaExtras}
-            </FloatingMediaBar>
+              <div className="absolute inset-0 overflow-hidden rounded-xl bg-background [&_.agora_video_player]:bg-background [&_video]:bg-background">
+                {localIsHost ? (
+                  localTileExcluded ? (
+                    <div className={videoHiddenPlaceholderClass}>Video hidden</div>
+                  ) : (
+                    <>
+                      <LocalVideoPreview
+                        track={localVideoTrack}
+                        isMicMuted={isMicMuted}
+                        isCameraOff={isCameraOff}
+                        fit={previewStageFit}
+                        className={stagePreviewClass}
+                      />
+                      {localVideoTrack == null ? (
+                        <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center bg-muted/80 text-sm text-muted-foreground">
+                          {localIdleLabel}
+                        </div>
+                      ) : null}
+                    </>
+                  )
+                ) : hostRemote != null ? (
+                  hostRemoteTileExcluded ? (
+                    <div className={videoHiddenPlaceholderClass}>Video hidden</div>
+                  ) : (
+                    <RemoteVideoPreview
+                      user={hostRemote}
+                      fit={previewStageFit}
+                      className={cn(stagePreviewClass, 'rounded-none border-0')}
+                    />
+                  )
+                ) : (
+                  <div className="absolute inset-0 z-[1] flex items-center justify-center bg-muted/80 text-sm text-muted-foreground">
+                    {joinError != null
+                      ? joinError
+                      : isConnecting
+                        ? 'Connecting…'
+                        : 'Waiting for host video…'}
+                  </div>
+                )}
+              </div>
+
+              {props.videoOverlays != null ? (
+                <div className="pointer-events-none absolute inset-0 z-[43]">
+                  {props.videoOverlays}
+                </div>
+              ) : null}
+
+              {props.stageBottomOverlay != null ? (
+                <div className="pointer-events-none absolute inset-0 z-[44] flex items-end justify-end px-3 pb-20">
+                  {props.stageBottomOverlay}
+                </div>
+              ) : null}
+
+              <FloatingMediaBar
+                isMicMuted={isMicMuted}
+                isCameraOff={isCameraOff}
+                onToggleMic={toggleMic}
+                onToggleCamera={toggleCamera}
+                micDisabled={!mediaControlsEnabled}
+                cameraDisabled={!mediaControlsEnabled}
+              >
+                {props.floatingMediaExtras}
+              </FloatingMediaBar>
+            </div>
           </div>
 
           {allRailParticipants.length > 0 ? (

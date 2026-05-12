@@ -227,33 +227,17 @@ export function useSessionState(options: UseSessionStateOptions): UseSessionStat
 
       channel.subscribe((status, err) => {
         if (cancelled) return;
-        if (status === 'SUBSCRIBED') {
-          connectedRef.current = true;
-          setConnectionStatus('connected');
-          epochOffsetMsRef.current = 0;
-          if (isHost) {
-            queueMicrotask(() => {
-              const ch = channelRef.current;
-              if (!ch || !connectedRef.current || cancelled) return;
-              sendStateBroadcast(ch, stateRef.current, localUserId);
-            });
-          }
-          if (!isHost && !syncRequestSentRef.current) {
-            syncRequestSentRef.current = true;
-            const now = Date.now();
-            void channel.send({
-              type: 'broadcast',
-              event: SESSION_SYNC_REQUEST_EVENT,
-              payload: {
-                senderId: localUserId,
-                requestId: `${localUserId}-${now}`,
-              },
-            });
-          }
-          return;
-        }
-        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+
+        if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           connectedRef.current = false;
+          if (syncRequestSentRef.current) {
+            syncRequestSentRef.current = false;
+          }
+          if (status === 'CLOSED') {
+            setConnectionStatus('connecting');
+            return;
+          }
+
           if (process.env.NODE_ENV === 'development') {
             if (attempt + 1 < MAX_SUBSCRIBE_ATTEMPTS) {
               console.warn('[useSessionState] Realtime channel', status, err ?? '');
@@ -278,6 +262,32 @@ export function useSessionState(options: UseSessionStateOptions): UseSessionStat
               setConnectionStatus('error');
             }
           })();
+          return;
+        }
+
+        if (status === 'SUBSCRIBED') {
+          connectedRef.current = true;
+          setConnectionStatus('connected');
+          epochOffsetMsRef.current = 0;
+          if (isHost) {
+            queueMicrotask(() => {
+              const ch = channelRef.current;
+              if (!ch || !connectedRef.current || cancelled) return;
+              sendStateBroadcast(ch, stateRef.current, localUserId);
+            });
+          }
+          if (!isHost && !syncRequestSentRef.current) {
+            syncRequestSentRef.current = true;
+            const now = Date.now();
+            void channel.send({
+              type: 'broadcast',
+              event: SESSION_SYNC_REQUEST_EVENT,
+              payload: {
+                senderId: localUserId,
+                requestId: `${localUserId}-${now}`,
+              },
+            });
+          }
         }
       });
     };

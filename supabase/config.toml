@@ -378,6 +378,15 @@ verify_jwt = true
 verify_jwt = true
 
 # Authentication: AGORA_WEBHOOK_SECRET — verify `Agora-Signature` (HMAC-SHA1 of raw body), not Supabase JWT.
+# Agora console health checks (e.g. Go-http-client) omit JWT and often omit signature + body; the function returns 200 for those probes.
+#
+# IMPORTANT: If Agora still gets HTTP 401 with ~55-byte JSON (e.g. "Missing authorization header")
+# and Edge logs show NO `[agora-webhook] handler_reached`, the cloud project still has **platform
+# JWT verification ON** for this function. config.toml alone may not update an existing deploy
+# (CLI bug history: supabase/cli#4059). Fix: Dashboard → Edge Functions → agora-recording-webhook
+# → disable "Verify JWT" / verify_jwt; and/or always deploy with:
+#   supabase functions deploy agora-recording-webhook --no-verify-jwt
+# from the repo root (directory containing this file).
 [functions.agora-recording-webhook]
 verify_jwt = false
 

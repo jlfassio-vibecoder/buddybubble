@@ -1,41 +1,34 @@
 /**
- * Agora Cloud Recording — Notifications (NCS) webhook.
+ * POST /api/webhooks/agora-recording
  *
- * Auth: `Agora-Signature` HMAC-SHA1 of raw body vs `AGORA_WEBHOOK_SECRET` (verify_jwt=false).
- * Requests with no signature (including Agora console health checks with a JSON body) return 200 and are not processed; real NCS events must be signed.
+ * Agora Cloud Recording NCS (Notification Center Service) webhook — same behavior as
+ * `supabase/functions/agora-recording-webhook`, hosted on Next.js to avoid Supabase Edge
+ * platform auth rewriting unsigned health probes.
  *
- * If Agora health checks get HTTP 401 with a tiny JSON body (~55 bytes) and you see **no**
- * `[agora-webhook] handler_reached` log in Edge Function logs, the failure is **Supabase’s
- * platform JWT gate** (verify_jwt still true in the cloud project), not this file. Fix:
- * Dashboard → Edge Functions → `agora-recording-webhook` → turn **off** “Verify JWT” / legacy JWT;
- * or deploy from repo root: `supabase functions deploy agora-recording-webhook --no-verify-jwt`;
- * ensure `supabase/config.toml` `[functions.agora-recording-webhook] verify_jwt = false` is present
- * and upgrade CLI if deploy “succeeds” but the toggle stays on (see supabase/cli#4059).
+ * Configure in Agora Console (Cloud Recording → Notifications):
+ *   https://<your-production-domain>/api/webhooks/agora-recording
  *
- * Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, AGORA_WEBHOOK_SECRET.
- *
- * Event mapping (Cloud Recording productId=3):
- * - 31 / 32 (upload complete / backup): success → `ready` + `metadata.class_recording.storagePath`
- * - 1 (error): failure when errorLevel >= 4 (Major/Fatal)
- * - 11 (session_exit): failure when exitStatus === 1
- * - 31 / 32 with details.status !== 0: upload failure
- * - 4 (first M3U8): session → `uploading` (non-terminal; does not fail — see docs)
- * - 33 (upload progress): ignored (heartbeat; must not fail)
+ * Env: `AGORA_WEBHOOK_SECRET` (HMAC-SHA1 hex of raw body). Uses `createServiceRoleClient()`:
+ * `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
  */
-import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
-import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { createHmac, timingSafeEqual } from 'node:crypto';
+import { NextResponse } from 'next/server';
+import { createServiceRoleClient } from '@/lib/supabase-service-role';
 import {
   AGORA_CLOUD_RECORDING_PRODUCT_ID,
   extractFileNamesFromDetails,
   parseAgoraNcsEnvelope,
   pickPlaybackFileName,
-} from '../_shared/agora-webhook-types.ts';
+} from '@/lib/agora/webhook-types';
 import {
   buildStoragePath,
   markSessionRecordingFailed,
   markSessionRecordingReady,
   UUID_PATTERN,
-} from '../_shared/class-recording-reconcile.ts';
+} from '@/lib/agora/recording-reconcile';
+
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -43,34 +36,25 @@ const corsHeaders: Record<string, string> = {
 };
 
 function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  });
+  return NextResponse.json(data, { status, headers: corsHeaders });
 }
 
-function timingSafeEqualHex(a: string, b: string): boolean {
-  const aa = a.toLowerCase();
-  const bb = b.toLowerCase();
-  if (aa.length !== bb.length) return false;
-  let out = 0;
-  for (let i = 0; i < aa.length; i++) {
-    out |= aa.charCodeAt(i) ^ bb.charCodeAt(i);
+function verifyAgoraSignatureHex(
+  secret: string,
+  rawBody: string,
+  signatureHeader: string,
+): boolean {
+  const expectedHex = createHmac('sha1', secret).update(rawBody, 'utf8').digest('hex');
+  const sig = signatureHeader.trim().toLowerCase().replace(/\s+/g, '');
+  if (!/^[0-9a-f]+$/.test(sig) || sig.length % 2 !== 0) return false;
+  try {
+    const a = Buffer.from(expectedHex, 'hex');
+    const b = Buffer.from(sig, 'hex');
+    if (a.length !== b.length) return false;
+    return timingSafeEqual(a, b);
+  } catch {
+    return false;
   }
-  return out === 0;
-}
-
-async function hmacSha1Hex(secret: string, message: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(secret),
-    { name: 'HMAC', hash: 'SHA-1' },
-    false,
-    ['sign'],
-  );
-  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message));
-  const bytes = new Uint8Array(sig);
-  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 function detailsStatus(details: Record<string, unknown>): number | null {
@@ -80,57 +64,43 @@ function detailsStatus(details: Record<string, unknown>): number | null {
   return null;
 }
 
-Deno.serve(async (req) => {
-  // If this never appears for a failing request, the 401 is from the platform (JWT verify), not our code.
-  if (req.method !== 'OPTIONS') {
-    console.log('[agora-webhook] handler_reached', {
-      method: req.method,
-      ua: req.headers.get('user-agent')?.slice(0, 120) ?? null,
-    });
-  }
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
-  if (req.method !== 'POST') {
-    return json({ ok: false, error: 'method_not_allowed' }, 200);
-  }
+export async function OPTIONS() {
+  return new Response('ok', { headers: corsHeaders });
+}
 
-  const webhookSecret = Deno.env.get('AGORA_WEBHOOK_SECRET')?.trim();
-  const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+export async function POST(req: Request) {
+  console.log('[agora-webhook] handler_reached', {
+    method: req.method,
+    ua: req.headers.get('user-agent')?.slice(0, 120) ?? null,
+  });
 
+  const webhookSecret = process.env.AGORA_WEBHOOK_SECRET?.trim();
   if (!webhookSecret) {
     console.error('[Agora Webhook] missing AGORA_WEBHOOK_SECRET');
-    return json({ ok: false, error: 'server_misconfigured' }, 500);
-  }
-  if (!supabaseUrl || !serviceKey) {
-    console.error('[Agora Webhook] missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
     return json({ ok: false, error: 'server_misconfigured' }, 500);
   }
 
   const rawBody = await req.text();
   const signatureHeader = req.headers.get('Agora-Signature')?.trim() ?? '';
 
-  // Agora console health checks POST JSON (~295 bytes) without `Agora-Signature`. Real NCS events
-  // from Agora include the header; we verify below. Do not process unsigned bodies as events.
   if (!signatureHeader) {
     console.log('[agora-webhook] Unsigned request received (likely Health Check).');
-    return new Response(JSON.stringify({ ok: true, skipped: 'unsigned_probe' }), {
+    return new NextResponse(JSON.stringify({ ok: true, skipped: 'unsigned_probe' }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 
-  let expectedHex: string;
-  try {
-    expectedHex = await hmacSha1Hex(webhookSecret, rawBody);
-  } catch (e) {
-    console.error('[Agora Webhook] hmac_failed', e);
-    return json({ ok: false, error: 'signature_compute_failed' }, 500);
+  if (!verifyAgoraSignatureHex(webhookSecret, rawBody, signatureHeader)) {
+    return json({ ok: false, error: 'unauthorized' }, 401);
   }
 
-  if (!timingSafeEqualHex(expectedHex, signatureHeader)) {
-    return json({ ok: false, error: 'unauthorized' }, 401);
+  let supabase: ReturnType<typeof createServiceRoleClient>;
+  try {
+    supabase = createServiceRoleClient();
+  } catch (e) {
+    console.error('[Agora Webhook] service role client failed', e);
+    return json({ ok: false, error: 'server_misconfigured' }, 500);
   }
 
   let parsedJson: unknown;
@@ -160,10 +130,6 @@ Deno.serve(async (req) => {
   console.log(
     `[Agora Webhook] Received SID: ${sid}, Event: ${eventType}, Notice: ${envelope.noticeId}`,
   );
-
-  const supabase = createClient(supabaseUrl, serviceKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
 
   const { data: sessionRow, error: sessionErr } = await supabase
     .from('class_recording_sessions')
@@ -223,8 +189,6 @@ Deno.serve(async (req) => {
     }
     return json({ ok: true, status: 'ready', storagePath }, 200);
   };
-
-  // --- Event routing ---
 
   if (eventType === 4) {
     const names = extractFileNamesFromDetails(details);
@@ -295,4 +259,4 @@ Deno.serve(async (req) => {
 
   console.log(`[Agora Webhook] Ignored event type=${eventType} SID=${sid}`);
   return json({ ok: true, skipped: 'ignored_event' }, 200);
-});
+}

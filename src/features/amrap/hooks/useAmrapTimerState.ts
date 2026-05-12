@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createClient } from '@utils/supabase/client';
 import type { AmrapTimerPhase } from '@/features/amrap/types/amrap-engine';
 import type { AmrapBlockSnapshotPayload } from '@/features/amrap/utils/buildAmrapBlockSnapshot';
@@ -42,23 +42,30 @@ export function useAmrapTimerState(amrapSessionId: string): AmrapTimerState {
   const [sessionRow, setSessionRow] = useState<AmrapSessionRow | null>(null);
   const [remainingSec, setRemainingSec] = useState(0);
 
-  useEffect(() => {
-    let cancelled = false;
-    void supabase
-      .from('amrap_sessions')
-      .select('*')
-      .eq('id', amrapSessionId)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (cancelled || error) return;
-        if (data) setSessionRow(data);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [amrapSessionId, supabase]);
+  const fetchSessionRow = useCallback(
+    async (signal?: AbortSignal) => {
+      const { data, error } = await supabase
+        .from('amrap_sessions')
+        .select('*')
+        .eq('id', amrapSessionId)
+        .maybeSingle();
+      if (signal?.aborted) return;
+      if (error) return;
+      if (data) setSessionRow(data);
+    },
+    [amrapSessionId, supabase],
+  );
 
   useEffect(() => {
+    const ac = new AbortController();
+    void fetchSessionRow(ac.signal);
+    return () => {
+      ac.abort();
+    };
+  }, [fetchSessionRow]);
+
+  useEffect(() => {
+    const seenSubscribedRef = { current: false };
     const channel = supabase
       .channel(`amrap_session:${amrapSessionId}`)
       .on(
@@ -73,12 +80,25 @@ export function useAmrapTimerState(amrapSessionId: string): AmrapTimerState {
           setSessionRow(payload.new as AmrapSessionRow);
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          if (seenSubscribedRef.current) {
+            seenSubscribedRef.current = false;
+          }
+          return;
+        }
+        if (status === 'SUBSCRIBED') {
+          if (seenSubscribedRef.current) {
+            void fetchSessionRow();
+          }
+          seenSubscribedRef.current = true;
+        }
+      });
 
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [amrapSessionId, supabase]);
+  }, [amrapSessionId, supabase, fetchSessionRow]);
 
   useEffect(() => {
     if (!sessionRow || sessionRow.timer_phase !== 'work' || !sessionRow.work_started_at) {

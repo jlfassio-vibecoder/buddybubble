@@ -217,7 +217,10 @@ function DashboardLiveVideoDockRouter({
       .then(({ error: fnError, data }) => {
         const toastKey = liveSessionRowId;
         if (fnError) {
-          console.error('[Recording] Failed to start Agora recording.');
+          console.error(
+            '[Recording] Failed to start recording',
+            fnError instanceof Error ? fnError.message : String(fnError),
+          );
           if (recordingStartFailureToastForSessionRef.current !== toastKey) {
             recordingStartFailureToastForSessionRef.current = toastKey;
             toast.error(
@@ -232,7 +235,11 @@ function DashboardLiveVideoDockRouter({
           'ok' in data &&
           (data as { ok?: boolean }).ok === false
         ) {
-          console.error('[Recording] Failed to start Agora recording.');
+          console.error(
+            '[Recording] Backend rejected start request with error code:',
+            (data as { error?: unknown }).error,
+            data,
+          );
           if (recordingStartFailureToastForSessionRef.current !== toastKey) {
             recordingStartFailureToastForSessionRef.current = toastKey;
             toast.error(
@@ -241,8 +248,11 @@ function DashboardLiveVideoDockRouter({
           }
         }
       })
-      .catch(() => {
-        console.error('[Recording] Failed to start Agora recording.');
+      .catch((err) => {
+        console.error(
+          '[Recording] Failed to start recording',
+          err instanceof Error ? err.message : String(err),
+        );
       });
   }, [
     isHost,

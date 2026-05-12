@@ -8,6 +8,11 @@ import { cn } from '@/lib/utils';
 export type RemoteVideoPreviewProps = {
   user: IAgoraRTCRemoteUser;
   className?: string;
+  /**
+   * Agora `videoTrack.play` fit. Default `contain`; pass `cover` when stage AR ≠ camera AR
+   * so participants see the host's chosen framing.
+   */
+  fit?: 'contain' | 'cover';
 };
 
 /**
@@ -19,7 +24,7 @@ function readRemoteTrackEnabled(track: unknown): boolean {
   return enabled !== false;
 }
 
-export function RemoteVideoPreview({ user, className }: RemoteVideoPreviewProps) {
+export function RemoteVideoPreview({ user, className, fit = 'contain' }: RemoteVideoPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
   const { uid, videoTrack, audioTrack } = user;
@@ -40,11 +45,11 @@ export function RemoteVideoPreview({ user, className }: RemoteVideoPreviewProps)
   useEffect(() => {
     const el = containerRef.current;
     if (!videoTrack || !el) return;
-    videoTrack.play(el, { fit: 'cover' });
+    videoTrack.play(el, { fit });
     return () => {
       videoTrack.stop();
     };
-  }, [uid, videoTrack]);
+  }, [uid, videoTrack, fit]);
 
   useEffect(() => {
     if (!videoTrack) return;
