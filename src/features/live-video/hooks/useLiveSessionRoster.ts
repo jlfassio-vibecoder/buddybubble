@@ -30,7 +30,6 @@ type DbParticipantIdentity = {
 
 export type UseLiveSessionRosterOptions = {
   sessionId: string;
-  workspaceId: string;
   localUserId: string;
   hostUserId: string;
   supabase: SupabaseClient<Database>;
@@ -91,7 +90,6 @@ export function useLiveSessionRoster(
 ): UseLiveSessionRosterResult {
   const {
     sessionId,
-    workspaceId,
     localUserId,
     hostUserId,
     supabase,
@@ -100,8 +98,6 @@ export function useLiveSessionRoster(
     localMediaState,
     onLocalMuteRequested,
   } = options;
-
-  void workspaceId;
 
   const [dbParticipants, setDbParticipants] = useState<DbParticipantIdentity[]>([]);
   const [remoteMedia, setRemoteMedia] = useState<
@@ -115,6 +111,12 @@ export function useLiveSessionRoster(
   const localUidRef = useRef(localUid);
   const clientRef = useRef(client);
   const onLocalMuteRef = useRef(onLocalMuteRequested);
+  const sessionIdRef = useRef(sessionId);
+  const rosterRefetchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
 
   useEffect(() => {
     hostUserIdRef.current = hostUserId;
@@ -129,18 +131,18 @@ export function useLiveSessionRoster(
     onLocalMuteRef.current = onLocalMuteRequested;
   }, [onLocalMuteRequested]);
 
-  useEffect(() => {
-    if (!sessionId.trim()) {
+  const refetchDbParticipants = useCallback(() => {
+    const sid = sessionIdRef.current;
+    if (!sid.trim()) {
       setDbParticipants([]);
       return;
     }
-    let cancelled = false;
     void supabase
-      .rpc('live_session_list_participants', { p_session_id: sessionId })
+      .rpc('live_session_list_participants', { p_session_id: sid })
       .then(({ data, error }) => {
-        if (cancelled) return;
+        if (sid !== sessionIdRef.current) return;
         if (error || !Array.isArray(data)) {
-          if (!cancelled) setDbParticipants([]);
+          setDbParticipants([]);
           return;
         }
         const rows: DbParticipantIdentity[] = [];
@@ -160,13 +162,22 @@ export function useLiveSessionRoster(
             role: raw.role ?? '',
           });
         }
-        if (cancelled) return;
+        if (sid !== sessionIdRef.current) return;
         setDbParticipants(rows);
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionId, supabase]);
+  }, [supabase]);
+
+  useEffect(() => {
+    refetchDbParticipants();
+  }, [sessionId, refetchDbParticipants]);
+
+  const scheduleDebouncedRosterRefetch = useCallback(() => {
+    if (rosterRefetchDebounceRef.current) clearTimeout(rosterRefetchDebounceRef.current);
+    rosterRefetchDebounceRef.current = setTimeout(() => {
+      rosterRefetchDebounceRef.current = null;
+      refetchDbParticipants();
+    }, 600);
+  }, [refetchDbParticipants]);
 
   useEffect(() => {
     if (!client) {
@@ -186,20 +197,29 @@ export function useLiveSessionRoster(
       setMediaTick((t) => t + 1);
     };
 
+    const onUserJoined = () => {
+      refreshRemote();
+      scheduleDebouncedRosterRefetch();
+    };
+
     refreshRemote();
 
     client.on('user-published', refreshRemote);
     client.on('user-unpublished', refreshRemote);
     client.on('user-left', refreshRemote);
-    client.on('user-joined', refreshRemote);
+    client.on('user-joined', onUserJoined);
 
     return () => {
+      if (rosterRefetchDebounceRef.current) {
+        clearTimeout(rosterRefetchDebounceRef.current);
+        rosterRefetchDebounceRef.current = null;
+      }
       client.off('user-published', refreshRemote);
       client.off('user-unpublished', refreshRemote);
       client.off('user-left', refreshRemote);
-      client.off('user-joined', refreshRemote);
+      client.off('user-joined', onUserJoined);
     };
-  }, [client]);
+  }, [client, scheduleDebouncedRosterRefetch]);
 
   const participants = useMemo((): RosterParticipant[] => {
     const localLive =

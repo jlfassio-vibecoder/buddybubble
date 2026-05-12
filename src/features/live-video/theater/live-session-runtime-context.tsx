@@ -13,6 +13,8 @@ export type LiveSessionRuntimeValue = {
   state: SessionState;
   actions: SessionActions;
   isHost: boolean;
+  /** Authenticated Supabase user id for this runtime (same as provider `localUserId`). */
+  localUserId: string;
   hostUserId: string;
   workspaceId: string;
   /** Shared `room-session:` Realtime channel from `useSessionState`; null when disconnected. */
@@ -63,6 +65,7 @@ export function LiveSessionRuntimeProvider({
       state: result.state,
       actions: result.actions,
       isHost: result.isHost,
+      localUserId,
       hostUserId,
       workspaceId,
       realtimeChannel: result.realtimeChannel,
@@ -81,6 +84,7 @@ export function LiveSessionRuntimeProvider({
       result.realtimeChannel,
       result.state,
       result.subscribeTick,
+      localUserId,
       hostUserId,
       workspaceId,
       sessionId,

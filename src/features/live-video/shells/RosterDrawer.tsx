@@ -103,8 +103,7 @@ function RosterDrawerInternalRoster({
   onCountChange,
   localUserId,
 }: Pick<RosterDrawerProps, 'open' | 'onOpenChange' | 'onCountChange'> & { localUserId: string }) {
-  const { sessionId, supabase, hostUserId, workspaceId, realtimeChannel, isHost } =
-    useLiveSessionRuntime();
+  const { sessionId, supabase, hostUserId, realtimeChannel, isHost } = useLiveSessionRuntime();
   const { client, isMicMuted, isCameraOff, toggleMic } = useAgoraSession();
 
   const localUid = useMemo(() => agoraUidFromUuid(localUserId), [localUserId]);
@@ -125,7 +124,6 @@ function RosterDrawerInternalRoster({
 
   const { participants, sendRemoteMute } = useLiveSessionRoster({
     sessionId,
-    workspaceId,
     localUserId,
     hostUserId,
     supabase,

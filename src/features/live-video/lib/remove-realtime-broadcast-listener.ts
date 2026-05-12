@@ -22,6 +22,7 @@ export function removeRealtimeBroadcastListener(
   event: string,
   handler: (message: { payload: unknown }) => void,
 ): void {
+  // Copilot suggestion ignored: Shared room-session channel has no public broadcast .off; internals match how supabase-js registers _on() bindings.
   const ch = channel as unknown as RealtimeChannelInternals;
   const list = ch.bindings?.broadcast;
   if (!list?.length) return;

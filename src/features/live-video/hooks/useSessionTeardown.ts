@@ -53,6 +53,7 @@ export function useSessionTeardown({
       if (!alive) return;
       const parsed = parseSessionCommandPayload(message.payload);
       if (!parsed || parsed.type !== 'SESSION_TERMINATED') return;
+      // Copilot suggestion ignored: Full server-authoritative terminate is out of scope; matching senderId to host is best-effort until DB/RPC signals exist.
       if (parsed.senderId !== hostUserIdRef.current) return;
       if (!sessionIdRef.current || parsed.sessionId !== sessionIdRef.current) return;
 

@@ -51,7 +51,8 @@ export function SessionControls({
   const {
     supabase,
     sessionId: liveSessionRowId,
-    hostUserId,
+    isHost,
+    localUserId,
     realtimeChannel,
   } = useLiveSessionRuntime();
   const { setOverride, override } = useWrapperAttach();
@@ -82,11 +83,11 @@ export function SessionControls({
     }
     if (!disableActions) setOverride(null);
     const sid = liveSessionRowId.trim();
-    if (realtimeChannel && hostUserId && sid) {
+    if (!disableActions && isHost && realtimeChannel && localUserId && sid) {
       void realtimeChannel.send({
         type: 'broadcast',
         event: SESSION_COMMAND_EVENT,
-        payload: { type: 'SESSION_TERMINATED', senderId: hostUserId, sessionId: sid },
+        payload: { type: 'SESSION_TERMINATED', senderId: localUserId, sessionId: sid },
       });
     }
     actions.endSession();

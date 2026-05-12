@@ -179,7 +179,6 @@ function LiveSessionViewInner({
 
   const { participants: rosterParticipants, sendRemoteMute } = useLiveSessionRoster({
     sessionId: liveSessionId,
-    workspaceId,
     localUserId,
     hostUserId: runtimeHostUserId,
     supabase: supabaseFromRuntime,
