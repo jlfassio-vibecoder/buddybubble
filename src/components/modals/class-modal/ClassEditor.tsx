@@ -33,6 +33,7 @@ import { ClassEditorWorkoutPicker } from '@/components/modals/class-modal/ClassE
 import { ClassEditorRecordingSection } from '@/components/modals/class-modal/ClassEditorRecordingSection';
 import { mergeClassRecordingIntoInstanceMetadata } from '@/lib/class-recording-metadata';
 import { useUserProfileStore } from '@/store/userProfileStore';
+import { useWorkspaceInstructors } from '@/hooks/useWorkspaceInstructors';
 
 type ClassEditorLiveDeckInnerProps = {
   workspaceId: string;
@@ -217,6 +218,13 @@ export function ClassEditor({
   const [asyncWorkoutEnabled, setAsyncWorkoutEnabled] = useState(false);
   const classWorkoutDeckScrollRef = useRef<HTMLDivElement>(null);
   const profileId = useUserProfileStore((s) => s.profile?.id ?? null);
+  const [instructorId, setInstructorId] = useState<string | null>(null);
+  const [allowInstructorAutofill, setAllowInstructorAutofill] = useState(() => mode === 'create');
+  const {
+    instructors,
+    loading: instructorsLoading,
+    error: instructorsQueryError,
+  } = useWorkspaceInstructors(workspaceId);
 
   const { createClass, saveClass } = useClassSaveAndCreate({
     setError,
@@ -283,6 +291,14 @@ export function ClassEditor({
 
       setCapacity(data.capacity != null ? String(data.capacity) : '');
       setInstructorNotes((data.instructor_notes as string) ?? '');
+      const loadedInstructorId = (data.instructor_id as string | null | undefined) ?? null;
+      if (loadedInstructorId) {
+        setInstructorId(loadedInstructorId);
+        setAllowInstructorAutofill(false);
+      } else {
+        setInstructorId(null);
+        setAllowInstructorAutofill(true);
+      }
       const { ymd, hm } = isoToDateAndTime(data.scheduled_at as string);
       setScheduledOn(ymd);
       setScheduledTime(hm);
@@ -298,6 +314,29 @@ export function ClassEditor({
       cancelled = true;
     };
   }, [mode, instanceId, offeringIdProp]);
+
+  useEffect(() => {
+    if (instructorsLoading) return;
+    if (instructorsQueryError) {
+      setAllowInstructorAutofill(false);
+      return;
+    }
+    if (!allowInstructorAutofill || instructorId !== null) return;
+    const idSet = new Set(instructors.map((i) => i.id));
+    if (profileId && idSet.has(profileId)) {
+      setInstructorId(profileId);
+    } else if (instructors.length === 1) {
+      setInstructorId(instructors[0].id);
+    }
+    setAllowInstructorAutofill(false);
+  }, [
+    allowInstructorAutofill,
+    instructorId,
+    instructors,
+    instructorsLoading,
+    instructorsQueryError,
+    profileId,
+  ]);
 
   const selectClassName = cn(
     'h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none md:text-sm',
@@ -354,6 +393,7 @@ export function ClassEditor({
         workspace_id: workspaceId,
         scheduled_at: scheduledAt,
         capacity: cap,
+        instructor_id: instructorId?.trim() ? instructorId.trim() : null,
         instructor_notes: instructorNotes.trim() || null,
         metadata: rawInstanceMetadata,
       },
@@ -366,6 +406,7 @@ export function ClassEditor({
     capacity,
     description,
     location,
+    instructorId,
     instructorNotes,
     intensity,
     targetedFocus,
@@ -710,6 +751,34 @@ export function ClassEditor({
                   onChange={(e) => setTargetedFocus(e.target.value)}
                   disabled={disabledForm}
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="class-instructor-user">Instructor</Label>
+                <select
+                  id="class-instructor-user"
+                  className={selectClassName}
+                  value={instructorId ?? ''}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setInstructorId(v ? v : null);
+                    setAllowInstructorAutofill(false);
+                  }}
+                  disabled={disabledForm || instructors.length === 0}
+                >
+                  <option value="">No instructor</option>
+                  {instructors.map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.displayName}
+                    </option>
+                  ))}
+                </select>
+                {instructorsQueryError ? (
+                  <p className="text-xs text-destructive">{instructorsQueryError}</p>
+                ) : null}
+                {instructorsLoading ? (
+                  <p className="text-xs text-muted-foreground">Loading instructors…</p>
+                ) : null}
               </div>
 
               <div className="space-y-2">
