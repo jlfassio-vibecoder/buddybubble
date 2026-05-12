@@ -1,6 +1,7 @@
 # ADR: Custom Live Workout Builder (inline exercise injection)
 
-Status: **Proposed** — direct blueprint for implementation.
+Status: **Implemented (v1)** — behavior matches [`LiveDeckExerciseInjector.tsx`](../../../src/features/live-video/shells/huddle/LiveDeckExerciseInjector.tsx) (Pre-Live + Active Live). This document is both the original design record and an **as-built** pointer; where the code intentionally differs from the earlier two-step empty-deck sequence, §4 calls it out.
+
 Scope: **Pre-Live** ([`PreJoinBuilder.tsx`](../../../src/features/live-video/shells/huddle/PreJoinBuilder.tsx)) and **Active Live** ([`LiveSessionView.tsx`](../../../src/features/live-video/shells/huddle/LiveSessionView.tsx)) host shells. Class Builder may follow later under the same contract; not covered here.
 
 Companion docs: [Unified workout builder layout](./unified-builder-layout.md), [Workout builder README](./README.md).
@@ -41,19 +42,18 @@ On **confirm** (host clicks **Add to deck**):
 
 1. The selector returns the chosen `ExerciseDictionaryAutocompleteRow[]` (id + name).
 2. We call **[`rpcExerciseDictionaryLookupByNames`](../../../src/lib/workout-factory/exercise-dictionary-bridge.ts)** (RPC `exercise_dictionary_lookup_by_names`, granted to `authenticated` in [`20260813120200_grant_exercise_dictionary_lookup_authenticated.sql`](../../../supabase/migrations/20260813120200_grant_exercise_dictionary_lookup_authenticated.sql)) to fetch full `ExerciseDictionaryRow`s for the picked names.
-3. We map each row to a [`WorkoutExercise`](../../../src/lib/item-metadata.ts) using the existing helpers in [`exercise-dictionary-bridge.ts`](../../../src/lib/workout-factory/exercise-dictionary-bridge.ts):
-   - `dictionaryRowToEnrichedExercise(row, order, name)` → `KanbanEnrichedExercise` (`detailed_instructions`, `biomechanical_cues`, `injury_prevention_tips`).
-   - Then a thin shim (mirror of [`mergeKanbanExtractEnrichToTaskExercises`](../../../src/lib/workout-factory/map-kanban-extract-to-workout.ts)) yields a `WorkoutExercise` with `name`, optional default prescription fields blank, plus `instructions`, `form_cues`, `injury_prevention_tips`, `equipment` (when present in `biomechanics`/dictionary metadata), and `thumbnail_url` (when `media` resolves a URL).
-4. The host can edit prescription (sets/reps/weight/RPE/duration) inline before or after injection in the existing [`WorkoutExercisesEditor`](../../../src/components/fitness/workout-exercises-editor.tsx) — this ADR does not change that editor’s API.
+3. We map each row to a [`WorkoutExercise`](../../../src/lib/item-metadata.ts) via **[`dictionaryRowToWorkoutExercise`](../../../src/lib/workout-factory/dictionary-row-to-workout-exercise.ts)** — it builds Kanban-shaped extract/enrich inputs, calls [`mergeKanbanExtractEnrichToTaskExercises`](../../../src/lib/workout-factory/map-kanban-extract-to-workout.ts) (same merge path as AI/Kanban enrichment), then attaches `thumbnail_url` when [`ExerciseDictionaryRow`](../../../src/types/database.ts) `media` exposes a URL. Equipment is derived from `biomechanics` keys (`equipment`, `equipmentNeeded`, `primaryEquipment`).
+4. RPC rows are reordered to match the picker with **`orderDictionaryRowsByPickerSelection`** in the same module (normalized name order).
+5. The host can edit prescription (sets/reps/weight/RPE/duration) inline before or after injection in the existing [`WorkoutExercisesEditor`](../../../src/components/fitness/workout-exercises-editor.tsx) — this ADR does not change that editor’s API.
 
-### Component placement
+### Component placement (implemented)
 
-A new reusable client component (suggested name): **`LiveDeckExerciseInjector`** under `src/features/live-video/shells/huddle/` (alongside `LiveSessionWorkoutPlayer.tsx`). Both `PreJoinBuilder` and `LiveSessionView`:
+- **[`LiveDeckExerciseInjector`](../../../src/features/live-video/shells/huddle/LiveDeckExerciseInjector.tsx)** (`'use client'`) — **+ Add custom** trigger, Radix **`Popover`** + shadcn-style **`Command`** list ([`command.tsx`](../../../src/components/ui/command.tsx), [`popover.tsx`](../../../src/components/ui/popover.tsx)) built on **`useExerciseDictionaryAutocomplete`**, multi-select via toggled `CommandItem` rows (max **25** per confirm).
+- **[`PreJoinBuilder`](../../../src/features/live-video/shells/huddle/PreJoinBuilder.tsx)** and **[`LiveSessionView`](../../../src/features/live-video/shells/huddle/LiveSessionView.tsx)** render it next to the board/deck actions and pass **`workspaceId`**, **`workoutsBubbleId`**, and **`canWrite`**.
 
-- Render it adjacent to the existing **+ Add from Board** affordance, e.g. as a sibling “**+ Add custom**” button that opens the popover.
-- Pass through `canWrite` and (for Option B fallback) the `workspaceId` + Supabase client already in scope.
+**Workouts bubble id wiring:** [`dashboard-shell.tsx`](../../../src/components/dashboard/dashboard-shell.tsx) resolves **`workoutsBubbleForLiveDeck`** for the active workspace and passes **`workoutsBubbleId={workoutsBubbleForLiveDeck?.id ?? null}`** through [`dashboard-live-video-dock.tsx`](../../../src/components/dashboard/dashboard-live-video-dock.tsx) into the live shell props so Option B can target the correct `bubble_id` without re-querying inside the injector.
 
-If atomic primitives are missing (e.g. a `MultiSelectCommand`), introduce them once in `src/components/ui/` rather than inlining ad-hoc — production gold standard outweighs strict reuse.
+**Errors:** confirm-path failures use **`formatUserFacingError`** ([`format-error.ts`](../../../src/lib/format-error.ts)); generic toasts for unexpected errors (no raw dictionary/autocomplete strings in user-visible copy). Dev-only `console.error` for thrown errors.
 
 ---
 
@@ -69,7 +69,7 @@ sequenceDiagram
   participant Injector as LiveDeckExerciseInjector
   participant Auto as useExerciseDictionaryAutocomplete
   participant RPC as rpcExerciseDictionaryLookupByNames
-  participant Map as dictionary -> WorkoutExercise
+  participant Map as dictionaryRowToWorkoutExercise
   participant Ctx as WorkoutDeckSelectionProvider
   participant DB as live_session_deck_items.session_task_metadata
 
@@ -107,43 +107,40 @@ sequenceDiagram
 - `WorkoutDeckSelectionProvider` `isSelectingFromBoard` stays **false** — this flow is independent of the “+ Add from Board” Kanban pick mode and must not toggle the embedded Workouts board.
 - Active Agora session and `WorkoutDeckSelectionProvider` are unaffected (no remount triggers).
 
-### Edge rules
+### Edge rules (implemented)
 
-- Disable **+ Add custom** when `activeSnapshot` exists but `activeSnapshot.task.item_type` is not `workout` / `workout_log` (mirror existing `LiveSessionWorkoutPlayer` guard); show the same neutral helper text.
-- Multi-select cap (suggested 25 per inject) to keep the metadata blob bounded; show a soft-limit toast.
-- After inject, optionally focus the newest exercise row in `WorkoutExercisesEditor` (use existing `autoEditFirstRow` semantic if/when extended).
+- **Active card is explicit:** if the deck has snapshots but **`activeSnapshotId` is null** (`needsSelectionFirst`), the injector **does not** fall back to `deck[0]`. The trigger is disabled with tooltip copy to select a card first; opening the popover is closed in an effect while that state holds.
+- Block injection when the active card’s **`item_type`** is not **`workout`** / **`workout_log`** (inline helper + toast).
+- Multi-select cap **25** per inject — toast when at cap; footer shows selected count.
+- After inject, optionally focus the newest exercise row in `WorkoutExercisesEditor` (use existing `autoEditFirstRow` semantic if/when extended) — **not** implemented in v1.
 
 ---
 
 ## 4. Empty-deck handling: Option B fallback (one-shot task seed)
 
-When the host opens the injector with **no `activeSnapshot`** (empty deck), Option A has nothing to mutate. We apply the smallest possible Option B — a single seed task — so the rest of the system keeps its **“every deck row has a `task_id`”** invariant ([`workout-deck-selection-context.tsx`](../../../src/features/live-video/shells/huddle/workout-deck-selection-context.tsx) `addTaskToDeck` ~335–375).
+When the host confirms with **an empty deck** (`ctx.deck.length === 0`) and there is no active snapshot to patch, Option A has nothing to mutate. The implementation still uses a **single seed `tasks` row** + **`addTaskToDeck`** so the invariant holds: **every deck row has a `task_id`** ([`workout-deck-selection-context.tsx`](../../../src/features/live-video/shells/huddle/workout-deck-selection-context.tsx)).
 
-### Sequence
+### As implemented (v1) — one confirm on empty deck
 
-1. Resolve the **Workouts** bubble id for the active workspace (same lookup pattern as [`ClassEditorWorkoutPicker.tsx`](../../../src/components/modals/class-modal/ClassEditorWorkoutPicker.tsx) or `dashboard-shell.tsx` `workoutsBubbleForLiveDeck`). If missing, surface the existing toast (“Add a ‘Workouts’ channel…”) and abort.
-2. Insert a minimal `tasks` row:
-   - `bubble_id = workoutsBubble.id`
-   - `item_type = 'workout'`
-   - `title = 'Custom workout'` (suffix with timestamp or session label as needed)
-   - `status = first board column slug` (reuse `resolveFirstBoardColumnSlug` already used by [`storefront-trial-workout-task.ts`](../../../src/lib/storefront-trial-workout-task.ts))
-   - `metadata = { workout_type: 'strength', exercises: [] }` cast to `Json`
-   - `visibility`, `priority`, `position` defaulted as in the storefront seed helper.
-3. `await addTaskToDeck(insertedTask)` from [`WorkoutDeckSelectionProvider`](../../../src/features/live-video/shells/huddle/workout-deck-selection-context.tsx). The provider:
-   - Pushes a `SessionDeckSnapshot`,
-   - Sets `activeSnapshotId` to the new snapshot,
-   - Inserts `live_session_deck_items` (`session_id`, `task_id`, `sort_order`).
-4. **Then** open the selector popover and run the standard **Option A** path against the freshly active snapshot.
+The original ADR text described inserting **`exercises: []`** then running a second **Option A** append. **Shipped behavior is a single user confirm:** the host selects dictionary rows in the popover and clicks **Add to deck**. On empty deck, the injector:
+
+1. Requires **`workoutsBubbleId`** (from dashboard props); otherwise toast: add a **“Workouts”** channel.
+2. Requires signed-in **`created_by`** (`profileId` from the client profile store).
+3. Awaits **[`resolveFirstBoardColumnSlug`](../../../src/lib/fitness/resolve-first-board-column-slug.ts)** (`board_columns` by `position`, fallback **`planned`**) — shared with [`storefront-trial-workout-task.ts`](../../../src/lib/storefront-trial-workout-task.ts) for consistent **Kanban column** placement.
+4. **`tasks.insert`** with `metadata: { workout_type: 'strength', exercises: mapped }` where **`mapped`** is the confirmed dictionary payload (not an empty array), plus defaults aligned with other workout inserts (`visibility: 'private'`, `priority: 'medium'`, `attachments: []`, etc.).
+5. **`insert(...).select('id').single()`** then a **`select('*').eq('id', ...).maybeSingle()`** to retrieve a full **`TaskRow`** for **`addTaskToDeck`** (provider expects a complete row shape).
+
+This avoids a two-step “empty task then inject” while keeping the same persistence boundary.
 
 ### Why Option B is a fallback, not the default
 
 - Avoids creating throwaway `tasks` rows for the common case where the host is editing an existing card.
-- Keeps the **active card** as the unit of host intent; the “new tile + immediately edit” motion is a one-time bootstrap.
-- One unified persistence story across Pre-Live and Active Live: **`task_id` always exists**; mutations land in `session_task_metadata`.
+- Keeps the **active card** as the unit of host intent; empty-deck bootstrap is the exception path.
+- **`task_id` always exists** after seed; further edits use the same snapshot / **Apply to session only** flow as other deck cards.
 
 ### Failure handling
 
-- If `tasks.insert` fails: toast the user-facing error, **do not** mount the selector, leave the deck unchanged.
+- If `tasks.insert` or the follow-up fetch fails: **`formatUserFacingError`** toast, deck unchanged.
 - If `addTaskToDeck` succeeds but the deck-item insert fails inside the provider: provider already retries via `flushDirtySessionMetadata`; the injector should still proceed — the snapshot exists locally and dirty edits will flush when the deck row is created.
 
 ---
@@ -155,7 +152,7 @@ When the host opens the injector with **no `activeSnapshot`** (empty deck), Opti
 - Host in **Active Live**:
   - Same as above; mic/camera bar (`selectionFloatingMediaBar`) is unaffected (the injector is not the Kanban pick mode).
 - **Empty deck** in either shell:
-  - Selector confirm performs the Option B seed once, then completes the same Option A inject.
+  - One **Add to deck** confirm: Option B inserts a **`workout`** task whose **`metadata.exercises`** already contains the chosen movements, then **`addTaskToDeck`** attaches it to the session deck (no separate second inject step).
 - Sidebar `selectedBubbleId` unchanged across the entire flow.
 - No regressions to `+ Add from Board`, AMRAP wrapper paths, or Agora connectivity.
 
@@ -166,3 +163,12 @@ When the host opens the injector with **no `activeSnapshot`** (empty deck), Opti
 - Auto-persist after inject vs require explicit **Apply to session only** click.
 - Whether the seed `tasks` row from Option B is later promoted to a “save as new card” by reusing `usePersistDeckSnapshot.insertTaskClone` semantics.
 - Whether to allow **drag-and-drop** of selector chips into a specific position in the exercise list (vs append-only).
+
+---
+
+## 7. Related work (same initiative, outside the injector file)
+
+These changes landed alongside the custom builder but are not part of the injector’s public API:
+
+- **Participant pre-join:** [`ParticipantPreJoinSummary.tsx`](../../../src/features/live-video/shells/ParticipantPreJoinSummary.tsx) surfaces a **`waitingForHost`** status banner when join retries detect the host row is not ready yet (clear UX instead of silent state).
+- **Dashboard / Agora hoist:** [`dashboard-shell.tsx`](../../../src/components/dashboard/dashboard-shell.tsx) keeps **`DashboardLiveVideoDockProvider`** wrapping **`LiveTheaterPlanBranch`** so video context survives `shellKind` transitions; narrowing the provider is a separate portal/slot refactor if we ever need to optimize re-renders.
