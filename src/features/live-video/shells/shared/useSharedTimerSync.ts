@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { createClient } from '@utils/supabase/client';
 import {
   type LiveAspectRatioId,
@@ -86,17 +86,6 @@ export function useSharedTimerSync(options: UseSharedTimerSyncOptions): UseShare
   const aspectRatio = session.state.aspectRatio as LiveAspectRatioId;
   const generation = session.state.generation;
 
-  useEffect(() => {
-    if (process.env.NODE_ENV === 'development') {
-      console.log(
-        '[DEBUG] useSharedTimerSync render: topic=%s aspectRatio=%s connection=%s',
-        topic,
-        aspectRatio,
-        session.connectionStatus,
-      );
-    }
-  }, [aspectRatio, session.connectionStatus, topic]);
-
   const getSnapshot = useCallback((): SharedTimerSnapshot => {
     const status: SharedTimerSessionStatus =
       session.state.status === 'idle'
@@ -118,13 +107,6 @@ export function useSharedTimerSync(options: UseSharedTimerSyncOptions): UseShare
 
   const setAspectRatio = useCallback(
     (ratio: LiveAspectRatioId) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.log(
-          '[DEBUG] useSharedTimerSync setAspectRatio requested: ratio=%s isHost=%s',
-          ratio,
-          session.isHost,
-        );
-      }
       session.actions.setAspectRatio(ratio as SessionAspectRatioId);
     },
     [session],

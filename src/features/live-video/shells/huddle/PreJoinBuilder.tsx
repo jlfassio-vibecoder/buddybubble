@@ -61,9 +61,6 @@ export function PreJoinBuilder({
       onLeaveDock?.();
       return;
     }
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[DEBUG] PreJoinBuilder - Host triggered End Session');
-    }
     actions.endSession();
     try {
       if (onEndSession) await onEndSession();

@@ -7,6 +7,7 @@ import {
   buildAmrapBlockSnapshot,
 } from '@/features/amrap/utils/buildAmrapBlockSnapshot';
 import { useLiveSessionRuntime } from '@/features/live-video/theater/live-session-runtime-context';
+import { SESSION_COMMAND_EVENT } from '@/features/live-video/state/session-sync.types';
 import { useWorkoutDeckSelectionOptional } from '@/features/live-video/shells/huddle/workout-deck-selection-context';
 import { useWrapperAttach } from '@/features/live-video/contexts/WrapperAttachContext';
 import type { Json } from '@/types/database';
@@ -47,7 +48,12 @@ export function SessionControls({
   hostClassRecordingProcessing = false,
   className,
 }: SessionControlsProps) {
-  const { supabase, sessionId: liveSessionRowId } = useLiveSessionRuntime();
+  const {
+    supabase,
+    sessionId: liveSessionRowId,
+    hostUserId,
+    realtimeChannel,
+  } = useLiveSessionRuntime();
   const { setOverride, override } = useWrapperAttach();
   const deckSel = useWorkoutDeckSelectionOptional();
   const amrapAttachReady = !disableActions && liveDbReady && liveSessionRowId.trim().length > 0;
@@ -75,6 +81,14 @@ export function SessionControls({
         });
     }
     if (!disableActions) setOverride(null);
+    const sid = liveSessionRowId.trim();
+    if (realtimeChannel && hostUserId && sid) {
+      void realtimeChannel.send({
+        type: 'broadcast',
+        event: SESSION_COMMAND_EVENT,
+        payload: { type: 'SESSION_TERMINATED', senderId: hostUserId, sessionId: sid },
+      });
+    }
     actions.endSession();
     void onHostEndLiveSessionForAll?.();
   };

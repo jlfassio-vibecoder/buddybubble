@@ -110,6 +110,7 @@ export function AgoraSessionProvider({
   const [localVideoTrack, setLocalVideoTrack] = useState<ILocalVideoTrack | null>(null);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [remoteUsers, setRemoteUsers] = useState<IAgoraRTCRemoteUser[]>([]);
+  const [rtcClient, setRtcClient] = useState<IAgoraRTCClient | null>(null);
   const [isMicMuted, setIsMicMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
 
@@ -132,7 +133,6 @@ export function AgoraSessionProvider({
   const hasPublishedRef = useRef(false);
 
   const leaveChannel = useCallback(() => {
-    console.log('[DEBUG] AgoraSessionProvider Unmounted - TRIPPING DISCONNECT / Cleanup');
     joinSeqRef.current += 1;
     if (abortRef.current) {
       abortRef.current.abort();
@@ -149,6 +149,7 @@ export function AgoraSessionProvider({
     const hadPublished = hasPublishedRef.current;
 
     clientRef.current = null;
+    setRtcClient(null);
     localAudioTrackRef.current = null;
     localVideoTrackRef.current = null;
     hasPublishedRef.current = false;
@@ -168,9 +169,6 @@ export function AgoraSessionProvider({
       const track = localAudioTrackRef.current;
       if (!track) return;
       const nextEnabled = !track.enabled;
-      console.log(
-        `[DEBUG] Toggling media: type=audio, newState=${nextEnabled ? 'enabled' : 'disabled'}`,
-      );
       try {
         await track.setEnabled(nextEnabled);
         setIsMicMuted(!track.enabled);
@@ -186,9 +184,6 @@ export function AgoraSessionProvider({
       const track = localVideoTrackRef.current;
       if (!track) return;
       const nextEnabled = !track.enabled;
-      console.log(
-        `[DEBUG] Toggling media: type=video, newState=${nextEnabled ? 'enabled' : 'disabled'}`,
-      );
       try {
         await track.setEnabled(nextEnabled);
         setIsCameraOff(!track.enabled);
@@ -255,12 +250,6 @@ export function AgoraSessionProvider({
           // 404: race with host `live_session_create` / participant `live_session_participant_join`.
           // Retry after a short backoff; do not surface as an error until we exhaust attempts.
           if (res.status === 404) {
-            if (process.env.NODE_ENV === 'development') {
-              console.log(
-                '[DEBUG][LiveVideo Token] 404 from token API; retrying for session-create race',
-                { attempt: attempt + 1, maxAttempts: TOKEN_FETCH_MAX_ATTEMPTS },
-              );
-            }
             lastErrorMsg = errorMsg ?? 'Live session not ready';
             if (attempt + 1 >= TOKEN_FETCH_MAX_ATTEMPTS) break;
             await abortableSleep(TOKEN_FETCH_RETRY_DELAY_MS, ac.signal);
@@ -300,7 +289,6 @@ export function AgoraSessionProvider({
         if (joinSeqRef.current !== seq || ac.signal.aborted) return;
 
         credentialsRef.current = payload;
-        console.log('[DEBUG] Token fetched successfully');
 
         const AgoraRTC = await loadAgoraRTC();
         if (joinSeqRef.current !== seq || ac.signal.aborted) return;
@@ -310,11 +298,13 @@ export function AgoraSessionProvider({
         if (role === 'subscriber') {
           client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
           clientRef.current = client;
+          setRtcClient(client);
           await client.join(appId, ch, token, uid);
           if (joinSeqRef.current !== seq || ac.signal.aborted) {
             detachRemoteListeners();
             await releaseClientAndTracks(client, null, null, false);
             clientRef.current = null;
+            setRtcClient(null);
             return;
           }
           unbindRemoteListenersRef.current?.();
@@ -364,12 +354,14 @@ export function AgoraSessionProvider({
 
         client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
         clientRef.current = client;
+        setRtcClient(client);
         await client.join(appId, ch, token, uid);
 
         if (joinSeqRef.current !== seq || ac.signal.aborted) {
           detachRemoteListeners();
           await releaseClientAndTracks(client, audio, video, false);
           clientRef.current = null;
+          setRtcClient(null);
           localAudioTrackRef.current = null;
           localVideoTrackRef.current = null;
           setLocalVideoTrack(null);
@@ -394,6 +386,7 @@ export function AgoraSessionProvider({
           detachRemoteListeners();
           await releaseClientAndTracks(client, audio, video, true);
           clientRef.current = null;
+          setRtcClient(null);
           localAudioTrackRef.current = null;
           localVideoTrackRef.current = null;
           hasPublishedRef.current = false;
@@ -412,6 +405,7 @@ export function AgoraSessionProvider({
         detachRemoteListeners();
         await releaseClientAndTracks(client, audio, video, published);
         clientRef.current = null;
+        setRtcClient(null);
         localAudioTrackRef.current = null;
         localVideoTrackRef.current = null;
         hasPublishedRef.current = false;
@@ -427,7 +421,6 @@ export function AgoraSessionProvider({
   }, [channelId, workspaceId, sessionId, role, detachRemoteListeners]);
 
   useEffect(() => {
-    console.log('[DEBUG] AgoraSessionProvider Mounted - Initializing connection bounds');
     return () => {
       leaveChannel();
     };
@@ -443,6 +436,7 @@ export function AgoraSessionProvider({
       localVideoTrack,
       joinError,
       remoteUsers,
+      client: rtcClient,
       role,
       isMicMuted,
       isCameraOff,
@@ -458,6 +452,7 @@ export function AgoraSessionProvider({
       localVideoTrack,
       joinError,
       remoteUsers,
+      rtcClient,
       role,
       isMicMuted,
       isCameraOff,

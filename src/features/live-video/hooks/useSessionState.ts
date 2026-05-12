@@ -49,6 +49,8 @@ export type UseSessionStateResult = {
   state: SessionState;
   actions: SessionActions;
   isHost: boolean;
+  /** Same topic as `room-session:${workspaceId}:${sessionId}`; null when disconnected. */
+  realtimeChannel: RealtimeChannel | null;
   /** Ref-backed state model for rAF-based clocks (no per-tick React updates). */
   getSnapshot: () => SessionState;
   /** Block elapsed time (ms), aligned to host clock when possible. */
@@ -77,6 +79,7 @@ export function useSessionState(options: UseSessionStateOptions): UseSessionStat
   const [state, setState] = useState<SessionState>(initialSessionState);
   const [connectionStatus, setConnectionStatus] =
     useState<UseSessionStateResult['connectionStatus']>('disconnected');
+  const [realtimeChannel, setRealtimeChannel] = useState<RealtimeChannel | null>(null);
   const stateRef = useRef(state);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const connectedRef = useRef(false);
@@ -118,33 +121,14 @@ export function useSessionState(options: UseSessionStateOptions): UseSessionStat
       const parsed = parseSessionStateBroadcastPayload(raw);
       if (!parsed) return;
 
-      // Copilot suggestion ignored: generation-enforcer logs stay unconditional so stale-drop reordering remains visible in production.
       const incomingGeneration = parsed.state.generation ?? 0;
       const currentGeneration = stateRef.current.generation ?? 0;
-      console.log('[DEBUG][LiveVideo State] Evaluating broadcast generation:', {
-        incoming: incomingGeneration,
-        current: currentGeneration,
-      });
       if (incomingGeneration < currentGeneration) {
-        console.log('[DEBUG][LiveVideo State] Dropped stale out-of-order broadcast.');
         return;
       }
 
       if (parsed.senderId !== hostUserId) return;
       if (isHost && parsed.senderId === localUserId) return;
-      if (process.env.NODE_ENV === 'development') {
-        console.log(
-          '[DEBUG] useSessionState broadcast received: senderId=%s phase=%s status=%s aspectRatio=%s generation=%s',
-          parsed.senderId,
-          parsed.state.phase,
-          parsed.state.status,
-          parsed.state.aspectRatio,
-          parsed.state.generation,
-        );
-      }
-      if (!isHost && process.env.NODE_ENV === 'development') {
-        console.log('[DEBUG] Participant received active item:', parsed.state.activeDeckItemId);
-      }
       if (!isHost && typeof parsed.hostNow === 'number') {
         const localReceive = Date.now();
         epochOffsetMsRef.current = parsed.hostNow - localReceive;
@@ -176,6 +160,7 @@ export function useSessionState(options: UseSessionStateOptions): UseSessionStat
     if (!topic) {
       connectedRef.current = false;
       channelRef.current = null;
+      setRealtimeChannel(null);
       syncRequestSentRef.current = false;
       epochOffsetMsRef.current = 0;
       setConnectionStatus('disconnected');
@@ -199,6 +184,7 @@ export function useSessionState(options: UseSessionStateOptions): UseSessionStat
       const ch = channelRef.current;
       channelRef.current = null;
       connectedRef.current = false;
+      setRealtimeChannel(null);
       if (ch) {
         await supabase.removeChannel(ch);
       }
@@ -228,6 +214,7 @@ export function useSessionState(options: UseSessionStateOptions): UseSessionStat
         config: { broadcast: { ack: false } },
       });
       channelRef.current = channel;
+      setRealtimeChannel(channel);
       setConnectionStatus('connecting');
 
       channel.on('broadcast', { event: SESSION_STATE_BROADCAST_EVENT }, (message) => {
@@ -373,9 +360,6 @@ export function useSessionState(options: UseSessionStateOptions): UseSessionStat
   const handleSetAspectRatio = useCallback(
     (ratio: SessionAspectRatioId) => {
       if (!isHost) return;
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[DEBUG] useSessionState setAspectRatio (host): ratio=%s', ratio);
-      }
       setState((prev) => {
         const next = reduceSetAspectRatio(prev, ratio);
         scheduleHostBroadcast(next, prev);
@@ -388,9 +372,6 @@ export function useSessionState(options: UseSessionStateOptions): UseSessionStat
   const handleSetActiveDeckItem = useCallback(
     (id: string | null) => {
       if (!isHost) return;
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[DEBUG] Host broadcast active item:', id);
-      }
       setState((prev) => {
         const next = reduceSetActiveDeckItem(prev, id);
         scheduleHostBroadcast(next, prev);
@@ -441,6 +422,7 @@ export function useSessionState(options: UseSessionStateOptions): UseSessionStat
     state,
     actions,
     isHost,
+    realtimeChannel,
     getSnapshot,
     getElapsedMs,
     subscribeTick,
