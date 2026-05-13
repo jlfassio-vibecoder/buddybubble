@@ -19,3 +19,5 @@ supabase/.temp/
 # Local symlink to agent skills (see skills-lock.json); not portable
 skills/
 next-env.d.ts
+
+# Copilot suggestion ignored: do not add a one-off filename rule for deleted scratch files; rely on review and Husky instead of bloating .gitignore.

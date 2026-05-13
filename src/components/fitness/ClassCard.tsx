@@ -285,7 +285,7 @@ export function ClassCard({
             {!currentUserId
               ? 'Sign in to play'
               : recordingCta === 'recording'
-                ? 'Recording in process…'
+                ? 'Recording in progress…'
                 : recordingCta === 'uploading'
                   ? 'Recording processing…'
                   : recordingCta === 'editorProcessing'

@@ -22,10 +22,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 // evaluates. `esm.sh` pre-bundles those polyfills, so importing from there avoids the module-load crash.
 import { RtcRole, RtcTokenBuilder } from 'https://esm.sh/agora-access-token@2.0.4';
 import { agoraRecordingBotUid, agoraUidFromUuid } from '../_shared/agora-uid.ts';
-import {
-  mergeClassRecordingIntoInstanceMetadata,
-  type ClassRecordingPayload,
-} from '../_shared/class-recording-metadata.ts';
+import { patchInstanceClassRecordingPipelineStatus } from '../_shared/class-recording-reconcile.ts';
 import { parseLiveSessionInviteFromInstanceMetadata } from '../_shared/live-session-invite.ts';
 
 const CHANNEL_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
@@ -515,14 +512,14 @@ Deno.serve(async (req) => {
         return controlPlaneError('update_recording', upRecErr.message);
       }
 
-      const nowIso = new Date().toISOString();
-      const { data: freshInst, error: freshErr } = await supabase
-        .from('class_instances')
-        .select('metadata')
-        .eq('id', classInstanceId)
-        .maybeSingle();
+      const patch = await patchInstanceClassRecordingPipelineStatus(supabase, {
+        classInstanceId,
+        status: 'recording',
+        logPrefix: '[agora-recording-start]',
+      });
 
-      if (freshErr || !freshInst) {
+      if (!patch.ok) {
+        console.error('[agora-recording-start] metadata update', patch.error);
         await agoraStopMixBestEffort(
           restBase,
           appId,
@@ -532,53 +529,32 @@ Deno.serve(async (req) => {
           channelName,
           botUidStr,
         );
-        await failSession('class_instance_refresh_failed');
-        return controlPlaneError('instance_refresh', freshErr?.message ?? 'row_missing');
+        await failSession(`metadata_update_failed: ${patch.error}`);
+        return json({ ok: false, error: 'metadata_update_failed' }, 500);
       }
 
-      const prevRecording = (freshInst.metadata as Record<string, unknown>)?.class_recording;
-      const prevCreated =
-        prevRecording &&
-        typeof prevRecording === 'object' &&
-        !Array.isArray(prevRecording) &&
-        typeof (prevRecording as { createdAt?: unknown }).createdAt === 'string'
-          ? (prevRecording as { createdAt: string }).createdAt
-          : undefined;
-
-      const recordingPayload: ClassRecordingPayload = {
-        type: 'class_recording',
-        status: 'recording',
-        provider: 'agora',
-        ...(prevCreated ? { createdAt: prevCreated } : { createdAt: nowIso }),
-        updatedAt: nowIso,
-      };
-
-      const nextMeta = mergeClassRecordingIntoInstanceMetadata(
-        freshInst.metadata,
-        recordingPayload,
-      );
-
-      const { error: metaErr } = await supabase
-        .from('class_instances')
-        .update({
-          metadata: nextMeta,
-          updated_at: nowIso,
-        })
-        .eq('id', classInstanceId);
-
-      if (metaErr) {
-        console.error('[agora-recording-start] metadata update', metaErr.message);
-        await agoraStopMixBestEffort(
-          restBase,
-          appId,
-          authz,
-          resourceId,
-          sid,
-          channelName,
-          botUidStr,
-        );
-        await failSession(`metadata_update_failed: ${metaErr.message}`);
-        return json({ ok: false, error: 'metadata_update_failed' }, 500);
+      if (patch.applied === false) {
+        if (patch.reason === 'forward_only_guard' || patch.reason === 'manual_provider') {
+          await agoraStopMixBestEffort(
+            restBase,
+            appId,
+            authz,
+            resourceId,
+            sid,
+            channelName,
+            botUidStr,
+          );
+          await failSession(
+            patch.reason === 'manual_provider'
+              ? 'manual_class_recording_metadata_present'
+              : 'class_recording_terminal_state_blocks_restart',
+          );
+          return controlPlaneError(
+            'metadata_conflict',
+            patch.reason === 'manual_provider' ? 'manual_provider' : 'terminal_state',
+          );
+        }
+        // `no_change`: metadata already `recording` — idempotent retry after successful Agora start.
       }
 
       return json({
