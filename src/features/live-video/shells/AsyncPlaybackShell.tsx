@@ -19,8 +19,10 @@ import {
 import { formatUserFacingError } from '@/lib/format-error';
 import { cn } from '@/lib/utils';
 import {
+  isClassRecordingPipelineBusy,
   parseClassRecordingFromInstanceMetadata,
   type ClassRecordingPayload,
+  type ClassRecordingStatus,
 } from '@/types/live-session-invite';
 import { useUserProfileStore } from '@/store/userProfileStore';
 import { createClient } from '@utils/supabase/client';
@@ -45,7 +47,7 @@ function AsyncPlaybackShellInner({ classInstanceId, onClose, className }: AsyncP
   const supabase = useMemo(() => createClient(), []);
   const deckCtx = useWorkoutDeckSelection();
   /** Last successful parse of `class_recording.status` — used to keep polling after transient read errors while processing. */
-  const lastRecordingStatusRef = useRef<string | null>(null);
+  const lastRecordingStatusRef = useRef<ClassRecordingStatus | null>(null);
 
   useEffect(() => {
     if (process.env.NODE_ENV === 'development') {
@@ -84,11 +86,11 @@ function AsyncPlaybackShellInner({ classInstanceId, onClose, className }: AsyncP
       if (cancelled) return;
       if (error) {
         setRecordingLoadError(formatUserFacingError(error));
-        if (lastRecordingStatusRef.current !== 'processing') {
+        if (!isClassRecordingPipelineBusy(lastRecordingStatusRef.current)) {
           setRecordingRec(null);
         }
         clearPoll();
-        if (lastRecordingStatusRef.current === 'processing') {
+        if (isClassRecordingPipelineBusy(lastRecordingStatusRef.current)) {
           schedulePoll();
         }
         return;
@@ -98,7 +100,7 @@ function AsyncPlaybackShellInner({ classInstanceId, onClose, className }: AsyncP
       lastRecordingStatusRef.current = rec?.status ?? null;
       setRecordingRec(rec);
       clearPoll();
-      if (rec?.status === 'processing') {
+      if (isClassRecordingPipelineBusy(rec?.status)) {
         schedulePoll();
       }
     };
@@ -170,13 +172,13 @@ function AsyncPlaybackShellInner({ classInstanceId, onClose, className }: AsyncP
     setLocalActiveDeckItemId(first.deckItemId ?? first.snapshotId);
   }, [deckCtx.deck, localActiveDeckItemId]);
 
-  const recordingProcessing = recordingRec?.status === 'processing';
+  const recordingPipelineBusy = isClassRecordingPipelineBusy(recordingRec?.status);
   const recordingFailed = recordingRec?.status === 'failed';
   const recordingReadyToPlay =
     recordingRec?.status === 'ready' && Boolean(resolvedVideoUrl?.trim());
   /** Queue-only async, failed pipeline, or playable video — theater still offers logger + queue. */
   const canStartTheater =
-    !recordingProcessing &&
+    !recordingPipelineBusy &&
     (recordingFailed ||
       !recordingRec ||
       recordingReadyToPlay ||
@@ -223,10 +225,11 @@ function AsyncPlaybackShellInner({ classInstanceId, onClose, className }: AsyncP
                   {recordingLoadError}
                 </p>
               ) : null}
-              {recordingProcessing && !recordingLoadError ? (
+              {recordingPipelineBusy && !recordingLoadError ? (
                 <p className="max-w-md text-center text-sm text-muted-foreground" role="status">
-                  Recording is processing — check back shortly. You can still review the workout
-                  queue.
+                  {recordingRec?.status === 'recording'
+                    ? 'Live recording is in progress. You can review the workout queue; playback will be available after the recording finishes and uploads.'
+                    : 'Recording is processing — check back shortly. You can still review the workout queue.'}
                 </p>
               ) : null}
               {recordingFailed && !recordingLoadError ? (
@@ -236,7 +239,7 @@ function AsyncPlaybackShellInner({ classInstanceId, onClose, className }: AsyncP
                     : 'Recording failed or is unavailable.'}
                 </p>
               ) : null}
-              {!recordingProcessing &&
+              {!recordingPipelineBusy &&
               !recordingFailed &&
               !recordingReadyToPlay &&
               !recordingLoadError ? (

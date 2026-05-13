@@ -3,7 +3,7 @@
  * `src/lib/class-recording-metadata.ts`).
  */
 
-export type ClassRecordingStatus = 'processing' | 'ready' | 'failed';
+export type ClassRecordingStatus = 'recording' | 'uploading' | 'processing' | 'ready' | 'failed';
 
 export type ClassRecordingPayload = {
   type: 'class_recording';

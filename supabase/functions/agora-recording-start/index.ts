@@ -529,7 +529,7 @@ Deno.serve(async (req) => {
 
       const recordingPayload: ClassRecordingPayload = {
         type: 'class_recording',
-        status: 'processing',
+        status: 'recording',
         provider: 'agora',
         ...(prevCreated ? { createdAt: prevCreated } : { createdAt: nowIso }),
         updatedAt: nowIso,

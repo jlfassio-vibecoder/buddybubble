@@ -9,7 +9,10 @@
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-import { markSessionRecordingFailed } from '../_shared/class-recording-reconcile.ts';
+import {
+  markSessionRecordingFailed,
+  patchInstanceClassRecordingPipelineStatus,
+} from '../_shared/class-recording-reconcile.ts';
 import { parseLiveSessionInviteFromInstanceMetadata } from '../_shared/live-session-invite.ts';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -250,21 +253,31 @@ Deno.serve(async (req) => {
   const stoppedAt = new Date().toISOString();
 
   if (stopRes.ok) {
+    // Refuse to overwrite a terminal state (ready/failed) the webhook may have already written.
     const { error: finErr } = await supabase
       .from('class_recording_sessions')
       .update({
         status: 'stopped',
         stopped_at: stoppedAt,
       })
-      .eq('id', latest.id);
+      .eq('id', latest.id)
+      .in('status', ['stopping', 'recording']);
     if (finErr) {
       console.error('[agora-recording-stop] set stopped', finErr.message);
       return json({ ok: false, error: 'control_plane_error' }, 500);
     }
+    const upMeta = await patchInstanceClassRecordingPipelineStatus(supabase, {
+      classInstanceId,
+      status: 'uploading',
+      logPrefix: '[agora-recording-stop]',
+    });
+    if (!upMeta.ok) {
+      console.error('[agora-recording-stop] instance_uploading_metadata_failed', upMeta.error);
+    }
     return json({ ok: true, sessionId: latest.id });
   }
 
-  // 404: recording already ended server-side — treat as idempotent success
+  // 404: recording already ended server-side — treat as idempotent success.
   if (stopRes.status === 404) {
     const { error: finErr } = await supabase
       .from('class_recording_sessions')
@@ -273,10 +286,19 @@ Deno.serve(async (req) => {
         stopped_at: stoppedAt,
         error_message: truncateMessage('agora_stop_404_already_ended'),
       })
-      .eq('id', latest.id);
+      .eq('id', latest.id)
+      .in('status', ['stopping', 'recording']);
     if (finErr) {
       console.error('[agora-recording-stop] set stopped after 404', finErr.message);
       return json({ ok: false, error: 'control_plane_error' }, 500);
+    }
+    const upMeta = await patchInstanceClassRecordingPipelineStatus(supabase, {
+      classInstanceId,
+      status: 'uploading',
+      logPrefix: '[agora-recording-stop]',
+    });
+    if (!upMeta.ok) {
+      console.error('[agora-recording-stop] instance_uploading_metadata_failed', upMeta.error);
     }
     return json({ ok: true, skipped: 'stop_idempotent_404', sessionId: latest.id });
   }

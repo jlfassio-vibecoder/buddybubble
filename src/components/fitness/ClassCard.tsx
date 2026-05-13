@@ -112,6 +112,11 @@ export function ClassCard({
   const recordingCta = classRecordingMemberCta(classRecordingMeta);
   const activeLiveSession = useLiveVideoStore((s) => s.activeSession);
   const currentUserId = useUserProfileStore((s) => s.profile?.id ?? null);
+  const asyncRecordingPlayBlocked =
+    !currentUserId ||
+    recordingCta === 'recording' ||
+    recordingCta === 'uploading' ||
+    recordingCta === 'editorProcessing';
   const { enroll, waitlist, unenroll, isMutating, error } = useClassEnrollment({
     classInstanceId: instance.id,
     workspaceId: instance.workspace_id,
@@ -266,9 +271,9 @@ export function ClassCard({
             size="sm"
             variant="secondary"
             className="h-8 w-full gap-2 text-xs shadow-sm"
-            disabled={!currentUserId || recordingCta === 'processing'}
+            disabled={asyncRecordingPlayBlocked}
             onClick={() => {
-              if (!currentUserId || recordingCta === 'processing') {
+              if (asyncRecordingPlayBlocked) {
                 return;
               }
               const q = new URLSearchParams(searchParams.toString());
@@ -279,11 +284,15 @@ export function ClassCard({
             <Play className="h-3.5 w-3.5 shrink-0" aria-hidden />
             {!currentUserId
               ? 'Sign in to play'
-              : recordingCta === 'processing'
-                ? 'Recording processing…'
-                : recordingCta === 'failed'
-                  ? 'Open workout'
-                  : 'Play Workout'}
+              : recordingCta === 'recording'
+                ? 'Recording in process…'
+                : recordingCta === 'uploading'
+                  ? 'Recording processing…'
+                  : recordingCta === 'editorProcessing'
+                    ? 'Preparing recording…'
+                    : recordingCta === 'failed'
+                      ? 'Open workout'
+                      : 'Play Workout'}
           </Button>
         </div>
       ) : null}

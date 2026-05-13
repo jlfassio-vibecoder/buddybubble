@@ -2119,6 +2119,7 @@ function DashboardShellInner({
                                           onHostEndLiveSessionForAll={onHostEndLiveSessionForAll}
                                           canWriteTasks={canWriteTasks}
                                           onWorkoutDeckPersisted={bumpTaskViews}
+                                          onClassRecordingPipelineUpdated={bumpTaskViews}
                                           workoutsBubbleId={workoutsBubbleForLiveDeck?.id ?? null}
                                           {...liveVideoDockBoardSlots}
                                         />
@@ -2155,6 +2156,7 @@ function DashboardShellInner({
                                         onHostEndLiveSessionForAll={onHostEndLiveSessionForAll}
                                         canWriteTasks={canWriteTasks}
                                         onWorkoutDeckPersisted={bumpTaskViews}
+                                        onClassRecordingPipelineUpdated={bumpTaskViews}
                                         workoutsBubbleId={workoutsBubbleForLiveDeck?.id ?? null}
                                         {...liveVideoDockBoardSlots}
                                       />
@@ -2201,6 +2203,7 @@ function DashboardShellInner({
                                           onHostEndLiveSessionForAll={onHostEndLiveSessionForAll}
                                           canWriteTasks={canWriteTasks}
                                           onWorkoutDeckPersisted={bumpTaskViews}
+                                          onClassRecordingPipelineUpdated={bumpTaskViews}
                                           workoutsBubbleId={workoutsBubbleForLiveDeck?.id ?? null}
                                           {...liveVideoDockBoardSlots}
                                         />

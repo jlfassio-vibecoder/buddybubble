@@ -138,6 +138,36 @@ export function ClassesBoard({
   }, [workspaceId, userId]);
 
   useEffect(() => {
+    if (!userId || !workspaceId) return;
+    const supabase = createClient();
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const channel = supabase
+      .channel(`class_instances_workspace_${workspaceId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'class_instances',
+          filter: `workspace_id=eq.${workspaceId}`,
+        },
+        () => {
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            debounceTimer = null;
+            void load();
+          }, 400);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      void supabase.removeChannel(channel);
+    };
+  }, [userId, workspaceId, load]);
+
+  useEffect(() => {
     void load();
   }, [load, taskViewsNonce]);
 
