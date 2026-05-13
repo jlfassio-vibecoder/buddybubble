@@ -55,6 +55,7 @@ export function liveSessionInviteMetadataToJson(invite: LiveSessionInvitePayload
 }
 
 /** Stored under `class_instances.metadata.async_session` for deck-only (no Agora) sessions. */
+// WARNING: Keep in sync with `supabase/functions/_shared/live-session-invite.ts`.
 export type AsyncSessionPayload = {
   type: 'async_session';
   sessionId: string;

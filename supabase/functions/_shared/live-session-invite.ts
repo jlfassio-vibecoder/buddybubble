@@ -44,3 +44,41 @@ export function parseLiveSessionInviteFromInstanceMetadata(
     ...(endedAt !== undefined ? { endedAt } : {}),
   };
 }
+
+/** Stored under `class_instances.metadata.async_session` — mirror of `src/types/live-session-invite.ts`. */
+// WARNING: Keep in sync with `src/types/live-session-invite.ts`.
+export type AsyncSessionPayload = {
+  type: 'async_session';
+  sessionId: string;
+  createdAt: string;
+  hostUserId: string;
+  endedAt?: string | null;
+};
+
+export function parseAsyncSessionFromInstanceMetadata(
+  metadata: unknown,
+): AsyncSessionPayload | null {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  const o = metadata as Record<string, unknown>;
+  const raw = o.async_session;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const a = raw as Record<string, unknown>;
+  if (a.type !== 'async_session') return null;
+  const sessionId = typeof a.sessionId === 'string' ? a.sessionId.trim() : '';
+  const createdAt = typeof a.createdAt === 'string' ? a.createdAt : '';
+  const hostUserId = typeof a.hostUserId === 'string' ? a.hostUserId.trim() : '';
+  if (!sessionId || !createdAt || !hostUserId) return null;
+  const endedAt =
+    a.endedAt === null || a.endedAt === undefined
+      ? undefined
+      : typeof a.endedAt === 'string'
+        ? a.endedAt
+        : undefined;
+  return {
+    type: 'async_session',
+    sessionId,
+    createdAt,
+    hostUserId,
+    ...(endedAt !== undefined ? { endedAt } : {}),
+  };
+}

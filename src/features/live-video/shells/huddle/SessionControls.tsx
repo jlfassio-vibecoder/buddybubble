@@ -22,8 +22,10 @@ export type SessionControlsProps = {
   disableActions?: boolean;
   /** Host: runs after `actions.endSession()` (e.g. mark chat invite ended). */
   onHostEndLiveSessionForAll?: () => void | Promise<void>;
-  /** Host: runs with Start Session to begin cloud recording. */
-  onHostStartRecording?: () => void | Promise<void>;
+  /** Host: runs with Start Session to begin cloud recording (includes current stage aspect ratio). */
+  onHostStartRecording?: (opts: {
+    aspectRatio: SessionState['aspectRatio'];
+  }) => void | Promise<void>;
   /**
    * When false, defers the AMRAP / wrapper-attaching RPC because `live_sessions` may not exist yet
    * (avoids the same connect-before-register race that produces 400s on join hints / list participants).
@@ -31,6 +33,11 @@ export type SessionControlsProps = {
   liveDbReady?: boolean;
   /** Host: show recording pipeline indicator while class metadata is in a non-ready capture/upload state. */
   hostClassRecordingPipelineBusy?: boolean;
+  /**
+   * Host + class-instance live: `true` when async workout is enabled in class metadata.
+   * When `false`, show a hint that cloud recording is off until async is enabled.
+   */
+  hostAsyncWorkoutEnabled?: boolean;
   className?: string;
 };
 
@@ -46,6 +53,7 @@ export function SessionControls({
   onHostStartRecording,
   liveDbReady = true,
   hostClassRecordingPipelineBusy = false,
+  hostAsyncWorkoutEnabled,
   className,
 }: SessionControlsProps) {
   const {
@@ -122,6 +130,14 @@ export function SessionControls({
             Recording
           </span>
         ) : null}
+        {!disableActions && isHost && onHostStartRecording && hostAsyncWorkoutEnabled === false ? (
+          <span
+            className="max-w-[14rem] text-center text-[11px] leading-snug text-muted-foreground sm:max-w-[18rem] sm:text-xs"
+            role="status"
+          >
+            Recording off — enable async workout to record
+          </span>
+        ) : null}
         {isIdle ? (
           <Button
             type="button"
@@ -131,7 +147,7 @@ export function SessionControls({
             disabled={disableActions}
             onClick={() => {
               actions.startSession();
-              void onHostStartRecording?.();
+              void onHostStartRecording?.({ aspectRatio: state.aspectRatio });
             }}
           >
             Start Session
