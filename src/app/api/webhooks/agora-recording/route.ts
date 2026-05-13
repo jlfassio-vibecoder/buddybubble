@@ -40,23 +40,21 @@ function json(data: unknown, status = 200) {
   return NextResponse.json(data, { status, headers: corsHeaders });
 }
 
-type VerifyResult = { ok: boolean; expectedHex: string };
-
 function verifyAgoraSignatureHex(
   secret: string,
   rawBody: string,
   signatureHeader: string,
-): VerifyResult {
+): boolean {
   const expectedHex = createHmac('sha1', secret).update(rawBody, 'utf8').digest('hex');
   const sig = signatureHeader.trim().toLowerCase().replace(/\s+/g, '');
-  if (!/^[0-9a-f]+$/.test(sig) || sig.length % 2 !== 0) return { ok: false, expectedHex };
+  if (!/^[0-9a-f]+$/.test(sig) || sig.length % 2 !== 0) return false;
   try {
     const a = Buffer.from(expectedHex, 'hex');
     const b = Buffer.from(sig, 'hex');
-    if (a.length !== b.length) return { ok: false, expectedHex };
-    return { ok: timingSafeEqual(a, b), expectedHex };
+    if (a.length !== b.length) return false;
+    return timingSafeEqual(a, b);
   } catch {
-    return { ok: false, expectedHex };
+    return false;
   }
 }
 
@@ -72,14 +70,9 @@ export async function OPTIONS() {
 }
 
 export async function POST(req: Request) {
-  console.log('[agora-webhook] handler_reached', {
-    method: req.method,
-    ua: req.headers.get('user-agent')?.slice(0, 120) ?? null,
-  });
-
   const webhookSecret = process.env.AGORA_WEBHOOK_SECRET?.trim();
   if (!webhookSecret) {
-    console.error('[Agora Webhook] missing AGORA_WEBHOOK_SECRET');
+    console.error('[Agora Webhook] server_misconfigured');
     return json({ ok: false, error: 'server_misconfigured' }, 500);
   }
 
@@ -87,28 +80,25 @@ export async function POST(req: Request) {
   const signatureHeader = req.headers.get('Agora-Signature')?.trim() ?? '';
 
   if (!signatureHeader) {
-    console.log('[agora-webhook] Unsigned request received (likely Health Check).');
+    // Health probes / unsigned hits — silently accept.
     return new NextResponse(JSON.stringify({ ok: true, skipped: 'unsigned_probe' }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 
-  const verifyResult = verifyAgoraSignatureHex(webhookSecret, rawBody, signatureHeader);
-  if (!verifyResult.ok) {
-    // Diagnostics only on the mismatch path. Logs the calculated/received hashes, never the secret.
-    console.log('[agora-webhook] Signature mismatch detected.');
-    console.log('[agora-webhook] Secret is defined:', !!process.env.AGORA_WEBHOOK_SECRET);
-    console.log('[agora-webhook] Expected (calculated):', verifyResult.expectedHex);
-    console.log('[agora-webhook] Received (header):', signatureHeader);
+  if (!verifyAgoraSignatureHex(webhookSecret, rawBody, signatureHeader)) {
+    // Mismatch logged without cryptographic material — never log expected hex or the signature header.
+    console.warn('[Agora Webhook] signature_mismatch');
     return json({ ok: false, error: 'unauthorized' }, 401);
   }
 
   let supabase: ReturnType<typeof createServiceRoleClient>;
   try {
     supabase = createServiceRoleClient();
-  } catch (e) {
-    console.error('[Agora Webhook] service role client failed', e);
+  } catch {
+    // Scrubbed: do not surface the underlying error (may contain env hints).
+    console.error('[Agora Webhook] service_role_client_init_failed');
     return json({ ok: false, error: 'server_misconfigured' }, 500);
   }
 
@@ -127,18 +117,11 @@ export async function POST(req: Request) {
   }
 
   if (envelope.productId !== AGORA_CLOUD_RECORDING_PRODUCT_ID) {
-    console.log(
-      `[Agora Webhook] Ignored productId=${envelope.productId} notice=${envelope.noticeId}`,
-    );
     return json({ ok: true, skipped: 'wrong_product' }, 200);
   }
 
   const { sid, details } = envelope.payload;
   const eventType = envelope.eventType;
-
-  console.log(
-    `[Agora Webhook] Received SID: ${sid}, Event: ${eventType}, Notice: ${envelope.noticeId}`,
-  );
 
   const { data: sessionRow, error: sessionErr } = await supabase
     .from('class_recording_sessions')
@@ -152,13 +135,11 @@ export async function POST(req: Request) {
   }
 
   if (!sessionRow) {
-    console.log(`[Agora Webhook] No session row for sid=${sid}, ignored`);
     return json({ ok: true, skipped: 'unknown_sid' }, 200);
   }
 
   const sessionStatus = sessionRow.status as string;
   if (sessionStatus === 'ready' || sessionStatus === 'failed') {
-    console.log(`[Agora Webhook] Dedupe terminal status for SID: ${sid}, Status: ${sessionStatus}`);
     return json({ ok: true, skipped: 'already_terminal', status: sessionStatus }, 200);
   }
 
@@ -200,11 +181,6 @@ export async function POST(req: Request) {
   };
 
   if (eventType === 4) {
-    const names = extractFileNamesFromDetails(details);
-    const fileHint = names[0] ?? (typeof details.fileList === 'string' ? details.fileList : null);
-    console.log(
-      `[Agora Webhook] Event 4 (m3u8 first upload) SID=${sid} fileHint=${fileHint ?? 'none'}`,
-    );
     // Conditional update — refuse to downgrade ready/failed/uploading by gating on prior status.
     const { error: upErr } = await supabase
       .from('class_recording_sessions')
@@ -224,10 +200,6 @@ export async function POST(req: Request) {
   }
 
   if (eventType === 33) {
-    const progress = details.progress;
-    console.log(
-      `[Agora Webhook] Ignored event 33 progress SID=${sid} progress=${JSON.stringify(progress)}`,
-    );
     return json({ ok: true, skipped: 'upload_progress' }, 200);
   }
 
@@ -238,7 +210,6 @@ export async function POST(req: Request) {
     if (errorLevel != null && errorLevel >= 4) {
       return failPipeline(`agora_error_level_${errorLevel}: ${errorMsg}`);
     }
-    console.log(`[Agora Webhook] Ignored non-fatal error level=${errorLevel} SID=${sid}`);
     return json({ ok: true, skipped: 'non_fatal_error' }, 200);
   }
 
@@ -267,7 +238,6 @@ export async function POST(req: Request) {
     const names = extractFileNamesFromDetails(details);
     const picked = pickPlaybackFileName(names);
     if (!picked) {
-      console.warn(`[Agora Webhook] No fileList entries SID=${sid} event=${eventType}`);
       return json({ ok: true, skipped: 'no_file_list' }, 200);
     }
 
@@ -278,6 +248,5 @@ export async function POST(req: Request) {
     return succeedPipeline(storagePath);
   }
 
-  console.log(`[Agora Webhook] Ignored event type=${eventType} SID=${sid}`);
   return json({ ok: true, skipped: 'ignored_event' }, 200);
 }

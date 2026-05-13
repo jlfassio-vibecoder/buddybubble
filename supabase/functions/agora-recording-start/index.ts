@@ -157,32 +157,46 @@ Deno.serve(async (req) => {
     const restBase = (
       Deno.env.get('AGORA_RESTAPI_BASE')?.trim() || 'https://api.sd-rtn.com'
     ).replace(/\/$/, '');
-    const rawStorageRegion = Deno.env.get('S3_REGION')?.trim() ?? '';
-    // Agora `storageConfig.region` is a numeric vendor code. Supabase convention sets `S3_REGION`
-    // to an AWS name like `us-east-1`. With `vendor: 11` (S3-compatible) + a custom `endpoint`,
+    // Dual-read region: prefer S3_REGION, fall back to legacy SUPABASE_S3_REGION.
+    const rawStorageRegion =
+      Deno.env.get('S3_REGION')?.trim() || Deno.env.get('SUPABASE_S3_REGION')?.trim() || '';
+    // Agora `storageConfig.region` is a numeric vendor code. Supabase convention sets the region
+    // env to an AWS name like `us-east-1`. With `vendor: 11` (S3-compatible) + a custom `endpoint`,
     // Agora effectively ignores `region`; using 0 is the documented safe default. Accept a
     // numeric string when ops want explicit control, otherwise fall back to 0 with a warning.
     const parsedRegion = Number.parseInt(rawStorageRegion, 10);
     const storageRegion = Number.isFinite(parsedRegion) ? parsedRegion : 0;
     if (rawStorageRegion && !Number.isFinite(parsedRegion)) {
       console.warn(
-        `[agora-recording-start] S3_REGION="${rawStorageRegion}" is not numeric; defaulting Agora storage region to 0 (vendor 11 uses endpoint URL).`,
+        `[agora-recording-start] storage region "${rawStorageRegion}" is not numeric; defaulting to 0 (vendor 11 uses endpoint URL).`,
       );
     }
-    const s3Bucket = Deno.env.get('S3_BUCKET')?.trim();
-    const s3Endpoint = Deno.env.get('S3_ENDPOINT')?.trim();
+    // Dual-read S3 env: prefer new S3_* names, fall back to legacy SUPABASE_S3_* so prod cutover
+    // is non-breaking. Remove the fallbacks once all environments have been renamed.
+    const s3Bucket =
+      Deno.env.get('S3_BUCKET')?.trim() || Deno.env.get('SUPABASE_S3_BUCKET')?.trim();
+    const s3Endpoint =
+      Deno.env.get('S3_ENDPOINT')?.trim() || Deno.env.get('SUPABASE_S3_ENDPOINT')?.trim();
     // Vendor 11: pass through `S3_ENDPOINT` exactly (trimmed); strip scheme only — no path mutation.
     const s3EndpointForAgora = (s3Endpoint ?? '').replace(/^https?:\/\//i, '');
-    const s3AccessKey = Deno.env.get('S3_ACCESS_KEY_ID')?.trim();
-    const s3SecretKey = Deno.env.get('S3_SECRET_ACCESS_KEY')?.trim();
+    const s3AccessKey =
+      Deno.env.get('S3_ACCESS_KEY_ID')?.trim() || Deno.env.get('SUPABASE_S3_ACCESS_KEY_ID')?.trim();
+    const s3SecretKey =
+      Deno.env.get('S3_SECRET_ACCESS_KEY')?.trim() ||
+      Deno.env.get('SUPABASE_S3_SECRET_ACCESS_KEY')?.trim();
 
+    // Opaque error responses: log specifics server-side, surface only `server_misconfigured` to
+    // callers — matches other edge functions and avoids leaking deployment fingerprints.
     const missingServer = missingEnvKeys([
       ['SUPABASE_URL', supabaseUrl],
       ['SUPABASE_ANON_KEY', anonKey],
       ['SUPABASE_SERVICE_ROLE_KEY', serviceKey],
     ]);
     if (missingServer.length) {
-      return json({ ok: false, error: 'server_misconfigured', missing_keys: missingServer }, 500);
+      console.error(
+        `[agora-recording-start] server_misconfigured missing=${missingServer.join(',')}`,
+      );
+      return json({ ok: false, error: 'server_misconfigured' }, 500);
     }
 
     const missingAgora = missingEnvKeys([
@@ -192,7 +206,10 @@ Deno.serve(async (req) => {
       ['AGORA_APP_CERTIFICATE', appCertificate],
     ]);
     if (missingAgora.length) {
-      return json({ ok: false, error: 'agora_not_configured', missing_keys: missingAgora }, 500);
+      console.error(
+        `[agora-recording-start] agora_not_configured missing=${missingAgora.join(',')}`,
+      );
+      return json({ ok: false, error: 'agora_not_configured' }, 500);
     }
 
     const missingS3 = missingEnvKeys([
@@ -202,7 +219,8 @@ Deno.serve(async (req) => {
       ['S3_SECRET_ACCESS_KEY', s3SecretKey],
     ]);
     if (missingS3.length) {
-      return json({ ok: false, error: 's3_not_configured', missing_keys: missingS3 }, 500);
+      console.error(`[agora-recording-start] s3_not_configured missing=${missingS3.join(',')}`);
+      return json({ ok: false, error: 's3_not_configured' }, 500);
     }
 
     const authHeader = req.headers.get('Authorization');
