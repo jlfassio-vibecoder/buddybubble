@@ -118,6 +118,7 @@ describe('isClassRecordingPipelineBusy', () => {
   });
 });
 
+// Copilot suggestion ignored: keeping async_session parser tests here avoids churn; edge mirror tests live in `supabase/functions/_shared/live-session-invite.test.ts`.
 describe('parseAsyncSessionFromInstanceMetadata', () => {
   const valid = {
     async_session: {

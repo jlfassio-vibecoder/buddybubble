@@ -203,6 +203,7 @@ function DashboardLiveVideoDockRouter({
         clearInterval(intervalId);
         intervalId = null;
       }
+      // Copilot suggestion ignored: we only poll while the recording pipeline is busy to limit DB load; async hint refreshes on Start Session via a fresh metadata read.
       if (busy) {
         intervalId = setInterval(() => {
           void fetchRecordingStatus();
@@ -242,6 +243,7 @@ function DashboardLiveVideoDockRouter({
       }
 
       const asyncSession = parseAsyncSessionFromInstanceMetadata(inst?.metadata);
+      setIsAsyncWorkoutEnabled(Boolean(asyncSession && !asyncSession.endedAt));
       if (!asyncSession || asyncSession.endedAt) {
         if (process.env.NODE_ENV === 'development') {
           console.info(
