@@ -273,17 +273,6 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: 'invalid_channel' }, 400);
     }
 
-    const aspectRatio = parseAspectRatio(body.aspectRatio);
-    const { width: mixWidth, height: mixHeight } = aspectRatioToCanvas(aspectRatio);
-    console.info(
-      JSON.stringify({
-        evt: 'agora_recording_start_aspect_ratio',
-        aspectRatio,
-        mixWidth,
-        mixHeight,
-      }),
-    );
-
     const supabase = createClient(supabaseUrl, serviceKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
@@ -327,6 +316,17 @@ Deno.serve(async (req) => {
     if (!asyncSession || asyncSession.endedAt) {
       return json({ ok: false, error: 'async_workout_not_enabled' }, 400);
     }
+
+    const aspectRatio = parseAspectRatio(body.aspectRatio);
+    const { width: mixWidth, height: mixHeight } = aspectRatioToCanvas(aspectRatio);
+    console.info(
+      JSON.stringify({
+        evt: 'agora_recording_start_aspect_ratio',
+        aspectRatio,
+        mixWidth,
+        mixHeight,
+      }),
+    );
 
     const authz = agoraBasicAuthHeader(customerId, customerSecret);
     const hostAgoraUid = agoraUidFromUuid(user.id);

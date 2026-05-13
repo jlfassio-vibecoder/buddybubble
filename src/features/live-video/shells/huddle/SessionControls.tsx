@@ -133,7 +133,7 @@ export function SessionControls({
         {!disableActions && isHost && onHostStartRecording && hostAsyncWorkoutEnabled === false ? (
           <span
             className="max-w-[14rem] text-center text-[11px] leading-snug text-muted-foreground sm:max-w-[18rem] sm:text-xs"
-            role="note"
+            role="status"
           >
             Recording off — enable async workout to record
           </span>

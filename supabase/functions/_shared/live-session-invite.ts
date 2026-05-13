@@ -46,6 +46,7 @@ export function parseLiveSessionInviteFromInstanceMetadata(
 }
 
 /** Stored under `class_instances.metadata.async_session` — mirror of `src/types/live-session-invite.ts`. */
+// WARNING: Keep in sync with `src/types/live-session-invite.ts`.
 export type AsyncSessionPayload = {
   type: 'async_session';
   sessionId: string;

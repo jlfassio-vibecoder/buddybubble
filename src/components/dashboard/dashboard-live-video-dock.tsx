@@ -233,11 +233,10 @@ function DashboardLiveVideoDockRouter({
         .maybeSingle();
 
       if (instMetaErr) {
-        if (process.env.NODE_ENV === 'development') {
-          console.warn(
-            '[Recording] class_instances metadata read before start',
-            instMetaErr.message,
-          );
+        console.error('[Recording] Unable to verify recording eligibility before start');
+        if (recordingStartFailureToastForSessionRef.current !== liveSessionRowId) {
+          recordingStartFailureToastForSessionRef.current = liveSessionRowId;
+          toast.error('Could not verify recording status. Please try Start Session again.');
         }
         return;
       }
@@ -264,10 +263,7 @@ function DashboardLiveVideoDockRouter({
         .then(({ error: fnError, data }) => {
           const toastKey = liveSessionRowId;
           if (fnError) {
-            console.error(
-              '[Recording] Failed to start recording',
-              fnError instanceof Error ? fnError.message : String(fnError),
-            );
+            console.error('[Recording] Failed to start recording');
             if (recordingStartFailureToastForSessionRef.current !== toastKey) {
               recordingStartFailureToastForSessionRef.current = toastKey;
               toast.error(
@@ -282,11 +278,7 @@ function DashboardLiveVideoDockRouter({
             'ok' in data &&
             (data as { ok?: boolean }).ok === false
           ) {
-            console.error(
-              '[Recording] Backend rejected start request with error code:',
-              (data as { error?: unknown }).error,
-              data,
-            );
+            console.error('[Recording] Backend rejected start request');
             if (recordingStartFailureToastForSessionRef.current !== toastKey) {
               recordingStartFailureToastForSessionRef.current = toastKey;
               toast.error(
@@ -300,11 +292,8 @@ function DashboardLiveVideoDockRouter({
           // disconnected (mobile sleep, network blip).
           onClassRecordingPipelineUpdated?.();
         })
-        .catch((err) => {
-          console.error(
-            '[Recording] Failed to start recording',
-            err instanceof Error ? err.message : String(err),
-          );
+        .catch(() => {
+          console.error('[Recording] Failed to start recording');
         });
     },
     [
@@ -407,15 +396,6 @@ function DashboardLiveVideoDockRouter({
     session.workspaceId,
     supabase,
   ]);
-
-  if (process.env.NODE_ENV === 'development') {
-    console.log(
-      '[DEBUG] DashboardLiveVideoDockRouter Render - Role:',
-      isHost ? 'Host' : 'Participant',
-      '| Connected:',
-      isConnected,
-    );
-  }
 
   let routeContent: ReactNode;
 
