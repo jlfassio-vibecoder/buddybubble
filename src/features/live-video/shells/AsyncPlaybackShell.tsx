@@ -115,15 +115,18 @@ function AsyncPlaybackShellInner({ classInstanceId, onClose, className }: AsyncP
   useEffect(() => {
     setResolvedVideoUrl(null);
     if (!recordingRec || recordingRec.status !== 'ready') {
+      setRecordingLoadError(null);
       return;
     }
     const direct = recordingRec.playbackUrl?.trim() ?? '';
     if (direct) {
+      setRecordingLoadError(null);
       setResolvedVideoUrl(direct);
       return;
     }
     const path = recordingRec.storagePath?.trim() ?? '';
     if (!path) {
+      setRecordingLoadError(null);
       return;
     }
     const altPath = storagePathAsAgoraUploadKey(path);
@@ -132,21 +135,27 @@ function AsyncPlaybackShellInner({ classInstanceId, onClose, className }: AsyncP
 
     void (async () => {
       let lastErr: string | null = null;
-      for (const candidate of candidates) {
-        const { data, error } = await supabase.storage
-          .from(CLASS_RECORDINGS_BUCKET)
-          .createSignedUrl(candidate, 60 * 60 * 4);
-        if (cancelled) return;
-        if (error) lastErr = formatUserFacingError(error);
-        if (!error && data?.signedUrl) {
-          setRecordingLoadError(null);
-          setResolvedVideoUrl(data.signedUrl);
-          return;
+      try {
+        for (const candidate of candidates) {
+          const { data, error } = await supabase.storage
+            .from(CLASS_RECORDINGS_BUCKET)
+            .createSignedUrl(candidate, 60 * 60 * 4);
+          if (cancelled) return;
+          if (error) lastErr = formatUserFacingError(error);
+          if (!error && data?.signedUrl) {
+            setRecordingLoadError(null);
+            setResolvedVideoUrl(data.signedUrl);
+            return;
+          }
         }
+        if (cancelled) return;
+        setResolvedVideoUrl(null);
+        setRecordingLoadError(lastErr ?? 'Could not create a playback link for this recording.');
+      } catch (e) {
+        if (cancelled) return;
+        setResolvedVideoUrl(null);
+        setRecordingLoadError(formatUserFacingError(e));
       }
-      if (cancelled) return;
-      setResolvedVideoUrl(null);
-      setRecordingLoadError(lastErr ?? 'Could not create a playback link for this recording.');
     })();
 
     return () => {

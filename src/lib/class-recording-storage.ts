@@ -6,7 +6,8 @@ export function agoraRecordingFolderSegment(id: string): string {
   return id.replace(/-/g, '').toLowerCase();
 }
 
-const UUID_V4_PATH_SEGMENT =
+/** Hyphenated UUID string form (versions 1–5 per RFC shape). */
+const UUID_PATH_SEGMENT =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
@@ -21,7 +22,7 @@ export function storagePathAsAgoraUploadKey(storagePath: string): string {
   const seg0 = parts[0] ?? '';
   const seg1 = parts[1] ?? '';
   const tail = parts.slice(2).join('/');
-  if (UUID_V4_PATH_SEGMENT.test(seg0) && UUID_V4_PATH_SEGMENT.test(seg1)) {
+  if (UUID_PATH_SEGMENT.test(seg0) && UUID_PATH_SEGMENT.test(seg1)) {
     return `${agoraRecordingFolderSegment(seg0)}/${agoraRecordingFolderSegment(seg1)}/${tail}`;
   }
   return trimmed;
