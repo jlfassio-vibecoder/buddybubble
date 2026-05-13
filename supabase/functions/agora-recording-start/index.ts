@@ -22,10 +22,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 // evaluates. `esm.sh` pre-bundles those polyfills, so importing from there avoids the module-load crash.
 import { RtcRole, RtcTokenBuilder } from 'https://esm.sh/agora-access-token@2.0.4';
 import { agoraRecordingBotUid, agoraUidFromUuid } from '../_shared/agora-uid.ts';
-import {
-  mergeClassRecordingIntoInstanceMetadata,
-  type ClassRecordingPayload,
-} from '../_shared/class-recording-metadata.ts';
+import { patchInstanceClassRecordingPipelineStatus } from '../_shared/class-recording-reconcile.ts';
 import { parseLiveSessionInviteFromInstanceMetadata } from '../_shared/live-session-invite.ts';
 
 const CHANNEL_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
@@ -157,32 +154,46 @@ Deno.serve(async (req) => {
     const restBase = (
       Deno.env.get('AGORA_RESTAPI_BASE')?.trim() || 'https://api.sd-rtn.com'
     ).replace(/\/$/, '');
-    const rawStorageRegion = Deno.env.get('S3_REGION')?.trim() ?? '';
-    // Agora `storageConfig.region` is a numeric vendor code. Supabase convention sets `S3_REGION`
-    // to an AWS name like `us-east-1`. With `vendor: 11` (S3-compatible) + a custom `endpoint`,
+    // Dual-read region: prefer S3_REGION, fall back to legacy SUPABASE_S3_REGION.
+    const rawStorageRegion =
+      Deno.env.get('S3_REGION')?.trim() || Deno.env.get('SUPABASE_S3_REGION')?.trim() || '';
+    // Agora `storageConfig.region` is a numeric vendor code. Supabase convention sets the region
+    // env to an AWS name like `us-east-1`. With `vendor: 11` (S3-compatible) + a custom `endpoint`,
     // Agora effectively ignores `region`; using 0 is the documented safe default. Accept a
     // numeric string when ops want explicit control, otherwise fall back to 0 with a warning.
     const parsedRegion = Number.parseInt(rawStorageRegion, 10);
     const storageRegion = Number.isFinite(parsedRegion) ? parsedRegion : 0;
     if (rawStorageRegion && !Number.isFinite(parsedRegion)) {
       console.warn(
-        `[agora-recording-start] S3_REGION="${rawStorageRegion}" is not numeric; defaulting Agora storage region to 0 (vendor 11 uses endpoint URL).`,
+        `[agora-recording-start] storage region "${rawStorageRegion}" is not numeric; defaulting to 0 (vendor 11 uses endpoint URL).`,
       );
     }
-    const s3Bucket = Deno.env.get('S3_BUCKET')?.trim();
-    const s3Endpoint = Deno.env.get('S3_ENDPOINT')?.trim();
+    // Dual-read S3 env: prefer new S3_* names, fall back to legacy SUPABASE_S3_* so prod cutover
+    // is non-breaking. Remove the fallbacks once all environments have been renamed.
+    const s3Bucket =
+      Deno.env.get('S3_BUCKET')?.trim() || Deno.env.get('SUPABASE_S3_BUCKET')?.trim();
+    const s3Endpoint =
+      Deno.env.get('S3_ENDPOINT')?.trim() || Deno.env.get('SUPABASE_S3_ENDPOINT')?.trim();
     // Vendor 11: pass through `S3_ENDPOINT` exactly (trimmed); strip scheme only — no path mutation.
     const s3EndpointForAgora = (s3Endpoint ?? '').replace(/^https?:\/\//i, '');
-    const s3AccessKey = Deno.env.get('S3_ACCESS_KEY_ID')?.trim();
-    const s3SecretKey = Deno.env.get('S3_SECRET_ACCESS_KEY')?.trim();
+    const s3AccessKey =
+      Deno.env.get('S3_ACCESS_KEY_ID')?.trim() || Deno.env.get('SUPABASE_S3_ACCESS_KEY_ID')?.trim();
+    const s3SecretKey =
+      Deno.env.get('S3_SECRET_ACCESS_KEY')?.trim() ||
+      Deno.env.get('SUPABASE_S3_SECRET_ACCESS_KEY')?.trim();
 
+    // Opaque error responses: log specifics server-side, surface only `server_misconfigured` to
+    // callers — matches other edge functions and avoids leaking deployment fingerprints.
     const missingServer = missingEnvKeys([
       ['SUPABASE_URL', supabaseUrl],
       ['SUPABASE_ANON_KEY', anonKey],
       ['SUPABASE_SERVICE_ROLE_KEY', serviceKey],
     ]);
     if (missingServer.length) {
-      return json({ ok: false, error: 'server_misconfigured', missing_keys: missingServer }, 500);
+      console.error(
+        `[agora-recording-start] server_misconfigured missing=${missingServer.join(',')}`,
+      );
+      return json({ ok: false, error: 'server_misconfigured' }, 500);
     }
 
     const missingAgora = missingEnvKeys([
@@ -192,7 +203,10 @@ Deno.serve(async (req) => {
       ['AGORA_APP_CERTIFICATE', appCertificate],
     ]);
     if (missingAgora.length) {
-      return json({ ok: false, error: 'agora_not_configured', missing_keys: missingAgora }, 500);
+      console.error(
+        `[agora-recording-start] agora_not_configured missing=${missingAgora.join(',')}`,
+      );
+      return json({ ok: false, error: 'agora_not_configured' }, 500);
     }
 
     const missingS3 = missingEnvKeys([
@@ -202,7 +216,8 @@ Deno.serve(async (req) => {
       ['S3_SECRET_ACCESS_KEY', s3SecretKey],
     ]);
     if (missingS3.length) {
-      return json({ ok: false, error: 's3_not_configured', missing_keys: missingS3 }, 500);
+      console.error(`[agora-recording-start] s3_not_configured missing=${missingS3.join(',')}`);
+      return json({ ok: false, error: 's3_not_configured' }, 500);
     }
 
     const authHeader = req.headers.get('Authorization');
@@ -497,14 +512,14 @@ Deno.serve(async (req) => {
         return controlPlaneError('update_recording', upRecErr.message);
       }
 
-      const nowIso = new Date().toISOString();
-      const { data: freshInst, error: freshErr } = await supabase
-        .from('class_instances')
-        .select('metadata')
-        .eq('id', classInstanceId)
-        .maybeSingle();
+      const patch = await patchInstanceClassRecordingPipelineStatus(supabase, {
+        classInstanceId,
+        status: 'recording',
+        logPrefix: '[agora-recording-start]',
+      });
 
-      if (freshErr || !freshInst) {
+      if (!patch.ok) {
+        console.error('[agora-recording-start] metadata update', patch.error);
         await agoraStopMixBestEffort(
           restBase,
           appId,
@@ -514,53 +529,32 @@ Deno.serve(async (req) => {
           channelName,
           botUidStr,
         );
-        await failSession('class_instance_refresh_failed');
-        return controlPlaneError('instance_refresh', freshErr?.message ?? 'row_missing');
+        await failSession(`metadata_update_failed: ${patch.error}`);
+        return json({ ok: false, error: 'metadata_update_failed' }, 500);
       }
 
-      const prevRecording = (freshInst.metadata as Record<string, unknown>)?.class_recording;
-      const prevCreated =
-        prevRecording &&
-        typeof prevRecording === 'object' &&
-        !Array.isArray(prevRecording) &&
-        typeof (prevRecording as { createdAt?: unknown }).createdAt === 'string'
-          ? (prevRecording as { createdAt: string }).createdAt
-          : undefined;
-
-      const recordingPayload: ClassRecordingPayload = {
-        type: 'class_recording',
-        status: 'processing',
-        provider: 'agora',
-        ...(prevCreated ? { createdAt: prevCreated } : { createdAt: nowIso }),
-        updatedAt: nowIso,
-      };
-
-      const nextMeta = mergeClassRecordingIntoInstanceMetadata(
-        freshInst.metadata,
-        recordingPayload,
-      );
-
-      const { error: metaErr } = await supabase
-        .from('class_instances')
-        .update({
-          metadata: nextMeta,
-          updated_at: nowIso,
-        })
-        .eq('id', classInstanceId);
-
-      if (metaErr) {
-        console.error('[agora-recording-start] metadata update', metaErr.message);
-        await agoraStopMixBestEffort(
-          restBase,
-          appId,
-          authz,
-          resourceId,
-          sid,
-          channelName,
-          botUidStr,
-        );
-        await failSession(`metadata_update_failed: ${metaErr.message}`);
-        return json({ ok: false, error: 'metadata_update_failed' }, 500);
+      if (patch.applied === false) {
+        if (patch.reason === 'forward_only_guard' || patch.reason === 'manual_provider') {
+          await agoraStopMixBestEffort(
+            restBase,
+            appId,
+            authz,
+            resourceId,
+            sid,
+            channelName,
+            botUidStr,
+          );
+          await failSession(
+            patch.reason === 'manual_provider'
+              ? 'manual_class_recording_metadata_present'
+              : 'class_recording_terminal_state_blocks_restart',
+          );
+          return controlPlaneError(
+            'metadata_conflict',
+            patch.reason === 'manual_provider' ? 'manual_provider' : 'terminal_state',
+          );
+        }
+        // `no_change`: metadata already `recording` — idempotent retry after successful Agora start.
       }
 
       return json({

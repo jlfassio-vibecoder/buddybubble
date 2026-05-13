@@ -18,15 +18,25 @@ export function mergeClassRecordingIntoInstanceMetadata(
   return base as Json;
 }
 
-export type ClassRecordingMemberCta = 'queueOnly' | 'processing' | 'ready' | 'failed';
+export type ClassRecordingMemberCta =
+  | 'queueOnly'
+  | 'recording'
+  | 'uploading'
+  | 'editorProcessing'
+  | 'ready'
+  | 'failed';
 
 /** Member-facing CTA for the async play control when `async_session` exists. */
 export function classRecordingMemberCta(
   recording: ClassRecordingPayload | null,
 ): ClassRecordingMemberCta {
   if (!recording) return 'queueOnly';
-  if (recording.status === 'processing') return 'processing';
   if (recording.status === 'failed') return 'failed';
   if (recording.status === 'ready') return 'ready';
+  if (recording.status === 'recording') return 'recording';
+  if (recording.status === 'uploading') return 'uploading';
+  if (recording.status === 'processing') {
+    return recording.provider === 'manual' ? 'editorProcessing' : 'uploading';
+  }
   return 'queueOnly';
 }

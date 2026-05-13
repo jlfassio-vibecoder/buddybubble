@@ -88,6 +88,116 @@ async function persistClassRecordingMetadata(
   return true;
 }
 
+function pickMetaString(obj: Record<string, unknown>, key: string): string | undefined {
+  const v = obj[key];
+  return typeof v === 'string' && v.trim() ? v.trim() : undefined;
+}
+
+export type PipelineStatus = 'recording' | 'uploading' | 'processing' | 'ready' | 'failed';
+
+/** Mirror of `src/lib/agora/recording-reconcile.ts#canAdvancePipelineStatus`. */
+export function canAdvancePipelineStatus(
+  prev: PipelineStatus | null | undefined,
+  next: 'recording' | 'uploading',
+): boolean {
+  if (prev === 'ready' || prev === 'failed') return false;
+  if (next === 'recording') {
+    return prev == null || prev === 'recording';
+  }
+  return prev == null || prev === 'recording' || prev === 'uploading' || prev === 'processing';
+}
+
+function readPipelineStatus(prevRaw: unknown): PipelineStatus | null {
+  if (!prevRaw || typeof prevRaw !== 'object' || Array.isArray(prevRaw)) return null;
+  const s = (prevRaw as { status?: unknown }).status;
+  if (
+    s === 'recording' ||
+    s === 'uploading' ||
+    s === 'processing' ||
+    s === 'ready' ||
+    s === 'failed'
+  ) {
+    return s;
+  }
+  return null;
+}
+
+export type PatchInstancePipelineStatusParams = {
+  classInstanceId: string;
+  status: 'recording' | 'uploading';
+  logPrefix?: string;
+};
+
+export type PatchInstancePipelineStatusResult =
+  | { ok: true; applied: true }
+  | { ok: true; applied: false; reason: 'manual_provider' | 'forward_only_guard' | 'no_change' }
+  | { ok: false; error: string };
+
+/** Parity with `src/lib/agora/recording-reconcile.ts` — forward-only instance metadata pipeline UX. */
+export async function patchInstanceClassRecordingPipelineStatus(
+  supabase: SupabaseClient,
+  params: PatchInstancePipelineStatusParams,
+): Promise<PatchInstancePipelineStatusResult> {
+  const { classInstanceId, status, logPrefix } = params;
+  const prefix = logPrefix ?? '[class-recording-reconcile]';
+  const nowIso = new Date().toISOString();
+  const meta = await loadInstanceMetadata(supabase, classInstanceId);
+  const prevRaw = meta.class_recording;
+
+  if (prevRaw && typeof prevRaw === 'object' && !Array.isArray(prevRaw)) {
+    const p = prevRaw as Record<string, unknown>;
+    if (p.provider === 'manual') {
+      console.log(`${prefix} skip_pipeline_patch_manual_provider instance=${classInstanceId}`);
+      return { ok: true, applied: false, reason: 'manual_provider' };
+    }
+  }
+
+  const prevStatus = readPipelineStatus(prevRaw);
+
+  if (!canAdvancePipelineStatus(prevStatus, status)) {
+    console.log(
+      `${prefix} skip_pipeline_patch_forward_only instance=${classInstanceId} prev=${prevStatus ?? 'null'} attempted=${status}`,
+    );
+    return { ok: true, applied: false, reason: 'forward_only_guard' };
+  }
+
+  if (prevStatus === status) {
+    return { ok: true, applied: false, reason: 'no_change' };
+  }
+
+  let createdAt = nowIso;
+  let playbackUrl: string | undefined;
+  let storagePath: string | undefined;
+  let provider: 'agora' = 'agora';
+
+  if (prevRaw && typeof prevRaw === 'object' && !Array.isArray(prevRaw)) {
+    const p = prevRaw as Record<string, unknown>;
+    const c = pickMetaString(p, 'createdAt');
+    if (c) createdAt = c;
+    playbackUrl = pickMetaString(p, 'playbackUrl');
+    storagePath = pickMetaString(p, 'storagePath');
+    const pr = p.provider;
+    if (pr === 'agora') provider = 'agora';
+  }
+
+  const recording: ClassRecordingPayload = {
+    type: 'class_recording',
+    status,
+    provider,
+    ...(playbackUrl ? { playbackUrl } : {}),
+    ...(storagePath ? { storagePath } : {}),
+    createdAt,
+    updatedAt: nowIso,
+  };
+
+  const ok = await persistClassRecordingMetadata(supabase, classInstanceId, recording);
+  if (!ok) return { ok: false, error: 'metadata_update_failed' };
+  console.log(
+    `${prefix} instance_pipeline_status prev=${prevStatus ?? 'null'} next=${status} instance=${classInstanceId}`,
+  );
+  return { ok: true, applied: true };
+}
+
 export type MarkReadyParams = {
   sessionRowId: string;
   classInstanceId: string;

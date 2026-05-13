@@ -92,8 +92,15 @@ export function parseAsyncSessionFromInstanceMetadata(
   };
 }
 
-/** Stored under `class_instances.metadata.class_recording` (manual upload + future Agora auto-attach). */
-export type ClassRecordingStatus = 'processing' | 'ready' | 'failed';
+/** Stored under `class_instances.metadata.class_recording` (manual upload + Agora cloud capture). */
+export type ClassRecordingStatus = 'recording' | 'uploading' | 'processing' | 'ready' | 'failed';
+
+/** True while capture or server-side upload/transcode is still in flight (includes legacy `processing`). */
+export function isClassRecordingPipelineBusy(
+  status: ClassRecordingStatus | undefined | null,
+): boolean {
+  return status === 'recording' || status === 'uploading' || status === 'processing';
+}
 
 export type ClassRecordingPayload = {
   type: 'class_recording';
@@ -129,7 +136,11 @@ export function parseClassRecordingFromInstanceMetadata(
 
   const statusRaw = r.status;
   let status: ClassRecordingStatus;
-  if (statusRaw === 'processing') {
+  if (statusRaw === 'recording') {
+    status = 'recording';
+  } else if (statusRaw === 'uploading') {
+    status = 'uploading';
+  } else if (statusRaw === 'processing') {
     status = 'processing';
   } else if (statusRaw === 'failed') {
     status = 'failed';

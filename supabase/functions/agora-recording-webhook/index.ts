@@ -34,6 +34,7 @@ import {
   buildStoragePath,
   markSessionRecordingFailed,
   markSessionRecordingReady,
+  patchInstanceClassRecordingPipelineStatus,
   UUID_PATTERN,
 } from '../_shared/class-recording-reconcile.ts';
 
@@ -232,16 +233,20 @@ Deno.serve(async (req) => {
     console.log(
       `[Agora Webhook] Event 4 (m3u8 first upload) SID=${sid} fileHint=${fileHint ?? 'none'}`,
     );
-    if (
-      sessionStatus === 'stopped' ||
-      sessionStatus === 'stopping' ||
-      sessionStatus === 'recording'
-    ) {
-      const { error: upErr } = await supabase
-        .from('class_recording_sessions')
-        .update({ status: 'uploading' })
-        .eq('id', sessionRow.id);
-      if (upErr) console.error('[Agora Webhook] uploading_state_failed', upErr.message);
+    // Conditional update — refuse to downgrade ready/failed/uploading by gating on prior status.
+    const { error: upErr } = await supabase
+      .from('class_recording_sessions')
+      .update({ status: 'uploading' })
+      .eq('id', sessionRow.id)
+      .in('status', ['stopped', 'stopping', 'recording']);
+    if (upErr) console.error('[Agora Webhook] uploading_state_failed', upErr.message);
+    const upMeta = await patchInstanceClassRecordingPipelineStatus(supabase, {
+      classInstanceId,
+      status: 'uploading',
+      logPrefix: '[Agora Webhook]',
+    });
+    if (!upMeta.ok) {
+      console.error('[Agora Webhook] instance_uploading_metadata_failed', upMeta.error);
     }
     return json({ ok: true, skipped: 'event_4_uploading_hint' }, 200);
   }
@@ -269,6 +274,14 @@ Deno.serve(async (req) => {
     const exitStatus = typeof details.exitStatus === 'number' ? details.exitStatus : null;
     if (exitStatus === 1) {
       return failPipeline('session_exit_abnormal');
+    }
+    const upMeta = await patchInstanceClassRecordingPipelineStatus(supabase, {
+      classInstanceId,
+      status: 'uploading',
+      logPrefix: '[Agora Webhook]',
+    });
+    if (!upMeta.ok) {
+      console.error('[Agora Webhook] instance_uploading_metadata_failed', upMeta.error);
     }
     return json({ ok: true, skipped: 'session_exit_normal' }, 200);
   }

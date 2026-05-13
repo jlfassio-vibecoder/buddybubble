@@ -107,8 +107,8 @@ export type LiveSessionViewProps = {
   liveDbReady?: boolean;
   /** Shown in AMRAP roster / join RPC; defaults to `localUserId` when unset. */
   displayName?: string;
-  /** Host-only (from dock): `class_recording.status === 'processing'` for cloud recording UX. */
-  hostClassRecordingProcessing?: boolean;
+  /** Host-only (from dock): `class_recording` pipeline in progress (recording / uploading / processing). */
+  hostClassRecordingPipelineBusy?: boolean;
   /** Host deck pick mode: embedded Workouts Kanban from `dashboard-shell` (below deck strip). */
   boardSelectionPanel?: ReactNode;
   /** Host deck pick mode: mic/camera controls pinned above the selection footer. */
@@ -137,7 +137,7 @@ function LiveSessionViewInner({
   onHostStartRecording,
   liveDbReady = true,
   displayName: displayNameProp,
-  hostClassRecordingProcessing = false,
+  hostClassRecordingPipelineBusy = false,
   boardSelectionPanel,
   selectionFloatingMediaBar,
   workoutsBubbleId,
@@ -584,7 +584,7 @@ function LiveSessionViewInner({
               onHostEndLiveSessionForAll={isHost ? onHostEndLiveSessionForAll : undefined}
               onHostStartRecording={isHost ? onHostStartRecording : undefined}
               liveDbReady={liveDbReady}
-              hostClassRecordingProcessing={isHost ? hostClassRecordingProcessing : false}
+              hostClassRecordingPipelineBusy={isHost ? hostClassRecordingPipelineBusy : false}
               className="shrink-0"
             />
           </div>

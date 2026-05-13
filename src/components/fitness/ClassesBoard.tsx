@@ -138,6 +138,55 @@ export function ClassesBoard({
   }, [workspaceId, userId]);
 
   useEffect(() => {
+    if (!userId || !workspaceId) return;
+    const supabase = createClient();
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    /** Stays true after the first `SUBSCRIBED` so a later resubscribe still refetches the board. */
+    const hadEverSubscribedRef = { current: false };
+
+    const scheduleLoad = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        void load();
+      }, 400);
+    };
+
+    const channel = supabase
+      .channel(`class_instances_workspace_${workspaceId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'class_instances',
+          filter: `workspace_id=eq.${workspaceId}`,
+        },
+        () => scheduleLoad(),
+      )
+      .subscribe((status, err) => {
+        if (status === 'SUBSCRIBED') {
+          // After a reconnect we may have missed UPDATEs while the socket was down — refetch once.
+          if (hadEverSubscribedRef.current) {
+            scheduleLoad();
+          }
+          hadEverSubscribedRef.current = true;
+          return;
+        }
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          if (process.env.NODE_ENV === 'development') {
+            console.warn('[ClassesBoard] Realtime channel', status, err ?? '');
+          }
+        }
+      });
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      void supabase.removeChannel(channel);
+    };
+  }, [userId, workspaceId, load]);
+
+  useEffect(() => {
     void load();
   }, [load, taskViewsNonce]);
 

@@ -19,7 +19,10 @@ import { agoraUidFromUuid } from '@/lib/live-video/agora-uid';
 import type { Database } from '@/types/database';
 import type { LiveVideoActiveSession } from '@/store/liveVideoStore';
 import { copyClassDeckToLiveSession } from '@/features/live-video/shells/huddle/live-deck-merge';
-import { parseClassRecordingFromInstanceMetadata } from '@/types/live-session-invite';
+import {
+  isClassRecordingPipelineBusy,
+  parseClassRecordingFromInstanceMetadata,
+} from '@/types/live-session-invite';
 
 export type DashboardLiveVideoDockProps = {
   session: LiveVideoActiveSession;
@@ -30,6 +33,12 @@ export type DashboardLiveVideoDockProps = {
   onHostEndLiveSessionForAll?: () => void | Promise<void>;
   canWriteTasks?: boolean;
   onWorkoutDeckPersisted?: () => void;
+  /**
+   * Host: fires after a successful `agora-recording-start` invoke. Wire to a board refetch
+   * (e.g. `bumpTaskViews`) so the `ClassesBoard` reflects the new pipeline status immediately —
+   * a complement to the Realtime subscription on `class_instances`.
+   */
+  onClassRecordingPipelineUpdated?: () => void;
   /** Shown in live_session_participants / AMRAP roster; falls back to `localUserId`. */
   displayName?: string;
   /** Host deck pick mode: embedded Workouts Kanban (from `dashboard-shell`). */
@@ -72,6 +81,7 @@ type DockRouterProps = {
   onHostEndLiveSessionForAll?: () => void | Promise<void>;
   canWriteTasks: boolean;
   onWorkoutDeckPersisted?: () => void;
+  onClassRecordingPipelineUpdated?: () => void;
   boardSelectionPanel?: ReactNode;
   selectionFloatingMediaBar?: ReactNode;
   workoutsBubbleId?: string | null;
@@ -94,6 +104,7 @@ function DashboardLiveVideoDockRouter({
   onHostEndLiveSessionForAll,
   canWriteTasks,
   onWorkoutDeckPersisted,
+  onClassRecordingPipelineUpdated,
   displayName: displayNameProp,
   boardSelectionPanel,
   selectionFloatingMediaBar,
@@ -108,8 +119,8 @@ function DashboardLiveVideoDockRouter({
   /** At most one host toast per live session when manual `agora-recording-start` fails. */
   const recordingStartFailureToastForSessionRef = useRef<string | null>(null);
   const [liveDbReady, setLiveDbReady] = useState(false);
-  /** Host-only: `class_instances.metadata.class_recording.status === 'processing'` for async pipeline UX. */
-  const [hostClassRecordingProcessing, setHostClassRecordingProcessing] = useState(false);
+  /** Host-only: `class_recording` is in an Agora/manual pipeline state (not yet ready). */
+  const [hostClassRecordingPipelineBusy, setHostClassRecordingPipelineBusy] = useState(false);
 
   const classInstanceIdForRecording = session.sourceInstanceId?.trim() ?? '';
 
@@ -153,7 +164,7 @@ function DashboardLiveVideoDockRouter({
 
   useEffect(() => {
     if (!isHost || !classInstanceIdForRecording) {
-      setHostClassRecordingProcessing(false);
+      setHostClassRecordingPipelineBusy(false);
       return;
     }
 
@@ -174,17 +185,17 @@ function DashboardLiveVideoDockRouter({
             error.message,
           );
         }
-        setHostClassRecordingProcessing(false);
+        setHostClassRecordingPipelineBusy(false);
         return;
       }
       const rec = parseClassRecordingFromInstanceMetadata(data?.metadata);
-      const processing = rec?.status === 'processing';
-      setHostClassRecordingProcessing(processing);
+      const busy = isClassRecordingPipelineBusy(rec?.status);
+      setHostClassRecordingPipelineBusy(busy);
       if (intervalId != null) {
         clearInterval(intervalId);
         intervalId = null;
       }
-      if (processing) {
+      if (busy) {
         intervalId = setInterval(() => {
           void fetchRecordingStatus();
         }, 15_000);
@@ -246,7 +257,12 @@ function DashboardLiveVideoDockRouter({
               'Cloud recording could not start. You can upload a recording manually from the class editor later.',
             );
           }
+          return;
         }
+        // Realtime on `class_instances` will refetch the board too; this callback is the
+        // belt-and-suspenders so cards reflect Phase 1 immediately, even if Realtime is briefly
+        // disconnected (mobile sleep, network blip).
+        onClassRecordingPipelineUpdated?.();
       })
       .catch((err) => {
         console.error(
@@ -256,6 +272,7 @@ function DashboardLiveVideoDockRouter({
       });
   }, [
     isHost,
+    onClassRecordingPipelineUpdated,
     session.sourceInstanceId,
     session.sessionId,
     session.channelId,
@@ -406,7 +423,7 @@ function DashboardLiveVideoDockRouter({
         className="min-h-0 flex-1 px-0 py-0"
         liveDbReady={liveDbReady}
         displayName={resolvedDisplayName}
-        hostClassRecordingProcessing={hostClassRecordingProcessing}
+        hostClassRecordingPipelineBusy={hostClassRecordingPipelineBusy}
         onHostStartRecording={isHost ? handleStartRecording : undefined}
         boardSelectionPanel={boardSelectionPanel}
         selectionFloatingMediaBar={selectionFloatingMediaBar}
@@ -438,6 +455,7 @@ export function DashboardLiveVideoDockBody({
   onHostEndLiveSessionForAll,
   canWriteTasks = false,
   onWorkoutDeckPersisted,
+  onClassRecordingPipelineUpdated,
   displayName,
   boardSelectionPanel,
   selectionFloatingMediaBar,
@@ -464,6 +482,7 @@ export function DashboardLiveVideoDockBody({
             onHostEndLiveSessionForAll={onHostEndLiveSessionForAll}
             canWriteTasks={canWriteTasks}
             onWorkoutDeckPersisted={onWorkoutDeckPersisted}
+            onClassRecordingPipelineUpdated={onClassRecordingPipelineUpdated}
             boardSelectionPanel={boardSelectionPanel}
             selectionFloatingMediaBar={selectionFloatingMediaBar}
             workoutsBubbleId={workoutsBubbleId}
