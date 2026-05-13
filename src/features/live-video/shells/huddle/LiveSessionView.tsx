@@ -57,6 +57,7 @@ import { agoraUidFromUuid } from '@/lib/live-video/agora-uid';
 import { cn } from '@/lib/utils';
 import { useLayoutCommands } from '@/components/layout/layout-command-context';
 import { useLiveVideoStore } from '@/store/liveVideoStore';
+import type { SessionState } from '@/features/live-video/state/sessionStateMachine';
 
 const HUDDLE_EDITOR_PANEL_ID = 'huddle-editor';
 const HUDDLE_VIDEO_PANEL_ID = 'huddle-video';
@@ -98,7 +99,9 @@ export type LiveSessionViewProps = {
   /** Host: invoked after `actions.endSession()` (e.g. mark chat invite ended). */
   onHostEndLiveSessionForAll?: () => void | Promise<void>;
   /** Host: invoked with Start Session to begin Agora cloud recording (manual trigger). */
-  onHostStartRecording?: () => void | Promise<void>;
+  onHostStartRecording?: (opts: {
+    aspectRatio: SessionState['aspectRatio'];
+  }) => void | Promise<void>;
   /**
    * When false, skips `get_live_session_join_hints` / `live_session_list_participants` until the
    * dashboard dock has finished `live_session_create` / `live_session_participant_join` so the
@@ -109,6 +112,11 @@ export type LiveSessionViewProps = {
   displayName?: string;
   /** Host-only (from dock): `class_recording` pipeline in progress (recording / uploading / processing). */
   hostClassRecordingPipelineBusy?: boolean;
+  /**
+   * Host + class-instance live only: whether `metadata.async_session` is active (async workout enabled).
+   * When `false`, cloud recording is suppressed — UI may show a hint next to Start Session.
+   */
+  hostAsyncWorkoutEnabled?: boolean;
   /** Host deck pick mode: embedded Workouts Kanban from `dashboard-shell` (below deck strip). */
   boardSelectionPanel?: ReactNode;
   /** Host deck pick mode: mic/camera controls pinned above the selection footer. */
@@ -138,6 +146,7 @@ function LiveSessionViewInner({
   liveDbReady = true,
   displayName: displayNameProp,
   hostClassRecordingPipelineBusy = false,
+  hostAsyncWorkoutEnabled,
   boardSelectionPanel,
   selectionFloatingMediaBar,
   workoutsBubbleId,
@@ -585,6 +594,7 @@ function LiveSessionViewInner({
               onHostStartRecording={isHost ? onHostStartRecording : undefined}
               liveDbReady={liveDbReady}
               hostClassRecordingPipelineBusy={isHost ? hostClassRecordingPipelineBusy : false}
+              hostAsyncWorkoutEnabled={isHost ? hostAsyncWorkoutEnabled : undefined}
               className="shrink-0"
             />
           </div>

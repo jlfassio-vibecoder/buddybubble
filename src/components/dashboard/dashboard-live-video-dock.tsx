@@ -21,8 +21,10 @@ import type { LiveVideoActiveSession } from '@/store/liveVideoStore';
 import { copyClassDeckToLiveSession } from '@/features/live-video/shells/huddle/live-deck-merge';
 import {
   isClassRecordingPipelineBusy,
+  parseAsyncSessionFromInstanceMetadata,
   parseClassRecordingFromInstanceMetadata,
 } from '@/types/live-session-invite';
+import type { SessionAspectRatioId } from '@/features/live-video/state/sessionStateMachine';
 
 export type DashboardLiveVideoDockProps = {
   session: LiveVideoActiveSession;
@@ -121,6 +123,8 @@ function DashboardLiveVideoDockRouter({
   const [liveDbReady, setLiveDbReady] = useState(false);
   /** Host-only: `class_recording` is in an Agora/manual pipeline state (not yet ready). */
   const [hostClassRecordingPipelineBusy, setHostClassRecordingPipelineBusy] = useState(false);
+  /** Host + class card: async workout toggle is on (`metadata.async_session` active). */
+  const [isAsyncWorkoutEnabled, setIsAsyncWorkoutEnabled] = useState(false);
 
   const classInstanceIdForRecording = session.sourceInstanceId?.trim() ?? '';
 
@@ -165,6 +169,7 @@ function DashboardLiveVideoDockRouter({
   useEffect(() => {
     if (!isHost || !classInstanceIdForRecording) {
       setHostClassRecordingPipelineBusy(false);
+      setIsAsyncWorkoutEnabled(false);
       return;
     }
 
@@ -186,11 +191,14 @@ function DashboardLiveVideoDockRouter({
           );
         }
         setHostClassRecordingPipelineBusy(false);
+        setIsAsyncWorkoutEnabled(false);
         return;
       }
       const rec = parseClassRecordingFromInstanceMetadata(data?.metadata);
       const busy = isClassRecordingPipelineBusy(rec?.status);
       setHostClassRecordingPipelineBusy(busy);
+      const asyncSession = parseAsyncSessionFromInstanceMetadata(data?.metadata);
+      setIsAsyncWorkoutEnabled(Boolean(asyncSession && !asyncSession.endedAt));
       if (intervalId != null) {
         clearInterval(intervalId);
         intervalId = null;
@@ -210,75 +218,105 @@ function DashboardLiveVideoDockRouter({
     };
   }, [isHost, classInstanceIdForRecording, supabase]);
 
-  const handleStartRecording = useCallback(() => {
-    if (!isHost) return;
-    const classInstanceForRecording = session.sourceInstanceId?.trim() ?? '';
-    if (!classInstanceForRecording) return;
-    const liveSessionRowId = session.sessionId.trim();
-    if (!liveSessionRowId) return;
+  const handleStartRecording = useCallback(
+    async (opts?: { aspectRatio?: SessionAspectRatioId }) => {
+      if (!isHost) return;
+      const classInstanceForRecording = session.sourceInstanceId?.trim() ?? '';
+      if (!classInstanceForRecording) return;
+      const liveSessionRowId = session.sessionId.trim();
+      if (!liveSessionRowId) return;
 
-    void supabase.functions
-      .invoke('agora-recording-start', {
-        body: {
-          classInstanceId: classInstanceForRecording,
-          channelName: session.channelId,
-          workspaceId: session.workspaceId,
-        },
-      })
-      .then(({ error: fnError, data }) => {
-        const toastKey = liveSessionRowId;
-        if (fnError) {
+      const { data: inst, error: instMetaErr } = await supabase
+        .from('class_instances')
+        .select('metadata')
+        .eq('id', classInstanceForRecording)
+        .maybeSingle();
+
+      if (instMetaErr) {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(
+            '[Recording] class_instances metadata read before start',
+            instMetaErr.message,
+          );
+        }
+        return;
+      }
+
+      const asyncSession = parseAsyncSessionFromInstanceMetadata(inst?.metadata);
+      if (!asyncSession || asyncSession.endedAt) {
+        if (process.env.NODE_ENV === 'development') {
+          console.info(
+            '[Recording] async workout not enabled — recording suppressed for this session',
+          );
+        }
+        return;
+      }
+
+      void supabase.functions
+        .invoke('agora-recording-start', {
+          body: {
+            classInstanceId: classInstanceForRecording,
+            channelName: session.channelId,
+            workspaceId: session.workspaceId,
+            aspectRatio: opts?.aspectRatio ?? '16:9',
+          },
+        })
+        .then(({ error: fnError, data }) => {
+          const toastKey = liveSessionRowId;
+          if (fnError) {
+            console.error(
+              '[Recording] Failed to start recording',
+              fnError instanceof Error ? fnError.message : String(fnError),
+            );
+            if (recordingStartFailureToastForSessionRef.current !== toastKey) {
+              recordingStartFailureToastForSessionRef.current = toastKey;
+              toast.error(
+                'Cloud recording could not start. You can upload a recording manually from the class editor later.',
+              );
+            }
+            return;
+          }
+          if (
+            data &&
+            typeof data === 'object' &&
+            'ok' in data &&
+            (data as { ok?: boolean }).ok === false
+          ) {
+            console.error(
+              '[Recording] Backend rejected start request with error code:',
+              (data as { error?: unknown }).error,
+              data,
+            );
+            if (recordingStartFailureToastForSessionRef.current !== toastKey) {
+              recordingStartFailureToastForSessionRef.current = toastKey;
+              toast.error(
+                'Cloud recording could not start. You can upload a recording manually from the class editor later.',
+              );
+            }
+            return;
+          }
+          // Realtime on `class_instances` will refetch the board too; this callback is the
+          // belt-and-suspenders so cards reflect Phase 1 immediately, even if Realtime is briefly
+          // disconnected (mobile sleep, network blip).
+          onClassRecordingPipelineUpdated?.();
+        })
+        .catch((err) => {
           console.error(
             '[Recording] Failed to start recording',
-            fnError instanceof Error ? fnError.message : String(fnError),
+            err instanceof Error ? err.message : String(err),
           );
-          if (recordingStartFailureToastForSessionRef.current !== toastKey) {
-            recordingStartFailureToastForSessionRef.current = toastKey;
-            toast.error(
-              'Cloud recording could not start. You can upload a recording manually from the class editor later.',
-            );
-          }
-          return;
-        }
-        if (
-          data &&
-          typeof data === 'object' &&
-          'ok' in data &&
-          (data as { ok?: boolean }).ok === false
-        ) {
-          console.error(
-            '[Recording] Backend rejected start request with error code:',
-            (data as { error?: unknown }).error,
-            data,
-          );
-          if (recordingStartFailureToastForSessionRef.current !== toastKey) {
-            recordingStartFailureToastForSessionRef.current = toastKey;
-            toast.error(
-              'Cloud recording could not start. You can upload a recording manually from the class editor later.',
-            );
-          }
-          return;
-        }
-        // Realtime on `class_instances` will refetch the board too; this callback is the
-        // belt-and-suspenders so cards reflect Phase 1 immediately, even if Realtime is briefly
-        // disconnected (mobile sleep, network blip).
-        onClassRecordingPipelineUpdated?.();
-      })
-      .catch((err) => {
-        console.error(
-          '[Recording] Failed to start recording',
-          err instanceof Error ? err.message : String(err),
-        );
-      });
-  }, [
-    isHost,
-    onClassRecordingPipelineUpdated,
-    session.sourceInstanceId,
-    session.sessionId,
-    session.channelId,
-    session.workspaceId,
-    supabase,
-  ]);
+        });
+    },
+    [
+      isHost,
+      onClassRecordingPipelineUpdated,
+      session.sourceInstanceId,
+      session.sessionId,
+      session.channelId,
+      session.workspaceId,
+      supabase,
+    ],
+  );
 
   useLayoutEffect(() => {
     if (!isConnected) {
@@ -424,6 +462,9 @@ function DashboardLiveVideoDockRouter({
         liveDbReady={liveDbReady}
         displayName={resolvedDisplayName}
         hostClassRecordingPipelineBusy={hostClassRecordingPipelineBusy}
+        hostAsyncWorkoutEnabled={
+          isHost && classInstanceIdForRecording ? isAsyncWorkoutEnabled : undefined
+        }
         onHostStartRecording={isHost ? handleStartRecording : undefined}
         boardSelectionPanel={boardSelectionPanel}
         selectionFloatingMediaBar={selectionFloatingMediaBar}

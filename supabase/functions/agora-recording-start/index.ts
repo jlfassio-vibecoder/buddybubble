@@ -2,6 +2,7 @@
  * Agora Cloud Recording — start (acquire + start) for class live video.
  *
  * Auth: User JWT (verify_jwt=true). Validates host via `class_instances.metadata.live_session`.
+ * Cloud recording only runs when `metadata.async_session` is present and not ended (`async_workout_not_enabled` otherwise).
  *
  * Secrets: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY,
  * AGORA_APP_ID, AGORA_CUSTOMER_ID, AGORA_CUSTOMER_SECRET, AGORA_APP_CERTIFICATE,
@@ -22,8 +23,12 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 // evaluates. `esm.sh` pre-bundles those polyfills, so importing from there avoids the module-load crash.
 import { RtcRole, RtcTokenBuilder } from 'https://esm.sh/agora-access-token@2.0.4';
 import { agoraRecordingBotUid, agoraUidFromUuid } from '../_shared/agora-uid.ts';
+import { aspectRatioToCanvas, parseAspectRatio } from '../_shared/aspect-ratio.ts';
 import { patchInstanceClassRecordingPipelineStatus } from '../_shared/class-recording-reconcile.ts';
-import { parseLiveSessionInviteFromInstanceMetadata } from '../_shared/live-session-invite.ts';
+import {
+  parseAsyncSessionFromInstanceMetadata,
+  parseLiveSessionInviteFromInstanceMetadata,
+} from '../_shared/live-session-invite.ts';
 
 const CHANNEL_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -40,6 +45,7 @@ type StartBody = {
   classInstanceId?: string;
   channelName?: string;
   workspaceId?: string;
+  aspectRatio?: unknown;
 };
 
 function json(data: unknown, status = 200) {
@@ -267,6 +273,17 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: 'invalid_channel' }, 400);
     }
 
+    const aspectRatio = parseAspectRatio(body.aspectRatio);
+    const { width: mixWidth, height: mixHeight } = aspectRatioToCanvas(aspectRatio);
+    console.info(
+      JSON.stringify({
+        evt: 'agora_recording_start_aspect_ratio',
+        aspectRatio,
+        mixWidth,
+        mixHeight,
+      }),
+    );
+
     const supabase = createClient(supabaseUrl, serviceKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
@@ -304,6 +321,11 @@ Deno.serve(async (req) => {
     }
     if (invite.endedAt) {
       return json({ ok: false, error: 'live_session_ended' }, 400);
+    }
+
+    const asyncSession = parseAsyncSessionFromInstanceMetadata(instance.metadata);
+    if (!asyncSession || asyncSession.endedAt) {
+      return json({ ok: false, error: 'async_workout_not_enabled' }, 400);
     }
 
     const authz = agoraBasicAuthHeader(customerId, customerSecret);
@@ -447,6 +469,12 @@ Deno.serve(async (req) => {
             subscribeAudioUids: ['#allstream#'],
             subscribeVideoUids: ['#allstream#'],
             subscribeUidGroup: 0,
+          },
+          transcodingConfig: {
+            width: mixWidth,
+            height: mixHeight,
+            fps: 15,
+            bitrate: 1500,
           },
           recordingFileConfig: {
             avFileType: ['hls', 'mp4'],

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isClassRecordingPipelineBusy,
+  parseAsyncSessionFromInstanceMetadata,
   parseClassRecordingFromInstanceMetadata,
 } from './live-session-invite';
 
@@ -114,5 +115,50 @@ describe('isClassRecordingPipelineBusy', () => {
     expect(isClassRecordingPipelineBusy('failed')).toBe(false);
     expect(isClassRecordingPipelineBusy(null)).toBe(false);
     expect(isClassRecordingPipelineBusy(undefined)).toBe(false);
+  });
+});
+
+describe('parseAsyncSessionFromInstanceMetadata', () => {
+  const valid = {
+    async_session: {
+      type: 'async_session',
+      sessionId: 'bb-class-deck:abc',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      hostUserId: 'host-uuid',
+    },
+  };
+
+  it('parses active async_session', () => {
+    const p = parseAsyncSessionFromInstanceMetadata(valid);
+    expect(p?.type).toBe('async_session');
+    expect(p?.sessionId).toBe('bb-class-deck:abc');
+    expect(p?.endedAt).toBeUndefined();
+  });
+
+  it('returns null when missing or invalid', () => {
+    expect(parseAsyncSessionFromInstanceMetadata(null)).toBeNull();
+    expect(parseAsyncSessionFromInstanceMetadata({})).toBeNull();
+    expect(
+      parseAsyncSessionFromInstanceMetadata({
+        async_session: { type: 'wrong', sessionId: 'x', createdAt: 't', hostUserId: 'h' },
+      }),
+    ).toBeNull();
+  });
+
+  it('includes endedAt when set', () => {
+    const p = parseAsyncSessionFromInstanceMetadata({
+      async_session: {
+        ...valid.async_session,
+        endedAt: '2026-01-02T00:00:00.000Z',
+      },
+    });
+    expect(p?.endedAt).toBe('2026-01-02T00:00:00.000Z');
+  });
+
+  it('treats endedAt null as active (field omitted)', () => {
+    const p = parseAsyncSessionFromInstanceMetadata({
+      async_session: { ...valid.async_session, endedAt: null },
+    });
+    expect(p?.endedAt).toBeUndefined();
   });
 });
