@@ -3,6 +3,7 @@
  * `class_instances.metadata.class_recording` in sync (webhook + reconciler).
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { agoraRecordingFolderSegment } from '@/lib/class-recording-storage';
 import { mergeClassRecordingIntoInstanceMetadata } from '@/lib/class-recording-metadata';
 import type { ClassRecordingPayload } from '@/types/live-session-invite';
 
@@ -21,12 +22,14 @@ export function buildStoragePath(
 ): string {
   const normalized = fileName.replace(/^\/+/g, '').trim();
   if (!normalized) return '';
-  const prefix = `${workspaceId}/${classInstanceId}/`;
+  const w = agoraRecordingFolderSegment(workspaceId);
+  const c = agoraRecordingFolderSegment(classInstanceId);
+  const prefix = `${w}/${c}/`;
   if (normalized.startsWith(prefix)) return normalized;
   const segments = normalized.split('/').filter(Boolean);
   const base = segments[segments.length - 1] ?? normalized;
   const safe = base.replace(/[^\w.\-]+/g, '_');
-  return `${workspaceId}/${classInstanceId}/${safe || 'recording.bin'}`;
+  return `${w}/${c}/${safe || 'recording.bin'}`;
 }
 
 async function loadInstanceMetadata(
