@@ -16,6 +16,10 @@ export function truncateMessage(msg: string, max = 4000): string {
   return t.length <= max ? t : `${t.slice(0, max)}…`;
 }
 
+function agoraRecordingFolderSegment(id: string): string {
+  return id.replace(/-/g, '').toLowerCase();
+}
+
 export function buildStoragePath(
   workspaceId: string,
   classInstanceId: string,
@@ -23,12 +27,14 @@ export function buildStoragePath(
 ): string {
   const normalized = fileName.replace(/^\/+/g, '').trim();
   if (!normalized) return '';
-  const prefix = `${workspaceId}/${classInstanceId}/`;
+  const w = agoraRecordingFolderSegment(workspaceId);
+  const c = agoraRecordingFolderSegment(classInstanceId);
+  const prefix = `${w}/${c}/`;
   if (normalized.startsWith(prefix)) return normalized;
   const segments = normalized.split('/').filter(Boolean);
   const base = segments[segments.length - 1] ?? normalized;
   const safe = base.replace(/[^\w.\-]+/g, '_');
-  return `${workspaceId}/${classInstanceId}/${safe || 'recording.bin'}`;
+  return `${w}/${c}/${safe || 'recording.bin'}`;
 }
 
 async function loadInstanceMetadata(

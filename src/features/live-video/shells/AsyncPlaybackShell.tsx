@@ -12,7 +12,10 @@ import {
 } from '@/features/live-video/shells/huddle/workout-deck-selection-context';
 import { initialSessionState } from '@/features/live-video/state/sessionStateMachine';
 import { classDeckBuilderSessionId } from '@/lib/fitness/class-deck-builder-session-id';
-import { CLASS_RECORDINGS_BUCKET } from '@/lib/class-recording-storage';
+import {
+  CLASS_RECORDINGS_BUCKET,
+  storagePathAsAgoraUploadKey,
+} from '@/lib/class-recording-storage';
 import { formatUserFacingError } from '@/lib/format-error';
 import { cn } from '@/lib/utils';
 import {
@@ -112,35 +115,49 @@ function AsyncPlaybackShellInner({ classInstanceId, onClose, className }: AsyncP
   useEffect(() => {
     setResolvedVideoUrl(null);
     if (!recordingRec || recordingRec.status !== 'ready') {
+      setRecordingLoadError(null);
       return;
     }
     const direct = recordingRec.playbackUrl?.trim() ?? '';
     if (direct) {
+      setRecordingLoadError(null);
       setResolvedVideoUrl(direct);
       return;
     }
     const path = recordingRec.storagePath?.trim() ?? '';
     if (!path) {
+      setRecordingLoadError(null);
       return;
     }
+    const altPath = storagePathAsAgoraUploadKey(path);
+    const candidates = path === altPath ? [path] : [path, altPath];
     let cancelled = false;
-    void supabase.storage
-      .from(CLASS_RECORDINGS_BUCKET)
-      .createSignedUrl(path, 60 * 60 * 4)
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        if (error || !data?.signedUrl) {
-          setResolvedVideoUrl(null);
-          setRecordingLoadError(
-            error
-              ? formatUserFacingError(error)
-              : 'Could not create a playback link for this recording.',
-          );
-          return;
+
+    void (async () => {
+      let lastErr: string | null = null;
+      try {
+        for (const candidate of candidates) {
+          const { data, error } = await supabase.storage
+            .from(CLASS_RECORDINGS_BUCKET)
+            .createSignedUrl(candidate, 60 * 60 * 4);
+          if (cancelled) return;
+          if (error) lastErr = formatUserFacingError(error);
+          if (!error && data?.signedUrl) {
+            setRecordingLoadError(null);
+            setResolvedVideoUrl(data.signedUrl);
+            return;
+          }
         }
-        setRecordingLoadError(null);
-        setResolvedVideoUrl(data.signedUrl);
-      });
+        if (cancelled) return;
+        setResolvedVideoUrl(null);
+        setRecordingLoadError(lastErr ?? 'Could not create a playback link for this recording.');
+      } catch (e) {
+        if (cancelled) return;
+        setResolvedVideoUrl(null);
+        setRecordingLoadError(formatUserFacingError(e));
+      }
+    })();
+
     return () => {
       cancelled = true;
     };
@@ -258,21 +275,27 @@ function AsyncPlaybackShellInner({ classInstanceId, onClose, className }: AsyncP
               />
             </div>
             <div className="flex min-h-0 min-w-0 flex-[1.4] flex-col justify-center">
-              {resolvedVideoUrl ? (
+              {recordingLoadError ? (
+                <p className="mx-auto max-w-md text-center text-sm text-destructive" role="alert">
+                  {recordingLoadError}
+                </p>
+              ) : null}
+              {!recordingLoadError && resolvedVideoUrl ? (
                 <video
                   key={resolvedVideoUrl}
                   src={resolvedVideoUrl}
                   controls
                   className="aspect-video w-full rounded-lg border border-border bg-black object-contain"
                 />
-              ) : (
+              ) : null}
+              {!recordingLoadError && !resolvedVideoUrl ? (
                 <div
                   className="flex aspect-video w-full items-center justify-center rounded-lg border border-dashed border-border bg-muted/20 px-4 text-center text-sm text-muted-foreground"
                   role="status"
                 >
                   Recording unavailable — playback URL is missing for this class.
                 </div>
-              )}
+              ) : null}
             </div>
           </div>
           <SessionDeckBuilder
