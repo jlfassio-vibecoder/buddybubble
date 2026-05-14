@@ -16,6 +16,7 @@
 export type AgentRoutingSurface =
   | 'chat'
   | 'workout-coach-rail'
+  | 'standard-task-chat-rail'
   | 'task-modal-root'
   | 'task-modal-thread'
   | 'thread-panel'

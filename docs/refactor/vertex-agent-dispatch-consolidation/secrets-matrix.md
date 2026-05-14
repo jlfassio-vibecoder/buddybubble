@@ -2,6 +2,18 @@
 
 Last updated: 2026-05-08 (Phase 5 cutover note appended)
 
+## Critical: do not delete or empty `AGENT_WEBHOOK_SECRET`
+
+If **`AGENT_WEBHOOK_SECRET`** is removed or cleared on the hosted **`agent-dispatch`** Edge Function while the Supabase **Database Webhook** (or `pg_net`) still sends `x-agent-secret` / `Authorization: Bearer …`, every invocation fails **`verifyAndParseWebhook`** with `{ "ok": false, "error": "unauthorized" }` and **HTTP 200**. No strategy runs, **no `messages` rows are inserted by agents**, and the product looks like “routing or Vertex is broken” for all bubbles.
+
+**Safe practices**
+
+- **Rotate, do not delete:** set the new value first (`supabase secrets set AGENT_WEBHOOK_SECRET=…` or Dashboard), update the webhook header to the same value, redeploy the function if required, then retire the old value from your password manager only.
+- **To intentionally stop dispatch:** disable the Database Webhook (or the trigger), not by blanking secrets.
+- **Pair check:** after any Dashboard edit to Edge secrets, confirm the webhook’s **`x-agent-secret`** still matches (copy/paste error causes the same symptom).
+
+---
+
 This file is the migration ledger for agent-dispatch secrets. Its purpose is to
 prevent accidental secret deletion while `bubble-agent-dispatch`,
 `buddy-agent-dispatch`, `organizer-agent-dispatch`, and the new
@@ -12,21 +24,21 @@ Phase 6 cutover has completed.
 
 ## Secret Status
 
-| Secret                                 | Live consumers today                                                        | Phase 1 consumer    | Phase 6 status |
-| -------------------------------------- | --------------------------------------------------------------------------- | ------------------- | -------------- |
-| `GCP_PROJECT_ID`                       | none                                                                        | `agent-dispatch-v2` | live           |
-| `GCP_LOCATION`                         | none                                                                        | `agent-dispatch-v2` | live           |
-| `GCP_SERVICE_ACCOUNT_JSON`             | none                                                                        | `agent-dispatch-v2` | live           |
-| `AGENT_WEBHOOK_SECRET`                 | none                                                                        | `agent-dispatch-v2` | live           |
-| `LLM_TIMEOUT_MS`                       | none                                                                        | `agent-dispatch-v2` | live           |
-| `GEMINI_API_KEY`                       | `bubble-agent-dispatch`, `buddy-agent-dispatch`, `organizer-agent-dispatch` | unchanged           | deleted        |
-| `GEMINI_MODEL` / `VERTEX_GEMINI_MODEL` | `bubble-agent-dispatch`                                                     | unchanged           | deleted        |
-| `BUDDY_GEMINI_MODEL`                   | `buddy-agent-dispatch`                                                      | unchanged           | deleted        |
-| `ORGANIZER_GEMINI_MODEL`               | `organizer-agent-dispatch`                                                  | unchanged           | deleted        |
-| `BUBBLE_AGENT_WEBHOOK_SECRET`          | `bubble-agent-dispatch`                                                     | unchanged           | deleted        |
-| `BUDDY_AGENT_WEBHOOK_SECRET`           | `buddy-agent-dispatch`                                                      | unchanged           | deleted        |
-| `ORGANIZER_AGENT_WEBHOOK_SECRET`       | `organizer-agent-dispatch`                                                  | unchanged           | deleted        |
-| `*_GEMINI_FETCH_TIMEOUT_MS`            | respective legacy dispatchers                                               | unchanged           | deleted        |
+| Secret                                 | Live consumers today                                                            | Phase 1 consumer    | Phase 6 status |
+| -------------------------------------- | ------------------------------------------------------------------------------- | ------------------- | -------------- |
+| `GCP_PROJECT_ID`                       | none                                                                            | `agent-dispatch-v2` | live           |
+| `GCP_LOCATION`                         | none                                                                            | `agent-dispatch-v2` | live           |
+| `GCP_SERVICE_ACCOUNT_JSON`             | none                                                                            | `agent-dispatch-v2` | live           |
+| `AGENT_WEBHOOK_SECRET`                 | **`agent-dispatch`** Edge Function + Database Webhook `x-agent-secret` / Bearer | `agent-dispatch`    | live           |
+| `LLM_TIMEOUT_MS`                       | none                                                                            | `agent-dispatch-v2` | live           |
+| `GEMINI_API_KEY`                       | `bubble-agent-dispatch`, `buddy-agent-dispatch`, `organizer-agent-dispatch`     | unchanged           | deleted        |
+| `GEMINI_MODEL` / `VERTEX_GEMINI_MODEL` | `bubble-agent-dispatch`                                                         | unchanged           | deleted        |
+| `BUDDY_GEMINI_MODEL`                   | `buddy-agent-dispatch`                                                          | unchanged           | deleted        |
+| `ORGANIZER_GEMINI_MODEL`               | `organizer-agent-dispatch`                                                      | unchanged           | deleted        |
+| `BUBBLE_AGENT_WEBHOOK_SECRET`          | `bubble-agent-dispatch`                                                         | unchanged           | deleted        |
+| `BUDDY_AGENT_WEBHOOK_SECRET`           | `buddy-agent-dispatch`                                                          | unchanged           | deleted        |
+| `ORGANIZER_AGENT_WEBHOOK_SECRET`       | `organizer-agent-dispatch`                                                      | unchanged           | deleted        |
+| `*_GEMINI_FETCH_TIMEOUT_MS`            | respective legacy dispatchers                                                   | unchanged           | deleted        |
 
 ## Update Protocol
 

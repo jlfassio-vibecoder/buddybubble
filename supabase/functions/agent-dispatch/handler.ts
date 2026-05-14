@@ -157,6 +157,7 @@ async function runShortCircuit(
 
 export async function handleDispatchRequest(req: Request): Promise<Response> {
   const dispatchStartedAt = Date.now();
+
   let env: ReturnType<typeof readDispatcherEnv>;
   try {
     env = readDispatcherEnv();
