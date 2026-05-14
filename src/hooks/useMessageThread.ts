@@ -135,6 +135,11 @@ export type UseMessageThreadResult = {
   ) => Promise<SendMessageSuccess | null>;
   clearError: () => void;
   setError: (message: string | null) => void;
+  /**
+   * Re-runs the thread query without toggling `isLoading`. Used when realtime may skip rows
+   * (e.g. RLS nuance) but PostgREST still returns them — agent-wait surfaces poll while pending.
+   */
+  silentRefreshMessages: () => Promise<void>;
 };
 
 export function useMessageThread({
@@ -175,6 +180,48 @@ export function useMessageThread({
   }
 
   const filterKey = messageThreadFilterKey(filter);
+
+  const silentRefreshMessages = useCallback(async () => {
+    if (!filter) return;
+    const f = filter;
+    if (f.scope === 'all_bubbles' && f.bubbleIds.length === 0) return;
+
+    const supabase = createClient();
+    let q = supabase
+      .from('messages')
+      .select(MESSAGES_SELECT_WITH_TASK)
+      .order('created_at', { ascending: true });
+    if (f.scope === 'all_bubbles') {
+      q = q.in('bubble_id', [...f.bubbleIds]);
+    } else if (f.scope === 'bubble') {
+      q = q.eq('bubble_id', f.bubbleId);
+    } else {
+      q = q.eq('target_task_id', f.taskId);
+    }
+    const { data, error: qErr } = await q;
+    if (qErr) {
+      if (!isSupabaseBenignRequestAbort(qErr) && process.env.NODE_ENV !== 'production') {
+        console.warn('[useMessageThread] silent refresh failed');
+      }
+      return;
+    }
+    const rows = (data ?? []) as MessageRowWithEmbeddedTask[];
+    setMessages(rows);
+    const ids = [...new Set(rows.map((r) => r.user_id))];
+    if (ids.length === 0) return;
+    const { data: users } = await supabase
+      .from('users')
+      .select('id, full_name, avatar_url, email, created_at')
+      .in('id', ids);
+    if (!users?.length) return;
+    setUserById((prev) => {
+      const next = { ...prev };
+      for (const u of users) {
+        next[u.id] = toChatUserSnapshot(u);
+      }
+      return next;
+    });
+  }, [filter]);
 
   const taskBubbleIdFromMessages = useMemo(() => {
     if (!filter || filter.scope !== 'task') return null;
@@ -1151,5 +1198,6 @@ export function useMessageThread({
     sendMessage,
     clearError,
     setError,
+    silentRefreshMessages,
   };
 }

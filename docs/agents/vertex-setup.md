@@ -85,6 +85,8 @@ Set on the Supabase Edge Function environment for `agent-dispatch-v2`:
 | `LLM_TIMEOUT_MS` (optional) | n/a       | Defaults to 25_000 ms; minimum 1_000 ms. Set lower only if you understand the retry budget in `_shared/llm/vertex-gemini.ts`. |
 | `AGENT_WEBHOOK_SECRET`      | unchanged | The shared secret the Supabase webhook posts in `x-agent-secret`.                                                             |
 
+**Never delete or empty this value on the hosted function.** If it mismatches the webhook header, every request is rejected as `unauthorized` (still HTTP 200) and **no agent replies are written**. Recovery: restore the secret, align the webhook header, redeploy if needed. See the callout at the top of the [secrets matrix](../refactor/vertex-agent-dispatch-consolidation/secrets-matrix.md).
+
 Cross-reference the [secrets matrix](../refactor/vertex-agent-dispatch-consolidation/secrets-matrix.md) before adding or removing any secret.
 
 ## 4. Key rotation (90-day cadence)

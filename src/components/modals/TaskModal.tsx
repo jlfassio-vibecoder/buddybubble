@@ -30,20 +30,15 @@ import { taskDateFieldLabels } from '@/lib/task-date-labels';
 import { buildTaskAttachmentObjectPath, TASK_ATTACHMENTS_BUCKET } from '@/lib/task-storage';
 import { isLikelyTaskAttachmentImageFileName } from '@/lib/task-attachment-url';
 import { TaskModalActivityPanel } from '@/components/modals/task-modal/TaskModalActivityPanel';
-import { TaskModalAttachmentsSection } from '@/components/modals/task-modal/TaskModalAttachmentsSection';
-import { TaskModalCardCoverSection } from '@/components/modals/task-modal/TaskModalCardCoverSection';
-import { TaskModalItemMetadataSections } from '@/components/modals/task-modal/TaskModalItemMetadataSections';
-import { TaskModalProgramFields } from '@/components/modals/task-modal/TaskModalProgramFields';
-import { TaskModalWorkoutFields } from '@/components/modals/task-modal/TaskModalWorkoutFields';
-import { WorkoutIntakePanel } from '@/components/fitness/WorkoutIntakePanel';
+import { TaskModalDetailsBody } from '@/components/modals/task-modal/TaskModalDetailsBody';
 import {
   TaskModalCommentsPanel,
   type TaskModalCommentsPanelHandle,
 } from '@/components/modals/task-modal/TaskModalCommentsPanel';
-import { TaskModalDetailsFooterActions } from '@/components/modals/task-modal/TaskModalDetailsFooterActions';
+import { TaskModalChatRailAdapter } from '@/components/modals/task-modal/TaskModalChatRailAdapter';
+import { isStandardTaskChatRailEnabled } from '@/lib/feature-flags/standardTaskChatRail';
 import { TaskModalEditorChrome } from '@/components/modals/task-modal/TaskModalEditorChrome';
 import { ClassEditor } from '@/components/modals/class-modal/ClassEditor';
-import { TaskModalSchedulingSection } from '@/components/modals/task-modal/TaskModalSchedulingSection';
 import { TaskModalSubtasksPanel } from '@/components/modals/task-modal/TaskModalSubtasksPanel';
 import { TaskModalTabBar } from '@/components/modals/task-modal/TaskModalTabBar';
 import { formatUserFacingError } from '@/lib/format-error';
@@ -57,10 +52,6 @@ import {
 import { useWorkoutTemplates } from '@/hooks/use-workout-templates';
 import { scheduledTimeToInputValue } from '@/lib/task-scheduled-time';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Separator } from '@/components/ui/separator';
 import { indefiniteArticleForUiNoun, itemTypeUiNoun } from '@/lib/item-type-styles';
 import { parseLiveSessionInviteFromMessageMetadata } from '@/types/live-session-invite';
 import { ALL_BUBBLES_BUBBLE_ID } from '@/lib/all-bubbles';
@@ -82,6 +73,7 @@ import { useTaskOriginalSnapshot } from '@/components/modals/task-modal/hooks/us
 import { useTaskDirtyState } from '@/components/modals/task-modal/hooks/useTaskDirtyState';
 import { useTaskEmbeddedCollections } from '@/components/modals/task-modal/hooks/useTaskEmbeddedCollections';
 import { useTaskSaveAndCreate } from '@/components/modals/task-modal/hooks/useTaskSaveAndCreate';
+import { useIsNarrowBelowMd } from '@/hooks/use-is-narrow-below-md';
 import type { TaskModalTab, TaskModalViewMode } from '@/types/open-task-options';
 
 export type { OpenTaskOptions, TaskModalTab, TaskModalViewMode } from '@/types/open-task-options';
@@ -215,6 +207,8 @@ export function TaskModal({
   const [commentsInThreadView, setCommentsInThreadView] = useState(false);
   const commentsUnifiedScrollRef = useRef<HTMLDivElement>(null);
   const commentsPanelRef = useRef<TaskModalCommentsPanelHandle>(null);
+  const standardRailEnabled = isStandardTaskChatRailEnabled();
+  const isMdUp = !useIsNarrowBelowMd();
   const [composerPortalHost, setComposerPortalHost] = useState<HTMLDivElement | null>(null);
   /** Below `md`, which pane is visible when the workout split is open. */
   const [mobileUnifiedPane, setMobileUnifiedPane] = useState<'workout' | 'card'>('workout');
@@ -952,6 +946,159 @@ export function TaskModal({
     aiWorkoutGenerating,
   ]);
 
+  const detailsBodyProps = useMemo(
+    () => ({
+      title,
+      onTitleChange: setTitle,
+      description,
+      onDescriptionChange: setDescription,
+      itemType,
+      canWrite,
+      onGenerateWorkoutFromIntake: handleGenerateWorkoutFromIntake,
+      aiWorkoutGenerating,
+      taskId,
+      cardCoverPath,
+      cardCoverFileInputRef,
+      onCardCoverFileChange: (f: File) => void uploadCardCover(f),
+      onPickCardCover: () => cardCoverFileInputRef.current?.click(),
+      onRemoveCardCover: removeCardCover,
+      cardCoverPresetId,
+      onCardCoverPresetIdChange: setCardCoverPresetId,
+      cardCoverAiHint,
+      onCardCoverAiHintChange: setCardCoverAiHint,
+      saving,
+      aiCardCoverGenerating,
+      onGenerateCardCoverWithAi: generateCardCoverWithAi,
+      eventLocation,
+      onEventLocationChange: setEventLocation,
+      eventUrl,
+      onEventUrlChange: setEventUrl,
+      experienceSeason,
+      onExperienceSeasonChange: setExperienceSeason,
+      scheduledOn,
+      onExperienceStartDateChange: (v: string) => {
+        setScheduledOn(v);
+        if (!v) setScheduledTime('');
+      },
+      experienceEndDate,
+      onExperienceEndDateChange: setExperienceEndDate,
+      memoryCaption,
+      onMemoryCaptionChange: setMemoryCaption,
+      aiWorkoutProgressIdx,
+      onAiGenerateWorkout: handleAiGenerateWorkout,
+      workoutTemplates,
+      templatePickerOpen,
+      onTemplatePickerOpenChange: setTemplatePickerOpen,
+      onApplyWorkoutTemplate: applyWorkoutTemplate,
+      workoutType,
+      onWorkoutTypeChange: setWorkoutType,
+      workoutDurationMin,
+      onWorkoutDurationMinChange: setWorkoutDurationMin,
+      workoutExercises,
+      onWorkoutExercisesChange: setWorkoutExercises,
+      workoutUnitSystem,
+      initialAutoEdit,
+      isWorkoutItemType,
+      workspaceId,
+      aiProgramPersonalizing,
+      onPersonalizeProgram: handlePersonalizeProgram,
+      programGoal,
+      onProgramGoalChange: setProgramGoal,
+      programDurationWeeks,
+      onProgramDurationWeeksChange: setProgramDurationWeeks,
+      programCurrentWeek,
+      programSchedule,
+      dateLabels,
+      status,
+      onStatusChange: setStatus,
+      statusSelectOptions,
+      priority,
+      onPriorityChange: setPriority,
+      assignedTo,
+      onAssignedToChange: setAssignedTo,
+      workspaceMembersForAssign,
+      scheduledTime,
+      onScheduledTimeChange: setScheduledTime,
+      onScheduledOnChange: (v: string) => {
+        setScheduledOn(v);
+        if (!v) setScheduledTime('');
+      },
+      attachments,
+      isCreateMode,
+      typeNoun,
+      onPickAttachmentFile: (f: File) => void uploadAttachment(f),
+      onDownloadAttachment: downloadLink,
+      onRemoveAttachment: removeAttachment,
+      coreDirty,
+      onCreateTask: createTask,
+      onSaveCoreFields: saveCoreFields,
+      archiving,
+      loading,
+      onArchiveTask: archiveTask,
+    }),
+    [
+      title,
+      description,
+      itemType,
+      canWrite,
+      handleGenerateWorkoutFromIntake,
+      aiWorkoutGenerating,
+      taskId,
+      cardCoverPath,
+      cardCoverFileInputRef,
+      uploadCardCover,
+      removeCardCover,
+      cardCoverPresetId,
+      cardCoverAiHint,
+      saving,
+      aiCardCoverGenerating,
+      generateCardCoverWithAi,
+      eventLocation,
+      eventUrl,
+      experienceSeason,
+      scheduledOn,
+      experienceEndDate,
+      memoryCaption,
+      aiWorkoutProgressIdx,
+      handleAiGenerateWorkout,
+      workoutTemplates,
+      templatePickerOpen,
+      applyWorkoutTemplate,
+      workoutType,
+      workoutDurationMin,
+      workoutExercises,
+      workoutUnitSystem,
+      initialAutoEdit,
+      isWorkoutItemType,
+      workspaceId,
+      aiProgramPersonalizing,
+      handlePersonalizeProgram,
+      programGoal,
+      programDurationWeeks,
+      programCurrentWeek,
+      programSchedule,
+      dateLabels,
+      status,
+      statusSelectOptions,
+      priority,
+      assignedTo,
+      workspaceMembersForAssign,
+      scheduledTime,
+      attachments,
+      isCreateMode,
+      typeNoun,
+      uploadAttachment,
+      downloadLink,
+      removeAttachment,
+      coreDirty,
+      createTask,
+      saveCoreFields,
+      archiving,
+      loading,
+      archiveTask,
+    ],
+  );
+
   if (!open) return null;
 
   const showClassEditorShell = itemType === 'class' && canManageClasses;
@@ -1030,14 +1177,20 @@ export function TaskModal({
   }
 
   const showEditorChrome = !taskId || viewMode === 'full';
+  const commentsSplitLayout =
+    standardRailEnabled && Boolean(taskId) && tab === 'comments' && isMdUp && !showWorkoutSplitPane;
   /** Hero + inspector tuned for reading workout context next to coach thread / comments-only. */
   const commentsReadingContext =
-    Boolean(taskId) && tab === 'comments' && (viewMode === 'comments-only' || commentsInThreadView);
+    Boolean(taskId) &&
+    tab === 'comments' &&
+    (viewMode === 'comments-only' || commentsInThreadView) &&
+    !commentsSplitLayout;
 
   /** Chat-first layout: inner scroll lives in comments panel; outer body does not scroll. */
   const commentsChatLayout = Boolean(taskId) && tab === 'comments';
   /** Hero + messages share one scroll; composer portaled above tab bar (no workout split). */
-  const useCommentsUnifiedLayout = commentsChatLayout && !showWorkoutSplitPane;
+  const useCommentsUnifiedLayout =
+    commentsChatLayout && !showWorkoutSplitPane && !commentsSplitLayout;
   const commentsSlimWorkoutViewer =
     Boolean(taskId) && (hasWorkoutViewerContent || aiWorkoutGenerating) && isWorkoutItemType;
   const commentsSlimDetails = Boolean(taskId) && !commentsInThreadView && !hasWorkoutViewerContent;
@@ -1063,7 +1216,7 @@ export function TaskModal({
           'relative z-10 flex min-h-0 w-full flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl transition-[max-width] duration-200 ease-out',
           'max-md:flex-1 max-md:min-h-0 max-md:max-h-none max-md:max-w-none max-md:rounded-none max-md:border-x-0 max-md:border-t-0',
           'md:max-h-[min(90dvh,100dvh)]',
-          showWorkoutSplitPane ? 'max-w-6xl' : 'max-w-2xl',
+          showWorkoutSplitPane || commentsSplitLayout ? 'max-w-6xl' : 'max-w-2xl',
         )}
       >
         {taskId && !showWorkoutSplitPane && !useCommentsUnifiedLayout ? (
@@ -1153,9 +1306,12 @@ export function TaskModal({
             {useCommentsUnifiedLayout ? (
               <>
                 <div
-                  ref={commentsUnifiedScrollRef}
-                  className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain"
-                  onScroll={handleTaskModalBodyScroll}
+                  ref={standardRailEnabled ? undefined : commentsUnifiedScrollRef}
+                  className={cn(
+                    'flex min-h-0 flex-1 flex-col',
+                    !standardRailEnabled && 'overflow-y-auto overscroll-contain',
+                  )}
+                  onScroll={!standardRailEnabled ? handleTaskModalBodyScroll : undefined}
                 >
                   {taskId ? (
                     isWorkoutItemType ? (
@@ -1253,34 +1409,54 @@ export function TaskModal({
                       <p className="text-sm text-muted-foreground">Loading {typeNoun}…</p>
                     ) : null}
                     {!loading || !taskId ? (
-                      <TaskModalCommentsPanel
-                        ref={commentsPanelRef}
-                        key={`${taskId}-${initialCommentThreadMessageId ?? ''}`}
-                        taskId={taskId!}
-                        workspaceId={workspaceId}
-                        bubbles={bubbles}
-                        canWrite={canWrite}
-                        taskBubbleIdHint={bubbleId}
-                        initialCommentThreadMessageId={initialCommentThreadMessageId}
-                        onThreadViewChange={setCommentsInThreadView}
-                        onMarkedRead={onTaskCommentsMarkedRead}
-                        showInlineGenerateWorkout={false}
-                        onGenerateWorkout={handleGenerateWorkoutFromComments}
-                        generateWorkoutBusy={aiWorkoutGenerating}
-                        unifiedScrollLayout
-                        composerPortalHost={composerPortalHost}
-                        scrollContainerRef={commentsUnifiedScrollRef}
-                        hideThreadBackRow
-                        onCoachDraftFinalizeSuccess={handleCoachDraftFinalizeSuccess}
-                        chatCardWorkoutActions={taskModalChatCardWorkoutActions}
-                      />
+                      standardRailEnabled ? (
+                        <TaskModalChatRailAdapter
+                          ref={commentsPanelRef}
+                          key={`${taskId}-${initialCommentThreadMessageId ?? ''}`}
+                          taskId={taskId!}
+                          workspaceId={workspaceId}
+                          bubbles={bubbles}
+                          canWrite={canWrite}
+                          taskBubbleIdHint={bubbleId}
+                          initialCommentThreadMessageId={initialCommentThreadMessageId}
+                          onThreadViewChange={setCommentsInThreadView}
+                          onMarkedRead={onTaskCommentsMarkedRead}
+                          onCoachDraftFinalizeSuccess={handleCoachDraftFinalizeSuccess}
+                          chatCardWorkoutActions={taskModalChatCardWorkoutActions}
+                          itemType={itemType}
+                        />
+                      ) : (
+                        <TaskModalCommentsPanel
+                          ref={commentsPanelRef}
+                          key={`${taskId}-${initialCommentThreadMessageId ?? ''}`}
+                          taskId={taskId!}
+                          workspaceId={workspaceId}
+                          bubbles={bubbles}
+                          canWrite={canWrite}
+                          taskBubbleIdHint={bubbleId}
+                          initialCommentThreadMessageId={initialCommentThreadMessageId}
+                          onThreadViewChange={setCommentsInThreadView}
+                          onMarkedRead={onTaskCommentsMarkedRead}
+                          showInlineGenerateWorkout={false}
+                          onGenerateWorkout={handleGenerateWorkoutFromComments}
+                          generateWorkoutBusy={aiWorkoutGenerating}
+                          unifiedScrollLayout
+                          composerPortalHost={composerPortalHost}
+                          scrollContainerRef={commentsUnifiedScrollRef}
+                          hideThreadBackRow
+                          onCoachDraftFinalizeSuccess={handleCoachDraftFinalizeSuccess}
+                          chatCardWorkoutActions={taskModalChatCardWorkoutActions}
+                        />
+                      )
                     ) : null}
                   </div>
                 </div>
-                <div
-                  ref={(el) => setComposerPortalHost(el)}
-                  className="relative shrink-0 border-t border-border bg-card"
-                />
+                {!standardRailEnabled ? (
+                  <div
+                    ref={(el) => setComposerPortalHost(el)}
+                    className="relative shrink-0 border-t border-border bg-card"
+                  />
+                ) : null}
                 <TaskModalTabBar
                   tab={tab}
                   onSelectTab={selectTab}
@@ -1352,212 +1528,24 @@ export function TaskModal({
                       : undefined
                   }
                 >
-                  <div className="shrink-0">
-                    <TaskModalEditorChrome
-                      showChrome={showEditorChrome}
-                      showTypeAndVisibility={showEditorChrome && !commentsReadingContext}
-                      itemType={itemType}
-                      onItemTypeChange={setItemType}
-                      canManageClasses={canManageClasses}
-                      canWrite={canWrite}
-                      visibility={visibility}
-                      onVisibilityChange={setVisibility}
-                      liveStreamEnabled={liveStreamEnabled}
-                      onLiveStreamEnabledChange={setLiveStreamEnabled}
-                      workoutTitle={title}
-                      workoutMetadata={metadata}
-                      bubbleId={bubbleId}
-                      workspaceId={workspaceId}
-                      taskId={taskId}
-                      onInteraction={() => setHeroCinematicCollapsed(true)}
-                    />
-                  </div>
-
-                  <div
-                    className={cn(
-                      'px-6 pt-4',
-                      commentsChatLayout ? 'flex min-h-0 flex-1 flex-col pb-0' : 'pb-4',
-                    )}
-                  >
-                    {error && (
-                      <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                        {error}
-                      </div>
-                    )}
-
-                    {loading && taskId ? (
-                      <p className="text-sm text-muted-foreground">Loading {typeNoun}…</p>
-                    ) : null}
-
-                    {!loading || !taskId ? (
-                      <>
-                        {tab === 'details' && (
-                          <div className="space-y-4">
-                            <div className="space-y-2">
-                              <Label htmlFor="task-title">Title</Label>
-                              <Input
-                                id="task-title"
-                                value={title}
-                                onChange={(e) => setTitle(e.target.value)}
-                                disabled={!canWrite}
-                                className="h-9"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="task-desc">Description</Label>
-                              <Textarea
-                                id="task-desc"
-                                value={description}
-                                onChange={(e) => setDescription(e.target.value)}
-                                disabled={!canWrite}
-                                rows={5}
-                              />
-                            </div>
-
-                            {itemType === 'workout' && canWrite ? (
-                              <WorkoutIntakePanel
-                                handleAiGenerateWorkout={handleGenerateWorkoutFromIntake}
-                                isGenerating={aiWorkoutGenerating}
-                              />
+                  {commentsSplitLayout ? (
+                    <div className="flex min-h-0 flex-1 flex-col">
+                      <div className="flex min-h-0 flex-1 md:flex-row md:items-stretch">
+                        <div className="flex min-h-0 min-w-0 flex-1 flex-col md:max-w-[min(42%,440px)] md:shrink-0 md:basis-[min(38%,400px)] md:grow-0 md:flex-none md:border-r md:border-border">
+                          <div className="flex min-h-0 flex-1 flex-col px-6 pt-4 pb-2">
+                            {error && (
+                              <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                                {error}
+                              </div>
+                            )}
+                            {loading && taskId ? (
+                              <p className="text-sm text-muted-foreground">Loading {typeNoun}…</p>
                             ) : null}
-
-                            <TaskModalCardCoverSection
-                              taskId={taskId}
-                              cardCoverPath={cardCoverPath}
-                              cardCoverFileInputRef={cardCoverFileInputRef}
-                              onCardCoverFileChange={(f) => void uploadCardCover(f)}
-                              onPickCardCover={() => cardCoverFileInputRef.current?.click()}
-                              onRemoveCardCover={removeCardCover}
-                              cardCoverPresetId={cardCoverPresetId}
-                              onCardCoverPresetIdChange={setCardCoverPresetId}
-                              cardCoverAiHint={cardCoverAiHint}
-                              onCardCoverAiHintChange={setCardCoverAiHint}
-                              canWrite={canWrite}
-                              saving={saving}
-                              aiCardCoverGenerating={aiCardCoverGenerating}
-                              onGenerateCardCoverWithAi={generateCardCoverWithAi}
-                            />
-
-                            <TaskModalItemMetadataSections
-                              itemType={itemType}
-                              canWrite={canWrite}
-                              eventLocation={eventLocation}
-                              onEventLocationChange={setEventLocation}
-                              eventUrl={eventUrl}
-                              onEventUrlChange={setEventUrl}
-                              experienceSeason={experienceSeason}
-                              onExperienceSeasonChange={setExperienceSeason}
-                              scheduledOn={scheduledOn}
-                              onExperienceStartDateChange={(v) => {
-                                setScheduledOn(v);
-                                if (!v) setScheduledTime('');
-                              }}
-                              experienceEndDate={experienceEndDate}
-                              onExperienceEndDateChange={setExperienceEndDate}
-                              memoryCaption={memoryCaption}
-                              onMemoryCaptionChange={setMemoryCaption}
-                            />
-
-                            {itemType === 'workout_log' && (
-                              <TaskModalWorkoutFields
-                                itemType="workout_log"
-                                canWrite={canWrite}
-                                taskId={taskId}
-                                aiWorkoutGenerating={aiWorkoutGenerating}
-                                aiWorkoutProgressIdx={aiWorkoutProgressIdx}
-                                onAiGenerateWorkout={handleAiGenerateWorkout}
-                                workoutTemplates={workoutTemplates}
-                                templatePickerOpen={templatePickerOpen}
-                                onTemplatePickerOpenChange={setTemplatePickerOpen}
-                                onApplyWorkoutTemplate={applyWorkoutTemplate}
-                                workoutType={workoutType}
-                                onWorkoutTypeChange={setWorkoutType}
-                                workoutDurationMin={workoutDurationMin}
-                                onWorkoutDurationMinChange={setWorkoutDurationMin}
-                                workoutExercises={workoutExercises}
-                                onWorkoutExercisesChange={setWorkoutExercises}
-                                workoutUnitSystem={workoutUnitSystem}
-                                autoEditFirstRow={Boolean(
-                                  initialAutoEdit && isWorkoutItemType && taskId && canWrite,
-                                )}
-                              />
-                            )}
-
-                            {itemType === 'program' && (
-                              <TaskModalProgramFields
-                                canWrite={canWrite}
-                                workspaceId={workspaceId}
-                                taskId={taskId}
-                                aiProgramPersonalizing={aiProgramPersonalizing}
-                                onPersonalizeProgram={handlePersonalizeProgram}
-                                programGoal={programGoal}
-                                onProgramGoalChange={setProgramGoal}
-                                programDurationWeeks={programDurationWeeks}
-                                onProgramDurationWeeksChange={setProgramDurationWeeks}
-                                programCurrentWeek={programCurrentWeek}
-                                programSchedule={programSchedule}
-                              />
-                            )}
-
-                            <TaskModalSchedulingSection
-                              itemType={itemType}
-                              dateLabels={dateLabels}
-                              status={status}
-                              onStatusChange={setStatus}
-                              statusSelectOptions={statusSelectOptions}
-                              priority={priority}
-                              onPriorityChange={setPriority}
-                              workspaceId={workspaceId}
-                              assignedTo={assignedTo}
-                              onAssignedToChange={setAssignedTo}
-                              workspaceMembersForAssign={workspaceMembersForAssign}
-                              scheduledOn={scheduledOn}
-                              onScheduledOnChange={(v) => {
-                                setScheduledOn(v);
-                                if (!v) setScheduledTime('');
-                              }}
-                              scheduledTime={scheduledTime}
-                              onScheduledTimeChange={setScheduledTime}
-                              canWrite={canWrite}
-                            />
-
-                            <Separator className="my-2" />
-
-                            <TaskModalAttachmentsSection
-                              attachments={attachments}
-                              isCreateMode={isCreateMode}
-                              taskId={taskId}
-                              canWrite={canWrite}
-                              typeNoun={typeNoun}
-                              onPickAttachmentFile={(f) => void uploadAttachment(f)}
-                              onDownloadAttachment={downloadLink}
-                              onRemoveAttachment={removeAttachment}
-                            />
-
-                            <TaskModalDetailsFooterActions
-                              canWrite={canWrite}
-                              isCreateMode={isCreateMode}
-                              saving={saving}
-                              title={title}
-                              typeNoun={typeNoun}
-                              coreDirty={coreDirty}
-                              onCreateTask={createTask}
-                              onSaveCoreFields={saveCoreFields}
-                              taskId={taskId}
-                              archiving={archiving}
-                              loading={loading}
-                              onArchiveTask={archiveTask}
-                            />
-                          </div>
-                        )}
-
-                        {tab === 'comments' &&
-                          (taskId ? (
-                            <div className="flex min-h-0 flex-1 flex-col">
-                              <TaskModalCommentsPanel
+                            {!loading || !taskId ? (
+                              <TaskModalChatRailAdapter
                                 ref={commentsPanelRef}
                                 key={`${taskId}-${initialCommentThreadMessageId ?? ''}`}
-                                taskId={taskId}
+                                taskId={taskId!}
                                 workspaceId={workspaceId}
                                 bubbles={bubbles}
                                 canWrite={canWrite}
@@ -1565,46 +1553,145 @@ export function TaskModal({
                                 initialCommentThreadMessageId={initialCommentThreadMessageId}
                                 onThreadViewChange={setCommentsInThreadView}
                                 onMarkedRead={onTaskCommentsMarkedRead}
-                                showInlineGenerateWorkout={
-                                  Boolean(showWorkoutSplitPane) &&
-                                  itemType === 'workout' &&
-                                  canWrite
-                                }
-                                onGenerateWorkout={handleGenerateWorkoutFromComments}
-                                generateWorkoutBusy={aiWorkoutGenerating}
-                                onMessagesScroll={
-                                  commentsChatLayout && !useCommentsUnifiedLayout
-                                    ? handleTaskModalBodyScroll
-                                    : undefined
-                                }
                                 onCoachDraftFinalizeSuccess={handleCoachDraftFinalizeSuccess}
                                 chatCardWorkoutActions={taskModalChatCardWorkoutActions}
+                                itemType={itemType}
                               />
-                            </div>
-                          ) : (
-                            <p className="text-xs text-muted-foreground">
-                              Create the {typeNoun} to add comments.
-                            </p>
-                          ))}
+                            ) : null}
+                          </div>
+                        </div>
+                        <div
+                          className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-6 pt-4 pb-4"
+                          data-testid="task-modal-comments-split-details-pane"
+                        >
+                          {loading && taskId ? (
+                            <p className="text-sm text-muted-foreground">Loading {typeNoun}…</p>
+                          ) : null}
+                          {!loading || !taskId ? (
+                            <TaskModalDetailsBody {...detailsBodyProps} />
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="shrink-0">
+                        <TaskModalEditorChrome
+                          showChrome={showEditorChrome}
+                          showTypeAndVisibility={showEditorChrome && !commentsReadingContext}
+                          itemType={itemType}
+                          onItemTypeChange={setItemType}
+                          canManageClasses={canManageClasses}
+                          canWrite={canWrite}
+                          visibility={visibility}
+                          onVisibilityChange={setVisibility}
+                          liveStreamEnabled={liveStreamEnabled}
+                          onLiveStreamEnabledChange={setLiveStreamEnabled}
+                          workoutTitle={title}
+                          workoutMetadata={metadata}
+                          bubbleId={bubbleId}
+                          workspaceId={workspaceId}
+                          taskId={taskId}
+                          onInteraction={() => setHeroCinematicCollapsed(true)}
+                        />
+                      </div>
 
-                        {tab === 'subtasks' && (
-                          <TaskModalSubtasksPanel
-                            subtasks={subtasks}
-                            newSubtaskTitle={newSubtaskTitle}
-                            onNewSubtaskTitleChange={setNewSubtaskTitle}
-                            onAddSubtask={addSubtask}
-                            onToggleSubtask={toggleSubtask}
-                            canWrite={canWrite}
-                            taskId={taskId}
-                            isCreateMode={isCreateMode}
-                            typeNoun={typeNoun}
-                          />
+                      <div
+                        className={cn(
+                          'px-6 pt-4',
+                          commentsChatLayout ? 'flex min-h-0 flex-1 flex-col pb-0' : 'pb-4',
+                        )}
+                      >
+                        {error && (
+                          <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                            {error}
+                          </div>
                         )}
 
-                        {tab === 'activity' && <TaskModalActivityPanel activityLog={activityLog} />}
-                      </>
-                    ) : null}
-                  </div>
+                        {loading && taskId ? (
+                          <p className="text-sm text-muted-foreground">Loading {typeNoun}…</p>
+                        ) : null}
+
+                        {!loading || !taskId ? (
+                          <>
+                            {tab === 'details' && <TaskModalDetailsBody {...detailsBodyProps} />}
+
+                            {tab === 'comments' &&
+                              (taskId ? (
+                                <div className="flex min-h-0 flex-1 flex-col">
+                                  {standardRailEnabled ? (
+                                    <TaskModalChatRailAdapter
+                                      ref={commentsPanelRef}
+                                      key={`${taskId}-${initialCommentThreadMessageId ?? ''}`}
+                                      taskId={taskId}
+                                      workspaceId={workspaceId}
+                                      bubbles={bubbles}
+                                      canWrite={canWrite}
+                                      taskBubbleIdHint={bubbleId}
+                                      initialCommentThreadMessageId={initialCommentThreadMessageId}
+                                      onThreadViewChange={setCommentsInThreadView}
+                                      onMarkedRead={onTaskCommentsMarkedRead}
+                                      onCoachDraftFinalizeSuccess={handleCoachDraftFinalizeSuccess}
+                                      chatCardWorkoutActions={taskModalChatCardWorkoutActions}
+                                      itemType={itemType}
+                                    />
+                                  ) : (
+                                    <TaskModalCommentsPanel
+                                      ref={commentsPanelRef}
+                                      key={`${taskId}-${initialCommentThreadMessageId ?? ''}`}
+                                      taskId={taskId}
+                                      workspaceId={workspaceId}
+                                      bubbles={bubbles}
+                                      canWrite={canWrite}
+                                      taskBubbleIdHint={bubbleId}
+                                      initialCommentThreadMessageId={initialCommentThreadMessageId}
+                                      onThreadViewChange={setCommentsInThreadView}
+                                      onMarkedRead={onTaskCommentsMarkedRead}
+                                      showInlineGenerateWorkout={
+                                        Boolean(showWorkoutSplitPane) &&
+                                        itemType === 'workout' &&
+                                        canWrite
+                                      }
+                                      onGenerateWorkout={handleGenerateWorkoutFromComments}
+                                      generateWorkoutBusy={aiWorkoutGenerating}
+                                      onMessagesScroll={
+                                        commentsChatLayout && !useCommentsUnifiedLayout
+                                          ? handleTaskModalBodyScroll
+                                          : undefined
+                                      }
+                                      onCoachDraftFinalizeSuccess={handleCoachDraftFinalizeSuccess}
+                                      chatCardWorkoutActions={taskModalChatCardWorkoutActions}
+                                    />
+                                  )}
+                                </div>
+                              ) : (
+                                <p className="text-xs text-muted-foreground">
+                                  Create the {typeNoun} to add comments.
+                                </p>
+                              ))}
+
+                            {tab === 'subtasks' && (
+                              <TaskModalSubtasksPanel
+                                subtasks={subtasks}
+                                newSubtaskTitle={newSubtaskTitle}
+                                onNewSubtaskTitleChange={setNewSubtaskTitle}
+                                onAddSubtask={addSubtask}
+                                onToggleSubtask={toggleSubtask}
+                                canWrite={canWrite}
+                                taskId={taskId}
+                                isCreateMode={isCreateMode}
+                                typeNoun={typeNoun}
+                              />
+                            )}
+
+                            {tab === 'activity' && (
+                              <TaskModalActivityPanel activityLog={activityLog} />
+                            )}
+                          </>
+                        ) : null}
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 <TaskModalTabBar
