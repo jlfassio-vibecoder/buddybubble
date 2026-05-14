@@ -1,6 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+} from 'react';
 import { PanelLeftClose } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
 import { cn } from '@/lib/utils';
@@ -272,7 +280,9 @@ function useRailThreadApi(props: StandardTaskChatRailProps): RailThreadApi {
   });
 
   const onThreadViewChangeRef = useRef(props.onThreadViewChange);
-  onThreadViewChangeRef.current = props.onThreadViewChange;
+  useLayoutEffect(() => {
+    onThreadViewChangeRef.current = props.onThreadViewChange;
+  }, [props.onThreadViewChange]);
   useEffect(() => {
     onThreadViewChangeRef.current?.(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per mount (TaskModal thread chrome parity)

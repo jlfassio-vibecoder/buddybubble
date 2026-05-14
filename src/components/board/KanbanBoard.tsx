@@ -561,7 +561,9 @@ export function KanbanBoard({
   const loadTasksGenerationRef = useRef(0);
   const columnsSnapshotRef = useRef<Record<string, TaskRow[]> | null>(null);
   const columnsRef = useRef(columns);
-  columnsRef.current = columns;
+  useLayoutEffect(() => {
+    columnsRef.current = columns;
+  }, [columns]);
 
   const loadTasks = useCallback(async () => {
     const loadGen = ++loadTasksGenerationRef.current;

@@ -63,13 +63,11 @@ export function useLiveSessionDeck(options: UseLiveSessionDeckOptions): UseLiveS
    * Multiple `useLiveSessionDeck` consumers (e.g. queue strip + participant logger) would
    * otherwise call `.on()` after the first instance already `subscribe()`d — Realtime throws.
    */
-  const realtimeInstanceIdRef = useRef<string | null>(null);
-  if (realtimeInstanceIdRef.current === null) {
-    realtimeInstanceIdRef.current =
-      typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `deck-${Math.random().toString(36).slice(2, 11)}`;
-  }
+  const [realtimeInstanceId] = useState(() =>
+    typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `deck-${Math.random().toString(36).slice(2, 11)}`,
+  );
 
   const fetchDeck = useCallback(async () => {
     const sid = sessionId.trim();
@@ -123,7 +121,7 @@ export function useLiveSessionDeck(options: UseLiveSessionDeckOptions): UseLiveS
     const sid = sessionId.trim();
     if (!sid) return;
 
-    const channelName = `live-session-deck:${sid}:${realtimeInstanceIdRef.current}`;
+    const channelName = `live-session-deck:${sid}:${realtimeInstanceId}`;
     const channel = supabase.channel(channelName);
 
     channel.on(
@@ -144,7 +142,7 @@ export function useLiveSessionDeck(options: UseLiveSessionDeckOptions): UseLiveS
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [enabled, sessionId, supabase, fetchDeck]);
+  }, [enabled, sessionId, supabase, fetchDeck, realtimeInstanceId]);
 
   const refresh = useMemo(() => fetchDeck, [fetchDeck]);
 

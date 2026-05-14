@@ -125,7 +125,9 @@ export function AgoraSessionProvider({
   const abortRef = useRef<AbortController | null>(null);
   const credentialsRef = useRef<RtcCredentials | null>(null);
   const sessionRef = useRef({ isConnecting: false, isConnected: false });
-  sessionRef.current = { isConnecting, isConnected };
+  useEffect(() => {
+    sessionRef.current = { isConnecting, isConnected };
+  }, [isConnecting, isConnected]);
 
   const clientRef = useRef<IAgoraRTCClient | null>(null);
   const localAudioTrackRef = useRef<IMicrophoneAudioTrack | null>(null);

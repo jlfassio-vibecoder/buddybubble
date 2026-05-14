@@ -86,7 +86,9 @@ function AmrapBody({
   });
 
   const engineRef = useRef(engine);
-  engineRef.current = engine;
+  useEffect(() => {
+    engineRef.current = engine;
+  }, [engine]);
 
   const { setChatDrawerLeaderboard } = useChatDrawer();
 

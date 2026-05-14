@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { PanelLeftClose } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
 import { cn } from '@/lib/utils';
@@ -301,9 +301,13 @@ export function WorkoutCoachRail({
 
   // Latest value for the one-shot sentinel — avoids effect deps on `sendMessage` identity churn.
   const sendMessageRef = useRef(sendMessage);
-  sendMessageRef.current = sendMessage;
+  useLayoutEffect(() => {
+    sendMessageRef.current = sendMessage;
+  }, [sendMessage]);
   const isMemberViewRef = useRef(isMemberView);
-  isMemberViewRef.current = isMemberView;
+  useLayoutEffect(() => {
+    isMemberViewRef.current = isMemberView;
+  }, [isMemberView]);
 
   /** At most one sentinel dispatch per rail mount (guards `sendMessage`/message churn and unstable JSON refs). */
   const sentinelHasFiredRef = useRef(false);

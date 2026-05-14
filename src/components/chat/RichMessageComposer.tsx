@@ -1,6 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -181,7 +189,9 @@ export function RichMessageComposer({
   const inputRef = useRef<HTMLInputElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const pendingFilesRef = useRef(pendingFiles);
-  pendingFilesRef.current = pendingFiles;
+  useLayoutEffect(() => {
+    pendingFilesRef.current = pendingFiles;
+  }, [pendingFiles]);
 
   const [mentionSearch, setMentionSearch] = useState('');
   const [showMentions, setShowMentions] = useState(false);
