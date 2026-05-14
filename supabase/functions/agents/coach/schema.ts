@@ -1,18 +1,8 @@
-/**
- * Coach response schemas — pure module, canonical source.
+/** MIRROR FILE — canonical lives at `src/lib/agents/coach/schema.ts`.
  *
- * Two `VertexResponseSchema` literals:
- *   - `COACH_RESPONSE_SCHEMA` — the main JSON-mode schema lifted verbatim from
- *     `supabase/functions/bubble-agent-dispatch/index.ts:704-860`.
- *   - `COACH_WORKOUT_GREETING_SCHEMA` — the preflight workout-open greeting schema
- *     lifted from `supabase/functions/bubble-agent-dispatch/index.ts:910-920`.
- *
- * A byte-for-byte mirror lives at `supabase/functions/agents/coach/schema.ts`. Run
- * `pnpm check:agent-mirror` to verify parity.
- *
- * The schema body is intentionally written as a plain object literal (not as a typed
- * cast) so the Vertex API receives exactly the keys the legacy implementation sent. The
- * `VertexResponseSchema` cast at the bottom only constrains the export surface.
+ * Body below is byte-for-byte identical to the canonical Vitest-side file (excluding
+ * this header). Import paths use explicit `.ts` extensions required by Deno.
+ * Any change must be hand-mirrored — run `pnpm check:agent-mirror` to verify parity.
  */
 
 import type { VertexResponseSchema } from '../../_shared/llm/types';

@@ -1,33 +1,8 @@
-/**
- * Coach server-side guards — pure module, canonical source.
+/** MIRROR FILE — canonical lives at `src/lib/agents/coach/server-guards.ts`.
  *
- * Encodes the three deterministic transformations the legacy file applies after
- * Gemini returns and before the persistence RPC runs. Reference:
- * `supabase/functions/bubble-agent-dispatch/index.ts:1683-1725`.
- *
- *   1. Draft override — when a server-resolved `knownTargetTaskId` exists and the
- *      model set `update_existing_task: true`, clear `create_card`, `task_title`,
- *      `task_description`, and `coach_task_notes`. The persistence path will route to
- *      `agent_insert_coach_workout_draft_reply` instead of `agent_create_card_and_reply`.
- *   2. Layer B turn gate — when `user_requested_immediate_card` is false, block first
- *      messages from creating a card (`first_message_card_blocked`) and block second
- *      session-request messages until the user has had at least two prior turns
- *      (`session_request_turn_gate`). Block clears `create_card`, `task_title`,
- *      `task_description`, `coach_task_notes`.
- *   3. Active-workout clamp — when CURRENT WORKOUT CONTEXT is present, the user is in
- *      live execution. Clear `create_card`, `task_title`, `task_description`,
- *      `coach_task_notes`, `update_existing_task`, `updated_task_title`,
- *      `updated_task_description`, `proposed_workout_metadata`. `execution_patch` and
- *      `personal_cues_resolved` survive (live grid + saved personal cues).
- *
- * Returns a new object — never mutates the caller's `parsed` argument — so guards-
- * focused unit tests can compose fragments freely.
- *
- * A byte-for-byte mirror lives at `supabase/functions/agents/coach/server-guards.ts`.
- * Run `pnpm check:agent-mirror` to verify parity.
- *
- * Pure module: only depends on `./parse` for the `CoachGeminiJsonResponse` type. No DB,
- * no Deno globals.
+ * Body below is byte-for-byte identical to the canonical Vitest-side file (excluding
+ * this header). Import paths use explicit `.ts` extensions required by Deno.
+ * Any change must be hand-mirrored — run `pnpm check:agent-mirror` to verify parity.
  */
 
 import type { CoachGeminiJsonResponse } from './parse.ts';

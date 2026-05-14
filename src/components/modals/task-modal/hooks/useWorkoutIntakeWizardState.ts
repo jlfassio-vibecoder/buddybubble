@@ -295,6 +295,7 @@ export function useWorkoutIntakeWizardState(
     };
   }, [readiness, equipmentArray, sleepQuality, durationMinutes, sorenessArray, targetIntensity]);
 
+  // Copilot suggestion ignored: memoizing this return object caused an effect-loop OOM in TaskModal.layout.test.tsx; consumers tolerate fresh identities.
   return {
     step,
     setStep,

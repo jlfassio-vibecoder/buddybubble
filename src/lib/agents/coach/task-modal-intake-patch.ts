@@ -68,6 +68,7 @@ const EQUIPMENT_SET = new Set<string>(WORKOUT_INTAKE_EQUIPMENT_OPTIONS as unknow
 const INTENSITY_SET = new Set<string>(WORKOUT_INTAKE_INTENSITY_OPTIONS as unknown as string[]);
 const DURATION_NUMS = new Set<number>([15, 30, 45, 60]);
 
+// Copilot suggestion ignored: camelCase keys are for replaying persisted metadata and hand-edited JSON, not Gemini’s primary snake_case contract.
 const TASK_MODAL_INTAKE_PATCH_KNOWN_KEYS = new Set<string>([
   'readiness',
   'readiness_energy',

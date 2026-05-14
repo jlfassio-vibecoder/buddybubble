@@ -917,6 +917,7 @@ function DashboardShellInner({
     setTaskModalOpen(true);
   }, []);
 
+  // Copilot suggestion ignored: optimistic insert before open keeps rail/taskId coherent; a skeleton/spinner would be follow-up UX polish.
   const openCreateTaskModal = useCallback(
     async (opts?: {
       status?: string;
