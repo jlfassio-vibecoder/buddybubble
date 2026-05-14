@@ -1564,7 +1564,12 @@ export function TaskModal({
                           className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-6 pt-4 pb-4"
                           data-testid="task-modal-comments-split-details-pane"
                         >
-                          <TaskModalDetailsBody {...detailsBodyProps} />
+                          {loading && taskId ? (
+                            <p className="text-sm text-muted-foreground">Loading {typeNoun}…</p>
+                          ) : null}
+                          {!loading || !taskId ? (
+                            <TaskModalDetailsBody {...detailsBodyProps} />
+                          ) : null}
                         </div>
                       </div>
                     </div>

@@ -3,7 +3,10 @@ import { COACH_SLUG } from '@/lib/agents/coach/config';
 import { defaultSlugForItemType } from '@/lib/agents/defaultSlugForItemType';
 import type { ItemType } from '@/lib/item-types';
 
-/** Every `ItemType` member — compile-time guard when `item-types.ts` adds a variant. */
+/**
+ * Covers each current `ItemType` variant for regression tests. `satisfies` only
+ * checks listed strings are valid `ItemType`s — add a row here when the union grows.
+ */
 const ALL_ITEM_TYPES = [
   'task',
   'event',

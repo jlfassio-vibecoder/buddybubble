@@ -226,8 +226,11 @@ flowchart TD
   unchanged.
 - [`src/components/modals/task-modal/TaskModalCommentsPanel.tsx`](../../../src/components/modals/task-modal/TaskModalCommentsPanel.tsx)
   — flag-off must stay byte-identical (Phase 4 retires it).
-- [`src/hooks/useMessageThread.ts`](../../../src/hooks/useMessageThread.ts),
-  `agent-dispatch`, RPCs, RLS, DB.
+- [`src/hooks/useMessageThread.ts`](../../../src/hooks/useMessageThread.ts) —
+  no new thread/RLS/send semantics for Phase 3.5; the rail may already depend on
+  `silentRefreshMessages` (agent-reply polling from earlier work), which is out
+  of scope for collapse/split-only changes.
+- `agent-dispatch`, RPCs, RLS, DB.
 - `WorkoutCoachRail.tsx` / `WorkoutPlayer.tsx` — Phase 5.
 
 ## Tests

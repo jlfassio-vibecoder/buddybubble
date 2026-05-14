@@ -515,6 +515,7 @@ export function StandardTaskChatRail(props: StandardTaskChatRailProps) {
   const resolvedSlug = props.defaultAgentSlug?.trim() ?? '';
   const api = useRailThreadApi(props);
 
+  // Copilot suggestion ignored: human-only mode keeps @ mentions (members + optional @agent); tying `useAgentResponseWait` to ad-hoc agent mentions needs product spec — not blocking default-agent-off UX.
   if (!resolvedSlug) {
     return <StandardTaskChatRailHumanOnly props={props} api={api} />;
   }

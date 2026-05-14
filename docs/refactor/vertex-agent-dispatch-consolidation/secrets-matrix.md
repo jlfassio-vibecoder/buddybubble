@@ -26,11 +26,11 @@ Phase 6 cutover has completed.
 
 | Secret                                 | Live consumers today                                                            | Phase 1 consumer    | Phase 6 status |
 | -------------------------------------- | ------------------------------------------------------------------------------- | ------------------- | -------------- |
-| `GCP_PROJECT_ID`                       | none                                                                            | `agent-dispatch-v2` | live           |
-| `GCP_LOCATION`                         | none                                                                            | `agent-dispatch-v2` | live           |
-| `GCP_SERVICE_ACCOUNT_JSON`             | none                                                                            | `agent-dispatch-v2` | live           |
+| `GCP_PROJECT_ID`                       | **`agent-dispatch`** (`readDispatcherEnv` → Vertex `generateContent`)           | `agent-dispatch-v2` | live           |
+| `GCP_LOCATION`                         | **`agent-dispatch`** (same)                                                     | `agent-dispatch-v2` | live           |
+| `GCP_SERVICE_ACCOUNT_JSON`             | **`agent-dispatch`** (same)                                                     | `agent-dispatch-v2` | live           |
 | `AGENT_WEBHOOK_SECRET`                 | **`agent-dispatch`** Edge Function + Database Webhook `x-agent-secret` / Bearer | `agent-dispatch`    | live           |
-| `LLM_TIMEOUT_MS`                       | none                                                                            | `agent-dispatch-v2` | live           |
+| `LLM_TIMEOUT_MS`                       | **`agent-dispatch`** (same)                                                     | `agent-dispatch-v2` | live           |
 | `GEMINI_API_KEY`                       | `bubble-agent-dispatch`, `buddy-agent-dispatch`, `organizer-agent-dispatch`     | unchanged           | deleted        |
 | `GEMINI_MODEL` / `VERTEX_GEMINI_MODEL` | `bubble-agent-dispatch`                                                         | unchanged           | deleted        |
 | `BUDDY_GEMINI_MODEL`                   | `buddy-agent-dispatch`                                                          | unchanged           | deleted        |

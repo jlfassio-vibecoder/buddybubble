@@ -17,7 +17,7 @@ Files to **create**:
 1. `src/components/chat/StandardTaskChatRail.tsx` — the rail itself.
 2. `src/components/chat/__tests__/StandardTaskChatRail.test.tsx` — unit tests
    (Vitest + Testing Library).
-3. `src/app/(dev)/_sandbox/standard-task-chat-rail/page.tsx` — sandbox route
+3. `src/app/(dev)/sandbox/standard-task-chat-rail/page.tsx` — sandbox route
    that mounts the rail with hardcoded `workspaceId` / `taskId` for visual
    sanity checks. Gate with `process.env.NEXT_PUBLIC_DEV_SANDBOXES === '1'`.
 

@@ -17,7 +17,7 @@
 --
 -- Functions touched:
 --   1. public.agent_create_card_and_reply (13-arg)
---   2. public.agent_insert_coach_workout_draft_reply (10-arg)
+--   2. public.agent_insert_coach_workout_draft_reply (11-arg)
 --   3. public.agent_update_task_and_reply (8-arg)
 
 -- ---------------------------------------------------------------------------

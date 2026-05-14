@@ -17,7 +17,6 @@ import { TaskModalWorkoutFields } from '@/components/modals/task-modal/TaskModal
 import { TaskModalSchedulingSection } from '@/components/modals/task-modal/TaskModalSchedulingSection';
 import { TaskModalAttachmentsSection } from '@/components/modals/task-modal/TaskModalAttachmentsSection';
 import { TaskModalDetailsFooterActions } from '@/components/modals/task-modal/TaskModalDetailsFooterActions';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';

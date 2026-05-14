@@ -21,6 +21,7 @@ import { StandardTaskChatRail } from '@/components/chat/StandardTaskChatRail';
 import { defaultSlugForItemType } from '@/lib/agents/defaultSlugForItemType';
 import { BUDDY_ONBOARDING_SYSTEM_EVENT } from '@/lib/agents/buddy-sentinel';
 import { BUDDY_SLUG } from '@/lib/agents/buddy/config';
+import { useWorkspaceSessionSubject } from '@/context/WorkspaceSessionContext';
 import type { ItemType } from '@/lib/item-types';
 import type {
   TaskModalChatCardWorkoutActions,
@@ -62,6 +63,7 @@ export const TaskModalChatRailAdapter = forwardRef<
   ref,
 ) {
   const myProfile = useUserProfileStore((s) => s.profile);
+  const { subjectUserId: workspaceSubjectUserId } = useWorkspaceSessionSubject();
 
   const defaultAgentSlug = useMemo(() => defaultSlugForItemType(itemType ?? null), [itemType]);
 
@@ -71,6 +73,8 @@ export const TaskModalChatRailAdapter = forwardRef<
     bubbles,
     canPostMessages: canWrite,
     taskBubbleIdHint,
+    currentUserId: myProfile?.id ?? null,
+    threadSubjectUserId: workspaceSubjectUserId ?? myProfile?.id ?? null,
   });
 
   const { messages, agentsByAuthUserId, isLoading } = sentinelThread;

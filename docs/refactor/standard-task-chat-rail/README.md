@@ -87,16 +87,16 @@ criteria so a planning agent can confirm prerequisites before starting work.
 
 Update this table in the same PR that lands a phase. Rows are in execution order.
 
-| #   | Phase                                   | Status      | PR  | Owner | Notes                                                                                         |
-| --- | --------------------------------------- | ----------- | --- | ----- | --------------------------------------------------------------------------------------------- |
-| 0   | Discovery & decisions                   | complete    |     |       |                                                                                               |
-| 1   | Build standalone rail                   | in review   |     |       |                                                                                               |
-| 2   | TaskModal integration (flagged)         | in review   |     |       |                                                                                               |
-| 3   | Dynamic agent binding                   | complete    |     |       | Manual smoke verified end-to-end Coach routing per `item_type`.                               |
-| 3.5 | Layout stabilization (collapse + split) | not started |     |       | Inserted before Phase 4 to fix rail collapse during AI generation and add desktop split-pane. |
-| 4   | Deprecate `TaskModalCommentsPanel`      | not started |     |       |                                                                                               |
-| 5   | `WorkoutCoachRail` migration            | not started |     |       |                                                                                               |
-| 6   | `ChatArea` + future surfaces (optional) | not started |     |       |                                                                                               |
+| #   | Phase                                   | Status      | PR  | Owner | Notes                                                                          |
+| --- | --------------------------------------- | ----------- | --- | ----- | ------------------------------------------------------------------------------ |
+| 0   | Discovery & decisions                   | complete    |     |       |                                                                                |
+| 1   | Build standalone rail                   | in review   |     |       |                                                                                |
+| 2   | TaskModal integration (flagged)         | in review   |     |       |                                                                                |
+| 3   | Dynamic agent binding                   | complete    |     |       | Manual smoke verified end-to-end Coach routing per `item_type`.                |
+| 3.5 | Layout stabilization (collapse + split) | complete    |     |       | Split-pane + collapse fix landed behind `NEXT_PUBLIC_STANDARD_TASK_CHAT_RAIL`. |
+| 4   | Deprecate `TaskModalCommentsPanel`      | not started |     |       |                                                                                |
+| 5   | `WorkoutCoachRail` migration            | not started |     |       |                                                                                |
+| 6   | `ChatArea` + future surfaces (optional) | not started |     |       |                                                                                |
 
 ---
 
@@ -123,4 +123,4 @@ Update this table in the same PR that lands a phase. Rows are in execution order
 - Hook the rail wraps: `src/hooks/useMessageThread.ts`
 - Agent waiting hook: `src/hooks/useAgentResponseWait.ts`
 - Server-side default-slug contract: `supabase/functions/_shared/dispatch/routing.ts` (`parseRootDefaultAgentSlug`)
-- Agent webhook safety rule: `.cursor/rules/agent-dispatch-webhook-secret.mdc`
+- Agent webhook safety rule: `.cursor/rules/supabase-agent-dispatch-webhook-secret.mdc`
