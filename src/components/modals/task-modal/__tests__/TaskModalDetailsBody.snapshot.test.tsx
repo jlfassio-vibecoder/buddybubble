@@ -44,6 +44,7 @@ const baseProps: TaskModalDetailsBodyProps = {
   canWrite: true,
   onGenerateWorkoutFromIntake: noop,
   aiWorkoutGenerating: false,
+  workoutIntakeState: null,
   taskId: 'task-snap-1',
   cardCoverPath: '',
   cardCoverFileInputRef,
@@ -124,7 +125,7 @@ describe('TaskModalDetailsBody', () => {
     const { container } = render(<TaskModalDetailsBody {...baseProps} />);
     expect(container.firstChild).toMatchInlineSnapshot(`
       <div
-        class="space-y-4"
+        class="min-w-0 space-y-4"
         data-testid="task-modal-details-body"
       >
         <div

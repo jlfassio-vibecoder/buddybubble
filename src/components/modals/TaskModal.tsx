@@ -35,7 +35,7 @@ import {
   TaskModalCommentsPanel,
   type TaskModalCommentsPanelHandle,
 } from '@/components/modals/task-modal/TaskModalCommentsPanel';
-import { TaskModalChatRailAdapter } from '@/components/modals/task-modal/TaskModalChatRailAdapter';
+import { StandardTaskChatRail } from '@/components/chat/StandardTaskChatRail';
 import { isStandardTaskChatRailEnabled } from '@/lib/feature-flags/standardTaskChatRail';
 import { TaskModalEditorChrome } from '@/components/modals/task-modal/TaskModalEditorChrome';
 import { ClassEditor } from '@/components/modals/class-modal/ClassEditor';
@@ -52,6 +52,7 @@ import {
 import { useWorkoutTemplates } from '@/hooks/use-workout-templates';
 import { scheduledTimeToInputValue } from '@/lib/task-scheduled-time';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 import { indefiniteArticleForUiNoun, itemTypeUiNoun } from '@/lib/item-type-styles';
 import { parseLiveSessionInviteFromMessageMetadata } from '@/types/live-session-invite';
 import { ALL_BUBBLES_BUBBLE_ID } from '@/lib/all-bubbles';
@@ -69,12 +70,29 @@ import {
   useTaskWorkoutAi,
   type WorkoutIntakeWizardData,
 } from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
+import { useWorkoutIntakeWizardState } from '@/components/modals/task-modal/hooks/useWorkoutIntakeWizardState';
 import { useTaskOriginalSnapshot } from '@/components/modals/task-modal/hooks/useTaskOriginalSnapshot';
 import { useTaskDirtyState } from '@/components/modals/task-modal/hooks/useTaskDirtyState';
 import { useTaskEmbeddedCollections } from '@/components/modals/task-modal/hooks/useTaskEmbeddedCollections';
 import { useTaskSaveAndCreate } from '@/components/modals/task-modal/hooks/useTaskSaveAndCreate';
+import { useTaskCommentsViewedMarker } from '@/components/modals/task-modal/hooks/useTaskCommentsViewedMarker';
+import { useTaskCommentMediaModal } from '@/components/modals/task-modal/hooks/useTaskCommentMediaModal';
+import { useDraftCleanupOnClose } from '@/components/modals/task-modal/hooks/useDraftCleanupOnClose';
+import { useTaskHardDelete } from '@/components/modals/task-modal/hooks/useTaskHardDelete';
+import { mapAgentEffectTelemetryToRouting } from '@/components/modals/task-modal/mapAgentEffectTelemetryToRouting';
+import type { TaskDraftBaseline } from '@/components/modals/task-modal/task-draft-types';
 import { useIsNarrowBelowMd } from '@/hooks/use-is-narrow-below-md';
 import type { TaskModalTab, TaskModalViewMode } from '@/types/open-task-options';
+import type {
+  AgentEffectTelemetryEvent,
+  ExecutionPatchEffectPayload,
+} from '@/components/chat/agent-effects/types';
+import type { TaskModalIntakePatch } from '@/lib/agents/coach/task-modal-intake-patch';
+import { BUDDY_ONBOARDING_SYSTEM_EVENT } from '@/lib/agents/buddy-sentinel';
+import { defaultSlugForItemType } from '@/lib/agents/defaultSlugForItemType';
+import { logAgentRoutingEvent } from '@/lib/agents/agentRoutingLogger';
+import { MessageMediaModal } from '@/components/chat/MessageMediaModal';
+import { useUserProfileStore } from '@/store/userProfileStore';
 
 export type { OpenTaskOptions, TaskModalTab, TaskModalViewMode } from '@/types/open-task-options';
 
@@ -102,6 +120,14 @@ export type TaskModalProps = {
   onClassSaved?: () => void;
   /** Called after a task is created so the parent can keep the modal in edit mode. */
   onCreated?: (newTaskId: string) => void;
+  /** Phase 3.8: opened from an optimistic `tasks` insert; cleared after first successful save. */
+  isOptimisticDraft?: boolean;
+  /** Baseline snapshot from optimistic insert; used for untouched auto-delete on close. */
+  draftBaseline?: TaskDraftBaseline | null;
+  /** Clear optimistic-draft shell state after the first successful save. */
+  onOptimisticDraftConsumed?: () => void;
+  /** After an untouched optimistic draft is auto-deleted on close (board refresh). */
+  onOptimisticDraftAutoDeleted?: () => void;
   /** When opening create mode, pre-select this Kanban column status if it exists on the board. */
   initialCreateStatus?: string | null;
   /** When opening create mode, pre-select item type (e.g. `workout` from Programs “This week” plan). */
@@ -151,6 +177,10 @@ export function TaskModal({
   onClassCreated,
   onClassSaved,
   onCreated,
+  isOptimisticDraft: isOptimisticDraftProp = false,
+  draftBaseline = null,
+  onOptimisticDraftConsumed,
+  onOptimisticDraftAutoDeleted,
   initialCreateStatus = null,
   initialCreateItemType = null,
   initialCreateTitle = null,
@@ -207,6 +237,9 @@ export function TaskModal({
   const [commentsInThreadView, setCommentsInThreadView] = useState(false);
   const commentsUnifiedScrollRef = useRef<HTMLDivElement>(null);
   const commentsPanelRef = useRef<TaskModalCommentsPanelHandle>(null);
+  const myProfile = useUserProfileStore((s) => s.profile);
+  const taskCommentMedia = useTaskCommentMediaModal();
+  const [embeddedTaskIdsFromThread, setEmbeddedTaskIdsFromThread] = useState<string[]>([]);
   const standardRailEnabled = isStandardTaskChatRailEnabled();
   const isMdUp = !useIsNarrowBelowMd();
   const [composerPortalHost, setComposerPortalHost] = useState<HTMLDivElement | null>(null);
@@ -229,6 +262,32 @@ export function TaskModal({
   /** `HH:mm` for `<input type="time" />` or empty (requires date) */
   const [scheduledTime, setScheduledTime] = useState('');
   const [itemType, setItemType] = useState<ItemType>('task');
+  /**
+   * Stable create-session id for the whole create flow (including after first save
+   * `null -> taskId`); cleared when the modal closes. Drives `sessionKey` for the
+   * workout intake wizard (Phase 3.6B C2).
+   */
+  const createSessionIdRef = useRef<string | null>(null);
+  const handledIntakePatchMessageIdsByTaskRef = useRef<Map<string, Set<string>>>(new Map());
+
+  useEffect(() => {
+    if (open) return;
+    createSessionIdRef.current = null;
+    handledIntakePatchMessageIdsByTaskRef.current.clear();
+    setEmbeddedTaskIdsFromThread([]);
+  }, [open]);
+
+  const sessionKey = useMemo(() => {
+    if (!open) return 'closed';
+    if (createSessionIdRef.current) {
+      return `create:${createSessionIdRef.current}`;
+    }
+    if (taskId) return `existing:${taskId}`;
+    createSessionIdRef.current = crypto.randomUUID();
+    return `create:${createSessionIdRef.current}`;
+  }, [open, taskId]);
+
+  const workoutIntake = useWorkoutIntakeWizardState(sessionKey);
   const [visibility, setVisibility] = useState<TaskVisibility>('private');
   /** Workspace member user id, or null = unassigned */
   const [assignedTo, setAssignedTo] = useState<string | null>(null);
@@ -562,6 +621,11 @@ export function TaskModal({
     clearOriginal,
   ]);
 
+  const handleTaskRowDeleted = useCallback(() => {
+    toast.error('This card was deleted or is no longer available.');
+    onOpenChange(false);
+  }, [onOpenChange]);
+
   const { loadTask } = useTaskLoadAndRealtime({
     open,
     taskId,
@@ -569,6 +633,7 @@ export function TaskModal({
     onResetForCreate,
     setLoading,
     setError,
+    onTaskRowDeleted: handleTaskRowDeleted,
   });
 
   const { aiProgramPersonalizing, handlePersonalizeProgram } = useTaskProgramPersonalization({
@@ -638,6 +703,33 @@ export function TaskModal({
     setSaving,
     originalRef,
     setOriginalFromAppliedRow,
+  });
+
+  const { hardDeleteTask } = useTaskHardDelete();
+
+  const handleSaveCoreFields = useCallback(async () => {
+    const ok = await saveCoreFields();
+    if (ok && isOptimisticDraftProp) {
+      onOptimisticDraftConsumed?.();
+    }
+  }, [saveCoreFields, isOptimisticDraftProp, onOptimisticDraftConsumed]);
+
+  const handleModalHardDelete = useCallback(async () => {
+    if (!taskId || !canWrite) return;
+    await hardDeleteTask(taskId, { itemType });
+    onOpenChange(false);
+    onTaskArchived?.();
+  }, [taskId, canWrite, itemType, hardDeleteTask, onOpenChange, onTaskArchived]);
+
+  useDraftCleanupOnClose({
+    open,
+    taskId,
+    isOptimisticDraft: isOptimisticDraftProp && draftBaseline != null,
+    baseline: draftBaseline,
+    hardDeleteTask: async (id) => {
+      await hardDeleteTask(id);
+    },
+    onUntouchedDraftDeleted: onOptimisticDraftAutoDeleted,
   });
 
   const { coreDirty } = useTaskDirtyState({
@@ -772,9 +864,19 @@ export function TaskModal({
     }
   }, []);
 
-  const bubbleUpScopeTaskIds = useMemo(() => (taskId ? [taskId] : []), [taskId]);
+  const bubbleUpScopeTaskIds = useMemo(() => {
+    if (!taskId) return [];
+    return [...new Set([taskId, ...embeddedTaskIdsFromThread])];
+  }, [taskId, embeddedTaskIdsFromThread]);
   const { bubbleUpPropsFor } = useTaskBubbleUps(bubbleUpScopeTaskIds);
   const modalBubbleUp = taskId ? bubbleUpPropsFor(taskId) : undefined;
+
+  useTaskCommentsViewedMarker({
+    enabled: open && Boolean(taskId) && standardRailEnabled,
+    taskId,
+    userId: myProfile?.id,
+    onMarkedRead: onTaskCommentsMarkedRead,
+  });
 
   const typeNoun = itemTypeUiNoun(itemType);
   /** Title-case for modal chrome; `itemTypeUiNoun` stays lowercase for in-flow copy (e.g. labels). */
@@ -946,6 +1048,46 @@ export function TaskModal({
     aiWorkoutGenerating,
   ]);
 
+  const handleAgentEffectTelemetry = useCallback((e: AgentEffectTelemetryEvent) => {
+    logAgentRoutingEvent(mapAgentEffectTelemetryToRouting(e));
+  }, []);
+
+  const handleExecutionPatch = useCallback(
+    (_ctx: ExecutionPatchEffectPayload) => {
+      if (!taskId) return;
+      // Keep the details pane synchronized with agent-side task mutations emitted via
+      // message metadata execution patches without forcing a loading-state flash.
+      void loadTask(taskId, { silent: true });
+    },
+    [loadTask, taskId],
+  );
+
+  const handleTaskModalIntakePatch = useCallback(
+    (args: {
+      taskId: string;
+      messageId: string;
+      messageCreatedAtMs: number;
+      patch: TaskModalIntakePatch;
+    }) => {
+      const dedupeKey = createSessionIdRef.current
+        ? `create:${createSessionIdRef.current}`
+        : `existing:${args.taskId}`;
+      let set = handledIntakePatchMessageIdsByTaskRef.current.get(dedupeKey);
+      if (!set) {
+        set = new Set();
+        handledIntakePatchMessageIdsByTaskRef.current.set(dedupeKey, set);
+      }
+      if (set.has(args.messageId)) return;
+      set.add(args.messageId);
+      workoutIntake.applyTaskModalIntakePatchFromMessage({
+        patch: args.patch,
+        messageId: args.messageId,
+        messageCreatedAtMs: args.messageCreatedAtMs,
+      });
+    },
+    [workoutIntake.applyTaskModalIntakePatchFromMessage],
+  );
+
   const detailsBodyProps = useMemo(
     () => ({
       title,
@@ -956,6 +1098,7 @@ export function TaskModal({
       canWrite,
       onGenerateWorkoutFromIntake: handleGenerateWorkoutFromIntake,
       aiWorkoutGenerating,
+      workoutIntakeState: itemType === 'workout' && canWrite ? workoutIntake : null,
       taskId,
       cardCoverPath,
       cardCoverFileInputRef,
@@ -1031,10 +1174,11 @@ export function TaskModal({
       onRemoveAttachment: removeAttachment,
       coreDirty,
       onCreateTask: createTask,
-      onSaveCoreFields: saveCoreFields,
+      onSaveCoreFields: handleSaveCoreFields,
       archiving,
       loading,
       onArchiveTask: archiveTask,
+      onHardDeleteTask: handleModalHardDelete,
     }),
     [
       title,
@@ -1092,10 +1236,12 @@ export function TaskModal({
       removeAttachment,
       coreDirty,
       createTask,
-      saveCoreFields,
+      handleSaveCoreFields,
       archiving,
       loading,
       archiveTask,
+      handleModalHardDelete,
+      workoutIntake,
     ],
   );
 
@@ -1219,6 +1365,14 @@ export function TaskModal({
           showWorkoutSplitPane || commentsSplitLayout ? 'max-w-6xl' : 'max-w-2xl',
         )}
       >
+        {standardRailEnabled && open ? (
+          <MessageMediaModal
+            open={taskCommentMedia.mediaModal !== null}
+            onOpenChange={taskCommentMedia.onMediaModalOpenChange}
+            attachments={taskCommentMedia.mediaModal?.attachments ?? []}
+            initialIndex={taskCommentMedia.mediaModal?.index ?? 0}
+          />
+        ) : null}
         {taskId && !showWorkoutSplitPane && !useCommentsUnifiedLayout ? (
           isWorkoutItemType ? (
             <TaskModalWorkoutHero
@@ -1226,6 +1380,7 @@ export function TaskModal({
               description={description ?? ''}
               coverPath={cardCoverPath.trim() || null}
               onClose={() => onOpenChange(false)}
+              compactCinematic={commentsSplitLayout}
               descriptionExpanded={commentsReadingContext}
               descriptionCollapseMode={commentsReadingContext ? 'preview_toggle' : 'none'}
               readingContextActions={
@@ -1244,7 +1399,10 @@ export function TaskModal({
               coverPath={cardCoverPath.trim() || null}
               onClose={() => onOpenChange(false)}
               compactCinematic={
-                tab !== 'details' || heroCinematicCollapsed || commentsReadingContext
+                tab !== 'details' ||
+                heroCinematicCollapsed ||
+                commentsReadingContext ||
+                commentsSplitLayout
               }
               descriptionExpanded={commentsReadingContext}
               descriptionCollapseMode={commentsReadingContext ? 'preview_toggle' : 'none'}
@@ -1410,25 +1568,35 @@ export function TaskModal({
                     ) : null}
                     {!loading || !taskId ? (
                       standardRailEnabled ? (
-                        <TaskModalChatRailAdapter
-                          ref={commentsPanelRef}
-                          key={`${taskId}-${initialCommentThreadMessageId ?? ''}`}
-                          taskId={taskId!}
-                          workspaceId={workspaceId}
-                          bubbles={bubbles}
-                          canWrite={canWrite}
-                          taskBubbleIdHint={bubbleId}
-                          initialCommentThreadMessageId={initialCommentThreadMessageId}
-                          onThreadViewChange={setCommentsInThreadView}
-                          onMarkedRead={onTaskCommentsMarkedRead}
-                          onCoachDraftFinalizeSuccess={handleCoachDraftFinalizeSuccess}
-                          chatCardWorkoutActions={taskModalChatCardWorkoutActions}
-                          itemType={itemType}
-                        />
+                        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+                          <StandardTaskChatRail
+                            key={taskId ?? 'create'}
+                            workspaceId={workspaceId}
+                            taskId={taskId!}
+                            bubbleId={bubbleId ?? undefined}
+                            canPostMessages={canWrite}
+                            defaultAgentSlug={defaultSlugForItemType(itemType)}
+                            transcriptFilter={(row) =>
+                              row.content !== BUDDY_ONBOARDING_SYSTEM_EVENT
+                            }
+                            initialCommentThreadMessageId={initialCommentThreadMessageId}
+                            onThreadViewChange={setCommentsInThreadView}
+                            onExecutionPatch={handleExecutionPatch}
+                            onTaskModalIntakePatch={handleTaskModalIntakePatch}
+                            onEffectTelemetry={handleAgentEffectTelemetry}
+                            onEmbeddedTaskIdsChange={setEmbeddedTaskIdsFromThread}
+                            chatRowExtras={{
+                              onCoachDraftFinalizeSuccess: handleCoachDraftFinalizeSuccess,
+                              chatCardWorkoutActions: taskModalChatCardWorkoutActions,
+                              bubbleUpPropsFor: bubbleUpPropsFor,
+                              onOpenAttachment: taskCommentMedia.onOpenAttachment,
+                            }}
+                          />
+                        </div>
                       ) : (
                         <TaskModalCommentsPanel
                           ref={commentsPanelRef}
-                          key={`${taskId}-${initialCommentThreadMessageId ?? ''}`}
+                          key={taskId ?? 'create'}
                           taskId={taskId!}
                           workspaceId={workspaceId}
                           bubbles={bubbles}
@@ -1542,26 +1710,36 @@ export function TaskModal({
                               <p className="text-sm text-muted-foreground">Loading {typeNoun}…</p>
                             ) : null}
                             {!loading || !taskId ? (
-                              <TaskModalChatRailAdapter
-                                ref={commentsPanelRef}
-                                key={`${taskId}-${initialCommentThreadMessageId ?? ''}`}
-                                taskId={taskId!}
-                                workspaceId={workspaceId}
-                                bubbles={bubbles}
-                                canWrite={canWrite}
-                                taskBubbleIdHint={bubbleId}
-                                initialCommentThreadMessageId={initialCommentThreadMessageId}
-                                onThreadViewChange={setCommentsInThreadView}
-                                onMarkedRead={onTaskCommentsMarkedRead}
-                                onCoachDraftFinalizeSuccess={handleCoachDraftFinalizeSuccess}
-                                chatCardWorkoutActions={taskModalChatCardWorkoutActions}
-                                itemType={itemType}
-                              />
+                              <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+                                <StandardTaskChatRail
+                                  key={taskId ?? 'create'}
+                                  workspaceId={workspaceId}
+                                  taskId={taskId!}
+                                  bubbleId={bubbleId ?? undefined}
+                                  canPostMessages={canWrite}
+                                  defaultAgentSlug={defaultSlugForItemType(itemType)}
+                                  transcriptFilter={(row) =>
+                                    row.content !== BUDDY_ONBOARDING_SYSTEM_EVENT
+                                  }
+                                  initialCommentThreadMessageId={initialCommentThreadMessageId}
+                                  onThreadViewChange={setCommentsInThreadView}
+                                  onExecutionPatch={handleExecutionPatch}
+                                  onTaskModalIntakePatch={handleTaskModalIntakePatch}
+                                  onEffectTelemetry={handleAgentEffectTelemetry}
+                                  onEmbeddedTaskIdsChange={setEmbeddedTaskIdsFromThread}
+                                  chatRowExtras={{
+                                    onCoachDraftFinalizeSuccess: handleCoachDraftFinalizeSuccess,
+                                    chatCardWorkoutActions: taskModalChatCardWorkoutActions,
+                                    bubbleUpPropsFor: bubbleUpPropsFor,
+                                    onOpenAttachment: taskCommentMedia.onOpenAttachment,
+                                  }}
+                                />
+                              </div>
                             ) : null}
                           </div>
                         </div>
                         <div
-                          className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-6 pt-4 pb-4"
+                          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain px-6 pt-4 pb-4"
                           data-testid="task-modal-comments-split-details-pane"
                         >
                           {loading && taskId ? (
@@ -1620,25 +1798,38 @@ export function TaskModal({
                               (taskId ? (
                                 <div className="flex min-h-0 flex-1 flex-col">
                                   {standardRailEnabled ? (
-                                    <TaskModalChatRailAdapter
-                                      ref={commentsPanelRef}
-                                      key={`${taskId}-${initialCommentThreadMessageId ?? ''}`}
-                                      taskId={taskId}
-                                      workspaceId={workspaceId}
-                                      bubbles={bubbles}
-                                      canWrite={canWrite}
-                                      taskBubbleIdHint={bubbleId}
-                                      initialCommentThreadMessageId={initialCommentThreadMessageId}
-                                      onThreadViewChange={setCommentsInThreadView}
-                                      onMarkedRead={onTaskCommentsMarkedRead}
-                                      onCoachDraftFinalizeSuccess={handleCoachDraftFinalizeSuccess}
-                                      chatCardWorkoutActions={taskModalChatCardWorkoutActions}
-                                      itemType={itemType}
-                                    />
+                                    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+                                      <StandardTaskChatRail
+                                        key={taskId ?? 'create'}
+                                        workspaceId={workspaceId}
+                                        taskId={taskId}
+                                        bubbleId={bubbleId ?? undefined}
+                                        canPostMessages={canWrite}
+                                        defaultAgentSlug={defaultSlugForItemType(itemType)}
+                                        transcriptFilter={(row) =>
+                                          row.content !== BUDDY_ONBOARDING_SYSTEM_EVENT
+                                        }
+                                        initialCommentThreadMessageId={
+                                          initialCommentThreadMessageId
+                                        }
+                                        onThreadViewChange={setCommentsInThreadView}
+                                        onExecutionPatch={handleExecutionPatch}
+                                        onTaskModalIntakePatch={handleTaskModalIntakePatch}
+                                        onEffectTelemetry={handleAgentEffectTelemetry}
+                                        onEmbeddedTaskIdsChange={setEmbeddedTaskIdsFromThread}
+                                        chatRowExtras={{
+                                          onCoachDraftFinalizeSuccess:
+                                            handleCoachDraftFinalizeSuccess,
+                                          chatCardWorkoutActions: taskModalChatCardWorkoutActions,
+                                          bubbleUpPropsFor: bubbleUpPropsFor,
+                                          onOpenAttachment: taskCommentMedia.onOpenAttachment,
+                                        }}
+                                      />
+                                    </div>
                                   ) : (
                                     <TaskModalCommentsPanel
                                       ref={commentsPanelRef}
-                                      key={`${taskId}-${initialCommentThreadMessageId ?? ''}`}
+                                      key={taskId ?? 'create'}
                                       taskId={taskId}
                                       workspaceId={workspaceId}
                                       bubbles={bubbles}
@@ -1739,7 +1930,7 @@ export function TaskModal({
                 {...(canWrite
                   ? {
                       onSaveTask: () => {
-                        void (taskId ? saveCoreFields() : createTask());
+                        void (taskId ? handleSaveCoreFields() : createTask());
                       },
                       saving,
                       saveDisabled: taskId ? !coreDirty : !title.trim(),

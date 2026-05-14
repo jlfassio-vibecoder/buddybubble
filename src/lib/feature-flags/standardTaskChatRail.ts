@@ -1,5 +1,5 @@
 /**
- * TaskModal: `1` = `StandardTaskChatRail` + `TaskModalChatRailAdapter`; otherwise `TaskModalCommentsPanel`.
+ * TaskModal: `1` = `StandardTaskChatRail` (task thread + agent effects in-rail); otherwise `TaskModalCommentsPanel`.
  * See docs/refactor/standard-task-chat-rail/phase-2-task-modal-integration.md
  */
 export function isStandardTaskChatRailEnabled(): boolean {

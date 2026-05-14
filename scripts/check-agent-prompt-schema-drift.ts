@@ -100,7 +100,8 @@ const REGISTRY: ReadonlyArray<Contract> = [
     parserSourcePath: 'src/lib/agents/coach/parse.ts',
     schemaOnlyKeys: [],
     // Runtime context block name + prose example value the Coach prompt mentions.
-    promptOnlyTokens: ['workoutContext', 'equipment_today'],
+    // `workout_log` is an `item_type` label in TASK MODAL INTAKE UI prose, not a schema key.
+    promptOnlyTokens: ['workoutContext', 'equipment_today', 'workout_log'],
   },
   {
     name: 'coach.workout-open-greeting',

@@ -73,6 +73,7 @@ import {
   parseCoachJson,
   personalCuesPatchForRpc,
   stripMarkdownCodeFences,
+  taskModalIntakePatchForRpc,
 } from './parse.ts';
 import {
   formatTaggedExerciseRefsPromptBlock,
@@ -82,9 +83,11 @@ import {
 import { loadExerciseDictionaryByIndex } from './exercise-dictionary-by-index.ts';
 import {
   buildBaseCoachPrompt,
+  buildTaskModalIntakeUiCoachBlock,
   buildWorkoutOpenGreetingPrompt,
   buildWorkoutOpenGreetingUserText,
   formatExerciseIndexMap,
+  taskMetadataLooksWorkoutShaped,
   WORKOUT_CONTEXT_HEADER,
   type ExerciseDictionaryIndexEntry,
 } from './prompts.ts';
@@ -249,6 +252,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
         p_task_status: 'todo',
         p_execution_patch: null,
         p_personal_cues: null,
+        p_task_modal_intake_patch: null,
       },
     };
   },
@@ -272,6 +276,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
 
     let currentTaskContextBlock = '';
     let taskMetadataForContext: unknown | null = null;
+    let taskItemType: string | null = null;
     if (knownTargetTaskId) {
       const ctxRow = await loadCurrentTaskContext(
         ctx.supabase as unknown as Parameters<typeof loadCurrentTaskContext>[0],
@@ -282,6 +287,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       if (ctxRow) {
         currentTaskContextBlock = ctxRow.titleBlock;
         taskMetadataForContext = ctxRow.metadata;
+        taskItemType = ctxRow.item_type;
       }
     }
 
@@ -349,6 +355,12 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       if (tagBlock) parts.push(tagBlock.trimStart());
     }
     if (currentTaskContextBlock) parts.push(currentTaskContextBlock);
+    const it = (taskItemType ?? '').toLowerCase();
+    const showTaskModalIntakeUi =
+      it === 'workout' ||
+      it === 'workout_log' ||
+      taskMetadataLooksWorkoutShaped(taskMetadataForContext);
+    if (showTaskModalIntakeUi) parts.push(buildTaskModalIntakeUiCoachBlock());
     if (userContextBlock) parts.push(userContextBlock);
     return parts.join('\n\n');
   },
@@ -379,6 +391,20 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
     }
     const dict = readCoachExtras(ctx).exerciseDictionaryByIndex ?? undefined;
     const out = parseCoachJson(text, dict ?? undefined);
+    if (out.task_modal_intake_dropped.length > 0) {
+      const tuples = out.task_modal_intake_dropped.slice(0, 20).map((d) => ({
+        field: d.field,
+        reason: d.reason,
+        detail: d.detail ?? null,
+      }));
+      log('warn', 'coach task_modal_intake_patch drops', {
+        request_id: ctx.requestId,
+        slug: COACH_SLUG,
+        error_kind: 'task_modal_intake_parse',
+        drop_count: out.task_modal_intake_dropped.length,
+        tuples,
+      });
+    }
     if (out.personal_cues_dropped_unanchored > 0) {
       log('warn', 'coach personal_cues unanchored drops', {
         request_id: ctx.requestId,
@@ -417,6 +443,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
     const supabase: SharedSupabaseClient = ctx.supabase;
     const patchParam = executionPatchForRpc(parsed.execution_patch);
     const personalCuesParam = personalCuesPatchForRpc(parsed.personal_cues_resolved);
+    const intakePatchParam = taskModalIntakePatchForRpc(parsed.task_modal_intake_patch);
 
     if (shouldInsertDraft) {
       const draft = await agentInsertCoachWorkoutDraftReply(supabase, {
@@ -431,6 +458,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
         p_proposed_metadata: hasProposedMeta ? parsed.proposed_workout_metadata! : {},
         p_execution_patch: patchParam,
         p_personal_cues: personalCuesParam,
+        p_task_modal_intake_patch: intakePatchParam,
       });
       if (!draft.ok) {
         log('error', 'coach persist draft rpc failed', {
@@ -458,6 +486,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       p_seed_task_comment_text?: string | null;
       p_execution_patch?: unknown;
       p_personal_cues?: unknown;
+      p_task_modal_intake_patch?: unknown;
     } = {
       p_trigger_message_id: ctx.message.id,
       p_thread_id: ctx.threadId,
@@ -475,6 +504,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
     }
     rpcArgs.p_execution_patch = patchParam;
     rpcArgs.p_personal_cues = personalCuesParam;
+    rpcArgs.p_task_modal_intake_patch = intakePatchParam;
 
     const card = await agentCreateCardAndReply(supabase, rpcArgs);
     if (!card.ok) {

@@ -1,17 +1,21 @@
 /**
- * MIRROR FILE — canonical lives at `src/lib/agents/coach/schema.ts`.
+ * Coach response schemas — pure module, canonical source.
  *
- * Body below is byte-for-byte identical to the canonical Vitest-side file (excluding
- * this header) EXCEPT for the import paths:
- *   - `VertexResponseSchema` is imported from `../../_shared/llm/types.ts` (Deno) vs
- *     `../_shared/llm/types` (Node bundler) on the canonical side.
- *   - `INTAKE_*` constants are imported from `./config.ts` (Deno) vs `./config` (Node).
+ * Two `VertexResponseSchema` literals:
+ *   - `COACH_RESPONSE_SCHEMA` — the main JSON-mode schema lifted verbatim from
+ *     `supabase/functions/bubble-agent-dispatch/index.ts:704-860`.
+ *   - `COACH_WORKOUT_GREETING_SCHEMA` — the preflight workout-open greeting schema
+ *     lifted from `supabase/functions/bubble-agent-dispatch/index.ts:910-920`.
  *
- * Any change must be hand-mirrored — run `pnpm check:agent-mirror` to verify body
- * parity.
+ * A byte-for-byte mirror lives at `supabase/functions/agents/coach/schema.ts`. Run
+ * `pnpm check:agent-mirror` to verify parity.
+ *
+ * The schema body is intentionally written as a plain object literal (not as a typed
+ * cast) so the Vertex API receives exactly the keys the legacy implementation sent. The
+ * `VertexResponseSchema` cast at the bottom only constrains the export surface.
  */
 
-import type { VertexResponseSchema } from '../../_shared/llm/types.ts';
+import type { VertexResponseSchema } from '../../_shared/llm/types';
 import { INTAKE_CATEGORIES, INTAKE_PHASES } from './config.ts';
 
 export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
@@ -181,6 +185,54 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
           },
         },
         required: ['exerciseIndex'],
+      },
+    },
+    task_modal_intake_patch: {
+      type: 'OBJECT',
+      nullable: true,
+      description:
+        'Optional. When TASK MODAL INTAKE UI appears in the system prompt (workout / workout_log task card), use this object to update the on-card intake wizard from chat. Keys are optional — include only fields you are changing. readiness and sleep_quality are integers 1–10 (Task Modal sliders). They are NOT the same as session_readiness_score (0–100 internal estimate): never put session_readiness_score values into readiness/sleep_quality; if you mention readiness in reply_content for the sliders, you MUST mirror the same integers here. wizard_step: 1–4. duration_minutes: 15, 30, 45, 60, or the exact string Optimized for Goals. target_intensity: Light/Recovery | Moderate | High/HIIT. soreness: subset of None, Legs, Back, Shoulders, Chest, Core. equipment: subset of Dumbbells, Kettlebell, Resistance bands, Pull-up bar, Mat, Bodyweight. Omit or null when not updating the wizard.',
+      properties: {
+        readiness: {
+          type: 'INTEGER',
+          nullable: true,
+          description: 'Task modal "Readiness / energy" slider; integer 1–10 only.',
+        },
+        sleep_quality: {
+          type: 'INTEGER',
+          nullable: true,
+          description: 'Task modal "Sleep quality" slider; integer 1–10 only.',
+        },
+        wizard_step: {
+          type: 'INTEGER',
+          nullable: true,
+          description: 'Which wizard step (1–4) to show after applying other fields.',
+        },
+        duration_minutes: {
+          type: 'STRING',
+          nullable: true,
+          description:
+            'Session length: exactly one of 15, 30, 45, 60, or Optimized for Goals (verbatim).',
+        },
+        target_intensity: {
+          type: 'STRING',
+          nullable: true,
+          description: 'One of: Light/Recovery, Moderate, High/HIIT.',
+        },
+        soreness: {
+          type: 'ARRAY',
+          nullable: true,
+          description:
+            'Body areas sore today; items must be from the allowed soreness list in TASK MODAL INTAKE UI.',
+          items: { type: 'STRING' },
+        },
+        equipment: {
+          type: 'ARRAY',
+          nullable: true,
+          description:
+            'Equipment available today; items must be from the allowed equipment list in TASK MODAL INTAKE UI.',
+          items: { type: 'STRING' },
+        },
       },
     },
   },

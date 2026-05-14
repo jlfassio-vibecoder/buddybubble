@@ -49,6 +49,8 @@ export type AgentCreateCardArgs = {
   p_execution_patch?: unknown;
   /** Resolved personal cues for `apply_personal_cues_for_user` + message metadata. */
   p_personal_cues?: unknown;
+  /** Coach task-modal workout intake wizard patch (merged into reply `metadata`). */
+  p_task_modal_intake_patch?: unknown;
 };
 
 export type AgentInsertCoachDraftArgs = {
@@ -63,6 +65,7 @@ export type AgentInsertCoachDraftArgs = {
   p_proposed_metadata: Record<string, unknown>;
   p_execution_patch?: unknown;
   p_personal_cues?: unknown;
+  p_task_modal_intake_patch?: unknown;
 };
 
 export type BuddyCreateOnboardingReplyArgs = {

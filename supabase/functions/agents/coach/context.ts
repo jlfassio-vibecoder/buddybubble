@@ -204,10 +204,10 @@ export async function loadCurrentTaskContext(
   taskId: string,
   bubbleId: string,
   requestId: string,
-): Promise<{ titleBlock: string; metadata: unknown | null } | null> {
+): Promise<{ titleBlock: string; metadata: unknown | null; item_type: string | null } | null> {
   const { data: ctxTask, error: ctxErr } = await supabase
     .from('tasks')
-    .select('title, description, metadata')
+    .select('title, description, metadata, item_type')
     .eq('id', taskId)
     .eq('bubble_id', bubbleId)
     .maybeSingle();
@@ -224,10 +224,17 @@ export async function loadCurrentTaskContext(
   if (!ctxTask || typeof ctxTask.title !== 'string' || !ctxTask.title.trim()) {
     return null;
   }
-  const row = ctxTask as { title: string; description?: string | null; metadata?: unknown };
+  const row = ctxTask as {
+    title: string;
+    description?: string | null;
+    metadata?: unknown;
+    item_type?: string | null;
+  };
   return {
     titleBlock: buildCurrentTaskContextBlock(row.title, row.description ?? null),
     metadata: row.metadata ?? null,
+    item_type:
+      typeof row.item_type === 'string' && row.item_type.trim() ? row.item_type.trim() : null,
   };
 }
 

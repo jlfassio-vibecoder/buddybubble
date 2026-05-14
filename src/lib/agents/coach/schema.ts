@@ -187,6 +187,54 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
         required: ['exerciseIndex'],
       },
     },
+    task_modal_intake_patch: {
+      type: 'OBJECT',
+      nullable: true,
+      description:
+        'Optional. When TASK MODAL INTAKE UI appears in the system prompt (workout / workout_log task card), use this object to update the on-card intake wizard from chat. Keys are optional — include only fields you are changing. readiness and sleep_quality are integers 1–10 (Task Modal sliders). They are NOT the same as session_readiness_score (0–100 internal estimate): never put session_readiness_score values into readiness/sleep_quality; if you mention readiness in reply_content for the sliders, you MUST mirror the same integers here. wizard_step: 1–4. duration_minutes: 15, 30, 45, 60, or the exact string Optimized for Goals. target_intensity: Light/Recovery | Moderate | High/HIIT. soreness: subset of None, Legs, Back, Shoulders, Chest, Core. equipment: subset of Dumbbells, Kettlebell, Resistance bands, Pull-up bar, Mat, Bodyweight. Omit or null when not updating the wizard.',
+      properties: {
+        readiness: {
+          type: 'INTEGER',
+          nullable: true,
+          description: 'Task modal "Readiness / energy" slider; integer 1–10 only.',
+        },
+        sleep_quality: {
+          type: 'INTEGER',
+          nullable: true,
+          description: 'Task modal "Sleep quality" slider; integer 1–10 only.',
+        },
+        wizard_step: {
+          type: 'INTEGER',
+          nullable: true,
+          description: 'Which wizard step (1–4) to show after applying other fields.',
+        },
+        duration_minutes: {
+          type: 'STRING',
+          nullable: true,
+          description:
+            'Session length: exactly one of 15, 30, 45, 60, or Optimized for Goals (verbatim).',
+        },
+        target_intensity: {
+          type: 'STRING',
+          nullable: true,
+          description: 'One of: Light/Recovery, Moderate, High/HIIT.',
+        },
+        soreness: {
+          type: 'ARRAY',
+          nullable: true,
+          description:
+            'Body areas sore today; items must be from the allowed soreness list in TASK MODAL INTAKE UI.',
+          items: { type: 'STRING' },
+        },
+        equipment: {
+          type: 'ARRAY',
+          nullable: true,
+          description:
+            'Equipment available today; items must be from the allowed equipment list in TASK MODAL INTAKE UI.',
+          items: { type: 'STRING' },
+        },
+      },
+    },
   },
   // Keys must be present so Gemini does not drop task_description on create_card flows.
   // execution_patch is NOT required: model may omit it; parse treats missing as null.

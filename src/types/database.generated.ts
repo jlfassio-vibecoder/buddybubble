@@ -2727,6 +2727,7 @@ export type Database = {
           p_reply_text: string;
           p_seed_task_comment_text?: string;
           p_task_description?: string;
+          p_task_modal_intake_patch?: Json;
           p_task_status?: string;
           p_task_title?: string;
           p_task_type?: string;
@@ -2746,6 +2747,7 @@ export type Database = {
           p_proposed_title?: string;
           p_reply_text: string;
           p_target_task_id: string;
+          p_task_modal_intake_patch?: Json;
           p_thread_id: string;
           p_trigger_message_id: string;
         };

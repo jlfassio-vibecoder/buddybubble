@@ -24,6 +24,15 @@ import {
 import { AgentTypingIndicator } from '@/components/chat/AgentTypingIndicator';
 import { logAgentRoutingEvent } from '@/lib/agents/agentRoutingLogger';
 import { useWorkspaceSessionSubject } from '@/context/WorkspaceSessionContext';
+import { BUDDY_SLUG } from '@/lib/agents/buddy/config';
+import { useAgentEffectSweep } from '@/components/chat/agent-effects/useAgentEffectSweep';
+import type {
+  AgentEffectTelemetryEvent,
+  ExecutionPatchEffectPayload,
+  TaskModalIntakePatchEffectPayload,
+} from '@/components/chat/agent-effects/types';
+import { useBuddyOnboardingSentinel } from '@/components/modals/task-modal/hooks/useBuddyOnboardingSentinel';
+import { useDeepLinkMessageScroll } from '@/components/modals/task-modal/hooks/useDeepLinkMessageScroll';
 
 const SURFACE = 'standard-task-chat-rail' as const;
 
@@ -86,6 +95,33 @@ export type StandardTaskChatRailProps = {
 
   /** Optional collapse handle (parity with `WorkoutCoachRail`'s header button). */
   onCollapse?: () => void;
+
+  /** When opening from a deep link, scroll this `messages.id` into view once loaded. */
+  initialCommentThreadMessageId?: string | null;
+
+  /** Task thread chrome: reset "in thread" UI state once per mount (TaskModal parity). */
+  onThreadViewChange?: (inThread: boolean) => void;
+
+  /**
+   * Coach `metadata.execution_patch` — parsed and delivered with stable ids/timestamps.
+   * Host owns dedupe beyond a single sweep (e.g. TaskModal silent reload).
+   */
+  onExecutionPatch?: (ctx: ExecutionPatchEffectPayload) => void;
+
+  /**
+   * Coach `metadata.task_modal_intake_patch` — parsed and delivered with stable ids/timestamps.
+   * Host owns cross-mount dedupe + write policy.
+   */
+  onTaskModalIntakePatch?: (ctx: TaskModalIntakePatchEffectPayload) => void;
+
+  /**
+   * Pure telemetry for agent-effect parsing / application. Host may forward to `logAgentRoutingEvent`.
+   * The rail does not import the logger for these events (host wires logging).
+   */
+  onEffectTelemetry?: (event: AgentEffectTelemetryEvent) => void;
+
+  /** `messages.attached_task_id` values for bubble-up props (TaskModal `useTaskBubbleUps` scope). */
+  onEmbeddedTaskIdsChange?: (taskIds: string[]) => void;
 
   className?: string;
 };
@@ -187,6 +223,60 @@ function useRailThreadApi(props: StandardTaskChatRailProps): RailThreadApi {
   });
 
   const availableAgents = useMemo(() => [...agentsByAuthUserId.values()], [agentsByAuthUserId]);
+
+  const taskIdTrimmed = taskId?.trim() ?? '';
+
+  const embeddedTaskIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const m of messages) {
+      if (m.attached_task_id) s.add(m.attached_task_id);
+    }
+    return [...s];
+  }, [messages]);
+
+  const onEmbeddedRef = useRef(props.onEmbeddedTaskIdsChange);
+  onEmbeddedRef.current = props.onEmbeddedTaskIdsChange;
+  useEffect(() => {
+    onEmbeddedRef.current?.(embeddedTaskIds);
+  }, [embeddedTaskIds]);
+
+  const buddyAgent = useMemo(
+    () => availableAgents.find((a) => a.slug === BUDDY_SLUG) ?? null,
+    [availableAgents],
+  );
+
+  useBuddyOnboardingSentinel({
+    taskId: taskIdTrimmed,
+    canWrite: canPostMessages,
+    isLoading,
+    messagesLength: messages.length,
+    buddyAgent,
+    sendMessage,
+  });
+
+  useDeepLinkMessageScroll({
+    taskId: taskIdTrimmed,
+    initialCommentThreadMessageId: props.initialCommentThreadMessageId,
+    isLoading,
+    messages,
+  });
+
+  useAgentEffectSweep({
+    taskId: taskIdTrimmed,
+    isLoading,
+    messages,
+    agentsByAuthUserId,
+    onExecutionPatch: props.onExecutionPatch,
+    onTaskModalIntakePatch: props.onTaskModalIntakePatch,
+    onEffectTelemetry: props.onEffectTelemetry,
+  });
+
+  const onThreadViewChangeRef = useRef(props.onThreadViewChange);
+  onThreadViewChangeRef.current = props.onThreadViewChange;
+  useEffect(() => {
+    onThreadViewChangeRef.current?.(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per mount (TaskModal thread chrome parity)
+  }, []);
 
   const bubbleName = bubbleRow?.name ?? 'Bubble';
 

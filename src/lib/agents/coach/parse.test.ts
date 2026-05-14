@@ -391,4 +391,22 @@ describe('parseCoachJson', () => {
     ]);
     expect(out.personal_cues_dropped_unanchored).toBe(0);
   });
+
+  it('returns empty task_modal_intake_dropped when intake patch is absent', () => {
+    const out = parseCoachJson(JSON.stringify(makeReplyOnlyPayload()));
+    expect(out.task_modal_intake_dropped).toEqual([]);
+  });
+
+  it('surfaces task_modal_intake_dropped for unknown keys and readiness clamp', () => {
+    const out = parseCoachJson(
+      JSON.stringify(
+        makeReplyOnlyPayload({
+          task_modal_intake_patch: { foo: 1, readiness: 95, sleep_quality: 4 },
+        }),
+      ),
+    );
+    expect(out.task_modal_intake_patch).toEqual({ readiness: 10, sleep_quality: 4 });
+    expect(out.task_modal_intake_dropped.some((d) => d.reason === 'unknown_key')).toBe(true);
+    expect(out.task_modal_intake_dropped.some((d) => d.reason === 'clamped')).toBe(true);
+  });
 });

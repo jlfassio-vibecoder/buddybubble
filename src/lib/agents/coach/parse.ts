@@ -45,6 +45,12 @@ import {
   coerceExecutionPatchNumericField,
   sanitizeNumericStringForPatch,
 } from './execution-patch-numeric';
+import {
+  parseAndCollectTaskModalIntakePatchFromGemini,
+  taskModalIntakePatchForRpc,
+  type TaskModalIntakePatch,
+  type TaskModalIntakePatchDrop,
+} from './task-modal-intake-patch';
 
 /**
  * Normalized Coach response shape. Lifted verbatim from
@@ -88,6 +94,13 @@ export type CoachGeminiJsonResponse = {
   personal_cues_resolved: PersonalCueResolvedForRpc[] | null;
   /** Count of patch entries dropped because the exercise index had no catalog match. */
   personal_cues_dropped_unanchored: number;
+  /**
+   * Optional: Task Modal workout intake wizard (1–10 sliders, steps, duration, etc.).
+   * Persisted on the agent reply `messages.metadata` for the client — does not write `tasks` rows.
+   */
+  task_modal_intake_patch: TaskModalIntakePatch | null;
+  /** Parser telemetry: fields dropped or clamped while normalizing `task_modal_intake_patch`. */
+  task_modal_intake_dropped: TaskModalIntakePatchDrop[];
 };
 
 /** Payload for `p_personal_cues` on agent RPCs (matches `apply_personal_cues_for_user`). */
@@ -418,6 +431,12 @@ export function parseCoachJson(
     execution_patch = null;
   }
 
+  const intakeCollect = parseAndCollectTaskModalIntakePatchFromGemini(
+    (parsed as Record<string, unknown>).task_modal_intake_patch,
+  );
+  const task_modal_intake_patch = intakeCollect.patch;
+  const task_modal_intake_dropped = intakeCollect.dropped;
+
   const cuesResult = parsePersonalCuesPatchFromGemini(
     (parsed as Record<string, unknown>).personal_cues_patch,
     exerciseDictionaryByIndex,
@@ -438,6 +457,8 @@ export function parseCoachJson(
       coach_task_notes: ensureCoachTaskNotesCta(parseCoachTaskNotes(parsed.coach_task_notes)),
       proposed_workout_metadata: null,
       execution_patch,
+      task_modal_intake_patch,
+      task_modal_intake_dropped,
       personal_cues_resolved,
       personal_cues_dropped_unanchored,
       ...intakeTail,
@@ -453,6 +474,8 @@ export function parseCoachJson(
     coach_task_notes: null,
     proposed_workout_metadata: proposedMetaOrNull,
     execution_patch,
+    task_modal_intake_patch,
+    task_modal_intake_dropped,
     personal_cues_resolved,
     personal_cues_dropped_unanchored,
     ...intakeTail,
@@ -482,3 +505,5 @@ export function personalCuesPatchForRpc(
     injury_prevention_tips: e.injury_prevention_tips ?? null,
   }));
 }
+
+export { taskModalIntakePatchForRpc } from './task-modal-intake-patch';
