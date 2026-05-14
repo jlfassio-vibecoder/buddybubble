@@ -90,16 +90,12 @@ export function useAgentEffectSweep({
               ? (meta as { execution_patch?: unknown }).execution_patch
               : undefined;
           let patch: ExecutionPatch | null = null;
+          let executionPatchParseThrew = false;
           try {
             patch = parseExecutionPatchFromMetadata(rawEx);
           } catch {
-            emit?.({
-              kind: 'effect.parse_dropped',
-              effect: 'execution_patch',
-              messageId: id,
-              reason: 'invalid',
-            });
-            return;
+            executionPatchParseThrew = true;
+            patch = null;
           }
           if (!patch) {
             handledExecutionPatchMessageIdsRef.current.add(id);
@@ -107,7 +103,7 @@ export function useAgentEffectSweep({
               kind: 'effect.parse_dropped',
               effect: 'execution_patch',
               messageId: id,
-              reason: rawEx === undefined ? 'missing' : 'invalid',
+              reason: executionPatchParseThrew || rawEx !== undefined ? 'invalid' : 'missing',
             });
           } else {
             onEx({ ...baseCtx, patch });

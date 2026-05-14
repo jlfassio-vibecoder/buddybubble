@@ -13,6 +13,13 @@ export default defineConfig({
     },
   },
   test: {
+    /** Fork pool: child processes accept `--max-old-space-size` (thread workers reject it as execArgv). */
+    pool: 'forks',
+    poolOptions: {
+      forks: {
+        execArgv: ['--max-old-space-size=8192'],
+      },
+    },
     // happy-dom provides File/Blob and other browser globals used by attachment tests (Node alone does not).
     environment: 'happy-dom',
     include: [
