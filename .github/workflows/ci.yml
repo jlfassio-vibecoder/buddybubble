@@ -44,6 +44,7 @@ jobs:
 
       - name: Tests
         env:
+          NODE_OPTIONS: --max-old-space-size=4096
           NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
           NEXT_PUBLIC_SUPABASE_ANON_KEY: dummy
         run: pnpm test

@@ -30,6 +30,11 @@ import {
   type TaskModalOriginalSnapshot,
 } from '@/components/modals/task-modal/task-modal-save-utils';
 import { mergeJsonWithLiveSessionToggle } from '@/lib/card-live-session-metadata';
+import {
+  insertTasksRowWithRetries,
+  resolveInsertPosition,
+  type TasksInsertRow,
+} from '@/components/modals/task-modal/task-insert-row';
 export type UseTaskSaveAndCreateArgs = {
   canWrite: boolean;
   taskId: string | null;
@@ -130,8 +135,8 @@ export function useTaskSaveAndCreate({
     onTaskArchived?.();
   }, [archiving, canWrite, itemType, onOpenChange, onTaskArchived, setError, taskId]);
 
-  const saveCoreFields = useCallback(async () => {
-    if (!canWrite || !taskId) return;
+  const saveCoreFields = useCallback(async (): Promise<boolean> => {
+    if (!canWrite || !taskId) return false;
     setSaving(true);
     setError(null);
     const supabase = createClient();
@@ -256,7 +261,7 @@ export function useTaskSaveAndCreate({
         setSaving(false);
         await syncAssigneesNow();
         void loadTask(taskId);
-        return;
+        return true;
       }
     }
 
@@ -310,7 +315,7 @@ export function useTaskSaveAndCreate({
         setSaving(false);
         await syncAssigneesNow();
         void loadTask(taskId);
-        return;
+        return true;
       }
     }
 
@@ -350,7 +355,7 @@ export function useTaskSaveAndCreate({
         setSaving(false);
         await syncAssigneesNow();
         void loadTask(taskId);
-        return;
+        return true;
       }
     }
 
@@ -392,14 +397,14 @@ export function useTaskSaveAndCreate({
         );
         await syncAssigneesNow();
         void loadTask(taskId);
-        return;
+        return true;
       }
     }
 
     setSaving(false);
     if (uErr) {
       setError(formatUserFacingError(uErr));
-      return;
+      return false;
     }
     if (
       itemType === 'program' &&
@@ -430,6 +435,7 @@ export function useTaskSaveAndCreate({
     });
     await syncAssigneesNow();
     void loadTask(taskId);
+    return true;
   }, [
     activityLog,
     assignedTo,
@@ -482,16 +488,7 @@ export function useTaskSaveAndCreate({
       return;
     }
 
-    const { data: existing } = await supabase
-      .from('tasks')
-      .select('position')
-      .eq('bubble_id', bubbleId)
-      .order('position', { ascending: false })
-      .limit(1);
-    const maxPos =
-      existing && existing.length > 0
-        ? Number((existing[0] as { position: number }).position) + 1
-        : 0;
+    const maxPos = await resolveInsertPosition(supabase, bubbleId);
 
     const { sched, scheduledTimeInsert } = parseCreateScheduleInputs(scheduledOn, scheduledTime);
     const effectiveStatus = computeEffectiveStatusForSchedule({
@@ -509,7 +506,7 @@ export function useTaskSaveAndCreate({
       hostUserId: authUser.id,
     }) as TaskRow['metadata'];
 
-    const insertRow = {
+    const insertRow: TasksInsertRow = {
       bubble_id: bubbleId,
       title: title.trim(),
       description: description.trim() || null,
@@ -524,69 +521,11 @@ export function useTaskSaveAndCreate({
       ...(sched ? { scheduled_time: scheduledTimeInsert } : {}),
     };
 
-    let { data, error: cErr } = await supabase
-      .from('tasks')
-      .insert(insertRow)
-      .select('id')
-      .maybeSingle();
-
-    if (cErr && isMissingColumnSchemaCacheError(cErr, 'scheduled_on')) {
-      const { scheduled_on: _s, scheduled_time: _t, ...insertNoSched } = insertRow;
-      const statusWithoutPersistedSchedule = computeStatusWhenCreateScheduledDateUnsupported({
-        currentStatus: status,
-        calendarTimezone,
-        hasTodayBoardColumn,
-      });
-      const retry = await supabase
-        .from('tasks')
-        .insert({ ...insertNoSched, status: statusWithoutPersistedSchedule })
-        .select('id')
-        .maybeSingle();
-      data = retry.data;
-      cErr = retry.error;
-    }
-
-    if (cErr && isMissingColumnSchemaCacheError(cErr, 'scheduled_time')) {
-      const { scheduled_time: _st, ...insertNoTime } = insertRow as typeof insertRow & {
-        scheduled_time?: string | null;
-      };
-      const retry = await supabase.from('tasks').insert(insertNoTime).select('id').maybeSingle();
-      data = retry.data;
-      cErr = retry.error;
-    }
-
-    if (cErr && isMissingColumnSchemaCacheError(cErr, 'priority')) {
-      const { priority: _p, ...insertWithoutPriority } = insertRow;
-      const second = await supabase
-        .from('tasks')
-        .insert(insertWithoutPriority)
-        .select('id')
-        .maybeSingle();
-      data = second.data;
-      cErr = second.error;
-    }
-
-    if (cErr && isMissingColumnSchemaCacheError(cErr, 'visibility')) {
-      const { visibility: _v, ...insertWithoutVisibility } = insertRow;
-      const second = await supabase
-        .from('tasks')
-        .insert(insertWithoutVisibility)
-        .select()
-        .maybeSingle();
-      data = second.data;
-      cErr = second.error;
-    }
-
-    if (cErr && isMissingColumnSchemaCacheError(cErr, 'created_by')) {
-      const { created_by: _cb, ...insertWithoutCreatedBy } = insertRow;
-      const second = await supabase
-        .from('tasks')
-        .insert(insertWithoutCreatedBy)
-        .select('id')
-        .maybeSingle();
-      data = second.data;
-      cErr = second.error;
-    }
+    const { data, error: cErr } = await insertTasksRowWithRetries(supabase, insertRow, {
+      status,
+      calendarTimezone,
+      hasTodayBoardColumn,
+    });
 
     setSaving(false);
     if (cErr || !data) {

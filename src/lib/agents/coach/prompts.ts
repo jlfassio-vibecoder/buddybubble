@@ -1,7 +1,7 @@
 /**
  * Coach prompt builders — pure module, canonical source.
  *
- * Five exports:
+ * Exports include:
  *   - `buildBaseCoachPrompt(currentDate)` — composite base prompt lifted verbatim from
  *     `supabase/functions/bubble-agent-dispatch/index.ts:1548-1573`. The only delta vs
  *     the legacy implementation is that the date is parameterized so unit tests can pin
@@ -12,6 +12,9 @@
  *     from `bubble-agent-dispatch/index.ts:1502`.
  *   - `buildCurrentTaskContextBlock(title, description)` — the CURRENT TASK CONTEXT
  *     block from `bubble-agent-dispatch/index.ts:1621-1625`.
+ *   - `buildTaskModalIntakeUiCoachBlock()` — when the resolved task is workout /
+ *     workout_log, appended after CURRENT TASK CONTEXT so the model maps chat to the
+ *     Task Modal intake wizard and `task_modal_intake_patch`.
  *   - `WORKOUT_CONTEXT_HEADER`, `USER_CONTEXT_TAIL`, `LAST_WORKOUT_CONTEXT_HEADER`,
  *     `CURRENT_USER_CONTEXT_HEADER` — header constants reused by the strategy and the
  *     Deno-only `context.ts` module.
@@ -19,10 +22,17 @@
  * A byte-for-byte mirror lives at `supabase/functions/agents/coach/prompts.ts`. Run
  * `pnpm check:agent-mirror` to verify parity.
  *
- * Pure module: only depends on `./config`. No DB clients, no Deno globals.
+ * Pure module: depends on `./config` and `./task-modal-intake-patch` (intake enum lists).
  */
 
 /* eslint-disable max-len */
+
+import {
+  WORKOUT_INTAKE_DURATION_CHOICES,
+  WORKOUT_INTAKE_EQUIPMENT_OPTIONS,
+  WORKOUT_INTAKE_INTENSITY_OPTIONS,
+  WORKOUT_INTAKE_SORENESS_OPTIONS,
+} from './task-modal-intake-patch';
 
 /** Header line prepended to the resolved CURRENT WORKOUT CONTEXT JSON when present. */
 export const WORKOUT_CONTEXT_HEADER = '--- CURRENT WORKOUT CONTEXT ---';
@@ -36,6 +46,59 @@ export const LAST_WORKOUT_CONTEXT_HEADER = '--- LAST WORKOUT CONTEXT ---';
 /** Trailing instruction appended to the user-context block. */
 export const USER_CONTEXT_TAIL =
   '\n\nUse this context to highly personalize your advice. Do not explicitly state that you are reading a database file, just speak to them as if you remember their journey.';
+
+/** Header for the task-modal workout intake wizard contract (Coach JSON + UI). */
+export const TASK_MODAL_INTAKE_UI_HEADER =
+  '--- TASK MODAL INTAKE UI (workout / workout_log card) ---';
+
+/**
+ * True when `tasks.metadata` (or equivalent) clearly describes a workout card even if
+ * `item_type` is not exactly `workout` / `workout_log` (used to gate TASK MODAL INTAKE UI).
+ */
+export function taskMetadataLooksWorkoutShaped(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return false;
+  const m = metadata as Record<string, unknown>;
+  const wt = m.workout_type ?? m.workoutType;
+  if (typeof wt === 'string' && wt.trim().length > 0) return true;
+  const ex = m.exercises;
+  if (Array.isArray(ex) && ex.length > 0) return true;
+  const wc = m.workoutContext;
+  if (wc != null && typeof wc === 'object') return true;
+  const dm = m.duration_min ?? m.durationMin;
+  if (typeof dm === 'number' && Number.isFinite(dm)) return true;
+  if (typeof dm === 'string' && dm.trim().length > 0) return true;
+  return false;
+}
+
+/**
+ * When the member is on a workout or workout_log task, the Task Modal shows a four-step
+ * intake wizard. Appended to the system prompt after CURRENT TASK CONTEXT.
+ */
+export function buildTaskModalIntakeUiCoachBlock(): string {
+  const durationLine = WORKOUT_INTAKE_DURATION_CHOICES.map((d) =>
+    d === 'Optimized for Goals' ? '"Optimized for Goals"' : `"${d}"`,
+  ).join(', ');
+  const intensityLine = WORKOUT_INTAKE_INTENSITY_OPTIONS.map((s) => `"${s}"`).join(', ');
+  const sorenessLine = WORKOUT_INTAKE_SORENESS_OPTIONS.map((s) => `"${s}"`).join(', ');
+  const equipmentLine = WORKOUT_INTAKE_EQUIPMENT_OPTIONS.map((s) => `"${s}"`).join(', ');
+  return (
+    `${TASK_MODAL_INTAKE_UI_HEADER}\n` +
+    'The Task Modal **Workout intake** wizard (before AI session generation) uses these fields. Populate or adjust them from chat with **task_modal_intake_patch** (JSON object; include only keys you change). The client applies the same object shape from message metadata—do not rely on reply prose alone.\n' +
+    '- **readiness** and **sleep_quality**: integers **1–10** only (slider labels: Readiness / energy, Sleep quality). They are **not** the same as **session_readiness_score** (0–100 routing estimate): never copy session_readiness_score into readiness or sleep_quality. If you tell the user a readiness or sleep slider value in reply_content, you **must** mirror those same 1–10 integers in task_modal_intake_patch.\n' +
+    '- **wizard_step**: optional integer **1–4** to show that step after applying other fields.\n' +
+    `- **duration_minutes**: string, exactly one of: ${durationLine}.\n` +
+    `- **target_intensity**: string, exactly one of: ${intensityLine}.\n` +
+    `- **soreness**: string array; each item must be one of: ${sorenessLine}. Use ["None"] when nothing is sore; do not mix "None" with other areas.\n` +
+    `- **equipment**: string array; each item must be one of: ${equipmentLine}.\n` +
+    'WORKED EXAMPLES (task_modal_intake_patch only — do not confuse with top-level session_readiness_score):\n' +
+    '- GOOD: {"readiness":7,"sleep_quality":8} — both are **1–10** intake sliders.\n' +
+    '- BAD: {"readiness":72} — 72 looks like **session_readiness_score (0–100)**; use 1–10 for readiness instead (e.g. map high energy to 8–10, not 70+).\n' +
+    '- BAD: {"readiness":"feeling great"} — free-text is invalid; use an integer 1–10 (or digit string like "7").\n' +
+    '- GOOD: {"soreness":["Legs"]} or {"soreness":["None"]} when nothing is sore.\n' +
+    '- BAD: {"soreness":["None","Legs"]} — never mix **None** with specific areas; drop None or pick only body areas.\n' +
+    'Use null / omit task_modal_intake_patch when you are not updating the wizard.'
+  );
+}
 
 /**
  * Composite base Coach prompt. Returns the same string the legacy file builds inline at
@@ -68,8 +131,9 @@ export function buildBaseCoachPrompt(currentDate: string): string {
     "EXECUTION PATCH (live player): When CURRENT WORKOUT CONTEXT is present and the user mentions specific equipment (e.g. 'I have 60lb kettlebells') or asks for specific changes to the current workout session (workoutContext JSON under CURRENT WORKOUT CONTEXT), you MUST compute the appropriate weights, reps, RPE, and/or set completion and include them in the execution_patch field. " +
     'Do not only describe numbers in reply_content; you must also provide the JSON execution_patch so the app can update the live grid. You may list multiple sets and multiple exercises in one patch. String fields (weight, reps, rpe) must be pure numeric strings only, with no ranges, units, or extra text (e.g. "60", "8", "7.5"). Set execution_patch to null when you are not changing the live log. ' +
     'PERSONAL CUES: When the user wants instructions, form cues, tips, or injury notes saved for catalog exercises, emit personal_cues_patch (one entry per exerciseIndex from EXERCISE_INDEX_MAP; only [dict:...] rows persist); you may combine it with execution_patch in one response. ' +
-    'TRUTHFULNESS: If reply_content claims you wrote or applied something, include non-null execution_patch, personal_cues_patch, or create_card/update_existing_task in the same JSON. ' +
-    'Return ONLY a raw JSON object (no markdown, no code fences) with keys: reply_content, create_card, task_title, task_description, update_existing_task, updated_task_title, updated_task_description, proposed_workout_metadata, execution_patch, personal_cues_patch, intake_phase, session_readiness_score, missing_intake_categories, user_requested_immediate_card, session_request, coach_task_notes. ' +
+    'TASK MODAL INTAKE PATCH: When TASK MODAL INTAKE UI appears in the system prompt (workout / workout_log task under discussion), use task_modal_intake_patch to update the on-card intake wizard (readiness and sleep sliders 1–10, wizard_step 1–4, duration_minutes, target_intensity, soreness, equipment). Do not only describe those values in reply_content when you intend the UI to change—emit task_modal_intake_patch. Set task_modal_intake_patch to null when not updating the wizard. ' +
+    'TRUTHFULNESS: If reply_content claims you wrote or applied something, include non-null execution_patch, personal_cues_patch, task_modal_intake_patch, or create_card/update_existing_task in the same JSON. ' +
+    'Return ONLY a raw JSON object (no markdown, no code fences) with keys: reply_content, create_card, task_title, task_description, update_existing_task, updated_task_title, updated_task_description, proposed_workout_metadata, execution_patch, personal_cues_patch, task_modal_intake_patch, intake_phase, session_readiness_score, missing_intake_categories, user_requested_immediate_card, session_request, coach_task_notes. ' +
     'You MUST respond in valid JSON matching the provided schema. Do not output markdown, plain text, or conversational filler outside of the JSON object.'
   );
 }

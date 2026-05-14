@@ -11,6 +11,7 @@
  *   - `agent.routing.unresolved` — resolver returned null; send proceeded anyway. Fields: surface, bubbleId, hadMention.
  *   - `agent.response.timeout`   — per-agent failsafe expired. Fields: agentSlug, elapsedMs, configuredFailsafeMs, bubbleId, surface.
  *   - `agent.response.received`  — target agent replied; pending cleared. Fields: agentSlug, elapsedMs, bubbleId, surface.
+ *   - `agent.effect.scanned` / `agent.effect.parse_dropped` / `agent.effect.applied` — coach metadata patch pipeline (TaskModal host wiring).
  */
 
 export type AgentRoutingSurface =
@@ -19,6 +20,7 @@ export type AgentRoutingSurface =
   | 'standard-task-chat-rail'
   | 'task-modal-root'
   | 'task-modal-thread'
+  | 'task-modal-rail'
   | 'thread-panel'
   | 'onboarding-sentinel';
 
@@ -54,11 +56,36 @@ export type AgentResponseReceivedEvent = {
   surface: AgentRoutingSurface;
 };
 
+export type AgentEffectScannedRoutingEvent = {
+  event: 'agent.effect.scanned';
+  surface: AgentRoutingSurface;
+  effect: 'execution_patch' | 'task_modal_intake_patch';
+  messageId: string;
+};
+
+export type AgentEffectParseDroppedRoutingEvent = {
+  event: 'agent.effect.parse_dropped';
+  surface: AgentRoutingSurface;
+  effect: 'execution_patch' | 'task_modal_intake_patch';
+  messageId: string;
+  reason: 'missing' | 'invalid';
+};
+
+export type AgentEffectAppliedRoutingEvent = {
+  event: 'agent.effect.applied';
+  surface: AgentRoutingSurface;
+  effect: 'execution_patch' | 'task_modal_intake_patch';
+  messageId: string;
+};
+
 export type AgentRoutingEvent =
   | AgentRoutingResolvedEvent
   | AgentRoutingUnresolvedEvent
   | AgentResponseTimeoutEvent
-  | AgentResponseReceivedEvent;
+  | AgentResponseReceivedEvent
+  | AgentEffectScannedRoutingEvent
+  | AgentEffectParseDroppedRoutingEvent
+  | AgentEffectAppliedRoutingEvent;
 
 const PREFIX = '[agent-routing]';
 

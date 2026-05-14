@@ -57,4 +57,15 @@ describe('logAgentRoutingEvent', () => {
     });
     expect(spy.mock.calls[0][1]).toBe('agent.response.received');
   });
+
+  it('logs agent.effect.scanned', () => {
+    const spy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    logAgentRoutingEvent({
+      event: 'agent.effect.scanned',
+      surface: 'task-modal-rail',
+      effect: 'task_modal_intake_patch',
+      messageId: 'mid-1',
+    });
+    expect(spy.mock.calls[0][1]).toBe('agent.effect.scanned');
+  });
 });

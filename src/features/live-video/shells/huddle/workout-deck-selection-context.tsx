@@ -174,9 +174,11 @@ export function WorkoutDeckSelectionProvider({
   /** SnapshotIds for which a host `insert` was issued; cleared only on insert error (Strict / double microtask guard). */
   const hostDeckInsertIssuedRef = useRef(new Set<string>());
 
-  sessionIdRef.current = sidTrimmed || null;
-  canPersistRef.current = canPersist;
-  deckRef.current = deck;
+  useLayoutEffect(() => {
+    sessionIdRef.current = sidTrimmed || null;
+    canPersistRef.current = canPersist;
+    deckRef.current = deck;
+  }, [sidTrimmed, canPersist, deck]);
 
   const setActiveSnapshotId = useCallback((id: string | null) => {
     setActiveSnapshotIdState(id);
@@ -377,7 +379,9 @@ export function WorkoutDeckSelectionProvider({
     [supabase],
   );
 
-  addTaskToDeckRef.current = addTaskToDeck;
+  useLayoutEffect(() => {
+    addTaskToDeckRef.current = addTaskToDeck;
+  }, [addTaskToDeck]);
 
   const enterSelectionMode = useCallback(() => {
     if (disableGlobalBoardBridge) {

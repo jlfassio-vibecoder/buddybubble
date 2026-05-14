@@ -22,6 +22,8 @@ function baseParsed(overrides: Partial<CoachGeminiJsonResponse> = {}): CoachGemi
     execution_patch: null,
     personal_cues_resolved: null,
     personal_cues_dropped_unanchored: 0,
+    task_modal_intake_patch: null,
+    task_modal_intake_dropped: [],
     ...overrides,
   };
 }

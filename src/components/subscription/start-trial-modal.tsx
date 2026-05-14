@@ -146,9 +146,13 @@ export function StartTrialModal({ workspaceId, categoryType }: Props) {
   );
 
   const stepRef = useRef<Step>('plan');
-  stepRef.current = step;
+  useLayoutEffect(() => {
+    stepRef.current = step;
+  }, [step]);
   const billingAttemptIdRef = useRef<string | null>(null);
-  billingAttemptIdRef.current = billingAttemptId;
+  useLayoutEffect(() => {
+    billingAttemptIdRef.current = billingAttemptId;
+  }, [billingAttemptId]);
   const modalOpenedAtRef = useRef(0);
 
   const availablePlans = plansForCategory(categoryType);

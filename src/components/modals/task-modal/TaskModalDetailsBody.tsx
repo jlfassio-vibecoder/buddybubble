@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import type { UnitSystem } from '@/types/database';
 import type { TaskDateFieldLabels } from '@/lib/task-date-labels';
 import type { RefObject } from 'react';
@@ -8,6 +9,8 @@ import type { TaskAttachment } from '@/types/task-modal';
 import type { TaskPriority } from '@/lib/task-priority';
 import type { ProgramWeek, WorkoutExercise } from '@/lib/item-metadata';
 import type { WorkoutIntakeWizardData } from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
+import { useWorkoutIntakeWizardState } from '@/components/modals/task-modal/hooks/useWorkoutIntakeWizardState';
+import type { WorkoutIntakePanelWizardProps } from '@/components/fitness/WorkoutIntakePanel';
 import type { WorkoutTemplate } from '@/hooks/use-workout-templates';
 import { WorkoutIntakePanel } from '@/components/fitness/WorkoutIntakePanel';
 import { TaskModalCardCoverSection } from '@/components/modals/task-modal/TaskModalCardCoverSection';
@@ -22,6 +25,19 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 
+function pickWorkoutIntakePanelWizardProps(
+  w: ReturnType<typeof useWorkoutIntakeWizardState>,
+): WorkoutIntakePanelWizardProps {
+  const {
+    applyTaskModalIntakePatch,
+    applyTaskModalIntakePatchFromMessage,
+    markUserTouched,
+    buildWizardPayload,
+    ...rest
+  } = w;
+  return rest;
+}
+
 export type TaskModalDetailsBodyProps = {
   title: string;
   onTitleChange: (value: string) => void;
@@ -31,6 +47,8 @@ export type TaskModalDetailsBodyProps = {
   canWrite: boolean;
   onGenerateWorkoutFromIntake: (data: WorkoutIntakeWizardData) => void;
   aiWorkoutGenerating: boolean;
+  /** When set with workout + canWrite, renders controlled `WorkoutIntakePanel`. */
+  workoutIntakeState: ReturnType<typeof useWorkoutIntakeWizardState> | null;
   taskId: string | null;
   cardCoverPath: string;
   cardCoverFileInputRef: RefObject<HTMLInputElement | null>;
@@ -100,13 +118,14 @@ export type TaskModalDetailsBodyProps = {
   onRemoveAttachment: (att: TaskAttachment) => void | Promise<void>;
   coreDirty: boolean;
   onCreateTask: () => void;
-  onSaveCoreFields: () => void;
+  onSaveCoreFields: () => void | Promise<void>;
   archiving: boolean;
   loading: boolean;
   onArchiveTask: () => void;
+  onHardDeleteTask?: () => void | Promise<void>;
 };
 
-export function TaskModalDetailsBody(props: TaskModalDetailsBodyProps) {
+function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
   const {
     title,
     onTitleChange,
@@ -116,6 +135,7 @@ export function TaskModalDetailsBody(props: TaskModalDetailsBodyProps) {
     canWrite,
     onGenerateWorkoutFromIntake,
     aiWorkoutGenerating,
+    workoutIntakeState,
     taskId,
     cardCoverPath,
     cardCoverFileInputRef,
@@ -189,10 +209,11 @@ export function TaskModalDetailsBody(props: TaskModalDetailsBodyProps) {
     archiving,
     loading,
     onArchiveTask,
+    onHardDeleteTask,
   } = props;
 
   return (
-    <div className="space-y-4" data-testid="task-modal-details-body">
+    <div className="min-w-0 space-y-4" data-testid="task-modal-details-body">
       <div className="space-y-2">
         <Label htmlFor="task-title">Title</Label>
         <Input
@@ -214,8 +235,9 @@ export function TaskModalDetailsBody(props: TaskModalDetailsBodyProps) {
         />
       </div>
 
-      {itemType === 'workout' && canWrite ? (
+      {workoutIntakeState ? (
         <WorkoutIntakePanel
+          {...pickWorkoutIntakePanelWizardProps(workoutIntakeState)}
           handleAiGenerateWorkout={onGenerateWorkoutFromIntake}
           isGenerating={aiWorkoutGenerating}
         />
@@ -339,7 +361,10 @@ export function TaskModalDetailsBody(props: TaskModalDetailsBodyProps) {
         archiving={archiving}
         loading={loading}
         onArchiveTask={onArchiveTask}
+        onHardDeleteTask={onHardDeleteTask}
       />
     </div>
   );
 }
+
+export const TaskModalDetailsBody = memo(TaskModalDetailsBodyInner);

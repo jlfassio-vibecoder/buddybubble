@@ -36,6 +36,8 @@ import {
   type TaskModalTab,
   type TaskModalViewMode,
 } from '@/components/modals/TaskModal';
+import { createDraftTask } from '@/components/modals/task-modal/hooks/useTaskDraftCreate';
+import type { TaskDraftBaseline } from '@/components/modals/task-modal/task-draft-types';
 import { WorkspaceSettingsModal } from '@/components/modals/WorkspaceSettingsModal';
 import { PeopleInvitesModal } from '@/components/modals/PeopleInvitesModal';
 import { CreateWorkspaceModal } from '@/components/modals/CreateWorkspaceModal';
@@ -88,6 +90,7 @@ import {
 } from '@/components/layout/layout-command-context';
 import type { MemberRole } from '@/types/database';
 import { parseMemberRole } from '@/lib/permissions';
+import { useBoardColumnDefs } from '@/hooks/use-board-columns';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useUpdatePresence } from '@/hooks/use-update-presence';
 import { ActiveUsersStack } from '@/components/presence/ActiveUsersStack';
@@ -282,6 +285,11 @@ function DashboardShellInner({
   const [taskModalClassEditorInstanceId, setTaskModalClassEditorInstanceId] = useState<
     string | null
   >(null);
+  /** Phase 3.8: optimistic `tasks` insert before modal open; cleared after first save or on close. */
+  const [taskModalOptimisticDraft, setTaskModalOptimisticDraft] = useState(false);
+  const [taskModalDraftBaseline, setTaskModalDraftBaseline] = useState<TaskDraftBaseline | null>(
+    null,
+  );
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [profileComplete, setProfileComplete] = useState(false);
   /** `null` = session email not resolved yet (avoid treating legacy users as incomplete during fetch). */
@@ -384,6 +392,16 @@ function DashboardShellInner({
       : null;
   const workspaceCalendarTz =
     activeWorkspace?.id === workspaceId ? (activeWorkspace.calendar_timezone ?? null) : null;
+
+  const boardColumnDefsForDraft = useBoardColumnDefs(workspaceId);
+  const hasTodayBoardColumnForDraft = useMemo(
+    () => boardColumnDefsForDraft?.some((c) => c.id === 'today') ?? false,
+    [boardColumnDefsForDraft],
+  );
+  const hasScheduledBoardColumnForDraft = useMemo(
+    () => boardColumnDefsForDraft?.some((c) => c.id === 'scheduled') ?? false,
+    [boardColumnDefsForDraft],
+  );
 
   const fitnessScopeForStorefrontAutoOpen = useMemo((): 'unknown' | 'yes' | 'no' => {
     if (activeWorkspace?.id !== workspaceId) return 'unknown';
@@ -883,6 +901,8 @@ function DashboardShellInner({
     setTaskModalInitialCreateWorkoutDurationMin(null);
     setTaskModalCreateBubbleId(null);
     setTaskModalClassEditorInstanceId(null);
+    setTaskModalOptimisticDraft(false);
+    setTaskModalDraftBaseline(null);
     setTaskModalTaskId(id);
     const vm = opts?.viewMode ?? 'full';
     setTaskModalViewMode(vm);
@@ -897,8 +917,9 @@ function DashboardShellInner({
     setTaskModalOpen(true);
   }, []);
 
+  // Copilot suggestion ignored: optimistic insert before open keeps rail/taskId coherent; a skeleton/spinner would be follow-up UX polish.
   const openCreateTaskModal = useCallback(
-    (opts?: {
+    async (opts?: {
       status?: string;
       itemType?: ItemType;
       title?: string;
@@ -915,23 +936,99 @@ function DashboardShellInner({
       if (!opts?.preserveChatCallback) {
         chatCardOnCreatedRef.current = null;
       }
+
+      const isClassFlow =
+        opts?.itemType === 'class' || Boolean(opts?.classEditorInstanceId?.trim());
+
+      if (isClassFlow) {
+        setTaskModalOptimisticDraft(false);
+        setTaskModalDraftBaseline(null);
+        setTaskModalInitialStatus(opts?.status ?? null);
+        setTaskModalInitialTab(null);
+        setTaskModalViewMode('full');
+        setTaskModalAutoEdit(false);
+        setTaskModalOpenWorkoutViewer(false);
+        setTaskModalCommentThreadMessageId(null);
+        setTaskModalTaskId(null);
+        setTaskModalInitialCreateItemType(opts?.itemType ?? null);
+        setTaskModalInitialCreateTitle(opts?.title ?? null);
+        setTaskModalInitialCreateWorkoutDurationMin(
+          opts?.workoutDurationMin !== undefined ? opts.workoutDurationMin : null,
+        );
+        setTaskModalCreateBubbleId(opts?.bubbleId ?? null);
+        setTaskModalClassEditorInstanceId(opts?.classEditorInstanceId ?? null);
+        setTaskModalOpen(true);
+        return;
+      }
+
+      if (!canWriteTasks) {
+        toast.error('You do not have permission to create tasks in this bubble.');
+        return;
+      }
+
+      const resolvedBubbleId =
+        opts?.bubbleId ??
+        (selectedBubbleId === ALL_BUBBLES_BUBBLE_ID ? (bubbles[0]?.id ?? null) : selectedBubbleId);
+
+      if (!resolvedBubbleId) {
+        toast.error('Select a bubble before creating a task.');
+        return;
+      }
+
+      const itemType = opts?.itemType ?? 'task';
+      const draft = await createDraftTask({
+        bubbleId: resolvedBubbleId,
+        workspaceId,
+        itemType,
+        statusSlug: opts?.status ?? null,
+        title: opts?.title ?? null,
+        workoutDurationMin: opts?.workoutDurationMin ?? null,
+        calendarTimezone: workspaceCalendarTz,
+        hasTodayBoardColumn: hasTodayBoardColumnForDraft,
+        hasScheduledBoardColumn: hasScheduledBoardColumnForDraft,
+      });
+
+      if (!draft.ok) {
+        toast.error(draft.error.message || 'Could not create draft. Please try again.');
+        return;
+      }
+
       setTaskModalInitialStatus(opts?.status ?? null);
       setTaskModalInitialTab(null);
       setTaskModalViewMode('full');
       setTaskModalAutoEdit(false);
       setTaskModalOpenWorkoutViewer(false);
       setTaskModalCommentThreadMessageId(null);
-      setTaskModalTaskId(null);
       setTaskModalInitialCreateItemType(opts?.itemType ?? null);
       setTaskModalInitialCreateTitle(opts?.title ?? null);
       setTaskModalInitialCreateWorkoutDurationMin(
         opts?.workoutDurationMin !== undefined ? opts.workoutDurationMin : null,
       );
       setTaskModalCreateBubbleId(opts?.bubbleId ?? null);
-      setTaskModalClassEditorInstanceId(opts?.classEditorInstanceId ?? null);
+      setTaskModalClassEditorInstanceId(null);
+      setTaskModalTaskId(draft.id);
+      setTaskModalDraftBaseline(draft.baseline);
+      setTaskModalOptimisticDraft(true);
+
+      const postToChat = chatCardOnCreatedRef.current;
+      if (postToChat) {
+        postToChat(draft.id);
+        chatCardOnCreatedRef.current = null;
+      }
+
+      bumpTaskViews();
       setTaskModalOpen(true);
     },
-    [],
+    [
+      bumpTaskViews,
+      bubbles,
+      canWriteTasks,
+      hasScheduledBoardColumnForDraft,
+      hasTodayBoardColumnForDraft,
+      selectedBubbleId,
+      workspaceCalendarTz,
+      workspaceId,
+    ],
   );
 
   const openChatComposeForTask = useCallback(
@@ -1055,6 +1152,8 @@ function DashboardShellInner({
         setTaskModalInitialCreateWorkoutDurationMin(null);
         setTaskModalCreateBubbleId(null);
         setTaskModalClassEditorInstanceId(null);
+        setTaskModalOptimisticDraft(false);
+        setTaskModalDraftBaseline(null);
       }
     },
     [layoutCommands],
@@ -2249,6 +2348,13 @@ function DashboardShellInner({
                       chatCardOnCreatedRef.current = null;
                       if (postToChat) postToChat(id);
                     }}
+                    isOptimisticDraft={taskModalOptimisticDraft}
+                    draftBaseline={taskModalDraftBaseline}
+                    onOptimisticDraftConsumed={() => {
+                      setTaskModalOptimisticDraft(false);
+                      setTaskModalDraftBaseline(null);
+                    }}
+                    onOptimisticDraftAutoDeleted={bumpTaskViews}
                     initialCreateStatus={taskModalInitialStatus}
                     initialCreateItemType={taskModalInitialCreateItemType}
                     initialCreateTitle={taskModalInitialCreateTitle}

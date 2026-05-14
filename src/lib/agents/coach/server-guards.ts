@@ -36,6 +36,10 @@ import type { CoachGeminiJsonResponse } from './parse';
 const SELF_ATTESTATION_PHRASE_RE =
   /\b(i['']?ve\s+(updated|added|now\s+updated)|i\s+added|applied\s+to\s+your\s+card|written\s+to\s+your\s+card|pushed\s+(those\s+)?changes\s+to\s+(the\s+)?card|saved\s+(it|them)\s+to\s+your\s+(card|workout)|finalize(d)?\s+(the\s+)?(card|workout)\s+update)\b/i;
 
+function hasTaskModalIntakePatch(p: CoachGeminiJsonResponse['task_modal_intake_patch']): boolean {
+  return p != null && Object.keys(p).length > 0;
+}
+
 /**
  * Throws `{ kind: 'self_attestation_mismatch' }` when reply_content narrates a persisted
  * update but no structured write field is present.
@@ -53,7 +57,8 @@ export function assertCoachReplySelfAttestation(parsed: CoachGeminiJsonResponse)
       (Boolean(parsed.updated_task_title?.trim()) ||
         Boolean(parsed.updated_task_description?.trim()) ||
         hasProposed));
-  if (!hasExecution && !hasPersonal && !hasCard) {
+  const hasIntake = hasTaskModalIntakePatch(parsed.task_modal_intake_patch);
+  if (!hasExecution && !hasPersonal && !hasCard && !hasIntake) {
     throw { kind: 'self_attestation_mismatch' as const };
   }
 }
@@ -88,6 +93,7 @@ export function applyCoachServerGuards(
   let updatedTaskTitle = parsed.updated_task_title;
   let updatedTaskDescription = parsed.updated_task_description;
   let proposedWorkoutMetadata = parsed.proposed_workout_metadata;
+  let taskModalIntakePatch = parsed.task_modal_intake_patch;
 
   // Guard 1: Draft override. Mirrors `bubble-agent-dispatch/index.ts:1683-1688`.
   if (fragment.knownTargetTaskId && updateExistingTask) {
@@ -133,6 +139,7 @@ export function applyCoachServerGuards(
     updatedTaskTitle = null;
     updatedTaskDescription = null;
     proposedWorkoutMetadata = null;
+    taskModalIntakePatch = null;
   }
 
   const out: CoachGeminiJsonResponse = {
@@ -145,6 +152,7 @@ export function applyCoachServerGuards(
     updated_task_title: updatedTaskTitle,
     updated_task_description: updatedTaskDescription,
     proposed_workout_metadata: proposedWorkoutMetadata,
+    task_modal_intake_patch: taskModalIntakePatch,
   };
   assertCoachReplySelfAttestation(out);
   return out;

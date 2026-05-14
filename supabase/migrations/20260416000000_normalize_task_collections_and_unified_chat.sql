@@ -342,7 +342,6 @@ insert into public.messages (
   parent_id,
   created_at,
   attachments,
-  attached_task_id,
   target_task_id
 )
 select
@@ -357,7 +356,6 @@ select
   null,
   coalesce((elem->>'created_at')::timestamptz, tk.created_at, now()),
   '[]'::jsonb,
-  null,
   tk.id
 from public.tasks tk
 cross join lateral jsonb_array_elements(

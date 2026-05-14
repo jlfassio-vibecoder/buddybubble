@@ -12,6 +12,12 @@ export type UseTaskLoadAndRealtimeParams = {
   onResetForCreate: () => void;
   setLoading: (loading: boolean) => void;
   setError: (message: string | null) => void;
+  /** Invoked when the `tasks` row is deleted while the modal is open (e.g. hard delete elsewhere). */
+  onTaskRowDeleted?: () => void;
+};
+
+type LoadTaskOptions = {
+  silent?: boolean;
 };
 
 /**
@@ -25,10 +31,16 @@ export function useTaskLoadAndRealtime({
   onResetForCreate,
   setLoading,
   setError,
-}: UseTaskLoadAndRealtimeParams): { loadTask: (id: string) => Promise<void> } {
+  onTaskRowDeleted,
+}: UseTaskLoadAndRealtimeParams): {
+  loadTask: (id: string, options?: LoadTaskOptions) => Promise<void>;
+} {
   const loadTask = useCallback(
-    async (id: string) => {
-      setLoading(true);
+    async (id: string, options?: LoadTaskOptions) => {
+      const silent = options?.silent === true;
+      if (!silent) {
+        setLoading(true);
+      }
       setError(null);
       const supabase = createClient();
       const maxAttempts = 5;
@@ -40,12 +52,16 @@ export function useTaskLoadAndRealtime({
           .eq('id', id)
           .maybeSingle();
         if (qErr) {
-          setLoading(false);
+          if (!silent) {
+            setLoading(false);
+          }
           setError(qErr.message ?? 'Card not found');
           return;
         }
         if (data) {
-          setLoading(false);
+          if (!silent) {
+            setLoading(false);
+          }
           applyRow(data as TaskRow);
           return;
         }
@@ -54,7 +70,9 @@ export function useTaskLoadAndRealtime({
           await new Promise((r) => setTimeout(r, delayMs));
         }
       }
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
       setError('Card not found');
     },
     [applyRow, setLoading, setError],
@@ -83,14 +101,28 @@ export function useTaskLoadAndRealtime({
           filter: `id=eq.${taskId}`,
         },
         () => {
-          void loadTask(taskId);
+          // Realtime task updates can be frequent during active chat. Refresh fields
+          // without toggling the shell loading state to avoid modal flash/reload UX.
+          void loadTask(taskId, { silent: true });
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'tasks',
+          filter: `id=eq.${taskId}`,
+        },
+        () => {
+          onTaskRowDeleted?.();
         },
       )
       .subscribe();
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [open, taskId, loadTask]);
+  }, [open, taskId, loadTask, onTaskRowDeleted]);
 
   return { loadTask };
 }

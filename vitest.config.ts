@@ -13,6 +13,22 @@ export default defineConfig({
     },
   },
   test: {
+    /**
+     * Fork pool, sequential. Forks accept `--max-old-space-size` (thread workers reject it as
+     * execArgv). `minForks: 1` + `maxForks: 1` forces one test file at a time so heap from
+     * earlier files is freed instead of stacking across parallel children — under the
+     * GitHub-hosted runner (~7 GB) and the orchestrator's 4 GB cap, this is the difference
+     * between OOM and clean runs. `--logHeapUsage` surfaces per-file heap so any future
+     * regression points at the offending test.
+     */
+    pool: 'forks',
+    poolOptions: {
+      forks: {
+        minForks: 1,
+        maxForks: 1,
+        execArgv: ['--max-old-space-size=4096'],
+      },
+    },
     // happy-dom provides File/Blob and other browser globals used by attachment tests (Node alone does not).
     environment: 'happy-dom',
     include: [
