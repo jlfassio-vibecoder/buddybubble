@@ -13,6 +13,9 @@ coverage/
 .env*
 !.env.example
 
+# Root-level Deno lock from ad-hoc `deno` at repo root; CI uses supabase/deno.lock
+/deno.lock
+
 # Supabase CLI local state
 supabase/.temp/
 
