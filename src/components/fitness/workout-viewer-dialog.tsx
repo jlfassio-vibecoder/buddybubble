@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { WorkoutExercisesEditor } from '@/components/fitness/workout-exercises-editor';
+import { formatBlockSubtitle } from '@/lib/workout-factory/format-block-subtitle';
 import { formatRepsDisplay } from '@/lib/workout-factory/parse-reps-scalar';
 import { useTaskCardCoverUrl } from '@/lib/task-card-cover';
 import { ChevronRight, Dumbbell, Image as ImageIcon, Loader2, X } from 'lucide-react';
@@ -258,18 +259,26 @@ function RichWorkoutReadView({
 
       <InstructionBlockSection title="Warm-up" blocks={first.warmupBlocks ?? []} taskId={taskId} />
 
-      {first.exerciseBlocks?.map((block, bi) => (
-        <section key={block.id ?? `block-${bi}`} className="space-y-3">
-          <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            {block.name?.trim() || 'Main work'}
-          </h4>
-          <div className="space-y-2">
-            {(block.exercises ?? []).map((ex, ei) => (
-              <ExerciseDetail key={ex.id ?? `${bi}-${ei}`} ex={ex} taskId={taskId} />
-            ))}
-          </div>
-        </section>
-      ))}
+      {first.exerciseBlocks?.map((block, bi) => {
+        const subtitle = formatBlockSubtitle(block.blockFormat, block.formatParams);
+        return (
+          <section key={block.id ?? `block-${bi}`} className="space-y-3">
+            <div className="space-y-0.5">
+              <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {block.name?.trim() || 'Main work'}
+              </h4>
+              {subtitle ? (
+                <p className="text-xs font-medium text-muted-foreground/80">{subtitle}</p>
+              ) : null}
+            </div>
+            <div className="space-y-2">
+              {(block.exercises ?? []).map((ex, ei) => (
+                <ExerciseDetail key={ex.id ?? `${bi}-${ei}`} ex={ex} taskId={taskId} />
+              ))}
+            </div>
+          </section>
+        );
+      })}
 
       <InstructionBlockSection
         title="Finisher"
