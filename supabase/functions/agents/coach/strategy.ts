@@ -475,7 +475,30 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       priorUserMessageCount: priorUserMessageCount(ctx),
       isActiveWorkoutSession,
     };
-    return applyCoachServerGuards(parsed, fragment);
+
+    if (parsed.proposed_workout_metadata_drops.length > 0) {
+      log('info', 'coach parametric block drops', {
+        request_id: ctx.requestId,
+        slug: COACH_SLUG,
+        message_id: ctx.message.id,
+        drops: parsed.proposed_workout_metadata_drops,
+      });
+    }
+
+    const out = applyCoachServerGuards(parsed, fragment);
+
+    const inHadDesc = Boolean(parsed.updated_task_description?.trim());
+    const outHasDesc = Boolean(out.updated_task_description?.trim());
+    if (inHadDesc && !outHasDesc) {
+      log('info', 'coach guard hard-nulled updated_task_description', {
+        request_id: ctx.requestId,
+        slug: COACH_SLUG,
+        message_id: ctx.message.id,
+        reason: 'narrative_vs_structure',
+      });
+    }
+
+    return out;
   },
 
   async persist(parsed, ctx): Promise<RpcEnvelope> {
@@ -528,6 +551,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
             merge_touched: mergeLog.touched,
             merge_exercise_count: mergeLog.exerciseCount,
             merge_drops: mergeLog.drops,
+            merge_block_formats: mergeLog.blockFormats,
           });
         } else {
           pNewMeta = raw;

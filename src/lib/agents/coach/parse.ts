@@ -32,6 +32,14 @@
  */
 
 import {
+  type BlockFormat,
+  type BlockShapeDrop,
+  isBlockFormat,
+  mapLegacyTypeToBlockFormat,
+  normalizeFormatParams,
+  validateBlockShape,
+} from './block-blueprint-library';
+import {
   COACH_TASK_NOTES_MAX_CHARS,
   COACH_TASK_SEED_CTA,
   INTAKE_CATEGORIES,
@@ -40,6 +48,8 @@ import {
   type IntakeCategory,
   type IntakePhase,
 } from './config';
+
+export type { BlockShapeDrop } from './block-blueprint-library';
 import type { ExerciseDictionaryIndexEntry } from './prompts';
 import {
   coerceExecutionPatchNumericField,
@@ -76,6 +86,8 @@ export type CoachGeminiJsonResponse = {
   coach_task_notes: string | null;
   /** When update_existing_task: structured fields merged into tasks.metadata on finalize (exercises, workout_type, duration_min). */
   proposed_workout_metadata: Record<string, unknown> | null;
+  /** Blocks dropped during parseProposedWorkoutMetadata (unknown format or invalid shape). */
+  proposed_workout_metadata_drops: BlockShapeDrop[];
   /**
    * Optional: live `WorkoutPlayer` grid updates (0-based indices vs CURRENT WORKOUT CONTEXT / workoutContext).
    * Persisted on the agent `messages` row for the client. Null/omit when not updating the live session.
@@ -151,17 +163,53 @@ function normalizeExercisesFromGeminiArray(raw: unknown): Record<string, unknown
     if (typeof e.coach_notes === 'string' && e.coach_notes.trim())
       row.coach_notes = e.coach_notes.trim();
     if (typeof e.equipment === 'string' && e.equipment.trim()) row.equipment = e.equipment.trim();
+    if (
+      typeof e.work_seconds === 'number' &&
+      Number.isFinite(e.work_seconds) &&
+      e.work_seconds > 0
+    ) {
+      row.work_seconds = Math.round(e.work_seconds);
+    }
+    if (
+      typeof e.rest_seconds === 'number' &&
+      Number.isFinite(e.rest_seconds) &&
+      e.rest_seconds >= 0
+    ) {
+      row.rest_seconds = Math.round(e.rest_seconds);
+    }
     exercises.push(row);
   }
   return exercises;
 }
 
-/** Normalizes Gemini `proposed_workout_metadata` for `tasks.metadata` merge on finalize. */
-export function parseProposedWorkoutMetadata(
-  parsed: Record<string, unknown>,
-): Record<string, unknown> {
+function resolveBlockFormat(blk: Record<string, unknown>): BlockFormat | 'unknown' {
+  const rawFormat = blk.block_format;
+  if (isBlockFormat(rawFormat)) return rawFormat;
+  if (rawFormat != null && String(rawFormat).trim().length > 0) {
+    const legacy = mapLegacyTypeToBlockFormat(blk.type);
+    return legacy ?? 'unknown';
+  }
+  return mapLegacyTypeToBlockFormat(blk.type) ?? 'straight_sets';
+}
+
+function instructionLinesFromBlock(blk: Record<string, unknown>): string[] {
+  if (!Array.isArray(blk.instructions)) return [];
+  return blk.instructions
+    .filter((x): x is string => typeof x === 'string')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+/** Normalizes Gemini `proposed_workout_metadata` with block-level drop telemetry. */
+export function parseProposedWorkoutMetadataWithDrops(parsed: Record<string, unknown>): {
+  meta: Record<string, unknown>;
+  drops: BlockShapeDrop[];
+} {
+  const drops: BlockShapeDrop[] = [];
   const raw = parsed.proposed_workout_metadata ?? parsed['proposed_workout_metadata'];
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { meta: {}, drops };
+  }
   const o = raw as Record<string, unknown>;
   const out: Record<string, unknown> = {};
   if (typeof o.workout_type === 'string' && o.workout_type.trim()) {
@@ -175,13 +223,40 @@ export function parseProposedWorkoutMetadata(
 
   if (Array.isArray(o.blocks)) {
     const blocks: Record<string, unknown>[] = [];
-    for (const b of o.blocks) {
+    for (let i = 0; i < o.blocks.length; i++) {
+      const b = o.blocks[i];
       if (!b || typeof b !== 'object' || Array.isArray(b)) continue;
       const blk = b as Record<string, unknown>;
-      const row: Record<string, unknown> = {};
-      if (typeof blk.name === 'string' && blk.name.trim()) row.name = blk.name.trim();
-      if (typeof blk.type === 'string' && blk.type.trim()) row.type = blk.type.trim();
-      if (typeof blk.rounds === 'number' && blk.rounds > 0) row.rounds = Math.round(blk.rounds);
+      const inner = normalizeExercisesFromGeminiArray(blk.exercises);
+      const instructions = instructionLinesFromBlock(blk);
+      const instructionOnly = instructions.length > 0 && inner.length === 0;
+
+      if (instructionOnly) {
+        const row: Record<string, unknown> = {};
+        if (typeof blk.name === 'string' && blk.name.trim()) row.name = blk.name.trim();
+        row.instructions = instructions;
+        if (Object.keys(row).length > 0) blocks.push(row);
+        continue;
+      }
+
+      const blockName = typeof blk.name === 'string' ? blk.name.trim() : '';
+      if (inner.length === 0 && !blockName) continue;
+
+      const resolved = resolveBlockFormat(blk);
+      if (resolved === 'unknown') {
+        drops.push({ field: `blocks[${i}]`, reason: 'unknown_block_format' });
+        continue;
+      }
+      const blockFormat = resolved;
+      const formatParams = normalizeFormatParams(blockFormat, blk.format_params);
+      const shapeReason = validateBlockShape(blockFormat, inner.length, formatParams);
+      if (shapeReason != null) {
+        drops.push({ field: `blocks[${i}]`, reason: shapeReason });
+        continue;
+      }
+
+      const row: Record<string, unknown> = { block_format: blockFormat };
+      if (blockName) row.name = blockName;
       if (
         typeof blk.duration_min === 'number' &&
         Number.isFinite(blk.duration_min) &&
@@ -192,20 +267,21 @@ export function parseProposedWorkoutMetadata(
       if (typeof blk.coach_notes === 'string' && blk.coach_notes.trim()) {
         row.coach_notes = blk.coach_notes.trim();
       }
-      const inner = normalizeExercisesFromGeminiArray(blk.exercises);
+      if (Object.keys(formatParams).length > 0) row.format_params = formatParams;
       if (inner.length > 0) row.exercises = inner;
-      if (Array.isArray(blk.instructions)) {
-        const lines = blk.instructions
-          .filter((x): x is string => typeof x === 'string')
-          .map((s) => s.trim())
-          .filter((s) => s.length > 0);
-        if (lines.length > 0) row.instructions = lines;
-      }
+      if (instructions.length > 0) row.instructions = instructions;
       if (Object.keys(row).length > 0) blocks.push(row);
     }
     if (blocks.length > 0) out.blocks = blocks;
   }
-  return out;
+  return { meta: out, drops };
+}
+
+/** Normalizes Gemini `proposed_workout_metadata` for `tasks.metadata` merge on finalize. */
+export function parseProposedWorkoutMetadata(
+  parsed: Record<string, unknown>,
+): Record<string, unknown> {
+  return parseProposedWorkoutMetadataWithDrops(parsed).meta;
 }
 
 /** Card body for update-existing-task flow (Gemini may use alternate keys). */
@@ -456,9 +532,11 @@ export function parseCoachJson(
     updated_task_description,
   };
 
-  const proposed_workout_metadata = parseProposedWorkoutMetadata(parsed);
+  const proposedCollect = parseProposedWorkoutMetadataWithDrops(parsed);
+  const proposed_workout_metadata = proposedCollect.meta;
   const proposedMetaOrNull =
     Object.keys(proposed_workout_metadata).length > 0 ? proposed_workout_metadata : null;
+  const proposed_workout_metadata_drops = proposedCollect.drops;
 
   let execution_patch: CoachGeminiJsonResponse['execution_patch'] = null;
   try {
@@ -494,6 +572,7 @@ export function parseCoachJson(
       task_description: rawDesc,
       coach_task_notes: ensureCoachTaskNotesCta(parseCoachTaskNotes(parsed.coach_task_notes)),
       proposed_workout_metadata: null,
+      proposed_workout_metadata_drops: [],
       execution_patch,
       task_modal_intake_patch,
       task_modal_intake_dropped,
@@ -511,6 +590,7 @@ export function parseCoachJson(
     task_description: null,
     coach_task_notes: null,
     proposed_workout_metadata: proposedMetaOrNull,
+    proposed_workout_metadata_drops,
     execution_patch,
     task_modal_intake_patch,
     task_modal_intake_dropped,

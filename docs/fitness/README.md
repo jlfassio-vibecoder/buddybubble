@@ -2,6 +2,8 @@
 
 This folder documents the **fitness-specific dashboard UI** under [src/components/fitness/](../../src/components/fitness/). Those modules implement programs, classes, analytics, workout editing/playback, and the per-workspace fitness profile sheet for **workspace category** `fitness`, as described in the root [README.md](../../README.md).
 
+**Platform architecture:** Fitness is one domain flavor of the same Canvas/Rail/Persona model. Decision-making for Coach rails, parametric workout blocks, and structured card metadata is guided by the [Persona–Context–Canvas (PCC) manifesto](../architecture/pcc-manifesto.md).
+
 ## Bubbles (channels)
 
 Default fitness **bubble** names, which main-stage UI each one selects, and one-pagers per channel: **[bubbles/README.md](bubbles/README.md)**. For **workspace/bubble roles**, **Zustand vs props**, and **gating** (chat disable, premium overlay, trial soft-lock), see **[Architecture: roles, state, and gating](bubbles/README.md#architecture-roles-state-and-gating)** in that folder.

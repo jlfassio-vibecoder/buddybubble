@@ -45,6 +45,13 @@ function hasTaskModalIntakePatch(p: CoachGeminiJsonResponse['task_modal_intake_p
   return p != null && Object.keys(p).length > 0;
 }
 
+function blocksArrayNonEmpty(meta: Record<string, unknown> | null): boolean {
+  if (!meta) return false;
+  const b = meta.blocks;
+  if (!Array.isArray(b) || b.length === 0) return false;
+  return b.some((x) => x != null && typeof x === 'object' && !Array.isArray(x));
+}
+
 /**
  * Throws `{ kind: 'self_attestation_mismatch' }` when reply_content narrates a persisted
  * update but no structured write field is present.
@@ -156,6 +163,13 @@ export function applyCoachServerGuards(
       proposedWorkoutMetadata = null;
       taskModalIntakePatch = null;
     }
+  }
+
+  // Guard 4: Narrative vs Structure. Per docs/refactor/parametric-workout-blocks §11.3,
+  // when proposed_workout_metadata.blocks is non-empty, structured JSON is the prescription
+  // — prose in updated_task_description is forbidden.
+  if (blocksArrayNonEmpty(proposedWorkoutMetadata as Record<string, unknown> | null)) {
+    updatedTaskDescription = null;
   }
 
   const out: CoachGeminiJsonResponse = {

@@ -25,6 +25,7 @@ import {
   parseMissingIntakeCategories,
   parsePersonalCuesPatchFromGemini,
   parseProposedWorkoutMetadata,
+  parseProposedWorkoutMetadataWithDrops,
   parseSessionReadinessScore,
   stripMarkdownCodeFences,
 } from './parse';
@@ -126,8 +127,8 @@ describe('parseProposedWorkoutMetadata', () => {
     });
   });
 
-  it('passes through blocks with nested exercises and drops empty blocks', () => {
-    const out = parseProposedWorkoutMetadata({
+  it('passes through blocks with block_format and drops invalid empty blocks', () => {
+    const { meta, drops } = parseProposedWorkoutMetadataWithDrops({
       proposed_workout_metadata: {
         workout_type: 'AMRAP',
         duration_min: 45,
@@ -135,8 +136,8 @@ describe('parseProposedWorkoutMetadata', () => {
         blocks: [
           {
             name: 'Finisher',
-            type: 'AMRAP',
-            rounds: 3,
+            block_format: 'amrap',
+            format_params: { time_cap_minutes: 12 },
             exercises: [{ name: 'Kettlebell Thrusters', sets: 3, reps: 12 }],
           },
           {},
@@ -144,15 +145,212 @@ describe('parseProposedWorkoutMetadata', () => {
         ],
       },
     });
-    expect(out.exercises).toEqual([{ name: 'Goblet Squat' }, { name: 'Push Press' }]);
-    expect(out.blocks).toEqual([
+    expect(meta.exercises).toEqual([{ name: 'Goblet Squat' }, { name: 'Push Press' }]);
+    expect(meta.blocks).toEqual([
       {
         name: 'Finisher',
-        type: 'AMRAP',
-        rounds: 3,
+        block_format: 'amrap',
+        format_params: { time_cap_minutes: 12 },
         exercises: [{ name: 'Kettlebell Thrusters', sets: 3, reps: 12 }],
       },
     ]);
+    expect(drops).toEqual([]);
+  });
+
+  it('drops legacy AMRAP block without time_cap_minutes', () => {
+    const { meta, drops } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Finisher',
+            type: 'AMRAP',
+            rounds: 3,
+            exercises: [{ name: 'Burpees' }],
+          },
+        ],
+      },
+    });
+    expect(meta.blocks).toBeUndefined();
+    expect(drops).toEqual([{ field: 'blocks[0]', reason: 'amrap_missing_time_cap' }]);
+  });
+
+  it('passes EMOM with valid format_params', () => {
+    const { meta } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Main',
+            block_format: 'emom',
+            format_params: { interval_seconds: 60, total_minutes: 16 },
+            exercises: [{ name: 'Kettlebell Swing', reps: '12' }],
+          },
+        ],
+      },
+    });
+    expect(meta.blocks).toEqual([
+      {
+        name: 'Main',
+        block_format: 'emom',
+        format_params: { interval_seconds: 60, total_minutes: 16 },
+        exercises: [{ name: 'Kettlebell Swing', reps: '12' }],
+      },
+    ]);
+  });
+
+  it('drops EMOM missing interval_seconds', () => {
+    const { meta, drops } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Main',
+            block_format: 'emom',
+            format_params: { total_minutes: 16 },
+            exercises: [{ name: 'Push-up' }],
+          },
+        ],
+      },
+    });
+    expect(meta.blocks).toBeUndefined();
+    expect(drops).toEqual([{ field: 'blocks[0]', reason: 'emom_missing_params' }]);
+  });
+
+  it('validates superset cardinality', () => {
+    const pass = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Strength A',
+            block_format: 'superset',
+            format_params: { rounds: 4 },
+            exercises: [{ name: 'Bench' }, { name: 'Row' }],
+          },
+        ],
+      },
+    });
+    expect((pass.meta.blocks as Record<string, unknown>[])[0]).toMatchObject({
+      block_format: 'superset',
+    });
+
+    const fail = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Strength A',
+            block_format: 'superset',
+            format_params: { rounds: 4 },
+            exercises: [{ name: 'A' }, { name: 'B' }, { name: 'C' }],
+          },
+        ],
+      },
+    });
+    expect(fail.meta.blocks).toBeUndefined();
+    expect(fail.drops[0]?.reason).toBe('superset_cardinality');
+  });
+
+  it('validates circuit cardinality', () => {
+    const fail = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Circuit',
+            block_format: 'circuit',
+            format_params: { rounds: 3 },
+            exercises: [{ name: 'A' }, { name: 'B' }],
+          },
+        ],
+      },
+    });
+    expect(fail.drops[0]?.reason).toBe('circuit_cardinality');
+
+    const pass = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Circuit',
+            block_format: 'circuit',
+            format_params: { rounds: 3 },
+            exercises: [{ name: 'A' }, { name: 'B' }, { name: 'C' }],
+          },
+        ],
+      },
+    });
+    expect(pass.meta.blocks).toHaveLength(1);
+  });
+
+  it('drops tabata without rounds', () => {
+    const { drops } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Finisher',
+            block_format: 'tabata',
+            exercises: [{ name: 'Mountain Climbers' }],
+          },
+        ],
+      },
+    });
+    expect(drops[0]?.reason).toBe('tabata_missing_rounds');
+  });
+
+  it('drops unknown block_format without coercing to straight_sets', () => {
+    const { meta, drops } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Main',
+            block_format: 'mystery',
+            exercises: [{ name: 'Squat' }],
+          },
+        ],
+      },
+    });
+    expect(meta.blocks).toBeUndefined();
+    expect(drops).toEqual([{ field: 'blocks[0]', reason: 'unknown_block_format' }]);
+  });
+
+  it('maps legacy type AMRAP with time_cap_minutes', () => {
+    const { meta } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Finisher',
+            type: 'AMRAP',
+            format_params: { time_cap_minutes: 12 },
+            exercises: [{ name: 'Burpees' }],
+          },
+        ],
+      },
+    });
+    const block = (meta.blocks as Record<string, unknown>[])[0];
+    expect(block.block_format).toBe('amrap');
+    expect(block).not.toHaveProperty('type');
+  });
+
+  it('defaults missing format to straight_sets for exercise-shaped blocks', () => {
+    const { meta } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [{ name: 'Main', exercises: [{ name: 'Squat', sets: 3, reps: '10' }] }],
+      },
+    });
+    expect((meta.blocks as Record<string, unknown>[])[0].block_format).toBe('straight_sets');
+  });
+
+  it('exempts instruction-only blocks from block_format', () => {
+    const { meta, drops } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Cool down',
+            instructions: ['Walk 2 min easy'],
+          },
+        ],
+      },
+    });
+    const block = (meta.blocks as Record<string, unknown>[])[0];
+    expect(block.instructions).toEqual(['Walk 2 min easy']);
+    expect(block).not.toHaveProperty('block_format');
+    expect(block).not.toHaveProperty('format_params');
+    expect(drops).toEqual([]);
   });
 
   it('returns only blocks when top-level exercises are empty or invalid', () => {
@@ -162,7 +360,13 @@ describe('parseProposedWorkoutMetadata', () => {
       },
     });
     expect(out).toEqual({
-      blocks: [{ name: 'Warmup', exercises: [{ name: 'Jump Rope' }] }],
+      blocks: [
+        {
+          name: 'Warmup',
+          block_format: 'straight_sets',
+          exercises: [{ name: 'Jump Rope' }],
+        },
+      ],
     });
   });
 
@@ -185,6 +389,56 @@ describe('parseProposedWorkoutMetadata', () => {
     ]);
     const blocks = out.blocks as Array<Record<string, unknown>>;
     expect(blocks[0]).not.toHaveProperty('exercises');
+  });
+
+  it('passes through work_seconds and rest_seconds on top-level exercises', () => {
+    const { meta } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        exercises: [{ name: 'Burpees', work_seconds: 20, rest_seconds: 10 }],
+      },
+    });
+    expect(meta.exercises).toEqual([{ name: 'Burpees', work_seconds: 20, rest_seconds: 10 }]);
+  });
+
+  it('passes through work_seconds and rest_seconds on block exercises', () => {
+    const { meta } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Finisher',
+            block_format: 'tabata',
+            format_params: { rounds: 8 },
+            exercises: [{ name: 'Thrusters', work_seconds: 20, rest_seconds: 10 }],
+          },
+        ],
+      },
+    });
+    const block = (meta.blocks as Record<string, unknown>[])[0];
+    expect((block.exercises as Record<string, unknown>[])[0]).toEqual({
+      name: 'Thrusters',
+      work_seconds: 20,
+      rest_seconds: 10,
+    });
+  });
+
+  it('preserves rest_seconds: 0', () => {
+    const { meta } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        exercises: [{ name: 'Row', rest_seconds: 0 }],
+      },
+    });
+    expect((meta.exercises as Record<string, unknown>[])[0].rest_seconds).toBe(0);
+  });
+
+  it('drops negative work_seconds', () => {
+    const { meta } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        exercises: [{ name: 'Row', work_seconds: -5, rest_seconds: 10 }],
+      },
+    });
+    const ex = (meta.exercises as Record<string, unknown>[])[0];
+    expect(ex).not.toHaveProperty('work_seconds');
+    expect(ex.rest_seconds).toBe(10);
   });
 });
 
@@ -456,6 +710,30 @@ describe('parseCoachJson', () => {
   it('returns empty task_modal_intake_dropped when intake patch is absent', () => {
     const out = parseCoachJson(JSON.stringify(makeReplyOnlyPayload()));
     expect(out.task_modal_intake_dropped).toEqual([]);
+    expect(out.proposed_workout_metadata_drops).toEqual([]);
+  });
+
+  it('surfaces proposed_workout_metadata_drops when blocks fail validation', () => {
+    const out = parseCoachJson(
+      JSON.stringify(
+        makeReplyOnlyPayload({
+          proposed_workout_metadata: {
+            blocks: [
+              {
+                name: 'Main',
+                block_format: 'emom',
+                format_params: { total_minutes: 10 },
+                exercises: [{ name: 'Swing' }],
+              },
+            ],
+          },
+        }),
+      ),
+    );
+    expect(out.proposed_workout_metadata_drops).toEqual([
+      { field: 'blocks[0]', reason: 'emom_missing_params' },
+    ]);
+    expect(out.proposed_workout_metadata).toBeNull();
   });
 
   it('surfaces task_modal_intake_dropped for unknown keys and readiness clamp', () => {

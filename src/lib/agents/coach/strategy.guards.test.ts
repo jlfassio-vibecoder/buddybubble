@@ -27,6 +27,7 @@ function makeParsed(overrides: Partial<CoachGeminiJsonResponse> = {}): CoachGemi
     session_request: false,
     coach_task_notes: null,
     proposed_workout_metadata: null,
+    proposed_workout_metadata_drops: [],
     execution_patch: null,
     personal_cues_resolved: null,
     personal_cues_dropped_unanchored: 0,
@@ -266,6 +267,76 @@ describe('applyCoachServerGuards — Active-workout clamp', () => {
       isActiveWorkoutSession: false,
     });
     expect(parsed).toEqual(snapshot);
+  });
+});
+
+describe('applyCoachServerGuards — Narrative vs Structure killswitch', () => {
+  it('nulls updated_task_description when blocks[] is non-empty', () => {
+    const blocks = [
+      {
+        name: 'Main',
+        block_format: 'amrap',
+        format_params: { time_cap_minutes: 12 },
+        exercises: [{ name: 'Burpees' }],
+      },
+    ];
+    const parsed = makeParsed({
+      update_existing_task: true,
+      updated_task_title: 'Leg day',
+      updated_task_description: 'Full prose workout narrative',
+      proposed_workout_metadata: { blocks },
+    });
+    const out = applyCoachServerGuards(parsed, NO_TASK_FRAGMENT);
+    expect(out.updated_task_description).toBeNull();
+    expect(out.updated_task_title).toBe('Leg day');
+    expect(out.proposed_workout_metadata?.blocks).toEqual(blocks);
+  });
+
+  it('nulls prose when instruction-only blocks are present', () => {
+    const parsed = makeParsed({
+      update_existing_task: true,
+      updated_task_description: 'Walk and stretch',
+      proposed_workout_metadata: {
+        blocks: [{ name: 'Cool down', instructions: ['Walk 2 min'] }],
+      },
+    });
+    const out = applyCoachServerGuards(parsed, NO_TASK_FRAGMENT);
+    expect(out.updated_task_description).toBeNull();
+  });
+
+  it('preserves prose when blocks are absent or empty', () => {
+    const withNull = makeParsed({
+      updated_task_description: 'Keep this',
+      proposed_workout_metadata: null,
+    });
+    expect(applyCoachServerGuards(withNull, NO_TASK_FRAGMENT).updated_task_description).toBe(
+      'Keep this',
+    );
+
+    const withEmpty = makeParsed({
+      updated_task_description: 'Keep this too',
+      proposed_workout_metadata: { blocks: [] },
+    });
+    expect(applyCoachServerGuards(withEmpty, NO_TASK_FRAGMENT).updated_task_description).toBe(
+      'Keep this too',
+    );
+  });
+
+  it('active workout session clears proposed metadata after Guard 3', () => {
+    const parsed = makeParsed({
+      update_existing_task: true,
+      updated_task_description: 'Should be nulled by Guard 4 then cleared by Guard 3',
+      proposed_workout_metadata: {
+        blocks: [{ name: 'Main', exercises: [{ name: 'Squat' }] }],
+      },
+    });
+    const out = applyCoachServerGuards(parsed, {
+      ...NO_TASK_FRAGMENT,
+      currentWorkoutContextJson: '{}',
+      isActiveWorkoutSession: true,
+    });
+    expect(out.updated_task_description).toBeNull();
+    expect(out.proposed_workout_metadata).toBeNull();
   });
 });
 

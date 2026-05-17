@@ -2,7 +2,8 @@
 
 > **Status:** blueprint **approved** (phases 11.1–11.5 + product sign-off in §11). Implementation not started in this doc.  
 > **Depends on:** Step 10.5 (`proposed_workout_metadata.blocks` declared in Coach schema + rail prompts + `instructions[]` parse passthrough).  
-> **Goal:** Replace “AI invents structure” with **Blueprint selection + hydration** — the model picks a format from a fixed library and fills exercises/reps/timers; the server validates and maps into the canonical `workout_set` tree the UI already reads.
+> **Goal:** Replace “AI invents structure” with **Blueprint selection + hydration** — the model picks a format from a fixed library and fills exercises/reps/timers; the server validates and maps into the canonical `workout_set` tree the UI already reads.  
+> **Guided by:** [PCC manifesto](../../architecture/pcc-manifesto.md) — especially _Canvas is source of truth_, _AI autonomy through data boundaries_, and _blocks are agnostic_.
 
 ---
 
@@ -23,6 +24,8 @@ Today Coach can emit polymorphic `blocks[]`, but:
 ---
 
 ## 2. Design principles
+
+Aligned with [PCC manifesto](../../architecture/pcc-manifesto.md) principles 1, 3, and 6.
 
 1. **Blueprints are closed-world.** The LLM may not invent `block_format` values outside the enum.
 2. **Hydration, not invention.** The model selects `block_format` + fills `format_params` + populates `exercises[]` within biomechanical guardrails (existing profile, readiness, equipment).
