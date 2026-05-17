@@ -143,6 +143,12 @@ export interface DispatchContext {
   history: HistoryRow[];
   signal: AbortSignal;
   /**
+   * When true, Coach rail may pass `p_new_metadata` through
+   * `mergeCoachProposedIntoTaskMetadata`. Set from `COACH_MERGE_WORKOUT_METADATA` on
+   * `agent-dispatch` (`readDispatcherEnv`).
+   */
+  coachMergeWorkoutMetadata?: boolean;
+  /**
    * Strategy-owned scratch space, request-scoped. Each strategy SHOULD namespace its
    * keys under its own slug (e.g. `extras.coach = { ... }`) so registrations cannot
    * collide. Phase 2 added this field; the dispatcher initializes it to `{}` per request

@@ -385,6 +385,19 @@ export function RichMessageComposer({
       setShowMentions(false);
       setShowTaskMentions(false);
       setShowHashMentions(false);
+      // Restore focus after submit (e.g. user clicked Send); `readOnly` during `isSending`
+      // keeps the field focusable, but focus may still sit on the submit control.
+      queueMicrotask(() => {
+        const el = inputRef.current;
+        if (!el || el.disabled) return;
+        el.focus();
+        try {
+          const len = el.value.length;
+          el.setSelectionRange(len, len);
+        } catch {
+          /* ignore */
+        }
+      });
     }
   };
 
@@ -746,6 +759,7 @@ export function RichMessageComposer({
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
             disabled={disabled}
+            readOnly={Boolean(isSending) && !disabled}
             className={inputClass}
           />
           <button

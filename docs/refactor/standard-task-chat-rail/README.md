@@ -25,16 +25,18 @@ Each phase is a standalone Markdown file you can paste into Plan mode as a
 single prompt. Phases are sequenced and call out their inputs and exit
 criteria so a planning agent can confirm prerequisites before starting work.
 
-| #   | File                                                                                                 | Purpose                                                                                                       |
-| --- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| 0   | [`phase-0-discovery-and-decisions.md`](./phase-0-discovery-and-decisions.md)                         | Inventory existing surfaces; freeze the prop API; lock the `item_type → agent slug` mapping. No code changes. |
-| 1   | [`phase-1-build-standalone-rail.md`](./phase-1-build-standalone-rail.md)                             | Create `StandardTaskChatRail.tsx` with no callers; unit tests + sandbox route only.                           |
-| 2   | [`phase-2-task-modal-integration.md`](./phase-2-task-modal-integration.md)                           | Swap the two `TaskModal` chat mount points behind a feature flag; port deep-link / mark-read features.        |
-| 3   | [`phase-3-dynamic-agent-binding.md`](./phase-3-dynamic-agent-binding.md)                             | Wire `item_type → defaultAgentSlug`; audit `bubble_agent_bindings`; verify `'none'` is fully silent.          |
-| 3.5 | [`phase-3.5-layout-stabilization.md`](./phase-3.5-layout-stabilization.md)                           | Stop the rail from collapsing during AI generation; opt-in desktop split-pane (rail + details side-by-side).  |
-| 4   | [`phase-4-deprecate-task-modal-comments-panel.md`](./phase-4-deprecate-task-modal-comments-panel.md) | Remove `TaskModalCommentsPanel` and the integration flag once Phase 2/3 have soaked.                          |
-| 5   | [`phase-5-workout-coach-rail-migration.md`](./phase-5-workout-coach-rail-migration.md)               | Convert `WorkoutCoachRail` into a thin Coach/workout wrapper over the standard rail (or delete it).           |
-| 6   | [`phase-6-chat-area-and-future-surfaces.md`](./phase-6-chat-area-and-future-surfaces.md)             | Optional: extend the rail to `ChatArea` and any new drawer surfaces. Out of scope for the initial epic.       |
+| #   | File                                                                                                 | Purpose                                                                                                             |
+| --- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| 0   | [`phase-0-discovery-and-decisions.md`](./phase-0-discovery-and-decisions.md)                         | Inventory existing surfaces; freeze the prop API; lock the `item_type → agent slug` mapping. No code changes.       |
+| 1   | [`phase-1-build-standalone-rail.md`](./phase-1-build-standalone-rail.md)                             | Create `StandardTaskChatRail.tsx` with no callers; unit tests + sandbox route only.                                 |
+| 2   | [`phase-2-task-modal-integration.md`](./phase-2-task-modal-integration.md)                           | Swap the two `TaskModal` chat mount points behind a feature flag; port deep-link / mark-read features.              |
+| 3   | [`phase-3-dynamic-agent-binding.md`](./phase-3-dynamic-agent-binding.md)                             | Wire `item_type → defaultAgentSlug`; audit `bubble_agent_bindings`; verify `'none'` is fully silent.                |
+| 3.5 | [`phase-3.5-layout-stabilization.md`](./phase-3.5-layout-stabilization.md)                           | Stop the rail from collapsing during AI generation; opt-in desktop split-pane (rail + details side-by-side).        |
+| 3.7 | [`phase-3.7-backend-agent-alignment.md`](./phase-3.7-backend-agent-alignment.md)                     | Coach read/write alignment: `task_modal_live_state` on sends, live-state prompt block, narrow Guard 3, schema copy. |
+| 3.8 | [`phase-3.8-strict-channel-isolation.md`](./phase-3.8-strict-channel-isolation.md)                   | Main bubble chat never ingests task-scoped `messages` (`target_task_id IS NOT NULL`); query + realtime + search.    |
+| 4   | [`phase-4-deprecate-task-modal-comments-panel.md`](./phase-4-deprecate-task-modal-comments-panel.md) | Remove `TaskModalCommentsPanel` and the integration flag once Phase 2/3 have soaked.                                |
+| 5   | [`phase-5-workout-coach-rail-migration.md`](./phase-5-workout-coach-rail-migration.md)               | Convert `WorkoutCoachRail` into a thin Coach/workout wrapper over the standard rail (or delete it).                 |
+| 6   | [`phase-6-chat-area-and-future-surfaces.md`](./phase-6-chat-area-and-future-surfaces.md)             | Optional: extend the rail to `ChatArea` and any new drawer surfaces. Out of scope for the initial epic.             |
 
 ---
 
@@ -63,10 +65,16 @@ criteria so a planning agent can confirm prerequisites before starting work.
    rail does not open its own Supabase channel, it does not write to
    `messages` directly, and it does not bypass `MessageThreadFilter`. The
    filter is hardcoded to `scope: 'task'`.
-7. **No new agent code paths.** This epic does not modify `agent-dispatch`,
-   `agent_definitions`, `bubble_agent_bindings`, RLS, or any RPC. Routing
-   stays exactly as it is today; the rail is presentation + send only.
-8. **Feature-flag every TaskModal change until Phase 4.** Any phase that
+7. **Main bubble chat is `target_task_id IS NULL` only.** Task-scoped rows
+   share `bubble_id` with the parent task; bubble / all_bubbles scopes in
+   `useMessageThread` and main chat search must never ingest rows where
+   `target_task_id` is set (see [`phase-3.8-strict-channel-isolation.md`](./phase-3.8-strict-channel-isolation.md)).
+8. **No new agent code paths.** This epic does not add new agents or RPC overloads.
+   **Phase 3.7** is the narrow exception: Coach prompt/guard/schema updates under
+   `supabase/functions/agents/coach/**` plus `agent-dispatch` integration tests
+   (see [`phase-3.7-backend-agent-alignment.md`](./phase-3.7-backend-agent-alignment.md)).
+   Routing, `agent_definitions`, `bubble_agent_bindings`, and RLS stay unchanged.
+9. **Feature-flag every TaskModal change until Phase 4.** Any phase that
    touches `TaskModal.tsx` lands behind `NEXT_PUBLIC_STANDARD_TASK_CHAT_RAIL`
    so a regression is one env flip away from being reverted.
 
@@ -75,8 +83,8 @@ criteria so a planning agent can confirm prerequisites before starting work.
 ## Non-goals
 
 - Redesigning `RichMessageComposer`, `ChatMessageRow`, or the message data model.
-- Changing `useMessageThread` semantics (channels, RLS, send pipeline).
-- Touching `supabase/functions/agent-dispatch/**` or any agent RPC.
+- Changing `useMessageThread` RLS or subscription **filter strings** (Phase 3.8 only tightens PostgREST filters + client-side realtime gates for `target_task_id`; see [`phase-3.8-strict-channel-isolation.md`](./phase-3.8-strict-channel-isolation.md)).
+- Broad edits to `supabase/functions/agent-dispatch/**` or new agent RPCs (narrow Coach-only changes are **Phase 3.7** — see [`phase-3.7-backend-agent-alignment.md`](./phase-3.7-backend-agent-alignment.md)).
 - Adding new `item_type` values, new agents, or new mention handles.
 - Introducing a new design system primitive — the rail composes existing chat
   primitives only.
@@ -87,16 +95,18 @@ criteria so a planning agent can confirm prerequisites before starting work.
 
 Update this table in the same PR that lands a phase. Rows are in execution order.
 
-| #   | Phase                                   | Status      | PR  | Owner | Notes                                                                          |
-| --- | --------------------------------------- | ----------- | --- | ----- | ------------------------------------------------------------------------------ |
-| 0   | Discovery & decisions                   | complete    |     |       |                                                                                |
-| 1   | Build standalone rail                   | in review   |     |       |                                                                                |
-| 2   | TaskModal integration (flagged)         | in review   |     |       |                                                                                |
-| 3   | Dynamic agent binding                   | complete    |     |       | Manual smoke verified end-to-end Coach routing per `item_type`.                |
-| 3.5 | Layout stabilization (collapse + split) | complete    |     |       | Split-pane + collapse fix landed behind `NEXT_PUBLIC_STANDARD_TASK_CHAT_RAIL`. |
-| 4   | Deprecate `TaskModalCommentsPanel`      | not started |     |       |                                                                                |
-| 5   | `WorkoutCoachRail` migration            | not started |     |       |                                                                                |
-| 6   | `ChatArea` + future surfaces (optional) | not started |     |       |                                                                                |
+| #   | Phase                                   | Status      | PR  | Owner | Notes                                                                                                                                     |
+| --- | --------------------------------------- | ----------- | --- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| 0   | Discovery & decisions                   | complete    |     |       |                                                                                                                                           |
+| 1   | Build standalone rail                   | in review   |     |       |                                                                                                                                           |
+| 2   | TaskModal integration (flagged)         | in review   |     |       |                                                                                                                                           |
+| 3   | Dynamic agent binding                   | complete    |     |       | Manual smoke verified end-to-end Coach routing per `item_type`.                                                                           |
+| 3.5 | Layout stabilization (collapse + split) | complete    |     |       | Split-pane + collapse fix landed behind `NEXT_PUBLIC_STANDARD_TASK_CHAT_RAIL`.                                                            |
+| 3.7 | Backend agent alignment (Coach)         | in review   |     |       | See [`phase-3.7-backend-agent-alignment.md`](./phase-3.7-backend-agent-alignment.md); follows 3.6A/B.                                     |
+| 3.8 | Strict channel isolation (main vs task) | complete    |     |       | See [`phase-3.8-strict-channel-isolation.md`](./phase-3.8-strict-channel-isolation.md); `target_task_id` null partition + realtime gates. |
+| 4   | Deprecate `TaskModalCommentsPanel`      | not started |     |       |                                                                                                                                           |
+| 5   | `WorkoutCoachRail` migration            | not started |     |       |                                                                                                                                           |
+| 6   | `ChatArea` + future surfaces (optional) | not started |     |       |                                                                                                                                           |
 
 ---
 
@@ -121,6 +131,7 @@ Update this table in the same PR that lands a phase. Rows are in execution order
 - TaskModal tab state + mount points: `src/components/modals/TaskModal.tsx`
 - Tab union type: `src/types/open-task-options.ts`
 - Hook the rail wraps: `src/hooks/useMessageThread.ts`
+- Channel isolation (main vs task): [`phase-3.8-strict-channel-isolation.md`](./phase-3.8-strict-channel-isolation.md)
 - Agent waiting hook: `src/hooks/useAgentResponseWait.ts`
 - Server-side default-slug contract: `supabase/functions/_shared/dispatch/routing.ts` (`parseRootDefaultAgentSlug`)
 - Agent webhook safety rule: `.cursor/rules/supabase-agent-dispatch-webhook-secret.mdc`

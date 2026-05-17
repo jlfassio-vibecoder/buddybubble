@@ -13,6 +13,7 @@ import {
   MESSAGES_SELECT_WITH_TASK,
   messageThreadChannelName,
   messageThreadFilterKey,
+  shouldDropRealtimeMessagePayloadForMainBubbleScope,
   toChatUserSnapshot,
   type MessageThreadFilter,
 } from '@/lib/message-thread';
@@ -192,9 +193,9 @@ export function useMessageThread({
       .select(MESSAGES_SELECT_WITH_TASK)
       .order('created_at', { ascending: true });
     if (f.scope === 'all_bubbles') {
-      q = q.in('bubble_id', [...f.bubbleIds]);
+      q = q.in('bubble_id', [...f.bubbleIds]).is('target_task_id', null);
     } else if (f.scope === 'bubble') {
-      q = q.eq('bubble_id', f.bubbleId);
+      q = q.eq('bubble_id', f.bubbleId).is('target_task_id', null);
     } else {
       q = q.eq('target_task_id', f.taskId);
     }
@@ -293,9 +294,9 @@ export function useMessageThread({
         .select(MESSAGES_SELECT_WITH_TASK)
         .order('created_at', { ascending: true });
       if (f.scope === 'all_bubbles') {
-        q = q.in('bubble_id', [...f.bubbleIds]);
+        q = q.in('bubble_id', [...f.bubbleIds]).is('target_task_id', null);
       } else if (f.scope === 'bubble') {
-        q = q.eq('bubble_id', f.bubbleId);
+        q = q.eq('bubble_id', f.bubbleId).is('target_task_id', null);
       } else {
         q = q.eq('target_task_id', f.taskId);
       }
@@ -353,6 +354,7 @@ export function useMessageThread({
 
     const onInsert = (payload: { new: Record<string, unknown> }) => {
       const row = payload.new as MessageRow;
+      if (shouldDropRealtimeMessagePayloadForMainBubbleScope(f, row)) return;
       void (async () => {
         const supa = createClient();
         const enriched = await fetchEmbeddedTaskForMessage(supa, row);
@@ -390,6 +392,7 @@ export function useMessageThread({
     };
     const onUpdate = (payload: { new: Record<string, unknown> }) => {
       const row = payload.new as MessageRow;
+      if (shouldDropRealtimeMessagePayloadForMainBubbleScope(f, row)) return;
       void (async () => {
         const supa = createClient();
         const enriched = await fetchEmbeddedTaskForMessage(supa, row);
@@ -397,8 +400,9 @@ export function useMessageThread({
       })();
     };
     const onDelete = (payload: { old: Record<string, unknown> }) => {
-      const old = payload.old as { id?: string };
+      const old = payload.old as { id?: string; target_task_id?: string | null };
       if (!old?.id) return;
+      if (shouldDropRealtimeMessagePayloadForMainBubbleScope(f, old)) return;
       setMessages((prev) => prev.filter((m) => m.id !== old.id));
     };
 
@@ -847,29 +851,52 @@ export function useMessageThread({
       const accepted = validated.files;
       setError(null);
 
+      const supabase = createClient();
+
       let targetBubbleId: string | null = null;
-      if (parentId) {
+      if (filter.scope === 'task') {
+        const { data: taskBubbleRow, error: taskBubbleErr } = await supabase
+          .from('tasks')
+          .select('bubble_id')
+          .eq('id', filter.taskId)
+          .maybeSingle();
+        const canonical =
+          !taskBubbleErr && taskBubbleRow && typeof taskBubbleRow.bubble_id === 'string'
+            ? taskBubbleRow.bubble_id.trim()
+            : '';
+        if (!canonical) {
+          setError('Could not resolve task bubble.');
+          return null;
+        }
+        targetBubbleId = canonical;
+        if (parentId) {
+          const parentRow = messagesRef.current.find((m) => m.id === parentId);
+          if (!parentRow) {
+            setError('Could not find thread parent. Try closing and reopening the thread.');
+            return null;
+          }
+          const parentBubble = parentRow.bubble_id?.trim() ?? '';
+          if (parentBubble && parentBubble !== targetBubbleId) {
+            setError('Could not find thread parent. Try closing and reopening the thread.');
+            return null;
+          }
+        }
+      } else if (parentId) {
         const parentRow = messagesRef.current.find((m) => m.id === parentId);
         targetBubbleId = parentRow?.bubble_id ?? null;
       } else if (filter.scope === 'all_bubbles') {
         targetBubbleId = defaultBubbleIdForWrites(bubbles);
       } else if (filter.scope === 'bubble') {
         targetBubbleId = filter.bubbleId;
-      } else {
-        targetBubbleId = resolvedTaskBubbleId;
       }
       if (!targetBubbleId) {
         setError(
           parentId
             ? 'Could not find thread parent. Try closing and reopening the thread.'
-            : filter.scope === 'task'
-              ? 'Could not resolve task bubble.'
-              : 'Add a bubble in this socialspace before posting attachments.',
+            : 'Add a bubble in this socialspace before posting attachments.',
         );
         return null;
       }
-
-      const supabase = createClient();
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -1182,7 +1209,7 @@ export function useMessageThread({
         setSending(false);
       }
     },
-    [bubbles, canPostMessages, filter, resolvedTaskBubbleId, threadSubjectUserId, workspaceId],
+    [bubbles, canPostMessages, filter, threadSubjectUserId, workspaceId],
   );
 
   return {

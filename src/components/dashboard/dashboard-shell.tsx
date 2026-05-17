@@ -36,6 +36,7 @@ import {
   type TaskModalTab,
   type TaskModalViewMode,
 } from '@/components/modals/TaskModal';
+import { CardTypeSelectorModal } from '@/components/modals/CardTypeSelectorModal';
 import { createDraftTask } from '@/components/modals/task-modal/hooks/useTaskDraftCreate';
 import type { TaskDraftBaseline } from '@/components/modals/task-modal/task-draft-types';
 import { WorkspaceSettingsModal } from '@/components/modals/WorkspaceSettingsModal';
@@ -143,6 +144,16 @@ const DASH_DOCK_PANEL_ID = 'dash-live-dock';
 const DASH_WORKSPACE_PANEL_ID = 'dash-workspace';
 const THEATER_BOARD_PANEL_ID = 'theater-board';
 const THEATER_DOCK_PANEL_ID = 'theater-dock';
+
+/** Options staged between CardTypeSelector and `createDraftTask`; excludes resolved item type. */
+type PendingCreateTaskModalOpts = {
+  status?: string;
+  title?: string;
+  workoutDurationMin?: string | null;
+  bubbleId?: string | null;
+  preserveChatCallback?: boolean;
+  focusMessagesOnClose?: boolean;
+};
 
 function LiveTheaterPlanBranch({
   children,
@@ -290,6 +301,11 @@ function DashboardShellInner({
   const [taskModalDraftBaseline, setTaskModalDraftBaseline] = useState<TaskDraftBaseline | null>(
     null,
   );
+  const [cardTypeSelectorOpen, setCardTypeSelectorOpen] = useState(false);
+  const [pendingCreateOpts, setPendingCreateOpts] = useState<PendingCreateTaskModalOpts | null>(
+    null,
+  );
+  const [pendingCreateSuggestedType, setPendingCreateSuggestedType] = useState<ItemType>('task');
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [profileComplete, setProfileComplete] = useState(false);
   /** `null` = session email not resolved yet (avoid treating legacy users as incomplete during fetch). */
@@ -440,6 +456,8 @@ function DashboardShellInner({
     open: false,
     taskId: null,
   });
+  /** When true, card type selector closed after a grid selection (avoid clearing chat compose callback on Radix close). */
+  const cardTypeSelectorConfirmedRef = useRef(false);
   const taskCommentToastTitleByIdRef = useRef<Map<string, string>>(new Map());
   /** One-time desktop rail collapse per live session join (user can expand rails again). */
   const liveVideoTheaterRailsPrimedForSessionIdRef = useRef<string | null>(null);
@@ -917,57 +935,16 @@ function DashboardShellInner({
     setTaskModalOpen(true);
   }, []);
 
-  // Copilot suggestion ignored: optimistic insert before open keeps rail/taskId coherent; a skeleton/spinner would be follow-up UX polish.
-  const openCreateTaskModal = useCallback(
-    async (opts?: {
-      status?: string;
-      itemType?: ItemType;
-      title?: string;
-      workoutDurationMin?: string | null;
-      bubbleId?: string | null;
-      /** When set with `itemType: 'class'`, opens `ClassEditor` in edit mode for this instance. */
-      classEditorInstanceId?: string | null;
-      /** When true, do not clear `chatCardOnCreatedRef` (caller just set it for chat compose). */
-      preserveChatCallback?: boolean;
-      /** When true, closing the modal may refocus Messages (e.g. chat compose). */
-      focusMessagesOnClose?: boolean;
-    }) => {
-      taskModalFocusMessagesOnCloseRef.current = opts?.focusMessagesOnClose === true;
-      if (!opts?.preserveChatCallback) {
-        chatCardOnCreatedRef.current = null;
-      }
-
-      const isClassFlow =
-        opts?.itemType === 'class' || Boolean(opts?.classEditorInstanceId?.trim());
-
-      if (isClassFlow) {
-        setTaskModalOptimisticDraft(false);
-        setTaskModalDraftBaseline(null);
-        setTaskModalInitialStatus(opts?.status ?? null);
-        setTaskModalInitialTab(null);
-        setTaskModalViewMode('full');
-        setTaskModalAutoEdit(false);
-        setTaskModalOpenWorkoutViewer(false);
-        setTaskModalCommentThreadMessageId(null);
-        setTaskModalTaskId(null);
-        setTaskModalInitialCreateItemType(opts?.itemType ?? null);
-        setTaskModalInitialCreateTitle(opts?.title ?? null);
-        setTaskModalInitialCreateWorkoutDurationMin(
-          opts?.workoutDurationMin !== undefined ? opts.workoutDurationMin : null,
-        );
-        setTaskModalCreateBubbleId(opts?.bubbleId ?? null);
-        setTaskModalClassEditorInstanceId(opts?.classEditorInstanceId ?? null);
-        setTaskModalOpen(true);
-        return;
-      }
-
+  // Open the task modal right after the optimistic draft insert so rail/taskId match the new row.
+  const proceedCreateTaskDraft = useCallback(
+    async (selectedType: ItemType, pending: PendingCreateTaskModalOpts) => {
       if (!canWriteTasks) {
         toast.error('You do not have permission to create tasks in this bubble.');
         return;
       }
 
       const resolvedBubbleId =
-        opts?.bubbleId ??
+        pending.bubbleId ??
         (selectedBubbleId === ALL_BUBBLES_BUBBLE_ID ? (bubbles[0]?.id ?? null) : selectedBubbleId);
 
       if (!resolvedBubbleId) {
@@ -975,14 +952,13 @@ function DashboardShellInner({
         return;
       }
 
-      const itemType = opts?.itemType ?? 'task';
       const draft = await createDraftTask({
         bubbleId: resolvedBubbleId,
         workspaceId,
-        itemType,
-        statusSlug: opts?.status ?? null,
-        title: opts?.title ?? null,
-        workoutDurationMin: opts?.workoutDurationMin ?? null,
+        itemType: selectedType,
+        statusSlug: pending.status ?? null,
+        title: pending.title ?? null,
+        workoutDurationMin: pending.workoutDurationMin ?? null,
         calendarTimezone: workspaceCalendarTz,
         hasTodayBoardColumn: hasTodayBoardColumnForDraft,
         hasScheduledBoardColumn: hasScheduledBoardColumnForDraft,
@@ -993,18 +969,18 @@ function DashboardShellInner({
         return;
       }
 
-      setTaskModalInitialStatus(opts?.status ?? null);
+      setTaskModalInitialStatus(pending.status ?? null);
       setTaskModalInitialTab(null);
       setTaskModalViewMode('full');
       setTaskModalAutoEdit(false);
       setTaskModalOpenWorkoutViewer(false);
       setTaskModalCommentThreadMessageId(null);
-      setTaskModalInitialCreateItemType(opts?.itemType ?? null);
-      setTaskModalInitialCreateTitle(opts?.title ?? null);
+      setTaskModalInitialCreateItemType(selectedType);
+      setTaskModalInitialCreateTitle(pending.title ?? null);
       setTaskModalInitialCreateWorkoutDurationMin(
-        opts?.workoutDurationMin !== undefined ? opts.workoutDurationMin : null,
+        pending.workoutDurationMin !== undefined ? pending.workoutDurationMin : null,
       );
-      setTaskModalCreateBubbleId(opts?.bubbleId ?? null);
+      setTaskModalCreateBubbleId(pending.bubbleId ?? null);
       setTaskModalClassEditorInstanceId(null);
       setTaskModalTaskId(draft.id);
       setTaskModalDraftBaseline(draft.baseline);
@@ -1029,6 +1005,91 @@ function DashboardShellInner({
       workspaceCalendarTz,
       workspaceId,
     ],
+  );
+
+  const openCreateTaskModal = useCallback(
+    async (opts?: {
+      status?: string;
+      itemType?: ItemType;
+      title?: string;
+      workoutDurationMin?: string | null;
+      bubbleId?: string | null;
+      /** When set with `itemType: 'class'`, opens `ClassEditor` in edit mode for this instance. */
+      classEditorInstanceId?: string | null;
+      /** When true, do not clear `chatCardOnCreatedRef` (caller just set it for chat compose). */
+      preserveChatCallback?: boolean;
+      /** When true, closing the modal may refocus Messages (e.g. chat compose). */
+      focusMessagesOnClose?: boolean;
+    }) => {
+      taskModalFocusMessagesOnCloseRef.current = opts?.focusMessagesOnClose === true;
+      if (!opts?.preserveChatCallback) {
+        chatCardOnCreatedRef.current = null;
+      }
+
+      const isClassFlow =
+        opts?.itemType === 'class' || Boolean(opts?.classEditorInstanceId?.trim());
+      const hasExplicitType = opts?.itemType != null;
+
+      if (isClassFlow) {
+        setTaskModalOptimisticDraft(false);
+        setTaskModalDraftBaseline(null);
+        setTaskModalInitialStatus(opts?.status ?? null);
+        setTaskModalInitialTab(null);
+        setTaskModalViewMode('full');
+        setTaskModalAutoEdit(false);
+        setTaskModalOpenWorkoutViewer(false);
+        setTaskModalCommentThreadMessageId(null);
+        setTaskModalTaskId(null);
+        setTaskModalInitialCreateItemType(opts?.itemType ?? null);
+        setTaskModalInitialCreateTitle(opts?.title ?? null);
+        setTaskModalInitialCreateWorkoutDurationMin(
+          opts?.workoutDurationMin !== undefined ? opts.workoutDurationMin : null,
+        );
+        setTaskModalCreateBubbleId(opts?.bubbleId ?? null);
+        setTaskModalClassEditorInstanceId(opts?.classEditorInstanceId ?? null);
+        setTaskModalOpen(true);
+        return;
+      }
+
+      if (hasExplicitType && opts?.itemType != null) {
+        await proceedCreateTaskDraft(opts.itemType, {
+          status: opts.status,
+          title: opts.title,
+          workoutDurationMin: opts.workoutDurationMin,
+          bubbleId: opts.bubbleId,
+          preserveChatCallback: opts.preserveChatCallback,
+          focusMessagesOnClose: opts.focusMessagesOnClose,
+        });
+        return;
+      }
+
+      if (!canWriteTasks) {
+        toast.error('You do not have permission to create tasks in this bubble.');
+        return;
+      }
+
+      const resolvedBubbleId =
+        opts?.bubbleId ??
+        (selectedBubbleId === ALL_BUBBLES_BUBBLE_ID ? (bubbles[0]?.id ?? null) : selectedBubbleId);
+
+      if (!resolvedBubbleId) {
+        toast.error('Select a bubble before creating a task.');
+        return;
+      }
+
+      const suggested: ItemType = workspaceCategoryForUi === 'fitness' ? 'workout' : 'task';
+      setPendingCreateOpts({
+        status: opts?.status,
+        title: opts?.title,
+        workoutDurationMin: opts?.workoutDurationMin,
+        bubbleId: opts?.bubbleId,
+        preserveChatCallback: opts?.preserveChatCallback,
+        focusMessagesOnClose: opts?.focusMessagesOnClose,
+      });
+      setPendingCreateSuggestedType(suggested);
+      setCardTypeSelectorOpen(true);
+    },
+    [bubbles, canWriteTasks, proceedCreateTaskDraft, selectedBubbleId, workspaceCategoryForUi],
   );
 
   const openChatComposeForTask = useCallback(
@@ -2326,6 +2387,31 @@ function DashboardShellInner({
 
                   {layoutMobile ? <MobileTabBar /> : null}
 
+                  <CardTypeSelectorModal
+                    open={cardTypeSelectorOpen}
+                    onOpenChange={(open) => {
+                      setCardTypeSelectorOpen(open);
+                      if (!open) {
+                        const confirmed = cardTypeSelectorConfirmedRef.current;
+                        cardTypeSelectorConfirmedRef.current = false;
+                        setPendingCreateOpts((prev) => {
+                          if (!confirmed && prev?.preserveChatCallback) {
+                            chatCardOnCreatedRef.current = null;
+                          }
+                          return null;
+                        });
+                      }
+                    }}
+                    suggestedItemType={pendingCreateSuggestedType}
+                    canManageClasses={canManageWorkspaceClasses}
+                    onSelect={(type) => {
+                      cardTypeSelectorConfirmedRef.current = true;
+                      const opts = pendingCreateOpts ?? {};
+                      setCardTypeSelectorOpen(false);
+                      setPendingCreateOpts(null);
+                      void proceedCreateTaskDraft(type, opts);
+                    }}
+                  />
                   <TaskModal
                     open={taskModalOpen}
                     onOpenChange={onTaskModalOpenChange}

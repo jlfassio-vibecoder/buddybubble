@@ -10,11 +10,14 @@
  *     the prompt-parts assembly from `bubble-agent-dispatch/index.ts:1486-1501`.
  *   - `buildWorkoutOpenGreetingUserText(workoutJson)` — the single user-turn payload
  *     from `bubble-agent-dispatch/index.ts:1502`.
- *   - `buildCurrentTaskContextBlock(title, description)` — the CURRENT TASK CONTEXT
- *     block from `bubble-agent-dispatch/index.ts:1621-1625`.
+ *   - `buildCurrentTaskContextBlock(title, description, opts?)` — the CURRENT TASK CONTEXT
+ *     block from `bubble-agent-dispatch/index.ts:1621-1625`; `opts.rail` swaps the trailing
+ *     instruction to the live co-pilot variant for `StandardTaskChatRail`.
  *   - `buildTaskModalIntakeUiCoachBlock()` — when the resolved task is workout /
  *     workout_log, appended after CURRENT TASK CONTEXT so the model maps chat to the
  *     Task Modal intake wizard and `task_modal_intake_patch`.
+ *   - `readTaskModalLiveStateFromMessageMetadata`, `buildTaskModalLiveStateBlock` —
+ *     Phase 3.7: client `messages.metadata.task_modal_live_state` → system prompt.
  *   - `WORKOUT_CONTEXT_HEADER`, `USER_CONTEXT_TAIL`, `LAST_WORKOUT_CONTEXT_HEADER`,
  *     `CURRENT_USER_CONTEXT_HEADER` — header constants reused by the strategy and the
  *     Deno-only `context.ts` module.
@@ -37,6 +40,16 @@ import {
 /** Header line prepended to the resolved CURRENT WORKOUT CONTEXT JSON when present. */
 export const WORKOUT_CONTEXT_HEADER = '--- CURRENT WORKOUT CONTEXT ---';
 
+/** `messages.metadata.surface` value emitted by `StandardTaskChatRail` (snake_case). */
+export const COACH_RAIL_SURFACE_VALUE = 'standard_task_chat_rail' as const;
+
+/** Returns true when the trigger message originated from the task-modal chat rail. */
+export function isCoachRailSurfaceFromMessageMetadata(meta: unknown): boolean {
+  if (meta == null || typeof meta !== 'object' || Array.isArray(meta)) return false;
+  const o = meta as Record<string, unknown>;
+  return o.surface === COACH_RAIL_SURFACE_VALUE;
+}
+
 /** Header line for the user-context block emitted by the Deno-only context module. */
 export const CURRENT_USER_CONTEXT_HEADER = '--- CURRENT USER CONTEXT ---';
 
@@ -50,6 +63,147 @@ export const USER_CONTEXT_TAIL =
 /** Header for the task-modal workout intake wizard contract (Coach JSON + UI). */
 export const TASK_MODAL_INTAKE_UI_HEADER =
   '--- TASK MODAL INTAKE UI (workout / workout_log card) ---';
+
+/** Header for client-supplied Task Modal wizard snapshot on the trigger message. */
+export const TASK_MODAL_LIVE_STATE_HEADER = '--- TASK MODAL LIVE STATE (v1) ---';
+
+/** Validated snapshot from `messages.metadata.task_modal_live_state` (v1). */
+export type TaskModalLiveStateV1 = {
+  v: 1;
+  item_type: 'workout' | 'workout_log';
+  wizard_step?: 1 | 2 | 3 | 4;
+  readiness?: number;
+  sleep_quality?: number;
+  /** Display / schema: numeric durations as quoted strings in Coach JSON. */
+  duration_minutes?: number | string;
+  target_intensity?: string;
+  soreness?: string[];
+  equipment?: string[];
+};
+
+const DURATION_STRING_SET = new Set(
+  WORKOUT_INTAKE_DURATION_CHOICES.map((d) => (typeof d === 'number' ? String(d) : d)),
+);
+const INTENSITY_SET_LIVE = new Set<string>(WORKOUT_INTAKE_INTENSITY_OPTIONS as unknown as string[]);
+const SORENESS_SET_LIVE = new Set<string>(WORKOUT_INTAKE_SORENESS_OPTIONS as unknown as string[]);
+const EQUIPMENT_SET_LIVE = new Set<string>(WORKOUT_INTAKE_EQUIPMENT_OPTIONS as unknown as string[]);
+
+function clampIntLive(n: number, lo: number, hi: number): number {
+  if (!Number.isFinite(n)) return lo;
+  return Math.max(lo, Math.min(hi, Math.round(n)));
+}
+
+/**
+ * Reads and validates `metadata.task_modal_live_state` from the trigger message.
+ * Returns `null` when absent, wrong version, or invalid `item_type`. Drops invalid fields silently.
+ */
+export function readTaskModalLiveStateFromMessageMetadata(
+  meta: unknown,
+): TaskModalLiveStateV1 | null {
+  if (meta == null || typeof meta !== 'object' || Array.isArray(meta)) return null;
+  const root = meta as Record<string, unknown>;
+  const raw = root.task_modal_live_state;
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  if (o.v !== 1) return null;
+  const itRaw = o.item_type ?? o.itemType;
+  const it =
+    typeof itRaw === 'string' && (itRaw === 'workout' || itRaw === 'workout_log')
+      ? (itRaw as 'workout' | 'workout_log')
+      : null;
+  if (!it) return null;
+
+  const out: TaskModalLiveStateV1 = { v: 1, item_type: it };
+
+  const wsRaw = o.wizard_step ?? o.wizardStep;
+  const ws =
+    typeof wsRaw === 'number' ? wsRaw : typeof wsRaw === 'string' ? Number(wsRaw.trim()) : NaN;
+  if (Number.isInteger(ws) && ws >= 1 && ws <= 4) out.wizard_step = ws as 1 | 2 | 3 | 4;
+
+  const rRaw = o.readiness;
+  if (typeof rRaw === 'number' && Number.isFinite(rRaw)) out.readiness = clampIntLive(rRaw, 1, 10);
+  else if (typeof rRaw === 'string' && /^\d+$/.test(rRaw.trim())) {
+    out.readiness = clampIntLive(Number(rRaw.trim()), 1, 10);
+  }
+
+  const sRaw = o.sleep_quality ?? o.sleepQuality;
+  if (typeof sRaw === 'number' && Number.isFinite(sRaw))
+    out.sleep_quality = clampIntLive(sRaw, 1, 10);
+  else if (typeof sRaw === 'string' && /^\d+$/.test(sRaw.trim())) {
+    out.sleep_quality = clampIntLive(Number(sRaw.trim()), 1, 10);
+  }
+
+  const dmRaw = o.duration_minutes ?? o.durationMinutes;
+  if (typeof dmRaw === 'number' && DURATION_STRING_SET.has(String(dmRaw))) {
+    out.duration_minutes = dmRaw;
+  } else if (typeof dmRaw === 'string') {
+    const t = dmRaw.trim();
+    if (t && DURATION_STRING_SET.has(t)) out.duration_minutes = t;
+  }
+
+  const tiRaw = o.target_intensity ?? o.targetIntensity;
+  if (typeof tiRaw === 'string') {
+    const t = tiRaw.trim();
+    if (INTENSITY_SET_LIVE.has(t)) out.target_intensity = t;
+  }
+
+  const sore = o.soreness;
+  if (Array.isArray(sore)) {
+    const arr: string[] = [];
+    for (const el of sore) {
+      if (typeof el !== 'string') continue;
+      const s = el.trim();
+      if (SORENESS_SET_LIVE.has(s)) arr.push(s);
+    }
+    if (arr.length) out.soreness = [...new Set(arr)].sort();
+  }
+
+  const eq = o.equipment;
+  if (Array.isArray(eq)) {
+    const arr: string[] = [];
+    for (const el of eq) {
+      if (typeof el !== 'string') continue;
+      const s = el.trim();
+      if (EQUIPMENT_SET_LIVE.has(s)) arr.push(s);
+    }
+    if (arr.length) out.equipment = [...new Set(arr)].sort();
+  }
+
+  return out;
+}
+
+function formatDurationForLiveBlock(d: number | string | undefined): string {
+  if (d === undefined) return '';
+  if (typeof d === 'number' && Number.isFinite(d)) return `"${d}"`;
+  return JSON.stringify(String(d));
+}
+
+/**
+ * Deterministic system-prompt block for validated live wizard state.
+ */
+export function buildTaskModalLiveStateBlock(snapshot: TaskModalLiveStateV1): string {
+  const lines: string[] = [
+    TASK_MODAL_LIVE_STATE_HEADER,
+    'This is what the user currently sees on the Task Modal intake wizard (NOT necessarily saved to the database). Treat it as ground truth for "current" values. If you describe a slider or step change in reply_content, mirror the same change in task_modal_intake_patch.',
+    `item_type: ${snapshot.item_type}`,
+  ];
+  if (snapshot.wizard_step !== undefined) lines.push(`wizard_step: ${snapshot.wizard_step}`);
+  if (snapshot.readiness !== undefined) lines.push(`readiness: ${snapshot.readiness}`);
+  if (snapshot.sleep_quality !== undefined) lines.push(`sleep_quality: ${snapshot.sleep_quality}`);
+  if (snapshot.duration_minutes !== undefined) {
+    lines.push(`duration_minutes: ${formatDurationForLiveBlock(snapshot.duration_minutes)}`);
+  }
+  if (snapshot.target_intensity !== undefined) {
+    lines.push(`target_intensity: ${JSON.stringify(snapshot.target_intensity)}`);
+  }
+  if (snapshot.soreness !== undefined && snapshot.soreness.length > 0) {
+    lines.push(`soreness: ${JSON.stringify(snapshot.soreness)}`);
+  }
+  if (snapshot.equipment !== undefined && snapshot.equipment.length > 0) {
+    lines.push(`equipment: ${JSON.stringify(snapshot.equipment)}`);
+  }
+  return lines.join('\n');
+}
 
 /**
  * True when `tasks.metadata` (or equivalent) clearly describes a workout card even if
@@ -92,6 +246,8 @@ export function buildTaskModalIntakeUiCoachBlock(): string {
     `- **equipment**: string array; each item must be one of: ${equipmentLine}.\n` +
     'WORKED EXAMPLES (task_modal_intake_patch only — do not confuse with top-level session_readiness_score):\n' +
     '- GOOD: {"readiness":7,"sleep_quality":8} — both are **1–10** intake sliders.\n' +
+    '- GOOD: {"duration_minutes":"30"} — duration_minutes must be a **string** (quoted in JSON), one of "15", "30", "45", "60", or "Optimized for Goals".\n' +
+    '- BAD: {"duration_minutes":30} — bare integer is invalid for the schema; use the string "30" instead.\n' +
     '- BAD: {"readiness":72} — 72 looks like **session_readiness_score (0–100)**; use 1–10 for readiness instead (e.g. map high energy to 8–10, not 70+).\n' +
     '- BAD: {"readiness":"feeling great"} — free-text is invalid; use an integer 1–10 (or digit string like "7").\n' +
     '- GOOD: {"soreness":["Legs"]} or {"soreness":["None"]} when nothing is sore.\n' +
@@ -124,7 +280,7 @@ export function buildBaseCoachPrompt(currentDate: string): string {
     'When create_card is true, you must provide non-empty task_title and a rich task_description for the Kanban card body (workout details, structure, equipment, safety). Never leave task_description null or empty when create_card is true. ' +
     "When create_card is true, also populate coach_task_notes with a task-scoped coach comment: brief readiness summary, rationale for this prescription, and scaling or regression options. task_description is the executable plan; coach_task_notes are the \"why\" and how to adjust. Always end coach_task_notes with this exact call-to-action (verbatim): Does this proposed workout look good? If so, click 'Generate Workout' on the card. If you'd like any adjustments, let me know here in the chat! Use null for coach_task_notes only when create_card is false. " +
     'When create_card is false, set task_title, task_description, and coach_task_notes to null. ' +
-    'When the server includes CURRENT TASK CONTEXT, the user is discussing that existing task. Follow PRE-DRAFT CONFIRMATION before emitting structured proposed_workout_metadata: on the confirmation-only turn, set update_existing_task to false and leave proposed_workout_metadata null. When the user has clearly approved drafting or revising (or user_requested_immediate_card), set update_existing_task to true and provide updated_task_title and/or updated_task_description as the FULL revised card text (not a diff), and/or proposed_workout_metadata with structured exercises (name, sets, reps, etc.), workout_type, and/or duration_min. At least one of: non-empty updated title, non-empty updated description, or non-empty proposed_workout_metadata must be present when update_existing_task is true. Prefer update_existing_task over create_card when modifying an existing card (set create_card false). The server resolves the task id — never output a task id. ' +
+    'When the server includes CURRENT TASK CONTEXT, the user is discussing that existing task. Follow PRE-DRAFT CONFIRMATION before emitting structured proposed_workout_metadata: on the confirmation-only turn, set update_existing_task to false and leave proposed_workout_metadata null. When the user has clearly approved drafting or revising (or user_requested_immediate_card), set update_existing_task to true and provide updated_task_title and/or updated_task_description as the FULL revised card text (not a diff), and/or proposed_workout_metadata with structured exercises (name, sets, reps, etc.), workout_type, and/or duration_min. At least one of: non-empty updated title, non-empty updated description, or non-empty proposed_workout_metadata must be present when update_existing_task is true. Prefer update_existing_task over create_card when modifying an existing card (set create_card false). The server resolves the task id — never output a task id. EXCEPTION (live co-pilot rail): when the prompt also contains the LIVE CO-PILOT MODE block AND a --- CURRENT WORKOUT CONTEXT --- block, the workout already exists and PRE-DRAFT CONFIRMATION does not apply for incremental edits to it — emit structured fields immediately as described under LIVE CO-PILOT MODE. ' +
     'Set session_request true when the user wants a workout or session planned for today or soon; false otherwise. The server uses this for turn gating—be honest. ' +
     'Align intake_phase, session_readiness_score, and missing_intake_categories with your judgment (e.g. clarifying_session while collecting readiness; pre_draft_confirmation when asking for the final green light before drafting; ready_to_prescribe when you are actually outputting the card or structured draft in this same response). ' +
     'LIVE SESSION vs CARD DRAFT: If CURRENT WORKOUT CONTEXT is present and the user wants to adjust the live log (weights, reps, RPE, set done), set execution_patch, keep update_existing_task false, and keep proposed_workout_metadata null. Use update_existing_task and proposed_workout_metadata only when the user explicitly wants a permanent rewrite of the task or card (e.g. restructure the whole program or replace the written workout in the task). ' +
@@ -132,6 +288,7 @@ export function buildBaseCoachPrompt(currentDate: string): string {
     'Do not only describe numbers in reply_content; you must also provide the JSON execution_patch so the app can update the live grid. You may list multiple sets and multiple exercises in one patch. String fields (weight, reps, rpe) must be pure numeric strings only, with no ranges, units, or extra text (e.g. "60", "8", "7.5"). Set execution_patch to null when you are not changing the live log. ' +
     'PERSONAL CUES: When the user wants instructions, form cues, tips, or injury notes saved for catalog exercises, emit personal_cues_patch (one entry per exerciseIndex from EXERCISE_INDEX_MAP; only [dict:...] rows persist); you may combine it with execution_patch in one response. ' +
     'TASK MODAL INTAKE PATCH: When TASK MODAL INTAKE UI appears in the system prompt (workout / workout_log task under discussion), use task_modal_intake_patch to update the on-card intake wizard (readiness and sleep sliders 1–10, wizard_step 1–4, duration_minutes, target_intensity, soreness, equipment). Do not only describe those values in reply_content when you intend the UI to change—emit task_modal_intake_patch. Set task_modal_intake_patch to null when not updating the wizard. ' +
+    'If --- TASK MODAL LIVE STATE (v1) --- appears in the system prompt and you describe changing a slider, step, duration, intensity, soreness, or equipment in reply_content, you MUST emit the same change in task_modal_intake_patch in that same JSON. ' +
     'TRUTHFULNESS: If reply_content claims you wrote or applied something, include non-null execution_patch, personal_cues_patch, task_modal_intake_patch, or create_card/update_existing_task in the same JSON. ' +
     'Return ONLY a raw JSON object (no markdown, no code fences) with keys: reply_content, create_card, task_title, task_description, update_existing_task, updated_task_title, updated_task_description, proposed_workout_metadata, execution_patch, personal_cues_patch, task_modal_intake_patch, intake_phase, session_readiness_score, missing_intake_categories, user_requested_immediate_card, session_request, coach_task_notes. ' +
     'You MUST respond in valid JSON matching the provided schema. Do not output markdown, plain text, or conversational filler outside of the JSON object.'
@@ -180,16 +337,24 @@ export function buildWorkoutOpenGreetingUserText(workoutJson: string): string {
  * resolved a task under discussion. Mirrors the inline composition at
  * `bubble-agent-dispatch/index.ts:1621-1625`.
  */
-export function buildCurrentTaskContextBlock(title: string, description: string | null): string {
+export function buildCurrentTaskContextBlock(
+  title: string,
+  description: string | null,
+  opts?: { rail?: boolean },
+): string {
   const desc =
     typeof description === 'string' && description.trim()
       ? description.trim()
       : '(empty description)';
+  const isRail = opts?.rail === true;
+  const tail = isRail
+    ? 'LIVE CO-PILOT MODE (Task Modal rail). You are actively co-editing this task with the user. Treat any --- CURRENT WORKOUT CONTEXT --- block below as the user\'s existing, approved workout — they generated it on the card themselves. When they ask for additions, swaps, or rewrites (e.g. "add a finisher", "make block 3 heavier", "swap squats for hinges"): Set update_existing_task: true. Emit proposed_workout_metadata containing the full revised workout (not a diff), preserving every block / exercise the user did not ask to change, with the requested change applied. When the user asks for a named section (e.g. "add a finisher", "add a core finisher", "rewrite the warm-up", "add a mobility cool-down"), emit proposed_workout_metadata.blocks as the full revised list of named sections — each item has name (free text like "Warm-up", "Main", "Strength A", "Finisher", "Cool down", "Mobility") plus either exercises (sets/reps) or instructions (one short line per item). Use blocks whenever section identity matters; reserve top-level exercises for cases where you are only appending or replacing items inside an existing single block. Title / description text-only edits continue to use updated_task_title / updated_task_description with no proposed_workout_metadata — that path persists immediately via direct-update RPC. Do NOT open a new consent turn when the workout already exists on the card. Confirm what you did in reply_content; the structured fields are the writes.'
+    : 'PRE-DRAFT CONFIRMATION: Do not populate proposed_workout_metadata until the user has given clear affirmative consent to draft or revise this card (or user_requested_immediate_card). On a confirmation-only turn, set update_existing_task to false and proposed_workout_metadata to null. When they confirm, set update_existing_task to true and provide updated_task_title and/or updated_task_description with the full revised text, and/or proposed_workout_metadata with structured exercises (and workout_type, duration_min as appropriate). The user must finalize changes on the card — do not assume the database updates immediately.';
   return (
     '--- CURRENT TASK CONTEXT ---\n' +
     `You are discussing an existing task titled "${title.trim()}".\n` +
     `Description:\n${desc}\n` +
-    'PRE-DRAFT CONFIRMATION: Do not populate proposed_workout_metadata until the user has given clear affirmative consent to draft or revise this card (or user_requested_immediate_card). On a confirmation-only turn, set update_existing_task to false and proposed_workout_metadata to null. When they confirm, set update_existing_task to true and provide updated_task_title and/or updated_task_description with the full revised text, and/or proposed_workout_metadata with structured exercises (and workout_type, duration_min as appropriate). The user must finalize changes on the card — do not assume the database updates immediately.'
+    tail
   );
 }
 

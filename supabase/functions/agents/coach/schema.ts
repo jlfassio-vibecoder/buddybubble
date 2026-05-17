@@ -92,7 +92,7 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
       type: 'OBJECT',
       nullable: true,
       description:
-        'When update_existing_task is true: structured workout fields to merge into tasks.metadata on user finalize (exercises array with name, sets, reps; workout_type; duration_min). MUST be null on pre_draft_confirmation turns and until the user confirms drafting or user_requested_immediate_card. MUST be null when you are only updating the live grid via execution_patch OR saving personal form cues via personal_cues_patch (never use this object for mid-workout cue persistence). Use null if only updating title/description text.',
+        'When update_existing_task is true: structured workout fields to merge into tasks.metadata on user finalize (exercises array with name, sets, reps; optional blocks array for named sections such as Warm-up, Main, Finisher, or Cool down; workout_type; duration_min). When the user requests a named section (for example add a finisher or swap the warm-up), prefer the blocks array over top-level exercises alone so each section keeps its identity. MUST be null on pre_draft_confirmation turns and until the user confirms drafting or user_requested_immediate_card. MUST be null when you are only updating the live grid via execution_patch OR saving personal form cues via personal_cues_patch (never use this object for mid-workout cue persistence). Use null if only updating title/description text.',
       properties: {
         exercises: {
           type: 'ARRAY',
@@ -104,6 +104,39 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
               reps: { type: 'STRING', nullable: true },
               coach_notes: { type: 'STRING', nullable: true },
               equipment: { type: 'STRING', nullable: true },
+            },
+          },
+        },
+        blocks: {
+          type: 'ARRAY',
+          nullable: true,
+          description:
+            'Polymorphic workout sections. Each block has a free-text name (e.g. Warm-up, Main, Strength, Cardio, Finisher, Cool down, Mobility). Exercise-shaped blocks include exercises; warm-up / cool-down / mobility may instead supply an instructions string list when there are no sets and reps. The server mergeCoachProposedIntoTaskMetadata routes each block by name and shape into exerciseBlocks (strength, cardio, core, finisher with sets and reps) or warmupBlocks, finisherBlocks, or cooldownBlocks (instruction-shaped). Prefer emitting blocks over flat exercises whenever the user asked for a named section (for example add a finisher). Use null or omit when not changing the workout structure.',
+          items: {
+            type: 'OBJECT',
+            properties: {
+              name: { type: 'STRING' },
+              exercises: {
+                type: 'ARRAY',
+                nullable: true,
+                items: {
+                  type: 'OBJECT',
+                  properties: {
+                    name: { type: 'STRING' },
+                    sets: { type: 'INTEGER', nullable: true },
+                    reps: { type: 'STRING', nullable: true },
+                    coach_notes: { type: 'STRING', nullable: true },
+                    equipment: { type: 'STRING', nullable: true },
+                  },
+                },
+              },
+              instructions: {
+                type: 'ARRAY',
+                nullable: true,
+                description:
+                  'Instruction-shaped section (warm-up, cool down, mobility): one short line per array item. Use when the section is cued execution rather than prescribed sets and reps.',
+                items: { type: 'STRING' },
+              },
             },
           },
         },
@@ -202,7 +235,7 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
           type: 'STRING',
           nullable: true,
           description:
-            'Session length: exactly one of 15, 30, 45, 60, or Optimized for Goals (verbatim).',
+            'Session length: exactly one of the strings "15", "30", "45", "60", or "Optimized for Goals" (verbatim). Never emit a bare integer—always quote (e.g. "30" not 30).',
         },
         target_intensity: {
           type: 'STRING',

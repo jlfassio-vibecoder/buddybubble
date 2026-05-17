@@ -156,7 +156,7 @@ export function ThreadPanel({
             pendingFiles={pendingFiles}
             onPendingFilesChange={setPendingFiles}
             fileAccept={MESSAGE_ATTACHMENT_FILE_ACCEPT}
-            disabled={!canPostMessages || !activeThreadParent || sending}
+            disabled={!canPostMessages || !activeThreadParent}
             isSending={sending}
             canSubmit={
               (!!threadInput.trim() || pendingFiles.length > 0) &&

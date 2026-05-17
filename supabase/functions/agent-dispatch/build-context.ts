@@ -51,6 +51,12 @@ export type BuildDispatchContextInput = {
    * `_shared/dispatch/history.ts:DEFAULT_HISTORY_LIMIT`.
    */
   historyLimit?: number;
+  /**
+   * When true, Coach rail merges `proposed_workout_metadata` via
+   * `mergeCoachProposedIntoTaskMetadata` before `agent_update_task_and_reply`.
+   * From `readDispatcherEnv().COACH_MERGE_WORKOUT_METADATA`.
+   */
+  coachMergeWorkoutMetadata?: boolean;
 };
 
 /**
@@ -71,7 +77,15 @@ function tailSlice<T>(rows: ReadonlyArray<T>, limit: number | undefined): T[] {
 export async function buildDispatchContext(
   input: BuildDispatchContextInput,
 ): Promise<DispatchContext> {
-  const { supabase, message, agent, requestId, llmTimeoutMs, historyLimit } = input;
+  const {
+    supabase,
+    message,
+    agent,
+    requestId,
+    llmTimeoutMs,
+    historyLimit,
+    coachMergeWorkoutMetadata,
+  } = input;
   const threadId = message.parent_id ?? message.id;
 
   let history: HistoryRow[] = input.history ?? [];
@@ -144,6 +158,7 @@ export async function buildDispatchContext(
     threadId,
     history,
     signal: AbortSignal.timeout(llmTimeoutMs),
+    coachMergeWorkoutMetadata,
     extras: {},
   };
 }

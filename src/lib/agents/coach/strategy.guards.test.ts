@@ -40,6 +40,7 @@ const NO_TASK_FRAGMENT: CoachGuardsFragment = {
   knownTargetTaskId: null,
   priorUserMessageCount: 5,
   currentWorkoutContextJson: null,
+  isActiveWorkoutSession: false,
 };
 
 describe('applyCoachServerGuards — Draft override', () => {
@@ -155,7 +156,7 @@ describe('applyCoachServerGuards — Layer B turn gate', () => {
 });
 
 describe('applyCoachServerGuards — Active-workout clamp', () => {
-  it('clears every card + task_update field when CURRENT WORKOUT CONTEXT is present', () => {
+  it('blocks new card creation when workout context exists; preserves task updates + intake + proposed when not active session', () => {
     const parsed = makeParsed({
       create_card: true,
       task_title: 'Title',
@@ -165,6 +166,7 @@ describe('applyCoachServerGuards — Active-workout clamp', () => {
       updated_task_title: 'Updated',
       updated_task_description: 'updated desc',
       proposed_workout_metadata: { workout_type: 'AMRAP' },
+      task_modal_intake_patch: { readiness: 7 },
       execution_patch: [{ exerciseIndex: 0, setIndex: 0, weight: '60' }],
       personal_cues_resolved: [
         { exercise_dictionary_id: 'd1', mode: 'append', form_cues: 'brace hard' },
@@ -173,16 +175,72 @@ describe('applyCoachServerGuards — Active-workout clamp', () => {
     const out = applyCoachServerGuards(parsed, {
       ...NO_TASK_FRAGMENT,
       currentWorkoutContextJson: '{"exercises":[]}',
+      isActiveWorkoutSession: false,
     });
     expect(out.create_card).toBe(false);
     expect(out.task_title).toBeNull();
     expect(out.task_description).toBeNull();
     expect(out.coach_task_notes).toBeNull();
+    expect(out.update_existing_task).toBe(true);
+    expect(out.updated_task_title).toBe('Updated');
+    expect(out.updated_task_description).toBe('updated desc');
+    expect(out.proposed_workout_metadata).toEqual({ workout_type: 'AMRAP' });
+    expect(out.task_modal_intake_patch).toEqual({ readiness: 7 });
+    expect(out.execution_patch).toEqual([{ exerciseIndex: 0, setIndex: 0, weight: '60' }]);
+    expect(out.personal_cues_resolved).toEqual([
+      {
+        exercise_dictionary_id: 'd1',
+        mode: 'append',
+        form_cues: 'brace hard',
+      },
+    ]);
+  });
+
+  it('preserves proposed_workout_metadata with blocks when workout context exists but session is not active', () => {
+    const proposed = {
+      workout_type: 'AMRAP',
+      blocks: [{ name: 'Finisher', exercises: [{ name: 'Thruster', sets: 3, reps: 10 }] }],
+    };
+    const parsed = makeParsed({
+      update_existing_task: true,
+      proposed_workout_metadata: proposed,
+    });
+    const out = applyCoachServerGuards(parsed, {
+      ...NO_TASK_FRAGMENT,
+      currentWorkoutContextJson: '{"exercises":[]}',
+      isActiveWorkoutSession: false,
+    });
+    expect(out.proposed_workout_metadata).toEqual(proposed);
+    expect(out.update_existing_task).toBe(true);
+  });
+
+  it('clears proposed_workout_metadata, task_modal_intake_patch, and task update fields when active workout session', () => {
+    const parsed = makeParsed({
+      create_card: true,
+      task_title: 'Title',
+      task_description: 'desc',
+      coach_task_notes: 'notes',
+      update_existing_task: true,
+      updated_task_title: 'Updated',
+      updated_task_description: 'updated desc',
+      proposed_workout_metadata: { workout_type: 'AMRAP' },
+      task_modal_intake_patch: { readiness: 9 },
+      execution_patch: [{ exerciseIndex: 0, setIndex: 0, weight: '60' }],
+      personal_cues_resolved: [
+        { exercise_dictionary_id: 'd1', mode: 'append', form_cues: 'brace hard' },
+      ],
+    });
+    const out = applyCoachServerGuards(parsed, {
+      ...NO_TASK_FRAGMENT,
+      currentWorkoutContextJson: '{"exercises":[]}',
+      isActiveWorkoutSession: true,
+    });
+    expect(out.create_card).toBe(false);
     expect(out.update_existing_task).toBe(false);
     expect(out.updated_task_title).toBeNull();
     expect(out.updated_task_description).toBeNull();
     expect(out.proposed_workout_metadata).toBeNull();
-    // execution_patch + personal_cues survive live-session output.
+    expect(out.task_modal_intake_patch).toBeNull();
     expect(out.execution_patch).toEqual([{ exerciseIndex: 0, setIndex: 0, weight: '60' }]);
     expect(out.personal_cues_resolved).toEqual([
       {
@@ -205,6 +263,7 @@ describe('applyCoachServerGuards — Active-workout clamp', () => {
     applyCoachServerGuards(parsed, {
       ...NO_TASK_FRAGMENT,
       currentWorkoutContextJson: '{}',
+      isActiveWorkoutSession: false,
     });
     expect(parsed).toEqual(snapshot);
   });

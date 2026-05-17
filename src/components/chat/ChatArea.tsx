@@ -849,6 +849,7 @@ export function ChatArea({
         } else {
           q = q.in('bubble_id', scopeIds);
         }
+        q = q.is('target_task_id', null);
 
         const onlyAttachmentFilter =
           parsed.hasAttachment &&
@@ -1465,7 +1466,7 @@ export function ChatArea({
         onPendingFilesChange={setPendingFiles}
         fileAccept={MESSAGE_ATTACHMENT_FILE_ACCEPT}
         onAttachmentFilesSelected={() => clearError()}
-        disabled={!canPostMessages || !canPostInComposer || sendingAttachments}
+        disabled={!canPostMessages || !canPostInComposer}
         isSending={sendingAttachments}
         canSubmit={
           (!!input.trim() || pendingFiles.length > 0) && canPostMessages && canPostInComposer

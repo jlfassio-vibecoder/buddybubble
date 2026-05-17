@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { useState } from 'react';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { StandardTaskChatRail } from '@/components/chat/StandardTaskChatRail';
 import { useMessageThread } from '@/hooks/useMessageThread';
@@ -131,7 +132,7 @@ describe('StandardTaskChatRail', () => {
     );
   });
 
-  it('with defaultAgentSlug undefined: no useAgentResponseWait, no typing indicator, send omits default_agent_slug', async () => {
+  it('with defaultAgentSlug undefined: no useAgentResponseWait, no typing indicator, send includes surface only', async () => {
     const sendMessage = mockThread();
     render(
       <StandardTaskChatRail
@@ -145,7 +146,132 @@ describe('StandardTaskChatRail', () => {
     expect(screen.queryByTestId('agent-typing-indicator')).toBeNull();
     fireEvent.submit(screen.getAllByTestId('rich-composer-mock')[0]!);
     await waitFor(() => expect(sendMessage).toHaveBeenCalled());
-    expect(sendMessage.mock.calls[0][3]).toBeUndefined();
+    expect(sendMessage.mock.calls[0][3]).toEqual({
+      metadata: { surface: 'standard_task_chat_rail' },
+    });
+  });
+
+  it('buildOutgoingMessageMetadata merges into sendMessage metadata; default_agent_slug wins on collision', async () => {
+    vi.mocked(useAgentResponseWait).mockReturnValue({
+      pending: null,
+      registerIntent: vi.fn(),
+      registerSuccessfulSend: vi.fn(),
+      clear: vi.fn(),
+    } as UseAgentResponseWaitResult);
+    const sendMessage = mockThread();
+    render(
+      <StandardTaskChatRail
+        workspaceId="ws-1"
+        taskId="task-1"
+        canPostMessages
+        defaultAgentSlug="coach"
+        buildOutgoingMessageMetadata={() => ({
+          default_agent_slug: 'buddy',
+          task_modal_live_state: { v: 1, item_type: 'workout' },
+        })}
+      />,
+    );
+    fireEvent.submit(screen.getAllByTestId('rich-composer-mock')[0]!);
+    await waitFor(() => expect(sendMessage).toHaveBeenCalled());
+    expect(sendMessage.mock.calls[0][3]).toEqual({
+      metadata: {
+        task_modal_live_state: { v: 1, item_type: 'workout' },
+        surface: 'standard_task_chat_rail',
+        default_agent_slug: 'coach',
+      },
+    });
+  });
+
+  it('buildOutgoingMessageMetadata returning null leaves only default_agent_slug when slug set', async () => {
+    vi.mocked(useAgentResponseWait).mockReturnValue({
+      pending: null,
+      registerIntent: vi.fn(),
+      registerSuccessfulSend: vi.fn(),
+      clear: vi.fn(),
+    } as UseAgentResponseWaitResult);
+    const sendMessage = mockThread();
+    render(
+      <StandardTaskChatRail
+        workspaceId="ws-1"
+        taskId="task-1"
+        canPostMessages
+        defaultAgentSlug="coach"
+        buildOutgoingMessageMetadata={() => null}
+      />,
+    );
+    fireEvent.submit(screen.getAllByTestId('rich-composer-mock')[0]!);
+    await waitFor(() => expect(sendMessage).toHaveBeenCalled());
+    expect(sendMessage.mock.calls[0][3]).toEqual({
+      metadata: { surface: 'standard_task_chat_rail', default_agent_slug: 'coach' },
+    });
+  });
+
+  it('buildOutgoingMessageMetadata uses latest wizard values on each send', async () => {
+    vi.mocked(useAgentResponseWait).mockReturnValue({
+      pending: null,
+      registerIntent: vi.fn(),
+      registerSuccessfulSend: vi.fn(),
+      clear: vi.fn(),
+    } as UseAgentResponseWaitResult);
+    const sendMessage = vi
+      .fn()
+      .mockResolvedValue({ messageId: 'msg-1', createdAt: new Date().toISOString() });
+    vi.mocked(useMessageThread).mockReturnValue({
+      messages: [],
+      userById: {},
+      teamMembers: [],
+      agentsByAuthUserId: new Map(),
+      agentAuthUserIds: [],
+      replyCounts: new Map(),
+      isLoading: false,
+      error: null,
+      sending: false,
+      sendMessage,
+      clearError: vi.fn(),
+      setError: vi.fn(),
+      silentRefreshMessages: vi.fn().mockResolvedValue(undefined),
+    } as unknown as ReturnType<typeof useMessageThread>);
+
+    function FreshnessParent() {
+      const [readiness, setReadiness] = useState(4);
+      return (
+        <>
+          <button type="button" data-testid="bump-readiness" onClick={() => setReadiness(7)}>
+            bump
+          </button>
+          <StandardTaskChatRail
+            workspaceId="ws-1"
+            taskId="task-1"
+            canPostMessages
+            defaultAgentSlug="coach"
+            buildOutgoingMessageMetadata={() => ({
+              task_modal_live_state: { v: 1, item_type: 'workout', readiness },
+            })}
+          />
+        </>
+      );
+    }
+
+    render(<FreshnessParent />);
+    fireEvent.submit(screen.getAllByTestId('rich-composer-mock')[0]!);
+    await waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1));
+    expect(
+      (
+        sendMessage.mock.calls[0][3] as {
+          metadata: { task_modal_live_state: { readiness: number } };
+        }
+      ).metadata.task_modal_live_state.readiness,
+    ).toBe(4);
+    fireEvent.click(screen.getByTestId('bump-readiness'));
+    fireEvent.submit(screen.getAllByTestId('rich-composer-mock')[0]!);
+    await waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(2));
+    expect(
+      (
+        sendMessage.mock.calls[1][3] as {
+          metadata: { task_modal_live_state: { readiness: number } };
+        }
+      ).metadata.task_modal_live_state.readiness,
+    ).toBe(7);
   });
 
   it('with defaultAgentSlug coach: metadata includes default_agent_slug; typing indicator when pending', async () => {
@@ -177,7 +303,7 @@ describe('StandardTaskChatRail', () => {
     fireEvent.submit(screen.getAllByTestId('rich-composer-mock')[0]!);
     await waitFor(() => expect(sendMessage).toHaveBeenCalled());
     expect(sendMessage.mock.calls[0][3]).toEqual({
-      metadata: { default_agent_slug: 'coach' },
+      metadata: { surface: 'standard_task_chat_rail', default_agent_slug: 'coach' },
     });
   });
 
@@ -260,7 +386,7 @@ describe('StandardTaskChatRail', () => {
     expect(container.querySelector('[data-message-id="msg-visible"]')).not.toBeNull();
   });
 
-  it('wraps each transcript row in data-message-id and forwards chatRowExtras to ChatMessageRow', () => {
+  it('wraps each transcript row in data-message-id and forwards chatRowExtras except rail-suppressed workout actions', () => {
     const row = {
       id: 'row-1',
       user_id: 'user-1',
@@ -304,8 +430,95 @@ describe('StandardTaskChatRail', () => {
     expect(chatMessageRowMockCalls[0]?.onCoachDraftFinalizeSuccess).toBe(
       onCoachDraftFinalizeSuccess,
     );
-    expect(chatMessageRowMockCalls[0]?.chatCardWorkoutActions).toBe(chatCardWorkoutActions);
+    expect(chatMessageRowMockCalls[0]?.chatCardWorkoutActions).toBeUndefined();
     expect(chatMessageRowMockCalls[0]?.bubbleUpPropsFor).toBe(bubbleUpPropsFor);
     expect(chatMessageRowMockCalls[0]?.onOpenAttachment).toBe(onOpenAttachment);
+  });
+
+  it('strips coachDraft from mapped messages so ChatMessageRow does not receive draft UI props', () => {
+    const draftMeta = {
+      coach_draft: {
+        status: 'pending' as const,
+        proposed_title: 'T',
+        proposed_description: 'D',
+        proposed_metadata: {},
+        target_task_id: 'task-1',
+      },
+    };
+    const row = {
+      id: 'draft-msg',
+      user_id: 'user-1',
+      content: 'Here is a proposal',
+      created_at: new Date().toISOString(),
+      parent_id: null,
+      bubble_id: 'b1',
+      attached_task_id: 'task-1',
+      attachments: null,
+      metadata: draftMeta,
+      tasks: null,
+    } as unknown as MessageRowWithEmbeddedTask;
+    mockThread({ messages: [row] });
+    render(
+      <StandardTaskChatRail workspaceId="ws-1" taskId="task-1" canPostMessages bubbleId="b1" />,
+    );
+    expect(chatMessageRowMockCalls[0]?.message).toMatchObject({
+      id: 'draft-msg',
+      content: 'Here is a proposal',
+      coachDraft: null,
+    });
+  });
+
+  it('strips same-task embedded task from agent rows so ChatFeedTaskCard HITL chrome is not shown', () => {
+    const coachAuthId = '00000000-0000-4000-8000-000000000099';
+    const agentsByAuthUserId = new Map([
+      [
+        coachAuthId,
+        {
+          id: 'coach-def',
+          slug: 'coach',
+          display_name: 'Coach',
+          mention_handle: 'coach',
+          auth_user_id: coachAuthId,
+          avatar_url: '',
+          response_timeout_ms: 30_000,
+        },
+      ],
+    ]);
+    const row = {
+      id: 'coach-msg',
+      user_id: coachAuthId,
+      content: 'I outlined the workout on your card.',
+      created_at: new Date().toISOString(),
+      parent_id: null,
+      bubble_id: 'b1',
+      attached_task_id: 'task-1',
+      attachments: null,
+      metadata: null,
+      tasks: {
+        id: 'task-1',
+        title: 'Kettlebell Leg Workout',
+        item_type: 'workout',
+      },
+    } as unknown as MessageRowWithEmbeddedTask;
+    mockThread({ messages: [row], agentsByAuthUserId });
+    render(
+      <StandardTaskChatRail
+        workspaceId="ws-1"
+        taskId="task-1"
+        canPostMessages
+        bubbleId="b1"
+        chatRowExtras={{
+          chatCardWorkoutActions: {
+            modalTaskId: 'task-1',
+          } as never,
+        }}
+      />,
+    );
+    expect(chatMessageRowMockCalls[0]?.message).toMatchObject({
+      id: 'coach-msg',
+      attached_task_id: null,
+      attachedTask: null,
+    });
+    expect(chatMessageRowMockCalls[0]?.chatCardWorkoutActions).toBeUndefined();
   });
 });

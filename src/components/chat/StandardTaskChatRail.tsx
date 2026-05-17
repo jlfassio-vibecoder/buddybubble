@@ -41,8 +41,12 @@ import type {
 } from '@/components/chat/agent-effects/types';
 import { useBuddyOnboardingSentinel } from '@/components/modals/task-modal/hooks/useBuddyOnboardingSentinel';
 import { useDeepLinkMessageScroll } from '@/components/modals/task-modal/hooks/useDeepLinkMessageScroll';
+import { scheduleScrollChatThreadToBottom } from '@/lib/chat-thread-auto-scroll';
 
 const SURFACE = 'standard-task-chat-rail' as const;
+
+/** Stored on `messages.metadata.surface` for agent-dispatch / strategy (snake_case). */
+const RAIL_SURFACE_METADATA_VALUE = 'standard_task_chat_rail' as const;
 
 const RAIL_FEATURES_DEFAULT: Required<RichMessageComposerFeatures> = {
   enableAtMentions: true,
@@ -130,6 +134,15 @@ export type StandardTaskChatRailProps = {
 
   /** `messages.attached_task_id` values for bubble-up props (TaskModal `useTaskBubbleUps` scope). */
   onEmbeddedTaskIdsChange?: (taskIds: string[]) => void;
+
+  /**
+   * Polymorphic host hook: extra keys merged into `messages.metadata` on send.
+   * Rail-owned keys (`surface`, `default_agent_slug`) win on collision.
+   */
+  buildOutgoingMessageMetadata?: (args: {
+    content: string;
+    files: File[];
+  }) => Record<string, Json> | null | undefined;
 
   className?: string;
 };
@@ -296,7 +309,20 @@ function useRailThreadApi(props: StandardTaskChatRailProps): RailThreadApi {
       const base = userById[row.user_id];
       const user: ChatUserSnapshot | undefined =
         myProfile && row.user_id === myProfile.id ? toChatUserSnapshot(myProfile) : base;
-      return rowToChatMessage(row, user, bubbleName, replyCounts, agentsByAuthUserId);
+      const mapped = rowToChatMessage(row, user, bubbleName, replyCounts, agentsByAuthUserId);
+      let out = mapped;
+      if (mapped.coachDraft != null) {
+        out = { ...out, coachDraft: null };
+      }
+      // Coach RPCs often attach this task for threading; in-rail that duplicates the
+      // right-hand task form and reintroduces human-in-the-loop chrome (ChatFeedTaskCard).
+      const isAgentRow = agentsByAuthUserId.has(row.user_id);
+      const attachedId =
+        typeof row.attached_task_id === 'string' ? row.attached_task_id.trim() : '';
+      if (isAgentRow && attachedId && attachedId === taskIdTrimmed) {
+        out = { ...out, attachedTask: null, attached_task_id: null };
+      }
+      return out;
     });
   }, [
     agentsByAuthUserId,
@@ -305,6 +331,7 @@ function useRailThreadApi(props: StandardTaskChatRailProps): RailThreadApi {
     myProfile,
     props.transcriptFilter,
     replyCounts,
+    taskIdTrimmed,
     userById,
   ]);
 
@@ -356,6 +383,8 @@ function StandardTaskChatRailChrome({
   resolvedDefaultSlug: string | null;
 }) {
   const { onCollapse, className } = props;
+  const { chatCardWorkoutActions: _omitChatCardWorkoutActions, ...railChatRowExtras } =
+    props.chatRowExtras ?? {};
   const {
     myProfile,
     transcriptMessages,
@@ -376,6 +405,7 @@ function StandardTaskChatRailChrome({
   } = api;
 
   const contextDefaultAgentSlug = resolvedDefaultSlug;
+  const composerShellRef = useRef<HTMLDivElement>(null);
 
   const handleSubmitIntent = useCallback(() => {
     const result = resolveTargetAgent({
@@ -411,8 +441,18 @@ function StandardTaskChatRailChrome({
         contextDefaultAgentSlug,
       });
       const slug = resolvedDefaultSlug;
+      const hostMeta = props.buildOutgoingMessageMetadata?.({ content: text, files }) ?? undefined;
+      const hostObj =
+        hostMeta != null && typeof hostMeta === 'object' && !Array.isArray(hostMeta)
+          ? (hostMeta as Record<string, Json>)
+          : {};
+      const railOwnedMeta: Record<string, Json> = {
+        surface: RAIL_SURFACE_METADATA_VALUE,
+        ...(slug && slug.length > 0 ? { default_agent_slug: slug } : {}),
+      };
+      const mergedMeta: Record<string, Json> = { ...hostObj, ...railOwnedMeta };
       const metadata: Json | undefined =
-        slug && slug.length > 0 ? { default_agent_slug: slug } : undefined;
+        Object.keys(mergedMeta).length > 0 ? (mergedMeta as Json) : undefined;
       const sent = await sendMessage(text, undefined, files, metadata ? { metadata } : undefined);
       if (!sent) return false;
       setDraft('');
@@ -425,6 +465,7 @@ function StandardTaskChatRailChrome({
     [
       availableAgents,
       contextDefaultAgentSlug,
+      props.buildOutgoingMessageMetadata,
       resolvedDefaultSlug,
       sendMessage,
       sending,
@@ -435,15 +476,10 @@ function StandardTaskChatRailChrome({
   );
 
   useEffect(() => {
-    if (!scrollContainerRef.current) return;
-    const container = scrollContainerRef.current;
-    const id = window.setTimeout(() => {
-      container.scrollTo({
-        top: container.scrollHeight,
-        behavior: 'smooth',
-      });
-    }, 50);
-    return () => clearTimeout(id);
+    return scheduleScrollChatThreadToBottom({
+      scrollRoot: scrollContainerRef.current,
+      composerShell: composerShellRef.current,
+    });
   }, [transcriptMessages, waitMain?.pending, scrollContainerRef]);
 
   return (
@@ -484,7 +520,7 @@ function StandardTaskChatRailChrome({
                 density="rail"
                 renderContent={(t) => t}
                 liveSessionViewerUserId={myProfile?.id ?? null}
-                {...(props.chatRowExtras ?? {})}
+                {...railChatRowExtras}
               />
             </div>
           ))}
@@ -496,7 +532,7 @@ function StandardTaskChatRailChrome({
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-border bg-card pt-4">
+      <div ref={composerShellRef} className="shrink-0 border-t border-border bg-card pt-4">
         <RichMessageComposer
           density="rail"
           formTestId="standard-task-chat-rail-composer"
@@ -509,7 +545,7 @@ function StandardTaskChatRailChrome({
           onPendingFilesChange={setPendingFiles}
           fileAccept={MESSAGE_ATTACHMENT_FILE_ACCEPT}
           onAttachmentFilesSelected={() => clearError()}
-          disabled={!props.canPostMessages || sending}
+          disabled={!props.canPostMessages}
           isSending={sending}
           canSubmit={
             (!!draft.trim() || pendingFiles.length > 0) && props.canPostMessages && !sending

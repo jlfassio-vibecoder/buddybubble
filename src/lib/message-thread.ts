@@ -53,6 +53,33 @@ export type MessageThreadFilter =
   | { scope: 'all_bubbles'; bubbleIds: readonly string[] }
   | { scope: 'task'; taskId: string };
 
+/**
+ * Bubble / aggregate scopes represent **main channel** chat only: rows where
+ * `messages.target_task_id` is null. Task-scoped comments share `bubble_id` with
+ * their parent task but must never appear in these universes.
+ */
+export function isMainBubbleChannelScope(filter: MessageThreadFilter): boolean {
+  return filter.scope === 'bubble' || filter.scope === 'all_bubbles';
+}
+
+/** True when the row is a unified task comment / thread (`target_task_id` set). */
+export function isTaskScopedMessageRow(row: { target_task_id?: string | null }): boolean {
+  const t = row.target_task_id;
+  return t != null && String(t).trim() !== '';
+}
+
+/**
+ * Realtime `postgres_changes` for `messages` can only filter on `bubble_id`, so task-scoped
+ * inserts/updates/deletes still arrive for subscribers on that bubble. Main-channel hooks must
+ * drop these payloads before mutating React state.
+ */
+export function shouldDropRealtimeMessagePayloadForMainBubbleScope(
+  filter: MessageThreadFilter,
+  row: { target_task_id?: string | null },
+): boolean {
+  return isMainBubbleChannelScope(filter) && isTaskScopedMessageRow(row);
+}
+
 export function messageThreadChannelName(filter: MessageThreadFilter): string {
   if (filter.scope === 'all_bubbles') {
     return `messages-rt-all:${[...filter.bubbleIds].sort().join(',')}`;

@@ -125,6 +125,67 @@ describe('parseProposedWorkoutMetadata', () => {
       ],
     });
   });
+
+  it('passes through blocks with nested exercises and drops empty blocks', () => {
+    const out = parseProposedWorkoutMetadata({
+      proposed_workout_metadata: {
+        workout_type: 'AMRAP',
+        duration_min: 45,
+        exercises: [{ name: 'Goblet Squat' }, { name: 'Push Press' }],
+        blocks: [
+          {
+            name: 'Finisher',
+            type: 'AMRAP',
+            rounds: 3,
+            exercises: [{ name: 'Kettlebell Thrusters', sets: 3, reps: 12 }],
+          },
+          {},
+          { name: '', exercises: [] },
+        ],
+      },
+    });
+    expect(out.exercises).toEqual([{ name: 'Goblet Squat' }, { name: 'Push Press' }]);
+    expect(out.blocks).toEqual([
+      {
+        name: 'Finisher',
+        type: 'AMRAP',
+        rounds: 3,
+        exercises: [{ name: 'Kettlebell Thrusters', sets: 3, reps: 12 }],
+      },
+    ]);
+  });
+
+  it('returns only blocks when top-level exercises are empty or invalid', () => {
+    const out = parseProposedWorkoutMetadata({
+      proposed_workout_metadata: {
+        blocks: [{ name: 'Warmup', exercises: [{ name: 'Jump Rope' }] }],
+      },
+    });
+    expect(out).toEqual({
+      blocks: [{ name: 'Warmup', exercises: [{ name: 'Jump Rope' }] }],
+    });
+  });
+
+  it('passes through blocks with instructions[] string lines', () => {
+    const out = parseProposedWorkoutMetadata({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Cool down',
+            instructions: ['Walk 2 min easy', 'Diaphragmatic breathing 1 min'],
+          },
+        ],
+      },
+    });
+    expect(out.blocks).toEqual([
+      {
+        name: 'Cool down',
+        instructions: ['Walk 2 min easy', 'Diaphragmatic breathing 1 min'],
+      },
+    ]);
+    const blocks = out.blocks as Array<Record<string, unknown>>;
+    expect(blocks[0]).not.toHaveProperty('exercises');
+  });
 });
 
 describe('ensureCoachTaskNotesCta', () => {

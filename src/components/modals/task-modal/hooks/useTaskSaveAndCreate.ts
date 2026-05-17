@@ -42,7 +42,7 @@ export type UseTaskSaveAndCreateArgs = {
   workspaceId: string;
   loadTask: (id: string) => void | Promise<void>;
   onCreated?: (newTaskId: string) => void;
-  onOpenChange: (open: boolean) => void;
+  onOpenChange: (open: boolean) => void | Promise<void>;
   onTaskArchived?: () => void;
   title: string;
   description: string;
