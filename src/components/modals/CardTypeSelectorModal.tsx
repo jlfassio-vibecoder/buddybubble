@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useLayoutEffect, useMemo, useRef } from 'react';
 import type { ItemType } from '@/types/database';
 import { ITEM_TYPES_ORDER, ITEM_TYPE_VISUAL } from '@/lib/item-type-styles';
 import { useIsNarrowBelowMd } from '@/hooks/use-is-narrow-below-md';
@@ -43,7 +43,6 @@ function CardTypeGrid({ open, creatableTypes, suggestedItemType, onSelect }: Car
   }, [open, suggestedItemType, creatableTypes]);
 
   const handleChoose = (selectedType: ItemType) => {
-    console.log('[DEBUG] Card type selected from grid:', selectedType);
     onSelect(selectedType);
   };
 
@@ -91,16 +90,6 @@ export function CardTypeSelectorModal({
     () => ITEM_TYPES_ORDER.filter((t) => t !== 'class' || canManageClasses),
     [canManageClasses],
   );
-
-  useEffect(() => {
-    if (!open) return;
-    console.log(
-      '[DEBUG] CardTypeSelector mounted. Suggested type:',
-      suggestedItemType,
-      '| Is Desktop:',
-      isDesktop,
-    );
-  }, [open, suggestedItemType, isDesktop]);
 
   const grid = (
     <CardTypeGrid

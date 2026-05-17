@@ -30,9 +30,12 @@ function findPrimaryComposerField(
   return form.querySelector<HTMLInputElement>('input[type="text"]:not([disabled])');
 }
 
-function restorePrimaryComposerFocusIfNeeded(composerShell: HTMLElement | null): void {
+function restorePrimaryComposerFocusIfNeeded(
+  composerShell: HTMLElement | null,
+  schedule: (cb: FrameRequestCallback) => number,
+): void {
   if (!composerShell) return;
-  requestAnimationFrame(() => {
+  schedule(() => {
     if (composerShell.contains(document.activeElement)) return;
     const primary = findPrimaryComposerField(composerShell);
     if (!primary || primary.disabled) return;
@@ -71,7 +74,7 @@ export function scheduleScrollChatThreadToBottom({
         scrollRoot.scrollTop = scrollRoot.scrollHeight;
         schedule(() => {
           scrollRoot.scrollTop = scrollRoot.scrollHeight;
-          restorePrimaryComposerFocusIfNeeded(composerShell);
+          restorePrimaryComposerFocusIfNeeded(composerShell, schedule);
         });
       });
     });

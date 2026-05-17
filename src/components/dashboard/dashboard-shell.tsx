@@ -935,7 +935,7 @@ function DashboardShellInner({
     setTaskModalOpen(true);
   }, []);
 
-  // Copilot suggestion ignored: optimistic insert before open keeps rail/taskId coherent; a skeleton/spinner would be follow-up UX polish.
+  // Open the task modal right after the optimistic draft insert so rail/taskId match the new row.
   const proceedCreateTaskDraft = useCallback(
     async (selectedType: ItemType, pending: PendingCreateTaskModalOpts) => {
       if (!canWriteTasks) {
