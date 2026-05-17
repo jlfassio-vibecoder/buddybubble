@@ -638,7 +638,7 @@ export const TaskModalCommentsPanel = forwardRef<
       onPendingFilesChange={setPendingFiles}
       fileAccept={MESSAGE_ATTACHMENT_FILE_ACCEPT}
       onAttachmentFilesSelected={() => chat.clearError()}
-      disabled={!canWrite || sending}
+      disabled={!canWrite}
       isSending={sending}
       canSubmit={(!!draft.trim() || pendingFiles.length > 0) && canWrite && !sending}
       attachDisabled={!canWrite || sending}
@@ -718,7 +718,7 @@ export const TaskModalCommentsPanel = forwardRef<
       onPendingFilesChange={setThreadPendingFiles}
       fileAccept={MESSAGE_ATTACHMENT_FILE_ACCEPT}
       onAttachmentFilesSelected={() => chat.clearError()}
-      disabled={!canWrite || sending}
+      disabled={!canWrite}
       isSending={sending}
       canSubmit={(!!threadDraft.trim() || threadPendingFiles.length > 0) && canWrite && !sending}
       attachDisabled={!canWrite || sending}

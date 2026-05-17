@@ -26,6 +26,7 @@ import { useExerciseDictionaryAutocomplete } from '@/hooks/useExerciseDictionary
 import { metadataFieldsFromParsed } from '@/lib/item-metadata';
 import type { ExerciseMentionClientPayload } from '@/lib/agents/coach/exercise-mentions';
 import { parseExecutionPatchFromMetadata, type ExecutionPatch } from '@/types/execution-patch';
+import { scheduleScrollChatThreadToBottom } from '@/lib/chat-thread-auto-scroll';
 
 function normMentionName(s: string): string {
   return s.trim().toLowerCase();
@@ -166,6 +167,7 @@ export function WorkoutCoachRail({
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [activeAgent, setActiveAgent] = useState<'coach' | 'buddy'>('coach');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const composerShellRef = useRef<HTMLDivElement>(null);
 
   // Resolve the bubble row so `useMessageThread` + mappers have names/types.
   useEffect(() => {
@@ -428,15 +430,10 @@ export function WorkoutCoachRail({
   }, [agentsByAuthUserId, bubbleName, messages, myProfile, replyCounts, userById]);
 
   useEffect(() => {
-    if (!scrollContainerRef.current) return;
-    const container = scrollContainerRef.current;
-    const id = window.setTimeout(() => {
-      container.scrollTo({
-        top: container.scrollHeight,
-        behavior: 'smooth',
-      });
-    }, 50);
-    return () => clearTimeout(id);
+    return scheduleScrollChatThreadToBottom({
+      scrollRoot: scrollContainerRef.current,
+      composerShell: composerShellRef.current,
+    });
   }, [allMessages, waitMain.pending]);
 
   const onExerciseHashInserted = useCallback(
@@ -588,7 +585,7 @@ export function WorkoutCoachRail({
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-border bg-card pt-4">
+      <div ref={composerShellRef} className="shrink-0 border-t border-border bg-card pt-4">
         <RichMessageComposer
           density="rail"
           formTestId="workout-coach-composer-rail"
@@ -602,7 +599,7 @@ export function WorkoutCoachRail({
           onPendingFilesChange={setPendingFiles}
           fileAccept={MESSAGE_ATTACHMENT_FILE_ACCEPT}
           onAttachmentFilesSelected={() => clearError()}
-          disabled={!canPostMessages || sending}
+          disabled={!canPostMessages}
           isSending={sending}
           canSubmit={(!!input.trim() || pendingFiles.length > 0) && canPostMessages && !sending}
           attachDisabled={!canPostMessages || sending}

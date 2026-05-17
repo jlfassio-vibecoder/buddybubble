@@ -9,6 +9,7 @@ export function useTaskOriginalSnapshot(): {
   setOriginalFromAppliedRow: (snapshot: TaskModalOriginalSnapshot) => void;
   clearOriginal: () => void;
   patchOriginalMetadataJson: (metadataJson: string) => void;
+  patchOriginalCoreText: (next: { title: string; description: string }) => void;
 } {
   const originalRef = useRef<TaskModalOriginalSnapshot | null>(null);
 
@@ -29,10 +30,21 @@ export function useTaskOriginalSnapshot(): {
     }
   }, []);
 
+  const patchOriginalCoreText = useCallback((next: { title: string; description: string }) => {
+    if (originalRef.current) {
+      originalRef.current = {
+        ...originalRef.current,
+        title: next.title,
+        description: next.description,
+      };
+    }
+  }, []);
+
   return {
     originalRef,
     setOriginalFromAppliedRow,
     clearOriginal,
     patchOriginalMetadataJson,
+    patchOriginalCoreText,
   };
 }

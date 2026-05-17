@@ -4,10 +4,15 @@ import { useCallback, useEffect } from 'react';
 import { createClient } from '@utils/supabase/client';
 import type { TaskRow } from '@/types/database';
 
+export type ApplyRowContext = {
+  /** When true, caller is a silent refresh (realtime / execution patch); form may merge instead of clobbering dirty text. */
+  silent: boolean;
+};
+
 export type UseTaskLoadAndRealtimeParams = {
   open: boolean;
   taskId: string | null;
-  applyRow: (row: TaskRow) => void;
+  applyRow: (row: TaskRow, ctx: ApplyRowContext) => void;
   /** Called when the modal opens in create mode (`open && !taskId`); should reset all form state. */
   onResetForCreate: () => void;
   setLoading: (loading: boolean) => void;
@@ -38,6 +43,7 @@ export function useTaskLoadAndRealtime({
   const loadTask = useCallback(
     async (id: string, options?: LoadTaskOptions) => {
       const silent = options?.silent === true;
+      const applyCtx: ApplyRowContext = { silent };
       if (!silent) {
         setLoading(true);
       }
@@ -62,7 +68,7 @@ export function useTaskLoadAndRealtime({
           if (!silent) {
             setLoading(false);
           }
-          applyRow(data as TaskRow);
+          applyRow(data as TaskRow, applyCtx);
           return;
         }
         // Row not visible yet (e.g. client opened TaskModal the moment after insert, before read-your-writes)

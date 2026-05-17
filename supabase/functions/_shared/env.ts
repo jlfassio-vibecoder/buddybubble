@@ -29,6 +29,12 @@ export type DispatcherEnv = {
    * the strategy still surfaces the un-gated `proposedWrite` in the structured log.
    */
   ORGANIZER_WRITES_ENABLED: boolean;
+  /**
+   * When true, Coach rail `agent_update_task_and_reply` passes `p_new_metadata` through
+   * `mergeCoachProposedIntoTaskMetadata` so rich `workout_set` and flat `exercises` stay
+   * aligned. Default false (raw proposed shallow-merge). Strict `=== '1'`.
+   */
+  COACH_MERGE_WORKOUT_METADATA: boolean;
 };
 
 const REQUIRED_STRING_KEYS: ReadonlyArray<keyof DispatcherEnv> = [
@@ -102,5 +108,6 @@ export function readDispatcherEnv(): DispatcherEnv {
     // Mirrors `organizer-agent-dispatch/index.ts:596` — strict `=== '1'` semantic
     // so an accidental `ORGANIZER_WRITES_ENABLED=true` or `=yes` reads as false.
     ORGANIZER_WRITES_ENABLED: readString('ORGANIZER_WRITES_ENABLED') === '1',
+    COACH_MERGE_WORKOUT_METADATA: readString('COACH_MERGE_WORKOUT_METADATA') === '1',
   };
 }

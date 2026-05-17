@@ -24,21 +24,22 @@ Phase 6 cutover has completed.
 
 ## Secret Status
 
-| Secret                                 | Live consumers today                                                            | Phase 1 consumer    | Phase 6 status |
-| -------------------------------------- | ------------------------------------------------------------------------------- | ------------------- | -------------- |
-| `GCP_PROJECT_ID`                       | **`agent-dispatch`** (`readDispatcherEnv` → Vertex `generateContent`)           | `agent-dispatch-v2` | live           |
-| `GCP_LOCATION`                         | **`agent-dispatch`** (same)                                                     | `agent-dispatch-v2` | live           |
-| `GCP_SERVICE_ACCOUNT_JSON`             | **`agent-dispatch`** (same)                                                     | `agent-dispatch-v2` | live           |
-| `AGENT_WEBHOOK_SECRET`                 | **`agent-dispatch`** Edge Function + Database Webhook `x-agent-secret` / Bearer | `agent-dispatch`    | live           |
-| `LLM_TIMEOUT_MS`                       | **`agent-dispatch`** (same)                                                     | `agent-dispatch-v2` | live           |
-| `GEMINI_API_KEY`                       | `bubble-agent-dispatch`, `buddy-agent-dispatch`, `organizer-agent-dispatch`     | unchanged           | deleted        |
-| `GEMINI_MODEL` / `VERTEX_GEMINI_MODEL` | `bubble-agent-dispatch`                                                         | unchanged           | deleted        |
-| `BUDDY_GEMINI_MODEL`                   | `buddy-agent-dispatch`                                                          | unchanged           | deleted        |
-| `ORGANIZER_GEMINI_MODEL`               | `organizer-agent-dispatch`                                                      | unchanged           | deleted        |
-| `BUBBLE_AGENT_WEBHOOK_SECRET`          | `bubble-agent-dispatch`                                                         | unchanged           | deleted        |
-| `BUDDY_AGENT_WEBHOOK_SECRET`           | `buddy-agent-dispatch`                                                          | unchanged           | deleted        |
-| `ORGANIZER_AGENT_WEBHOOK_SECRET`       | `organizer-agent-dispatch`                                                      | unchanged           | deleted        |
-| `*_GEMINI_FETCH_TIMEOUT_MS`            | respective legacy dispatchers                                                   | unchanged           | deleted        |
+| Secret                                 | Live consumers today                                                             | Phase 1 consumer    | Phase 6 status |
+| -------------------------------------- | -------------------------------------------------------------------------------- | ------------------- | -------------- |
+| `GCP_PROJECT_ID`                       | **`agent-dispatch`** (`readDispatcherEnv` → Vertex `generateContent`)            | `agent-dispatch-v2` | live           |
+| `GCP_LOCATION`                         | **`agent-dispatch`** (same)                                                      | `agent-dispatch-v2` | live           |
+| `GCP_SERVICE_ACCOUNT_JSON`             | **`agent-dispatch`** (same)                                                      | `agent-dispatch-v2` | live           |
+| `AGENT_WEBHOOK_SECRET`                 | **`agent-dispatch`** Edge Function + Database Webhook `x-agent-secret` / Bearer  | `agent-dispatch`    | live           |
+| `LLM_TIMEOUT_MS`                       | **`agent-dispatch`** (same)                                                      | `agent-dispatch-v2` | live           |
+| `COACH_MERGE_WORKOUT_METADATA`         | **`agent-dispatch`** (optional; `readDispatcherEnv` → Coach rail metadata merge) | `agent-dispatch-v2` | live           |
+| `GEMINI_API_KEY`                       | `bubble-agent-dispatch`, `buddy-agent-dispatch`, `organizer-agent-dispatch`      | unchanged           | deleted        |
+| `GEMINI_MODEL` / `VERTEX_GEMINI_MODEL` | `bubble-agent-dispatch`                                                          | unchanged           | deleted        |
+| `BUDDY_GEMINI_MODEL`                   | `buddy-agent-dispatch`                                                           | unchanged           | deleted        |
+| `ORGANIZER_GEMINI_MODEL`               | `organizer-agent-dispatch`                                                       | unchanged           | deleted        |
+| `BUBBLE_AGENT_WEBHOOK_SECRET`          | `bubble-agent-dispatch`                                                          | unchanged           | deleted        |
+| `BUDDY_AGENT_WEBHOOK_SECRET`           | `buddy-agent-dispatch`                                                           | unchanged           | deleted        |
+| `ORGANIZER_AGENT_WEBHOOK_SECRET`       | `organizer-agent-dispatch`                                                       | unchanged           | deleted        |
+| `*_GEMINI_FETCH_TIMEOUT_MS`            | respective legacy dispatchers                                                    | unchanged           | deleted        |
 
 ## Update Protocol
 
@@ -75,6 +76,7 @@ read at module load:
 - `GCP_SERVICE_ACCOUNT_JSON` — passed to `_shared/llm/vertex-auth.ts:getVertexAccessToken`.
 - `AGENT_WEBHOOK_SECRET` — passed to `_shared/dispatch/webhook.ts:verifyAndParseWebhook`.
 - `LLM_TIMEOUT_MS` — passed to `generateContent.timeoutMs` and (re-read inside the Coach preflight) to the workout-greeting sub-call.
+- `COACH_MERGE_WORKOUT_METADATA` (optional) — when set to `1`, Coach rail `persist` runs `mergeCoachProposedIntoTaskMetadata` before `agent_update_task_and_reply` so `ai_workout_factory.workout_set` and flat `exercises` stay aligned. Omit or any value other than `1`: legacy behavior (raw `proposed_workout_metadata` patch only).
 
 No legacy secrets move yet — Phase 3 owns the webhook cutover for Coach.
 

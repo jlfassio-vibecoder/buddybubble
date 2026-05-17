@@ -11,6 +11,10 @@
  *     `p_execution_patch jsonb` extension; original at
  *     `supabase/migrations/20260623120000_coach_workout_draft_messages_metadata.sql:43-53`
  *     (signature mirrored at `bubble-agent-dispatch/index.ts:80-92`).
+ *   - `agent_update_task_and_reply` —
+ *     `supabase/migrations/20260825120000_agent_update_task_and_reply_metadata.sql`
+ *     (rail-surface direct `tasks` title/description + optional shallow `metadata` merge + reply;
+ *     bypasses coach_draft).
  *   - `buddy_create_onboarding_reply` —
  *     `supabase/migrations/20260701140000_buddy_rpc.sql:16-23`
  *     (call site at `buddy-agent-dispatch/index.ts:545-553`).
@@ -66,6 +70,20 @@ export type AgentInsertCoachDraftArgs = {
   p_execution_patch?: unknown;
   p_personal_cues?: unknown;
   p_task_modal_intake_patch?: unknown;
+};
+
+export type AgentUpdateTaskAndReplyArgs = {
+  p_trigger_message_id: string;
+  p_thread_id: string;
+  p_agent_auth_user_id: string;
+  p_invoker_user_id: string;
+  p_target_task_id: string;
+  p_reply_text: string;
+  /** Nullable; RPC requires at least one of title, description, or non-empty metadata. */
+  p_new_title: string | null;
+  p_new_description: string | null;
+  /** Shallow-merge into `tasks.metadata` when non-null (rail auto-apply). */
+  p_new_metadata?: Record<string, unknown> | null;
 };
 
 export type BuddyCreateOnboardingReplyArgs = {
@@ -135,6 +153,13 @@ export function agentInsertCoachWorkoutDraftReply(
   args: AgentInsertCoachDraftArgs,
 ): Promise<RpcResult> {
   return callRpc(supabase, 'agent_insert_coach_workout_draft_reply', args);
+}
+
+export function agentUpdateTaskAndReply(
+  supabase: SupabaseClient,
+  args: AgentUpdateTaskAndReplyArgs,
+): Promise<RpcResult> {
+  return callRpc(supabase, 'agent_update_task_and_reply', args);
 }
 
 export function buddyCreateOnboardingReply(

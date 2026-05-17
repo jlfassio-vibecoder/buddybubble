@@ -35,6 +35,18 @@ export type InstallPostgrestOptions = {
   boundSlugs?: AgentSlug[];
   rpcResponses?: Record<string, RpcResponse>;
   rootHistoryRows?: Array<Record<string, unknown>>;
+  /**
+   * When set, mocks GET `/rest/v1/tasks` for `taskIdInBubble` (`select=id`) and
+   * `loadCurrentTaskContext` (`select` includes `title`).
+   */
+  coachTaskResolution?: {
+    taskId: string;
+    bubbleId?: string;
+    title?: string;
+    description?: string | null;
+    metadata?: unknown;
+    item_type?: string | null;
+  };
 };
 
 export type PostgrestFixtureHarness = {
@@ -97,12 +109,14 @@ function isThreadHistoryQuery(raw: string): boolean {
 }
 
 function isTargetTaskHistoryQuery(raw: string): boolean {
+  const lim = Number(queryParam(raw, 'limit'));
   return (
     isMessagesHistoryBase(raw) &&
     selectParam(raw) ===
       'id, user_id, content, created_at, parent_id, target_task_id, attached_task_id, metadata' &&
     hasQueryParam(raw, 'target_task_id') &&
-    queryParam(raw, 'limit') === '50'
+    Number.isFinite(lim) &&
+    lim > 0
   );
 }
 
@@ -172,8 +186,42 @@ export function installPostgrestRoutes(
   const rpcResponses: Record<string, RpcResponse> = { ...(options.rpcResponses ?? {}) };
   const boundSlugs = options.boundSlugs ?? ['coach'];
   const rootHistoryRows = options.rootHistoryRows ?? [];
+  const coachTask = options.coachTaskResolution;
+
+  if (coachTask) {
+    router.route(
+      'postgrest:tasks-coach-context',
+      (_req, call) =>
+        call.method === 'GET' &&
+        isRestPath(call.url, 'tasks') &&
+        call.url.includes(coachTask.taskId),
+      (_req, call) => {
+        const sel = selectParam(call.url);
+        if (sel === 'id') {
+          // PostgREST returns a JSON array of rows; supabase-js expects that shape.
+          return jsonResponse([{ id: coachTask.taskId }]);
+        }
+        return jsonResponse([
+          {
+            title: coachTask.title ?? 'Test workout',
+            description: coachTask.description ?? '',
+            metadata: coachTask.metadata ?? {},
+            item_type: coachTask.item_type ?? 'workout',
+          },
+        ]);
+      },
+    );
+  }
 
   router
+    .route(
+      'postgrest:bubbles-workspace',
+      (_req, call) =>
+        call.method === 'GET' &&
+        isRestPath(call.url, 'bubbles') &&
+        selectParam(call.url).includes('workspace_id'),
+      () => jsonResponse({ workspace_id: null }),
+    )
     .route(
       'postgrest:loop-guard-agent-definitions',
       (_req, call) =>

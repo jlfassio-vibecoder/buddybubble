@@ -11,4 +11,17 @@ describe('TaskModal standard rail (Phase 3.7 / 3.8)', () => {
     expect(src.includes('isOptimisticDraft')).toBe(true);
     expect(src.includes('draftBaseline')).toBe(true);
   });
+
+  it('wires buildOutgoingMessageMetadata to all three rails and gates task_modal_live_state on workout types', () => {
+    const taskModalPath = join(process.cwd(), 'src/components/modals/TaskModal.tsx');
+    const src = readFileSync(taskModalPath, 'utf8');
+    expect((src.match(/buildOutgoingMessageMetadata=/g) || []).length).toBe(3);
+    expect(
+      src.includes('buildOutgoingMessageMetadata={buildStandardTaskChatRailOutgoingMetadata}'),
+    ).toBe(true);
+    expect(
+      src.includes("if (itemType !== 'workout' && itemType !== 'workout_log') return null"),
+    ).toBe(true);
+    expect(src.includes('task_modal_live_state:')).toBe(true);
+  });
 });

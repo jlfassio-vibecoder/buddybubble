@@ -61,7 +61,10 @@ import { useWorkspaceStore } from '@/store/workspaceStore';
 import { TaskModalHero } from '@/components/modals/task-modal-hero';
 import { TaskModalWorkoutHero } from '@/components/modals/task-modal-workout-hero';
 import { WorkoutAiGenerateButton } from '@/components/modals/task-modal/workout-ai-generate-button';
-import { useTaskLoadAndRealtime } from '@/components/modals/task-modal/hooks/useTaskLoadAndRealtime';
+import {
+  useTaskLoadAndRealtime,
+  type ApplyRowContext,
+} from '@/components/modals/task-modal/hooks/useTaskLoadAndRealtime';
 import { useWorkspaceAssignees } from '@/components/modals/task-modal/hooks/useWorkspaceAssignees';
 import { useWorkoutUnitSystem } from '@/components/modals/task-modal/hooks/useWorkoutUnitSystem';
 import { useTaskCardCoverAi } from '@/components/modals/task-modal/hooks/useTaskCardCoverAi';
@@ -72,6 +75,7 @@ import {
 } from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
 import { useWorkoutIntakeWizardState } from '@/components/modals/task-modal/hooks/useWorkoutIntakeWizardState';
 import { useTaskOriginalSnapshot } from '@/components/modals/task-modal/hooks/useTaskOriginalSnapshot';
+import { useTaskCoreTextAutosave } from '@/components/modals/task-modal/hooks/useTaskCoreTextAutosave';
 import { useTaskDirtyState } from '@/components/modals/task-modal/hooks/useTaskDirtyState';
 import { useTaskEmbeddedCollections } from '@/components/modals/task-modal/hooks/useTaskEmbeddedCollections';
 import { useTaskSaveAndCreate } from '@/components/modals/task-modal/hooks/useTaskSaveAndCreate';
@@ -255,6 +259,13 @@ export function TaskModal({
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const titleRef = useRef(title);
+  const descriptionRef = useRef(description);
+
+  useEffect(() => {
+    titleRef.current = title;
+    descriptionRef.current = description;
+  }, [title, description]);
   const [status, setStatus] = useState<string>('todo');
   const [priority, setPriority] = useState<TaskPriority>('medium');
   /** YYYY-MM-DD for `<input type="date" />` or empty */
@@ -362,8 +373,13 @@ export function TaskModal({
 
   const defaultStatus = statusOptions[0]?.value ?? 'todo';
 
-  const { originalRef, setOriginalFromAppliedRow, clearOriginal, patchOriginalMetadataJson } =
-    useTaskOriginalSnapshot();
+  const {
+    originalRef,
+    setOriginalFromAppliedRow,
+    clearOriginal,
+    patchOriginalMetadataJson,
+    patchOriginalCoreText,
+  } = useTaskOriginalSnapshot();
 
   const dateLabels = taskDateFieldLabels(workspaceCategory);
 
@@ -504,11 +520,23 @@ export function TaskModal({
   }, [statusOptions, status]);
 
   const applyRow = useCallback(
-    (row: TaskRow) => {
+    (row: TaskRow, ctx: ApplyRowContext = { silent: false }) => {
+      const silent = ctx.silent === true;
+      const orig = originalRef.current;
+      const titleDirty = silent && orig != null && titleRef.current.trim() !== orig.title;
+      const descriptionDirty =
+        silent &&
+        orig != null &&
+        (descriptionRef.current ?? '').trim() !== (orig.description ?? '').trim();
+
+      if (!silent || !titleDirty) {
+        setTitle(row.title);
+      }
+      if (!silent || !descriptionDirty) {
+        setDescription(row.description ?? '');
+      }
       const nextStatus = row.status || defaultStatus;
       const nextPriority = normalizeTaskPriority(row.priority);
-      setTitle(row.title);
-      setDescription(row.description ?? '');
       setStatus(nextStatus);
       setPriority(nextPriority);
       const sched = row.scheduled_on ? String(row.scheduled_on).slice(0, 10) : '';
@@ -636,6 +664,26 @@ export function TaskModal({
     onTaskRowDeleted: handleTaskRowDeleted,
   });
 
+  const { flushNow } = useTaskCoreTextAutosave({
+    enabled: canWrite && Boolean(taskId),
+    canWrite,
+    taskId,
+    title,
+    description,
+    originalRef,
+    patchOriginalCoreText,
+  });
+
+  const handleOpenChange = useCallback(
+    async (nextOpen: boolean) => {
+      if (!nextOpen) {
+        await flushNow();
+      }
+      onOpenChange(nextOpen);
+    },
+    [onOpenChange, flushNow],
+  );
+
   const { aiProgramPersonalizing, handlePersonalizeProgram } = useTaskProgramPersonalization({
     canWrite,
     workspaceId,
@@ -675,7 +723,7 @@ export function TaskModal({
     workspaceId,
     loadTask,
     onCreated,
-    onOpenChange,
+    onOpenChange: handleOpenChange,
     onTaskArchived,
     title,
     description,
@@ -716,10 +764,11 @@ export function TaskModal({
 
   const handleModalHardDelete = useCallback(async () => {
     if (!taskId || !canWrite) return;
+    await flushNow();
     await hardDeleteTask(taskId, { itemType });
     onOpenChange(false);
     onTaskArchived?.();
-  }, [taskId, canWrite, itemType, hardDeleteTask, onOpenChange, onTaskArchived]);
+  }, [taskId, canWrite, itemType, hardDeleteTask, flushNow, onOpenChange, onTaskArchived]);
 
   useDraftCleanupOnClose({
     open,
@@ -830,7 +879,10 @@ export function TaskModal({
   }, [showWorkoutSplitPane]);
 
   const selectTab = useCallback(
-    (id: TabId) => {
+    async (id: TabId) => {
+      if (id !== 'details') {
+        await flushNow();
+      }
       tabChoiceOwnedByUserRef.current = true;
       setTab(id);
       setViewMode((prev) => {
@@ -839,13 +891,13 @@ export function TaskModal({
         return prev;
       });
     },
-    [taskId],
+    [taskId, flushNow],
   );
 
   const handleCoachDraftFinalizeSuccess = useCallback(async () => {
     if (!taskId) return;
     commentsPanelRef.current?.exitThread();
-    selectTab('details');
+    await selectTab('details');
     onClearOpenTaskCommentDeepLink?.();
     await loadTask(taskId);
     requestAnimationFrame(() => {
@@ -1033,7 +1085,7 @@ export function TaskModal({
     if (!open || !taskId) return null;
     return {
       modalTaskId: taskId,
-      onReviewDetails: () => selectTab('details'),
+      onReviewDetails: () => void selectTab('details'),
       onGenerateWorkout:
         canWrite && itemType === 'workout' ? handleGenerateWorkoutFromComments : undefined,
       generateBusy: aiWorkoutGenerating,
@@ -1060,6 +1112,35 @@ export function TaskModal({
       void loadTask(taskId, { silent: true });
     },
     [loadTask, taskId],
+  );
+
+  const buildStandardTaskChatRailOutgoingMetadata = useCallback(
+    ({ content: _content, files: _files }: { content: string; files: File[] }) => {
+      if (itemType !== 'workout' && itemType !== 'workout_log') return null;
+      return {
+        task_modal_live_state: {
+          v: 1,
+          item_type: itemType,
+          wizard_step: workoutIntake.step,
+          readiness: workoutIntake.readiness,
+          sleep_quality: workoutIntake.sleepQuality,
+          duration_minutes: workoutIntake.durationMinutes,
+          target_intensity: workoutIntake.targetIntensity,
+          soreness: workoutIntake.sorenessArray,
+          equipment: workoutIntake.equipmentArray,
+        },
+      } as Record<string, Json>;
+    },
+    [
+      itemType,
+      workoutIntake.step,
+      workoutIntake.readiness,
+      workoutIntake.sleepQuality,
+      workoutIntake.durationMinutes,
+      workoutIntake.targetIntensity,
+      workoutIntake.sorenessArray,
+      workoutIntake.equipmentArray,
+    ],
   );
 
   const handleTaskModalIntakePatch = useCallback(
@@ -1260,7 +1341,7 @@ export function TaskModal({
           type="button"
           className="absolute inset-0 bg-black/40"
           aria-label="Close"
-          onClick={() => onOpenChange(false)}
+          onClick={() => handleOpenChange(false)}
         />
         <div
           className={cn(
@@ -1280,7 +1361,7 @@ export function TaskModal({
               type="button"
               className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               aria-label="Close"
-              onClick={() => onOpenChange(false)}
+              onClick={() => handleOpenChange(false)}
             >
               <X className="h-5 w-5" />
             </button>
@@ -1314,7 +1395,7 @@ export function TaskModal({
               onSaved={() => {
                 onClassSaved?.();
               }}
-              onClose={() => onOpenChange(false)}
+              onClose={() => handleOpenChange(false)}
             />
           </div>
         </div>
@@ -1354,7 +1435,7 @@ export function TaskModal({
         type="button"
         className="absolute inset-0 bg-black/40"
         aria-label="Close"
-        onClick={() => onOpenChange(false)}
+        onClick={() => handleOpenChange(false)}
       />
       {/* QA: compact-path description bleed uses -mx-*; on mobile the shell is full-width so cinematic heroes need not rely on negative margins at the modal edge. */}
       <div
@@ -1379,7 +1460,7 @@ export function TaskModal({
               title={title}
               description={description ?? ''}
               coverPath={cardCoverPath.trim() || null}
-              onClose={() => onOpenChange(false)}
+              onClose={() => handleOpenChange(false)}
               compactCinematic={commentsSplitLayout}
               descriptionExpanded={commentsReadingContext}
               descriptionCollapseMode={commentsReadingContext ? 'preview_toggle' : 'none'}
@@ -1397,7 +1478,7 @@ export function TaskModal({
               title={title}
               description={description ?? ''}
               coverPath={cardCoverPath.trim() || null}
-              onClose={() => onOpenChange(false)}
+              onClose={() => handleOpenChange(false)}
               compactCinematic={
                 tab !== 'details' ||
                 heroCinematicCollapsed ||
@@ -1477,7 +1558,7 @@ export function TaskModal({
                         title={title}
                         description={description ?? ''}
                         coverPath={cardCoverPath.trim() || null}
-                        onClose={() => onOpenChange(false)}
+                        onClose={() => handleOpenChange(false)}
                         onBack={unifiedThreadBack}
                         descriptionExpanded={commentsReadingContext}
                         descriptionCollapseMode={commentsReadingContext ? 'preview_toggle' : 'none'}
@@ -1495,7 +1576,7 @@ export function TaskModal({
                         title={title}
                         description={description ?? ''}
                         coverPath={cardCoverPath.trim() || null}
-                        onClose={() => onOpenChange(false)}
+                        onClose={() => handleOpenChange(false)}
                         onBack={unifiedThreadBack}
                         compactCinematic={
                           heroCinematicCollapsed ||
@@ -1530,7 +1611,7 @@ export function TaskModal({
                           variant="default"
                           size="sm"
                           className="shadow-sm"
-                          onClick={() => selectTab('details')}
+                          onClick={() => void selectTab('details')}
                         >
                           Details
                         </Button>
@@ -1576,6 +1657,7 @@ export function TaskModal({
                             bubbleId={bubbleId ?? undefined}
                             canPostMessages={canWrite}
                             defaultAgentSlug={defaultSlugForItemType(itemType)}
+                            buildOutgoingMessageMetadata={buildStandardTaskChatRailOutgoingMetadata}
                             transcriptFilter={(row) =>
                               row.content !== BUDDY_ONBOARDING_SYSTEM_EVENT
                             }
@@ -1627,7 +1709,7 @@ export function TaskModal({
                 ) : null}
                 <TaskModalTabBar
                   tab={tab}
-                  onSelectTab={selectTab}
+                  onSelectTab={(id) => void selectTab(id)}
                   bubblyProps={modalBubbleUp ?? null}
                 />
               </>
@@ -1666,7 +1748,7 @@ export function TaskModal({
                         variant="default"
                         size="sm"
                         className="shadow-sm"
-                        onClick={() => selectTab('details')}
+                        onClick={() => void selectTab('details')}
                       >
                         Details
                       </Button>
@@ -1676,7 +1758,7 @@ export function TaskModal({
                         type="button"
                         className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                         aria-label="Close"
-                        onClick={() => onOpenChange(false)}
+                        onClick={() => handleOpenChange(false)}
                       >
                         <X className="h-5 w-5" aria-hidden />
                       </button>
@@ -1718,6 +1800,9 @@ export function TaskModal({
                                   bubbleId={bubbleId ?? undefined}
                                   canPostMessages={canWrite}
                                   defaultAgentSlug={defaultSlugForItemType(itemType)}
+                                  buildOutgoingMessageMetadata={
+                                    buildStandardTaskChatRailOutgoingMetadata
+                                  }
                                   transcriptFilter={(row) =>
                                     row.content !== BUDDY_ONBOARDING_SYSTEM_EVENT
                                   }
@@ -1806,6 +1891,9 @@ export function TaskModal({
                                         bubbleId={bubbleId ?? undefined}
                                         canPostMessages={canWrite}
                                         defaultAgentSlug={defaultSlugForItemType(itemType)}
+                                        buildOutgoingMessageMetadata={
+                                          buildStandardTaskChatRailOutgoingMetadata
+                                        }
                                         transcriptFilter={(row) =>
                                           row.content !== BUDDY_ONBOARDING_SYSTEM_EVENT
                                         }
@@ -1887,7 +1975,7 @@ export function TaskModal({
 
                 <TaskModalTabBar
                   tab={tab}
-                  onSelectTab={selectTab}
+                  onSelectTab={(id) => void selectTab(id)}
                   bubblyProps={modalBubbleUp ?? null}
                 />
               </>

@@ -28,10 +28,13 @@ import { log } from '../../_shared/obs/log.ts';
 import {
   agentCreateCardAndReply,
   agentInsertCoachWorkoutDraftReply,
+  agentUpdateTaskAndReply,
 } from '../../_shared/dispatch/rpc.ts';
+import { mergeCoachProposedIntoTaskMetadata } from '../../_shared/workout-metadata/merge-coach-proposed-into-task-metadata.ts';
 import {
   shouldExcludeWorkoutSentinelFromHistory,
   isWorkoutContextSentinel,
+  WORKOUT_CONTEXT_LEGACY_SENTINEL,
 } from '../../_shared/dispatch/sentinel.ts';
 import type {
   AgentStrategy,
@@ -83,10 +86,14 @@ import {
 import { loadExerciseDictionaryByIndex } from './exercise-dictionary-by-index.ts';
 import {
   buildBaseCoachPrompt,
+  buildCurrentTaskContextBlock,
   buildTaskModalIntakeUiCoachBlock,
+  buildTaskModalLiveStateBlock,
   buildWorkoutOpenGreetingPrompt,
   buildWorkoutOpenGreetingUserText,
   formatExerciseIndexMap,
+  isCoachRailSurfaceFromMessageMetadata,
+  readTaskModalLiveStateFromMessageMetadata,
   taskMetadataLooksWorkoutShaped,
   WORKOUT_CONTEXT_HEADER,
   type ExerciseDictionaryIndexEntry,
@@ -103,6 +110,23 @@ type CoachExtras = {
 };
 
 const FALLBACK_WORKOUT_GREETING = "Good to see you back in the gym! Let's get to work.";
+
+/** True when the **trigger** row indicates a live workout session (not task-row metadata alone). */
+function isTriggerActiveWorkoutSession(
+  message: Pick<DispatchContext['message'], 'content' | 'metadata'>,
+): boolean {
+  if (isCoachRailSurfaceFromMessageMetadata(message.metadata)) return false;
+  if (isWorkoutContextSentinel(message)) return true;
+  const c = message.content;
+  if (typeof c === 'string' && c.trim() === WORKOUT_CONTEXT_LEGACY_SENTINEL) return true;
+  const m = message.metadata;
+  if (m != null && typeof m === 'object' && !Array.isArray(m)) {
+    const o = m as Record<string, unknown>;
+    const wc = o.workoutContext ?? o.workout_context;
+    if (wc != null && typeof wc === 'object' && !Array.isArray(wc)) return true;
+  }
+  return false;
+}
 
 function readCoachExtras(ctx: DispatchContext): CoachExtras {
   const raw = (ctx.extras?.coach ?? {}) as Partial<CoachExtras>;
@@ -274,6 +298,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       ctx.requestId,
     );
 
+    const isRailSurface = isCoachRailSurfaceFromMessageMetadata(ctx.message.metadata);
     let currentTaskContextBlock = '';
     let taskMetadataForContext: unknown | null = null;
     let taskItemType: string | null = null;
@@ -285,9 +310,13 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
         ctx.requestId,
       );
       if (ctxRow) {
-        currentTaskContextBlock = ctxRow.titleBlock;
         taskMetadataForContext = ctxRow.metadata;
         taskItemType = ctxRow.item_type;
+        currentTaskContextBlock = buildCurrentTaskContextBlock(
+          ctxRow.title,
+          ctxRow.description,
+          isRailSurface ? { rail: true } : undefined,
+        );
       }
     }
 
@@ -304,6 +333,10 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       ctx.history,
       { metadata: ctx.message.metadata },
       taskMetadataForContext,
+      {
+        preferTaskMetadata: isRailSurface && knownTargetTaskId !== null,
+        requestId: ctx.requestId,
+      },
     );
 
     let exerciseDictionaryByIndex: Record<number, ExerciseDictionaryIndexEntry | null> | null =
@@ -361,6 +394,8 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       it === 'workout_log' ||
       taskMetadataLooksWorkoutShaped(taskMetadataForContext);
     if (showTaskModalIntakeUi) parts.push(buildTaskModalIntakeUiCoachBlock());
+    const liveState = readTaskModalLiveStateFromMessageMetadata(ctx.message.metadata);
+    if (showTaskModalIntakeUi && liveState) parts.push(buildTaskModalLiveStateBlock(liveState));
     if (userContextBlock) parts.push(userContextBlock);
     return parts.join('\n\n');
   },
@@ -418,10 +453,27 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
 
   applyServerGuards(parsed, ctx) {
     const extras = readCoachExtras(ctx);
+    const isActiveWorkoutSession = isTriggerActiveWorkoutSession(ctx.message);
+    const hasIntakePatch =
+      parsed.task_modal_intake_patch != null &&
+      typeof parsed.task_modal_intake_patch === 'object' &&
+      Object.keys(parsed.task_modal_intake_patch).length > 0;
+    const reply = typeof parsed.reply_content === 'string' ? parsed.reply_content : '';
+    const claimsIntakeUi =
+      /\b(slider|wizard\s*step|readiness|sleep\s*quality|duration|intensity|soreness|equipment)\b/i.test(
+        reply,
+      );
+    if (claimsIntakeUi && !hasIntakePatch) {
+      log('warn', 'coach reply_content claims intake update without patch', {
+        request_id: ctx.requestId,
+        slug: COACH_SLUG,
+      });
+    }
     const fragment: CoachGuardsFragment = {
       knownTargetTaskId: extras.knownTargetTaskId,
       currentWorkoutContextJson: extras.currentWorkoutContextJson,
       priorUserMessageCount: priorUserMessageCount(ctx),
+      isActiveWorkoutSession,
     };
     return applyCoachServerGuards(parsed, fragment);
   },
@@ -435,15 +487,82 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
     const hasProposedMeta =
       parsed.proposed_workout_metadata != null &&
       Object.keys(parsed.proposed_workout_metadata).length > 0;
-    const shouldInsertDraft =
-      knownTargetTaskId !== null &&
-      parsed.update_existing_task &&
-      (hasUpdateBody || hasProposedMeta);
 
+    const isRailSurface = isCoachRailSurfaceFromMessageMetadata(ctx.message.metadata);
     const supabase: SharedSupabaseClient = ctx.supabase;
     const patchParam = executionPatchForRpc(parsed.execution_patch);
     const personalCuesParam = personalCuesPatchForRpc(parsed.personal_cues_resolved);
     const intakePatchParam = taskModalIntakePatchForRpc(parsed.task_modal_intake_patch);
+    const hasMessageMetaPatch =
+      patchParam != null || personalCuesParam != null || intakePatchParam != null;
+
+    const shouldDirectUpdate =
+      isRailSurface &&
+      knownTargetTaskId !== null &&
+      parsed.update_existing_task &&
+      (hasUpdateBody || hasProposedMeta) &&
+      !hasMessageMetaPatch;
+
+    const shouldInsertDraft =
+      !shouldDirectUpdate &&
+      knownTargetTaskId !== null &&
+      parsed.update_existing_task &&
+      (hasUpdateBody || hasProposedMeta);
+
+    if (shouldDirectUpdate) {
+      let pNewMeta: Record<string, unknown> | null = null;
+      if (hasProposedMeta) {
+        const raw = parsed.proposed_workout_metadata as Record<string, unknown>;
+        if (ctx.coachMergeWorkoutMetadata === true) {
+          // Merge base must match the task row Coach saw in buildSystemPrompt (`taskMetadataForContext`).
+          const { metadata, mergeLog } = mergeCoachProposedIntoTaskMetadata({
+            base: extras.taskMetadataForContext ?? {},
+            proposed: raw,
+          });
+          pNewMeta = metadata;
+          log('info', 'coach merge workout metadata', {
+            request_id: ctx.requestId,
+            slug: COACH_SLUG,
+            message_id: ctx.message.id,
+            merge_target: mergeLog.target,
+            merge_touched: mergeLog.touched,
+            merge_exercise_count: mergeLog.exerciseCount,
+            merge_drops: mergeLog.drops,
+          });
+        } else {
+          pNewMeta = raw;
+        }
+      }
+      const upd = await agentUpdateTaskAndReply(supabase, {
+        p_trigger_message_id: ctx.message.id,
+        p_thread_id: ctx.threadId,
+        p_agent_auth_user_id: ctx.agent.auth_user_id,
+        p_invoker_user_id: ctx.message.user_id,
+        p_target_task_id: knownTargetTaskId!,
+        p_reply_text: parsed.reply_content,
+        p_new_title: trimmedNewTitle.length > 0 ? trimmedNewTitle : null,
+        p_new_description: trimmedNewDesc.length > 0 ? trimmedNewDesc : null,
+        p_new_metadata: pNewMeta,
+      });
+      if (!upd.ok) {
+        log('error', 'coach persist direct update rpc failed', {
+          request_id: ctx.requestId,
+          slug: COACH_SLUG,
+          message_id: ctx.message.id,
+          error: upd.error,
+        });
+        throw new Error(`rpc_failed:${upd.error}`);
+      }
+      log('info', 'coach rail auto-applied workout edit', {
+        request_id: ctx.requestId,
+        slug: COACH_SLUG,
+        message_id: ctx.message.id,
+        has_title: trimmedNewTitle.length > 0,
+        has_desc: trimmedNewDesc.length > 0,
+        has_metadata: hasProposedMeta,
+      });
+      return { ok: true, data: upd.data };
+    }
 
     if (shouldInsertDraft) {
       const draft = await agentInsertCoachWorkoutDraftReply(supabase, {

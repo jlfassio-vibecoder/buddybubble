@@ -112,6 +112,26 @@ export function coalesceTaskDescription(parsed: Record<string, unknown>): string
   return null;
 }
 
+/** Normalizes a Gemini `exercises[]` array for proposed workout metadata. */
+function normalizeExercisesFromGeminiArray(raw: unknown): Record<string, unknown>[] {
+  const exercises: Record<string, unknown>[] = [];
+  if (!Array.isArray(raw)) return exercises;
+  for (const ex of raw) {
+    if (!ex || typeof ex !== 'object' || Array.isArray(ex)) continue;
+    const e = ex as Record<string, unknown>;
+    const name = typeof e.name === 'string' ? e.name.trim() : '';
+    if (!name) continue;
+    const row: Record<string, unknown> = { name };
+    if (typeof e.sets === 'number' && e.sets > 0) row.sets = Math.round(e.sets);
+    if (e.reps != null) row.reps = e.reps;
+    if (typeof e.coach_notes === 'string' && e.coach_notes.trim())
+      row.coach_notes = e.coach_notes.trim();
+    if (typeof e.equipment === 'string' && e.equipment.trim()) row.equipment = e.equipment.trim();
+    exercises.push(row);
+  }
+  return exercises;
+}
+
 /** Normalizes Gemini `proposed_workout_metadata` for `tasks.metadata` merge on finalize. */
 export function parseProposedWorkoutMetadata(
   parsed: Record<string, unknown>,
@@ -126,22 +146,40 @@ export function parseProposedWorkoutMetadata(
   if (typeof o.duration_min === 'number' && Number.isFinite(o.duration_min) && o.duration_min > 0) {
     out.duration_min = Math.round(o.duration_min);
   }
-  if (Array.isArray(o.exercises)) {
-    const exercises: Record<string, unknown>[] = [];
-    for (const ex of o.exercises) {
-      if (!ex || typeof ex !== 'object' || Array.isArray(ex)) continue;
-      const e = ex as Record<string, unknown>;
-      const name = typeof e.name === 'string' ? e.name.trim() : '';
-      if (!name) continue;
-      const row: Record<string, unknown> = { name };
-      if (typeof e.sets === 'number' && e.sets > 0) row.sets = Math.round(e.sets);
-      if (e.reps != null) row.reps = e.reps;
-      if (typeof e.coach_notes === 'string' && e.coach_notes.trim())
-        row.coach_notes = e.coach_notes.trim();
-      if (typeof e.equipment === 'string' && e.equipment.trim()) row.equipment = e.equipment.trim();
-      exercises.push(row);
+  const topExercises = normalizeExercisesFromGeminiArray(o.exercises);
+  if (topExercises.length > 0) out.exercises = topExercises;
+
+  if (Array.isArray(o.blocks)) {
+    const blocks: Record<string, unknown>[] = [];
+    for (const b of o.blocks) {
+      if (!b || typeof b !== 'object' || Array.isArray(b)) continue;
+      const blk = b as Record<string, unknown>;
+      const row: Record<string, unknown> = {};
+      if (typeof blk.name === 'string' && blk.name.trim()) row.name = blk.name.trim();
+      if (typeof blk.type === 'string' && blk.type.trim()) row.type = blk.type.trim();
+      if (typeof blk.rounds === 'number' && blk.rounds > 0) row.rounds = Math.round(blk.rounds);
+      if (
+        typeof blk.duration_min === 'number' &&
+        Number.isFinite(blk.duration_min) &&
+        blk.duration_min > 0
+      ) {
+        row.duration_min = Math.round(blk.duration_min);
+      }
+      if (typeof blk.coach_notes === 'string' && blk.coach_notes.trim()) {
+        row.coach_notes = blk.coach_notes.trim();
+      }
+      const inner = normalizeExercisesFromGeminiArray(blk.exercises);
+      if (inner.length > 0) row.exercises = inner;
+      if (Array.isArray(blk.instructions)) {
+        const lines = blk.instructions
+          .filter((x): x is string => typeof x === 'string')
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
+        if (lines.length > 0) row.instructions = lines;
+      }
+      if (Object.keys(row).length > 0) blocks.push(row);
     }
-    if (exercises.length > 0) out.exercises = exercises;
+    if (blocks.length > 0) out.blocks = blocks;
   }
   return out;
 }

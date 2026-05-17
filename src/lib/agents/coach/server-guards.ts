@@ -14,11 +14,16 @@
  *      session-request messages until the user has had at least two prior turns
  *      (`session_request_turn_gate`). Block clears `create_card`, `task_title`,
  *      `task_description`, `coach_task_notes`.
- *   3. Active-workout clamp — when CURRENT WORKOUT CONTEXT is present, the user is in
- *      live execution. Clear `create_card`, `task_title`, `task_description`,
- *      `coach_task_notes`, `update_existing_task`, `updated_task_title`,
- *      `updated_task_description`, `proposed_workout_metadata`. `execution_patch` and
- *      `personal_cues_resolved` survive (live grid + saved personal cues).
+ *   3. Active-workout clamp — when CURRENT WORKOUT CONTEXT is present, the user may be
+ *      in live execution OR only viewing planned workout JSON on the card. When the
+ *      trigger row indicates an **active** workout session, clear `create_card`,
+ *      `task_title`, `task_description`, `coach_task_notes`, `update_existing_task`,
+ *      `updated_task_title`, `updated_task_description`, `proposed_workout_metadata`,
+ *      and `task_modal_intake_patch`. `execution_patch` and `personal_cues_resolved`
+ *      survive. When workout context exists only from task metadata (planning / Task
+ *      Modal), block **new** card creation (`create_card` / seed fields) but preserve
+ *      `update_existing_task`, title/description updates, `proposed_workout_metadata`,
+ *      and `task_modal_intake_patch` so the Coach can rewrite the open workout card.
  *
  * Returns a new object — never mutates the caller's `parsed` argument — so guards-
  * focused unit tests can compose fragments freely.
@@ -45,7 +50,8 @@ function hasTaskModalIntakePatch(p: CoachGeminiJsonResponse['task_modal_intake_p
  * update but no structured write field is present.
  */
 export function assertCoachReplySelfAttestation(parsed: CoachGeminiJsonResponse): void {
-  if (!SELF_ATTESTATION_PHRASE_RE.test(parsed.reply_content)) return;
+  const claimsUpdate = SELF_ATTESTATION_PHRASE_RE.test(parsed.reply_content);
+  if (!claimsUpdate) return;
   const hasExecution = parsed.execution_patch != null && parsed.execution_patch.length > 0;
   const hasPersonal =
     parsed.personal_cues_resolved != null && parsed.personal_cues_resolved.length > 0;
@@ -58,7 +64,8 @@ export function assertCoachReplySelfAttestation(parsed: CoachGeminiJsonResponse)
         Boolean(parsed.updated_task_description?.trim()) ||
         hasProposed));
   const hasIntake = hasTaskModalIntakePatch(parsed.task_modal_intake_patch);
-  if (!hasExecution && !hasPersonal && !hasCard && !hasIntake) {
+  const hasPayload = hasExecution || hasPersonal || hasCard || hasIntake;
+  if (!hasPayload) {
     throw { kind: 'self_attestation_mismatch' as const };
   }
 }
@@ -75,6 +82,11 @@ export type CoachGuardsFragment = {
   priorUserMessageCount: number;
   /** Stringified CURRENT WORKOUT CONTEXT JSON or null when no live workout context. */
   currentWorkoutContextJson: string | null;
+  /**
+   * True when the **trigger** message indicates a live workout session (player /
+   * sentinel), not merely that the task row carries planned workout JSON.
+   */
+  isActiveWorkoutSession: boolean;
 };
 
 /**
@@ -129,17 +141,21 @@ export function applyCoachServerGuards(
     seedTaskCommentText = null;
   }
 
-  // Guard 3: Active-workout clamp. Mirrors `bubble-agent-dispatch/index.ts:1716-1725`.
+  // Guard 3: Workout-context clamp. Whenever planned/workout JSON is in context, block
+  // creating a *new* card from this turn. Only an active live session strips structured
+  // updates to the task card (draft/metadata/intake); Task Modal / planning keeps them.
   if (fragment.currentWorkoutContextJson) {
     createCard = false;
     taskTitle = null;
     taskDescription = null;
     seedTaskCommentText = null;
-    updateExistingTask = false;
-    updatedTaskTitle = null;
-    updatedTaskDescription = null;
-    proposedWorkoutMetadata = null;
-    taskModalIntakePatch = null;
+    if (fragment.isActiveWorkoutSession) {
+      updateExistingTask = false;
+      updatedTaskTitle = null;
+      updatedTaskDescription = null;
+      proposedWorkoutMetadata = null;
+      taskModalIntakePatch = null;
+    }
   }
 
   const out: CoachGeminiJsonResponse = {

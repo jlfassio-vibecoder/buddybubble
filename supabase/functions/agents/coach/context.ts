@@ -16,7 +16,7 @@
  * No mirror exists for this file: it imports the real Deno Supabase client and the
  * structural placeholder is too thin for these queries. The Vitest side relies on the
  * pure modules (`config`, `parse`, `server-guards`) instead. The CURRENT TASK CONTEXT
- * block is composed by `buildCurrentTaskContextBlock` (canonical in
+ * block is composed by `buildCurrentTaskContextBlock` in `strategy.ts` (canonical in
  * `src/lib/agents/coach/prompts.ts`, mirrored at `./prompts.ts`).
  */
 
@@ -24,7 +24,6 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 
 import { log } from '../../_shared/obs/log.ts';
 import { COACH_SLUG } from './config.ts';
-import { buildCurrentTaskContextBlock } from './prompts.ts';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -107,34 +106,87 @@ export function readWorkoutContextFromMessageMetadata(meta: unknown): unknown {
 }
 
 /**
- * Latest chronologically wins. Walks oldest → newest history rows for a workout
- * payload, then prefers the trigger row's metadata, then falls back to the active
- * task's metadata. Mirrors `bubble-agent-dispatch/index.ts:185-209`.
+ * Resolves the JSON string injected under `--- CURRENT WORKOUT CONTEXT ---`.
+ *
+ * **Default (`opts?.preferTaskMetadata !== true`)** — legacy order (mirrors
+ * `bubble-agent-dispatch/index.ts:185-209`):
+ * 1. Walk history oldest → newest; last non-empty `workoutContext` / `workout_context` wins.
+ * 2. Trigger row `workoutContext` / `workout_context` overrides when non-empty.
+ * 3. If still empty, fall back to `tasks.metadata` when non-empty object.
+ *
+ * **Rail co-pilot (`opts.preferTaskMetadata === true`)** — Live Co-Pilot Step 1:
+ * 1. Trigger `workoutContext` / `workout_context` when non-empty (live-player override).
+ * 2. Else `tasks.metadata` when non-empty object (canonical generated workout on card).
+ * 3. Else walk history as in (1) (pre-generate / stale-message fallback).
+ *
+ * Emits one structured log per call: `coach workout context source`.
  */
 export function resolveCurrentWorkoutContextJsonFromThread(
   rowsChronologicalOldestFirst: ReadonlyArray<{ metadata?: unknown }>,
   trigger: { metadata?: unknown },
   taskMetadataFallback: unknown | null,
+  opts?: { preferTaskMetadata?: boolean; requestId?: string },
 ): string | null {
+  const preferTaskMetadata = opts?.preferTaskMetadata === true;
+  const requestId = opts?.requestId;
+
   let best: unknown | null = null;
-  for (const r of rowsChronologicalOldestFirst) {
-    const raw = extractRawWorkoutContextFromMetadata(r.metadata);
-    if (raw != null && isNonEmptyWorkoutPayload(raw)) best = raw;
-  }
-  const fromTrigger = extractRawWorkoutContextFromMetadata(trigger.metadata);
-  if (fromTrigger != null && isNonEmptyWorkoutPayload(fromTrigger)) best = fromTrigger;
-  if (
-    best == null &&
+  let source: 'trigger' | 'task_metadata' | 'history' | 'none' = 'none';
+
+  const taskMetaEligible =
     taskMetadataFallback != null &&
     typeof taskMetadataFallback === 'object' &&
     !Array.isArray(taskMetadataFallback) &&
-    isNonEmptyWorkoutPayload(taskMetadataFallback)
-  ) {
-    best = taskMetadataFallback;
+    isNonEmptyWorkoutPayload(taskMetadataFallback);
+
+  if (preferTaskMetadata) {
+    const fromTrigger = extractRawWorkoutContextFromMetadata(trigger.metadata);
+    if (fromTrigger != null && isNonEmptyWorkoutPayload(fromTrigger)) {
+      best = fromTrigger;
+      source = 'trigger';
+    } else if (taskMetaEligible) {
+      best = taskMetadataFallback;
+      source = 'task_metadata';
+    } else {
+      for (const r of rowsChronologicalOldestFirst) {
+        const raw = extractRawWorkoutContextFromMetadata(r.metadata);
+        if (raw != null && isNonEmptyWorkoutPayload(raw)) best = raw;
+      }
+      if (best != null) source = 'history';
+    }
+  } else {
+    for (const r of rowsChronologicalOldestFirst) {
+      const raw = extractRawWorkoutContextFromMetadata(r.metadata);
+      if (raw != null && isNonEmptyWorkoutPayload(raw)) best = raw;
+    }
+    if (best != null) source = 'history';
+
+    const fromTrigger = extractRawWorkoutContextFromMetadata(trigger.metadata);
+    if (fromTrigger != null && isNonEmptyWorkoutPayload(fromTrigger)) {
+      best = fromTrigger;
+      source = 'trigger';
+    }
+
+    if (best == null && taskMetaEligible) {
+      best = taskMetadataFallback;
+      source = 'task_metadata';
+    }
   }
-  if (best == null) return null;
-  const s = stringifyWorkoutContextForPrompt(best);
-  return s.length > 0 ? s : null;
+
+  if (best == null) source = 'none';
+
+  const s = best == null ? '' : stringifyWorkoutContextForPrompt(best);
+  const result = s.length > 0 ? s : null;
+
+  log('info', 'coach workout context source', {
+    request_id: requestId,
+    slug: COACH_SLUG,
+    surface: preferTaskMetadata ? 'rail' : 'non_rail',
+    source,
+    bytes: result?.length ?? 0,
+  });
+
+  return result;
 }
 
 async function taskIdInBubble(
@@ -194,9 +246,8 @@ export async function resolveKnownTargetTaskId(
 }
 
 /**
- * Load the resolved task and produce the CURRENT TASK CONTEXT block alongside the raw
- * task metadata (used downstream by the workout-context resolver). Returns null when
- * no task row matched.
+ * Load the resolved task row for CURRENT TASK CONTEXT and workout-context resolution.
+ * Returns null when no task row matched.
  */
 export async function loadCurrentTaskContext(
   // deno-lint-ignore no-explicit-any
@@ -204,7 +255,12 @@ export async function loadCurrentTaskContext(
   taskId: string,
   bubbleId: string,
   requestId: string,
-): Promise<{ titleBlock: string; metadata: unknown | null; item_type: string | null } | null> {
+): Promise<{
+  title: string;
+  description: string | null;
+  metadata: unknown | null;
+  item_type: string | null;
+} | null> {
   const { data: ctxTask, error: ctxErr } = await supabase
     .from('tasks')
     .select('title, description, metadata, item_type')
@@ -231,7 +287,8 @@ export async function loadCurrentTaskContext(
     item_type?: string | null;
   };
   return {
-    titleBlock: buildCurrentTaskContextBlock(row.title, row.description ?? null),
+    title: row.title,
+    description: row.description ?? null,
     metadata: row.metadata ?? null,
     item_type:
       typeof row.item_type === 'string' && row.item_type.trim() ? row.item_type.trim() : null,

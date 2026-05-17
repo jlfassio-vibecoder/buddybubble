@@ -84,6 +84,7 @@ async function setDispatcherEnv(): Promise<void> {
   Deno.env.set('LLM_TIMEOUT_MS', '2500');
   Deno.env.delete('LLM_DEBUG');
   Deno.env.delete('ORGANIZER_WRITES_ENABLED');
+  Deno.env.delete('COACH_MERGE_WORKOUT_METADATA');
 }
 
 function clearDispatcherEnv(): void {
@@ -97,6 +98,7 @@ function clearDispatcherEnv(): void {
     'LLM_TIMEOUT_MS',
     'LLM_DEBUG',
     'ORGANIZER_WRITES_ENABLED',
+    'COACH_MERGE_WORKOUT_METADATA',
   ]) {
     Deno.env.delete(key);
   }
@@ -111,6 +113,8 @@ function webhookRequest(
     bubbleId?: string | null;
     parentId?: string | null;
     metadata?: Record<string, unknown> | null;
+    targetTaskId?: string | null;
+    attachedTaskId?: string | null;
   } = {},
 ): Request {
   const record = {
@@ -118,8 +122,8 @@ function webhookRequest(
     bubble_id: options.bubbleId === undefined ? TEST_BUBBLE_ID : options.bubbleId,
     user_id: options.userId ?? TEST_USER_ID,
     parent_id: options.parentId ?? null,
-    target_task_id: null,
-    attached_task_id: null,
+    target_task_id: options.targetTaskId === undefined ? null : options.targetTaskId,
+    attached_task_id: options.attachedTaskId === undefined ? null : options.attachedTaskId,
     content: options.content ?? '@coach what should I do today?',
     created_at: '2026-05-08T21:00:00.000Z',
     metadata: options.metadata ?? null,
@@ -386,3 +390,288 @@ integrationTest('happy buddy mention persists via buddy RPC', async () => {
     },
   );
 });
+
+const COACH_REPLY_WITH_INTAKE_PATCH = {
+  ...COACH_REPLY,
+  task_modal_intake_patch: { readiness: 7 },
+};
+
+const COACH_RAIL_SURFACE_DIRECT_REPLY = {
+  ...COACH_REPLY,
+  reply_content: 'I have updated the workout description on your card.',
+  update_existing_task: true,
+  updated_task_title: null,
+  updated_task_description: 'Full body AMRAP with supersets and mobility finisher.',
+  proposed_workout_metadata: null,
+};
+
+const COACH_REPLY_RAIL_AUTO_APPLY = {
+  ...COACH_REPLY,
+  reply_content: 'Added a finisher.',
+  update_existing_task: true,
+  updated_task_title: null,
+  updated_task_description: null,
+  proposed_workout_metadata: {
+    workout_type: 'AMRAP',
+    duration_min: 45,
+    exercises: [{ name: 'Goblet Squat' }, { name: 'Push Press' }],
+    blocks: [
+      {
+        name: 'Finisher',
+        type: 'AMRAP',
+        rounds: 3,
+        exercises: [{ name: 'Kettlebell Thrusters', sets: 3, reps: 12 }],
+      },
+    ],
+  },
+};
+
+const TEST_COACH_TARGET_TASK_ID = '00000000-0000-4000-8000-000000000501';
+
+integrationTest(
+  'coach rail surface routes title or description updates to agent_update_task_and_reply',
+  async () => {
+    await withHarness(
+      {
+        postgrest: {
+          coachTaskResolution: { taskId: TEST_COACH_TARGET_TASK_ID },
+        },
+        vertex: vertexHappy(COACH_RAIL_SURFACE_DIRECT_REPLY),
+      },
+      async ({ rpc }) => {
+        const response = await handleDispatchRequest(
+          webhookRequest({
+            id: '00000000-0000-4000-8000-000000000888',
+            content: '@coach rewrite the workout description',
+            metadata: {
+              surface: 'standard_task_chat_rail',
+              default_agent_slug: 'coach',
+            },
+            targetTaskId: TEST_COACH_TARGET_TASK_ID,
+          }),
+        );
+        assertEquals(response.status, 200);
+        assertEquals((await readJson(response)).ok, true);
+
+        const direct = rpc.getRpcCalls('agent_update_task_and_reply');
+        assertEquals(direct.length, 1);
+        assertEquals(direct[0].args.p_target_task_id, TEST_COACH_TARGET_TASK_ID);
+        assertEquals(direct[0].args.p_new_title, null);
+        assertEquals(
+          direct[0].args.p_new_description,
+          COACH_RAIL_SURFACE_DIRECT_REPLY.updated_task_description,
+        );
+
+        assertEquals(rpc.getRpcCalls('agent_insert_coach_workout_draft_reply').length, 0);
+        assertEquals(rpc.getRpcCalls('agent_create_card_and_reply').length, 0);
+      },
+    );
+  },
+);
+
+integrationTest(
+  'coach rail surface auto-applies proposed_workout_metadata via agent_update_task_and_reply (Step 3 write path)',
+  async () => {
+    await withHarness(
+      {
+        postgrest: {
+          coachTaskResolution: {
+            taskId: TEST_COACH_TARGET_TASK_ID,
+            metadata: {
+              workout_type: 'AMRAP',
+              duration_min: 45,
+              exercises: [{ name: 'Goblet Squat' }, { name: 'Push Press' }],
+            },
+            item_type: 'workout',
+          },
+          rootHistoryRows: [{ metadata: { workoutContext: { partial: true } } }],
+        },
+        vertex: vertexHappy(COACH_REPLY_RAIL_AUTO_APPLY),
+      },
+      async ({ logs, rpc, vertex }) => {
+        const response = await handleDispatchRequest(
+          webhookRequest({
+            id: '00000000-0000-4000-8000-000000000887',
+            content: '@coach add a HIIT finisher',
+            metadata: {
+              surface: 'standard_task_chat_rail',
+              default_agent_slug: 'coach',
+            },
+            targetTaskId: TEST_COACH_TARGET_TASK_ID,
+          }),
+        );
+        assertEquals(response.status, 200);
+        assertEquals((await readJson(response)).ok, true);
+        assertExists(vertex);
+        assertEquals(vertex.count(), 1);
+
+        const direct = rpc.getRpcCalls('agent_update_task_and_reply');
+        assertEquals(direct.length, 1);
+        assertEquals(direct[0].args.p_target_task_id, TEST_COACH_TARGET_TASK_ID);
+        assertEquals(direct[0].args.p_new_title, null);
+        assertEquals(direct[0].args.p_new_description, null);
+        const meta = direct[0].args.p_new_metadata as Record<string, unknown>;
+        assertEquals(meta.workout_type, 'AMRAP');
+        assertEquals(meta.duration_min, 45);
+        assertEquals(meta.exercises, [{ name: 'Goblet Squat' }, { name: 'Push Press' }]);
+        assertEquals(meta.blocks, [
+          {
+            name: 'Finisher',
+            type: 'AMRAP',
+            rounds: 3,
+            exercises: [{ name: 'Kettlebell Thrusters', sets: 3, reps: 12 }],
+          },
+        ]);
+
+        assertEquals(rpc.getRpcCalls('agent_insert_coach_workout_draft_reply').length, 0);
+        assertEquals(rpc.getRpcCalls('agent_create_card_and_reply').length, 0);
+
+        const received = logs.findLog((log) => log.msg === 'webhook received');
+        assertExists(received);
+        const requestId = received.request_id;
+        assertEquals(typeof requestId, 'string');
+
+        assertExists(
+          logs.findLog(
+            (log) =>
+              log.msg === 'coach rail auto-applied workout edit' &&
+              log.request_id === requestId &&
+              log.has_metadata === true,
+          ),
+        );
+        const ctxLogs = logs.logs.filter(
+          (log) => log.msg === 'coach workout context source' && log.request_id === requestId,
+        );
+        assertEquals(ctxLogs.length, 1);
+        assertEquals(ctxLogs[0].surface, 'rail');
+        assertEquals(ctxLogs[0].source, 'task_metadata');
+      },
+    );
+  },
+);
+
+integrationTest(
+  'coach rail surface prefers tasks.metadata over stale history workoutContext (Step 1 read path)',
+  async () => {
+    await withHarness(
+      {
+        postgrest: {
+          coachTaskResolution: {
+            taskId: TEST_COACH_TARGET_TASK_ID,
+            metadata: {
+              workout_type: 'AMRAP',
+              duration_min: 45,
+              exercises: [{ name: 'Goblet Squat' }, { name: 'Push Press' }],
+            },
+            item_type: 'workout',
+          },
+          rootHistoryRows: [{ metadata: { workoutContext: { partial: true } } }],
+        },
+        vertex: vertexHappy(COACH_REPLY),
+      },
+      async ({ logs, vertex }) => {
+        const response = await handleDispatchRequest(
+          webhookRequest({
+            id: '00000000-0000-4000-8000-000000000889',
+            content: '@coach review my workout and add a finisher',
+            metadata: {
+              surface: 'standard_task_chat_rail',
+              default_agent_slug: 'coach',
+            },
+            targetTaskId: TEST_COACH_TARGET_TASK_ID,
+          }),
+        );
+        assertEquals(response.status, 200);
+        assertEquals((await readJson(response)).ok, true);
+        assertExists(vertex);
+        assertEquals(vertex.count(), 1);
+
+        const received = logs.findLog((log) => log.msg === 'webhook received');
+        assertExists(received);
+        const requestId = received.request_id;
+        assertEquals(typeof requestId, 'string');
+
+        const ctxLogs = logs.logs.filter(
+          (log) => log.msg === 'coach workout context source' && log.request_id === requestId,
+        );
+        assertEquals(
+          ctxLogs.length,
+          1,
+          'expected exactly one workout context source log for this request',
+        );
+        assertEquals(ctxLogs[0].surface, 'rail');
+        assertEquals(ctxLogs[0].source, 'task_metadata');
+        assertEquals(typeof ctxLogs[0].bytes, 'number');
+        assertEquals((ctxLogs[0].bytes as number) > 0, true);
+
+        const historyLog = logs.logs.find(
+          (log) =>
+            log.msg === 'coach workout context source' &&
+            log.request_id === requestId &&
+            log.source === 'history',
+        );
+        assertEquals(historyLog, undefined);
+      },
+    );
+  },
+);
+
+integrationTest(
+  'trigger message with workoutContext clears task_modal_intake_patch before RPC',
+  async () => {
+    await withHarness({ vertex: vertexHappy(COACH_REPLY_WITH_INTAKE_PATCH) }, async ({ rpc }) => {
+      const response = await handleDispatchRequest(
+        webhookRequest({
+          content: '@coach log my set',
+          metadata: {
+            default_agent_slug: 'coach',
+            workoutContext: { exercises: [{ name: 'Squat' }] },
+          },
+        }),
+      );
+      assertEquals(response.status, 200);
+      assertEquals((await readJson(response)).ok, true);
+      const calls = rpc.getRpcCalls('agent_create_card_and_reply');
+      assertEquals(calls.length, 1);
+      assertEquals(calls[0].args.p_task_modal_intake_patch, null);
+    });
+  },
+);
+
+integrationTest(
+  'coach reply with task_modal_intake_patch passes through when trigger has no workoutContext',
+  async () => {
+    await withHarness({ vertex: vertexHappy(COACH_REPLY_WITH_INTAKE_PATCH) }, async ({ rpc }) => {
+      const response = await handleDispatchRequest(webhookRequest());
+      assertEquals(response.status, 200);
+      assertEquals((await readJson(response)).ok, true);
+      const calls = rpc.getRpcCalls('agent_create_card_and_reply');
+      assertEquals(calls.length, 1);
+      assertEquals(calls[0].args.p_task_modal_intake_patch, { readiness: 7 });
+    });
+  },
+);
+
+integrationTest(
+  'coach reply claiming sleep quality slider update without patch logs warn',
+  async () => {
+    await withHarness(
+      {
+        vertex: vertexHappy({
+          ...COACH_REPLY,
+          reply_content: 'Set your sleep quality slider to 8.',
+        }),
+      },
+      async ({ logs }) => {
+        const response = await handleDispatchRequest(webhookRequest());
+        assertEquals(response.status, 200);
+        assertEquals((await readJson(response)).ok, true);
+        assertExists(
+          logs.findLog(
+            (log) => log.msg === 'coach reply_content claims intake update without patch',
+          ),
+        );
+      },
+    );
+  },
+);
