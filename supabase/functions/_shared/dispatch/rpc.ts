@@ -55,6 +55,8 @@ export type AgentCreateCardArgs = {
   p_personal_cues?: unknown;
   /** Coach task-modal workout intake wizard patch (merged into reply `metadata`). */
   p_task_modal_intake_patch?: unknown;
+  /** Coach UI command (e.g. `{ v: 1, kind: 'trigger_generation' }`). */
+  p_card_action?: unknown;
 };
 
 export type AgentInsertCoachDraftArgs = {
@@ -70,6 +72,7 @@ export type AgentInsertCoachDraftArgs = {
   p_execution_patch?: unknown;
   p_personal_cues?: unknown;
   p_task_modal_intake_patch?: unknown;
+  p_card_action?: unknown;
 };
 
 export type AgentUpdateTaskAndReplyArgs = {
@@ -84,6 +87,7 @@ export type AgentUpdateTaskAndReplyArgs = {
   p_new_description: string | null;
   /** Shallow-merge into `tasks.metadata` when non-null (rail auto-apply). */
   p_new_metadata?: Record<string, unknown> | null;
+  p_card_action?: unknown;
 };
 
 export type BuddyCreateOnboardingReplyArgs = {

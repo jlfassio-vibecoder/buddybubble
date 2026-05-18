@@ -12,6 +12,7 @@
  *   - `agent.response.timeout`   — per-agent failsafe expired. Fields: agentSlug, elapsedMs, configuredFailsafeMs, bubbleId, surface.
  *   - `agent.response.received`  — target agent replied; pending cleared. Fields: agentSlug, elapsedMs, bubbleId, surface.
  *   - `agent.effect.scanned` / `agent.effect.parse_dropped` / `agent.effect.applied` — coach metadata patch pipeline (TaskModal host wiring).
+ *   - `coach.card_action.triggered` — TaskModal invoked Generate Workout from Coach `card_action` metadata.
  */
 
 export type AgentRoutingSurface =
@@ -59,14 +60,14 @@ export type AgentResponseReceivedEvent = {
 export type AgentEffectScannedRoutingEvent = {
   event: 'agent.effect.scanned';
   surface: AgentRoutingSurface;
-  effect: 'execution_patch' | 'task_modal_intake_patch';
+  effect: 'execution_patch' | 'task_modal_intake_patch' | 'card_action';
   messageId: string;
 };
 
 export type AgentEffectParseDroppedRoutingEvent = {
   event: 'agent.effect.parse_dropped';
   surface: AgentRoutingSurface;
-  effect: 'execution_patch' | 'task_modal_intake_patch';
+  effect: 'execution_patch' | 'task_modal_intake_patch' | 'card_action';
   messageId: string;
   reason: 'missing' | 'invalid';
 };
@@ -74,8 +75,16 @@ export type AgentEffectParseDroppedRoutingEvent = {
 export type AgentEffectAppliedRoutingEvent = {
   event: 'agent.effect.applied';
   surface: AgentRoutingSurface;
-  effect: 'execution_patch' | 'task_modal_intake_patch';
+  effect: 'execution_patch' | 'task_modal_intake_patch' | 'card_action';
   messageId: string;
+};
+
+export type CoachCardActionTriggeredEvent = {
+  event: 'coach.card_action.triggered';
+  action: 'trigger_generation';
+  taskId: string;
+  messageId: string;
+  surface: 'standard-task-chat-rail';
 };
 
 export type AgentRoutingEvent =
@@ -85,7 +94,8 @@ export type AgentRoutingEvent =
   | AgentResponseReceivedEvent
   | AgentEffectScannedRoutingEvent
   | AgentEffectParseDroppedRoutingEvent
-  | AgentEffectAppliedRoutingEvent;
+  | AgentEffectAppliedRoutingEvent
+  | CoachCardActionTriggeredEvent;
 
 const PREFIX = '[agent-routing]';
 

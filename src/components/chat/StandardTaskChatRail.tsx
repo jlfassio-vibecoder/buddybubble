@@ -36,6 +36,7 @@ import { BUDDY_SLUG } from '@/lib/agents/buddy/config';
 import { useAgentEffectSweep } from '@/components/chat/agent-effects/useAgentEffectSweep';
 import type {
   AgentEffectTelemetryEvent,
+  CardActionEffectPayload,
   ExecutionPatchEffectPayload,
   TaskModalIntakePatchEffectPayload,
 } from '@/components/chat/agent-effects/types';
@@ -125,6 +126,12 @@ export type StandardTaskChatRailProps = {
    * Host owns cross-mount dedupe + write policy.
    */
   onTaskModalIntakePatch?: (ctx: TaskModalIntakePatchEffectPayload) => void;
+
+  /**
+   * Coach `metadata.card_action` — parsed UI command (e.g. trigger workout generation).
+   * Host owns cross-mount dedupe beyond a single sweep.
+   */
+  onCardAction?: (ctx: CardActionEffectPayload) => void;
 
   /**
    * Pure telemetry for agent-effect parsing / application. Host may forward to `logAgentRoutingEvent`.
@@ -289,6 +296,7 @@ function useRailThreadApi(props: StandardTaskChatRailProps): RailThreadApi {
     agentsByAuthUserId,
     onExecutionPatch: props.onExecutionPatch,
     onTaskModalIntakePatch: props.onTaskModalIntakePatch,
+    onCardAction: props.onCardAction,
     onEffectTelemetry: props.onEffectTelemetry,
   });
 

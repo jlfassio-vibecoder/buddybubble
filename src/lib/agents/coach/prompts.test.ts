@@ -54,6 +54,19 @@ describe('buildCurrentTaskContextBlock', () => {
     expect(block).not.toContain('Use blocks whenever section identity matters');
     expect(block).not.toContain('block_format');
   });
+
+  it('rail tail contains GENERATION HAND-OFF once', () => {
+    const block = buildCurrentTaskContextBlock('Leg day', 'Squats', { rail: true });
+    expect(block).toContain('GENERATION HAND-OFF');
+    const matches = block.match(/GENERATION HAND-OFF/g) ?? [];
+    expect(matches.length).toBe(1);
+    expect(block).toContain("card_action: 'trigger_generation'");
+  });
+
+  it('non-rail tail does NOT contain GENERATION HAND-OFF', () => {
+    const block = buildCurrentTaskContextBlock('Leg day', 'Squats');
+    expect(block).not.toContain('GENERATION HAND-OFF');
+  });
 });
 
 describe('buildBaseCoachPrompt', () => {
@@ -97,6 +110,17 @@ describe('buildBaseCoachPrompt', () => {
   it('documents per-exercise EMOM timers and server derivation from interval_seconds', () => {
     expect(prompt).toContain('per-exercise work_seconds / rest_seconds');
     expect(prompt).toContain('derives them from interval_seconds');
+  });
+
+  it('names card_action in the JSON keys list', () => {
+    expect(prompt).toContain('task_modal_intake_patch, card_action, intake_phase');
+  });
+
+  it('contains flat-card parametric refusal sentence once', () => {
+    expect(prompt).toContain('parametric_requires_rich_workout_set');
+    expect(prompt).toContain("card_action: 'trigger_generation'");
+    const matches = prompt.match(/parametric_requires_rich_workout_set/g) ?? [];
+    expect(matches.length).toBe(1);
   });
 });
 

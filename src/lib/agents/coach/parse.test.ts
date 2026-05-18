@@ -736,6 +736,51 @@ describe('parseCoachJson', () => {
     expect(out.proposed_workout_metadata).toBeNull();
   });
 
+  it('round-trips card_action trigger_generation on no-card branch', () => {
+    const out = parseCoachJson(
+      JSON.stringify(
+        makeReplyOnlyPayload({
+          card_action: 'trigger_generation',
+          reply_content: 'Starting the generator now.',
+        }),
+      ),
+    );
+    expect(out.card_action).toBe('trigger_generation');
+  });
+
+  it('maps unknown card_action strings to null', () => {
+    const out = parseCoachJson(
+      JSON.stringify(makeReplyOnlyPayload({ card_action: 'reset_intake' })),
+    );
+    expect(out.card_action).toBeNull();
+  });
+
+  it('defaults missing card_action to null', () => {
+    const out = parseCoachJson(JSON.stringify(makeReplyOnlyPayload()));
+    expect(out.card_action).toBeNull();
+  });
+
+  it('forces card_action null on create_card branch', () => {
+    const out = parseCoachJson(
+      JSON.stringify({
+        reply_content: 'New card',
+        create_card: true,
+        task_title: 'Workout',
+        task_description: null,
+        card_action: 'trigger_generation',
+        ...REQUIRED_TAIL,
+        intake_phase: 'other',
+        session_readiness_score: 50,
+        missing_intake_categories: [],
+        user_requested_immediate_card: false,
+        session_request: false,
+        coach_task_notes: null,
+      }),
+    );
+    expect(out.create_card).toBe(true);
+    expect(out.card_action).toBeNull();
+  });
+
   it('surfaces task_modal_intake_dropped for unknown keys and readiness clamp', () => {
     const out = parseCoachJson(
       JSON.stringify(

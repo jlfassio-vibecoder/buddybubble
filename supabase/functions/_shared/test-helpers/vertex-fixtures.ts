@@ -119,6 +119,25 @@ export function vertexHappy(parsedJson: unknown): VertexHandlerWithCount {
   };
 }
 
+export type VertexHandlerWithCapturedBody = VertexHandlerWithCount & {
+  lastBodyText: () => string | null;
+};
+
+/** Like `vertexHappy`, but exposes the raw Vertex request body for prompt assertions. */
+export function vertexHappyCapturingBody(parsedJson: unknown): VertexHandlerWithCapturedBody {
+  let calls = 0;
+  let lastBody: string | null = null;
+  return {
+    count: () => calls,
+    lastBodyText: () => lastBody,
+    handler: (_req, call) => {
+      calls += 1;
+      lastBody = call.bodyText;
+      return jsonResponse(vertexGenerateResponse(JSON.stringify(parsedJson)));
+    },
+  };
+}
+
 export function vertex429ThenHappy(parsedJson: unknown): VertexHandlerWithCount {
   let calls = 0;
   return {

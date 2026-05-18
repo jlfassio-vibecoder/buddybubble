@@ -89,6 +89,8 @@ export type CoachGeminiJsonResponse = {
   task_modal_intake_patch: TaskModalIntakePatch | null;
   /** Parser telemetry: fields dropped or clamped while normalizing `task_modal_intake_patch`. */
   task_modal_intake_dropped: TaskModalIntakePatchDrop[];
+  /** Optional UI command. Phase 12.1 only enum: 'trigger_generation'. */
+  card_action: 'trigger_generation' | null;
 };
 
 /** Payload for `p_personal_cues` on agent RPCs (matches `apply_personal_cues_for_user`). */
@@ -529,6 +531,10 @@ export function parseCoachJson(
   const task_modal_intake_patch = intakeCollect.patch;
   const task_modal_intake_dropped = intakeCollect.dropped;
 
+  const cardActionRaw = (parsed as Record<string, unknown>).card_action;
+  const card_action: CoachGeminiJsonResponse['card_action'] =
+    cardActionRaw === 'trigger_generation' ? 'trigger_generation' : null;
+
   const cuesResult = parsePersonalCuesPatchFromGemini(
     (parsed as Record<string, unknown>).personal_cues_patch,
     exerciseDictionaryByIndex,
@@ -554,6 +560,7 @@ export function parseCoachJson(
       task_modal_intake_dropped,
       personal_cues_resolved,
       personal_cues_dropped_unanchored,
+      card_action: null,
       ...intakeTail,
       ...updateTail,
     };
@@ -572,9 +579,16 @@ export function parseCoachJson(
     task_modal_intake_dropped,
     personal_cues_resolved,
     personal_cues_dropped_unanchored,
+    card_action,
     ...intakeTail,
     ...updateTail,
   };
+}
+
+/** Versioned payload for `p_card_action` on agent RPCs (or null when empty). */
+export function cardActionForRpc(action: 'trigger_generation' | null): unknown | null {
+  if (action == null) return null;
+  return { v: 1, kind: action };
 }
 
 /** Returns the patch shape expected by the persistence RPCs (or null when empty). */

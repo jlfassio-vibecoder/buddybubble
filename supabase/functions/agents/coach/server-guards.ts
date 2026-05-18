@@ -41,7 +41,8 @@ export function assertCoachReplySelfAttestation(parsed: CoachGeminiJsonResponse)
         Boolean(parsed.updated_task_description?.trim()) ||
         hasProposed));
   const hasIntake = hasTaskModalIntakePatch(parsed.task_modal_intake_patch);
-  const hasPayload = hasExecution || hasPersonal || hasCard || hasIntake;
+  const hasCardAction = parsed.card_action === 'trigger_generation';
+  const hasPayload = hasExecution || hasPersonal || hasCard || hasIntake || hasCardAction;
   if (!hasPayload) {
     throw { kind: 'self_attestation_mismatch' as const };
   }
@@ -83,6 +84,7 @@ export function applyCoachServerGuards(
   let updatedTaskDescription = parsed.updated_task_description;
   let proposedWorkoutMetadata = parsed.proposed_workout_metadata;
   let taskModalIntakePatch = parsed.task_modal_intake_patch;
+  let cardAction = parsed.card_action;
 
   // Guard 1: Draft override. Mirrors `bubble-agent-dispatch/index.ts:1683-1688`.
   if (fragment.knownTargetTaskId && updateExistingTask) {
@@ -132,6 +134,7 @@ export function applyCoachServerGuards(
       updatedTaskDescription = null;
       proposedWorkoutMetadata = null;
       taskModalIntakePatch = null;
+      cardAction = null;
     }
   }
 
@@ -139,6 +142,12 @@ export function applyCoachServerGuards(
   // when proposed_workout_metadata.blocks is non-empty, structured JSON is the prescription
   // — prose in updated_task_description is forbidden.
   if (blocksArrayNonEmpty(proposedWorkoutMetadata as Record<string, unknown> | null)) {
+    updatedTaskDescription = null;
+  }
+
+  // Guard 5: Action exclusivity — card_action is a UI command, not a workout draft.
+  if (cardAction === 'trigger_generation') {
+    proposedWorkoutMetadata = null;
     updatedTaskDescription = null;
   }
 
@@ -153,6 +162,7 @@ export function applyCoachServerGuards(
     updated_task_description: updatedTaskDescription,
     proposed_workout_metadata: proposedWorkoutMetadata,
     task_modal_intake_patch: taskModalIntakePatch,
+    card_action: cardAction,
   };
   assertCoachReplySelfAttestation(out);
   return out;

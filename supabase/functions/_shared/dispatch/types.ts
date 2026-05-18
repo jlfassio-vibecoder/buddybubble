@@ -151,6 +151,8 @@ export interface DispatchContext {
    * `agent-dispatch` (`readDispatcherEnv`).
    */
   coachMergeWorkoutMetadata?: boolean;
+  /** From COACH_CARD_ACTIONS env. When false, strategy strips card_action before guards. */
+  coachCardActions?: boolean;
   /**
    * Strategy-owned scratch space, request-scoped. Each strategy SHOULD namespace its
    * keys under its own slug (e.g. `extras.coach = { ... }`) so registrations cannot

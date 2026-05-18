@@ -33,6 +33,7 @@ function makeParsed(overrides: Partial<CoachGeminiJsonResponse> = {}): CoachGemi
     personal_cues_dropped_unanchored: 0,
     task_modal_intake_patch: null,
     task_modal_intake_dropped: [],
+    card_action: null,
     ...overrides,
   };
 }
@@ -101,6 +102,21 @@ describe('applyCoachServerGuards — Layer B turn gate', () => {
     expect(out.task_title).toBeNull();
     expect(out.task_description).toBeNull();
     expect(out.coach_task_notes).toBeNull();
+  });
+
+  it('does not clear card_action on first-message Layer B card block', () => {
+    const parsed = makeParsed({
+      create_card: true,
+      task_title: 'Quick Workout',
+      task_description: 'desc',
+      card_action: 'trigger_generation',
+    });
+    const out = applyCoachServerGuards(parsed, {
+      ...NO_TASK_FRAGMENT,
+      priorUserMessageCount: 0,
+    });
+    expect(out.create_card).toBe(false);
+    expect(out.card_action).toBe('trigger_generation');
   });
 
   it('blocks session_request card creation when prior count < 2 (session_request_turn_gate)', () => {
@@ -242,6 +258,7 @@ describe('applyCoachServerGuards — Active-workout clamp', () => {
     expect(out.updated_task_description).toBeNull();
     expect(out.proposed_workout_metadata).toBeNull();
     expect(out.task_modal_intake_patch).toBeNull();
+    expect(out.card_action).toBeNull();
     expect(out.execution_patch).toEqual([{ exerciseIndex: 0, setIndex: 0, weight: '60' }]);
     expect(out.personal_cues_resolved).toEqual([
       {
@@ -340,6 +357,23 @@ describe('applyCoachServerGuards — Narrative vs Structure killswitch', () => {
   });
 });
 
+describe('applyCoachServerGuards — Action exclusivity (Guard 5)', () => {
+  it('nulls proposed_workout_metadata and updated_task_description; preserves title', () => {
+    const parsed = makeParsed({
+      card_action: 'trigger_generation',
+      update_existing_task: true,
+      updated_task_title: 'Leg day',
+      updated_task_description: 'Full prose',
+      proposed_workout_metadata: { workout_type: 'AMRAP' },
+    });
+    const out = applyCoachServerGuards(parsed, NO_TASK_FRAGMENT);
+    expect(out.card_action).toBe('trigger_generation');
+    expect(out.updated_task_title).toBe('Leg day');
+    expect(out.updated_task_description).toBeNull();
+    expect(out.proposed_workout_metadata).toBeNull();
+  });
+});
+
 describe('applyCoachServerGuards — Self-attestation', () => {
   it('throws when reply_content claims an update without structured writes', () => {
     const parsed = makeParsed({
@@ -351,6 +385,15 @@ describe('applyCoachServerGuards — Self-attestation', () => {
     } catch (e) {
       expect(e).toEqual({ kind: 'self_attestation_mismatch' });
     }
+  });
+
+  it('allows narrative when only card_action is present', () => {
+    const parsed = makeParsed({
+      reply_content: 'Starting the generator now on your card.',
+      card_action: 'trigger_generation',
+    });
+    const out = applyCoachServerGuards(parsed, NO_TASK_FRAGMENT);
+    expect(out.card_action).toBe('trigger_generation');
   });
 
   it('allows narrative update when personal_cues_resolved is present', () => {

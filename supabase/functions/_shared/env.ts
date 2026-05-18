@@ -35,6 +35,8 @@ export type DispatcherEnv = {
    * aligned. Default false (raw proposed shallow-merge). Strict `=== '1'`.
    */
   COACH_MERGE_WORKOUT_METADATA: boolean;
+  /** When true, coach/strategy lets parsed `card_action` flow through guards and persist. */
+  COACH_CARD_ACTIONS: boolean;
 };
 
 const REQUIRED_STRING_KEYS: ReadonlyArray<keyof DispatcherEnv> = [
@@ -109,5 +111,6 @@ export function readDispatcherEnv(): DispatcherEnv {
     // so an accidental `ORGANIZER_WRITES_ENABLED=true` or `=yes` reads as false.
     ORGANIZER_WRITES_ENABLED: readString('ORGANIZER_WRITES_ENABLED') === '1',
     COACH_MERGE_WORKOUT_METADATA: readString('COACH_MERGE_WORKOUT_METADATA') === '1',
+    COACH_CARD_ACTIONS: readString('COACH_CARD_ACTIONS') === '1',
   };
 }

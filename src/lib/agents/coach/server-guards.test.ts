@@ -25,6 +25,7 @@ function baseParsed(overrides: Partial<CoachGeminiJsonResponse> = {}): CoachGemi
     personal_cues_dropped_unanchored: 0,
     task_modal_intake_patch: null,
     task_modal_intake_dropped: [],
+    card_action: null,
     ...overrides,
   };
 }
@@ -67,6 +68,17 @@ describe('assertCoachReplySelfAttestation', () => {
               form_cues: 'knees out',
             },
           ],
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('allows phrase when card_action is trigger_generation', () => {
+    expect(() =>
+      assertCoachReplySelfAttestation(
+        baseParsed({
+          reply_content: 'Starting the generator now on your card.',
+          card_action: 'trigger_generation',
         }),
       ),
     ).not.toThrow();

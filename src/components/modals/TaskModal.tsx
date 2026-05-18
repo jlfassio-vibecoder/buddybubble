@@ -89,6 +89,7 @@ import { useIsNarrowBelowMd } from '@/hooks/use-is-narrow-below-md';
 import type { TaskModalTab, TaskModalViewMode } from '@/types/open-task-options';
 import type {
   AgentEffectTelemetryEvent,
+  CardActionEffectPayload,
   ExecutionPatchEffectPayload,
 } from '@/components/chat/agent-effects/types';
 import type { TaskModalIntakePatch } from '@/lib/agents/coach/task-modal-intake-patch';
@@ -435,6 +436,34 @@ export function TaskModal({
       void handleAiGenerateWorkout(wizardData);
     },
     [setWorkoutViewerOpen, handleAiGenerateWorkout],
+  );
+
+  const handleCardAction = useCallback(
+    (args: CardActionEffectPayload) => {
+      if (args.action.kind !== 'trigger_generation') return;
+      if (itemType !== 'workout' && itemType !== 'workout_log') return;
+      if (!canWrite) return;
+      if (aiWorkoutGenerating) return;
+      if (viewerWorkoutSet != null) return;
+      logAgentRoutingEvent({
+        event: 'coach.card_action.triggered',
+        action: args.action.kind,
+        taskId: args.taskId,
+        messageId: args.messageId,
+        surface: 'standard-task-chat-rail',
+      });
+      setWorkoutViewerOpen(true);
+      void handleAiGenerateWorkout(workoutIntake.buildWizardPayload());
+    },
+    [
+      itemType,
+      canWrite,
+      aiWorkoutGenerating,
+      viewerWorkoutSet,
+      setWorkoutViewerOpen,
+      handleAiGenerateWorkout,
+      workoutIntake,
+    ],
   );
 
   const { aiCardCoverGenerating, generateCardCoverWithAi, resetCardCoverAi } = useTaskCardCoverAi({
@@ -1665,6 +1694,7 @@ export function TaskModal({
                             onThreadViewChange={setCommentsInThreadView}
                             onExecutionPatch={handleExecutionPatch}
                             onTaskModalIntakePatch={handleTaskModalIntakePatch}
+                            onCardAction={handleCardAction}
                             onEffectTelemetry={handleAgentEffectTelemetry}
                             onEmbeddedTaskIdsChange={setEmbeddedTaskIdsFromThread}
                             chatRowExtras={{
@@ -1810,6 +1840,7 @@ export function TaskModal({
                                   onThreadViewChange={setCommentsInThreadView}
                                   onExecutionPatch={handleExecutionPatch}
                                   onTaskModalIntakePatch={handleTaskModalIntakePatch}
+                                  onCardAction={handleCardAction}
                                   onEffectTelemetry={handleAgentEffectTelemetry}
                                   onEmbeddedTaskIdsChange={setEmbeddedTaskIdsFromThread}
                                   chatRowExtras={{
@@ -1903,6 +1934,7 @@ export function TaskModal({
                                         onThreadViewChange={setCommentsInThreadView}
                                         onExecutionPatch={handleExecutionPatch}
                                         onTaskModalIntakePatch={handleTaskModalIntakePatch}
+                                        onCardAction={handleCardAction}
                                         onEffectTelemetry={handleAgentEffectTelemetry}
                                         onEmbeddedTaskIdsChange={setEmbeddedTaskIdsFromThread}
                                         chatRowExtras={{

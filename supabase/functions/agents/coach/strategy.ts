@@ -71,6 +71,7 @@ import {
   stringifyWorkoutContextForPrompt,
 } from './context.ts';
 import {
+  cardActionForRpc,
   CoachGeminiJsonResponse,
   executionPatchForRpc,
   parseCoachJson,
@@ -516,8 +517,19 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
     const patchParam = executionPatchForRpc(parsed.execution_patch);
     const personalCuesParam = personalCuesPatchForRpc(parsed.personal_cues_resolved);
     const intakePatchParam = taskModalIntakePatchForRpc(parsed.task_modal_intake_patch);
+    const cardActionParam = cardActionForRpc(parsed.card_action);
+    const hasCardAction = cardActionParam != null;
     const hasMessageMetaPatch =
       patchParam != null || personalCuesParam != null || intakePatchParam != null;
+
+    if (parsed.card_action) {
+      log('info', 'coach card_action emitted', {
+        request_id: ctx.requestId,
+        slug: COACH_SLUG,
+        message_id: ctx.message.id,
+        action: parsed.card_action,
+      });
+    }
 
     const shouldDirectUpdate =
       isRailSurface &&
@@ -567,6 +579,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
         p_new_title: trimmedNewTitle.length > 0 ? trimmedNewTitle : null,
         p_new_description: trimmedNewDesc.length > 0 ? trimmedNewDesc : null,
         p_new_metadata: pNewMeta,
+        p_card_action: cardActionParam,
       });
       if (!upd.ok) {
         log('error', 'coach persist direct update rpc failed', {
@@ -602,6 +615,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
         p_execution_patch: patchParam,
         p_personal_cues: personalCuesParam,
         p_task_modal_intake_patch: intakePatchParam,
+        p_card_action: cardActionParam,
       });
       if (!draft.ok) {
         log('error', 'coach persist draft rpc failed', {
@@ -630,6 +644,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       p_execution_patch?: unknown;
       p_personal_cues?: unknown;
       p_task_modal_intake_patch?: unknown;
+      p_card_action?: unknown;
     } = {
       p_trigger_message_id: ctx.message.id,
       p_thread_id: ctx.threadId,
@@ -648,6 +663,17 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
     rpcArgs.p_execution_patch = patchParam;
     rpcArgs.p_personal_cues = personalCuesParam;
     rpcArgs.p_task_modal_intake_patch = intakePatchParam;
+    rpcArgs.p_card_action = cardActionParam;
+
+    if (
+      hasCardAction &&
+      !hasUpdateBody &&
+      !hasProposedMeta &&
+      !hasMessageMetaPatch &&
+      !parsed.create_card
+    ) {
+      rpcArgs.p_create_card = false;
+    }
 
     const card = await agentCreateCardAndReply(supabase, rpcArgs);
     if (!card.ok) {

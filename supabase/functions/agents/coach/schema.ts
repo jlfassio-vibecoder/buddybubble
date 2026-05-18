@@ -311,6 +311,13 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
         },
       },
     },
+    card_action: {
+      type: 'STRING',
+      nullable: true,
+      enum: ['trigger_generation'],
+      description:
+        'Optional UI command sent to the chat client. Emit "trigger_generation" only when the open card has no rich workout_set yet AND the user has given clear consent to draft now AND not in an active workout session — the client will run the heavy /api/ai/generate-workout-chain on the user\'s behalf. MUST be null on every other turn. When non-null, omit proposed_workout_metadata. reply_content should briefly say you are starting the generator.',
+    },
   },
   // Keys must be present so Gemini does not drop task_description on create_card flows.
   // execution_patch is NOT required: model may omit it; parse treats missing as null.

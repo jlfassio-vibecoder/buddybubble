@@ -12,6 +12,15 @@ describe('TaskModal standard rail (Phase 3.7 / 3.8)', () => {
     expect(src.includes('draftBaseline')).toBe(true);
   });
 
+  it('wires onCardAction to all three StandardTaskChatRail mounts', () => {
+    const taskModalPath = join(process.cwd(), 'src/components/modals/TaskModal.tsx');
+    const src = readFileSync(taskModalPath, 'utf8');
+    expect((src.match(/onCardAction=\{handleCardAction\}/g) || []).length).toBe(3);
+    expect(src.includes('handleAiGenerateWorkout(workoutIntake.buildWizardPayload())')).toBe(true);
+    expect(src.includes('viewerWorkoutSet != null')).toBe(true);
+    expect(src.includes("event: 'coach.card_action.triggered'")).toBe(true);
+  });
+
   it('wires buildOutgoingMessageMetadata to all three rails and gates task_modal_live_state on workout types', () => {
     const taskModalPath = join(process.cwd(), 'src/components/modals/TaskModal.tsx');
     const src = readFileSync(taskModalPath, 'utf8');

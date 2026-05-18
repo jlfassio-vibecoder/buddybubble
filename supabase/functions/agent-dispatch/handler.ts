@@ -227,6 +227,7 @@ export async function handleDispatchRequest(req: Request): Promise<Response> {
     llmTimeoutMs: env.LLM_TIMEOUT_MS,
     history: resolution.history,
     coachMergeWorkoutMetadata: env.COACH_MERGE_WORKOUT_METADATA,
+    coachCardActions: env.COACH_CARD_ACTIONS,
     // Per-strategy override for the LLM-input history window. Coach uses this
     // (`COACH_HISTORY_LIMIT = 15`) to keep the Vertex `contents` array bounded
     // as a workout thread accumulates turns. Undefined for other strategies →
