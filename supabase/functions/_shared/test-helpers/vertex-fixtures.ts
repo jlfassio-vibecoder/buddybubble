@@ -152,6 +152,27 @@ export function vertex429ThenHappy(parsedJson: unknown): VertexHandlerWithCount 
   };
 }
 
+/** Hangs until the fetch is aborted; `vertex-gemini` `timeoutMs` triggers timeout path. */
+export function vertexHanging(): VertexHandlerWithCount {
+  let calls = 0;
+  return {
+    count: () => calls,
+    handler: (req) => {
+      calls += 1;
+      return new Promise<Response>((_resolve, reject) => {
+        const signal = req.signal;
+        if (signal.aborted) {
+          reject(new DOMException('Aborted', 'AbortError'));
+          return;
+        }
+        signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), {
+          once: true,
+        });
+      });
+    },
+  };
+}
+
 export function vertex500Always(): VertexHandlerWithCount {
   let calls = 0;
   return {

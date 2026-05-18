@@ -25,7 +25,10 @@ export const COACH_TEMPERATURE = 0.2 as const;
  * thinking; the model only emits what it needs per turn — this is the cap, not a
  * target.
  */
-export const COACH_MAX_OUTPUT_TOKENS = 32768 as const;
+export const COACH_MAX_OUTPUT_TOKENS = 12288 as const;
+
+/** Caps Gemini 2.5 thinking tokens so JSON replies finish within `LLM_TIMEOUT_MS`. */
+export const COACH_THINKING_BUDGET = 2048 as const;
 
 /** Generation params for the workout-open silent-greeting preflight sub-call. */
 export const COACH_WORKOUT_GREETING_TEMPERATURE = 0.35 as const;

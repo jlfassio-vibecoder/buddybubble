@@ -6,11 +6,10 @@ import {
   useCallback,
   useContext,
   useMemo,
-  useState,
   type ReactNode,
 } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { normalizeMobileTab, type MobileCrmTab } from '@/lib/mobile-crm-tab';
+import { normalizeMobileNav, normalizeMobileTab, type MobileCrmTab } from '@/lib/mobile-crm-tab';
 
 export type MobileShellState = {
   tab: MobileCrmTab;
@@ -21,24 +20,56 @@ export type MobileShellState = {
 
 const MobileShellStateContext = createContext<MobileShellState | null>(null);
 
+function hrefFor(pathname: string, q: URLSearchParams): string {
+  const qs = q.toString();
+  return qs ? `${pathname}?${qs}` : pathname;
+}
+
 /**
- * Owns mobile CRM tab (`?tab=`) and drawer open state for the dashboard shell.
- * Wrap `DashboardShellInner` (and any descendant that calls `useMobileShellState`, e.g. `MobileTabBar`).
+ * Owns mobile CRM tab (`?tab=`) and menu drawer (`?nav=open`) for the dashboard shell.
+ * Drawer/tab URL updates use `router.replace` (no extra history entries; system Back does not close the drawer).
  */
 export function MobileShellProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const searchKey = searchParams.toString();
   const tab = normalizeMobileTab(searchParams.get('tab'));
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const drawerOpen = normalizeMobileNav(searchParams.get('nav'));
+
+  const replaceSearchIfChanged = useCallback(
+    (mutate: (q: URLSearchParams) => void) => {
+      const q = new URLSearchParams(searchKey);
+      mutate(q);
+      const nextHref = hrefFor(pathname, q);
+      const currentHref = hrefFor(pathname, new URLSearchParams(searchKey));
+      if (nextHref === currentHref) return;
+      router.replace(nextHref, { scroll: false });
+    },
+    [pathname, router, searchKey],
+  );
 
   const setTab = useCallback(
     (next: MobileCrmTab) => {
-      const q = new URLSearchParams(searchParams.toString());
-      q.set('tab', next);
-      router.replace(`${pathname}?${q.toString()}`, { scroll: false });
+      const q = new URLSearchParams(searchKey);
+      if (normalizeMobileTab(q.get('tab')) === next) return;
+      replaceSearchIfChanged((draft) => {
+        draft.set('tab', next);
+      });
     },
-    [pathname, router, searchParams],
+    [replaceSearchIfChanged, searchKey],
+  );
+
+  const setDrawerOpen = useCallback(
+    (open: boolean) => {
+      const q = new URLSearchParams(searchKey);
+      if (normalizeMobileNav(q.get('nav')) === open) return;
+      replaceSearchIfChanged((draft) => {
+        if (open) draft.set('nav', 'open');
+        else draft.delete('nav');
+      });
+    },
+    [replaceSearchIfChanged, searchKey],
   );
 
   const value = useMemo(
@@ -50,8 +81,7 @@ export function MobileShellProvider({ children }: { children: ReactNode }) {
 }
 
 /**
- * Mobile shell: active CRM tab from `?tab=` and drawer open state.
- * Tab writes go through `setTab` (router.replace, scroll: false).
+ * Mobile shell: active CRM tab from `?tab=` and drawer from `?nav=open`.
  * Must be used under {@link MobileShellProvider}.
  */
 export function useMobileShellState(): MobileShellState {

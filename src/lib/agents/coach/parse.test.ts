@@ -748,6 +748,42 @@ describe('parseCoachJson', () => {
     expect(out.card_action).toBe('trigger_generation');
   });
 
+  it('accepts card_action as object { kind: trigger_generation }', () => {
+    const out = parseCoachJson(
+      JSON.stringify(
+        makeReplyOnlyPayload({
+          card_action: { kind: 'trigger_generation' },
+          reply_content: 'Starting the generator now.',
+        }),
+      ),
+    );
+    expect(out.card_action).toBe('trigger_generation');
+  });
+
+  it('accepts card_action as object { v: 1, kind: trigger_generation }', () => {
+    const out = parseCoachJson(
+      JSON.stringify(
+        makeReplyOnlyPayload({
+          card_action: { v: 1, kind: 'trigger_generation' },
+          reply_content: 'Starting the generator now.',
+        }),
+      ),
+    );
+    expect(out.card_action).toBe('trigger_generation');
+  });
+
+  it('trims whitespace on string card_action trigger_generation', () => {
+    const out = parseCoachJson(
+      JSON.stringify(
+        makeReplyOnlyPayload({
+          card_action: '  trigger_generation ',
+          reply_content: 'Go.',
+        }),
+      ),
+    );
+    expect(out.card_action).toBe('trigger_generation');
+  });
+
   it('maps unknown card_action strings to null', () => {
     const out = parseCoachJson(
       JSON.stringify(makeReplyOnlyPayload({ card_action: 'reset_intake' })),

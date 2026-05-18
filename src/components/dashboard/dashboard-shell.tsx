@@ -78,6 +78,7 @@ import { resolveEffectiveCategory, useThemeOverride } from '@/hooks/use-theme-ov
 import { useIsNarrowBelowMd } from '@/hooks/use-is-narrow-below-md';
 import { MobileShellProvider, useMobileShellState } from '@/hooks/use-mobile-shell-state';
 import { MobileHeader } from '@/components/layout/MobileHeader';
+import { MobileEdgeSwipeOpener } from '@/components/layout/MobileEdgeSwipeOpener';
 import { MobileSidebarSheet } from '@/components/layout/MobileSidebarSheet';
 import { MobileWorkspaceStrip } from '@/components/layout/MobileWorkspaceStrip';
 import { MobileTabBar } from '@/components/layout/MobileTabBar';
@@ -359,12 +360,12 @@ function DashboardShellInner({
     }
   }, [layoutMobile, mobileShell]);
 
-  /** Drawer is mobile-only chrome; clear open state when leaving narrow layout so it cannot reopen spuriously. */
+  /** Drawer is mobile-only chrome; strip `?nav=open` when leaving narrow layout (once, only if present). */
+  const mobileNavOpenInUrl = searchParams.get('nav') === 'open';
   useEffect(() => {
-    if (!layoutMobile) {
-      setMobileNavOpen(false);
-    }
-  }, [layoutMobile, setMobileNavOpen]);
+    if (layoutMobile || !mobileNavOpenInUrl) return;
+    setMobileNavOpen(false);
+  }, [layoutMobile, mobileNavOpenInUrl, setMobileNavOpen]);
 
   const openCreateWorkspace = useCallback(() => {
     setCreateWorkspaceOpen(true);
@@ -1714,6 +1715,9 @@ function DashboardShellInner({
 
   const drawerStripProps = {
     workspaceId,
+    currentWorkspaceName: workspaceTitle,
+    onClose: layoutMobile ? () => mobileShell.setDrawerOpen(false) : undefined,
+    onWorkspaceNavigate: layoutMobile ? () => mobileShell.setDrawerOpen(false) : undefined,
     pendingJoinRequestCount: isAdmin ? pendingJoinRequestCount : 0,
     profileAvatarUrl: profile?.avatar_url ?? null,
     profileName: profile?.full_name ?? profile?.email ?? null,
@@ -2103,6 +2107,7 @@ function DashboardShellInner({
                   style={
                     {
                       '--mobile-tab-bar-h': 'calc(4rem + env(safe-area-inset-bottom, 0px))',
+                      '--mobile-header-h': 'calc(3.5rem + env(safe-area-inset-top, 0px))',
                     } as CSSProperties
                   }
                 >
@@ -2112,8 +2117,15 @@ function DashboardShellInner({
                       trailing={embedMode ? null : <ActiveUsersStack localUserId={profile?.id} />}
                     />
                   ) : null}
+                  {layoutMobile && !mobileNavOpen ? (
+                    <MobileEdgeSwipeOpener onOpen={() => mobileShell.setDrawerOpen(true)} />
+                  ) : null}
                   {layoutMobile ? (
-                    <MobileSidebarSheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+                    <MobileSidebarSheet
+                      open={mobileNavOpen}
+                      onOpenChange={setMobileNavOpen}
+                      themeCategory={effectiveThemeCategory}
+                    >
                       <MobileWorkspaceStrip {...drawerStripProps} />
                       <BubbleSidebar {...drawerBubbleProps} hideWorkspaceTitle isMobileDrawerMode />
                     </MobileSidebarSheet>

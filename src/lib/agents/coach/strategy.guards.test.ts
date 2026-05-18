@@ -45,7 +45,7 @@ const NO_TASK_FRAGMENT: CoachGuardsFragment = {
   isActiveWorkoutSession: false,
 };
 
-describe('applyCoachServerGuards — Draft override', () => {
+describe('applyCoachServerGuards — Open Canvas guard', () => {
   it('clears card fields when knownTargetTaskId is set and the model wants update_existing_task', () => {
     const parsed = makeParsed({
       create_card: true,
@@ -68,6 +68,27 @@ describe('applyCoachServerGuards — Draft override', () => {
     expect(out.update_existing_task).toBe(true);
     expect(out.updated_task_title).toBe('Updated');
     expect(out.updated_task_description).toBe('updated desc');
+  });
+
+  it('blocks create_card when knownTargetTaskId is set even without update_existing_task', () => {
+    const parsed = makeParsed({
+      create_card: true,
+      task_title: 'Kettlebell & Bodyweight Core Blast',
+      task_description: 'This workout focuses on strengthening your core.',
+      coach_task_notes: 'notes',
+      reply_content: 'Starting the generator now — give me about a minute.',
+    });
+    const out = applyCoachServerGuards(parsed, {
+      ...NO_TASK_FRAGMENT,
+      knownTargetTaskId: 'task-123',
+    });
+    expect(out.create_card).toBe(false);
+    expect(out.task_title).toBeNull();
+    expect(out.task_description).toBeNull();
+    expect(out.coach_task_notes).toBeNull();
+    expect(out.update_existing_task).toBe(true);
+    expect(out.updated_task_title).toBe('Kettlebell & Bodyweight Core Blast');
+    expect(out.updated_task_description).toBe('This workout focuses on strengthening your core.');
   });
 
   it('does NOT clear card fields when no knownTargetTaskId is resolved', () => {

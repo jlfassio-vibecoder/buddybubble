@@ -456,6 +456,26 @@ export function parseExecutionPatchFromGemini(
 }
 
 /**
+ * Normalize `card_action` from Gemini JSON. The Vertex schema declares a string enum,
+ * but the model intermittently echoes the persisted RPC shape `{ v: 1, kind:
+ * 'trigger_generation' }` or a bare `{ kind: 'trigger_generation' }`. When we
+ * only accepted the plain string, the field was silently dropped (`null`) and the
+ * client never saw `messages.metadata.card_action` — Generation Hand-off stalled.
+ *
+ * Exported for unit tests; `parseCoachJson` is the primary consumer.
+ */
+export function parseCardActionTriggerGenerationFromGemini(
+  raw: unknown,
+): 'trigger_generation' | null {
+  if (typeof raw === 'string') {
+    return raw.trim() === 'trigger_generation' ? 'trigger_generation' : null;
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const kind = (raw as Record<string, unknown>).kind;
+  return kind === 'trigger_generation' ? 'trigger_generation' : null;
+}
+
+/**
  * Parse a Coach JSON-mode response text into the normalized shape every guard /
  * persister consumes. Throws `Error('gemini_json_parse_failed')` when the body is not
  * JSON and `Error('gemini_invalid_json_shape')` when required keys are missing or
@@ -533,7 +553,7 @@ export function parseCoachJson(
 
   const cardActionRaw = (parsed as Record<string, unknown>).card_action;
   const card_action: CoachGeminiJsonResponse['card_action'] =
-    cardActionRaw === 'trigger_generation' ? 'trigger_generation' : null;
+    parseCardActionTriggerGenerationFromGemini(cardActionRaw);
 
   const cuesResult = parsePersonalCuesPatchFromGemini(
     (parsed as Record<string, unknown>).personal_cues_patch,

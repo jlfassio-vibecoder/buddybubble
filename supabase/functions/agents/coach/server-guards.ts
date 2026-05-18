@@ -86,12 +86,29 @@ export function applyCoachServerGuards(
   let taskModalIntakePatch = parsed.task_modal_intake_patch;
   let cardAction = parsed.card_action;
 
-  // Guard 1: Draft override. Mirrors `bubble-agent-dispatch/index.ts:1683-1688`.
-  if (fragment.knownTargetTaskId && updateExistingTask) {
-    createCard = false;
-    taskTitle = null;
-    taskDescription = null;
-    seedTaskCommentText = null;
+  // Guard 1: Open Canvas — never create a sibling card when a target task is known.
+  if (fragment.knownTargetTaskId) {
+    if (createCard) {
+      const draftTitle = taskTitle?.trim() ?? '';
+      const draftDesc = taskDescription?.trim() ?? '';
+      if (draftTitle && !updatedTaskTitle?.trim()) {
+        updatedTaskTitle = taskTitle;
+        updateExistingTask = true;
+      }
+      if (draftDesc && !updatedTaskDescription?.trim()) {
+        updatedTaskDescription = taskDescription;
+        updateExistingTask = true;
+      }
+      createCard = false;
+      taskTitle = null;
+      taskDescription = null;
+      seedTaskCommentText = null;
+    } else if (updateExistingTask) {
+      createCard = false;
+      taskTitle = null;
+      taskDescription = null;
+      seedTaskCommentText = null;
+    }
   }
 
   // Guard 2: Layer B turn gate. Mirrors `bubble-agent-dispatch/index.ts:1694-1707`.
@@ -108,16 +125,6 @@ export function applyCoachServerGuards(
       taskDescription = null;
       seedTaskCommentText = null;
     }
-  }
-
-  // The legacy file repeats Guard 1 here at lines 1709-1714 — preserved for
-  // byte-for-byte fidelity (no-op when Guard 1 already cleared the fields, but the
-  // duplicate keeps drift detection trivial).
-  if (fragment.knownTargetTaskId && updateExistingTask) {
-    createCard = false;
-    taskTitle = null;
-    taskDescription = null;
-    seedTaskCommentText = null;
   }
 
   // Guard 3: Workout-context clamp. Whenever planned/workout JSON is in context, block

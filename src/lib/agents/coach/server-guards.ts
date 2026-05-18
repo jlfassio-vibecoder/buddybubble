@@ -5,10 +5,12 @@
  * Gemini returns and before the persistence RPC runs. Reference:
  * `supabase/functions/bubble-agent-dispatch/index.ts:1683-1725`.
  *
- *   1. Draft override — when a server-resolved `knownTargetTaskId` exists and the
- *      model set `update_existing_task: true`, clear `create_card`, `task_title`,
- *      `task_description`, and `coach_task_notes`. The persistence path will route to
- *      `agent_insert_coach_workout_draft_reply` instead of `agent_create_card_and_reply`.
+ *   1. Open Canvas — when a server-resolved `knownTargetTaskId` exists, never
+ *      `create_card` (PCC: Canvas is source of truth; Rail must not spawn sibling cards).
+ *      Erroneous `task_title` / `task_description` on the create path are remapped to
+ *      `updated_task_*` + `update_existing_task: true`. When the model already set
+ *      `update_existing_task: true`, seed fields are cleared so persistence routes to
+ *      draft/update RPCs instead of `agent_create_card_and_reply`.
  *   2. Layer B turn gate — when `user_requested_immediate_card` is false, block first
  *      messages from creating a card (`first_message_card_blocked`) and block second
  *      session-request messages until the user has had at least two prior turns
@@ -116,12 +118,29 @@ export function applyCoachServerGuards(
   let taskModalIntakePatch = parsed.task_modal_intake_patch;
   let cardAction = parsed.card_action;
 
-  // Guard 1: Draft override. Mirrors `bubble-agent-dispatch/index.ts:1683-1688`.
-  if (fragment.knownTargetTaskId && updateExistingTask) {
-    createCard = false;
-    taskTitle = null;
-    taskDescription = null;
-    seedTaskCommentText = null;
+  // Guard 1: Open Canvas — never create a sibling card when a target task is known.
+  if (fragment.knownTargetTaskId) {
+    if (createCard) {
+      const draftTitle = taskTitle?.trim() ?? '';
+      const draftDesc = taskDescription?.trim() ?? '';
+      if (draftTitle && !updatedTaskTitle?.trim()) {
+        updatedTaskTitle = taskTitle;
+        updateExistingTask = true;
+      }
+      if (draftDesc && !updatedTaskDescription?.trim()) {
+        updatedTaskDescription = taskDescription;
+        updateExistingTask = true;
+      }
+      createCard = false;
+      taskTitle = null;
+      taskDescription = null;
+      seedTaskCommentText = null;
+    } else if (updateExistingTask) {
+      createCard = false;
+      taskTitle = null;
+      taskDescription = null;
+      seedTaskCommentText = null;
+    }
   }
 
   // Guard 2: Layer B turn gate. Mirrors `bubble-agent-dispatch/index.ts:1694-1707`.
@@ -138,16 +157,6 @@ export function applyCoachServerGuards(
       taskDescription = null;
       seedTaskCommentText = null;
     }
-  }
-
-  // The legacy file repeats Guard 1 here at lines 1709-1714 — preserved for
-  // byte-for-byte fidelity (no-op when Guard 1 already cleared the fields, but the
-  // duplicate keeps drift detection trivial).
-  if (fragment.knownTargetTaskId && updateExistingTask) {
-    createCard = false;
-    taskTitle = null;
-    taskDescription = null;
-    seedTaskCommentText = null;
   }
 
   // Guard 3: Workout-context clamp. Whenever planned/workout JSON is in context, block

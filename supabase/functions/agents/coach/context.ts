@@ -84,6 +84,31 @@ function isNonEmptyWorkoutPayload(raw: unknown): boolean {
   return true;
 }
 
+/**
+ * Phase 12 (Generation Hand-Off): a task is only treated as having a workout
+ * "on the card" when `tasks.metadata.ai_workout_factory.workout_set.workouts`
+ * is a non-empty array. This is the canonical rich-workout signature emitted
+ * by the workout generator (`/api/ai/generate-workout-chain`).
+ *
+ * The previous `isNonEmptyWorkoutPayload`-based gate treated any non-empty
+ * `tasks.metadata` (including intake-only state, scattered legacy fields,
+ * shell flags, etc.) as "workout context exists", which flipped the Coach
+ * into LIVE CO-PILOT MODE and suppressed the GENERATION HAND-OFF clause. The
+ * model then refused to emit `card_action: 'trigger_generation'` because the
+ * prompt told it the workout already existed.
+ *
+ * Exported for unit tests; callers should prefer `resolveCurrentWorkoutContextJsonFromThread`.
+ */
+export function hasRichWorkoutSetMetadata(metadata: unknown): boolean {
+  if (metadata == null || typeof metadata !== 'object' || Array.isArray(metadata)) return false;
+  const af = (metadata as Record<string, unknown>).ai_workout_factory;
+  if (af == null || typeof af !== 'object' || Array.isArray(af)) return false;
+  const ws = (af as Record<string, unknown>).workout_set;
+  if (ws == null || typeof ws !== 'object' || Array.isArray(ws)) return false;
+  const workouts = (ws as Record<string, unknown>).workouts;
+  return Array.isArray(workouts) && workouts.length > 0;
+}
+
 export function stringifyWorkoutContextForPrompt(raw: unknown): string {
   try {
     const s = JSON.stringify(raw ?? null);
@@ -112,12 +137,21 @@ export function readWorkoutContextFromMessageMetadata(meta: unknown): unknown {
  * `bubble-agent-dispatch/index.ts:185-209`):
  * 1. Walk history oldest → newest; last non-empty `workoutContext` / `workout_context` wins.
  * 2. Trigger row `workoutContext` / `workout_context` overrides when non-empty.
- * 3. If still empty, fall back to `tasks.metadata` when non-empty object.
+ * 3. If still empty, fall back to `tasks.metadata` **only when it carries a
+ *    rich workout set** (`ai_workout_factory.workout_set.workouts[]`).
  *
  * **Rail co-pilot (`opts.preferTaskMetadata === true`)** — Live Co-Pilot Step 1:
  * 1. Trigger `workoutContext` / `workout_context` when non-empty (live-player override).
- * 2. Else `tasks.metadata` when non-empty object (canonical generated workout on card).
+ * 2. Else `tasks.metadata` **only when it carries a rich workout set**
+ *    (`ai_workout_factory.workout_set.workouts[]`) — the canonical generated
+ *    workout on the card.
  * 3. Else walk history as in (1) (pre-generate / stale-message fallback).
+ *
+ * Phase 12 rich-workout gate: intake-only metadata, scattered legacy fields,
+ * and shell flags no longer trigger workout-context injection. This is what
+ * lets the Coach see a flat (pre-generation) card and emit GENERATION
+ * HAND-OFF `card_action: 'trigger_generation'` instead of the LIVE CO-PILOT
+ * `proposed_workout_metadata` revision path.
  *
  * Emits one structured log per call: `coach workout context source`.
  */
@@ -133,11 +167,10 @@ export function resolveCurrentWorkoutContextJsonFromThread(
   let best: unknown | null = null;
   let source: 'trigger' | 'task_metadata' | 'history' | 'none' = 'none';
 
-  const taskMetaEligible =
-    taskMetadataFallback != null &&
-    typeof taskMetadataFallback === 'object' &&
-    !Array.isArray(taskMetadataFallback) &&
-    isNonEmptyWorkoutPayload(taskMetadataFallback);
+  // Phase 12: only treat `tasks.metadata` as workout context when it carries a
+  // rich workout set. Intake state and scattered legacy fields are no longer
+  // sufficient. See `hasRichWorkoutSetMetadata` for the canonical signature.
+  const taskMetaEligible = hasRichWorkoutSetMetadata(taskMetadataFallback);
 
   if (preferTaskMetadata) {
     const fromTrigger = extractRawWorkoutContextFromMetadata(trigger.metadata);

@@ -101,6 +101,7 @@ import {
 } from './prompts.ts';
 import { COACH_RESPONSE_SCHEMA, COACH_WORKOUT_GREETING_SCHEMA } from './schema.ts';
 import { applyCoachServerGuards, type CoachGuardsFragment } from './server-guards.ts';
+import { inferCardActionTriggerGeneration } from './card-action-infer.ts';
 
 /** Coach-owned scratch on `ctx.extras`. */
 type CoachExtras = {
@@ -486,7 +487,28 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       });
     }
 
-    const out = applyCoachServerGuards(parsed, fragment);
+    let out = applyCoachServerGuards(parsed, fragment);
+
+    if (ctx.coachCardActions !== true) {
+      out = { ...out, card_action: null };
+    }
+
+    const isRailSurface = isCoachRailSurfaceFromMessageMetadata(ctx.message.metadata);
+    const inferred = inferCardActionTriggerGeneration({
+      isRailSurface,
+      currentWorkoutContextJson: extras.currentWorkoutContextJson,
+      triggerContent: typeof ctx.message.content === 'string' ? ctx.message.content : '',
+      parsed: out,
+    });
+    if (inferred != null) {
+      out = { ...out, card_action: inferred };
+      log('info', 'coach card_action server_inferred', {
+        request_id: ctx.requestId,
+        slug: COACH_SLUG,
+        message_id: ctx.message.id,
+        action: inferred,
+      });
+    }
 
     const inHadDesc = Boolean(parsed.updated_task_description?.trim());
     const outHasDesc = Boolean(out.updated_task_description?.trim());
@@ -659,6 +681,9 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       rpcArgs.p_task_title = parsed.task_title;
       rpcArgs.p_task_description = parsed.task_description ?? null;
       rpcArgs.p_seed_task_comment_text = parsed.coach_task_notes ?? null;
+    }
+    if (knownTargetTaskId) {
+      rpcArgs.p_create_card = false;
     }
     rpcArgs.p_execution_patch = patchParam;
     rpcArgs.p_personal_cues = personalCuesParam;

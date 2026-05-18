@@ -281,11 +281,19 @@ export function TaskModal({
    */
   const createSessionIdRef = useRef<string | null>(null);
   const handledIntakePatchMessageIdsByTaskRef = useRef<Map<string, Set<string>>>(new Map());
+  /** Survives StandardTaskChatRail remounts when workout split layout toggles (Phase 12.2). */
+  const handledCardActionMessageIdsByTaskRef = useRef<Map<string, Set<string>>>(new Map());
+  const handledExecutionPatchMessageIdsByTaskRef = useRef<Map<string, Set<string>>>(new Map());
+  /** Keeps workout split engaged after card_action so failed generation does not collapse the rail layout. */
+  const [workoutSplitEngaged, setWorkoutSplitEngaged] = useState(false);
 
   useEffect(() => {
     if (open) return;
     createSessionIdRef.current = null;
     handledIntakePatchMessageIdsByTaskRef.current.clear();
+    handledCardActionMessageIdsByTaskRef.current.clear();
+    handledExecutionPatchMessageIdsByTaskRef.current.clear();
+    setWorkoutSplitEngaged(false);
     setEmbeddedTaskIdsFromThread([]);
   }, [open]);
 
@@ -300,6 +308,7 @@ export function TaskModal({
   }, [open, taskId]);
 
   const workoutIntake = useWorkoutIntakeWizardState(sessionKey);
+  const buildWizardPayload = workoutIntake.buildWizardPayload;
   const [visibility, setVisibility] = useState<TaskVisibility>('private');
   /** Workspace member user id, or null = unassigned */
   const [assignedTo, setAssignedTo] = useState<string | null>(null);
@@ -422,16 +431,18 @@ export function TaskModal({
     open &&
     workoutViewerOpen &&
     isWorkoutItemType &&
-    (hasWorkoutViewerContent || aiWorkoutGenerating),
+    (hasWorkoutViewerContent || aiWorkoutGenerating || workoutSplitEngaged),
   );
 
   const handleGenerateWorkoutFromComments = useCallback(() => {
+    setWorkoutSplitEngaged(true);
     setWorkoutViewerOpen(true);
     void handleAiGenerateWorkout();
   }, [setWorkoutViewerOpen, handleAiGenerateWorkout]);
 
   const handleGenerateWorkoutFromIntake = useCallback(
     (wizardData: WorkoutIntakeWizardData) => {
+      setWorkoutSplitEngaged(true);
       setWorkoutViewerOpen(true);
       void handleAiGenerateWorkout(wizardData);
     },
@@ -445,6 +456,18 @@ export function TaskModal({
       if (!canWrite) return;
       if (aiWorkoutGenerating) return;
       if (viewerWorkoutSet != null) return;
+
+      const dedupeKey = createSessionIdRef.current
+        ? `create:${createSessionIdRef.current}`
+        : `existing:${args.taskId}`;
+      let handled = handledCardActionMessageIdsByTaskRef.current.get(dedupeKey);
+      if (!handled) {
+        handled = new Set();
+        handledCardActionMessageIdsByTaskRef.current.set(dedupeKey, handled);
+      }
+      if (handled.has(args.messageId)) return;
+      handled.add(args.messageId);
+
       logAgentRoutingEvent({
         event: 'coach.card_action.triggered',
         action: args.action.kind,
@@ -452,8 +475,9 @@ export function TaskModal({
         messageId: args.messageId,
         surface: 'standard-task-chat-rail',
       });
+      setWorkoutSplitEngaged(true);
       setWorkoutViewerOpen(true);
-      void handleAiGenerateWorkout(workoutIntake.buildWizardPayload());
+      void handleAiGenerateWorkout(buildWizardPayload());
     },
     [
       itemType,
@@ -462,7 +486,7 @@ export function TaskModal({
       viewerWorkoutSet,
       setWorkoutViewerOpen,
       handleAiGenerateWorkout,
-      workoutIntake,
+      buildWizardPayload,
     ],
   );
 
@@ -1134,8 +1158,18 @@ export function TaskModal({
   }, []);
 
   const handleExecutionPatch = useCallback(
-    (_ctx: ExecutionPatchEffectPayload) => {
+    (ctx: ExecutionPatchEffectPayload) => {
       if (!taskId) return;
+      const dedupeKey = createSessionIdRef.current
+        ? `create:${createSessionIdRef.current}`
+        : `existing:${ctx.taskId}`;
+      let set = handledExecutionPatchMessageIdsByTaskRef.current.get(dedupeKey);
+      if (!set) {
+        set = new Set();
+        handledExecutionPatchMessageIdsByTaskRef.current.set(dedupeKey, set);
+      }
+      if (set.has(ctx.messageId)) return;
+      set.add(ctx.messageId);
       // Keep the details pane synchronized with agent-side task mutations emitted via
       // message metadata execution patches without forcing a loading-state flash.
       void loadTask(taskId, { silent: true });

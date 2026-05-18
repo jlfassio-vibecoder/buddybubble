@@ -331,6 +331,9 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
   },
   // Keys must be present so Gemini does not drop task_description on create_card flows.
   // execution_patch is NOT required: model may omit it; parse treats missing as null.
+  // card_action MUST be emitted every turn as null or "trigger_generation" — when it was
+  // optional Gemini often omitted the key entirely, reply metadata stayed `{}`, and the
+  // Task Modal client never received the Generate Workout hand-off.
   required: [
     'reply_content',
     'create_card',
@@ -340,6 +343,7 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
     'updated_task_title',
     'updated_task_description',
     'proposed_workout_metadata',
+    'card_action',
   ],
 };
 

@@ -49,6 +49,8 @@ import { CORS_HEADERS, verifyAndParseWebhook } from '../_shared/dispatch/webhook
 import { classifyError, extractGeminiText, generateContent } from '../_shared/llm/vertex-gemini.ts';
 import { agentCreateCardAndReply } from '../_shared/dispatch/rpc.ts';
 import { insertSafeReply } from '../_shared/dispatch/fallback.ts';
+import { computeLlmBudgetMs } from '../_shared/dispatch/llm-budget.ts';
+import { COACH_THINKING_BUDGET } from '../agents/coach/config.ts';
 import type {
   AgentStrategy,
   DispatchContext,
@@ -264,9 +266,13 @@ export async function handleDispatchRequest(req: Request): Promise<Response> {
     const systemPrompt = await strategy.buildSystemPrompt(ctx);
     const contents = await strategy.buildContents(ctx);
 
+    const llmBudgetMs = computeLlmBudgetMs(env.LLM_TIMEOUT_MS, dispatchStartedAt);
+    const llmSignal = AbortSignal.timeout(llmBudgetMs);
     log('info', 'llm call begin', {
       ...baseFields(requestId, record, strategy.slug, 'llm_call'),
       model: strategy.model,
+      llm_budget_ms: llmBudgetMs,
+      llm_timeout_configured_ms: env.LLM_TIMEOUT_MS,
     });
     const startedAt = Date.now();
     const response = await generateContent({
@@ -280,9 +286,12 @@ export async function handleDispatchRequest(req: Request): Promise<Response> {
         maxOutputTokens: strategy.maxOutputTokens,
         responseMimeType: 'application/json',
         responseSchema: strategy.responseSchema,
+        ...(strategy.slug === COACH_SLUG
+          ? { thinkingConfig: { thinkingBudget: COACH_THINKING_BUDGET } }
+          : {}),
       },
-      timeoutMs: env.LLM_TIMEOUT_MS,
-      signal: ctx.signal,
+      timeoutMs: llmBudgetMs,
+      signal: llmSignal,
       env: { GCP_SERVICE_ACCOUNT_JSON: env.GCP_SERVICE_ACCOUNT_JSON },
       debug: env.LLM_DEBUG,
       slug: strategy.slug,
@@ -381,6 +390,7 @@ export async function handleDispatchRequest(req: Request): Promise<Response> {
         ...baseFields(requestId, record, strategy.slug, 'fallback'),
         error_kind: kind,
         fallback_ok: fallback.ok,
+        ...(!fallback.ok ? { fallback_error: fallback.error, fallback_raw: fallback.raw } : {}),
       });
       if (!fallback.ok) {
         return jsonResponse({ ok: false, error: 'dispatch_failed', detail: errorMessage }, 500);

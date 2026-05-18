@@ -31,11 +31,13 @@ import {
   vertex500Always,
   vertexHappy,
   vertexHappyCapturingBody,
+  vertexHanging,
   vertexMalformedJson,
   vertexShapeViolating,
   vertexUrl,
   type VertexHandlerWithCount,
 } from '../_shared/test-helpers/vertex-fixtures.ts';
+import { simulateCreateCardReplyMetadata } from '../_shared/test-helpers/agent-rpc-persistence-simulator.ts';
 
 const COACH_REPLY = {
   reply_content: 'Start with an easy full-body warmup today.',
@@ -53,6 +55,7 @@ const COACH_REPLY = {
   coach_task_notes: null,
   proposed_workout_metadata: null,
   execution_patch: null,
+  card_action: null,
 };
 
 const ORGANIZER_REPLY = {
@@ -332,6 +335,25 @@ integrationTest(
   },
 );
 
+integrationTest('Vertex timeout inserts safe reply with 200', async () => {
+  const vertex = vertexHanging();
+  await withHarness({ vertex }, async ({ logs, rpc }) => {
+    const response = await handleDispatchRequest(webhookRequest());
+    assertEquals(response.status, 200);
+    assertEquals((await readJson(response)).fallback_reply_inserted, true);
+    assertEquals(vertex.count(), 1);
+    assertExists(
+      logs.findLog(
+        (log) =>
+          log.msg === 'fallback insertion' &&
+          log.error_kind === 'timeout' &&
+          log.fallback_ok === true,
+      ),
+    );
+    assertEquals(rpc.getRpcCalls('agent_create_card_and_reply').length, 1);
+  });
+});
+
 integrationTest('OAuth auth failure inserts safe reply with auth error_kind', async () => {
   await withHarness(
     { vertex: vertexHappy(COACH_REPLY), oauth: 'auth_error' },
@@ -485,6 +507,11 @@ integrationTest(
               },
               item_type: 'workout',
             },
+            // Phase 12 (Phase B): flat workout-shaped task metadata is no longer
+            // eligible as `task_metadata` source. The resolver falls back to history,
+            // which is exactly what we want to exercise here — the auto-apply merge
+            // still operates on the task row directly (not on the resolver result),
+            // so the assertions on the RPC args below remain unchanged.
             rootHistoryRows: [{ metadata: { workoutContext: { partial: true } } }],
           },
           vertex: vertexHappy(COACH_REPLY_RAIL_AUTO_APPLY),
@@ -549,7 +576,11 @@ integrationTest(
           );
           assertEquals(ctxLogs.length, 1);
           assertEquals(ctxLogs[0].surface, 'rail');
-          assertEquals(ctxLogs[0].source, 'task_metadata');
+          // Phase 12 (Phase B): flat workout-shaped task metadata is no longer
+          // eligible for `task_metadata` source — only rich
+          // `ai_workout_factory.workout_set.workouts[]` qualifies. The resolver
+          // falls back to history here. The auto-apply RPC path is unaffected.
+          assertEquals(ctxLogs[0].source, 'history');
         },
       );
     } finally {
@@ -559,17 +590,36 @@ integrationTest(
 );
 
 integrationTest(
-  'coach rail surface prefers tasks.metadata over stale history workoutContext (Step 1 read path)',
+  'coach rail surface prefers rich tasks.metadata over stale history workoutContext (Step 1 read path)',
   async () => {
     await withHarness(
       {
         postgrest: {
           coachTaskResolution: {
             taskId: TEST_COACH_TARGET_TASK_ID,
+            // Phase 12 (Phase B): only rich `ai_workout_factory.workout_set.workouts[]`
+            // metadata is eligible as `task_metadata` source. This test demonstrates
+            // that with a rich workout on the card, the resolver chooses it over a
+            // stale history `workoutContext` — preserving the original semantic of
+            // "rail surface prefers the live task row".
             metadata: {
               workout_type: 'AMRAP',
               duration_min: 45,
-              exercises: [{ name: 'Goblet Squat' }, { name: 'Push Press' }],
+              ai_workout_factory: {
+                workout_set: {
+                  workouts: [
+                    {
+                      name: 'Main',
+                      exerciseBlocks: [
+                        {
+                          name: 'Main',
+                          exercises: [{ name: 'Goblet Squat' }, { name: 'Push Press' }],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              },
             },
             item_type: 'workout',
           },
@@ -625,6 +675,115 @@ integrationTest(
 );
 
 integrationTest(
+  'coach rail surface: flat / intake-only tasks.metadata is NOT injected as workout context (Phase 12 rich-workout gate)',
+  async () => {
+    await withHarness(
+      {
+        postgrest: {
+          coachTaskResolution: {
+            taskId: TEST_COACH_TARGET_TASK_ID,
+            // Intake-only metadata: readiness + intake fields, NO rich
+            // ai_workout_factory.workout_set. Under Phase 12 Phase B this must
+            // NOT be treated as workout context; the resolver should fall through
+            // to history (none here) and report `source: 'none'`. The model then
+            // sees a flat card and can correctly emit GENERATION HAND-OFF instead
+            // of LIVE CO-PILOT edits.
+            metadata: {
+              readiness: 7,
+              sleep_quality: 6,
+              duration_minutes: 45,
+              target_intensity: 'Moderate',
+              soreness: ['None'],
+              equipment: ['Dumbbells'],
+            },
+            item_type: 'workout',
+          },
+        },
+        vertex: vertexHappy(COACH_REPLY),
+      },
+      async ({ logs }) => {
+        const response = await handleDispatchRequest(
+          webhookRequest({
+            id: '00000000-0000-4000-8000-000000000895',
+            content: '@coach can you draft a workout?',
+            metadata: {
+              surface: 'standard_task_chat_rail',
+              default_agent_slug: 'coach',
+            },
+            targetTaskId: TEST_COACH_TARGET_TASK_ID,
+          }),
+        );
+        assertEquals(response.status, 200);
+        assertEquals((await readJson(response)).ok, true);
+
+        const received = logs.findLog((log) => log.msg === 'webhook received');
+        assertExists(received);
+        const requestId = received.request_id;
+
+        const ctxLogs = logs.logs.filter(
+          (log) => log.msg === 'coach workout context source' && log.request_id === requestId,
+        );
+        assertEquals(ctxLogs.length, 1);
+        assertEquals(ctxLogs[0].surface, 'rail');
+        assertEquals(ctxLogs[0].source, 'none');
+        assertEquals(ctxLogs[0].bytes, 0);
+      },
+    );
+  },
+);
+
+integrationTest(
+  'coach rail surface: flat workout-shaped tasks.metadata without rich workout_set falls through to history',
+  async () => {
+    await withHarness(
+      {
+        postgrest: {
+          coachTaskResolution: {
+            taskId: TEST_COACH_TARGET_TASK_ID,
+            metadata: {
+              workout_type: 'AMRAP',
+              duration_min: 45,
+              exercises: [{ name: 'Goblet Squat' }],
+            },
+            item_type: 'workout',
+          },
+          rootHistoryRows: [{ metadata: { workoutContext: { exercises: [{ name: 'Squat' }] } } }],
+        },
+        vertex: vertexHappy(COACH_REPLY),
+      },
+      async ({ logs }) => {
+        const response = await handleDispatchRequest(
+          webhookRequest({
+            id: '00000000-0000-4000-8000-000000000896',
+            content: '@coach swap squats for hinges',
+            metadata: {
+              surface: 'standard_task_chat_rail',
+              default_agent_slug: 'coach',
+            },
+            targetTaskId: TEST_COACH_TARGET_TASK_ID,
+          }),
+        );
+        assertEquals(response.status, 200);
+        assertEquals((await readJson(response)).ok, true);
+
+        const received = logs.findLog((log) => log.msg === 'webhook received');
+        assertExists(received);
+        const requestId = received.request_id;
+
+        // Phase 12 (Phase B): flat workout-shaped task metadata is rejected by
+        // the rich-only gate; resolver falls back to history's workoutContext.
+        const ctxLogs = logs.logs.filter(
+          (log) => log.msg === 'coach workout context source' && log.request_id === requestId,
+        );
+        assertEquals(ctxLogs.length, 1);
+        assertEquals(ctxLogs[0].surface, 'rail');
+        assertEquals(ctxLogs[0].source, 'history');
+      },
+    );
+  },
+);
+
+integrationTest(
   'trigger message with workoutContext clears task_modal_intake_patch before RPC',
   async () => {
     await withHarness({ vertex: vertexHappy(COACH_REPLY_WITH_INTAKE_PATCH) }, async ({ rpc }) => {
@@ -666,54 +825,164 @@ const COACH_REPLY_TRIGGER_GENERATION = {
   card_action: 'trigger_generation',
 };
 
+const COACH_REPLY_GENERATOR_PROSE_ONLY = {
+  ...COACH_REPLY,
+  reply_content: 'Starting the generator now — give me about a minute.',
+  card_action: null,
+};
+
+integrationTest('coach server_inferred card_action when model omits JSON hand-off', async () => {
+  await withHarness(
+    {
+      postgrest: {
+        coachTaskResolution: {
+          taskId: TEST_COACH_TARGET_TASK_ID,
+          metadata: { workout_type: 'AMRAP' },
+          item_type: 'workout',
+        },
+      },
+      vertex: vertexHappy(COACH_REPLY_GENERATOR_PROSE_ONLY),
+    },
+    async ({ logs, rpc }) => {
+      Deno.env.set('COACH_CARD_ACTIONS', '1');
+      const response = await handleDispatchRequest(
+        webhookRequest({
+          content: 'Please draft the outline',
+          metadata: {
+            surface: 'standard_task_chat_rail',
+            default_agent_slug: 'coach',
+          },
+          targetTaskId: TEST_COACH_TARGET_TASK_ID,
+        }),
+      );
+      assertEquals(response.status, 200);
+      assertExists(
+        logs.findLog(
+          (log) =>
+            log.msg === 'coach card_action server_inferred' && log.action === 'trigger_generation',
+        ),
+      );
+      const calls = rpc.getRpcCalls('agent_create_card_and_reply');
+      assertEquals(calls.length, 1);
+      assertEquals(calls[0].args.p_card_action, { v: 1, kind: 'trigger_generation' });
+    },
+  );
+});
+
 integrationTest(
   'coach card_action trigger_generation persists via reply-only RPC when flag on',
   async () => {
-    Deno.env.set('COACH_CARD_ACTIONS', '1');
-    try {
-      await withHarness(
-        {
-          postgrest: {
-            coachTaskResolution: { taskId: TEST_COACH_TARGET_TASK_ID },
-          },
-          vertex: vertexHappyCapturingBody(COACH_REPLY_TRIGGER_GENERATION),
+    await withHarness(
+      {
+        postgrest: {
+          coachTaskResolution: { taskId: TEST_COACH_TARGET_TASK_ID },
         },
-        async ({ logs, rpc, vertex }) => {
-          const response = await handleDispatchRequest(
-            webhookRequest({
-              content: '@coach please draft the workout now',
-              metadata: {
-                surface: 'standard_task_chat_rail',
-                default_agent_slug: 'coach',
-              },
-              targetTaskId: TEST_COACH_TARGET_TASK_ID,
-            }),
-          );
-          assertEquals(response.status, 200);
-          assertEquals((await readJson(response)).ok, true);
+        vertex: vertexHappyCapturingBody(COACH_REPLY_TRIGGER_GENERATION),
+      },
+      async ({ logs, rpc, vertex }) => {
+        Deno.env.set('COACH_CARD_ACTIONS', '1');
+        const response = await handleDispatchRequest(
+          webhookRequest({
+            content: '@coach please draft the workout now',
+            metadata: {
+              surface: 'standard_task_chat_rail',
+              default_agent_slug: 'coach',
+            },
+            targetTaskId: TEST_COACH_TARGET_TASK_ID,
+          }),
+        );
+        assertEquals(response.status, 200);
+        assertEquals((await readJson(response)).ok, true);
 
-          assertExists(
-            logs.findLog(
-              (log) =>
-                log.msg === 'coach card_action emitted' && log.action === 'trigger_generation',
-            ),
-          );
+        assertExists(
+          logs.findLog(
+            (log) =>
+              (log.msg === 'coach card_action emitted' ||
+                log.msg === 'coach card_action server_inferred') &&
+              log.action === 'trigger_generation',
+          ),
+        );
 
-          const calls = rpc.getRpcCalls('agent_create_card_and_reply');
-          assertEquals(calls.length, 1);
-          assertEquals(calls[0].args.p_create_card, false);
-          assertEquals(calls[0].args.p_card_action, { v: 1, kind: 'trigger_generation' });
-          assertEquals(rpc.getRpcCalls('agent_insert_coach_workout_draft_reply').length, 0);
-          assertEquals(rpc.getRpcCalls('agent_update_task_and_reply').length, 0);
+        const calls = rpc.getRpcCalls('agent_create_card_and_reply');
+        assertEquals(calls.length, 1);
+        assertEquals(calls[0].args.p_create_card, false);
+        assertEquals(calls[0].args.p_card_action, { v: 1, kind: 'trigger_generation' });
+        assertEquals(rpc.getRpcCalls('agent_insert_coach_workout_draft_reply').length, 0);
+        assertEquals(rpc.getRpcCalls('agent_update_task_and_reply').length, 0);
 
-          const bodyText = vertex?.lastBodyText?.() ?? null;
-          assertExists(bodyText);
-          assertEquals(bodyText.includes('GENERATION HAND-OFF'), true);
+        // Persistence proof: drive the same args Postgres receives through the
+        // simulator and assert `card_action` survives onto reply metadata even
+        // without an accompanying intake patch — the exact regression that
+        // shipped silently in the prior migration.
+        const args = calls[0].args;
+        const persistedMeta = simulateCreateCardReplyMetadata({
+          execution_patch: args.p_execution_patch,
+          personal_cues: args.p_personal_cues,
+          task_modal_intake_patch: args.p_task_modal_intake_patch,
+          card_action: args.p_card_action,
+        });
+        assertEquals(persistedMeta.card_action, { v: 1, kind: 'trigger_generation' });
+        assertEquals('task_modal_intake_patch' in persistedMeta, false);
+
+        const bodyText = vertex?.lastBodyText?.() ?? null;
+        assertExists(bodyText);
+        assertEquals(bodyText.includes('card_action'), true);
+      },
+    );
+  },
+);
+
+const COACH_REPLY_TRIGGER_GENERATION_WITH_INTAKE = {
+  ...COACH_REPLY,
+  reply_content: 'Logged that you slept well — starting the generator now.',
+  card_action: 'trigger_generation',
+  task_modal_intake_patch: { readiness: 7 },
+};
+
+integrationTest(
+  'coach card_action + intake patch both persist on the same reply metadata',
+  async () => {
+    await withHarness(
+      {
+        postgrest: {
+          coachTaskResolution: { taskId: TEST_COACH_TARGET_TASK_ID },
         },
-      );
-    } finally {
-      Deno.env.delete('COACH_CARD_ACTIONS');
-    }
+        vertex: vertexHappy(COACH_REPLY_TRIGGER_GENERATION_WITH_INTAKE),
+      },
+      async ({ rpc }) => {
+        Deno.env.set('COACH_CARD_ACTIONS', '1');
+        const response = await handleDispatchRequest(
+          webhookRequest({
+            content: '@coach I slept well — go ahead and draft it',
+            metadata: {
+              surface: 'standard_task_chat_rail',
+              default_agent_slug: 'coach',
+            },
+            targetTaskId: TEST_COACH_TARGET_TASK_ID,
+          }),
+        );
+        assertEquals(response.status, 200);
+        assertEquals((await readJson(response)).ok, true);
+
+        const calls = rpc.getRpcCalls('agent_create_card_and_reply');
+        assertEquals(calls.length, 1);
+        const args = calls[0].args;
+        assertEquals(args.p_card_action, { v: 1, kind: 'trigger_generation' });
+        assertEquals(args.p_task_modal_intake_patch, { readiness: 7 });
+
+        // Persistence proof: both card_action and the intake patch survive as
+        // siblings. The prior SQL bug would have dropped card_action even
+        // here in the worst-case ordering of the nested `case ... end` chain.
+        const persistedMeta = simulateCreateCardReplyMetadata({
+          execution_patch: args.p_execution_patch,
+          personal_cues: args.p_personal_cues,
+          task_modal_intake_patch: args.p_task_modal_intake_patch,
+          card_action: args.p_card_action,
+        });
+        assertEquals(persistedMeta.card_action, { v: 1, kind: 'trigger_generation' });
+        assertEquals(persistedMeta.task_modal_intake_patch, { readiness: 7 });
+      },
+    );
   },
 );
 
