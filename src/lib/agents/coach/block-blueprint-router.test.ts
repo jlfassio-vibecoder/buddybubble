@@ -32,6 +32,29 @@ describe('blockMeetsExerciseCardinality', () => {
     expect(blockMeetsExerciseCardinality('superset', 2)).toBe(true);
     expect(blockMeetsExerciseCardinality('superset', 1)).toBe(false);
   });
+
+  it('ladder needs at least one exercise', () => {
+    expect(blockMeetsExerciseCardinality('ladder', 1)).toBe(true);
+    expect(blockMeetsExerciseCardinality('ladder', 0)).toBe(false);
+  });
+
+  it('chipper needs at least three exercises', () => {
+    expect(blockMeetsExerciseCardinality('chipper', 3)).toBe(true);
+    expect(blockMeetsExerciseCardinality('chipper', 2)).toBe(false);
+  });
+
+  it('contrast needs exactly two exercises', () => {
+    expect(blockMeetsExerciseCardinality('contrast', 2)).toBe(true);
+    expect(blockMeetsExerciseCardinality('contrast', 1)).toBe(false);
+    expect(blockMeetsExerciseCardinality('contrast', 3)).toBe(false);
+  });
+
+  it('pyramid clusters and drop_sets need at least one exercise', () => {
+    expect(blockMeetsExerciseCardinality('pyramid', 1)).toBe(true);
+    expect(blockMeetsExerciseCardinality('clusters', 1)).toBe(true);
+    expect(blockMeetsExerciseCardinality('drop_sets', 1)).toBe(true);
+    expect(blockMeetsExerciseCardinality('pyramid', 0)).toBe(false);
+  });
 });
 
 describe('assignExerciseMentionsToBlocks', () => {
@@ -70,6 +93,36 @@ describe('pickBlockBlueprintLane', () => {
       [PUSHUP],
     );
     expect(pickBlockBlueprintLane(assigned)).toBe('lane1');
+  });
+
+  it('lane1 when ladder has one exercise', () => {
+    const ladder = {
+      ...TABATA_MENTION,
+      block_format: 'ladder' as const,
+      token: ':finisher/ladder/core ',
+      format_params: { start_reps: 1, peak_reps: 10, step_reps: 1, direction: 'ascending' },
+    };
+    const assigned = assignExerciseMentionsToBlocks(
+      'x :finisher/ladder/core #Push-ups ',
+      [ladder],
+      [PUSHUP],
+    );
+    expect(pickBlockBlueprintLane(assigned)).toBe('lane1');
+  });
+
+  it('lane2 when chipper has two exercises', () => {
+    const chipper = {
+      ...TABATA_MENTION,
+      block_format: 'chipper' as const,
+      token: ':finisher/chipper/core ',
+      format_params: { rounds: 1 },
+    };
+    const assigned = assignExerciseMentionsToBlocks(
+      'x :finisher/chipper/core #Push-ups #Burpees',
+      [chipper],
+      [PUSHUP, { ...PUSHUP, token: '#Burpees ', name: 'Burpees' }],
+    );
+    expect(pickBlockBlueprintLane(assigned)).toBe('lane2');
   });
 
   it('lane2 when superset has one exercise', () => {

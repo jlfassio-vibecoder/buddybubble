@@ -266,6 +266,111 @@ describe('mergeCoachProposedIntoTaskMetadata', () => {
     expect(mergeLog.blockFormats).toContain('amrap');
   });
 
+  it('11b — parametric ladder and chipper map blockFormat and formatParams', () => {
+    const base = richBaseFixture();
+    const { metadata: ladderMeta, mergeLog: ladderLog } = mergeCoachProposedIntoTaskMetadata({
+      base,
+      proposed: {
+        blocks: [
+          {
+            name: 'Finisher',
+            block_format: 'ladder',
+            format_params: { start_reps: 1, peak_reps: 10, step_reps: 1, direction: 'ascending' },
+            exercises: [{ name: 'Pull-ups', sets: 1, reps: '1' }],
+          },
+        ],
+      },
+    });
+    const ladderSession = (
+      ladderMeta as { ai_workout_factory: { workout_set: { workouts: unknown[] } } }
+    ).ai_workout_factory.workout_set.workouts[0] as {
+      exerciseBlocks: Array<Record<string, unknown>>;
+    };
+    const ladderBlock = ladderSession.exerciseBlocks.find((b) => b.name === 'Finisher');
+    expect(ladderBlock?.blockFormat).toBe('ladder');
+    expect(ladderBlock?.formatParams).toMatchObject({ start_reps: 1, peak_reps: 10 });
+    expect(ladderLog.blockFormats).toContain('ladder');
+
+    const { metadata: chipperMeta, mergeLog: chipperLog } = mergeCoachProposedIntoTaskMetadata({
+      base,
+      proposed: {
+        blocks: [
+          {
+            name: 'Finisher',
+            block_format: 'chipper',
+            format_params: { rounds: 1, time_cap_minutes: 12 },
+            exercises: [
+              { name: 'Burpees', sets: 1, reps: '50' },
+              { name: 'Kettlebell Swings', sets: 1, reps: '40' },
+              { name: 'Box Jumps', sets: 1, reps: '30' },
+            ],
+          },
+        ],
+      },
+    });
+    const chipperSession = (
+      chipperMeta as { ai_workout_factory: { workout_set: { workouts: unknown[] } } }
+    ).ai_workout_factory.workout_set.workouts[0] as {
+      exerciseBlocks: Array<Record<string, unknown>>;
+    };
+    const chipperBlock = chipperSession.exerciseBlocks.find((b) => b.name === 'Finisher');
+    expect(chipperBlock?.blockFormat).toBe('chipper');
+    expect(chipperBlock?.formatParams).toEqual({ rounds: 1, time_cap_minutes: 12 });
+    expect(chipperLog.blockFormats).toContain('chipper');
+  });
+
+  it('11c — parametric contrast and drop_sets map blockFormat and formatParams', () => {
+    const base = richBaseFixture();
+    const { metadata: contrastMeta, mergeLog: contrastLog } = mergeCoachProposedIntoTaskMetadata({
+      base,
+      proposed: {
+        blocks: [
+          {
+            name: 'Main',
+            block_format: 'contrast',
+            format_params: { rounds: 4 },
+            exercises: [
+              { name: 'Back Squat', sets: 1, reps: '5' },
+              { name: 'Box Jump', sets: 1, reps: '5' },
+            ],
+          },
+        ],
+      },
+    });
+    const contrastSession = (
+      contrastMeta as { ai_workout_factory: { workout_set: { workouts: unknown[] } } }
+    ).ai_workout_factory.workout_set.workouts[0] as {
+      exerciseBlocks: Array<Record<string, unknown>>;
+    };
+    const contrastBlock = contrastSession.exerciseBlocks.find((b) => b.name === 'Main');
+    expect(contrastBlock?.blockFormat).toBe('contrast');
+    expect(contrastBlock?.formatParams).toEqual({ rounds: 4 });
+    expect(contrastLog.blockFormats).toContain('contrast');
+
+    const { metadata: dropMeta, mergeLog: dropLog } = mergeCoachProposedIntoTaskMetadata({
+      base,
+      proposed: {
+        blocks: [
+          {
+            name: 'Strength',
+            block_format: 'drop_sets',
+            format_params: { drop_percent: 20, drops: 2 },
+            exercises: [{ name: 'Leg Press', sets: 1, reps: '8-12' }],
+          },
+        ],
+      },
+    });
+    const dropSession = (
+      dropMeta as { ai_workout_factory: { workout_set: { workouts: unknown[] } } }
+    ).ai_workout_factory.workout_set.workouts[0] as {
+      exerciseBlocks: Array<Record<string, unknown>>;
+    };
+    const dropBlock = dropSession.exerciseBlocks.find((b) => b.name === 'Strength');
+    expect(dropBlock?.blockFormat).toBe('drop_sets');
+    expect(dropBlock?.formatParams).toEqual({ drop_percent: 20, drops: 2 });
+    expect(dropLog.blockFormats).toContain('drop_sets');
+  });
+
   it('12 — EMOM derives workSeconds and restSeconds from format_params', () => {
     const base = richBaseFixture();
     const { metadata } = mergeCoachProposedIntoTaskMetadata({

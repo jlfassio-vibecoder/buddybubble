@@ -432,8 +432,11 @@ describe('StandardTaskChatRail', () => {
       | ((preset: BlockPickerPreset) => void)
       | undefined;
     onBlock?.({
-      id: 'finisher-amrap',
-      label: 'Finisher · AMRAP',
+      id: 'finisher-amrap-metcon',
+      token: ':finisher/amrap/metcon ',
+      label: 'Finisher · AMRAP · Metcon',
+      group: 'CONDITIONING_AND_FINISHERS',
+      searchAliases: ['burnout', 'glycolytic'],
       section_name: 'Finisher',
       block_format: 'amrap',
       format_params: { time_cap_minutes: 5 },
@@ -441,7 +444,7 @@ describe('StandardTaskChatRail', () => {
     const onSubmit = lastRichComposerProps.current?.onSubmit as
       | ((p: { text: string; files: File[] }) => void | Promise<void>)
       | undefined;
-    await onSubmit?.({ text: 'add :finisher/amrap ', files: [] });
+    await onSubmit?.({ text: 'add :finisher/amrap/metcon ', files: [] });
     await waitFor(() => expect(sendMessage).toHaveBeenCalled());
     const meta = sendMessage.mock.calls[0][3] as {
       metadata: {
@@ -450,7 +453,7 @@ describe('StandardTaskChatRail', () => {
     };
     expect(meta.metadata.block_blueprint_mentions).toHaveLength(1);
     expect(meta.metadata.block_blueprint_mentions[0].block_format).toBe('amrap');
-    expect(meta.metadata.block_blueprint_mentions[0].token).toBe(':finisher/amrap ');
+    expect(meta.metadata.block_blueprint_mentions[0].token).toBe(':finisher/amrap/metcon ');
   });
 
   it('root element has exact layout classes', () => {

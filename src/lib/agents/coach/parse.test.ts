@@ -292,6 +292,210 @@ describe('parseProposedWorkoutMetadata', () => {
     expect(drops[0]?.reason).toBe('tabata_missing_rounds');
   });
 
+  it('passes ladder with start_reps and peak_reps', () => {
+    const { meta, drops } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Finisher',
+            block_format: 'ladder',
+            format_params: { start_reps: 1, peak_reps: 10, step_reps: 1, direction: 'ascending' },
+            exercises: [{ name: 'Pull-ups' }],
+          },
+        ],
+      },
+    });
+    expect(drops).toHaveLength(0);
+    const block = (meta.blocks as Record<string, unknown>[])[0];
+    expect(block.block_format).toBe('ladder');
+    expect(block.format_params).toMatchObject({ start_reps: 1, peak_reps: 10 });
+  });
+
+  it('passes chipper with rounds and 3+ exercises', () => {
+    const { meta, drops } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Finisher',
+            block_format: 'chipper',
+            format_params: { rounds: 1, time_cap_minutes: 15 },
+            exercises: [{ name: 'Burpees' }, { name: 'Kettlebell Swings' }, { name: 'Box Jumps' }],
+          },
+        ],
+      },
+    });
+    expect(drops).toHaveLength(0);
+    const block = (meta.blocks as Record<string, unknown>[])[0];
+    expect(block.block_format).toBe('chipper');
+  });
+
+  it('drops chipper with fewer than 3 exercises', () => {
+    const { meta, drops } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Finisher',
+            block_format: 'chipper',
+            format_params: { rounds: 1 },
+            exercises: [{ name: 'Burpees' }, { name: 'Push-ups' }],
+          },
+        ],
+      },
+    });
+    expect(meta.blocks).toBeUndefined();
+    expect(drops).toEqual([{ field: 'blocks[0]', reason: 'chipper_cardinality' }]);
+  });
+
+  it('passes pyramid with start_reps and peak_reps', () => {
+    const { meta, drops } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Main',
+            block_format: 'pyramid',
+            format_params: { start_reps: 6, peak_reps: 12, direction: 'ascending' },
+            exercises: [{ name: 'Bench Press' }],
+          },
+        ],
+      },
+    });
+    expect(drops).toHaveLength(0);
+    const block = (meta.blocks as Record<string, unknown>[])[0];
+    expect(block.block_format).toBe('pyramid');
+    expect(block.format_params).toMatchObject({ start_reps: 6, peak_reps: 12 });
+  });
+
+  it('drops pyramid without start_reps and peak_reps', () => {
+    const { drops } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Main',
+            block_format: 'pyramid',
+            format_params: { start_reps: 6 },
+            exercises: [{ name: 'Bench Press' }],
+          },
+        ],
+      },
+    });
+    expect(drops[0]?.reason).toBe('pyramid_missing_reps');
+  });
+
+  it('passes contrast with exactly 2 exercises', () => {
+    const { meta, drops } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Main',
+            block_format: 'contrast',
+            format_params: { rounds: 4 },
+            exercises: [{ name: 'Back Squat' }, { name: 'Box Jump' }],
+          },
+        ],
+      },
+    });
+    expect(drops).toHaveLength(0);
+    expect((meta.blocks as Record<string, unknown>[])[0].block_format).toBe('contrast');
+  });
+
+  it('drops contrast with wrong exercise count', () => {
+    const { drops } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Main',
+            block_format: 'contrast',
+            format_params: { rounds: 4 },
+            exercises: [{ name: 'Back Squat' }],
+          },
+        ],
+      },
+    });
+    expect(drops[0]?.reason).toBe('contrast_cardinality');
+  });
+
+  it('drops contrast without rounds', () => {
+    const { drops } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Main',
+            block_format: 'contrast',
+            format_params: {},
+            exercises: [{ name: 'Back Squat' }, { name: 'Box Jump' }],
+          },
+        ],
+      },
+    });
+    expect(drops[0]?.reason).toBe('contrast_missing_rounds');
+  });
+
+  it('passes clusters with reps_per_cluster and clusters', () => {
+    const { meta, drops } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Strength',
+            block_format: 'clusters',
+            format_params: { reps_per_cluster: 3, clusters: 4 },
+            exercises: [{ name: 'Deadlift' }],
+          },
+        ],
+      },
+    });
+    expect(drops).toHaveLength(0);
+    expect((meta.blocks as Record<string, unknown>[])[0].block_format).toBe('clusters');
+  });
+
+  it('drops clusters without required params', () => {
+    const { drops } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Strength',
+            block_format: 'clusters',
+            format_params: { reps_per_cluster: 3 },
+            exercises: [{ name: 'Deadlift' }],
+          },
+        ],
+      },
+    });
+    expect(drops[0]?.reason).toBe('clusters_missing_params');
+  });
+
+  it('passes drop_sets with drop_percent and drops', () => {
+    const { meta, drops } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Strength',
+            block_format: 'drop_sets',
+            format_params: { drop_percent: 20, drops: 2 },
+            exercises: [{ name: 'Leg Press' }],
+          },
+        ],
+      },
+    });
+    expect(drops).toHaveLength(0);
+    expect((meta.blocks as Record<string, unknown>[])[0].block_format).toBe('drop_sets');
+  });
+
+  it('drops drop_sets without drop_percent and drops', () => {
+    const { drops } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Strength',
+            block_format: 'drop_sets',
+            format_params: { drop_percent: 20 },
+            exercises: [{ name: 'Leg Press' }],
+          },
+        ],
+      },
+    });
+    expect(drops[0]?.reason).toBe('drop_sets_missing_params');
+  });
+
   it('drops unknown block_format without coercing to straight_sets', () => {
     const { meta, drops } = parseProposedWorkoutMetadataWithDrops({
       proposed_workout_metadata: {

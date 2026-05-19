@@ -58,7 +58,7 @@ Implementation: [`buildBaseCoachPrompt`](../../../src/lib/agents/coach/prompts.t
 | **`@`** | `@Coach`, `@Buddy`, team members | `enableAtMentions`             | Agent routing via mention handle; no extra metadata                                         | ChatArea, both rails                                          |
 | **`/`** | `/Task title`                    | `enableSlashTaskLinks`         | Inserts link text; attaches task on send (bubble chat)                                      | ChatArea (not TaskModal rail — `slashConfig={{ tasks: [] }}`) |
 | **`#`** | `#Bulgarian Split Squat`         | `enableExerciseHashMentions`   | `metadata.exercise_mentions[]` → Coach `TAGGED_EXERCISE_REFS`                               | ChatArea, WorkoutCoachRail, workout TaskModal rail            |
-| **`:`** | `:finisher/amrap`                | `enableBlockBlueprintMentions` | `metadata.block_blueprint_mentions[]` → Lane 1/2 preflight or Lane 3 `BLOCK_BLUEPRINT_REFS` | Workout TaskModal rail                                        |
+| **`:`** | `:finisher/amrap/metcon`         | `enableBlockBlueprintMentions` | `metadata.block_blueprint_mentions[]` → Lane 1/2 preflight or Lane 3 `BLOCK_BLUEPRINT_REFS` | Workout TaskModal rail                                        |
 
 **Token resolution** lives in [`src/lib/chat-composer-tokens.ts`](../../../src/lib/chat-composer-tokens.ts): rightmost active `@`, `/`, or `#` wins (`resolveActiveComposerTrigger`).
 
@@ -98,16 +98,20 @@ Exercise-shaped blocks (sets/reps or parametric format) named **Finisher** land 
 
 From [`block-blueprint-library.ts`](../../../src/lib/agents/coach/block-blueprint-library.ts) / Coach Vertex schema:
 
-| `block_format`  | Typical use                    | Required `format_params`                                     |
-| --------------- | ------------------------------ | ------------------------------------------------------------ |
-| `straight_sets` | Default strength / hypertrophy | —                                                            |
-| `superset`      | Exactly **2** exercises        | `rounds`                                                     |
-| `circuit`       | 3+ exercises, round-robin      | `rounds`                                                     |
-| `amrap`         | Time-capped rounds             | `time_cap_minutes`                                           |
-| `emom`          | Every minute on the minute     | `interval_seconds` + (`total_minutes` **or** `total_rounds`) |
-| `tabata`        | Work/rest intervals            | `rounds` (optional `work_seconds` / `rest_seconds`)          |
-
-**Reserved v2 (not in schema yet):** `chipper`, `ladder` (listed in parametric-blocks doc; do not expose in composer until parser/merge support lands).
+| `block_format`  | Typical use                     | Required `format_params`                                                                  |
+| --------------- | ------------------------------- | ----------------------------------------------------------------------------------------- |
+| `straight_sets` | Default strength / hypertrophy  | —                                                                                         |
+| `superset`      | Exactly **2** exercises         | `rounds`                                                                                  |
+| `circuit`       | 3+ exercises, round-robin       | `rounds`                                                                                  |
+| `amrap`         | Time-capped rounds              | `time_cap_minutes`                                                                        |
+| `emom`          | Every minute on the minute      | `interval_seconds` + (`total_minutes` **or** `total_rounds`)                              |
+| `tabata`        | Work/rest intervals             | `rounds` (optional `work_seconds` / `rest_seconds`)                                       |
+| `ladder`        | Ascending/descending rep rungs  | `start_reps`, `peak_reps` (optional `step_reps`, `direction`)                             |
+| `chipper`       | Sequential for-time work        | `rounds` (optional `time_cap_minutes`); **≥ 3** exercises                                 |
+| `pyramid`       | Set-by-set rep/load progression | `start_reps`, `peak_reps` (optional `step_reps`, `direction`, `load_progression_percent`) |
+| `contrast`      | PAP heavy + explosive pair      | `rounds`; **exactly 2** exercises                                                         |
+| `clusters`      | Intra-set micro-rest clusters   | `reps_per_cluster`, `clusters` (optional rest seconds)                                    |
+| `drop_sets`     | Failure + load reduction        | `drop_percent`, `drops`                                                                   |
 
 **Instruction-only blocks** (`instructions[]`, no `exercises[]`) may omit `block_format` — used for warm-up / mobility copy, not finishers with sets.
 
@@ -275,10 +279,39 @@ Persist on send as `metadata.block_blueprint_mentions[]` (name TBD). Coach promp
 3. On pick, insert template snippet + stash pending blueprint payload.
 4. Coach server: new parser `parseBlockBlueprintMentionsFromMetadata` + prompt block instructing **append single block** when blueprint refs present (override “full workout” rail copy for additive edits).
 
-### 5.5 `ladder` / HIIT
+### 5.5 `ladder`, `chipper`, and HIIT
 
-- **HIIT** is not a separate enum value — map to **`emom`**, **`tabata`**, or **`amrap`** in copy/examples.
-- **`ladder`** stays **v2** until added to `BLOCK_FORMATS` in `block-blueprint-library.ts` and Coach schema enum.
+- **HIIT** is not a separate enum value — map to **`emom`**, **`tabata`**, or **`amrap`** in copy/examples (or **`chipper`** when the user wants sequential for-time work).
+- **`ladder`** and **`chipper`** are in `block-blueprint-library.ts` and the `:` picker (Phase B). Example tokens: `:finisher/ladder/core `, `:metcon/chipper/density `.
+
+### 5.6 Block catalog (flat + fuzzy search)
+
+**Source of truth:** [`src/lib/agents/coach/block-blueprint-catalog.ts`](../../../src/lib/agents/coach/block-blueprint-catalog.ts) (~38 pre-combined rows; grows via PR).
+
+**UX token convention (3 segments):**
+
+```text
+:phase/structure/focus
+```
+
+Example: `:finisher/tabata/vo2 ` — the third segment (`vo2`, `core`, `cns`) is **search and grouping metadata only**. Lane 1/2/3 still read structured fields on send:
+
+- `section_name` (e.g. `Finisher`)
+- `block_format` (one of eight enum values)
+- `format_params` (defaults from catalog row)
+
+Legacy 2-part tokens (`:finisher/amrap `) are **not** emitted by the picker; old messages in history may still contain them.
+
+**Picker behavior:**
+
+| Mode                                           | UI                                                                                         |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Empty query (`:` only)                         | Flat catalog with sticky headers: MAIN, CONDITIONING & FINISHERS, STRENGTH, PREP, RECOVERY |
+| Filtered query (`:tab`, `:core`, `:fin/amrap`) | Flat list, no headers; multi-segment `/` matching on token + aliases                       |
+
+**Phase B (shipped):** `ladder` and `chipper`. **Phase C (shipped):** `pyramid`, `contrast`, `clusters`, `drop_sets` catalog rows and engine support. **Deferred:** instruction-only mobility/LISS without `block_format`.
+
+**Client wiring:** [`block-blueprint-mentions-client.ts`](../../../src/lib/agents/coach/block-blueprint-mentions-client.ts) re-exports `BLOCK_PICKER_PRESETS`; [`RichMessageComposer`](../../../src/components/chat/RichMessageComposer.tsx) inserts `preset.token` verbatim on pick.
 
 ---
 
@@ -311,6 +344,8 @@ Persist on send as `metadata.block_blueprint_mentions[]` (name TBD). Coach promp
 | Token parsing            | `src/lib/chat-composer-tokens.ts`                                                    |
 | Mention types            | `src/lib/agents/coach/exercise-mentions.ts` (+ Deno mirror)                          |
 | Block enums              | `src/lib/agents/coach/block-blueprint-library.ts`                                    |
+| Block picker catalog     | `src/lib/agents/coach/block-blueprint-catalog.ts`                                    |
+| Block mention client     | `src/lib/agents/coach/block-blueprint-mentions-client.ts`                            |
 | Merge / finisher routing | `src/lib/agents/_shared/workout-metadata/merge-coach-proposed-into-task-metadata.ts` |
 | Parametric blocks epic   | `docs/refactor/parametric-workout-blocks/README.md`                                  |
 | Merge epic               | `docs/refactor/workout-metadata-merge/README.md`                                     |

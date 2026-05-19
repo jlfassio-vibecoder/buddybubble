@@ -63,8 +63,12 @@ Align naming with factory HIIT vocabulary where possible; add strength-specific 
 | `amrap`         | As-many-rounds-as-possible in time cap | `time_cap_minutes`; exercises repeated in order until cap.                                                       |
 | `emom`          | Every minute on the minute             | `interval_seconds` (usually 60), `total_minutes` or `total_rounds`.                                              |
 | `tabata`        | 20s work / 10s rest style              | `work_seconds`, `rest_seconds`, `rounds` (default 8).                                                            |
-
-**Reserved (v2):** `chipper`, `ladder` (factory already lists these under `HiitProtocolFormat`).
+| `ladder`        | Ascending/descending rep rungs         | `start_reps`, `peak_reps`; optional `step_reps`, `direction`, `rounds`.                                          |
+| `chipper`       | Sequential for-time work               | `rounds` (usually 1); optional `time_cap_minutes`; **≥ 3** exercises in sequence.                                |
+| `pyramid`       | Set-by-set rep/load progression        | `start_reps`, `peak_reps`; optional `step_reps`, `direction`, `sets`, `load_progression_percent`.                |
+| `contrast`      | PAP heavy + explosive pair             | `rounds`; **exactly 2** exercises; optional `rest_between_rounds_seconds`, `pairing_notes`.                      |
+| `clusters`      | Intra-set micro-rest clusters          | `reps_per_cluster`, `clusters`; optional `intra_cluster_rest_seconds`, `inter_set_rest_seconds`, `rounds`.       |
+| `drop_sets`     | Failure + load reduction               | `drop_percent`, `drops`; optional `rounds`, `target_rpe`.                                                        |
 
 ### 3.3 `format_params` per format
 
@@ -114,7 +118,7 @@ export interface ExerciseBlock {
 block_format: {
   type: 'STRING',
   description:
-    'Blueprint discriminator. MUST be one of: straight_sets, superset, circuit, amrap, emom, tabata. Do not invent other values.',
+    'Blueprint discriminator. MUST be one of: straight_sets, superset, circuit, amrap, emom, tabata, ladder, chipper, pyramid, contrast, clusters, drop_sets. Do not invent other values.',
   // Vertex: enum if supported; else document allowed list in description + server validate.
 },
 format_params: {
@@ -269,6 +273,12 @@ const newBlock: Record<string, unknown> = {
 | `amrap`         | Set block subtitle via `formatParams.time_cap_minutes`; exercises typically `sets: 1`, reps as target; optional `coachNotes` “repeat for time”.                                                                                                                                                          |
 | `emom`          | **Exercise-level timers (§11.5):** Within each `interval_seconds` window, map per-exercise `workSeconds` and `restSeconds` so work + rest ≤ interval (e.g. 15s deadlifts + 45s rest in a 60s minute). Block `format_params` supply budget; merge writes exercise fields for accurate time-under-tension. |
 | `tabata`        | Apply `work_seconds` / `rest_seconds` / `rounds` to each exercise (factory already uses exercise-level timer fields).                                                                                                                                                                                    |
+| `ladder`        | Persist `blockFormat` + `formatParams`; hydrate rep rungs in exercises (Lane 2 / Coach).                                                                                                                                                                                                                 |
+| `chipper`       | Persist `blockFormat` + `formatParams`; distinct reps per exercise in order.                                                                                                                                                                                                                             |
+| `pyramid`       | Persist `blockFormat` + `formatParams`; hydrate set-by-set rep/load progression in exercises.                                                                                                                                                                                                            |
+| `contrast`      | Persist `blockFormat` + `formatParams`; **exactly 2** exercises (heavy + explosive).                                                                                                                                                                                                                     |
+| `clusters`      | Persist `blockFormat` + `formatParams`; cluster structure in sets/reps or coach notes.                                                                                                                                                                                                                   |
+| `drop_sets`     | Persist `blockFormat` + `formatParams`; working set + drop load reductions in exercises.                                                                                                                                                                                                                 |
 
 **Name routing (`classifyBlockRole`)** stays for warm-up/finisher/cool-down; `block_format` does not override role. A **Finisher** block can be `block_format: 'amrap'` with `time_cap_minutes: 5`.
 
