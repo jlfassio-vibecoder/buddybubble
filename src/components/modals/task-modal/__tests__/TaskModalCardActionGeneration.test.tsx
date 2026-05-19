@@ -19,6 +19,17 @@ vi.mock('@/hooks/useAgentResponseWait', () => ({
   }),
 }));
 
+vi.mock('@/hooks/useExerciseDictionaryAutocomplete', () => ({
+  useExerciseDictionaryAutocomplete: vi.fn(() => ({
+    rows: [
+      { id: 'dict-1', name: 'Bench Press', slug: 'bench-press', status: 'published' as const },
+    ],
+    loading: false,
+    error: null,
+    refresh: vi.fn(),
+  })),
+}));
+
 vi.mock('@/store/userProfileStore', () => ({
   useUserProfileStore: (selector: (s: { profile: { id: string } | null }) => unknown) =>
     selector({ profile: { id: 'user-1' } }),
