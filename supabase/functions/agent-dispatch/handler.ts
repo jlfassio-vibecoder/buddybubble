@@ -325,6 +325,8 @@ export async function handleDispatchRequest(req: Request): Promise<Response> {
         responseSchema: strategy.responseSchema,
         ...(strategy.slug === COACH_SLUG
           ? {
+              // Copilot suggestion ignored: Coach strategy.resolveGenerationConfig already applies
+              // resolveCoachThinkingBudget; this fallback is only when the full 2048 budget applies.
               thinkingConfig: generationOverrides?.thinkingConfig ?? {
                 thinkingBudget: COACH_THINKING_BUDGET,
               },

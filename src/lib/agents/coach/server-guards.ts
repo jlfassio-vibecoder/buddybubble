@@ -211,6 +211,12 @@ export function applyCoachServerGuards(
     updatedTaskDescription = null;
   }
 
+  // Guard 5: Action exclusivity — card_action is a UI command, not a workout draft.
+  if (cardAction === 'trigger_generation') {
+    proposedWorkoutMetadata = null;
+    updatedTaskDescription = null;
+  }
+
   // Guard 6: When planned workout context exists, strip prescription dumps in description
   // when the model omitted structured proposed_workout_metadata (blocks or exercises).
   const metaRecord = proposedWorkoutMetadata as Record<string, unknown> | null;
@@ -221,12 +227,6 @@ export function applyCoachServerGuards(
     !flatExercisesNonEmpty(metaRecord) &&
     looksLikeWorkoutPrescriptionDump(updatedTaskDescription)
   ) {
-    updatedTaskDescription = null;
-  }
-
-  // Guard 5: Action exclusivity — card_action is a UI command, not a workout draft.
-  if (cardAction === 'trigger_generation') {
-    proposedWorkoutMetadata = null;
     updatedTaskDescription = null;
   }
 

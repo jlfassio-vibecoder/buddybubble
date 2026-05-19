@@ -36,6 +36,8 @@ export default defineConfig({
       'scripts/**/*.test.ts',
       'supabase/functions/_shared/**/*.test.ts',
     ],
+    /** Deno-only tests (jsr: imports) run via `pnpm run test:deno-integration`. */
+    exclude: ['supabase/functions/_shared/dispatch/llm-budget.test.ts'],
     coverage: {
       provider: 'v8',
       /** Scope: agent-routing pure modules (unit-tested). Widen as more areas get Vitest coverage. */

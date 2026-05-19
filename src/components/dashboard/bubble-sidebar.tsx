@@ -201,10 +201,7 @@ export function BubbleSidebar({
                   </button>
                 )}
                 <div className="flex min-w-0 flex-1 items-center gap-2">
-                  <h2
-                    className="min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/70"
-                    aria-label="Bubbles"
-                  >
+                  <h2 className="min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/70">
                     Channels
                   </h2>
                   {onOpenWorkspaceSettings && isAdmin ? (

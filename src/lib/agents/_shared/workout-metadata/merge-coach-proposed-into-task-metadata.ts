@@ -74,7 +74,10 @@ function positiveMergeInt(v: unknown): number | null {
   return n > 0 ? n : null;
 }
 
-/** Propagate Tabata block format_params to each factory exercise row for viewer/player. */
+/**
+ * Propagate Tabata block format_params to each factory exercise row for viewer/player.
+ * Always clears sets/reps on Tabata rows so the player uses interval timers (not straight-set UI).
+ */
 function hydrateTabataExercisesFromFormatParams(
   mappedInner: Record<string, unknown>[],
   normalizedParams: Record<string, unknown>,

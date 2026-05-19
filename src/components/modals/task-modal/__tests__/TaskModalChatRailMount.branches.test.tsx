@@ -16,7 +16,7 @@ describe('TaskModal standard rail (Phase 3.7 / 3.8)', () => {
     const taskModalPath = join(process.cwd(), 'src/components/modals/TaskModal.tsx');
     const src = readFileSync(taskModalPath, 'utf8');
     expect((src.match(/onCardAction=\{handleCardAction\}/g) || []).length).toBe(3);
-    expect(src.includes('handleAiGenerateWorkout(workoutIntake.buildWizardPayload())')).toBe(true);
+    expect(src.includes('handleAiGenerateWorkout(buildWizardPayload())')).toBe(true);
     expect(src.includes('viewerWorkoutSet != null')).toBe(true);
     expect(src.includes("event: 'coach.card_action.triggered'")).toBe(true);
   });
