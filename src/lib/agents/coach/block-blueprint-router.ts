@@ -96,7 +96,16 @@ export function blockMeetsExerciseCardinality(format: BlockFormat, exerciseCount
     case 'tabata':
     case 'amrap':
     case 'emom':
+    case 'ladder':
+    case 'pyramid':
+    case 'clusters':
+    case 'drop_sets':
     case 'straight_sets':
+      return exerciseCount >= 1;
+    case 'chipper':
+      return exerciseCount >= 3;
+    case 'contrast':
+      return exerciseCount === 2;
     default:
       return exerciseCount >= 1;
   }
@@ -169,6 +178,18 @@ export function defaultRepsForFormat(format: BlockFormat): string {
     case 'emom':
     case 'amrap':
       return 'max';
+    case 'ladder':
+      return '1';
+    case 'chipper':
+      return '10';
+    case 'pyramid':
+      return '10';
+    case 'contrast':
+      return '5';
+    case 'clusters':
+      return '3';
+    case 'drop_sets':
+      return '8-12';
     case 'straight_sets':
       return '8-12';
     case 'superset':

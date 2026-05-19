@@ -36,6 +36,7 @@ import {
 } from '@/lib/chat-composer-tokens';
 import type { BlockPickerPreset } from '@/lib/agents/coach/block-blueprint-mentions-client';
 import { filterBlockPickerPresets } from '@/lib/agents/coach/block-blueprint-mentions-client';
+import { groupCatalogForDisplay } from '@/lib/agents/coach/block-blueprint-catalog';
 import {
   rankExercisesForHashQuery,
   shouldSuppressHashPopoverAfterSelection,
@@ -265,6 +266,30 @@ export function RichMessageComposer({
     return filterBlockPickerPresets(blockConfig.presets, blockSearch);
   }, [blockConfig, blockSearch, features.enableBlockBlueprintMentions]);
 
+  const blockCatalogBrowseGrouped = blockSearch.trim() === '';
+
+  const blockDisplayItems = useMemo(() => {
+    return groupCatalogForDisplay(filteredBlockPresets, {
+      grouped: blockCatalogBrowseGrouped,
+    });
+  }, [blockCatalogBrowseGrouped, filteredBlockPresets]);
+
+  /** Selectable rows in popover display order (headers excluded). */
+  const blockSelectablePresets = useMemo(() => {
+    return blockDisplayItems.filter((item) => item.type === 'entry').map((item) => item.entry);
+  }, [blockDisplayItems]);
+
+  const highlightedBlockPresetId = blockSelectablePresets[blockMentionIndex]?.id ?? null;
+
+  useEffect(() => {
+    const len = blockSelectablePresets.length;
+    setBlockMentionIndex((prev) => {
+      if (len === 0) return -1;
+      if (prev < 0 || prev >= len) return 0;
+      return prev;
+    });
+  }, [blockSelectablePresets]);
+
   useEffect(() => {
     if (!value) {
       setShowMentions(false);
@@ -418,8 +443,7 @@ export function RichMessageComposer({
       const textAfterCursor = value.substring(cursorPosition);
       const lastColon = lastBlockColonIndex(textBeforeCursor);
       if (lastColon < 0) return;
-      const sectionKey = preset.section_name.trim().toLowerCase().replace(/\s+/g, '-');
-      const inserted = `:${sectionKey}/${preset.block_format} `;
+      const inserted = preset.token;
       const textBeforeColon = textBeforeCursor.substring(0, lastColon);
       const newValue = textBeforeColon + inserted + textAfterCursor;
       onChange(newValue, { selectionStart: (textBeforeColon + inserted).length });
@@ -518,19 +542,24 @@ export function RichMessageComposer({
         setShowHashMentions(false);
       }
     } else if (features.enableBlockBlueprintMentions && showBlockMentions) {
-      const filtered = filteredBlockPresets;
-      if (filtered.length > 0) {
+      const selectable = blockSelectablePresets;
+      if (selectable.length > 0) {
         if (e.key === 'ArrowDown') {
           e.preventDefault();
-          setBlockMentionIndex((prev) => (prev + 1) % filtered.length);
+          setBlockMentionIndex((prev) => {
+            const base = prev < 0 ? -1 : prev;
+            return (base + 1) % selectable.length;
+          });
         } else if (e.key === 'ArrowUp') {
           e.preventDefault();
-          setBlockMentionIndex((prev) => (prev - 1 + filtered.length) % filtered.length);
+          setBlockMentionIndex((prev) => {
+            const base = prev < 0 ? 0 : prev;
+            return (base - 1 + selectable.length) % selectable.length;
+          });
         } else if (e.key === 'Enter' || e.key === 'Tab') {
           e.preventDefault();
-          if (filtered[blockMentionIndex]) {
-            insertBlockBlueprint(filtered[blockMentionIndex]);
-          }
+          const pick = selectable[blockMentionIndex] ?? selectable[0];
+          if (pick) insertBlockBlueprint(pick);
         }
       }
       if (e.key === 'Escape') {
@@ -766,29 +795,45 @@ export function RichMessageComposer({
                 <p className="text-xs text-muted-foreground">No block formats found</p>
               </div>
             ) : (
-              filteredBlockPresets.map((preset, idx) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  onClick={() => insertBlockBlueprint(preset)}
-                  className={cn(
-                    'flex w-full min-w-0 items-center gap-3 px-4 py-2.5 text-left transition-colors',
-                    idx === blockMentionIndex
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-foreground hover:bg-muted/70',
-                  )}
-                >
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-primary/15 text-[10px] font-bold text-primary">
-                    <LayoutGrid className="h-3.5 w-3.5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold">{preset.label}</span>
-                    <span className="block truncate text-[10px] text-muted-foreground">
-                      {preset.block_format}
-                    </span>
-                  </div>
-                </button>
-              ))
+              blockDisplayItems.map((item) => {
+                if (item.type === 'header') {
+                  return (
+                    <div
+                      key={`header-${item.group}`}
+                      className="sticky top-0 z-10 border-b border-border bg-muted/90 px-4 py-1.5"
+                    >
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                        {item.title}
+                      </span>
+                    </div>
+                  );
+                }
+                const preset = item.entry;
+                const tokenSubtitle = preset.token.trim().replace(/^:/, '');
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => insertBlockBlueprint(preset)}
+                    className={cn(
+                      'flex w-full min-w-0 items-center gap-3 px-4 py-2.5 text-left transition-colors',
+                      preset.id === highlightedBlockPresetId
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-foreground hover:bg-muted/70',
+                    )}
+                  >
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-primary/15 text-[10px] font-bold text-primary">
+                      <LayoutGrid className="h-3.5 w-3.5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold">{preset.label}</span>
+                      <span className="block truncate text-[10px] text-muted-foreground">
+                        {tokenSubtitle}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })
             )}
           </div>
         </motion.div>

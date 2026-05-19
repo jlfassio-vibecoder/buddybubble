@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { BLOCK_PICKER_PRESETS } from '@/lib/agents/coach/block-blueprint-mentions-client';
 import { RichMessageComposer } from './RichMessageComposer';
 
 afterEach(() => cleanup());
@@ -31,7 +32,11 @@ function HashHarness() {
   );
 }
 
-function BlockHarness() {
+function BlockHarness({
+  presets = BLOCK_PICKER_PRESETS,
+}: {
+  presets?: typeof BLOCK_PICKER_PRESETS;
+}) {
   const [value, setValue] = useState('');
   return (
     <RichMessageComposer
@@ -50,17 +55,7 @@ function BlockHarness() {
         enableCreateAndAttachCard: false,
         enableStartLiveWorkout: false,
       }}
-      blockConfig={{
-        presets: [
-          {
-            id: 'finisher-amrap',
-            label: 'Finisher · AMRAP',
-            section_name: 'Finisher',
-            block_format: 'amrap',
-            format_params: { time_cap_minutes: 5 },
-          },
-        ],
-      }}
+      blockConfig={{ presets }}
       formTestId="t-colon"
     />
   );
@@ -74,7 +69,63 @@ describe('RichMessageComposer block trigger', () => {
       target: { value: ':amr', selectionStart: 4 },
     });
     expect(screen.getByText('Block blueprint')).toBeDefined();
-    expect(screen.getByText('Finisher · AMRAP')).toBeDefined();
+    expect(screen.getAllByText(/AMRAP/).length).toBeGreaterThan(0);
+  });
+
+  it('shows sticky group headers when query is empty', () => {
+    render(<BlockHarness />);
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { value: ':', selectionStart: 1 },
+    });
+    expect(screen.getByText('MAIN')).toBeDefined();
+    expect(screen.getByText('CONDITIONING & FINISHERS')).toBeDefined();
+  });
+
+  it('filters via alias when typing :tab', () => {
+    render(<BlockHarness />);
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { value: ':tab', selectionStart: 4 },
+    });
+    expect(screen.getAllByText(/Tabata/).length).toBeGreaterThan(0);
+    expect(screen.queryByText('MAIN')).toBeNull();
+  });
+
+  it('keyboard navigation follows grouped display order', () => {
+    render(<BlockHarness />);
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { value: ':', selectionStart: 1 },
+    });
+
+    const highlightedLabel = () => {
+      const row = document.querySelector('.bg-primary\\/10.text-primary .font-semibold');
+      return row?.textContent ?? null;
+    };
+
+    const first = highlightedLabel();
+    expect(first).toBeTruthy();
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    const second = highlightedLabel();
+    expect(second).toBeTruthy();
+    expect(second).not.toBe(first);
+
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(input.value).toMatch(/^:/);
+    expect(input.value.endsWith(' ')).toBe(true);
+  });
+
+  it('inserts catalog token on pick', () => {
+    const finisherAmrap = BLOCK_PICKER_PRESETS.find((p) => p.id === 'finisher-amrap-metcon');
+    expect(finisherAmrap).toBeDefined();
+    render(<BlockHarness presets={[finisherAmrap!]} />);
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { value: ':amr', selectionStart: 4 },
+    });
+    fireEvent.click(screen.getByText(finisherAmrap!.label));
+    expect(input.value).toBe(':finisher/amrap/metcon ');
   });
 });
 

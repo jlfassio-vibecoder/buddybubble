@@ -3,7 +3,6 @@
  * Body below is byte-for-byte identical to the canonical Vitest-side file (excluding
  * this header). Any change must be hand-mirrored — run `pnpm check:agent-mirror` to verify parity.
  */
-
 export const BLOCK_FORMAT_ENUM = [
   'straight_sets',
   'superset',
@@ -11,6 +10,12 @@ export const BLOCK_FORMAT_ENUM = [
   'amrap',
   'emom',
   'tabata',
+  'ladder',
+  'chipper',
+  'pyramid',
+  'contrast',
+  'clusters',
+  'drop_sets',
 ] as const;
 
 export type BlockFormat = (typeof BLOCK_FORMAT_ENUM)[number];
@@ -23,7 +28,15 @@ export type BlockShapeDropReason =
   | 'circuit_cardinality'
   | 'emom_missing_params'
   | 'amrap_missing_time_cap'
-  | 'tabata_missing_rounds';
+  | 'tabata_missing_rounds'
+  | 'ladder_missing_reps'
+  | 'chipper_cardinality'
+  | 'chipper_missing_rounds'
+  | 'pyramid_missing_reps'
+  | 'contrast_cardinality'
+  | 'contrast_missing_rounds'
+  | 'clusters_missing_params'
+  | 'drop_sets_missing_params';
 
 export type BlockShapeDrop = {
   field: string;
@@ -37,6 +50,25 @@ export const FORMAT_PARAM_KEYS_BY_FORMAT: Readonly<Record<BlockFormat, readonly 
   amrap: ['time_cap_minutes', 'target_rounds', 'rest_between_rounds_seconds'],
   emom: ['interval_seconds', 'total_minutes', 'total_rounds', 'rest_in_interval_seconds'],
   tabata: ['work_seconds', 'rest_seconds', 'rounds'],
+  ladder: ['start_reps', 'peak_reps', 'step_reps', 'direction', 'rounds'],
+  chipper: ['rounds', 'time_cap_minutes'],
+  pyramid: [
+    'start_reps',
+    'peak_reps',
+    'step_reps',
+    'direction',
+    'sets',
+    'load_progression_percent',
+  ],
+  contrast: ['rounds', 'rest_between_rounds_seconds', 'pairing_notes'],
+  clusters: [
+    'reps_per_cluster',
+    'clusters',
+    'intra_cluster_rest_seconds',
+    'inter_set_rest_seconds',
+    'rounds',
+  ],
+  drop_sets: ['drop_percent', 'drops', 'rounds', 'target_rpe'],
 };
 
 /** Keys that must be present after normalize for shape validation (format-specific). */
@@ -47,6 +79,12 @@ export const REQUIRED_FORMAT_PARAMS_BY_FORMAT: Readonly<Record<BlockFormat, read
   amrap: ['time_cap_minutes'],
   emom: ['interval_seconds'],
   tabata: ['rounds'],
+  ladder: ['start_reps', 'peak_reps'],
+  chipper: ['rounds'],
+  pyramid: ['start_reps', 'peak_reps'],
+  contrast: ['rounds'],
+  clusters: ['reps_per_cluster', 'clusters'],
+  drop_sets: ['drop_percent', 'drops'],
 };
 
 const LEGACY_TYPE_TO_FORMAT: Readonly<Record<string, BlockFormat>> = {
@@ -58,7 +96,16 @@ const LEGACY_TYPE_TO_FORMAT: Readonly<Record<string, BlockFormat>> = {
   amrap: 'amrap',
   emom: 'emom',
   tabata: 'tabata',
+  ladder: 'ladder',
+  chipper: 'chipper',
+  pyramid: 'pyramid',
+  contrast: 'contrast',
+  clusters: 'clusters',
+  drop_sets: 'drop_sets',
+  drop_set: 'drop_sets',
 };
+
+const LADDER_DIRECTIONS = new Set(['ascending', 'descending']);
 
 function normalizeLegacyKey(raw: string): string {
   return raw
@@ -111,6 +158,17 @@ const INTEGER_PARAM_KEYS = new Set([
   'rest_between_rounds_seconds',
   'rest_between_exercises_seconds',
   'target_rounds',
+  'start_reps',
+  'peak_reps',
+  'step_reps',
+  'sets',
+  'load_progression_percent',
+  'reps_per_cluster',
+  'intra_cluster_rest_seconds',
+  'inter_set_rest_seconds',
+  'clusters',
+  'drop_percent',
+  'drops',
 ]);
 
 /** Strip irrelevant keys, round integers, drop invalid values. */
@@ -124,6 +182,13 @@ export function normalizeFormatParams(format: BlockFormat, raw: unknown): Record
     const v = o[key];
     if (key === 'pairing_notes') {
       if (typeof v === 'string' && v.trim()) out.pairing_notes = v.trim();
+      continue;
+    }
+    if (key === 'direction') {
+      if (typeof v === 'string') {
+        const d = v.trim().toLowerCase();
+        if (LADDER_DIRECTIONS.has(d)) out.direction = d;
+      }
       continue;
     }
     if (key === 'target_rpe') {
@@ -173,6 +238,37 @@ export function validateBlockShape(
     case 'tabata':
       if (!hasPositiveIntParam(params, 'rounds')) return 'tabata_missing_rounds';
       return null;
+    case 'ladder':
+      if (!hasPositiveIntParam(params, 'start_reps') || !hasPositiveIntParam(params, 'peak_reps')) {
+        return 'ladder_missing_reps';
+      }
+      return null;
+    case 'chipper':
+      if (exercisesLength < 3) return 'chipper_cardinality';
+      if (!hasPositiveIntParam(params, 'rounds')) return 'chipper_missing_rounds';
+      return null;
+    case 'pyramid':
+      if (!hasPositiveIntParam(params, 'start_reps') || !hasPositiveIntParam(params, 'peak_reps')) {
+        return 'pyramid_missing_reps';
+      }
+      return null;
+    case 'contrast':
+      if (exercisesLength !== 2) return 'contrast_cardinality';
+      if (!hasPositiveIntParam(params, 'rounds')) return 'contrast_missing_rounds';
+      return null;
+    case 'clusters':
+      if (
+        !hasPositiveIntParam(params, 'reps_per_cluster') ||
+        !hasPositiveIntParam(params, 'clusters')
+      ) {
+        return 'clusters_missing_params';
+      }
+      return null;
+    case 'drop_sets':
+      if (!hasPositiveIntParam(params, 'drop_percent') || !hasPositiveIntParam(params, 'drops')) {
+        return 'drop_sets_missing_params';
+      }
+      return null;
     case 'straight_sets':
     default:
       return null;
@@ -197,7 +293,7 @@ export function buildBlockBlueprintLibraryPrompt(): string {
   return (
     `${BLOCK_BLUEPRINT_LIBRARY_HEADER}\n` +
     'When you emit proposed_workout_metadata.blocks for exercise-shaped sections, you MUST select a blueprint and hydrate within its constraints. Do not invent formats or put timing only in reply_content — structured JSON is the prescription.\n' +
-    'block_format must be one of: straight_sets, superset, circuit, amrap, emom, tabata. Do not invent new values. Prefer block_format over legacy type.\n' +
+    'block_format must be one of: straight_sets, superset, circuit, amrap, emom, tabata, ladder, chipper, pyramid, contrast, clusters, drop_sets. Do not invent new values. Prefer block_format over legacy type.\n' +
     'format_params is a single object; include only keys relevant to block_format (see below). Omit format_params for straight_sets when using default rest only.\n' +
     '\n' +
     'straight_sets — Default strength / hypertrophy. Optional format_params: rest_between_sets_seconds, target_rpe. Fill exercises[] with sets × reps per movement.\n' +
@@ -212,7 +308,19 @@ export function buildBlockBlueprintLibraryPrompt(): string {
     '\n' +
     'tabata — Work / rest intervals. Required format_params: rounds. Optional: work_seconds (default 20), rest_seconds (default 10). Each exercise inherits work_seconds / rest_seconds / rounds from format_params; you may override per-exercise with work_seconds / rest_seconds.\n' +
     '\n' +
+    'ladder — Ascending or descending rep rungs on one or more movements. Required format_params: start_reps, peak_reps. Optional: step_reps (default 1), direction (ascending or descending), rounds. Hydrate exercises[] with per-set or per-round rep targets from start_reps toward peak_reps by step_reps; do not put the scheme only in reply_content.\n' +
+    '\n' +
+    'chipper — Complete all prescribed reps of each exercise in order before advancing to the next. Required format_params: rounds (usually 1). Optional: time_cap_minutes for for-time chippers. Require at least 3 exercises in exercises[] with distinct rep counts per movement.\n' +
+    '\n' +
+    'pyramid — Set-by-set rep and/or load progression (not rep-rung ladders). Required format_params: start_reps, peak_reps. Optional: step_reps, direction (ascending or descending), sets, load_progression_percent. Hydrate exercises[] with per-set rep or load targets across the pyramid; do not put the scheme only in reply_content.\n' +
+    '\n' +
+    'contrast — Post-activation potentiation: exactly 2 exercises (heavy strength + explosive plyometric or speed). Required format_params: rounds. Optional: rest_between_rounds_seconds, pairing_notes. Alternate heavy then explosive each round; use superset for antagonist pairs without PAP intent.\n' +
+    '\n' +
+    'clusters — Intra-set micro-rest between rep clusters. Required format_params: reps_per_cluster, clusters. Optional: intra_cluster_rest_seconds, inter_set_rest_seconds, rounds. Hydrate exercises[] with cluster structure in sets/reps or coach_notes.\n' +
+    '\n' +
+    'drop_sets — Working set to failure then load reductions. Required format_params: drop_percent, drops. Optional: rounds, target_rpe. Hydrate exercises[] with working-set reps and drop-set load reductions; do not put drops only in reply_content.\n' +
+    '\n' +
     'Instruction-only blocks (warm-up, cool-down, mobility): when instructions[] is non-empty and exercises[] is empty or omitted, omit block_format and format_params; name + instructions only.\n' +
-    'HARD RULES: superset requires exactly 2 exercises. amrap requires time_cap_minutes. emom requires interval_seconds and total_minutes or total_rounds. tabata requires rounds. Unknown block_format values are rejected server-side — never coerce a time-domain format into straight_sets.'
+    'HARD RULES: superset and contrast require exactly 2 exercises. contrast requires rounds. circuit and chipper require at least 3 exercises. amrap requires time_cap_minutes. emom requires interval_seconds and total_minutes or total_rounds. tabata requires rounds. ladder and pyramid require start_reps and peak_reps. chipper requires rounds. clusters requires reps_per_cluster and clusters. drop_sets requires drop_percent and drops. Unknown block_format values are rejected server-side — never coerce a time-domain format into straight_sets.'
   );
 }

@@ -133,7 +133,7 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
           type: 'ARRAY',
           nullable: true,
           description:
-            'Polymorphic workout sections. Each block has a free-text name (e.g. Warm-up, Main, Strength, Cardio, Finisher, Cool down, Mobility). Exercise-shaped blocks include exercises; warm-up / cool-down / mobility may instead supply an instructions string list when there are no sets and reps. The server mergeCoachProposedIntoTaskMetadata appends blocks by default — emit only new or changed blocks; do not re-send unchanged sections. Routes each block by name and shape into exerciseBlocks (strength, cardio, core, finisher with sets and reps) or warmupBlocks, finisherBlocks, or cooldownBlocks (instruction-shaped). Prefer emitting blocks over flat exercises whenever the user asked for a named section (for example add a finisher). Each exercise-shaped block MUST set block_format (one of straight_sets, superset, circuit, amrap, emom, tabata) and the matching format_params per the BLUEPRINT LIBRARY in the system prompt. Instruction-only blocks (instructions[] without exercises[]) may omit block_format. Use null or omit when not changing the workout structure.',
+            'Polymorphic workout sections. Each block has a free-text name (e.g. Warm-up, Main, Strength, Cardio, Finisher, Cool down, Mobility). Exercise-shaped blocks include exercises; warm-up / cool-down / mobility may instead supply an instructions string list when there are no sets and reps. The server mergeCoachProposedIntoTaskMetadata appends blocks by default — emit only new or changed blocks; do not re-send unchanged sections. Routes each block by name and shape into exerciseBlocks (strength, cardio, core, finisher with sets and reps) or warmupBlocks, finisherBlocks, or cooldownBlocks (instruction-shaped). Prefer emitting blocks over flat exercises whenever the user asked for a named section (for example add a finisher). Each exercise-shaped block MUST set block_format (one of straight_sets, superset, circuit, amrap, emom, tabata, ladder, chipper, pyramid, contrast, clusters, drop_sets) and the matching format_params per the BLUEPRINT LIBRARY in the system prompt. Instruction-only blocks (instructions[] without exercises[]) may omit block_format. Use null or omit when not changing the workout structure.',
           items: {
             type: 'OBJECT',
             properties: {
@@ -174,7 +174,20 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
               block_format: {
                 type: 'STRING',
                 nullable: true,
-                enum: ['straight_sets', 'superset', 'circuit', 'amrap', 'emom', 'tabata'],
+                enum: [
+                  'straight_sets',
+                  'superset',
+                  'circuit',
+                  'amrap',
+                  'emom',
+                  'tabata',
+                  'ladder',
+                  'chipper',
+                  'pyramid',
+                  'contrast',
+                  'clusters',
+                  'drop_sets',
+                ],
                 description:
                   'Blueprint discriminator. MUST be one of the enum values; do not invent new formats. Required on exercise-shaped blocks; instruction-only warm-up / cool-down blocks may omit it. Use circuit (not superset) for 3+ exercises in sequence.',
               },
@@ -182,7 +195,7 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
                 type: 'OBJECT',
                 nullable: true,
                 description:
-                  'Format-specific parameters. Required keys depend on block_format (see BLUEPRINT LIBRARY in system prompt): amrap requires time_cap_minutes; emom requires interval_seconds AND (total_minutes OR total_rounds); tabata requires rounds; superset/circuit require rounds. Omit when straight_sets with default rest.',
+                  'Format-specific parameters. Required keys depend on block_format (see BLUEPRINT LIBRARY in system prompt): amrap requires time_cap_minutes; emom requires interval_seconds AND (total_minutes OR total_rounds); tabata requires rounds; superset/circuit/contrast require rounds; ladder and pyramid require start_reps and peak_reps; chipper requires rounds and at least 3 exercises; clusters requires reps_per_cluster and clusters; drop_sets requires drop_percent and drops. Omit when straight_sets with default rest.',
                 properties: {
                   time_cap_minutes: { type: 'INTEGER', nullable: true },
                   interval_seconds: { type: 'INTEGER', nullable: true },
@@ -198,6 +211,22 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
                   target_rpe: { type: 'NUMBER', nullable: true },
                   target_rounds: { type: 'INTEGER', nullable: true },
                   pairing_notes: { type: 'STRING', nullable: true },
+                  start_reps: { type: 'INTEGER', nullable: true },
+                  peak_reps: { type: 'INTEGER', nullable: true },
+                  step_reps: { type: 'INTEGER', nullable: true },
+                  direction: {
+                    type: 'STRING',
+                    nullable: true,
+                    description: 'Ladder or pyramid: ascending or descending.',
+                  },
+                  sets: { type: 'INTEGER', nullable: true },
+                  load_progression_percent: { type: 'INTEGER', nullable: true },
+                  reps_per_cluster: { type: 'INTEGER', nullable: true },
+                  intra_cluster_rest_seconds: { type: 'INTEGER', nullable: true },
+                  inter_set_rest_seconds: { type: 'INTEGER', nullable: true },
+                  clusters: { type: 'INTEGER', nullable: true },
+                  drop_percent: { type: 'INTEGER', nullable: true },
+                  drops: { type: 'INTEGER', nullable: true },
                 },
               },
             },

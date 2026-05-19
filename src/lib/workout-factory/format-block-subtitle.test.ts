@@ -66,4 +66,44 @@ describe('formatBlockSubtitle', () => {
     expect(formatBlockSubtitle('amrap', null)).toBe('AMRAP');
     expect(formatBlockSubtitle('amrap', [] as unknown as Record<string, unknown>)).toBe('AMRAP');
   });
+
+  it('formats ladder ascending and descending', () => {
+    expect(formatBlockSubtitle('ladder', { start_reps: 1, peak_reps: 10 })).toBe('Ladder · 1→10');
+    expect(
+      formatBlockSubtitle('ladder', {
+        start_reps: 1,
+        peak_reps: 10,
+        direction: 'descending',
+      }),
+    ).toBe('Ladder · 10→1');
+    expect(formatBlockSubtitle('ladder', {})).toBe('Ladder');
+  });
+
+  it('formats chipper with optional time cap', () => {
+    expect(formatBlockSubtitle('chipper', { rounds: 1 })).toBe('Chipper');
+    expect(formatBlockSubtitle('chipper', { rounds: 1, time_cap_minutes: 12 })).toBe(
+      'Chipper · 12 Min',
+    );
+  });
+
+  it('formats pyramid ascending and descending', () => {
+    expect(formatBlockSubtitle('pyramid', { start_reps: 6, peak_reps: 12 })).toBe('Pyramid · 6→12');
+    expect(
+      formatBlockSubtitle('pyramid', {
+        start_reps: 6,
+        peak_reps: 12,
+        direction: 'descending',
+      }),
+    ).toBe('Pyramid · 12→6');
+  });
+
+  it('formats contrast clusters and drop_sets', () => {
+    expect(formatBlockSubtitle('contrast', { rounds: 4 })).toBe('Contrast · 4 Rounds');
+    expect(formatBlockSubtitle('clusters', { reps_per_cluster: 3, clusters: 4 })).toBe(
+      'Clusters · 4×3',
+    );
+    expect(formatBlockSubtitle('drop_sets', { drop_percent: 20, drops: 2 })).toBe(
+      'Drop sets · 20% × 2',
+    );
+  });
 });
