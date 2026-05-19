@@ -29,10 +29,13 @@ import {
 import { PremiumGate } from '@/components/subscription/premium-gate';
 import { cn } from '@/lib/utils';
 import {
+  lastBlockColonIndex,
   lastExerciseHashIndex,
   lastTaskMentionSlashIndex,
   resolveActiveComposerTrigger,
 } from '@/lib/chat-composer-tokens';
+import type { BlockPickerPreset } from '@/lib/agents/coach/block-blueprint-mentions-client';
+import { filterBlockPickerPresets } from '@/lib/agents/coach/block-blueprint-mentions-client';
 import {
   rankExercisesForHashQuery,
   shouldSuppressHashPopoverAfterSelection,
@@ -77,11 +80,18 @@ export type RichMessageComposerHashConfig = {
   errorText?: string | null;
 };
 
+export type RichMessageComposerBlockConfig = {
+  presets: BlockPickerPreset[];
+  getBlockCandidates?: (query: string) => BlockPickerPreset[];
+};
+
 export type RichMessageComposerFeatures = {
   enableAtMentions?: boolean;
   enableSlashTaskLinks?: boolean;
   /** `#` to insert canonical exercise names (requires `hashConfig`). */
   enableExerciseHashMentions?: boolean;
+  /** `:` to insert block blueprint presets (requires `blockConfig`). */
+  enableBlockBlueprintMentions?: boolean;
   enableCreateAndAttachCard?: boolean;
   enableStartLiveWorkout?: boolean;
 };
@@ -98,6 +108,9 @@ export type RichMessageComposerProps = {
    * Used by WorkoutCoachRail to attach `metadata.exercise_mentions` on send.
    */
   onExerciseHashInserted?: (exercise: RichMessageComposerExercise) => void;
+
+  /** When the user picks a block blueprint from the `:` popover (for `metadata.block_blueprint_mentions`). */
+  onBlockBlueprintInserted?: (preset: BlockPickerPreset) => void;
 
   /**
    * Fires on every `<form>` submit (Enter or send button), immediately after `preventDefault`,
@@ -126,6 +139,7 @@ export type RichMessageComposerProps = {
   mentionConfig?: RichMessageComposerMentionConfig;
   slashConfig?: RichMessageComposerSlashConfig;
   hashConfig?: RichMessageComposerHashConfig;
+  blockConfig?: RichMessageComposerBlockConfig;
 
   onRequestCreateAndAttachCard?: () => void;
   onRequestStartLiveWorkout?: () => void;
@@ -150,6 +164,7 @@ const defaultFeatures: Required<RichMessageComposerFeatures> = {
   enableAtMentions: true,
   enableSlashTaskLinks: true,
   enableExerciseHashMentions: false,
+  enableBlockBlueprintMentions: false,
   enableCreateAndAttachCard: true,
   enableStartLiveWorkout: false,
 };
@@ -159,6 +174,7 @@ export function RichMessageComposer({
   onChange,
   onSubmit,
   onExerciseHashInserted,
+  onBlockBlueprintInserted,
   onSubmitIntent,
   pendingFiles,
   onPendingFilesChange,
@@ -175,6 +191,7 @@ export function RichMessageComposer({
   mentionConfig,
   slashConfig,
   hashConfig,
+  blockConfig,
   onRequestCreateAndAttachCard,
   onRequestStartLiveWorkout,
   startLiveWorkoutDisabled,
@@ -204,6 +221,10 @@ export function RichMessageComposer({
   const [hashSearch, setHashSearch] = useState('');
   const [showHashMentions, setShowHashMentions] = useState(false);
   const [hashMentionIndex, setHashMentionIndex] = useState(-1);
+
+  const [blockSearch, setBlockSearch] = useState('');
+  const [showBlockMentions, setShowBlockMentions] = useState(false);
+  const [blockMentionIndex, setBlockMentionIndex] = useState(-1);
 
   const filteredMembers = useMemo(() => {
     if (!features.enableAtMentions || !mentionConfig) return [];
@@ -236,11 +257,20 @@ export function RichMessageComposer({
     return rankExercisesForHashQuery(hashConfig.exercises, hashSearch);
   }, [features.enableExerciseHashMentions, hashConfig, hashSearch]);
 
+  const filteredBlockPresets = useMemo(() => {
+    if (!features.enableBlockBlueprintMentions || !blockConfig) return [];
+    if (blockConfig.getBlockCandidates) {
+      return blockConfig.getBlockCandidates(blockSearch);
+    }
+    return filterBlockPickerPresets(blockConfig.presets, blockSearch);
+  }, [blockConfig, blockSearch, features.enableBlockBlueprintMentions]);
+
   useEffect(() => {
     if (!value) {
       setShowMentions(false);
       setShowTaskMentions(false);
       setShowHashMentions(false);
+      setShowBlockMentions(false);
     }
   }, [value]);
 
@@ -271,6 +301,7 @@ export function RichMessageComposer({
         enableAt: features.enableAtMentions && Boolean(mentionConfig),
         enableSlash: features.enableSlashTaskLinks && Boolean(slashConfig),
         enableHash: features.enableExerciseHashMentions && Boolean(hashConfig),
+        enableBlock: features.enableBlockBlueprintMentions && Boolean(blockConfig),
       });
 
       if (active?.kind === 'mention') {
@@ -279,12 +310,14 @@ export function RichMessageComposer({
         setMentionIndex(0);
         setShowTaskMentions(false);
         setShowHashMentions(false);
+        setShowBlockMentions(false);
       } else if (active?.kind === 'slash') {
         setTaskMentionSearch(active.query);
         setShowTaskMentions(true);
         setTaskMentionIndex(0);
         setShowMentions(false);
         setShowHashMentions(false);
+        setShowBlockMentions(false);
       } else if (active?.kind === 'hash') {
         if (
           hashConfig &&
@@ -299,14 +332,25 @@ export function RichMessageComposer({
         }
         setShowMentions(false);
         setShowTaskMentions(false);
+        setShowBlockMentions(false);
+      } else if (active?.kind === 'block') {
+        setBlockSearch(active.query);
+        setShowBlockMentions(true);
+        setBlockMentionIndex(0);
+        setShowMentions(false);
+        setShowTaskMentions(false);
+        setShowHashMentions(false);
       } else {
         setShowMentions(false);
         setShowTaskMentions(false);
         setShowHashMentions(false);
+        setShowBlockMentions(false);
       }
     },
     [
+      blockConfig,
       features.enableAtMentions,
+      features.enableBlockBlueprintMentions,
       features.enableExerciseHashMentions,
       features.enableSlashTaskLinks,
       hashConfig,
@@ -367,6 +411,25 @@ export function RichMessageComposer({
     [onChange, onExerciseHashInserted, value],
   );
 
+  const insertBlockBlueprint = useCallback(
+    (preset: BlockPickerPreset) => {
+      const cursorPosition = inputRef.current?.selectionStart || 0;
+      const textBeforeCursor = value.substring(0, cursorPosition);
+      const textAfterCursor = value.substring(cursorPosition);
+      const lastColon = lastBlockColonIndex(textBeforeCursor);
+      if (lastColon < 0) return;
+      const sectionKey = preset.section_name.trim().toLowerCase().replace(/\s+/g, '-');
+      const inserted = `:${sectionKey}/${preset.block_format} `;
+      const textBeforeColon = textBeforeCursor.substring(0, lastColon);
+      const newValue = textBeforeColon + inserted + textAfterCursor;
+      onChange(newValue, { selectionStart: (textBeforeColon + inserted).length });
+      onBlockBlueprintInserted?.(preset);
+      setShowBlockMentions(false);
+      inputRef.current?.focus();
+    },
+    [onBlockBlueprintInserted, onChange, value],
+  );
+
   const handleAttachmentPick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const incoming = e.target.files;
     const picked = incoming?.length ? Array.from(incoming) : [];
@@ -385,6 +448,7 @@ export function RichMessageComposer({
       setShowMentions(false);
       setShowTaskMentions(false);
       setShowHashMentions(false);
+      setShowBlockMentions(false);
       // Restore focus after submit (e.g. user clicked Send); `readOnly` during `isSending`
       // keeps the field focusable, but focus may still sit on the submit control.
       queueMicrotask(() => {
@@ -453,6 +517,25 @@ export function RichMessageComposer({
       if (e.key === 'Escape') {
         setShowHashMentions(false);
       }
+    } else if (features.enableBlockBlueprintMentions && showBlockMentions) {
+      const filtered = filteredBlockPresets;
+      if (filtered.length > 0) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          setBlockMentionIndex((prev) => (prev + 1) % filtered.length);
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          setBlockMentionIndex((prev) => (prev - 1 + filtered.length) % filtered.length);
+        } else if (e.key === 'Enter' || e.key === 'Tab') {
+          e.preventDefault();
+          if (filtered[blockMentionIndex]) {
+            insertBlockBlueprint(filtered[blockMentionIndex]);
+          }
+        }
+      }
+      if (e.key === 'Escape') {
+        setShowBlockMentions(false);
+      }
     }
   };
 
@@ -488,7 +571,9 @@ export function RichMessageComposer({
     showMentions && features.enableAtMentions && filteredMembers.length > 0;
   const showSlashPopover = showTaskMentions && features.enableSlashTaskLinks;
   const showHashPopover = showHashMentions && features.enableExerciseHashMentions;
-  const showAnyPopover = showMentionPopover || showSlashPopover || showHashPopover;
+  const showBlockPopover = showBlockMentions && features.enableBlockBlueprintMentions;
+  const showAnyPopover =
+    showMentionPopover || showSlashPopover || showHashPopover || showBlockPopover;
 
   const popoverLayer = showAnyPopover ? (
     <AnimatePresence>
@@ -653,6 +738,54 @@ export function RichMessageComposer({
                         {ex.slug}
                       </span>
                     ) : null}
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </motion.div>
+      ) : null}
+
+      {showBlockPopover ? (
+        <motion.div
+          key="block-blueprint"
+          initial={{ opacity: 0, y: 10, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 10, scale: 0.95 }}
+          className="absolute bottom-24 left-6 z-50 w-80 overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-2xl"
+        >
+          <div className="flex items-center gap-2 border-b border-border bg-muted/70 p-2">
+            <LayoutGrid className="h-3 w-3 text-primary" />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              Block blueprint
+            </span>
+          </div>
+          <div className="custom-scrollbar max-h-48 overflow-y-auto">
+            {filteredBlockPresets.length === 0 ? (
+              <div className="p-4 text-center">
+                <p className="text-xs text-muted-foreground">No block formats found</p>
+              </div>
+            ) : (
+              filteredBlockPresets.map((preset, idx) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => insertBlockBlueprint(preset)}
+                  className={cn(
+                    'flex w-full min-w-0 items-center gap-3 px-4 py-2.5 text-left transition-colors',
+                    idx === blockMentionIndex
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-foreground hover:bg-muted/70',
+                  )}
+                >
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-primary/15 text-[10px] font-bold text-primary">
+                    <LayoutGrid className="h-3.5 w-3.5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold">{preset.label}</span>
+                    <span className="block truncate text-[10px] text-muted-foreground">
+                      {preset.block_format}
+                    </span>
                   </div>
                 </button>
               ))

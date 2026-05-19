@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  lastBlockColonIndex,
   lastExerciseHashIndex,
   lastTaskMentionSlashIndex,
+  parseBlockTriggerQuery,
   parseHashTriggerQuery,
   resolveActiveComposerTrigger,
 } from '@/lib/chat-composer-tokens';
@@ -50,8 +52,35 @@ describe('parseHashTriggerQuery', () => {
   });
 });
 
+describe('lastBlockColonIndex', () => {
+  it('returns index after whitespace boundary', () => {
+    expect(lastBlockColonIndex('add :amrap')).toBe(4);
+  });
+
+  it('returns -1 for time-like digit before colon', () => {
+    expect(lastBlockColonIndex('rest 10:30')).toBe(-1);
+  });
+
+  it('returns -1 for colon inside a word', () => {
+    expect(lastBlockColonIndex('foo:bar')).toBe(-1);
+  });
+});
+
+describe('parseBlockTriggerQuery', () => {
+  it('parses section/format composite query', () => {
+    expect(parseBlockTriggerQuery('hi :finisher/amr')).toEqual({
+      start: 3,
+      query: 'finisher/amr',
+    });
+  });
+
+  it('returns null when query contains spaces', () => {
+    expect(parseBlockTriggerQuery(':finisher amrap')).toBeNull();
+  });
+});
+
 describe('resolveActiveComposerTrigger', () => {
-  const allOn = { enableAt: true, enableSlash: true, enableHash: true };
+  const allOn = { enableAt: true, enableSlash: true, enableHash: true, enableBlock: true };
 
   it('picks hash when it is rightmost before cursor', () => {
     const t = '@joe #sq';
@@ -69,6 +98,15 @@ describe('resolveActiveComposerTrigger', () => {
       kind: 'mention',
       start: 7,
       query: 'j',
+    });
+  });
+
+  it('picks block when it is rightmost', () => {
+    const t = '#squat :amr';
+    expect(resolveActiveComposerTrigger(t, allOn)).toEqual({
+      kind: 'block',
+      start: 7,
+      query: 'amr',
     });
   });
 });

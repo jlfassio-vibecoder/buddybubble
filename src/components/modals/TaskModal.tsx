@@ -50,6 +50,7 @@ import {
   type WorkoutExercise,
 } from '@/lib/item-metadata';
 import { useWorkoutTemplates } from '@/hooks/use-workout-templates';
+import { getExercisesFromWorkout } from '@/lib/workout-factory/program-schedule-utils';
 import { scheduledTimeToInputValue } from '@/lib/task-scheduled-time';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -433,6 +434,28 @@ export function TaskModal({
     isWorkoutItemType &&
     (hasWorkoutViewerContent || aiWorkoutGenerating || workoutSplitEngaged),
   );
+
+  const workoutHashExerciseNames = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    const add = (name: string) => {
+      const t = name.trim();
+      const k = t.toLowerCase();
+      if (!t || seen.has(k)) return;
+      seen.add(k);
+      out.push(t);
+    };
+    for (const e of workoutExercises) {
+      add(e.name);
+    }
+    const firstSession = viewerWorkoutSet?.workouts?.[0];
+    if (firstSession) {
+      for (const ex of getExercisesFromWorkout(firstSession)) {
+        add(ex.exerciseName);
+      }
+    }
+    return out;
+  }, [workoutExercises, viewerWorkoutSet]);
 
   const handleGenerateWorkoutFromComments = useCallback(() => {
     setWorkoutSplitEngaged(true);
@@ -1720,6 +1743,9 @@ export function TaskModal({
                             bubbleId={bubbleId ?? undefined}
                             canPostMessages={canWrite}
                             defaultAgentSlug={defaultSlugForItemType(itemType)}
+                            enableExerciseHashMentions={isWorkoutItemType}
+                            enableBlockBlueprintMentions={isWorkoutItemType}
+                            workoutExerciseNames={workoutHashExerciseNames}
                             buildOutgoingMessageMetadata={buildStandardTaskChatRailOutgoingMetadata}
                             transcriptFilter={(row) =>
                               row.content !== BUDDY_ONBOARDING_SYSTEM_EVENT
@@ -1864,6 +1890,9 @@ export function TaskModal({
                                   bubbleId={bubbleId ?? undefined}
                                   canPostMessages={canWrite}
                                   defaultAgentSlug={defaultSlugForItemType(itemType)}
+                                  enableExerciseHashMentions={isWorkoutItemType}
+                                  enableBlockBlueprintMentions={isWorkoutItemType}
+                                  workoutExerciseNames={workoutHashExerciseNames}
                                   buildOutgoingMessageMetadata={
                                     buildStandardTaskChatRailOutgoingMetadata
                                   }
@@ -1956,6 +1985,9 @@ export function TaskModal({
                                         bubbleId={bubbleId ?? undefined}
                                         canPostMessages={canWrite}
                                         defaultAgentSlug={defaultSlugForItemType(itemType)}
+                                        enableExerciseHashMentions={isWorkoutItemType}
+                                        enableBlockBlueprintMentions={isWorkoutItemType}
+                                        workoutExerciseNames={workoutHashExerciseNames}
                                         buildOutgoingMessageMetadata={
                                           buildStandardTaskChatRailOutgoingMetadata
                                         }

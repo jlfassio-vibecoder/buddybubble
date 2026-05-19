@@ -84,6 +84,10 @@ import {
   parseExerciseMentionsFromMetadata,
   resolveExerciseMentionLines,
 } from './exercise-mentions.ts';
+import {
+  formatBlockBlueprintRefsPromptBlock,
+  parseBlockBlueprintMentionsFromMetadata,
+} from './block-blueprint-mentions.ts';
 import { loadExerciseDictionaryByIndex } from './exercise-dictionary-by-index.ts';
 import {
   buildBaseCoachPrompt,
@@ -370,6 +374,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
     const today = new Date().toISOString().split('T')[0];
     const parts: string[] = [buildBaseCoachPrompt(today)];
     const exerciseMentions = parseExerciseMentionsFromMetadata(ctx.message.metadata);
+    const blockBlueprintMentions = parseBlockBlueprintMentionsFromMetadata(ctx.message.metadata);
 
     if (currentWorkoutContextJson) {
       let workoutCtxBlock = `${WORKOUT_CONTEXT_HEADER}\n${currentWorkoutContextJson}`;
@@ -381,13 +386,19 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       const tagLines = resolveExerciseMentionLines(exerciseMentions, currentWorkoutContextJson);
       const tagBlock = formatTaggedExerciseRefsPromptBlock(tagLines);
       if (tagBlock) workoutCtxBlock += tagBlock;
+      const blueprintBlock = formatBlockBlueprintRefsPromptBlock(blockBlueprintMentions ?? []);
+      if (blueprintBlock) workoutCtxBlock += blueprintBlock;
       parts.push(workoutCtxBlock);
       parts.push(MID_WORKOUT_SUPPORT_MODE_DIRECTIVE);
       parts.push(ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE);
-    } else if (exerciseMentions?.length) {
-      const tagLines = resolveExerciseMentionLines(exerciseMentions, null);
-      const tagBlock = formatTaggedExerciseRefsPromptBlock(tagLines);
-      if (tagBlock) parts.push(tagBlock.trimStart());
+    } else {
+      if (exerciseMentions?.length) {
+        const tagLines = resolveExerciseMentionLines(exerciseMentions, null);
+        const tagBlock = formatTaggedExerciseRefsPromptBlock(tagLines);
+        if (tagBlock) parts.push(tagBlock.trimStart());
+      }
+      const blueprintBlock = formatBlockBlueprintRefsPromptBlock(blockBlueprintMentions ?? []);
+      if (blueprintBlock) parts.push(blueprintBlock.trimStart());
     }
     if (currentTaskContextBlock) parts.push(currentTaskContextBlock);
     const it = (taskItemType ?? '').toLowerCase();

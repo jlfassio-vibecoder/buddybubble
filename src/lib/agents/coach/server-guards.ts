@@ -54,6 +54,33 @@ function blocksArrayNonEmpty(meta: Record<string, unknown> | null): boolean {
   return b.some((x) => x != null && typeof x === 'object' && !Array.isArray(x));
 }
 
+function flatExercisesNonEmpty(meta: Record<string, unknown> | null): boolean {
+  if (!meta) return false;
+  const ex = meta.exercises;
+  if (!Array.isArray(ex) || ex.length === 0) return false;
+  return ex.some((x) => x != null && typeof x === 'object' && !Array.isArray(x));
+}
+
+const WORKOUT_SECTION_HEADER_RE =
+  /(^|\n)\s*(warm[\s-]?up|finisher|cool[\s-]?down|main|strength|mobility|cardio)\s*:/im;
+
+const SETS_REPS_PRESCRIPTION_RE = /\b\d+\s*x\s*\d+\b|\b\d+\s*sets?\b|\b\d+\s*reps?\b/i;
+
+/**
+ * True when description text looks like a full workout prescription dump (not a short summary).
+ * Short rail description-only updates (e.g. under ~80 chars) are allowed.
+ */
+export function looksLikeWorkoutPrescriptionDump(text: string | null | undefined): boolean {
+  const t = typeof text === 'string' ? text.trim() : '';
+  if (!t || t.length < 80) return false;
+  if (WORKOUT_SECTION_HEADER_RE.test(t)) return true;
+  const hasSetsReps = SETS_REPS_PRESCRIPTION_RE.test(t);
+  if (t.length >= 120 && hasSetsReps) return true;
+  const bulletLines = t.split(/\n/).filter((line) => /^\s*[-*•]\s+/.test(line));
+  if (bulletLines.length >= 2 && hasSetsReps) return true;
+  return false;
+}
+
 /**
  * Throws `{ kind: 'self_attestation_mismatch' }` when reply_content narrates a persisted
  * update but no structured write field is present.
@@ -181,6 +208,19 @@ export function applyCoachServerGuards(
   // when proposed_workout_metadata.blocks is non-empty, structured JSON is the prescription
   // — prose in updated_task_description is forbidden.
   if (blocksArrayNonEmpty(proposedWorkoutMetadata as Record<string, unknown> | null)) {
+    updatedTaskDescription = null;
+  }
+
+  // Guard 6: When planned workout context exists, strip prescription dumps in description
+  // when the model omitted structured proposed_workout_metadata (blocks or exercises).
+  const metaRecord = proposedWorkoutMetadata as Record<string, unknown> | null;
+  if (
+    fragment.currentWorkoutContextJson &&
+    !fragment.isActiveWorkoutSession &&
+    !blocksArrayNonEmpty(metaRecord) &&
+    !flatExercisesNonEmpty(metaRecord) &&
+    looksLikeWorkoutPrescriptionDump(updatedTaskDescription)
+  ) {
     updatedTaskDescription = null;
   }
 

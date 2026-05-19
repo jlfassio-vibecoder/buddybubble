@@ -159,6 +159,8 @@ async function withHarness<T>(
     postgrest?: InstallPostgrestOptions;
     vertex?: VertexHandlerWithCount;
     oauth?: 'happy' | 'auth_error';
+    /** When true, sets `COACH_MERGE_WORKOUT_METADATA=1` after base dispatcher env (not cleared by setDispatcherEnv). */
+    coachMergeWorkoutMetadata?: boolean;
   },
   fn: (harness: {
     router: MockFetchRouter;
@@ -168,6 +170,9 @@ async function withHarness<T>(
   }) => Promise<T>,
 ): Promise<T> {
   await setDispatcherEnv();
+  if (options.coachMergeWorkoutMetadata === true) {
+    Deno.env.set('COACH_MERGE_WORKOUT_METADATA', '1');
+  }
   _resetVertexAuthCacheForTests();
 
   const router = new MockFetchRouter();
@@ -447,6 +452,44 @@ const COACH_REPLY_RAIL_AUTO_APPLY = {
   },
 };
 
+const COACH_REPLY_APPEND_FINISHER_BLOCK = {
+  ...COACH_REPLY,
+  reply_content: 'Added a Finisher block.',
+  update_existing_task: true,
+  updated_task_title: null,
+  updated_task_description: null,
+  proposed_workout_metadata: {
+    blocks: [
+      {
+        name: 'Finisher',
+        block_format: 'amrap',
+        format_params: { time_cap_minutes: 8 },
+        exercises: [{ name: 'Kettlebell Thrusters', sets: 3, reps: 10 }],
+      },
+    ],
+  },
+};
+
+const RICH_WORKOUT_TASK_METADATA = {
+  workout_type: 'AMRAP',
+  duration_min: 45,
+  ai_workout_factory: {
+    workout_set: {
+      workouts: [
+        {
+          name: 'Main',
+          exerciseBlocks: [
+            {
+              name: 'Main',
+              exercises: [{ name: 'Goblet Squat' }, { name: 'Push Press' }],
+            },
+          ],
+        },
+      ],
+    },
+  },
+};
+
 const TEST_COACH_TARGET_TASK_ID = '00000000-0000-4000-8000-000000000501';
 
 integrationTest(
@@ -493,99 +536,223 @@ integrationTest(
 integrationTest(
   'coach rail surface auto-applies proposed_workout_metadata via agent_update_task_and_reply (Step 3 write path)',
   async () => {
-    Deno.env.set('COACH_MERGE_WORKOUT_METADATA', '1');
-    try {
-      await withHarness(
-        {
-          postgrest: {
-            coachTaskResolution: {
-              taskId: TEST_COACH_TARGET_TASK_ID,
-              metadata: {
-                workout_type: 'AMRAP',
-                duration_min: 45,
-                exercises: [{ name: 'Goblet Squat' }, { name: 'Push Press' }],
-              },
-              item_type: 'workout',
+    await withHarness(
+      {
+        coachMergeWorkoutMetadata: true,
+        postgrest: {
+          coachTaskResolution: {
+            taskId: TEST_COACH_TARGET_TASK_ID,
+            metadata: {
+              workout_type: 'AMRAP',
+              duration_min: 45,
+              exercises: [{ name: 'Goblet Squat' }, { name: 'Push Press' }],
             },
-            // Phase 12 (Phase B): flat workout-shaped task metadata is no longer
-            // eligible as `task_metadata` source. The resolver falls back to history,
-            // which is exactly what we want to exercise here — the auto-apply merge
-            // still operates on the task row directly (not on the resolver result),
-            // so the assertions on the RPC args below remain unchanged.
-            rootHistoryRows: [{ metadata: { workoutContext: { partial: true } } }],
+            item_type: 'workout',
           },
-          vertex: vertexHappy(COACH_REPLY_RAIL_AUTO_APPLY),
-        },
-        async ({ logs, rpc, vertex }) => {
-          const response = await handleDispatchRequest(
-            webhookRequest({
-              id: '00000000-0000-4000-8000-000000000887',
-              content: '@coach add a HIIT finisher',
-              metadata: {
-                surface: 'standard_task_chat_rail',
-                default_agent_slug: 'coach',
-              },
-              targetTaskId: TEST_COACH_TARGET_TASK_ID,
-            }),
-          );
-          assertEquals(response.status, 200);
-          assertEquals((await readJson(response)).ok, true);
-          assertExists(vertex);
-          assertEquals(vertex.count(), 1);
-
-          const direct = rpc.getRpcCalls('agent_update_task_and_reply');
-          assertEquals(direct.length, 1);
-          assertEquals(direct[0].args.p_target_task_id, TEST_COACH_TARGET_TASK_ID);
-          assertEquals(direct[0].args.p_new_title, null);
-          assertEquals(direct[0].args.p_new_description, null);
-          const meta = direct[0].args.p_new_metadata as Record<string, unknown>;
-          assertEquals(meta.workout_type, 'AMRAP');
-          assertEquals(meta.duration_min, 45);
-          const exercises = meta.exercises as Array<{ name?: string }>;
-          assertEquals(
-            exercises.some((e) => e.name === 'Goblet Squat'),
-            true,
-          );
-          assertEquals(
-            exercises.some((e) => e.name === 'Push Press'),
-            true,
-          );
-          assertEquals(
-            exercises.some((e) => e.name === 'Kettlebell Thrusters'),
-            true,
-          );
-
-          assertEquals(rpc.getRpcCalls('agent_insert_coach_workout_draft_reply').length, 0);
-          assertEquals(rpc.getRpcCalls('agent_create_card_and_reply').length, 0);
-
-          const received = logs.findLog((log) => log.msg === 'webhook received');
-          assertExists(received);
-          const requestId = received.request_id;
-          assertEquals(typeof requestId, 'string');
-
-          assertExists(
-            logs.findLog(
-              (log) =>
-                log.msg === 'coach rail auto-applied workout edit' &&
-                log.request_id === requestId &&
-                log.has_metadata === true,
-            ),
-          );
-          const ctxLogs = logs.logs.filter(
-            (log) => log.msg === 'coach workout context source' && log.request_id === requestId,
-          );
-          assertEquals(ctxLogs.length, 1);
-          assertEquals(ctxLogs[0].surface, 'rail');
           // Phase 12 (Phase B): flat workout-shaped task metadata is no longer
-          // eligible for `task_metadata` source — only rich
-          // `ai_workout_factory.workout_set.workouts[]` qualifies. The resolver
-          // falls back to history here. The auto-apply RPC path is unaffected.
-          assertEquals(ctxLogs[0].source, 'history');
+          // eligible as `task_metadata` source. The resolver falls back to history,
+          // which is exactly what we want to exercise here — the auto-apply merge
+          // still operates on the task row directly (not on the resolver result),
+          // so the assertions on the RPC args below remain unchanged.
+          rootHistoryRows: [{ metadata: { workoutContext: { partial: true } } }],
         },
-      );
-    } finally {
-      Deno.env.delete('COACH_MERGE_WORKOUT_METADATA');
-    }
+        vertex: vertexHappy(COACH_REPLY_RAIL_AUTO_APPLY),
+      },
+      async ({ logs, rpc, vertex }) => {
+        const response = await handleDispatchRequest(
+          webhookRequest({
+            id: '00000000-0000-4000-8000-000000000887',
+            content: '@coach add a HIIT finisher',
+            metadata: {
+              surface: 'standard_task_chat_rail',
+              default_agent_slug: 'coach',
+            },
+            targetTaskId: TEST_COACH_TARGET_TASK_ID,
+          }),
+        );
+        assertEquals(response.status, 200);
+        assertEquals((await readJson(response)).ok, true);
+        assertExists(vertex);
+        assertEquals(vertex.count(), 1);
+
+        const direct = rpc.getRpcCalls('agent_update_task_and_reply');
+        assertEquals(direct.length, 1);
+        assertEquals(direct[0].args.p_target_task_id, TEST_COACH_TARGET_TASK_ID);
+        assertEquals(direct[0].args.p_new_title, null);
+        assertEquals(direct[0].args.p_new_description, null);
+        const meta = direct[0].args.p_new_metadata as Record<string, unknown>;
+        assertEquals(meta.workout_type, 'AMRAP');
+        assertEquals(meta.duration_min, 45);
+        const exercises = meta.exercises as Array<{ name?: string }>;
+        assertEquals(
+          exercises.some((e) => e.name === 'Goblet Squat'),
+          true,
+        );
+        assertEquals(
+          exercises.some((e) => e.name === 'Push Press'),
+          true,
+        );
+        assertEquals(
+          exercises.some((e) => e.name === 'Kettlebell Thrusters'),
+          true,
+        );
+
+        assertEquals(rpc.getRpcCalls('agent_insert_coach_workout_draft_reply').length, 0);
+        assertEquals(rpc.getRpcCalls('agent_create_card_and_reply').length, 0);
+
+        const received = logs.findLog((log) => log.msg === 'webhook received');
+        assertExists(received);
+        const requestId = received.request_id;
+        assertEquals(typeof requestId, 'string');
+
+        assertExists(
+          logs.findLog(
+            (log) =>
+              log.msg === 'coach rail auto-applied workout edit' &&
+              log.request_id === requestId &&
+              log.has_metadata === true,
+          ),
+        );
+        const ctxLogs = logs.logs.filter(
+          (log) => log.msg === 'coach workout context source' && log.request_id === requestId,
+        );
+        assertEquals(ctxLogs.length, 1);
+        assertEquals(ctxLogs[0].surface, 'rail');
+        // Phase 12 (Phase B): flat workout-shaped task metadata is no longer
+        // eligible for `task_metadata` source — only rich
+        // `ai_workout_factory.workout_set.workouts[]` qualifies. The resolver
+        // falls back to history here. The auto-apply RPC path is unaffected.
+        assertEquals(ctxLogs[0].source, 'history');
+      },
+    );
+  },
+);
+
+integrationTest(
+  'coach rail surface appends blocks-only Finisher to rich workout via merge (append-only co-pilot)',
+  async () => {
+    await withHarness(
+      {
+        coachMergeWorkoutMetadata: true,
+        postgrest: {
+          coachTaskResolution: {
+            taskId: TEST_COACH_TARGET_TASK_ID,
+            metadata: RICH_WORKOUT_TASK_METADATA,
+            item_type: 'workout',
+          },
+        },
+        vertex: vertexHappy(COACH_REPLY_APPEND_FINISHER_BLOCK),
+      },
+      async ({ rpc, vertex }) => {
+        const response = await handleDispatchRequest(
+          webhookRequest({
+            id: '00000000-0000-4000-8000-000000000886',
+            content: '@coach add a HIIT finisher',
+            metadata: {
+              surface: 'standard_task_chat_rail',
+              default_agent_slug: 'coach',
+            },
+            targetTaskId: TEST_COACH_TARGET_TASK_ID,
+          }),
+        );
+        assertEquals(response.status, 200);
+        assertEquals((await readJson(response)).ok, true);
+        assertExists(vertex);
+        assertEquals(vertex.count(), 1);
+
+        const direct = rpc.getRpcCalls('agent_update_task_and_reply');
+        assertEquals(direct.length, 1);
+        assertEquals(direct[0].args.p_target_task_id, TEST_COACH_TARGET_TASK_ID);
+        assertEquals(direct[0].args.p_new_title, null);
+        assertEquals(direct[0].args.p_new_description, null);
+
+        const meta = direct[0].args.p_new_metadata as {
+          ai_workout_factory?: {
+            workout_set?: {
+              workouts?: Array<{
+                exerciseBlocks?: Array<{
+                  name?: string;
+                  exercises?: Array<{ name?: string; exerciseName?: string }>;
+                }>;
+              }>;
+            };
+          };
+        };
+        const exerciseLabel = (e: { name?: string; exerciseName?: string }) =>
+          e.exerciseName ?? e.name ?? '';
+        const session = meta.ai_workout_factory?.workout_set?.workouts?.[0];
+        assertExists(session);
+        const blocks = session.exerciseBlocks ?? [];
+        const mainBlock = blocks.find((b) => b.name === 'Main');
+        assertExists(mainBlock);
+        assertEquals(
+          mainBlock.exercises?.some((e) => exerciseLabel(e) === 'Goblet Squat'),
+          true,
+        );
+        assertEquals(
+          mainBlock.exercises?.some((e) => exerciseLabel(e) === 'Push Press'),
+          true,
+        );
+        const finisherBlock = blocks.find((b) => b.name === 'Finisher');
+        assertExists(finisherBlock);
+        assertEquals(
+          finisherBlock.exercises?.some((e) => exerciseLabel(e) === 'Kettlebell Thrusters'),
+          true,
+        );
+
+        assertEquals(rpc.getRpcCalls('agent_insert_coach_workout_draft_reply').length, 0);
+        assertEquals(rpc.getRpcCalls('agent_create_card_and_reply').length, 0);
+      },
+    );
+  },
+);
+
+integrationTest(
+  'coach rail injects BLOCK_BLUEPRINT_REFS when trigger metadata has block_blueprint_mentions',
+  async () => {
+    const vertex = vertexHappyCapturingBody(COACH_REPLY);
+    await withHarness(
+      {
+        postgrest: {
+          coachTaskResolution: {
+            taskId: TEST_COACH_TARGET_TASK_ID,
+            metadata: RICH_WORKOUT_TASK_METADATA,
+            item_type: 'workout',
+          },
+        },
+        vertex,
+      },
+      async ({ vertex: vtx }) => {
+        const response = await handleDispatchRequest(
+          webhookRequest({
+            id: '00000000-0000-4000-8000-000000000885',
+            content: '@coach add a finisher',
+            metadata: {
+              surface: 'standard_task_chat_rail',
+              default_agent_slug: 'coach',
+              block_blueprint_mentions: [
+                {
+                  token: ':finisher/amrap ',
+                  section_name: 'Finisher',
+                  section_role: 'finisher',
+                  block_format: 'amrap',
+                  format_params: { time_cap_minutes: 5 },
+                },
+              ],
+            },
+            targetTaskId: TEST_COACH_TARGET_TASK_ID,
+          }),
+        );
+        assertEquals(response.status, 200);
+        assertEquals((await readJson(response)).ok, true);
+        assertExists(vtx);
+        const body = vtx.lastBodyText();
+        assertExists(body);
+        assertEquals(body.includes('BLOCK_BLUEPRINT_REFS'), true);
+        assertEquals(body.includes('finisher/amrap'), true);
+        assertEquals(body.includes('time_cap_minutes'), true);
+      },
+    );
   },
 );
 

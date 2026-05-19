@@ -9,7 +9,11 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CoachGeminiJsonResponse } from './parse';
-import { applyCoachServerGuards, type CoachGuardsFragment } from './server-guards';
+import {
+  applyCoachServerGuards,
+  looksLikeWorkoutPrescriptionDump,
+  type CoachGuardsFragment,
+} from './server-guards';
 
 function makeParsed(overrides: Partial<CoachGeminiJsonResponse> = {}): CoachGeminiJsonResponse {
   return {
@@ -375,6 +379,88 @@ describe('applyCoachServerGuards — Narrative vs Structure killswitch', () => {
     });
     expect(out.updated_task_description).toBeNull();
     expect(out.proposed_workout_metadata).toBeNull();
+  });
+});
+
+const PLANNED_WORKOUT_FRAGMENT: CoachGuardsFragment = {
+  ...NO_TASK_FRAGMENT,
+  currentWorkoutContextJson: '{"exercises":[{"name":"Goblet Squat"}]}',
+  isActiveWorkoutSession: false,
+};
+
+const FINISHER_PROSE_DUMP =
+  'WARM-UP:\n' +
+  '- Goblet Squat 3x10\n' +
+  '- Push Press 3 sets of 12\n' +
+  '- Row 3x12\n\n' +
+  'MAIN:\n' +
+  '- Deadlift 4 sets of 5\n' +
+  '- Bulgarian Split Squat 3x8 each leg\n\n' +
+  'FINISHER:\n' +
+  '- Kettlebell Thrusters 3x10\n' +
+  '- Burpees 3 sets of 15\n\n' +
+  'COOL DOWN:\n' +
+  '- Walk 2 min\n' +
+  '- Stretch hips 60s';
+
+describe('looksLikeWorkoutPrescriptionDump', () => {
+  it('returns false for short summaries', () => {
+    expect(
+      looksLikeWorkoutPrescriptionDump('Full body AMRAP with supersets and mobility finisher.'),
+    ).toBe(false);
+  });
+
+  it('returns true for section-header prescription dumps', () => {
+    expect(looksLikeWorkoutPrescriptionDump(FINISHER_PROSE_DUMP)).toBe(true);
+  });
+});
+
+describe('applyCoachServerGuards — Prescription dump without structure (Guard 6)', () => {
+  it('nulls updated_task_description when workout context exists and no proposed metadata', () => {
+    const parsed = makeParsed({
+      update_existing_task: true,
+      updated_task_description: FINISHER_PROSE_DUMP,
+      proposed_workout_metadata: null,
+    });
+    const out = applyCoachServerGuards(parsed, PLANNED_WORKOUT_FRAGMENT);
+    expect(out.updated_task_description).toBeNull();
+  });
+
+  it('preserves short description-only updates when workout context exists', () => {
+    const short = 'Full body AMRAP with supersets and mobility finisher.';
+    const parsed = makeParsed({
+      update_existing_task: true,
+      updated_task_description: short,
+      proposed_workout_metadata: null,
+    });
+    const out = applyCoachServerGuards(parsed, PLANNED_WORKOUT_FRAGMENT);
+    expect(out.updated_task_description).toBe(short);
+  });
+
+  it('preserves description when flat exercises are proposed', () => {
+    const prose = FINISHER_PROSE_DUMP;
+    const parsed = makeParsed({
+      update_existing_task: true,
+      updated_task_description: prose,
+      proposed_workout_metadata: {
+        exercises: [{ name: 'Kettlebell Thrusters', sets: 3, reps: 10 }],
+      },
+    });
+    const out = applyCoachServerGuards(parsed, PLANNED_WORKOUT_FRAGMENT);
+    expect(out.updated_task_description).toBe(prose);
+  });
+
+  it('nulls description via Guard 4 when blocks are present', () => {
+    const parsed = makeParsed({
+      update_existing_task: true,
+      updated_task_description: FINISHER_PROSE_DUMP,
+      proposed_workout_metadata: {
+        blocks: [{ name: 'Finisher', exercises: [{ name: 'Thruster', sets: 3, reps: 10 }] }],
+      },
+    });
+    const out = applyCoachServerGuards(parsed, PLANNED_WORKOUT_FRAGMENT);
+    expect(out.updated_task_description).toBeNull();
+    expect(out.proposed_workout_metadata?.blocks).toHaveLength(1);
   });
 });
 
