@@ -68,6 +68,29 @@ function nextInstructionOrder(arr: Array<Record<string, unknown>>): number {
   return max + 1;
 }
 
+function positiveMergeInt(v: unknown): number | null {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return null;
+  const n = Math.round(v);
+  return n > 0 ? n : null;
+}
+
+/** Propagate Tabata block format_params to each factory exercise row for viewer/player. */
+function hydrateTabataExercisesFromFormatParams(
+  mappedInner: Record<string, unknown>[],
+  normalizedParams: Record<string, unknown>,
+): void {
+  const rounds = positiveMergeInt(normalizedParams.rounds);
+  const work = positiveMergeInt(normalizedParams.work_seconds);
+  const rest = positiveMergeInt(normalizedParams.rest_seconds);
+  for (const ex of mappedInner) {
+    if (rounds != null && typeof ex.rounds !== 'number') ex.rounds = rounds;
+    if (work != null && typeof ex.workSeconds !== 'number') ex.workSeconds = work;
+    if (rest != null && typeof ex.restSeconds !== 'number') ex.restSeconds = rest;
+    delete ex.sets;
+    ex.reps = '';
+  }
+}
+
 function proposedExerciseToFactoryExercise(
   e: Record<string, unknown>,
   order: number,
@@ -381,6 +404,9 @@ function mergeRichBlocks(
           if (typeof ex.restSeconds !== 'number') ex.restSeconds = derivedRest;
         }
       }
+    }
+    if (rawFormat === 'tabata' && normalizedParams) {
+      hydrateTabataExercisesFromFormatParams(mappedInner, normalizedParams);
     }
     const dup = exerciseBlocks.some((eb) => exerciseBlocksDeepEqual(eb, newBlock));
     if (dup) {

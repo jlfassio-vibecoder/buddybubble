@@ -351,7 +351,7 @@ describe('mergeCoachProposedIntoTaskMetadata', () => {
     expect(ex?.restSeconds).toBe(0);
   });
 
-  it('15 — Tabata block carries formatParams without synthesizing exercise timers', () => {
+  it('15 — Tabata block hydrates format_params onto each exercise row', () => {
     const base = richBaseFixture();
     const { metadata } = mergeCoachProposedIntoTaskMetadata({
       base,
@@ -361,7 +361,7 @@ describe('mergeCoachProposedIntoTaskMetadata', () => {
             name: 'Finisher',
             block_format: 'tabata',
             format_params: { rounds: 8, work_seconds: 20, rest_seconds: 10 },
-            exercises: [{ name: 'Bike Sprint' }],
+            exercises: [{ name: 'Bike Sprint', sets: 1, reps: 'max' }],
           },
         ],
       },
@@ -374,8 +374,47 @@ describe('mergeCoachProposedIntoTaskMetadata', () => {
     expect(block?.blockFormat).toBe('tabata');
     expect(block?.formatParams).toEqual({ rounds: 8, work_seconds: 20, rest_seconds: 10 });
     const ex = (block?.exercises as Array<Record<string, unknown>>)?.[0];
-    expect(ex?.workSeconds).toBeUndefined();
-    expect(ex?.restSeconds).toBeUndefined();
+    expect(ex?.workSeconds).toBe(20);
+    expect(ex?.restSeconds).toBe(10);
+    expect(ex?.rounds).toBe(8);
+    expect(ex?.sets).toBeUndefined();
+    expect(ex?.reps).toBe('');
+  });
+
+  it('15b — Tabata hydrates every exercise in a multi-movement block', () => {
+    const base = richBaseFixture();
+    const { metadata } = mergeCoachProposedIntoTaskMetadata({
+      base,
+      proposed: {
+        blocks: [
+          {
+            name: 'Finisher',
+            block_format: 'tabata',
+            format_params: { rounds: 8, work_seconds: 20, rest_seconds: 10 },
+            exercises: [
+              { name: 'Broad Jumps', sets: 1, reps: 'max' },
+              { name: 'Jump Squats', sets: 1, reps: 'max' },
+            ],
+          },
+        ],
+      },
+    });
+    const session = (metadata as { ai_workout_factory: { workout_set: { workouts: unknown[] } } })
+      .ai_workout_factory.workout_set.workouts[0] as {
+      exerciseBlocks: Array<Record<string, unknown>>;
+    };
+    const exercises =
+      (session.exerciseBlocks.find((b) => b.name === 'Finisher')?.exercises as
+        | Array<Record<string, unknown>>
+        | undefined) ?? [];
+    expect(exercises).toHaveLength(2);
+    for (const ex of exercises) {
+      expect(ex.workSeconds).toBe(20);
+      expect(ex.restSeconds).toBe(10);
+      expect(ex.rounds).toBe(8);
+      expect(ex.sets).toBeUndefined();
+      expect(ex.reps).toBe('');
+    }
   });
 
   it('16 — instruction-only blocks do not populate blockFormats', () => {

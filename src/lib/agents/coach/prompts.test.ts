@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { BLOCK_BLUEPRINT_LIBRARY_HEADER, BLOCK_FORMAT_ENUM } from './block-blueprint-library';
+import { BLOCK_BLUEPRINT_LIBRARY_HEADER } from './block-blueprint-library';
 import {
   EXERCISE_INDEX_MAP_HEADER,
   COACH_RAIL_SURFACE_VALUE,
@@ -89,30 +89,13 @@ describe('buildBaseCoachPrompt', () => {
     expect(matches.length).toBe(1);
   });
 
-  it('includes the BLOCK BLUEPRINT LIBRARY and enum values', () => {
-    expect(prompt).toContain(BLOCK_BLUEPRINT_LIBRARY_HEADER);
-    for (const fmt of BLOCK_FORMAT_ENUM) {
-      expect(prompt).toContain(fmt);
-    }
+  it('does not embed the BLOCK BLUEPRINT LIBRARY (injected on rail / block mentions only)', () => {
+    expect(prompt).not.toContain(BLOCK_BLUEPRINT_LIBRARY_HEADER);
   });
 
-  it('names block_format, format_params, and required param keys', () => {
+  it('still names card_action and parametric hand-off in the base contract', () => {
     expect(prompt).toContain('block_format');
-    expect(prompt).toContain('format_params');
-    expect(prompt).toContain('time_cap_minutes');
-    expect(prompt).toContain('interval_seconds');
-    expect(prompt).toContain('rounds');
-    expect(prompt).toContain('work_seconds');
-  });
-
-  it('states superset cardinality and instruction-only exemption', () => {
-    expect(prompt).toContain('exactly 2');
-    expect(prompt.toLowerCase()).toContain('instruction-only');
-  });
-
-  it('documents per-exercise EMOM timers and server derivation from interval_seconds', () => {
-    expect(prompt).toContain('per-exercise work_seconds / rest_seconds');
-    expect(prompt).toContain('derives them from interval_seconds');
+    expect(prompt).toContain('parametric_requires_rich_workout_set');
   });
 
   it('names card_action in the JSON keys list', () => {

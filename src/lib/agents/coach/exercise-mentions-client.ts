@@ -5,7 +5,10 @@
 
 import type { RichMessageComposerExercise } from '@/components/chat/RichMessageComposer';
 import type { ExerciseDictionaryAutocompleteRow } from '@/lib/exercise-dictionary-autocomplete-cache';
-import type { ExerciseMentionClientPayload } from '@/lib/agents/coach/exercise-mentions';
+import {
+  composerMentionTokenInMessage,
+  type ExerciseMentionClientPayload,
+} from '@/lib/agents/coach/exercise-mentions';
 
 export function normMentionName(s: string): string {
   return s.trim().toLowerCase();
@@ -18,7 +21,7 @@ export function finalizeExerciseMentionsForSend(
   workoutNames: string[],
 ): ExerciseMentionClientPayload[] | null {
   const names = workoutNames.map((n) => n.trim());
-  const filtered = pending.filter((m) => messageText.includes(m.token));
+  const filtered = pending.filter((m) => composerMentionTokenInMessage(messageText, m.token));
   if (filtered.length === 0) return null;
   return filtered.map((m) => {
     const idx = names.findIndex((n) => normMentionName(n) === normMentionName(m.name));

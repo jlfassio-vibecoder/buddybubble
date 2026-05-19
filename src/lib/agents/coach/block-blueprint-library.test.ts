@@ -6,6 +6,7 @@ import {
   buildBlockBlueprintLibraryPrompt,
   mapLegacyTypeToBlockFormat,
   normalizeFormatParams,
+  shouldInjectBlockBlueprintLibrary,
   validateBlockShape,
 } from './block-blueprint-library';
 
@@ -70,6 +71,26 @@ describe('validateBlockShape', () => {
 
   it('always accepts straight_sets', () => {
     expect(validateBlockShape('straight_sets', 0, {})).toBeNull();
+  });
+});
+
+describe('shouldInjectBlockBlueprintLibrary', () => {
+  it('includes library on task rail surface', () => {
+    expect(
+      shouldInjectBlockBlueprintLibrary({ isRailSurface: true, blockBlueprintMentionCount: 0 }),
+    ).toBe(true);
+  });
+
+  it('includes library when block mentions are present on any surface', () => {
+    expect(
+      shouldInjectBlockBlueprintLibrary({ isRailSurface: false, blockBlueprintMentionCount: 1 }),
+    ).toBe(true);
+  });
+
+  it('excludes library on main bubble without block mentions', () => {
+    expect(
+      shouldInjectBlockBlueprintLibrary({ isRailSurface: false, blockBlueprintMentionCount: 0 }),
+    ).toBe(false);
   });
 });
 

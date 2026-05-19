@@ -1,11 +1,34 @@
 import { describe, expect, it } from 'vitest';
 import {
+  composerMentionTokenInMessage,
   formatTaggedExerciseRefsPromptBlock,
   parseExerciseMentionsFromMetadata,
   parseExerciseNamesFromWorkoutContextJson,
   resolveExerciseMentionLines,
   TAGGED_EXERCISE_REFS_HEADER,
 } from './exercise-mentions';
+
+describe('composerMentionTokenInMessage', () => {
+  it('matches token with trailing space in mid-message', () => {
+    const msg = 'add #Broad Jumps and more';
+    expect(composerMentionTokenInMessage(msg, '#Broad Jumps ')).toBe(true);
+  });
+
+  it('matches EOS tag when stored token has trailing space', () => {
+    const msg = 'like #Broad Jumps and #Jump Squats';
+    expect(composerMentionTokenInMessage(msg, '#Jump Squats ')).toBe(true);
+  });
+
+  it('rejects mention not present', () => {
+    expect(composerMentionTokenInMessage('hello', '#Removed ')).toBe(false);
+  });
+
+  it('matches both tags in realistic finisher message', () => {
+    const msg = "I'd like to add an :finisher/tabata with #Broad Jumps and #Jump Squats";
+    expect(composerMentionTokenInMessage(msg, '#Broad Jumps ')).toBe(true);
+    expect(composerMentionTokenInMessage(msg, '#Jump Squats ')).toBe(true);
+  });
+});
 
 describe('parseExerciseNamesFromWorkoutContextJson', () => {
   it('returns names in array order', () => {

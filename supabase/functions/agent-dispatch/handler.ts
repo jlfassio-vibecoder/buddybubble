@@ -47,7 +47,7 @@ import { readDispatcherEnv } from '../_shared/env.ts';
 import { log, type DispatchPhase, type LogFields } from '../_shared/obs/log.ts';
 import { CORS_HEADERS, verifyAndParseWebhook } from '../_shared/dispatch/webhook.ts';
 import { classifyError, extractGeminiText, generateContent } from '../_shared/llm/vertex-gemini.ts';
-import { agentCreateCardAndReply } from '../_shared/dispatch/rpc.ts';
+import { agentCreateCardAndReply, agentUpdateTaskAndReply } from '../_shared/dispatch/rpc.ts';
 import { insertSafeReply } from '../_shared/dispatch/fallback.ts';
 import { computeLlmBudgetMs } from '../_shared/dispatch/llm-budget.ts';
 import { COACH_THINKING_BUDGET } from '../agents/coach/config.ts';
@@ -157,6 +157,39 @@ async function runShortCircuit(
   return jsonResponse({ ok: true, preflight_short_circuit: true, result: result.data }, 200);
 }
 
+async function runShortCircuitPersist(
+  ctx: DispatchContext,
+  action: Extract<PreflightAction, { kind: 'short_circuit_with_persist' }>,
+): Promise<Response> {
+  const args = {
+    ...action.rpcArgs,
+    p_trigger_message_id: ctx.message.id,
+    p_thread_id: ctx.threadId,
+    p_agent_auth_user_id: ctx.agent.auth_user_id,
+    p_invoker_user_id: ctx.message.user_id,
+    p_reply_text: action.replyText,
+  } as Parameters<typeof agentUpdateTaskAndReply>[1];
+  const startedAt = Date.now();
+  const result = await agentUpdateTaskAndReply(ctx.supabase, args);
+  const latency = Date.now() - startedAt;
+  if (!result.ok) {
+    log('error', 'preflight short-circuit persist RPC failed', {
+      ...baseFields(ctx.requestId, ctx.message, ctx.agent.slug, 'preflight'),
+      lane: action.lane,
+    });
+    return jsonResponse({ ok: false, error: 'rpc_failed', detail: result.error }, 500);
+  }
+  log('info', 'coach block blueprint lane', {
+    ...baseFields(ctx.requestId, ctx.message, ctx.agent.slug, 'preflight'),
+    lane: action.lane,
+    latency_ms: latency,
+  });
+  return jsonResponse(
+    { ok: true, preflight_short_circuit: true, lane: action.lane, result: result.data },
+    200,
+  );
+}
+
 export async function handleDispatchRequest(req: Request): Promise<Response> {
   const dispatchStartedAt = Date.now();
 
@@ -253,6 +286,9 @@ export async function handleDispatchRequest(req: Request): Promise<Response> {
   if (preflight && preflight.kind === 'short_circuit_with_reply') {
     return runShortCircuit(ctx, preflight);
   }
+  if (preflight && preflight.kind === 'short_circuit_with_persist') {
+    return runShortCircuitPersist(ctx, preflight);
+  }
   if (preflight && preflight.kind === 'skip') {
     log('info', 'preflight skip', {
       ...baseFields(requestId, record, strategy.slug, 'preflight'),
@@ -275,6 +311,7 @@ export async function handleDispatchRequest(req: Request): Promise<Response> {
       llm_timeout_configured_ms: env.LLM_TIMEOUT_MS,
     });
     const startedAt = Date.now();
+    const generationOverrides = strategy.resolveGenerationConfig?.(ctx) ?? null;
     const response = await generateContent({
       project: env.GCP_PROJECT_ID,
       location: env.GCP_LOCATION,
@@ -283,11 +320,15 @@ export async function handleDispatchRequest(req: Request): Promise<Response> {
       contents,
       generationConfig: {
         temperature: strategy.temperature,
-        maxOutputTokens: strategy.maxOutputTokens,
+        maxOutputTokens: generationOverrides?.maxOutputTokens ?? strategy.maxOutputTokens,
         responseMimeType: 'application/json',
         responseSchema: strategy.responseSchema,
         ...(strategy.slug === COACH_SLUG
-          ? { thinkingConfig: { thinkingBudget: COACH_THINKING_BUDGET } }
+          ? {
+              thinkingConfig: generationOverrides?.thinkingConfig ?? {
+                thinkingBudget: COACH_THINKING_BUDGET,
+              },
+            }
           : {}),
       },
       timeoutMs: llmBudgetMs,

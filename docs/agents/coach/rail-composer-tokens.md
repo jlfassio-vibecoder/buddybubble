@@ -17,16 +17,48 @@ Users need **deterministic, typed intent** in the rail so Coach does not guess s
 
 **Plan 3 (shipped):** Same rail enables `:` block blueprint picker and sends `metadata.block_blueprint_mentions` → Coach `BLOCK_BLUEPRINT_REFS`.
 
+**Three-lane router (shipped):** When `block_blueprint_mentions` is present on the rail, `agent-dispatch` **preflight** routes before the full `COACH_RESPONSE_SCHEMA`:
+
+| Lane       | When                                                              | Server behavior                                                                                 | LLM                                                                              |
+| ---------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| **Lane 1** | `:` + `#` tags meet block cardinality (e.g. Tabata + ≥1 exercise) | Deterministic `blocks[]` + `mergeCoachProposedIntoTaskMetadata` + `agent_update_task_and_reply` | None (template reply); optional `COACH_BLOCK_APPEND_MICRO_REPLY=1` polishes copy |
+| **Lane 2** | `:` present but exercises missing / under cardinality             | Fixed shells + exercise-fill micro-schema only                                                  | One small JSON call (`blocks[].exercises[]` only)                                |
+| **Lane 3** | No `:` metadata, or gate fails (no rich workout, merge off)       | Full Coach co-pilot path                                                                        | Full schema                                                                      |
+
+**Required Edge secret:** `COACH_MERGE_WORKOUT_METADATA=1` for Lane 1/2 card writes.
+
+Implementation: [`block-blueprint-lane-preflight.ts`](../../../supabase/functions/agents/coach/block-blueprint-lane-preflight.ts), [`block-blueprint-router.ts`](../../../src/lib/agents/coach/block-blueprint-router.ts).
+
+### Main Rail Diet (main bubble / `non_rail`)
+
+Main workspace chat (`ChatArea`, no `surface: standard_task_chat_rail`) must stay inside the **~28s** effective Vertex budget. The full **BLOCK BLUEPRINT LIBRARY** taxonomy is **not** injected unless the trigger is on the task rail or carries `block_blueprint_mentions`.
+
+| Signal                                                                            | Block library in system prompt | `thinkingBudget`              |
+| --------------------------------------------------------------------------------- | ------------------------------ | ----------------------------- |
+| Task rail (`standard_task_chat_rail`)                                             | Included                       | 2048 (default)                |
+| Any surface with `block_blueprint_mentions`                                       | Included                       | 2048 unless intake-only below |
+| Main bubble, no workout context (`coach workout context source` → `source: none`) | **Excluded**                   | **512**                       |
+| Main bubble with live/workout JSON in context                                     | Excluded                       | 2048                          |
+
+Structured log: `coach main rail diet` with `{ surface, block_library_included, thinking_budget }`.  
+Implementation: [`buildBaseCoachPrompt`](../../../src/lib/agents/coach/prompts.ts) (slim base) + conditional inject in [`strategy.ts`](../../../supabase/functions/agents/coach/strategy.ts) via [`shouldInjectBlockBlueprintLibrary`](../../../src/lib/agents/coach/block-blueprint-library.ts) and [`resolveCoachThinkingBudget`](../../../src/lib/agents/coach/config.ts).
+
+### Mention matching and Tabata hydration
+
+**EOS-safe tokens:** Client send and server Lane 1 routing use [`composerMentionTokenInMessage`](../../../src/lib/agents/coach/exercise-mentions.ts) instead of naive `messageText.includes(token)`. A `#` tag at end-of-message without the picker’s trailing space still matches (e.g. `… #Jump Squats`). Same helper filters `:` block blueprint mentions on send.
+
+**Tabata exercise rows:** Block subtitle comes from `format_params` on the block (`Tabata · 8 Rounds (20/10s)`). Merge also hydrates each exercise in a Tabata block via [`hydrateTabataExercisesFromFormatParams`](../../../src/lib/agents/_shared/workout-metadata/merge-coach-proposed-into-task-metadata.ts) (`rounds`, `workSeconds`, `restSeconds`; clears strength-style `sets`/`reps`). Applies to Lane 1, Lane 2, and Lane 3 so the viewer shows interval meta (e.g. `20s work · Rest 10s · 8 rounds`) on every movement card.
+
 ---
 
 ## 2. Current composer token inventory
 
-| Token   | UI trigger                       | Composer flag                  | Metadata / effect                                                    | Surfaces today                                                |
-| ------- | -------------------------------- | ------------------------------ | -------------------------------------------------------------------- | ------------------------------------------------------------- |
-| **`@`** | `@Coach`, `@Buddy`, team members | `enableAtMentions`             | Agent routing via mention handle; no extra metadata                  | ChatArea, both rails                                          |
-| **`/`** | `/Task title`                    | `enableSlashTaskLinks`         | Inserts link text; attaches task on send (bubble chat)               | ChatArea (not TaskModal rail — `slashConfig={{ tasks: [] }}`) |
-| **`#`** | `#Bulgarian Split Squat`         | `enableExerciseHashMentions`   | `metadata.exercise_mentions[]` → Coach `TAGGED_EXERCISE_REFS`        | ChatArea, WorkoutCoachRail, workout TaskModal rail            |
-| **`:`** | `:finisher/amrap`                | `enableBlockBlueprintMentions` | `metadata.block_blueprint_mentions[]` → Coach `BLOCK_BLUEPRINT_REFS` | Workout TaskModal rail                                        |
+| Token   | UI trigger                       | Composer flag                  | Metadata / effect                                                                           | Surfaces today                                                |
+| ------- | -------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| **`@`** | `@Coach`, `@Buddy`, team members | `enableAtMentions`             | Agent routing via mention handle; no extra metadata                                         | ChatArea, both rails                                          |
+| **`/`** | `/Task title`                    | `enableSlashTaskLinks`         | Inserts link text; attaches task on send (bubble chat)                                      | ChatArea (not TaskModal rail — `slashConfig={{ tasks: [] }}`) |
+| **`#`** | `#Bulgarian Split Squat`         | `enableExerciseHashMentions`   | `metadata.exercise_mentions[]` → Coach `TAGGED_EXERCISE_REFS`                               | ChatArea, WorkoutCoachRail, workout TaskModal rail            |
+| **`:`** | `:finisher/amrap`                | `enableBlockBlueprintMentions` | `metadata.block_blueprint_mentions[]` → Lane 1/2 preflight or Lane 3 `BLOCK_BLUEPRINT_REFS` | Workout TaskModal rail                                        |
 
 **Token resolution** lives in [`src/lib/chat-composer-tokens.ts`](../../../src/lib/chat-composer-tokens.ts): rightmost active `@`, `/`, or `#` wins (`resolveActiveComposerTrigger`).
 

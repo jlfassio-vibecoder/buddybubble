@@ -5,8 +5,8 @@
  * the same payloads they do today. Definitions:
  *
  *   - `agent_create_card_and_reply` —
- *     `supabase/migrations/20260729120000_agent_rpcs_persist_execution_patch.sql:46-60`
- *     (signature mirrored at `bubble-agent-dispatch/index.ts:61-78`).
+ *     `supabase/migrations/20260829120000_collapse_agent_create_card_overloads.sql`
+ *     (single 15-arg signature including `p_card_action`; always pass explicit nulls).
  *   - `agent_insert_coach_workout_draft_reply` — same migration, plus
  *     `p_execution_patch jsonb` extension; original at
  *     `supabase/migrations/20260623120000_coach_workout_draft_messages_metadata.sql:43-53`
@@ -36,6 +36,21 @@ import type { RpcEnvelope, RpcResult, SupabaseClient } from './types.ts';
 // definition was hoisted to `./types.ts` in Phase 5 so `AgentStrategy.safeReplyInsert`
 // can reference it without creating a circular dependency.
 export type { RpcResult } from './types.ts';
+
+/**
+ * Explicit nulls for optional JSONB RPC args. PostgREST cannot disambiguate
+ * `agent_create_card_and_reply` overloads when these keys are omitted; always spread
+ * this object on every call site.
+ */
+export const AGENT_CREATE_CARD_CANONICAL_NULL_PATCHES = {
+  p_execution_patch: null,
+  p_personal_cues: null,
+  p_task_modal_intake_patch: null,
+  p_card_action: null,
+} as const satisfies Pick<
+  AgentCreateCardArgs,
+  'p_execution_patch' | 'p_personal_cues' | 'p_task_modal_intake_patch' | 'p_card_action'
+>;
 
 export type AgentCreateCardArgs = {
   p_trigger_message_id: string;

@@ -5,6 +5,7 @@
 
 import { classifyBlockRole } from '@/lib/agents/_shared/workout-metadata/merge-coach-proposed-into-task-metadata';
 import type { BlockFormat } from '@/lib/agents/coach/block-blueprint-library';
+import { composerMentionTokenInMessage } from '@/lib/agents/coach/exercise-mentions';
 import type {
   BlockBlueprintMentionClientPayload,
   BlockSectionRole,
@@ -103,6 +104,6 @@ export function finalizeBlockBlueprintMentionsForSend(
   pending: BlockBlueprintMentionClientPayload[],
   messageText: string,
 ): BlockBlueprintMentionClientPayload[] | null {
-  const filtered = pending.filter((m) => messageText.includes(m.token));
+  const filtered = pending.filter((m) => composerMentionTokenInMessage(messageText, m.token));
   return filtered.length > 0 ? filtered : null;
 }

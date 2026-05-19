@@ -182,6 +182,14 @@ export function validateBlockShape(
 
 export const BLOCK_BLUEPRINT_LIBRARY_HEADER = '--- BLOCK BLUEPRINT LIBRARY ---';
 
+/** True when the full block taxonomy should be appended to the Coach system prompt. */
+export function shouldInjectBlockBlueprintLibrary(args: {
+  isRailSurface: boolean;
+  blockBlueprintMentionCount: number;
+}): boolean {
+  return args.isRailSurface || args.blockBlueprintMentionCount > 0;
+}
+
 /**
  * Imperative blueprint prose for Coach system prompt injection.
  * Names schema keys so `pnpm check:agent-prompts` Direction B stays clean.

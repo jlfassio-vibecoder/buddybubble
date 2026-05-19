@@ -215,6 +215,21 @@ function agentLogsFromRouted(logs: CapturedAgentLog[]): CapturedAgentLog[] {
   return routedIndex === -1 ? [] : logs.slice(routedIndex);
 }
 
+function parseCapturedVertexRequest(bodyText: string): {
+  systemPrompt: string;
+  thinkingBudget: number | undefined;
+} {
+  const body = JSON.parse(bodyText) as {
+    system_instruction?: { parts?: Array<{ text?: string }> };
+    generationConfig?: { thinkingConfig?: { thinkingBudget?: number } };
+  };
+  const systemPrompt = body.system_instruction?.parts?.map((p) => p.text ?? '').join('') ?? '';
+  return {
+    systemPrompt,
+    thinkingBudget: body.generationConfig?.thinkingConfig?.thinkingBudget,
+  };
+}
+
 function assertSuccessfulDispatchLogs(logs: CapturedAgentLog[], slug: string): void {
   const phases = logs
     .filter(
@@ -303,6 +318,7 @@ integrationTest('500 from Vertex exhausts retries and inserts safe reply', async
     const calls = rpc.getRpcCalls('agent_create_card_and_reply');
     assertEquals(calls.length, 1);
     assertEquals(calls[0].args.p_create_card, false);
+    assertEquals(calls[0].args.p_card_action, null);
   });
 });
 
@@ -356,6 +372,9 @@ integrationTest('Vertex timeout inserts safe reply with 200', async () => {
       ),
     );
     assertEquals(rpc.getRpcCalls('agent_create_card_and_reply').length, 1);
+    const fallbackCall = rpc.getRpcCalls('agent_create_card_and_reply')[0];
+    assertEquals(fallbackCall.args.p_card_action, null);
+    assertEquals(fallbackCall.args.p_task_modal_intake_patch, null);
   });
 });
 
@@ -707,8 +726,304 @@ integrationTest(
   },
 );
 
+const LANE2_EXERCISE_FILL_RESPONSE = {
+  blocks: [
+    {
+      name: 'Finisher',
+      exercises: [
+        { name: 'Burpees', sets: 1, reps: 'max' },
+        { name: 'Mountain Climbers', sets: 1, reps: 'max' },
+      ],
+    },
+  ],
+};
+
 integrationTest(
-  'coach rail injects BLOCK_BLUEPRINT_REFS when trigger metadata has block_blueprint_mentions',
+  'Lane 1 block append deterministic bypass persists without full Coach schema',
+  async () => {
+    const vertex = vertexHappy(COACH_REPLY);
+    await withHarness(
+      {
+        coachMergeWorkoutMetadata: true,
+        postgrest: {
+          coachTaskResolution: {
+            taskId: TEST_COACH_TARGET_TASK_ID,
+            metadata: RICH_WORKOUT_TASK_METADATA,
+            item_type: 'workout',
+          },
+        },
+        vertex,
+      },
+      async ({ logs, vertex: vtx, rpc }) => {
+        const response = await handleDispatchRequest(
+          webhookRequest({
+            id: '00000000-0000-4000-8000-000000000890',
+            content: '@coach add :finisher/tabata #Push-ups ',
+            metadata: {
+              surface: 'standard_task_chat_rail',
+              default_agent_slug: 'coach',
+              block_blueprint_mentions: [
+                {
+                  token: ':finisher/tabata ',
+                  section_name: 'Finisher',
+                  section_role: 'finisher',
+                  block_format: 'tabata',
+                  format_params: { rounds: 8, work_seconds: 20, rest_seconds: 10 },
+                },
+              ],
+              exercise_mentions: [
+                {
+                  token: '#Push-ups ',
+                  name: 'Push-ups',
+                  source: 'dictionary',
+                },
+              ],
+            },
+            targetTaskId: TEST_COACH_TARGET_TASK_ID,
+          }),
+        );
+        assertEquals(response.status, 200);
+        const body = await readJson(response);
+        assertEquals(body.ok, true);
+        assertEquals(body.preflight_short_circuit, true);
+        assertEquals(body.lane, 'block_append_deterministic');
+        assertEquals(vtx?.count() ?? 0, 0);
+
+        const direct = rpc.getRpcCalls('agent_update_task_and_reply');
+        assertEquals(direct.length, 1);
+        assertExists(
+          logs.findLog(
+            (log) =>
+              log.msg === 'coach block blueprint lane' && log.lane === 'block_append_deterministic',
+          ),
+        );
+
+        const meta = direct[0].args.p_new_metadata as {
+          ai_workout_factory?: {
+            workout_set?: {
+              workouts?: Array<{ exerciseBlocks?: Array<{ name?: string }> }>;
+            };
+          };
+        };
+        const blocks = meta.ai_workout_factory?.workout_set?.workouts?.[0]?.exerciseBlocks ?? [];
+        assertEquals(
+          blocks.some((b) => b.name === 'Finisher'),
+          true,
+        );
+      },
+    );
+  },
+);
+
+integrationTest(
+  'Lane 1 tabata finisher persists two EOS exercise mentions with hydrated timers',
+  async () => {
+    const vertex = vertexHappy(COACH_REPLY);
+    await withHarness(
+      {
+        coachMergeWorkoutMetadata: true,
+        postgrest: {
+          coachTaskResolution: {
+            taskId: TEST_COACH_TARGET_TASK_ID,
+            metadata: RICH_WORKOUT_TASK_METADATA,
+            item_type: 'workout',
+          },
+        },
+        vertex,
+      },
+      async ({ vertex: vtx, rpc }) => {
+        const response = await handleDispatchRequest(
+          webhookRequest({
+            id: '00000000-0000-4000-8000-000000000895',
+            content: '@coach add :finisher/tabata with #Broad Jumps and #Jump Squats',
+            metadata: {
+              surface: 'standard_task_chat_rail',
+              default_agent_slug: 'coach',
+              block_blueprint_mentions: [
+                {
+                  token: ':finisher/tabata ',
+                  section_name: 'Finisher',
+                  section_role: 'finisher',
+                  block_format: 'tabata',
+                  format_params: { rounds: 8, work_seconds: 20, rest_seconds: 10 },
+                },
+              ],
+              exercise_mentions: [
+                { token: '#Broad Jumps ', name: 'Broad Jumps', source: 'dictionary' },
+                { token: '#Jump Squats ', name: 'Jump Squats', source: 'dictionary' },
+              ],
+            },
+            targetTaskId: TEST_COACH_TARGET_TASK_ID,
+          }),
+        );
+        assertEquals(response.status, 200);
+        assertEquals((await readJson(response)).lane, 'block_append_deterministic');
+        assertEquals(vtx?.count() ?? 0, 0);
+
+        const meta = rpc.getRpcCalls('agent_update_task_and_reply')[0].args.p_new_metadata as {
+          ai_workout_factory?: {
+            workout_set?: {
+              workouts?: Array<{
+                exerciseBlocks?: Array<{
+                  name?: string;
+                  exercises?: Array<Record<string, unknown>>;
+                }>;
+              }>;
+            };
+          };
+        };
+        const finisher = meta.ai_workout_factory?.workout_set?.workouts?.[0]?.exerciseBlocks?.find(
+          (b) => b.name === 'Finisher',
+        );
+        assertExists(finisher);
+        const exercises = finisher.exercises ?? [];
+        assertEquals(exercises.length, 2);
+        const names = exercises.map((e) => e.exerciseName).sort();
+        assertEquals(names, ['Broad Jumps', 'Jump Squats']);
+        for (const ex of exercises) {
+          assertEquals(ex.workSeconds, 20);
+          assertEquals(ex.restSeconds, 10);
+          assertEquals(ex.rounds, 8);
+          assertEquals(ex.reps, '');
+        }
+      },
+    );
+  },
+);
+
+integrationTest('Lane 2 block append uses exercise-fill micro-schema then persists', async () => {
+  const vertex = vertexHappyCapturingBody(LANE2_EXERCISE_FILL_RESPONSE);
+  await withHarness(
+    {
+      coachMergeWorkoutMetadata: true,
+      postgrest: {
+        coachTaskResolution: {
+          taskId: TEST_COACH_TARGET_TASK_ID,
+          metadata: RICH_WORKOUT_TASK_METADATA,
+          item_type: 'workout',
+        },
+      },
+      vertex,
+    },
+    async ({ logs, vertex: vtx, rpc }) => {
+      const response = await handleDispatchRequest(
+        webhookRequest({
+          id: '00000000-0000-4000-8000-000000000891',
+          content: '@coach add a bodyweight :finisher/tabata',
+          metadata: {
+            surface: 'standard_task_chat_rail',
+            default_agent_slug: 'coach',
+            block_blueprint_mentions: [
+              {
+                token: ':finisher/tabata ',
+                section_name: 'Finisher',
+                section_role: 'finisher',
+                block_format: 'tabata',
+                format_params: { rounds: 8, work_seconds: 20, rest_seconds: 10 },
+              },
+            ],
+          },
+          targetTaskId: TEST_COACH_TARGET_TASK_ID,
+        }),
+      );
+      assertEquals(response.status, 200);
+      assertEquals((await readJson(response)).lane, 'block_append_exercise_fill');
+      assertEquals(vtx?.count(), 1);
+      const bodyText = vtx!.lastBodyText();
+      assertExists(bodyText);
+      assertEquals(bodyText.includes('"blocks"'), true);
+      assertEquals(bodyText.includes('reply_content'), false);
+
+      assertEquals(rpc.getRpcCalls('agent_update_task_and_reply').length, 1);
+      assertExists(
+        logs.findLog(
+          (log) =>
+            log.msg === 'coach block blueprint lane' && log.lane === 'block_append_exercise_fill',
+        ),
+      );
+    },
+  );
+});
+
+integrationTest(
+  'Lane 2 exercise-fill failure inserts safe reply without full Coach schema retry',
+  async () => {
+    const vertex = vertexHappyCapturingBody({
+      blocks: [{ name: 'Finisher', exercises: [] }],
+    });
+    await withHarness(
+      {
+        coachMergeWorkoutMetadata: true,
+        postgrest: {
+          coachTaskResolution: {
+            taskId: TEST_COACH_TARGET_TASK_ID,
+            metadata: RICH_WORKOUT_TASK_METADATA,
+            item_type: 'workout',
+          },
+        },
+        vertex,
+      },
+      async ({ rpc, vertex: vtx }) => {
+        const response = await handleDispatchRequest(
+          webhookRequest({
+            id: '00000000-0000-4000-8000-000000000892',
+            content: '@coach bodyweight :finisher/tabata',
+            metadata: {
+              surface: 'standard_task_chat_rail',
+              default_agent_slug: 'coach',
+              block_blueprint_mentions: [
+                {
+                  token: ':finisher/tabata ',
+                  section_name: 'Finisher',
+                  section_role: 'finisher',
+                  block_format: 'tabata',
+                  format_params: { rounds: 8 },
+                },
+              ],
+            },
+            targetTaskId: TEST_COACH_TARGET_TASK_ID,
+          }),
+        );
+        assertEquals(response.status, 200);
+        assertEquals((await readJson(response)).preflight_short_circuit, true);
+        assertEquals(vtx?.count(), 1);
+        assertEquals(rpc.getRpcCalls('agent_update_task_and_reply').length, 0);
+        assertEquals(rpc.getRpcCalls('agent_create_card_and_reply').length, 1);
+      },
+    );
+  },
+);
+
+integrationTest(
+  'main bubble intake excludes block library and uses reduced thinking budget',
+  async () => {
+    const vertex = vertexHappyCapturingBody(COACH_REPLY);
+    await withHarness({ vertex }, async ({ vertex: vtx, logs }) => {
+      const response = await handleDispatchRequest(
+        webhookRequest({
+          id: '00000000-0000-4000-8000-000000000894',
+          content: '@coach create a leg day workout for me',
+          metadata: { default_agent_slug: 'coach' },
+        }),
+      );
+      assertEquals(response.status, 200);
+      assertExists(vtx);
+      const body = vtx!.lastBodyText();
+      assertExists(body);
+      const req = parseCapturedVertexRequest(body);
+      assertEquals(req.systemPrompt.includes('--- BLOCK BLUEPRINT LIBRARY ---'), false);
+      assertEquals(req.thinkingBudget, 512);
+      const dietLog = logs.findLog((log) => log.msg === 'coach main rail diet');
+      assertExists(dietLog);
+      assertEquals(dietLog.block_library_included, false);
+      assertEquals(dietLog.thinking_budget, 512);
+      assertEquals(dietLog.surface, 'non_rail');
+    });
+  },
+);
+
+integrationTest(
+  'block mentions with merge disabled falls through to Lane 3 Coach prompt',
   async () => {
     const vertex = vertexHappyCapturingBody(COACH_REPLY);
     await withHarness(
@@ -722,10 +1037,10 @@ integrationTest(
         },
         vertex,
       },
-      async ({ vertex: vtx }) => {
+      async ({ vertex: vtx, logs }) => {
         const response = await handleDispatchRequest(
           webhookRequest({
-            id: '00000000-0000-4000-8000-000000000885',
+            id: '00000000-0000-4000-8000-000000000893',
             content: '@coach add a finisher',
             metadata: {
               surface: 'standard_task_chat_rail',
@@ -744,13 +1059,19 @@ integrationTest(
           }),
         );
         assertEquals(response.status, 200);
-        assertEquals((await readJson(response)).ok, true);
         assertExists(vtx);
-        const body = vtx.lastBodyText();
+        const body = vtx!.lastBodyText();
         assertExists(body);
-        assertEquals(body.includes('BLOCK_BLUEPRINT_REFS'), true);
-        assertEquals(body.includes('finisher/amrap'), true);
-        assertEquals(body.includes('time_cap_minutes'), true);
+        const req = parseCapturedVertexRequest(body);
+        assertEquals(req.systemPrompt.includes('--- BLOCK BLUEPRINT LIBRARY ---'), true);
+        assertEquals(req.systemPrompt.includes('BLOCK_BLUEPRINT_REFS'), true);
+        assertEquals(req.thinkingBudget, 2048);
+        assertEquals(vtx!.count(), 1);
+        const dietLog = logs.findLog((log) => log.msg === 'coach main rail diet');
+        assertExists(dietLog);
+        assertEquals(dietLog.block_library_included, true);
+        assertEquals(dietLog.thinking_budget, 2048);
+        assertEquals(dietLog.surface, 'rail');
       },
     );
   },

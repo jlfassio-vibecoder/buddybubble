@@ -29,6 +29,7 @@ import {
   agentCreateCardAndReply,
   agentInsertCoachWorkoutDraftReply,
   agentUpdateTaskAndReply,
+  AGENT_CREATE_CARD_CANONICAL_NULL_PATCHES,
 } from '../../_shared/dispatch/rpc.ts';
 import { mergeCoachProposedIntoTaskMetadata } from '../../_shared/workout-metadata/merge-coach-proposed-into-task-metadata.ts';
 import {
@@ -57,10 +58,16 @@ import {
   COACH_SAFE_REPLY_TEXT,
   COACH_SLUG,
   COACH_TEMPERATURE,
+  COACH_THINKING_BUDGET,
   COACH_WORKOUT_GREETING_MAX_OUTPUT_TOKENS,
   COACH_WORKOUT_GREETING_TEMPERATURE,
   MID_WORKOUT_SUPPORT_MODE_DIRECTIVE,
+  resolveCoachThinkingBudget,
 } from './config.ts';
+import {
+  buildBlockBlueprintLibraryPrompt,
+  shouldInjectBlockBlueprintLibrary,
+} from './block-blueprint-library.ts';
 import {
   fetchCoachUserContext,
   loadCurrentTaskContext,
@@ -88,6 +95,10 @@ import {
   formatBlockBlueprintRefsPromptBlock,
   parseBlockBlueprintMentionsFromMetadata,
 } from './block-blueprint-mentions.ts';
+import {
+  mergeBlueprintShellsWithModelBlocks,
+  synthesizeProposedBlocksFromMentions,
+} from './block-blueprint-synthesize.ts';
 import { loadExerciseDictionaryByIndex } from './exercise-dictionary-by-index.ts';
 import {
   buildBaseCoachPrompt,
@@ -105,6 +116,7 @@ import {
 } from './prompts.ts';
 import { COACH_RESPONSE_SCHEMA, COACH_WORKOUT_GREETING_SCHEMA } from './schema.ts';
 import { applyCoachServerGuards, type CoachGuardsFragment } from './server-guards.ts';
+import { tryBlockBlueprintLanePreflight } from './block-blueprint-lane-preflight.ts';
 import { inferCardActionTriggerGeneration } from './card-action-infer.ts';
 
 /** Coach-owned scratch on `ctx.extras`. */
@@ -196,95 +208,99 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
    * exits before running the main JSON-mode call.
    */
   async preflight(ctx) {
-    if (!isWorkoutContextSentinel(ctx.message)) return null;
+    if (isWorkoutContextSentinel(ctx.message)) {
+      const env = readDispatcherEnv();
+      const meta = (ctx.message.metadata ?? {}) as Record<string, unknown>;
+      const workoutTitle = extractWorkoutTaskTitleFromMetadata(meta);
+      const workoutJson = stringifyWorkoutContextForPrompt(meta['workoutContext']);
 
-    const env = readDispatcherEnv();
-    const meta = (ctx.message.metadata ?? {}) as Record<string, unknown>;
-    const workoutTitle = extractWorkoutTaskTitleFromMetadata(meta);
-    const workoutJson = stringifyWorkoutContextForPrompt(meta['workoutContext']);
-
-    let userContextBlock: string | null = null;
-    if (ctx.message.bubble_id) {
-      try {
-        // deno-lint-ignore no-explicit-any
-        userContextBlock = await fetchCoachUserContext(
-          ctx.supabase as unknown as Parameters<typeof fetchCoachUserContext>[0],
-          ctx.message.user_id,
-          ctx.message.bubble_id,
-          ctx.requestId,
-        );
-      } catch (err) {
-        log('warn', 'coach preflight user context failed', {
-          request_id: ctx.requestId,
-          slug: COACH_SLUG,
-          error: err instanceof Error ? err.message : String(err),
-        });
+      let userContextBlock: string | null = null;
+      if (ctx.message.bubble_id) {
+        try {
+          // deno-lint-ignore no-explicit-any
+          userContextBlock = await fetchCoachUserContext(
+            ctx.supabase as unknown as Parameters<typeof fetchCoachUserContext>[0],
+            ctx.message.user_id,
+            ctx.message.bubble_id,
+            ctx.requestId,
+          );
+        } catch (err) {
+          log('warn', 'coach preflight user context failed', {
+            request_id: ctx.requestId,
+            slug: COACH_SLUG,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
-    }
 
-    const isoNow = new Date().toISOString();
-    const systemPrompt = buildWorkoutOpenGreetingPrompt({
-      workoutTitle,
-      isoNow,
-      userContextBlock,
-    });
-    const userText = buildWorkoutOpenGreetingUserText(workoutJson);
-
-    let replyText = FALLBACK_WORKOUT_GREETING;
-    try {
-      const response = await generateContent({
-        project: env.GCP_PROJECT_ID,
-        location: env.GCP_LOCATION,
-        model: COACH_MODEL_DEFAULT,
-        systemPrompt,
-        contents: [{ role: 'user', parts: [{ text: userText }] }] as GeminiContent[],
-        generationConfig: {
-          temperature: COACH_WORKOUT_GREETING_TEMPERATURE,
-          maxOutputTokens: COACH_WORKOUT_GREETING_MAX_OUTPUT_TOKENS,
-          responseMimeType: 'application/json',
-          responseSchema: COACH_WORKOUT_GREETING_SCHEMA,
-        },
-        timeoutMs: env.LLM_TIMEOUT_MS,
-        signal: ctx.signal,
-        env: { GCP_SERVICE_ACCOUNT_JSON: env.GCP_SERVICE_ACCOUNT_JSON },
+      const isoNow = new Date().toISOString();
+      const systemPrompt = buildWorkoutOpenGreetingPrompt({
+        workoutTitle,
+        isoNow,
+        userContextBlock,
       });
-      const text = extractGeminiText(response.candidates?.[0]);
-      const cleaned = stripMarkdownCodeFences(text);
+      const userText = buildWorkoutOpenGreetingUserText(workoutJson);
+
+      let replyText = FALLBACK_WORKOUT_GREETING;
       try {
-        const parsed = JSON.parse(cleaned) as Record<string, unknown>;
-        const rc = parsed.reply_content;
-        const cleanedReply = typeof rc === 'string' ? rc.trim() : '';
-        if (cleanedReply.length > 0) replyText = cleanedReply;
-      } catch (parseErr) {
-        log('warn', 'coach workout greeting parse fallback', {
+        const response = await generateContent({
+          project: env.GCP_PROJECT_ID,
+          location: env.GCP_LOCATION,
+          model: COACH_MODEL_DEFAULT,
+          systemPrompt,
+          contents: [{ role: 'user', parts: [{ text: userText }] }] as GeminiContent[],
+          generationConfig: {
+            temperature: COACH_WORKOUT_GREETING_TEMPERATURE,
+            maxOutputTokens: COACH_WORKOUT_GREETING_MAX_OUTPUT_TOKENS,
+            responseMimeType: 'application/json',
+            responseSchema: COACH_WORKOUT_GREETING_SCHEMA,
+          },
+          timeoutMs: env.LLM_TIMEOUT_MS,
+          signal: ctx.signal,
+          env: { GCP_SERVICE_ACCOUNT_JSON: env.GCP_SERVICE_ACCOUNT_JSON },
+        });
+        const text = extractGeminiText(response.candidates?.[0]);
+        const cleaned = stripMarkdownCodeFences(text);
+        try {
+          const parsed = JSON.parse(cleaned) as Record<string, unknown>;
+          const rc = parsed.reply_content;
+          const cleanedReply = typeof rc === 'string' ? rc.trim() : '';
+          if (cleanedReply.length > 0) replyText = cleanedReply;
+        } catch (parseErr) {
+          log('warn', 'coach workout greeting parse fallback', {
+            request_id: ctx.requestId,
+            slug: COACH_SLUG,
+            error: parseErr instanceof Error ? parseErr.message : String(parseErr),
+          });
+          replyText = FALLBACK_WORKOUT_GREETING;
+        }
+      } catch (err) {
+        log('warn', 'coach workout greeting generate failed', {
           request_id: ctx.requestId,
           slug: COACH_SLUG,
-          error: parseErr instanceof Error ? parseErr.message : String(parseErr),
+          error_kind: classifyError(err),
         });
         replyText = FALLBACK_WORKOUT_GREETING;
       }
-    } catch (err) {
-      log('warn', 'coach workout greeting generate failed', {
-        request_id: ctx.requestId,
-        slug: COACH_SLUG,
-        error_kind: classifyError(err),
-      });
-      replyText = FALLBACK_WORKOUT_GREETING;
+
+      return {
+        kind: 'short_circuit_with_reply',
+        replyText,
+        rpc: 'agent_create_card_and_reply',
+        rpcArgs: {
+          p_create_card: false,
+          p_task_type: 'workout',
+          p_task_status: 'todo',
+          ...AGENT_CREATE_CARD_CANONICAL_NULL_PATCHES,
+        },
+      };
     }
 
-    return {
-      kind: 'short_circuit_with_reply',
-      replyText,
-      rpc: 'agent_create_card_and_reply',
-      rpcArgs: {
-        p_create_card: false,
-        p_task_type: 'workout',
-        p_task_status: 'todo',
-        p_execution_patch: null,
-        p_personal_cues: null,
-        p_task_modal_intake_patch: null,
-      },
-    };
+    const env = readDispatcherEnv();
+    const blockLane = await tryBlockBlueprintLanePreflight(ctx, env);
+    if (blockLane) return blockLane;
+
+    return null;
   },
 
   /**
@@ -364,6 +380,9 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       }
     }
 
+    const exerciseMentions = parseExerciseMentionsFromMetadata(ctx.message.metadata);
+    const blockBlueprintMentions = parseBlockBlueprintMentionsFromMetadata(ctx.message.metadata);
+
     writeCoachExtras(ctx, {
       knownTargetTaskId,
       currentWorkoutContextJson,
@@ -373,8 +392,26 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
 
     const today = new Date().toISOString().split('T')[0];
     const parts: string[] = [buildBaseCoachPrompt(today)];
-    const exerciseMentions = parseExerciseMentionsFromMetadata(ctx.message.metadata);
-    const blockBlueprintMentions = parseBlockBlueprintMentionsFromMetadata(ctx.message.metadata);
+
+    const blockLibraryIncluded = shouldInjectBlockBlueprintLibrary({
+      isRailSurface,
+      blockBlueprintMentionCount: blockBlueprintMentions?.length ?? 0,
+    });
+    if (blockLibraryIncluded) {
+      parts.push(buildBlockBlueprintLibraryPrompt());
+    }
+
+    const thinkingBudget = resolveCoachThinkingBudget({
+      isRailSurface,
+      hasWorkoutContext: currentWorkoutContextJson != null,
+    });
+    log('info', 'coach main rail diet', {
+      request_id: ctx.requestId,
+      slug: COACH_SLUG,
+      surface: isRailSurface ? 'rail' : 'non_rail',
+      block_library_included: blockLibraryIncluded,
+      thinking_budget: thinkingBudget,
+    });
 
     if (currentWorkoutContextJson) {
       let workoutCtxBlock = `${WORKOUT_CONTEXT_HEADER}\n${currentWorkoutContextJson}`;
@@ -389,8 +426,12 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       const blueprintBlock = formatBlockBlueprintRefsPromptBlock(blockBlueprintMentions ?? []);
       if (blueprintBlock) workoutCtxBlock += blueprintBlock;
       parts.push(workoutCtxBlock);
-      parts.push(MID_WORKOUT_SUPPORT_MODE_DIRECTIVE);
-      parts.push(ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE);
+      // Live-player / mid-workout directives forbid proposed_workout_metadata and
+      // conflict with LIVE CO-PILOT rail co-editing (colon composer, block append).
+      if (!isRailSurface) {
+        parts.push(MID_WORKOUT_SUPPORT_MODE_DIRECTIVE);
+        parts.push(ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE);
+      }
     } else {
       if (exerciseMentions?.length) {
         const tagLines = resolveExerciseMentionLines(exerciseMentions, null);
@@ -411,6 +452,17 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
     if (showTaskModalIntakeUi && liveState) parts.push(buildTaskModalLiveStateBlock(liveState));
     if (userContextBlock) parts.push(userContextBlock);
     return parts.join('\n\n');
+  },
+
+  resolveGenerationConfig(ctx) {
+    const extras = readCoachExtras(ctx);
+    const isRailSurface = isCoachRailSurfaceFromMessageMetadata(ctx.message.metadata);
+    const budget = resolveCoachThinkingBudget({
+      isRailSurface,
+      hasWorkoutContext: extras.currentWorkoutContextJson != null,
+    });
+    if (budget === COACH_THINKING_BUDGET) return null;
+    return { thinkingConfig: { thinkingBudget: budget } };
   },
 
   /**
@@ -499,6 +551,28 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
     }
 
     let out = applyCoachServerGuards(parsed, fragment);
+
+    const blockBlueprintMentions = parseBlockBlueprintMentionsFromMetadata(ctx.message.metadata);
+    if (blockBlueprintMentions?.length) {
+      const shells = synthesizeProposedBlocksFromMentions(blockBlueprintMentions);
+      const mergedBlocks = mergeBlueprintShellsWithModelBlocks(
+        shells,
+        out.proposed_workout_metadata?.blocks,
+      );
+      const hasExercises = mergedBlocks.some(
+        (b) => Array.isArray(b.exercises) && b.exercises.length > 0,
+      );
+      if (hasExercises) {
+        out = {
+          ...out,
+          update_existing_task: true,
+          proposed_workout_metadata: {
+            ...(out.proposed_workout_metadata ?? {}),
+            blocks: mergedBlocks,
+          },
+        };
+      }
+    }
 
     if (ctx.coachCardActions !== true) {
       out = { ...out, card_action: null };

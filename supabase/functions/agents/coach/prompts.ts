@@ -7,7 +7,6 @@
 
 /* eslint-disable max-len */
 
-import { buildBlockBlueprintLibraryPrompt } from './block-blueprint-library.ts';
 import {
   WORKOUT_INTAKE_DURATION_CHOICES,
   WORKOUT_INTAKE_EQUIPMENT_OPTIONS,
@@ -269,9 +268,7 @@ export function buildBaseCoachPrompt(currentDate: string): string {
     'If --- TASK MODAL LIVE STATE (v1) --- appears in the system prompt and you describe changing a slider, step, duration, intensity, soreness, or equipment in reply_content, you MUST emit the same change in task_modal_intake_patch in that same JSON. ' +
     'TRUTHFULNESS: If reply_content claims you wrote or applied something, include non-null execution_patch, personal_cues_patch, task_modal_intake_patch, or create_card/update_existing_task in the same JSON. ' +
     'Return ONLY a raw JSON object (no markdown, no code fences) with keys: reply_content, create_card, task_title, task_description, update_existing_task, updated_task_title, updated_task_description, proposed_workout_metadata, execution_patch, personal_cues_patch, task_modal_intake_patch, card_action, intake_phase, session_readiness_score, missing_intake_categories, user_requested_immediate_card, session_request, coach_task_notes. ' +
-    'You MUST respond in valid JSON matching the provided schema. Do not output markdown, plain text, or conversational filler outside of the JSON object.' +
-    '\n\n' +
-    buildBlockBlueprintLibraryPrompt()
+    'You MUST respond in valid JSON matching the provided schema. Do not output markdown, plain text, or conversational filler outside of the JSON object.'
   );
 }
 
