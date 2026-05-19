@@ -17,6 +17,17 @@ vi.mock('@/hooks/useAgentResponseWait', () => ({
   useAgentResponseWait: vi.fn(),
 }));
 
+vi.mock('@/hooks/useExerciseDictionaryAutocomplete', () => ({
+  useExerciseDictionaryAutocomplete: vi.fn(() => ({
+    rows: [
+      { id: 'dict-1', name: 'Bench Press', slug: 'bench-press', status: 'published' as const },
+    ],
+    loading: false,
+    error: null,
+    refresh: vi.fn(),
+  })),
+}));
+
 vi.mock('@utils/supabase/client', () => ({
   createClient: () => ({
     from: () => ({
@@ -126,6 +137,62 @@ describe('StandardTaskChatRail agent effects', () => {
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
+  });
+
+  it('invokes onCardAction once per message id when messages reference is stable on rerender', async () => {
+    const onCardAction = vi.fn();
+    const coachMsg = {
+      id: 'coach-card-action-1',
+      user_id: 'auth-coach',
+      created_at: '2026-01-15T12:00:00.000Z',
+      metadata: {
+        card_action: { v: 1, kind: 'trigger_generation' },
+      },
+    } as never;
+    const messages = [coachMsg];
+    mockThread({
+      isLoading: false,
+      messages,
+      agentsByAuthUserId: new Map<string, AgentDefinitionLite>([
+        ['auth-buddy', buddyAgent],
+        ['auth-coach', coachAgent],
+      ]),
+    });
+
+    const { rerender } = render(
+      <StandardTaskChatRail
+        workspaceId="ws-1"
+        taskId="task-1"
+        canPostMessages
+        defaultAgentSlug="coach"
+        onCardAction={onCardAction}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(onCardAction).toHaveBeenCalledTimes(1);
+    });
+    expect(onCardAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: 'task-1',
+        messageId: 'coach-card-action-1',
+        action: { v: 1, kind: 'trigger_generation' },
+      }),
+    );
+
+    rerender(
+      <StandardTaskChatRail
+        workspaceId="ws-1"
+        taskId="task-1"
+        canPostMessages
+        defaultAgentSlug="coach"
+        onCardAction={onCardAction}
+      />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(onCardAction).toHaveBeenCalledTimes(1);
   });
 
   it('invokes onExecutionPatch once per message id when messages reference is stable on rerender', async () => {

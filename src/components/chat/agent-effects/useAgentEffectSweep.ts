@@ -6,8 +6,10 @@ import type { AgentDefinitionLite } from '@/lib/agents/resolveTargetAgent';
 import { COACH_SLUG } from '@/lib/agents/coach/config';
 import { parseExecutionPatchFromMetadata, type ExecutionPatch } from '@/types/execution-patch';
 import { parseTaskModalIntakePatchFromMetadata } from '@/lib/agents/coach/task-modal-intake-patch';
+import { parseCardActionFromMetadata } from '@/components/chat/agent-effects/parse-card-action';
 import type {
   AgentEffectTelemetryEvent,
+  CardActionEffectPayload,
   ExecutionPatchEffectPayload,
   TaskModalIntakePatchEffectPayload,
 } from '@/components/chat/agent-effects/types';
@@ -19,6 +21,7 @@ export type UseAgentEffectSweepArgs = {
   agentsByAuthUserId: Map<string, AgentDefinitionLite>;
   onExecutionPatch?: (ctx: ExecutionPatchEffectPayload) => void;
   onTaskModalIntakePatch?: (ctx: TaskModalIntakePatchEffectPayload) => void;
+  onCardAction?: (ctx: CardActionEffectPayload) => void;
   onEffectTelemetry?: (event: AgentEffectTelemetryEvent) => void;
 };
 
@@ -29,7 +32,7 @@ function messageCreatedAtMs(row: MessageRowWithEmbeddedTask): number {
 }
 
 /**
- * Scans coach-authored rows for `execution_patch` / `task_modal_intake_patch` metadata.
+ * Scans coach-authored rows for `execution_patch` / `task_modal_intake_patch` / `card_action` metadata.
  * - Per-effect-run dedupe for intake within a single sweep (duplicate ids in one pass).
  * - Cross-run ref dedupe for execution (matches WorkoutCoachRail / prior TaskModal adapter).
  */
@@ -40,26 +43,32 @@ export function useAgentEffectSweep({
   agentsByAuthUserId,
   onExecutionPatch,
   onTaskModalIntakePatch,
+  onCardAction,
   onEffectTelemetry,
 }: UseAgentEffectSweepArgs): void {
   const onExecutionPatchRef = useRef(onExecutionPatch);
   onExecutionPatchRef.current = onExecutionPatch;
   const onTaskModalIntakePatchRef = useRef(onTaskModalIntakePatch);
   onTaskModalIntakePatchRef.current = onTaskModalIntakePatch;
+  const onCardActionRef = useRef(onCardAction);
+  onCardActionRef.current = onCardAction;
   const onEffectTelemetryRef = useRef(onEffectTelemetry);
   onEffectTelemetryRef.current = onEffectTelemetry;
 
   const handledExecutionPatchMessageIdsRef = useRef<Set<string>>(new Set());
+  const handledCardActionMessageIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     handledExecutionPatchMessageIdsRef.current.clear();
+    handledCardActionMessageIdsRef.current.clear();
   }, [taskId]);
 
   useEffect(() => {
     const emit = onEffectTelemetryRef.current;
     const onEx = onExecutionPatchRef.current;
     const onIntake = onTaskModalIntakePatchRef.current;
-    if (!onEx && !onIntake) return;
+    const onCard = onCardActionRef.current;
+    if (!onEx && !onIntake && !onCard) return;
     if (!taskId.trim()) return;
     if (isLoading || messages.length === 0) return;
 
@@ -135,6 +144,31 @@ export function useAgentEffectSweep({
         onIntake({ ...baseCtx, patch: intakePatch });
         intakeHandledThisRun.add(id);
         emit?.({ kind: 'effect.applied', effect: 'task_modal_intake_patch', messageId: id });
+      }
+
+      if (onCard) {
+        emit?.({ kind: 'effect.scanned', effect: 'card_action', messageId: id });
+        if (!handledCardActionMessageIdsRef.current.has(id)) {
+          const meta = row.metadata;
+          const rawAction =
+            meta != null && typeof meta === 'object' && !Array.isArray(meta)
+              ? (meta as { card_action?: unknown }).card_action
+              : undefined;
+          const action = parseCardActionFromMetadata(rawAction);
+          if (!action) {
+            handledCardActionMessageIdsRef.current.add(id);
+            emit?.({
+              kind: 'effect.parse_dropped',
+              effect: 'card_action',
+              messageId: id,
+              reason: rawAction === undefined ? 'missing' : 'invalid',
+            });
+          } else {
+            onCard({ ...baseCtx, action });
+            handledCardActionMessageIdsRef.current.add(id);
+            emit?.({ kind: 'effect.applied', effect: 'card_action', messageId: id });
+          }
+        }
       }
     }
   }, [agentsByAuthUserId, isLoading, messages, taskId]);

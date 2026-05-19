@@ -9,7 +9,11 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CoachGeminiJsonResponse } from './parse';
-import { applyCoachServerGuards, type CoachGuardsFragment } from './server-guards';
+import {
+  applyCoachServerGuards,
+  looksLikeWorkoutPrescriptionDump,
+  type CoachGuardsFragment,
+} from './server-guards';
 
 function makeParsed(overrides: Partial<CoachGeminiJsonResponse> = {}): CoachGeminiJsonResponse {
   return {
@@ -27,11 +31,13 @@ function makeParsed(overrides: Partial<CoachGeminiJsonResponse> = {}): CoachGemi
     session_request: false,
     coach_task_notes: null,
     proposed_workout_metadata: null,
+    proposed_workout_metadata_drops: [],
     execution_patch: null,
     personal_cues_resolved: null,
     personal_cues_dropped_unanchored: 0,
     task_modal_intake_patch: null,
     task_modal_intake_dropped: [],
+    card_action: null,
     ...overrides,
   };
 }
@@ -43,7 +49,7 @@ const NO_TASK_FRAGMENT: CoachGuardsFragment = {
   isActiveWorkoutSession: false,
 };
 
-describe('applyCoachServerGuards — Draft override', () => {
+describe('applyCoachServerGuards — Open Canvas guard', () => {
   it('clears card fields when knownTargetTaskId is set and the model wants update_existing_task', () => {
     const parsed = makeParsed({
       create_card: true,
@@ -66,6 +72,27 @@ describe('applyCoachServerGuards — Draft override', () => {
     expect(out.update_existing_task).toBe(true);
     expect(out.updated_task_title).toBe('Updated');
     expect(out.updated_task_description).toBe('updated desc');
+  });
+
+  it('blocks create_card when knownTargetTaskId is set even without update_existing_task', () => {
+    const parsed = makeParsed({
+      create_card: true,
+      task_title: 'Kettlebell & Bodyweight Core Blast',
+      task_description: 'This workout focuses on strengthening your core.',
+      coach_task_notes: 'notes',
+      reply_content: 'Starting the generator now — give me about a minute.',
+    });
+    const out = applyCoachServerGuards(parsed, {
+      ...NO_TASK_FRAGMENT,
+      knownTargetTaskId: 'task-123',
+    });
+    expect(out.create_card).toBe(false);
+    expect(out.task_title).toBeNull();
+    expect(out.task_description).toBeNull();
+    expect(out.coach_task_notes).toBeNull();
+    expect(out.update_existing_task).toBe(true);
+    expect(out.updated_task_title).toBe('Kettlebell & Bodyweight Core Blast');
+    expect(out.updated_task_description).toBe('This workout focuses on strengthening your core.');
   });
 
   it('does NOT clear card fields when no knownTargetTaskId is resolved', () => {
@@ -100,6 +127,21 @@ describe('applyCoachServerGuards — Layer B turn gate', () => {
     expect(out.task_title).toBeNull();
     expect(out.task_description).toBeNull();
     expect(out.coach_task_notes).toBeNull();
+  });
+
+  it('does not clear card_action on first-message Layer B card block', () => {
+    const parsed = makeParsed({
+      create_card: true,
+      task_title: 'Quick Workout',
+      task_description: 'desc',
+      card_action: 'trigger_generation',
+    });
+    const out = applyCoachServerGuards(parsed, {
+      ...NO_TASK_FRAGMENT,
+      priorUserMessageCount: 0,
+    });
+    expect(out.create_card).toBe(false);
+    expect(out.card_action).toBe('trigger_generation');
   });
 
   it('blocks session_request card creation when prior count < 2 (session_request_turn_gate)', () => {
@@ -241,6 +283,7 @@ describe('applyCoachServerGuards — Active-workout clamp', () => {
     expect(out.updated_task_description).toBeNull();
     expect(out.proposed_workout_metadata).toBeNull();
     expect(out.task_modal_intake_patch).toBeNull();
+    expect(out.card_action).toBeNull();
     expect(out.execution_patch).toEqual([{ exerciseIndex: 0, setIndex: 0, weight: '60' }]);
     expect(out.personal_cues_resolved).toEqual([
       {
@@ -269,6 +312,175 @@ describe('applyCoachServerGuards — Active-workout clamp', () => {
   });
 });
 
+describe('applyCoachServerGuards — Narrative vs Structure killswitch', () => {
+  it('nulls updated_task_description when blocks[] is non-empty', () => {
+    const blocks = [
+      {
+        name: 'Main',
+        block_format: 'amrap',
+        format_params: { time_cap_minutes: 12 },
+        exercises: [{ name: 'Burpees' }],
+      },
+    ];
+    const parsed = makeParsed({
+      update_existing_task: true,
+      updated_task_title: 'Leg day',
+      updated_task_description: 'Full prose workout narrative',
+      proposed_workout_metadata: { blocks },
+    });
+    const out = applyCoachServerGuards(parsed, NO_TASK_FRAGMENT);
+    expect(out.updated_task_description).toBeNull();
+    expect(out.updated_task_title).toBe('Leg day');
+    expect(out.proposed_workout_metadata?.blocks).toEqual(blocks);
+  });
+
+  it('nulls prose when instruction-only blocks are present', () => {
+    const parsed = makeParsed({
+      update_existing_task: true,
+      updated_task_description: 'Walk and stretch',
+      proposed_workout_metadata: {
+        blocks: [{ name: 'Cool down', instructions: ['Walk 2 min'] }],
+      },
+    });
+    const out = applyCoachServerGuards(parsed, NO_TASK_FRAGMENT);
+    expect(out.updated_task_description).toBeNull();
+  });
+
+  it('preserves prose when blocks are absent or empty', () => {
+    const withNull = makeParsed({
+      updated_task_description: 'Keep this',
+      proposed_workout_metadata: null,
+    });
+    expect(applyCoachServerGuards(withNull, NO_TASK_FRAGMENT).updated_task_description).toBe(
+      'Keep this',
+    );
+
+    const withEmpty = makeParsed({
+      updated_task_description: 'Keep this too',
+      proposed_workout_metadata: { blocks: [] },
+    });
+    expect(applyCoachServerGuards(withEmpty, NO_TASK_FRAGMENT).updated_task_description).toBe(
+      'Keep this too',
+    );
+  });
+
+  it('active workout session clears proposed metadata after Guard 3', () => {
+    const parsed = makeParsed({
+      update_existing_task: true,
+      updated_task_description: 'Should be nulled by Guard 4 then cleared by Guard 3',
+      proposed_workout_metadata: {
+        blocks: [{ name: 'Main', exercises: [{ name: 'Squat' }] }],
+      },
+    });
+    const out = applyCoachServerGuards(parsed, {
+      ...NO_TASK_FRAGMENT,
+      currentWorkoutContextJson: '{}',
+      isActiveWorkoutSession: true,
+    });
+    expect(out.updated_task_description).toBeNull();
+    expect(out.proposed_workout_metadata).toBeNull();
+  });
+});
+
+const PLANNED_WORKOUT_FRAGMENT: CoachGuardsFragment = {
+  ...NO_TASK_FRAGMENT,
+  currentWorkoutContextJson: '{"exercises":[{"name":"Goblet Squat"}]}',
+  isActiveWorkoutSession: false,
+};
+
+const FINISHER_PROSE_DUMP =
+  'WARM-UP:\n' +
+  '- Goblet Squat 3x10\n' +
+  '- Push Press 3 sets of 12\n' +
+  '- Row 3x12\n\n' +
+  'MAIN:\n' +
+  '- Deadlift 4 sets of 5\n' +
+  '- Bulgarian Split Squat 3x8 each leg\n\n' +
+  'FINISHER:\n' +
+  '- Kettlebell Thrusters 3x10\n' +
+  '- Burpees 3 sets of 15\n\n' +
+  'COOL DOWN:\n' +
+  '- Walk 2 min\n' +
+  '- Stretch hips 60s';
+
+describe('looksLikeWorkoutPrescriptionDump', () => {
+  it('returns false for short summaries', () => {
+    expect(
+      looksLikeWorkoutPrescriptionDump('Full body AMRAP with supersets and mobility finisher.'),
+    ).toBe(false);
+  });
+
+  it('returns true for section-header prescription dumps', () => {
+    expect(looksLikeWorkoutPrescriptionDump(FINISHER_PROSE_DUMP)).toBe(true);
+  });
+});
+
+describe('applyCoachServerGuards — Prescription dump without structure (Guard 6)', () => {
+  it('nulls updated_task_description when workout context exists and no proposed metadata', () => {
+    const parsed = makeParsed({
+      update_existing_task: true,
+      updated_task_description: FINISHER_PROSE_DUMP,
+      proposed_workout_metadata: null,
+    });
+    const out = applyCoachServerGuards(parsed, PLANNED_WORKOUT_FRAGMENT);
+    expect(out.updated_task_description).toBeNull();
+  });
+
+  it('preserves short description-only updates when workout context exists', () => {
+    const short = 'Full body AMRAP with supersets and mobility finisher.';
+    const parsed = makeParsed({
+      update_existing_task: true,
+      updated_task_description: short,
+      proposed_workout_metadata: null,
+    });
+    const out = applyCoachServerGuards(parsed, PLANNED_WORKOUT_FRAGMENT);
+    expect(out.updated_task_description).toBe(short);
+  });
+
+  it('preserves description when flat exercises are proposed', () => {
+    const prose = FINISHER_PROSE_DUMP;
+    const parsed = makeParsed({
+      update_existing_task: true,
+      updated_task_description: prose,
+      proposed_workout_metadata: {
+        exercises: [{ name: 'Kettlebell Thrusters', sets: 3, reps: 10 }],
+      },
+    });
+    const out = applyCoachServerGuards(parsed, PLANNED_WORKOUT_FRAGMENT);
+    expect(out.updated_task_description).toBe(prose);
+  });
+
+  it('nulls description via Guard 4 when blocks are present', () => {
+    const parsed = makeParsed({
+      update_existing_task: true,
+      updated_task_description: FINISHER_PROSE_DUMP,
+      proposed_workout_metadata: {
+        blocks: [{ name: 'Finisher', exercises: [{ name: 'Thruster', sets: 3, reps: 10 }] }],
+      },
+    });
+    const out = applyCoachServerGuards(parsed, PLANNED_WORKOUT_FRAGMENT);
+    expect(out.updated_task_description).toBeNull();
+    expect(out.proposed_workout_metadata?.blocks).toHaveLength(1);
+  });
+});
+
+describe('applyCoachServerGuards — Action exclusivity (Guard 5)', () => {
+  it('nulls proposed_workout_metadata and updated_task_description; preserves title', () => {
+    const parsed = makeParsed({
+      card_action: 'trigger_generation',
+      update_existing_task: true,
+      updated_task_title: 'Leg day',
+      updated_task_description: 'Full prose',
+      proposed_workout_metadata: { workout_type: 'AMRAP' },
+    });
+    const out = applyCoachServerGuards(parsed, NO_TASK_FRAGMENT);
+    expect(out.card_action).toBe('trigger_generation');
+    expect(out.updated_task_title).toBe('Leg day');
+    expect(out.updated_task_description).toBeNull();
+    expect(out.proposed_workout_metadata).toBeNull();
+  });
+});
+
 describe('applyCoachServerGuards — Self-attestation', () => {
   it('throws when reply_content claims an update without structured writes', () => {
     const parsed = makeParsed({
@@ -280,6 +492,15 @@ describe('applyCoachServerGuards — Self-attestation', () => {
     } catch (e) {
       expect(e).toEqual({ kind: 'self_attestation_mismatch' });
     }
+  });
+
+  it('allows narrative when only card_action is present', () => {
+    const parsed = makeParsed({
+      reply_content: 'Starting the generator now on your card.',
+      card_action: 'trigger_generation',
+    });
+    const out = applyCoachServerGuards(parsed, NO_TASK_FRAGMENT);
+    expect(out.card_action).toBe('trigger_generation');
   });
 
   it('allows narrative update when personal_cues_resolved is present', () => {

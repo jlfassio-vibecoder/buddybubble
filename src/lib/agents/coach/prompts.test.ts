@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
+import { BLOCK_BLUEPRINT_LIBRARY_HEADER } from './block-blueprint-library';
 import {
   EXERCISE_INDEX_MAP_HEADER,
   COACH_RAIL_SURFACE_VALUE,
@@ -28,21 +29,46 @@ describe('buildCurrentTaskContextBlock', () => {
     const block = buildCurrentTaskContextBlock('Leg day', 'Squats', { rail: true });
     expect(block).toContain('LIVE CO-PILOT MODE (Task Modal rail)');
     expect(block).toContain('actively co-editing this task with the user');
-    expect(block).toContain('Emit proposed_workout_metadata containing the full revised workout');
+    expect(block).toContain('Server merge is append-only');
+    expect(block).toContain('emit only what changed');
+    expect(block).not.toContain('full revised workout');
     expect(block).not.toContain('still require clear affirmative consent before drafting');
     expect(block).not.toContain('The user must finalize changes on the card');
   });
 
   it('rail tone instructs blocks for named sections', () => {
     const block = buildCurrentTaskContextBlock('Leg day', 'Squats', { rail: true });
-    expect(block).toContain('emit proposed_workout_metadata.blocks as the full revised list');
+    expect(block).toContain('only the new or changed block(s)');
+    expect(block).toContain('Do not re-emit unchanged blocks');
     expect(block).toContain('Use blocks whenever section identity matters');
+  });
+
+  it('rail tone requires block_format and format_params per blueprint library', () => {
+    const block = buildCurrentTaskContextBlock('Leg day', 'Squats', { rail: true });
+    expect(block).toContain('block_format');
+    expect(block).toContain('format_params');
+    expect(block).toContain('BLUEPRINT LIBRARY');
+    expect(block).toContain('instruction-only');
   });
 
   it('default tone does NOT mention blocks routing', () => {
     const block = buildCurrentTaskContextBlock('Leg day', 'Squats');
     expect(block).not.toContain('proposed_workout_metadata.blocks');
     expect(block).not.toContain('Use blocks whenever section identity matters');
+    expect(block).not.toContain('block_format');
+  });
+
+  it('rail tail contains GENERATION HAND-OFF once', () => {
+    const block = buildCurrentTaskContextBlock('Leg day', 'Squats', { rail: true });
+    expect(block).toContain('GENERATION HAND-OFF');
+    const matches = block.match(/GENERATION HAND-OFF/g) ?? [];
+    expect(matches.length).toBe(1);
+    expect(block).toContain("card_action: 'trigger_generation'");
+  });
+
+  it('non-rail tail does NOT contain GENERATION HAND-OFF', () => {
+    const block = buildCurrentTaskContextBlock('Leg day', 'Squats');
+    expect(block).not.toContain('GENERATION HAND-OFF');
   });
 });
 
@@ -60,6 +86,26 @@ describe('buildBaseCoachPrompt', () => {
       'EXCEPTION (live co-pilot rail): when the prompt also contains the LIVE CO-PILOT MODE block',
     );
     const matches = prompt.match(/EXCEPTION \(live co-pilot rail\):/g) ?? [];
+    expect(matches.length).toBe(1);
+  });
+
+  it('does not embed the BLOCK BLUEPRINT LIBRARY (injected on rail / block mentions only)', () => {
+    expect(prompt).not.toContain(BLOCK_BLUEPRINT_LIBRARY_HEADER);
+  });
+
+  it('still names card_action and parametric hand-off in the base contract', () => {
+    expect(prompt).toContain('block_format');
+    expect(prompt).toContain('parametric_requires_rich_workout_set');
+  });
+
+  it('names card_action in the JSON keys list', () => {
+    expect(prompt).toContain('task_modal_intake_patch, card_action, intake_phase');
+  });
+
+  it('contains flat-card parametric refusal sentence once', () => {
+    expect(prompt).toContain('parametric_requires_rich_workout_set');
+    expect(prompt).toContain("card_action: 'trigger_generation'");
+    const matches = prompt.match(/parametric_requires_rich_workout_set/g) ?? [];
     expect(matches.length).toBe(1);
   });
 });

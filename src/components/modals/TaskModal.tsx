@@ -50,6 +50,7 @@ import {
   type WorkoutExercise,
 } from '@/lib/item-metadata';
 import { useWorkoutTemplates } from '@/hooks/use-workout-templates';
+import { getExercisesFromWorkout } from '@/lib/workout-factory/program-schedule-utils';
 import { scheduledTimeToInputValue } from '@/lib/task-scheduled-time';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -89,6 +90,7 @@ import { useIsNarrowBelowMd } from '@/hooks/use-is-narrow-below-md';
 import type { TaskModalTab, TaskModalViewMode } from '@/types/open-task-options';
 import type {
   AgentEffectTelemetryEvent,
+  CardActionEffectPayload,
   ExecutionPatchEffectPayload,
 } from '@/components/chat/agent-effects/types';
 import type { TaskModalIntakePatch } from '@/lib/agents/coach/task-modal-intake-patch';
@@ -280,11 +282,19 @@ export function TaskModal({
    */
   const createSessionIdRef = useRef<string | null>(null);
   const handledIntakePatchMessageIdsByTaskRef = useRef<Map<string, Set<string>>>(new Map());
+  /** Survives StandardTaskChatRail remounts when workout split layout toggles (Phase 12.2). */
+  const handledCardActionMessageIdsByTaskRef = useRef<Map<string, Set<string>>>(new Map());
+  const handledExecutionPatchMessageIdsByTaskRef = useRef<Map<string, Set<string>>>(new Map());
+  /** Keeps workout split engaged after card_action so failed generation does not collapse the rail layout. */
+  const [workoutSplitEngaged, setWorkoutSplitEngaged] = useState(false);
 
   useEffect(() => {
     if (open) return;
     createSessionIdRef.current = null;
     handledIntakePatchMessageIdsByTaskRef.current.clear();
+    handledCardActionMessageIdsByTaskRef.current.clear();
+    handledExecutionPatchMessageIdsByTaskRef.current.clear();
+    setWorkoutSplitEngaged(false);
     setEmbeddedTaskIdsFromThread([]);
   }, [open]);
 
@@ -299,6 +309,7 @@ export function TaskModal({
   }, [open, taskId]);
 
   const workoutIntake = useWorkoutIntakeWizardState(sessionKey);
+  const buildWizardPayload = workoutIntake.buildWizardPayload;
   const [visibility, setVisibility] = useState<TaskVisibility>('private');
   /** Workspace member user id, or null = unassigned */
   const [assignedTo, setAssignedTo] = useState<string | null>(null);
@@ -421,20 +432,85 @@ export function TaskModal({
     open &&
     workoutViewerOpen &&
     isWorkoutItemType &&
-    (hasWorkoutViewerContent || aiWorkoutGenerating),
+    (hasWorkoutViewerContent || aiWorkoutGenerating || workoutSplitEngaged),
   );
 
+  const workoutHashExerciseNames = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    const add = (name: string) => {
+      const t = name.trim();
+      const k = t.toLowerCase();
+      if (!t || seen.has(k)) return;
+      seen.add(k);
+      out.push(t);
+    };
+    for (const e of workoutExercises) {
+      add(e.name);
+    }
+    const firstSession = viewerWorkoutSet?.workouts?.[0];
+    if (firstSession) {
+      for (const ex of getExercisesFromWorkout(firstSession)) {
+        add(ex.exerciseName);
+      }
+    }
+    return out;
+  }, [workoutExercises, viewerWorkoutSet]);
+
   const handleGenerateWorkoutFromComments = useCallback(() => {
+    setWorkoutSplitEngaged(true);
     setWorkoutViewerOpen(true);
     void handleAiGenerateWorkout();
   }, [setWorkoutViewerOpen, handleAiGenerateWorkout]);
 
   const handleGenerateWorkoutFromIntake = useCallback(
     (wizardData: WorkoutIntakeWizardData) => {
+      setWorkoutSplitEngaged(true);
       setWorkoutViewerOpen(true);
       void handleAiGenerateWorkout(wizardData);
     },
     [setWorkoutViewerOpen, handleAiGenerateWorkout],
+  );
+
+  const handleCardAction = useCallback(
+    (args: CardActionEffectPayload) => {
+      if (args.action.kind !== 'trigger_generation') return;
+      if (itemType !== 'workout' && itemType !== 'workout_log') return;
+      if (!canWrite) return;
+      if (aiWorkoutGenerating) return;
+      if (viewerWorkoutSet != null) return;
+
+      const dedupeKey = createSessionIdRef.current
+        ? `create:${createSessionIdRef.current}`
+        : `existing:${args.taskId}`;
+      let handled = handledCardActionMessageIdsByTaskRef.current.get(dedupeKey);
+      if (!handled) {
+        handled = new Set();
+        handledCardActionMessageIdsByTaskRef.current.set(dedupeKey, handled);
+      }
+      if (handled.has(args.messageId)) return;
+      handled.add(args.messageId);
+
+      logAgentRoutingEvent({
+        event: 'coach.card_action.triggered',
+        action: args.action.kind,
+        taskId: args.taskId,
+        messageId: args.messageId,
+        surface: 'standard-task-chat-rail',
+      });
+      setWorkoutSplitEngaged(true);
+      setWorkoutViewerOpen(true);
+      void handleAiGenerateWorkout(buildWizardPayload());
+    },
+    [
+      itemType,
+      canWrite,
+      aiWorkoutGenerating,
+      viewerWorkoutSet,
+      setWorkoutViewerOpen,
+      handleAiGenerateWorkout,
+      buildWizardPayload,
+    ],
   );
 
   const { aiCardCoverGenerating, generateCardCoverWithAi, resetCardCoverAi } = useTaskCardCoverAi({
@@ -1105,8 +1181,18 @@ export function TaskModal({
   }, []);
 
   const handleExecutionPatch = useCallback(
-    (_ctx: ExecutionPatchEffectPayload) => {
+    (ctx: ExecutionPatchEffectPayload) => {
       if (!taskId) return;
+      const dedupeKey = createSessionIdRef.current
+        ? `create:${createSessionIdRef.current}`
+        : `existing:${ctx.taskId}`;
+      let set = handledExecutionPatchMessageIdsByTaskRef.current.get(dedupeKey);
+      if (!set) {
+        set = new Set();
+        handledExecutionPatchMessageIdsByTaskRef.current.set(dedupeKey, set);
+      }
+      if (set.has(ctx.messageId)) return;
+      set.add(ctx.messageId);
       // Keep the details pane synchronized with agent-side task mutations emitted via
       // message metadata execution patches without forcing a loading-state flash.
       void loadTask(taskId, { silent: true });
@@ -1657,6 +1743,9 @@ export function TaskModal({
                             bubbleId={bubbleId ?? undefined}
                             canPostMessages={canWrite}
                             defaultAgentSlug={defaultSlugForItemType(itemType)}
+                            enableExerciseHashMentions={isWorkoutItemType}
+                            enableBlockBlueprintMentions={isWorkoutItemType}
+                            workoutExerciseNames={workoutHashExerciseNames}
                             buildOutgoingMessageMetadata={buildStandardTaskChatRailOutgoingMetadata}
                             transcriptFilter={(row) =>
                               row.content !== BUDDY_ONBOARDING_SYSTEM_EVENT
@@ -1665,6 +1754,7 @@ export function TaskModal({
                             onThreadViewChange={setCommentsInThreadView}
                             onExecutionPatch={handleExecutionPatch}
                             onTaskModalIntakePatch={handleTaskModalIntakePatch}
+                            onCardAction={handleCardAction}
                             onEffectTelemetry={handleAgentEffectTelemetry}
                             onEmbeddedTaskIdsChange={setEmbeddedTaskIdsFromThread}
                             chatRowExtras={{
@@ -1800,6 +1890,9 @@ export function TaskModal({
                                   bubbleId={bubbleId ?? undefined}
                                   canPostMessages={canWrite}
                                   defaultAgentSlug={defaultSlugForItemType(itemType)}
+                                  enableExerciseHashMentions={isWorkoutItemType}
+                                  enableBlockBlueprintMentions={isWorkoutItemType}
+                                  workoutExerciseNames={workoutHashExerciseNames}
                                   buildOutgoingMessageMetadata={
                                     buildStandardTaskChatRailOutgoingMetadata
                                   }
@@ -1810,6 +1903,7 @@ export function TaskModal({
                                   onThreadViewChange={setCommentsInThreadView}
                                   onExecutionPatch={handleExecutionPatch}
                                   onTaskModalIntakePatch={handleTaskModalIntakePatch}
+                                  onCardAction={handleCardAction}
                                   onEffectTelemetry={handleAgentEffectTelemetry}
                                   onEmbeddedTaskIdsChange={setEmbeddedTaskIdsFromThread}
                                   chatRowExtras={{
@@ -1891,6 +1985,9 @@ export function TaskModal({
                                         bubbleId={bubbleId ?? undefined}
                                         canPostMessages={canWrite}
                                         defaultAgentSlug={defaultSlugForItemType(itemType)}
+                                        enableExerciseHashMentions={isWorkoutItemType}
+                                        enableBlockBlueprintMentions={isWorkoutItemType}
+                                        workoutExerciseNames={workoutHashExerciseNames}
                                         buildOutgoingMessageMetadata={
                                           buildStandardTaskChatRailOutgoingMetadata
                                         }
@@ -1903,6 +2000,7 @@ export function TaskModal({
                                         onThreadViewChange={setCommentsInThreadView}
                                         onExecutionPatch={handleExecutionPatch}
                                         onTaskModalIntakePatch={handleTaskModalIntakePatch}
+                                        onCardAction={handleCardAction}
                                         onEffectTelemetry={handleAgentEffectTelemetry}
                                         onEmbeddedTaskIdsChange={setEmbeddedTaskIdsFromThread}
                                         chatRowExtras={{

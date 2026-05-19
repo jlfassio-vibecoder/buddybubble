@@ -150,19 +150,21 @@ The architecture plan does **not** list these fields; the **file header** and `C
 - [`ChatArea.tsx`](../../../src/components/chat/ChatArea.tsx) — `CHAT_AREA_DEFAULT_AGENT_SLUG = 'coach'`; sends `metadata: { default_agent_slug: 'coach' }` for Coach sends where applicable.
 - [`TaskModalCommentsPanel.tsx`](../../../src/components/modals/task-modal/TaskModalCommentsPanel.tsx) — `TASK_COMMENTS_DEFAULT_AGENT_SLUG = 'coach'`.
 - [`WorkoutCoachRail.tsx`](../../../src/components/chat/WorkoutCoachRail.tsx) — same default for Coach tab; **Buddy** tab prefixes `@Buddy` so the Buddy pipeline can own routing without relying on `default_agent_slug` for that send.
+- [`StandardTaskChatRail.tsx`](../../../src/components/chat/StandardTaskChatRail.tsx) — TaskModal task-scoped rail (`metadata.surface = standard_task_chat_rail`). Composer tokens (`@`, `#`, future block blueprints): see [`rail-composer-tokens.md`](./rail-composer-tokens.md).
 
 ---
 
 ## File map (Coach-related)
 
-| Area                            | Path                                                                                                           |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Edge dispatch                   | `supabase/functions/agent-dispatch/index.ts` + Coach strategy at `supabase/functions/agents/coach/strategy.ts` |
-| Workout rail UI                 | `src/components/chat/WorkoutCoachRail.tsx`                                                                     |
-| Draft card + finalize           | `src/components/chat/CoachDraftCard.tsx`, `src/types/coach-draft.ts`                                           |
-| Live player patch types / apply | `src/types/execution-patch.ts`, `src/components/fitness/WorkoutPlayer.tsx`                                     |
-| Personal cues hook + storage    | `src/hooks/useUserExerciseNotes.ts`, `public.user_exercise_notes`                                              |
-| Default Coach in main/task chat | `src/components/chat/ChatArea.tsx`, `src/components/modals/task-modal/TaskModalCommentsPanel.tsx`              |
+| Area                            | Path                                                                                                                     |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Edge dispatch                   | `supabase/functions/agent-dispatch/index.ts` + Coach strategy at `supabase/functions/agents/coach/strategy.ts`           |
+| Workout rail UI                 | `src/components/chat/WorkoutCoachRail.tsx`                                                                               |
+| TaskModal standard rail         | `src/components/chat/StandardTaskChatRail.tsx` — composer tokens: [`rail-composer-tokens.md`](./rail-composer-tokens.md) |
+| Draft card + finalize           | `src/components/chat/CoachDraftCard.tsx`, `src/types/coach-draft.ts`                                                     |
+| Live player patch types / apply | `src/types/execution-patch.ts`, `src/components/fitness/WorkoutPlayer.tsx`                                               |
+| Personal cues hook + storage    | `src/hooks/useUserExerciseNotes.ts`, `public.user_exercise_notes`                                                        |
+| Default Coach in main/task chat | `src/components/chat/ChatArea.tsx`, `src/components/modals/task-modal/TaskModalCommentsPanel.tsx`                        |
 
 ---
 

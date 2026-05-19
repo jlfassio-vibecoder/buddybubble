@@ -114,6 +114,18 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
               reps: { type: 'STRING', nullable: true },
               coach_notes: { type: 'STRING', nullable: true },
               equipment: { type: 'STRING', nullable: true },
+              work_seconds: {
+                type: 'INTEGER',
+                nullable: true,
+                description:
+                  'Per-exercise work duration in seconds (Tabata, EMOM, AMRAP timing). Optional; merge derives from format_params for EMOM when omitted.',
+              },
+              rest_seconds: {
+                type: 'INTEGER',
+                nullable: true,
+                description:
+                  'Per-exercise rest duration in seconds. For EMOM: rest within the interval after work. For Tabata: rest between work rounds.',
+              },
             },
           },
         },
@@ -121,7 +133,7 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
           type: 'ARRAY',
           nullable: true,
           description:
-            'Polymorphic workout sections. Each block has a free-text name (e.g. Warm-up, Main, Strength, Cardio, Finisher, Cool down, Mobility). Exercise-shaped blocks include exercises; warm-up / cool-down / mobility may instead supply an instructions string list when there are no sets and reps. The server mergeCoachProposedIntoTaskMetadata routes each block by name and shape into exerciseBlocks (strength, cardio, core, finisher with sets and reps) or warmupBlocks, finisherBlocks, or cooldownBlocks (instruction-shaped). Prefer emitting blocks over flat exercises whenever the user asked for a named section (for example add a finisher). Use null or omit when not changing the workout structure.',
+            'Polymorphic workout sections. Each block has a free-text name (e.g. Warm-up, Main, Strength, Cardio, Finisher, Cool down, Mobility). Exercise-shaped blocks include exercises; warm-up / cool-down / mobility may instead supply an instructions string list when there are no sets and reps. The server mergeCoachProposedIntoTaskMetadata appends blocks by default — emit only new or changed blocks; do not re-send unchanged sections. Routes each block by name and shape into exerciseBlocks (strength, cardio, core, finisher with sets and reps) or warmupBlocks, finisherBlocks, or cooldownBlocks (instruction-shaped). Prefer emitting blocks over flat exercises whenever the user asked for a named section (for example add a finisher). Each exercise-shaped block MUST set block_format (one of straight_sets, superset, circuit, amrap, emom, tabata) and the matching format_params per the BLUEPRINT LIBRARY in the system prompt. Instruction-only blocks (instructions[] without exercises[]) may omit block_format. Use null or omit when not changing the workout structure.',
           items: {
             type: 'OBJECT',
             properties: {
@@ -137,6 +149,18 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
                     reps: { type: 'STRING', nullable: true },
                     coach_notes: { type: 'STRING', nullable: true },
                     equipment: { type: 'STRING', nullable: true },
+                    work_seconds: {
+                      type: 'INTEGER',
+                      nullable: true,
+                      description:
+                        'Per-exercise work duration in seconds (Tabata, EMOM, AMRAP timing). Optional; merge derives from format_params for EMOM when omitted.',
+                    },
+                    rest_seconds: {
+                      type: 'INTEGER',
+                      nullable: true,
+                      description:
+                        'Per-exercise rest duration in seconds. For EMOM: rest within the interval after work. For Tabata: rest between work rounds.',
+                    },
                   },
                 },
               },
@@ -146,6 +170,35 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
                 description:
                   'Instruction-shaped section (warm-up, cool down, mobility): one short line per array item. Use when the section is cued execution rather than prescribed sets and reps.',
                 items: { type: 'STRING' },
+              },
+              block_format: {
+                type: 'STRING',
+                nullable: true,
+                enum: ['straight_sets', 'superset', 'circuit', 'amrap', 'emom', 'tabata'],
+                description:
+                  'Blueprint discriminator. MUST be one of the enum values; do not invent new formats. Required on exercise-shaped blocks; instruction-only warm-up / cool-down blocks may omit it. Use circuit (not superset) for 3+ exercises in sequence.',
+              },
+              format_params: {
+                type: 'OBJECT',
+                nullable: true,
+                description:
+                  'Format-specific parameters. Required keys depend on block_format (see BLUEPRINT LIBRARY in system prompt): amrap requires time_cap_minutes; emom requires interval_seconds AND (total_minutes OR total_rounds); tabata requires rounds; superset/circuit require rounds. Omit when straight_sets with default rest.',
+                properties: {
+                  time_cap_minutes: { type: 'INTEGER', nullable: true },
+                  interval_seconds: { type: 'INTEGER', nullable: true },
+                  total_minutes: { type: 'INTEGER', nullable: true },
+                  total_rounds: { type: 'INTEGER', nullable: true },
+                  rounds: { type: 'INTEGER', nullable: true },
+                  work_seconds: { type: 'INTEGER', nullable: true },
+                  rest_seconds: { type: 'INTEGER', nullable: true },
+                  rest_in_interval_seconds: { type: 'INTEGER', nullable: true },
+                  rest_between_sets_seconds: { type: 'INTEGER', nullable: true },
+                  rest_between_rounds_seconds: { type: 'INTEGER', nullable: true },
+                  rest_between_exercises_seconds: { type: 'INTEGER', nullable: true },
+                  target_rpe: { type: 'NUMBER', nullable: true },
+                  target_rounds: { type: 'INTEGER', nullable: true },
+                  pairing_notes: { type: 'STRING', nullable: true },
+                },
               },
             },
           },
@@ -268,9 +321,19 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
         },
       },
     },
+    card_action: {
+      type: 'STRING',
+      nullable: true,
+      enum: ['trigger_generation'],
+      description:
+        'Optional UI command sent to the chat client. Emit "trigger_generation" only when the open card has no rich workout_set yet AND the user has given clear consent to draft now AND not in an active workout session — the client will run the heavy /api/ai/generate-workout-chain on the user\'s behalf. MUST be null on every other turn. When non-null, omit proposed_workout_metadata. reply_content should briefly say you are starting the generator.',
+    },
   },
   // Keys must be present so Gemini does not drop task_description on create_card flows.
   // execution_patch is NOT required: model may omit it; parse treats missing as null.
+  // card_action MUST be emitted every turn as null or "trigger_generation" — when it was
+  // optional Gemini often omitted the key entirely, reply metadata stayed `{}`, and the
+  // Task Modal client never received the Generate Workout hand-off.
   required: [
     'reply_content',
     'create_card',
@@ -280,6 +343,7 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
     'updated_task_title',
     'updated_task_description',
     'proposed_workout_metadata',
+    'card_action',
   ],
 };
 

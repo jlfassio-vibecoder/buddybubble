@@ -8,6 +8,7 @@ import {
   type UseAgentResponseWaitResult,
 } from '@/hooks/useAgentResponseWait';
 import type { MessageRowWithEmbeddedTask } from '@/types/database';
+import type { BlockPickerPreset } from '@/lib/agents/coach/block-blueprint-mentions-client';
 
 vi.mock('@/hooks/useMessageThread', () => ({
   useMessageThread: vi.fn(),
@@ -15,6 +16,17 @@ vi.mock('@/hooks/useMessageThread', () => ({
 
 vi.mock('@/hooks/useAgentResponseWait', () => ({
   useAgentResponseWait: vi.fn(),
+}));
+
+vi.mock('@/hooks/useExerciseDictionaryAutocomplete', () => ({
+  useExerciseDictionaryAutocomplete: vi.fn(() => ({
+    rows: [
+      { id: 'dict-1', name: 'Bench Press', slug: 'bench-press', status: 'published' as const },
+    ],
+    loading: false,
+    error: null,
+    refresh: vi.fn(),
+  })),
 }));
 
 vi.mock('@utils/supabase/client', () => ({
@@ -326,6 +338,119 @@ describe('StandardTaskChatRail', () => {
       enableCreateAndAttachCard: false,
       enableStartLiveWorkout: false,
     });
+  });
+
+  it('enableExerciseHashMentions with coach default passes hashConfig and footer hint', () => {
+    mockThread();
+    render(
+      <StandardTaskChatRail
+        workspaceId="ws-1"
+        taskId="task-1"
+        canPostMessages
+        defaultAgentSlug="coach"
+        enableExerciseHashMentions
+        workoutExerciseNames={['Goblet Squat']}
+      />,
+    );
+    expect(lastRichComposerProps.current?.features).toMatchObject({
+      enableExerciseHashMentions: true,
+    });
+    const hashConfig = lastRichComposerProps.current?.hashConfig as {
+      exercises: Array<{ name: string }>;
+    };
+    expect(hashConfig.exercises.some((e) => e.name === 'Goblet Squat')).toBe(true);
+    expect(lastRichComposerProps.current?.onExerciseHashInserted).toBeTypeOf('function');
+  });
+
+  it('send attaches exercise_mentions when coach hash pick is pending in message', async () => {
+    const sendMessage = mockThread();
+    render(
+      <StandardTaskChatRail
+        workspaceId="ws-1"
+        taskId="task-1"
+        canPostMessages
+        defaultAgentSlug="coach"
+        enableExerciseHashMentions
+        workoutExerciseNames={['Goblet Squat']}
+      />,
+    );
+    const onHash = lastRichComposerProps.current?.onExerciseHashInserted as
+      | ((ex: { id: string; name: string }) => void)
+      | undefined;
+    onHash?.({ id: 'workout:goblet squat', name: 'Goblet Squat' });
+    const onSubmit = lastRichComposerProps.current?.onSubmit as
+      | ((p: { text: string; files: File[] }) => void | Promise<void>)
+      | undefined;
+    await onSubmit?.({ text: 'load #Goblet Squat ', files: [] });
+    await waitFor(() => expect(sendMessage).toHaveBeenCalled());
+    const meta = sendMessage.mock.calls[0][3] as {
+      metadata: {
+        surface: string;
+        default_agent_slug: string;
+        exercise_mentions: Array<{ name: string; token: string }>;
+      };
+    };
+    expect(meta.metadata.surface).toBe('standard_task_chat_rail');
+    expect(meta.metadata.exercise_mentions).toHaveLength(1);
+    expect(meta.metadata.exercise_mentions[0].name).toBe('Goblet Squat');
+    expect(meta.metadata.exercise_mentions[0].token).toBe('#Goblet Squat ');
+  });
+
+  it('enableBlockBlueprintMentions with coach passes blockConfig and footer hint', () => {
+    mockThread();
+    render(
+      <StandardTaskChatRail
+        workspaceId="ws-1"
+        taskId="task-1"
+        canPostMessages
+        defaultAgentSlug="coach"
+        enableBlockBlueprintMentions
+      />,
+    );
+    expect(lastRichComposerProps.current?.features).toMatchObject({
+      enableBlockBlueprintMentions: true,
+    });
+    const blockConfig = lastRichComposerProps.current?.blockConfig as {
+      presets: Array<{ label: string }>;
+    };
+    expect(blockConfig.presets.some((p) => p.label.includes('AMRAP'))).toBe(true);
+    expect(lastRichComposerProps.current?.onBlockBlueprintInserted).toBeTypeOf('function');
+  });
+
+  it('send attaches block_blueprint_mentions when coach block pick is pending in message', async () => {
+    const sendMessage = mockThread();
+    render(
+      <StandardTaskChatRail
+        workspaceId="ws-1"
+        taskId="task-1"
+        canPostMessages
+        defaultAgentSlug="coach"
+        enableBlockBlueprintMentions
+      />,
+    );
+    const onBlock = lastRichComposerProps.current?.onBlockBlueprintInserted as
+      | ((preset: BlockPickerPreset) => void)
+      | undefined;
+    onBlock?.({
+      id: 'finisher-amrap',
+      label: 'Finisher · AMRAP',
+      section_name: 'Finisher',
+      block_format: 'amrap',
+      format_params: { time_cap_minutes: 5 },
+    });
+    const onSubmit = lastRichComposerProps.current?.onSubmit as
+      | ((p: { text: string; files: File[] }) => void | Promise<void>)
+      | undefined;
+    await onSubmit?.({ text: 'add :finisher/amrap ', files: [] });
+    await waitFor(() => expect(sendMessage).toHaveBeenCalled());
+    const meta = sendMessage.mock.calls[0][3] as {
+      metadata: {
+        block_blueprint_mentions: Array<{ block_format: string; token: string }>;
+      };
+    };
+    expect(meta.metadata.block_blueprint_mentions).toHaveLength(1);
+    expect(meta.metadata.block_blueprint_mentions[0].block_format).toBe('amrap');
+    expect(meta.metadata.block_blueprint_mentions[0].token).toBe(':finisher/amrap ');
   });
 
   it('root element has exact layout classes', () => {

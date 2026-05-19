@@ -44,6 +44,17 @@ vi.mock('@/hooks/useAgentResponseWait', () => ({
   }),
 }));
 
+vi.mock('@/hooks/useExerciseDictionaryAutocomplete', () => ({
+  useExerciseDictionaryAutocomplete: vi.fn(() => ({
+    rows: [
+      { id: 'dict-1', name: 'Bench Press', slug: 'bench-press', status: 'published' as const },
+    ],
+    loading: false,
+    error: null,
+    refresh: vi.fn(),
+  })),
+}));
+
 vi.mock('@/context/WorkspaceSessionContext', () => ({
   useWorkspaceSessionSubject: () => ({ subjectUserId: 'user-1' }),
 }));

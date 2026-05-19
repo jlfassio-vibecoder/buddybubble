@@ -300,6 +300,10 @@ export interface ExerciseBlock {
   exercises: Exercise[];
   /** Client-only: stable ID for React keys and DnD. Assigned during normalization. */
   id?: string;
+  /** Parametric blueprint key written by Coach merge (Phase 11.2). */
+  blockFormat?: string;
+  /** Format-specific params (snake_case keys, e.g. time_cap_minutes). */
+  formatParams?: Record<string, unknown>;
 }
 
 export interface ProgramSchedule {

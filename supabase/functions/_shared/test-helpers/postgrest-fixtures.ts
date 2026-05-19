@@ -81,6 +81,19 @@ function selectParam(raw: string): string {
   return urlOf(raw).searchParams.get('select') ?? '';
 }
 
+/**
+ * supabase-js strips whitespace from `select` column lists when serializing the URL
+ * (so `'id, user_id, content'` becomes `select=id%2Cuser_id%2Ccontent`). Tests
+ * express expected columns with the same spaced format as the loader source for
+ * readability; this comparator normalizes whitespace on both sides so the match
+ * holds against the actual on-the-wire URL. See
+ * `supabase/functions/_shared/dispatch/history.ts:HISTORY_COLUMNS`.
+ */
+function selectMatches(raw: string, expected: string): boolean {
+  const normalize = (s: string) => s.replace(/\s+/g, '');
+  return normalize(selectParam(raw)) === normalize(expected);
+}
+
 function hasQueryParam(raw: string, name: string): boolean {
   return urlOf(raw).searchParams.has(name);
 }
@@ -101,8 +114,10 @@ function isMessagesHistoryBase(raw: string): boolean {
 function isThreadHistoryQuery(raw: string): boolean {
   return (
     isMessagesHistoryBase(raw) &&
-    selectParam(raw) ===
-      'id, user_id, content, created_at, parent_id, target_task_id, attached_task_id, metadata' &&
+    selectMatches(
+      raw,
+      'id, user_id, content, created_at, parent_id, target_task_id, attached_task_id, metadata',
+    ) &&
     hasQueryParam(raw, 'or') &&
     queryParam(raw, 'limit') === '50'
   );
@@ -112,8 +127,10 @@ function isTargetTaskHistoryQuery(raw: string): boolean {
   const lim = Number(queryParam(raw, 'limit'));
   return (
     isMessagesHistoryBase(raw) &&
-    selectParam(raw) ===
-      'id, user_id, content, created_at, parent_id, target_task_id, attached_task_id, metadata' &&
+    selectMatches(
+      raw,
+      'id, user_id, content, created_at, parent_id, target_task_id, attached_task_id, metadata',
+    ) &&
     hasQueryParam(raw, 'target_task_id') &&
     Number.isFinite(lim) &&
     lim > 0
@@ -123,7 +140,7 @@ function isTargetTaskHistoryQuery(raw: string): boolean {
 function isPriorBubbleMessageQuery(raw: string): boolean {
   return (
     isMessagesHistoryBase(raw) &&
-    selectParam(raw) === 'id, user_id' &&
+    selectMatches(raw, 'id, user_id') &&
     queryParam(raw, 'limit') === '2'
   );
 }
@@ -131,8 +148,10 @@ function isPriorBubbleMessageQuery(raw: string): boolean {
 function isOrganizerRootHistoryQuery(raw: string): boolean {
   return (
     isMessagesHistoryBase(raw) &&
-    selectParam(raw) ===
-      'id, user_id, content, created_at, parent_id, target_task_id, attached_task_id, metadata' &&
+    selectMatches(
+      raw,
+      'id, user_id, content, created_at, parent_id, target_task_id, attached_task_id, metadata',
+    ) &&
     queryParam(raw, 'limit') === '10'
   );
 }
@@ -140,7 +159,7 @@ function isOrganizerRootHistoryQuery(raw: string): boolean {
 function isBuddyRootHistoryQuery(raw: string): boolean {
   return (
     isMessagesHistoryBase(raw) &&
-    selectParam(raw) === 'id, user_id, content, created_at, parent_id' &&
+    selectMatches(raw, 'id, user_id, content, created_at, parent_id') &&
     queryParam(raw, 'limit') === '12'
   );
 }

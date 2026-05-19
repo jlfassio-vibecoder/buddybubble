@@ -17,6 +17,22 @@ export type ExerciseMentionClientPayload = {
 
 export const TAGGED_EXERCISE_REFS_HEADER = '--- TAGGED_EXERCISE_REFS ---';
 
+/**
+ * True when the composer still contains this mention token.
+ * Picker inserts often include a trailing space (`#Name `); users may delete it or end the message at EOS.
+ */
+export function composerMentionTokenInMessage(messageText: string, token: string): boolean {
+  if (!token || !messageText) return false;
+  if (messageText.includes(token)) return true;
+  const core = token.trimEnd();
+  if (!core) return false;
+  if (messageText.endsWith(core)) return true;
+  const idx = messageText.indexOf(core);
+  if (idx < 0) return false;
+  const next = messageText[idx + core.length];
+  return next === undefined || /[\s.,;!?)\]]/.test(next);
+}
+
 /** Parse `exercises[].name` order from stringified workout context JSON. */
 export function parseExerciseNamesFromWorkoutContextJson(
   workoutContextJson: string,

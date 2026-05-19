@@ -99,12 +99,33 @@ export interface HistoryRow {
  * Coach's preflight short-circuit (e.g. workout-player silent greeting). Slug-agnostic
  * union so other strategies can extend.
  */
+export type BlockBlueprintPreflightLane =
+  | 'block_append_deterministic'
+  | 'block_append_exercise_fill';
+
+/** Args for `agent_update_task_and_reply` minus ids filled by the dispatcher. */
+export type ShortCircuitPersistRpcArgs = {
+  p_target_task_id: string;
+  p_reply_text: string;
+  p_new_title: string | null;
+  p_new_description: string | null;
+  p_new_metadata?: Record<string, unknown> | null;
+  p_card_action?: unknown;
+};
+
 export type PreflightAction =
   | {
       kind: 'short_circuit_with_reply';
       replyText: string;
       rpc: 'agent_create_card_and_reply';
       rpcArgs: Record<string, unknown>;
+    }
+  | {
+      kind: 'short_circuit_with_persist';
+      lane: BlockBlueprintPreflightLane;
+      replyText: string;
+      rpc: 'agent_update_task_and_reply';
+      rpcArgs: ShortCircuitPersistRpcArgs;
     }
   | { kind: 'skip'; reason: string };
 
@@ -148,6 +169,8 @@ export interface DispatchContext {
    * `agent-dispatch` (`readDispatcherEnv`).
    */
   coachMergeWorkoutMetadata?: boolean;
+  /** From COACH_CARD_ACTIONS env. When false, strategy strips card_action before guards. */
+  coachCardActions?: boolean;
   /**
    * Strategy-owned scratch space, request-scoped. Each strategy SHOULD namespace its
    * keys under its own slug (e.g. `extras.coach = { ... }`) so registrations cannot
@@ -204,4 +227,13 @@ export interface AgentStrategy<TParsed> {
    * dispatch).
    */
   historyLimit?: number;
+
+  /**
+   * Optional per-request Vertex generation overrides (e.g. Coach rail block append).
+   * Returned fields are shallow-merged over the strategy defaults in the handler.
+   */
+  resolveGenerationConfig?(ctx: DispatchContext): {
+    maxOutputTokens?: number;
+    thinkingConfig?: { thinkingBudget: number };
+  } | null;
 }

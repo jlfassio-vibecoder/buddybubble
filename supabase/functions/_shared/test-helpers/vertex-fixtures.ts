@@ -119,6 +119,25 @@ export function vertexHappy(parsedJson: unknown): VertexHandlerWithCount {
   };
 }
 
+export type VertexHandlerWithCapturedBody = VertexHandlerWithCount & {
+  lastBodyText: () => string | null;
+};
+
+/** Like `vertexHappy`, but exposes the raw Vertex request body for prompt assertions. */
+export function vertexHappyCapturingBody(parsedJson: unknown): VertexHandlerWithCapturedBody {
+  let calls = 0;
+  let lastBody: string | null = null;
+  return {
+    count: () => calls,
+    lastBodyText: () => lastBody,
+    handler: (_req, call) => {
+      calls += 1;
+      lastBody = call.bodyText;
+      return jsonResponse(vertexGenerateResponse(JSON.stringify(parsedJson)));
+    },
+  };
+}
+
 export function vertex429ThenHappy(parsedJson: unknown): VertexHandlerWithCount {
   let calls = 0;
   return {
@@ -129,6 +148,27 @@ export function vertex429ThenHappy(parsedJson: unknown): VertexHandlerWithCount 
         return textResponse('rate limited', 429, { 'retry-after': '1' });
       }
       return jsonResponse(vertexGenerateResponse(JSON.stringify(parsedJson)));
+    },
+  };
+}
+
+/** Hangs until the fetch is aborted; `vertex-gemini` `timeoutMs` triggers timeout path. */
+export function vertexHanging(): VertexHandlerWithCount {
+  let calls = 0;
+  return {
+    count: () => calls,
+    handler: (req) => {
+      calls += 1;
+      return new Promise<Response>((_resolve, reject) => {
+        const signal = req.signal;
+        if (signal.aborted) {
+          reject(new DOMException('Aborted', 'AbortError'));
+          return;
+        }
+        signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), {
+          once: true,
+        });
+      });
     },
   };
 }

@@ -173,6 +173,11 @@ export function useTaskWorkoutAi({
     if (!ai || typeof ai !== 'object') return null;
     const ws = (ai as { workout_set?: unknown }).workout_set;
     if (!ws || typeof ws !== 'object') return null;
+    // Match server + merge logic: only block generation hand-off when a *rich*
+    // generator output exists (`workout_set.workouts[]`). A bare or empty
+    // `workout_set` object must not suppress `card_action` triggers.
+    const workouts = (ws as { workouts?: unknown }).workouts;
+    if (!Array.isArray(workouts) || workouts.length === 0) return null;
     return ws as WorkoutSetTemplate;
   }, [metadata]);
 

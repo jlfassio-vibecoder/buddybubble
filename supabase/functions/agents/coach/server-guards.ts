@@ -15,6 +15,40 @@ function hasTaskModalIntakePatch(p: CoachGeminiJsonResponse['task_modal_intake_p
   return p != null && Object.keys(p).length > 0;
 }
 
+function blocksArrayNonEmpty(meta: Record<string, unknown> | null): boolean {
+  if (!meta) return false;
+  const b = meta.blocks;
+  if (!Array.isArray(b) || b.length === 0) return false;
+  return b.some((x) => x != null && typeof x === 'object' && !Array.isArray(x));
+}
+
+function flatExercisesNonEmpty(meta: Record<string, unknown> | null): boolean {
+  if (!meta) return false;
+  const ex = meta.exercises;
+  if (!Array.isArray(ex) || ex.length === 0) return false;
+  return ex.some((x) => x != null && typeof x === 'object' && !Array.isArray(x));
+}
+
+const WORKOUT_SECTION_HEADER_RE =
+  /(^|\n)\s*(warm[\s-]?up|finisher|cool[\s-]?down|main|strength|mobility|cardio)\s*:/im;
+
+const SETS_REPS_PRESCRIPTION_RE = /\b\d+\s*x\s*\d+\b|\b\d+\s*sets?\b|\b\d+\s*reps?\b/i;
+
+/**
+ * True when description text looks like a full workout prescription dump (not a short summary).
+ * Short rail description-only updates (e.g. under ~80 chars) are allowed.
+ */
+export function looksLikeWorkoutPrescriptionDump(text: string | null | undefined): boolean {
+  const t = typeof text === 'string' ? text.trim() : '';
+  if (!t || t.length < 80) return false;
+  if (WORKOUT_SECTION_HEADER_RE.test(t)) return true;
+  const hasSetsReps = SETS_REPS_PRESCRIPTION_RE.test(t);
+  if (t.length >= 120 && hasSetsReps) return true;
+  const bulletLines = t.split(/\n/).filter((line) => /^\s*[-*•]\s+/.test(line));
+  if (bulletLines.length >= 2 && hasSetsReps) return true;
+  return false;
+}
+
 /**
  * Throws `{ kind: 'self_attestation_mismatch' }` when reply_content narrates a persisted
  * update but no structured write field is present.
@@ -34,7 +68,8 @@ export function assertCoachReplySelfAttestation(parsed: CoachGeminiJsonResponse)
         Boolean(parsed.updated_task_description?.trim()) ||
         hasProposed));
   const hasIntake = hasTaskModalIntakePatch(parsed.task_modal_intake_patch);
-  const hasPayload = hasExecution || hasPersonal || hasCard || hasIntake;
+  const hasCardAction = parsed.card_action === 'trigger_generation';
+  const hasPayload = hasExecution || hasPersonal || hasCard || hasIntake || hasCardAction;
   if (!hasPayload) {
     throw { kind: 'self_attestation_mismatch' as const };
   }
@@ -76,13 +111,31 @@ export function applyCoachServerGuards(
   let updatedTaskDescription = parsed.updated_task_description;
   let proposedWorkoutMetadata = parsed.proposed_workout_metadata;
   let taskModalIntakePatch = parsed.task_modal_intake_patch;
+  let cardAction = parsed.card_action;
 
-  // Guard 1: Draft override. Mirrors `bubble-agent-dispatch/index.ts:1683-1688`.
-  if (fragment.knownTargetTaskId && updateExistingTask) {
-    createCard = false;
-    taskTitle = null;
-    taskDescription = null;
-    seedTaskCommentText = null;
+  // Guard 1: Open Canvas — never create a sibling card when a target task is known.
+  if (fragment.knownTargetTaskId) {
+    if (createCard) {
+      const draftTitle = taskTitle?.trim() ?? '';
+      const draftDesc = taskDescription?.trim() ?? '';
+      if (draftTitle && !updatedTaskTitle?.trim()) {
+        updatedTaskTitle = taskTitle;
+        updateExistingTask = true;
+      }
+      if (draftDesc && !updatedTaskDescription?.trim()) {
+        updatedTaskDescription = taskDescription;
+        updateExistingTask = true;
+      }
+      createCard = false;
+      taskTitle = null;
+      taskDescription = null;
+      seedTaskCommentText = null;
+    } else if (updateExistingTask) {
+      createCard = false;
+      taskTitle = null;
+      taskDescription = null;
+      seedTaskCommentText = null;
+    }
   }
 
   // Guard 2: Layer B turn gate. Mirrors `bubble-agent-dispatch/index.ts:1694-1707`.
@@ -101,16 +154,6 @@ export function applyCoachServerGuards(
     }
   }
 
-  // The legacy file repeats Guard 1 here at lines 1709-1714 — preserved for
-  // byte-for-byte fidelity (no-op when Guard 1 already cleared the fields, but the
-  // duplicate keeps drift detection trivial).
-  if (fragment.knownTargetTaskId && updateExistingTask) {
-    createCard = false;
-    taskTitle = null;
-    taskDescription = null;
-    seedTaskCommentText = null;
-  }
-
   // Guard 3: Workout-context clamp. Whenever planned/workout JSON is in context, block
   // creating a *new* card from this turn. Only an active live session strips structured
   // updates to the task card (draft/metadata/intake); Task Modal / planning keeps them.
@@ -125,7 +168,34 @@ export function applyCoachServerGuards(
       updatedTaskDescription = null;
       proposedWorkoutMetadata = null;
       taskModalIntakePatch = null;
+      cardAction = null;
     }
+  }
+
+  // Guard 4: Narrative vs Structure. Per docs/refactor/parametric-workout-blocks §11.3,
+  // when proposed_workout_metadata.blocks is non-empty, structured JSON is the prescription
+  // — prose in updated_task_description is forbidden.
+  if (blocksArrayNonEmpty(proposedWorkoutMetadata as Record<string, unknown> | null)) {
+    updatedTaskDescription = null;
+  }
+
+  // Guard 5: Action exclusivity — card_action is a UI command, not a workout draft.
+  if (cardAction === 'trigger_generation') {
+    proposedWorkoutMetadata = null;
+    updatedTaskDescription = null;
+  }
+
+  // Guard 6: When planned workout context exists, strip prescription dumps in description
+  // when the model omitted structured proposed_workout_metadata (blocks or exercises).
+  const metaRecord = proposedWorkoutMetadata as Record<string, unknown> | null;
+  if (
+    fragment.currentWorkoutContextJson &&
+    !fragment.isActiveWorkoutSession &&
+    !blocksArrayNonEmpty(metaRecord) &&
+    !flatExercisesNonEmpty(metaRecord) &&
+    looksLikeWorkoutPrescriptionDump(updatedTaskDescription)
+  ) {
+    updatedTaskDescription = null;
   }
 
   const out: CoachGeminiJsonResponse = {
@@ -139,6 +209,7 @@ export function applyCoachServerGuards(
     updated_task_description: updatedTaskDescription,
     proposed_workout_metadata: proposedWorkoutMetadata,
     task_modal_intake_patch: taskModalIntakePatch,
+    card_action: cardAction,
   };
   assertCoachReplySelfAttestation(out);
   return out;

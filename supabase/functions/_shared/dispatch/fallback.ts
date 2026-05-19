@@ -11,7 +11,11 @@
  * Mirrors the legacy fallback at `supabase/functions/bubble-agent-dispatch/index.ts:1741-1752`.
  */
 
-import { agentCreateCardAndReply, type RpcResult } from './rpc.ts';
+import {
+  agentCreateCardAndReply,
+  AGENT_CREATE_CARD_CANONICAL_NULL_PATCHES,
+  type RpcResult,
+} from './rpc.ts';
 import type { DispatchContext } from './types.ts';
 
 /**
@@ -29,8 +33,6 @@ export async function insertSafeReply(ctx: DispatchContext, text: string): Promi
     p_create_card: false,
     p_task_type: 'workout',
     p_task_status: 'todo',
-    p_execution_patch: null,
-    p_personal_cues: null,
-    p_task_modal_intake_patch: null,
+    ...AGENT_CREATE_CARD_CANONICAL_NULL_PATCHES,
   });
 }

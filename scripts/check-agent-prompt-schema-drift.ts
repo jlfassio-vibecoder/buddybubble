@@ -43,6 +43,7 @@ import {
   COACH_RESPONSE_SCHEMA,
   COACH_WORKOUT_GREETING_SCHEMA,
 } from '../src/lib/agents/coach/schema';
+import { buildBlockBlueprintLibraryPrompt } from '../src/lib/agents/coach/block-blueprint-library';
 import {
   buildBaseCoachPrompt,
   buildWorkoutOpenGreetingPrompt,
@@ -96,12 +97,19 @@ const REGISTRY: ReadonlyArray<Contract> = [
     name: 'coach.main',
     slug: 'coach',
     schema: COACH_RESPONSE_SCHEMA,
-    prompt: buildBaseCoachPrompt('2026-01-01'),
+    prompt: buildBaseCoachPrompt('2026-01-01') + '\n\n' + buildBlockBlueprintLibraryPrompt(),
     parserSourcePath: 'src/lib/agents/coach/parse.ts',
     schemaOnlyKeys: [],
     // Runtime context block name + prose example value the Coach prompt mentions.
     // `workout_log` is an `item_type` label in TASK MODAL INTAKE UI prose, not a schema key.
-    promptOnlyTokens: ['workoutContext', 'equipment_today', 'workout_log'],
+    promptOnlyTokens: [
+      'workoutContext',
+      'equipment_today',
+      'workout_log',
+      'ai_workout_factory',
+      'workout_set',
+      'parametric_requires_rich_workout_set',
+    ],
   },
   {
     name: 'coach.workout-open-greeting',

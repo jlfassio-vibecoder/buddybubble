@@ -23,12 +23,16 @@ const SheetOverlay = React.forwardRef<
 ));
 SheetOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
+type SheetContentProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
+  side?: 'left' | 'right' | 'bottom';
+  /** Hide the default top-right close control (e.g. custom chrome inside the sheet). */
+  hideCloseButton?: boolean;
+};
+
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
-    side?: 'left' | 'right' | 'bottom';
-  }
->(({ side = 'left', className, children, ...props }, ref) => (
+  SheetContentProps
+>(({ side = 'left', className, children, hideCloseButton, ...props }, ref) => (
   <SheetPortal>
     <SheetOverlay />
     <DialogPrimitive.Content
@@ -45,13 +49,15 @@ const SheetContent = React.forwardRef<
       {...props}
     >
       {children}
-      <DialogPrimitive.Close
-        type="button"
-        className="absolute right-3 top-3 z-10 rounded-md p-2 text-muted-foreground opacity-80 ring-offset-background transition-opacity hover:opacity-100 hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:pointer-events-none"
-      >
-        <X className="size-4" />
-        <span className="sr-only">Close</span>
-      </DialogPrimitive.Close>
+      {!hideCloseButton ? (
+        <DialogPrimitive.Close
+          type="button"
+          className="absolute right-3 top-3 z-10 rounded-md p-2 text-muted-foreground opacity-80 ring-offset-background transition-opacity hover:opacity-100 hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:pointer-events-none"
+        >
+          <X className="size-4" />
+          <span className="sr-only">Close</span>
+        </DialogPrimitive.Close>
+      ) : null}
     </DialogPrimitive.Content>
   </SheetPortal>
 ));

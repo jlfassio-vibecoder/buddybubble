@@ -25,35 +25,13 @@ import { useWorkspaceSessionSubject } from '@/context/WorkspaceSessionContext';
 import { useExerciseDictionaryAutocomplete } from '@/hooks/useExerciseDictionaryAutocomplete';
 import { metadataFieldsFromParsed } from '@/lib/item-metadata';
 import type { ExerciseMentionClientPayload } from '@/lib/agents/coach/exercise-mentions';
+import {
+  buildHashExerciseList,
+  exerciseMentionFromHashPick,
+  finalizeExerciseMentionsForSend,
+} from '@/lib/agents/coach/exercise-mentions-client';
 import { parseExecutionPatchFromMetadata, type ExecutionPatch } from '@/types/execution-patch';
 import { scheduleScrollChatThreadToBottom } from '@/lib/chat-thread-auto-scroll';
-
-function normMentionName(s: string): string {
-  return s.trim().toLowerCase();
-}
-
-/** Keep only mentions still in the outgoing text; refresh `workout_exercise_index` from current workout order. */
-function finalizeExerciseMentionsForSend(
-  pending: ExerciseMentionClientPayload[],
-  messageText: string,
-  workoutNames: string[],
-): ExerciseMentionClientPayload[] | null {
-  const names = workoutNames.map((n) => n.trim());
-  const filtered = pending.filter((m) => messageText.includes(m.token));
-  if (filtered.length === 0) return null;
-  return filtered.map((m) => {
-    const idx = names.findIndex((n) => normMentionName(n) === normMentionName(m.name));
-    const row: ExerciseMentionClientPayload = {
-      token: m.token,
-      name: m.name,
-      source: m.source,
-    };
-    if (m.dictionary_id) row.dictionary_id = m.dictionary_id;
-    if (m.dictionary_slug) row.dictionary_slug = m.dictionary_slug;
-    if (idx >= 0) row.workout_exercise_index = idx;
-    return row;
-  });
-}
 
 const CHAT_AREA_DEFAULT_AGENT_SLUG = 'coach';
 /** Persisted on `messages.metadata` for root inserts; `agent-dispatch` reads this key. */
@@ -237,24 +215,11 @@ export function WorkoutCoachRail({
     [workoutData],
   );
 
-  const hashExercises = useMemo((): RichMessageComposerExercise[] => {
-    const seen = new Set<string>();
-    const out: RichMessageComposerExercise[] = [];
-    for (const name of workoutExerciseNameList) {
-      const t = name.trim();
-      const k = t.toLowerCase();
-      if (!k || seen.has(k)) continue;
-      seen.add(k);
-      out.push({ id: `workout:${k}`, name: t });
-    }
-    for (const ex of dictExercises) {
-      const k = ex.name.trim().toLowerCase();
-      if (seen.has(k)) continue;
-      seen.add(k);
-      out.push(ex);
-    }
-    return out;
-  }, [workoutExerciseNameList, dictExercises]);
+  const hashExercises = useMemo(
+    (): RichMessageComposerExercise[] =>
+      buildHashExerciseList(workoutExerciseNameList, dictExercises),
+    [workoutExerciseNameList, dictExercises],
+  );
 
   const buddyMention = useMemo(
     () => availableAgents.find((a) => a.slug === 'buddy')?.mention_handle ?? 'Buddy',
@@ -438,21 +403,7 @@ export function WorkoutCoachRail({
 
   const onExerciseHashInserted = useCallback(
     (ex: RichMessageComposerExercise) => {
-      const names = workoutExerciseNameList.map((n) => n.trim());
-      const isWorkout = ex.id.startsWith('workout:');
-      const name = ex.name.trim();
-      const token = `#${name} `;
-      const idx = names.findIndex((n) => normMentionName(n) === normMentionName(name));
-      const row: ExerciseMentionClientPayload = {
-        token,
-        name,
-        source: isWorkout ? 'workout' : 'dictionary',
-      };
-      if (idx >= 0) row.workout_exercise_index = idx;
-      if (!isWorkout) {
-        if (ex.id) row.dictionary_id = ex.id;
-        if (ex.slug) row.dictionary_slug = ex.slug;
-      }
+      const row = exerciseMentionFromHashPick(ex, workoutExerciseNameList);
       exerciseMentionsPendingRef.current = [...exerciseMentionsPendingRef.current, row];
     },
     [workoutExerciseNameList],

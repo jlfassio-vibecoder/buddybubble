@@ -21,6 +21,7 @@ import { useUserProfileStore, type UserProfileRow } from '@/store/userProfileSto
 import { ChatMessageRow } from '@/components/chat/ChatMessageRow';
 import {
   RichMessageComposer,
+  type RichMessageComposerExercise,
   type RichMessageComposerFeatures,
 } from '@/components/chat/RichMessageComposer';
 import { MESSAGE_ATTACHMENT_FILE_ACCEPT } from '@/lib/message-attachment-limits';
@@ -33,9 +34,25 @@ import { AgentTypingIndicator } from '@/components/chat/AgentTypingIndicator';
 import { logAgentRoutingEvent } from '@/lib/agents/agentRoutingLogger';
 import { useWorkspaceSessionSubject } from '@/context/WorkspaceSessionContext';
 import { BUDDY_SLUG } from '@/lib/agents/buddy/config';
+import { COACH_SLUG } from '@/lib/agents/coach/config';
+import type { ExerciseMentionClientPayload } from '@/lib/agents/coach/exercise-mentions';
+import {
+  buildHashExerciseList,
+  exerciseMentionFromHashPick,
+  finalizeExerciseMentionsForSend,
+} from '@/lib/agents/coach/exercise-mentions-client';
+import type { BlockBlueprintMentionClientPayload } from '@/lib/agents/coach/block-blueprint-mentions';
+import {
+  BLOCK_PICKER_PRESETS,
+  blockBlueprintMentionFromPick,
+  finalizeBlockBlueprintMentionsForSend,
+  type BlockPickerPreset,
+} from '@/lib/agents/coach/block-blueprint-mentions-client';
+import { useExerciseDictionaryAutocomplete } from '@/hooks/useExerciseDictionaryAutocomplete';
 import { useAgentEffectSweep } from '@/components/chat/agent-effects/useAgentEffectSweep';
 import type {
   AgentEffectTelemetryEvent,
+  CardActionEffectPayload,
   ExecutionPatchEffectPayload,
   TaskModalIntakePatchEffectPayload,
 } from '@/components/chat/agent-effects/types';
@@ -52,6 +69,7 @@ const RAIL_FEATURES_DEFAULT: Required<RichMessageComposerFeatures> = {
   enableAtMentions: true,
   enableSlashTaskLinks: false,
   enableExerciseHashMentions: false,
+  enableBlockBlueprintMentions: false,
   enableCreateAndAttachCard: false,
   enableStartLiveWorkout: false,
 };
@@ -127,6 +145,12 @@ export type StandardTaskChatRailProps = {
   onTaskModalIntakePatch?: (ctx: TaskModalIntakePatchEffectPayload) => void;
 
   /**
+   * Coach `metadata.card_action` — parsed UI command (e.g. trigger workout generation).
+   * Host owns cross-mount dedupe beyond a single sweep.
+   */
+  onCardAction?: (ctx: CardActionEffectPayload) => void;
+
+  /**
    * Pure telemetry for agent-effect parsing / application. Host may forward to `logAgentRoutingEvent`.
    * The rail does not import the logger for these events (host wires logging).
    */
@@ -143,6 +167,15 @@ export type StandardTaskChatRailProps = {
     content: string;
     files: File[];
   }) => Record<string, Json> | null | undefined;
+
+  /** Canonical exercise names on the open canvas; used for `#` picker and index hints. */
+  workoutExerciseNames?: string[];
+
+  /** When true, enable `#` picker and `metadata.exercise_mentions` on send (workout / workout_log). */
+  enableExerciseHashMentions?: boolean;
+
+  /** When true, enable `:` block blueprint picker and `metadata.block_blueprint_mentions` on send. */
+  enableBlockBlueprintMentions?: boolean;
 
   className?: string;
 };
@@ -289,6 +322,7 @@ function useRailThreadApi(props: StandardTaskChatRailProps): RailThreadApi {
     agentsByAuthUserId,
     onExecutionPatch: props.onExecutionPatch,
     onTaskModalIntakePatch: props.onTaskModalIntakePatch,
+    onCardAction: props.onCardAction,
     onEffectTelemetry: props.onEffectTelemetry,
   });
 
@@ -341,6 +375,12 @@ function useRailThreadApi(props: StandardTaskChatRailProps): RailThreadApi {
   const mergedFeatures: Required<RichMessageComposerFeatures> = {
     ...RAIL_FEATURES_DEFAULT,
     ...overrideFeatures,
+    enableExerciseHashMentions:
+      (props.enableExerciseHashMentions ?? false) ||
+      overrideFeatures?.enableExerciseHashMentions === true,
+    enableBlockBlueprintMentions:
+      (props.enableBlockBlueprintMentions ?? false) ||
+      overrideFeatures?.enableBlockBlueprintMentions === true,
   };
 
   const bubbleIdForTelemetry: string | null = bubbleId?.trim() || null;
@@ -406,6 +446,63 @@ function StandardTaskChatRailChrome({
 
   const contextDefaultAgentSlug = resolvedDefaultSlug;
   const composerShellRef = useRef<HTMLDivElement>(null);
+  const exerciseMentionsPendingRef = useRef<ExerciseMentionClientPayload[]>([]);
+  const blockBlueprintMentionsPendingRef = useRef<BlockBlueprintMentionClientPayload[]>([]);
+  const workoutExerciseNames = props.workoutExerciseNames ?? [];
+
+  const {
+    rows: dictExercises,
+    loading: exerciseDictionaryLoading,
+    error: exerciseDictionaryError,
+  } = useExerciseDictionaryAutocomplete();
+
+  const hashExercises = useMemo(
+    (): RichMessageComposerExercise[] => buildHashExerciseList(workoutExerciseNames, dictExercises),
+    [workoutExerciseNames, dictExercises],
+  );
+
+  useEffect(() => {
+    exerciseMentionsPendingRef.current = [];
+    blockBlueprintMentionsPendingRef.current = [];
+  }, [props.taskId]);
+
+  const coachHashMentionsEnabled =
+    mergedFeatures.enableExerciseHashMentions && resolvedDefaultSlug === COACH_SLUG;
+
+  const coachBlockBlueprintMentionsEnabled =
+    mergedFeatures.enableBlockBlueprintMentions && resolvedDefaultSlug === COACH_SLUG;
+
+  const onExerciseHashInserted = useCallback(
+    (ex: RichMessageComposerExercise) => {
+      const row = exerciseMentionFromHashPick(ex, workoutExerciseNames);
+      exerciseMentionsPendingRef.current = [...exerciseMentionsPendingRef.current, row];
+    },
+    [workoutExerciseNames],
+  );
+
+  const onBlockBlueprintInserted = useCallback((preset: BlockPickerPreset) => {
+    const row = blockBlueprintMentionFromPick(preset);
+    blockBlueprintMentionsPendingRef.current = [...blockBlueprintMentionsPendingRef.current, row];
+  }, []);
+
+  const defaultFooterHint =
+    coachHashMentionsEnabled || coachBlockBlueprintMentionsEnabled ? (
+      <>
+        <b>Return</b> to send • <b>Shift + Return</b> for new line • <b>@</b> to mention
+        {coachHashMentionsEnabled ? (
+          <>
+            {' '}
+            • <b>#</b> to tag an exercise
+          </>
+        ) : null}
+        {coachBlockBlueprintMentionsEnabled ? (
+          <>
+            {' '}
+            • <b>:</b> for block format (AMRAP, EMOM…)
+          </>
+        ) : null}
+      </>
+    ) : undefined;
 
   const handleSubmitIntent = useCallback(() => {
     const result = resolveTargetAgent({
@@ -451,10 +548,31 @@ function StandardTaskChatRailChrome({
         ...(slug && slug.length > 0 ? { default_agent_slug: slug } : {}),
       };
       const mergedMeta: Record<string, Json> = { ...hostObj, ...railOwnedMeta };
+      if (coachHashMentionsEnabled) {
+        const exerciseMentions = finalizeExerciseMentionsForSend(
+          exerciseMentionsPendingRef.current,
+          text,
+          workoutExerciseNames,
+        );
+        if (exerciseMentions && exerciseMentions.length > 0) {
+          mergedMeta.exercise_mentions = exerciseMentions as unknown as Json;
+        }
+      }
+      if (coachBlockBlueprintMentionsEnabled) {
+        const blockMentions = finalizeBlockBlueprintMentionsForSend(
+          blockBlueprintMentionsPendingRef.current,
+          text,
+        );
+        if (blockMentions && blockMentions.length > 0) {
+          mergedMeta.block_blueprint_mentions = blockMentions as unknown as Json;
+        }
+      }
       const metadata: Json | undefined =
         Object.keys(mergedMeta).length > 0 ? (mergedMeta as Json) : undefined;
       const sent = await sendMessage(text, undefined, files, metadata ? { metadata } : undefined);
       if (!sent) return false;
+      exerciseMentionsPendingRef.current = [];
+      blockBlueprintMentionsPendingRef.current = [];
       setDraft('');
       setPendingFiles([]);
       if (routingResult && waitMain) {
@@ -466,12 +584,15 @@ function StandardTaskChatRailChrome({
       availableAgents,
       contextDefaultAgentSlug,
       props.buildOutgoingMessageMetadata,
+      coachHashMentionsEnabled,
+      coachBlockBlueprintMentionsEnabled,
       resolvedDefaultSlug,
       sendMessage,
       sending,
       setDraft,
       setPendingFiles,
       waitMain,
+      workoutExerciseNames,
     ],
   );
 
@@ -558,7 +679,24 @@ function StandardTaskChatRailChrome({
             members: api.teamMembers.map((m) => ({ id: m.id, name: m.name, email: m.email })),
           }}
           slashConfig={{ tasks: [] }}
+          hashConfig={
+            coachHashMentionsEnabled
+              ? {
+                  exercises: hashExercises,
+                  isLoading: exerciseDictionaryLoading,
+                  errorText: exerciseDictionaryError,
+                }
+              : undefined
+          }
+          onExerciseHashInserted={coachHashMentionsEnabled ? onExerciseHashInserted : undefined}
+          blockConfig={
+            coachBlockBlueprintMentionsEnabled ? { presets: BLOCK_PICKER_PRESETS } : undefined
+          }
+          onBlockBlueprintInserted={
+            coachBlockBlueprintMentionsEnabled ? onBlockBlueprintInserted : undefined
+          }
           features={mergedFeatures}
+          footerHint={restComposerOverrides.footerHint ?? defaultFooterHint}
           {...restComposerOverrides}
         />
       </div>

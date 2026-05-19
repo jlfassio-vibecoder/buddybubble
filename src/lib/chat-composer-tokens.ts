@@ -9,6 +9,18 @@ export function lastTaskMentionSlashIndex(s: string): number {
   return -1;
 }
 
+/** Rightmost `:` that starts a `:block` token (after start or whitespace), not `:` in e.g. `10:30`. */
+export function lastBlockColonIndex(s: string): number {
+  for (let i = s.length - 1; i >= 0; i--) {
+    if (s[i] !== ':') continue;
+    if (i === 0) return 0;
+    const before = s[i - 1];
+    if (before === ' ' || before === '\n' || before === '\r' || before === '\t') return i;
+    if (/\d/.test(before)) continue;
+  }
+  return -1;
+}
+
 /** Rightmost `#` that starts a `#exercise` token (after start or whitespace), not `#` inside e.g. `foo#bar`. */
 export function lastExerciseHashIndex(s: string): number {
   for (let i = s.length - 1; i >= 0; i--) {
@@ -50,10 +62,28 @@ export function parseHashTriggerQuery(textBeforeCursor: string): {
   return { start: lastHash, searchQuery, rawQuery };
 }
 
+/**
+ * Active `:` token: single-token filter on section and/or format (e.g. `finisher`, `amrap`, `finisher/amrap`).
+ * No spaces inside the token.
+ */
+export function parseBlockTriggerQuery(textBeforeCursor: string): {
+  start: number;
+  query: string;
+} | null {
+  const lastColon = lastBlockColonIndex(textBeforeCursor);
+  if (lastColon < 0) return null;
+  let rawQuery = textBeforeCursor.slice(lastColon + 1);
+  const nl = rawQuery.indexOf('\n');
+  if (nl !== -1) rawQuery = rawQuery.slice(0, nl);
+  if (rawQuery.includes(' ')) return null;
+  return { start: lastColon, query: rawQuery };
+}
+
 export type ActiveComposerTrigger =
   | { kind: 'mention'; start: number; query: string }
   | { kind: 'slash'; start: number; query: string }
-  | { kind: 'hash'; start: number; query: string; rawQuery: string };
+  | { kind: 'hash'; start: number; query: string; rawQuery: string }
+  | { kind: 'block'; start: number; query: string };
 
 /**
  * Among valid @, /, and # triggers in `textBeforeCursor`, returns the one whose start index is
@@ -66,6 +96,7 @@ export function resolveActiveComposerTrigger(
     enableAt: boolean;
     enableSlash: boolean;
     enableHash: boolean;
+    enableBlock?: boolean;
   },
 ): ActiveComposerTrigger | null {
   const candidates: ActiveComposerTrigger[] = [];
@@ -101,6 +132,17 @@ export function resolveActiveComposerTrigger(
         start: parsed.start,
         query: parsed.searchQuery,
         rawQuery: parsed.rawQuery,
+      });
+    }
+  }
+
+  if (opts.enableBlock) {
+    const parsed = parseBlockTriggerQuery(textBeforeCursor);
+    if (parsed) {
+      candidates.push({
+        kind: 'block',
+        start: parsed.start,
+        query: parsed.query,
       });
     }
   }

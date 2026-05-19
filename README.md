@@ -79,6 +79,7 @@ The table below lists **what the codebase implements**—mapped where it helps t
 
 ## Key architecture
 
+- **AI-native (PCC)** — [Persona–Context–Canvas manifesto](docs/architecture/pcc-manifesto.md): parametric Canvas state, Rails as intent pipes, Personas constrained by validated JSON—not prose in chat.
 - **Multi-tenant “community graph”** — Each **Social Space** / **BuddyBubble** is stored as a `**workspaces`** row and holds many **Bubbles**; each bubble has **messages** (chat) and **tasks** (Bubbleboard cards). `workspace_members` carries who belongs to that Social Space; `bubble_members` can narrow who sees or edits a given bubble. Types in `src/types/database.ts` match **RLS\*\*-oriented Supabase migrations under `supabase/migrations/`.
 - **Next.js App Router** — Route groups such as `(dashboard)` wrap authenticated app pages; `src/app/(dashboard)/app/[workspace_id]/layout.tsx` verifies membership and renders `DashboardShell`.
 - **Supabase session handling** — `middleware.ts` calls `updateSession` from `utils/supabase/middleware.ts` (cookie-backed `createServerClient` from `@supabase/ssr`). Invite paths also set `**bb_invite_token`\*\* for downstream onboarding.

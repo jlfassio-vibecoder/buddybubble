@@ -57,6 +57,8 @@ export type BuildDispatchContextInput = {
    * From `readDispatcherEnv().COACH_MERGE_WORKOUT_METADATA`.
    */
   coachMergeWorkoutMetadata?: boolean;
+  /** From `readDispatcherEnv().COACH_CARD_ACTIONS`. */
+  coachCardActions?: boolean;
 };
 
 /**
@@ -85,6 +87,7 @@ export async function buildDispatchContext(
     llmTimeoutMs,
     historyLimit,
     coachMergeWorkoutMetadata,
+    coachCardActions,
   } = input;
   const threadId = message.parent_id ?? message.id;
 
@@ -159,6 +162,7 @@ export async function buildDispatchContext(
     history,
     signal: AbortSignal.timeout(llmTimeoutMs),
     coachMergeWorkoutMetadata,
+    coachCardActions,
     extras: {},
   };
 }

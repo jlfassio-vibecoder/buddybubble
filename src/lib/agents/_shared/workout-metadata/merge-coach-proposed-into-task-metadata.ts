@@ -19,6 +19,8 @@ export type MergeLog = {
   touched: Array<'warmup' | 'exerciseBlocks' | 'finisher' | 'cooldown'>;
   exerciseCount: number;
   drops: MergeLogDrop[];
+  /** Phase 11.2: per-block formats actually written to exerciseBlocks. */
+  blockFormats: string[];
 };
 
 export type MergeResult = {
@@ -64,6 +66,32 @@ function nextInstructionOrder(arr: Array<Record<string, unknown>>): number {
     if (o > max) max = o;
   }
   return max + 1;
+}
+
+function positiveMergeInt(v: unknown): number | null {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return null;
+  const n = Math.round(v);
+  return n > 0 ? n : null;
+}
+
+/**
+ * Propagate Tabata block format_params to each factory exercise row for viewer/player.
+ * Always clears sets/reps on Tabata rows so the player uses interval timers (not straight-set UI).
+ */
+function hydrateTabataExercisesFromFormatParams(
+  mappedInner: Record<string, unknown>[],
+  normalizedParams: Record<string, unknown>,
+): void {
+  const rounds = positiveMergeInt(normalizedParams.rounds);
+  const work = positiveMergeInt(normalizedParams.work_seconds);
+  const rest = positiveMergeInt(normalizedParams.rest_seconds);
+  for (const ex of mappedInner) {
+    if (rounds != null && typeof ex.rounds !== 'number') ex.rounds = rounds;
+    if (work != null && typeof ex.workSeconds !== 'number') ex.workSeconds = work;
+    if (rest != null && typeof ex.restSeconds !== 'number') ex.restSeconds = rest;
+    delete ex.sets;
+    ex.reps = '';
+  }
 }
 
 function proposedExerciseToFactoryExercise(
@@ -204,6 +232,11 @@ function instructionBlockExists(
   );
 }
 
+function blockIsParametric(block: Record<string, unknown>): boolean {
+  const f = block.block_format;
+  return typeof f === 'string' && f.length > 0;
+}
+
 function parseInstructionsField(raw: unknown): string[] | null {
   if (raw == null) return null;
   if (Array.isArray(raw)) {
@@ -340,6 +373,44 @@ function mergeRichBlocks(
       name: blockName,
       exercises: mappedInner,
     };
+    const rawFormat = typeof bRaw.block_format === 'string' ? bRaw.block_format.trim() : '';
+    let normalizedParams: Record<string, unknown> | null = null;
+    if (rawFormat) {
+      newBlock.blockFormat = rawFormat;
+      log.blockFormats.push(rawFormat);
+      if (
+        bRaw.format_params &&
+        typeof bRaw.format_params === 'object' &&
+        !Array.isArray(bRaw.format_params)
+      ) {
+        normalizedParams = JSON.parse(JSON.stringify(bRaw.format_params)) as Record<
+          string,
+          unknown
+        >;
+        newBlock.formatParams = normalizedParams;
+      }
+    }
+    if (rawFormat === 'emom' && normalizedParams) {
+      const interval =
+        typeof normalizedParams.interval_seconds === 'number'
+          ? normalizedParams.interval_seconds
+          : null;
+      const restInInterval =
+        typeof normalizedParams.rest_in_interval_seconds === 'number'
+          ? normalizedParams.rest_in_interval_seconds
+          : 0;
+      if (interval && interval > 0) {
+        const derivedWork = Math.max(0, interval - Math.max(0, restInInterval));
+        const derivedRest = Math.max(0, restInInterval);
+        for (const ex of mappedInner) {
+          if (typeof ex.workSeconds !== 'number') ex.workSeconds = derivedWork;
+          if (typeof ex.restSeconds !== 'number') ex.restSeconds = derivedRest;
+        }
+      }
+    }
+    if (rawFormat === 'tabata' && normalizedParams) {
+      hydrateTabataExercisesFromFormatParams(mappedInner, normalizedParams);
+    }
     const dup = exerciseBlocks.some((eb) => exerciseBlocksDeepEqual(eb, newBlock));
     if (dup) {
       log.drops.push({ field: `blocks:${blockName}`, reason: 'exercise_block_already_present' });
@@ -364,9 +435,22 @@ function mergeRichFlatExercises(
 
 function mergeIntoFlat(
   next: Record<string, unknown>,
-  proposed: Record<string, unknown>,
+  proposedIn: Record<string, unknown>,
   log: MergeLog,
 ): void {
+  let proposed = proposedIn;
+  if (Array.isArray(proposed.blocks) && proposed.blocks.length > 0) {
+    const filtered: unknown[] = [];
+    for (let i = 0; i < proposed.blocks.length; i++) {
+      const b = proposed.blocks[i];
+      if (isPlainObject(b) && blockIsParametric(b)) {
+        log.drops.push({ field: `blocks[${i}]`, reason: 'parametric_requires_rich_workout_set' });
+        continue;
+      }
+      filtered.push(b);
+    }
+    proposed = { ...proposed, blocks: filtered };
+  }
   mergeProposedScalars(next, proposed, log);
 
   const blocksRaw = proposed.blocks;
@@ -499,6 +583,7 @@ export function mergeCoachProposedIntoTaskMetadata(input: MergeInput): MergeResu
         touched: [],
         exerciseCount,
         drops: [],
+        blockFormats: [],
       },
     };
   }
@@ -509,6 +594,7 @@ export function mergeCoachProposedIntoTaskMetadata(input: MergeInput): MergeResu
     touched: [],
     exerciseCount: 0,
     drops: [],
+    blockFormats: [],
   };
 
   if (rich) mergeIntoRich(next, proposed!, log);

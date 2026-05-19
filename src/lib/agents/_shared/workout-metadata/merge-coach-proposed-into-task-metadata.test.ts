@@ -175,6 +175,8 @@ describe('mergeCoachProposedIntoTaskMetadata', () => {
     expect(b.mergeLog.touched).toEqual([]);
     expect(a.mergeLog.drops).toEqual([]);
     expect(b.mergeLog.drops).toEqual([]);
+    expect(a.mergeLog.blockFormats).toEqual([]);
+    expect(b.mergeLog.blockFormats).toEqual([]);
     expect(a.metadata).toEqual(base);
     expect(b.metadata).toEqual(base);
   });
@@ -235,6 +237,260 @@ describe('mergeCoachProposedIntoTaskMetadata', () => {
       cooldownBlocks: Array<{ exerciseName: string }>;
     };
     expect(session.cooldownBlocks.some((c) => c.exerciseName === 'Mobility flow')).toBe(true);
+  });
+
+  it('11 — parametric AMRAP block maps blockFormat and formatParams', () => {
+    const base = richBaseFixture();
+    const { metadata, mergeLog } = mergeCoachProposedIntoTaskMetadata({
+      base,
+      proposed: {
+        blocks: [
+          {
+            name: 'Finisher',
+            block_format: 'amrap',
+            format_params: { time_cap_minutes: 5 },
+            exercises: [{ name: 'Burpees', sets: 1, reps: 'max' }],
+          },
+        ],
+      },
+    });
+    const session = (metadata as { ai_workout_factory: { workout_set: { workouts: unknown[] } } })
+      .ai_workout_factory.workout_set.workouts[0] as {
+      exerciseBlocks: Array<Record<string, unknown>>;
+    };
+    const finisher = session.exerciseBlocks.find((b) => b.name === 'Finisher');
+    expect(finisher?.blockFormat).toBe('amrap');
+    expect(finisher?.formatParams).toEqual({ time_cap_minutes: 5 });
+    expect(finisher).not.toHaveProperty('block_format');
+    expect(finisher).not.toHaveProperty('format_params');
+    expect(mergeLog.blockFormats).toContain('amrap');
+  });
+
+  it('12 — EMOM derives workSeconds and restSeconds from format_params', () => {
+    const base = richBaseFixture();
+    const { metadata } = mergeCoachProposedIntoTaskMetadata({
+      base,
+      proposed: {
+        blocks: [
+          {
+            name: 'Main',
+            block_format: 'emom',
+            format_params: {
+              interval_seconds: 60,
+              total_minutes: 16,
+              rest_in_interval_seconds: 15,
+            },
+            exercises: [{ name: 'Kettlebell Swing', reps: '12' }],
+          },
+        ],
+      },
+    });
+    const session = (metadata as { ai_workout_factory: { workout_set: { workouts: unknown[] } } })
+      .ai_workout_factory.workout_set.workouts[0] as {
+      exerciseBlocks: Array<{ exercises?: Array<Record<string, unknown>> }>;
+    };
+    const main = session.exerciseBlocks.find((b) =>
+      b.exercises?.some((e) => e.exerciseName === 'Kettlebell Swing'),
+    );
+    const ex = main?.exercises?.find((e) => e.exerciseName === 'Kettlebell Swing');
+    expect(ex?.workSeconds).toBe(45);
+    expect(ex?.restSeconds).toBe(15);
+  });
+
+  it('13 — EMOM honors model-emitted per-exercise timers', () => {
+    const base = richBaseFixture();
+    const { metadata } = mergeCoachProposedIntoTaskMetadata({
+      base,
+      proposed: {
+        blocks: [
+          {
+            name: 'Main',
+            block_format: 'emom',
+            format_params: { interval_seconds: 60, total_minutes: 10 },
+            exercises: [{ name: 'Deadlift', work_seconds: 30, rest_seconds: 30 }],
+          },
+        ],
+      },
+    });
+    const session = (metadata as { ai_workout_factory: { workout_set: { workouts: unknown[] } } })
+      .ai_workout_factory.workout_set.workouts[0] as {
+      exerciseBlocks: Array<{ exercises?: Array<Record<string, unknown>> }>;
+    };
+    const block = session.exerciseBlocks.find((b) =>
+      b.exercises?.some((e) => e.exerciseName === 'Deadlift'),
+    );
+    const ex = block?.exercises?.find((e) => e.exerciseName === 'Deadlift');
+    expect(ex?.workSeconds).toBe(30);
+    expect(ex?.restSeconds).toBe(30);
+  });
+
+  it('14 — EMOM without rest_in_interval_seconds uses full interval as work', () => {
+    const base = richBaseFixture();
+    const { metadata } = mergeCoachProposedIntoTaskMetadata({
+      base,
+      proposed: {
+        blocks: [
+          {
+            name: 'Main',
+            block_format: 'emom',
+            format_params: { interval_seconds: 60, total_minutes: 8 },
+            exercises: [{ name: 'Push Press' }],
+          },
+        ],
+      },
+    });
+    const session = (metadata as { ai_workout_factory: { workout_set: { workouts: unknown[] } } })
+      .ai_workout_factory.workout_set.workouts[0] as {
+      exerciseBlocks: Array<{ exercises?: Array<Record<string, unknown>> }>;
+    };
+    const block = session.exerciseBlocks.find((b) =>
+      b.exercises?.some((e) => e.exerciseName === 'Push Press'),
+    );
+    const ex = block?.exercises?.find((e) => e.exerciseName === 'Push Press');
+    expect(ex?.workSeconds).toBe(60);
+    expect(ex?.restSeconds).toBe(0);
+  });
+
+  it('15 — Tabata block hydrates format_params onto each exercise row', () => {
+    const base = richBaseFixture();
+    const { metadata } = mergeCoachProposedIntoTaskMetadata({
+      base,
+      proposed: {
+        blocks: [
+          {
+            name: 'Finisher',
+            block_format: 'tabata',
+            format_params: { rounds: 8, work_seconds: 20, rest_seconds: 10 },
+            exercises: [{ name: 'Bike Sprint', sets: 1, reps: 'max' }],
+          },
+        ],
+      },
+    });
+    const session = (metadata as { ai_workout_factory: { workout_set: { workouts: unknown[] } } })
+      .ai_workout_factory.workout_set.workouts[0] as {
+      exerciseBlocks: Array<Record<string, unknown>>;
+    };
+    const block = session.exerciseBlocks.find((b) => b.name === 'Finisher');
+    expect(block?.blockFormat).toBe('tabata');
+    expect(block?.formatParams).toEqual({ rounds: 8, work_seconds: 20, rest_seconds: 10 });
+    const ex = (block?.exercises as Array<Record<string, unknown>>)?.[0];
+    expect(ex?.workSeconds).toBe(20);
+    expect(ex?.restSeconds).toBe(10);
+    expect(ex?.rounds).toBe(8);
+    expect(ex?.sets).toBeUndefined();
+    expect(ex?.reps).toBe('');
+  });
+
+  it('15b — Tabata hydrates every exercise in a multi-movement block', () => {
+    const base = richBaseFixture();
+    const { metadata } = mergeCoachProposedIntoTaskMetadata({
+      base,
+      proposed: {
+        blocks: [
+          {
+            name: 'Finisher',
+            block_format: 'tabata',
+            format_params: { rounds: 8, work_seconds: 20, rest_seconds: 10 },
+            exercises: [
+              { name: 'Broad Jumps', sets: 1, reps: 'max' },
+              { name: 'Jump Squats', sets: 1, reps: 'max' },
+            ],
+          },
+        ],
+      },
+    });
+    const session = (metadata as { ai_workout_factory: { workout_set: { workouts: unknown[] } } })
+      .ai_workout_factory.workout_set.workouts[0] as {
+      exerciseBlocks: Array<Record<string, unknown>>;
+    };
+    const exercises =
+      (session.exerciseBlocks.find((b) => b.name === 'Finisher')?.exercises as
+        | Array<Record<string, unknown>>
+        | undefined) ?? [];
+    expect(exercises).toHaveLength(2);
+    for (const ex of exercises) {
+      expect(ex.workSeconds).toBe(20);
+      expect(ex.restSeconds).toBe(10);
+      expect(ex.rounds).toBe(8);
+      expect(ex.sets).toBeUndefined();
+      expect(ex.reps).toBe('');
+    }
+  });
+
+  it('16 — instruction-only blocks do not populate blockFormats', () => {
+    const base = richBaseFixture();
+    const { mergeLog } = mergeCoachProposedIntoTaskMetadata({
+      base,
+      proposed: {
+        blocks: [{ name: 'Mobility flow', instructions: ['Hip circles'] }],
+      },
+    });
+    expect(mergeLog.blockFormats).toEqual([]);
+  });
+
+  it('17 — flat card refuses parametric blocks', () => {
+    const base = { exercises: [{ name: 'Old', sets: 1, reps: '1' }] };
+    const { metadata, mergeLog } = mergeCoachProposedIntoTaskMetadata({
+      base,
+      proposed: {
+        blocks: [
+          {
+            name: 'Main',
+            block_format: 'amrap',
+            format_params: { time_cap_minutes: 5 },
+            exercises: [{ name: 'Burpees' }],
+          },
+        ],
+      },
+    });
+    expect(mergeLog.target).toBe('flat');
+    expect(mergeLog.drops).toContainEqual({
+      field: 'blocks[0]',
+      reason: 'parametric_requires_rich_workout_set',
+    });
+    expect((metadata as { exercises: Array<{ name: string }> }).exercises).toEqual([
+      { name: 'Old', sets: 1, reps: '1' },
+    ]);
+  });
+
+  it('18 — flat card refusal preserves workout_type and duration_min', () => {
+    const base = { exercises: [] as unknown[] };
+    const { metadata, mergeLog } = mergeCoachProposedIntoTaskMetadata({
+      base,
+      proposed: {
+        workout_type: 'AMRAP',
+        duration_min: 30,
+        blocks: [
+          {
+            name: 'Main',
+            block_format: 'amrap',
+            format_params: { time_cap_minutes: 5 },
+            exercises: [{ name: 'Burpees' }],
+          },
+        ],
+      },
+    });
+    expect((metadata as { workout_type: string }).workout_type).toBe('AMRAP');
+    expect((metadata as { duration_min: number }).duration_min).toBe(30);
+    expect(mergeLog.drops.some((d) => d.reason === 'parametric_requires_rich_workout_set')).toBe(
+      true,
+    );
+  });
+
+  it('19 — flat card allows instruction-only blocks without parametric drop', () => {
+    const base = { exercises: [{ name: 'Old', sets: 1, reps: '1' }] };
+    const { metadata, mergeLog } = mergeCoachProposedIntoTaskMetadata({
+      base,
+      proposed: {
+        blocks: [{ name: 'Cool down', instructions: ['Walk 2 min easy'] }],
+      },
+    });
+    expect(mergeLog.drops.some((d) => d.reason === 'parametric_requires_rich_workout_set')).toBe(
+      false,
+    );
+    expect((metadata as { exercises: Array<{ name: string }> }).exercises).toEqual([
+      { name: 'Old', sets: 1, reps: '1' },
+    ]);
   });
 
   it('10 — idempotent: second merge equals first for Finisher block', () => {

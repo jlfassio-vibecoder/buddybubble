@@ -132,14 +132,16 @@ The bar uses **`pb-[env(safe-area-inset-bottom,0px)]`** plus **`h-[var(--mobile-
 
 ### 3.3 `MobileSidebarSheet.tsx`
 
-A left-edge **off-canvas drawer** that wraps **[`MobileWorkspaceStrip`](../../src/components/layout/MobileWorkspaceStrip.tsx)** + **[`BubbleSidebar`](../../src/components/dashboard/bubble-sidebar.tsx)** (not the desktop `WorkspaceRail`) so the user can switch BuddyBubble or bubble without leaving the active tab.
+A left-edge **off-canvas drawer** that wraps **[`MobileWorkspaceStrip`](../../src/components/layout/MobileWorkspaceStrip.tsx)** + **[`BubbleSidebar`](../../src/components/dashboard/bubble-sidebar.tsx)** (not the desktop `WorkspaceRail`) so the user can switch BuddyBubble or bubble without leaving the active tab. Known issues and fix status: [`social-space-drawer-ui-issues.md`](./social-space-drawer-ui-issues.md).
 
-The inner content wrapper is **`flex-col`** with **`pt-[max(3rem,env(safe-area-inset-top))]`** and **`pb-[env(safe-area-inset-bottom,0px)]`** so Radix’s close control and iOS safe areas clear correctly.
+The inner content wrapper is **`flex-col`** with safe-area padding only (`pt-[env(safe-area-inset-top)]`, `pb-[env(safe-area-inset-bottom)]`). Close lives in the rail header; swipe gestures use **vaul** (see below).
 
 Key points:
 
-- Width is **`min(100vw - 0.5rem, 24rem)`** — full screen on the smallest phones, capped at 24 rem on larger phones/tablets.
-- **`BubbleSidebar`** in the drawer uses **`hideWorkspaceTitle`** and **`isMobileDrawerMode`** with `hideSidebarCollapseButton: true` where applicable — the drawer closes via the overlay/escape, not via collapse chevrons.
+- Width is **`w-full max-w-none`** — full viewport on mobile (no dimmed sliver).
+- **Open:** Menu tab, or swipe right from the left edge via [`MobileEdgeSwipeOpener`](../../src/components/layout/MobileEdgeSwipeOpener.tsx) (18px strip; `--mobile-header-h` / `--mobile-tab-bar-h` on the shell).
+- **Close:** rail header ×, overlay, Escape, or swipe left on the drawer (**vaul** `direction="left"`).
+- **`BubbleSidebar`** in the drawer uses **`hideWorkspaceTitle`** and **`isMobileDrawerMode`** with `hideSidebarCollapseButton: true` where applicable — the drawer closes via the overlay/escape/swipe, not via collapse chevrons.
 
 - Selecting a bubble inside the drawer **closes the drawer** and, on narrow viewports, calls **`mobileShell.setTab('chat')`** (same URL writer as the tab bar).
 
@@ -390,7 +392,7 @@ The drawer open flag comes from **`useMobileShellState()`** (same provider as th
 
 - `MobileHeader` uses a real `<header>` and a single `<h1>`; the current screen identity is the BuddyBubble title.
 - `MobileTabBar` uses `<nav aria-label="Primary socialspace views">`. Each tab is a `<button>`; the menu opener is a `<button>` (not a tab — it never receives `aria-current`). The active tab uses color/weight, not just color, to indicate state (`stroke-[2.25px]` on the icon plus `text-primary`).
-- `MobileSidebarSheet` uses Radix Dialog (`Sheet`); the `SheetTitle` is `sr-only` because the rail headers inside provide visible labels. The drawer is dismissible by overlay click, escape, and (on iOS) swipe — all from Radix defaults.
+- `MobileSidebarSheet` uses **vaul** (`Drawer` with `direction="left"`); the `Drawer.Title` is `sr-only` because the rail headers inside provide visible labels. Dismiss by overlay, Escape, rail close, or **swipe left on the drawer** (vaul). Open from the left edge via `MobileEdgeSwipeOpener` (not Radix Sheet defaults). Other surfaces still use [`sheet.tsx`](../../src/components/ui/sheet.tsx).
 - `pb-[env(safe-area-inset-bottom,0px)]` on the tab bar and the body container respects iOS home-indicator safe areas. The task modal's tab bar pads its bottom the same way.
 - The kanban swipe-snap region hides its scrollbar (`[scrollbar-width:none]`) but remains keyboard-scrollable because the underlying element is a normal scroll container.
 
