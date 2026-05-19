@@ -242,7 +242,7 @@ describe('mobile chrome smoke', () => {
         />
       </ThemeScope>,
     );
-    expect(screen.getByRole('heading', { name: 'Bubbles' }).textContent).toBe('Channels');
+    expect(screen.getByRole('heading', { name: 'Channels' })).toBeTruthy();
     const form = screen.getByPlaceholderText('New bubble').closest('form');
     expect(form?.className).toMatch(/flex-col/);
     expect(form?.querySelector('button[type="submit"]')?.className).toMatch(/w-full/);
