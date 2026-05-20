@@ -263,7 +263,7 @@ The dashboard's children also adapt without needing the `layoutMobile` flag, by 
 ### 5.3 Chat (`src/components/chat/ChatArea.tsx`)
 
 - The **"Collapse Messages" button** in the chat header is `max-md:hidden`. Mobile users use the bottom tab bar instead of collapsing the chat into a strip.
-- The composer (`RichMessageComposer`), thread panel, and feed cards are otherwise the same components used on desktop; they rely on their own internal responsive sizing.
+- On narrow viewports, **threads** use [`MobileThreadSheet`](../../src/components/layout/MobileThreadSheet.tsx) (vaul `direction="right"`, full width) with URL state **`?thread={messageId}`** (`router.push` on open, `router.back()` on close when opened via push). Desktop keeps the side-by-side `w-80` column. See [`chat-area-thread-assessment.md`](./chat-area-thread-assessment.md).
 
 ### 5.4 Task modal (`src/components/modals/TaskModal.tsx`)
 

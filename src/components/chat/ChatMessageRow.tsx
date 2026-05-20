@@ -179,7 +179,7 @@ export function ChatMessageRow({
           ) : (
             <button
               onClick={() => onOpenThread(message)}
-              className="mt-1 opacity-0 group-hover:opacity-100 flex items-center gap-1 text-[10px] font-bold text-muted-foreground hover:text-primary transition-all"
+              className="mt-1 flex items-center gap-1 text-[10px] font-bold text-muted-foreground opacity-0 transition-all group-hover:opacity-100 max-md:opacity-100 hover:text-primary"
             >
               <MessageSquare className="w-3 h-3" />
               Reply in thread
