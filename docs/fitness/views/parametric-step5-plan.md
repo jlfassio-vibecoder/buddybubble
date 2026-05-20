@@ -1,8 +1,10 @@
 # Parametric Workout Blocks — Step 5 (Block-Aware Edit & Metadata Sync)
 
-**Status:** Planning only — no React changes in this pass.
+**Status:** In progress — **M0**, **M1**, and **M3** shipped; **M2** (viewer Apply wiring) next.
 
-**Prerequisites:** [parametric-step4-plan.md](./parametric-step4-plan.md) M0–M1 shipped (shared read renderer + core viewer wiring).
+**Prerequisites:** [parametric-step4-plan.md](./parametric-step4-plan.md) M0–M4 shipped (shared read renderer + read parity).
+
+**M1 + M3 milestone doc:** [parametric-step5-m1-m3-plan.md](./parametric-step5-m1-m3-plan.md)
 
 **Related:** [Workout UI landscape audit](./README.md) · [parametric-step1-2-plan.md](./parametric-step1-2-plan.md) (data contract) · [layout-shell-architecture.md](./layout-shell-architecture.md)
 
@@ -125,6 +127,8 @@ flowchart TB
 
 ## Milestone 1 — Block edit foundation
 
+**Status:** Shipped — see [parametric-step5-m1-m3-plan.md](./parametric-step5-m1-m3-plan.md).
+
 **Goal:** Shared edit orchestrator exists; tests green; not wired to viewer yet.
 
 ### New modules
@@ -214,6 +218,8 @@ Edit:  localExercises     → WorkoutExercisesEditor   (flat fallback)
 ---
 
 ## Milestone 3 — Metadata write path
+
+**Status:** Shipped — see [parametric-step5-m1-m3-plan.md](./parametric-step5-m1-m3-plan.md).
 
 **Goal:** Apply and Save persist block-aware edits into `ai_workout_factory` without collapsing parametric blocks.
 

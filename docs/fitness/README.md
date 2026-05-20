@@ -72,7 +72,8 @@ Deeper database and RLS behavior live under [supabase/migrations/](../../supabas
 **[views/parametric-step4-m3-plan.md](views/parametric-step4-m3-plan.md)** — Step 4 M3 (shipped): `SessionDeckBuilder` deck summaries, live `UpNextCard`, `buildWorkoutCoachRailContext` for Coach rail / launch payload.  
 **[views/parametric-step4-m2-plan.md](views/parametric-step4-m2-plan.md)** — Step 4 M2 (shipped): `UpNextCard`, `ParticipantPreJoinSummary`, `CoachDraftCard` read parity.  
 **[views/parametric-step4-m1-plan.md](views/parametric-step4-m1-plan.md)** — Step 4 M1 (shipped): shared `WorkoutBlockListRenderer`; core viewers wired to the ViewModel.  
-**[views/parametric-step5-plan.md](views/parametric-step5-plan.md)** — Step 5 (planned): block-aware Edit/Apply; `applyBlockEditsToMetadata`; M0 Apply safety hotfix.
+**[views/parametric-step5-plan.md](views/parametric-step5-plan.md)** — Step 5: M0/M1/M3 shipped; M2 viewer Apply wiring next.  
+**[views/parametric-step5-m1-m3-plan.md](views/parametric-step5-m1-m3-plan.md)** — Step 5 M1 + M3 (shipped): block editor + `applyBlockEditsToMetadata`.
 
 ## Conventions for contributors
 

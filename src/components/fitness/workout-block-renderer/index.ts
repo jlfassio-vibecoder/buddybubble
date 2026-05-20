@@ -27,3 +27,15 @@ export type { WorkoutFlatExerciseLogListProps } from './WorkoutFlatExerciseLogLi
 
 export { WorkoutLogReadSummary } from './WorkoutLogReadSummary';
 export type { WorkoutLogReadSummaryProps } from './WorkoutLogReadSummary';
+
+export { WorkoutBlockListEditor } from './WorkoutBlockListEditor';
+export type { WorkoutBlockListEditorProps } from './WorkoutBlockListEditor';
+export { WorkoutBlockExerciseEditRow } from './WorkoutBlockExerciseEditRow';
+export type { WorkoutBlockExerciseEditRowProps } from './WorkoutBlockExerciseEditRow';
+export { WorkoutInstructionBlockEdit } from './WorkoutInstructionBlockEdit';
+export {
+  blockStationLabel,
+  blockUsesGroupedLayout,
+  updateBlock,
+  updateExerciseInBlock,
+} from './workout-block-editor-types';
