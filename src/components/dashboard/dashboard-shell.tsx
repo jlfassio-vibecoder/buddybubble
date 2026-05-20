@@ -5,6 +5,7 @@ import {
   isValidElement,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -22,7 +23,8 @@ import {
   makeAllBubblesBubbleRow,
   resolveBuddyBubbleDisplayTitle,
 } from '@/lib/all-bubbles';
-import { NARROW_MAX_QUERY } from '@/lib/viewport';
+import { resolveDashboardLayoutCollapse } from '@/lib/dashboard-layout-collapse';
+import { NARROW_MAX_QUERY, readIsNarrowBelowMd } from '@/lib/viewport';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { WorkspaceRail } from '@/components/layout/WorkspaceRail';
 import { BubbleSidebar } from './bubble-sidebar';
@@ -337,7 +339,8 @@ function DashboardShellInner({
   const [kanbanCollapsed, setKanbanCollapsedState] = useState(false);
   const [calendarCollapsed, setCalendarCollapsedState] = useState(false);
   const [taskViewsNonce, setTaskViewsNonce] = useState(0);
-  const [layoutHydrated, setLayoutHydrated] = useState(false);
+  const [layoutHydratedWorkspaceId, setLayoutHydratedWorkspaceId] = useState<string | null>(null);
+  const layoutHydrated = layoutHydratedWorkspaceId === workspaceId;
   /** Bumped when the calendar is collapsed so `KanbanBoard` expands its column strip (avoid empty stage). */
   const [boardStripExpandNonce, setBoardStripExpandNonce] = useState(0);
 
@@ -1328,27 +1331,25 @@ function DashboardShellInner({
     setBoardStripExpandNonce(0);
   }, [workspaceId]);
 
-  useEffect(() => {
-    const urlChatOverride =
-      !embedMode && (urlTab === 'chat' || urlView?.toLowerCase() === 'messages');
-
+  useLayoutEffect(() => {
     try {
       const w = localStorage.getItem(workspaceRailCollapsedStorageKey(workspaceId));
       const b = localStorage.getItem(bubbleSidebarCollapsedStorageKey(workspaceId));
       const cRaw = localStorage.getItem(chatCollapsedStorageKey(workspaceId));
       const kRaw = localStorage.getItem(kanbanCollapsedStorageKey(workspaceId));
       const calRaw = localStorage.getItem(calendarCollapsedStorageKey(workspaceId));
-      const isFreshLayoutPrefs = cRaw === null && kRaw === null && calRaw === null;
 
-      let chatOn: boolean;
-      let k: boolean;
-      let cal: boolean;
+      const isNarrow = readIsNarrowBelowMd();
 
-      if (urlChatOverride) {
-        /** Deep link: messages rail open, kanban collapsed, calendar strip expanded (ignore localStorage for these). */
-        chatOn = false;
-        k = true;
-        cal = false;
+      const collapse = resolveDashboardLayoutCollapse({
+        embedMode,
+        urlTab,
+        urlView,
+        isNarrow,
+        stored: { chatRaw: cRaw, kanbanRaw: kRaw, calendarRaw: calRaw },
+      });
+
+      if (collapse.persistMessagesFocusToStorage) {
         try {
           localStorage.setItem(chatCollapsedStorageKey(workspaceId), '0');
           localStorage.setItem(kanbanCollapsedStorageKey(workspaceId), '1');
@@ -1356,31 +1357,18 @@ function DashboardShellInner({
         } catch {
           /* ignore */
         }
-      } else if (isFreshLayoutPrefs) {
-        /** First visit: default to desktop "chat focus" — messages open, kanban collapsed, calendar expanded. */
-        chatOn = false;
-        k = true;
-        cal = false;
-      } else {
-        let kParsed = kRaw === '1';
-        chatOn = cRaw === '1';
-        if (chatOn && kParsed) kParsed = false;
-        k = kParsed;
-        cal = calRaw === '1';
-        /** Kanban hidden + calendar strip = blank main stage; open calendar. */
-        if (k && cal) cal = false;
       }
 
       setWorkspaceRailCollapsed(w === '1');
       setBubbleSidebarCollapsed(b === '1');
-      setChatCollapsedState(chatOn);
-      setKanbanCollapsedState(k);
-      setCalendarCollapsedState(cal);
+      setChatCollapsedState(collapse.chatCollapsed);
+      setKanbanCollapsedState(collapse.kanbanCollapsed);
+      setCalendarCollapsedState(collapse.calendarCollapsed);
     } catch {
       /* ignore */
     }
-    setLayoutHydrated(true);
-  }, [workspaceId, embedMode, urlTab, urlView]);
+    setLayoutHydratedWorkspaceId(workspaceId);
+  }, [workspaceId, embedMode, urlTab, urlView, narrowViewport]);
 
   useEffect(() => {
     didDesktopMessagesBubbleForceRef.current = false;
@@ -1462,29 +1450,6 @@ function DashboardShellInner({
       /* ignore */
     }
   }, [workspaceId, calendarCollapsed, layoutHydrated]);
-
-  /**
-   * Mobile explicit `?tab=` / `?view=messages` only (narrow viewport).
-   * `?tab=chat` / `?view=messages` on all viewports is handled in the layout hydrate effect.
-   */
-  useEffect(() => {
-    if (!layoutHydrated || embedMode) return;
-    const mq = window.matchMedia(NARROW_MAX_QUERY);
-    if (!mq.matches) return;
-    const viewMessages = urlView?.toLowerCase() === 'messages';
-    if (mobileTab === 'chat' || viewMessages) {
-      setChatCollapsedState(false);
-      setKanbanCollapsedState(true);
-      setCalendarCollapsedState(false);
-    } else if (mobileTab === 'board') {
-      setChatCollapsedState(true);
-      setKanbanCollapsedState(false);
-    } else if (mobileTab === 'calendar') {
-      setChatCollapsedState(true);
-      setKanbanCollapsedState(true);
-      setCalendarCollapsedState(false);
-    }
-  }, [layoutHydrated, embedMode, mobileTab, urlView]);
 
   const bubbleQueryParam = searchParams.get('bubble');
 

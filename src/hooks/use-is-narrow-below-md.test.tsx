@@ -28,7 +28,7 @@ describe('useIsNarrowBelowMd', () => {
 
     const { result } = renderHook(() => useIsNarrowBelowMd());
 
-    await waitFor(() => expect(result.current).toBe(true));
+    expect(result.current).toBe(true);
     expect(matchMediaSpy).toHaveBeenCalledWith(NARROW_MAX_QUERY);
   });
 

@@ -8,3 +8,9 @@
  * responsive utilities and avoids the 1px overlap at exactly 768px.
  */
 export const NARROW_MAX_QUERY = '(max-width: 767.98px)';
+
+/** Synchronous narrow check for layout hydrate (avoids one-frame `useState(false)` before `useLayoutEffect`). */
+export function readIsNarrowBelowMd(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia(NARROW_MAX_QUERY).matches;
+}

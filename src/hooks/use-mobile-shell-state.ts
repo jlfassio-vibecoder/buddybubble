@@ -55,6 +55,7 @@ export function MobileShellProvider({ children }: { children: ReactNode }) {
       if (normalizeMobileTab(q.get('tab')) === next) return;
       replaceSearchIfChanged((draft) => {
         draft.set('tab', next);
+        if (next !== 'chat') draft.delete('view');
       });
     },
     [replaceSearchIfChanged, searchKey],
