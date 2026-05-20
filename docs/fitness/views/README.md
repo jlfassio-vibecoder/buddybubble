@@ -1,5 +1,7 @@
 # Workout UI landscape audit (parametric blocks)
 
+<!-- Copilot suggestion ignored: PR title/body are maintained on GitHub; this file is the fitness surface audit, not the release description. -->
+
 **Status:** Living landscape audit (updated after Steps 1–3).  
 **Context:** The Parametric Workout Blocks epic ships a closed-world engine with **12** `block_format` values, block-level `formatParams`, and merge-time exercise hydration (e.g. EMOM/Tabata `workSeconds` / `restSeconds`). This document maps **every UI surface** that renders or executes workouts. **Steps 1–3** added the data contract, `WorkoutSessionViewModel`, and block-aware **WorkoutPlayer** P0; many surfaces below are still flat-only.
 

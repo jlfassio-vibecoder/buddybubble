@@ -1,7 +1,12 @@
-import type { BlockFormat } from '@/lib/agents/coach/block-blueprint-library';
 import type { Exercise } from '@/lib/workout-factory/types/ai-program';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 import type { UnitSystem } from '@/types/database';
+
+export type { BlockFormat } from '@/lib/agents/coach/block-blueprint-library';
+export {
+  blockStationLabel,
+  blockUsesGroupedLayout,
+} from '@/lib/workout-factory/block-station-label';
 
 export type WorkoutBlockListEditorProps = {
   blocks: WorkoutSessionBlockView[];
@@ -10,23 +15,6 @@ export type WorkoutBlockListEditorProps = {
   onChange: (next: WorkoutSessionBlockView[]) => void;
   idPrefix?: string;
 };
-
-export function blockUsesGroupedLayout(
-  blockFormat: BlockFormat | null,
-  exerciseCount: number,
-): boolean {
-  if (exerciseCount < 2) return false;
-  return blockFormat === 'superset' || blockFormat === 'contrast' || blockFormat === 'circuit';
-}
-
-export function blockStationLabel(
-  blockFormat: BlockFormat | null,
-  exerciseIndexInBlock: number,
-  exerciseCount: number,
-): string | null {
-  if (!blockUsesGroupedLayout(blockFormat, exerciseCount)) return null;
-  return `A${exerciseIndexInBlock + 1}`;
-}
 
 export function updateBlock(
   blocks: WorkoutSessionBlockView[],

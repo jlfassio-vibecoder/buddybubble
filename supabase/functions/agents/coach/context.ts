@@ -230,14 +230,18 @@ export function resolveCoachTaskMetadataForMerge(
   taskMetadataFromDb: unknown,
   workoutContextJson: string | null,
 ): unknown {
-  if (hasRichWorkoutSetMetadata(taskMetadataFromDb)) {
+  const dbBase = asMetadataObject(taskMetadataFromDb);
+  if (hasRichWorkoutSetMetadata(dbBase)) {
     return taskMetadataFromDb;
   }
   const trimmed = workoutContextJson?.trim();
   if (!trimmed) return taskMetadataFromDb ?? {};
   try {
     const parsed = JSON.parse(trimmed) as unknown;
-    if (hasRichWorkoutSetMetadata(parsed)) return parsed;
+    if (hasRichWorkoutSetMetadata(parsed)) {
+      const parsedObj = asMetadataObject(parsed);
+      return { ...dbBase, ai_workout_factory: parsedObj.ai_workout_factory };
+    }
   } catch {
     // fall through
   }

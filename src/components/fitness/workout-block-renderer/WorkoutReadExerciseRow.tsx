@@ -36,7 +36,7 @@ export function WorkoutReadExerciseRow({
   unitSystem = 'metric',
 }: WorkoutReadExerciseRowProps) {
   const compact = density === 'compact';
-  const showRequest = !thumbnailUrl;
+  const showRequest = !thumbnailUrl && taskId != null;
   const loggedSets = setLogs ?? [];
 
   return (

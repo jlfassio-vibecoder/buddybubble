@@ -74,7 +74,7 @@ export function WorkoutBlockListEditor({
           <WorkoutBlockExerciseEditRow
             key={ex.id ?? `${block.id}-ex-${ei}`}
             exercise={ex}
-            stationLabel={blockStationLabel(block.blockFormat, ei, exercises.length)}
+            stationLabel={blockStationLabel(block.blockFormat, ei)}
             canWrite={canWrite}
             idPrefix={`${idPrefix}-${block.id}`}
             exerciseIndex={ei}
