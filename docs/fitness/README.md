@@ -62,6 +62,12 @@ flowchart LR
 
 Deeper database and RLS behavior live under [supabase/migrations/](../../supabase/migrations/); this doc set focuses on UI behavior and file-level entry points.
 
+## Workout rendering landscape (parametric blocks)
+
+**[views/README.md](views/README.md)** — Investigation audit of every surface that renders or executes workouts  
+**[views/parametric-step1-2-plan.md](views/parametric-step1-2-plan.md)** — Steps 1 & 2 (data contract + ViewModel)  
+**[views/parametric-step3-plan.md](views/parametric-step3-plan.md)** — Step 3 (shipped): WorkoutPlayer block-aware P0 — `useWorkoutSessionViewModel`, `WorkoutPlayerBlockList`, block headers/subtitles during play; flat `SetDraft[][]` logging and finish payload unchanged. Interval timers and format-specific execution UX are out of scope for this step. Dashboard layout/shell notes: [views/layout-shell-architecture.md](views/layout-shell-architecture.md).
+
 ## Conventions for contributors
 
 - All listed components are **client components** (`'use client'`).
@@ -70,6 +76,7 @@ Deeper database and RLS behavior live under [supabase/migrations/](../../supabas
 
 ## Doc map (reading order)
 
+0. [views/README.md](views/README.md) — workout UI audit (block-aware parity gaps).
 1. [workout-exercises-editor.md](workout-exercises-editor.md) — shared list editor.
 2. [schedule-program-start-dialog.md](schedule-program-start-dialog.md) — small scheduling primitive.
 3. [workout-viewer-dialog.md](workout-viewer-dialog.md) — embeds the editor; used from Task modal.

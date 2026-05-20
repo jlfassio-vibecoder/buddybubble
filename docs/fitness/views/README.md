@@ -1,162 +1,269 @@
-# Layout, View State & Shell Architecture
+# Workout UI landscape audit (parametric blocks)
 
-This document describes how the dashboard shell manages **which surface the user sees** (Messages, Board, Calendar, split layouts) on **desktop vs. mobile**, how that state is **hydrated** from persistence, and the **safe patterns** for routing users to a specific view (for example after login).
+**Status:** Living landscape audit (updated after Steps 1–3).  
+**Context:** The Parametric Workout Blocks epic ships a closed-world engine with **12** `block_format` values, block-level `formatParams`, and merge-time exercise hydration (e.g. EMOM/Tabata `workSeconds` / `restSeconds`). This document maps **every UI surface** that renders or executes workouts. **Steps 1–3** added the data contract, `WorkoutSessionViewModel`, and block-aware **WorkoutPlayer** P0; many surfaces below are still flat-only.
 
-It is grounded in the current implementation in:
+**Implementation plans:** [parametric-step1-2-plan.md](./parametric-step1-2-plan.md) · [parametric-step3-plan.md](./parametric-step3-plan.md)
 
-- `src/components/dashboard/dashboard-shell.tsx` — primary shell: collapse state, hydration, mobile vs. desktop branching, `LayoutCommandContext`, and composition of `WorkspaceMainSplit`
-- `src/lib/layout-collapse-keys.ts` — per-workspace `localStorage` key helpers for rail/split/collapse preferences
-- `src/components/dashboard/workspace-main-split.tsx` — resizable Messages | Board row; receives collapse flags from the shell and applies layout (strips, hidden stages, calendar slot injection)
+**Related engine docs:** [parametric-workout-blocks](../../refactor/parametric-workout-blocks/README.md), [rail-composer-tokens](../../agents/coach/rail-composer-tokens.md), [PCC manifesto](../../architecture/pcc-manifesto.md).
 
-Related types and entry points:
-
-- `DesktopFocusMode` — `src/components/layout/desktop-view-switcher.tsx`
-- Layout commands API — `src/components/layout/layout-command-context.tsx`
-- Mobile tab normalization — `src/lib/mobile-crm-tab.ts` (`normalizeMobileTab`)
+**Note:** Dashboard layout/shell documentation was moved to [layout-shell-architecture.md](./layout-shell-architecture.md) (it previously lived in this file by mistake).
 
 ---
 
-## Overview
+## Executive summary
 
-### What “Desktop Focus Mode” actually is
+| Layer                            | What exists today                                                                                                                                                                                                                                                                                                | User impact                                                                                            |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| **Data (write path)**            | Coach merge + AI factory write `ai_workout_factory.workout_set` with `exerciseBlocks[]`, `blockFormat`, `formatParams`, warmup/finisher/cooldown                                                                                                                                                                 | Prescription is clinically structured in the DB                                                        |
+| **Data (read path — preview)**   | `RichWorkoutReadView` shows block sections + `formatBlockSubtitle()`                                                                                                                                                                                                                                             | User **sees** intent in Task Modal viewer (view mode only)                                             |
+| **Data (read path — execution)** | **WorkoutPlayer** uses `useWorkoutSessionViewModel` → rich blocks + subtitles when `ai_workout_factory` exists; flat `metadata.exercises` is a derived cache for logging. Live loggers / deck text still read flat lists.                                                                                        | Player shows block structure (P0); timers / superset pairing / progression UX still missing            |
+| **Flattening / manual edits**    | `deriveFlatExercisesFromMetadata` keeps `metadata.exercises` in sync with factory. **Manual flat edits** (viewer Apply, live deck merge) call `applyFlatWorkoutEditsToMetadata`: main `exerciseBlocks` degrade to one `straight_sets` “Main” block; warmup/finisher/cooldown preserved; factory **not** deleted. | Intentional degradation when the user edits the flat list; parametric intent on main work is collapsed |
 
-**`DesktopFocusMode` is not stored anywhere.** It is a **derived projection** of three boolean collapse flags owned by the shell:
-
-- `chatCollapsed`
-- `kanbanCollapsed`
-- `calendarCollapsed`
-
-The shell computes `desktopFocusModeActive` from those flags (only when not in mobile layout and not in embed mode). Mappings in code:
-
-| Mode       | Condition (simplified)                                        |
-| ---------- | ------------------------------------------------------------- |
-| `chat`     | Messages expanded, Kanban collapsed                           |
-| `board`    | Messages collapsed, Kanban expanded, calendar strip collapsed |
-| `calendar` | Messages collapsed, Kanban collapsed, calendar expanded       |
-| `split`    | Messages and Kanban both expanded, calendar strip collapsed   |
-
-If the triple does not match any row above, the switcher shows **no** active mode (`null`).
-
-The **desktop view switcher** calls into the same transitions as programmatic layout commands; it does not maintain a parallel “mode” state machine.
-
-### Shell invariants and derived calendar collapse
-
-The shell enforces constraints so the UI never lands in an empty main stage:
-
-- Collapsing **chat** forces **Kanban** open (at least one of Messages or Kanban stays meaningful).
-- Collapsing **Kanban** forces **chat** open.
-- Collapsing the **calendar** strip forces **Kanban** open and bumps board column expansion so the stage is not toolbar-only.
-
-**Calendar rail collapse is partly derived:** when Kanban is hidden (`kanbanCollapsed === true`), the calendar rail is treated as **not** strip-collapsed (`calendarRailIsCollapsed` is forced to `false`) so invariants stay consistent even if raw `calendarCollapsed` state were stale.
-
-`WorkspaceMainSplit` receives `calendarRailIsCollapsed` (not the raw `calendarCollapsed` flag) as `calendarCollapsed` for layout math and calendar injection.
+**Bottom line:** The engine and **WorkoutPlayer** now share a block-aware read path for rich cards. Live video, Coach draft preview, and format-specific execution (timers, pairs, ladders) remain the main gaps.
 
 ---
 
-## The Truth Hierarchy (Desktop vs. Mobile)
+## Data model reference (two truths)
 
-### Desktop (`md` and up, non-embed)
+```mermaid
+flowchart TB
+  subgraph rich [Rich prescription - ai_workout_factory]
+    WS[workout_set.workouts 0]
+    WS --> EB[exerciseBlocks]
+    WS --> WB[warmupBlocks / finisherBlocks / cooldownBlocks]
+    EB --> BF[blockFormat + formatParams]
+    EB --> EX1[exercises with sets reps workSeconds etc]
+  end
 
-**Source of truth:** `localStorage` (per workspace via keys in `layout-collapse-keys.ts`) **plus** user actions that update React state and then sync back to `localStorage`.
+  subgraph flat [Flat playback - metadata.exercises]
+    ME[metadata.exercises array]
+    ME --> WE[WorkoutExercise name sets reps rest_seconds work_seconds rounds]
+  end
 
-- Chat / Kanban / calendar strip preferences use `chatCollapsedStorageKey`, `kanbanCollapsedStorageKey`, and `calendarCollapsedStorageKey` (all scoped by `workspaceId`).
-- Additional shell chrome (workspace rail, bubble sidebar, dock splits, etc.) uses other helpers in the same module.
+  AI[AI generate / Coach merge] --> rich
+  AI --> flat
+  MAP[deriveFlatExercisesFromMetadata / workoutInSetToTaskExercises] --> flat
+  APPLY[Manual flat edit / Apply / live deck merge] --> DEGRADE[applyFlatWorkoutEditsToMetadata]
+  DEGRADE --> rich
+  DEGRADE --> flat
 
-**User-driven updates:** toggles and `LayoutCommands` update React state; **effects that persist only run after `layoutHydrated` is true** so the first paint does not fight the hydrate read.
+  rich --> VIEW[RichWorkoutReadView]
+  rich --> PLAYER_RICH[WorkoutPlayer block list]
+  flat --> PLAYER_FLAT[WorkoutPlayer flat fallback]
+  flat --> LOGGERS[Live loggers / deck text]
+```
 
-**URL on desktop:** `?tab=` and `?view=messages` participate in **initial hydrate** and deep-link behavior (see Hydration Rules), but ongoing desktop focus is not “owned” by the query string the way mobile tabs are.
+| Field / helper                                    | Location                                                                                        | Used for                                                                     |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `metadata.ai_workout_factory.workout_set`         | `tasks.metadata`                                                                                | Viewer rich mode, Kanban “has workout” detection                             |
+| `metadata.exercises`                              | `tasks.metadata`                                                                                | Derived cache: logging, editors, Coach rail `#` list, finish → `workout_log` |
+| `buildWorkoutSessionViewModel(metadata)`          | [workout-session-view-model.ts](../../../src/lib/workout-factory/workout-session-view-model.ts) | Player + triggers: `source`, `blocks[]`, `flatExercises`, `flatCacheStale`   |
+| `metadataFieldsFromParsed(meta).workoutExercises` | [item-metadata.ts](../../../src/lib/item-metadata.ts)                                           | Universal flat accessor (legacy surfaces)                                    |
+| `getExercisesFromWorkout(session)`                | [program-schedule-utils.ts](../../../src/lib/workout-factory/program-schedule-utils.ts)         | Flattens `exerciseBlocks` → `Exercise[]` (drops block boundaries)            |
+| `formatBlockSubtitle(blockFormat, formatParams)`  | [format-block-subtitle.ts](../../../src/lib/workout-factory/format-block-subtitle.ts)           | Subtitles only in `RichWorkoutReadView`                                      |
 
-### Mobile (narrow viewport, non-embed)
+### Twelve closed-world formats (engine)
 
-**Source of truth for which tab is visible:** the URL search param **`?tab=`**, normalized by `normalizeMobileTab` in `mobile-crm-tab.ts` to one of `chat` | `board` | `calendar` (invalid or missing values default to **`chat`**).
+From [block-blueprint-library.ts](../../../src/lib/agents/coach/block-blueprint-library.ts):
 
-The shell sets `layoutMobile` from viewport width (`useIsNarrowBelowMd`) and `embedMode` from `?embed=true`. On mobile, **tab bar navigation** updates the URL (same pattern as layout commands: `router.replace` with preserved query params).
+`straight_sets`, `superset`, `circuit`, `amrap`, `emom`, `tabata`, `ladder`, `chipper`, `pyramid`, `contrast`, `clusters`, `drop_sets`.
 
-**Collapse flags still exist on mobile** and are **synchronized from** `?tab=` / `?view=messages` in a dedicated effect (narrow viewport only), so the same `WorkspaceMainSplit` and board/calendar wiring can render. **Do not treat those booleans as the mobile source of truth**—they follow the URL.
-
----
-
-## Hydration Rules
-
-### The `layoutHydrated` gate
-
-`layoutHydrated` starts as **`false`** and flips to **`true`** once after the shell’s hydrate `useEffect` runs for the current `workspaceId` (and relevant URL flags). That effect:
-
-1. Reads workspace rail, bubble sidebar, chat, Kanban, and calendar strip values from `localStorage` (with parsing and invariants).
-2. Applies **URL overrides** for messages-style deep links (`?tab=chat` or `?view=messages`) on **all viewports** during that read path—forcing a messages-style desktop layout and persisting aligned values back to `localStorage`.
-3. Handles **first visit** defaults when all three collapse keys are missing (desktop-style default: Messages open, Kanban collapsed, calendar expanded).
-4. Sets React state, then **`setLayoutHydrated(true)`**.
-
-### Why the gate exists
-
-Until hydration completes:
-
-- **Persistence effects do not run** — nothing writes chat/Kanban/calendar (or rails) back to `localStorage` from initial default React state. That avoids **double-writes** and clobbering saved prefs on refresh.
-- **Layout commands no-op** (`focusMessages`, `focusBoard`, etc. return early if `!layoutHydrated`).
-- **Desktop view switcher** is disabled until hydrated — avoids clicking transitions before state matches storage.
-- Other behaviors (e.g. live-video rail auto-collapse, storefront auto-open hooks) also key off `layoutHydrated` so they do not run against pre-hydrate guesses.
-
-Together, this reduces **UI flash** (e.g. default layout briefly shown then snapping to `localStorage`) and keeps **storage and UI** aligned.
-
-### `WorkspaceMainSplit` local hydration
-
-`WorkspaceMainSplit` maintains its own small **`hydrated`** flag for **chat panel pixel width** (`buddybubble.chatWidth.${workspaceId}`). It reads width once, then persists resizes only after that—same “read first, then write” idea as the shell gate, scoped to the split handle.
+Merge already hydrates **EMOM** (derived `workSeconds` / `restSeconds`) and **Tabata** (`hydrateTabataExercisesFromFormatParams`) onto factory exercise rows inside `exerciseBlocks`. The Player **displays** block headers/subtitles and extended target lines; it does **not** yet run interval timers or paired-round UX per format.
 
 ---
 
-## The “Mobile Blast Radius”
+## View inventory
 
-**Risk:** Treating `chatCollapsed` / `kanbanCollapsed` / `calendarCollapsed` as the primary control on mobile—or updating them without updating **`?tab=`**—creates **desync**:
+### Tier 1 — Primary prescription & execution (highest impact)
 
-1. **URL vs. collapse mismatch:** Mobile UX is driven by `normalizeMobileTab(searchParams.get('tab'))`. If code collapses panels but leaves `?tab=board`, the next render or tab bar may still reflect “board” while strips/stages show something else.
-2. **localStorage pollution:** After `layoutHydrated`, desktop persistence effects write collapse booleans to `localStorage`. Mutating collapse on mobile in ways that **don’t** match how desktop interprets tabs can leave **saved desktop prefs** inconsistent with what the user thought they chose on phone.
-3. **Effects ordering:** Mobile has a **narrow-only** effect that reapplies collapse state from `urlTab` / `urlView`. Blind collapse updates can be **overwritten** on the next URL-driven pass, causing flicker or apparent “ignored” actions.
-4. **Deep links:** `?tab=chat` and `?view=messages` interact with both the **global hydrate** path and the **mobile-only** sync effect. Partial or duplicate handling can confuse which layer “wins.”
+| #   | Component                  | Path                                                                                         | Role                                                               | Data source                                                                                                                                          |
+| --- | -------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **RichWorkoutReadView**    | [workout-viewer-dialog.tsx](../../../src/components/fitness/workout-viewer-dialog.tsx)       | Read-only prescription: warmup / main blocks / finisher / cooldown | **Rich:** `workoutSet.workouts[0]` → `exerciseBlocks`, `formatBlockSubtitle`                                                                         |
+| 2   | **WorkoutViewerContent**   | same file                                                                                    | View/edit shell; toggles rich vs flat                              | Rich if `workoutSet != null`; else `metadata.exercises`                                                                                              |
+| 3   | **FlatExercisesReadView**  | same file                                                                                    | Flat fallback list                                                 | `metadata.exercises`                                                                                                                                 |
+| 4   | **WorkoutExercisesEditor** | [workout-exercises-editor.tsx](../../../src/components/fitness/workout-exercises-editor.tsx) | Edit mode in viewer                                                | **Flat only**                                                                                                                                        |
+| 5   | **WorkoutPlayer**          | [WorkoutPlayer.tsx](../../../src/components/fitness/WorkoutPlayer.tsx)                       | Live session: set grid, elapsed timer, finish → `workout_log`      | **Rich:** `useWorkoutSessionViewModel` → `WorkoutPlayerBlockList`; **flat fallback** when no factory; logging still `flatExercises` + global indices |
+| 6   | **TaskModal**              | [TaskModal.tsx](../../../src/components/modals/TaskModal.tsx)                                | Embeds viewer; wires AI gen, player triggers                       | Both: `viewerWorkoutSet` + `workoutExercises` state                                                                                                  |
+| 7   | **useTaskWorkoutAi**       | [useTaskWorkoutAi.ts](../../../src/components/modals/task-modal/hooks/useTaskWorkoutAi.ts)   | Rich detection; viewer Apply                                       | `applyFlatWorkoutEditsToMetadata` — degrades main blocks to `straight_sets`, preserves factory + instruction sections                                |
 
-**Rule of thumb:** On mobile, **change the URL first** (`router.replace` with `tab` set) for any intentional navigation to Messages / Board / Calendar. Let the shell’s established effects map that to collapse state. Avoid ad-hoc `setChatCollapsedState` / `setKanbanCollapsedState` from feature code on narrow viewports unless you fully control URL and understand persistence side effects.
+### Tier 2 — Board, shell, and launch surfaces
+
+| #   | Component                  | Path                                                                                               | Role                           | Data source                                                                                     |
+| --- | -------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------- |
+| 8   | **KanbanTaskCard**         | [kanban-task-card.tsx](../../../src/components/board/kanban-task-card.tsx)                         | Card chrome; Quick View / Play | Detection: flat exercises **or** `ai_workout_factory.workout_set`; **no exercise list on card** |
+| 9   | **DashboardShell**         | [dashboard-shell.tsx](../../../src/components/dashboard/dashboard-shell.tsx)                       | Global `WorkoutPlayer` host    | Passes task `metadata` → Player (ViewModel inside player)                                       |
+| 10  | **TaskModalEditorChrome**  | [TaskModalEditorChrome.tsx](../../../src/components/modals/task-modal/TaskModalEditorChrome.tsx)   | `WorkoutPlayerTriggers`        | Gate: `buildWorkoutSessionViewModel(metadata).flatExercises.length` (factory-derived when rich) |
+| 11  | **TaskModalWorkoutFields** | [TaskModalWorkoutFields.tsx](../../../src/components/modals/task-modal/TaskModalWorkoutFields.tsx) | Details tab editor             | **Flat** — used for `workout_log` rows                                                          |
+| 12  | **TaskModalDetailsBody**   | [TaskModalDetailsBody.tsx](../../../src/components/modals/task-modal/TaskModalDetailsBody.tsx)     | Intake + log fields            | Flat for logs                                                                                   |
+
+### Tier 3 — Live video & class deck
+
+| #   | Component                     | Path                                                                                                        | Role                                | Data source                           |
+| --- | ----------------------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------- | ------------------------------------- |
+| 13  | **LiveSessionWorkoutPlayer**  | [LiveSessionWorkoutPlayer.tsx](../../../src/features/live-video/shells/huddle/LiveSessionWorkoutPlayer.tsx) | Host edits active deck card         | Flat `workoutExercises`               |
+| 14  | **ParticipantWorkoutLogger**  | [ParticipantWorkoutLogger.tsx](../../../src/features/live-video/shells/ParticipantWorkoutLogger.tsx)        | Per-exercise set logging in session | Flat                                  |
+| 15  | **UpNextCard**                | [UpNextCard.tsx](../../../src/features/live-video/shells/huddle/UpNextCard.tsx)                             | “Up next” exercise line summary     | Flat `formatExerciseLine`             |
+| 16  | **ParticipantPreJoinSummary** | [ParticipantPreJoinSummary.tsx](../../../src/features/live-video/shells/ParticipantPreJoinSummary.tsx)      | Queue preview bullets               | Flat                                  |
+| 17  | **LiveDeckExerciseInjector**  | [LiveDeckExerciseInjector.tsx](../../../src/features/live-video/shells/huddle/LiveDeckExerciseInjector.tsx) | Append `#` exercises to card        | Merges into flat `metadata.exercises` |
+| 18  | **SessionDeckBuilder**        | [SessionDeckBuilder.tsx](../../../src/features/live-video/shells/huddle/SessionDeckBuilder.tsx)             | Deck strip of `KanbanTaskCard`      | No direct read                        |
+
+### Tier 4 — Chat, drafts, and ancillary
+
+| #   | Component                    | Path                                                                                                    | Role                           | Data source                                                 |
+| --- | ---------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------ | ----------------------------------------------------------- |
+| 19  | **WorkoutCoachRail**         | [WorkoutCoachRail.tsx](../../../src/components/chat/WorkoutCoachRail.tsx)                               | Coach beside player            | Flat exercise names in metadata                             |
+| 20  | **CoachDraftCard**           | [CoachDraftCard.tsx](../../../src/components/chat/CoachDraftCard.tsx)                                   | Proposed workout preview       | **Flat** `proposed_metadata.exercises` only — no `blocks[]` |
+| 21  | **RichMessageComposer**      | [RichMessageComposer.tsx](../../../src/components/chat/RichMessageComposer.tsx)                         | `:` / `#` tokens               | Catalog + hash picker (not full prescription UI)            |
+| 22  | **ClassEditorWorkoutPicker** | [ClassEditorWorkoutPicker.tsx](../../../src/components/modals/class-modal/ClassEditorWorkoutPicker.tsx) | Pick workout by title/duration | No exercise list                                            |
+
+### Tier 5 — Post-workout / analytics
+
+| Surface                          | Path                                                                                    | Notes                                                                                             |
+| -------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| **WorkoutPlayer `handleFinish`** | WorkoutPlayer.tsx                                                                       | Persists **`workout_log`** with flat `metadata.exercises` + `set_logs` — block context not stored |
+| **AnalyticsBoard**               | [AnalyticsBoard.tsx](../../../src/components/fitness/AnalyticsBoard.tsx)                | Counts completed workouts — no prescription UI                                                    |
+| **AmrapResultsDrawer**           | [AmrapResultsDrawer.tsx](../../../src/features/amrap/components/AmrapResultsDrawer.tsx) | Explicitly does **not** repeat exercise list                                                      |
+
+There is **no** dedicated post-workout summary component that renders block structure.
+
+### Existing component docs (per-surface)
+
+- [workout-player.md](../workout-player.md)
+- [workout-viewer-dialog.md](../workout-viewer-dialog.md)
+- [workout-exercises-editor.md](../workout-exercises-editor.md)
 
 ---
 
-## Layout Command Strategy (Next Steps)
+## Parametric gap analysis (by view)
 
-### What exists today
+### What “full support” means per format
 
-`DashboardShell` exposes **`LayoutCommands`** via `LayoutCommandContext` (`useLayoutCommands`):
+| Format          | Clinical intent                    | Minimum UI parity                                                                     |
+| --------------- | ---------------------------------- | ------------------------------------------------------------------------------------- |
+| `straight_sets` | Sets × reps                        | Current flat grid is adequate                                                         |
+| `superset`      | Exactly 2 exercises, shared rounds | **Grouped pair** UI; alternate A/B per round                                          |
+| `circuit`       | 3+ stations, rounds                | **Round-robin** grouping; station order                                               |
+| `amrap`         | Time-capped rounds                 | **Countdown** from `time_cap_minutes`; round tracker                                  |
+| `emom`          | Interval clock                     | **Per-minute timer**; work/rest from `workSeconds` / `restSeconds`                    |
+| `tabata`        | Work/rest intervals                | **Interval timer** using exercise or block `work_seconds` / `rest_seconds` / `rounds` |
+| `ladder`        | Rep rungs                          | **Progression UI** (1→10), not single static reps                                     |
+| `chipper`       | Sequential for-time                | **Ordered checklist**; optional time cap subtitle                                     |
+| `pyramid`       | Rep/load progression               | **Per-set targets** across sets                                                       |
+| `contrast`      | PAP heavy + explosive              | **Paired blocks** (2 exercises), round structure                                      |
+| `clusters`      | Micro-rest clusters                | **Cluster rep/rest** breakdown per set                                                |
+| `drop_sets`     | Failure + load drops               | **Drop steps** (% and count from `formatParams`)                                      |
 
-- `focusMessages`
-- `focusBoard`
-- `focusCalendar`
-- `focusSplit` (on mobile, maps to **board** as the closest multi-pane surface)
+### Gap matrix (current vs needed)
 
-Each command already implements the required **branch**:
+| View                     | Block sections | Subtitles    | Grouped superset/contrast  | Timers AMRAP/EMOM/Tabata                 | Ladder/pyramid progression | Chipper order   | Clusters/drop_sets |
+| ------------------------ | -------------- | ------------ | -------------------------- | ---------------------------------------- | -------------------------- | --------------- | ------------------ |
+| RichWorkoutReadView      | Yes            | Yes          | No (linear list per block) | Meta line only (`workSeconds`, `rounds`) | Meta line only             | List order only | Meta line only     |
+| WorkoutPlayer            | **Yes** (P0)   | **Yes** (P0) | **No**                     | **No**                                   | **No**                     | List order only | Meta line only     |
+| WorkoutExercisesEditor   | **No**         | **No**       | **No**                     | **No**                                   | **No**                     | **No**          | **No**             |
+| FlatExercisesReadView    | **No**         | **No**       | **No**                     | **No**                                   | **No**                     | **No**          | **No**             |
+| Live loggers / deck text | **No**         | **No**       | **No**                     | **No**                                   | **No**                     | **No**          | **No**             |
+| CoachDraftCard           | **No**         | **No**       | **No**                     | **No**                                   | **No**                     | **No**          | **No**             |
 
-- **Mobile:** `router.replace` with updated search params (`tab` set to `chat`, `board`, or `calendar`), preserving other params.
-- **Desktop:** updates the three collapse states (and related UX like `boardStripExpandNonce`, bubble rail) directly—no reliance on `?tab=` for ongoing focus.
+### Critical behavioral gaps (not just styling)
 
-Commands **respect** `layoutHydrated` and **no-op** in `embedMode`.
+1. ~~**Player never reads `exerciseBlocks`**~~ — **Fixed (Step 3):** rich cards render `WorkoutPlayerBlockList` from the ViewModel. Set logging still uses flat global indices.
 
-### Pattern for post-login (or any global) routing
+2. ~~**Apply deletes `ai_workout_factory`**~~ — **Fixed (Step 1):** Apply uses `applyFlatWorkoutEditsToMetadata`; factory remains, main work degrades to a single `straight_sets` block when flat edits diverge from factory-derived list.
 
-When sending a user to a specific shell view after auth or from a notification:
+3. **Flattening drops block boundaries for logging** — [getExercisesFromWorkout](../../../src/lib/workout-factory/program-schedule-utils.ts) concatenates all block exercises; block name, `blockFormat`, and `formatParams` are lost. AI → task mapping via [map-ai-workout-to-task-exercises.ts](../../../src/lib/workout-factory/map-ai-workout-to-task-exercises.ts) preserves per-exercise `work_seconds` / `rounds` but not grouping.
 
-1. **Wait until the user is under `DashboardShell`** (or equivalent provider) so `useLayoutCommands` is wired—not `silentNoopLayoutCommands`.
-2. **Prefer calling the existing layout commands** rather than duplicating collapse logic. That keeps desktop invariants and mobile URL updates in one place.
-3. If the redirect runs **before** hydration completes, accept that commands **no-op** until `layoutHydrated` is true; schedule the focus **after** shell mount/hydrate (e.g. effect keyed on hydrated + user id) or encode the intent in **`?tab=`** / `?view=messages` on the **initial** navigation URL so the hydrate path applies it.
-4. **Never** assume a single code path for “open board”: always branch mentally **mobile URL vs. desktop collapse** (even if the API hides that behind `focusBoard`).
+4. **Finish workout flattens logs** — Completed `workout_log` stores flat exercises + `set_logs`; no record of which block format was performed.
 
-### Documentation-only note
+5. **Coach draft UI is flat** — `CoachDraftCard` only renders `proposed_metadata.exercises`; Coach can emit rich `blocks[]` that users never preview before finalize.
 
-This README does not change runtime behavior. Future code should **extend** `LayoutCommands` (or a thin facade) for new targets rather than scattering `router.replace` and `localStorage` writes across features.
+6. **Rich view is read-only for structure** — Edit mode always uses `WorkoutExercisesEditor` (flat). No way to adjust `formatParams` or block boundaries in UI.
+
+7. **Kanban / deck surfaces** — Play launches block-aware Player for rich cards, but **no Tabata/EMOM timer** yet — subtitles only.
 
 ---
 
-## Quick reference: key files
+## Architectural recommendation
 
-| Concern                                  | Location                                            |
-| ---------------------------------------- | --------------------------------------------------- |
-| Collapse state, hydrate, mobile URL sync | `src/components/dashboard/dashboard-shell.tsx`      |
-| `localStorage` key names                 | `src/lib/layout-collapse-keys.ts`                   |
-| Messages / board row layout              | `src/components/dashboard/workspace-main-split.tsx` |
-| Focus mode type & switcher UI            | `src/components/layout/desktop-view-switcher.tsx`   |
-| `useLayoutCommands()` API                | `src/components/layout/layout-command-context.tsx`  |
-| Mobile tab values                        | `src/lib/mobile-crm-tab.ts`                         |
+### Principle: one block-aware presentation layer, many shells
+
+Do **not** teach `WorkoutPlayer`, `UpNextCard`, and `CoachDraftCard` each to parse `block_format` independently. Introduce a **shared block presentation module** consumed by all surfaces.
+
+```mermaid
+flowchart LR
+  subgraph input [Normalized input]
+    NORM[normalizeWorkoutForDisplay]
+    NORM --> Session[WorkoutSessionViewModel]
+  end
+
+  subgraph shared [Shared UI package]
+    BR[WorkoutBlockRenderer]
+    BR --> Header[BlockHeader + formatBlockSubtitle]
+    BR --> Body[FormatSpecificBlockBody]
+    Body --> SS[straight_sets list]
+    Body --> Pair[superset / contrast pair]
+    Body --> Timer[amrap / emom / tabata shell]
+    Body --> Prog[ladder / pyramid / chipper]
+  end
+
+  subgraph consumers [Consumers]
+    Viewer[RichWorkoutReadView]
+    Player[WorkoutPlayer blocks mode]
+    Deck[UpNextCard / PreJoin]
+    Draft[CoachDraftCard blocks preview]
+  end
+
+  Session --> BR
+  BR --> Viewer
+  BR --> Player
+  BR --> Deck
+  BR --> Draft
+```
+
+### Proposed building blocks
+
+| Piece                                          | Responsibility                                                                       | Suggested location                                                                  |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| **`WorkoutSessionViewModel`**                  | Single normalized shape from either `WorkoutSetTemplate` or flat `WorkoutExercise[]` | `src/lib/workout-factory/workout-session-view-model.ts` (**shipped**)               |
+| **`WorkoutBlockRenderer` / player block list** | Block headers + exercise panels for Player P0                                        | `src/components/fitness/workout-block-renderer/` (**shipped**, read-only execution) |
+| **`useWorkoutPlayerBlockState`**               | Player-specific: active block, round index, timer state                              | Colocated with WorkoutPlayer or `src/hooks/`                                        |
+| **Keep `formatBlockSubtitle`**                 | Pure subtitle helper — already shared                                                | Existing file                                                                       |
+
+### Phased delivery (suggested effort order)
+
+| Phase                        | Scope                                                                                                 | Outcome                               |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| **P0 — Data path**           | Player reads `exerciseBlocks` when `ai_workout_factory` exists; fallback to flat `metadata.exercises` | **Done** (Steps 1–3)                  |
+| **P1 — Read parity**         | Replace `RichWorkoutReadView` inner loop with `WorkoutBlockRenderer`; use in deck “up next”           | Consistent preview everywhere         |
+| **P2 — Player modes**        | Timer shell for AMRAP/EMOM/Tabata; pair layout for superset/contrast                                  | Functional clinical intent            |
+| **P3 — Progression formats** | Ladder, pyramid, chipper, clusters, drop_sets interactive UX                                          | Full 12-format execution              |
+| **P4 — Edit & logs**         | Block-aware editor or “re-sync flat from blocks”; optional block metadata on `workout_log`            | Persist intent through edit + history |
+
+### What not to do
+
+- Do not add format-specific `if (tabata)` branches only inside `WorkoutPlayer` without a shared renderer — duplication will diverge from merge/Coach rules.
+- Do not rely on flattening for Player — use factory tree as source of truth when present.
+- Do not expand `WorkoutExercisesEditor` alone — it cannot represent `formatParams` or two-exercise cardinality rules.
+
+---
+
+## Suggested verification checklist (when implementing)
+
+After block-aware UI work, manually verify:
+
+1. Card with only `ai_workout_factory` (no flat `exercises`) → Play shows blocks + subtitles. (**Verify post–Step 3.**)
+2. Tabata finisher block → work/rest intervals match `formatParams` and per-exercise timers.
+3. Superset / contrast with two `#` tags on rail → paired UI, not two unrelated exercises.
+4. Apply from viewer → factory preserved; main blocks degrade to `straight_sets` when flat list edited (warning UX optional).
+5. Finish workout → log remains usable; document whether block context is stored.
+
+---
+
+## Audit metadata
+
+| Item                  | Value                                                                |
+| --------------------- | -------------------------------------------------------------------- |
+| Branch audited        | `feat/parametric-workout-blocks` (post Phase A/B/C)                  |
+| Audit date            | 2026-05-19 (doc sync 2026-05-18 after Steps 1–3)                     |
+| Player block UI       | Shipped — see [parametric-step3-plan.md](./parametric-step3-plan.md) |
+| Layout doc relocation | [layout-shell-architecture.md](./layout-shell-architecture.md)       |

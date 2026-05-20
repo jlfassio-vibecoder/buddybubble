@@ -1,12 +1,21 @@
 import type { ItemType, Json } from '@/types/database';
 import { hydrateWorkoutExerciseFromStorefrontCoachNotes } from '@/lib/workout-factory/storefront-preview-exercise-detail';
 import { normalizeRepsForStorage } from '@/lib/workout-factory/parse-reps-scalar';
+import { finalizeWorkoutMetadataForSave } from '@/lib/workout-factory/sync-workout-metadata';
 
 /**
  * Program ↔ workout linkage uses top-level `tasks.program_id` and `tasks.program_session_key`,
  * not JSON metadata. Legacy `linked_program_task_id` / `program_session_key` keys in metadata
  * are stripped when saving workout metadata from the task modal.
  */
+
+/** Remove legacy program linkage keys from workout metadata JSON. */
+export function stripLegacyWorkoutMetadataKeys(meta: unknown): Json {
+  const o = { ...(parseTaskMetadata(meta) as Record<string, unknown>) };
+  delete o.linked_program_task_id;
+  delete o.program_session_key;
+  return o as Json;
+}
 
 /** Recorded data for one set logged during a live workout session. */
 export type SetLogEntry = {
@@ -252,5 +261,5 @@ export function buildTaskMetadataPayload(
   }
   if (t(fields.cardCoverPath)) o.card_cover_path = t(fields.cardCoverPath);
   else delete o.card_cover_path;
-  return o as Json;
+  return finalizeWorkoutMetadataForSave(itemType, fields, o);
 }

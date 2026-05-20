@@ -1,0 +1,180 @@
+import { describe, expect, it } from 'vitest';
+import {
+  applyFlatWorkoutEditsToMetadata,
+  deriveFlatExercisesFromMetadata,
+  finalizeWorkoutMetadataForSave,
+  flatExercisesMatchDerived,
+  hasRichWorkoutSetInMetadata,
+} from './sync-workout-metadata';
+import type { TaskMetadataFormFields } from '@/lib/item-metadata';
+import { buildTaskMetadataPayload } from '@/lib/item-metadata';
+
+function richBaseFixture() {
+  return {
+    workout_type: 'Strength',
+    duration_min: 45,
+    exercises: [{ name: 'Legacy flat', sets: 1, reps: '5' }],
+    ai_workout_factory: {
+      generated_at: '2026-01-01T00:00:00Z',
+      model: 'gemini-test',
+      chain_metadata: { foo: 1 },
+      workout_set: {
+        title: 'Set title',
+        description: 'Set desc',
+        difficulty: 'intermediate',
+        workouts: [
+          {
+            title: 'Session',
+            description: 'Session desc',
+            exerciseBlocks: [
+              {
+                name: 'MAIN',
+                blockFormat: 'tabata',
+                formatParams: { rounds: 8, work_seconds: 20, rest_seconds: 10 },
+                exercises: [
+                  {
+                    order: 1,
+                    exerciseName: 'Kettlebell Sumo Deadlift',
+                    sets: 3,
+                    reps: '15',
+                    rpe: 8,
+                    restSeconds: 60,
+                  },
+                ],
+              },
+            ],
+            cooldownBlocks: [
+              {
+                order: 1,
+                exerciseName: 'Deep Squat Hold',
+                instructions: ['Static stretch for hip openers.'],
+              },
+            ],
+          },
+        ],
+      },
+    },
+  };
+}
+
+describe('hasRichWorkoutSetInMetadata', () => {
+  it('returns true when workouts array is non-empty', () => {
+    expect(hasRichWorkoutSetInMetadata(richBaseFixture())).toBe(true);
+  });
+
+  it('returns false for flat-only metadata', () => {
+    expect(hasRichWorkoutSetInMetadata({ exercises: [{ name: 'Squat', sets: 3, reps: 5 }] })).toBe(
+      false,
+    );
+  });
+
+  it('returns false when factory has empty workouts', () => {
+    expect(
+      hasRichWorkoutSetInMetadata({
+        ai_workout_factory: { workout_set: { workouts: [] } },
+        exercises: [{ name: 'A', sets: 1, reps: 1 }],
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('applyFlatWorkoutEditsToMetadata', () => {
+  it('preserves ai_workout_factory and siblings on flat edit', () => {
+    const base = richBaseFixture();
+    const next = applyFlatWorkoutEditsToMetadata(base, [
+      { name: 'Goblet Squat', sets: 4, reps: 12 },
+    ]) as Record<string, unknown>;
+
+    expect(next.ai_workout_factory).toBeDefined();
+    const af = next.ai_workout_factory as Record<string, unknown>;
+    expect(af.generated_at).toBe('2026-01-01T00:00:00Z');
+    expect(af.chain_metadata).toEqual({ foo: 1 });
+
+    const session = (af.workout_set as { workouts: Record<string, unknown>[] }).workouts[0];
+    expect(session.cooldownBlocks).toHaveLength(1);
+    const blocks = session.exerciseBlocks as Record<string, unknown>[];
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].name).toBe('Main');
+    expect(blocks[0].blockFormat).toBe('straight_sets');
+    const ex = (blocks[0].exercises as Record<string, unknown>[])[0];
+    expect(ex.exerciseName).toBe('Goblet Squat');
+  });
+
+  it('flat-only metadata sets exercises without factory', () => {
+    const next = applyFlatWorkoutEditsToMetadata({}, [
+      { name: 'Push-up', sets: 3, reps: 10 },
+    ]) as Record<string, unknown>;
+    expect(next.ai_workout_factory).toBeUndefined();
+    expect((next.exercises as unknown[]).length).toBe(1);
+  });
+});
+
+describe('deriveFlatExercisesFromMetadata', () => {
+  it('derives from factory when rich', () => {
+    const flat = deriveFlatExercisesFromMetadata(richBaseFixture());
+    expect(flat.some((e) => e.name.includes('Kettlebell'))).toBe(true);
+  });
+});
+
+describe('flatExercisesMatchDerived', () => {
+  it('detects mismatch between form flat and derived', () => {
+    const derived = deriveFlatExercisesFromMetadata(richBaseFixture());
+    expect(flatExercisesMatchDerived([{ name: 'Other', sets: 1, reps: 1 }], derived)).toBe(false);
+    expect(flatExercisesMatchDerived(derived, derived)).toBe(true);
+  });
+});
+
+describe('finalizeWorkoutMetadataForSave', () => {
+  const emptyFields = (): TaskMetadataFormFields => ({
+    eventLocation: '',
+    eventUrl: '',
+    experienceSeason: '',
+    experienceEndDate: '',
+    memoryCaption: '',
+    workoutType: 'Strength',
+    workoutDurationMin: '45',
+    workoutExercises: [],
+    programGoal: '',
+    programDurationWeeks: '',
+    programCurrentWeek: 0,
+    programSchedule: [],
+    programSourceTitle: '',
+    cardCoverPath: '',
+  });
+
+  it('refreshes exercises from factory when form matches derived', () => {
+    const base = richBaseFixture();
+    const derived = deriveFlatExercisesFromMetadata(base);
+    const fields = { ...emptyFields(), workoutExercises: derived };
+    const built = buildTaskMetadataPayload('workout', fields, base);
+    const finalized = finalizeWorkoutMetadataForSave('workout', fields, built) as Record<
+      string,
+      unknown
+    >;
+    expect(finalized.ai_workout_factory).toBeDefined();
+    expect((finalized.exercises as unknown[]).length).toBeGreaterThan(0);
+    const tabataBlock = (
+      (finalized.ai_workout_factory as { workout_set: { workouts: Record<string, unknown>[] } })
+        .workout_set.workouts[0].exerciseBlocks as Record<string, unknown>[]
+    )[0];
+    expect(tabataBlock.blockFormat).toBe('tabata');
+  });
+
+  it('degrades factory when form flat differs from derived', () => {
+    const base = richBaseFixture();
+    const fields = {
+      ...emptyFields(),
+      workoutExercises: [{ name: 'Edited Row', sets: 2, reps: 8 }],
+    };
+    const built = buildTaskMetadataPayload('workout', fields, base);
+    const finalized = finalizeWorkoutMetadataForSave('workout', fields, built) as Record<
+      string,
+      unknown
+    >;
+    const blocks = (
+      finalized.ai_workout_factory as { workout_set: { workouts: Record<string, unknown>[] } }
+    ).workout_set.workouts[0].exerciseBlocks as Record<string, unknown>[];
+    expect(blocks[0].blockFormat).toBe('straight_sets');
+    expect((blocks[0].exercises as Record<string, unknown>[])[0].exerciseName).toBe('Edited Row');
+  });
+});
