@@ -355,14 +355,14 @@ M4  formatParams editor (stretch)
 
 ## Step 6+ roadmap preview
 
-| Step  | Theme                                 | Primary surfaces                                              |
-| ----- | ------------------------------------- | ------------------------------------------------------------- |
-| **6** | Player interval timers (P2)           | `WorkoutPlayer` — AMRAP/EMOM/Tabata countdown shells          |
-| **7** | Progression formats (P3)              | Ladder, pyramid, chipper, clusters, drop_sets interactive UX  |
-| **8** | Block-aware logs (P4)                 | `handleFinish`, `workout_log.metadata` block context          |
-| **9** | Read parity completion (P1 remainder) | `UpNextCard`, `CoachDraftCard`, deck summaries (Step 4 M2–M4) |
+| Step  | Theme                                     | Primary surfaces                                                                                                                                                     |
+| ----- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **6** | Execution grid fidelity + Coach sync (P2) | **M6.1–M6.2:** `WorkoutPlayer` log rows + `live_set_counts` / index map — [parametric-step6-plan.md](./parametric-step6-plan.md). **Stretch:** interval timer shells |
+| **7** | Progression formats (P3)                  | Ladder, pyramid, chipper, clusters, drop_sets interactive UX                                                                                                         |
+| **8** | Block-aware logs (P4)                     | `handleFinish`, `workout_log.metadata` block context                                                                                                                 |
+| **9** | Read parity completion (P1 remainder)     | `UpNextCard`, `CoachDraftCard`, deck summaries (Step 4 M2–M4)                                                                                                        |
 
-Step 5 unblocks **prescription editing**; Steps 6–7 unblock **execution fidelity**; Step 8 unblocks **history/analytics**.
+Step 5 unblocks **prescription editing**; Step 6 **M6.1–M6.2** unblocks **live grid ↔ Coach alignment** (fixes Tabata row mismatch / `execution_patch` drops); Step 6 stretch + Step 7 unblock **timer and progression UX**; Step 8 unblocks **history/analytics**.
 
 ---
 

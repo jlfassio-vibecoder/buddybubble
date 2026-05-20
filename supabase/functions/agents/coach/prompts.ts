@@ -349,10 +349,23 @@ export type ExerciseDictionaryIndexEntry = { dictionary_id: string; slug: string
 export const PERSONAL_CUES_PATCH_GUIDE =
   'Use personal_cues_patch for saved personal cues per EXERCISE_INDEX_MAP ([dict:...] only), optionally alongside execution_patch.';
 
+function parseLiveSetCountsFromContext(parsed: unknown, exerciseCount: number): number[] | null {
+  if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  const raw = (parsed as Record<string, unknown>).live_set_counts;
+  if (!Array.isArray(raw) || raw.length !== exerciseCount) return null;
+  const counts: number[] = [];
+  for (const n of raw) {
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 1) return null;
+    counts.push(n);
+  }
+  return counts;
+}
+
 /**
  * Builds a deterministic exerciseIndex roster from stringified workout context JSON.
  * Returns null when JSON is invalid, truncated, or has no `exercises` array.
  * When `dictionaryByIndex` is provided, each line is suffixed with [dict:uuid] or [custom].
+ * When `live_set_counts` aligns with `exercises`, each line includes `(N log rows)` and a bounds footer.
  */
 export function formatExerciseIndexMap(
   workoutContextJson: string,
@@ -363,11 +376,13 @@ export function formatExerciseIndexMap(
   try {
     const parsed = JSON.parse(trimmed) as unknown;
     let ex: unknown[];
+    let liveSetCounts: number[] | null = null;
     if (Array.isArray(parsed)) {
       ex = parsed;
     } else if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       const raw = (parsed as Record<string, unknown>).exercises;
       ex = Array.isArray(raw) ? raw : [];
+      liveSetCounts = parseLiveSetCountsFromContext(parsed, ex.length);
     } else {
       return null;
     }
@@ -380,17 +395,20 @@ export function formatExerciseIndexMap(
         const n = (el as Record<string, unknown>).name;
         if (typeof n === 'string' && n.trim()) label = n.trim();
       }
-      let suffix = '';
+      const rowCountSuffix = liveSetCounts != null ? ` (${liveSetCounts[i]} log rows)` : '';
+      let dictSuffix = '';
       if (dictionaryByIndex != null && Object.prototype.hasOwnProperty.call(dictionaryByIndex, i)) {
         const ent = dictionaryByIndex[i];
-        suffix = ent != null ? ` [dict:${ent.dictionary_id}]` : ' [custom]';
+        dictSuffix = ent != null ? ` [dict:${ent.dictionary_id}]` : ' [custom]';
       }
-      lines.push(`${i}: ${label}${suffix}`);
+      lines.push(`${i}: ${label}${rowCountSuffix}${dictSuffix}`);
     }
+    const baseFooter =
+      'Use this index for execution_patch.exerciseIndex (live grid; setIndex is 0-based) and personal_cues_patch[].exerciseIndex (only [dict:...] rows persist).';
+    const boundsFooter =
+      liveSetCounts != null ? ' setIndex must be 0 .. live_set_counts[exerciseIndex] - 1.' : '';
     return (
-      `\n\n${EXERCISE_INDEX_MAP_HEADER}\n` +
-      lines.join('\n') +
-      '\n\nUse this index for execution_patch.exerciseIndex (live grid; setIndex is 0-based) and personal_cues_patch[].exerciseIndex (only [dict:...] rows persist).'
+      `\n\n${EXERCISE_INDEX_MAP_HEADER}\n` + lines.join('\n') + `\n\n${baseFooter}${boundsFooter}`
     );
   } catch {
     return null;

@@ -5,6 +5,7 @@ import {
   buildWorkoutCoachRailContext,
   exerciseNamesFromCoachWorkoutData,
   normalizeCoachWorkoutDataProp,
+  validateLiveSetCounts,
 } from './build-workout-coach-rail-context';
 
 describe('buildWorkoutCoachRailContext', () => {
@@ -43,6 +44,36 @@ describe('buildWorkoutCoachRailContext', () => {
     const ctx = buildWorkoutCoachRailContext(stripped, 'Factory only');
     expect((ctx.exercises as unknown[]).length).toBeGreaterThan(0);
     expect(ctx.ai_workout_factory).toBeTruthy();
+  });
+
+  it('includes live_set_counts when aligned with flat exercises', () => {
+    const metadata = richMetadataWithBlockFormat('tabata');
+    const vm = buildWorkoutSessionViewModel(metadata);
+    const ctx = buildWorkoutCoachRailContext(metadata, 'Tabata', [8]);
+    expect(ctx.live_set_counts).toEqual([8]);
+    expect((ctx.exercises as unknown[]).length).toBe(vm.flatExercises.length);
+  });
+
+  it('omits live_set_counts when length mismatches exercises', () => {
+    const metadata = richMetadataWithBlockFormat('tabata');
+    const ctx = buildWorkoutCoachRailContext(metadata, 'Tabata', [8, 8]);
+    expect(ctx.live_set_counts).toBeUndefined();
+  });
+
+  it('omits live_set_counts for invalid entries', () => {
+    const metadata = richMetadataWithBlockFormat('tabata');
+    const ctx = buildWorkoutCoachRailContext(metadata, 'Tabata', [0]);
+    expect(ctx.live_set_counts).toBeUndefined();
+  });
+});
+
+describe('validateLiveSetCounts', () => {
+  it('returns null when length mismatches', () => {
+    expect(validateLiveSetCounts([8, 4], 1)).toBeNull();
+  });
+
+  it('returns counts when valid', () => {
+    expect(validateLiveSetCounts([8, 4], 2)).toEqual([8, 4]);
   });
 });
 
