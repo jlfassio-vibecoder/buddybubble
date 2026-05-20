@@ -31,6 +31,44 @@ function renderViewer(
   };
 }
 
+const baseViewProps = {
+  workoutSet: null,
+  exercises: [] as { name: string; sets: number; reps: string }[],
+  title: 'Test workout',
+  description: '',
+  canWrite: false,
+  workoutUnitSystem: 'metric' as const,
+  onApply: () => {},
+  onRequestClose: () => {},
+  syncKey: 0,
+};
+
+describe('WorkoutViewerContent view mode', () => {
+  afterEach(() => cleanup());
+
+  it('renders rich block list from metadata', () => {
+    const metadata = richMetadataWithBlockFormat('tabata') as Json;
+    render(<WorkoutViewerContent {...baseViewProps} metadata={metadata} syncKey={1} />);
+
+    expect(screen.getByTestId('workout-viewer-block-list')).toBeTruthy();
+    expect(screen.getByText('MAIN')).toBeTruthy();
+  });
+
+  it('renders flat exercise list when metadata has no factory', () => {
+    render(
+      <WorkoutViewerContent
+        {...baseViewProps}
+        metadata={{} as Json}
+        exercises={[{ name: 'Squat', sets: 3, reps: 10 }]}
+        syncKey={1}
+      />,
+    );
+
+    expect(screen.getByText(/No AI workout structure saved/)).toBeTruthy();
+    expect(screen.getByText('Squat')).toBeTruthy();
+  });
+});
+
 describe('WorkoutViewerContent edit mode', () => {
   afterEach(() => cleanup());
 

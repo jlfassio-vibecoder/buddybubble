@@ -203,11 +203,9 @@ export function useTaskWorkoutAi({
       setDescription(payload.description);
 
       if (payload.blocks != null && payload.blocks.length > 0) {
-        setMetadata((prev) => {
-          const next = applyBlockEditsToMetadata(prev, payload.blocks!) as Json;
-          setWorkoutExercises(deriveFlatExercisesFromMetadata(next));
-          return next;
-        });
+        const nextMeta = applyBlockEditsToMetadata(metadata, payload.blocks) as Json;
+        setMetadata(nextMeta);
+        setWorkoutExercises(deriveFlatExercisesFromMetadata(nextMeta));
         return;
       }
 
@@ -220,7 +218,7 @@ export function useTaskWorkoutAi({
         return applyFlatWorkoutEditsToMetadata(prev, payload.exercises) as Json;
       });
     },
-    [setTitle, setDescription, setWorkoutExercises, setMetadata],
+    [metadata, setTitle, setDescription, setWorkoutExercises, setMetadata],
   );
 
   return {
