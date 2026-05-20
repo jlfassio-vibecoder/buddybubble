@@ -14,7 +14,11 @@ import {
   parseTaskMetadata,
   type WorkoutExercise,
 } from '@/lib/item-metadata';
-import { applyFlatWorkoutEditsToMetadata } from '@/lib/workout-factory/sync-workout-metadata';
+import {
+  applyFlatWorkoutEditsToMetadata,
+  deriveFlatExercisesFromMetadata,
+  flatExercisesMatchDerived,
+} from '@/lib/workout-factory/sync-workout-metadata';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import type { WorkoutTemplate } from '@/hooks/use-workout-templates';
 
@@ -196,7 +200,13 @@ export function useTaskWorkoutAi({
       setTitle(payload.title);
       setDescription(payload.description);
       setWorkoutExercises(payload.exercises);
-      setMetadata((prev) => applyFlatWorkoutEditsToMetadata(prev, payload.exercises) as Json);
+      setMetadata((prev) => {
+        const derived = deriveFlatExercisesFromMetadata(prev);
+        if (flatExercisesMatchDerived(payload.exercises, derived)) {
+          return prev;
+        }
+        return applyFlatWorkoutEditsToMetadata(prev, payload.exercises) as Json;
+      });
     },
     [setTitle, setDescription, setWorkoutExercises, setMetadata],
   );
