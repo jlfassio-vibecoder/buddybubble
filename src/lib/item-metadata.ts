@@ -1,7 +1,14 @@
 import type { ItemType, Json } from '@/types/database';
-import { hydrateWorkoutExerciseFromStorefrontCoachNotes } from '@/lib/workout-factory/storefront-preview-exercise-detail';
-import { normalizeRepsForStorage } from '@/lib/workout-factory/parse-reps-scalar';
-import { finalizeWorkoutMetadataForSave } from '@/lib/workout-factory/sync-workout-metadata';
+import { parseWorkoutExercisesFromMetadata } from '@/lib/parse-workout-exercises-from-metadata';
+import { parseTaskMetadata } from '@/lib/parse-task-metadata';
+import {
+  applyFlatWorkoutEditsToMetadata,
+  deriveFlatExercisesFromMetadata,
+  flatExercisesMatchDerived,
+  hasRichWorkoutSetInMetadata,
+} from '@/lib/workout-factory/sync-workout-metadata';
+
+export { parseTaskMetadata } from '@/lib/parse-task-metadata';
 
 /**
  * Program ↔ workout linkage uses top-level `tasks.program_id` and `tasks.program_session_key`,
@@ -84,13 +91,6 @@ export type ProgramWeek = {
   days: ProgramDay[];
 };
 
-/** Normalize DB `metadata` jsonb for form state (object only; otherwise {}). */
-export function parseTaskMetadata(value: unknown): Json {
-  if (value == null) return {};
-  if (typeof value === 'object' && !Array.isArray(value)) return value as Json;
-  return {};
-}
-
 const MANAGED_METADATA_KEYS = [
   'location',
   'url',
@@ -136,23 +136,6 @@ export type TaskMetadataFormFields = {
   /** Storage path for optional card cover image (all item types). */
   cardCoverPath: string;
 };
-
-function asWorkoutExercises(value: unknown): WorkoutExercise[] {
-  if (!Array.isArray(value)) return [];
-  const out: WorkoutExercise[] = [];
-  for (const x of value) {
-    if (typeof x !== 'object' || x === null) continue;
-    const raw = x as WorkoutExercise;
-    const name = typeof raw.name === 'string' ? raw.name.trim() : '';
-    if (!name) continue;
-    const r = normalizeRepsForStorage(raw.reps);
-    const merged: WorkoutExercise = { ...raw, name };
-    if (r === undefined) delete merged.reps;
-    else merged.reps = r;
-    out.push(hydrateWorkoutExerciseFromStorefrontCoachNotes(merged));
-  }
-  return out;
-}
 
 /** Normalize stored `schedule` JSON into `ProgramWeek[]` (for API + forms). */
 export function asProgramSchedule(value: unknown): ProgramWeek[] {
@@ -201,7 +184,7 @@ export function metadataFieldsFromParsed(meta: unknown): TaskMetadataFormFields 
     memoryCaption: str(o.caption),
     workoutType: str(o.workout_type),
     workoutDurationMin: o.duration_min != null ? String(o.duration_min) : '',
-    workoutExercises: asWorkoutExercises(o.exercises),
+    workoutExercises: parseWorkoutExercisesFromMetadata(meta),
     programGoal: str(o.goal),
     programDurationWeeks: o.duration_weeks != null ? String(o.duration_weeks) : '',
     programCurrentWeek: typeof o.current_week === 'number' ? o.current_week : 0,
@@ -262,4 +245,38 @@ export function buildTaskMetadataPayload(
   if (t(fields.cardCoverPath)) o.card_cover_path = t(fields.cardCoverPath);
   else delete o.card_cover_path;
   return finalizeWorkoutMetadataForSave(itemType, fields, o);
+}
+
+/**
+ * After `buildTaskMetadataPayload` sets managed workout fields, reconcile rich factory vs flat form state.
+ */
+export function finalizeWorkoutMetadataForSave(
+  itemType: ItemType,
+  fields: TaskMetadataFormFields,
+  built: unknown,
+): Json {
+  const o = { ...(parseTaskMetadata(built) as Record<string, unknown>) };
+
+  if (itemType !== 'workout' && itemType !== 'workout_log') {
+    return o as Json;
+  }
+
+  if (!hasRichWorkoutSetInMetadata(o)) {
+    return o as Json;
+  }
+
+  const derived = deriveFlatExercisesFromMetadata(o);
+  const flatFromForm = fields.workoutExercises;
+
+  if (!flatExercisesMatchDerived(flatFromForm, derived)) {
+    return applyFlatWorkoutEditsToMetadata(o, flatFromForm);
+  }
+
+  if (derived.length > 0) {
+    o.exercises = derived;
+  } else {
+    delete o.exercises;
+  }
+
+  return o as Json;
 }

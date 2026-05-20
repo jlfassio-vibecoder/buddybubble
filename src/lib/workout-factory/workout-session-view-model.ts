@@ -15,7 +15,6 @@ import {
   type ProgramWorkout,
 } from '@/lib/workout-factory/program-schedule-utils';
 import {
-  deriveFlatExercisesFromMetadata,
   flatExercisesMatchDerived,
   hasRichWorkoutSetInMetadata,
 } from '@/lib/workout-factory/sync-workout-metadata';

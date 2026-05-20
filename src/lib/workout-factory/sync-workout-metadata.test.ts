@@ -2,12 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   applyFlatWorkoutEditsToMetadata,
   deriveFlatExercisesFromMetadata,
-  finalizeWorkoutMetadataForSave,
   flatExercisesMatchDerived,
   hasRichWorkoutSetInMetadata,
 } from './sync-workout-metadata';
 import type { TaskMetadataFormFields } from '@/lib/item-metadata';
-import { buildTaskMetadataPayload } from '@/lib/item-metadata';
+import { buildTaskMetadataPayload, finalizeWorkoutMetadataForSave } from '@/lib/item-metadata';
 
 function richBaseFixture() {
   return {
@@ -121,6 +120,18 @@ describe('flatExercisesMatchDerived', () => {
     const derived = deriveFlatExercisesFromMetadata(richBaseFixture());
     expect(flatExercisesMatchDerived([{ name: 'Other', sets: 1, reps: 1 }], derived)).toBe(false);
     expect(flatExercisesMatchDerived(derived, derived)).toBe(true);
+  });
+
+  it('treats reorder as a change (order-sensitive)', () => {
+    const a = [
+      { name: 'Squat', sets: 3, reps: 5 },
+      { name: 'Bench', sets: 3, reps: 8 },
+    ];
+    const b = [
+      { name: 'Bench', sets: 3, reps: 8 },
+      { name: 'Squat', sets: 3, reps: 5 },
+    ];
+    expect(flatExercisesMatchDerived(a, b)).toBe(false);
   });
 });
 

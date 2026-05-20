@@ -4,13 +4,10 @@
  * `metadata.exercises` is a derived legacy cache for Player / loggers.
  */
 
-import type { ItemType, Json } from '@/types/database';
-import {
-  metadataFieldsFromParsed,
-  parseTaskMetadata,
-  type TaskMetadataFormFields,
-  type WorkoutExercise,
-} from '@/lib/item-metadata';
+import type { Json } from '@/types/database';
+import type { WorkoutExercise } from '@/lib/item-metadata';
+import { parseTaskMetadata } from '@/lib/parse-task-metadata';
+import { parseWorkoutExercisesFromMetadata } from '@/lib/parse-workout-exercises-from-metadata';
 import { normalizeRepsForStorage } from '@/lib/workout-factory/parse-reps-scalar';
 import {
   normalizeWorkoutForEditor,
@@ -103,8 +100,8 @@ export function flatExercisesMatchDerived(
   if (flat.length !== derived.length) return false;
   const norm = (list: WorkoutExercise[]) =>
     list.map(normalizeFlatExerciseForCompare).map((r) => JSON.stringify(r));
-  const a = norm(flat).sort();
-  const b = norm(derived).sort();
+  const a = norm(flat);
+  const b = norm(derived);
   return a.every((s, i) => s === b[i]);
 }
 
@@ -116,7 +113,7 @@ export function deriveFlatExercisesFromMetadata(meta: unknown): WorkoutExercise[
     const normalized = normalizeWorkoutForEditor(session as ProgramWorkout);
     return workoutInSetToTaskExercises(normalized as WorkoutInSet);
   }
-  return metadataFieldsFromParsed(meta).workoutExercises;
+  return parseWorkoutExercisesFromMetadata(meta);
 }
 
 /**
@@ -159,38 +156,4 @@ export function applyFlatWorkoutEditsToMetadata(
   next.exercises = workoutInSetToTaskExercises(normalized as WorkoutInSet);
 
   return next as Json;
-}
-
-/**
- * After `buildTaskMetadataPayload` sets managed workout fields, reconcile rich factory vs flat form state.
- */
-export function finalizeWorkoutMetadataForSave(
-  itemType: ItemType,
-  fields: TaskMetadataFormFields,
-  built: unknown,
-): Json {
-  const o = { ...(parseTaskMetadata(built) as Record<string, unknown>) };
-
-  if (itemType !== 'workout' && itemType !== 'workout_log') {
-    return o as Json;
-  }
-
-  if (!hasRichWorkoutSetInMetadata(o)) {
-    return o as Json;
-  }
-
-  const derived = deriveFlatExercisesFromMetadata(o);
-  const flatFromForm = fields.workoutExercises;
-
-  if (!flatExercisesMatchDerived(flatFromForm, derived)) {
-    return applyFlatWorkoutEditsToMetadata(o, flatFromForm);
-  }
-
-  if (derived.length > 0) {
-    o.exercises = derived;
-  } else {
-    delete o.exercises;
-  }
-
-  return o as Json;
 }
