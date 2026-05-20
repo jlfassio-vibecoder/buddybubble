@@ -28,6 +28,7 @@ import type { ExecutionPatch } from '@/types/execution-patch';
 import { useUserExerciseNotes, type UserExerciseNotesRow } from '@/hooks/useUserExerciseNotes';
 import { useWorkoutSessionViewModel } from '@/hooks/use-workout-session-view-model';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
+import { buildWorkoutCoachRailContext } from '@/lib/workout-factory/build-workout-coach-rail-context';
 import { WorkoutPlayerBlockList } from '@/components/fitness/workout-block-renderer/WorkoutPlayerBlockList';
 import {
   WorkoutPlayerExercisePanel,
@@ -355,10 +356,15 @@ export function WorkoutPlayer({
     [exercises, dictIdByExerciseIndex, notesByDictId],
   );
 
-  /** Coach rail + sentinel: same exercise list as the live grid (metadata can update after open). */
+  /** Coach rail + sentinel: structured context with block summary when factory exists. */
   const coachWorkoutDataForRail = useMemo(() => {
-    return exercises.length > 0 ? (exercises as unknown as Json) : undefined;
-  }, [exercises]);
+    const ctx = buildWorkoutCoachRailContext(metadata, workoutTitle);
+    const hasExercises = Array.isArray(ctx.exercises) && (ctx.exercises as unknown[]).length > 0;
+    const hasRich =
+      typeof ctx.workout_structure_summary === 'string' || ctx.ai_workout_factory != null;
+    if (!hasExercises && !hasRich) return undefined;
+    return ctx as unknown as Json;
+  }, [metadata, workoutTitle]);
 
   useLayoutEffect(() => {
     if (mode === 'desktop' || mode === 'mobile') {

@@ -2,6 +2,19 @@
 
 This document describes how the dashboard shell manages **which surface the user sees** (Messages, Board, Calendar, split layouts) on **desktop vs. mobile**, how that state is **hydrated** from persistence, and the **safe patterns** for routing users to a specific view (for example after login).
 
+It also covers how the **WorkoutPlayer** full-screen overlay mounts from the shell without participating in desktop focus mode or mobile `?tab=` routing.
+
+**Related (workout prescription / parametric blocks, not shell layout):**
+
+- [Workout UI landscape audit](./README.md) — every surface that reads or executes workouts
+- [parametric-step1-2-plan.md](./parametric-step1-2-plan.md) — metadata sync contract + `WorkoutSessionViewModel`
+- [parametric-step3-plan.md](./parametric-step3-plan.md) — block-aware WorkoutPlayer P0 (shipped)
+- [workout-player.md](../workout-player.md) — player props, finish flow, triggers
+
+---
+
+## Grounded in code
+
 It is grounded in the current implementation in:
 
 - `src/components/dashboard/dashboard-shell.tsx` — primary shell: collapse state, hydration, mobile vs. desktop branching, `LayoutCommandContext`, and composition of `WorkspaceMainSplit`
@@ -153,13 +166,76 @@ This README does not change runtime behavior. Future code should **extend** `Lay
 
 ---
 
+## WorkoutPlayer overlay (fitness shell integration)
+
+### Relationship to layout state
+
+`WorkoutPlayer` is a **modal overlay** (Radix dialog / mobile bottom sheet). It does **not**:
+
+- Change `DesktopFocusMode` or the three collapse flags
+- Update mobile `?tab=`
+- Write layout `localStorage` keys
+
+The shell keeps a separate **`workoutPlayerLaunch`** payload (`WorkoutPlayerLaunchPayload | null`). When non-null, it renders `<WorkoutPlayer open … />` as a sibling under the main workspace tree (alongside `TaskModal`, settings modals, etc.).
+
+### Launch paths
+
+| Entry           | Handler / component                                    | What gets passed                                                                                                                                     |
+| --------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Kanban **Play** | `handleStartWorkout` in `dashboard-shell.tsx`          | Full `task.metadata` (`Json`); optional `workoutData` derived from `metadataFieldsFromParsed(task.metadata).workoutExercises` for class/member flows |
+| Class board     | `handleStartWorkoutFromClass`                          | Same, plus `sessionId` and `class_instance_id` on the launch payload                                                                                 |
+| Task modal      | `WorkoutPlayerTriggers` in `TaskModalEditorChrome.tsx` | Nested player with forced `mode` (`desktop` \| `mobile`); does not use `workoutPlayerLaunch`                                                         |
+
+Trial gating: `handleStartWorkout` / `handleStartWorkoutFromClass` call `shouldBlockWorkoutForExpiredMemberPreview` and open the trial modal instead of setting launch state.
+
+On close or finish: `setWorkoutPlayerLaunch(null)`; `onComplete` calls `bumpTaskViews` so boards refresh.
+
+### Metadata at the shell boundary (parametric blocks, Steps 1–3)
+
+The shell passes **raw** `tasks.metadata` into `WorkoutPlayer`. Parsing and block layout happen **inside** the player:
+
+- `useWorkoutSessionViewModel(metadata)` → `source`, `blocks[]`, `flatExercises`, `flatCacheStale`
+- Rich cards (`source === 'rich'`) render `WorkoutPlayerBlockList` (warmup → main blocks with subtitles → finisher → cooldown)
+- Set logging, draft recovery, and `handleFinish` still use **flat global exercise indices** (`flatExercises` + `SetDraft[][]`)
+
+**Play gate (task modal only):** `WorkoutPlayerTriggers` memoizes `buildWorkoutSessionViewModel(metadata)` and returns `null` when `flatExercises.length === 0` (includes factory-derived exercises when `ai_workout_factory` exists but `metadata.exercises` is empty).
+
+**Save / sync contract (not invoked by the shell on play):**
+
+| Module                                                                                                  | Role                                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`sync-workout-metadata.ts`](../../../src/lib/workout-factory/sync-workout-metadata.ts)                 | `deriveFlatExercisesFromMetadata`, `applyFlatWorkoutEditsToMetadata`, order-sensitive `flatExercisesMatchDerived`                              |
+| [`item-metadata.ts`](../../../src/lib/item-metadata.ts)                                                 | `buildTaskMetadataPayload` → `finalizeWorkoutMetadataForSave`; strips legacy `linked_program_task_id` / `program_session_key` on workout saves |
+| [`parse-task-metadata.ts`](../../../src/lib/parse-task-metadata.ts)                                     | `parseTaskMetadata` (shared parse helper; breaks `item-metadata` ↔ `sync-workout-metadata` import cycle)                                       |
+| [`parse-workout-exercises-from-metadata.ts`](../../../src/lib/parse-workout-exercises-from-metadata.ts) | `parseWorkoutExercisesFromMetadata` for `metadata.exercises` only                                                                              |
+
+Manual flat edits (viewer Apply, live deck merge) call `applyFlatWorkoutEditsToMetadata`: factory is **preserved**, main `exerciseBlocks` degrade to a single `straight_sets` “Main” block. Session-only deck merges also strip legacy linkage keys via `stripLegacyWorkoutMetadataKeys`.
+
+### Future shell work (documented elsewhere)
+
+- **WorkoutPlayer + Coach split pane** — not a layout-collapse concern; see [workout-player.md § Architectural assessment](../workout-player.md#architectural-assessment--gap-analysis-2026-04-25)
+- **Step 4+ player UX** — interval timers, superset/contrast pairing; see [parametric-step3-plan.md § Out of scope](./parametric-step3-plan.md#out-of-scope-step-4)
+
+---
+
 ## Quick reference: key files
 
-| Concern                                  | Location                                            |
-| ---------------------------------------- | --------------------------------------------------- |
-| Collapse state, hydrate, mobile URL sync | `src/components/dashboard/dashboard-shell.tsx`      |
-| `localStorage` key names                 | `src/lib/layout-collapse-keys.ts`                   |
-| Messages / board row layout              | `src/components/dashboard/workspace-main-split.tsx` |
-| Focus mode type & switcher UI            | `src/components/layout/desktop-view-switcher.tsx`   |
-| `useLayoutCommands()` API                | `src/components/layout/layout-command-context.tsx`  |
-| Mobile tab values                        | `src/lib/mobile-crm-tab.ts`                         |
+| Concern                                  | Location                                                                                  |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Collapse state, hydrate, mobile URL sync | `src/components/dashboard/dashboard-shell.tsx`                                            |
+| WorkoutPlayer launch state & mount       | `src/components/dashboard/dashboard-shell.tsx` (`workoutPlayerLaunch`)                    |
+| WorkoutPlayer UI + ViewModel             | `src/components/fitness/WorkoutPlayer.tsx`, `src/hooks/use-workout-session-view-model.ts` |
+| Workout metadata sync / finalize         | `src/lib/workout-factory/sync-workout-metadata.ts`, `src/lib/item-metadata.ts`            |
+| `localStorage` key names                 | `src/lib/layout-collapse-keys.ts`                                                         |
+| Messages / board row layout              | `src/components/dashboard/workspace-main-split.tsx`                                       |
+| Focus mode type & switcher UI            | `src/components/layout/desktop-view-switcher.tsx`                                         |
+| `useLayoutCommands()` API                | `src/components/layout/layout-command-context.tsx`                                        |
+| Mobile tab values                        | `src/lib/mobile-crm-tab.ts`                                                               |
+
+---
+
+## Doc maintenance
+
+| Last updated | Scope                                                                                              |
+| ------------ | -------------------------------------------------------------------------------------------------- |
+| 2026-05-20   | WorkoutPlayer shell integration + parametric metadata cross-links (Steps 1–3, Copilot cycle-break) |

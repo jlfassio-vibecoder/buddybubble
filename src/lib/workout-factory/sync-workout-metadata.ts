@@ -14,8 +14,9 @@ import {
   type ProgramWorkout,
 } from '@/lib/workout-factory/program-schedule-utils';
 import { workoutInSetToTaskExercises } from '@/lib/workout-factory/map-ai-workout-to-task-exercises';
-import type { Exercise } from '@/lib/workout-factory/types/ai-program';
+import type { Exercise, ExerciseBlock, WarmupBlock } from '@/lib/workout-factory/types/ai-program';
 import type { WorkoutInSet } from '@/lib/workout-factory/types/ai-workout';
+import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -154,6 +155,126 @@ export function applyFlatWorkoutEditsToMetadata(
 
   const normalized = normalizeWorkoutForEditor(session as ProgramWorkout);
   next.exercises = workoutInSetToTaskExercises(normalized as WorkoutInSet);
+
+  return next as Json;
+}
+
+function viewExerciseToFactoryExercise(ex: Exercise, order: number): Exercise {
+  const repsRaw = ex.reps;
+  const repsNorm = normalizeRepsForStorage(repsRaw);
+  const reps =
+    repsNorm !== undefined ? (typeof repsNorm === 'number' ? String(repsNorm) : repsNorm) : '';
+  const next: Exercise = {
+    order,
+    exerciseName: ex.exerciseName?.trim() || 'Exercise',
+    sets: typeof ex.sets === 'number' && ex.sets > 0 ? ex.sets : 1,
+    reps,
+  };
+  if (ex.id) next.id = ex.id;
+  if (ex.exerciseQuery) next.exerciseQuery = ex.exerciseQuery;
+  if (typeof ex.rpe === 'number' && Number.isFinite(ex.rpe)) next.rpe = ex.rpe;
+  if (typeof ex.restSeconds === 'number' && ex.restSeconds > 0) {
+    next.restSeconds = ex.restSeconds;
+  }
+  if (typeof ex.workSeconds === 'number' && ex.workSeconds > 0) {
+    next.workSeconds = ex.workSeconds;
+  }
+  if (typeof ex.rounds === 'number' && ex.rounds > 0) next.rounds = ex.rounds;
+  if (ex.coachNotes?.trim()) next.coachNotes = ex.coachNotes.trim();
+  return next;
+}
+
+/** Map main block view → factory `ExerciseBlock` (preserves format + params). */
+export function viewBlockToExerciseBlock(view: WorkoutSessionBlockView): ExerciseBlock {
+  const exercises = (view.exercises ?? []).map((ex, i) => viewExerciseToFactoryExercise(ex, i + 1));
+  const block: ExerciseBlock = {
+    order: view.order,
+    name: view.name?.trim() || 'Main work',
+    exercises,
+  };
+  if (view.id) block.id = view.id;
+  if (view.blockFormat) block.blockFormat = view.blockFormat;
+  if (view.formatParams && Object.keys(view.formatParams).length > 0) {
+    block.formatParams = { ...view.formatParams };
+  }
+  return block;
+}
+
+/** Map instruction section view → factory `WarmupBlock`. */
+export function viewBlockToWarmupBlock(view: WorkoutSessionBlockView): WarmupBlock {
+  const base = view.instructionBlock;
+  const block: WarmupBlock = {
+    order: typeof base?.order === 'number' ? base.order : view.order,
+    exerciseName: view.name?.trim() || view.section,
+    instructions: [...(view.instructions ?? [])],
+  };
+  if (view.id) block.id = view.id;
+  if (base?.exerciseQuery) block.exerciseQuery = base.exerciseQuery;
+  return block;
+}
+
+function sortBlocksByOrder(blocks: WorkoutSessionBlockView[]): WorkoutSessionBlockView[] {
+  return blocks.slice().sort((a, b) => a.order - b.order);
+}
+
+/** Rebuild primary session workout from editor block views. */
+export function blocksViewToProgramWorkout(
+  blocks: WorkoutSessionBlockView[],
+  existingSession: ProgramWorkout,
+): ProgramWorkout {
+  const warmup = sortBlocksByOrder(blocks.filter((b) => b.section === 'warmup')).map(
+    viewBlockToWarmupBlock,
+  );
+  const main = sortBlocksByOrder(blocks.filter((b) => b.section === 'main')).map(
+    viewBlockToExerciseBlock,
+  );
+  const finisher = sortBlocksByOrder(blocks.filter((b) => b.section === 'finisher')).map(
+    viewBlockToWarmupBlock,
+  );
+  const cooldown = sortBlocksByOrder(blocks.filter((b) => b.section === 'cooldown')).map(
+    viewBlockToWarmupBlock,
+  );
+
+  const session: ProgramWorkout = {
+    title: existingSession.title ?? 'Workout',
+    description: existingSession.description ?? '',
+    exerciseBlocks: main,
+  };
+  if (warmup.length > 0) session.warmupBlocks = warmup;
+  else delete session.warmupBlocks;
+  if (finisher.length > 0) session.finisherBlocks = finisher;
+  else delete session.finisherBlocks;
+  if (cooldown.length > 0) session.cooldownBlocks = cooldown;
+  else delete session.cooldownBlocks;
+  return session;
+}
+
+/**
+ * Apply block-aware edits from the viewer editor. Updates factory tree + derived flat cache.
+ * Rich cards only; flat-only metadata is returned unchanged.
+ */
+export function applyBlockEditsToMetadata(meta: unknown, blocks: WorkoutSessionBlockView[]): Json {
+  const next = deepClone(parseTaskMetadata(meta)) as Record<string, unknown>;
+
+  if (!hasRichWorkoutSetInMetadata(next)) {
+    return next as Json;
+  }
+
+  const sessionRaw = getPrimarySession(next);
+  if (!sessionRaw) {
+    return next as Json;
+  }
+
+  const existing = normalizeWorkoutForEditor(sessionRaw as ProgramWorkout) as ProgramWorkout;
+  const merged = blocksViewToProgramWorkout(blocks, existing);
+  const normalized = normalizeWorkoutForEditor(merged) as WorkoutInSet;
+
+  const af = next.ai_workout_factory as Record<string, unknown>;
+  const ws = af.workout_set as Record<string, unknown>;
+  const workouts = ws.workouts as Record<string, unknown>[];
+  workouts[0] = normalized as unknown as Record<string, unknown>;
+
+  next.exercises = workoutInSetToTaskExercises(normalized);
 
   return next as Json;
 }

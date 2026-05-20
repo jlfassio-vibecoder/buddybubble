@@ -1,0 +1,143 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { useState } from 'react';
+import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
+import { applyBlockEditsToMetadata } from '@/lib/workout-factory/sync-workout-metadata';
+import { richMetadataWithBlockFormat } from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
+import { WorkoutBlockListEditor } from './WorkoutBlockListEditor';
+
+function ControlledEditor({
+  initialMeta,
+  onChangeSpy,
+}: {
+  initialMeta: Record<string, unknown>;
+  onChangeSpy: (blocks: ReturnType<typeof buildWorkoutSessionViewModel>['blocks']) => void;
+}) {
+  const vm = buildWorkoutSessionViewModel(initialMeta);
+  const [blocks, setBlocks] = useState(vm.blocks);
+
+  return (
+    <WorkoutBlockListEditor
+      blocks={blocks}
+      canWrite
+      workoutUnitSystem="metric"
+      onChange={(next) => {
+        setBlocks(next);
+        onChangeSpy(next);
+      }}
+      idPrefix="test"
+    />
+  );
+}
+
+describe('WorkoutBlockListEditor', () => {
+  afterEach(() => cleanup());
+
+  it('renders Tabata main header with subtitle', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('tabata'));
+
+    render(
+      <WorkoutBlockListEditor
+        blocks={vm.blocks}
+        canWrite
+        workoutUnitSystem="metric"
+        onChange={() => {}}
+      />,
+    );
+
+    expect(screen.getByTestId('workout-block-list-editor')).toBeTruthy();
+    expect(screen.getByText('MAIN')).toBeTruthy();
+    expect(screen.getByText(/Tabata/i)).toBeTruthy();
+  });
+
+  it('fires onChange with updated exercise name while preserving blockFormat', () => {
+    const meta = richMetadataWithBlockFormat('tabata');
+    const vm = buildWorkoutSessionViewModel(meta);
+    const main = vm.blocks.find((b) => b.section === 'main')!;
+    const onChange = vi.fn();
+
+    render(
+      <WorkoutBlockListEditor
+        blocks={vm.blocks}
+        canWrite
+        workoutUnitSystem="metric"
+        onChange={onChange}
+        idPrefix="tabata"
+      />,
+    );
+
+    const mainSection = screen.getByTestId(`editor-main-block-${main.id}`);
+    const nameInput = within(mainSection).getByLabelText('Exercise name');
+    fireEvent.change(nameInput, { target: { value: 'Burpee Tabata' } });
+
+    expect(onChange).toHaveBeenCalled();
+    const next = onChange.mock.calls.at(-1)![0];
+    const mainNext = next.find((b: { id: string }) => b.id === main.id)!;
+    expect(mainNext.exercises[0].exerciseName).toBe('Burpee Tabata');
+    expect(mainNext.blockFormat).toBe('tabata');
+    expect(mainNext.formatParams).toEqual(main.formatParams);
+  });
+
+  it('shows A1 and A2 station labels for superset', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('superset'));
+
+    render(
+      <WorkoutBlockListEditor
+        blocks={vm.blocks}
+        canWrite
+        workoutUnitSystem="metric"
+        onChange={() => {}}
+      />,
+    );
+
+    expect(screen.getByText('A1')).toBeTruthy();
+    expect(screen.getByText('A2')).toBeTruthy();
+  });
+
+  it('updates finisher instructions via textarea', () => {
+    const meta = richMetadataWithBlockFormat('tabata');
+    const vm = buildWorkoutSessionViewModel(meta);
+    const finisher = vm.blocks.find((b) => b.section === 'finisher')!;
+    const onChange = vi.fn();
+
+    render(
+      <WorkoutBlockListEditor
+        blocks={vm.blocks}
+        canWrite
+        workoutUnitSystem="metric"
+        onChange={onChange}
+        idPrefix="fin"
+      />,
+    );
+
+    const finSection = screen.getByTestId('editor-instruction-finisher');
+    const textarea = within(finSection).getByLabelText('Instructions (one line per bullet)');
+    fireEvent.change(textarea, { target: { value: '90s hollow hold' } });
+
+    const next = onChange.mock.calls.at(-1)![0];
+    const finNext = next.find((b: { id: string }) => b.id === finisher.id)!;
+    expect(finNext.instructions).toEqual(['90s hollow hold']);
+  });
+
+  it('round-trips editor onChange through applyBlockEditsToMetadata', () => {
+    const meta = richMetadataWithBlockFormat('tabata');
+    const vm1 = buildWorkoutSessionViewModel(meta);
+    const main = vm1.blocks.find((b) => b.section === 'main')!;
+    const onChangeSpy = vi.fn();
+
+    render(<ControlledEditor initialMeta={meta} onChangeSpy={onChangeSpy} />);
+
+    const mainSection = screen.getByTestId(`editor-main-block-${main.id}`);
+    const nameInput = within(mainSection).getByLabelText('Exercise name');
+    fireEvent.change(nameInput, { target: { value: 'Factory Renamed' } });
+
+    const editedBlocks = onChangeSpy.mock.calls.at(-1)![0];
+    const next = applyBlockEditsToMetadata(meta, editedBlocks);
+    const vm2 = buildWorkoutSessionViewModel(next);
+    const main2 = vm2.blocks.find((b) => b.section === 'main')!;
+
+    expect(main2.blockFormat).toBe('tabata');
+    expect(main2.exercises[0].exerciseName).toBe('Factory Renamed');
+    expect(main2.formatParams).toEqual(main.formatParams);
+  });
+});

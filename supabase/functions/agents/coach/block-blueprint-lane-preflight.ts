@@ -43,6 +43,7 @@ import {
 } from './block-blueprint-synthesize.ts';
 import {
   loadCurrentTaskContext,
+  resolveCoachTaskMetadataForMerge,
   resolveCurrentWorkoutContextJsonFromThread,
   resolveKnownTargetTaskId,
 } from './context.ts';
@@ -274,27 +275,6 @@ export async function tryBlockBlueprintLanePreflight(
   const messageText = typeof ctx.message.content === 'string' ? ctx.message.content : '';
   const exerciseMentions = parseExerciseMentionsFromMetadata(ctx.message.metadata);
 
-  const gate = resolveBlockBlueprintRouterGate({
-    isRailSurface,
-    blockMentions,
-    knownTargetTaskId,
-    taskMetadataForContext,
-    coachMergeWorkoutMetadata: ctx.coachMergeWorkoutMetadata === true,
-    messageText,
-    exerciseMentions,
-  });
-
-  if (!gate.eligible) {
-    if (blockMentions.length > 0 && gate.reason === 'merge_disabled') {
-      log('info', 'lane_blocked_merge_disabled', {
-        request_id: ctx.requestId,
-        slug: COACH_SLUG,
-        reason: gate.reason,
-      });
-    }
-    return null;
-  }
-
   const workoutContextJson = resolveCurrentWorkoutContextJsonFromThread(
     ctx.history,
     { metadata: ctx.message.metadata },
@@ -302,12 +282,39 @@ export async function tryBlockBlueprintLanePreflight(
     { preferTaskMetadata: true, requestId: ctx.requestId },
   );
 
+  const taskMetadataForMerge = resolveCoachTaskMetadataForMerge(
+    taskMetadataForContext,
+    workoutContextJson,
+  );
+
+  const gate = resolveBlockBlueprintRouterGate({
+    isRailSurface,
+    blockMentions,
+    knownTargetTaskId,
+    taskMetadataForContext: taskMetadataForMerge,
+    coachMergeWorkoutMetadata: ctx.coachMergeWorkoutMetadata === true,
+    messageText,
+    exerciseMentions,
+  });
+
+  if (!gate.eligible) {
+    if (blockMentions.length > 0) {
+      log('info', 'coach block blueprint lane blocked', {
+        request_id: ctx.requestId,
+        slug: COACH_SLUG,
+        reason: gate.reason,
+        has_trigger_workout_context: workoutContextJson != null,
+      });
+    }
+    return null;
+  }
+
   if (gate.lane === 'lane2') {
     const lane2 = await runLane2ExerciseFill(
       ctx,
       env,
       gate,
-      taskMetadataForContext,
+      taskMetadataForMerge,
       workoutContextJson,
     );
     if (lane2 === 'lane2_failed') {
@@ -327,7 +334,7 @@ export async function tryBlockBlueprintLanePreflight(
   }
 
   const blocks = buildDeterministicCoachBlocks(gate.assigned);
-  const { p_new_metadata } = buildMergedTaskMetadataForBlockAppend(taskMetadataForContext, blocks);
+  const { p_new_metadata } = buildMergedTaskMetadataForBlockAppend(taskMetadataForMerge, blocks);
   const templateReply = templateBlockAppendReply(blocks);
   const replyText = await maybePolishLane1Reply(
     ctx,

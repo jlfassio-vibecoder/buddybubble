@@ -4,6 +4,8 @@ import { useMemo } from 'react';
 import { useWorkoutDeckSelectionOptional } from '@/features/live-video/shells/huddle/workout-deck-selection-context';
 import type { SessionDeckSnapshot } from '@/features/live-video/shells/huddle/session-deck-snapshot';
 import { metadataFieldsFromParsed, type WorkoutExercise } from '@/lib/item-metadata';
+import { formatRichWorkoutStripSummary } from '@/lib/workout-factory/format-block-summary-line';
+import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import { cn } from '@/lib/utils';
 
 export type UpNextCardProps = {
@@ -66,17 +68,29 @@ export function UpNextCard({ className, maxExercises = 6 }: UpNextCardProps) {
     const fields = metadataFieldsFromParsed(upNext.task.metadata);
     const title = upNext.task.title?.trim() || 'Untitled workout';
     const duration = formatDurationLabel(fields.workoutDurationMin);
-    const exerciseLines = fields.workoutExercises
-      .map(formatExerciseLine)
-      .filter((s): s is string => Boolean(s));
-    const clipped = exerciseLines.slice(0, maxExercises);
-    const overflow = exerciseLines.length - clipped.length;
-    const exerciseText =
-      clipped.length === 0
-        ? null
-        : overflow > 0
-          ? `${clipped.join(' · ')} · +${overflow} more`
-          : clipped.join(' · ');
+    const vm = buildWorkoutSessionViewModel(upNext.task.metadata);
+
+    let exerciseText: string | null = null;
+    if (vm.source === 'rich' && vm.blocks.length > 0) {
+      exerciseText = formatRichWorkoutStripSummary(vm.blocks, {
+        maxBlocks: 3,
+        flatExercises: vm.flatExercises,
+        maxFlatExercises: maxExercises,
+      });
+    } else {
+      const exerciseLines = fields.workoutExercises
+        .map(formatExerciseLine)
+        .filter((s): s is string => Boolean(s));
+      const clipped = exerciseLines.slice(0, maxExercises);
+      const overflow = exerciseLines.length - clipped.length;
+      exerciseText =
+        clipped.length === 0
+          ? null
+          : overflow > 0
+            ? `${clipped.join(' · ')} · +${overflow} more`
+            : clipped.join(' · ');
+    }
+
     return { title, duration, exerciseText, workoutType: fields.workoutType?.trim() || null };
   }, [upNext, maxExercises]);
 

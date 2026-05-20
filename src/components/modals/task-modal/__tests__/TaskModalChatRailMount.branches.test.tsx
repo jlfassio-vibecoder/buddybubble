@@ -32,5 +32,7 @@ describe('TaskModal standard rail (Phase 3.7 / 3.8)', () => {
       src.includes("if (itemType !== 'workout' && itemType !== 'workout_log') return null"),
     ).toBe(true);
     expect(src.includes('task_modal_live_state:')).toBe(true);
+    expect(src.includes('buildTaskModalOutgoingWorkoutContext')).toBe(true);
+    expect(src.includes('workoutContext')).toBe(true);
   });
 });

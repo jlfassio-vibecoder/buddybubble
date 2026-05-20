@@ -97,6 +97,8 @@ import type { TaskModalIntakePatch } from '@/lib/agents/coach/task-modal-intake-
 import { BUDDY_ONBOARDING_SYSTEM_EVENT } from '@/lib/agents/buddy-sentinel';
 import { defaultSlugForItemType } from '@/lib/agents/defaultSlugForItemType';
 import { logAgentRoutingEvent } from '@/lib/agents/agentRoutingLogger';
+import { buildTaskModalOutgoingWorkoutContext } from '@/lib/agents/coach/task-modal-outgoing-workout-context';
+import { hasRichWorkoutSetInMetadata } from '@/lib/workout-factory/sync-workout-metadata';
 import { MessageMediaModal } from '@/components/chat/MessageMediaModal';
 import { useUserProfileStore } from '@/store/userProfileStore';
 
@@ -314,6 +316,10 @@ export function TaskModal({
   /** Workspace member user id, or null = unassigned */
   const [assignedTo, setAssignedTo] = useState<string | null>(null);
   const [metadata, setMetadata] = useState<Json>({});
+  const metadataRef = useRef(metadata);
+  useEffect(() => {
+    metadataRef.current = metadata;
+  }, [metadata]);
   const [eventLocation, setEventLocation] = useState('');
   const [eventUrl, setEventUrl] = useState('');
   const [experienceSeason, setExperienceSeason] = useState('');
@@ -623,9 +629,16 @@ export function TaskModal({
         nextItemType = 'task';
       }
       const nextMeta = parseTaskMetadata((row as TaskRow).metadata);
+      const preserveLocalRichWorkout =
+        silent &&
+        hasRichWorkoutSetInMetadata(metadataRef.current) &&
+        !hasRichWorkoutSetInMetadata(nextMeta);
+      const metaToApply = preserveLocalRichWorkout
+        ? parseTaskMetadata(metadataRef.current)
+        : nextMeta;
       setItemType(nextItemType);
-      setMetadata(nextMeta);
-      const mf = metadataFieldsFromParsed(nextMeta);
+      setMetadata(metaToApply);
+      const mf = metadataFieldsFromParsed(metaToApply);
       setEventLocation(mf.eventLocation);
       setEventUrl(mf.eventUrl);
       setExperienceSeason(mf.experienceSeason);
@@ -661,7 +674,7 @@ export function TaskModal({
         scheduledOn: row.scheduled_on ? String(row.scheduled_on).slice(0, 10) : null,
         scheduledTime: st || null,
         itemType: nextItemType,
-        metadataJson: JSON.stringify(buildTaskMetadataPayload(nextItemType, mf, nextMeta)),
+        metadataJson: JSON.stringify(buildTaskMetadataPayload(nextItemType, mf, metaToApply)),
         visibility: vis,
         assignedTo: assignee,
         liveStreamEnabled: nextLiveEnabled,
@@ -1203,7 +1216,7 @@ export function TaskModal({
   const buildStandardTaskChatRailOutgoingMetadata = useCallback(
     ({ content: _content, files: _files }: { content: string; files: File[] }) => {
       if (itemType !== 'workout' && itemType !== 'workout_log') return null;
-      return {
+      const payload: Record<string, Json> = {
         task_modal_live_state: {
           v: 1,
           item_type: itemType,
@@ -1215,10 +1228,17 @@ export function TaskModal({
           soreness: workoutIntake.sorenessArray,
           equipment: workoutIntake.equipmentArray,
         },
-      } as Record<string, Json>;
+      };
+      const workoutContext = buildTaskModalOutgoingWorkoutContext(metadata, title);
+      if (workoutContext) {
+        payload.workoutContext = workoutContext as Json;
+      }
+      return payload;
     },
     [
       itemType,
+      metadata,
+      title,
       workoutIntake.step,
       workoutIntake.readiness,
       workoutIntake.sleepQuality,
@@ -2092,10 +2112,12 @@ export function TaskModal({
               <WorkoutViewerContent
                 workoutSet={viewerWorkoutSet}
                 exercises={workoutExercises}
+                metadata={metadata}
                 title={title}
                 description={description}
                 canWrite={canWrite}
                 workoutUnitSystem={workoutUnitSystem}
+                readVariant={itemType === 'workout_log' ? 'log' : 'workout'}
                 onApply={handleWorkoutViewerApply}
                 onRequestClose={() => setWorkoutViewerOpen(false)}
                 syncKey={workoutPaneSyncKey}

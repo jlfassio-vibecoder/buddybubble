@@ -133,6 +133,7 @@ import {
   shouldSoftLockTrialSurfaces,
 } from '@/lib/member-trial-soft-lock';
 import { metadataFieldsFromParsed } from '@/lib/item-metadata';
+import { buildWorkoutCoachRailContext } from '@/lib/workout-factory/build-workout-coach-rail-context';
 import { TrialBanner } from '@/components/subscription/trial-banner';
 import { ExpiredGate } from '@/components/subscription/expired-gate';
 import { StartTrialModal } from '@/components/subscription/start-trial-modal';
@@ -1128,8 +1129,10 @@ function DashboardShellInner({
         openTrialModal();
         return;
       }
-      const workoutData = metadataFieldsFromParsed(task.metadata ?? {})
-        .workoutExercises as unknown as Json;
+      const workoutData = buildWorkoutCoachRailContext(
+        task.metadata ?? {},
+        task.title ?? '',
+      ) as unknown as Json;
       setWorkoutPlayerLaunch({
         task,
         sessionId: null,
@@ -1148,8 +1151,10 @@ function DashboardShellInner({
         openTrialModal();
         return;
       }
-      const workoutData = metadataFieldsFromParsed(task.metadata ?? {})
-        .workoutExercises as unknown as Json;
+      const workoutData = buildWorkoutCoachRailContext(
+        task.metadata ?? {},
+        task.title ?? '',
+      ) as unknown as Json;
       setWorkoutPlayerLaunch({
         task,
         sessionId,

@@ -34,6 +34,7 @@ import { useLiveTheaterLayoutPlanContext } from '@/features/live-video/theater/l
 import { SessionHeader } from '@/features/live-video/shells/huddle/SessionHeader';
 import { SessionControls } from '@/features/live-video/shells/huddle/SessionControls';
 import { SessionDeckBuilder } from '@/features/live-video/shells/huddle/SessionDeckBuilder';
+import { UpNextCard } from '@/features/live-video/shells/huddle/UpNextCard';
 import { Button } from '@/components/ui/button';
 import { LiveSessionWorkoutPlayer } from '@/features/live-video/shells/huddle/LiveSessionWorkoutPlayer';
 import { LiveDeckExerciseInjector } from '@/features/live-video/shells/huddle/LiveDeckExerciseInjector';
@@ -497,6 +498,8 @@ function LiveSessionViewInner({
         </div>
 
         <SessionDeckBuilder state={state} className="min-h-0 min-w-0 shrink-0" />
+
+        {uiMode === 'live' && !selectingFromBoard ? <UpNextCard className="shrink-0" /> : null}
 
         {showEmbeddedBoardSelection ? (
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">

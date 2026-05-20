@@ -14,7 +14,13 @@ import {
   parseTaskMetadata,
   type WorkoutExercise,
 } from '@/lib/item-metadata';
-import { applyFlatWorkoutEditsToMetadata } from '@/lib/workout-factory/sync-workout-metadata';
+import type { WorkoutViewerApplyPayload } from '@/components/fitness/workout-viewer-dialog';
+import {
+  applyBlockEditsToMetadata,
+  applyFlatWorkoutEditsToMetadata,
+  deriveFlatExercisesFromMetadata,
+  flatExercisesMatchDerived,
+} from '@/lib/workout-factory/sync-workout-metadata';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import type { WorkoutTemplate } from '@/hooks/use-workout-templates';
 
@@ -192,13 +198,27 @@ export function useTaskWorkoutAi({
   }, [open, taskId, loading, initialOpenWorkoutViewer, hasWorkoutViewerContent]);
 
   const handleWorkoutViewerApply = useCallback(
-    (payload: { title: string; description: string; exercises: WorkoutExercise[] }) => {
+    (payload: WorkoutViewerApplyPayload) => {
       setTitle(payload.title);
       setDescription(payload.description);
+
+      if (payload.blocks != null && payload.blocks.length > 0) {
+        const nextMeta = applyBlockEditsToMetadata(metadata, payload.blocks) as Json;
+        setMetadata(nextMeta);
+        setWorkoutExercises(deriveFlatExercisesFromMetadata(nextMeta));
+        return;
+      }
+
       setWorkoutExercises(payload.exercises);
-      setMetadata((prev) => applyFlatWorkoutEditsToMetadata(prev, payload.exercises) as Json);
+      setMetadata((prev) => {
+        const derived = deriveFlatExercisesFromMetadata(prev);
+        if (flatExercisesMatchDerived(payload.exercises, derived)) {
+          return prev;
+        }
+        return applyFlatWorkoutEditsToMetadata(prev, payload.exercises) as Json;
+      });
     },
-    [setTitle, setDescription, setWorkoutExercises, setMetadata],
+    [metadata, setTitle, setDescription, setWorkoutExercises, setMetadata],
   );
 
   return {

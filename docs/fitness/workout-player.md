@@ -6,16 +6,21 @@ Full-screen modal (**desktop**: centered Radix dialog; **mobile**: bottom sheet)
 
 ## WorkoutPlayerProps
 
-| Prop               | Notes                                                                                                                                                                                                                            |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `open` / `onClose` | Controls visibility; closing the root calls `onClose`.                                                                                                                                                                           |
-| `mode`             | Optional `'desktop'` \| `'mobile'`. If omitted, `useLayoutEffect` picks mobile when `matchMedia('(max-width: 768px)')` matches on open.                                                                                          |
-| `workspaceId`      | Loads `fitness_profiles.unit_system` for this workspace and current user.                                                                                                                                                        |
-| `workoutTitle`     | Shown in chrome; log task title becomes `` `${workoutTitle} — Log` ``.                                                                                                                                                           |
-| `metadata`         | Raw `tasks.metadata` (`Json`); `useWorkoutSessionViewModel` runs inside the player so session state does not reset on parent re-renders. Rich factory cards render block sections + subtitles; flat exercises drive set logging. |
-| `bubbleId`         | Inserted on the new `workout_log` row.                                                                                                                                                                                           |
-| `sourceTaskId`     | Source **`workout`** (or compatible) task id (`null` in edge cases): copies `program_id`, `program_session_key`, `scheduled_on`, `scheduled_time`, `visibility`, and assignees onto the log row.                                 |
-| `onComplete`       | Invoked after successful insert (e.g. shell’s `bumpTaskViews`); then `onClose` runs.                                                                                                                                             |
+| Prop                | Notes                                                                                                                                                                                                                            |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `open` / `onClose`  | Controls visibility; closing the root calls `onClose`.                                                                                                                                                                           |
+| `mode`              | Optional `'desktop'` \| `'mobile'`. If omitted, `useLayoutEffect` picks mobile when `matchMedia('(max-width: 768px)')` matches on open.                                                                                          |
+| `workspaceId`       | Loads `fitness_profiles.unit_system` for this workspace and current user; passed to `WorkoutCoachRail`.                                                                                                                          |
+| `workoutTitle`      | Shown in chrome; log task title becomes `` `${workoutTitle} — Log` ``.                                                                                                                                                           |
+| `metadata`          | Raw `tasks.metadata` (`Json`); `useWorkoutSessionViewModel` runs inside the player so session state does not reset on parent re-renders. Rich factory cards render block sections + subtitles; flat exercises drive set logging. |
+| `bubbleId`          | Inserted on the new `workout_log` row; scopes Coach rail messages to the task bubble.                                                                                                                                            |
+| `sourceTaskId`      | Source **`workout`** (or compatible) task id (`null` in edge cases): copies `program_id`, `program_session_key`, `scheduled_on`, `scheduled_time`, `visibility`, and assignees onto the log row; draft recovery key.             |
+| `sessionId`         | Live class session id when launched from class board; forwarded to `WorkoutCoachRail` (`null` for Kanban play).                                                                                                                  |
+| `class_instance_id` | Class instance id when launched from class board; forwarded to Coach rail and draft autosave metadata.                                                                                                                           |
+| `isMemberView`      | When `true`, Coach rail uses member-scoped context (class / member flows).                                                                                                                                                       |
+| `canPostMessages`   | Gates Coach rail composer, attachments, and send in `WorkoutCoachRail`; shell passes workspace write permission.                                                                                                                 |
+| `workoutData`       | Optional legacy flat exercise JSON for Coach rail context; player prefers live `flatExercises` from the ViewModel when non-empty.                                                                                                |
+| `onComplete`        | Invoked after successful insert (e.g. shell’s `bumpTaskViews`); then `onClose` runs.                                                                                                                                             |
 
 ## Unit display
 
@@ -47,123 +52,106 @@ Exported helper that renders **Desktop Player** and **Mobile Player** buttons; e
 
 ## Shell integration
 
-[DashboardShell](../../src/components/dashboard/dashboard-shell.tsx) mounts a single **`WorkoutPlayer`** when `workoutPlayerTask` is set (from `KanbanBoard` **`onStartWorkout`** after trial checks), passing **`workoutPlayerTask.metadata`** and the task id (no pre-parsed `exercises` array).
+[DashboardShell](../../src/components/dashboard/dashboard-shell.tsx) mounts a single **`WorkoutPlayer`** when **`workoutPlayerLaunch`** is set (from `KanbanBoard` **`onStartWorkout`** or class board **`handleStartWorkoutFromClass`**, after trial checks). The shell passes raw **`task.metadata`**, `bubbleId`, `sourceTaskId`, optional `sessionId` / `class_instance_id`, and `canPostMessages` from workspace permissions. The player builds the block-aware body internally via `useWorkoutSessionViewModel` — no pre-parsed exercise array is required at the shell boundary.
+
+See also [views/layout-shell-architecture.md](views/layout-shell-architecture.md) for how the overlay relates to layout collapse / mobile tabs.
 
 ## Related docs
 
 - [README.md](README.md)
 - [workout-exercises-editor.md](workout-exercises-editor.md) (editing before play happens in task modal, not inside `WorkoutPlayer`)
+- [views/parametric-step3-plan.md](views/parametric-step3-plan.md) — block-aware player P0 (shipped)
 
 ---
 
-## Architectural assessment & gap analysis (2026-04-25)
+## Architectural assessment (updated 2026-05-20)
 
-This section captures the current `WorkoutPlayer` architecture, how “split pane” is implemented elsewhere (notably the WorkoutViewer-in-TaskModal pattern), and what’s missing to add a **WorkoutPlayer + Messages (Coach)** split pane that “opens the same way” as today.
+This section describes the **current** `WorkoutPlayer` architecture after Parametric Workout Blocks **Steps 1–3**: block-aware rendering via `WorkoutSessionViewModel`, flat-indexed set logging unchanged, and an integrated **Coach split pane**.
 
-### Current `WorkoutPlayer` architecture (as-is)
+### Mount and entry points
 
-- **Mount + open semantics**
-  - `WorkoutPlayer` is a **client component** that renders a **Radix Dialog**.
-  - `DashboardShell` mounts it when `workoutPlayerTask` is set, and passes `open={true}` (single-instance shell mount).
-  - `WorkoutPlayerTriggers` can also mount nested players (desktop/mobile buttons inside the Task Modal editor chrome) by setting `mode` and toggling a local `mode` state.
+- **Client component** — Radix dialog (desktop) or bottom sheet (mobile).
+- **Dashboard shell** — `workoutPlayerLaunch` state; `handleStartWorkout` / `handleStartWorkoutFromClass` set payload and render `<WorkoutPlayer open … />`.
+- **Task modal** — `WorkoutPlayerTriggers` mounts a nested player with forced `mode`; gate uses memoized `buildWorkoutSessionViewModel(metadata).flatExercises.length > 0`.
 
-- **UI layout**
-  - **Desktop**: centered dialog with fixed max width (`sm:max-w-2xl`) and `h-[90dvh]`.
-  - **Mobile**: bottom sheet with drag handle and `h-[92dvh]`.
-  - Single-column body with: header (title + timer + view toggle), scrollable exercise panels, footer (Cancel / Finish).
+The overlay does not change workspace layout collapse or mobile `?tab=` (see [layout-shell-architecture.md](views/layout-shell-architecture.md)).
 
-- **State + data flow**
-  - Parses `tasks.metadata` inside the player using `metadataFieldsFromParsed`, with a JSON digest pattern to avoid parent re-render resets.
-  - Builds per-exercise `logs` state (`SetDraft[][]`) seeded via `makeSets(ex)` when opened.
-  - Local-only elapsed timer via `setInterval` while open.
-  - Loads `fitness_profiles.unit_system` for `(workspaceId, profileId)` on open to format target lines (`kg` vs `lbs`).
+### State and data flow
 
-- **Persistence / finish**
-  - `handleFinish` inserts a `tasks` row with `item_type: 'workout_log'`, `status: 'completed'`, and `metadata.exercises` containing only **completed sets**.
-  - Optionally loads the `sourceTaskId` task to copy scheduling / program fields + replicate assignees via `replaceTaskAssigneesWithUserIds`.
-  - Error handling is `toast.error(formatUserFacingError(...))`.
+```mermaid
+flowchart TB
+  META[tasks.metadata Json]
+  VM[useWorkoutSessionViewModel]
+  META --> VM
+  VM --> SRC[source: rich | flat | empty]
+  VM --> BLOCKS[blocks + subtitles]
+  VM --> FLAT[flatExercises]
+  FLAT --> LOGS[SetDraft matrix by global index]
+  FLAT --> FINISH[handleFinish flat payload]
+  FLAT --> COACH[WorkoutCoachRail workoutData]
+  SRC -->|rich + blocks| BL[WorkoutPlayerBlockList]
+  SRC -->|flat fallback| LIN[linear WorkoutPlayerExercisePanel list]
+  BL --> PANELS[WorkoutPlayerExercisePanel per exercise]
+  LIN --> PANELS
+```
 
-### Where “split pane” exists today (WorkoutViewer pattern)
+1. **`useWorkoutSessionViewModel(metadata)`** — memoized read model from [workout-session-view-model.ts](../../src/lib/workout-factory/workout-session-view-model.ts):
+   - **`source === 'rich'`** when `ai_workout_factory.workout_set.workouts[]` is non-empty.
+   - **`flatExercises`** — derived from factory via `workoutInSetToTaskExercises` when rich; else from `metadata.exercises`.
+   - **`blocks[]`** — warmup / main / finisher / cooldown with `formatBlockSubtitle` per main block.
+   - **`flatCacheStale`** — stored flat list differs from factory-derived list (not yet surfaced in UI).
 
-There are two relevant, already-established patterns:
+2. **`exercises = sessionVm.flatExercises`** — single list for logs, Coach rail, personal notes, and finish.
 
-- **TaskModal workout split pane**
-  - `TaskModal` conditionally enables `showWorkoutSplitPane` and switches to a **two-column layout** (`md:flex-row`).
-  - Left column is a **narrow rail** (“Card + Comments”), right column is `WorkoutViewerContent` rendered with `layout="embedded"`.
-  - On mobile, this becomes a **two-tab unified pane** (“Workout” vs “Card”) rather than a true side-by-side split.
+3. **Draft recovery identity** — `exercisesStringDigest` (`JSON.stringify(exercises)`) plus `sourceTaskId` and `bubbleId` reset `logs` when exercise content changes; avoids churn from unrelated parent re-renders while still recovering when metadata content changes.
 
-- **Workspace-level Messages vs Board split**
-  - `WorkspaceMainSplit` implements a resizable split between **Messages** (`ChatArea`) and the **board/calendar stage**.
-  - It persists per-workspace chat width in localStorage and has well-defined collapse/expand behavior.
+4. **Set state** — `logs: SetDraft[][]` indexed by **global exercise index** (same as flat list order). Seeded with `makeSets(ex)` on open / recovery. Unchanged finish shape: flat `metadata.exercises` + completed `set_logs` only.
 
-For the requested change, the **TaskModal workout split pane** is the closest analogue: it’s a local, modal-scoped two-column composition (not the full workspace layout manager).
+5. **Unit system** — loaded from `fitness_profiles` for `(workspaceId, userId)` on open.
 
-### Coach / messages rail primitives already in the codebase
+### Rich vs flat body rendering
 
-- `ChatArea` is the “messages rail” component used in the workspace shell.
-- `ChatArea` has an explicit surface-level default agent slug:
-  - `CHAT_AREA_DEFAULT_AGENT_SLUG = 'coach'`
-  - The comment above it states: “The fitness surface assumes `@Coach` is the implicit responder for non-mention messages.”
-- `ChatArea` uses `resolveTargetAgent(... contextDefaultAgentSlug ...)` so that messages without an explicit `@mention` still route to Coach by default.
+`PlayerBody` chooses the scroll region:
 
-### Gaps to implement “WorkoutPlayer split pane + Coach-only message rail”
+| Condition                                                                                | UI                                                                                                                                                                                              |
+| ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sessionVm.source === 'rich'` **and** `blocks.length > 0` **and** `exercises.length > 0` | [WorkoutPlayerBlockList](../../src/components/fitness/workout-block-renderer/WorkoutPlayerBlockList.tsx) — instruction sections (warmup/finisher/cooldown) + main blocks with headers/subtitles |
+| Otherwise                                                                                | Linear list of `WorkoutPlayerExercisePanel` (legacy flat path)                                                                                                                                  |
 
-#### 1) `WorkoutPlayer` has no messages/chat integration today
+Block list maps main-block exercises to global log indices via [workout-player-exercise-index.ts](../../src/lib/workout-factory/workout-player-exercise-index.ts). **P0 only:** subtitles and extended target lines (work/rest/rounds); no AMRAP/EMOM/Tabata timers or superset pairing UX yet ([parametric-step3-plan.md § Out of scope](views/parametric-step3-plan.md#out-of-scope-step-4)).
 
-- **Current**: `WorkoutPlayer` is self-contained (exercise logging + finish insert) and does not render `ChatArea` (or any message/thread UI).
-- **Needed**: a right-hand pane that renders the messages rail while the workout is active.
+### Split pane and Coach rail (shipped)
 
-#### 2) We need “message rail only” without disturbing global workspace chat state
+The player body is a **two-pane split** (`splitPaneBody`):
 
-`ChatArea` is currently tightly coupled to `useWorkspaceStore` for:
+- **Desktop** — Coach rail left (`md:max-w-[min(38%,400px)]`), workout logging right; dialog widened (`sm:max-w-6xl`).
+- **Mobile** — tabbed **Workout | Coach** (`mobileUnifiedPane`); only one pane visible at a time.
 
-- Active bubble selection (`activeBubble`)
-- Workspace id (`activeWorkspace?.id`)
+**Left pane:** [WorkoutCoachRail](../../src/components/chat/WorkoutCoachRail.tsx) with props from `WorkoutPlayer`:
 
-To show “message rail only” _inside the workout player_ without changing the user’s main selected bubble / chat context in the dashboard, we’ll need one of:
+| Prop                                             | Role                                                                                    |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `workspaceId`, `bubbleId`                        | Scoped thread context (does not rely on global bubble selection for routing)            |
+| `taskId`                                         | `sourceTaskId` (empty string when null)                                                 |
+| `canPostMessages`                                | Disables composer, attach, and send when false                                          |
+| `sessionId`, `class_instance_id`, `isMemberView` | Class / member session context                                                          |
+| `workoutTitle`, `workoutData`                    | Coach context; `workoutData` prefers live `flatExercises` over shell `workoutData` prop |
+| `onApplyExecutionPatch`                          | Applies Coach `execution_patch` into `logs` by `exerciseIndex`                          |
 
-- **A dedicated “rail” wrapper** for workout player that uses the same underlying message/thread hooks but does **not** depend on the global `useWorkspaceStore` bubble selection, or
-- A way to **scope/override** `ChatArea`’s active bubble/workspace context for this surface (e.g. explicit `workspaceId` + `bubbleId` props, with store reads only as fallback).
+**Right pane:** `PlayerBody` (header, exercise scroll, Cancel / Finish footer).
 
-This is the biggest architectural gap: the UI exists, and the Coach routing exists, but the workout player needs a **scoped chat context** so it doesn’t mutate the main app’s chat selection when it opens/closes.
+### Persistence
 
-#### 3) Pane choreography and mobile parity
+- **Draft autosave** — in-progress `SetDraft[][]` to a draft `workout_log` row when `sourceTaskId` is set (debounced).
+- **Finish** — inserts completed `workout_log` with flat exercises; copies program/schedule/assignees from source task.
 
-- **Desired**: “split pane like the WorkoutViewer” implies:
-  - Desktop: two columns.
-  - Mobile: a unified/tabs approach (“Workout” vs “Coach”), matching `TaskModal`’s mobile split handling.
-- **Current `WorkoutPlayer`**: already has distinct desktop dialog vs mobile bottom sheet chromes. Adding a split pane must preserve these entry points while changing only the interior composition.
+### Remaining gaps (Step 4+)
 
-#### 4) “Open exactly the same way” constraints
+Documented in [views/README.md](views/README.md) and [parametric-step3-plan.md](views/parametric-step3-plan.md):
 
-The WorkoutPlayer must continue to:
-
-- Open from `DashboardShell`’s `workoutPlayerTask` the same way (no additional navigation).
-- Preserve `mode` forcing from `WorkoutPlayerTriggers`.
-- Keep the finish flow exactly as-is (it is production-critical DB behavior).
-
-The split-pane + chat rail should be additive and should not change the insert payload shape or the reset semantics tied to `open` + `sourceTaskId` + exercises digest.
-
-#### 5) “Coach loaded to assist… and fill out the workout player”
-
-The codebase already supports:
-
-- Coach as default agent for chat (`ChatArea`).
-- Rich message composing + attachments + thread panel.
-
-What’s not implemented (yet) in `WorkoutPlayer`:
-
-- Any notion of “Coach can fill out sets for the user” (i.e., writing to the player’s `logs` state from a chat action).
-
-This will require an explicit integration surface:
-
-- **Option A (lower coupling)**: Coach replies with structured “draft cards” (similar to `CoachDraftCard`) that the user can apply into the workout player (sets/reps/weight) via a UI button.
-- **Option B (direct coupling)**: Chat actions dispatch directly into the workout player via callbacks/refs (higher risk, tighter coupling).
-
-This doc update focuses on the split-pane + rail plumbing; the “fill out for the user” piece will need a follow-up design decision on _how_ Coach proposes/applies changes into `logs`.
-
-### Recommended implementation direction (based on current patterns)
-
-- **Layout**: mirror `TaskModal`’s split-pane composition (flex row, fixed/narrow rail width on desktop; tabbed “Workout vs Coach” on mobile).
-- **Messages rail**: reuse as much of `ChatArea` as possible, but introduce a workout-player-scoped variant or override hooks so it can render messages for `bubbleId` without mutating global `useWorkspaceStore` selection.
-- **Agent**: rely on existing default agent slug `'coach'` (already aligned with the fitness surface) so “Coach” is the implicit responder.
+- Interval timer shells (AMRAP / EMOM / Tabata)
+- Superset / contrast paired-round UX
+- Ladder / pyramid progression UI
+- Block metadata on finished `workout_log`
+- Shared block renderer for `RichWorkoutReadView`, deck “up next”, and live loggers
+- User-visible warning when `flatCacheStale` is true

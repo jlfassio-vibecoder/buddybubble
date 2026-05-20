@@ -2,6 +2,7 @@
 
 import { ChevronDown, Sparkles } from 'lucide-react';
 import { WorkoutExercisesEditor } from '@/components/fitness/workout-exercises-editor';
+import { WorkoutLogReadSummary } from '@/components/fitness/workout-block-renderer';
 import { PremiumGate } from '@/components/subscription/premium-gate';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -54,6 +55,12 @@ export function TaskModalWorkoutFields({
   workoutUnitSystem,
   autoEditFirstRow,
 }: TaskModalWorkoutFieldsProps) {
+  const durationMins = parseInt(workoutDurationMin, 10);
+  const logReadMetadata = {
+    exercises: workoutExercises,
+    ...(!Number.isNaN(durationMins) && durationMins > 0 ? { duration_min: durationMins } : {}),
+  };
+
   return (
     <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
       <div className="flex items-center justify-between gap-2">
@@ -153,15 +160,25 @@ export function TaskModalWorkoutFields({
           />
         </div>
       </div>
-      <WorkoutExercisesEditor
-        key={taskId ?? 'new-task'}
-        exercises={workoutExercises}
-        onChange={onWorkoutExercisesChange}
-        canWrite={canWrite}
-        workoutUnitSystem={workoutUnitSystem}
-        idPrefix="task-ex"
-        autoEditFirstRow={autoEditFirstRow}
-      />
+      {itemType === 'workout_log' ? (
+        <WorkoutLogReadSummary
+          metadata={logReadMetadata}
+          taskId={taskId}
+          density="full"
+          unitSystem={workoutUnitSystem}
+          data-testid="task-modal-workout-log-read"
+        />
+      ) : (
+        <WorkoutExercisesEditor
+          key={taskId ?? 'new-task'}
+          exercises={workoutExercises}
+          onChange={onWorkoutExercisesChange}
+          canWrite={canWrite}
+          workoutUnitSystem={workoutUnitSystem}
+          idPrefix="task-ex"
+          autoEditFirstRow={autoEditFirstRow}
+        />
+      )}
     </div>
   );
 }
