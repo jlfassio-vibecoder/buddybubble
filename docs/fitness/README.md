@@ -68,7 +68,8 @@ Deeper database and RLS behavior live under [supabase/migrations/](../../supabas
 **[views/parametric-step1-2-plan.md](views/parametric-step1-2-plan.md)** — Steps 1 & 2 (data contract + ViewModel)  
 **[views/parametric-step3-plan.md](views/parametric-step3-plan.md)** — Step 3 (shipped): WorkoutPlayer block-aware P0 — `useWorkoutSessionViewModel`, `WorkoutPlayerBlockList`, block headers/subtitles during play; flat `SetDraft[][]` logging and finish payload unchanged. Interval timers and format-specific execution UX are out of scope for this step. Dashboard layout/shell notes: [views/layout-shell-architecture.md](views/layout-shell-architecture.md).  
 **[views/parametric-step4-plan.md](views/parametric-step4-plan.md)** — Step 4 parent plan (M0–M2 shipped).  
-**[views/parametric-step4-m2-plan.md](views/parametric-step4-m2-plan.md)** — Step 4 M2 (shipped): `UpNextCard`, `ParticipantPreJoinSummary`, `CoachDraftCard` read parity via ViewModel + compact renderer / strip summaries.  
+**[views/parametric-step4-m2-plan.md](views/parametric-step4-m2-plan.md)** — Step 4 M2 (shipped): `UpNextCard`, `ParticipantPreJoinSummary`, `CoachDraftCard` read parity.  
+**[views/parametric-step4-m3-plan.md](views/parametric-step4-m3-plan.md)** — Step 4 M3 (shipped): `SessionDeckBuilder` deck summaries, live `UpNextCard`, `buildWorkoutCoachRailContext` for Coach rail / launch payload.  
 **[views/parametric-step4-m1-plan.md](views/parametric-step4-m1-plan.md)** — Step 4 M1 (shipped): shared `WorkoutBlockListRenderer`; core viewers wired to the ViewModel.  
 **[views/parametric-step5-plan.md](views/parametric-step5-plan.md)** — Step 5 (planned): block-aware Edit/Apply; `applyBlockEditsToMetadata`; M0 Apply safety hotfix.
 

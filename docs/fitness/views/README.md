@@ -3,7 +3,7 @@
 **Status:** Living landscape audit (updated after Steps 1–3).  
 **Context:** The Parametric Workout Blocks epic ships a closed-world engine with **12** `block_format` values, block-level `formatParams`, and merge-time exercise hydration (e.g. EMOM/Tabata `workSeconds` / `restSeconds`). This document maps **every UI surface** that renders or executes workouts. **Steps 1–3** added the data contract, `WorkoutSessionViewModel`, and block-aware **WorkoutPlayer** P0; many surfaces below are still flat-only.
 
-**Implementation plans:** [parametric-step1-2-plan.md](./parametric-step1-2-plan.md) · [parametric-step3-plan.md](./parametric-step3-plan.md) · [parametric-step4-plan.md](./parametric-step4-plan.md) · [parametric-step4-m2-plan.md](./parametric-step4-m2-plan.md) (M2 shipped) · [parametric-step5-plan.md](./parametric-step5-plan.md) (block-aware Edit/Apply — planned)
+**Implementation plans:** [parametric-step1-2-plan.md](./parametric-step1-2-plan.md) · [parametric-step3-plan.md](./parametric-step3-plan.md) · [parametric-step4-plan.md](./parametric-step4-plan.md) · [parametric-step4-m2-plan.md](./parametric-step4-m2-plan.md) · [parametric-step4-m3-plan.md](./parametric-step4-m3-plan.md) (M3 shipped) · [parametric-step5-plan.md](./parametric-step5-plan.md) (block-aware Edit/Apply — planned)
 
 **Related engine docs:** [parametric-workout-blocks](../../refactor/parametric-workout-blocks/README.md), [rail-composer-tokens](../../agents/coach/rail-composer-tokens.md), [PCC manifesto](../../architecture/pcc-manifesto.md).
 
@@ -99,23 +99,23 @@ Merge already hydrates **EMOM** (derived `workSeconds` / `restSeconds`) and **Ta
 
 ### Tier 3 — Live video & class deck
 
-| #   | Component                     | Path                                                                                                        | Role                                | Data source                                                                            |
-| --- | ----------------------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------- |
-| 13  | **LiveSessionWorkoutPlayer**  | [LiveSessionWorkoutPlayer.tsx](../../../src/features/live-video/shells/huddle/LiveSessionWorkoutPlayer.tsx) | Host edits active deck card         | Flat `workoutExercises`                                                                |
-| 14  | **ParticipantWorkoutLogger**  | [ParticipantWorkoutLogger.tsx](../../../src/features/live-video/shells/ParticipantWorkoutLogger.tsx)        | Per-exercise set logging in session | Flat                                                                                   |
-| 15  | **UpNextCard**                | [UpNextCard.tsx](../../../src/features/live-video/shells/huddle/UpNextCard.tsx)                             | “Up next” strip summary             | **Rich:** `formatRichWorkoutStripSummary`; **flat:** legacy `formatExerciseLine`       |
-| 16  | **ParticipantPreJoinSummary** | [ParticipantPreJoinSummary.tsx](../../../src/features/live-video/shells/ParticipantPreJoinSummary.tsx)      | Queue preview per card              | **Rich:** `WorkoutMetadataPreview` compact blocks; **flat:** `WorkoutFlatExerciseList` |
-| 17  | **LiveDeckExerciseInjector**  | [LiveDeckExerciseInjector.tsx](../../../src/features/live-video/shells/huddle/LiveDeckExerciseInjector.tsx) | Append `#` exercises to card        | Merges into flat `metadata.exercises`                                                  |
-| 18  | **SessionDeckBuilder**        | [SessionDeckBuilder.tsx](../../../src/features/live-video/shells/huddle/SessionDeckBuilder.tsx)             | Deck strip of `KanbanTaskCard`      | No direct read                                                                         |
+| #   | Component                     | Path                                                                                                        | Role                                | Data source                                                                             |
+| --- | ----------------------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------- |
+| 13  | **LiveSessionWorkoutPlayer**  | [LiveSessionWorkoutPlayer.tsx](../../../src/features/live-video/shells/huddle/LiveSessionWorkoutPlayer.tsx) | Host edits active deck card         | Flat `workoutExercises`                                                                 |
+| 14  | **ParticipantWorkoutLogger**  | [ParticipantWorkoutLogger.tsx](../../../src/features/live-video/shells/ParticipantWorkoutLogger.tsx)        | Per-exercise set logging in session | Flat                                                                                    |
+| 15  | **UpNextCard**                | [UpNextCard.tsx](../../../src/features/live-video/shells/huddle/UpNextCard.tsx)                             | “Up next” strip summary             | **Rich:** `formatRichWorkoutStripSummary`; **flat:** legacy `formatExerciseLine`        |
+| 16  | **ParticipantPreJoinSummary** | [ParticipantPreJoinSummary.tsx](../../../src/features/live-video/shells/ParticipantPreJoinSummary.tsx)      | Queue preview per card              | **Rich:** `WorkoutMetadataPreview` compact blocks; **flat:** `WorkoutFlatExerciseList`  |
+| 17  | **LiveDeckExerciseInjector**  | [LiveDeckExerciseInjector.tsx](../../../src/features/live-video/shells/huddle/LiveDeckExerciseInjector.tsx) | Append `#` exercises to card        | Merges into flat `metadata.exercises`                                                   |
+| 18  | **SessionDeckBuilder**        | [SessionDeckBuilder.tsx](../../../src/features/live-video/shells/huddle/SessionDeckBuilder.tsx)             | Deck strip of `KanbanTaskCard`      | **Rich:** `SessionDeckWorkoutSummary` strip/compact under tile; **flat:** exercise line |
 
 ### Tier 4 — Chat, drafts, and ancillary
 
-| #   | Component                    | Path                                                                                                    | Role                           | Data source                                                                                |
-| --- | ---------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------ |
-| 19  | **WorkoutCoachRail**         | [WorkoutCoachRail.tsx](../../../src/components/chat/WorkoutCoachRail.tsx)                               | Coach beside player            | Flat exercise names in metadata                                                            |
-| 20  | **CoachDraftCard**           | [CoachDraftCard.tsx](../../../src/components/chat/CoachDraftCard.tsx)                                   | Proposed workout preview       | **Rich:** `WorkoutMetadataPreview` on `proposed_metadata`; **flat:** same via VM flat list |
-| 21  | **RichMessageComposer**      | [RichMessageComposer.tsx](../../../src/components/chat/RichMessageComposer.tsx)                         | `:` / `#` tokens               | Catalog + hash picker (not full prescription UI)                                           |
-| 22  | **ClassEditorWorkoutPicker** | [ClassEditorWorkoutPicker.tsx](../../../src/components/modals/class-modal/ClassEditorWorkoutPicker.tsx) | Pick workout by title/duration | No exercise list                                                                           |
+| #   | Component                    | Path                                                                                                    | Role                           | Data source                                                                                 |
+| --- | ---------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------- |
+| 19  | **WorkoutCoachRail**         | [WorkoutCoachRail.tsx](../../../src/components/chat/WorkoutCoachRail.tsx)                               | Coach beside player            | **Rich:** `buildWorkoutCoachRailContext` (structure summary + factory in sentinel metadata) |
+| 20  | **CoachDraftCard**           | [CoachDraftCard.tsx](../../../src/components/chat/CoachDraftCard.tsx)                                   | Proposed workout preview       | **Rich:** `WorkoutMetadataPreview` on `proposed_metadata`; **flat:** same via VM flat list  |
+| 21  | **RichMessageComposer**      | [RichMessageComposer.tsx](../../../src/components/chat/RichMessageComposer.tsx)                         | `:` / `#` tokens               | Catalog + hash picker (not full prescription UI)                                            |
+| 22  | **ClassEditorWorkoutPicker** | [ClassEditorWorkoutPicker.tsx](../../../src/components/modals/class-modal/ClassEditorWorkoutPicker.tsx) | Pick workout by title/duration | No exercise list                                                                            |
 
 ### Tier 5 — Post-workout / analytics
 
@@ -156,16 +156,18 @@ There is **no** dedicated post-workout summary component that renders block stru
 
 ### Gap matrix (current vs needed)
 
-| View                      | Block sections    | Subtitles    | Grouped superset/contrast  | Timers AMRAP/EMOM/Tabata                 | Ladder/pyramid progression | Chipper order   | Clusters/drop_sets |
-| ------------------------- | ----------------- | ------------ | -------------------------- | ---------------------------------------- | -------------------------- | --------------- | ------------------ |
-| RichWorkoutReadView       | Yes               | Yes          | No (linear list per block) | Meta line only (`workSeconds`, `rounds`) | Meta line only             | List order only | Meta line only     |
-| WorkoutPlayer             | **Yes** (P0)      | **Yes** (P0) | **No**                     | **No**                                   | **No**                     | List order only | Meta line only     |
-| WorkoutExercisesEditor    | **No**            | **No**       | **No**                     | **No**                                   | **No**                     | **No**          | **No**             |
-| FlatExercisesReadView     | **No**            | **No**       | **No**                     | **No**                                   | **No**                     | **No**          | **No**             |
-| UpNextCard (strip)        | Partial           | **Yes**      | No                         | No                                       | No                         | No              | No                 |
-| ParticipantPreJoinSummary | **Yes** (compact) | **Yes**      | Labels only                | No                                       | No                         | List order only | Meta line only     |
-| Live loggers / deck edit  | **No**            | **No**       | **No**                     | **No**                                   | **No**                     | **No**          | **No**             |
-| CoachDraftCard            | **Yes** (compact) | **Yes**      | Labels only                | No                                       | No                         | List order only | Meta line only     |
+| View                       | Block sections    | Subtitles                | Grouped superset/contrast  | Timers AMRAP/EMOM/Tabata                 | Ladder/pyramid progression | Chipper order   | Clusters/drop_sets |
+| -------------------------- | ----------------- | ------------------------ | -------------------------- | ---------------------------------------- | -------------------------- | --------------- | ------------------ |
+| RichWorkoutReadView        | Yes               | Yes                      | No (linear list per block) | Meta line only (`workSeconds`, `rounds`) | Meta line only             | List order only | Meta line only     |
+| WorkoutPlayer              | **Yes** (P0)      | **Yes** (P0)             | **No**                     | **No**                                   | **No**                     | List order only | Meta line only     |
+| WorkoutExercisesEditor     | **No**            | **No**                   | **No**                     | **No**                                   | **No**                     | **No**          | **No**             |
+| FlatExercisesReadView      | **No**            | **No**                   | **No**                     | **No**                                   | **No**                     | **No**          | **No**             |
+| SessionDeckBuilder (strip) | Partial           | **Yes**                  | No                         | No                                       | No                         | No              | No                 |
+| UpNextCard (strip)         | Partial           | **Yes**                  | No                         | No                                       | No                         | No              | No                 |
+| ParticipantPreJoinSummary  | **Yes** (compact) | **Yes**                  | Labels only                | No                                       | No                         | List order only | Meta line only     |
+| WorkoutCoachRail context   | N/A (metadata)    | **Yes** (summary string) | No                         | No                                       | No                         | No              | No                 |
+| Live loggers / deck edit   | **No**            | **No**                   | **No**                     | **No**                                   | **No**                     | **No**          | **No**             |
+| CoachDraftCard             | **Yes** (compact) | **Yes**                  | Labels only                | No                                       | No                         | List order only | Meta line only     |
 
 ### Critical behavioral gaps (not just styling)
 
@@ -179,9 +181,11 @@ There is **no** dedicated post-workout summary component that renders block stru
 
 5. ~~**Coach draft UI is flat**~~ — **Fixed (Step 4 M2):** `CoachDraftCard` uses `WorkoutMetadataPreview` when `proposed_metadata` includes factory; flat drafts unchanged.
 
-6. **Rich view is read-only for structure** — Edit mode always uses `WorkoutExercisesEditor` (flat). **Planned:** [parametric-step5-plan.md](./parametric-step5-plan.md) (M0 Apply guard + block editor).
+6. ~~**Live deck tiles show title only**~~ — **Fixed (Step 4 M3):** `SessionDeckBuilder` tiles show `SessionDeckWorkoutSummary`; Coach rail context includes `workout_structure_summary` when rich.
 
-7. **Kanban / deck surfaces** — Play launches block-aware Player for rich cards, but **no Tabata/EMOM timer** yet — subtitles only.
+7. **Rich view is read-only for structure** — Edit mode always uses `WorkoutExercisesEditor` (flat). **Planned:** [parametric-step5-plan.md](./parametric-step5-plan.md) (M0 Apply guard + block editor).
+
+8. **Kanban / deck surfaces** — Play launches block-aware Player for rich cards, but **no Tabata/EMOM timer** yet — subtitles only.
 
 ---
 

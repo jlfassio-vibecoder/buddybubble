@@ -1,6 +1,6 @@
 # Parametric Workout Blocks — Step 4 (P1 Read Parity)
 
-**Status:** M0–M2 shipped; M3–M4 planned. See milestone docs below.
+**Status:** M0–M3 shipped; M4 planned. See milestone docs below.
 
 **Prerequisites:** [parametric-step1-2-plan.md](./parametric-step1-2-plan.md) (data contract + ViewModel) · [parametric-step3-plan.md](./parametric-step3-plan.md) (WorkoutPlayer block-aware P0)
 
@@ -262,12 +262,14 @@ Use in inline/deck one-liners to avoid duplicating subtitle logic outside render
 
 ### Milestone 3 — Pre-class & waiting rooms (sprint days 7–8)
 
-| #   | Surface                               | Path                                        | Migration                                                                                                                                     |
-| --- | ------------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| 9   | **ParticipantPreJoinSummary** (deep)  | already in M2                               | Per-deck-item block bullets when queue items are rich                                                                                         |
-| 10  | **Session deck strip summaries**      | `SessionDeckBuilder.tsx` / deck row chrome  | Compact block count + first subtitle (if space)                                                                                               |
-| 11  | **Class board / member pre-join**     | class-related shells using workout metadata | Audit call sites of `formatExerciseLine`; swap to VM + compact renderer                                                                       |
-| 12  | **WorkoutCoachRail** exercise context | `WorkoutCoachRail.tsx`                      | Read-only name list from `flatExercises` (already); optional: include block names in system prompt context string — **metadata only**, not UI |
+**Status:** Shipped — see [parametric-step4-m3-plan.md](./parametric-step4-m3-plan.md).
+
+| #   | Surface                               | Path                                    | Migration                                                                                                       |
+| --- | ------------------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| 9   | **ParticipantPreJoinSummary** (deep)  | already in M2                           | Verified M2 compact blocks per queue row                                                                        |
+| 10  | **Session deck strip summaries**      | `SessionDeckBuilder.tsx`                | `SessionDeckWorkoutSummary` strip/compact under deck tiles; `UpNextCard` wired in live `LiveSessionView`        |
+| 11  | **Class board / member pre-join**     | class deck shells                       | Covered via `SessionDeckBuilder` in StandaloneClassDeckBuilder / ClassEditor; `ClassCard` N/A (no prescription) |
+| 12  | **WorkoutCoachRail** exercise context | `WorkoutCoachRail.tsx` + launch payload | `buildWorkoutCoachRailContext` — `workout_structure_summary` + factory in sentinel / `#` picker metadata        |
 
 **Explicitly excluded (write / execution paths):**
 

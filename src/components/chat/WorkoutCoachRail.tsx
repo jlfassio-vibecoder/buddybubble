@@ -23,7 +23,10 @@ import { logAgentRoutingEvent } from '@/lib/agents/agentRoutingLogger';
 import type { Json } from '@/types/database';
 import { useWorkspaceSessionSubject } from '@/context/WorkspaceSessionContext';
 import { useExerciseDictionaryAutocomplete } from '@/hooks/useExerciseDictionaryAutocomplete';
-import { metadataFieldsFromParsed } from '@/lib/item-metadata';
+import {
+  exerciseNamesFromCoachWorkoutData,
+  normalizeCoachWorkoutDataProp,
+} from '@/lib/workout-factory/build-workout-coach-rail-context';
 import type { ExerciseMentionClientPayload } from '@/lib/agents/coach/exercise-mentions';
 import {
   buildHashExerciseList,
@@ -210,9 +213,14 @@ export function WorkoutCoachRail({
     error: exerciseDictionaryError,
   } = useExerciseDictionaryAutocomplete();
 
+  const coachWorkoutContext = useMemo(
+    () => normalizeCoachWorkoutDataProp(workoutData, null, workoutTitle),
+    [workoutData, workoutTitle],
+  );
+
   const workoutExerciseNameList = useMemo(
-    () => metadataFieldsFromParsed(workoutData ?? null).workoutExercises.map((e) => e.name),
-    [workoutData],
+    () => exerciseNamesFromCoachWorkoutData(coachWorkoutContext),
+    [coachWorkoutContext],
   );
 
   const hashExercises = useMemo(
@@ -299,7 +307,10 @@ export function WorkoutCoachRail({
     const hasCoachAgent = availableAgents.some((a) => a.slug === 'coach');
     if (!hasCoachAgent) return;
 
-    const workoutContext = resolveWorkoutContextForSentinel(workoutData, workoutTitle);
+    const workoutContext = resolveWorkoutContextForSentinel(
+      coachWorkoutContext as unknown as Json,
+      workoutTitle,
+    );
 
     sentinelHasFiredRef.current = true;
 
@@ -338,7 +349,7 @@ export function WorkoutCoachRail({
     myProfile?.id,
     sessionId,
     taskId,
-    workoutData,
+    coachWorkoutContext,
     workoutTitle,
     workspaceId,
     waitMainClear,

@@ -33,6 +33,7 @@ import { createClient } from '@utils/supabase/client';
 import { cn } from '@/lib/utils';
 import type { WorkspaceCategory } from '@/types/database';
 import { useLayoutCommands } from '@/components/layout/layout-command-context';
+import { SessionDeckWorkoutSummary } from '@/features/live-video/shells/huddle/SessionDeckWorkoutSummary';
 
 export type SessionDeckBuilderProps = {
   state: SessionState;
@@ -66,6 +67,7 @@ function ReadonlyDeckTile({
   /** When set, tile is a button (async member picks active card for logging). */
   onSelect?: () => void;
 }) {
+  const summaryMode = tallCardChrome ? 'compact' : 'strip';
   const card = (
     <div
       className={cn(
@@ -88,6 +90,12 @@ function ReadonlyDeckTile({
             'overflow-hidden',
             tallCardChrome ? 'max-h-[min(480px,55vh)]' : 'max-h-[min(280px,40vh)]',
           )}
+        />
+        <SessionDeckWorkoutSummary
+          metadata={snapshot.task.metadata}
+          mode={summaryMode}
+          taskId={null}
+          className="px-0.5"
         />
       </div>
     </div>
@@ -193,6 +201,12 @@ function SortableDeckTile({
               <GripVertical className="size-4" />
             </button>
           }
+        />
+        <SessionDeckWorkoutSummary
+          metadata={snapshot.task.metadata}
+          mode={tallCardChrome ? 'compact' : 'strip'}
+          taskId={null}
+          className="px-0.5"
         />
       </div>
     </div>
