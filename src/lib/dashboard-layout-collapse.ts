@@ -26,9 +26,14 @@ function isUrlChatOverride(urlTab: string | null, urlView: string | null): boole
   return urlTab === 'chat' || urlView?.toLowerCase() === 'messages';
 }
 
+function calendarCollapsedFromStored(stored: StoredCollapsePrefs): boolean {
+  return stored.calendarRaw === '1';
+}
+
 function resolveMobileCollapseTriplet(
   urlTab: string | null,
-  urlView: string | null,
+  _urlView: string | null,
+  stored: StoredCollapsePrefs,
 ): Pick<
   ResolvedDashboardLayoutCollapse,
   'chatCollapsed' | 'kanbanCollapsed' | 'calendarCollapsed'
@@ -36,17 +41,17 @@ function resolveMobileCollapseTriplet(
   const tab = normalizeMobileTab(urlTab);
 
   if (tab === 'board') {
-    return { chatCollapsed: true, kanbanCollapsed: false, calendarCollapsed: false };
+    return {
+      chatCollapsed: true,
+      kanbanCollapsed: false,
+      calendarCollapsed: calendarCollapsedFromStored(stored),
+    };
   }
   if (tab === 'calendar') {
     return { chatCollapsed: true, kanbanCollapsed: true, calendarCollapsed: false };
   }
 
-  const viewMessages = urlView?.toLowerCase() === 'messages';
-  if (tab === 'chat' || viewMessages) {
-    return { chatCollapsed: false, kanbanCollapsed: true, calendarCollapsed: false };
-  }
-  return { chatCollapsed: true, kanbanCollapsed: true, calendarCollapsed: false };
+  return { chatCollapsed: false, kanbanCollapsed: true, calendarCollapsed: false };
 }
 
 function resolveDesktopCollapseTriplet(
@@ -101,7 +106,7 @@ export function resolveDashboardLayoutCollapse(
   const { embedMode, urlTab, urlView, isNarrow, stored } = input;
 
   if (isNarrow && !embedMode) {
-    const triplet = resolveMobileCollapseTriplet(urlTab, urlView);
+    const triplet = resolveMobileCollapseTriplet(urlTab, urlView, stored);
     return { ...triplet, persistMessagesFocusToStorage: false };
   }
 

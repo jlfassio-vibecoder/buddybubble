@@ -39,6 +39,23 @@ describe('resolveDashboardLayoutCollapse', () => {
     });
   });
 
+  it('narrow + board tab preserves stored calendarCollapsed (desktop LS not clobbered)', () => {
+    expect(
+      resolveDashboardLayoutCollapse({
+        embedMode: false,
+        urlTab: 'board',
+        urlView: null,
+        isNarrow: true,
+        stored: { chatRaw: '0', kanbanRaw: '1', calendarRaw: '1' },
+      }),
+    ).toEqual({
+      chatCollapsed: true,
+      kanbanCollapsed: false,
+      calendarCollapsed: true,
+      persistMessagesFocusToStorage: false,
+    });
+  });
+
   it('narrow + default chat tab + fresh LS → chat triplet', () => {
     expect(
       resolveDashboardLayoutCollapse({
