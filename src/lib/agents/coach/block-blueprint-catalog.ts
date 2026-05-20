@@ -464,8 +464,8 @@ export const BLOCK_BLUEPRINT_CATALOG: readonly BlockBlueprintCatalogEntry[] = [
     'ladder',
     {
       format_params: {
-        start_reps: 10,
-        peak_reps: 1,
+        start_reps: 1,
+        peak_reps: 10,
         step_reps: 1,
         direction: 'descending',
       },

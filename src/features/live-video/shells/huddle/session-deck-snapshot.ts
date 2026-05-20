@@ -1,11 +1,14 @@
-import type { ItemType, TaskRow } from '@/types/database';
+import type { TaskRow } from '@/types/database';
 import type { WorkoutExercise } from '@/lib/item-metadata';
 import {
-  buildTaskMetadataPayload,
   metadataFieldsFromParsed,
   parseTaskMetadata,
-  type TaskMetadataFormFields,
+  stripLegacyWorkoutMetadataKeys,
 } from '@/lib/item-metadata';
+import {
+  applyFlatWorkoutEditsToMetadata,
+  hasRichWorkoutSetInMetadata,
+} from '@/lib/workout-factory/sync-workout-metadata';
 
 export type SessionDeckSnapshot = {
   /**
@@ -61,13 +64,28 @@ export function cloneSessionDeckSnapshot(s: SessionDeckSnapshot): SessionDeckSna
   }
 }
 
+function factoryWorkoutSetSignature(meta: Record<string, unknown>): string | null {
+  if (!hasRichWorkoutSetInMetadata(meta)) return null;
+  const af = meta.ai_workout_factory;
+  if (typeof af !== 'object' || af === null) return null;
+  const ws = (af as { workout_set?: unknown }).workout_set;
+  if (ws == null) return null;
+  try {
+    return JSON.stringify(ws);
+  } catch {
+    return null;
+  }
+}
+
 /** Stable comparison for dirty detection (workout-relevant metadata slice). */
 export function workoutMetadataSignature(meta: unknown): string {
+  const o = parseTaskMetadata(meta) as Record<string, unknown>;
   const f = metadataFieldsFromParsed(meta);
   return JSON.stringify({
     t: f.workoutType,
     d: f.workoutDurationMin,
     e: f.workoutExercises,
+    factory: factoryWorkoutSetSignature(o),
   });
 }
 
@@ -127,14 +145,7 @@ export function mergeWorkoutExercisesIntoTaskMetadata(
   task: TaskRow,
   nextExercises: WorkoutExercise[],
 ): TaskRow['metadata'] {
-  const fields = metadataFieldsFromParsed(task.metadata);
-  const merged: TaskMetadataFormFields = {
-    ...fields,
-    workoutExercises: nextExercises,
-  };
-  return buildTaskMetadataPayload(
-    task.item_type as ItemType,
-    merged,
-    task.metadata,
-  ) as TaskRow['metadata'];
+  const merged = applyFlatWorkoutEditsToMetadata(task.metadata, nextExercises);
+  // Session-only path: no buildTaskMetadataPayload / finalizeWorkoutMetadataForSave — still strip legacy linkage keys.
+  return stripLegacyWorkoutMetadataKeys(merged) as TaskRow['metadata'];
 }

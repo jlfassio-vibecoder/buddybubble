@@ -14,6 +14,8 @@ import {
   parseTaskMetadata,
   type WorkoutExercise,
 } from '@/lib/item-metadata';
+import { applyFlatWorkoutEditsToMetadata } from '@/lib/workout-factory/sync-workout-metadata';
+import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import type { WorkoutTemplate } from '@/hooks/use-workout-templates';
 
 /** Intake wizard payload forwarded to `postGenerateWorkoutChain` as `daily_checkin`. */
@@ -167,19 +169,10 @@ export function useTaskWorkoutAi({
     ],
   );
 
-  const viewerWorkoutSet = useMemo((): WorkoutSetTemplate | null => {
-    const o = parseTaskMetadata(metadata) as Record<string, unknown>;
-    const ai = o.ai_workout_factory;
-    if (!ai || typeof ai !== 'object') return null;
-    const ws = (ai as { workout_set?: unknown }).workout_set;
-    if (!ws || typeof ws !== 'object') return null;
-    // Match server + merge logic: only block generation hand-off when a *rich*
-    // generator output exists (`workout_set.workouts[]`). A bare or empty
-    // `workout_set` object must not suppress `card_action` triggers.
-    const workouts = (ws as { workouts?: unknown }).workouts;
-    if (!Array.isArray(workouts) || workouts.length === 0) return null;
-    return ws as WorkoutSetTemplate;
-  }, [metadata]);
+  const viewerWorkoutSet = useMemo(
+    (): WorkoutSetTemplate | null => buildWorkoutSessionViewModel(metadata).workoutSet,
+    [metadata],
+  );
 
   const hasWorkoutViewerContent =
     isWorkoutItemType && (workoutExercises.length > 0 || viewerWorkoutSet != null);
@@ -203,12 +196,7 @@ export function useTaskWorkoutAi({
       setTitle(payload.title);
       setDescription(payload.description);
       setWorkoutExercises(payload.exercises);
-      setMetadata((prev) => {
-        const o = parseTaskMetadata(prev) as Record<string, unknown>;
-        const next = { ...o };
-        delete next.ai_workout_factory;
-        return next as Json;
-      });
+      setMetadata((prev) => applyFlatWorkoutEditsToMetadata(prev, payload.exercises) as Json);
     },
     [setTitle, setDescription, setWorkoutExercises, setMetadata],
   );

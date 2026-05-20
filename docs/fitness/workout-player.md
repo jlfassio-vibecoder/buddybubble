@@ -6,16 +6,16 @@ Full-screen modal (**desktop**: centered Radix dialog; **mobile**: bottom sheet)
 
 ## WorkoutPlayerProps
 
-| Prop               | Notes                                                                                                                                                                                            |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `open` / `onClose` | Controls visibility; closing the root calls `onClose`.                                                                                                                                           |
-| `mode`             | Optional `'desktop'` \| `'mobile'`. If omitted, `useLayoutEffect` picks mobile when `matchMedia('(max-width: 768px)')` matches on open.                                                          |
-| `workspaceId`      | Loads `fitness_profiles.unit_system` for this workspace and current user.                                                                                                                        |
-| `workoutTitle`     | Shown in chrome; log task title becomes `` `${workoutTitle} — Log` ``.                                                                                                                           |
-| `metadata`         | Raw `tasks.metadata` (`Json`); `metadataFieldsFromParsed` runs inside the player so session state does not reset on parent re-renders.                                                           |
-| `bubbleId`         | Inserted on the new `workout_log` row.                                                                                                                                                           |
-| `sourceTaskId`     | Source **`workout`** (or compatible) task id (`null` in edge cases): copies `program_id`, `program_session_key`, `scheduled_on`, `scheduled_time`, `visibility`, and assignees onto the log row. |
-| `onComplete`       | Invoked after successful insert (e.g. shell’s `bumpTaskViews`); then `onClose` runs.                                                                                                             |
+| Prop               | Notes                                                                                                                                                                                                                            |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `open` / `onClose` | Controls visibility; closing the root calls `onClose`.                                                                                                                                                                           |
+| `mode`             | Optional `'desktop'` \| `'mobile'`. If omitted, `useLayoutEffect` picks mobile when `matchMedia('(max-width: 768px)')` matches on open.                                                                                          |
+| `workspaceId`      | Loads `fitness_profiles.unit_system` for this workspace and current user.                                                                                                                                                        |
+| `workoutTitle`     | Shown in chrome; log task title becomes `` `${workoutTitle} — Log` ``.                                                                                                                                                           |
+| `metadata`         | Raw `tasks.metadata` (`Json`); `useWorkoutSessionViewModel` runs inside the player so session state does not reset on parent re-renders. Rich factory cards render block sections + subtitles; flat exercises drive set logging. |
+| `bubbleId`         | Inserted on the new `workout_log` row.                                                                                                                                                                                           |
+| `sourceTaskId`     | Source **`workout`** (or compatible) task id (`null` in edge cases): copies `program_id`, `program_session_key`, `scheduled_on`, `scheduled_time`, `visibility`, and assignees onto the log row.                                 |
+| `onComplete`       | Invoked after successful insert (e.g. shell’s `bumpTaskViews`); then `onClose` runs.                                                                                                                                             |
 
 ## Unit display
 
@@ -43,7 +43,7 @@ Errors use **`toast.error`** with **`formatUserFacingError`**.
 
 ## WorkoutPlayerTriggers
 
-Exported helper that renders **Desktop Player** and **Mobile Player** buttons; each sets forced `mode` and mounts nested **`WorkoutPlayer`**. Used from [TaskModalEditorChrome.tsx](../../src/components/modals/task-modal/TaskModalEditorChrome.tsx) when parsed metadata includes exercises. Returns `null` if the metadata has no exercises.
+Exported helper that renders **Desktop Player** and **Mobile Player** buttons; each sets forced `mode` and mounts nested **`WorkoutPlayer`**. Used from [TaskModalEditorChrome.tsx](../../src/components/modals/task-modal/TaskModalEditorChrome.tsx). Returns `null` when `buildWorkoutSessionViewModel(metadata).flatExercises` is empty (includes factory-derived exercises when rich metadata exists, memoized on `metadata`).
 
 ## Shell integration
 
