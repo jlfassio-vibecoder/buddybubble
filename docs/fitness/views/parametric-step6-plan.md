@@ -1,6 +1,6 @@
 # Parametric Workout Blocks — Step 6 (Execution grid fidelity & Coach context sync)
 
-**Status:** **M6.1 shipped** · **M6.2** (Coach context sync) planned · **M6.3+** deferred.
+**Status:** **M6.1 shipped** · **M6.2 shipped** · **M6.3+** deferred.
 
 **Prerequisites:** [parametric-step3-plan.md](./parametric-step3-plan.md) (block-aware player P0) · [parametric-step5-plan.md](./parametric-step5-plan.md) (rich prescription edit/Apply). Step 5 M4 (`formatParams` editor) optional but not blocking.
 
@@ -75,6 +75,39 @@ flowchart TD
 pnpm exec vitest run \
   src/lib/workout-factory/resolve-player-log-row-count.test.ts \
   src/lib/workout-factory/workout-player-exercise-index.test.ts
+```
+
+---
+
+## What shipped (M6.2)
+
+| File                                                                                                          | Change                                                                |
+| ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| [`build-workout-coach-rail-context.ts`](../../../src/lib/workout-factory/build-workout-coach-rail-context.ts) | `validateLiveSetCounts`, optional `liveSetCounts` → `live_set_counts` |
+| [`WorkoutPlayer.tsx`](../../../src/components/fitness/WorkoutPlayer.tsx)                                      | `liveSetCounts` from `logs`; passed into rail `workoutData`           |
+| [`WorkoutCoachRail.tsx`](../../../src/components/chat/WorkoutCoachRail.tsx)                                   | `metadata.workoutContext` on Coach user sends (latest row bounds)     |
+| [`prompts.ts`](../../../src/lib/agents/coach/prompts.ts)                                                      | `formatExerciseIndexMap`: `(N log rows)` + setIndex bounds footer     |
+| [`supabase/functions/agents/coach/prompts.ts`](../../../supabase/functions/agents/coach/prompts.ts)           | Mirrored formatter                                                    |
+
+**Payload shape:**
+
+```json
+{
+  "exercises": [ … ],
+  "live_set_counts": [8, 8],
+  "workout_task_title": "…"
+}
+```
+
+**Verification:**
+
+```bash
+pnpm exec vitest run \
+  src/lib/workout-factory/build-workout-coach-rail-context.test.ts \
+  src/lib/agents/coach/prompts.test.ts \
+  src/components/chat/WorkoutCoachRail.test.tsx
+
+pnpm check:agent-mirror
 ```
 
 ---
@@ -156,6 +189,8 @@ When `draft_logs` row length ≠ newly resolved template length:
 ---
 
 ## M6.2 — Coach context sync (live row bounds)
+
+**Status:** Shipped.
 
 ### Goal
 
@@ -308,8 +343,8 @@ Workout coach rail has **no feature flag** ([docs/rails/workout-coach-rail/READM
 - [x] **M6.1a** — `resolvePlayerLogRowCount` + unit tests (Tabata, straight_sets, flat fallback)
 - [x] **M6.1b** — Wire WorkoutPlayer init/recovery through resolver + `sessionVm.blocks`
 - [ ] **M6.1c** — Manual Tabata QA on production-like rich card
-- [ ] **M6.2a** — `live_set_counts` on coach context from player `logs`
-- [ ] **M6.2b** — `formatExerciseIndexMap` formatter + mirror + tests
+- [x] **M6.2a** — `live_set_counts` on coach context from player `logs`
+- [x] **M6.2b** — `formatExerciseIndexMap` formatter + mirror + tests
 - [ ] **M6.2c** — End-to-end Coach rep/RPE fill QA
 - [ ] **Defer** — `add_sets`, prompt directive edits, timer shells
 

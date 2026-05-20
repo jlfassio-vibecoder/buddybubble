@@ -368,15 +368,20 @@ export function WorkoutPlayer({
     [exercises, dictIdByExerciseIndex, notesByDictId],
   );
 
+  const liveSetCounts = useMemo(() => {
+    if (logs.length === 0 || logs.length !== exercises.length) return undefined;
+    return logs.map((row) => row.length);
+  }, [logs, exercises.length]);
+
   /** Coach rail + sentinel: structured context with block summary when factory exists. */
   const coachWorkoutDataForRail = useMemo(() => {
-    const ctx = buildWorkoutCoachRailContext(metadata, workoutTitle);
+    const ctx = buildWorkoutCoachRailContext(metadata, workoutTitle, liveSetCounts);
     const hasExercises = Array.isArray(ctx.exercises) && (ctx.exercises as unknown[]).length > 0;
     const hasRich =
       typeof ctx.workout_structure_summary === 'string' || ctx.ai_workout_factory != null;
     if (!hasExercises && !hasRich) return undefined;
     return ctx as unknown as Json;
-  }, [metadata, workoutTitle]);
+  }, [metadata, workoutTitle, liveSetCounts]);
 
   useLayoutEffect(() => {
     if (mode === 'desktop' || mode === 'mobile') {

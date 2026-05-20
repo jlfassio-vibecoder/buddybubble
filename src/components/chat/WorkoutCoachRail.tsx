@@ -472,6 +472,10 @@ export function WorkoutCoachRail({
           ? {
               metadata: {
                 [MESSAGE_METADATA_DEFAULT_AGENT_SLUG_KEY]: CHAT_AREA_DEFAULT_AGENT_SLUG,
+                workoutContext: resolveWorkoutContextForSentinel(
+                  coachWorkoutContext as unknown as Json,
+                  workoutTitle,
+                ),
                 ...(exerciseMentions && exerciseMentions.length > 0
                   ? { exercise_mentions: exerciseMentions as unknown as Json }
                   : {}),
@@ -492,10 +496,12 @@ export function WorkoutCoachRail({
       activeAgent,
       applyAgentPrefix,
       availableAgents,
+      coachWorkoutContext,
       sendMessage,
       sending,
       waitMain,
       workoutExerciseNameList,
+      workoutTitle,
     ],
   );
 

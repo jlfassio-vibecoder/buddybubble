@@ -145,6 +145,27 @@ describe('formatExerciseIndexMap', () => {
     expect(out).toContain('0: Dumbbell Bench Press');
     expect(out).toContain('1: Row');
   });
+
+  it('appends log row counts and setIndex bounds when live_set_counts aligns', () => {
+    const json = JSON.stringify({
+      exercises: [{ name: 'Burpees' }, { name: 'High Knees' }],
+      live_set_counts: [8, 4],
+    });
+    const out = formatExerciseIndexMap(json)!;
+    expect(out).toContain('0: Burpees (8 log rows)');
+    expect(out).toContain('1: High Knees (4 log rows)');
+    expect(out).toContain('setIndex must be 0 .. live_set_counts[exerciseIndex] - 1.');
+  });
+
+  it('omits row counts when live_set_counts length mismatches', () => {
+    const json = JSON.stringify({
+      exercises: [{ name: 'Burpees' }],
+      live_set_counts: [8, 4],
+    });
+    const out = formatExerciseIndexMap(json)!;
+    expect(out).not.toContain('log rows');
+    expect(out).not.toContain('live_set_counts[exerciseIndex]');
+  });
 });
 
 describe('taskMetadataLooksWorkoutShaped', () => {

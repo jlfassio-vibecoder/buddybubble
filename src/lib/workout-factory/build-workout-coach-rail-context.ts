@@ -4,6 +4,19 @@ import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-sess
 import { hasRichWorkoutSetInMetadata } from '@/lib/workout-factory/sync-workout-metadata';
 import type { Json } from '@/types/database';
 
+/** Validates live grid row counts against flat exercise list length (WorkoutPlayer M6.2). */
+export function validateLiveSetCounts(
+  liveSetCounts: number[] | undefined,
+  exerciseCount: number,
+): number[] | null {
+  if (liveSetCounts == null || exerciseCount === 0) return null;
+  if (liveSetCounts.length !== exerciseCount) return null;
+  for (const n of liveSetCounts) {
+    if (!Number.isInteger(n) || n < 1) return null;
+  }
+  return liveSetCounts;
+}
+
 /**
  * Coach rail / WorkoutPlayer sentinel context: flat `exercises` for legacy parsers plus
  * block structure summary and factory when rich metadata exists.
@@ -11,6 +24,7 @@ import type { Json } from '@/types/database';
 export function buildWorkoutCoachRailContext(
   metadata: unknown,
   title: string,
+  liveSetCounts?: number[],
 ): Record<string, unknown> {
   const vm = buildWorkoutSessionViewModel(metadata ?? {});
   const parsed = parseTaskMetadata(metadata) as Record<string, unknown>;
@@ -20,6 +34,11 @@ export function buildWorkoutCoachRailContext(
     exercises: vm.flatExercises,
     workout_task_title: taskTitle,
   };
+
+  const validatedCounts = validateLiveSetCounts(liveSetCounts, vm.flatExercises.length);
+  if (validatedCounts != null) {
+    out.live_set_counts = validatedCounts;
+  }
 
   if (typeof parsed.workout_type === 'string' && parsed.workout_type.trim()) {
     out.workout_type = parsed.workout_type.trim();
