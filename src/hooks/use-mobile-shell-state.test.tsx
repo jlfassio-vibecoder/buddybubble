@@ -26,6 +26,15 @@ function DrawerToggle() {
   );
 }
 
+function TabSwitcher() {
+  const { setTab } = useMobileShellState();
+  return (
+    <button type="button" onClick={() => setTab('board')}>
+      Board tab
+    </button>
+  );
+}
+
 describe('useMobileShellState drawer URL', () => {
   beforeEach(() => {
     cleanup();
@@ -76,5 +85,16 @@ describe('useMobileShellState drawer URL', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Close drawer' }));
     expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('setTab(board) strips stale view=messages from default login URL', () => {
+    searchParams = new URLSearchParams('tab=chat&view=messages');
+    render(
+      <MobileShellProvider>
+        <TabSwitcher />
+      </MobileShellProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Board tab' }));
+    expect(replace).toHaveBeenCalledWith('/app/ws-smoke?tab=board', { scroll: false });
   });
 });

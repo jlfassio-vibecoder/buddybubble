@@ -72,7 +72,7 @@ The shell enforces constraints so the UI never lands in an empty main stage:
 
 The shell sets `layoutMobile` from viewport width (`useIsNarrowBelowMd`) and `embedMode` from `?embed=true`. On mobile, **tab bar navigation** updates the URL (same pattern as layout commands: `router.replace` with preserved query params).
 
-**Collapse flags still exist on mobile** and are **synchronized from** `?tab=` / `?view=messages` in a dedicated effect (narrow viewport only), so the same `WorkspaceMainSplit` and board/calendar wiring can render. **Do not treat those booleans as the mobile source of truth**—they follow the URL.
+**Collapse flags still exist on mobile** and are set in the **same hydrate `useLayoutEffect`** as desktop (via [`resolveDashboardLayoutCollapse`](../../../src/lib/dashboard-layout-collapse.ts)): on narrow viewports, **`?tab=` wins over `?view=`** (e.g. login defaults append `view=messages` but `tab=board` must not keep Messages layout), and the pair overrides localStorage for the collapse triplet. **`setTab('board' | 'calendar')` strips `view`** so stale deep-link params do not fight the tab bar. **Do not treat collapse booleans as the mobile source of truth**—they follow the URL at hydrate time.
 
 ---
 
@@ -80,12 +80,15 @@ The shell sets `layoutMobile` from viewport width (`useIsNarrowBelowMd`) and `em
 
 ### The `layoutHydrated` gate
 
-`layoutHydrated` starts as **`false`** and flips to **`true`** once after the shell’s hydrate `useEffect` runs for the current `workspaceId` (and relevant URL flags). That effect:
+`layoutHydrated` is **`layoutHydratedWorkspaceId === workspaceId`**. It becomes true after the shell’s hydrate **`useLayoutEffect`** runs for the current workspace. That effect:
 
-1. Reads workspace rail, bubble sidebar, chat, Kanban, and calendar strip values from `localStorage` (with parsing and invariants).
-2. Applies **URL overrides** for messages-style deep links (`?tab=chat` or `?view=messages`) on **all viewports** during that read path—forcing a messages-style desktop layout and persisting aligned values back to `localStorage`.
-3. Handles **first visit** defaults when all three collapse keys are missing (desktop-style default: Messages open, Kanban collapsed, calendar expanded).
-4. Sets React state, then **`setLayoutHydrated(true)`**.
+1. Reads workspace rail and bubble sidebar from `localStorage`.
+2. Calls **`resolveDashboardLayoutCollapse`** with `urlTab`, `urlView`, `narrowViewport`, and stored collapse keys.
+3. On **narrow** viewports: maps `normalizeMobileTab(urlTab)` to the mobile CRM collapse triplet (URL wins over LS for chat/kanban/calendar).
+4. On **wide** viewports: messages deep links, first-visit desktop default, or parsed LS + invariants (unchanged desktop behavior).
+5. Sets React collapse state, then **`setLayoutHydratedWorkspaceId(workspaceId)`**.
+
+Re-runs when **`workspaceId`**, **`urlTab`**, **`urlView`**, or **`narrowViewport`** change (fixes mobile Board tab stuck after workspace switch).
 
 ### Why the gate exists
 
@@ -110,10 +113,10 @@ Together, this reduces **UI flash** (e.g. default layout briefly shown then snap
 
 1. **URL vs. collapse mismatch:** Mobile UX is driven by `normalizeMobileTab(searchParams.get('tab'))`. If code collapses panels but leaves `?tab=board`, the next render or tab bar may still reflect “board” while strips/stages show something else.
 2. **localStorage pollution:** After `layoutHydrated`, desktop persistence effects write collapse booleans to `localStorage`. Mutating collapse on mobile in ways that **don’t** match how desktop interprets tabs can leave **saved desktop prefs** inconsistent with what the user thought they chose on phone.
-3. **Effects ordering:** Mobile has a **narrow-only** effect that reapplies collapse state from `urlTab` / `urlView`. Blind collapse updates can be **overwritten** on the next URL-driven pass, causing flicker or apparent “ignored” actions.
-4. **Deep links:** `?tab=chat` and `?view=messages` interact with both the **global hydrate** path and the **mobile-only** sync effect. Partial or duplicate handling can confuse which layer “wins.”
+3. **Effects ordering:** A single hydrate path applies mobile rules when `narrowViewport` is true—no secondary effect to race.
+4. **Deep links:** `?tab=chat` and `?view=messages` are handled inside `resolveDashboardLayoutCollapse` on the appropriate viewport branch.
 
-**Rule of thumb:** On mobile, **change the URL first** (`router.replace` with `tab` set) for any intentional navigation to Messages / Board / Calendar. Let the shell’s established effects map that to collapse state. Avoid ad-hoc `setChatCollapsedState` / `setKanbanCollapsedState` from feature code on narrow viewports unless you fully control URL and understand persistence side effects.
+**Rule of thumb:** On mobile, **change the URL first** (`router.replace` with `tab` set) for any intentional navigation to Messages / Board / Calendar. The hydrate `useLayoutEffect` maps that to collapse state. Avoid ad-hoc `setChatCollapsedState` / `setKanbanCollapsedState` from feature code on narrow viewports unless you fully control URL and understand persistence side effects.
 
 ---
 

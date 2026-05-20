@@ -159,35 +159,15 @@ The desktop dashboard uses a multi-column resizable shell (`WorkspaceRail` | `Bu
 | `board`          | `KanbanBoard` only — calendar slot is omitted    | `chatCollapsed=true`, `kanbanCollapsed=false`                            |
 | `calendar`       | `CalendarRail` (main-stage variant)              | `chatCollapsed=true`, `kanbanCollapsed=true`, `calendarCollapsed=false`  |
 
-These transitions are wired in two places:
+These transitions are wired in two layers:
 
 **(a)** The `LayoutCommands` returned from `dashboard-shell.tsx` route any `focus*` macro (Messages / Board / Calendar / Split) through **`mobileShell.setTab(...)`** when `layoutMobile` (same `router.replace` semantics as [`useMobileShellState`](../../src/hooks/use-mobile-shell-state.ts)).
 
 Note: `focusSplit()` falls back to `?tab=board` on mobile, since there is no split mode small enough to be useful on a phone.
 
-**(b)** A dedicated mobile-only effect listens for explicit deep links (`?tab=chat`, `?view=messages`, `?tab=board`, `?tab=calendar`) and applies the matching collapse flags to the underlying desktop state machine, so that if the viewport widens later the layout remains coherent:
+**(b)** A single **`useLayoutEffect`** in `dashboard-shell.tsx` hydrates collapse flags from `localStorage` (rails + desktop prefs) and applies **`resolveDashboardLayoutCollapse`** ([`src/lib/dashboard-layout-collapse.ts`](../../src/lib/dashboard-layout-collapse.ts)). On narrow viewports it reads **`readIsNarrowBelowMd()`** synchronously inside the effect (not a stale `useState(false)` from the first paint), so **`?tab=` is authoritative** for the chat/kanban/calendar triplet on the same pass. Deps: `[workspaceId, embedMode, urlTab, urlView, narrowViewport]` (viewport changes re-run hydrate).
 
-```ts
-// dashboard-shell.tsx — effect body (imports NARROW_MAX_QUERY from @/lib/viewport)
-useEffect(() => {
-  if (!layoutHydrated || embedMode) return;
-  const mq = window.matchMedia(NARROW_MAX_QUERY);
-  if (!mq.matches) return;
-  const viewMessages = urlView?.toLowerCase() === 'messages';
-  if (urlTab === 'chat' || viewMessages) {
-    setChatCollapsedState(false);
-    setKanbanCollapsedState(true);
-    setCalendarCollapsedState(false);
-  } else if (urlTab === 'board') {
-    setChatCollapsedState(true);
-    setKanbanCollapsedState(false);
-  } else if (urlTab === 'calendar') {
-    setChatCollapsedState(true);
-    setKanbanCollapsedState(true);
-    setCalendarCollapsedState(false);
-  }
-}, [layoutHydrated, embedMode, urlTab, urlView]);
-```
+`layoutHydrated` is true only when `layoutHydratedWorkspaceId === workspaceId`, so workspace switches re-hydrate before persistence effects run.
 
 ### How `WorkspaceMainSplit` honors the active tab
 
@@ -367,9 +347,9 @@ The drawer open flag comes from **`useMobileShellState()`** (same provider as th
 
 ## 7. Behavior around hydration
 
-`DashboardShell` reads `useLayoutEffect` for the breakpoint and gates the column behavior on a separate `layoutHydrated` flag (set after the layout-preferences effect reads localStorage). This matters on mobile in two ways:
+`DashboardShell` uses `useIsNarrowBelowMd` for the breakpoint and gates column behavior on `layoutHydrated` (`layoutHydratedWorkspaceId === workspaceId`). A single **`useLayoutEffect`** reads localStorage and applies `resolveDashboardLayoutCollapse` (mobile: `?tab=` wins). This matters on mobile in two ways:
 
-1. The `LayoutCommands.focusMessages|focusBoard|focusCalendar|focusSplit` macros are **no-ops while `!layoutHydrated`**, so an early click on the tab bar will not race the hydration write to localStorage. The tab bar's own `?tab=` mutation still works (it does not depend on `layoutHydrated`), but the underlying collapse flags are reconciled by the deep-link effect once hydration completes.
+1. The `LayoutCommands.focusMessages|focusBoard|focusCalendar|focusSplit` macros are **no-ops while `!layoutHydrated`**, so an early click on the tab bar will not race the hydration write to localStorage. The tab bar's own `?tab=` mutation still works (it does not depend on `layoutHydrated`); collapse flags update when the hydrate effect runs (`urlTab`, `workspaceId`, `narrowViewport`).
 2. The `Suspense` fallback in `src/app/(dashboard)/app/[workspace_id]/layout.tsx` renders a column shell with `flex-col bg-background md:flex-row md:overflow-hidden` and **`h-[100dvh]`** so the SSR placeholder height matches the hydrated dashboard shell (avoids iOS URL-bar jitter).
 
    ```10:20:src/app/(dashboard)/app/[workspace_id]/layout.tsx
