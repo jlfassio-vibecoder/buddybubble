@@ -199,6 +199,8 @@ Surfaces grouped by **risk** and **user visibility**. Milestones are sequential 
 
 ### Milestone 0 — Foundation (sprint days 1–2)
 
+**Status:** Shipped (read renderer package + Vitest matrix; consumers wired in M1).
+
 **Goal:** Shared module exists; tests green; no consumer wired yet.
 
 | Deliverable                                                                         | Notes                                                                    |
