@@ -1,7 +1,5 @@
-'use client';
-
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import {
   Hash,
   Info,
@@ -45,11 +43,6 @@ import { ChatFeedTaskCard } from './ChatFeedTaskCard';
 import { ChatMessageRow } from './ChatMessageRow';
 import { RichMessageComposer } from './RichMessageComposer';
 import { ThreadPanel } from './ThreadPanel';
-import type { SendMessageSuccess } from '@/hooks/useMessageThread';
-import { MobileThreadSheet } from '@/components/layout/MobileThreadSheet';
-import { useIsNarrowBelowMd } from '@/hooks/use-is-narrow-below-md';
-import { parseThreadMessageIdFromSearchParam, THREAD_SEARCH_PARAM } from '@/lib/mobile-chat-thread';
-import { normalizeMobileTab } from '@/lib/mobile-crm-tab';
 import { MessageMediaModal } from './MessageMediaModal';
 import type { OpenTaskOptions } from '@/types/open-task-options';
 import { resolveTaskCommentMessageIdFromBubbleAnchor } from '@/lib/resolve-task-comment-from-bubble-anchor';
@@ -180,13 +173,6 @@ export function ChatArea({
   workspaceTitle,
 }: ChatAreaProps) {
   const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const isNarrow = useIsNarrowBelowMd();
-  const threadIdFromUrl = parseThreadMessageIdFromSearchParam(
-    searchParams.get(THREAD_SEARCH_PARAM),
-  );
-  const threadOpenedViaPushRef = useRef(false);
   const activeBubble = useWorkspaceStore((s) => s.activeBubble);
   const workspaceId = useWorkspaceStore((s) => s.activeWorkspace?.id) ?? null;
   const workspaceName = useWorkspaceStore((s) => s.activeWorkspace?.name);
@@ -204,7 +190,7 @@ export function ChatArea({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchSender, setSearchSender] = useState('');
   const [searchDate, setSearchDate] = useState('');
-  const [desktopThreadParent, setDesktopThreadParent] = useState<ChatMessage | null>(null);
+  const [activeThreadParent, setActiveThreadParent] = useState<ChatMessage | null>(null);
   const [peerThreadReplyNotifications, setPeerThreadReplyNotifications] = useState<
     NotificationStub[]
   >([]);
@@ -369,15 +355,11 @@ export function ChatArea({
     );
   }, [messages]);
 
-  const threadParentId = useMemo(
-    () => (isNarrow ? threadIdFromUrl : (desktopThreadParent?.id ?? null)),
-    [isNarrow, threadIdFromUrl, desktopThreadParent?.id],
-  );
-
   const agentScopeThreadMessages = useMemo(() => {
-    if (!threadParentId) return [];
-    return messages.filter((m) => m.id === threadParentId || m.parent_id === threadParentId);
-  }, [messages, threadParentId]);
+    const pid = activeThreadParent?.id;
+    if (!pid) return [];
+    return messages.filter((m) => m.id === pid || m.parent_id === pid);
+  }, [messages, activeThreadParent?.id]);
 
   const availableAgents = useMemo(() => [...agentsByAuthUserId.values()], [agentsByAuthUserId]);
 
@@ -453,7 +435,7 @@ export function ChatArea({
 
   useEffect(() => {
     waitThreadClear();
-  }, [threadParentId, waitThreadClear]);
+  }, [activeThreadParent?.id, waitThreadClear]);
 
   const chatBubbleTaskIds = useMemo(() => {
     const s = new Set<string>();
@@ -498,48 +480,6 @@ export function ChatArea({
         })
     );
   }, [messages, userById, myProfile, bubbleNameById, bubbleName, replyCounts, agentsByAuthUserId]);
-
-  const activeThreadParent = useMemo(() => {
-    if (isNarrow) {
-      if (!threadIdFromUrl) return null;
-      return allMessages.find((m) => m.id === threadIdFromUrl) ?? null;
-    }
-    return desktopThreadParent;
-  }, [isNarrow, threadIdFromUrl, allMessages, desktopThreadParent]);
-
-  const clearThreadFromUrlReplace = useCallback(() => {
-    const q = new URLSearchParams(searchParams.toString());
-    if (!q.has(THREAD_SEARCH_PARAM)) return;
-    q.delete(THREAD_SEARCH_PARAM);
-    const qs = q.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-  }, [pathname, router, searchParams]);
-
-  const openThreadInUrl = useCallback(
-    (messageId: string) => {
-      const q = new URLSearchParams(searchParams.toString());
-      if (q.get(THREAD_SEARCH_PARAM) === messageId) return;
-      q.set(THREAD_SEARCH_PARAM, messageId);
-      const qs = q.toString();
-      router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-      threadOpenedViaPushRef.current = true;
-    },
-    [pathname, router, searchParams],
-  );
-
-  const closeThread = useCallback(() => {
-    waitThreadClear();
-    if (isNarrow) {
-      if (threadOpenedViaPushRef.current) {
-        threadOpenedViaPushRef.current = false;
-        router.back();
-      } else {
-        clearThreadFromUrlReplace();
-      }
-    } else {
-      setDesktopThreadParent(null);
-    }
-  }, [isNarrow, router, waitThreadClear, clearThreadFromUrlReplace]);
 
   // ---------------------------------------------------------------------------
   // Buddy: proactive onboarding trigger + "typing" indicator.
@@ -620,14 +560,10 @@ export function ChatArea({
     if (!openThreadFromPeerIntent) return;
     const parent = allMessages.find((m) => m.id === openThreadFromPeerIntent.threadRootMessageId);
     if (!parent) return;
-    if (isNarrow) {
-      openThreadInUrl(parent.id);
-    } else {
-      setDesktopThreadParent(parent);
-    }
+    setActiveThreadParent(parent);
     setOpenThreadFromPeerIntent(null);
     setThreadComposerFocusNonce((n) => n + 1);
-  }, [openThreadFromPeerIntent, allMessages, isNarrow, openThreadInUrl]);
+  }, [openThreadFromPeerIntent, allMessages]);
 
   useEffect(() => {
     setPeerThreadReplyNotifications([]);
@@ -654,29 +590,13 @@ export function ChatArea({
 
   useEffect(() => {
     if (!activeBubble) {
-      if (isNarrow) clearThreadFromUrlReplace();
-      else setDesktopThreadParent(null);
+      setActiveThreadParent(null);
       return;
     }
     if (activeBubble.id === ALL_BUBBLES_BUBBLE_ID && realBubbleIds.length === 0) {
-      if (isNarrow) clearThreadFromUrlReplace();
-      else setDesktopThreadParent(null);
+      setActiveThreadParent(null);
     }
-  }, [activeBubble, realBubbleIds.length, isNarrow, clearThreadFromUrlReplace]);
-
-  useEffect(() => {
-    if (!isNarrow || !threadIdFromUrl || isThreadLoading) return;
-    if (!activeThreadParent) {
-      clearThreadFromUrlReplace();
-    }
-  }, [isNarrow, threadIdFromUrl, activeThreadParent, isThreadLoading, clearThreadFromUrlReplace]);
-
-  useEffect(() => {
-    if (!isNarrow) return;
-    if (normalizeMobileTab(searchParams.get('tab')) !== 'chat') {
-      clearThreadFromUrlReplace();
-    }
-  }, [isNarrow, searchParams, clearThreadFromUrlReplace]);
+  }, [activeBubble, realBubbleIds.length]);
 
   /** Task / feature picker: all tasks in this BuddyBubble (matches legacy global task list for `/…` links). */
   useEffect(() => {
@@ -995,62 +915,13 @@ export function ChatArea({
     });
   };
 
-  const handleOpenThread = useCallback(
-    (msg: ChatMessage) => {
-      if (isNarrow) {
-        openThreadInUrl(msg.id);
-      } else {
-        setDesktopThreadParent(msg);
-      }
-      setThreadComposerFocusNonce((n) => n + 1);
-      notifications
-        .filter((n) => n.type === 'thread_reply' && n.relatedId === msg.id && !n.read)
-        .forEach((n) => onMarkNotificationRead(n.id));
-    },
-    [isNarrow, openThreadInUrl, notifications, onMarkNotificationRead],
-  );
-
-  const onThreadSubmitIntent = useCallback(
-    (text: string) => {
-      const result = resolveTargetAgent({
-        messageDraft: text,
-        availableAgents,
-        contextDefaultAgentSlug: CHAT_AREA_DEFAULT_AGENT_SLUG,
-      });
-      if (result) {
-        logAgentRoutingEvent({
-          event: 'agent.routing.resolved',
-          agentSlug: result.agent.slug,
-          via: result.via,
-          bubbleId: bubbleIdForTelemetry,
-          surface: 'thread-panel',
-        });
-        waitThread.registerIntent(result.agent);
-      } else {
-        logAgentRoutingEvent({
-          event: 'agent.routing.unresolved',
-          surface: 'thread-panel',
-          bubbleId: bubbleIdForTelemetry,
-          hadMention: /(^|[^\w])@\w+/.test(text),
-        });
-      }
-    },
-    [availableAgents, bubbleIdForTelemetry, waitThread],
-  );
-
-  const onThreadSuccessfulSend = useCallback(
-    (sent: SendMessageSuccess, text: string) => {
-      const result = resolveTargetAgent({
-        messageDraft: text,
-        availableAgents,
-        contextDefaultAgentSlug: CHAT_AREA_DEFAULT_AGENT_SLUG,
-      });
-      if (result) {
-        waitThread.registerSuccessfulSend(sent, result.agent);
-      }
-    },
-    [availableAgents, waitThread],
-  );
+  const handleOpenThread = (msg: ChatMessage) => {
+    setActiveThreadParent(msg);
+    setThreadComposerFocusNonce((n) => n + 1);
+    notifications
+      .filter((n) => n.type === 'thread_reply' && n.relatedId === msg.id && !n.read)
+      .forEach((n) => onMarkNotificationRead(n.id));
+  };
 
   const renderMessageContent = (content: string) => {
     let parts: (string | React.ReactNode)[] = [content];
@@ -1204,7 +1075,10 @@ export function ChatArea({
                               }
                               if (n.type === 'thread_reply') {
                                 const parent = allMessages.find((m) => m.id === n.relatedId);
-                                if (parent) handleOpenThread(parent);
+                                if (parent) {
+                                  setActiveThreadParent(parent);
+                                  setThreadComposerFocusNonce((x) => x + 1);
+                                }
                               }
                               onMarkNotificationRead(n.id);
                               setIsNotificationsOpen(false);
@@ -1468,58 +1342,62 @@ export function ChatArea({
           ) : null}
         </div>
 
-        {isNarrow ? (
-          <MobileThreadSheet
-            open={activeThreadParent != null}
-            onOpenChange={(open: boolean) => {
-              if (!open) closeThread();
-            }}
-          >
-            <ThreadPanel
-              presentation="sheet"
-              activeThreadParent={activeThreadParent}
-              threadMessages={threadMessages}
-              canPostMessages={canPostMessages}
-              liveSessionViewerUserId={myProfile?.id ?? null}
-              onClose={closeThread}
-              onSendMessage={async (content, files) => {
-                if (!activeThreadParent) return null;
-                return await sendMessage(content, activeThreadParent.id, files);
-              }}
-              onSubmitIntent={onThreadSubmitIntent}
-              onSuccessfulThreadSend={onThreadSuccessfulSend}
-              threadPending={waitThread.pending}
-              onOpenAttachment={(attachments, index) => setMediaModal({ attachments, index })}
-              onOpenTask={(taskId, opts) => void openTaskFromChat(taskId, opts)}
-              bubbleUpPropsFor={bubbleUpPropsFor}
-              renderMessageContent={renderMessageContent}
-              sending={sendingAttachments}
-              composerFocusNonce={threadComposerFocusNonce}
-            />
-          </MobileThreadSheet>
-        ) : (
-          <ThreadPanel
-            presentation="column"
-            activeThreadParent={activeThreadParent}
-            threadMessages={threadMessages}
-            canPostMessages={canPostMessages}
-            liveSessionViewerUserId={myProfile?.id ?? null}
-            onClose={closeThread}
-            onSendMessage={async (content, files) => {
-              if (!activeThreadParent) return null;
-              return await sendMessage(content, activeThreadParent.id, files);
-            }}
-            onSubmitIntent={onThreadSubmitIntent}
-            onSuccessfulThreadSend={onThreadSuccessfulSend}
-            threadPending={waitThread.pending}
-            onOpenAttachment={(attachments, index) => setMediaModal({ attachments, index })}
-            onOpenTask={(taskId, opts) => void openTaskFromChat(taskId, opts)}
-            bubbleUpPropsFor={bubbleUpPropsFor}
-            renderMessageContent={renderMessageContent}
-            sending={sendingAttachments}
-            composerFocusNonce={threadComposerFocusNonce}
-          />
-        )}
+        {/* Thread Panel */}
+        <ThreadPanel
+          activeThreadParent={activeThreadParent}
+          threadMessages={threadMessages}
+          canPostMessages={canPostMessages}
+          liveSessionViewerUserId={myProfile?.id ?? null}
+          onClose={() => {
+            waitThread.clear();
+            setActiveThreadParent(null);
+          }}
+          onSendMessage={async (content, files) => {
+            if (!activeThreadParent) return null;
+            return await sendMessage(content, activeThreadParent.id, files);
+          }}
+          onSubmitIntent={(text) => {
+            const result = resolveTargetAgent({
+              messageDraft: text,
+              availableAgents,
+              contextDefaultAgentSlug: CHAT_AREA_DEFAULT_AGENT_SLUG,
+            });
+            if (result) {
+              logAgentRoutingEvent({
+                event: 'agent.routing.resolved',
+                agentSlug: result.agent.slug,
+                via: result.via,
+                bubbleId: bubbleIdForTelemetry,
+                surface: 'thread-panel',
+              });
+              waitThread.registerIntent(result.agent);
+            } else {
+              logAgentRoutingEvent({
+                event: 'agent.routing.unresolved',
+                surface: 'thread-panel',
+                bubbleId: bubbleIdForTelemetry,
+                hadMention: /(^|[^\w])@\w+/.test(text),
+              });
+            }
+          }}
+          onSuccessfulThreadSend={(sent, text) => {
+            const result = resolveTargetAgent({
+              messageDraft: text,
+              availableAgents,
+              contextDefaultAgentSlug: CHAT_AREA_DEFAULT_AGENT_SLUG,
+            });
+            if (result) {
+              waitThread.registerSuccessfulSend(sent, result.agent);
+            }
+          }}
+          threadPending={waitThread.pending}
+          onOpenAttachment={(attachments, index) => setMediaModal({ attachments, index })}
+          onOpenTask={(taskId, opts) => void openTaskFromChat(taskId, opts)}
+          bubbleUpPropsFor={bubbleUpPropsFor}
+          renderMessageContent={renderMessageContent}
+          sending={sendingAttachments}
+          composerFocusNonce={threadComposerFocusNonce}
+        />
       </div>
 
       <MessageMediaModal
@@ -1531,109 +1409,106 @@ export function ChatArea({
         initialIndex={mediaModal?.index ?? 0}
       />
 
-      {(!isNarrow || !activeThreadParent) && (
-        <RichMessageComposer
-          density="rail"
-          formTestId="chat-composer-rail"
-          popoverContainerRef={composerPopoverRef}
-          value={input}
-          onChange={(next, _meta) => setInput(next)}
-          onSubmitIntent={() => {
-            const result = resolveTargetAgent({
-              messageDraft: input,
-              availableAgents,
-              contextDefaultAgentSlug: CHAT_AREA_DEFAULT_AGENT_SLUG,
+      <RichMessageComposer
+        density="rail"
+        formTestId="chat-composer-rail"
+        popoverContainerRef={composerPopoverRef}
+        value={input}
+        onChange={(next, _meta) => setInput(next)}
+        onSubmitIntent={() => {
+          const result = resolveTargetAgent({
+            messageDraft: input,
+            availableAgents,
+            contextDefaultAgentSlug: CHAT_AREA_DEFAULT_AGENT_SLUG,
+          });
+          if (result) {
+            logAgentRoutingEvent({
+              event: 'agent.routing.resolved',
+              agentSlug: result.agent.slug,
+              via: result.via,
+              bubbleId: bubbleIdForTelemetry,
+              surface: 'chat',
             });
-            if (result) {
-              logAgentRoutingEvent({
-                event: 'agent.routing.resolved',
-                agentSlug: result.agent.slug,
-                via: result.via,
-                bubbleId: bubbleIdForTelemetry,
-                surface: 'chat',
-              });
-              waitMain.registerIntent(result.agent);
-            } else {
-              logAgentRoutingEvent({
-                event: 'agent.routing.unresolved',
-                surface: 'chat',
-                bubbleId: bubbleIdForTelemetry,
-                hadMention: /(^|[^\w])@\w+/.test(input),
-              });
-            }
-          }}
-          onSubmit={async ({ text, files }) => {
-            if ((!text.trim() && (!files || files.length === 0)) || sendingAttachments)
-              return false;
-            const result = resolveTargetAgent({
-              messageDraft: text,
-              availableAgents,
-              contextDefaultAgentSlug: CHAT_AREA_DEFAULT_AGENT_SLUG,
+            waitMain.registerIntent(result.agent);
+          } else {
+            logAgentRoutingEvent({
+              event: 'agent.routing.unresolved',
+              surface: 'chat',
+              bubbleId: bubbleIdForTelemetry,
+              hadMention: /(^|[^\w])@\w+/.test(input),
             });
-            // Root inserts must carry `default_agent_slug` so `bubble-agent-dispatch` can resolve
-            // Coach the same way as `WorkoutCoachRail` (parseRootDefaultAgentSlug); @mention still wins server-side.
-            // When `availableAgents` is not ready, `result` is null but we still need the hint for dispatch.
-            const sendOpts: { metadata?: Json } | undefined =
-              result == null || result.agent.slug === 'coach'
-                ? { metadata: { default_agent_slug: CHAT_AREA_DEFAULT_AGENT_SLUG } satisfies Json }
-                : undefined;
-            const sent = await sendMessage(text, undefined, files, sendOpts);
-            if (!sent) return false;
-            setInput('');
-            setPendingFiles([]);
-            if (result) {
-              waitMain.registerSuccessfulSend(sent, result.agent);
-            }
-            return true;
-          }}
-          pendingFiles={pendingFiles}
-          onPendingFilesChange={setPendingFiles}
-          fileAccept={MESSAGE_ATTACHMENT_FILE_ACCEPT}
-          onAttachmentFilesSelected={() => clearError()}
-          disabled={!canPostMessages || !canPostInComposer}
-          isSending={sendingAttachments}
-          canSubmit={
-            (!!input.trim() || pendingFiles.length > 0) && canPostMessages && canPostInComposer
           }
-          attachDisabled={!canPostMessages || !canPostInComposer || sendingAttachments}
-          createCardDisabled={
-            !canPostMessages ||
-            !canPostInComposer ||
-            !canWriteTasks ||
-            !onOpenCreateTaskForChat ||
-            pendingFiles.length > 0 ||
-            sendingAttachments
+        }}
+        onSubmit={async ({ text, files }) => {
+          if ((!text.trim() && (!files || files.length === 0)) || sendingAttachments) return false;
+          const result = resolveTargetAgent({
+            messageDraft: text,
+            availableAgents,
+            contextDefaultAgentSlug: CHAT_AREA_DEFAULT_AGENT_SLUG,
+          });
+          // Root inserts must carry `default_agent_slug` so `bubble-agent-dispatch` can resolve
+          // Coach the same way as `WorkoutCoachRail` (parseRootDefaultAgentSlug); @mention still wins server-side.
+          // When `availableAgents` is not ready, `result` is null but we still need the hint for dispatch.
+          const sendOpts: { metadata?: Json } | undefined =
+            result == null || result.agent.slug === 'coach'
+              ? { metadata: { default_agent_slug: CHAT_AREA_DEFAULT_AGENT_SLUG } satisfies Json }
+              : undefined;
+          const sent = await sendMessage(text, undefined, files, sendOpts);
+          if (!sent) return false;
+          setInput('');
+          setPendingFiles([]);
+          if (result) {
+            waitMain.registerSuccessfulSend(sent, result.agent);
           }
-          placeholder={activeBubble ? `Message #${activeBubble.name}` : 'Select a bubble…'}
-          errorText={messageError}
-          mentionConfig={richMentionConfig}
-          slashConfig={richSlashConfig}
-          hashConfig={richHashConfig}
-          onRequestCreateAndAttachCard={handleComposeChatCard}
-          features={{
-            enableStartLiveWorkout: workspaceRole !== 'trialing',
-            enableExerciseHashMentions: true,
-          }}
-          onRequestStartLiveWorkout={
-            workspaceRole === 'trialing' ? undefined : handleStartLiveWorkout
-          }
-          startLiveWorkoutDisabled={
-            !canPostMessages ||
-            !canPostInComposer ||
-            !workspaceId ||
-            !myProfile?.id ||
-            pendingFiles.length > 0 ||
-            sendingAttachments
-          }
-          footerHint={
-            <>
-              <b>Return</b> to send (after attaching, pick files then send) • <b>Shift + Return</b>{' '}
-              for new line • <b>@</b> to mention • <b>/</b> to link a card • <b>#</b> to tag an
-              exercise
-            </>
-          }
-        />
-      )}
+          return true;
+        }}
+        pendingFiles={pendingFiles}
+        onPendingFilesChange={setPendingFiles}
+        fileAccept={MESSAGE_ATTACHMENT_FILE_ACCEPT}
+        onAttachmentFilesSelected={() => clearError()}
+        disabled={!canPostMessages || !canPostInComposer}
+        isSending={sendingAttachments}
+        canSubmit={
+          (!!input.trim() || pendingFiles.length > 0) && canPostMessages && canPostInComposer
+        }
+        attachDisabled={!canPostMessages || !canPostInComposer || sendingAttachments}
+        createCardDisabled={
+          !canPostMessages ||
+          !canPostInComposer ||
+          !canWriteTasks ||
+          !onOpenCreateTaskForChat ||
+          pendingFiles.length > 0 ||
+          sendingAttachments
+        }
+        placeholder={activeBubble ? `Message #${activeBubble.name}` : 'Select a bubble…'}
+        errorText={messageError}
+        mentionConfig={richMentionConfig}
+        slashConfig={richSlashConfig}
+        hashConfig={richHashConfig}
+        onRequestCreateAndAttachCard={handleComposeChatCard}
+        features={{
+          enableStartLiveWorkout: workspaceRole !== 'trialing',
+          enableExerciseHashMentions: true,
+        }}
+        onRequestStartLiveWorkout={
+          workspaceRole === 'trialing' ? undefined : handleStartLiveWorkout
+        }
+        startLiveWorkoutDisabled={
+          !canPostMessages ||
+          !canPostInComposer ||
+          !workspaceId ||
+          !myProfile?.id ||
+          pendingFiles.length > 0 ||
+          sendingAttachments
+        }
+        footerHint={
+          <>
+            <b>Return</b> to send (after attaching, pick files then send) • <b>Shift + Return</b>{' '}
+            for new line • <b>@</b> to mention • <b>/</b> to link a card • <b>#</b> to tag an
+            exercise
+          </>
+        }
+      />
     </div>
   );
 }
