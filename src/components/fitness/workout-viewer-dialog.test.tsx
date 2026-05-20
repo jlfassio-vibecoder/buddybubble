@@ -1,69 +1,88 @@
-import { describe, expect, it, afterEach } from 'vitest';
-import { cleanup, render } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { Json } from '@/types/database';
 import { richMetadataWithBlockFormat } from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
 import { WorkoutViewerContent } from './workout-viewer-dialog';
 
-afterEach(() => {
-  cleanup();
-});
+function renderViewer(
+  meta: Record<string, unknown>,
+  opts?: { readVariant?: 'workout' | 'log'; onApply?: ReturnType<typeof vi.fn> },
+) {
+  const onApply = opts?.onApply ?? vi.fn();
+  const exercises = (meta.exercises as { name: string; sets: number; reps: string }[]) ?? [];
 
-const baseProps = {
-  workoutSet: null,
-  exercises: [],
-  title: 'Test workout',
-  description: '',
-  canWrite: false,
-  workoutUnitSystem: 'metric' as const,
-  onApply: () => {},
-  onRequestClose: () => {},
-  syncKey: 0,
-};
+  return {
+    onApply,
+    ...render(
+      <WorkoutViewerContent
+        workoutSet={null}
+        exercises={exercises}
+        metadata={meta as Json}
+        title="Test workout"
+        description=""
+        canWrite
+        workoutUnitSystem="metric"
+        onApply={onApply}
+        onRequestClose={() => {}}
+        syncKey={1}
+        readVariant={opts?.readVariant ?? 'workout'}
+      />,
+    ),
+  };
+}
 
-describe('WorkoutViewerContent', () => {
-  it('renders rich block list from metadata', () => {
-    const metadata = richMetadataWithBlockFormat('tabata') as Json;
-    const { getByTestId, getByText } = render(
-      <WorkoutViewerContent {...baseProps} metadata={metadata} syncKey={1} />,
-    );
+describe('WorkoutViewerContent edit mode', () => {
+  afterEach(() => cleanup());
 
-    expect(getByTestId('workout-viewer-block-list')).toBeTruthy();
-    expect(getByText('MAIN')).toBeTruthy();
+  it('renders WorkoutBlockListEditor for rich tabata in edit mode', () => {
+    const meta = richMetadataWithBlockFormat('tabata');
+    renderViewer(meta);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+
+    expect(screen.getByTestId('workout-block-list-editor')).toBeTruthy();
+    expect(screen.getByText('MAIN')).toBeTruthy();
+    expect(screen.queryByLabelText('Exercise name')).toBeTruthy();
   });
 
-  it('renders flat exercise list when metadata has no factory', () => {
-    const { getByText } = render(
-      <WorkoutViewerContent
-        {...baseProps}
-        metadata={{}}
-        exercises={[{ name: 'Squat', sets: 3, reps: 10 }]}
-        syncKey={1}
-      />,
-    );
+  it('renders flat WorkoutExercisesEditor for flat-only metadata', () => {
+    renderViewer({ exercises: [{ name: 'Squat', sets: 3, reps: 10 }] });
 
-    expect(getByText(/No AI workout structure saved/)).toBeTruthy();
-    expect(getByText('Squat')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+
+    expect(screen.queryByTestId('workout-block-list-editor')).toBeNull();
+    expect(screen.getByPlaceholderText('Exercise name')).toBeTruthy();
   });
 
-  it('renders log read summary with set_logs when readVariant is log', () => {
-    const { getByTestId, getByText, queryByText } = render(
-      <WorkoutViewerContent
-        {...baseProps}
-        metadata={{ duration_min: 30 }}
-        exercises={[
-          {
-            name: 'Deadlift',
-            set_logs: [{ set: 1, weight: 140, reps: 5, done: true }],
-          },
-        ]}
-        readVariant="log"
-        syncKey={1}
-      />,
-    );
+  it('uses flat editor when readVariant is log', () => {
+    const meta = richMetadataWithBlockFormat('tabata');
+    renderViewer(meta, { readVariant: 'log' });
 
-    expect(getByTestId('workout-viewer-log-read')).toBeTruthy();
-    expect(getByText('Deadlift')).toBeTruthy();
-    expect(getByText('Set 1 · 140 kg · 5 reps')).toBeTruthy();
-    expect(queryByText(/No AI workout structure saved/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+
+    expect(screen.queryByTestId('workout-block-list-editor')).toBeNull();
+  });
+
+  it('includes blocks in Apply payload for rich edit', () => {
+    const meta = richMetadataWithBlockFormat('tabata');
+    const onApply = vi.fn();
+    renderViewer(meta, { onApply });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+
+    const mainSection = screen.getByTestId(/^editor-main-block-/);
+    const nameInput = mainSection.querySelector(
+      'input[placeholder="Exercise name"]',
+    ) as HTMLInputElement;
+    fireEvent.change(nameInput, { target: { value: 'Burpee Tabata' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Apply changes' }));
+
+    expect(onApply).toHaveBeenCalledTimes(1);
+    const payload = onApply.mock.calls[0]![0];
+    expect(payload.blocks).toBeDefined();
+    expect(payload.blocks!.length).toBeGreaterThan(0);
+    const main = payload.blocks!.find((b: { section: string }) => b.section === 'main')!;
+    expect(main.exercises[0].exerciseName).toBe('Burpee Tabata');
   });
 });

@@ -1,10 +1,10 @@
 # Parametric Workout Blocks — Step 5 (Block-Aware Edit & Metadata Sync)
 
-**Status:** In progress — **M0**, **M1**, and **M3** shipped; **M2** (viewer Apply wiring) next.
+**Status:** In progress — **M0**, **M1**, **M2**, and **M3** shipped; **M4** (`formatParams` editor) next.
 
 **Prerequisites:** [parametric-step4-plan.md](./parametric-step4-plan.md) M0–M4 shipped (shared read renderer + read parity).
 
-**M1 + M3 milestone doc:** [parametric-step5-m1-m3-plan.md](./parametric-step5-m1-m3-plan.md)
+**Milestone docs:** [parametric-step5-m1-m3-plan.md](./parametric-step5-m1-m3-plan.md) · [parametric-step5-m2-plan.md](./parametric-step5-m2-plan.md)
 
 **Related:** [Workout UI landscape audit](./README.md) · [parametric-step1-2-plan.md](./parametric-step1-2-plan.md) (data contract) · [layout-shell-architecture.md](./layout-shell-architecture.md)
 
@@ -14,11 +14,9 @@
 
 ## Executive summary
 
-Step 4 delivered **read parity**: View mode renders parametric blocks (Tabata subtitles, section headers, superset labels) via `WorkoutBlockListRenderer`. **Edit mode is unchanged** — it still mounts flat `WorkoutExercisesEditor`, and **Apply** always routes through `applyFlatWorkoutEditsToMetadata`, which collapses all `exerciseBlocks` into a single `straight_sets` “Main” block.
+Step 4 delivered **read parity**: View mode renders parametric blocks via `WorkoutBlockListRenderer`. **M2** wires **Edit** to `WorkoutBlockListEditor` and **Apply** to `applyBlockEditsToMetadata` when `payload.blocks` is present; flat-only cards and the flat fallback still use `WorkoutExercisesEditor` + M0 guard.
 
-Users who open **Edit → Apply** (even to change title/description only) lose block formatting in View mode. Card **Save** is safer: `finalizeWorkoutMetadataForSave` only degrades when the flat form list **diverges** from factory-derived exercises — but the viewer Apply path does not use that guard today.
-
-Step 5 closes the **edit / persist loop** for rich cards: block structure survives intentional edits, and accidental Apply without exercise changes does not destroy parametric intent.
+Step 5 closes the **edit / persist loop** for rich cards: block structure survives intentional block edits; title-only Apply with unchanged blocks stays idempotent; flat path still degrades only when flat exercises diverge (M0).
 
 **Sprint shape:** One technical plan, **four phased milestones** (M0–M3 required; M4 optional stretch). M0 can ship as a hotfix before the full block editor.
 
@@ -187,6 +185,8 @@ pnpm exec vitest run src/components/fitness/workout-block-renderer/WorkoutBlockL
 ---
 
 ## Milestone 2 — Viewer integration
+
+**Status:** Shipped — see [parametric-step5-m2-plan.md](./parametric-step5-m2-plan.md).
 
 **Goal:** Task Modal workout viewer Edit mode preserves block structure for rich cards.
 

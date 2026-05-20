@@ -14,7 +14,9 @@ import {
   parseTaskMetadata,
   type WorkoutExercise,
 } from '@/lib/item-metadata';
+import type { WorkoutViewerApplyPayload } from '@/components/fitness/workout-viewer-dialog';
 import {
+  applyBlockEditsToMetadata,
   applyFlatWorkoutEditsToMetadata,
   deriveFlatExercisesFromMetadata,
   flatExercisesMatchDerived,
@@ -196,9 +198,19 @@ export function useTaskWorkoutAi({
   }, [open, taskId, loading, initialOpenWorkoutViewer, hasWorkoutViewerContent]);
 
   const handleWorkoutViewerApply = useCallback(
-    (payload: { title: string; description: string; exercises: WorkoutExercise[] }) => {
+    (payload: WorkoutViewerApplyPayload) => {
       setTitle(payload.title);
       setDescription(payload.description);
+
+      if (payload.blocks != null && payload.blocks.length > 0) {
+        setMetadata((prev) => {
+          const next = applyBlockEditsToMetadata(prev, payload.blocks!) as Json;
+          setWorkoutExercises(deriveFlatExercisesFromMetadata(next));
+          return next;
+        });
+        return;
+      }
+
       setWorkoutExercises(payload.exercises);
       setMetadata((prev) => {
         const derived = deriveFlatExercisesFromMetadata(prev);

@@ -13,11 +13,13 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { WorkoutExercisesEditor } from '@/components/fitness/workout-exercises-editor';
 import {
+  WorkoutBlockListEditor,
   WorkoutBlockListRenderer,
   WorkoutFlatExerciseList,
   WorkoutLogReadSummary,
 } from '@/components/fitness/workout-block-renderer';
 import { useWorkoutSessionViewModel } from '@/hooks/use-workout-session-view-model';
+import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 import { useTaskCardCoverUrl } from '@/lib/task-card-cover';
 import { ChevronRight, Image as ImageIcon, Loader2, X } from 'lucide-react';
 import { WORKOUT_FACTORY_CHAIN_MESSAGES } from '@/lib/workout-factory/api-client';
@@ -27,9 +29,19 @@ export type WorkoutViewerApplyPayload = {
   title: string;
   description: string;
   exercises: WorkoutExercise[];
+  /** Present when rich block editor was used for Apply. */
+  blocks?: WorkoutSessionBlockView[];
 };
 
 type ViewMode = 'view' | 'edit';
+
+function cloneBlocksForEditor(blocks: WorkoutSessionBlockView[]): WorkoutSessionBlockView[] {
+  return blocks.map((b) => ({
+    ...b,
+    exercises: b.exercises.map((ex) => ({ ...ex })),
+    instructions: [...b.instructions],
+  }));
+}
 
 function WorkoutViewHero({
   cardCoverPath,
@@ -231,24 +243,38 @@ export function WorkoutViewerContent({
   const [localTitle, setLocalTitle] = useState(title);
   const [localDescription, setLocalDescription] = useState(description);
   const [localExercises, setLocalExercises] = useState<WorkoutExercise[]>([]);
+  const [localBlocks, setLocalBlocks] = useState<WorkoutSessionBlockView[]>([]);
 
   const sessionVm = useWorkoutSessionViewModel(metadata ?? {});
+
+  const useRichBlockEdit =
+    readVariant !== 'log' && sessionVm.source === 'rich' && sessionVm.blocks.length > 0;
 
   useEffect(() => {
     setLocalTitle(title);
     setLocalDescription(description);
     setLocalExercises(exercises.map((e) => ({ ...e })));
+    setLocalBlocks(cloneBlocksForEditor(sessionVm.blocks));
     setMode('view');
-  }, [syncKey, title, description, exercises]);
+  }, [syncKey, title, description, exercises, sessionVm.blocks]);
 
   const handleApply = useCallback(() => {
     onApply({
       title: localTitle.trim(),
       description: localDescription.trim(),
       exercises: localExercises,
+      ...(useRichBlockEdit ? { blocks: localBlocks } : {}),
     });
     onRequestClose();
-  }, [localTitle, localDescription, localExercises, onApply, onRequestClose]);
+  }, [
+    localTitle,
+    localDescription,
+    localExercises,
+    localBlocks,
+    useRichBlockEdit,
+    onApply,
+    onRequestClose,
+  ]);
 
   const showRichRead =
     mode === 'view' && sessionVm.source === 'rich' && sessionVm.blocks.length > 0;
@@ -463,13 +489,23 @@ export function WorkoutViewerContent({
               className="min-h-[96px] resize-y"
             />
           </div>
-          <WorkoutExercisesEditor
-            exercises={localExercises}
-            onChange={setLocalExercises}
-            canWrite={canWrite}
-            workoutUnitSystem={workoutUnitSystem}
-            idPrefix="wv-ex"
-          />
+          {useRichBlockEdit ? (
+            <WorkoutBlockListEditor
+              blocks={localBlocks}
+              canWrite={canWrite}
+              workoutUnitSystem={workoutUnitSystem}
+              onChange={setLocalBlocks}
+              idPrefix="wv-block"
+            />
+          ) : (
+            <WorkoutExercisesEditor
+              exercises={localExercises}
+              onChange={setLocalExercises}
+              canWrite={canWrite}
+              workoutUnitSystem={workoutUnitSystem}
+              idPrefix="wv-ex"
+            />
+          )}
         </div>
       )}
     </div>

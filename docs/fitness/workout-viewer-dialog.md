@@ -9,7 +9,7 @@ Two exports share most behavior:
 
 ## Types
 
-- **`WorkoutViewerApplyPayload`** — `{ title, description, exercises }` passed to `onApply` when the user confirms edits so the parent can persist task metadata.
+- **`WorkoutViewerApplyPayload`** — `{ title, description, exercises, blocks? }` passed to `onApply`. When `blocks` is set (rich block editor path), [`useTaskWorkoutAi`](../../src/components/modals/task-modal/hooks/useTaskWorkoutAi.ts) writes via `applyBlockEditsToMetadata`; otherwise the M0 flat guard applies.
 - **`WorkoutViewerDialogProps`** — Adds `open`, `onOpenChange`, plus workout data, permissions, AI card-cover hooks, optional `onSaveTask` for inline DB save from the task modal, and loading flags for AI generation.
 
 `WorkoutViewerContentProps` omits `open` / `onOpenChange`, adds:
@@ -23,9 +23,9 @@ Two exports share most behavior:
 
 ## View vs edit
 
-Internal `ViewMode` toggles between **`view`** (read-only exercise rows with thumbnails, meta lines, optional “Request image” mailto) and **`edit`** (delegates list editing to [WorkoutExercisesEditor](workout-exercises-editor.md)).
+Internal `ViewMode` toggles between **`view`** and **`edit`**.
 
-**Rich cards (`ai_workout_factory`):** View mode uses `WorkoutBlockListRenderer` (Step 4). Edit mode still uses the flat editor today; block structure is lost on Apply unless exercises are unchanged — see [parametric-step5-plan.md](views/parametric-step5-plan.md).
+**Rich cards (`ai_workout_factory`):** View uses `WorkoutBlockListRenderer` (or `WorkoutLogReadSummary` when `readVariant="log"`). Edit uses `WorkoutBlockListEditor` when `readVariant !== 'log'` and `sessionVm.source === 'rich'`; otherwise [WorkoutExercisesEditor](workout-exercises-editor.md). See [parametric-step5-m2-plan.md](views/parametric-step5-m2-plan.md).
 
 `onApply` is invoked from the apply path with the normalized payload so parents merge into `tasks.metadata` and related fields.
 

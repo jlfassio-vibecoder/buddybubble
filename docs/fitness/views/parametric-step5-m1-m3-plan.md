@@ -4,7 +4,7 @@
 
 **Parent:** [parametric-step5-plan.md](./parametric-step5-plan.md) (Step 5 umbrella).
 
-**Deferred next:** **M2** — wire `WorkoutViewerDialog` / `useTaskWorkoutAi` Apply to `applyBlockEditsToMetadata` when `payload.blocks` is present.
+**Follow-up (shipped):** [parametric-step5-m2-plan.md](./parametric-step5-m2-plan.md) — viewer Edit + Apply wiring.
 
 ---
 

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { Json } from '@/types/database';
 import type { WorkoutExercise } from '@/lib/item-metadata';
 import { deriveFlatExercisesFromMetadata } from '@/lib/workout-factory/sync-workout-metadata';
+import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import { useTaskWorkoutAi } from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
 
 function richTabataFixture(): Record<string, unknown> {
@@ -182,5 +183,67 @@ describe('useTaskWorkoutAi handleWorkoutViewerApply', () => {
       name: string;
     }[];
     expect(exercises[0].name).toBe('Bench Press');
+  });
+
+  it('applies rich block edits via applyBlockEditsToMetadata when blocks payload present', () => {
+    const initialMeta = richTabataFixture() as Json;
+    const vm = buildWorkoutSessionViewModel(initialMeta);
+    const main = vm.blocks.find((b) => b.section === 'main')!;
+    const originalParams = main.formatParams;
+    const editedBlocks = vm.blocks.map((b) =>
+      b.id === main.id
+        ? {
+            ...b,
+            exercises: b.exercises.map((ex, i) =>
+              i === 0 ? { ...ex, exerciseName: 'Renamed Via Blocks' } : ex,
+            ),
+          }
+        : b,
+    );
+    const staleFlat = deriveFlatExercisesFromMetadata(initialMeta);
+
+    const { result } = renderHook(() => useTaskWorkoutAiHarness(initialMeta));
+
+    act(() => {
+      result.current.handleWorkoutViewerApply({
+        title: 'Original Title',
+        description: 'Original description',
+        exercises: staleFlat,
+        blocks: editedBlocks,
+      });
+    });
+
+    const block = getMainBlock(result.current.metadata);
+    expect(block.blockFormat).toBe('tabata');
+    expect(block.formatParams).toEqual(originalParams);
+    const ex = (block.exercises as Record<string, unknown>[])[0];
+    expect(ex.exerciseName).toBe('Renamed Via Blocks');
+
+    const flat = (result.current.metadata as Record<string, unknown>).exercises as {
+      name: string;
+    }[];
+    expect(flat[0].name).toBe('Renamed Via Blocks');
+  });
+
+  it('preserves tabata when title changes and blocks payload unchanged', () => {
+    const initialMeta = richTabataFixture() as Json;
+    const vm = buildWorkoutSessionViewModel(initialMeta);
+    const derived = deriveFlatExercisesFromMetadata(initialMeta);
+
+    const { result } = renderHook(() => useTaskWorkoutAiHarness(initialMeta));
+
+    act(() => {
+      result.current.handleWorkoutViewerApply({
+        title: 'Title From Block Path',
+        description: 'New description',
+        exercises: derived,
+        blocks: vm.blocks,
+      });
+    });
+
+    expect(result.current.title).toBe('Title From Block Path');
+    const block = getMainBlock(result.current.metadata);
+    expect(block.blockFormat).toBe('tabata');
+    expect(block.name).toBe('MAIN');
   });
 });
