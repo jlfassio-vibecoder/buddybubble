@@ -1925,6 +1925,7 @@ function DashboardShellInner({
           onOpenCreateTaskForChat={openChatComposeForTask}
           onCollapse={onCollapse}
           workspaceTitle={workspaceTitle}
+          themeCategory={effectiveThemeCategory}
           joinRequestBellPreview={isAdmin ? joinRequestBellPreview : undefined}
         />
       )}

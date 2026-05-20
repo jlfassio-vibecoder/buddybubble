@@ -52,7 +52,7 @@ describe('MobileThreadSheet', () => {
 
   it('renders right-direction drawer when open with full-width content', () => {
     render(
-      <MobileThreadSheet open onOpenChange={() => {}}>
+      <MobileThreadSheet open themeCategory="business" onOpenChange={() => {}}>
         <p>Thread body</p>
       </MobileThreadSheet>,
     );
@@ -68,7 +68,7 @@ describe('MobileThreadSheet', () => {
 
   it('does not render children when closed', () => {
     render(
-      <MobileThreadSheet open={false} onOpenChange={() => {}}>
+      <MobileThreadSheet open={false} themeCategory="business" onOpenChange={() => {}}>
         <p>Thread body</p>
       </MobileThreadSheet>,
     );

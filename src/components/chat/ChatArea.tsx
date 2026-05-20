@@ -30,7 +30,7 @@ import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useWorkspaceSessionSubject } from '@/context/WorkspaceSessionContext';
 import { useUserProfileStore } from '@/store/userProfileStore';
 import { useLiveVideoStore } from '@/store/liveVideoStore';
-import type { BubbleRow, TaskRow } from '@/types/database';
+import type { BubbleRow, TaskRow, WorkspaceCategory } from '@/types/database';
 import {
   ALL_BUBBLES_BUBBLE_ID,
   ALL_BUBBLES_LABEL,
@@ -166,6 +166,8 @@ export type ChatAreaProps = {
   joinRequestBellPreview?: JoinRequestPreviewItem[];
   /** Centered above the channel row — workspace (BuddyBubble) name, same as Bubbles rail. */
   workspaceTitle?: string;
+  /** Portaled mobile thread sheet — same category as dashboard `ThemeScope`. */
+  themeCategory?: WorkspaceCategory | string | null;
 };
 
 export function ChatArea({
@@ -177,6 +179,7 @@ export function ChatArea({
   onOpenTask = () => {},
   joinRequestBellPreview = [],
   workspaceTitle,
+  themeCategory,
 }: ChatAreaProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -519,10 +522,16 @@ export function ChatArea({
     (messageId: string) => {
       const q = new URLSearchParams(searchParams.toString());
       if (q.get(THREAD_SEARCH_PARAM) === messageId) return;
+      const hadThread = q.has(THREAD_SEARCH_PARAM);
       q.set(THREAD_SEARCH_PARAM, messageId);
       const qs = q.toString();
-      router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-      threadOpenedViaPushRef.current = true;
+      const href = qs ? `${pathname}?${qs}` : pathname;
+      if (hadThread) {
+        router.replace(href, { scroll: false });
+      } else {
+        router.push(href, { scroll: false });
+        threadOpenedViaPushRef.current = true;
+      }
     },
     [pathname, router, searchParams],
   );
@@ -1429,6 +1438,7 @@ export function ChatArea({
         {isNarrow ? (
           <MobileThreadSheet
             open={activeThreadParent != null}
+            themeCategory={themeCategory}
             onOpenChange={(open) => {
               if (!open) closeThread();
             }}
