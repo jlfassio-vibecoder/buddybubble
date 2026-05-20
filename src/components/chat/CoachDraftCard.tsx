@@ -1,14 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Check, Loader2, Sparkles } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
 import { Button } from '@/components/ui/button';
+import { WorkoutMetadataPreview } from '@/components/fitness/workout-block-renderer';
 import { cn } from '@/lib/utils';
 import { formatUserFacingError } from '@/lib/format-error';
+import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import type { CoachDraftPayload } from '@/types/coach-draft';
 import type { TaskModalChatCardWorkoutActions } from '@/components/modals/task-modal/TaskModalCommentsPanel';
 import { WorkoutAiGenerateButton } from '@/components/modals/task-modal/workout-ai-generate-button';
+import type { Json } from '@/types/database';
 
 export type CoachDraftCardProps = {
   messageId: string;
@@ -55,9 +58,13 @@ export function CoachDraftCard({
     }
   }
 
-  const exercises = Array.isArray(draft.proposed_metadata.exercises)
-    ? draft.proposed_metadata.exercises
-    : [];
+  const showWorkoutPreview = useMemo(() => {
+    const vm = buildWorkoutSessionViewModel(draft.proposed_metadata);
+    if (vm.source === 'rich') {
+      return vm.blocks.some((b) => b.exercises.length > 0 || b.instructions.length > 0);
+    }
+    return vm.flatExercises.length > 0;
+  }, [draft.proposed_metadata]);
 
   return (
     <div
@@ -88,25 +95,15 @@ export function CoachDraftCard({
             {draft.proposed_description}
           </p>
         ) : null}
-        {exercises.length > 0 ? (
-          <ul className="max-h-40 list-inside list-disc space-y-1 overflow-y-auto text-xs text-muted-foreground">
-            {exercises.slice(0, 12).map((ex, i) => {
-              const row =
-                ex && typeof ex === 'object' && !Array.isArray(ex)
-                  ? (ex as Record<string, unknown>)
-                  : {};
-              const name = typeof row.name === 'string' ? row.name : 'Exercise';
-              const sets = row.sets != null ? String(row.sets) : '';
-              const reps = row.reps != null ? String(row.reps) : '';
-              const bits = [sets && `${sets} sets`, reps && `${reps} reps`].filter(Boolean);
-              return (
-                <li key={i}>
-                  <span className="font-medium text-foreground">{name}</span>
-                  {bits.length ? ` — ${bits.join(', ')}` : null}
-                </li>
-              );
-            })}
-          </ul>
+        {showWorkoutPreview ? (
+          <WorkoutMetadataPreview
+            metadata={draft.proposed_metadata as Json}
+            density="compact"
+            taskId={null}
+            maxHeightClass="max-h-40 overflow-y-auto"
+            className="text-xs text-muted-foreground"
+            data-testid="coach-draft-workout-preview"
+          />
         ) : null}
         {error ? <p className="text-xs text-destructive">{error}</p> : null}
         {isPending ? (

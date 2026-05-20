@@ -18,3 +18,6 @@ export { WorkoutBlockHeader } from './WorkoutBlockHeader';
 
 export { WorkoutInstructionSection } from './WorkoutInstructionSection';
 export type { WorkoutInstructionSectionProps } from './WorkoutInstructionSection';
+
+export { WorkoutMetadataPreview } from './WorkoutMetadataPreview';
+export type { WorkoutMetadataPreviewProps } from './WorkoutMetadataPreview';

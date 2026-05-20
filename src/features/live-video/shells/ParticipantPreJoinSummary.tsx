@@ -5,10 +5,10 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { useLiveSessionDeck } from '@/features/live-video/hooks/useLiveSessionDeck';
-import { metadataFieldsFromParsed, type WorkoutExercise } from '@/lib/item-metadata';
+import { WorkoutMetadataPreview } from '@/components/fitness/workout-block-renderer';
 import { formatUserFacingError } from '@/lib/format-error';
 import { agoraUidFromUuid } from '@/lib/live-video/agora-uid';
-import type { Database } from '@/types/database';
+import type { Database, Json } from '@/types/database';
 import { cn } from '@/lib/utils';
 
 const LIVE_SESSION_JOIN_MAX_ATTEMPTS = 8;
@@ -28,21 +28,6 @@ function isLiveSessionForeignKeyViolation(
   if (err.code === '23503') return true;
   const m = (err.message ?? '').toLowerCase();
   return m.includes('foreign key') && m.includes('live_session');
-}
-
-function formatExerciseLine(ex: WorkoutExercise): string | null {
-  const name = ex.name?.trim();
-  if (!name) return null;
-  if (ex.reps !== undefined && ex.reps !== null && String(ex.reps).trim() !== '') {
-    return `${ex.reps} ${name}`;
-  }
-  if (typeof ex.sets === 'number' && ex.sets > 0) {
-    return `${ex.sets}× ${name}`;
-  }
-  if (typeof ex.duration_min === 'number' && ex.duration_min > 0) {
-    return `${ex.duration_min} min ${name}`;
-  }
-  return name;
 }
 
 export type ParticipantPreJoinSummaryProps = {
@@ -181,10 +166,6 @@ export function ParticipantPreJoinSummary({
                 </div>
               );
             }
-            const fields = metadataFieldsFromParsed(task.metadata);
-            const exerciseLines = fields.workoutExercises
-              .map(formatExerciseLine)
-              .filter((s): s is string => Boolean(s));
             const title = task.title?.trim() || 'Untitled card';
             return (
               <div
@@ -192,15 +173,12 @@ export function ParticipantPreJoinSummary({
                 className="rounded-xl border border-border bg-card px-3 py-3 shadow-sm"
               >
                 <p className="text-sm font-semibold leading-snug text-foreground">{title}</p>
-                {exerciseLines.length > 0 ? (
-                  <ul className="mt-2 list-inside list-disc space-y-0.5 text-xs text-muted-foreground">
-                    {exerciseLines.map((line, i) => (
-                      <li key={i}>{line}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-2 text-xs text-muted-foreground">No exercises listed on card.</p>
-                )}
+                <WorkoutMetadataPreview
+                  metadata={task.metadata as Json}
+                  density="compact"
+                  className="mt-2"
+                  emptyMessage="No exercises listed on card."
+                />
               </div>
             );
           })

@@ -77,6 +77,20 @@ describe('WorkoutBlockListRenderer', () => {
     expect(queryByText('Goblet Squat')).toBeNull();
   });
 
+  it('renders compact density with smaller exercise row padding', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('tabata'));
+    const { container, getByText } = render(
+      <WorkoutBlockListRenderer
+        blocks={vm.blocks}
+        density="compact"
+        data-testid="read-block-list"
+      />,
+    );
+
+    expect(container.querySelector('.p-2')).toBeTruthy();
+    expect(getByText('MAIN')).toBeTruthy();
+  });
+
   it('renders inline density stub for main blocks', () => {
     const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('tabata'));
     const main = vm.blocks.find((b) => b.section === 'main')!;

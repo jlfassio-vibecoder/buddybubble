@@ -1,6 +1,6 @@
 # Parametric Workout Blocks — Step 4 (P1 Read Parity)
 
-**Status:** Planning only — no React changes in this pass.
+**Status:** M0–M2 shipped; M3–M4 planned. See milestone docs below.
 
 **Prerequisites:** [parametric-step1-2-plan.md](./parametric-step1-2-plan.md) (data contract + ViewModel) · [parametric-step3-plan.md](./parametric-step3-plan.md) (WorkoutPlayer block-aware P0)
 
@@ -16,7 +16,7 @@ Steps 1–3 stabilized the **data router** (`sync-workout-metadata`), the **tran
 
 **In scope:** Read-only prescription UI (headers, subtitles, exercise rows, instruction sections, superset/contrast grouping labels).
 
-**Out of scope (Step 5+ / P2 execution):** Interval timers, interactive round state, ladder rung progression UX, block metadata on `workout_log`, block-aware **editors**, live set logging (`ParticipantWorkoutLogger`), Coach `execution_patch` plumbing.
+**Out of scope (Step 5+ / P2 execution):** Interval timers, interactive round state, ladder rung progression UX, block metadata on `workout_log`, block-aware **editors**, live set logging (`ParticipantWorkoutLogger`), Coach `execution_patch` plumbing. → **Step 5 plan:** [parametric-step5-plan.md](./parametric-step5-plan.md) (block-aware Edit/Apply); **Step 6+:** player timers and log metadata.
 
 ---
 
@@ -217,6 +217,8 @@ Surfaces grouped by **risk** and **user visibility**. Milestones are sequential 
 
 ### Milestone 1 — Core viewers (sprint days 3–4)
 
+**Status:** Shipped — see [parametric-step4-m1-plan.md](./parametric-step4-m1-plan.md).
+
 **Highest impact; establishes visual source of truth.**
 
 | #   | Surface                    | Path                        | Migration                                                                   |
@@ -234,14 +236,16 @@ Surfaces grouped by **risk** and **user visibility**. Milestones are sequential 
 
 ### Milestone 2 — Dashboard & discovery (sprint days 5–6)
 
+**Status:** Shipped — see [parametric-step4-m2-plan.md](./parametric-step4-m2-plan.md). Kanban card-face / tooltip remains out of scope (Quick View uses M1 viewer).
+
 **Compact read density; flat fallback when no factory.**
 
 | #   | Surface                       | Path                            | Migration                                                                                                            |
 | --- | ----------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| 5   | **UpNextCard**                | `UpNextCard.tsx`                | `buildWorkoutSessionViewModel(metadata)` → `density="compact"`; show first main block subtitle + next exercise row   |
-| 6   | **ParticipantPreJoinSummary** | `ParticipantPreJoinSummary.tsx` | Same VM; list blocks as bullets (block name + subtitle + exercise count)                                             |
-| 7   | **KanbanTaskCard**            | `kanban-task-card.tsx`          | _Optional P1.5:_ tooltip / expanded quick view using compact renderer (card face stays chrome-only)                  |
-| 8   | **CoachDraftCard**            | `CoachDraftCard.tsx`            | When `proposed_metadata` includes factory (`hasRichWorkoutSetInMetadata`), render compact block list; else flat list |
+| 5   | **UpNextCard**                | `UpNextCard.tsx`                | Strip summary via `formatRichWorkoutStripSummary` / `formatBlockSummaryLine` (no full renderer — height constrained) |
+| 6   | **ParticipantPreJoinSummary** | `ParticipantPreJoinSummary.tsx` | `WorkoutMetadataPreview` → `WorkoutBlockListRenderer` `density="compact"` or flat list                               |
+| 7   | **KanbanTaskCard**            | `kanban-task-card.tsx`          | **Out of scope** — Quick View already uses M1 viewer                                                                 |
+| 8   | **CoachDraftCard**            | `CoachDraftCard.tsx`            | `WorkoutMetadataPreview` on `proposed_metadata`; `taskId={null}`; rich when factory present                          |
 
 **Shared helper (new):**
 
@@ -412,6 +416,7 @@ pnpm exec vitest run \
 | Doc                                                     | Update                                                                       |
 | ------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | [parametric-step3-plan.md](./parametric-step3-plan.md)  | Link Step 4 as follow-up; move “Shared renderer” from out-of-scope to Step 4 |
+| [parametric-step5-plan.md](./parametric-step5-plan.md)  | Step 5: block-aware Edit/Apply (follow-up to M1 viewer)                      |
 | [views/README.md](./README.md)                          | Mark P1 read parity in progress; update gap matrix when milestones land      |
 | [workout-viewer-dialog.md](../workout-viewer-dialog.md) | ViewModel + shared renderer                                                  |
 | [docs/fitness/README.md](../README.md)                  | Link `parametric-step4-plan.md`                                              |
