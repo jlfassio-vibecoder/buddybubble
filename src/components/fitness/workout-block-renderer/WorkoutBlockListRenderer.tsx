@@ -83,7 +83,13 @@ export function WorkoutBlockListRenderer({
     .slice()
     .sort((a, b) => a.order - b.order);
 
-  let globalFlatIndex = 0;
+  const mainFlatIndexStarts: number[] = [];
+  let flatCursor = 0;
+  for (const block of mainBlocks) {
+    mainFlatIndexStarts.push(flatCursor);
+    flatCursor += block.exercises.length;
+  }
+
   const instructionDensity = density === 'compact' ? 'compact' : 'full';
 
   return (
@@ -100,7 +106,7 @@ export function WorkoutBlockListRenderer({
         density={instructionDensity}
       />
 
-      {mainBlocks.map((block) => {
+      {mainBlocks.map((block, blockIndex) => {
         if (density === 'inline') {
           return (
             <p key={block.id} className="text-xs text-muted-foreground">
@@ -116,10 +122,9 @@ export function WorkoutBlockListRenderer({
             taskId={taskId}
             density={density === 'compact' ? 'compact' : 'full'}
             renderExercise={renderExercise}
-            globalFlatIndexStart={globalFlatIndex}
+            globalFlatIndexStart={mainFlatIndexStarts[blockIndex] ?? 0}
           />
         );
-        globalFlatIndex += block.exercises.length;
 
         const sectionProps = getMainBlockSectionProps?.(block);
         return (
