@@ -139,11 +139,11 @@ export function useAgentEffectSweep({
             messageId: id,
             reason: rawIntake === undefined ? 'missing' : 'invalid',
           });
-          continue;
+        } else {
+          onIntake({ ...baseCtx, patch: intakePatch });
+          intakeHandledThisRun.add(id);
+          emit?.({ kind: 'effect.applied', effect: 'task_modal_intake_patch', messageId: id });
         }
-        onIntake({ ...baseCtx, patch: intakePatch });
-        intakeHandledThisRun.add(id);
-        emit?.({ kind: 'effect.applied', effect: 'task_modal_intake_patch', messageId: id });
       }
 
       if (onCard) {
