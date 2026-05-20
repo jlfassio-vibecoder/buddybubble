@@ -87,7 +87,7 @@ pnpm exec vitest run \
 
 ---
 
-## Follow-up (M4+)
+## Follow-up (Step 5+)
 
-- Workout log read unify ([parametric-step4-plan.md](./parametric-step4-plan.md) M4)
+- ~~Workout log read unify~~ — Shipped: [parametric-step4-m4-plan.md](./parametric-step4-m4-plan.md)
 - Block-aware Edit/Apply ([parametric-step5-plan.md](./parametric-step5-plan.md))

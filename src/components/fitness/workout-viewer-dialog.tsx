@@ -2,13 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { toast } from 'sonner';
-import type { Exercise } from '@/lib/workout-factory/types/ai-program';
-import { normalizeWorkoutForEditor } from '@/lib/workout-factory/program-schedule-utils';
-import type { ProgramWorkout } from '@/lib/workout-factory/program-schedule-utils';
 import type { WorkoutSetTemplate } from '@/lib/workout-factory/types/workout-contract';
 import type { WorkoutExercise } from '@/lib/item-metadata';
-import type { UnitSystem } from '@/types/database';
+import type { Json, UnitSystem } from '@/types/database';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogOverlay, DialogPortal, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -16,10 +12,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { WorkoutExercisesEditor } from '@/components/fitness/workout-exercises-editor';
-import { formatBlockSubtitle } from '@/lib/workout-factory/format-block-subtitle';
-import { formatRepsDisplay } from '@/lib/workout-factory/parse-reps-scalar';
+import {
+  WorkoutBlockListRenderer,
+  WorkoutFlatExerciseList,
+  WorkoutLogReadSummary,
+} from '@/components/fitness/workout-block-renderer';
+import { useWorkoutSessionViewModel } from '@/hooks/use-workout-session-view-model';
 import { useTaskCardCoverUrl } from '@/lib/task-card-cover';
-import { ChevronRight, Dumbbell, Image as ImageIcon, Loader2, X } from 'lucide-react';
+import { ChevronRight, Image as ImageIcon, Loader2, X } from 'lucide-react';
 import { WORKOUT_FACTORY_CHAIN_MESSAGES } from '@/lib/workout-factory/api-client';
 import { TaskModalCardCoverAiBlock } from '@/components/modals/task-modal/TaskModalCardCoverAiBlock';
 
@@ -30,269 +30,6 @@ export type WorkoutViewerApplyPayload = {
 };
 
 type ViewMode = 'view' | 'edit';
-
-function formatRestLabel(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) return '';
-  if (seconds >= 60 && seconds % 60 === 0) return `Rest ${seconds / 60} min`;
-  if (seconds >= 60) return `Rest ${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-  return `Rest ${seconds}s`;
-}
-
-function exerciseThumbnailSrc(ex: WorkoutExercise): string | null {
-  const u = ex.thumbnail_url;
-  return typeof u === 'string' && u.trim().length > 0 ? u.trim() : null;
-}
-
-function RequestImageLink({
-  exerciseName,
-  exerciseQuery,
-  taskId,
-}: {
-  exerciseName: string;
-  exerciseQuery?: string;
-  taskId: string | null;
-}) {
-  const body = [
-    'Please add or generate a visualization image for this exercise in the BuddyBubble library.',
-    '',
-    `Exercise: ${exerciseName}`,
-    exerciseQuery?.trim() ? `Catalog / query hint: ${exerciseQuery.trim()}` : null,
-    taskId ? `Task ID: ${taskId}` : null,
-  ]
-    .filter(Boolean)
-    .join('\n');
-
-  const subject = encodeURIComponent('Exercise image request');
-  const bodyEnc = encodeURIComponent(body);
-  const to =
-    typeof process !== 'undefined' && process.env.NEXT_PUBLIC_EXERCISE_IMAGE_REQUEST_EMAIL?.trim()
-      ? process.env.NEXT_PUBLIC_EXERCISE_IMAGE_REQUEST_EMAIL.trim()
-      : '';
-  const href = to
-    ? `mailto:${to}?subject=${subject}&body=${bodyEnc}`
-    : `mailto:?subject=${subject}&body=${bodyEnc}`;
-
-  return (
-    <a
-      href={href}
-      className="mt-1.5 inline-block text-[11px] font-medium text-primary/90 underline-offset-2 hover:underline"
-      onClick={() => {
-        toast.message('Opening your mail app…', {
-          description: 'Add our team address in To: if your client left it blank.',
-        });
-      }}
-      onPointerDown={(e) => e.stopPropagation()}
-    >
-      Request image
-    </a>
-  );
-}
-
-function ExerciseThumbnailFrame({ src, alt }: { src: string | null; alt: string }) {
-  return (
-    <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-border/50 bg-background/80 shadow-sm ring-1 ring-border/20">
-      {src ? (
-        <img src={src} alt={alt} className="h-full w-full object-cover" />
-      ) : (
-        <div className="flex h-full w-full items-center justify-center bg-muted/30" aria-hidden>
-          <Dumbbell className="size-6 text-muted-foreground/45" />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ExerciseReadRow({
-  name,
-  metaLine,
-  notes,
-  thumbnailUrl,
-  taskId,
-  exerciseQuery,
-}: {
-  name: string;
-  metaLine: string | null;
-  notes?: string | null;
-  thumbnailUrl: string | null;
-  taskId: string | null;
-  exerciseQuery?: string;
-}) {
-  const showRequest = !thumbnailUrl;
-
-  return (
-    <div className="flex gap-4 rounded-xl bg-muted/40 p-3 ring-1 ring-border/15 transition-colors hover:bg-muted/55">
-      <ExerciseThumbnailFrame src={thumbnailUrl} alt={name} />
-      <div className="min-w-0 flex-1 flex-col">
-        <h4 className="font-semibold leading-snug text-foreground">{name}</h4>
-        {metaLine ? (
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-            <span className="font-medium text-foreground/80">{metaLine}</span>
-          </div>
-        ) : null}
-        {notes?.trim() ? (
-          <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-            {notes.trim()}
-          </p>
-        ) : null}
-        {showRequest ? (
-          <RequestImageLink exerciseName={name} exerciseQuery={exerciseQuery} taskId={taskId} />
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function ExerciseDetail({ ex, taskId }: { ex: Exercise; taskId: string | null }) {
-  const bits: string[] = [];
-  if (typeof ex.sets === 'number' && ex.sets > 0) bits.push(`${ex.sets}×`);
-  if (ex.reps) bits.push(`${formatRepsDisplay(ex.reps)} reps`);
-  if (ex.rpe != null) bits.push(`RPE ${ex.rpe}`);
-  if (ex.restSeconds != null && ex.restSeconds > 0) bits.push(formatRestLabel(ex.restSeconds));
-  if (ex.workSeconds != null && ex.workSeconds > 0) bits.push(`${ex.workSeconds}s work`);
-  if (ex.rounds != null && ex.rounds > 0) bits.push(`${ex.rounds} rounds`);
-  const metaLine = bits.length > 0 ? bits.join(' · ') : null;
-  const notes = ex.coachNotes?.trim() ?? '';
-
-  return (
-    <ExerciseReadRow
-      name={ex.exerciseName}
-      metaLine={metaLine}
-      notes={notes || null}
-      thumbnailUrl={null}
-      taskId={taskId}
-      exerciseQuery={ex.exerciseQuery}
-    />
-  );
-}
-
-function InstructionBlockSection({
-  title,
-  blocks,
-  taskId,
-}: {
-  title: string;
-  blocks: Array<{ order: number; exerciseName: string; instructions: string[] }>;
-  taskId: string | null;
-}) {
-  if (!blocks?.length) return null;
-  return (
-    <section className="space-y-3">
-      <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-        {title}
-      </h4>
-      <div className="space-y-2">
-        {blocks.map((b, i) => (
-          <div
-            key={`${b.order}-${i}`}
-            className="flex gap-4 rounded-xl bg-muted/30 p-3 ring-1 ring-border/10"
-          >
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg border border-border/40 bg-background/60 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Prep
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="font-semibold text-foreground">{b.exerciseName}</p>
-              {b.instructions?.length ? (
-                <ul className="mt-1.5 list-inside list-disc space-y-0.5 text-xs text-muted-foreground">
-                  {b.instructions.map((line, j) => (
-                    <li key={j}>{line}</li>
-                  ))}
-                </ul>
-              ) : null}
-              <RequestImageLink exerciseName={b.exerciseName} taskId={taskId} />
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function RichWorkoutReadView({
-  workoutSet,
-  cardTitle,
-  taskId,
-}: {
-  workoutSet: WorkoutSetTemplate;
-  cardTitle: string;
-  taskId: string | null;
-}) {
-  const firstRaw = workoutSet.workouts?.[0] as ProgramWorkout | undefined;
-  if (!firstRaw) {
-    return <p className="text-sm text-muted-foreground">No session in this workout set.</p>;
-  }
-  const first = normalizeWorkoutForEditor(firstRaw);
-  const setTitleDiffers =
-    workoutSet.title.trim().length > 0 && workoutSet.title.trim() !== cardTitle.trim();
-
-  return (
-    <div className="space-y-6">
-      <p className="text-[11px] capitalize text-muted-foreground">
-        Difficulty · {workoutSet.difficulty}
-      </p>
-
-      {(setTitleDiffers || workoutSet.description?.trim()) && (
-        <div className="space-y-1 rounded-xl bg-muted/25 px-3 py-2.5 ring-1 ring-border/10">
-          {setTitleDiffers ? (
-            <p className="text-sm font-medium text-foreground">{workoutSet.title}</p>
-          ) : null}
-          {workoutSet.description?.trim() ? (
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              {workoutSet.description}
-            </p>
-          ) : null}
-        </div>
-      )}
-
-      {(first.title.trim().length > 0 || first.description?.trim()) && (
-        <div className="space-y-1">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Session
-          </p>
-          {first.title.trim() ? (
-            <p className="text-sm font-semibold text-foreground">{first.title}</p>
-          ) : null}
-          {first.description?.trim() ? (
-            <p className="text-sm leading-relaxed text-muted-foreground">{first.description}</p>
-          ) : null}
-        </div>
-      )}
-
-      <InstructionBlockSection title="Warm-up" blocks={first.warmupBlocks ?? []} taskId={taskId} />
-
-      {first.exerciseBlocks?.map((block, bi) => {
-        const subtitle = formatBlockSubtitle(block.blockFormat, block.formatParams);
-        return (
-          <section key={block.id ?? `block-${bi}`} className="space-y-3">
-            <div className="space-y-0.5">
-              <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                {block.name?.trim() || 'Main work'}
-              </h4>
-              {subtitle ? (
-                <p className="text-xs font-medium text-muted-foreground/80">{subtitle}</p>
-              ) : null}
-            </div>
-            <div className="space-y-2">
-              {(block.exercises ?? []).map((ex, ei) => (
-                <ExerciseDetail key={ex.id ?? `${bi}-${ei}`} ex={ex} taskId={taskId} />
-              ))}
-            </div>
-          </section>
-        );
-      })}
-
-      <InstructionBlockSection
-        title="Finisher"
-        blocks={first.finisherBlocks ?? []}
-        taskId={taskId}
-      />
-      <InstructionBlockSection
-        title="Cool down"
-        blocks={first.cooldownBlocks ?? []}
-        taskId={taskId}
-      />
-    </div>
-  );
-}
 
 function WorkoutViewHero({
   cardCoverPath,
@@ -368,44 +105,6 @@ function ViewReadHeader({
   );
 }
 
-function FlatExercisesReadView({
-  exercises,
-  taskId,
-}: {
-  exercises: WorkoutExercise[];
-  taskId: string | null;
-}) {
-  if (exercises.length === 0) {
-    return <p className="text-sm text-muted-foreground">No exercises on this card yet.</p>;
-  }
-  return (
-    <ul className="space-y-2">
-      {exercises.map((ex, idx) => {
-        const thumb = exerciseThumbnailSrc(ex);
-        const parts: string[] = [];
-        if (ex.sets != null) parts.push(`${ex.sets}×`);
-        if (ex.reps != null) parts.push(`${formatRepsDisplay(ex.reps)} reps`);
-        const rest = ex.rest_seconds != null ? formatRestLabel(ex.rest_seconds) : '';
-        const metaParts = [...parts, rest].filter(Boolean);
-        const metaLine = metaParts.length > 0 ? metaParts.join(' · ') : null;
-        const notes = ex.coach_notes || ex.notes || null;
-
-        return (
-          <li key={idx}>
-            <ExerciseReadRow
-              name={ex.name}
-              metaLine={metaLine}
-              notes={notes}
-              thumbnailUrl={thumb}
-              taskId={taskId}
-            />
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
 const sectionHeadingClass =
   'mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground';
 
@@ -454,6 +153,8 @@ export type WorkoutViewerDialogProps = {
   workoutSet: WorkoutSetTemplate | null;
   /** Flat list from task metadata (always passed). */
   exercises: WorkoutExercise[];
+  /** Task metadata for read VM (blocks, chrome). */
+  metadata?: Json | null;
   title: string;
   description: string;
   canWrite: boolean;
@@ -481,6 +182,8 @@ export type WorkoutViewerDialogProps = {
   saving?: boolean;
   /** When true, save is disabled (e.g. `!coreDirty` in the parent). */
   saveDisabled?: boolean;
+  /** `log` uses completed-workout read UI with set_logs overlay. */
+  readVariant?: 'workout' | 'log';
 };
 
 export type WorkoutViewerContentProps = Omit<WorkoutViewerDialogProps, 'open' | 'onOpenChange'> & {
@@ -497,6 +200,7 @@ export type WorkoutViewerContentProps = Omit<WorkoutViewerDialogProps, 'open' | 
 export function WorkoutViewerContent({
   workoutSet,
   exercises,
+  metadata = null,
   title,
   description,
   canWrite,
@@ -521,11 +225,14 @@ export function WorkoutViewerContent({
   onSaveTask,
   saving = false,
   saveDisabled = false,
+  readVariant = 'workout',
 }: WorkoutViewerContentProps) {
   const [mode, setMode] = useState<ViewMode>('view');
   const [localTitle, setLocalTitle] = useState(title);
   const [localDescription, setLocalDescription] = useState(description);
   const [localExercises, setLocalExercises] = useState<WorkoutExercise[]>([]);
+
+  const sessionVm = useWorkoutSessionViewModel(metadata ?? {});
 
   useEffect(() => {
     setLocalTitle(title);
@@ -543,7 +250,20 @@ export function WorkoutViewerContent({
     onRequestClose();
   }, [localTitle, localDescription, localExercises, onApply, onRequestClose]);
 
-  const showRich = mode === 'view' && workoutSet != null;
+  const showRichRead =
+    mode === 'view' && sessionVm.source === 'rich' && sessionVm.blocks.length > 0;
+  const isLogRead =
+    readVariant === 'log' ||
+    localExercises.some((e) => Array.isArray(e.set_logs) && e.set_logs.length > 0);
+  const logReadMetadata = useMemo(
+    () => ({
+      ...(typeof metadata === 'object' && metadata !== null && !Array.isArray(metadata)
+        ? metadata
+        : {}),
+      exercises: localExercises,
+    }),
+    [metadata, localExercises],
+  );
   const hasWorkoutViewerContent = workoutSet != null || localExercises.length > 0;
   const showUnsavedPersistenceNotice = !taskId && (hasWorkoutViewerContent || isAiGenerating);
   const displayTitle = localTitle.trim() || title.trim() || 'Untitled workout';
@@ -680,20 +400,41 @@ export function WorkoutViewerContent({
             <ViewReadHeader displayTitle={displayTitle} displayDescription={displayDescription} />
             <section>
               <h3 className={sectionHeadingClass}>Workout plan</h3>
-              {showRich ? (
-                <RichWorkoutReadView
-                  workoutSet={workoutSet}
-                  cardTitle={displayTitle}
+              {showRichRead ? (
+                <WorkoutBlockListRenderer
+                  blocks={sessionVm.blocks}
                   taskId={taskId}
+                  density="full"
+                  chrome={{
+                    difficulty: sessionVm.workoutSet?.difficulty,
+                    setTitle: sessionVm.workoutSet?.title,
+                    setDescription: sessionVm.workoutSet?.description ?? undefined,
+                    sessionTitle: sessionVm.session?.title,
+                    sessionDescription: sessionVm.session?.description ?? undefined,
+                    cardTitle: displayTitle,
+                  }}
+                  data-testid="workout-viewer-block-list"
                 />
               ) : isAiGenerating && mode === 'view' ? (
                 <WorkoutPlanGeneratingView active />
+              ) : isLogRead ? (
+                <WorkoutLogReadSummary
+                  metadata={logReadMetadata}
+                  taskId={taskId}
+                  density="full"
+                  unitSystem={workoutUnitSystem}
+                  data-testid="workout-viewer-log-read"
+                />
               ) : (
                 <div className="space-y-4">
                   <p className="text-xs text-muted-foreground">
                     No AI workout structure saved — showing the exercise list from this card.
                   </p>
-                  <FlatExercisesReadView exercises={localExercises} taskId={taskId} />
+                  <WorkoutFlatExerciseList
+                    exercises={localExercises}
+                    taskId={taskId}
+                    density="full"
+                  />
                 </div>
               )}
             </section>
@@ -786,6 +527,7 @@ export function WorkoutViewerDialog({
   onOpenChange,
   workoutSet,
   exercises,
+  metadata = null,
   title,
   description,
   canWrite,
@@ -821,6 +563,7 @@ export function WorkoutViewerDialog({
           <WorkoutViewerContent
             workoutSet={workoutSet}
             exercises={exercises}
+            metadata={metadata}
             title={title}
             description={description}
             canWrite={canWrite}

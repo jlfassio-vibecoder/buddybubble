@@ -21,3 +21,9 @@ export type { WorkoutInstructionSectionProps } from './WorkoutInstructionSection
 
 export { WorkoutMetadataPreview } from './WorkoutMetadataPreview';
 export type { WorkoutMetadataPreviewProps } from './WorkoutMetadataPreview';
+
+export { WorkoutFlatExerciseLogList } from './WorkoutFlatExerciseLogList';
+export type { WorkoutFlatExerciseLogListProps } from './WorkoutFlatExerciseLogList';
+
+export { WorkoutLogReadSummary } from './WorkoutLogReadSummary';
+export type { WorkoutLogReadSummaryProps } from './WorkoutLogReadSummary';

@@ -71,6 +71,7 @@ import {
 import {
   fetchCoachUserContext,
   loadCurrentTaskContext,
+  resolveCoachTaskMetadataForMerge,
   resolveCurrentWorkoutContextJsonFromThread,
   resolveKnownTargetTaskId,
   extractWorkoutTaskTitleFromMetadata,
@@ -656,9 +657,12 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       if (hasProposedMeta) {
         const raw = parsed.proposed_workout_metadata as Record<string, unknown>;
         if (ctx.coachMergeWorkoutMetadata === true) {
-          // Merge base must match the task row Coach saw in buildSystemPrompt (`taskMetadataForContext`).
+          const mergeBase = resolveCoachTaskMetadataForMerge(
+            extras.taskMetadataForContext ?? {},
+            extras.currentWorkoutContextJson,
+          );
           const { metadata, mergeLog } = mergeCoachProposedIntoTaskMetadata({
-            base: extras.taskMetadataForContext ?? {},
+            base: mergeBase,
             proposed: raw,
           });
           pNewMeta = metadata;

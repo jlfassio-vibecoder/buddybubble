@@ -74,6 +74,7 @@ export function WorkoutBlockListRenderer({
   taskId = null,
   className,
   'data-testid': dataTestId,
+  getMainBlockSectionProps,
 }: WorkoutBlockListRendererProps) {
   if (blocks.length === 0) return null;
 
@@ -120,8 +121,13 @@ export function WorkoutBlockListRenderer({
         );
         globalFlatIndex += block.exercises.length;
 
+        const sectionProps = getMainBlockSectionProps?.(block);
         return (
-          <section key={block.id} className="space-y-3">
+          <section
+            key={block.id}
+            {...sectionProps}
+            className={cn('space-y-3', sectionProps?.className)}
+          >
             <WorkoutBlockHeader name={block.name} subtitle={block.subtitle} />
             {group}
           </section>

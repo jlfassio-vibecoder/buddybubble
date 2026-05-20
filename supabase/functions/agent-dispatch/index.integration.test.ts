@@ -816,6 +816,99 @@ integrationTest(
 );
 
 integrationTest(
+  'Lane 1 tabata finisher uses trigger workoutContext when task row has no rich workout (unsaved generate)',
+  async () => {
+    const vertex = vertexHappy(COACH_REPLY);
+    await withHarness(
+      {
+        coachMergeWorkoutMetadata: true,
+        postgrest: {
+          coachTaskResolution: {
+            taskId: TEST_COACH_TARGET_TASK_ID,
+            metadata: {
+              workout_type: 'Complex',
+            },
+            item_type: 'workout',
+          },
+        },
+        vertex,
+      },
+      async ({ logs, vertex: vtx, rpc }) => {
+        const response = await handleDispatchRequest(
+          webhookRequest({
+            id: '00000000-0000-4000-8000-000000000896',
+            content: '@coach add :finisher/tabata #Push-ups ',
+            metadata: {
+              surface: 'standard_task_chat_rail',
+              default_agent_slug: 'coach',
+              workoutContext: RICH_WORKOUT_TASK_METADATA,
+              block_blueprint_mentions: [
+                {
+                  token: ':finisher/tabata ',
+                  section_name: 'Finisher',
+                  section_role: 'finisher',
+                  block_format: 'tabata',
+                  format_params: { rounds: 8, work_seconds: 20, rest_seconds: 10 },
+                },
+              ],
+              exercise_mentions: [
+                {
+                  token: '#Push-ups ',
+                  name: 'Push-ups',
+                  source: 'dictionary',
+                },
+              ],
+            },
+            targetTaskId: TEST_COACH_TARGET_TASK_ID,
+          }),
+        );
+        assertEquals(response.status, 200);
+        const body = await readJson(response);
+        assertEquals(body.ok, true);
+        assertEquals(body.preflight_short_circuit, true);
+        assertEquals(body.lane, 'block_append_deterministic');
+        assertEquals(vtx?.count() ?? 0, 0);
+
+        const received = logs.findLog((log) => log.msg === 'webhook received');
+        assertExists(received);
+        const requestId = received.request_id;
+        const ctxLog = logs.logs.find(
+          (log) => log.msg === 'coach workout context source' && log.request_id === requestId,
+        );
+        assertExists(ctxLog);
+        assertEquals(ctxLog.source, 'trigger');
+
+        const direct = rpc.getRpcCalls('agent_update_task_and_reply');
+        assertEquals(direct.length, 1);
+        const meta = direct[0].args.p_new_metadata as {
+          ai_workout_factory?: {
+            workout_set?: {
+              workouts?: Array<{
+                exerciseBlocks?: Array<{ name?: string; exercises?: Array<{ name?: string }> }>;
+              }>;
+            };
+          };
+        };
+        const blocks = meta.ai_workout_factory?.workout_set?.workouts?.[0]?.exerciseBlocks ?? [];
+        assertEquals(
+          blocks.some((b) => b.name === 'Main'),
+          true,
+        );
+        assertEquals(
+          blocks.some((b) => b.name === 'Finisher'),
+          true,
+        );
+        const main = blocks.find((b) => b.name === 'Main');
+        assertEquals(
+          main?.exercises?.some((e) => e.name === 'Goblet Squat'),
+          true,
+        );
+      },
+    );
+  },
+);
+
+integrationTest(
   'Lane 1 tabata finisher persists two EOS exercise mentions with hydrated timers',
   async () => {
     const vertex = vertexHappy(COACH_REPLY);

@@ -25,6 +25,8 @@ Two exports share most behavior:
 
 Internal `ViewMode` toggles between **`view`** (read-only exercise rows with thumbnails, meta lines, optional “Request image” mailto) and **`edit`** (delegates list editing to [WorkoutExercisesEditor](workout-exercises-editor.md)).
 
+**Rich cards (`ai_workout_factory`):** View mode uses `WorkoutBlockListRenderer` (Step 4). Edit mode still uses the flat editor today; block structure is lost on Apply unless exercises are unchanged — see [parametric-step5-plan.md](views/parametric-step5-plan.md).
+
 `onApply` is invoked from the apply path with the normalized payload so parents merge into `tasks.metadata` and related fields.
 
 ## AI and card cover

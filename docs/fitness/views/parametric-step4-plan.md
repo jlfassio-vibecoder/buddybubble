@@ -1,6 +1,6 @@
 # Parametric Workout Blocks — Step 4 (P1 Read Parity)
 
-**Status:** M0–M3 shipped; M4 planned. See milestone docs below.
+**Status:** M0–M4 shipped (Step 4 read parity complete). See milestone docs below.
 
 **Prerequisites:** [parametric-step1-2-plan.md](./parametric-step1-2-plan.md) (data contract + ViewModel) · [parametric-step3-plan.md](./parametric-step3-plan.md) (WorkoutPlayer block-aware P0)
 
@@ -280,6 +280,8 @@ Use in inline/deck one-liners to avoid duplicating subtitle logic outside render
 ---
 
 ### Milestone 4 — Post-workout & history (sprint days 9–10)
+
+**Status:** Shipped — see [parametric-step4-m4-plan.md](./parametric-step4-m4-plan.md).
 
 | #   | Surface                        | Path                                        | Migration                                                                                                                                                    |
 | --- | ------------------------------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |

@@ -222,6 +222,28 @@ export function resolveCurrentWorkoutContextJsonFromThread(
   return result;
 }
 
+/**
+ * Merge base for Coach rail writes: prefer persisted rich `tasks.metadata`, else
+ * unsaved rich workout carried on the trigger message's `workoutContext`.
+ */
+export function resolveCoachTaskMetadataForMerge(
+  taskMetadataFromDb: unknown,
+  workoutContextJson: string | null,
+): unknown {
+  if (hasRichWorkoutSetMetadata(taskMetadataFromDb)) {
+    return taskMetadataFromDb;
+  }
+  const trimmed = workoutContextJson?.trim();
+  if (!trimmed) return taskMetadataFromDb ?? {};
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (hasRichWorkoutSetMetadata(parsed)) return parsed;
+  } catch {
+    // fall through
+  }
+  return taskMetadataFromDb ?? {};
+}
+
 async function taskIdInBubble(
   // deno-lint-ignore no-explicit-any
   supabase: SupabaseClient<any, 'public', any>,

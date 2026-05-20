@@ -1,7 +1,10 @@
 'use client';
 
+import type { SetLogEntry } from '@/lib/item-metadata';
 import type { Exercise } from '@/lib/workout-factory/types/ai-program';
 import { formatExercisePrescriptionLineFromFactory } from '@/lib/workout-factory/format-exercise-prescription-line';
+import { formatSetLogLine } from '@/lib/workout-factory/format-set-log-line';
+import type { UnitSystem } from '@/types/database';
 import { cn } from '@/lib/utils';
 import { RequestImageLink } from '@/components/fitness/workout-block-renderer/RequestImageLink';
 import { WorkoutExerciseThumbnail } from '@/components/fitness/workout-block-renderer/WorkoutExerciseThumbnail';
@@ -15,6 +18,9 @@ export type WorkoutReadExerciseRowProps = {
   exerciseQuery?: string;
   stationLabel?: string | null;
   density?: 'full' | 'compact';
+  /** Per-set performance from workout_log (read-only). */
+  setLogs?: SetLogEntry[];
+  unitSystem?: UnitSystem;
 };
 
 export function WorkoutReadExerciseRow({
@@ -26,9 +32,12 @@ export function WorkoutReadExerciseRow({
   exerciseQuery,
   stationLabel,
   density = 'full',
+  setLogs,
+  unitSystem = 'metric',
 }: WorkoutReadExerciseRowProps) {
   const compact = density === 'compact';
   const showRequest = !thumbnailUrl;
+  const loggedSets = setLogs ?? [];
 
   return (
     <div
@@ -63,6 +72,15 @@ export function WorkoutReadExerciseRow({
           >
             {notes.trim()}
           </p>
+        ) : null}
+        {loggedSets.length > 0 ? (
+          <ul className="mt-2 space-y-0.5 border-t border-border/40 pt-2">
+            {loggedSets.map((entry) => (
+              <li key={entry.set} className="text-xs text-muted-foreground">
+                {formatSetLogLine(entry, unitSystem)}
+              </li>
+            ))}
+          </ul>
         ) : null}
         {showRequest ? (
           <RequestImageLink exerciseName={name} exerciseQuery={exerciseQuery} taskId={taskId} />

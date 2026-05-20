@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { HTMLAttributes, ReactNode } from 'react';
 import type { Exercise } from '@/lib/workout-factory/types/ai-program';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 
@@ -27,4 +27,6 @@ export type WorkoutBlockListRendererProps = {
   taskId?: string | null;
   className?: string;
   'data-testid'?: string;
+  /** Applied to each main block section (e.g. player `main-block-*` testids). */
+  getMainBlockSectionProps?: (block: WorkoutSessionBlockView) => HTMLAttributes<HTMLElement>;
 };

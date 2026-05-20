@@ -3,7 +3,7 @@
 **Status:** Living landscape audit (updated after Steps 1–3).  
 **Context:** The Parametric Workout Blocks epic ships a closed-world engine with **12** `block_format` values, block-level `formatParams`, and merge-time exercise hydration (e.g. EMOM/Tabata `workSeconds` / `restSeconds`). This document maps **every UI surface** that renders or executes workouts. **Steps 1–3** added the data contract, `WorkoutSessionViewModel`, and block-aware **WorkoutPlayer** P0; many surfaces below are still flat-only.
 
-**Implementation plans:** [parametric-step1-2-plan.md](./parametric-step1-2-plan.md) · [parametric-step3-plan.md](./parametric-step3-plan.md) · [parametric-step4-plan.md](./parametric-step4-plan.md) · [parametric-step4-m2-plan.md](./parametric-step4-m2-plan.md) · [parametric-step4-m3-plan.md](./parametric-step4-m3-plan.md) (M3 shipped) · [parametric-step5-plan.md](./parametric-step5-plan.md) (block-aware Edit/Apply — planned)
+**Implementation plans:** [parametric-step1-2-plan.md](./parametric-step1-2-plan.md) · [parametric-step3-plan.md](./parametric-step3-plan.md) · [parametric-step4-plan.md](./parametric-step4-plan.md) (M0–M4 shipped) · [parametric-step4-m4-plan.md](./parametric-step4-m4-plan.md) · [parametric-step5-plan.md](./parametric-step5-plan.md) (block-aware Edit/Apply — planned)
 
 **Related engine docs:** [parametric-workout-blocks](../../refactor/parametric-workout-blocks/README.md), [rail-composer-tokens](../../agents/coach/rail-composer-tokens.md), [PCC manifesto](../../architecture/pcc-manifesto.md).
 
@@ -119,13 +119,14 @@ Merge already hydrates **EMOM** (derived `workSeconds` / `restSeconds`) and **Ta
 
 ### Tier 5 — Post-workout / analytics
 
-| Surface                          | Path                                                                                    | Notes                                                                                             |
-| -------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| **WorkoutPlayer `handleFinish`** | WorkoutPlayer.tsx                                                                       | Persists **`workout_log`** with flat `metadata.exercises` + `set_logs` — block context not stored |
-| **AnalyticsBoard**               | [AnalyticsBoard.tsx](../../../src/components/fitness/AnalyticsBoard.tsx)                | Counts completed workouts — no prescription UI                                                    |
-| **AmrapResultsDrawer**           | [AmrapResultsDrawer.tsx](../../../src/features/amrap/components/AmrapResultsDrawer.tsx) | Explicitly does **not** repeat exercise list                                                      |
+| Surface                          | Path                                                                                               | Notes                                                                                             |
+| -------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| **TaskModal workout_log read**   | [TaskModalWorkoutFields.tsx](../../../src/components/modals/task-modal/TaskModalWorkoutFields.tsx) | **Fixed (Step 4 M4):** `WorkoutLogReadSummary` + `set_logs` overlay; viewer `readVariant="log"`   |
+| **WorkoutPlayer `handleFinish`** | WorkoutPlayer.tsx                                                                                  | Persists **`workout_log`** with flat `metadata.exercises` + `set_logs` — block context not stored |
+| **AnalyticsBoard**               | [AnalyticsBoard.tsx](../../../src/components/fitness/AnalyticsBoard.tsx)                           | Counts completed workouts — no prescription UI                                                    |
+| **AmrapResultsDrawer**           | [AmrapResultsDrawer.tsx](../../../src/features/amrap/components/AmrapResultsDrawer.tsx)            | Explicitly does **not** repeat exercise list                                                      |
 
-There is **no** dedicated post-workout summary component that renders block structure.
+There is **no** dedicated post-workout summary component that renders block structure beyond TaskModal / viewer log read.
 
 ### Existing component docs (per-surface)
 
@@ -156,18 +157,19 @@ There is **no** dedicated post-workout summary component that renders block stru
 
 ### Gap matrix (current vs needed)
 
-| View                       | Block sections    | Subtitles                | Grouped superset/contrast  | Timers AMRAP/EMOM/Tabata                 | Ladder/pyramid progression | Chipper order   | Clusters/drop_sets |
-| -------------------------- | ----------------- | ------------------------ | -------------------------- | ---------------------------------------- | -------------------------- | --------------- | ------------------ |
-| RichWorkoutReadView        | Yes               | Yes                      | No (linear list per block) | Meta line only (`workSeconds`, `rounds`) | Meta line only             | List order only | Meta line only     |
-| WorkoutPlayer              | **Yes** (P0)      | **Yes** (P0)             | **No**                     | **No**                                   | **No**                     | List order only | Meta line only     |
-| WorkoutExercisesEditor     | **No**            | **No**                   | **No**                     | **No**                                   | **No**                     | **No**          | **No**             |
-| FlatExercisesReadView      | **No**            | **No**                   | **No**                     | **No**                                   | **No**                     | **No**          | **No**             |
-| SessionDeckBuilder (strip) | Partial           | **Yes**                  | No                         | No                                       | No                         | No              | No                 |
-| UpNextCard (strip)         | Partial           | **Yes**                  | No                         | No                                       | No                         | No              | No                 |
-| ParticipantPreJoinSummary  | **Yes** (compact) | **Yes**                  | Labels only                | No                                       | No                         | List order only | Meta line only     |
-| WorkoutCoachRail context   | N/A (metadata)    | **Yes** (summary string) | No                         | No                                       | No                         | No              | No                 |
-| Live loggers / deck edit   | **No**            | **No**                   | **No**                     | **No**                                   | **No**                     | **No**          | **No**             |
-| CoachDraftCard             | **Yes** (compact) | **Yes**                  | Labels only                | No                                       | No                         | List order only | Meta line only     |
+| View                       | Block sections     | Subtitles                | Grouped superset/contrast  | Timers AMRAP/EMOM/Tabata                 | Ladder/pyramid progression | Chipper order   | Clusters/drop_sets   |
+| -------------------------- | ------------------ | ------------------------ | -------------------------- | ---------------------------------------- | -------------------------- | --------------- | -------------------- |
+| RichWorkoutReadView        | Yes                | Yes                      | No (linear list per block) | Meta line only (`workSeconds`, `rounds`) | Meta line only             | List order only | Meta line only       |
+| WorkoutPlayer              | **Yes** (P0)       | **Yes** (P0)             | **No**                     | **No**                                   | **No**                     | List order only | Meta line only       |
+| WorkoutExercisesEditor     | **No**             | **No**                   | **No**                     | **No**                                   | **No**                     | **No**          | **No**               |
+| FlatExercisesReadView      | **No**             | **No**                   | **No**                     | **No**                                   | **No**                     | **No**          | **No**               |
+| SessionDeckBuilder (strip) | Partial            | **Yes**                  | No                         | No                                       | No                         | No              | No                   |
+| UpNextCard (strip)         | Partial            | **Yes**                  | No                         | No                                       | No                         | No              | No                   |
+| ParticipantPreJoinSummary  | **Yes** (compact)  | **Yes**                  | Labels only                | No                                       | No                         | List order only | Meta line only       |
+| WorkoutCoachRail context   | N/A (metadata)     | **Yes** (summary string) | No                         | No                                       | No                         | No              | No                   |
+| Live loggers / deck edit   | **No**             | **No**                   | **No**                     | **No**                                   | **No**                     | **No**          | **No**               |
+| CoachDraftCard             | **Yes** (compact)  | **Yes**                  | Labels only                | No                                       | No                         | List order only | Meta line only       |
+| TaskModal workout_log read | **No** (flat list) | N/A                      | **No**                     | **No**                                   | **No**                     | List order only | **Yes** (`set_logs`) |
 
 ### Critical behavioral gaps (not just styling)
 
@@ -183,9 +185,11 @@ There is **no** dedicated post-workout summary component that renders block stru
 
 6. ~~**Live deck tiles show title only**~~ — **Fixed (Step 4 M3):** `SessionDeckBuilder` tiles show `SessionDeckWorkoutSummary`; Coach rail context includes `workout_structure_summary` when rich.
 
-7. **Rich view is read-only for structure** — Edit mode always uses `WorkoutExercisesEditor` (flat). **Planned:** [parametric-step5-plan.md](./parametric-step5-plan.md) (M0 Apply guard + block editor).
+7. ~~**Log read used editor UI; set_logs invisible**~~ — **Fixed (Step 4 M4):** `WorkoutLogReadSummary` in TaskModal Details and viewer log variant.
 
-8. **Kanban / deck surfaces** — Play launches block-aware Player for rich cards, but **no Tabata/EMOM timer** yet — subtitles only.
+8. **Rich view is read-only for structure** — Edit mode always uses `WorkoutExercisesEditor` (flat). **Planned:** [parametric-step5-plan.md](./parametric-step5-plan.md) (M0 Apply guard + block editor).
+
+9. **Kanban / deck surfaces** — Play launches block-aware Player for rich cards, but **no Tabata/EMOM timer** yet — subtitles only.
 
 ---
 
