@@ -47,7 +47,9 @@ Render parametric block structure during live workout execution: warmup → main
 
 ## Out of scope (Step 4+)
 
-- AMRAP/EMOM/Tabata interval timer shells
+- AMRAP/EMOM/Tabata interval timer shells → Step 6 stretch ([parametric-step6-plan.md](./parametric-step6-plan.md))
+- **Log row count vs `formatParams.rounds`** (Tabata 8 rounds → 8 fillable rows) → Step 6 M6.1
+- **Coach `live_set_counts` / index map bounds** → Step 6 M6.2
 - Superset/contrast paired layouts
 - Ladder/pyramid progression UX
 - Block metadata on `workout_log`

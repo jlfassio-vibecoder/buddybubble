@@ -29,13 +29,20 @@ import { useUserExerciseNotes, type UserExerciseNotesRow } from '@/hooks/useUser
 import { useWorkoutSessionViewModel } from '@/hooks/use-workout-session-view-model';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import { buildWorkoutCoachRailContext } from '@/lib/workout-factory/build-workout-coach-rail-context';
+import {
+  buildPlayerInitialLogRowsForExercise,
+  buildPlayerInitialLogs,
+} from '@/lib/workout-factory/resolve-player-log-row-count';
 import { WorkoutPlayerBlockList } from '@/components/fitness/workout-block-renderer/WorkoutPlayerBlockList';
 import {
   WorkoutPlayerExercisePanel,
   type SetDraft,
 } from '@/components/fitness/workout-block-renderer/WorkoutPlayerExercisePanel';
 import { NARROW_MAX_QUERY } from '@/lib/viewport';
-import type { WorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
+import type {
+  WorkoutSessionBlockView,
+  WorkoutSessionViewModel,
+} from '@/lib/workout-factory/workout-session-view-model';
 
 export type WorkoutPlayerProps = {
   open: boolean;
@@ -69,16 +76,6 @@ function formatElapsed(secs: number) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-function makeSets(ex: WorkoutExercise): SetDraft[] {
-  const count = Math.max(1, ex.sets ?? 3);
-  return Array.from({ length: count }, () => ({
-    weight: ex.weight != null ? String(ex.weight) : '',
-    reps: typeof ex.reps === 'number' ? String(ex.reps) : '',
-    rpe: ex.rpe != null ? String(ex.rpe) : '',
-    done: false,
-  }));
-}
-
 function isSetDraftMatrix(raw: unknown): raw is SetDraft[][] {
   if (!Array.isArray(raw)) return false;
   for (const row of raw) {
@@ -99,8 +96,12 @@ function isSetDraftMatrix(raw: unknown): raw is SetDraft[][] {
   return true;
 }
 
-function logsEqualTemplate(logs: SetDraft[][], exercises: WorkoutExercise[]): boolean {
-  return JSON.stringify(logs) === JSON.stringify(exercises.map(makeSets));
+function logsEqualTemplate(
+  logs: SetDraft[][],
+  exercises: WorkoutExercise[],
+  blocks: WorkoutSessionBlockView[],
+): boolean {
+  return JSON.stringify(logs) === JSON.stringify(buildPlayerInitialLogs(exercises, blocks));
 }
 
 function buildDraftMetadata(
@@ -339,6 +340,17 @@ export function WorkoutPlayer({
   const sessionVm = useWorkoutSessionViewModel(metadata);
   const exercises = sessionVm.flatExercises;
   const exercisesStringDigest = useMemo(() => JSON.stringify(exercises), [exercises]);
+  const blocksDigest = useMemo(
+    () =>
+      JSON.stringify(
+        sessionVm.blocks.map((b) => ({
+          id: b.id,
+          format: b.blockFormat,
+          rounds: b.formatParams?.rounds,
+        })),
+      ),
+    [sessionVm.blocks],
+  );
 
   const exerciseNamesForNotes = useMemo(() => exercises.map((e) => e.name), [exercises]);
   const { dictIdByExerciseIndex, notesByDictId } = useUserExerciseNotes({
@@ -399,7 +411,7 @@ export function WorkoutPlayer({
       lastRecoveryIdentityRef.current = null;
       return;
     }
-    const identity = `${sourceTaskId ?? 'null'}:${bubbleId}:${exercisesStringDigest}`;
+    const identity = `${sourceTaskId ?? 'null'}:${bubbleId}:${exercisesStringDigest}:${blocksDigest}`;
     if (lastRecoveryIdentityRef.current !== identity) {
       lastRecoveryIdentityRef.current = identity;
       hasUserEditedRef.current = false;
@@ -413,7 +425,7 @@ export function WorkoutPlayer({
     const recover = async () => {
       if (!sourceTaskId) {
         if (!cancelled) {
-          setLogs(exercises.map(makeSets));
+          setLogs(buildPlayerInitialLogs(exercises, sessionVm.blocks));
           setActiveLogTaskId(null);
         }
         return;
@@ -436,7 +448,7 @@ export function WorkoutPlayer({
       if (error) {
         console.error('workout draft recovery failed', error);
         if (!hasUserEditedRef.current) {
-          setLogs(exercises.map(makeSets));
+          setLogs(buildPlayerInitialLogs(exercises, sessionVm.blocks));
         }
         setActiveLogTaskId(null);
         return;
@@ -457,7 +469,7 @@ export function WorkoutPlayer({
         }
       }
 
-      let prefilledLogs = exercises.map(makeSets);
+      let prefilledLogs = buildPlayerInitialLogs(exercises, sessionVm.blocks);
 
       const { data: historical } = await supabase
         .from('tasks')
@@ -485,8 +497,8 @@ export function WorkoutPlayer({
             if (!byName.has(key)) byName.set(key, he);
           }
 
-          prefilledLogs = exercises.map((ex) => {
-            const base = makeSets(ex);
+          prefilledLogs = exercises.map((ex, i) => {
+            const base = buildPlayerInitialLogRowsForExercise(ex, i, sessionVm.blocks);
             const key = ex.name.toLowerCase().trim();
             const hist = byName.get(key);
             if (!hist?.set_logs || !Array.isArray(hist.set_logs)) return base;
@@ -520,12 +532,24 @@ export function WorkoutPlayer({
     return () => {
       cancelled = true;
     };
-  }, [open, sourceTaskId, exercisesStringDigest, exercises, bubbleId]);
+  }, [
+    open,
+    sourceTaskId,
+    exercisesStringDigest,
+    blocksDigest,
+    exercises,
+    sessionVm.blocks,
+    bubbleId,
+  ]);
 
   // Debounced cloud autosave of in-progress draft_logs (2s) — no UI spinner.
   useEffect(() => {
     if (!open || !sourceTaskId || logs.length === 0) return;
-    if (!activeLogTaskId && !hasUserEditedRef.current && logsEqualTemplate(logs, exercises)) {
+    if (
+      !activeLogTaskId &&
+      !hasUserEditedRef.current &&
+      logsEqualTemplate(logs, exercises, sessionVm.blocks)
+    ) {
       return;
     }
 
@@ -590,7 +614,9 @@ export function WorkoutPlayer({
     bubbleId,
     class_instance_id,
     exercisesStringDigest,
+    blocksDigest,
     exercises,
+    sessionVm.blocks,
   ]);
 
   // Elapsed timer

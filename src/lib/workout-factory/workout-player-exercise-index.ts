@@ -43,3 +43,27 @@ export function playerExerciseIndexByGlobalIndex(
 ): Map<number, PlayerExerciseIndexEntry> {
   return new Map(lookup.map((e) => [e.globalIndex, e]));
 }
+
+export type PlayerLogRowBlockContext = {
+  blockFormat: string | null;
+  formatParams: Record<string, unknown>;
+};
+
+/**
+ * Main-block format context for a global flat exercise index (WorkoutPlayer log rows).
+ */
+export function blockContextForGlobalIndex(
+  globalIndex: number,
+  blocks: WorkoutSessionBlockView[],
+  lookup?: PlayerExerciseIndexEntry[],
+): PlayerLogRowBlockContext | null {
+  const indexMap = lookup ?? buildPlayerExerciseIndexLookup(blocks);
+  const entry = playerExerciseIndexByGlobalIndex(indexMap).get(globalIndex);
+  if (!entry) return null;
+  const block = blocks.find((b) => b.id === entry.blockId);
+  if (!block || block.section !== 'main') return null;
+  return {
+    blockFormat: block.blockFormat,
+    formatParams: block.formatParams ?? {},
+  };
+}

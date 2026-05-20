@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { buildWorkoutSessionViewModel } from './workout-session-view-model';
-import { buildPlayerExerciseIndexLookup } from './workout-player-exercise-index';
+import {
+  blockContextForGlobalIndex,
+  buildPlayerExerciseIndexLookup,
+} from './workout-player-exercise-index';
 import { richMetadataWithBlockFormat } from './__fixtures__/workout-session-view-model.fixtures';
 
 describe('buildPlayerExerciseIndexLookup', () => {
@@ -28,5 +31,15 @@ describe('buildPlayerExerciseIndexLookup', () => {
   it('returns empty lookup when no main exercises', () => {
     const vm = buildWorkoutSessionViewModel({});
     expect(buildPlayerExerciseIndexLookup(vm.blocks)).toEqual([]);
+  });
+});
+
+describe('blockContextForGlobalIndex', () => {
+  it('returns Tabata block context with rounds for main exercise index 0', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('tabata'));
+    const ctx = blockContextForGlobalIndex(0, vm.blocks);
+    expect(ctx).not.toBeNull();
+    expect(ctx!.blockFormat).toBe('tabata');
+    expect(ctx!.formatParams.rounds).toBe(8);
   });
 });
