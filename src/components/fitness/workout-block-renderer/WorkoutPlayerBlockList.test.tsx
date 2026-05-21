@@ -25,6 +25,7 @@ describe('WorkoutPlayerBlockList', () => {
         onSetChange={() => {}}
         onToggleDone={() => {}}
         onAddSet={() => {}}
+        onLogAmrapRound={() => {}}
       />,
     );
 
@@ -37,7 +38,7 @@ describe('WorkoutPlayerBlockList', () => {
     expect(screen.getByTestId(`tabata-interval-shell-${tabataBlock!.id}`)).toBeTruthy();
   });
 
-  it('renders warmup instruction section without tabata shell', () => {
+  it('renders amrap interval shell and warmup section', () => {
     const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('amrap'));
 
     const { container } = render(
@@ -51,11 +52,17 @@ describe('WorkoutPlayerBlockList', () => {
         onSetChange={() => {}}
         onToggleDone={() => {}}
         onAddSet={() => {}}
+        onLogAmrapRound={() => {}}
       />,
     );
 
     const list = container.querySelector('[data-testid="workout-player-block-list"]');
     expect(list?.querySelector('[data-testid="instruction-section-warmup"]')).toBeTruthy();
     expect(list?.querySelector('[data-testid^="tabata-interval-shell-"]')).toBeNull();
+    const amrapBlock = vm.blocks.find((b) => b.blockFormat === 'amrap');
+    expect(amrapBlock).toBeDefined();
+    expect(
+      list?.querySelector(`[data-testid="amrap-interval-shell-${amrapBlock!.id}"]`),
+    ).toBeTruthy();
   });
 });

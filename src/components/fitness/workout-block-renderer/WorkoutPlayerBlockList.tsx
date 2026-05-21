@@ -2,11 +2,13 @@
 
 import { useCallback, useState } from 'react';
 import { Separator } from '@/components/ui/separator';
-import { TabataIntervalShell } from '@/components/fitness/interval-shells';
+import { AmrapIntervalShell, TabataIntervalShell } from '@/components/fitness/interval-shells';
 import { buildPlayerExerciseIndexLookup } from '@/lib/workout-factory/workout-player-exercise-index';
+import { resolveAmrapTimerConfig } from '@/lib/workout-factory/interval-timer/resolve-amrap-timer-config';
 import { resolveTabataTimerConfig } from '@/lib/workout-factory/interval-timer/resolve-tabata-timer-config';
 import type { IntervalTimerSnapshot } from '@/lib/workout-factory/interval-timer/types';
 import type { WorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
+import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 import type { WorkoutExercise } from '@/lib/item-metadata';
 import type { UserExerciseNotesRow } from '@/hooks/useUserExerciseNotes';
 import { WorkoutBlockListRenderer } from '@/components/fitness/workout-block-renderer/WorkoutBlockListRenderer';
@@ -30,7 +32,22 @@ export type WorkoutPlayerBlockListProps = {
   ) => void;
   onToggleDone: (exIdx: number, setIdx: number) => void;
   onAddSet: (exIdx: number) => void;
+  onLogAmrapRound: (blockId: string) => void;
 };
+
+function renderIntervalShellForBlock(
+  block: WorkoutSessionBlockView,
+  onTabataSnapshot: (blockId: string, snapshot: IntervalTimerSnapshot | null) => void,
+  onLogAmrapRound: (blockId: string) => void,
+) {
+  if (block.blockFormat === 'tabata' && resolveTabataTimerConfig(block)) {
+    return <TabataIntervalShell block={block} onSnapshot={onTabataSnapshot} />;
+  }
+  if (block.blockFormat === 'amrap' && resolveAmrapTimerConfig(block)) {
+    return <AmrapIntervalShell block={block} onLogRound={onLogAmrapRound} />;
+  }
+  return null;
+}
 
 export function WorkoutPlayerBlockList({
   viewModel,
@@ -42,6 +59,7 @@ export function WorkoutPlayerBlockList({
   onSetChange,
   onToggleDone,
   onAddSet,
+  onLogAmrapRound,
 }: WorkoutPlayerBlockListProps) {
   const { blocks } = viewModel;
   const indexLookup = buildPlayerExerciseIndexLookup(blocks);
@@ -83,12 +101,9 @@ export function WorkoutPlayerBlockList({
           'data-testid': `main-block-${block.id}`,
           className: 'space-y-4',
         })}
-        renderMainBlockAfterHeader={(block) => {
-          if (block.blockFormat !== 'tabata' || !resolveTabataTimerConfig(block)) {
-            return null;
-          }
-          return <TabataIntervalShell block={block} onSnapshot={handleTabataSnapshot} />;
-        }}
+        renderMainBlockAfterHeader={(block) =>
+          renderIntervalShellForBlock(block, handleTabataSnapshot, onLogAmrapRound)
+        }
         renderExercise={(ctx) => {
           const globalIndex =
             ctx.globalFlatIndex ??

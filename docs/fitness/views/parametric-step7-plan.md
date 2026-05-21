@@ -1,6 +1,6 @@
 # Parametric Workout Blocks — Step 7 (Execution UX & Timer Shells)
 
-**Status:** **M7.1 shipped** · M7.2–M7.4 planned (2026-05-20)  
+**Status:** **M7.1 shipped** · **M7.2 shipped** · M7.3–M7.4 planned (2026-05-21)  
 **Prerequisites:** [parametric-step6-plan.md](./parametric-step6-plan.md) (**M6.1** row counts · **M6.2** Coach `live_set_counts`) · [live-video-timers-audit.md](../architecture/live-video-timers-audit.md)
 
 **Related:** [Workout UI landscape audit](./README.md) · [workout-coach-rail README](../../rails/workout-coach-rail/README.md) · [parametric-step3-plan.md](./parametric-step3-plan.md)
@@ -176,7 +176,7 @@ stateDiagram-v2
 | Milestone | Theme                              | Status      |
 | --------- | ---------------------------------- | ----------- |
 | **M7.1**  | Core timer engine + Tabata shell   | **Shipped** |
-| **M7.2**  | Local AMRAP shell + grid extension | Planned     |
+| **M7.2**  | Local AMRAP shell + grid extension | **Shipped** |
 | **M7.3**  | EMOM shell                         | Planned     |
 | **M7.4**  | Polish: audio cues + wake lock     | Stretch     |
 
@@ -237,7 +237,7 @@ pnpm exec vitest run \
 
 ## M7.2 — Local AMRAP shell
 
-**Status:** Not started.
+**Status:** Shipped. See [parametric-step7-m7.2-plan.md](./parametric-step7-m7.2-plan.md).
 
 ### Goal
 
@@ -383,7 +383,7 @@ Each sub-plan must include:
 ## Implementation checklist (master)
 
 - [x] **M7.1** — Engine + Tabata shell shipped
-- [ ] **M7.2** — Sub-plan approved → AMRAP shell + local Log Round
+- [x] **M7.2** — AMRAP shell + local Log Round shipped
 - [ ] **M7.3** — Sub-plan approved → EMOM shell
 - [ ] **M7.4** — Sub-plan approved → audio + wake lock (stretch)
 
@@ -397,3 +397,40 @@ Each sub-plan must include:
 | Step 6 dependency | M6.1 + M6.2 shipped                                                        |
 | Live-video audit  | [live-video-timers-audit.md](../architecture/live-video-timers-audit.md)   |
 | Decision          | Local parametric shells; **no** live AMRAP wrapper reuse for WorkoutPlayer |
+
+---
+
+## Known gap — main ChatArea / thread Coach cannot generate HIIT parametric workouts (2026-05-21)
+
+**Observed during M7.1 manual QA / production-like Coach dispatch** (edge logs: `error_kind: timeout` on thread-panel; also applies to main bubble chat when `surface !== rail`).
+
+Step 7 M7.1 ships **offline WorkoutPlayer timer shells** only. It does **not** fix Coach **prescription / generation** paths. A separate product gap exists for **HIIT-style parametric formats** (Tabata, AMRAP, EMOM, circuit) when the user talks to Coach from the **main ChatArea composer** or **thread panel**, rather than the **Task Modal Coach rail** (`StandardTaskChatRail`).
+
+### Symptoms
+
+- User asks for a Tabata / HIIT workout in main chat or on a card thread → Coach times out (~28s `llm_budget_ms`) or returns the safe-reply fallback (_“technical hiccup calculating your workout”_).
+- Even on successful turns, parametric blocks may not land: flat cards drop `block_format: tabata | amrap | emom` via server guard **`parametric_requires_rich_workout_set`**.
+
+### Root causes (dispatch logs + code path)
+
+| Factor                                           | Task Modal Coach rail                     | Main ChatArea / thread panel                           |
+| ------------------------------------------------ | ----------------------------------------- | ------------------------------------------------------ |
+| `isCoachRailSurfaceFromMessageMetadata`          | `true` → `surface: rail`                  | `false` → `surface: non_rail`                          |
+| Block blueprint library in system prompt         | Included                                  | **Omitted** unless `metadata.block_blueprint_mentions` |
+| `:` block picker / `#` exercise tags             | Yes (`StandardTaskChatRail`)              | **No** (thread composer disables rich features)        |
+| `card_action: trigger_generation` client handler | Yes (`TaskModal` + `useAgentEffectSweep`) | **No**                                                 |
+| Server `inferCardActionTriggerGeneration`        | Eligible on rail                          | **Skipped** on non-rail                                |
+| Rich `workout_set` on flat card                  | N/A — uses generator hand-off             | Direct Tabata JSON **server-dropped**                  |
+
+**Intended path for new HIIT prescriptions:** Task Modal → Coach rail → user consent → `card_action: trigger_generation` → `/api/ai/generate-workout-chain` → rich `ai_workout_factory.workout_set` with parametric blocks → then M7.x timer shells in WorkoutPlayer.
+
+### Out of scope for M7.2–M7.4 (track separately)
+
+Do not block Step 7 timer-shell milestones on this; file as **Coach intake / generation UX** follow-up:
+
+1. **ChatArea parity** — wire `useAgentEffectSweep` + `onCardAction` when composing on a workout-attached thread or card context.
+2. **Prompt diet** — include block blueprint library on `non_rail` when `knownTargetTaskId` is a workout task without rich `workout_set` (or when message mentions Tabata/AMRAP/EMOM).
+3. **Ops** — raise Supabase `LLM_TIMEOUT_MS` (e.g. 55000) if intake turns on long threads keep hitting `error_kind: timeout`.
+4. **Docs / UX** — steer users to Task Modal Coach rail for first-time HIIT generation until ChatArea parity ships.
+
+**Reference:** [live-video-timers-audit.md](../architecture/live-video-timers-audit.md) · Coach `shouldInjectBlockBlueprintLibrary` · `parametric_requires_rich_workout_set` in merge layer.
