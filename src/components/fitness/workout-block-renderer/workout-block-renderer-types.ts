@@ -29,4 +29,6 @@ export type WorkoutBlockListRendererProps = {
   'data-testid'?: string;
   /** Applied to each main block section (e.g. player `main-block-*` testids). */
   getMainBlockSectionProps?: (block: WorkoutSessionBlockView) => HTMLAttributes<HTMLElement>;
+  /** Rendered between block header and exercise list (e.g. interval timer shell). */
+  renderMainBlockAfterHeader?: (block: WorkoutSessionBlockView) => ReactNode;
 };

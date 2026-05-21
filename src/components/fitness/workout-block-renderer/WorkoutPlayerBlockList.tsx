@@ -1,7 +1,11 @@
 'use client';
 
+import { useCallback, useState } from 'react';
 import { Separator } from '@/components/ui/separator';
+import { TabataIntervalShell } from '@/components/fitness/interval-shells';
 import { buildPlayerExerciseIndexLookup } from '@/lib/workout-factory/workout-player-exercise-index';
+import { resolveTabataTimerConfig } from '@/lib/workout-factory/interval-timer/resolve-tabata-timer-config';
+import type { IntervalTimerSnapshot } from '@/lib/workout-factory/interval-timer/types';
 import type { WorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import type { WorkoutExercise } from '@/lib/item-metadata';
 import type { UserExerciseNotesRow } from '@/hooks/useUserExerciseNotes';
@@ -45,6 +49,30 @@ export function WorkoutPlayerBlockList({
     indexLookup.map((e) => [`${e.blockId}:${e.exerciseIndexInBlock}`, e.globalIndex]),
   );
 
+  const [tabataSnapshots, setTabataSnapshots] = useState<
+    Record<string, IntervalTimerSnapshot | null>
+  >({});
+
+  const handleTabataSnapshot = useCallback(
+    (blockId: string, snapshot: IntervalTimerSnapshot | null) => {
+      setTabataSnapshots((prev) => {
+        const cur = prev[blockId] ?? null;
+        if (snapshot === null && cur === null) return prev;
+        if (
+          snapshot &&
+          cur &&
+          snapshot.phase === cur.phase &&
+          snapshot.roundIndex === cur.roundIndex &&
+          snapshot.isPaused === cur.isPaused
+        ) {
+          return prev;
+        }
+        return { ...prev, [blockId]: snapshot };
+      });
+    },
+    [],
+  );
+
   return (
     <div className="space-y-8" data-testid="workout-player-block-list">
       <WorkoutBlockListRenderer
@@ -55,6 +83,12 @@ export function WorkoutPlayerBlockList({
           'data-testid': `main-block-${block.id}`,
           className: 'space-y-4',
         })}
+        renderMainBlockAfterHeader={(block) => {
+          if (block.blockFormat !== 'tabata' || !resolveTabataTimerConfig(block)) {
+            return null;
+          }
+          return <TabataIntervalShell block={block} onSnapshot={handleTabataSnapshot} />;
+        }}
         renderExercise={(ctx) => {
           const globalIndex =
             ctx.globalFlatIndex ??
@@ -63,6 +97,7 @@ export function WorkoutPlayerBlockList({
           const exercise = flatExercises[globalIndex];
           if (!exercise) return null;
           const showSeparator = globalIndex > 0;
+          const tabataSnap = tabataSnapshots[ctx.block.id] ?? null;
           return (
             <div key={`${ctx.block.id}-ex-${ctx.exerciseIndexInBlock}`}>
               {showSeparator ? <Separator className="mb-6" /> : null}
@@ -76,6 +111,8 @@ export function WorkoutPlayerBlockList({
                 onSetChange={(si, f, v) => onSetChange(globalIndex, si, f, v)}
                 onToggleDone={(si) => onToggleDone(globalIndex, si)}
                 onAddSet={() => onAddSet(globalIndex)}
+                activeSetIndex={tabataSnap?.roundIndex ?? null}
+                activeSetPhase={tabataSnap?.phase ?? null}
               />
             </div>
           );

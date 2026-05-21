@@ -2,10 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useAgoraSession } from '@/features/live-video/agora-session-context';
-import {
-  formatSessionTime,
-  type SessionTimeFormat,
-} from '@/features/live-video/shells/TimerDisplay';
+import { formatSessionTime, type SessionTimeFormat } from '@/lib/timer';
 import {
   getBlockElapsedMs,
   type SessionState,

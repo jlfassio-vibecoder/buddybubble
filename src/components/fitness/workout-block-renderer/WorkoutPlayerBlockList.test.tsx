@@ -32,12 +32,15 @@ describe('WorkoutPlayerBlockList', () => {
     expect(lists.length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Tabata/).length).toBeGreaterThan(0);
     expect(screen.getAllByTestId(/^exercise-panel-/)).toHaveLength(vm.flatExercises.length);
+    const tabataBlock = vm.blocks.find((b) => b.blockFormat === 'tabata');
+    expect(tabataBlock).toBeDefined();
+    expect(screen.getByTestId(`tabata-interval-shell-${tabataBlock!.id}`)).toBeTruthy();
   });
 
-  it('renders warmup instruction section', () => {
+  it('renders warmup instruction section without tabata shell', () => {
     const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('amrap'));
 
-    render(
+    const { container } = render(
       <WorkoutPlayerBlockList
         viewModel={vm}
         flatExercises={vm.flatExercises}
@@ -51,7 +54,8 @@ describe('WorkoutPlayerBlockList', () => {
       />,
     );
 
-    const list = screen.getAllByTestId('workout-player-block-list')[0];
-    expect(list.querySelector('[data-testid="instruction-section-warmup"]')).toBeTruthy();
+    const list = container.querySelector('[data-testid="workout-player-block-list"]');
+    expect(list?.querySelector('[data-testid="instruction-section-warmup"]')).toBeTruthy();
+    expect(list?.querySelector('[data-testid^="tabata-interval-shell-"]')).toBeNull();
   });
 });

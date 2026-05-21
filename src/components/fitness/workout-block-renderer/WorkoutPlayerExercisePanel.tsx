@@ -4,6 +4,7 @@ import { Check, Info, Plus } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import type { WorkoutExercise } from '@/lib/item-metadata';
+import type { IntervalTimerPhase } from '@/lib/workout-factory/interval-timer/types';
 import type { UserExerciseNotesRow } from '@/hooks/useUserExerciseNotes';
 
 export type SetDraft = {
@@ -58,6 +59,9 @@ export type WorkoutPlayerExercisePanelProps = {
   onSetChange: (setIdx: number, field: 'weight' | 'reps' | 'rpe', value: string) => void;
   onToggleDone: (setIdx: number) => void;
   onAddSet: () => void;
+  /** Tabata / interval shell: highlight active set row (editing never disabled). */
+  activeSetIndex?: number | null;
+  activeSetPhase?: IntervalTimerPhase | null;
 };
 
 export function WorkoutPlayerExercisePanel({
@@ -70,6 +74,8 @@ export function WorkoutPlayerExercisePanel({
   onSetChange,
   onToggleDone,
   onAddSet,
+  activeSetIndex = null,
+  activeSetPhase = null,
 }: WorkoutPlayerExercisePanelProps) {
   const targetLine = formatExerciseTargetLine(exercise, unit);
 
@@ -197,63 +203,75 @@ export function WorkoutPlayerExercisePanel({
       </div>
 
       <div className="space-y-1.5">
-        {sets.map((s, idx) => (
-          <div
-            key={idx}
-            className={cn(
-              'grid grid-cols-[2.5rem_1fr_1fr_1fr_2.5rem] items-center gap-2 rounded-md px-1 py-1 transition-colors',
-              s.done && 'bg-primary/5',
-            )}
-          >
-            <span
+        {sets.map((s, idx) => {
+          const isActiveRow =
+            activeSetIndex != null && idx === activeSetIndex && activeSetPhase != null;
+          const activeWork = isActiveRow && activeSetPhase === 'work';
+          const activeMuted =
+            isActiveRow &&
+            (activeSetPhase === 'rest' ||
+              activeSetPhase === 'prepare' ||
+              activeSetPhase === 'paused');
+          return (
+            <div
+              key={idx}
               className={cn(
-                'text-center text-sm font-semibold tabular-nums',
-                s.done ? 'text-primary' : 'text-muted-foreground',
+                'grid grid-cols-[2.5rem_1fr_1fr_1fr_2.5rem] items-center gap-2 rounded-md px-1 py-1 transition-colors',
+                s.done && 'bg-primary/5',
+                activeWork && 'bg-primary/10 ring-2 ring-primary',
+                activeMuted && 'bg-muted/30 ring-1 ring-primary/40',
               )}
             >
-              {idx + 1}
-            </span>
-            <Input
-              value={s.weight}
-              onChange={(e) => onSetChange(idx, 'weight', e.target.value)}
-              placeholder={`— ${unit}`}
-              className="h-8 text-center text-sm"
-              type="number"
-              min={0}
-              step={0.5}
-            />
-            <Input
-              value={s.reps}
-              onChange={(e) => onSetChange(idx, 'reps', e.target.value)}
-              placeholder="—"
-              className="h-8 text-center text-sm"
-              type="number"
-              min={0}
-            />
-            <Input
-              value={s.rpe}
-              onChange={(e) => onSetChange(idx, 'rpe', e.target.value)}
-              placeholder="—"
-              className="h-8 text-center text-sm"
-              type="number"
-              min={1}
-              max={10}
-            />
-            <button
-              type="button"
-              onClick={() => onToggleDone(idx)}
-              aria-label={s.done ? `Mark set ${idx + 1} undone` : `Mark set ${idx + 1} done`}
-              className={cn(
-                'flex h-8 w-8 items-center justify-center rounded-md border-2 transition-colors',
-                s.done
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-border text-transparent hover:border-primary/40',
-              )}
-            >
-              <Check className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        ))}
+              <span
+                className={cn(
+                  'text-center text-sm font-semibold tabular-nums',
+                  s.done ? 'text-primary' : 'text-muted-foreground',
+                )}
+              >
+                {idx + 1}
+              </span>
+              <Input
+                value={s.weight}
+                onChange={(e) => onSetChange(idx, 'weight', e.target.value)}
+                placeholder={`— ${unit}`}
+                className="h-8 text-center text-sm"
+                type="number"
+                min={0}
+                step={0.5}
+              />
+              <Input
+                value={s.reps}
+                onChange={(e) => onSetChange(idx, 'reps', e.target.value)}
+                placeholder="—"
+                className="h-8 text-center text-sm"
+                type="number"
+                min={0}
+              />
+              <Input
+                value={s.rpe}
+                onChange={(e) => onSetChange(idx, 'rpe', e.target.value)}
+                placeholder="—"
+                className="h-8 text-center text-sm"
+                type="number"
+                min={1}
+                max={10}
+              />
+              <button
+                type="button"
+                onClick={() => onToggleDone(idx)}
+                aria-label={s.done ? `Mark set ${idx + 1} undone` : `Mark set ${idx + 1} done`}
+                className={cn(
+                  'flex h-8 w-8 items-center justify-center rounded-md border-2 transition-colors',
+                  s.done
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border text-transparent hover:border-primary/40',
+                )}
+              >
+                <Check className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          );
+        })}
       </div>
 
       <button
