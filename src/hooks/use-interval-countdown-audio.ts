@@ -11,6 +11,16 @@ export type IntervalCountdownAudioInput = {
   amrapTenSecondWarning?: boolean;
 };
 
+function resetAudioCueDedupeRefs(refs: {
+  lastTickSecRef: { current: number | null };
+  lastEndSegmentRef: { current: string | null };
+  tenSecWarnedRef: { current: boolean };
+}): void {
+  refs.lastTickSecRef.current = null;
+  refs.lastEndSegmentRef.current = null;
+  refs.tenSecWarnedRef.current = false;
+}
+
 export function useIntervalCountdownAudio(input: IntervalCountdownAudioInput): void {
   const {
     remainingMs,
@@ -26,6 +36,19 @@ export function useIntervalCountdownAudio(input: IntervalCountdownAudioInput): v
   const lastTickSecRef = useRef<number | null>(null);
   const lastEndSegmentRef = useRef<string | null>(null);
   const tenSecWarnedRef = useRef(false);
+  const wasActiveRef = useRef(false);
+
+  const dedupeRefs = { lastTickSecRef, lastEndSegmentRef, tenSecWarnedRef };
+
+  // Re-arm cues when a run starts again (e.g. AMRAP Restart with cueSegmentKey still 'global').
+  useEffect(() => {
+    const wasActive = wasActiveRef.current;
+    wasActiveRef.current = isActive;
+    if (!wasActive && isActive) {
+      resetAudioCueDedupeRefs(dedupeRefs);
+      lastSegmentRef.current = null;
+    }
+  }, [isActive]);
 
   useEffect(() => {
     if (!audioEnabled || !isActive) return;
@@ -34,8 +57,7 @@ export function useIntervalCountdownAudio(input: IntervalCountdownAudioInput): v
 
     if (cueSegmentKey !== lastSegmentRef.current) {
       lastSegmentRef.current = cueSegmentKey;
-      lastTickSecRef.current = null;
-      tenSecWarnedRef.current = false;
+      resetAudioCueDedupeRefs(dedupeRefs);
     }
 
     if (amrapTenSecondWarning && remainingSec === 10 && !tenSecWarnedRef.current) {

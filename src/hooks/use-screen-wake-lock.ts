@@ -48,7 +48,11 @@ export function useScreenWakeLock(requested: boolean): {
       try {
         const sentinel = await wakeLockApi!.request('screen');
         if (!requestedRef.current) {
-          await sentinel.release();
+          try {
+            await sentinel.release();
+          } catch {
+            // Browser may already have released the lock (e.g. visibility hidden).
+          }
           setStatus('released');
           return;
         }
@@ -60,8 +64,15 @@ export function useScreenWakeLock(requested: boolean): {
       }
     };
 
+    const acquireSafe = () => {
+      void acquire().catch(() => {
+        sentinelRef.current = null;
+        setStatus('error');
+      });
+    };
+
     if (requested) {
-      void acquire();
+      acquireSafe();
     } else {
       void releaseHeld();
       setStatus('idle');
@@ -73,7 +84,7 @@ export function useScreenWakeLock(requested: boolean): {
         return;
       }
       if (document.visibilityState === 'visible' && requestedRef.current) {
-        void acquire();
+        acquireSafe();
       }
     };
 

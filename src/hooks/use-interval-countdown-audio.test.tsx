@@ -75,6 +75,32 @@ describe('useIntervalCountdownAudio', () => {
     expect(play).not.toHaveBeenCalled();
   });
 
+  it('re-arms amrap cues after isActive restarts with the same global segment key', () => {
+    const amrapBase = {
+      ...base,
+      cueSegmentKey: 'global',
+      amrapTenSecondWarning: true,
+    };
+
+    const { rerender } = renderHook(
+      ({ remainingMs, isActive }) =>
+        useIntervalCountdownAudio({ ...amrapBase, remainingMs, isActive }),
+      { initialProps: { remainingMs: 10_000, isActive: true } },
+    );
+    expect(play).toHaveBeenCalledWith('amrap_ten_second');
+
+    play.mockClear();
+    rerender({ remainingMs: 0, isActive: true });
+    expect(play).toHaveBeenCalledWith('countdown_end');
+
+    play.mockClear();
+    rerender({ remainingMs: 12 * 60_000, isActive: false });
+
+    play.mockClear();
+    rerender({ remainingMs: 10_000, isActive: true });
+    expect(play).toHaveBeenCalledWith('amrap_ten_second');
+  });
+
   it('plays amrap ten second warning once', () => {
     const { rerender } = renderHook(
       ({ remainingMs }) =>
