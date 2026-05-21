@@ -41,4 +41,4 @@ pnpm exec vitest run \
 
 ## Next
 
-[M7.3](./parametric-step7-plan.md) — EMOM shell.
+[M7.3](./parametric-step7-m7.3-plan.md) — EMOM shell (shipped).

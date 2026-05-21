@@ -65,4 +65,32 @@ describe('WorkoutPlayerBlockList', () => {
       list?.querySelector(`[data-testid="amrap-interval-shell-${amrapBlock!.id}"]`),
     ).toBeTruthy();
   });
+
+  it('renders emom interval shell', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('emom'));
+
+    const { container } = render(
+      <WorkoutPlayerBlockList
+        viewModel={vm}
+        flatExercises={vm.flatExercises}
+        logs={emptyLogs(vm.flatExercises.length)}
+        view="simple"
+        unit="kg"
+        personalNotesByExerciseIndex={vm.flatExercises.map(() => null)}
+        onSetChange={() => {}}
+        onToggleDone={() => {}}
+        onAddSet={() => {}}
+        onLogAmrapRound={() => {}}
+      />,
+    );
+
+    const list = container.querySelector('[data-testid="workout-player-block-list"]');
+    expect(list?.querySelector('[data-testid^="tabata-interval-shell-"]')).toBeNull();
+    expect(list?.querySelector('[data-testid^="amrap-interval-shell-"]')).toBeNull();
+    const emomBlock = vm.blocks.find((b) => b.blockFormat === 'emom');
+    expect(emomBlock).toBeDefined();
+    expect(
+      list?.querySelector(`[data-testid="emom-interval-shell-${emomBlock!.id}"]`),
+    ).toBeTruthy();
+  });
 });

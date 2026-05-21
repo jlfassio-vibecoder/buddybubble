@@ -2,11 +2,16 @@
 
 import { useCallback, useState } from 'react';
 import { Separator } from '@/components/ui/separator';
-import { AmrapIntervalShell, TabataIntervalShell } from '@/components/fitness/interval-shells';
+import {
+  AmrapIntervalShell,
+  EmomIntervalShell,
+  TabataIntervalShell,
+} from '@/components/fitness/interval-shells';
 import { buildPlayerExerciseIndexLookup } from '@/lib/workout-factory/workout-player-exercise-index';
 import { resolveAmrapTimerConfig } from '@/lib/workout-factory/interval-timer/resolve-amrap-timer-config';
+import { resolveEmomTimerConfig } from '@/lib/workout-factory/interval-timer/resolve-emom-timer-config';
 import { resolveTabataTimerConfig } from '@/lib/workout-factory/interval-timer/resolve-tabata-timer-config';
-import type { IntervalTimerSnapshot } from '@/lib/workout-factory/interval-timer/types';
+import type { IntervalRowSnapshot } from '@/lib/workout-factory/interval-timer/types';
 import type { WorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 import type { WorkoutExercise } from '@/lib/item-metadata';
@@ -37,14 +42,17 @@ export type WorkoutPlayerBlockListProps = {
 
 function renderIntervalShellForBlock(
   block: WorkoutSessionBlockView,
-  onTabataSnapshot: (blockId: string, snapshot: IntervalTimerSnapshot | null) => void,
+  onIntervalSnapshot: (blockId: string, snapshot: IntervalRowSnapshot | null) => void,
   onLogAmrapRound: (blockId: string) => void,
 ) {
   if (block.blockFormat === 'tabata' && resolveTabataTimerConfig(block)) {
-    return <TabataIntervalShell block={block} onSnapshot={onTabataSnapshot} />;
+    return <TabataIntervalShell block={block} onSnapshot={onIntervalSnapshot} />;
   }
   if (block.blockFormat === 'amrap' && resolveAmrapTimerConfig(block)) {
     return <AmrapIntervalShell block={block} onLogRound={onLogAmrapRound} />;
+  }
+  if (block.blockFormat === 'emom' && resolveEmomTimerConfig(block)) {
+    return <EmomIntervalShell block={block} onSnapshot={onIntervalSnapshot} />;
   }
   return null;
 }
@@ -67,21 +75,20 @@ export function WorkoutPlayerBlockList({
     indexLookup.map((e) => [`${e.blockId}:${e.exerciseIndexInBlock}`, e.globalIndex]),
   );
 
-  const [tabataSnapshots, setTabataSnapshots] = useState<
-    Record<string, IntervalTimerSnapshot | null>
+  const [intervalSnapshots, setIntervalSnapshots] = useState<
+    Record<string, IntervalRowSnapshot | null>
   >({});
 
-  const handleTabataSnapshot = useCallback(
-    (blockId: string, snapshot: IntervalTimerSnapshot | null) => {
-      setTabataSnapshots((prev) => {
+  const handleIntervalSnapshot = useCallback(
+    (blockId: string, snapshot: IntervalRowSnapshot | null) => {
+      setIntervalSnapshots((prev) => {
         const cur = prev[blockId] ?? null;
         if (snapshot === null && cur === null) return prev;
         if (
           snapshot &&
           cur &&
-          snapshot.phase === cur.phase &&
           snapshot.roundIndex === cur.roundIndex &&
-          snapshot.isPaused === cur.isPaused
+          snapshot.activeSetPhase === cur.activeSetPhase
         ) {
           return prev;
         }
@@ -102,7 +109,7 @@ export function WorkoutPlayerBlockList({
           className: 'space-y-4',
         })}
         renderMainBlockAfterHeader={(block) =>
-          renderIntervalShellForBlock(block, handleTabataSnapshot, onLogAmrapRound)
+          renderIntervalShellForBlock(block, handleIntervalSnapshot, onLogAmrapRound)
         }
         renderExercise={(ctx) => {
           const globalIndex =
@@ -112,7 +119,7 @@ export function WorkoutPlayerBlockList({
           const exercise = flatExercises[globalIndex];
           if (!exercise) return null;
           const showSeparator = globalIndex > 0;
-          const tabataSnap = tabataSnapshots[ctx.block.id] ?? null;
+          const intervalSnap = intervalSnapshots[ctx.block.id] ?? null;
           return (
             <div key={`${ctx.block.id}-ex-${ctx.exerciseIndexInBlock}`}>
               {showSeparator ? <Separator className="mb-6" /> : null}
@@ -126,8 +133,8 @@ export function WorkoutPlayerBlockList({
                 onSetChange={(si, f, v) => onSetChange(globalIndex, si, f, v)}
                 onToggleDone={(si) => onToggleDone(globalIndex, si)}
                 onAddSet={() => onAddSet(globalIndex)}
-                activeSetIndex={tabataSnap?.roundIndex ?? null}
-                activeSetPhase={tabataSnap?.phase ?? null}
+                activeSetIndex={intervalSnap?.roundIndex ?? null}
+                activeSetPhase={intervalSnap?.activeSetPhase ?? null}
               />
             </div>
           );

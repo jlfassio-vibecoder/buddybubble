@@ -1,6 +1,6 @@
 # Parametric Workout Blocks — Step 7 (Execution UX & Timer Shells)
 
-**Status:** **M7.1 shipped** · **M7.2 shipped** · M7.3–M7.4 planned (2026-05-21)  
+**Status:** **M7.1 shipped** · **M7.2 shipped** · **M7.3 shipped** · **M7.4 shipped** (2026-05-21)  
 **Prerequisites:** [parametric-step6-plan.md](./parametric-step6-plan.md) (**M6.1** row counts · **M6.2** Coach `live_set_counts`) · [live-video-timers-audit.md](../architecture/live-video-timers-audit.md)
 
 **Related:** [Workout UI landscape audit](./README.md) · [workout-coach-rail README](../../rails/workout-coach-rail/README.md) · [parametric-step3-plan.md](./parametric-step3-plan.md)
@@ -177,8 +177,8 @@ stateDiagram-v2
 | --------- | ---------------------------------- | ----------- |
 | **M7.1**  | Core timer engine + Tabata shell   | **Shipped** |
 | **M7.2**  | Local AMRAP shell + grid extension | **Shipped** |
-| **M7.3**  | EMOM shell                         | Planned     |
-| **M7.4**  | Polish: audio cues + wake lock     | Stretch     |
+| **M7.3**  | EMOM shell                         | Shipped     |
+| **M7.4**  | Polish: audio cues + wake lock     | Shipped     |
 
 ---
 
@@ -279,7 +279,7 @@ Time-cap countdown for `blockFormat === 'amrap'` using **local-only** state. Imp
 
 ## M7.3 — EMOM shell
 
-**Status:** Not started.
+**Status:** Shipped (2026-05-21). Sub-plan: [parametric-step7-m7.3-plan.md](./parametric-step7-m7.3-plan.md).
 
 ### Goal
 
@@ -314,9 +314,9 @@ Fixed-reset interval loop: every `interval_seconds`, reset the visible countdown
 
 ---
 
-## M7.4 — Polish & UX (stretch)
+## M7.4 — Polish & UX
 
-**Status:** Not started · **optional after M7.1–M7.3 ship**
+**Status:** Shipped (2026-05-21). Sub-plan: [parametric-step7-m7.4-plan.md](./parametric-step7-m7.4-plan.md).
 
 ### Goal
 
@@ -384,8 +384,8 @@ Each sub-plan must include:
 
 - [x] **M7.1** — Engine + Tabata shell shipped
 - [x] **M7.2** — AMRAP shell + local Log Round shipped
-- [ ] **M7.3** — Sub-plan approved → EMOM shell
-- [ ] **M7.4** — Sub-plan approved → audio + wake lock (stretch)
+- [x] **M7.3** — EMOM shell shipped
+- [x] **M7.4** — Audio cues + wake lock shipped
 
 ---
 

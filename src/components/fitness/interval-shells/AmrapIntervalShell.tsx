@@ -4,6 +4,8 @@ import { useMemo, useState } from 'react';
 import { TimerDisplay } from '@/components/timer';
 import { Button } from '@/components/ui/button';
 import { useAmrapTimerEngine } from '@/hooks/use-amrap-timer-engine';
+import { useIntervalShellPolish } from '@/hooks/use-interval-shell-polish';
+import { IntervalShellAudioToggle } from '@/components/fitness/interval-shells/IntervalShellAudioToggle';
 import { resolveAmrapTimerConfig } from '@/lib/workout-factory/interval-timer/resolve-amrap-timer-config';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 import { cn } from '@/lib/utils';
@@ -32,8 +34,21 @@ function AmrapIntervalShellInner({
 }) {
   const { snapshot, start, pause, resume, reset } = useAmrapTimerEngine(config);
   const [roundCount, setRoundCount] = useState(0);
+  const isActive = snapshot.phase === 'running' && !snapshot.isPaused;
+  const { audioEnabled, toggleAudio, primeAudio } = useIntervalShellPolish({
+    isRunning: snapshot.phase === 'running',
+    isPaused: snapshot.isPaused,
+    remainingMs: snapshot.remainingMs,
+    cueSegmentKey: 'global',
+    amrapTenSecondWarning: true,
+  });
 
-  const canLogRound = snapshot.phase === 'running' && !snapshot.isPaused;
+  const canLogRound = isActive;
+
+  const handleStart = async () => {
+    await primeAudio();
+    start();
+  };
   const phaseLabel =
     snapshot.phase === 'idle'
       ? 'Ready'
@@ -86,8 +101,9 @@ function AmrapIntervalShellInner({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        <IntervalShellAudioToggle audioEnabled={audioEnabled} onToggle={toggleAudio} />
         {snapshot.phase === 'idle' || snapshot.phase === 'done' ? (
-          <Button type="button" size="sm" onClick={start}>
+          <Button type="button" size="sm" onClick={handleStart}>
             {snapshot.phase === 'done' ? 'Restart' : 'Start'}
           </Button>
         ) : (

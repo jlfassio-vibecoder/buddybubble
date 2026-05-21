@@ -33,3 +33,22 @@ export type IntervalTimerAction =
   | { type: 'resume'; now: number }
   | { type: 'reset' }
   | { type: 'tick'; now: number };
+
+/** BlockList → WorkoutPlayerExercisePanel active row contract (Tabata + EMOM). */
+export type IntervalRowSnapshot = {
+  roundIndex: number;
+  activeSetPhase: 'work' | 'rest' | 'prepare' | 'paused';
+};
+
+export function intervalTimerSnapshotToRowSnapshot(
+  snapshot: IntervalTimerSnapshot,
+): IntervalRowSnapshot | null {
+  if (snapshot.phase === 'idle' || snapshot.phase === 'done') return null;
+  if (snapshot.phase === 'paused') {
+    return { roundIndex: snapshot.roundIndex, activeSetPhase: 'paused' };
+  }
+  if (snapshot.phase === 'work' || snapshot.phase === 'rest' || snapshot.phase === 'prepare') {
+    return { roundIndex: snapshot.roundIndex, activeSetPhase: snapshot.phase };
+  }
+  return null;
+}

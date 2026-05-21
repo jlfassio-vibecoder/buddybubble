@@ -3,55 +3,42 @@
 import { useEffect, useMemo } from 'react';
 import { TimerDisplay } from '@/components/timer';
 import { Button } from '@/components/ui/button';
+import { useEmomTimerEngine } from '@/hooks/use-emom-timer-engine';
 import { useIntervalShellPolish } from '@/hooks/use-interval-shell-polish';
-import { useIntervalTimerEngine } from '@/hooks/use-interval-timer-engine';
 import { IntervalShellAudioToggle } from '@/components/fitness/interval-shells/IntervalShellAudioToggle';
-import { resolveTabataTimerConfig } from '@/lib/workout-factory/interval-timer/resolve-tabata-timer-config';
-import {
-  intervalTimerSnapshotToRowSnapshot,
-  type IntervalRowSnapshot,
-} from '@/lib/workout-factory/interval-timer/types';
+import { resolveEmomTimerConfig } from '@/lib/workout-factory/interval-timer/resolve-emom-timer-config';
+import type { IntervalRowSnapshot } from '@/lib/workout-factory/interval-timer/types';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 import { cn } from '@/lib/utils';
 
-export type TabataIntervalShellProps = {
+export type EmomIntervalShellProps = {
   block: WorkoutSessionBlockView;
   onSnapshot: (blockId: string, snapshot: IntervalRowSnapshot | null) => void;
 };
 
-const PHASE_LABELS: Record<string, string> = {
-  idle: 'Ready',
-  prepare: 'Prepare',
-  work: 'Work',
-  rest: 'Rest',
-  done: 'Complete',
-  paused: 'Paused',
-};
-
-export function TabataIntervalShell({ block, onSnapshot }: TabataIntervalShellProps) {
-  const config = useMemo(() => resolveTabataTimerConfig(block), [block]);
+export function EmomIntervalShell({ block, onSnapshot }: EmomIntervalShellProps) {
+  const config = useMemo(() => resolveEmomTimerConfig(block), [block]);
 
   if (!config) return null;
 
-  return <TabataIntervalShellInner blockId={block.id} config={config} onSnapshot={onSnapshot} />;
+  return <EmomIntervalShellInner blockId={block.id} config={config} onSnapshot={onSnapshot} />;
 }
 
-function TabataIntervalShellInner({
+function EmomIntervalShellInner({
   blockId,
   config,
   onSnapshot,
 }: {
   blockId: string;
-  config: NonNullable<ReturnType<typeof resolveTabataTimerConfig>>;
-  onSnapshot: TabataIntervalShellProps['onSnapshot'];
+  config: NonNullable<ReturnType<typeof resolveEmomTimerConfig>>;
+  onSnapshot: EmomIntervalShellProps['onSnapshot'];
 }) {
-  const { snapshot, start, pause, resume, reset } = useIntervalTimerEngine(config);
-  const cueSegmentKey = `${snapshot.phase}-${snapshot.roundIndex}`;
+  const { snapshot, start, pause, resume, reset } = useEmomTimerEngine(config);
   const { audioEnabled, toggleAudio, primeAudio } = useIntervalShellPolish({
     isRunning: snapshot.isRunning,
     isPaused: snapshot.isPaused,
     remainingMs: snapshot.remainingMs,
-    cueSegmentKey,
+    cueSegmentKey: String(snapshot.roundIndex),
   });
 
   const handleStart = async () => {
@@ -60,14 +47,30 @@ function TabataIntervalShellInner({
   };
 
   useEffect(() => {
-    onSnapshot(blockId, intervalTimerSnapshotToRowSnapshot(snapshot));
+    if (snapshot.phase === 'idle' || snapshot.phase === 'done') {
+      onSnapshot(blockId, null);
+      return;
+    }
+    const activeSetPhase = snapshot.phase === 'paused' ? 'paused' : 'work';
+    onSnapshot(blockId, { roundIndex: snapshot.roundIndex, activeSetPhase });
   }, [blockId, onSnapshot, snapshot.phase, snapshot.roundIndex, snapshot.isPaused]);
 
-  const phaseLabel = PHASE_LABELS[snapshot.phase] ?? snapshot.phase;
-  const showRound =
-    snapshot.phase !== 'idle' && snapshot.totalRounds > 0 && snapshot.phase !== 'done';
+  const phaseLabel =
+    snapshot.phase === 'idle'
+      ? 'Ready'
+      : snapshot.phase === 'done'
+        ? 'Complete'
+        : snapshot.isPaused
+          ? 'Paused'
+          : 'EMOM';
 
-  const getElapsedMs = () => Math.max(0, snapshot.phaseDurationMs - snapshot.remainingMs);
+  const roundLabel =
+    config.intervalSeconds === 60
+      ? `Minute ${snapshot.displayRound} of ${snapshot.totalRounds}`
+      : `Round ${snapshot.displayRound} of ${snapshot.totalRounds}`;
+
+  const showRound = snapshot.phase !== 'idle' && snapshot.phase !== 'done';
+  const getElapsedMs = () => Math.max(0, snapshot.intervalMs - snapshot.remainingMs);
 
   return (
     <div
@@ -75,8 +78,8 @@ function TabataIntervalShellInner({
         'rounded-lg border border-border bg-muted/30 px-4 py-3',
         'flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between',
       )}
-      data-testid={`tabata-interval-shell-${blockId}`}
-      data-region="tabata-interval-shell"
+      data-testid={`emom-interval-shell-${blockId}`}
+      data-region="emom-interval-shell"
     >
       <div className="flex flex-col gap-1">
         <span className="text-xs font-semibold uppercase tracking-wide text-primary">
@@ -85,15 +88,11 @@ function TabataIntervalShellInner({
         <TimerDisplay
           getElapsedMs={getElapsedMs}
           isActive={snapshot.isRunning && !snapshot.isPaused}
-          format="countdown-tenths"
-          totalMs={snapshot.phaseDurationMs}
+          format="countdown-seconds"
+          totalMs={snapshot.intervalMs}
           className="text-3xl"
         />
-        {showRound ? (
-          <span className="text-xs text-muted-foreground">
-            Round {snapshot.displayRound} of {snapshot.totalRounds}
-          </span>
-        ) : null}
+        {showRound ? <span className="text-xs text-muted-foreground">{roundLabel}</span> : null}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
