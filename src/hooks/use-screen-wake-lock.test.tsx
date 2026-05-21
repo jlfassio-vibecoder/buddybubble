@@ -4,7 +4,11 @@ import { useScreenWakeLock } from './use-screen-wake-lock';
 
 describe('useScreenWakeLock', () => {
   const release = vi.fn(async () => {});
-  const request = vi.fn(async () => ({ release }));
+  const request = vi.fn(async () => ({
+    release,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
 
   afterEach(() => {
     vi.restoreAllMocks();

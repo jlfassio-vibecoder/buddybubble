@@ -6,7 +6,8 @@ function positiveInt(v: unknown): number | null {
 
 /**
  * Derives EMOM round count from formatParams.
- * Precedence: total_rounds → floor(total_minutes * 60 / interval_seconds) → rounds → null.
+ * Requires valid `interval_seconds` (closed-world EMOM contract).
+ * Then: total_rounds → floor(total_minutes * 60 / interval_seconds) → legacy `rounds` → null.
  */
 export function resolveEmomTotalRounds(params: Record<string, unknown>): number | null {
   const intervalSeconds = positiveInt(params.interval_seconds);

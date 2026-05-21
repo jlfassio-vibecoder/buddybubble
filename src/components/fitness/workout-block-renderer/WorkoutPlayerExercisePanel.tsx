@@ -4,7 +4,7 @@ import { Check, Info, Plus } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import type { WorkoutExercise } from '@/lib/item-metadata';
-import type { IntervalTimerPhase } from '@/lib/workout-factory/interval-timer/types';
+import type { IntervalRowSnapshot } from '@/lib/workout-factory/interval-timer/types';
 import type { UserExerciseNotesRow } from '@/hooks/useUserExerciseNotes';
 
 export type SetDraft = {
@@ -61,7 +61,7 @@ export type WorkoutPlayerExercisePanelProps = {
   onAddSet: () => void;
   /** Tabata / interval shell: highlight active set row (editing never disabled). */
   activeSetIndex?: number | null;
-  activeSetPhase?: IntervalTimerPhase | null;
+  activeSetPhase?: IntervalRowSnapshot['activeSetPhase'] | null;
 };
 
 export function WorkoutPlayerExercisePanel({

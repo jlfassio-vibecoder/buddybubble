@@ -19,7 +19,7 @@ export function IntervalShellAudioToggle({
       size="icon"
       onClick={onToggle}
       aria-label={audioEnabled ? 'Mute timer sounds' : 'Unmute timer sounds'}
-      aria-pressed={audioEnabled}
+      aria-pressed={!audioEnabled}
       data-testid="interval-shell-audio-toggle"
     >
       {audioEnabled ? (

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 
 export type WakeLockStatus = 'unsupported' | 'idle' | 'requesting' | 'held' | 'released' | 'error';
 
-type WakeLockSentinel = { release: () => Promise<void> };
+type ScreenWakeLockSentinel = WakeLockSentinel;
 
 function getWakeLockApi(): WakeLock | undefined {
   if (typeof navigator === 'undefined') return undefined;
@@ -20,22 +20,28 @@ export function useScreenWakeLock(requested: boolean): {
   const [status, setStatus] = useState<WakeLockStatus>(() =>
     isSupported ? 'idle' : 'unsupported',
   );
-  const sentinelRef = useRef<WakeLockSentinel | null>(null);
+  const sentinelRef = useRef<ScreenWakeLockSentinel | null>(null);
   const requestedRef = useRef(requested);
   requestedRef.current = requested;
 
   useEffect(() => {
     if (!isSupported) return;
 
-    const releaseHeld = async () => {
+    let cancelled = false;
+    const safeSetStatus = (next: WakeLockStatus) => {
+      if (!cancelled) setStatus(next);
+    };
+
+    const releaseHeld = async (options?: { updateStatus?: boolean }) => {
+      const updateStatus = options?.updateStatus ?? true;
       const sentinel = sentinelRef.current;
       sentinelRef.current = null;
       if (!sentinel) return;
       try {
         await sentinel.release();
-        setStatus('released');
+        if (updateStatus) safeSetStatus('released');
       } catch {
-        setStatus('error');
+        if (updateStatus) safeSetStatus('error');
       }
     };
 
@@ -44,43 +50,61 @@ export function useScreenWakeLock(requested: boolean): {
       if (sentinelRef.current) return;
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
 
-      setStatus('requesting');
+      safeSetStatus('requesting');
       try {
-        const sentinel = await wakeLockApi!.request('screen');
+        const sentinel: ScreenWakeLockSentinel = await wakeLockApi!.request('screen');
+
+        const onSentinelReleased = () => {
+          if (sentinelRef.current !== sentinel) return;
+          sentinelRef.current = null;
+          safeSetStatus('idle');
+          if (requestedRef.current && document.visibilityState === 'visible') {
+            acquireSafe();
+          }
+        };
+
+        if (typeof sentinel.addEventListener === 'function') {
+          sentinel.addEventListener('release', onSentinelReleased);
+        }
+
         if (!requestedRef.current) {
+          if (typeof sentinel.removeEventListener === 'function') {
+            sentinel.removeEventListener('release', onSentinelReleased);
+          }
           try {
             await sentinel.release();
           } catch {
             // Browser may already have released the lock (e.g. visibility hidden).
           }
-          setStatus('released');
+          safeSetStatus('released');
           return;
         }
+
         sentinelRef.current = sentinel;
-        setStatus('held');
+        safeSetStatus('held');
       } catch {
         sentinelRef.current = null;
-        setStatus('error');
+        safeSetStatus('error');
       }
     };
 
     const acquireSafe = () => {
       void acquire().catch(() => {
         sentinelRef.current = null;
-        setStatus('error');
+        safeSetStatus('error');
       });
     };
 
     if (requested) {
       acquireSafe();
     } else {
-      void releaseHeld();
-      setStatus('idle');
+      void releaseHeld({ updateStatus: false });
+      safeSetStatus('idle');
     }
 
     const onVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
-        void releaseHeld();
+        void releaseHeld({ updateStatus: false });
         return;
       }
       if (document.visibilityState === 'visible' && requestedRef.current) {
@@ -90,8 +114,9 @@ export function useScreenWakeLock(requested: boolean): {
 
     document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
+      cancelled = true;
       document.removeEventListener('visibilitychange', onVisibilityChange);
-      void releaseHeld();
+      void releaseHeld({ updateStatus: false });
     };
   }, [requested, isSupported, wakeLockApi]);
 
