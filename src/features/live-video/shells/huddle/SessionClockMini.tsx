@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { formatSessionTime } from '@/features/live-video/shells/TimerDisplay';
+import { formatSessionTime } from '@/lib/timer';
 import type { SessionState } from '@/features/live-video/state/sessionStateMachine';
 import { cn } from '@/lib/utils';
 

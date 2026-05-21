@@ -25,6 +25,7 @@ describe('WorkoutPlayerBlockList', () => {
         onSetChange={() => {}}
         onToggleDone={() => {}}
         onAddSet={() => {}}
+        onLogAmrapRound={() => {}}
       />,
     );
 
@@ -32,12 +33,15 @@ describe('WorkoutPlayerBlockList', () => {
     expect(lists.length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Tabata/).length).toBeGreaterThan(0);
     expect(screen.getAllByTestId(/^exercise-panel-/)).toHaveLength(vm.flatExercises.length);
+    const tabataBlock = vm.blocks.find((b) => b.blockFormat === 'tabata');
+    expect(tabataBlock).toBeDefined();
+    expect(screen.getByTestId(`tabata-interval-shell-${tabataBlock!.id}`)).toBeTruthy();
   });
 
-  it('renders warmup instruction section', () => {
+  it('renders amrap interval shell and warmup section', () => {
     const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('amrap'));
 
-    render(
+    const { container } = render(
       <WorkoutPlayerBlockList
         viewModel={vm}
         flatExercises={vm.flatExercises}
@@ -48,10 +52,45 @@ describe('WorkoutPlayerBlockList', () => {
         onSetChange={() => {}}
         onToggleDone={() => {}}
         onAddSet={() => {}}
+        onLogAmrapRound={() => {}}
       />,
     );
 
-    const list = screen.getAllByTestId('workout-player-block-list')[0];
-    expect(list.querySelector('[data-testid="instruction-section-warmup"]')).toBeTruthy();
+    const list = container.querySelector('[data-testid="workout-player-block-list"]');
+    expect(list?.querySelector('[data-testid="instruction-section-warmup"]')).toBeTruthy();
+    expect(list?.querySelector('[data-testid^="tabata-interval-shell-"]')).toBeNull();
+    const amrapBlock = vm.blocks.find((b) => b.blockFormat === 'amrap');
+    expect(amrapBlock).toBeDefined();
+    expect(
+      list?.querySelector(`[data-testid="amrap-interval-shell-${amrapBlock!.id}"]`),
+    ).toBeTruthy();
+  });
+
+  it('renders emom interval shell', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('emom'));
+
+    const { container } = render(
+      <WorkoutPlayerBlockList
+        viewModel={vm}
+        flatExercises={vm.flatExercises}
+        logs={emptyLogs(vm.flatExercises.length)}
+        view="simple"
+        unit="kg"
+        personalNotesByExerciseIndex={vm.flatExercises.map(() => null)}
+        onSetChange={() => {}}
+        onToggleDone={() => {}}
+        onAddSet={() => {}}
+        onLogAmrapRound={() => {}}
+      />,
+    );
+
+    const list = container.querySelector('[data-testid="workout-player-block-list"]');
+    expect(list?.querySelector('[data-testid^="tabata-interval-shell-"]')).toBeNull();
+    expect(list?.querySelector('[data-testid^="amrap-interval-shell-"]')).toBeNull();
+    const emomBlock = vm.blocks.find((b) => b.blockFormat === 'emom');
+    expect(emomBlock).toBeDefined();
+    expect(
+      list?.querySelector(`[data-testid="emom-interval-shell-${emomBlock!.id}"]`),
+    ).toBeTruthy();
   });
 });

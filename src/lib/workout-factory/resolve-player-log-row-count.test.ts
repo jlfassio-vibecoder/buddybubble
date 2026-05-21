@@ -32,6 +32,15 @@ describe('resolvePlayerLogRowCount', () => {
     expect(resolvePlayerLogRowCount({ name: 'Burpees', sets: 1, rounds: 8 }, null)).toBe(8);
   });
 
+  it('uses total_minutes for EMOM main block', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('emom'));
+    const main = vm.blocks.find((b) => b.section === 'main')!;
+    const ex = vm.flatExercises[0]!;
+    expect(
+      resolvePlayerLogRowCount(ex, { blockFormat: 'emom', formatParams: main.formatParams }),
+    ).toBe(16);
+  });
+
   it('uses formatParams.rounds for circuit', () => {
     expect(
       resolvePlayerLogRowCount(
@@ -49,6 +58,15 @@ describe('buildPlayerInitialLogs', () => {
     expect(logs).toHaveLength(vm.flatExercises.length);
     for (const row of logs) {
       expect(row).toHaveLength(8);
+    }
+  });
+
+  it('builds 16 rows per exercise for rich EMOM', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('emom'));
+    const logs = buildPlayerInitialLogs(vm.flatExercises, vm.blocks);
+    expect(logs).toHaveLength(vm.flatExercises.length);
+    for (const row of logs) {
+      expect(row).toHaveLength(16);
     }
   });
 

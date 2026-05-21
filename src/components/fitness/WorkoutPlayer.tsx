@@ -29,10 +29,12 @@ import { useUserExerciseNotes, type UserExerciseNotesRow } from '@/hooks/useUser
 import { useWorkoutSessionViewModel } from '@/hooks/use-workout-session-view-model';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import { buildWorkoutCoachRailContext } from '@/lib/workout-factory/build-workout-coach-rail-context';
+import { appendAmrapRoundRows } from '@/lib/workout-factory/interval-timer/append-amrap-round-rows';
 import {
   buildPlayerInitialLogRowsForExercise,
   buildPlayerInitialLogs,
 } from '@/lib/workout-factory/resolve-player-log-row-count';
+import { buildPlayerExerciseIndexLookup } from '@/lib/workout-factory/workout-player-exercise-index';
 import { WorkoutPlayerBlockList } from '@/components/fitness/workout-block-renderer/WorkoutPlayerBlockList';
 import {
   WorkoutPlayerExercisePanel,
@@ -138,6 +140,7 @@ type PlayerBodyProps = {
   ) => void;
   onToggleDone: (exIdx: number, setIdx: number) => void;
   onAddSet: (exIdx: number) => void;
+  onLogAmrapRound: (blockId: string) => void;
   onFinish: () => void;
   onClose: () => void;
   /** Per-exercise rows from `user_exercise_notes` (by catalog id), aligned with `exercises`. */
@@ -159,6 +162,7 @@ function PlayerBody({
   onSetChange,
   onToggleDone,
   onAddSet,
+  onLogAmrapRound,
   onFinish,
   onClose,
   personalNotesByExerciseIndex,
@@ -252,6 +256,7 @@ function PlayerBody({
             onSetChange={onSetChange}
             onToggleDone={onToggleDone}
             onAddSet={onAddSet}
+            onLogAmrapRound={onLogAmrapRound}
           />
         ) : (
           <div className="space-y-6">
@@ -677,6 +682,17 @@ export function WorkoutPlayer({
     [exercises],
   );
 
+  const logAmrapRound = useCallback(
+    (blockId: string) => {
+      hasUserEditedRef.current = true;
+      const indices = buildPlayerExerciseIndexLookup(sessionVm.blocks)
+        .filter((e) => e.blockId === blockId)
+        .map((e) => e.globalIndex);
+      setLogs((prev) => appendAmrapRoundRows(prev, indices, exercises));
+    },
+    [sessionVm.blocks, exercises],
+  );
+
   const handleApplyExecutionPatch = useCallback((patch: ExecutionPatch) => {
     hasUserEditedRef.current = true;
     setLogs((prev) => {
@@ -904,6 +920,7 @@ export function WorkoutPlayer({
     onSetChange: updateSet,
     onToggleDone: toggleDone,
     onAddSet: addSet,
+    onLogAmrapRound: logAmrapRound,
     onFinish: () => void handleFinish(),
     onClose,
     personalNotesByExerciseIndex,

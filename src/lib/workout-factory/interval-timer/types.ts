@@ -1,0 +1,54 @@
+import type { TabataTimerConfig } from '@/lib/workout-factory/interval-timer/resolve-tabata-timer-config';
+
+export type IntervalTimerPhase = 'idle' | 'prepare' | 'work' | 'rest' | 'done' | 'paused';
+
+export type IntervalTimerConfig = TabataTimerConfig;
+
+export type IntervalTimerEngineState = {
+  config: IntervalTimerConfig;
+  phase: IntervalTimerPhase;
+  /** 0-based; indexes WORK phase within totalRounds */
+  roundIndex: number;
+  phaseAnchorMs: number | null;
+  pausedTotalMs: number;
+  pausedAtMs: number | null;
+  /** Phase to restore on resume */
+  pausedFromPhase: 'prepare' | 'work' | 'rest' | null;
+};
+
+export type IntervalTimerSnapshot = {
+  phase: IntervalTimerPhase;
+  roundIndex: number;
+  remainingMs: number;
+  phaseDurationMs: number;
+  isRunning: boolean;
+  isPaused: boolean;
+  totalRounds: number;
+  displayRound: number;
+};
+
+export type IntervalTimerAction =
+  | { type: 'start'; now: number }
+  | { type: 'pause'; now: number }
+  | { type: 'resume'; now: number }
+  | { type: 'reset' }
+  | { type: 'tick'; now: number };
+
+/** BlockList → WorkoutPlayerExercisePanel active row contract (Tabata + EMOM). */
+export type IntervalRowSnapshot = {
+  roundIndex: number;
+  activeSetPhase: 'work' | 'rest' | 'prepare' | 'paused';
+};
+
+export function intervalTimerSnapshotToRowSnapshot(
+  snapshot: IntervalTimerSnapshot,
+): IntervalRowSnapshot | null {
+  if (snapshot.phase === 'idle' || snapshot.phase === 'done') return null;
+  if (snapshot.phase === 'paused') {
+    return { roundIndex: snapshot.roundIndex, activeSetPhase: 'paused' };
+  }
+  if (snapshot.phase === 'work' || snapshot.phase === 'rest' || snapshot.phase === 'prepare') {
+    return { roundIndex: snapshot.roundIndex, activeSetPhase: snapshot.phase };
+  }
+  return null;
+}
