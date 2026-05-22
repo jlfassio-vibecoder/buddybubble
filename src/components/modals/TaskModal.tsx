@@ -1366,6 +1366,7 @@ export function TaskModal({
       loading,
       onArchiveTask: archiveTask,
       onHardDeleteTask: handleModalHardDelete,
+      taskMetadata: metadata,
     }),
     [
       title,
@@ -1429,6 +1430,7 @@ export function TaskModal({
       archiveTask,
       handleModalHardDelete,
       workoutIntake,
+      metadata,
     ],
   );
 

@@ -29,6 +29,10 @@ import { useUserExerciseNotes, type UserExerciseNotesRow } from '@/hooks/useUser
 import { useWorkoutSessionViewModel } from '@/hooks/use-workout-session-view-model';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import { buildWorkoutCoachRailContext } from '@/lib/workout-factory/build-workout-coach-rail-context';
+import {
+  buildWorkoutLogExercisePayloadFromLogs,
+  buildWorkoutLogFinishMetadata,
+} from '@/lib/workout-factory/build-workout-log-finish-metadata';
 import { appendAmrapRoundRows } from '@/lib/workout-factory/interval-timer/append-amrap-round-rows';
 import {
   buildPlayerInitialLogRowsForExercise,
@@ -727,23 +731,7 @@ export function WorkoutPlayer({
     setSaving(true);
     const supabase = createClient();
 
-    const exercisePayload = exercises.map((ex, i) => {
-      const completedSets = (logs[i] ?? []).filter((s) => s.done);
-      return {
-        name: ex.name,
-        ...(ex.reps != null ? { reps: ex.reps } : {}),
-        ...(ex.weight != null ? { weight: ex.weight } : {}),
-        ...(ex.duration_min != null ? { duration_min: ex.duration_min } : {}),
-        sets: completedSets.length,
-        set_logs: completedSets.map((s, idx) => ({
-          set: idx + 1,
-          ...(s.weight !== '' ? { weight: parseFloat(s.weight) } : {}),
-          ...(s.reps !== '' ? { reps: parseInt(s.reps, 10) } : {}),
-          ...(s.rpe !== '' ? { rpe: parseInt(s.rpe, 10) } : {}),
-          done: true,
-        })),
-      };
-    });
+    const exercisePayload = buildWorkoutLogExercisePayloadFromLogs(exercises, logs);
 
     const durationMins = Math.round(elapsed / 60);
 
@@ -798,12 +786,14 @@ export function WorkoutPlayer({
       }
     }
 
-    const finalMetadata: Json = {
-      ...(sourceTaskId ? { source_task_id: sourceTaskId } : {}),
-      ...(durationMins > 0 ? { duration_min: durationMins } : {}),
+    const finalMetadata = buildWorkoutLogFinishMetadata({
+      sourceMetadata: metadata,
+      sessionVm,
       exercises: exercisePayload,
-      ...(class_instance_id ? { class_instance_id } : {}),
-    };
+      durationMin: durationMins,
+      sourceTaskId,
+      classInstanceId: class_instance_id,
+    });
 
     const programFields = {
       ...(sourceRow?.program_id != null ? { program_id: sourceRow.program_id } : {}),
@@ -896,6 +886,8 @@ export function WorkoutPlayer({
     exercises,
     logs,
     elapsed,
+    metadata,
+    sessionVm,
     bubbleId,
     workoutTitle,
     sourceTaskId,

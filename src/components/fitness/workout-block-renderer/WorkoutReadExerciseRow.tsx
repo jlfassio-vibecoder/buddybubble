@@ -95,11 +95,15 @@ export function WorkoutReadExerciseRowFromFactory({
   taskId = null,
   stationLabel,
   density = 'full',
+  setLogs,
+  unitSystem = 'metric',
 }: {
   ex: Exercise;
   taskId?: string | null;
   stationLabel?: string | null;
   density?: 'full' | 'compact';
+  setLogs?: SetLogEntry[];
+  unitSystem?: UnitSystem;
 }) {
   const metaLine = formatExercisePrescriptionLineFromFactory(ex);
   const notes = ex.coachNotes?.trim() ?? '';
@@ -114,6 +118,8 @@ export function WorkoutReadExerciseRowFromFactory({
       exerciseQuery={ex.exerciseQuery}
       stationLabel={stationLabel}
       density={density}
+      setLogs={setLogs}
+      unitSystem={unitSystem}
     />
   );
 }

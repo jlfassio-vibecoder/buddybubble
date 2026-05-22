@@ -5,7 +5,7 @@
 **Status:** Living landscape audit (updated after Steps 1–3).  
 **Context:** The Parametric Workout Blocks epic ships a closed-world engine with **12** `block_format` values, block-level `formatParams`, and merge-time exercise hydration (e.g. EMOM/Tabata `workSeconds` / `restSeconds`). This document maps **every UI surface** that renders or executes workouts. **Steps 1–3** added the data contract, `WorkoutSessionViewModel`, and block-aware **WorkoutPlayer** P0; many surfaces below are still flat-only.
 
-**Implementation plans:** [parametric-step1-2-plan.md](./parametric-step1-2-plan.md) · [parametric-step3-plan.md](./parametric-step3-plan.md) · [parametric-step4-plan.md](./parametric-step4-plan.md) (M0–M4 shipped) · [parametric-step4-m4-plan.md](./parametric-step4-m4-plan.md) · [parametric-step5-plan.md](./parametric-step5-plan.md) · [parametric-step5-m1-m3-plan.md](./parametric-step5-m1-m3-plan.md) · [parametric-step5-m2-plan.md](./parametric-step5-m2-plan.md) (Step 5 M0–M3 + M2 shipped) · [parametric-step6-plan.md](./parametric-step6-plan.md) (Step 6 M6.1–M6.2 planned)
+**Implementation plans:** [parametric-step1-2-plan.md](./parametric-step1-2-plan.md) · [parametric-step3-plan.md](./parametric-step3-plan.md) · [parametric-step4-plan.md](./parametric-step4-plan.md) (M0–M4 shipped) · [parametric-step4-m4-plan.md](./parametric-step4-m4-plan.md) · [parametric-step5-plan.md](./parametric-step5-plan.md) · [parametric-step5-m1-m3-plan.md](./parametric-step5-m1-m3-plan.md) · [parametric-step5-m2-plan.md](./parametric-step5-m2-plan.md) (Step 5 M0–M3 + M2 shipped) · [parametric-step6-plan.md](./parametric-step6-plan.md) (M6.1–M6.2 shipped) · [parametric-step7-plan.md](./parametric-step7-plan.md) (M7.1–M7.4 shipped) · [parametric-step8-plan.md](./parametric-step8-plan.md) (M8.1–M8.3 shipped — epic complete)
 
 **Related engine docs:** [parametric-workout-blocks](../../refactor/parametric-workout-blocks/README.md), [rail-composer-tokens](../../agents/coach/rail-composer-tokens.md), [PCC manifesto](../../architecture/pcc-manifesto.md).
 
@@ -181,7 +181,7 @@ There is **no** dedicated post-workout summary component that renders block stru
 
 3. **Flattening drops block boundaries for logging** — [getExercisesFromWorkout](../../../src/lib/workout-factory/program-schedule-utils.ts) concatenates all block exercises; block name, `blockFormat`, and `formatParams` are lost. AI → task mapping via [map-ai-workout-to-task-exercises.ts](../../../src/lib/workout-factory/map-ai-workout-to-task-exercises.ts) preserves per-exercise `work_seconds` / `rounds` but not grouping.
 
-4. **Finish workout flattens logs** — Completed `workout_log` stores flat exercises + `set_logs`; no record of which block format was performed.
+4. ~~**Finish workout flattens logs**~~ — **Fixed (Step 8)** — Completed `workout_log` persists `ai_workout_factory` + flat `set_logs`; history read shows block structure (M8.2–M8.3).
 
 5. ~~**Coach draft UI is flat**~~ — **Fixed (Step 4 M2):** `CoachDraftCard` uses `WorkoutMetadataPreview` when `proposed_metadata` includes factory; flat drafts unchanged.
 

@@ -54,6 +54,41 @@ describe('WorkoutViewerContent view mode', () => {
     expect(screen.getByText('MAIN')).toBeTruthy();
   });
 
+  it('readVariant log uses WorkoutLogReadSummary with set_logs not bare block list', () => {
+    const base = richMetadataWithBlockFormat('tabata');
+    const meta = {
+      ...base,
+      exercises: [
+        {
+          name: 'Goblet Squat',
+          sets: 1,
+          reps: '10',
+          set_logs: [{ set: 1, reps: 12, done: true }],
+        },
+      ],
+    };
+    renderViewer(meta, { readVariant: 'log' });
+
+    expect(screen.getByTestId('workout-viewer-log-read')).toBeTruthy();
+    expect(screen.queryByTestId('workout-viewer-block-list')).toBeNull();
+    expect(screen.getByText('Set 1 · 12 reps')).toBeTruthy();
+  });
+
+  it('readVariant workout still uses block list for rich prescription', () => {
+    const metadata = richMetadataWithBlockFormat('tabata') as Json;
+    render(
+      <WorkoutViewerContent
+        {...baseViewProps}
+        metadata={metadata}
+        syncKey={1}
+        readVariant="workout"
+      />,
+    );
+
+    expect(screen.getByTestId('workout-viewer-block-list')).toBeTruthy();
+    expect(screen.queryByTestId('workout-viewer-log-read')).toBeNull();
+  });
+
   it('renders flat exercise list when metadata has no factory', () => {
     render(
       <WorkoutViewerContent

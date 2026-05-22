@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { ChevronDown, Sparkles } from 'lucide-react';
 import { WorkoutExercisesEditor } from '@/components/fitness/workout-exercises-editor';
 import { WorkoutLogReadSummary } from '@/components/fitness/workout-block-renderer';
@@ -10,7 +11,7 @@ import { Label } from '@/components/ui/label';
 import { WORKOUT_FACTORY_CHAIN_MESSAGES } from '@/lib/workout-factory/api-client';
 import { metadataFieldsFromParsed, type WorkoutExercise } from '@/lib/item-metadata';
 import type { WorkoutTemplate } from '@/hooks/use-workout-templates';
-import type { ItemType, UnitSystem } from '@/types/database';
+import type { ItemType, Json, UnitSystem } from '@/types/database';
 import { cn } from '@/lib/utils';
 import type { WorkoutIntakeWizardData } from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
 
@@ -33,6 +34,8 @@ export type TaskModalWorkoutFieldsProps = {
   onWorkoutExercisesChange: (next: WorkoutExercise[]) => void;
   workoutUnitSystem: UnitSystem;
   autoEditFirstRow: boolean;
+  /** Full `tasks.metadata` for workout_log read (preserves ai_workout_factory). */
+  taskMetadata?: Json;
 };
 
 export function TaskModalWorkoutFields({
@@ -54,12 +57,20 @@ export function TaskModalWorkoutFields({
   onWorkoutExercisesChange,
   workoutUnitSystem,
   autoEditFirstRow,
+  taskMetadata = {},
 }: TaskModalWorkoutFieldsProps) {
-  const durationMins = parseInt(workoutDurationMin, 10);
-  const logReadMetadata = {
-    exercises: workoutExercises,
-    ...(!Number.isNaN(durationMins) && durationMins > 0 ? { duration_min: durationMins } : {}),
-  };
+  const logReadMetadata = useMemo(() => {
+    const base =
+      typeof taskMetadata === 'object' && taskMetadata !== null && !Array.isArray(taskMetadata)
+        ? taskMetadata
+        : {};
+    const durationMins = parseInt(workoutDurationMin, 10);
+    return {
+      ...base,
+      exercises: workoutExercises,
+      ...(!Number.isNaN(durationMins) && durationMins > 0 ? { duration_min: durationMins } : {}),
+    };
+  }, [taskMetadata, workoutExercises, workoutDurationMin]);
 
   return (
     <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
