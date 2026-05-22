@@ -2,7 +2,7 @@ import type { ExecutionPatch } from '@/types/execution-patch';
 
 /** Stable fingerprint for deduping Coach `execution_patch` applies (raw metadata or parsed patch). */
 export function executionPatchFingerprint(raw: unknown): string | null {
-  if (raw == null) return null;
+  if (raw == null) return 'null';
   try {
     return JSON.stringify(raw);
   } catch {

@@ -117,6 +117,9 @@ export function useAgentEffectSweep({
               messageId: id,
               reason: executionPatchParseThrew || rawEx !== undefined ? 'invalid' : 'missing',
             });
+            if (!executionPatchParseThrew && fp != null) {
+              handledExecutionPatchFingerprintRef.current.set(id, fp);
+            }
           } else {
             onEx({ ...baseCtx, patch });
             if (fp != null) handledExecutionPatchFingerprintRef.current.set(id, fp);

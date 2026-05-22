@@ -1,6 +1,7 @@
-/**
- * Deterministic alternating EMOM matrix hydration for persist/parse pipelines.
- * Canonical for Vitest; Deno mirror at `supabase/functions/_shared/workout-metadata/`.
+/** MIRROR FILE — canonical lives at `src/lib/agents/_shared/workout-metadata/hydrate-emom-alternating-stations.ts`.
+ *
+ * Body below is byte-for-byte identical to the canonical Vitest-side file (excluding
+ * this header). Any change must be hand-mirrored — run `pnpm check:agent-mirror` to verify parity.
  */
 
 function alternatingStationsMissingOrEmpty(params: Record<string, unknown>): boolean {

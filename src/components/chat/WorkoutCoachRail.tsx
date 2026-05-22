@@ -388,7 +388,10 @@ export function WorkoutCoachRail({
       } catch {
         continue;
       }
-      if (!patch) continue;
+      if (!patch) {
+        if (fp != null) coachExecutionAppliedFingerprintRef.current.set(id, fp);
+        continue;
+      }
       onApplyExecutionPatch(patch);
       if (fp != null) coachExecutionAppliedFingerprintRef.current.set(id, fp);
     }
