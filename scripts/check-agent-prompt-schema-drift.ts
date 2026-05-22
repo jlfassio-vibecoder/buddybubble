@@ -45,6 +45,7 @@ import {
 } from '../src/lib/agents/coach/schema';
 import { buildBlockBlueprintLibraryPrompt } from '../src/lib/agents/coach/block-blueprint-library';
 import {
+  buildApexArchitectMainChatBlock,
   buildBaseCoachPrompt,
   buildWorkoutOpenGreetingPrompt,
 } from '../src/lib/agents/coach/prompts';
@@ -97,7 +98,12 @@ const REGISTRY: ReadonlyArray<Contract> = [
     name: 'coach.main',
     slug: 'coach',
     schema: COACH_RESPONSE_SCHEMA,
-    prompt: buildBaseCoachPrompt('2026-01-01') + '\n\n' + buildBlockBlueprintLibraryPrompt(),
+    prompt:
+      buildBaseCoachPrompt('2026-01-01') +
+      '\n\n' +
+      buildApexArchitectMainChatBlock() +
+      '\n\n' +
+      buildBlockBlueprintLibraryPrompt(),
     parserSourcePath: 'src/lib/agents/coach/parse.ts',
     schemaOnlyKeys: [],
     // Runtime context block name + prose example value the Coach prompt mentions.

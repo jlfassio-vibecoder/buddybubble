@@ -32,6 +32,8 @@ function makeParsed(overrides: Partial<CoachGeminiJsonResponse> = {}): CoachGemi
     coach_task_notes: null,
     proposed_workout_metadata: null,
     proposed_workout_metadata_drops: [],
+    coach_workout_outline: null,
+    coach_workout_outline_drops: [],
     execution_patch: null,
     personal_cues_resolved: null,
     personal_cues_dropped_unanchored: 0,
@@ -464,6 +466,62 @@ describe('applyCoachServerGuards — Prescription dump without structure (Guard 
   });
 });
 
+describe('applyCoachServerGuards — coach_workout_outline (Apex Phase 2)', () => {
+  it('preserves outline with create_card when no workout context', () => {
+    const outline = [
+      {
+        name: 'Main',
+        block_format: 'emom',
+        format_params: { interval_seconds: 60, total_minutes: 10, is_alternating: true },
+        exercises: [{ name: 'Swing' }, { name: 'Push-up' }],
+      },
+    ];
+    const parsed = makeParsed({
+      create_card: true,
+      task_title: 'EMOM Day',
+      task_description: 'Summary',
+      coach_workout_outline: outline,
+    });
+    const out = applyCoachServerGuards(parsed, NO_TASK_FRAGMENT);
+    expect(out.create_card).toBe(true);
+    expect(out.coach_workout_outline).toEqual(outline);
+  });
+
+  it('clears outline on active workout session with proposed metadata', () => {
+    const parsed = makeParsed({
+      coach_workout_outline: [
+        { name: 'Main', block_format: 'amrap', format_params: { time_cap_minutes: 12 } },
+      ],
+      proposed_workout_metadata: { workout_type: 'AMRAP' },
+    });
+    const out = applyCoachServerGuards(parsed, {
+      ...NO_TASK_FRAGMENT,
+      currentWorkoutContextJson: '{"exercises":[]}',
+      isActiveWorkoutSession: true,
+    });
+    expect(out.coach_workout_outline).toBeNull();
+    expect(out.proposed_workout_metadata).toBeNull();
+  });
+
+  it('nulls updated_task_description when outline is non-empty (Guard 4)', () => {
+    const parsed = makeParsed({
+      update_existing_task: true,
+      updated_task_description: FINISHER_PROSE_DUMP,
+      coach_workout_outline: [
+        {
+          name: 'Main',
+          block_format: 'emom',
+          format_params: { interval_seconds: 60, total_minutes: 8 },
+          exercises: [{ name: 'Row' }],
+        },
+      ],
+    });
+    const out = applyCoachServerGuards(parsed, NO_TASK_FRAGMENT);
+    expect(out.updated_task_description).toBeNull();
+    expect(out.coach_workout_outline).toHaveLength(1);
+  });
+});
+
 describe('applyCoachServerGuards — Action exclusivity (Guard 5)', () => {
   it('nulls proposed_workout_metadata and updated_task_description; preserves title', () => {
     const parsed = makeParsed({
@@ -478,6 +536,7 @@ describe('applyCoachServerGuards — Action exclusivity (Guard 5)', () => {
     expect(out.updated_task_title).toBe('Leg day');
     expect(out.updated_task_description).toBeNull();
     expect(out.proposed_workout_metadata).toBeNull();
+    expect(out.coach_workout_outline).toBeNull();
   });
 });
 

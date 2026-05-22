@@ -10,6 +10,7 @@ import {
   mapLegacyTypeToBlockFormat,
   normalizeFormatParams,
   shouldInjectBlockBlueprintLibrary,
+  userMessageShowsDraftIntent,
   validateBlockShape,
 } from './block-blueprint-library';
 
@@ -343,10 +344,30 @@ describe('shouldInjectBlockBlueprintLibrary', () => {
     ).toBe(true);
   });
 
-  it('excludes library on main bubble without block mentions', () => {
+  it('omits library on main bubble intake without mentions or draft intent', () => {
     expect(
       shouldInjectBlockBlueprintLibrary({ isRailSurface: false, blockBlueprintMentionCount: 0 }),
     ).toBe(false);
+  });
+
+  it('includes library on main bubble draft-intent message', () => {
+    expect(
+      shouldInjectBlockBlueprintLibrary({
+        isRailSurface: false,
+        blockBlueprintMentionCount: 0,
+        userMessageShowsDraftIntent: true,
+      }),
+    ).toBe(true);
+  });
+});
+
+describe('userMessageShowsDraftIntent', () => {
+  it('matches please draft the outline', () => {
+    expect(userMessageShowsDraftIntent('Please draft the outline.')).toBe(true);
+  });
+
+  it('does not match generic readiness reply', () => {
+    expect(userMessageShowsDraftIntent('I have a lot of energy, no soreness.')).toBe(false);
   });
 });
 

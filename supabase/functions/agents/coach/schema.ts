@@ -8,6 +8,121 @@
 import type { VertexResponseSchema } from '../../_shared/llm/types.ts';
 import { INTAKE_CATEGORIES, INTAKE_PHASES } from './config.ts';
 
+/** Shared block object shape for `proposed_workout_metadata.blocks` and `coach_workout_outline`. */
+export const COACH_PROPOSED_WORKOUT_BLOCK_ITEM_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    name: { type: 'STRING' },
+    exercises: {
+      type: 'ARRAY',
+      nullable: true,
+      items: {
+        type: 'OBJECT',
+        properties: {
+          name: { type: 'STRING' },
+          sets: { type: 'INTEGER', nullable: true },
+          reps: { type: 'STRING', nullable: true },
+          coach_notes: { type: 'STRING', nullable: true },
+          equipment: { type: 'STRING', nullable: true },
+          work_seconds: {
+            type: 'INTEGER',
+            nullable: true,
+            description:
+              'Per-exercise work duration in seconds (Tabata, EMOM, AMRAP timing). Optional; merge derives from format_params for EMOM when omitted.',
+          },
+          rest_seconds: {
+            type: 'INTEGER',
+            nullable: true,
+            description:
+              'Per-exercise rest duration in seconds. For EMOM: rest within the interval after work. For Tabata: rest between work rounds.',
+          },
+        },
+      },
+    },
+    instructions: {
+      type: 'ARRAY',
+      nullable: true,
+      description:
+        'Instruction-shaped section (warm-up, cool down, mobility): one short line per array item. Use when the section is cued execution rather than prescribed sets and reps.',
+      items: { type: 'STRING' },
+    },
+    block_format: {
+      type: 'STRING',
+      nullable: true,
+      enum: [
+        'straight_sets',
+        'superset',
+        'circuit',
+        'amrap',
+        'emom',
+        'tabata',
+        'ladder',
+        'chipper',
+        'pyramid',
+        'contrast',
+        'clusters',
+        'drop_sets',
+      ],
+      description:
+        'Blueprint discriminator. MUST be one of the enum values; do not invent new formats. Required on exercise-shaped blocks; instruction-only warm-up / cool-down blocks may omit it. Use circuit (not superset) for 3+ exercises in sequence.',
+    },
+    format_params: {
+      type: 'OBJECT',
+      nullable: true,
+      description:
+        'Format-specific parameters. Required keys depend on block_format (see BLUEPRINT LIBRARY in system prompt): amrap requires time_cap_minutes; emom requires interval_seconds AND (total_minutes OR total_rounds); optional emom is_alternating and alternating_stations for minute-bound alternating work; tabata requires rounds; superset/circuit/contrast require rounds; ladder and pyramid require start_reps and peak_reps; chipper requires rounds and at least 3 exercises; clusters requires reps_per_cluster and clusters; drop_sets requires drop_percent and drops. Omit when straight_sets with default rest.',
+      properties: {
+        time_cap_minutes: { type: 'INTEGER', nullable: true },
+        interval_seconds: { type: 'INTEGER', nullable: true },
+        total_minutes: { type: 'INTEGER', nullable: true },
+        total_rounds: { type: 'INTEGER', nullable: true },
+        is_alternating: {
+          type: 'BOOLEAN',
+          nullable: true,
+          description:
+            'EMOM only. When true, minute highlights follow alternating_stations instead of a single exercise column. Omit or false for legacy EMOM.',
+        },
+        alternating_stations: {
+          type: 'ARRAY',
+          nullable: true,
+          description:
+            'EMOM only when is_alternating is true. Cycle of minute slots; each slot is an array of 0-based exercise indices within this block. For simple A/B/C rotation set is_alternating true and omit this field — the server auto-builds [[0],[1],[2],…]. For combined minutes supply explicitly, e.g. [[0],[1,2]].',
+          items: {
+            type: 'ARRAY',
+            items: { type: 'INTEGER' },
+          },
+        },
+        rounds: { type: 'INTEGER', nullable: true },
+        work_seconds: { type: 'INTEGER', nullable: true },
+        rest_seconds: { type: 'INTEGER', nullable: true },
+        rest_in_interval_seconds: { type: 'INTEGER', nullable: true },
+        rest_between_sets_seconds: { type: 'INTEGER', nullable: true },
+        rest_between_rounds_seconds: { type: 'INTEGER', nullable: true },
+        rest_between_exercises_seconds: { type: 'INTEGER', nullable: true },
+        target_rpe: { type: 'NUMBER', nullable: true },
+        target_rounds: { type: 'INTEGER', nullable: true },
+        pairing_notes: { type: 'STRING', nullable: true },
+        start_reps: { type: 'INTEGER', nullable: true },
+        peak_reps: { type: 'INTEGER', nullable: true },
+        step_reps: { type: 'INTEGER', nullable: true },
+        direction: {
+          type: 'STRING',
+          nullable: true,
+          description: 'Ladder or pyramid: ascending or descending.',
+        },
+        sets: { type: 'INTEGER', nullable: true },
+        load_progression_percent: { type: 'INTEGER', nullable: true },
+        reps_per_cluster: { type: 'INTEGER', nullable: true },
+        intra_cluster_rest_seconds: { type: 'INTEGER', nullable: true },
+        inter_set_rest_seconds: { type: 'INTEGER', nullable: true },
+        clusters: { type: 'INTEGER', nullable: true },
+        drop_percent: { type: 'INTEGER', nullable: true },
+        drops: { type: 'INTEGER', nullable: true },
+      },
+    },
+  },
+} as const;
+
 export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
   type: 'OBJECT',
   properties: {
@@ -124,119 +239,7 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
           nullable: true,
           description:
             'Polymorphic workout sections. Each block has a free-text name (e.g. Warm-up, Main, Strength, Cardio, Finisher, Cool down, Mobility). Exercise-shaped blocks include exercises; warm-up / cool-down / mobility may instead supply an instructions string list when there are no sets and reps. The server mergeCoachProposedIntoTaskMetadata appends blocks by default — emit only new or changed blocks; do not re-send unchanged sections. Routes each block by name and shape into exerciseBlocks (strength, cardio, core, finisher with sets and reps) or warmupBlocks, finisherBlocks, or cooldownBlocks (instruction-shaped). Prefer emitting blocks over flat exercises whenever the user asked for a named section (for example add a finisher). Each exercise-shaped block MUST set block_format (one of straight_sets, superset, circuit, amrap, emom, tabata, ladder, chipper, pyramid, contrast, clusters, drop_sets) and the matching format_params per the BLUEPRINT LIBRARY in the system prompt. Instruction-only blocks (instructions[] without exercises[]) may omit block_format. Use null or omit when not changing the workout structure.',
-          items: {
-            type: 'OBJECT',
-            properties: {
-              name: { type: 'STRING' },
-              exercises: {
-                type: 'ARRAY',
-                nullable: true,
-                items: {
-                  type: 'OBJECT',
-                  properties: {
-                    name: { type: 'STRING' },
-                    sets: { type: 'INTEGER', nullable: true },
-                    reps: { type: 'STRING', nullable: true },
-                    coach_notes: { type: 'STRING', nullable: true },
-                    equipment: { type: 'STRING', nullable: true },
-                    work_seconds: {
-                      type: 'INTEGER',
-                      nullable: true,
-                      description:
-                        'Per-exercise work duration in seconds (Tabata, EMOM, AMRAP timing). Optional; merge derives from format_params for EMOM when omitted.',
-                    },
-                    rest_seconds: {
-                      type: 'INTEGER',
-                      nullable: true,
-                      description:
-                        'Per-exercise rest duration in seconds. For EMOM: rest within the interval after work. For Tabata: rest between work rounds.',
-                    },
-                  },
-                },
-              },
-              instructions: {
-                type: 'ARRAY',
-                nullable: true,
-                description:
-                  'Instruction-shaped section (warm-up, cool down, mobility): one short line per array item. Use when the section is cued execution rather than prescribed sets and reps.',
-                items: { type: 'STRING' },
-              },
-              block_format: {
-                type: 'STRING',
-                nullable: true,
-                enum: [
-                  'straight_sets',
-                  'superset',
-                  'circuit',
-                  'amrap',
-                  'emom',
-                  'tabata',
-                  'ladder',
-                  'chipper',
-                  'pyramid',
-                  'contrast',
-                  'clusters',
-                  'drop_sets',
-                ],
-                description:
-                  'Blueprint discriminator. MUST be one of the enum values; do not invent new formats. Required on exercise-shaped blocks; instruction-only warm-up / cool-down blocks may omit it. Use circuit (not superset) for 3+ exercises in sequence.',
-              },
-              format_params: {
-                type: 'OBJECT',
-                nullable: true,
-                description:
-                  'Format-specific parameters. Required keys depend on block_format (see BLUEPRINT LIBRARY in system prompt): amrap requires time_cap_minutes; emom requires interval_seconds AND (total_minutes OR total_rounds); optional emom is_alternating and alternating_stations for minute-bound alternating work; tabata requires rounds; superset/circuit/contrast require rounds; ladder and pyramid require start_reps and peak_reps; chipper requires rounds and at least 3 exercises; clusters requires reps_per_cluster and clusters; drop_sets requires drop_percent and drops. Omit when straight_sets with default rest.',
-                properties: {
-                  time_cap_minutes: { type: 'INTEGER', nullable: true },
-                  interval_seconds: { type: 'INTEGER', nullable: true },
-                  total_minutes: { type: 'INTEGER', nullable: true },
-                  total_rounds: { type: 'INTEGER', nullable: true },
-                  is_alternating: {
-                    type: 'BOOLEAN',
-                    nullable: true,
-                    description:
-                      'EMOM only. When true, minute highlights follow alternating_stations instead of a single exercise column. Omit or false for legacy EMOM.',
-                  },
-                  alternating_stations: {
-                    type: 'ARRAY',
-                    nullable: true,
-                    description:
-                      'EMOM only when is_alternating is true. Cycle of minute slots; each slot is an array of 0-based exercise indices within this block. For simple A/B/C rotation set is_alternating true and omit this field — the server auto-builds [[0],[1],[2],…]. For combined minutes supply explicitly, e.g. [[0],[1,2]].',
-                    items: {
-                      type: 'ARRAY',
-                      items: { type: 'INTEGER' },
-                    },
-                  },
-                  rounds: { type: 'INTEGER', nullable: true },
-                  work_seconds: { type: 'INTEGER', nullable: true },
-                  rest_seconds: { type: 'INTEGER', nullable: true },
-                  rest_in_interval_seconds: { type: 'INTEGER', nullable: true },
-                  rest_between_sets_seconds: { type: 'INTEGER', nullable: true },
-                  rest_between_rounds_seconds: { type: 'INTEGER', nullable: true },
-                  rest_between_exercises_seconds: { type: 'INTEGER', nullable: true },
-                  target_rpe: { type: 'NUMBER', nullable: true },
-                  target_rounds: { type: 'INTEGER', nullable: true },
-                  pairing_notes: { type: 'STRING', nullable: true },
-                  start_reps: { type: 'INTEGER', nullable: true },
-                  peak_reps: { type: 'INTEGER', nullable: true },
-                  step_reps: { type: 'INTEGER', nullable: true },
-                  direction: {
-                    type: 'STRING',
-                    nullable: true,
-                    description: 'Ladder or pyramid: ascending or descending.',
-                  },
-                  sets: { type: 'INTEGER', nullable: true },
-                  load_progression_percent: { type: 'INTEGER', nullable: true },
-                  reps_per_cluster: { type: 'INTEGER', nullable: true },
-                  intra_cluster_rest_seconds: { type: 'INTEGER', nullable: true },
-                  inter_set_rest_seconds: { type: 'INTEGER', nullable: true },
-                  clusters: { type: 'INTEGER', nullable: true },
-                  drop_percent: { type: 'INTEGER', nullable: true },
-                  drops: { type: 'INTEGER', nullable: true },
-                },
-              },
-            },
-          },
+          items: COACH_PROPOSED_WORKOUT_BLOCK_ITEM_SCHEMA,
         },
         workout_type: { type: 'STRING', nullable: true },
         duration_min: { type: 'INTEGER', nullable: true },
@@ -356,6 +359,13 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
         },
       },
     },
+    coach_workout_outline: {
+      type: 'ARRAY',
+      nullable: true,
+      description:
+        'Apex Architect main bubble chat only: after explicit user agreement and when create_card is true (or update_existing_task revising the outline), emit the agreed parametric blocks here using catalog block_format and format_params. Persisted to tasks.metadata.coach_workout_outline for Phase 3 generation. MUST be null on pre_draft_confirmation turns and on rail surfaces. Do NOT put pre-factory parametric outlines in proposed_workout_metadata.blocks — use this field instead. task_description remains human-readable summary.',
+      items: COACH_PROPOSED_WORKOUT_BLOCK_ITEM_SCHEMA,
+    },
     card_action: {
       type: 'STRING',
       nullable: true,
@@ -378,6 +388,7 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
     'updated_task_title',
     'updated_task_description',
     'proposed_workout_metadata',
+    'coach_workout_outline',
     'card_action',
   ],
 };

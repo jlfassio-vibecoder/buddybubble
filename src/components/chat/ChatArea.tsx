@@ -59,6 +59,14 @@ import { useExerciseDictionaryAutocomplete } from '@/hooks/useExerciseDictionary
 import { AgentTypingIndicator } from '@/components/chat/AgentTypingIndicator';
 import { ActiveClassBanner } from '@/components/chat/ActiveClassBanner';
 import { resolveTargetAgent } from '@/lib/agents/resolveTargetAgent';
+import { COACH_SLUG } from '@/lib/agents/coach/config';
+import type { BlockBlueprintMentionClientPayload } from '@/lib/agents/coach/block-blueprint-mentions';
+import {
+  BLOCK_PICKER_PRESETS,
+  blockBlueprintMentionFromPick,
+  finalizeBlockBlueprintMentionsForSend,
+  type BlockPickerPreset,
+} from '@/lib/agents/coach/block-blueprint-mentions-client';
 import { logAgentRoutingEvent } from '@/lib/agents/agentRoutingLogger';
 import { toChatUserSnapshot, type MessageThreadFilter } from '@/lib/message-thread';
 import { liveSessionInviteMetadataToJson } from '@/types/live-session-invite';
@@ -312,6 +320,7 @@ export function ChatArea({
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const composerPopoverRef = useRef<HTMLDivElement>(null);
+  const blockBlueprintMentionsPendingRef = useRef<BlockBlueprintMentionClientPayload[]>([]);
 
   const bubbleName = activeBubble?.name ?? 'Bubble';
 
@@ -889,6 +898,21 @@ export function ChatArea({
     }),
     [exerciseDictionaryForHash, exerciseDictionaryLoading, exerciseDictionaryError],
   );
+
+  const coachBlockBlueprintMentionsEnabled = useMemo(() => {
+    const result = resolveTargetAgent({
+      messageDraft: input,
+      availableAgents,
+      contextDefaultAgentSlug: CHAT_AREA_DEFAULT_AGENT_SLUG,
+    });
+    const slug = result?.agent.slug ?? CHAT_AREA_DEFAULT_AGENT_SLUG;
+    return slug === COACH_SLUG;
+  }, [input, availableAgents]);
+
+  const onBlockBlueprintInserted = useCallback((preset: BlockPickerPreset) => {
+    const row = blockBlueprintMentionFromPick(preset);
+    blockBlueprintMentionsPendingRef.current = [...blockBlueprintMentionsPendingRef.current, row];
+  }, []);
 
   const performSearch = useCallback(
     async (overrides?: { query?: string; sender?: string; date?: string }) => {
@@ -1602,15 +1626,23 @@ export function ChatArea({
               availableAgents,
               contextDefaultAgentSlug: CHAT_AREA_DEFAULT_AGENT_SLUG,
             });
-            // Root inserts must carry `default_agent_slug` so `bubble-agent-dispatch` can resolve
-            // Coach the same way as `WorkoutCoachRail` (parseRootDefaultAgentSlug); @mention still wins server-side.
-            // When `availableAgents` is not ready, `result` is null but we still need the hint for dispatch.
+            const routesToCoach = result == null || result.agent.slug === COACH_SLUG;
+            const mergedMeta: Record<string, Json> = {};
+            if (routesToCoach) {
+              mergedMeta.default_agent_slug = CHAT_AREA_DEFAULT_AGENT_SLUG;
+              const blockMentions = finalizeBlockBlueprintMentionsForSend(
+                blockBlueprintMentionsPendingRef.current,
+                text,
+              );
+              if (blockMentions?.length) {
+                mergedMeta.block_blueprint_mentions = blockMentions as unknown as Json;
+              }
+            }
             const sendOpts: { metadata?: Json } | undefined =
-              result == null || result.agent.slug === 'coach'
-                ? { metadata: { default_agent_slug: CHAT_AREA_DEFAULT_AGENT_SLUG } satisfies Json }
-                : undefined;
+              Object.keys(mergedMeta).length > 0 ? { metadata: mergedMeta as Json } : undefined;
             const sent = await sendMessage(text, undefined, files, sendOpts);
             if (!sent) return false;
+            blockBlueprintMentionsPendingRef.current = [];
             setInput('');
             setPendingFiles([]);
             if (result) {
@@ -1641,10 +1673,17 @@ export function ChatArea({
           mentionConfig={richMentionConfig}
           slashConfig={richSlashConfig}
           hashConfig={richHashConfig}
+          blockConfig={
+            coachBlockBlueprintMentionsEnabled ? { presets: BLOCK_PICKER_PRESETS } : undefined
+          }
+          onBlockBlueprintInserted={
+            coachBlockBlueprintMentionsEnabled ? onBlockBlueprintInserted : undefined
+          }
           onRequestCreateAndAttachCard={handleComposeChatCard}
           features={{
             enableStartLiveWorkout: workspaceRole !== 'trialing',
             enableExerciseHashMentions: true,
+            enableBlockBlueprintMentions: coachBlockBlueprintMentionsEnabled,
           }}
           onRequestStartLiveWorkout={
             workspaceRole === 'trialing' ? undefined : handleStartLiveWorkout
@@ -1662,6 +1701,12 @@ export function ChatArea({
               <b>Return</b> to send (after attaching, pick files then send) • <b>Shift + Return</b>{' '}
               for new line • <b>@</b> to mention • <b>/</b> to link a card • <b>#</b> to tag an
               exercise
+              {coachBlockBlueprintMentionsEnabled ? (
+                <>
+                  {' '}
+                  • <b>:</b> for block format (AMRAP, EMOM…)
+                </>
+              ) : null}
             </>
           }
         />

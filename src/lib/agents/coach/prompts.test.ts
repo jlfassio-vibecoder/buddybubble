@@ -1,8 +1,10 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { BLOCK_BLUEPRINT_LIBRARY_HEADER } from './block-blueprint-library';
 import {
+  APEX_ARCHITECT_MAIN_CHAT_HEADER,
   EXERCISE_INDEX_MAP_HEADER,
   COACH_RAIL_SURFACE_VALUE,
+  buildApexArchitectMainChatBlock,
   buildBaseCoachPrompt,
   buildCurrentTaskContextBlock,
   buildTaskModalIntakeUiCoachBlock,
@@ -69,6 +71,25 @@ describe('buildCurrentTaskContextBlock', () => {
   it('non-rail tail does NOT contain GENERATION HAND-OFF', () => {
     const block = buildCurrentTaskContextBlock('Leg day', 'Squats');
     expect(block).not.toContain('GENERATION HAND-OFF');
+  });
+});
+
+describe('buildApexArchitectMainChatBlock', () => {
+  const block = buildApexArchitectMainChatBlock();
+
+  it('includes Apex Architect persona and catalog token examples', () => {
+    expect(block).toContain(APEX_ARCHITECT_MAIN_CHAT_HEADER);
+    expect(block).toContain('The Apex Architect');
+    expect(block).toContain('DPT');
+    expect(block).toContain('Exercise Physiology');
+    expect(block).toContain('CSCS');
+    expect(block).toContain('Triad of Performance');
+    expect(block).toContain(':main/emom/alternating');
+    expect(block).toContain(':metcon/tabata');
+  });
+
+  it('does not mention LIVE CO-PILOT MODE', () => {
+    expect(block).not.toContain('LIVE CO-PILOT MODE');
   });
 });
 

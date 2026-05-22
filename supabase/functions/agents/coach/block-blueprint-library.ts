@@ -1,7 +1,8 @@
 /** MIRROR FILE — canonical lives at `src/lib/agents/coach/block-blueprint-library.ts`.
  *
  * Body below is byte-for-byte identical to the canonical Vitest-side file (excluding
- * this header). Any change must be hand-mirrored — run `pnpm check:agent-mirror` to verify parity.
+ * this header). Import paths use explicit `.ts` extensions required by Deno.
+ * Any change must be hand-mirrored — run `pnpm check:agent-mirror` to verify parity.
  */
 
 export const BLOCK_FORMAT_ENUM = [
@@ -355,12 +356,26 @@ export function validateBlockShape(
 
 export const BLOCK_BLUEPRINT_LIBRARY_HEADER = '--- BLOCK BLUEPRINT LIBRARY ---';
 
+/** User clearly asked to draft / create the card (main-chat outline turn). */
+export function userMessageShowsDraftIntent(content: string): boolean {
+  const t = content.trim();
+  if (!t) return false;
+  return /\b(draft\s+(the\s+)?outline|please\s+draft|proceed\s+with|go\s+ahead\s+and\s+draft|create\s+(the\s+)?card|put\s+it\s+on\s+a\s+card)\b/i.test(
+    t,
+  );
+}
+
 /** True when the full block taxonomy should be appended to the Coach system prompt. */
 export function shouldInjectBlockBlueprintLibrary(args: {
   isRailSurface: boolean;
   blockBlueprintMentionCount: number;
+  /** Main bubble: inject on draft-intent turns (heavy JSON); skip during intake Q&A to save latency. */
+  userMessageShowsDraftIntent?: boolean;
 }): boolean {
-  return args.isRailSurface || args.blockBlueprintMentionCount > 0;
+  if (args.isRailSurface) return true;
+  if (args.blockBlueprintMentionCount > 0) return true;
+  if (args.userMessageShowsDraftIntent) return true;
+  return false;
 }
 
 /**

@@ -39,6 +39,10 @@ import {
 } from '../_shared/test-helpers/vertex-fixtures.ts';
 import { simulateCreateCardReplyMetadata } from '../_shared/test-helpers/agent-rpc-persistence-simulator.ts';
 
+/** Present only when `buildBlockBlueprintLibraryPrompt()` is injected (not Apex prose references). */
+const BLOCK_LIBRARY_INJECTED_MARKER =
+  'When you emit proposed_workout_metadata.blocks for exercise-shaped sections';
+
 const COACH_REPLY = {
   reply_content: 'Start with an easy full-body warmup today.',
   create_card: false,
@@ -1088,7 +1092,7 @@ integrationTest(
 );
 
 integrationTest(
-  'main bubble intake excludes block library and uses reduced thinking budget',
+  'main bubble intake omits block library but keeps Apex block and reduced thinking budget',
   async () => {
     const vertex = vertexHappyCapturingBody(COACH_REPLY);
     await withHarness({ vertex }, async ({ vertex: vtx, logs }) => {
@@ -1104,7 +1108,8 @@ integrationTest(
       const body = vtx!.lastBodyText();
       assertExists(body);
       const req = parseCapturedVertexRequest(body);
-      assertEquals(req.systemPrompt.includes('--- BLOCK BLUEPRINT LIBRARY ---'), false);
+      assertEquals(req.systemPrompt.includes(BLOCK_LIBRARY_INJECTED_MARKER), false);
+      assertEquals(req.systemPrompt.includes('--- APEX ARCHITECT (main bubble chat) ---'), true);
       assertEquals(req.thinkingBudget, 512);
       const dietLog = logs.findLog((log) => log.msg === 'coach main rail diet');
       assertExists(dietLog);
@@ -1114,6 +1119,30 @@ integrationTest(
     });
   },
 );
+
+integrationTest('main bubble draft intent includes block library and Apex block', async () => {
+  const vertex = vertexHappyCapturingBody(COACH_REPLY);
+  await withHarness({ vertex }, async ({ vertex: vtx, logs }) => {
+    const response = await handleDispatchRequest(
+      webhookRequest({
+        id: '00000000-0000-4000-8000-000000000895',
+        content: 'Please draft the outline.',
+        metadata: { default_agent_slug: 'coach' },
+      }),
+    );
+    assertEquals(response.status, 200);
+    assertExists(vtx);
+    const body = vtx!.lastBodyText();
+    assertExists(body);
+    const req = parseCapturedVertexRequest(body);
+    assertEquals(req.systemPrompt.includes(BLOCK_LIBRARY_INJECTED_MARKER), true);
+    assertEquals(req.systemPrompt.includes('--- APEX ARCHITECT (main bubble chat) ---'), true);
+    const dietLog = logs.findLog((log) => log.msg === 'coach main rail diet');
+    assertExists(dietLog);
+    assertEquals(dietLog.block_library_included, true);
+    assertEquals(dietLog.surface, 'non_rail');
+  });
+});
 
 integrationTest(
   'block mentions with merge disabled falls through to Lane 3 Coach prompt',
@@ -1156,7 +1185,7 @@ integrationTest(
         const body = vtx!.lastBodyText();
         assertExists(body);
         const req = parseCapturedVertexRequest(body);
-        assertEquals(req.systemPrompt.includes('--- BLOCK BLUEPRINT LIBRARY ---'), true);
+        assertEquals(req.systemPrompt.includes(BLOCK_LIBRARY_INJECTED_MARKER), true);
         assertEquals(req.systemPrompt.includes('BLOCK_BLUEPRINT_REFS'), true);
         assertEquals(req.thinkingBudget, 2048);
         assertEquals(vtx!.count(), 1);
@@ -1385,6 +1414,54 @@ integrationTest(
     });
   },
 );
+
+const COACH_REPLY_CREATE_EMOM_OUTLINE = {
+  ...COACH_REPLY,
+  reply_content: 'Your EMOM card is ready.',
+  create_card: true,
+  task_title: 'EMOM Alternating',
+  task_description: '12-minute alternating EMOM with kettlebell swing and push-ups.',
+  coach_task_notes:
+    "Does this proposed workout look good? If so, click 'Generate Workout' on the card. If you'd like any adjustments, let me know here in the chat!",
+  user_requested_immediate_card: true,
+  session_request: true,
+  intake_phase: 'ready_to_prescribe',
+  missing_intake_categories: [],
+  coach_workout_outline: [
+    {
+      name: 'Main',
+      block_format: 'emom',
+      format_params: {
+        interval_seconds: 60,
+        total_minutes: 12,
+        is_alternating: true,
+      },
+      exercises: [
+        { name: 'KB Swing', sets: 1, reps: '10' },
+        { name: 'Push-up', sets: 1, reps: '12' },
+      ],
+    },
+  ],
+};
+
+integrationTest('coach create_card passes p_coach_workout_outline for Apex outline', async () => {
+  await withHarness({ vertex: vertexHappy(COACH_REPLY_CREATE_EMOM_OUTLINE) }, async ({ rpc }) => {
+    const response = await handleDispatchRequest(
+      webhookRequest({ content: '@coach build my EMOM card now' }),
+    );
+    assertEquals(response.status, 200);
+    assertEquals((await readJson(response)).ok, true);
+    const calls = rpc.getRpcCalls('agent_create_card_and_reply');
+    assertEquals(calls.length, 1);
+    assertEquals(calls[0].args.p_create_card, true);
+    const outline = calls[0].args.p_coach_workout_outline as Array<Record<string, unknown>>;
+    assertEquals(Array.isArray(outline), true);
+    assertEquals(outline.length, 1);
+    assertEquals(outline[0].block_format, 'emom');
+    const fp = outline[0].format_params as Record<string, unknown>;
+    assertEquals(fp.is_alternating, true);
+  });
+});
 
 integrationTest(
   'coach reply with task_modal_intake_patch passes through when trigger has no workoutContext',

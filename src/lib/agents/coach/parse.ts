@@ -90,6 +90,12 @@ export type CoachGeminiJsonResponse = {
   /** Blocks dropped during parseProposedWorkoutMetadata (unknown format or invalid shape). */
   proposed_workout_metadata_drops: BlockShapeDrop[];
   /**
+   * Apex Architect main chat: agreed parametric outline before factory generation.
+   * Persisted to `tasks.metadata.coach_workout_outline` (not proposed_workout_metadata).
+   */
+  coach_workout_outline: Record<string, unknown>[] | null;
+  coach_workout_outline_drops: BlockShapeDrop[];
+  /**
    * Optional: live `WorkoutPlayer` grid updates (0-based indices vs CURRENT WORKOUT CONTEXT / workoutContext).
    * Persisted on the agent `messages` row for the client. Null/omit when not updating the live session.
    */
@@ -203,6 +209,82 @@ function instructionLinesFromBlock(blk: Record<string, unknown>): string[] {
     .filter((s) => s.length > 0);
 }
 
+/** Normalizes a Gemini blocks array with validation (shared by proposed metadata and coach outline). */
+function normalizeBlocksFromGeminiArray(
+  blocksRaw: unknown,
+  fieldPrefix: string,
+): { blocks: Record<string, unknown>[]; drops: BlockShapeDrop[] } {
+  const drops: BlockShapeDrop[] = [];
+  const blocks: Record<string, unknown>[] = [];
+  if (!Array.isArray(blocksRaw)) return { blocks, drops };
+
+  for (let i = 0; i < blocksRaw.length; i++) {
+    const b = blocksRaw[i];
+    if (!b || typeof b !== 'object' || Array.isArray(b)) continue;
+    const blk = b as Record<string, unknown>;
+    const inner = normalizeExercisesFromGeminiArray(blk.exercises);
+    const instructions = instructionLinesFromBlock(blk);
+    const instructionOnly = instructions.length > 0 && inner.length === 0;
+
+    if (instructionOnly) {
+      const row: Record<string, unknown> = {};
+      if (typeof blk.name === 'string' && blk.name.trim()) row.name = blk.name.trim();
+      row.instructions = instructions;
+      if (Object.keys(row).length > 0) blocks.push(row);
+      continue;
+    }
+
+    const blockName = typeof blk.name === 'string' ? blk.name.trim() : '';
+    if (inner.length === 0 && !blockName) continue;
+
+    const resolved = resolveBlockFormat(blk);
+    if (resolved === 'unknown') {
+      drops.push({ field: `${fieldPrefix}[${i}]`, reason: 'unknown_block_format' });
+      continue;
+    }
+    const blockFormat = resolved;
+    let formatParams = normalizeFormatParams(blockFormat, blk.format_params);
+    if (blockFormat === 'emom') {
+      formatParams = hydrateEmomAlternatingStations(inner.length, formatParams);
+    }
+    const shapeReason = validateBlockShape(blockFormat, inner.length, formatParams);
+    if (shapeReason != null) {
+      drops.push({ field: `${fieldPrefix}[${i}]`, reason: shapeReason });
+      continue;
+    }
+
+    const row: Record<string, unknown> = { block_format: blockFormat };
+    if (blockName) row.name = blockName;
+    if (
+      typeof blk.duration_min === 'number' &&
+      Number.isFinite(blk.duration_min) &&
+      blk.duration_min > 0
+    ) {
+      row.duration_min = Math.round(blk.duration_min);
+    }
+    if (typeof blk.coach_notes === 'string' && blk.coach_notes.trim()) {
+      row.coach_notes = blk.coach_notes.trim();
+    }
+    if (Object.keys(formatParams).length > 0) row.format_params = formatParams;
+    if (inner.length > 0) row.exercises = inner;
+    if (instructions.length > 0) row.instructions = instructions;
+    if (Object.keys(row).length > 0) blocks.push(row);
+  }
+  return { blocks, drops };
+}
+
+/** Normalizes Gemini `coach_workout_outline` (Apex Architect pre-factory; parametric allowed). */
+export function parseCoachWorkoutOutlineWithDrops(parsed: Record<string, unknown>): {
+  outline: Record<string, unknown>[] | null;
+  drops: BlockShapeDrop[];
+} {
+  const raw = parsed.coach_workout_outline ?? parsed['coach_workout_outline'];
+  if (raw == null) return { outline: null, drops: [] };
+  if (!Array.isArray(raw)) return { outline: null, drops: [] };
+  const { blocks, drops } = normalizeBlocksFromGeminiArray(raw, 'coach_workout_outline');
+  return { outline: blocks.length > 0 ? blocks : null, drops };
+}
+
 /** Normalizes Gemini `proposed_workout_metadata` with block-level drop telemetry. */
 export function parseProposedWorkoutMetadataWithDrops(parsed: Record<string, unknown>): {
   meta: Record<string, unknown>;
@@ -225,60 +307,9 @@ export function parseProposedWorkoutMetadataWithDrops(parsed: Record<string, unk
   if (topExercises.length > 0) out.exercises = topExercises;
 
   if (Array.isArray(o.blocks)) {
-    const blocks: Record<string, unknown>[] = [];
-    for (let i = 0; i < o.blocks.length; i++) {
-      const b = o.blocks[i];
-      if (!b || typeof b !== 'object' || Array.isArray(b)) continue;
-      const blk = b as Record<string, unknown>;
-      const inner = normalizeExercisesFromGeminiArray(blk.exercises);
-      const instructions = instructionLinesFromBlock(blk);
-      const instructionOnly = instructions.length > 0 && inner.length === 0;
-
-      if (instructionOnly) {
-        const row: Record<string, unknown> = {};
-        if (typeof blk.name === 'string' && blk.name.trim()) row.name = blk.name.trim();
-        row.instructions = instructions;
-        if (Object.keys(row).length > 0) blocks.push(row);
-        continue;
-      }
-
-      const blockName = typeof blk.name === 'string' ? blk.name.trim() : '';
-      if (inner.length === 0 && !blockName) continue;
-
-      const resolved = resolveBlockFormat(blk);
-      if (resolved === 'unknown') {
-        drops.push({ field: `blocks[${i}]`, reason: 'unknown_block_format' });
-        continue;
-      }
-      const blockFormat = resolved;
-      let formatParams = normalizeFormatParams(blockFormat, blk.format_params);
-      if (blockFormat === 'emom') {
-        formatParams = hydrateEmomAlternatingStations(inner.length, formatParams);
-      }
-      const shapeReason = validateBlockShape(blockFormat, inner.length, formatParams);
-      if (shapeReason != null) {
-        drops.push({ field: `blocks[${i}]`, reason: shapeReason });
-        continue;
-      }
-
-      const row: Record<string, unknown> = { block_format: blockFormat };
-      if (blockName) row.name = blockName;
-      if (
-        typeof blk.duration_min === 'number' &&
-        Number.isFinite(blk.duration_min) &&
-        blk.duration_min > 0
-      ) {
-        row.duration_min = Math.round(blk.duration_min);
-      }
-      if (typeof blk.coach_notes === 'string' && blk.coach_notes.trim()) {
-        row.coach_notes = blk.coach_notes.trim();
-      }
-      if (Object.keys(formatParams).length > 0) row.format_params = formatParams;
-      if (inner.length > 0) row.exercises = inner;
-      if (instructions.length > 0) row.instructions = instructions;
-      if (Object.keys(row).length > 0) blocks.push(row);
-    }
-    if (blocks.length > 0) out.blocks = blocks;
+    const blockCollect = normalizeBlocksFromGeminiArray(o.blocks, 'blocks');
+    drops.push(...blockCollect.drops);
+    if (blockCollect.blocks.length > 0) out.blocks = blockCollect.blocks;
   }
   return { meta: out, drops };
 }
@@ -564,6 +595,10 @@ export function parseCoachJson(
     Object.keys(proposed_workout_metadata).length > 0 ? proposed_workout_metadata : null;
   const proposed_workout_metadata_drops = proposedCollect.drops;
 
+  const outlineCollect = parseCoachWorkoutOutlineWithDrops(parsed);
+  const coach_workout_outline = outlineCollect.outline;
+  const coach_workout_outline_drops = outlineCollect.drops;
+
   let execution_patch: CoachGeminiJsonResponse['execution_patch'] = null;
   try {
     execution_patch = parseExecutionPatchFromGemini(
@@ -603,6 +638,8 @@ export function parseCoachJson(
       coach_task_notes: ensureCoachTaskNotesCta(parseCoachTaskNotes(parsed.coach_task_notes)),
       proposed_workout_metadata: null,
       proposed_workout_metadata_drops: [],
+      coach_workout_outline,
+      coach_workout_outline_drops,
       execution_patch,
       task_modal_intake_patch,
       task_modal_intake_dropped,
@@ -622,6 +659,8 @@ export function parseCoachJson(
     coach_task_notes: null,
     proposed_workout_metadata: proposedMetaOrNull,
     proposed_workout_metadata_drops,
+    coach_workout_outline,
+    coach_workout_outline_drops,
     execution_patch,
     task_modal_intake_patch,
     task_modal_intake_dropped,
