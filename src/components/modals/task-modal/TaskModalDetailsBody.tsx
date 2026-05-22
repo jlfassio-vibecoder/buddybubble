@@ -1,7 +1,7 @@
 'use client';
 
 import { memo } from 'react';
-import type { UnitSystem } from '@/types/database';
+import type { Json, UnitSystem } from '@/types/database';
 import type { TaskDateFieldLabels } from '@/lib/task-date-labels';
 import type { RefObject } from 'react';
 import type { ItemType } from '@/lib/item-types';
@@ -123,6 +123,7 @@ export type TaskModalDetailsBodyProps = {
   loading: boolean;
   onArchiveTask: () => void;
   onHardDeleteTask?: () => void | Promise<void>;
+  taskMetadata?: Json;
 };
 
 function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
@@ -210,6 +211,7 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     loading,
     onArchiveTask,
     onHardDeleteTask,
+    taskMetadata,
   } = props;
 
   return (
@@ -297,6 +299,7 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
           onWorkoutExercisesChange={onWorkoutExercisesChange}
           workoutUnitSystem={workoutUnitSystem}
           autoEditFirstRow={Boolean(initialAutoEdit && isWorkoutItemType && taskId && canWrite)}
+          taskMetadata={taskMetadata}
         />
       )}
 

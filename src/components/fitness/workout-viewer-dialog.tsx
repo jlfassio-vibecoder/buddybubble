@@ -426,7 +426,15 @@ export function WorkoutViewerContent({
             <ViewReadHeader displayTitle={displayTitle} displayDescription={displayDescription} />
             <section>
               <h3 className={sectionHeadingClass}>Workout plan</h3>
-              {showRichRead ? (
+              {readVariant === 'log' ? (
+                <WorkoutLogReadSummary
+                  metadata={logReadMetadata}
+                  taskId={taskId}
+                  density="full"
+                  unitSystem={workoutUnitSystem}
+                  data-testid="workout-viewer-log-read"
+                />
+              ) : showRichRead ? (
                 <WorkoutBlockListRenderer
                   blocks={sessionVm.blocks}
                   taskId={taskId}

@@ -35,13 +35,62 @@ describe('WorkoutLogReadSummary', () => {
     expect(getByText('Set 2 · 100 kg · 6 reps')).toBeTruthy();
   });
 
-  it('renders block list for rich metadata (future logs with factory)', () => {
+  it('renders rich block headers and set_logs overlay', () => {
+    const base = richMetadataWithBlockFormat('tabata');
+    const metadata = {
+      ...base,
+      exercises: [
+        {
+          name: 'Goblet Squat',
+          sets: 2,
+          set_logs: [
+            { set: 1, weight: 53, reps: 10, rpe: 8, done: true },
+            { set: 2, weight: 53, reps: 9, done: true },
+          ],
+        },
+      ],
+    };
+
     const { getByTestId, getByText } = render(
+      <WorkoutLogReadSummary metadata={metadata as Json} />,
+    );
+
+    expect(getByTestId('workout-log-read-summary-blocks')).toBeTruthy();
+    expect(getByText('MAIN')).toBeTruthy();
+    expect(getByText('Set 1 · 53 kg · 10 reps · RPE 8')).toBeTruthy();
+    expect(getByText('Set 2 · 53 kg · 9 reps')).toBeTruthy();
+  });
+
+  it('renders rich blocks without set lines when no set_logs', () => {
+    const { getByTestId, getByText, queryByText } = render(
       <WorkoutLogReadSummary metadata={richMetadataWithBlockFormat('tabata') as Json} />,
     );
 
     expect(getByTestId('workout-log-read-summary-blocks')).toBeTruthy();
     expect(getByText('MAIN')).toBeTruthy();
+    expect(queryByText(/^Set 1 ·/)).toBeNull();
+  });
+
+  it('renders AMRAP block header with many set_logs lines', () => {
+    const base = richMetadataWithBlockFormat('amrap');
+    const set_logs = Array.from({ length: 12 }, (_, i) => ({
+      set: i + 1,
+      reps: 10,
+      done: true as const,
+    }));
+    const metadata = {
+      ...base,
+      exercises: [{ name: 'Goblet Squat', sets: 12, set_logs }],
+    };
+
+    const { getByTestId, getByText } = render(
+      <WorkoutLogReadSummary metadata={metadata as Json} />,
+    );
+
+    expect(getByTestId('workout-log-read-summary-blocks')).toBeTruthy();
+    expect(getByText('MAIN')).toBeTruthy();
+    expect(getByText('Set 1 · 10 reps')).toBeTruthy();
+    expect(getByText('Set 12 · 10 reps')).toBeTruthy();
   });
 
   it('renders empty message when no exercises', () => {

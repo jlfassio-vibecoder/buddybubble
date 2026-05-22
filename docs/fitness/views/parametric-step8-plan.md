@@ -1,6 +1,6 @@
 # Parametric Workout Blocks — Step 8 (Post-Workout Save & Rich History)
 
-**Status:** **M8.2 shipped** · **M8.3 planned** (audit complete 2026-05-18).  
+**Status:** **Complete** — M8.1–M8.3 shipped (Parametric Workout Blocks epic closed).  
 **Prerequisites:** [parametric-step7-plan.md](./parametric-step7-plan.md) (**M7.1–M7.4 shipped** — block-aware player, interval shells, audio, wake lock) · [parametric-step6-plan.md](./parametric-step6-plan.md) (grid fidelity) · [parametric-step5-plan.md](./parametric-step5-plan.md) (block edit/Apply) · [parametric-step4-m4-plan.md](./parametric-step4-m4-plan.md) (log read UI)
 
 **Related:** [Workout UI landscape audit](./README.md) · [parametric-step1-2-plan.md](./parametric-step1-2-plan.md) (metadata contract) · [live-video-timers-audit.md](../architecture/live-video-timers-audit.md) (`block_snapshot` on live AMRAP — separate product surface)
@@ -204,7 +204,7 @@ Each `exercisePayload` entry includes only **completed** sets (`filter(s => s.do
 | 4   | Tests                                              | Extend `WorkoutLogReadSummary.test.tsx` — rich Tabata metadata + `set_logs` on flat exercises → expect block header **and** set lines                                       |
 | 5   | Docs                                               | Update [parametric-step4-m4-plan.md](./parametric-step4-m4-plan.md) “future factory” note to point at Step 8                                                                |
 
-**Sub-plan required before code:** `parametric-step8-m8.3-plan.md` — UI spec for parametric read (compact vs full), EMOM 16-row logs, and Task Modal metadata prop plumbing.
+**Sub-plan:** [parametric-step8-m8.3-plan.md](./parametric-step8-m8.3-plan.md) — **shipped** (Task Modal + Viewer read parity, `set_logs` overlay on rich blocks).
 
 ---
 
@@ -244,7 +244,7 @@ pnpm run check
 | --------- | --------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------- |
 | **M8.1**  | Storage contract & snapshot rules | `parametric-step8-m8.1-plan.md`                                  | Written contract; migration decision recorded                     |
 | **M8.2**  | Finish payload                    | [parametric-step8-m8.2-plan.md](./parametric-step8-m8.2-plan.md) | **Shipped** — new logs persist `ai_workout_factory` + tests green |
-| **M8.3**  | History read parity               | `parametric-step8-m8.3-plan.md`                                  | Task Modal + Viewer show blocks **with** `set_logs`               |
+| **M8.3**  | History read parity               | [parametric-step8-m8.3-plan.md](./parametric-step8-m8.3-plan.md) | **Shipped** — Task Modal + Viewer show blocks **with** `set_logs` |
 
 ---
 
