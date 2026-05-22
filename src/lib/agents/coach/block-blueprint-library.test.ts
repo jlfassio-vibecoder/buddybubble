@@ -4,6 +4,7 @@ import {
   BLOCK_BLUEPRINT_LIBRARY_HEADER,
   BLOCK_FORMAT_ENUM,
   buildBlockBlueprintLibraryPrompt,
+  buildComboAlternatingStationsMatrix,
   buildDefaultAlternatingStationsMatrix,
   hydrateEmomAlternatingStations,
   mapLegacyTypeToBlockFormat,
@@ -193,6 +194,39 @@ describe('validateBlockShape', () => {
     expect(buildDefaultAlternatingStationsMatrix(0)).toEqual([]);
     expect(buildDefaultAlternatingStationsMatrix(1)).toEqual([[0]]);
     expect(buildDefaultAlternatingStationsMatrix(3)).toEqual([[0], [1], [2]]);
+  });
+
+  it('buildComboAlternatingStationsMatrix pairs last two exercises on one minute', () => {
+    expect(buildComboAlternatingStationsMatrix(2)).toEqual([[0, 1]]);
+    expect(buildComboAlternatingStationsMatrix(3)).toEqual([[0], [1, 2]]);
+    expect(buildComboAlternatingStationsMatrix(4)).toEqual([[0], [1], [2, 3]]);
+    expect(buildComboAlternatingStationsMatrix(1)).toEqual([[0]]);
+  });
+
+  it('hydrateEmomAlternatingStations injects combo matrix and strips is_combo', () => {
+    const base = { interval_seconds: 60, total_minutes: 10, is_alternating: true, is_combo: true };
+    const hydrated = hydrateEmomAlternatingStations(3, base);
+    expect(hydrated).toEqual({
+      interval_seconds: 60,
+      total_minutes: 10,
+      is_alternating: true,
+      alternating_stations: [[0], [1, 2]],
+    });
+    expect(hydrated).not.toHaveProperty('is_combo');
+    expect(validateBlockShape('emom', 3, hydrated)).toBeNull();
+  });
+
+  it('hydrateEmomAlternatingStations combo does not overwrite explicit alternating_stations', () => {
+    const base = {
+      interval_seconds: 60,
+      total_minutes: 10,
+      is_alternating: true,
+      is_combo: true,
+      alternating_stations: [[0], [1]],
+    };
+    const hydrated = hydrateEmomAlternatingStations(3, base);
+    expect(hydrated.alternating_stations).toEqual([[0], [1]]);
+    expect(hydrated).not.toHaveProperty('is_combo');
   });
 
   it('hydrateEmomAlternatingStations injects matrix when missing', () => {

@@ -11,6 +11,12 @@ function alternatingStationsMissingOrEmpty(params: Record<string, unknown>): boo
   return false;
 }
 
+function omitIsCombo(params: Record<string, unknown>): Record<string, unknown> {
+  if (!('is_combo' in params)) return params;
+  const { is_combo: _removed, ...rest } = params;
+  return rest;
+}
+
 /** Build [[0], [1], …, [n-1]] for simple A/B/C alternating EMOM (one station per minute). */
 export function buildDefaultAlternatingStationsMatrix(exerciseCount: number): number[][] {
   const out: number[][] = [];
@@ -19,15 +25,38 @@ export function buildDefaultAlternatingStationsMatrix(exerciseCount: number): nu
 }
 
 /**
+ * A / B+C combo circuit: solo minutes for early exercises, last two paired on one minute.
+ * Example: 3 exercises -> [[0], [1, 2]]; 4 -> [[0], [1], [2, 3]]; 2 -> [[0, 1]].
+ */
+export function buildComboAlternatingStationsMatrix(exerciseCount: number): number[][] {
+  if (!Number.isInteger(exerciseCount) || exerciseCount < 2) {
+    return buildDefaultAlternatingStationsMatrix(exerciseCount);
+  }
+  if (exerciseCount === 2) return [[0, 1]];
+  const out: number[][] = [];
+  for (let i = 0; i < exerciseCount - 2; i++) out.push([i]);
+  out.push([exerciseCount - 2, exerciseCount - 1]);
+  return out;
+}
+
+/**
  * When is_alternating is true and alternating_stations is missing/empty,
- * inject a 1-to-1 minute cycle. Does not overwrite explicit matrices.
+ * inject a minute cycle (1-to-1 or combo). Does not overwrite explicit matrices.
+ * Always strips internal is_combo from the returned params.
  */
 export function hydrateEmomAlternatingStations(
   exerciseCount: number,
   params: Record<string, unknown>,
 ): Record<string, unknown> {
-  if (params.is_alternating !== true) return params;
-  if (!alternatingStationsMissingOrEmpty(params)) return params;
-  if (!Number.isInteger(exerciseCount) || exerciseCount < 1) return params;
-  return { ...params, alternating_stations: buildDefaultAlternatingStationsMatrix(exerciseCount) };
+  const stripped = omitIsCombo(params);
+  if (stripped.is_alternating !== true) return stripped;
+  if (!alternatingStationsMissingOrEmpty(stripped)) return stripped;
+  if (!Number.isInteger(exerciseCount) || exerciseCount < 1) return stripped;
+
+  const useCombo = params.is_combo === true && exerciseCount >= 2;
+  const alternating_stations = useCombo
+    ? buildComboAlternatingStationsMatrix(exerciseCount)
+    : buildDefaultAlternatingStationsMatrix(exerciseCount);
+
+  return { ...stripped, alternating_stations };
 }

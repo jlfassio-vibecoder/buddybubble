@@ -237,5 +237,5 @@ pnpm run test:deno-integration
 
 ## Follow-up (Step 10 candidate)
 
-- Catalog preset `:main/emom/alternating-combo` with fixed `alternating_stations: [[0],[1,2]]` for whiteboard A / B+C without LLM matrix
+- ~~Catalog preset `:main/emom/alternating-combo`~~ — **shipped** (`buildComboAlternatingStationsMatrix` + `:main/emom/alternating-combo` / `:finisher/emom/alternating-combo` catalog tokens)
 - Lane 1 template: when mention is alternating + N exercises, inject matrix in `synthesizeProposedBlocksFromMentions` before cardinality check (avoid Lane 2 round-trip)

@@ -214,6 +214,48 @@ describe('parseProposedWorkoutMetadata', () => {
     expect(drops).toEqual([{ field: 'blocks[0]', reason: 'emom_missing_params' }]);
   });
 
+  it('hydrates combo alternating EMOM when is_combo true and stations omitted', () => {
+    const { meta, drops } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Main',
+            block_format: 'emom',
+            format_params: {
+              interval_seconds: 60,
+              total_minutes: 12,
+              is_alternating: true,
+              is_combo: true,
+            },
+            exercises: [
+              { name: 'Back Squat', reps: '5' },
+              { name: 'Push-up', reps: '10' },
+              { name: 'Sit-up', reps: '15' },
+            ],
+          },
+        ],
+      },
+    });
+    expect(drops).toEqual([]);
+    expect(meta.blocks).toEqual([
+      {
+        name: 'Main',
+        block_format: 'emom',
+        format_params: {
+          interval_seconds: 60,
+          total_minutes: 12,
+          is_alternating: true,
+          alternating_stations: [[0], [1, 2]],
+        },
+        exercises: [
+          { name: 'Back Squat', reps: '5' },
+          { name: 'Push-up', reps: '10' },
+          { name: 'Sit-up', reps: '15' },
+        ],
+      },
+    ]);
+  });
+
   it('hydrates alternating EMOM matrix when is_alternating true and stations omitted', () => {
     const { meta, drops } = parseProposedWorkoutMetadataWithDrops({
       proposed_workout_metadata: {

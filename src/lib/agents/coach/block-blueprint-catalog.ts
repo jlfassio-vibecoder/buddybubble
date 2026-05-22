@@ -201,6 +201,25 @@ export const BLOCK_BLUEPRINT_CATALOG: readonly BlockBlueprintCatalogEntry[] = [
     },
   ),
   entry(
+    'main-emom-alternating-combo',
+    'main',
+    'emom',
+    'alternating-combo',
+    'Main · EMOM · Alternating Combo',
+    'MAIN',
+    'Main',
+    'emom',
+    {
+      format_params: {
+        interval_seconds: 60,
+        total_minutes: 10,
+        is_alternating: true,
+        is_combo: true,
+      },
+      searchAliases: ['combo', 'a/b+c', 'paired', 'circuit'],
+    },
+  ),
+  entry(
     'main-emom-straight',
     'main',
     'emom',
@@ -372,6 +391,25 @@ export const BLOCK_BLUEPRINT_CATALOG: readonly BlockBlueprintCatalogEntry[] = [
     {
       format_params: { interval_seconds: 60, total_minutes: 8, is_alternating: true },
       searchAliases: ['pacing', 'minute', 'interval'],
+    },
+  ),
+  entry(
+    'finisher-emom-alternating-combo',
+    'finisher',
+    'emom',
+    'alternating-combo',
+    'Finisher · EMOM · Alternating Combo',
+    'CONDITIONING_AND_FINISHERS',
+    'Finisher',
+    'emom',
+    {
+      format_params: {
+        interval_seconds: 60,
+        total_minutes: 8,
+        is_alternating: true,
+        is_combo: true,
+      },
+      searchAliases: ['combo', 'a/b+c', 'paired', 'circuit'],
     },
   ),
   entry(

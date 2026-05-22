@@ -53,15 +53,15 @@ flowchart TB
 
 ### `tasks.metadata` keys relevant to Step 8
 
-| Key                                         | On source `workout`             | On in-progress `workout_log` draft | On completed `workout_log` (shipped)        |
-| ------------------------------------------- | ------------------------------- | ---------------------------------- | ------------------------------------------- |
-| `ai_workout_factory.workout_set.workouts[]` | ✅ Prescription source of truth | ❌ Not copied (draft autosave TBD) | ✅ **Snapshotted at finish** (M8.2)         |
-| `workout_log_schema_version`                | —                               | —                                  | ✅ `1` on player finish                     |
-| `exercises[]`                               | ✅ Derived cache                | ❌ (draft uses `draft_logs` only)  | ✅ Flat list + `set_logs` on completed sets |
-| `draft_logs`                                | —                               | ✅ Autosave matrix                 | ❌ Removed at finish                        |
-| `source_task_id`                            | —                               | ✅                                 | ✅                                          |
-| `duration_min`                              | optional                        | —                                  | ✅                                          |
-| `class_instance_id`                         | optional                        | optional                           | optional                                    |
+| Key                                         | On source `workout`             | On in-progress `workout_log` draft   | On completed `workout_log` (shipped)        |
+| ------------------------------------------- | ------------------------------- | ------------------------------------ | ------------------------------------------- |
+| `ai_workout_factory.workout_set.workouts[]` | ✅ Prescription source of truth | ✅ **Snapshotted on draft autosave** | ✅ **Snapshotted at finish** (M8.2)         |
+| `workout_log_schema_version`                | —                               | —                                    | ✅ `1` on player finish                     |
+| `exercises[]`                               | ✅ Derived cache                | ❌ (draft uses `draft_logs` only)    | ✅ Flat list + `set_logs` on completed sets |
+| `draft_logs`                                | —                               | ✅ Autosave matrix                   | ❌ Removed at finish                        |
+| `source_task_id`                            | —                               | ✅                                   | ✅                                          |
+| `duration_min`                              | optional                        | —                                    | ✅                                          |
+| `class_instance_id`                         | optional                        | optional                             | optional                                    |
 
 **Conclusion (8.1):** No new table is required. `tasks.metadata` already accepts arbitrary JSON; persisting `ai_workout_factory` on finish is a **write-path** change, not a greenfield schema. Optional hardening: document a **`workout_log_schema_version`** integer for forward-compatible migrations inside JSON.
 
@@ -82,7 +82,7 @@ There is **no** `finish_workout` RPC. Completion is:
 
 `handleFinish` calls `buildWorkoutLogFinishMetadata`, which writes `workout_log_schema_version`, flat `exercises` + `set_logs`, and a deep-cloned `ai_workout_factory` when the source session is rich.
 
-**In-progress draft autosave** still uses [`buildDraftMetadata`](../../../src/components/fitness/WorkoutPlayer.tsx) only (`draft_logs`; factory not copied mid-session) — optional future stretch.
+**In-progress draft autosave** uses [`buildWorkoutLogDraftMetadata`](../../../src/lib/workout-factory/build-workout-log-finish-metadata.ts) (`draft_logs` + deep-cloned `ai_workout_factory` when source is rich).
 
 ---
 
@@ -186,11 +186,11 @@ pnpm run check
 
 ## Remaining limitations (post–Step 8)
 
-1. **Draft autosave** — In-progress `workout_log` drafts still omit `ai_workout_factory` (only `draft_logs`).
+1. **Launch `sourceTaskId` on in-progress log cards** — Kanban/Task Modal may pass the log task id instead of `metadata.source_task_id` for draft recovery (follow-up).
 2. **No finish RPC** — Validation and snapshot normalization are client-side only.
 3. **Parallel legacy stores** — `workout_logs`, `user_workout_logs`, and `workout_exercise_logs` do not participate in the Kanban `workout_log` metadata contract.
 4. **Flat cache still required** — `metadata.exercises` + `set_logs` remain the performance layer; factory is prescription snapshot, not a replacement.
-5. **Manual Task Modal save** — Editing flat exercises on a log via save can still degrade factory via `applyFlatWorkoutEditsToMetadata` (pre-existing; out of Step 8 scope).
+5. **Manual Task Modal save** — **Fixed:** `workout_log` saves use `passThroughRichWorkoutLogMetadata` (factory snapshot + `set_logs` preserved). Workout Viewer flat Apply on logs may still degrade in-memory state before save (separate follow-up).
 6. **AMRAP index drift** — Extra logged rounds live only in flat `exercises`; overlay may diverge if flat order/count disagrees with factory-derived indices.
 
 ---

@@ -31,6 +31,7 @@ import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-sess
 import { buildWorkoutCoachRailContext } from '@/lib/workout-factory/build-workout-coach-rail-context';
 import { registerWorkoutPlayerExecutionPatchApplier } from '@/lib/workout-player-execution-patch-bridge';
 import {
+  buildWorkoutLogDraftMetadata,
   buildWorkoutLogExercisePayloadFromLogs,
   buildWorkoutLogFinishMetadata,
 } from '@/lib/workout-factory/build-workout-log-finish-metadata';
@@ -109,18 +110,6 @@ function logsEqualTemplate(
   blocks: WorkoutSessionBlockView[],
 ): boolean {
   return JSON.stringify(logs) === JSON.stringify(buildPlayerInitialLogs(exercises, blocks));
-}
-
-function buildDraftMetadata(
-  sourceTaskId: string,
-  logs: SetDraft[][],
-  classInstanceId: string | null,
-): Json {
-  return {
-    source_task_id: sourceTaskId,
-    draft_logs: logs,
-    ...(classInstanceId ? { class_instance_id: classInstanceId } : {}),
-  };
 }
 
 const AUTOSAVE_MS = 2000;
@@ -577,7 +566,13 @@ export function WorkoutPlayer({
       saveTimeoutRef.current = null;
       const p = (async () => {
         const supabase = createClient();
-        const meta = buildDraftMetadata(sourceTaskId, logs, class_instance_id);
+        const meta = buildWorkoutLogDraftMetadata({
+          sourceMetadata: metadata,
+          sessionVm,
+          sourceTaskId,
+          draftLogs: logs,
+          classInstanceId: class_instance_id,
+        });
 
         const currentDraftId = activeLogTaskIdRef.current;
         if (!currentDraftId) {
@@ -628,6 +623,8 @@ export function WorkoutPlayer({
     workoutTitle,
     bubbleId,
     class_instance_id,
+    metadata,
+    sessionVm.source,
     exercisesStringDigest,
     blocksDigest,
     exercises,

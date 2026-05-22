@@ -1,12 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import type { Json } from '@/types/database';
-import { richMetadataWithBlockFormat } from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
+import type { SetDraft } from '@/components/fitness/workout-block-renderer/WorkoutPlayerExercisePanel';
+import {
+  richAlternatingEmomMetadata,
+  richMetadataWithBlockFormat,
+} from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import {
   WORKOUT_LOG_SCHEMA_VERSION,
+  buildWorkoutLogDraftMetadata,
   buildWorkoutLogExercisePayloadFromLogs,
   buildWorkoutLogFinishMetadata,
 } from './build-workout-log-finish-metadata';
+
+const sampleDraftLogs: SetDraft[][] = [
+  [{ weight: '50', reps: '5', rpe: '', done: true }],
+  [{ weight: '', reps: '10', rpe: '', done: false }],
+];
 
 function finishParams(
   sourceMetadata: unknown,
@@ -211,6 +221,117 @@ describe('buildWorkoutLogFinishMetadata', () => {
     const meta = buildWorkoutLogFinishMetadata(
       finishParams(source, exercises, { sessionVm: flatVm }),
     ) as Record<string, unknown>;
+
+    expect(meta.ai_workout_factory).toBeUndefined();
+  });
+});
+
+describe('buildWorkoutLogDraftMetadata', () => {
+  it('rich Tabata draft includes factory snapshot and draft_logs', () => {
+    const source = richMetadataWithBlockFormat('tabata');
+    const vm = buildWorkoutSessionViewModel(source as Json);
+
+    const meta = buildWorkoutLogDraftMetadata({
+      sourceMetadata: source as Json,
+      sessionVm: vm,
+      sourceTaskId: 'task-source-1',
+      draftLogs: sampleDraftLogs,
+      classInstanceId: null,
+    }) as Record<string, unknown>;
+
+    expect(meta.workout_log_schema_version).toBeUndefined();
+    expect(meta.exercises).toBeUndefined();
+    expect(meta.source_task_id).toBe('task-source-1');
+    expect(meta.draft_logs).toEqual(sampleDraftLogs);
+    expect(meta.ai_workout_factory).toEqual((source as Record<string, unknown>).ai_workout_factory);
+  });
+
+  it('flat-only source omits ai_workout_factory', () => {
+    const source = {
+      exercises: [{ name: 'Squat', sets: 3, reps: 10 }],
+    };
+    const vm = buildWorkoutSessionViewModel(source as Json);
+
+    const meta = buildWorkoutLogDraftMetadata({
+      sourceMetadata: source as Json,
+      sessionVm: vm,
+      sourceTaskId: 'task-source-1',
+      draftLogs: sampleDraftLogs,
+      classInstanceId: null,
+    }) as Record<string, unknown>;
+
+    expect(meta.ai_workout_factory).toBeUndefined();
+    expect(meta.draft_logs).toEqual(sampleDraftLogs);
+    expect(meta.source_task_id).toBe('task-source-1');
+  });
+
+  it('deep-clone isolation: mutating draft factory does not alter source', () => {
+    const source = richMetadataWithBlockFormat('tabata');
+    const vm = buildWorkoutSessionViewModel(source as Json);
+
+    const meta = buildWorkoutLogDraftMetadata({
+      sourceMetadata: source as Json,
+      sessionVm: vm,
+      sourceTaskId: 'task-source-1',
+      draftLogs: sampleDraftLogs,
+      classInstanceId: null,
+    }) as Record<string, unknown>;
+
+    const af = meta.ai_workout_factory as Record<string, unknown>;
+    const ws = af.workout_set as Record<string, unknown>;
+    ws.title = 'MUTATED';
+
+    const sourceAf = (source as Record<string, unknown>).ai_workout_factory as Record<
+      string,
+      unknown
+    >;
+    const sourceWs = sourceAf.workout_set as Record<string, unknown>;
+    expect(sourceWs.title).toBe('Test set');
+  });
+
+  it('alternating EMOM draft preserves formatParams.alternating_stations', () => {
+    const source = richAlternatingEmomMetadata({
+      totalRounds: 15,
+      cycle: [[0], [1], [2]],
+    });
+    const vm = buildWorkoutSessionViewModel(source as Json);
+
+    const meta = buildWorkoutLogDraftMetadata({
+      sourceMetadata: source as Json,
+      sessionVm: vm,
+      sourceTaskId: 'task-source-1',
+      draftLogs: sampleDraftLogs,
+      classInstanceId: 'class-abc',
+    }) as Record<string, unknown>;
+
+    expect(meta.class_instance_id).toBe('class-abc');
+    const mainBlock = (
+      meta.ai_workout_factory as {
+        workout_set: {
+          workouts: {
+            exerciseBlocks: { blockFormat: string; formatParams: Record<string, unknown> }[];
+          }[];
+        };
+      }
+    ).workout_set.workouts[0].exerciseBlocks[0];
+    expect(mainBlock.blockFormat).toBe('emom');
+    expect(mainBlock.formatParams.is_alternating).toBe(true);
+    expect(mainBlock.formatParams.alternating_stations).toEqual([[0], [1], [2]]);
+  });
+
+  it('defensive: flat sessionVm with rich metadata does not attach factory', () => {
+    const source = richMetadataWithBlockFormat('tabata');
+    const flatVm = buildWorkoutSessionViewModel({
+      exercises: [{ name: 'Squat', sets: 3, reps: 10 }],
+    } as Json);
+
+    const meta = buildWorkoutLogDraftMetadata({
+      sourceMetadata: source as Json,
+      sessionVm: flatVm,
+      sourceTaskId: 'task-source-1',
+      draftLogs: sampleDraftLogs,
+      classInstanceId: null,
+    }) as Record<string, unknown>;
 
     expect(meta.ai_workout_factory).toBeUndefined();
   });

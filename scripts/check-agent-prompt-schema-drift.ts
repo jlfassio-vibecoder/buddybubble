@@ -109,6 +109,8 @@ const REGISTRY: ReadonlyArray<Contract> = [
       'ai_workout_factory',
       'workout_set',
       'parametric_requires_rich_workout_set',
+      // Catalog/hydrator-only EMOM flag (stripped before persist); mentioned in blueprint library prose.
+      'is_combo',
     ],
   },
   {

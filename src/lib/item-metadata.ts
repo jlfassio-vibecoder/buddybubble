@@ -6,6 +6,7 @@ import {
   deriveFlatExercisesFromMetadata,
   flatExercisesMatchDerived,
   hasRichWorkoutSetInMetadata,
+  passThroughRichWorkoutLogMetadata,
 } from '@/lib/workout-factory/sync-workout-metadata';
 
 export { parseTaskMetadata } from '@/lib/parse-task-metadata';
@@ -263,6 +264,10 @@ export function finalizeWorkoutMetadataForSave(
 
   if (!hasRichWorkoutSetInMetadata(o)) {
     return o as Json;
+  }
+
+  if (itemType === 'workout_log') {
+    return passThroughRichWorkoutLogMetadata(o, fields.workoutExercises);
   }
 
   const derived = deriveFlatExercisesFromMetadata(o);
