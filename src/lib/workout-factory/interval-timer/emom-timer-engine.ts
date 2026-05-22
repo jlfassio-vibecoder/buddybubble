@@ -21,6 +21,8 @@ export type EmomTimerSnapshot = {
   isPaused: boolean;
   totalRounds: number;
   displayRound: number;
+  /** Alternating EMOM: 0-based exercise indices active this minute */
+  activeStationIndices: number[] | null;
 };
 
 export type EmomTimerAction =
@@ -143,6 +145,12 @@ export function deriveEmomTimerSnapshot(
   const isPaused = state.phase === 'paused';
   const isRunning = state.phase === 'running' || isPaused;
 
+  const { alternatingStations } = state.config;
+  const activeStationIndices =
+    alternatingStations != null && alternatingStations.length > 0
+      ? [...(alternatingStations[state.roundIndex % alternatingStations.length] ?? [])]
+      : null;
+
   return {
     phase: state.phase,
     roundIndex: state.roundIndex,
@@ -152,5 +160,6 @@ export function deriveEmomTimerSnapshot(
     isPaused,
     totalRounds: state.config.totalRounds,
     displayRound: state.roundIndex + 1,
+    activeStationIndices,
   };
 }

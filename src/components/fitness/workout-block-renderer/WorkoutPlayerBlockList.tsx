@@ -9,7 +9,9 @@ import {
 } from '@/components/fitness/interval-shells';
 import { buildPlayerExerciseIndexLookup } from '@/lib/workout-factory/workout-player-exercise-index';
 import { resolveAmrapTimerConfig } from '@/lib/workout-factory/interval-timer/resolve-amrap-timer-config';
+import { resolveEmomLocalHighlightSetIndex } from '@/lib/workout-factory/interval-timer/resolve-emom-alternating';
 import { resolveEmomTimerConfig } from '@/lib/workout-factory/interval-timer/resolve-emom-timer-config';
+import { isAlternatingEmomParams } from '@/lib/workout-factory/types/emom-format-params';
 import { resolveTabataTimerConfig } from '@/lib/workout-factory/interval-timer/resolve-tabata-timer-config';
 import type { IntervalRowSnapshot } from '@/lib/workout-factory/interval-timer/types';
 import type { WorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
@@ -120,6 +122,19 @@ export function WorkoutPlayerBlockList({
           if (!exercise) return null;
           const showSeparator = globalIndex > 0;
           const intervalSnap = intervalSnapshots[ctx.block.id] ?? null;
+          const formatParams = ctx.block.formatParams ?? {};
+          const isAlternatingEmom =
+            ctx.block.blockFormat === 'emom' && isAlternatingEmomParams(formatParams);
+          const activeSetIndex =
+            intervalSnap && isAlternatingEmom
+              ? resolveEmomLocalHighlightSetIndex(
+                  ctx.exerciseIndexInBlock,
+                  intervalSnap.roundIndex,
+                  formatParams,
+                )
+              : (intervalSnap?.roundIndex ?? null);
+          const activeSetPhase =
+            intervalSnap && activeSetIndex != null ? intervalSnap.activeSetPhase : null;
           return (
             <div key={`${ctx.block.id}-ex-${ctx.exerciseIndexInBlock}`}>
               {showSeparator ? <Separator className="mb-6" /> : null}
@@ -133,8 +148,8 @@ export function WorkoutPlayerBlockList({
                 onSetChange={(si, f, v) => onSetChange(globalIndex, si, f, v)}
                 onToggleDone={(si) => onToggleDone(globalIndex, si)}
                 onAddSet={() => onAddSet(globalIndex)}
-                activeSetIndex={intervalSnap?.roundIndex ?? null}
-                activeSetPhase={intervalSnap?.activeSetPhase ?? null}
+                activeSetIndex={activeSetIndex}
+                activeSetPhase={activeSetPhase}
               />
             </div>
           );

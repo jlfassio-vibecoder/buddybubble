@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
-import { richMetadataWithBlockFormat } from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
+import {
+  richAlternatingEmomMetadata,
+  richMetadataWithBlockFormat,
+} from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
 import { resolveEmomTimerConfig } from './resolve-emom-timer-config';
 
 describe('resolveEmomTimerConfig', () => {
@@ -12,7 +15,17 @@ describe('resolveEmomTimerConfig', () => {
       intervalMs: 60_000,
       totalRounds: 16,
       intervalSeconds: 60,
+      alternatingStations: null,
     });
+  });
+
+  it('includes alternatingStations for alternating EMOM block', () => {
+    const vm = buildWorkoutSessionViewModel(
+      richAlternatingEmomMetadata({ totalRounds: 12, cycle: [[0], [1, 2]] }),
+    );
+    const main = vm.blocks.find((b) => b.blockFormat === 'emom')!;
+    const config = resolveEmomTimerConfig(main);
+    expect(config?.alternatingStations).toEqual([[0], [1, 2]]);
   });
 
   it('returns null for wrong format', () => {

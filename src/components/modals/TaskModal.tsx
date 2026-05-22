@@ -98,6 +98,10 @@ import { BUDDY_ONBOARDING_SYSTEM_EVENT } from '@/lib/agents/buddy-sentinel';
 import { defaultSlugForItemType } from '@/lib/agents/defaultSlugForItemType';
 import { logAgentRoutingEvent } from '@/lib/agents/agentRoutingLogger';
 import { buildTaskModalOutgoingWorkoutContext } from '@/lib/agents/coach/task-modal-outgoing-workout-context';
+import {
+  applyWorkoutPlayerExecutionPatchIfOpen,
+  executionPatchFingerprint,
+} from '@/lib/workout-player-execution-patch-bridge';
 import { hasRichWorkoutSetInMetadata } from '@/lib/workout-factory/sync-workout-metadata';
 import { MessageMediaModal } from '@/components/chat/MessageMediaModal';
 import { useUserProfileStore } from '@/store/userProfileStore';
@@ -286,7 +290,9 @@ export function TaskModal({
   const handledIntakePatchMessageIdsByTaskRef = useRef<Map<string, Set<string>>>(new Map());
   /** Survives StandardTaskChatRail remounts when workout split layout toggles (Phase 12.2). */
   const handledCardActionMessageIdsByTaskRef = useRef<Map<string, Set<string>>>(new Map());
-  const handledExecutionPatchMessageIdsByTaskRef = useRef<Map<string, Set<string>>>(new Map());
+  const handledExecutionPatchFingerprintByTaskRef = useRef<Map<string, Map<string, string>>>(
+    new Map(),
+  );
   /** Keeps workout split engaged after card_action so failed generation does not collapse the rail layout. */
   const [workoutSplitEngaged, setWorkoutSplitEngaged] = useState(false);
 
@@ -295,7 +301,7 @@ export function TaskModal({
     createSessionIdRef.current = null;
     handledIntakePatchMessageIdsByTaskRef.current.clear();
     handledCardActionMessageIdsByTaskRef.current.clear();
-    handledExecutionPatchMessageIdsByTaskRef.current.clear();
+    handledExecutionPatchFingerprintByTaskRef.current.clear();
     setWorkoutSplitEngaged(false);
     setEmbeddedTaskIdsFromThread([]);
   }, [open]);
@@ -1199,13 +1205,15 @@ export function TaskModal({
       const dedupeKey = createSessionIdRef.current
         ? `create:${createSessionIdRef.current}`
         : `existing:${ctx.taskId}`;
-      let set = handledExecutionPatchMessageIdsByTaskRef.current.get(dedupeKey);
-      if (!set) {
-        set = new Set();
-        handledExecutionPatchMessageIdsByTaskRef.current.set(dedupeKey, set);
+      const fp = executionPatchFingerprint(ctx.patch);
+      let byMessage = handledExecutionPatchFingerprintByTaskRef.current.get(dedupeKey);
+      if (!byMessage) {
+        byMessage = new Map();
+        handledExecutionPatchFingerprintByTaskRef.current.set(dedupeKey, byMessage);
       }
-      if (set.has(ctx.messageId)) return;
-      set.add(ctx.messageId);
+      if (fp != null && byMessage.get(ctx.messageId) === fp) return;
+      applyWorkoutPlayerExecutionPatchIfOpen(ctx.patch);
+      if (fp != null) byMessage.set(ctx.messageId, fp);
       // Keep the details pane synchronized with agent-side task mutations emitted via
       // message metadata execution patches without forcing a loading-state flash.
       void loadTask(taskId, { silent: true });

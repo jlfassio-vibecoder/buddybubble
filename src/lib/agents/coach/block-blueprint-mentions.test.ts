@@ -11,6 +11,27 @@ describe('parseBlockBlueprintMentionsFromMetadata', () => {
     expect(parseBlockBlueprintMentionsFromMetadata({ block_blueprint_mentions: [] })).toBeNull();
   });
 
+  it('parses boolean format_params', () => {
+    const rows = parseBlockBlueprintMentionsFromMetadata({
+      block_blueprint_mentions: [
+        {
+          token: ':main/emom/alternating ',
+          section_name: 'Main',
+          section_role: 'main',
+          block_format: 'emom',
+          format_params: {
+            interval_seconds: 60,
+            total_minutes: 10,
+            is_alternating: true,
+          },
+        },
+      ],
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows![0].format_params.is_alternating).toBe(true);
+    expect(rows![0].format_params.interval_seconds).toBe(60);
+  });
+
   it('parses valid mention rows', () => {
     const rows = parseBlockBlueprintMentionsFromMetadata({
       block_blueprint_mentions: [

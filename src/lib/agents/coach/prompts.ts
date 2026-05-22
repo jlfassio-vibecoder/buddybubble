@@ -384,6 +384,79 @@ function parseLiveSetCountsFromContext(parsed: unknown, exerciseCount: number): 
   return counts;
 }
 
+type EmomAlternatingGuideParsed = Array<{
+  block_name?: unknown;
+  cycle_taxonomy?: unknown;
+  exercises?: unknown;
+}>;
+
+function parseEmomAlternatingGuideFromContext(parsed: unknown): EmomAlternatingGuideParsed | null {
+  if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  const raw = (parsed as Record<string, unknown>).emom_alternating_guide;
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  return raw as EmomAlternatingGuideParsed;
+}
+
+/** Renders deterministic minute → setIndex table for alternating EMOM blocks. */
+export function formatEmomAlternatingGuideBlock(parsed: unknown): string | null {
+  const guide = parseEmomAlternatingGuideFromContext(parsed);
+  if (!guide) return null;
+
+  const lines: string[] = ['[Alternating EMOM Guide]'];
+
+  for (const block of guide) {
+    if (block == null || typeof block !== 'object' || Array.isArray(block)) continue;
+    const blockName =
+      typeof block.block_name === 'string' && block.block_name.trim()
+        ? block.block_name.trim()
+        : 'Main';
+    const taxonomy =
+      typeof block.cycle_taxonomy === 'string' && block.cycle_taxonomy.trim()
+        ? block.cycle_taxonomy.trim()
+        : '';
+    const header = taxonomy ? `Block "${blockName}" (${taxonomy}):` : `Block "${blockName}":`;
+    lines.push(header);
+
+    const exercises = block.exercises;
+    if (!Array.isArray(exercises)) continue;
+
+    for (const ex of exercises) {
+      if (ex == null || typeof ex !== 'object' || Array.isArray(ex)) continue;
+      const o = ex as Record<string, unknown>;
+      const exerciseIndex = o.exerciseIndex;
+      const name = typeof o.name === 'string' && o.name.trim() ? o.name.trim() : '(unnamed)';
+      const globalMinutes = o.global_minutes;
+      const setIndices = o.set_indices;
+      if (
+        typeof exerciseIndex !== 'number' ||
+        !Number.isInteger(exerciseIndex) ||
+        exerciseIndex < 0
+      ) {
+        continue;
+      }
+      if (!Array.isArray(globalMinutes) || !Array.isArray(setIndices)) continue;
+      if (globalMinutes.length === 0 || globalMinutes.length !== setIndices.length) continue;
+
+      const minuteList = globalMinutes
+        .filter((m) => typeof m === 'number' && Number.isInteger(m) && m >= 0)
+        .join(', ');
+      const setList = setIndices
+        .filter((s) => typeof s === 'number' && Number.isInteger(s) && s >= 0)
+        .join(', ');
+      if (!minuteList || !setList) continue;
+
+      lines.push(`${exerciseIndex}: ${name} — active minutes ${minuteList} → setIndex ${setList}`);
+    }
+  }
+
+  if (lines.length <= 1) return null;
+
+  lines.push(
+    '*CRITICAL: Never use the global minute as setIndex for Alternating EMOMs. Use the mapped setIndex above.*',
+  );
+  return `\n\n${lines.join('\n')}`;
+}
+
 /**
  * Builds a deterministic exerciseIndex roster from stringified workout context JSON.
  * Returns null when JSON is invalid, truncated, or has no `exercises` array.
@@ -430,8 +503,17 @@ export function formatExerciseIndexMap(
       'Use this index for execution_patch.exerciseIndex (live grid; setIndex is 0-based) and personal_cues_patch[].exerciseIndex (only [dict:...] rows persist).';
     const boundsFooter =
       liveSetCounts != null ? ' setIndex must be 0 .. live_set_counts[exerciseIndex] - 1.' : '';
+    const parsedRoot = Array.isArray(parsed)
+      ? null
+      : parsed && typeof parsed === 'object'
+        ? parsed
+        : null;
+    const emomGuideBlock = parsedRoot != null ? formatEmomAlternatingGuideBlock(parsedRoot) : null;
     return (
-      `\n\n${EXERCISE_INDEX_MAP_HEADER}\n` + lines.join('\n') + `\n\n${baseFooter}${boundsFooter}`
+      `\n\n${EXERCISE_INDEX_MAP_HEADER}\n` +
+      lines.join('\n') +
+      `\n\n${baseFooter}${boundsFooter}` +
+      (emomGuideBlock ?? '')
     );
   } catch {
     return null;

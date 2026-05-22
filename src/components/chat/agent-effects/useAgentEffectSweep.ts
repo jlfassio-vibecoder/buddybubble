@@ -5,6 +5,7 @@ import type { MessageRowWithEmbeddedTask } from '@/types/database';
 import type { AgentDefinitionLite } from '@/lib/agents/resolveTargetAgent';
 import { COACH_SLUG } from '@/lib/agents/coach/config';
 import { parseExecutionPatchFromMetadata, type ExecutionPatch } from '@/types/execution-patch';
+import { executionPatchFingerprint } from '@/lib/workout-player-execution-patch-bridge';
 import { parseTaskModalIntakePatchFromMetadata } from '@/lib/agents/coach/task-modal-intake-patch';
 import { parseCardActionFromMetadata } from '@/components/chat/agent-effects/parse-card-action';
 import type {
@@ -55,11 +56,11 @@ export function useAgentEffectSweep({
   const onEffectTelemetryRef = useRef(onEffectTelemetry);
   onEffectTelemetryRef.current = onEffectTelemetry;
 
-  const handledExecutionPatchMessageIdsRef = useRef<Set<string>>(new Set());
+  const handledExecutionPatchFingerprintRef = useRef<Map<string, string>>(new Map());
   const handledCardActionMessageIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    handledExecutionPatchMessageIdsRef.current.clear();
+    handledExecutionPatchFingerprintRef.current.clear();
     handledCardActionMessageIdsRef.current.clear();
   }, [taskId]);
 
@@ -92,12 +93,15 @@ export function useAgentEffectSweep({
 
       if (onEx) {
         emit?.({ kind: 'effect.scanned', effect: 'execution_patch', messageId: id });
-        if (!handledExecutionPatchMessageIdsRef.current.has(id)) {
-          const meta = row.metadata;
-          const rawEx =
-            meta != null && typeof meta === 'object' && !Array.isArray(meta)
-              ? (meta as { execution_patch?: unknown }).execution_patch
-              : undefined;
+        const meta = row.metadata;
+        const rawEx =
+          meta != null && typeof meta === 'object' && !Array.isArray(meta)
+            ? (meta as { execution_patch?: unknown }).execution_patch
+            : undefined;
+        const fp = executionPatchFingerprint(rawEx);
+        const alreadyApplied =
+          fp != null && handledExecutionPatchFingerprintRef.current.get(id) === fp;
+        if (!alreadyApplied) {
           let patch: ExecutionPatch | null = null;
           let executionPatchParseThrew = false;
           try {
@@ -107,7 +111,6 @@ export function useAgentEffectSweep({
             patch = null;
           }
           if (!patch) {
-            handledExecutionPatchMessageIdsRef.current.add(id);
             emit?.({
               kind: 'effect.parse_dropped',
               effect: 'execution_patch',
@@ -116,7 +119,7 @@ export function useAgentEffectSweep({
             });
           } else {
             onEx({ ...baseCtx, patch });
-            handledExecutionPatchMessageIdsRef.current.add(id);
+            if (fp != null) handledExecutionPatchFingerprintRef.current.set(id, fp);
             emit?.({ kind: 'effect.applied', effect: 'execution_patch', messageId: id });
           }
         }

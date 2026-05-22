@@ -239,6 +239,77 @@ describe('mergeCoachProposedIntoTaskMetadata', () => {
     expect(session.cooldownBlocks.some((c) => c.exerciseName === 'Mobility flow')).toBe(true);
   });
 
+  it('10b — EMOM merge hydrates alternating_stations when is_alternating and matrix omitted', () => {
+    const base = richBaseFixture();
+    const { metadata, mergeLog } = mergeCoachProposedIntoTaskMetadata({
+      base,
+      proposed: {
+        blocks: [
+          {
+            name: 'Main',
+            block_format: 'emom',
+            format_params: {
+              interval_seconds: 60,
+              total_minutes: 10,
+              is_alternating: true,
+            },
+            exercises: [
+              { name: 'Band Bent-Over Rows', sets: 1, reps: '10' },
+              { name: 'Band Woodchoppers', sets: 1, reps: '10' },
+            ],
+          },
+        ],
+      },
+    });
+    const session = (metadata as { ai_workout_factory: { workout_set: { workouts: unknown[] } } })
+      .ai_workout_factory.workout_set.workouts[0] as {
+      exerciseBlocks: Array<Record<string, unknown>>;
+    };
+    const main = session.exerciseBlocks.find((b) => b.name === 'Main');
+    expect(main?.blockFormat).toBe('emom');
+    expect(main?.formatParams).toEqual({
+      interval_seconds: 60,
+      total_minutes: 10,
+      is_alternating: true,
+      alternating_stations: [[0], [1]],
+    });
+    expect(mergeLog.blockFormats).toContain('emom');
+  });
+
+  it('10c — EMOM merge preserves explicit alternating_stations matrix', () => {
+    const base = richBaseFixture();
+    const { metadata } = mergeCoachProposedIntoTaskMetadata({
+      base,
+      proposed: {
+        blocks: [
+          {
+            name: 'Main',
+            block_format: 'emom',
+            format_params: {
+              interval_seconds: 60,
+              total_minutes: 12,
+              is_alternating: true,
+              alternating_stations: [[0], [1, 2]],
+            },
+            exercises: [
+              { name: 'Deadlift', sets: 1, reps: '5' },
+              { name: 'Push-up', sets: 1, reps: '10' },
+              { name: 'Air Squat', sets: 1, reps: '15' },
+            ],
+          },
+        ],
+      },
+    });
+    const session = (metadata as { ai_workout_factory: { workout_set: { workouts: unknown[] } } })
+      .ai_workout_factory.workout_set.workouts[0] as {
+      exerciseBlocks: Array<Record<string, unknown>>;
+    };
+    const main = session.exerciseBlocks.find((b) => b.name === 'Main');
+    expect(main?.formatParams).toMatchObject({
+      alternating_stations: [[0], [1, 2]],
+    });
+  });
+
   it('11 — parametric AMRAP block maps blockFormat and formatParams', () => {
     const base = richBaseFixture();
     const { metadata, mergeLog } = mergeCoachProposedIntoTaskMetadata({

@@ -214,6 +214,115 @@ describe('parseProposedWorkoutMetadata', () => {
     expect(drops).toEqual([{ field: 'blocks[0]', reason: 'emom_missing_params' }]);
   });
 
+  it('hydrates alternating EMOM matrix when is_alternating true and stations omitted', () => {
+    const { meta, drops } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Main',
+            block_format: 'emom',
+            format_params: {
+              interval_seconds: 60,
+              total_minutes: 12,
+              is_alternating: true,
+            },
+            exercises: [
+              { name: 'Deadlift', reps: '5' },
+              { name: 'Push-up', reps: '10' },
+              { name: 'Air Squat', reps: '15' },
+            ],
+          },
+        ],
+      },
+    });
+    expect(drops).toEqual([]);
+    expect(meta.blocks).toEqual([
+      {
+        name: 'Main',
+        block_format: 'emom',
+        format_params: {
+          interval_seconds: 60,
+          total_minutes: 12,
+          is_alternating: true,
+          alternating_stations: [[0], [1], [2]],
+        },
+        exercises: [
+          { name: 'Deadlift', reps: '5' },
+          { name: 'Push-up', reps: '10' },
+          { name: 'Air Squat', reps: '15' },
+        ],
+      },
+    ]);
+  });
+
+  it('passes alternating EMOM with valid alternating_stations', () => {
+    const { meta, drops } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Main',
+            block_format: 'emom',
+            format_params: {
+              interval_seconds: 60,
+              total_minutes: 12,
+              is_alternating: true,
+              alternating_stations: [[0], [1, 2]],
+            },
+            exercises: [
+              { name: 'Deadlift', reps: '5' },
+              { name: 'Push-up', reps: '10' },
+              { name: 'Air Squat', reps: '15' },
+            ],
+          },
+        ],
+      },
+    });
+    expect(drops).toEqual([]);
+    expect(meta.blocks).toEqual([
+      {
+        name: 'Main',
+        block_format: 'emom',
+        format_params: {
+          interval_seconds: 60,
+          total_minutes: 12,
+          is_alternating: true,
+          alternating_stations: [[0], [1, 2]],
+        },
+        exercises: [
+          { name: 'Deadlift', reps: '5' },
+          { name: 'Push-up', reps: '10' },
+          { name: 'Air Squat', reps: '15' },
+        ],
+      },
+    ]);
+  });
+
+  it('drops alternating EMOM when stations are invalid', () => {
+    const { meta, drops } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Main',
+            block_format: 'emom',
+            format_params: {
+              interval_seconds: 60,
+              total_minutes: 12,
+              is_alternating: true,
+              alternating_stations: [[0], [3]],
+            },
+            exercises: [
+              { name: 'Deadlift', reps: '5' },
+              { name: 'Push-up', reps: '10' },
+              { name: 'Air Squat', reps: '15' },
+            ],
+          },
+        ],
+      },
+    });
+    expect(meta.blocks).toBeUndefined();
+    expect(drops).toEqual([{ field: 'blocks[0]', reason: 'emom_alternating_invalid_stations' }]);
+  });
+
   it('validates superset cardinality', () => {
     const pass = parseProposedWorkoutMetadataWithDrops({
       proposed_workout_metadata: {

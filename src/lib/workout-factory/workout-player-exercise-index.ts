@@ -47,6 +47,7 @@ export function playerExerciseIndexByGlobalIndex(
 export type PlayerLogRowBlockContext = {
   blockFormat: string | null;
   formatParams: Record<string, unknown>;
+  exerciseIndexInBlock: number;
 };
 
 /**
@@ -65,5 +66,6 @@ export function blockContextForGlobalIndex(
   return {
     blockFormat: block.blockFormat,
     formatParams: block.formatParams ?? {},
+    exerciseIndexInBlock: entry.exerciseIndexInBlock,
   };
 }

@@ -93,6 +93,7 @@ export const MID_WORKOUT_SUPPORT_MODE_DIRECTIVE =
  */
 export const ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE =
   'EXECUTION STATE (CRITICAL): The member is in an active workout right now. You MUST set create_card to false, task_title, task_description, and coach_task_notes to null, update_existing_task to false, and proposed_workout_metadata to null. Do not describe or claim you are creating a new Kanban workout card. For live set adjustments (load, reps, RPE, done), use execution_patch only. ' +
+  'If the user asks to apply a generic value across a multi-round format (e.g. Tabata, EMOM, circuit), emit execution_patch entries for every valid setIndex for that exercise (0 through live_set_counts[exerciseIndex] - 1). ' +
   'If the user asks a general coaching question, answer in reply_content without card fields.';
 
 /** Conversation-stage enum surfaced to Vertex via the response schema. */

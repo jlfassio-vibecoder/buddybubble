@@ -5,7 +5,7 @@
  * Any change must be hand-mirrored — run `pnpm check:agent-mirror` to verify parity.
  */
 
-import type { VertexResponseSchema } from '../../_shared/llm/types';
+import type { VertexResponseSchema } from '../../_shared/llm/types.ts';
 import { INTAKE_CATEGORIES, INTAKE_PHASES } from './config.ts';
 
 export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
@@ -185,12 +185,28 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
                 type: 'OBJECT',
                 nullable: true,
                 description:
-                  'Format-specific parameters. Required keys depend on block_format (see BLUEPRINT LIBRARY in system prompt): amrap requires time_cap_minutes; emom requires interval_seconds AND (total_minutes OR total_rounds); tabata requires rounds; superset/circuit/contrast require rounds; ladder and pyramid require start_reps and peak_reps; chipper requires rounds and at least 3 exercises; clusters requires reps_per_cluster and clusters; drop_sets requires drop_percent and drops. Omit when straight_sets with default rest.',
+                  'Format-specific parameters. Required keys depend on block_format (see BLUEPRINT LIBRARY in system prompt): amrap requires time_cap_minutes; emom requires interval_seconds AND (total_minutes OR total_rounds); optional emom is_alternating and alternating_stations for minute-bound alternating work; tabata requires rounds; superset/circuit/contrast require rounds; ladder and pyramid require start_reps and peak_reps; chipper requires rounds and at least 3 exercises; clusters requires reps_per_cluster and clusters; drop_sets requires drop_percent and drops. Omit when straight_sets with default rest.',
                 properties: {
                   time_cap_minutes: { type: 'INTEGER', nullable: true },
                   interval_seconds: { type: 'INTEGER', nullable: true },
                   total_minutes: { type: 'INTEGER', nullable: true },
                   total_rounds: { type: 'INTEGER', nullable: true },
+                  is_alternating: {
+                    type: 'BOOLEAN',
+                    nullable: true,
+                    description:
+                      'EMOM only. When true, minute highlights follow alternating_stations instead of a single exercise column. Omit or false for legacy EMOM.',
+                  },
+                  alternating_stations: {
+                    type: 'ARRAY',
+                    nullable: true,
+                    description:
+                      'EMOM only when is_alternating is true. Cycle of minute slots; each slot is an array of 0-based exercise indices within this block. For simple A/B/C rotation set is_alternating true and omit this field — the server auto-builds [[0],[1],[2],…]. For combined minutes supply explicitly, e.g. [[0],[1,2]].',
+                    items: {
+                      type: 'ARRAY',
+                      items: { type: 'INTEGER' },
+                    },
+                  },
                   rounds: { type: 'INTEGER', nullable: true },
                   work_seconds: { type: 'INTEGER', nullable: true },
                   rest_seconds: { type: 'INTEGER', nullable: true },

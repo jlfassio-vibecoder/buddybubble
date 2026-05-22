@@ -13,7 +13,7 @@ export type BlockBlueprintMentionClientPayload = {
   section_name: string;
   section_role: BlockSectionRole;
   block_format: BlockFormat;
-  format_params: Record<string, number | string>;
+  format_params: Record<string, number | string | boolean>;
 };
 
 export const BLOCK_BLUEPRINT_REFS_HEADER = '--- BLOCK_BLUEPRINT_REFS ---';
@@ -41,9 +41,10 @@ export function parseBlockBlueprintMentionsFromMetadata(
     if (typeof fmt !== 'string' || !formats.has(fmt)) continue;
     const paramsRaw = o.format_params;
     if (!paramsRaw || typeof paramsRaw !== 'object' || Array.isArray(paramsRaw)) continue;
-    const format_params: Record<string, number | string> = {};
+    const format_params: Record<string, number | string | boolean> = {};
     for (const [k, v] of Object.entries(paramsRaw as Record<string, unknown>)) {
-      if (typeof v === 'number' && Number.isFinite(v)) format_params[k] = v;
+      if (typeof v === 'boolean') format_params[k] = v;
+      else if (typeof v === 'number' && Number.isFinite(v)) format_params[k] = v;
       else if (typeof v === 'string' && v.trim()) format_params[k] = v.trim();
     }
     out.push({

@@ -75,6 +75,33 @@ describe('mergeBlueprintShellsWithModelBlocks', () => {
     expect(merged[0].format_params).toEqual({ rounds: 8, work_seconds: 20, rest_seconds: 10 });
     expect(merged[0].exercises).toEqual([{ name: 'Burpees', sets: 1, reps: 8 }]);
   });
+
+  it('hydrates alternating EMOM format_params when model fills exercises', () => {
+    const shells = synthesizeProposedBlocksFromMentions([
+      {
+        token: ':main/emom/alternating ',
+        section_name: 'Main',
+        section_role: 'main',
+        block_format: 'emom',
+        format_params: { interval_seconds: 60, total_minutes: 10, is_alternating: true },
+      },
+    ]);
+    const merged = mergeBlueprintShellsWithModelBlocks(shells, [
+      {
+        name: 'Main',
+        exercises: [
+          { name: 'Band Bent-Over Rows', sets: 1, reps: '10' },
+          { name: 'Band Woodchoppers', sets: 1, reps: '10' },
+        ],
+      },
+    ]);
+    expect(merged[0].format_params).toEqual({
+      interval_seconds: 60,
+      total_minutes: 10,
+      is_alternating: true,
+      alternating_stations: [[0], [1]],
+    });
+  });
 });
 
 describe('formatServerBlockShellsPromptBlock', () => {

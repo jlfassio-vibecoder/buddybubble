@@ -1590,3 +1590,31 @@ integrationTest(
     );
   },
 );
+
+integrationTest(
+  'coach reply with execution_patch and intensity wording does not log intake warn',
+  async () => {
+    await withHarness(
+      {
+        vertex: vertexHappy({
+          ...COACH_REPLY,
+          reply_content:
+            'Added 35 reps with an RPE of 8.5 for each set — this gives you a clear intensity goal.',
+          execution_patch: [
+            { exerciseIndex: 5, setIndex: 0, reps: '35', rpe: '8.5' },
+            { exerciseIndex: 5, setIndex: 1, reps: '35', rpe: '8.5' },
+          ],
+        }),
+      },
+      async ({ logs }) => {
+        const response = await handleDispatchRequest(webhookRequest());
+        assertEquals(response.status, 200);
+        assertEquals((await readJson(response)).ok, true);
+        const warn = logs.findLog(
+          (log) => log.msg === 'coach reply_content claims intake update without patch',
+        );
+        assertEquals(warn, undefined);
+      },
+    );
+  },
+);

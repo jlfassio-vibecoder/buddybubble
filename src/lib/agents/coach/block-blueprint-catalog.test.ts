@@ -51,6 +51,25 @@ describe('block-blueprint-catalog', () => {
     expect(searchBlockCatalog('drop').some((e) => e.block_format === 'drop_sets')).toBe(true);
   });
 
+  it('searchBlockCatalog finds EMOM alternating via pacing alias', () => {
+    const pacing = searchBlockCatalog('pacing');
+    expect(pacing.some((e) => e.id === 'main-emom-alternating')).toBe(true);
+    const alt = BLOCK_BLUEPRINT_CATALOG.find((e) => e.id === 'main-emom-alternating');
+    expect(alt?.token).toBe(':main/emom/alternating ');
+    expect(alt?.format_params.is_alternating).toBe(true);
+    expect(alt?.format_params).not.toHaveProperty('alternating_stations');
+  });
+
+  it('EMOM catalog includes straight and density tokens', () => {
+    const straight = BLOCK_BLUEPRINT_CATALOG.find((e) => e.id === 'main-emom-straight');
+    expect(straight?.token).toBe(':main/emom/straight ');
+    expect(straight?.format_params.is_alternating).toBe(false);
+    const density = BLOCK_BLUEPRINT_CATALOG.find((e) => e.id === 'metcon-emom-density');
+    expect(density?.token).toBe(':metcon/emom/density ');
+    expect(density?.format_params.is_alternating).toBe(false);
+    expect(searchBlockCatalog('threshold').some((e) => e.id === 'metcon-emom-density')).toBe(true);
+  });
+
   it('searchBlockCatalog matches ladder and chipper', () => {
     expect(searchBlockCatalog('ladder').length).toBeGreaterThan(0);
     expect(searchBlockCatalog('ladder').every((e) => e.block_format === 'ladder')).toBe(true);
@@ -74,6 +93,15 @@ describe('block-blueprint-catalog', () => {
 });
 
 describe('blockBlueprintMentionFromPick', () => {
+  it('carries is_alternating from alternating EMOM preset', () => {
+    const preset = BLOCK_BLUEPRINT_CATALOG.find((e) => e.id === 'main-emom-alternating');
+    expect(preset).toBeDefined();
+    const mention = blockBlueprintMentionFromPick(preset!);
+    expect(mention.token).toBe(':main/emom/alternating ');
+    expect(mention.format_params.is_alternating).toBe(true);
+    expect(mention.format_params).not.toHaveProperty('alternating_stations');
+  });
+
   it('preserves explicit catalog token', () => {
     const preset = BLOCK_BLUEPRINT_CATALOG.find((e) => e.id === 'finisher-amrap-metcon');
     expect(preset).toBeDefined();

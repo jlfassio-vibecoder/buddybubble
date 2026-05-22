@@ -166,6 +166,50 @@ describe('formatExerciseIndexMap', () => {
     expect(out).not.toContain('log rows');
     expect(out).not.toContain('live_set_counts[exerciseIndex]');
   });
+
+  it('appends Alternating EMOM guide when emom_alternating_guide is present', () => {
+    const json = JSON.stringify({
+      exercises: [{ name: 'Deadlift' }, { name: 'Push-up' }, { name: 'Air Squat' }],
+      live_set_counts: [4, 3, 3],
+      emom_alternating_guide: [
+        {
+          block_name: 'MAIN',
+          cycle_taxonomy: 'A / B / C',
+          exercises: [
+            {
+              exerciseIndex: 0,
+              name: 'Deadlift',
+              global_minutes: [0, 3, 6, 9],
+              set_indices: [0, 1, 2, 3],
+            },
+            {
+              exerciseIndex: 1,
+              name: 'Push-up',
+              global_minutes: [1, 4, 7],
+              set_indices: [0, 1, 2],
+            },
+          ],
+        },
+      ],
+    });
+    const out = formatExerciseIndexMap(json)!;
+    expect(out).toContain('[Alternating EMOM Guide]');
+    expect(out).toContain('Block "MAIN" (A / B / C):');
+    expect(out).toContain('0: Deadlift — active minutes 0, 3, 6, 9 → setIndex 0, 1, 2, 3');
+    expect(out).toContain('1: Push-up — active minutes 1, 4, 7 → setIndex 0, 1, 2');
+    expect(out).toContain(
+      '*CRITICAL: Never use the global minute as setIndex for Alternating EMOMs. Use the mapped setIndex above.*',
+    );
+  });
+
+  it('omits Alternating EMOM guide for legacy workouts', () => {
+    const json = JSON.stringify({
+      exercises: [{ name: 'Burpees' }],
+      live_set_counts: [8],
+    });
+    const out = formatExerciseIndexMap(json)!;
+    expect(out).not.toContain('[Alternating EMOM Guide]');
+  });
 });
 
 describe('taskMetadataLooksWorkoutShaped', () => {

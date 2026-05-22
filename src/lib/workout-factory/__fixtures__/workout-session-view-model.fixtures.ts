@@ -22,6 +22,58 @@ export const FORMAT_PARAMS_BY_BLOCK: Record<BlockFormat, Record<string, unknown>
   drop_sets: { drop_percent: 20, drops: 2 },
 };
 
+export function richAlternatingEmomMetadata(args: {
+  totalRounds: number;
+  cycle: number[][];
+  exerciseNames?: string[];
+}): Record<string, unknown> {
+  const names = args.exerciseNames ?? ['Deadlift', 'Push-up', 'Air Squat'];
+  const exercises = names.map((exerciseName, i) => ({
+    order: i + 1,
+    exerciseName,
+    sets: 1,
+    reps: '10',
+  }));
+
+  return {
+    workout_type: 'Generated',
+    exercises: exercises.map((e) => ({
+      name: e.exerciseName,
+      sets: e.sets,
+      reps: e.reps,
+    })),
+    ai_workout_factory: {
+      generated_at: '2026-06-01T00:00:00Z',
+      model: 'test',
+      workout_set: {
+        title: 'Test set',
+        description: 'Test',
+        difficulty: 'intermediate',
+        workouts: [
+          {
+            title: 'Session',
+            description: 'Session',
+            exerciseBlocks: [
+              {
+                order: 1,
+                name: 'MAIN',
+                blockFormat: 'emom',
+                formatParams: {
+                  interval_seconds: 60,
+                  total_rounds: args.totalRounds,
+                  is_alternating: true,
+                  alternating_stations: args.cycle,
+                },
+                exercises,
+              },
+            ],
+          },
+        ],
+      },
+    },
+  };
+}
+
 export function richMetadataWithBlockFormat(blockFormat: BlockFormat): Record<string, unknown> {
   const exerciseCount =
     blockFormat === 'superset' || blockFormat === 'contrast'

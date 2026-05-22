@@ -3,6 +3,9 @@
  * Used by RichWorkoutReadView and any future workout block headings.
  */
 
+import { formatAlternatingEmomTaxonomy } from '@/lib/workout-factory/format-alternating-taxonomy';
+import { isAlternatingEmomParams } from '@/lib/workout-factory/types/emom-format-params';
+
 function positiveInt(v: unknown): number | null {
   if (typeof v !== 'number' || !Number.isFinite(v)) return null;
   const n = Math.round(v);
@@ -15,17 +18,25 @@ function formatAmrap(params: Record<string, unknown>): string {
 }
 
 function formatEmom(params: Record<string, unknown>): string {
+  const alternating = isAlternatingEmomParams(params);
+  const taxonomy = alternating ? formatAlternatingEmomTaxonomy(params.alternating_stations) : '';
+
   const interval = positiveInt(params.interval_seconds);
   const totalMinutes = positiveInt(params.total_minutes);
   const totalRounds = positiveInt(params.total_rounds);
-  const intervalLabel = interval != null ? ` (Every ${interval}s)` : '';
+  const intervalLabel = !alternating && interval != null ? ` (Every ${interval}s)` : '';
+  const taxonomySuffix = taxonomy ? ` (${taxonomy})` : '';
+  const prefix = alternating ? 'Alternating EMOM' : 'EMOM';
+
   if (totalMinutes != null) {
-    return `${totalMinutes} Min EMOM${intervalLabel}`;
+    return `${totalMinutes} Min ${prefix}${taxonomySuffix}${intervalLabel}`;
   }
   if (totalRounds != null) {
-    return `${totalRounds} Rounds EMOM${intervalLabel}`;
+    return `${totalRounds} Rounds ${prefix}${taxonomySuffix}${intervalLabel}`;
   }
-  return interval != null ? `EMOM (Every ${interval}s)` : 'EMOM';
+  return interval != null
+    ? `${prefix} (Every ${interval}s)${taxonomySuffix}`
+    : `${prefix}${taxonomySuffix}`;
 }
 
 function formatTabata(params: Record<string, unknown>): string {
