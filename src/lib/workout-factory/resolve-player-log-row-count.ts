@@ -9,7 +9,9 @@ import {
   buildPlayerExerciseIndexLookup,
   type PlayerLogRowBlockContext,
 } from '@/lib/workout-factory/workout-player-exercise-index';
+import { countEmomStationLogRows } from '@/lib/workout-factory/interval-timer/resolve-emom-alternating';
 import { resolveEmomTotalRounds } from '@/lib/workout-factory/interval-timer/resolve-emom-total-rounds';
+import { isAlternatingEmomParams } from '@/lib/workout-factory/types/emom-format-params';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 
 export type { PlayerLogRowBlockContext };
@@ -54,7 +56,11 @@ export function resolvePlayerLogRowCount(
   if (blockContext && isRoundDrivenBlockFormat(blockContext.blockFormat)) {
     const blockFormat = blockContext.blockFormat;
     if (blockFormat?.trim().toLowerCase() === 'emom') {
-      const emomRounds = resolveEmomTotalRounds(blockContext.formatParams);
+      const params = blockContext.formatParams;
+      if (isAlternatingEmomParams(params)) {
+        return countEmomStationLogRows(blockContext.exerciseIndexInBlock, params);
+      }
+      const emomRounds = resolveEmomTotalRounds(params);
       if (emomRounds != null && emomRounds > 0) return emomRounds;
     }
     const fromParams = positiveInt(blockContext.formatParams.rounds);

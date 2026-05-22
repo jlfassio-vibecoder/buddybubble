@@ -52,8 +52,21 @@ function EmomIntervalShellInner({
       return;
     }
     const activeSetPhase = snapshot.phase === 'paused' ? 'paused' : 'work';
-    onSnapshot(blockId, { roundIndex: snapshot.roundIndex, activeSetPhase });
-  }, [blockId, onSnapshot, snapshot.phase, snapshot.roundIndex, snapshot.isPaused]);
+    onSnapshot(blockId, {
+      roundIndex: snapshot.roundIndex,
+      activeSetPhase,
+      ...(snapshot.activeStationIndices != null
+        ? { activeStationIndices: snapshot.activeStationIndices }
+        : {}),
+    });
+  }, [
+    blockId,
+    onSnapshot,
+    snapshot.phase,
+    snapshot.roundIndex,
+    snapshot.isPaused,
+    snapshot.activeStationIndices,
+  ]);
 
   const phaseLabel =
     snapshot.phase === 'idle'

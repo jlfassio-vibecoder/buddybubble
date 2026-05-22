@@ -1,7 +1,10 @@
 import { describe, expect, it, afterEach } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
 import type { Json } from '@/types/database';
-import { richMetadataWithBlockFormat } from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
+import {
+  richAlternatingEmomMetadata,
+  richMetadataWithBlockFormat,
+} from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
 import { WorkoutLogReadSummary } from './WorkoutLogReadSummary';
 
 afterEach(() => {
@@ -97,5 +100,20 @@ describe('WorkoutLogReadSummary', () => {
     const { getByText } = render(<WorkoutLogReadSummary metadata={{ exercises: [] }} />);
 
     expect(getByText('No exercises recorded on this log.')).toBeTruthy();
+  });
+
+  it('renders alternating EMOM taxonomy in block subtitle', () => {
+    const metadata = richAlternatingEmomMetadata({
+      totalRounds: 12,
+      cycle: [[0], [1, 2]],
+    });
+
+    const { getByTestId, getByText } = render(
+      <WorkoutLogReadSummary metadata={metadata as Json} />,
+    );
+
+    expect(getByTestId('workout-log-read-summary-blocks')).toBeTruthy();
+    expect(getByText(/Alternating EMOM/)).toBeTruthy();
+    expect(getByText(/A \/ B\+C/)).toBeTruthy();
   });
 });

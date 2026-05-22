@@ -5,6 +5,8 @@
  * so the parity script discovers the pair).
  */
 
+import { hydrateEmomAlternatingStations } from './hydrate-emom-alternating-stations';
+
 export type MergeInput = {
   /** Current `tasks.metadata`. Treated as object; non-object → {}. */
   base: unknown;
@@ -389,6 +391,10 @@ function mergeRichBlocks(
         >;
         newBlock.formatParams = normalizedParams;
       }
+    }
+    if (rawFormat === 'emom' && normalizedParams && mappedInner.length > 0) {
+      normalizedParams = hydrateEmomAlternatingStations(mappedInner.length, normalizedParams);
+      newBlock.formatParams = normalizedParams;
     }
     if (rawFormat === 'emom' && normalizedParams) {
       const interval =

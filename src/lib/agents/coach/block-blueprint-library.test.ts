@@ -4,6 +4,8 @@ import {
   BLOCK_BLUEPRINT_LIBRARY_HEADER,
   BLOCK_FORMAT_ENUM,
   buildBlockBlueprintLibraryPrompt,
+  buildDefaultAlternatingStationsMatrix,
+  hydrateEmomAlternatingStations,
   mapLegacyTypeToBlockFormat,
   normalizeFormatParams,
   shouldInjectBlockBlueprintLibrary,
@@ -103,6 +105,66 @@ describe('normalizeFormatParams', () => {
       drops: 2,
     });
   });
+
+  it('normalizes alternating EMOM params and strips stations when not alternating', () => {
+    expect(
+      normalizeFormatParams('emom', {
+        interval_seconds: 60,
+        total_minutes: 12,
+      }),
+    ).toEqual({ interval_seconds: 60, total_minutes: 12 });
+
+    expect(
+      normalizeFormatParams('emom', {
+        interval_seconds: 60,
+        total_minutes: 12,
+        is_alternating: true,
+        alternating_stations: [[0], [1, 2]],
+      }),
+    ).toEqual({
+      interval_seconds: 60,
+      total_minutes: 12,
+      is_alternating: true,
+      alternating_stations: [[0], [1, 2]],
+    });
+
+    expect(
+      normalizeFormatParams('emom', {
+        interval_seconds: 60,
+        total_minutes: 12,
+        is_alternating: false,
+        alternating_stations: [[0]],
+      }),
+    ).toEqual({ interval_seconds: 60, total_minutes: 12, is_alternating: false });
+
+    expect(
+      normalizeFormatParams('emom', {
+        interval_seconds: 60,
+        total_minutes: 12,
+        is_alternating: true,
+        alternating_stations: [[0], [1.9, 2]],
+      }),
+    ).toEqual({
+      interval_seconds: 60,
+      total_minutes: 12,
+      is_alternating: true,
+      alternating_stations: [[0], [1, 2]],
+    });
+
+    expect(
+      normalizeFormatParams('emom', {
+        interval_seconds: 60,
+        total_minutes: 12,
+        is_alternating: true,
+        alternating_stations: [[1, 1]],
+      }),
+    ).toEqual({
+      interval_seconds: 60,
+      total_minutes: 12,
+      is_alternating: true,
+      alternating_stations: [[1]],
+    });
+  });
 });
 
 describe('validateBlockShape', () => {
@@ -125,6 +187,67 @@ describe('validateBlockShape', () => {
     expect(validateBlockShape('emom', 1, { interval_seconds: 60 })).toBe('emom_missing_params');
     expect(validateBlockShape('emom', 1, { interval_seconds: 60, total_minutes: 16 })).toBeNull();
     expect(validateBlockShape('emom', 1, { interval_seconds: 60, total_rounds: 10 })).toBeNull();
+  });
+
+  it('buildDefaultAlternatingStationsMatrix builds one index per exercise', () => {
+    expect(buildDefaultAlternatingStationsMatrix(0)).toEqual([]);
+    expect(buildDefaultAlternatingStationsMatrix(1)).toEqual([[0]]);
+    expect(buildDefaultAlternatingStationsMatrix(3)).toEqual([[0], [1], [2]]);
+  });
+
+  it('hydrateEmomAlternatingStations injects matrix when missing', () => {
+    const base = { interval_seconds: 60, total_minutes: 10, is_alternating: true };
+    expect(hydrateEmomAlternatingStations(0, base)).toEqual(base);
+    expect(hydrateEmomAlternatingStations(3, base)).toEqual({
+      ...base,
+      alternating_stations: [[0], [1], [2]],
+    });
+    expect(hydrateEmomAlternatingStations(3, { ...base, is_alternating: false })).toEqual({
+      ...base,
+      is_alternating: false,
+    });
+    expect(
+      hydrateEmomAlternatingStations(3, {
+        ...base,
+        alternating_stations: [[0], [1, 2]],
+      }),
+    ).toEqual({ ...base, alternating_stations: [[0], [1, 2]] });
+    expect(hydrateEmomAlternatingStations(3, { ...base, alternating_stations: [] })).toEqual({
+      ...base,
+      alternating_stations: [[0], [1], [2]],
+    });
+  });
+
+  it('hydrateEmomAlternatingStations enables validateBlockShape for simple alternating EMOM', () => {
+    const params = hydrateEmomAlternatingStations(3, {
+      interval_seconds: 60,
+      total_minutes: 12,
+      is_alternating: true,
+    });
+    expect(validateBlockShape('emom', 3, params)).toBeNull();
+  });
+
+  it('validates alternating EMOM stations when is_alternating is true', () => {
+    const params = {
+      interval_seconds: 60,
+      total_minutes: 12,
+      is_alternating: true,
+      alternating_stations: [[0], [1, 2]],
+    };
+    expect(validateBlockShape('emom', 3, params)).toBeNull();
+    expect(validateBlockShape('emom', 2, params)).toBe('emom_alternating_invalid_stations');
+    expect(validateBlockShape('emom', 3, { ...params, alternating_stations: [[0]] })).toBeNull();
+    expect(
+      validateBlockShape('emom', 3, {
+        interval_seconds: 60,
+        total_minutes: 12,
+        is_alternating: true,
+      }),
+    ).toBe('emom_alternating_invalid_stations');
+  });
+
+  it('legacy emom with multiple exercises passes without alternating keys', () => {
+    expect(validateBlockShape('emom', 2, { interval_seconds: 60, total_minutes: 16 })).toBeNull();
   });
 
   it('requires tabata rounds', () => {
@@ -209,6 +332,8 @@ describe('buildBlockBlueprintLibraryPrompt', () => {
     expect(prose).toContain('exactly 2');
     expect(prose.toLowerCase()).toContain('instruction-only');
     expect(prose).toContain('derives them from interval_seconds');
+    expect(prose).toContain('omit alternating_stations');
+    expect(prose).toContain('auto-builds');
     expect(prose).toContain('ladder');
     expect(prose).toContain('chipper');
     expect(prose).toContain('start_reps');

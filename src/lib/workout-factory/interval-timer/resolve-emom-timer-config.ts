@@ -1,4 +1,5 @@
 import { resolveEmomTotalRounds } from '@/lib/workout-factory/interval-timer/resolve-emom-total-rounds';
+import { isAlternatingEmomParams } from '@/lib/workout-factory/types/emom-format-params';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 
 export type EmomTimerConfig = {
@@ -6,6 +7,8 @@ export type EmomTimerConfig = {
   totalRounds: number;
   /** For display: Minute vs Round label */
   intervalSeconds: number;
+  /** Alternating EMOM cycle; null for legacy single-column EMOM */
+  alternatingStations: readonly (readonly number[])[] | null;
 };
 
 function positiveInt(v: unknown): number | null {
@@ -26,9 +29,12 @@ export function resolveEmomTimerConfig(block: WorkoutSessionBlockView): EmomTime
   const totalRounds = resolveEmomTotalRounds(params);
   if (totalRounds == null || totalRounds <= 0) return null;
 
+  const alternatingStations = isAlternatingEmomParams(params) ? params.alternating_stations : null;
+
   return {
     intervalMs: intervalSeconds * 1000,
     totalRounds,
     intervalSeconds,
+    alternatingStations,
   };
 }

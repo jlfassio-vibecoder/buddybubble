@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
-import { richMetadataWithBlockFormat } from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
+import {
+  richAlternatingEmomMetadata,
+  richMetadataWithBlockFormat,
+} from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
+import { buildPlayerInitialLogs } from '@/lib/workout-factory/resolve-player-log-row-count';
 import { WorkoutPlayerBlockList } from './WorkoutPlayerBlockList';
 import type { SetDraft } from './WorkoutPlayerExercisePanel';
 
@@ -89,6 +93,36 @@ describe('WorkoutPlayerBlockList', () => {
     expect(list?.querySelector('[data-testid^="amrap-interval-shell-"]')).toBeNull();
     const emomBlock = vm.blocks.find((b) => b.blockFormat === 'emom');
     expect(emomBlock).toBeDefined();
+    expect(
+      list?.querySelector(`[data-testid="emom-interval-shell-${emomBlock!.id}"]`),
+    ).toBeTruthy();
+  });
+
+  it('renders alternating EMOM with uneven log rows per exercise', () => {
+    const vm = buildWorkoutSessionViewModel(
+      richAlternatingEmomMetadata({ totalRounds: 10, cycle: [[0], [1], [2]] }),
+    );
+    const logs = buildPlayerInitialLogs(vm.flatExercises, vm.blocks);
+    expect(logs.map((r) => r.length)).toEqual([4, 3, 3]);
+
+    const { container } = render(
+      <WorkoutPlayerBlockList
+        viewModel={vm}
+        flatExercises={vm.flatExercises}
+        logs={logs}
+        view="simple"
+        unit="kg"
+        personalNotesByExerciseIndex={vm.flatExercises.map(() => null)}
+        onSetChange={() => {}}
+        onToggleDone={() => {}}
+        onAddSet={() => {}}
+        onLogAmrapRound={() => {}}
+      />,
+    );
+
+    const list = container.querySelector('[data-testid="workout-player-block-list"]');
+    expect(list?.querySelectorAll('[data-testid^="exercise-panel-"]')).toHaveLength(3);
+    const emomBlock = vm.blocks.find((b) => b.blockFormat === 'emom');
     expect(
       list?.querySelector(`[data-testid="emom-interval-shell-${emomBlock!.id}"]`),
     ).toBeTruthy();

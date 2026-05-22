@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { richMetadataWithBlockFormat } from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
+import {
+  richAlternatingEmomMetadata,
+  richMetadataWithBlockFormat,
+} from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import {
   buildWorkoutCoachRailContext,
@@ -64,6 +67,22 @@ describe('buildWorkoutCoachRailContext', () => {
     const metadata = richMetadataWithBlockFormat('tabata');
     const ctx = buildWorkoutCoachRailContext(metadata, 'Tabata', [0]);
     expect(ctx.live_set_counts).toBeUndefined();
+  });
+
+  it('includes emom_alternating_guide for alternating EMOM metadata', () => {
+    const metadata = richAlternatingEmomMetadata({
+      totalRounds: 10,
+      cycle: [[0], [1], [2]],
+    });
+    const ctx = buildWorkoutCoachRailContext(metadata, 'EMOM day');
+    expect(ctx.emom_alternating_guide).toBeTruthy();
+    expect(Array.isArray(ctx.emom_alternating_guide)).toBe(true);
+  });
+
+  it('omits emom_alternating_guide for tabata metadata', () => {
+    const metadata = richMetadataWithBlockFormat('tabata');
+    const ctx = buildWorkoutCoachRailContext(metadata, 'Tabata day');
+    expect(ctx.emom_alternating_guide).toBeUndefined();
   });
 });
 

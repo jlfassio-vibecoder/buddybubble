@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BLOCK_FORMAT_ENUM } from '@/lib/agents/coach/block-blueprint-library';
 import {
+  richAlternatingEmomMetadata,
   richMetadataWithBlockFormat,
   SUBTITLE_SNIPPETS,
 } from './__fixtures__/workout-session-view-model.fixtures';
@@ -81,5 +82,14 @@ describe('buildWorkoutSessionViewModel', () => {
       .filter((b) => b.section === 'main')
       .reduce((n, b) => n + b.exercises.length, 0);
     expect(vm.flatExercises.length).toBe(mainCount);
+  });
+
+  it('alternating EMOM main block subtitle includes taxonomy', () => {
+    const vm = buildWorkoutSessionViewModel(
+      richAlternatingEmomMetadata({ totalRounds: 12, cycle: [[0], [1, 2]] }),
+    );
+    const main = vm.blocks.find((b) => b.section === 'main');
+    expect(main?.subtitle).toContain('Alternating EMOM');
+    expect(main?.subtitle).toContain('A / B+C');
   });
 });

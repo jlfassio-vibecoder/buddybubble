@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
-import { richMetadataWithBlockFormat } from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
+import {
+  richAlternatingEmomMetadata,
+  richMetadataWithBlockFormat,
+} from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
 import {
   formatBlockSummaryLine,
   formatFlatExerciseLine,
@@ -41,5 +44,14 @@ describe('formatRichWorkoutStripSummary', () => {
     if (main.subtitle) {
       expect(text).toContain(main.subtitle);
     }
+  });
+
+  it('includes alternating EMOM taxonomy in coach strip summary', () => {
+    const vm = buildWorkoutSessionViewModel(
+      richAlternatingEmomMetadata({ totalRounds: 12, cycle: [[0], [1, 2]] }),
+    );
+    const text = formatRichWorkoutStripSummary(vm.blocks, { maxBlocks: 3 });
+    expect(text).toContain('A / B+C');
+    expect(text).toContain('Alternating EMOM');
   });
 });

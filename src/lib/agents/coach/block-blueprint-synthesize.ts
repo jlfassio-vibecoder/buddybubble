@@ -3,7 +3,8 @@
  * Mirror: `supabase/functions/agents/coach/block-blueprint-synthesize.ts`. Run `pnpm check:agent-mirror`.
  */
 
-import { normalizeFormatParams } from './block-blueprint-library';
+// prettier-ignore
+import { hydrateEmomAlternatingStations, normalizeFormatParams } from './block-blueprint-library';
 import type { BlockBlueprintMentionClientPayload } from './block-blueprint-mentions';
 
 export const WORKOUT_BLOCK_INDEX_HEADER = '--- WORKOUT BLOCK INDEX (append-only rail) ---';
@@ -192,10 +193,14 @@ export function mergeBlueprintShellsWithModelBlocks(
       model && Array.isArray(model.exercises) && model.exercises.length > 0
         ? model.exercises
         : shell.exercises;
+    let format_params = shell.format_params;
+    if (shell.block_format === 'emom' && exercises.length > 0) {
+      format_params = hydrateEmomAlternatingStations(exercises.length, format_params);
+    }
     return {
       name: shell.name,
       block_format: shell.block_format,
-      format_params: shell.format_params,
+      format_params,
       exercises,
     };
   });

@@ -5,7 +5,8 @@
  * Any change must be hand-mirrored — run `pnpm check:agent-mirror` to verify parity.
  */
 
-import { normalizeFormatParams } from './block-blueprint-library.ts';
+// prettier-ignore
+import { hydrateEmomAlternatingStations, normalizeFormatParams } from './block-blueprint-library.ts';
 import type { BlockBlueprintMentionClientPayload } from './block-blueprint-mentions.ts';
 
 export const WORKOUT_BLOCK_INDEX_HEADER = '--- WORKOUT BLOCK INDEX (append-only rail) ---';
@@ -194,10 +195,14 @@ export function mergeBlueprintShellsWithModelBlocks(
       model && Array.isArray(model.exercises) && model.exercises.length > 0
         ? model.exercises
         : shell.exercises;
+    let format_params = shell.format_params;
+    if (shell.block_format === 'emom' && exercises.length > 0) {
+      format_params = hydrateEmomAlternatingStations(exercises.length, format_params);
+    }
     return {
       name: shell.name,
       block_format: shell.block_format,
-      format_params: shell.format_params,
+      format_params,
       exercises,
     };
   });

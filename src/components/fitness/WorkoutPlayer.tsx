@@ -29,6 +29,7 @@ import { useUserExerciseNotes, type UserExerciseNotesRow } from '@/hooks/useUser
 import { useWorkoutSessionViewModel } from '@/hooks/use-workout-session-view-model';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import { buildWorkoutCoachRailContext } from '@/lib/workout-factory/build-workout-coach-rail-context';
+import { registerWorkoutPlayerExecutionPatchApplier } from '@/lib/workout-player-execution-patch-bridge';
 import {
   buildWorkoutLogExercisePayloadFromLogs,
   buildWorkoutLogFinishMetadata,
@@ -714,6 +715,15 @@ export function WorkoutPlayer({
       return next;
     });
   }, []);
+
+  useEffect(() => {
+    if (!open) {
+      registerWorkoutPlayerExecutionPatchApplier(null);
+      return;
+    }
+    registerWorkoutPlayerExecutionPatchApplier(handleApplyExecutionPatch);
+    return () => registerWorkoutPlayerExecutionPatchApplier(null);
+  }, [open, handleApplyExecutionPatch]);
 
   const handleFinish = useCallback(async () => {
     if (saveTimeoutRef.current) {

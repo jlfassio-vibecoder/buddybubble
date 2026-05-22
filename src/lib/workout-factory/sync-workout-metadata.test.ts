@@ -168,6 +168,56 @@ describe('applyBlockEditsToMetadata', () => {
     expect(af.workout_set.workouts[0].exerciseBlocks[0].blockFormat).toBe('tabata');
   });
 
+  it('preserves alternating EMOM formatParams on block edit round-trip', () => {
+    const alternatingEmomParams = {
+      interval_seconds: 60,
+      total_minutes: 12,
+      is_alternating: true,
+      alternating_stations: [[0], [1, 2]],
+    };
+    const meta = {
+      ...richMetadataWithBlockFormat('emom'),
+      ai_workout_factory: {
+        ...(richMetadataWithBlockFormat('emom').ai_workout_factory as object),
+        workout_set: {
+          ...(
+            richMetadataWithBlockFormat('emom').ai_workout_factory as {
+              workout_set: Record<string, unknown>;
+            }
+          ).workout_set,
+          workouts: [
+            {
+              title: 'Session',
+              description: 'Session',
+              exerciseBlocks: [
+                {
+                  name: 'MAIN',
+                  blockFormat: 'emom',
+                  formatParams: alternatingEmomParams,
+                  exercises: [
+                    { order: 1, exerciseName: 'Deadlift', sets: 1, reps: '5' },
+                    { order: 2, exerciseName: 'Push-up', sets: 1, reps: '10' },
+                    { order: 3, exerciseName: 'Air Squat', sets: 1, reps: '15' },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    };
+
+    const vm1 = buildWorkoutSessionViewModel(meta);
+    const main = vm1.blocks.find((b) => b.section === 'main')!;
+    expect(main.formatParams).toEqual(alternatingEmomParams);
+
+    const next = applyBlockEditsToMetadata(meta, vm1.blocks) as Record<string, unknown>;
+    const vm2 = buildWorkoutSessionViewModel(next);
+    const main2 = vm2.blocks.find((b) => b.section === 'main')!;
+
+    expect(main2.formatParams).toEqual(alternatingEmomParams);
+  });
+
   it('round-trips physiological fields to flat exercises cache', () => {
     const meta = richBaseFixture();
     const vm1 = buildWorkoutSessionViewModel(meta);

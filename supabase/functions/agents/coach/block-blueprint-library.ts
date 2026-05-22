@@ -3,6 +3,7 @@
  * Body below is byte-for-byte identical to the canonical Vitest-side file (excluding
  * this header). Any change must be hand-mirrored — run `pnpm check:agent-mirror` to verify parity.
  */
+
 export const BLOCK_FORMAT_ENUM = [
   'straight_sets',
   'superset',
@@ -27,6 +28,7 @@ export type BlockShapeDropReason =
   | 'superset_cardinality'
   | 'circuit_cardinality'
   | 'emom_missing_params'
+  | 'emom_alternating_invalid_stations'
   | 'amrap_missing_time_cap'
   | 'tabata_missing_rounds'
   | 'ladder_missing_reps'
@@ -48,7 +50,14 @@ export const FORMAT_PARAM_KEYS_BY_FORMAT: Readonly<Record<BlockFormat, readonly 
   superset: ['rounds', 'rest_between_rounds_seconds', 'pairing_notes'],
   circuit: ['rounds', 'rest_between_rounds_seconds', 'rest_between_exercises_seconds'],
   amrap: ['time_cap_minutes', 'target_rounds', 'rest_between_rounds_seconds'],
-  emom: ['interval_seconds', 'total_minutes', 'total_rounds', 'rest_in_interval_seconds'],
+  emom: [
+    'interval_seconds',
+    'total_minutes',
+    'total_rounds',
+    'rest_in_interval_seconds',
+    'is_alternating',
+    'alternating_stations',
+  ],
   tabata: ['work_seconds', 'rest_seconds', 'rounds'],
   ladder: ['start_reps', 'peak_reps', 'step_reps', 'direction', 'rounds'],
   chipper: ['rounds', 'time_cap_minutes'],
@@ -145,6 +154,47 @@ function positiveNumber(value: unknown): number | null {
   return null;
 }
 
+/** Normalize alternating EMOM station cycle; null when malformed. */
+function normalizeAlternatingStations(raw: unknown): number[][] | null {
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const out: number[][] = [];
+  for (const minute of raw) {
+    if (!Array.isArray(minute) || minute.length === 0) return null;
+    const indices: number[] = [];
+    const seen = new Set<number>();
+    for (const idx of minute) {
+      if (typeof idx !== 'number' || !Number.isFinite(idx)) return null;
+      const i = Math.trunc(idx);
+      if (i < 0) return null;
+      if (!seen.has(i)) {
+        seen.add(i);
+        indices.push(i);
+      }
+    }
+    if (indices.length === 0) return null;
+    out.push(indices);
+  }
+  return out;
+}
+
+function validateEmomAlternatingStations(
+  params: Record<string, unknown>,
+  exercisesLength: number,
+): boolean {
+  if (params.is_alternating !== true) return true;
+  const raw = params.alternating_stations;
+  if (!Array.isArray(raw) || raw.length === 0) return false;
+  for (const minute of raw) {
+    if (!Array.isArray(minute) || minute.length === 0) return false;
+    for (const idx of minute) {
+      if (typeof idx !== 'number' || !Number.isFinite(idx)) return false;
+      const i = Math.trunc(idx);
+      if (i < 0 || i >= exercisesLength) return false;
+    }
+  }
+  return true;
+}
+
 const INTEGER_PARAM_KEYS = new Set([
   'time_cap_minutes',
   'interval_seconds',
@@ -196,10 +246,23 @@ export function normalizeFormatParams(format: BlockFormat, raw: unknown): Record
       if (n != null) out.target_rpe = n;
       continue;
     }
+    if (key === 'is_alternating') {
+      if (v === true) out.is_alternating = true;
+      else if (v === false) out.is_alternating = false;
+      continue;
+    }
+    if (key === 'alternating_stations') {
+      const stations = normalizeAlternatingStations(v);
+      if (stations != null) out.alternating_stations = stations;
+      continue;
+    }
     if (INTEGER_PARAM_KEYS.has(key)) {
       const n = positiveInt(v);
       if (n != null) out[key] = n;
     }
+  }
+  if (out.is_alternating !== true) {
+    delete out.alternating_stations;
   }
   // Defensive: only emit keys in allow-list even if raw had extras
   for (const k of Object.keys(out)) {
@@ -211,6 +274,11 @@ export function normalizeFormatParams(format: BlockFormat, raw: unknown): Record
 function hasPositiveIntParam(params: Record<string, unknown>, key: string): boolean {
   return typeof params[key] === 'number' && (params[key] as number) > 0;
 }
+
+export {
+  buildDefaultAlternatingStationsMatrix,
+  hydrateEmomAlternatingStations,
+} from '../../_shared/workout-metadata/hydrate-emom-alternating-stations.ts';
 
 /** Returns drop reason or null when shape is valid. */
 export function validateBlockShape(
@@ -233,6 +301,9 @@ export function validateBlockShape(
       const hasDuration =
         hasPositiveIntParam(params, 'total_minutes') || hasPositiveIntParam(params, 'total_rounds');
       if (!hasDuration) return 'emom_missing_params';
+      if (!validateEmomAlternatingStations(params, exercisesLength)) {
+        return 'emom_alternating_invalid_stations';
+      }
       return null;
     }
     case 'tabata':
@@ -304,7 +375,7 @@ export function buildBlockBlueprintLibraryPrompt(): string {
     '\n' +
     'amrap — As many rounds as possible in a time cap. Required format_params: time_cap_minutes. Optional: target_rounds, rest_between_rounds_seconds. exercises[] repeat in order until time_cap_minutes elapses.\n' +
     '\n' +
-    'emom — Every minute on the minute. Required format_params: interval_seconds AND (total_minutes OR total_rounds). Optional: rest_in_interval_seconds. Hydrate exercises[] with one movement per minute slot, or alternating A/B each minute. You MAY emit per-exercise work_seconds / rest_seconds (e.g. 15s deadlifts + 45s rest in a 60-second minute); when omitted, the server derives them from interval_seconds and rest_in_interval_seconds.\n' +
+    'emom — Every minute on the minute. Required format_params: interval_seconds AND (total_minutes OR total_rounds). Optional: rest_in_interval_seconds, is_alternating (boolean), alternating_stations (array of index arrays, 0-based within exercises[]). For simple A/B/C rotation set is_alternating true and omit alternating_stations — the server auto-builds [[0],[1],[2],…]. For combined minutes (e.g. A / B+C) supply alternating_stations explicitly such as [[0],[1,2]]. Do NOT use circuit for minute-bound alternating work. You MAY emit per-exercise work_seconds / rest_seconds; when omitted, the server derives them from interval_seconds and rest_in_interval_seconds.\n' +
     '\n' +
     'tabata — Work / rest intervals. Required format_params: rounds. Optional: work_seconds (default 20), rest_seconds (default 10). Each exercise inherits work_seconds / rest_seconds / rounds from format_params; you may override per-exercise with work_seconds / rest_seconds.\n' +
     '\n' +

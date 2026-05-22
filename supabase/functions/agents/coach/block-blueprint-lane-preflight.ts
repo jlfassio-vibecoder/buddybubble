@@ -33,7 +33,7 @@ import {
   templateBlockAppendReply,
 } from './block-blueprint-router.ts';
 import type { BlockFormat } from './block-blueprint-library.ts';
-import { validateBlockShape } from './block-blueprint-library.ts';
+import { hydrateEmomAlternatingStations, validateBlockShape } from './block-blueprint-library.ts';
 import { parseBlockBlueprintMentionsFromMetadata } from './block-blueprint-mentions.ts';
 import { parseExerciseMentionsFromMetadata } from './exercise-mentions.ts';
 import {
@@ -147,7 +147,11 @@ function blocksMeetCardinality(
   for (const shell of shells) {
     const count = Array.isArray(shell.exercises) ? shell.exercises.length : 0;
     if (!blockMeetsExerciseCardinality(shell.block_format as BlockFormat, count)) return false;
-    const shape = validateBlockShape(shell.block_format as BlockFormat, count, shell.format_params);
+    let formatParams = shell.format_params as Record<string, unknown>;
+    if (shell.block_format === 'emom') {
+      formatParams = hydrateEmomAlternatingStations(count, formatParams);
+    }
+    const shape = validateBlockShape(shell.block_format as BlockFormat, count, formatParams);
     if (shape != null) return false;
   }
   return true;

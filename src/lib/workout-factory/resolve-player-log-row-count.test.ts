@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { richMetadataWithBlockFormat } from './__fixtures__/workout-session-view-model.fixtures';
+import {
+  richAlternatingEmomMetadata,
+  richMetadataWithBlockFormat,
+} from './__fixtures__/workout-session-view-model.fixtures';
 import { buildPlayerInitialLogs, resolvePlayerLogRowCount } from './resolve-player-log-row-count';
 import { buildWorkoutSessionViewModel } from './workout-session-view-model';
 
@@ -10,7 +13,11 @@ describe('resolvePlayerLogRowCount', () => {
     const ex = vm.flatExercises[0]!;
     expect(ex.sets).toBe(1);
     expect(
-      resolvePlayerLogRowCount(ex, { blockFormat: 'tabata', formatParams: main.formatParams }),
+      resolvePlayerLogRowCount(ex, {
+        blockFormat: 'tabata',
+        formatParams: main.formatParams,
+        exerciseIndexInBlock: 0,
+      }),
     ).toBe(8);
   });
 
@@ -18,7 +25,7 @@ describe('resolvePlayerLogRowCount', () => {
     expect(
       resolvePlayerLogRowCount(
         { name: 'Squat', sets: 4, reps: 5 },
-        { blockFormat: 'straight_sets', formatParams: {} },
+        { blockFormat: 'straight_sets', formatParams: {}, exerciseIndexInBlock: 0 },
       ),
     ).toBe(4);
   });
@@ -37,15 +44,50 @@ describe('resolvePlayerLogRowCount', () => {
     const main = vm.blocks.find((b) => b.section === 'main')!;
     const ex = vm.flatExercises[0]!;
     expect(
-      resolvePlayerLogRowCount(ex, { blockFormat: 'emom', formatParams: main.formatParams }),
+      resolvePlayerLogRowCount(ex, {
+        blockFormat: 'emom',
+        formatParams: main.formatParams,
+        exerciseIndexInBlock: 0,
+      }),
     ).toBe(16);
+  });
+
+  it('allocates uneven rows for alternating EMOM A/B/C', () => {
+    const meta = richAlternatingEmomMetadata({
+      totalRounds: 10,
+      cycle: [[0], [1], [2]],
+    });
+    const vm = buildWorkoutSessionViewModel(meta);
+    const main = vm.blocks.find((b) => b.section === 'main')!;
+    const params = main.formatParams;
+    expect(
+      resolvePlayerLogRowCount(vm.flatExercises[0]!, {
+        blockFormat: 'emom',
+        formatParams: params,
+        exerciseIndexInBlock: 0,
+      }),
+    ).toBe(4);
+    expect(
+      resolvePlayerLogRowCount(vm.flatExercises[1]!, {
+        blockFormat: 'emom',
+        formatParams: params,
+        exerciseIndexInBlock: 1,
+      }),
+    ).toBe(3);
+    expect(
+      resolvePlayerLogRowCount(vm.flatExercises[2]!, {
+        blockFormat: 'emom',
+        formatParams: params,
+        exerciseIndexInBlock: 2,
+      }),
+    ).toBe(3);
   });
 
   it('uses formatParams.rounds for circuit', () => {
     expect(
       resolvePlayerLogRowCount(
         { name: 'A', sets: 1 },
-        { blockFormat: 'circuit', formatParams: { rounds: 3 } },
+        { blockFormat: 'circuit', formatParams: { rounds: 3 }, exerciseIndexInBlock: 0 },
       ),
     ).toBe(3);
   });
@@ -68,6 +110,14 @@ describe('buildPlayerInitialLogs', () => {
     for (const row of logs) {
       expect(row).toHaveLength(16);
     }
+  });
+
+  it('builds uneven rows for alternating EMOM', () => {
+    const vm = buildWorkoutSessionViewModel(
+      richAlternatingEmomMetadata({ totalRounds: 10, cycle: [[0], [1], [2]] }),
+    );
+    const logs = buildPlayerInitialLogs(vm.flatExercises, vm.blocks);
+    expect(logs.map((r) => r.length)).toEqual([4, 3, 3]);
   });
 
   it('builds 4 rows for flat-only straight sets', () => {

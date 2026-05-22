@@ -24,7 +24,7 @@ export type BlockBlueprintCatalogEntry = {
   searchAliases: string[];
   section_name: string;
   block_format: BlockFormat;
-  format_params: Record<string, number | string>;
+  format_params: Record<string, number | string | boolean>;
   /** Search-only; not sent on the wire */
   physiological_focus?: string;
 };
@@ -45,7 +45,9 @@ export const BLOCK_CATALOG_GROUP_LABELS: Readonly<Record<BlockCatalogGroup, stri
   RECOVERY: 'RECOVERY',
 };
 
-export function defaultFormatParamsFor(format: BlockFormat): Record<string, number | string> {
+export function defaultFormatParamsFor(
+  format: BlockFormat,
+): Record<string, number | string | boolean> {
   switch (format) {
     case 'amrap':
       return { time_cap_minutes: 5 };
@@ -88,7 +90,7 @@ function entry(
   section_name: string,
   block_format: BlockFormat,
   opts?: {
-    format_params?: Record<string, number | string>;
+    format_params?: Record<string, number | string | boolean>;
     searchAliases?: string[];
     physiological_focus?: string;
   },
@@ -185,15 +187,32 @@ export const BLOCK_BLUEPRINT_CATALOG: readonly BlockBlueprintCatalogEntry[] = [
     },
   ),
   entry(
-    'main-emom-pacing',
+    'main-emom-alternating',
     'main',
     'emom',
-    'pacing',
-    'Main · EMOM · Pacing',
+    'alternating',
+    'Main · EMOM · Alternating',
     'MAIN',
     'Main',
     'emom',
-    { searchAliases: ['interval', 'minute'] },
+    {
+      format_params: { interval_seconds: 60, total_minutes: 10, is_alternating: true },
+      searchAliases: ['pacing', 'interval', 'minute', 'abc'],
+    },
+  ),
+  entry(
+    'main-emom-straight',
+    'main',
+    'emom',
+    'straight',
+    'Main · EMOM · Straight',
+    'MAIN',
+    'Main',
+    'emom',
+    {
+      format_params: { interval_seconds: 60, total_minutes: 10, is_alternating: false },
+      searchAliases: ['single', 'station'],
+    },
   ),
   entry(
     'main-tabata-power',
@@ -342,17 +361,17 @@ export const BLOCK_BLUEPRINT_CATALOG: readonly BlockBlueprintCatalogEntry[] = [
     { searchAliases: ['tab', 'abs'], physiological_focus: 'core' },
   ),
   entry(
-    'finisher-emom-pacing',
+    'finisher-emom-alternating',
     'finisher',
     'emom',
-    'pacing',
-    'Finisher · EMOM · Pacing',
+    'alternating',
+    'Finisher · EMOM · Alternating',
     'CONDITIONING_AND_FINISHERS',
     'Finisher',
     'emom',
     {
-      format_params: { interval_seconds: 60, total_minutes: 8 },
-      searchAliases: ['minute', 'interval'],
+      format_params: { interval_seconds: 60, total_minutes: 8, is_alternating: true },
+      searchAliases: ['pacing', 'minute', 'interval'],
     },
   ),
   entry(
@@ -385,17 +404,17 @@ export const BLOCK_BLUEPRINT_CATALOG: readonly BlockBlueprintCatalogEntry[] = [
     },
   ),
   entry(
-    'metcon-emom-threshold',
+    'metcon-emom-density',
     'metcon',
     'emom',
-    'threshold',
-    'Metcon · EMOM · Threshold',
+    'density',
+    'Metcon · EMOM · Density',
     'CONDITIONING_AND_FINISHERS',
     'Main',
     'emom',
     {
-      format_params: { interval_seconds: 60, total_minutes: 15 },
-      searchAliases: ['lactic', 'pacing'],
+      format_params: { interval_seconds: 60, total_minutes: 15, is_alternating: false },
+      searchAliases: ['threshold', 'lactic', 'pacing'],
     },
   ),
   entry(

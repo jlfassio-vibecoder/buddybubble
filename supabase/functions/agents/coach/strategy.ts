@@ -529,7 +529,8 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       /\b(slider|wizard\s*step|readiness|sleep\s*quality|duration|intensity|soreness|equipment)\b/i.test(
         reply,
       );
-    if (claimsIntakeUi && !hasIntakePatch) {
+    const hasExecutionPatch = parsed.execution_patch != null && parsed.execution_patch.length > 0;
+    if (claimsIntakeUi && !hasIntakePatch && !hasExecutionPatch) {
       log('warn', 'coach reply_content claims intake update without patch', {
         request_id: ctx.requestId,
         slug: COACH_SLUG,

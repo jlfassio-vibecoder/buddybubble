@@ -38,6 +38,8 @@ export type IntervalTimerAction =
 export type IntervalRowSnapshot = {
   roundIndex: number;
   activeSetPhase: 'work' | 'rest' | 'prepare' | 'paused';
+  /** EMOM alternating only — 0-based exercise indices within block */
+  activeStationIndices?: number[];
 };
 
 export function intervalTimerSnapshotToRowSnapshot(

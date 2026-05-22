@@ -36,6 +36,33 @@ describe('formatBlockSubtitle', () => {
     expect(formatBlockSubtitle('emom', {})).toBe('EMOM');
   });
 
+  it('formats alternating EMOM with whiteboard taxonomy', () => {
+    expect(
+      formatBlockSubtitle('emom', {
+        interval_seconds: 60,
+        total_minutes: 12,
+        is_alternating: true,
+        alternating_stations: [[0], [1, 2]],
+      }),
+    ).toBe('12 Min Alternating EMOM (A / B+C)');
+    expect(
+      formatBlockSubtitle('emom', {
+        total_rounds: 10,
+        is_alternating: true,
+        alternating_stations: [[0], [1], [2]],
+      }),
+    ).toBe('10 Rounds Alternating EMOM (A / B / C)');
+  });
+
+  it('legacy EMOM unchanged when not alternating', () => {
+    expect(
+      formatBlockSubtitle('emom', {
+        interval_seconds: 60,
+        total_minutes: 16,
+      }),
+    ).toBe('16 Min EMOM (Every 60s)');
+  });
+
   it('formats Tabata bare and with full params', () => {
     expect(formatBlockSubtitle('tabata', {})).toBe('Tabata');
     expect(

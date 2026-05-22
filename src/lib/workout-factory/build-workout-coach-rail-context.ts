@@ -1,4 +1,5 @@
 import { parseTaskMetadata } from '@/lib/item-metadata';
+import { buildEmomAlternatingCoachGuide } from '@/lib/workout-factory/build-emom-alternating-coach-guide';
 import { formatRichWorkoutStripSummary } from '@/lib/workout-factory/format-block-summary-line';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import { hasRichWorkoutSetInMetadata } from '@/lib/workout-factory/sync-workout-metadata';
@@ -66,6 +67,11 @@ export function buildWorkoutCoachRailContext(
         out.ai_workout_factory = af;
       }
     }
+  }
+
+  const emomGuide = buildEmomAlternatingCoachGuide(vm.blocks, vm.flatExercises);
+  if (emomGuide != null) {
+    out.emom_alternating_guide = emomGuide;
   }
 
   return out;

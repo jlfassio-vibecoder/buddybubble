@@ -11,6 +11,14 @@ const emomConfig: EmomTimerConfig = {
   intervalMs: 60_000,
   totalRounds: 3,
   intervalSeconds: 60,
+  alternatingStations: null,
+};
+
+const alternatingEmomConfig: EmomTimerConfig = {
+  intervalMs: 60_000,
+  totalRounds: 12,
+  intervalSeconds: 60,
+  alternatingStations: [[0], [1, 2]],
 };
 
 describe('emomTimerReducer', () => {
@@ -76,5 +84,18 @@ describe('emomTimerReducer', () => {
     expect(snap.remainingMs).toBe(60_000);
     expect(snap.displayRound).toBe(1);
     expect(snap.isRunning).toBe(false);
+    expect(snap.activeStationIndices).toBeNull();
+  });
+
+  it('deriveEmomTimerSnapshot exposes activeStationIndices for alternating config', () => {
+    let s = emomTimerReducer(createInitialEmomTimerState(alternatingEmomConfig), {
+      type: 'start',
+      now: 0,
+    });
+    expect(deriveEmomTimerSnapshot(s, 0).activeStationIndices).toEqual([0]);
+    s = emomTimerReducer(s, { type: 'tick', now: 60_000 });
+    expect(deriveEmomTimerSnapshot(s, 60_000).activeStationIndices).toEqual([1, 2]);
+    s = emomTimerReducer(s, { type: 'tick', now: 120_000 });
+    expect(deriveEmomTimerSnapshot(s, 120_000).activeStationIndices).toEqual([0]);
   });
 });

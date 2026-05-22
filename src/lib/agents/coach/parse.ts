@@ -36,6 +36,7 @@ import {
   type BlockShapeDrop,
   isBlockFormat,
   mapLegacyTypeToBlockFormat,
+  hydrateEmomAlternatingStations,
   normalizeFormatParams,
   validateBlockShape,
 } from './block-blueprint-library';
@@ -250,7 +251,10 @@ export function parseProposedWorkoutMetadataWithDrops(parsed: Record<string, unk
         continue;
       }
       const blockFormat = resolved;
-      const formatParams = normalizeFormatParams(blockFormat, blk.format_params);
+      let formatParams = normalizeFormatParams(blockFormat, blk.format_params);
+      if (blockFormat === 'emom') {
+        formatParams = hydrateEmomAlternatingStations(inner.length, formatParams);
+      }
       const shapeReason = validateBlockShape(blockFormat, inner.length, formatParams);
       if (shapeReason != null) {
         drops.push({ field: `blocks[${i}]`, reason: shapeReason });

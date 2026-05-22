@@ -34,6 +34,7 @@ import {
   finalizeExerciseMentionsForSend,
 } from '@/lib/agents/coach/exercise-mentions-client';
 import { parseExecutionPatchFromMetadata, type ExecutionPatch } from '@/types/execution-patch';
+import { executionPatchFingerprint } from '@/lib/workout-player-execution-patch-bridge';
 import { scheduleScrollChatThreadToBottom } from '@/lib/chat-thread-auto-scroll';
 
 const CHAT_AREA_DEFAULT_AGENT_SLUG = 'coach';
@@ -287,12 +288,13 @@ export function WorkoutCoachRail({
   /** At most one sentinel dispatch per rail mount (guards `sendMessage`/message churn and unstable JSON refs). */
   const sentinelHasFiredRef = useRef(false);
 
-  /** Coach message ids for which we applied a patch or confirmed there is nothing to apply (stops effect churn). */
-  const coachExecutionHandledMessageIdsRef = useRef<Set<string>>(new Set());
+  /** Last applied `execution_patch` fingerprint per Coach message (re-apply when metadata updates). */
+  const coachExecutionAppliedFingerprintRef = useRef<Map<string, string>>(new Map());
+
   /** Pending `#` exercise picks for the next Coach send (`metadata.exercise_mentions`). Cleared after successful send. */
   const exerciseMentionsPendingRef = useRef<ExerciseMentionClientPayload[]>([]);
   useEffect(() => {
-    coachExecutionHandledMessageIdsRef.current.clear();
+    coachExecutionAppliedFingerprintRef.current.clear();
     exerciseMentionsPendingRef.current = [];
   }, [taskId]);
 
@@ -371,24 +373,27 @@ export function WorkoutCoachRail({
     for (const row of coachRows) {
       const id = row.id;
       if (!id) continue;
-      if (coachExecutionHandledMessageIdsRef.current.has(id)) continue;
       const meta = row.metadata;
       const raw =
         meta != null && typeof meta === 'object' && !Array.isArray(meta)
           ? (meta as { execution_patch?: unknown }).execution_patch
           : undefined;
+      const fp = executionPatchFingerprint(raw);
+      if (fp != null && coachExecutionAppliedFingerprintRef.current.get(id) === fp) {
+        continue;
+      }
       let patch: ExecutionPatch | null = null;
       try {
         patch = parseExecutionPatchFromMetadata(raw);
       } catch {
-        return;
+        continue;
       }
       if (!patch) {
-        coachExecutionHandledMessageIdsRef.current.add(id);
+        if (fp != null) coachExecutionAppliedFingerprintRef.current.set(id, fp);
         continue;
       }
       onApplyExecutionPatch(patch);
-      coachExecutionHandledMessageIdsRef.current.add(id);
+      if (fp != null) coachExecutionAppliedFingerprintRef.current.set(id, fp);
     }
   }, [availableAgents, isLoading, messages, onApplyExecutionPatch]);
 
