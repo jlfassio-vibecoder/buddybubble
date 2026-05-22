@@ -91,20 +91,32 @@ export function buildWorkoutLogExercisePayloadFromLogs(
   logs: readonly (readonly SetDraft[])[],
 ): WorkoutLogExerciseFinishPayload[] {
   return exercises.map((ex, i) => {
-    const completedSets = (logs[i] ?? []).filter((s) => s.done);
+    const rowLogs = logs[i] ?? [];
+    const set_logs: SetLogEntry[] = [];
+    rowLogs.forEach((s, setIdx) => {
+      if (!s.done) return;
+      const entry: SetLogEntry = { set: setIdx + 1, done: true };
+      if (s.weight !== '') {
+        const weight = parseFloat(s.weight);
+        if (Number.isFinite(weight)) entry.weight = weight;
+      }
+      if (s.reps !== '') {
+        const reps = parseInt(s.reps, 10);
+        if (Number.isFinite(reps)) entry.reps = reps;
+      }
+      if (s.rpe !== '') {
+        const rpe = parseInt(s.rpe, 10);
+        if (Number.isFinite(rpe)) entry.rpe = rpe;
+      }
+      set_logs.push(entry);
+    });
     return {
       name: ex.name,
       ...(ex.reps != null ? { reps: ex.reps } : {}),
       ...(ex.weight != null ? { weight: ex.weight } : {}),
       ...(ex.duration_min != null ? { duration_min: ex.duration_min } : {}),
-      sets: completedSets.length,
-      set_logs: completedSets.map((s, idx) => ({
-        set: idx + 1,
-        ...(s.weight !== '' ? { weight: parseFloat(s.weight) } : {}),
-        ...(s.reps !== '' ? { reps: parseInt(s.reps, 10) } : {}),
-        ...(s.rpe !== '' ? { rpe: parseInt(s.rpe, 10) } : {}),
-        done: true,
-      })),
+      sets: set_logs.length,
+      set_logs,
     };
   });
 }

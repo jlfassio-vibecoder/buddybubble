@@ -236,4 +236,31 @@ describe('buildWorkoutLogExercisePayloadFromLogs', () => {
       { set: 2, weight: 100, reps: 6, done: true },
     ]);
   });
+
+  it('preserves original set numbers when sets are completed out of order', () => {
+    const exercises = [{ name: 'Bench', sets: 3, reps: 8 as const }];
+    const logs = [
+      [
+        { weight: '', reps: '', rpe: '', done: false },
+        { weight: '100', reps: '8', rpe: '', done: true },
+        { weight: '105', reps: '6', rpe: '', done: true },
+      ],
+    ];
+
+    const payload = buildWorkoutLogExercisePayloadFromLogs(exercises, logs);
+
+    expect(payload[0]?.set_logs).toEqual([
+      { set: 2, weight: 100, reps: 8, done: true },
+      { set: 3, weight: 105, reps: 6, done: true },
+    ]);
+  });
+
+  it('omits weight/reps/rpe when parsed values are not finite', () => {
+    const exercises = [{ name: 'Bench', sets: 1 }];
+    const logs = [[{ weight: '  ', reps: 'abc', rpe: 'x', done: true }]];
+
+    const payload = buildWorkoutLogExercisePayloadFromLogs(exercises, logs);
+
+    expect(payload[0]?.set_logs).toEqual([{ set: 1, done: true }]);
+  });
 });
