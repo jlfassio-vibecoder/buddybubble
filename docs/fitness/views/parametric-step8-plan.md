@@ -9,37 +9,23 @@
 
 ## Executive summary
 
-Step 7 made **execution** block-aware: Tabata / AMRAP / EMOM shells, correct log row counts, and Coach `live_set_counts` alignment. Step 8 closes the **persistence loop**: when the athlete taps **Finish Workout**, the completed `workout_log` task must retain the same **parametric structure** (`block_format`, `format_params`, section names) as the source prescription, while still storing **per-set performance** (`set_logs`) for analytics and history.
+Step 7 made **execution** block-aware: Tabata / AMRAP / EMOM shells, correct log row counts, and Coach `live_set_counts` alignment. Step 8 closed the **persistence loop**: when the athlete taps **Finish Workout**, the completed `workout_log` task retains the same **parametric structure** (`block_format`, `format_params`, section names) as the source prescription, while still storing **per-set performance** (`set_logs`) for analytics and history.
 
-**Today:** `WorkoutPlayer.handleFinish` writes only a **flat** `metadata.exercises[]` (+ `set_logs`, `duration_min`, `source_task_id`) into `tasks.metadata`. It does **not** copy `ai_workout_factory`. History surfaces therefore lose Tabata/EMOM/AMRAP headers and fall back to a flat exercise list—even though read components (`WorkoutLogReadSummary`, `WorkoutBlockListRenderer`) already support rich logs **if** factory JSON is present.
-
-**Step 8 goal:** **Structural parity** between prescription and completed log—rich blocks in the DB, rich blocks in Task Modal / Workout Viewer / Analytics-facing task rows, with logged sets overlaid on the correct global exercise indices.
+**Shipped outcome:** `buildWorkoutLogFinishMetadata` snapshots `ai_workout_factory` on finish (M8.2). Task Modal and Workout Viewer pass full metadata into `WorkoutLogReadSummary`, which overlays `set_logs` onto block headers via `globalFlatIndex` (M8.3).
 
 ```mermaid
 flowchart TB
-  subgraph today [Today — finish path]
-    Src[Source workout task metadata]
-    Player[WorkoutPlayer sessionVm + logs]
-    Finish[handleFinish]
-    LogMeta[workout_log tasks.metadata]
-    Src -->|ai_workout_factory read-only in player| Player
-    Player --> Finish
-    Finish -->|exercises + set_logs only| LogMeta
-    LogMeta -->|no factory| FlatRead[WorkoutFlatExerciseLogList]
-  end
+  Src[Source workout metadata]
+  Player[WorkoutPlayer]
+  Build[buildWorkoutLogFinishMetadata]
+  LogMeta[workout_log tasks.metadata]
+  Summary[WorkoutLogReadSummary]
+  Blocks[WorkoutBlockListRenderer + set_logs]
 
-  subgraph step8 [Step 8 target]
-    Src2[Source workout metadata]
-    Player2[WorkoutPlayer]
-    Build[buildWorkoutLogFinishMetadata]
-    LogMeta2[workout_log metadata]
-    Summary[WorkoutLogReadSummary]
-    Blocks[WorkoutBlockListRenderer + set_logs overlay]
-    Src2 --> Player2
-    Player2 --> Build
-    Build -->|factory snapshot + exercises + set_logs| LogMeta2
-    LogMeta2 --> Summary --> Blocks
-  end
+  Src --> Player
+  Player --> Build
+  Build -->|factory snapshot + exercises + set_logs| LogMeta
+  LogMeta --> Summary --> Blocks
 ```
 
 **Out of scope (this epic):**
@@ -67,9 +53,10 @@ flowchart TB
 
 ### `tasks.metadata` keys relevant to Step 8
 
-| Key                                         | On source `workout`             | On in-progress `workout_log` draft | On completed `workout_log` (today)          |
+| Key                                         | On source `workout`             | On in-progress `workout_log` draft | On completed `workout_log` (shipped)        |
 | ------------------------------------------- | ------------------------------- | ---------------------------------- | ------------------------------------------- |
-| `ai_workout_factory.workout_set.workouts[]` | ✅ Prescription source of truth | ❌ Not copied                      | ❌ **Stripped at finish**                   |
+| `ai_workout_factory.workout_set.workouts[]` | ✅ Prescription source of truth | ❌ Not copied (draft autosave TBD) | ✅ **Snapshotted at finish** (M8.2)         |
+| `workout_log_schema_version`                | —                               | —                                  | ✅ `1` on player finish                     |
 | `exercises[]`                               | ✅ Derived cache                | ❌ (draft uses `draft_logs` only)  | ✅ Flat list + `set_logs` on completed sets |
 | `draft_logs`                                | —                               | ✅ Autosave matrix                 | ❌ Removed at finish                        |
 | `source_task_id`                            | —                               | ✅                                 | ✅                                          |
@@ -89,57 +76,26 @@ There is **no** `finish_workout` RPC. Completion is:
 
 ---
 
-## Payload audit — `WorkoutPlayer.handleFinish`
+## Payload — `WorkoutPlayer.handleFinish` (shipped M8.2)
 
-**File:** [`src/components/fitness/WorkoutPlayer.tsx`](../../../src/components/fitness/WorkoutPlayer.tsx)
+**File:** [`src/components/fitness/WorkoutPlayer.tsx`](../../../src/components/fitness/WorkoutPlayer.tsx) · [`build-workout-log-finish-metadata.ts`](../../../src/lib/workout-factory/build-workout-log-finish-metadata.ts)
 
-### What the player already has in memory
+`handleFinish` calls `buildWorkoutLogFinishMetadata`, which writes `workout_log_schema_version`, flat `exercises` + `set_logs`, and a deep-cloned `ai_workout_factory` when the source session is rich.
 
-| State           | Source                                                               | Used at finish?                |
-| --------------- | -------------------------------------------------------------------- | ------------------------------ |
-| `sessionVm`     | `useWorkoutSessionViewModel(metadata)` from **source** workout props | ❌ Not serialized              |
-| `exercises`     | `sessionVm.flatExercises`                                            | ✅ Mapped to `exercisePayload` |
-| `logs`          | `SetDraft[][]` aligned to global flat indices                        | ✅ Completed sets → `set_logs` |
-| `metadata` prop | Source task `tasks.metadata`                                         | ❌ Factory not copied          |
-
-### What `handleFinish` sends today (lines ~730–872)
-
-```ts
-const finalMetadata: Json = {
-  ...(sourceTaskId ? { source_task_id: sourceTaskId } : {}),
-  ...(durationMins > 0 ? { duration_min: durationMins } : {}),
-  exercises: exercisePayload, // flat: name, sets, set_logs, optional reps/weight/duration_min
-  ...(class_instance_id ? { class_instance_id } : {}),
-};
-```
-
-Each `exercisePayload` entry includes only **completed** sets (`filter(s => s.done)`), with `set`, `weight`, `reps`, `rpe`, `done`.
-
-**Autosave (in-progress)** uses [`buildDraftMetadata`](../../../src/components/fitness/WorkoutPlayer.tsx) — only `source_task_id`, `draft_logs`, optional `class_instance_id`. Factory is also omitted during draft.
-
-### Implications for 8.2
-
-1. **Snapshot prescription:** Deep-clone `metadata.ai_workout_factory` from the **source** workout at finish time (immutable “what was prescribed”), not from live timer state machines.
-2. **Keep flat cache:** Continue writing `metadata.exercises` with `set_logs` (analytics, Coach `#` list, historical prefill, [`deriveFlatExercisesFromMetadata`](../../../src/lib/workout-factory/sync-workout-metadata.ts)).
-3. **AMRAP extra rounds:** Player may append rows via [`appendAmrapRoundRows`](../../../src/lib/workout-factory/interval-timer/append-amrap-round-rows.ts); flat `exercises` may be **longer** than factory-derived prescription. Do **not** silently rewrite factory round counts at finish unless a dedicated sub-plan defines merge rules.
-4. **New helper (proposed):** `buildWorkoutLogFinishMetadata({ sourceMetadata, sessionVm, exercisePayload, durationMin, sourceTaskId, classInstanceId })` in `src/lib/workout-factory/` with unit tests.
+**In-progress draft autosave** still uses [`buildDraftMetadata`](../../../src/components/fitness/WorkoutPlayer.tsx) only (`draft_logs`; factory not copied mid-session) — optional future stretch.
 
 ---
 
-## History view audit
+## History read path (shipped M8.3)
 
-### Read components (ready vs gaps)
+| Surface                                | Rich blocks | `set_logs` overlay                                                                 |
+| -------------------------------------- | ----------- | ---------------------------------------------------------------------------------- |
+| **Task Modal** `workout_log` Details   | ✅          | ✅ via full `taskMetadata` merge + `WorkoutLogReadSummary`                         |
+| **Workout Viewer** `readVariant="log"` | ✅          | ✅ `readVariant === 'log'` routes to `WorkoutLogReadSummary` before `showRichRead` |
+| **WorkoutLogReadSummary**              | ✅          | ✅ `setLogsByGlobalIndexFromMetadata` + `renderExercise`                           |
+| **Analytics / Programs**               | N/A         | N/A                                                                                |
 
-| Surface                                       | Component                                                                                                                                                                                                      | Rich blocks                                                                                                                                                                                        | `set_logs` overlay                                                                                                                                                                                                   |
-| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Task Modal** `workout_log` Details          | [`TaskModalWorkoutFields`](../../../src/components/modals/task-modal/TaskModalWorkoutFields.tsx) → [`WorkoutLogReadSummary`](../../../src/components/fitness/workout-block-renderer/WorkoutLogReadSummary.tsx) | ⚠️ **Blocked** — passes `logReadMetadata = { exercises, duration_min }` only (**drops factory**)                                                                                                   | ✅ Flat branch only                                                                                                                                                                                                  |
-| **Workout Viewer** view + `readVariant="log"` | [`workout-viewer-dialog.tsx`](../../../src/components/fitness/workout-viewer-dialog.tsx)                                                                                                                       | ⚠️ If factory exists, **`showRichRead` wins** and renders [`WorkoutBlockListRenderer`](../../../src/components/fitness/workout-block-renderer/WorkoutBlockListRenderer.tsx) **without** `set_logs` | ✅ Via `WorkoutLogReadSummary` when `isLogRead` and not `showRichRead`                                                                                                                                               |
-| **WorkoutLogReadSummary**                     | Self                                                                                                                                                                                                           | ✅ `vm.source === 'rich'` → block list                                                                                                                                                             | ❌ Rich branch has **no** per-set performance lines ([`WorkoutLogReadSummary.test.tsx`](../../../src/components/fitness/workout-block-renderer/WorkoutLogReadSummary.test.tsx) documents “future logs with factory”) |
-| **Analytics / Programs**                      | Task lists                                                                                                                                                                                                     | N/A (counts)                                                                                                                                                                                       | N/A                                                                                                                                                                                                                  |
-
-### Index mapping for overlays
-
-[`buildPlayerExerciseIndexLookup`](../../../src/lib/workout-factory/workout-player-exercise-index.ts) maps **main-block** exercises to **global flat indices** (same order as `workoutInSetToTaskExercises`). Step 8.3 should reuse this to attach `flatExercises[i].set_logs` to the correct block exercise rows in read mode.
+Overlay index order matches `WorkoutBlockListRenderer` main-block `globalFlatIndex` (same flattening as [`buildPlayerExerciseIndexLookup`](../../../src/lib/workout-factory/workout-player-exercise-index.ts)).
 
 ---
 
@@ -228,13 +184,14 @@ pnpm run check
 
 ---
 
-## Current database / metadata limitations (summary)
+## Remaining limitations (post–Step 8)
 
-1. **Finish path drops structure** — `handleFinish` never writes `ai_workout_factory`; parametric intent exists only on the source `workout` task.
-2. **Read path partially ready** — `WorkoutLogReadSummary` can render rich blocks but Task Modal **strips** factory from props; Workout Viewer **prefers** block list without `set_logs` when factory is present.
-3. **No finish RPC** — validation and snapshot normalization are client-side only today.
-4. **Parallel legacy stores** — `workout_logs`, `user_workout_logs`, and `workout_exercise_logs` do not participate in the Kanban `workout_log` metadata contract.
-5. **Flat cache remains necessary** — `metadata.exercises` + `set_logs` stay the performance layer for analytics and Coach; Step 8 **adds** factory snapshot, not replaces flat logs.
+1. **Draft autosave** — In-progress `workout_log` drafts still omit `ai_workout_factory` (only `draft_logs`).
+2. **No finish RPC** — Validation and snapshot normalization are client-side only.
+3. **Parallel legacy stores** — `workout_logs`, `user_workout_logs`, and `workout_exercise_logs` do not participate in the Kanban `workout_log` metadata contract.
+4. **Flat cache still required** — `metadata.exercises` + `set_logs` remain the performance layer; factory is prescription snapshot, not a replacement.
+5. **Manual Task Modal save** — Editing flat exercises on a log via save can still degrade factory via `applyFlatWorkoutEditsToMetadata` (pre-existing; out of Step 8 scope).
+6. **AMRAP index drift** — Extra logged rounds live only in flat `exercises`; overlay may diverge if flat order/count disagrees with factory-derived indices.
 
 ---
 
@@ -250,8 +207,10 @@ pnpm run check
 
 ## Cross-links
 
-| Doc                                                    | Update when Step 8 ships                                    |
-| ------------------------------------------------------ | ----------------------------------------------------------- |
-| [parametric-step7-plan.md](./parametric-step7-plan.md) | Remove “block context on finish (Step 8)” from out-of-scope |
-| [README.md](./README.md)                               | Landscape row “Finish workout flattens logs” → fixed        |
-| [parametric-step6-plan.md](./parametric-step6-plan.md) | Step 8 follow-up → shipped                                  |
+| Doc                                                              | Status                                   |
+| ---------------------------------------------------------------- | ---------------------------------------- |
+| [parametric-step7-plan.md](./parametric-step7-plan.md)           | Step 8 out-of-scope note can be retired  |
+| [README.md](./README.md)                                         | Landscape updated — finish/history fixed |
+| [parametric-step6-plan.md](./parametric-step6-plan.md)           | Step 8 follow-up shipped                 |
+| [parametric-step8-m8.2-plan.md](./parametric-step8-m8.2-plan.md) | Finish payload                           |
+| [parametric-step8-m8.3-plan.md](./parametric-step8-m8.3-plan.md) | History read parity                      |

@@ -58,8 +58,9 @@ export function WorkoutLogReadSummary({
           taskId={taskId}
           data-testid={testId}
           renderExercise={(ctx) => {
-            const globalIndex = ctx.globalFlatIndex ?? 0;
-            const setLogs = setLogsByIndex.get(globalIndex);
+            const globalIndex = ctx.globalFlatIndex;
+            const setLogs =
+              typeof globalIndex === 'number' ? setLogsByIndex.get(globalIndex) : undefined;
             return (
               <WorkoutReadExerciseRowFromFactory
                 ex={ctx.exercise}
