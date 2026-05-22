@@ -21,6 +21,8 @@ type RequestBody = {
    * Also inferred server-side from a long persona.description.
    */
   workout_brief_authoritative?: boolean;
+  /** Apex Architect outline from tasks.metadata (Phase 3 factory handoff). */
+  coach_workout_outline?: Record<string, unknown>[] | null;
 };
 
 /**
@@ -50,6 +52,22 @@ export async function POST(req: Request) {
     if (!workspaceId) {
       return NextResponse.json({ error: 'workspace_id is required' }, { status: 400 });
     }
+
+    if (
+      body.coach_workout_outline !== undefined &&
+      body.coach_workout_outline !== null &&
+      !Array.isArray(body.coach_workout_outline)
+    ) {
+      return NextResponse.json(
+        { error: 'coach_workout_outline must be an array' },
+        { status: 400 },
+      );
+    }
+
+    const coachWorkoutOutline =
+      Array.isArray(body.coach_workout_outline) && body.coach_workout_outline.length > 0
+        ? body.coach_workout_outline
+        : undefined;
 
     const { data: profileRow, error: profileError } = await supabase
       .from('fitness_profiles')
@@ -86,6 +104,7 @@ export async function POST(req: Request) {
         includeFinisher: false,
         includeCooldown: false,
       },
+      ...(coachWorkoutOutline ? { coach_workout_outline: coachWorkoutOutline } : {}),
     };
 
     const result = await runGenerateWorkoutChain(chainBody, shouldLog, {

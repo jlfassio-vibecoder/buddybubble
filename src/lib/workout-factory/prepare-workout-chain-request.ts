@@ -50,6 +50,8 @@ export interface PreparedWorkoutChainRequest {
   providedArchitect: WorkoutArchitectBlueprint | undefined;
   /** Request override for prior architect flows; current extract+enrich pipeline does not use this. */
   step1UserPromptOverride: string | undefined;
+  /** Apex Architect outline from tasks.metadata (Phase 3.1 wiring; filler in 3.2). */
+  coachWorkoutOutline?: Record<string, unknown>[];
 }
 
 const defaultBlockOptions: BlockOptions = {
@@ -65,7 +67,19 @@ type IncomingBody = WorkoutPersona & {
   step1UserPromptOverride?: string;
   /** BuddyBubble: equipment labels (e.g. from fitness_profiles.equipment); used when no training zone. */
   availableEquipmentNames?: string[];
+  /** Apex Architect parametric outline from tasks.metadata. */
+  coach_workout_outline?: unknown;
 };
+
+function parseCoachWorkoutOutlineFromBody(raw: unknown): Record<string, unknown>[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const blocks: Record<string, unknown>[] = [];
+  for (const item of raw) {
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) return undefined;
+    blocks.push(item as Record<string, unknown>);
+  }
+  return blocks;
+}
 
 export type PrepareWorkoutChainResult =
   | { ok: true; data: PreparedWorkoutChainRequest }
@@ -94,8 +108,11 @@ export async function prepareWorkoutChainRequest(
     blockOptions: requestBlockOptions,
     step1UserPromptOverride: rawOverride,
     availableEquipmentNames,
+    coach_workout_outline: rawCoachOutline,
     ...persona
   } = body;
+
+  const coachWorkoutOutline = parseCoachWorkoutOutlineFromBody(rawCoachOutline);
 
   const blockOptions: BlockOptions =
     requestBlockOptions && typeof requestBlockOptions === 'object'
@@ -545,6 +562,7 @@ export async function prepareWorkoutChainRequest(
       availableEquipment,
       providedArchitect,
       step1UserPromptOverride,
+      ...(coachWorkoutOutline ? { coachWorkoutOutline } : {}),
     },
   };
 }

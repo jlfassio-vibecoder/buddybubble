@@ -19,7 +19,13 @@ export async function runGenerateWorkoutChain(
   if ('error' in creds) return { ok: false, response: creds.error };
 
   if (shouldLog) {
-    console.warn('[generate-workout-chain] Using Kanban extract & enrich pipeline');
+    if (prepared.data.coachWorkoutOutline?.length) {
+      console.warn(
+        '[generate-workout-chain] coach_workout_outline present; outline filler not implemented (Phase 3.2) — using Kanban extract & enrich',
+      );
+    } else {
+      console.warn('[generate-workout-chain] Using Kanban extract & enrich pipeline');
+    }
   }
   return runExtractAndEnrichChain(prepared.data, creds, shouldLog, options?.createdByUserId);
 }

@@ -22,7 +22,12 @@ export const COACH_PROPOSED_WORKOUT_BLOCK_ITEM_SCHEMA = {
           name: { type: 'STRING' },
           sets: { type: 'INTEGER', nullable: true },
           reps: { type: 'STRING', nullable: true },
-          coach_notes: { type: 'STRING', nullable: true },
+          coach_notes: {
+            type: 'STRING',
+            nullable: true,
+            description:
+              'Outline/create_card turns: omit or null — Vertex Factory enriches later. Rail/full draft may use brief cues only.',
+          },
           equipment: { type: 'STRING', nullable: true },
           work_seconds: {
             type: 'INTEGER',
@@ -43,7 +48,7 @@ export const COACH_PROPOSED_WORKOUT_BLOCK_ITEM_SCHEMA = {
       type: 'ARRAY',
       nullable: true,
       description:
-        'Instruction-shaped section (warm-up, cool down, mobility): one short line per array item. Use when the section is cued execution rather than prescribed sets and reps.',
+        'Instruction-shaped section (warm-up, cool down, mobility): max 1–2 short lines per block on outline turns. Use when the section is cued execution rather than prescribed sets and reps.',
       items: { type: 'STRING' },
     },
     block_format: {
@@ -147,7 +152,7 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
       type: 'STRING',
       nullable: true,
       description:
-        'Full Kanban card body: workout plan, sets/reps cues, equipment, and safety notes. Saved to the task description in the database. When create_card is true, populate this with the same detail you would put on a workout card (can be multi-sentence or short markdown). Use null only if create_card is false.',
+        'EXTREMELY CONCISE summary. Max 3 sentences. Human-readable session intent only — no per-exercise prescriptions; Vertex Factory fills detail on Generate Workout. Use null only if create_card is false.',
     },
     intake_phase: {
       type: 'STRING',
@@ -183,7 +188,7 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
       type: 'STRING',
       nullable: true,
       description:
-        "When create_card is true: task-comment body (readiness summary, prescription rationale, scaling options). Not shown in bubble chat. MUST end with this exact CTA paragraph (verbatim line breaks optional): Does this proposed workout look good? If so, click 'Generate Workout' on the card. If you'd like any adjustments, let me know here in the chat! Use null when create_card is false.",
+        "When create_card is true: brief task-comment only — readiness summary and prescription rationale in at most 2 short paragraphs; no biomechanical essays or exercise-by-exercise coaching. Not shown in bubble chat. MUST end with this exact CTA paragraph (verbatim line breaks optional): Does this proposed workout look good? If so, click 'Generate Workout' on the card. If you'd like any adjustments, let me know here in the chat! Use null when create_card is false.",
     },
     update_existing_task: {
       type: 'BOOLEAN',
@@ -363,7 +368,7 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
       type: 'ARRAY',
       nullable: true,
       description:
-        'Apex Architect main bubble chat only: after explicit user agreement and when create_card is true (or update_existing_task revising the outline), emit the agreed parametric blocks here using catalog block_format and format_params. Persisted to tasks.metadata.coach_workout_outline for Phase 3 generation. MUST be null on pre_draft_confirmation turns and on rail surfaces. Do NOT put pre-factory parametric outlines in proposed_workout_metadata.blocks — use this field instead. task_description remains human-readable summary.',
+        'Apex Architect main bubble chat only: minimal-token structural skeleton after explicit agreement (create_card true or update_existing_task revising outline). Each block: name, block_format, format_params, exercise name placeholders only — omit coach_notes, long instructions[], sets/reps unless format requires. Persisted to tasks.metadata.coach_workout_outline for Vertex Factory. MUST be null on pre_draft_confirmation turns and on rail surfaces. Do NOT use proposed_workout_metadata.blocks for pre-factory parametric outlines.',
       items: COACH_PROPOSED_WORKOUT_BLOCK_ITEM_SCHEMA,
     },
     card_action: {

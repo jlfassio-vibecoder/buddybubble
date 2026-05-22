@@ -127,10 +127,15 @@ export function useTaskWorkoutAi({
                 : {}),
             }
           : null;
+        const meta = parseTaskMetadata(metadata) as Record<string, unknown>;
+        const rawOutline = meta.coach_workout_outline;
+        const coach_workout_outline =
+          Array.isArray(rawOutline) && rawOutline.length > 0 ? rawOutline : undefined;
         const data = await postGenerateWorkoutChain({
           workspace_id: workspaceId,
           daily_checkin: dailyCheckInPayload,
           workout_brief_authoritative: title.trim().length > 0 && description.trim().length > 0,
+          ...(coach_workout_outline ? { coach_workout_outline } : {}),
           persona: {
             title: title.trim() || undefined,
             description: description.trim() || undefined,
@@ -167,6 +172,7 @@ export function useTaskWorkoutAi({
       workoutDurationMin,
       title,
       description,
+      metadata,
       setTitle,
       setDescription,
       setWorkoutExercises,

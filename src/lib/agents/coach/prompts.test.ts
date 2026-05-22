@@ -91,6 +91,13 @@ describe('buildApexArchitectMainChatBlock', () => {
   it('does not mention LIVE CO-PILOT MODE', () => {
     expect(block).not.toContain('LIVE CO-PILOT MODE');
   });
+
+  it('includes CRITICAL TOKEN CONSTRAINT for skeleton-only outline turns', () => {
+    expect(block).toContain('CRITICAL TOKEN CONSTRAINT');
+    expect(block).toContain('structural skeleton');
+    expect(block).toContain('max 3 sentences');
+    expect(block).toContain('Vertex Factory');
+  });
 });
 
 describe('buildBaseCoachPrompt', () => {
