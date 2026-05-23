@@ -21,6 +21,7 @@ export type WorkoutIntakePanelWizardProps = Omit<
 export type WorkoutIntakePanelProps = WorkoutIntakePanelWizardProps & {
   handleAiGenerateWorkout: (wizardData: WorkoutIntakeWizardData) => void | Promise<void>;
   isGenerating?: boolean;
+  disabledReason?: string;
 };
 
 const sparklesClassName =
@@ -32,6 +33,7 @@ const sparklesClassName =
 export function WorkoutIntakePanel({
   handleAiGenerateWorkout,
   isGenerating = false,
+  disabledReason,
   step,
   setStep,
   readiness,
@@ -43,20 +45,17 @@ export function WorkoutIntakePanel({
   targetIntensity,
   setTargetIntensity,
   soreness,
-  equipment,
   toggleSoreness,
-  toggleEquipment,
-  equipmentArray,
   sorenessArray,
   durationOptions,
   intensityOptions,
   sorenessOptions,
-  equipmentOptions,
 }: WorkoutIntakePanelProps) {
+  const intakeDisabled = Boolean(disabledReason) || isGenerating;
+
   const handleSubmit = useCallback(() => {
     const payload: WorkoutIntakeWizardData = {
       readiness,
-      equipment: equipmentArray,
       sleepQuality,
       durationMinutes,
       soreness: sorenessArray,
@@ -65,7 +64,6 @@ export function WorkoutIntakePanel({
     void handleAiGenerateWorkout(payload);
   }, [
     readiness,
-    equipmentArray,
     sleepQuality,
     durationMinutes,
     sorenessArray,
@@ -85,11 +83,19 @@ export function WorkoutIntakePanel({
   );
 
   return (
-    <div className="space-y-4 rounded-lg border border-border/60 bg-muted/20 p-3">
+    <div
+      className={cn(
+        'space-y-4 rounded-lg border border-border/60 bg-muted/20 p-3',
+        intakeDisabled && 'pointer-events-none opacity-60',
+      )}
+      aria-disabled={intakeDisabled || undefined}
+    >
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-medium text-muted-foreground">Workout intake</p>
-        <p className="text-[11px] text-muted-foreground">Step {step} of 4</p>
+        <p className="text-[11px] text-muted-foreground">Step {step} of 3</p>
       </div>
+
+      {disabledReason ? <p className="text-xs text-muted-foreground">{disabledReason}</p> : null}
 
       {step === 1 && (
         <div className="space-y-4">
@@ -222,44 +228,8 @@ export function WorkoutIntakePanel({
               );
             })}
           </div>
-          <div className="flex flex-wrap justify-between gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => setStep(2)}>
-              Back
-            </Button>
-            <Button type="button" size="sm" onClick={() => setStep(4)}>
-              Next
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {step === 4 && (
-        <div className="space-y-3">
-          <p className="text-xs text-muted-foreground">
-            Select equipment available for this session.
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {equipmentOptions.map((name) => {
-              const selected = equipment.has(name);
-              return (
-                <button
-                  key={name}
-                  type="button"
-                  onClick={() => toggleEquipment(name)}
-                  className={cn(
-                    'rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors',
-                    selected
-                      ? 'border-primary bg-primary/15 text-foreground'
-                      : 'border-border bg-background text-muted-foreground hover:bg-muted',
-                  )}
-                >
-                  {name}
-                </button>
-              );
-            })}
-          </div>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => setStep(3)}>
+            <Button type="button" variant="outline" size="sm" onClick={() => setStep(2)}>
               Back
             </Button>
             <PremiumGate feature="ai" inline>
@@ -268,7 +238,7 @@ export function WorkoutIntakePanel({
                 variant="default"
                 size="sm"
                 className={cn('group/button', WORKOUT_AI_GENERATE_PRIMARY_CLASS)}
-                disabled={isGenerating}
+                disabled={intakeDisabled}
                 onClick={handleSubmit}
                 title="Build the plan from this card's intake and brief (same as Details → AI workout)."
               >

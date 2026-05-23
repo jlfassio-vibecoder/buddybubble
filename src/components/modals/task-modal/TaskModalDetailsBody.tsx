@@ -13,6 +13,8 @@ import { useWorkoutIntakeWizardState } from '@/components/modals/task-modal/hook
 import type { WorkoutIntakePanelWizardProps } from '@/components/fitness/WorkoutIntakePanel';
 import type { WorkoutTemplate } from '@/hooks/use-workout-templates';
 import { WorkoutIntakePanel } from '@/components/fitness/WorkoutIntakePanel';
+import { WorkoutOutlinePanel } from '@/components/fitness/WorkoutOutlinePanel';
+import type { WorkoutOutlineEditorState } from '@/components/modals/task-modal/hooks/useWorkoutOutlineEditor';
 import { TaskModalCardCoverSection } from '@/components/modals/task-modal/TaskModalCardCoverSection';
 import { TaskModalItemMetadataSections } from '@/components/modals/task-modal/TaskModalItemMetadataSections';
 import { TaskModalProgramFields } from '@/components/modals/task-modal/TaskModalProgramFields';
@@ -49,6 +51,8 @@ export type TaskModalDetailsBodyProps = {
   aiWorkoutGenerating: boolean;
   /** When set with workout + canWrite, renders controlled `WorkoutIntakePanel`. */
   workoutIntakeState: ReturnType<typeof useWorkoutIntakeWizardState> | null;
+  workoutOutlineEditor: WorkoutOutlineEditorState | null;
+  intakeDisabledReason?: string;
   taskId: string | null;
   cardCoverPath: string;
   cardCoverFileInputRef: RefObject<HTMLInputElement | null>;
@@ -137,6 +141,8 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     onGenerateWorkoutFromIntake,
     aiWorkoutGenerating,
     workoutIntakeState,
+    workoutOutlineEditor,
+    intakeDisabledReason,
     taskId,
     cardCoverPath,
     cardCoverFileInputRef,
@@ -237,11 +243,16 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
         />
       </div>
 
+      {workoutOutlineEditor ? (
+        <WorkoutOutlinePanel editor={workoutOutlineEditor} canWrite={canWrite} />
+      ) : null}
+
       {workoutIntakeState ? (
         <WorkoutIntakePanel
           {...pickWorkoutIntakePanelWizardProps(workoutIntakeState)}
           handleAiGenerateWorkout={onGenerateWorkoutFromIntake}
           isGenerating={aiWorkoutGenerating}
+          disabledReason={intakeDisabledReason}
         />
       ) : null}
 

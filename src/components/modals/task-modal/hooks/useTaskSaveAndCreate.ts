@@ -29,6 +29,7 @@ import {
   toPgScheduledTime,
   type TaskModalOriginalSnapshot,
 } from '@/components/modals/task-modal/task-modal-save-utils';
+import { mergeOutlineMetadataOntoFormSavePayload } from '@/lib/agents/coach/coach-outline-metadata';
 import { mergeJsonWithLiveSessionToggle } from '@/lib/card-live-session-metadata';
 import {
   insertTasksRowWithRetries,
@@ -135,339 +136,351 @@ export function useTaskSaveAndCreate({
     onTaskArchived?.();
   }, [archiving, canWrite, itemType, onOpenChange, onTaskArchived, setError, taskId]);
 
-  const saveCoreFields = useCallback(async (): Promise<boolean> => {
-    if (!canWrite || !taskId) return false;
-    setSaving(true);
-    setError(null);
-    const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    const uid = user?.id ?? null;
+  const saveCoreFields = useCallback(
+    async (metadataOverride?: Json): Promise<boolean> => {
+      if (!canWrite || !taskId) return false;
+      setSaving(true);
+      setError(null);
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      const uid = user?.id ?? null;
 
-    const syncAssigneesNow = async () => {
-      const { error: syncErr } = await replaceTaskAssigneesWithUserIds(
-        supabase,
-        taskId,
-        assignedTo ? [assignedTo] : [],
-      );
-      if (syncErr) {
-        console.warn('[useTaskSaveAndCreate] task_assignees sync failed', syncErr);
-      }
-    };
-
-    const orig = originalRef.current;
-    const scheduledOnValue = parseScheduledDateFromInput(scheduledOn);
-    const newTimeHm = parseTimeHmFromScheduledInputs(scheduledOnValue, scheduledTime);
-    const scheduledTimePg = toPgScheduledTime(newTimeHm);
-    const { schedChanged, schedTimeChanged } = computeSchedulePatchFlags(
-      orig,
-      scheduledOnValue,
-      newTimeHm,
-    );
-    const effectiveStatus = computeEffectiveStatusForSchedule({
-      currentStatus: status,
-      scheduledOnYmd: scheduledOnValue,
-      calendarTimezone,
-      hasTodayBoardColumn,
-      hasScheduledBoardColumn,
-      itemType,
-    });
-
-    const mergedMetadata = mergeJsonWithLiveSessionToggle(metadataForSave, {
-      enabled: liveStreamEnabled,
-      workspaceId,
-      hostUserId: uid,
-    }) as TaskRow['metadata'];
-
-    const typeMetaPatch = {
-      item_type: itemType,
-      metadata: mergedMetadata,
-    };
-
-    const nextActivity = buildActivityLogForCoreFieldChanges({
-      orig,
-      activityLog,
-      uid,
-      titleTrimmed: title.trim(),
-      description,
-      effectiveStatus,
-      priority,
-      visibility,
-      scheduledOnValue,
-      newTimeHm,
-      assignedTo,
-    });
-
-    // Copilot suggestion ignored: field-change activity is inserted into `task_activity_log` via `insertTaskActivityLogEntries`, not `tasks.activity_log`.
-    const persistNewActivity = async (nextActs: typeof nextActivity) => {
-      const delta = diffNewActivityEntries(activityLog, nextActs);
-      const { error: actErr } = await insertTaskActivityLogEntries(supabase, taskId, delta);
-      if (actErr) {
-        console.warn('[useTaskSaveAndCreate] task_activity_log insert failed', actErr.message);
-      }
-    };
-
-    const updateWithPriority = {
-      title: title.trim(),
-      description: description.trim() || null,
-      status: effectiveStatus,
-      priority,
-      visibility,
-      ...typeMetaPatch,
-      ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
-      ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
-    };
-
-    let { error: uErr } = await supabase.from('tasks').update(updateWithPriority).eq('id', taskId);
-
-    if (uErr && isMissingColumnSchemaCacheError(uErr, 'scheduled_time')) {
-      const activityWithoutTime = nextActivity.filter(
-        (e) => !(e.type === 'field_change' && e.field === 'scheduled_time'),
-      );
-      const updateNoTime = {
-        title: title.trim(),
-        description: description.trim() || null,
-        status: effectiveStatus,
-        priority,
-        visibility,
-        ...typeMetaPatch,
-        ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
-      };
-      uErr = (await supabase.from('tasks').update(updateNoTime).eq('id', taskId)).error;
-      if (!uErr) {
-        if (orig && schedTimeChanged) {
-          setScheduledTime(orig.scheduledTime ? `${orig.scheduledTime}` : '');
-          setError(
-            'Scheduled time is not saved yet: apply the scheduled-time migration on Supabase (tasks.scheduled_time), then try again.',
-          );
+      const syncAssigneesNow = async () => {
+        const { error: syncErr } = await replaceTaskAssigneesWithUserIds(
+          supabase,
+          taskId,
+          assignedTo ? [assignedTo] : [],
+        );
+        if (syncErr) {
+          console.warn('[useTaskSaveAndCreate] task_assignees sync failed', syncErr);
         }
-        await persistNewActivity(activityWithoutTime);
-        setActivityLog(asActivityLog(activityWithoutTime));
-        setStatus(effectiveStatus);
-        setOriginalFromAppliedRow({
-          title: title.trim(),
-          description: description.trim(),
-          status: effectiveStatus,
-          priority,
-          scheduledOn: schedChanged ? scheduledOnValue : (orig?.scheduledOn ?? null),
-          scheduledTime: orig?.scheduledTime ?? null,
-          itemType,
-          metadataJson: JSON.stringify(mergedMetadata),
-          visibility,
-          assignedTo,
-          liveStreamEnabled,
-        });
-        setSaving(false);
-        await syncAssigneesNow();
-        void loadTask(taskId);
-        return true;
-      }
-    }
+      };
 
-    if (uErr && isMissingColumnSchemaCacheError(uErr, 'scheduled_on')) {
-      const activityWithoutSched = nextActivity.filter(
-        (e) =>
-          !(
-            e.type === 'field_change' &&
-            (e.field === 'scheduled_on' || e.field === 'scheduled_time')
-          ),
+      const orig = originalRef.current;
+      const scheduledOnValue = parseScheduledDateFromInput(scheduledOn);
+      const newTimeHm = parseTimeHmFromScheduledInputs(scheduledOnValue, scheduledTime);
+      const scheduledTimePg = toPgScheduledTime(newTimeHm);
+      const { schedChanged, schedTimeChanged } = computeSchedulePatchFlags(
+        orig,
+        scheduledOnValue,
+        newTimeHm,
       );
-      const statusWithoutSavedSchedule = computeStatusWhenUpdateScheduledDateUnsupported({
+      const effectiveStatus = computeEffectiveStatusForSchedule({
         currentStatus: status,
-        persistedScheduledOnYmd: orig?.scheduledOn ?? null,
+        scheduledOnYmd: scheduledOnValue,
         calendarTimezone,
         hasTodayBoardColumn,
+        hasScheduledBoardColumn,
+        itemType,
       });
-      const updateNoSched = {
+
+      const metadataPayload =
+        metadataOverride != null
+          ? (mergeOutlineMetadataOntoFormSavePayload(metadataForSave, metadataOverride) as Json)
+          : metadataForSave;
+
+      const mergedMetadata = mergeJsonWithLiveSessionToggle(metadataPayload, {
+        enabled: liveStreamEnabled,
+        workspaceId,
+        hostUserId: uid,
+      }) as TaskRow['metadata'];
+
+      const typeMetaPatch = {
+        item_type: itemType,
+        metadata: mergedMetadata,
+      };
+
+      const nextActivity = buildActivityLogForCoreFieldChanges({
+        orig,
+        activityLog,
+        uid,
+        titleTrimmed: title.trim(),
+        description,
+        effectiveStatus,
+        priority,
+        visibility,
+        scheduledOnValue,
+        newTimeHm,
+        assignedTo,
+      });
+
+      // Copilot suggestion ignored: field-change activity is inserted into `task_activity_log` via `insertTaskActivityLogEntries`, not `tasks.activity_log`.
+      const persistNewActivity = async (nextActs: typeof nextActivity) => {
+        const delta = diffNewActivityEntries(activityLog, nextActs);
+        const { error: actErr } = await insertTaskActivityLogEntries(supabase, taskId, delta);
+        if (actErr) {
+          console.warn('[useTaskSaveAndCreate] task_activity_log insert failed', actErr.message);
+        }
+      };
+
+      const updateWithPriority = {
         title: title.trim(),
         description: description.trim() || null,
-        status: statusWithoutSavedSchedule,
+        status: effectiveStatus,
         priority,
         visibility,
         ...typeMetaPatch,
+        ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
+        ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
       };
-      uErr = (await supabase.from('tasks').update(updateNoSched).eq('id', taskId)).error;
-      if (!uErr) {
-        if (orig && scheduledOnValue !== orig.scheduledOn) {
-          setScheduledOn(orig.scheduledOn ?? '');
-          setScheduledTime(orig.scheduledTime ? `${orig.scheduledTime}` : '');
-          setError(
-            'Scheduled date is not saved yet: apply the scheduled-dates migration on Supabase (tasks.scheduled_on), then try again.',
-          );
-        }
-        await persistNewActivity(activityWithoutSched);
-        setActivityLog(asActivityLog(activityWithoutSched));
-        setStatus(statusWithoutSavedSchedule);
-        setOriginalFromAppliedRow({
+
+      let { error: uErr } = await supabase
+        .from('tasks')
+        .update(updateWithPriority)
+        .eq('id', taskId);
+
+      if (uErr && isMissingColumnSchemaCacheError(uErr, 'scheduled_time')) {
+        const activityWithoutTime = nextActivity.filter(
+          (e) => !(e.type === 'field_change' && e.field === 'scheduled_time'),
+        );
+        const updateNoTime = {
           title: title.trim(),
-          description: description.trim(),
+          description: description.trim() || null,
+          status: effectiveStatus,
+          priority,
+          visibility,
+          ...typeMetaPatch,
+          ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
+        };
+        uErr = (await supabase.from('tasks').update(updateNoTime).eq('id', taskId)).error;
+        if (!uErr) {
+          if (orig && schedTimeChanged) {
+            setScheduledTime(orig.scheduledTime ? `${orig.scheduledTime}` : '');
+            setError(
+              'Scheduled time is not saved yet: apply the scheduled-time migration on Supabase (tasks.scheduled_time), then try again.',
+            );
+          }
+          await persistNewActivity(activityWithoutTime);
+          setActivityLog(asActivityLog(activityWithoutTime));
+          setStatus(effectiveStatus);
+          setOriginalFromAppliedRow({
+            title: title.trim(),
+            description: description.trim(),
+            status: effectiveStatus,
+            priority,
+            scheduledOn: schedChanged ? scheduledOnValue : (orig?.scheduledOn ?? null),
+            scheduledTime: orig?.scheduledTime ?? null,
+            itemType,
+            metadataJson: JSON.stringify(mergedMetadata),
+            visibility,
+            assignedTo,
+            liveStreamEnabled,
+          });
+          setSaving(false);
+          await syncAssigneesNow();
+          void loadTask(taskId);
+          return true;
+        }
+      }
+
+      if (uErr && isMissingColumnSchemaCacheError(uErr, 'scheduled_on')) {
+        const activityWithoutSched = nextActivity.filter(
+          (e) =>
+            !(
+              e.type === 'field_change' &&
+              (e.field === 'scheduled_on' || e.field === 'scheduled_time')
+            ),
+        );
+        const statusWithoutSavedSchedule = computeStatusWhenUpdateScheduledDateUnsupported({
+          currentStatus: status,
+          persistedScheduledOnYmd: orig?.scheduledOn ?? null,
+          calendarTimezone,
+          hasTodayBoardColumn,
+        });
+        const updateNoSched = {
+          title: title.trim(),
+          description: description.trim() || null,
           status: statusWithoutSavedSchedule,
           priority,
-          scheduledOn: orig?.scheduledOn ?? null,
-          scheduledTime: orig?.scheduledTime ?? null,
-          itemType,
-          metadataJson: JSON.stringify(mergedMetadata),
           visibility,
-          assignedTo,
-          liveStreamEnabled,
-        });
-        setSaving(false);
-        await syncAssigneesNow();
-        void loadTask(taskId);
-        return true;
+          ...typeMetaPatch,
+        };
+        uErr = (await supabase.from('tasks').update(updateNoSched).eq('id', taskId)).error;
+        if (!uErr) {
+          if (orig && scheduledOnValue !== orig.scheduledOn) {
+            setScheduledOn(orig.scheduledOn ?? '');
+            setScheduledTime(orig.scheduledTime ? `${orig.scheduledTime}` : '');
+            setError(
+              'Scheduled date is not saved yet: apply the scheduled-dates migration on Supabase (tasks.scheduled_on), then try again.',
+            );
+          }
+          await persistNewActivity(activityWithoutSched);
+          setActivityLog(asActivityLog(activityWithoutSched));
+          setStatus(statusWithoutSavedSchedule);
+          setOriginalFromAppliedRow({
+            title: title.trim(),
+            description: description.trim(),
+            status: statusWithoutSavedSchedule,
+            priority,
+            scheduledOn: orig?.scheduledOn ?? null,
+            scheduledTime: orig?.scheduledTime ?? null,
+            itemType,
+            metadataJson: JSON.stringify(mergedMetadata),
+            visibility,
+            assignedTo,
+            liveStreamEnabled,
+          });
+          setSaving(false);
+          await syncAssigneesNow();
+          void loadTask(taskId);
+          return true;
+        }
       }
-    }
 
-    if (uErr && isMissingColumnSchemaCacheError(uErr, 'priority')) {
-      const activityWithoutPriority = nextActivity.filter(
-        (e) => !(e.type === 'field_change' && e.field === 'priority'),
-      );
-      const revertedPriority = orig?.priority ?? 'medium';
-      const updateWithoutPriority = {
-        title: title.trim(),
-        description: description.trim() || null,
-        status: effectiveStatus,
-        visibility,
-        ...typeMetaPatch,
-        ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
-        ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
-      };
-      uErr = (await supabase.from('tasks').update(updateWithoutPriority).eq('id', taskId)).error;
-      if (!uErr) {
-        if (orig && priority !== orig.priority) setPriority(revertedPriority);
-        await persistNewActivity(activityWithoutPriority);
-        setActivityLog(asActivityLog(activityWithoutPriority));
-        setStatus(effectiveStatus);
-        setOriginalFromAppliedRow({
+      if (uErr && isMissingColumnSchemaCacheError(uErr, 'priority')) {
+        const activityWithoutPriority = nextActivity.filter(
+          (e) => !(e.type === 'field_change' && e.field === 'priority'),
+        );
+        const revertedPriority = orig?.priority ?? 'medium';
+        const updateWithoutPriority = {
           title: title.trim(),
-          description: description.trim(),
+          description: description.trim() || null,
           status: effectiveStatus,
-          priority: revertedPriority,
-          scheduledOn: scheduledOnValue,
-          scheduledTime: newTimeHm,
-          itemType,
-          metadataJson: JSON.stringify(mergedMetadata),
-          visibility: orig?.visibility ?? visibility,
-          assignedTo: orig?.assignedTo ?? assignedTo,
-          liveStreamEnabled,
-        });
-        setSaving(false);
-        await syncAssigneesNow();
-        void loadTask(taskId);
-        return true;
+          visibility,
+          ...typeMetaPatch,
+          ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
+          ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
+        };
+        uErr = (await supabase.from('tasks').update(updateWithoutPriority).eq('id', taskId)).error;
+        if (!uErr) {
+          if (orig && priority !== orig.priority) setPriority(revertedPriority);
+          await persistNewActivity(activityWithoutPriority);
+          setActivityLog(asActivityLog(activityWithoutPriority));
+          setStatus(effectiveStatus);
+          setOriginalFromAppliedRow({
+            title: title.trim(),
+            description: description.trim(),
+            status: effectiveStatus,
+            priority: revertedPriority,
+            scheduledOn: scheduledOnValue,
+            scheduledTime: newTimeHm,
+            itemType,
+            metadataJson: JSON.stringify(mergedMetadata),
+            visibility: orig?.visibility ?? visibility,
+            assignedTo: orig?.assignedTo ?? assignedTo,
+            liveStreamEnabled,
+          });
+          setSaving(false);
+          await syncAssigneesNow();
+          void loadTask(taskId);
+          return true;
+        }
       }
-    }
 
-    if (uErr && isMissingColumnSchemaCacheError(uErr, 'visibility')) {
-      const activityWithoutVisibility = nextActivity.filter(
-        (e) => !(e.type === 'field_change' && e.field === 'visibility'),
-      );
-      const updateWithoutVisibility = {
-        title: title.trim(),
-        description: description.trim() || null,
-        status: effectiveStatus,
-        priority,
-        ...typeMetaPatch,
-        ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
-        ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
-      };
-      uErr = (await supabase.from('tasks').update(updateWithoutVisibility).eq('id', taskId)).error;
-      if (!uErr) {
-        if (orig && visibility !== orig.visibility) setVisibility(orig.visibility);
-        await persistNewActivity(activityWithoutVisibility);
-        setActivityLog(asActivityLog(activityWithoutVisibility));
-        setStatus(effectiveStatus);
-        setOriginalFromAppliedRow({
+      if (uErr && isMissingColumnSchemaCacheError(uErr, 'visibility')) {
+        const activityWithoutVisibility = nextActivity.filter(
+          (e) => !(e.type === 'field_change' && e.field === 'visibility'),
+        );
+        const updateWithoutVisibility = {
           title: title.trim(),
-          description: description.trim(),
+          description: description.trim() || null,
           status: effectiveStatus,
           priority,
-          scheduledOn: scheduledOnValue,
-          scheduledTime: newTimeHm,
-          itemType,
-          metadataJson: JSON.stringify(mergedMetadata),
-          visibility: orig?.visibility ?? 'private',
-          assignedTo: orig?.assignedTo ?? assignedTo,
-          liveStreamEnabled,
-        });
-        setSaving(false);
-        setError(
-          'Visibility is not saved yet: apply the public-portals migration on Supabase (tasks.visibility), then try again.',
-        );
-        await syncAssigneesNow();
-        void loadTask(taskId);
-        return true;
+          ...typeMetaPatch,
+          ...(schedChanged ? { scheduled_on: scheduledOnValue } : {}),
+          ...(schedTimeChanged ? { scheduled_time: scheduledTimePg } : {}),
+        };
+        uErr = (await supabase.from('tasks').update(updateWithoutVisibility).eq('id', taskId))
+          .error;
+        if (!uErr) {
+          if (orig && visibility !== orig.visibility) setVisibility(orig.visibility);
+          await persistNewActivity(activityWithoutVisibility);
+          setActivityLog(asActivityLog(activityWithoutVisibility));
+          setStatus(effectiveStatus);
+          setOriginalFromAppliedRow({
+            title: title.trim(),
+            description: description.trim(),
+            status: effectiveStatus,
+            priority,
+            scheduledOn: scheduledOnValue,
+            scheduledTime: newTimeHm,
+            itemType,
+            metadataJson: JSON.stringify(mergedMetadata),
+            visibility: orig?.visibility ?? 'private',
+            assignedTo: orig?.assignedTo ?? assignedTo,
+            liveStreamEnabled,
+          });
+          setSaving(false);
+          setError(
+            'Visibility is not saved yet: apply the public-portals migration on Supabase (tasks.visibility), then try again.',
+          );
+          await syncAssigneesNow();
+          void loadTask(taskId);
+          return true;
+        }
       }
-    }
 
-    setSaving(false);
-    if (uErr) {
-      setError(formatUserFacingError(uErr));
-      return false;
-    }
-    if (
-      itemType === 'program' &&
-      orig &&
-      !taskColumnIsCompletionStatus(orig.status ?? '', boardColumnDefs) &&
-      taskColumnIsCompletionStatus(effectiveStatus, boardColumnDefs)
-    ) {
-      const { error: childErr } = await archiveOpenChildWorkoutsForProgram(supabase, taskId);
-      if (childErr) {
-        toast.error(childErr);
+      setSaving(false);
+      if (uErr) {
+        setError(formatUserFacingError(uErr));
+        return false;
       }
-    }
-    await persistNewActivity(nextActivity);
-    setActivityLog(asActivityLog(nextActivity));
-    setStatus(effectiveStatus);
-    setOriginalFromAppliedRow({
-      title: title.trim(),
-      description: description.trim(),
-      status: effectiveStatus,
-      priority,
-      scheduledOn: scheduledOnValue,
-      scheduledTime: newTimeHm,
-      itemType,
-      metadataJson: JSON.stringify(mergedMetadata),
-      visibility,
+      if (
+        itemType === 'program' &&
+        orig &&
+        !taskColumnIsCompletionStatus(orig.status ?? '', boardColumnDefs) &&
+        taskColumnIsCompletionStatus(effectiveStatus, boardColumnDefs)
+      ) {
+        const { error: childErr } = await archiveOpenChildWorkoutsForProgram(supabase, taskId);
+        if (childErr) {
+          toast.error(childErr);
+        }
+      }
+      await persistNewActivity(nextActivity);
+      setActivityLog(asActivityLog(nextActivity));
+      setStatus(effectiveStatus);
+      setOriginalFromAppliedRow({
+        title: title.trim(),
+        description: description.trim(),
+        status: effectiveStatus,
+        priority,
+        scheduledOn: scheduledOnValue,
+        scheduledTime: newTimeHm,
+        itemType,
+        metadataJson: JSON.stringify(mergedMetadata),
+        visibility,
+        assignedTo,
+        liveStreamEnabled,
+      });
+      await syncAssigneesNow();
+      void loadTask(taskId);
+      return true;
+    },
+    [
+      activityLog,
       assignedTo,
+      boardColumnDefs,
+      calendarTimezone,
+      canWrite,
+      description,
+      hasScheduledBoardColumn,
+      hasTodayBoardColumn,
+      itemType,
+      loadTask,
       liveStreamEnabled,
-    });
-    await syncAssigneesNow();
-    void loadTask(taskId);
-    return true;
-  }, [
-    activityLog,
-    assignedTo,
-    boardColumnDefs,
-    calendarTimezone,
-    canWrite,
-    description,
-    hasScheduledBoardColumn,
-    hasTodayBoardColumn,
-    itemType,
-    loadTask,
-    liveStreamEnabled,
-    metadataForSave,
-    originalRef,
-    priority,
-    scheduledOn,
-    scheduledTime,
-    setActivityLog,
-    setError,
-    setOriginalFromAppliedRow,
-    setPriority,
-    setSaving,
-    setScheduledOn,
-    setScheduledTime,
-    setStatus,
-    setVisibility,
-    status,
-    taskId,
-    title,
-    visibility,
-    workspaceId,
-  ]);
+      metadataForSave,
+      originalRef,
+      priority,
+      scheduledOn,
+      scheduledTime,
+      setActivityLog,
+      setError,
+      setOriginalFromAppliedRow,
+      setPriority,
+      setSaving,
+      setScheduledOn,
+      setScheduledTime,
+      setStatus,
+      setVisibility,
+      status,
+      taskId,
+      title,
+      visibility,
+      workspaceId,
+    ],
+  );
 
   const createTask = useCallback(async () => {
     if (!canWrite || !bubbleId || !title.trim()) return;

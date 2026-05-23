@@ -40,6 +40,7 @@ import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 
 import {
+  COACH_MAIN_CHAT_RESPONSE_SCHEMA,
   COACH_RESPONSE_SCHEMA,
   COACH_WORKOUT_GREETING_SCHEMA,
 } from '../src/lib/agents/coach/schema';
@@ -97,9 +98,9 @@ const REGISTRY: ReadonlyArray<Contract> = [
   {
     name: 'coach.main',
     slug: 'coach',
-    schema: COACH_RESPONSE_SCHEMA,
+    schema: COACH_MAIN_CHAT_RESPONSE_SCHEMA,
     prompt:
-      buildBaseCoachPrompt('2026-01-01') +
+      buildBaseCoachPrompt('2026-01-01', { apexArchitectMainChat: true }) +
       '\n\n' +
       buildApexArchitectMainChatBlock() +
       '\n\n' +
@@ -115,8 +116,51 @@ const REGISTRY: ReadonlyArray<Contract> = [
       'ai_workout_factory',
       'workout_set',
       'parametric_requires_rich_workout_set',
-      // Catalog/hydrator-only EMOM flag (stripped before persist); mentioned in blueprint library prose.
+      // Main bubble Call A schema omits this key; prose + blueprint library still reference it.
+      'proposed_workout_metadata',
+      'coach_workout_outline',
       'is_combo',
+      // BLOCK BLUEPRINT LIBRARY prose (not Call A schema keys).
+      'block_format',
+      'format_params',
+      'workout_type',
+      'duration_min',
+      'straight_sets',
+      'superset',
+      'circuit',
+      'amrap',
+      'emom',
+      'tabata',
+      'ladder',
+      'chipper',
+      'pyramid',
+      'contrast',
+      'clusters',
+      'drop_sets',
+      'interval_seconds',
+      'total_minutes',
+      'total_rounds',
+      'rest_in_interval_seconds',
+      'is_alternating',
+      'alternating_stations',
+      'work_seconds',
+      'rest_seconds',
+      'time_cap_minutes',
+      'target_rounds',
+      'start_reps',
+      'peak_reps',
+      'step_reps',
+      'rest_between_sets_seconds',
+      'rest_between_rounds_seconds',
+      'rest_between_exercises_seconds',
+      'target_rpe',
+      'pairing_notes',
+      'load_progression_percent',
+      'reps_per_cluster',
+      'intra_cluster_rest_seconds',
+      'inter_set_rest_seconds',
+      'coach_notes',
+      'drop_percent',
     ],
   },
   {

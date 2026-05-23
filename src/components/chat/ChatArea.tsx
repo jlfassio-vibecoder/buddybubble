@@ -321,6 +321,7 @@ export function ChatArea({
   const scrollRef = useRef<HTMLDivElement>(null);
   const composerPopoverRef = useRef<HTMLDivElement>(null);
   const blockBlueprintMentionsPendingRef = useRef<BlockBlueprintMentionClientPayload[]>([]);
+  const threadBlockBlueprintMentionsPendingRef = useRef<BlockBlueprintMentionClientPayload[]>([]);
 
   const bubbleName = activeBubble?.name ?? 'Bubble';
 
@@ -661,6 +662,10 @@ export function ChatArea({
   }, [activeThreadParent?.id]);
 
   useEffect(() => {
+    threadBlockBlueprintMentionsPendingRef.current = [];
+  }, [activeThreadParent?.id]);
+
+  useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
@@ -913,6 +918,47 @@ export function ChatArea({
     const row = blockBlueprintMentionFromPick(preset);
     blockBlueprintMentionsPendingRef.current = [...blockBlueprintMentionsPendingRef.current, row];
   }, []);
+
+  const threadCoachBlockBlueprintMentionsEnabled = CHAT_AREA_DEFAULT_AGENT_SLUG === COACH_SLUG;
+
+  const onThreadBlockBlueprintInserted = useCallback((preset: BlockPickerPreset) => {
+    const row = blockBlueprintMentionFromPick(preset);
+    threadBlockBlueprintMentionsPendingRef.current = [
+      ...threadBlockBlueprintMentionsPendingRef.current,
+      row,
+    ];
+  }, []);
+
+  const sendThreadMessage = useCallback(
+    async (content: string, files?: File[]) => {
+      if (!activeThreadParent) return null;
+      const result = resolveTargetAgent({
+        messageDraft: content,
+        availableAgents,
+        contextDefaultAgentSlug: CHAT_AREA_DEFAULT_AGENT_SLUG,
+      });
+      const routesToCoach = result == null || result.agent.slug === COACH_SLUG;
+      const mergedMeta: Record<string, Json> = {};
+      if (routesToCoach) {
+        mergedMeta.default_agent_slug = CHAT_AREA_DEFAULT_AGENT_SLUG;
+        const blockMentions = finalizeBlockBlueprintMentionsForSend(
+          threadBlockBlueprintMentionsPendingRef.current,
+          content,
+        );
+        if (blockMentions?.length) {
+          mergedMeta.block_blueprint_mentions = blockMentions as unknown as Json;
+        }
+      }
+      const sendOpts: { metadata?: Json } | undefined =
+        Object.keys(mergedMeta).length > 0 ? { metadata: mergedMeta as Json } : undefined;
+      const sent = await sendMessage(content, activeThreadParent.id, files, sendOpts);
+      if (sent) {
+        threadBlockBlueprintMentionsPendingRef.current = [];
+      }
+      return sent;
+    },
+    [activeThreadParent, availableAgents, sendMessage],
+  );
 
   const performSearch = useCallback(
     async (overrides?: { query?: string; sender?: string; date?: string }) => {
@@ -1474,10 +1520,7 @@ export function ChatArea({
               canPostMessages={canPostMessages}
               liveSessionViewerUserId={myProfile?.id ?? null}
               onClose={closeThread}
-              onSendMessage={async (content, files) => {
-                if (!activeThreadParent) return null;
-                return await sendMessage(content, activeThreadParent.id, files);
-              }}
+              onSendMessage={sendThreadMessage}
               onSubmitIntent={(text) => {
                 const result = resolveTargetAgent({
                   messageDraft: text,
@@ -1519,6 +1562,17 @@ export function ChatArea({
               renderMessageContent={renderMessageContent}
               sending={sendingAttachments}
               composerFocusNonce={threadComposerFocusNonce}
+              coachBlockBlueprintMentionsEnabled={threadCoachBlockBlueprintMentionsEnabled}
+              blockConfig={
+                threadCoachBlockBlueprintMentionsEnabled
+                  ? { presets: BLOCK_PICKER_PRESETS }
+                  : undefined
+              }
+              onBlockBlueprintInserted={
+                threadCoachBlockBlueprintMentionsEnabled
+                  ? onThreadBlockBlueprintInserted
+                  : undefined
+              }
             />
           </MobileThreadSheet>
         ) : (
@@ -1529,10 +1583,7 @@ export function ChatArea({
             canPostMessages={canPostMessages}
             liveSessionViewerUserId={myProfile?.id ?? null}
             onClose={closeThread}
-            onSendMessage={async (content, files) => {
-              if (!activeThreadParent) return null;
-              return await sendMessage(content, activeThreadParent.id, files);
-            }}
+            onSendMessage={sendThreadMessage}
             onSubmitIntent={(text) => {
               const result = resolveTargetAgent({
                 messageDraft: text,
@@ -1574,6 +1625,15 @@ export function ChatArea({
             renderMessageContent={renderMessageContent}
             sending={sendingAttachments}
             composerFocusNonce={threadComposerFocusNonce}
+            coachBlockBlueprintMentionsEnabled={threadCoachBlockBlueprintMentionsEnabled}
+            blockConfig={
+              threadCoachBlockBlueprintMentionsEnabled
+                ? { presets: BLOCK_PICKER_PRESETS }
+                : undefined
+            }
+            onBlockBlueprintInserted={
+              threadCoachBlockBlueprintMentionsEnabled ? onThreadBlockBlueprintInserted : undefined
+            }
           />
         )}
       </div>

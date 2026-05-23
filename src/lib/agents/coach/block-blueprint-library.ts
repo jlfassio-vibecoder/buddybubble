@@ -39,7 +39,9 @@ export type BlockShapeDropReason =
   | 'contrast_cardinality'
   | 'contrast_missing_rounds'
   | 'clusters_missing_params'
-  | 'drop_sets_missing_params';
+  | 'drop_sets_missing_params'
+  | 'json_parse_failed'
+  | 'missing_blocks';
 
 export type BlockShapeDrop = {
   field: string;
@@ -366,16 +368,15 @@ export function userMessageShowsDraftIntent(content: string): boolean {
 }
 
 /** True when the full block taxonomy should be appended to the Coach system prompt. */
-export function shouldInjectBlockBlueprintLibrary(args: {
+export function shouldInjectBlockBlueprintLibrary(_args: {
   isRailSurface: boolean;
   blockBlueprintMentionCount: number;
-  /** Main bubble: inject on draft-intent turns (heavy JSON); skip during intake Q&A to save latency. */
+  /** @deprecated Main chat always injects; kept for call-site compatibility. */
   userMessageShowsDraftIntent?: boolean;
 }): boolean {
-  if (args.isRailSurface) return true;
-  if (args.blockBlueprintMentionCount > 0) return true;
-  if (args.userMessageShowsDraftIntent) return true;
-  return false;
+  // Rail and main bubble always receive the blueprint library so agreement turns
+  // (e.g. "That sounds good") still know EMOM/tabata format_params without draft-intent regex.
+  return true;
 }
 
 /**

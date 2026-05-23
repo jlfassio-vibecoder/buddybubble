@@ -344,10 +344,10 @@ describe('shouldInjectBlockBlueprintLibrary', () => {
     ).toBe(true);
   });
 
-  it('omits library on main bubble intake without mentions or draft intent', () => {
+  it('always includes library on main bubble (no draft-intent gating)', () => {
     expect(
       shouldInjectBlockBlueprintLibrary({ isRailSurface: false, blockBlueprintMentionCount: 0 }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('includes library on main bubble draft-intent message', () => {

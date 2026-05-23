@@ -22,14 +22,24 @@ import { INTAKE_CATEGORIES, INTAKE_PHASES } from './config';
 export const COACH_PROPOSED_WORKOUT_BLOCK_ITEM_SCHEMA = {
   type: 'OBJECT',
   properties: {
-    name: { type: 'STRING' },
+    name: {
+      type: 'STRING',
+      maxLength: 80,
+      description:
+        'Short section label only (e.g. "Main EMOM", "Warm-up") — NOT workout prose, timing, or prescriptions. Put structure in block_format and format_params; Vertex Factory fills detail.',
+    },
     exercises: {
       type: 'ARRAY',
       nullable: true,
       items: {
         type: 'OBJECT',
         properties: {
-          name: { type: 'STRING' },
+          name: {
+            type: 'STRING',
+            maxLength: 80,
+            description:
+              'Exercise name only (e.g. "Kettlebell Swing") — short placeholder on outline turns; no coaching prose or prescription narrative.',
+          },
           sets: { type: 'INTEGER', nullable: true },
           reps: { type: 'STRING', nullable: true },
           coach_notes: {
@@ -138,6 +148,81 @@ export const COACH_PROPOSED_WORKOUT_BLOCK_ITEM_SCHEMA = {
   },
 } as const;
 
+/** Phase B outline fill: minimal block tree only (separate Vertex call). */
+export const COACH_OUTLINE_ONLY_BLOCK_ITEM_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    name: {
+      type: 'STRING',
+      maxLength: 80,
+      description: 'Short section label only (e.g. "Main EMOM") — never workout prose or timing.',
+    },
+    block_format: {
+      type: 'STRING',
+      enum: [
+        'straight_sets',
+        'superset',
+        'circuit',
+        'amrap',
+        'emom',
+        'tabata',
+        'ladder',
+        'chipper',
+        'pyramid',
+        'contrast',
+        'clusters',
+        'drop_sets',
+      ],
+      description: 'Blueprint discriminator from BLOCK BLUEPRINT LIBRARY.',
+    },
+    format_params: {
+      type: 'OBJECT',
+      nullable: true,
+      description: 'Format-specific params per block_format (see BLUEPRINT LIBRARY).',
+      properties: {
+        time_cap_minutes: { type: 'INTEGER', nullable: true },
+        interval_seconds: { type: 'INTEGER', nullable: true },
+        total_minutes: { type: 'INTEGER', nullable: true },
+        total_rounds: { type: 'INTEGER', nullable: true },
+        is_alternating: { type: 'BOOLEAN', nullable: true },
+        is_combo: { type: 'BOOLEAN', nullable: true },
+        rounds: { type: 'INTEGER', nullable: true },
+        work_seconds: { type: 'INTEGER', nullable: true },
+        rest_seconds: { type: 'INTEGER', nullable: true },
+        rest_in_interval_seconds: { type: 'INTEGER', nullable: true },
+      },
+    },
+    exercises: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          name: {
+            type: 'STRING',
+            maxLength: 80,
+            description: 'Exercise name placeholder only.',
+          },
+        },
+        required: ['name'],
+      },
+    },
+  },
+  required: ['name', 'block_format'],
+} as const;
+
+export const COACH_OUTLINE_ONLY_SCHEMA: VertexResponseSchema = {
+  type: 'OBJECT',
+  properties: {
+    blocks: {
+      type: 'ARRAY',
+      description:
+        'Parametric workout outline blocks. Extremely concise — name, block_format, format_params, exercise name placeholders only.',
+      items: COACH_OUTLINE_ONLY_BLOCK_ITEM_SCHEMA,
+    },
+  },
+  required: ['blocks'],
+};
+
 export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
   type: 'OBJECT',
   properties: {
@@ -198,7 +283,7 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
       type: 'STRING',
       nullable: true,
       description:
-        "When create_card is true: brief task-comment only — readiness summary and prescription rationale in at most 2 short paragraphs; no biomechanical essays or exercise-by-exercise coaching. Not shown in bubble chat. MUST end with this exact CTA paragraph (verbatim line breaks optional): Does this proposed workout look good? If so, click 'Generate Workout' on the card. If you'd like any adjustments, let me know here in the chat! Use null when create_card is false.",
+        "When create_card is true: brief task-comment only — readiness summary and prescription rationale in at most 2 short paragraphs; no biomechanical essays or exercise-by-exercise coaching. Not shown in bubble chat. MUST end with this exact CTA paragraph (verbatim line breaks optional): Complete the Workout Intake 3-step form then click 'Generate Workout' on the card. Use null when create_card is false.",
     },
     update_existing_task: {
       type: 'BOOLEAN',
@@ -330,7 +415,7 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
       type: 'OBJECT',
       nullable: true,
       description:
-        'Optional. When TASK MODAL INTAKE UI appears in the system prompt (workout / workout_log task card), use this object to update the on-card intake wizard from chat. Keys are optional — include only fields you are changing. readiness and sleep_quality are integers 1–10 (Task Modal sliders). They are NOT the same as session_readiness_score (0–100 internal estimate): never put session_readiness_score values into readiness/sleep_quality; if you mention readiness in reply_content for the sliders, you MUST mirror the same integers here. wizard_step: 1–4. duration_minutes: 15, 30, 45, 60, or the exact string Optimized for Goals. target_intensity: Light/Recovery | Moderate | High/HIIT. soreness: subset of None, Legs, Back, Shoulders, Chest, Core. equipment: subset of Dumbbells, Kettlebell, Resistance bands, Pull-up bar, Mat, Bodyweight. Omit or null when not updating the wizard.',
+        'Optional. When TASK MODAL INTAKE UI appears in the system prompt (workout / workout_log task card), use this object to update the on-card intake wizard from chat. Keys are optional — include only fields you are changing. readiness and sleep_quality are integers 1–10 (Task Modal sliders). They are NOT the same as session_readiness_score (0–100 internal estimate): never put session_readiness_score values into readiness/sleep_quality; if you mention readiness in reply_content for the sliders, you MUST mirror the same integers here. wizard_step: 1–3. duration_minutes: 15, 30, 45, 60, or the exact string Optimized for Goals. target_intensity: Light/Recovery | Moderate | High/HIIT. soreness: subset of None, Legs, Back, Shoulders, Chest, Core. Omit or null when not updating the wizard.',
       properties: {
         readiness: {
           type: 'INTEGER',
@@ -345,7 +430,7 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
         wizard_step: {
           type: 'INTEGER',
           nullable: true,
-          description: 'Which wizard step (1–4) to show after applying other fields.',
+          description: 'Which wizard step (1–3) to show after applying other fields.',
         },
         duration_minutes: {
           type: 'STRING',
@@ -365,21 +450,7 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
             'Body areas sore today; items must be from the allowed soreness list in TASK MODAL INTAKE UI.',
           items: { type: 'STRING' },
         },
-        equipment: {
-          type: 'ARRAY',
-          nullable: true,
-          description:
-            'Equipment available today; items must be from the allowed equipment list in TASK MODAL INTAKE UI.',
-          items: { type: 'STRING' },
-        },
       },
-    },
-    coach_workout_outline: {
-      type: 'ARRAY',
-      nullable: true,
-      description:
-        'Apex Architect main bubble chat only: minimal-token structural skeleton after explicit agreement (create_card true or update_existing_task revising outline). Each block: name, block_format, format_params, exercise name placeholders only — omit coach_notes, long instructions[], sets/reps unless format requires. Persisted to tasks.metadata.coach_workout_outline for Vertex Factory. MUST be null on pre_draft_confirmation turns and on rail surfaces. Do NOT use proposed_workout_metadata.blocks for pre-factory parametric outlines.',
-      items: COACH_PROPOSED_WORKOUT_BLOCK_ITEM_SCHEMA,
     },
     card_action: {
       type: 'STRING',
@@ -403,9 +474,25 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
     'updated_task_title',
     'updated_task_description',
     'proposed_workout_metadata',
-    'coach_workout_outline',
     'card_action',
   ],
+};
+
+/**
+ * Main bubble Call A schema — card shell only. Omits `proposed_workout_metadata` so the
+ * model cannot dump parametric blocks into Call A (Phase B writes `coach_workout_outline`).
+ * Rail / task-modal co-pilot uses full `COACH_RESPONSE_SCHEMA`.
+ */
+export const COACH_MAIN_CHAT_RESPONSE_SCHEMA: VertexResponseSchema = {
+  type: 'OBJECT',
+  properties: Object.fromEntries(
+    Object.entries(COACH_RESPONSE_SCHEMA.properties as Record<string, unknown>).filter(
+      ([key]) => key !== 'proposed_workout_metadata',
+    ),
+  ) as VertexResponseSchema['properties'],
+  required: (COACH_RESPONSE_SCHEMA.required ?? []).filter(
+    (key) => key !== 'proposed_workout_metadata',
+  ),
 };
 
 /**

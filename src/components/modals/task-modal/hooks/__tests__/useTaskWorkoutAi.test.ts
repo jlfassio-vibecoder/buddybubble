@@ -275,9 +275,21 @@ describe('useTaskWorkoutAi handleAiGenerateWorkout', () => {
   });
 
   it('forwards coach_workout_outline from task metadata to postGenerateWorkoutChain', async () => {
-    const outline = [{ name: 'Main', block_format: 'emom', exercises: [{ name: 'Swing' }] }];
+    const outline = [
+      {
+        name: 'Main EMOM',
+        block_format: 'emom',
+        format_params: {
+          interval_seconds: 60,
+          total_minutes: 10,
+          is_alternating: true,
+        },
+        exercises: [{ name: 'Swing' }, { name: 'Thruster' }],
+      },
+    ];
     const meta = {
       coach_workout_outline: outline,
+      coach_outline_confirmed_at: '2026-05-22T12:00:00.000Z',
       exercises: [],
     } as Json;
 
@@ -289,8 +301,32 @@ describe('useTaskWorkoutAi handleAiGenerateWorkout', () => {
 
     expect(mockPostGenerateWorkoutChain).toHaveBeenCalledTimes(1);
     const payload = mockPostGenerateWorkoutChain.mock.calls[0][0] as {
-      coach_workout_outline?: unknown;
+      coach_workout_outline?: Array<Record<string, unknown>>;
     };
-    expect(payload.coach_workout_outline).toEqual(outline);
+    expect(Array.isArray(payload.coach_workout_outline)).toBe(true);
+    expect(payload.coach_workout_outline?.[0]?.block_format).toBe('emom');
+    expect(payload.coach_workout_outline?.[0]?.name).toBe('Main EMOM');
+  });
+
+  it('blocks generate when outline is not confirmed', async () => {
+    const outline = [
+      {
+        name: 'Main',
+        block_format: 'straight_sets',
+        exercises: [{ name: 'Squat' }],
+      },
+    ];
+    const meta = {
+      coach_workout_outline: outline,
+      exercises: [],
+    } as Json;
+
+    const { result } = renderHook(() => useTaskWorkoutAiHarness(meta));
+
+    await act(async () => {
+      await result.current.handleAiGenerateWorkout();
+    });
+
+    expect(mockPostGenerateWorkoutChain).not.toHaveBeenCalled();
   });
 });

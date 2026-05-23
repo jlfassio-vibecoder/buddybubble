@@ -1,11 +1,15 @@
-import { runExtractAndEnrichChain } from '@/lib/workout-factory/generate-workout-kanban-extract-runner';
+// import { runExtractAndEnrichChain } from '@/lib/workout-factory/generate-workout-kanban-extract-runner';
+import { runGenerateWorkoutOutlineFill } from '@/lib/workout-factory/generate-workout-outline-fill-runner';
+import { preflightOutlineBlocks } from '@/lib/workout-factory/outline-block-preflight';
 import { prepareWorkoutChainRequest } from '@/lib/workout-factory/prepare-workout-chain-request';
 import { getVertexAICredentials } from '@/lib/workout-factory/vertex-ai-client';
 import type { WorkoutChainGenerationResponse } from '@/lib/workout-factory/workout-chain-response';
 
+const OUTLINE_REQUIRED_ERROR = 'OUTLINE_REQUIRED_FOR_FACTORY';
+
 /**
- * All workout chain generation uses the Kanban extract → enrich pipeline
- * (Vertex brief extraction + optional dictionary merge + enrich).
+ * Workout chain generation: parametric outline fill when a valid Apex outline is present.
+ * STEP 1 quarantine: Kanban extract → enrich (Hop 3b/4) disabled while rebuilding states.
  */
 export async function runGenerateWorkoutChain(
   rawBody: unknown,
@@ -18,14 +22,40 @@ export async function runGenerateWorkoutChain(
   const creds = await getVertexAICredentials('[generate-workout-chain]');
   if ('error' in creds) return { ok: false, response: creds.error };
 
-  if (shouldLog) {
-    if (prepared.data.coachWorkoutOutline?.length) {
-      console.warn(
-        '[generate-workout-chain] coach_workout_outline present; outline filler not implemented (Phase 3.2) — using Kanban extract & enrich',
-      );
-    } else {
-      console.warn('[generate-workout-chain] Using Kanban extract & enrich pipeline');
+  const preflight = prepared.data.coachWorkoutOutline?.length
+    ? preflightOutlineBlocks(prepared.data.coachWorkoutOutline)
+    : null;
+
+  if (preflight && preflight.blocks.length > 0) {
+    if (shouldLog) {
+      console.warn('[generate-workout-chain] Using parametric outline fill pipeline');
     }
+    return runGenerateWorkoutOutlineFill(prepared.data, creds, shouldLog, options?.createdByUserId);
   }
+
+  if (shouldLog) {
+    console.warn(
+      '[generate-workout-chain] No valid coach_workout_outline — factory blocked (Kanban quarantined)',
+    );
+  }
+
+  return {
+    ok: false,
+    response: new Response(JSON.stringify({ error: OUTLINE_REQUIRED_ERROR }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  };
+
+  /*
+  if (shouldLog && prepared.data.coachWorkoutOutline?.length) {
+    console.warn(
+      '[generate-workout-chain] coach_workout_outline present but preflight dropped all blocks — using Kanban extract & enrich',
+    );
+  } else if (shouldLog) {
+    console.warn('[generate-workout-chain] Using Kanban extract & enrich pipeline');
+  }
+
   return runExtractAndEnrichChain(prepared.data, creds, shouldLog, options?.createdByUserId);
+  */
 }

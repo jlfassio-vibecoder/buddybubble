@@ -69,6 +69,10 @@ export async function POST(req: Request) {
         ? body.coach_workout_outline
         : undefined;
 
+    if (!coachWorkoutOutline) {
+      throw new Error('OUTLINE_REQUIRED_FOR_FACTORY');
+    }
+
     const { data: profileRow, error: profileError } = await supabase
       .from('fitness_profiles')
       .select('*')
@@ -145,6 +149,7 @@ export async function POST(req: Request) {
   } catch (e) {
     console.error('[generate-workout-chain]', e);
     const msg = e instanceof Error ? e.message : 'Failed to generate workout';
-    return NextResponse.json({ error: msg }, { status: 500 });
+    const status = msg === 'OUTLINE_REQUIRED_FOR_FACTORY' ? 400 : 500;
+    return NextResponse.json({ error: msg }, { status });
   }
 }

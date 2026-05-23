@@ -92,21 +92,38 @@ describe('buildApexArchitectMainChatBlock', () => {
     expect(block).not.toContain('LIVE CO-PILOT MODE');
   });
 
-  it('includes CRITICAL TOKEN CONSTRAINT for skeleton-only outline turns', () => {
+  it('includes Master Prompt core directives', () => {
+    expect(block).toContain('Assess Before Prescribing');
+    expect(block).toContain('Science-Grounded Programming');
+    expect(block).toContain('Triad of Performance');
+    expect(block).toContain('Clinical Precision');
+    expect(block).toContain('motor unit recruitment');
+  });
+
+  it('includes CRITICAL TOKEN CONSTRAINT for card-shell-only create_card turns', () => {
     expect(block).toContain('CRITICAL TOKEN CONSTRAINT');
-    expect(block).toContain('structural skeleton');
     expect(block).toContain('max 3 sentences');
-    expect(block).toContain('Vertex Factory');
+    expect(block).toContain('FACTORY HANDOFF');
+    expect(block).not.toContain('set create_card to true with task_title');
+  });
+
+  it('includes vocabulary strictness for Alternating EMOM vs Combo', () => {
+    expect(block).toContain('Vocabulary Strictness');
+    expect(block).toContain('Alternating EMOM');
+    expect(block).toContain(':main/emom/alternating');
   });
 });
 
 describe('buildBaseCoachPrompt', () => {
   const prompt = buildBaseCoachPrompt('2026-05-15');
 
-  it('keeps the global PRE-DRAFT CONFIRMATION sentence', () => {
-    expect(prompt).toContain(
-      'Follow PRE-DRAFT CONFIRMATION before emitting structured proposed_workout_metadata',
-    );
+  it('requires clinical intake before card creation', () => {
+    expect(prompt).toContain('PRE-DRAFT CONFIRMATION (clinical intake state machine)');
+    expect(prompt).toContain('CLINICAL INTAKE PHASE');
+    expect(prompt).toContain('ASK ELITE QUESTIONS');
+    expect(prompt).toContain('DRAFT TRIGGER');
+    expect(prompt).not.toContain('immediately set create_card to true');
+    expect(prompt).not.toContain('Leave missing_intake_categories empty unless');
   });
 
   it('appends the live co-pilot rail EXCEPTION exactly once', () => {
@@ -117,8 +134,19 @@ describe('buildBaseCoachPrompt', () => {
     expect(matches.length).toBe(1);
   });
 
-  it('does not embed the BLOCK BLUEPRINT LIBRARY (injected on rail / block mentions only)', () => {
+  it('does not embed the BLOCK BLUEPRINT LIBRARY (injected separately in strategy)', () => {
     expect(prompt).not.toContain(BLOCK_BLUEPRINT_LIBRARY_HEADER);
+  });
+
+  it('with apexArchitectMainChat, omits rich task_description directive', () => {
+    const apexPrompt = buildBaseCoachPrompt('2026-05-15', { apexArchitectMainChat: true });
+    expect(apexPrompt).not.toContain('rich task_description');
+    expect(apexPrompt).toContain('concise task_description');
+    expect(apexPrompt).toContain('max 3 sentences per APEX ARCHITECT block');
+  });
+
+  it('without apexArchitectMainChat, keeps rich task_description directive', () => {
+    expect(prompt).toContain('rich task_description');
   });
 
   it('still names card_action and parametric hand-off in the base contract', () => {
@@ -293,7 +321,6 @@ describe('readTaskModalLiveStateFromMessageMetadata', () => {
         duration_minutes: 30,
         target_intensity: 'Moderate',
         soreness: ['Legs', 'bogus'],
-        equipment: ['Mat'],
       },
     });
     expect(s).toEqual({
@@ -305,7 +332,6 @@ describe('readTaskModalLiveStateFromMessageMetadata', () => {
       duration_minutes: 30,
       target_intensity: 'Moderate',
       soreness: ['Legs'],
-      equipment: ['Mat'],
     });
   });
 });
@@ -321,7 +347,6 @@ describe('buildTaskModalLiveStateBlock', () => {
       duration_minutes: 45,
       target_intensity: 'High/HIIT',
       soreness: ['None'],
-      equipment: ['Bodyweight'],
     });
     expect(text).toContain('--- TASK MODAL LIVE STATE (v1) ---');
     expect(text).toContain('item_type: workout_log');

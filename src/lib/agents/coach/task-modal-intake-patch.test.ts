@@ -43,4 +43,12 @@ describe('parseAndCollectTaskModalIntakePatchFromGemini', () => {
     expect(patch).toBeNull();
     expect(dropped.some((d) => d.reason === 'invalid_enum' && d.field === 'soreness')).toBe(true);
   });
+
+  it('records unknown_key for legacy equipment patches', () => {
+    const { patch, dropped } = parseAndCollectTaskModalIntakePatchFromGemini({
+      equipment: ['Kettlebell'],
+    });
+    expect(patch).toBeNull();
+    expect(dropped.some((d) => d.field === 'equipment' && d.reason === 'unknown_key')).toBe(true);
+  });
 });

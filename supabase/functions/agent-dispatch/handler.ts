@@ -299,6 +299,11 @@ export async function handleDispatchRequest(req: Request): Promise<Response> {
 
   // Main path: build prompt + contents, call Vertex, parse, guard, persist.
   try {
+    if (!ctx.extras) {
+      (ctx as DispatchContext & { extras: Record<string, unknown> }).extras = {};
+    }
+    ctx.extras!.dispatchStartedAtMs = dispatchStartedAt;
+
     const systemPrompt = await strategy.buildSystemPrompt(ctx);
     const contents = await strategy.buildContents(ctx);
 
@@ -312,6 +317,7 @@ export async function handleDispatchRequest(req: Request): Promise<Response> {
     });
     const startedAt = Date.now();
     const generationOverrides = strategy.resolveGenerationConfig?.(ctx) ?? null;
+    const responseSchema = strategy.resolveResponseSchema?.(ctx) ?? strategy.responseSchema;
     const response = await generateContent({
       project: env.GCP_PROJECT_ID,
       location: env.GCP_LOCATION,
@@ -322,7 +328,7 @@ export async function handleDispatchRequest(req: Request): Promise<Response> {
         temperature: strategy.temperature,
         maxOutputTokens: generationOverrides?.maxOutputTokens ?? strategy.maxOutputTokens,
         responseMimeType: 'application/json',
-        responseSchema: strategy.responseSchema,
+        responseSchema,
         ...(strategy.slug === COACH_SLUG
           ? {
               // Copilot suggestion ignored: Coach strategy.resolveGenerationConfig already applies
@@ -360,8 +366,13 @@ export async function handleDispatchRequest(req: Request): Promise<Response> {
       } as VertexClassifiedError;
     }
 
-    const parsed = (strategy as AgentStrategy<unknown>).parse(response, ctx);
+    let parsed = (strategy as AgentStrategy<unknown>).parse(response, ctx);
     log('info', 'parsed', baseFields(requestId, record, strategy.slug, 'parsed'));
+
+    if (strategy.enrichParsed) {
+      parsed = await (strategy as AgentStrategy<unknown>).enrichParsed!(parsed, ctx);
+      log('info', 'enriched', baseFields(requestId, record, strategy.slug, 'enriched'));
+    }
 
     let guarded: unknown = parsed;
     if (strategy.applyServerGuards) {

@@ -31,6 +31,7 @@ import {
   vertex500Always,
   vertexHappy,
   vertexHappyCapturingBody,
+  vertexHappySequence,
   vertexHanging,
   vertexMalformedJson,
   vertexShapeViolating,
@@ -246,6 +247,7 @@ function assertSuccessfulDispatchLogs(logs: CapturedAgentLog[], slug: string): v
     'llm_call',
     'llm_done',
     'parsed',
+    ...(slug === 'coach' ? ['enriched'] : []),
     ...(slug === 'coach' ? ['guarded'] : []),
     'persisted',
     'done',
@@ -1092,7 +1094,7 @@ integrationTest(
 );
 
 integrationTest(
-  'main bubble intake omits block library but keeps Apex block and reduced thinking budget',
+  'main bubble intake includes block library, Apex block, and reduced thinking budget',
   async () => {
     const vertex = vertexHappyCapturingBody(COACH_REPLY);
     await withHarness({ vertex }, async ({ vertex: vtx, logs }) => {
@@ -1108,12 +1110,12 @@ integrationTest(
       const body = vtx!.lastBodyText();
       assertExists(body);
       const req = parseCapturedVertexRequest(body);
-      assertEquals(req.systemPrompt.includes(BLOCK_LIBRARY_INJECTED_MARKER), false);
+      assertEquals(req.systemPrompt.includes(BLOCK_LIBRARY_INJECTED_MARKER), true);
       assertEquals(req.systemPrompt.includes('--- APEX ARCHITECT (main bubble chat) ---'), true);
       assertEquals(req.thinkingBudget, 512);
       const dietLog = logs.findLog((log) => log.msg === 'coach main rail diet');
       assertExists(dietLog);
-      assertEquals(dietLog.block_library_included, false);
+      assertEquals(dietLog.block_library_included, true);
       assertEquals(dietLog.thinking_budget, 512);
       assertEquals(dietLog.surface, 'non_rail');
     });
@@ -1415,42 +1417,43 @@ integrationTest(
   },
 );
 
-const COACH_REPLY_CREATE_EMOM_OUTLINE = {
+const COACH_REPLY_CREATE_EMOM_SHELL = {
   ...COACH_REPLY,
   reply_content: 'Your EMOM card is ready.',
   create_card: true,
   task_title: 'EMOM Alternating',
   task_description: '12-minute alternating EMOM with kettlebell swing and push-ups.',
   coach_task_notes:
-    "Does this proposed workout look good? If so, click 'Generate Workout' on the card. If you'd like any adjustments, let me know here in the chat!",
+    "Complete the Workout Intake 3-step form then click 'Generate Workout' on the card.",
   user_requested_immediate_card: true,
   session_request: true,
   intake_phase: 'ready_to_prescribe',
   missing_intake_categories: [],
-  coach_workout_outline: [
+};
+
+const COACH_OUTLINE_PHASE_B_EMOM = {
+  blocks: [
     {
       name: 'Main',
       block_format: 'emom',
       format_params: {
         interval_seconds: 60,
         total_minutes: 12,
-        is_alternating: true,
       },
-      exercises: [
-        { name: 'KB Swing', sets: 1, reps: '10' },
-        { name: 'Push-up', sets: 1, reps: '12' },
-      ],
+      exercises: [{ name: 'KB Swing' }, { name: 'Push-up' }],
     },
   ],
 };
 
 integrationTest('coach create_card passes p_coach_workout_outline for Apex outline', async () => {
-  await withHarness({ vertex: vertexHappy(COACH_REPLY_CREATE_EMOM_OUTLINE) }, async ({ rpc }) => {
+  const vertex = vertexHappySequence([COACH_REPLY_CREATE_EMOM_SHELL, COACH_OUTLINE_PHASE_B_EMOM]);
+  await withHarness({ vertex }, async ({ rpc }) => {
     const response = await handleDispatchRequest(
       webhookRequest({ content: '@coach build my EMOM card now' }),
     );
     assertEquals(response.status, 200);
     assertEquals((await readJson(response)).ok, true);
+    assertEquals(vertex.count(), 2);
     const calls = rpc.getRpcCalls('agent_create_card_and_reply');
     assertEquals(calls.length, 1);
     assertEquals(calls[0].args.p_create_card, true);
@@ -1460,6 +1463,7 @@ integrationTest('coach create_card passes p_coach_workout_outline for Apex outli
     assertEquals(outline[0].block_format, 'emom');
     const fp = outline[0].format_params as Record<string, unknown>;
     assertEquals(fp.is_alternating, true);
+    assertEquals(fp.alternating_stations, [[0], [1]]);
   });
 });
 

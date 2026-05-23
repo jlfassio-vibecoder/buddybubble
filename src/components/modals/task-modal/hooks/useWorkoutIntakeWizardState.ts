@@ -8,12 +8,11 @@ import {
   type WorkoutIntakeDurationChoice,
   type WorkoutIntakeIntensityChoice,
   WORKOUT_INTAKE_DURATION_CHOICES,
-  WORKOUT_INTAKE_EQUIPMENT_OPTIONS,
   WORKOUT_INTAKE_INTENSITY_OPTIONS,
   WORKOUT_INTAKE_SORENESS_OPTIONS,
 } from '@/lib/agents/coach/task-modal-intake-patch';
 
-export type WorkoutIntakeWizardStep = 1 | 2 | 3 | 4;
+export type WorkoutIntakeWizardStep = 1 | 2 | 3;
 
 export type IntakeWritableField =
   | 'readiness'
@@ -21,8 +20,7 @@ export type IntakeWritableField =
   | 'wizard_step'
   | 'duration_minutes'
   | 'target_intensity'
-  | 'soreness'
-  | 'equipment';
+  | 'soreness';
 
 export type FieldWriteMeta = {
   userTouchedAtMs: number;
@@ -53,7 +51,6 @@ const ALL_FIELDS: IntakeWritableField[] = [
   'duration_minutes',
   'target_intensity',
   'soreness',
-  'equipment',
 ];
 
 function emptyPolicy(): WizardWritePolicyState {
@@ -71,7 +68,6 @@ function resetWizardValues(): {
   durationMinutes: WorkoutIntakeDurationChoice;
   targetIntensity: WorkoutIntakeIntensityChoice;
   soreness: Set<string>;
-  equipment: Set<string>;
 } {
   return {
     step: 1,
@@ -80,7 +76,6 @@ function resetWizardValues(): {
     durationMinutes: 'Optimized for Goals',
     targetIntensity: 'Moderate',
     soreness: new Set(['None']),
-    equipment: new Set(),
   };
 }
 
@@ -106,7 +101,6 @@ export function useWorkoutIntakeWizardState(
   const [targetIntensity, setTargetIntensityState] =
     useState<WorkoutIntakeIntensityChoice>('Moderate');
   const [soreness, setSorenessState] = useState<Set<string>>(() => new Set(['None']));
-  const [equipment, setEquipmentState] = useState<Set<string>>(() => new Set());
 
   const writePolicyRef = useRef<WizardWritePolicyState>(emptyPolicy());
   const prevSessionKeyRef = useRef<string | null>(null);
@@ -126,7 +120,6 @@ export function useWorkoutIntakeWizardState(
     setDurationMinutesState(v.durationMinutes);
     setTargetIntensityState(v.targetIntensity);
     setSorenessState(v.soreness);
-    setEquipmentState(v.equipment);
     writePolicyRef.current = emptyPolicy();
   }, [sessionKey]);
 
@@ -175,9 +168,6 @@ export function useWorkoutIntakeWizardState(
       }
       if (patch.soreness !== undefined) {
         tryField('soreness', () => setSorenessState(new Set(patch.soreness)));
-      }
-      if (patch.equipment !== undefined) {
-        tryField('equipment', () => setEquipmentState(new Set(patch.equipment)));
       }
     },
     [],
@@ -264,20 +254,6 @@ export function useWorkoutIntakeWizardState(
     [markUserTouched],
   );
 
-  const toggleEquipment = useCallback(
-    (name: string) => {
-      markUserTouched('equipment');
-      setEquipmentState((prev) => {
-        const n = new Set(prev);
-        if (n.has(name)) n.delete(name);
-        else n.add(name);
-        return n;
-      });
-    },
-    [markUserTouched],
-  );
-
-  const equipmentArray = useMemo(() => [...equipment].sort(), [equipment]);
   const sorenessArray = useMemo(() => {
     const arr = [...soreness].filter((s) => s !== 'None');
     if (soreness.has('None') && arr.length === 0) return ['None'];
@@ -287,13 +263,12 @@ export function useWorkoutIntakeWizardState(
   const buildWizardPayload = useCallback((): WorkoutIntakeWizardData => {
     return {
       readiness,
-      equipment: equipmentArray,
       sleepQuality,
       durationMinutes,
       soreness: sorenessArray,
       targetIntensity,
     };
-  }, [readiness, equipmentArray, sleepQuality, durationMinutes, sorenessArray, targetIntensity]);
+  }, [readiness, sleepQuality, durationMinutes, sorenessArray, targetIntensity]);
 
   // Copilot suggestion ignored: memoizing this return object caused an effect-loop OOM in TaskModal.layout.test.tsx; consumers tolerate fresh identities.
   return {
@@ -308,10 +283,7 @@ export function useWorkoutIntakeWizardState(
     targetIntensity,
     setTargetIntensity,
     soreness,
-    equipment,
     toggleSoreness,
-    toggleEquipment,
-    equipmentArray,
     sorenessArray,
     applyTaskModalIntakePatch,
     applyTaskModalIntakePatchFromMessage,
@@ -320,7 +292,6 @@ export function useWorkoutIntakeWizardState(
     durationOptions: WORKOUT_INTAKE_DURATION_CHOICES,
     intensityOptions: WORKOUT_INTAKE_INTENSITY_OPTIONS,
     sorenessOptions: WORKOUT_INTAKE_SORENESS_OPTIONS,
-    equipmentOptions: WORKOUT_INTAKE_EQUIPMENT_OPTIONS,
   };
 }
 

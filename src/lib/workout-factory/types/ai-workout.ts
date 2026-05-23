@@ -25,6 +25,7 @@ import type {
   KanbanExtractBriefOutput,
   KanbanEnrichBiomechanicsOutput,
 } from '@/lib/workout-factory/types/kanban-extract-types';
+import type { OutlineFillOutput } from '@/lib/workout-factory/types/outline-fill-types';
 
 /** Re-export for consumers. */
 export type { ExerciseBlock, Exercise, WarmupBlock };
@@ -302,7 +303,22 @@ export interface WorkoutChainMetadataKanbanExtract {
   total_tokens?: number;
 }
 
-export type WorkoutChainMetadata = WorkoutChainMetadataLegacy | WorkoutChainMetadataKanbanExtract;
+/** Apex Architect outline → Vertex fill (parametric blocks preserved). */
+export interface WorkoutChainMetadataOutlineFill {
+  pipeline: 'parametric_outline_fill';
+  fill_parametric_outline: OutlineFillOutput;
+  outline_source_block_count: number;
+  /** Stage 2 enrich deferred (Phase 3.2b). */
+  enrich_workout_biomechanics: null;
+  generated_at: string;
+  model_used: string;
+  total_tokens?: number;
+}
+
+export type WorkoutChainMetadata =
+  | WorkoutChainMetadataLegacy
+  | WorkoutChainMetadataKanbanExtract
+  | WorkoutChainMetadataOutlineFill;
 
 export interface WorkoutLibraryItem extends WorkoutMetadata {
   id: string;

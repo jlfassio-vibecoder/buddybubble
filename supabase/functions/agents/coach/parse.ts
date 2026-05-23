@@ -1,10 +1,6 @@
 /**
  * MIRROR FILE — canonical lives at `src/lib/agents/coach/parse.ts`.
- *
- * Body below is byte-for-byte identical to the canonical Vitest-side file (excluding
- * this header) EXCEPT for relative imports that use the explicit `.ts` extension
- * required by Deno (`./config.ts`, `./execution-patch-numeric.ts`). Any change must be
- * hand-mirrored — run `pnpm check:agent-mirror` to verify parity.
+ * Run `pnpm check:agent-mirror` after edits.
  */
 
 import {
@@ -261,6 +257,25 @@ export function parseCoachWorkoutOutlineWithDrops(parsed: Record<string, unknown
   return { outline: blocks.length > 0 ? blocks : null, drops };
 }
 
+/** Parses Phase B outline-only Vertex JSON (`{ blocks: [...] }`). */
+export function parseCoachOutlineOnlyBlocksFromText(text: string): {
+  outline: Record<string, unknown>[] | null;
+  drops: BlockShapeDrop[];
+} {
+  const cleanText = stripMarkdownCodeFences(text);
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(cleanText) as Record<string, unknown>;
+  } catch {
+    return { outline: null, drops: [{ field: 'blocks', reason: 'json_parse_failed' }] };
+  }
+  const raw = parsed.blocks ?? parsed['blocks'];
+  if (!Array.isArray(raw)) {
+    return { outline: null, drops: [{ field: 'blocks', reason: 'missing_blocks' }] };
+  }
+  return parseCoachWorkoutOutlineWithDrops({ coach_workout_outline: raw });
+}
+
 /** Normalizes Gemini `proposed_workout_metadata` with block-level drop telemetry. */
 export function parseProposedWorkoutMetadataWithDrops(parsed: Record<string, unknown>): {
   meta: Record<string, unknown>;
@@ -376,7 +391,7 @@ export function ensureCoachTaskNotesCta(notes: string | null): string | null {
   if (!notes) return null;
   const n = notes.trim();
   if (!n) return null;
-  if (n.includes('Generate Workout') && n.includes('adjustments')) return n;
+  if (n.includes('Workout Intake') && n.includes('Generate Workout')) return n;
   const combined = `${n}\n\n${COACH_TASK_SEED_CTA}`;
   if (combined.length <= COACH_TASK_NOTES_MAX_CHARS) return combined;
   return combined.slice(0, COACH_TASK_NOTES_MAX_CHARS - 3) + '...';

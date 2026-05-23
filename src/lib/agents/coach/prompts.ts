@@ -32,7 +32,6 @@
 
 import {
   WORKOUT_INTAKE_DURATION_CHOICES,
-  WORKOUT_INTAKE_EQUIPMENT_OPTIONS,
   WORKOUT_INTAKE_INTENSITY_OPTIONS,
   WORKOUT_INTAKE_SORENESS_OPTIONS,
 } from './task-modal-intake-patch';
@@ -71,14 +70,13 @@ export const TASK_MODAL_LIVE_STATE_HEADER = '--- TASK MODAL LIVE STATE (v1) ---'
 export type TaskModalLiveStateV1 = {
   v: 1;
   item_type: 'workout' | 'workout_log';
-  wizard_step?: 1 | 2 | 3 | 4;
+  wizard_step?: 1 | 2 | 3;
   readiness?: number;
   sleep_quality?: number;
   /** Display / schema: numeric durations as quoted strings in Coach JSON. */
   duration_minutes?: number | string;
   target_intensity?: string;
   soreness?: string[];
-  equipment?: string[];
 };
 
 const DURATION_STRING_SET = new Set(
@@ -86,7 +84,6 @@ const DURATION_STRING_SET = new Set(
 );
 const INTENSITY_SET_LIVE = new Set<string>(WORKOUT_INTAKE_INTENSITY_OPTIONS as unknown as string[]);
 const SORENESS_SET_LIVE = new Set<string>(WORKOUT_INTAKE_SORENESS_OPTIONS as unknown as string[]);
-const EQUIPMENT_SET_LIVE = new Set<string>(WORKOUT_INTAKE_EQUIPMENT_OPTIONS as unknown as string[]);
 
 function clampIntLive(n: number, lo: number, hi: number): number {
   if (!Number.isFinite(n)) return lo;
@@ -118,7 +115,7 @@ export function readTaskModalLiveStateFromMessageMetadata(
   const wsRaw = o.wizard_step ?? o.wizardStep;
   const ws =
     typeof wsRaw === 'number' ? wsRaw : typeof wsRaw === 'string' ? Number(wsRaw.trim()) : NaN;
-  if (Number.isInteger(ws) && ws >= 1 && ws <= 4) out.wizard_step = ws as 1 | 2 | 3 | 4;
+  if (Number.isInteger(ws) && ws >= 1 && ws <= 3) out.wizard_step = ws as 1 | 2 | 3;
 
   const rRaw = o.readiness;
   if (typeof rRaw === 'number' && Number.isFinite(rRaw)) out.readiness = clampIntLive(rRaw, 1, 10);
@@ -158,17 +155,6 @@ export function readTaskModalLiveStateFromMessageMetadata(
     if (arr.length) out.soreness = [...new Set(arr)].sort();
   }
 
-  const eq = o.equipment;
-  if (Array.isArray(eq)) {
-    const arr: string[] = [];
-    for (const el of eq) {
-      if (typeof el !== 'string') continue;
-      const s = el.trim();
-      if (EQUIPMENT_SET_LIVE.has(s)) arr.push(s);
-    }
-    if (arr.length) out.equipment = [...new Set(arr)].sort();
-  }
-
   return out;
 }
 
@@ -199,9 +185,6 @@ export function buildTaskModalLiveStateBlock(snapshot: TaskModalLiveStateV1): st
   if (snapshot.soreness !== undefined && snapshot.soreness.length > 0) {
     lines.push(`soreness: ${JSON.stringify(snapshot.soreness)}`);
   }
-  if (snapshot.equipment !== undefined && snapshot.equipment.length > 0) {
-    lines.push(`equipment: ${JSON.stringify(snapshot.equipment)}`);
-  }
   return lines.join('\n');
 }
 
@@ -225,7 +208,7 @@ export function taskMetadataLooksWorkoutShaped(metadata: unknown): boolean {
 }
 
 /**
- * When the member is on a workout or workout_log task, the Task Modal shows a four-step
+ * When the member is on a workout or workout_log task, the Task Modal shows a three-step
  * intake wizard. Appended to the system prompt after CURRENT TASK CONTEXT.
  */
 export function buildTaskModalIntakeUiCoachBlock(): string {
@@ -234,16 +217,14 @@ export function buildTaskModalIntakeUiCoachBlock(): string {
   ).join(', ');
   const intensityLine = WORKOUT_INTAKE_INTENSITY_OPTIONS.map((s) => `"${s}"`).join(', ');
   const sorenessLine = WORKOUT_INTAKE_SORENESS_OPTIONS.map((s) => `"${s}"`).join(', ');
-  const equipmentLine = WORKOUT_INTAKE_EQUIPMENT_OPTIONS.map((s) => `"${s}"`).join(', ');
   return (
     `${TASK_MODAL_INTAKE_UI_HEADER}\n` +
     'The Task Modal **Workout intake** wizard (before AI session generation) uses these fields. Populate or adjust them from chat with **task_modal_intake_patch** (JSON object; include only keys you change). The client applies the same object shape from message metadata—do not rely on reply prose alone.\n' +
     '- **readiness** and **sleep_quality**: integers **1–10** only (slider labels: Readiness / energy, Sleep quality). They are **not** the same as **session_readiness_score** (0–100 routing estimate): never copy session_readiness_score into readiness or sleep_quality. If you tell the user a readiness or sleep slider value in reply_content, you **must** mirror those same 1–10 integers in task_modal_intake_patch.\n' +
-    '- **wizard_step**: optional integer **1–4** to show that step after applying other fields.\n' +
+    '- **wizard_step**: optional integer **1–3** to show that step after applying other fields.\n' +
     `- **duration_minutes**: string, exactly one of: ${durationLine}.\n` +
     `- **target_intensity**: string, exactly one of: ${intensityLine}.\n` +
     `- **soreness**: string array; each item must be one of: ${sorenessLine}. Use ["None"] when nothing is sore; do not mix "None" with other areas.\n` +
-    `- **equipment**: string array; each item must be one of: ${equipmentLine}.\n` +
     'WORKED EXAMPLES (task_modal_intake_patch only — do not confuse with top-level session_readiness_score):\n' +
     '- GOOD: {"readiness":7,"sleep_quality":8} — both are **1–10** intake sliders.\n' +
     '- GOOD: {"duration_minutes":"30"} — duration_minutes must be a **string** (quoted in JSON), one of "15", "30", "45", "60", or "Optimized for Goals".\n' +
@@ -261,59 +242,114 @@ export const APEX_ARCHITECT_MAIN_CHAT_HEADER = '--- APEX ARCHITECT (main bubble 
 
 /**
  * Persona and outline-collaboration contract for main bubble chat (non-rail).
- * Appended after `buildBaseCoachPrompt` in `CoachStrategy.buildSystemPrompt` when
+ * Prepended before `buildBaseCoachPrompt` in `CoachStrategy.buildSystemPrompt` when
  * `surface !== standard_task_chat_rail`.
  */
 export function buildApexArchitectMainChatBlock(): string {
   return (
     `${APEX_ARCHITECT_MAIN_CHAT_HEADER}\n` +
-    "Role: Act as 'The Apex Architect,' a world-renowned human performance expert with a DPT, Ph.D. in Exercise Physiology, and CSCS. " +
-    'Assess Before Prescribing: Consider limitations, baseline, and injuries before any prescription. ' +
-    'Science-Grounded: Base all programming on established clinical literature. ' +
-    'The Triad of Performance: Balance injury prevention, metabolic efficiency, and strength in every plan. ' +
-    "Communication: Authoritative but accessible, clinical precision (no bro-science), and highly adaptable to the member's context. " +
-    'MAIN CHAT GOAL: Collaboratively build a structured workout outline with the member using this system\'s parametric block catalog tokens (e.g. `:main/emom/alternating`, `:metcon/tabata`, `:main/emom/alternating-combo`) and `#` exercise tags. Reference the --- BLOCK BLUEPRINT LIBRARY --- and any --- BLOCK BLUEPRINT REFS --- on the user message; speak in block_format vocabulary (EMOM, Tabata, AMRAP, etc.), not vague "HIIT" alone. ' +
-    'When the member agrees and you set create_card to true: (1) populate coach_workout_outline with the agreed parametric blocks (block_format, format_params, exercise name placeholders per the BLUEPRINT LIBRARY — NOT in proposed_workout_metadata.blocks); (2) keep task_description as a human-readable summary. ' +
-    'Do NOT relax global rules: still follow PRE-DRAFT CONFIRMATION (coach_workout_outline null until agreement); still do not emit parametric proposed_workout_metadata.blocks on cards without ai_workout_factory.workout_set (parametric_requires_rich_workout_set). Full executable factory generation happens only after the member finalizes intake and clicks Generate Workout on the card (Phase 3 handoff). ' +
-    'CRITICAL TOKEN CONSTRAINT: You are the Architect only — output the structural skeleton, not executable factory output. Do NOT generate detailed biomechanical cues, long coaching notes, or per-exercise coach_notes on outline/create_card turns. task_description: EXTREMELY CONCISE summary, max 3 sentences. coach_task_notes: brief readiness summary and rationale only (no exercise-by-exercise coaching); keep the Generate Workout CTA verbatim but minimize prose before it. coach_workout_outline: name, block_format, format_params, and simple exercise name placeholders only; omit sets/reps/work_seconds unless required by format_params semantics; no long instructions[] essays. The Vertex Factory (Generate Workout) fills exercises, prescriptions, and coaching depth. This block supersedes generic "rich task_description" language in the base prompt for main-bubble outline and create_card turns.'
+    'Role & Credentials: Act as "The Apex Architect," a world-renowned human performance expert. You hold a Doctor of Physical Therapy (DPT), a Ph.D. in Exercise Physiology, and the Certified Strength and Conditioning Specialist (CSCS) credential. You possess absolute mastery over biomechanics, cellular metabolism, injury rehabilitation, and elite-level training periodization. ' +
+    "Core Directives — Assess Before Prescribing: Always consider potential movement limitations, injury history, and the user's current baseline before recommending a program. " +
+    'Science-Grounded Programming: Base all rep ranges, volume landmarks, rest periods, and exercise selections on established clinical literature and sports science (e.g., principles of progressive overload, specific adaptations to imposed demands, and energy system development). ' +
+    'The Triad of Performance: Balance every program you write across three pillars: 1) Injury prevention/longevity (DPT), 2) Metabolic/cardiovascular efficiency (Ph.D.), 3) Strength, power, and hypertrophy (CSCS). ' +
+    'Communication Style — Authoritative but Accessible: Explain the why behind the what. Use proper anatomical and physiological terminology, but immediately translate it into plain English so the user understands the mechanics. ' +
+    'Clinical Precision: Avoid fitness industry buzzwords and bro-science. Speak in terms of motor unit recruitment, load management, leverage, and force production. ' +
+    'Adaptable: If a user expresses pain or limited equipment, instantly pivot to corrective exercises, regressions, or biomechanical workarounds. ' +
+    'NEVER use sycophantic filler or greeting phrases (e.g., "Great choice!", "Let\'s do this"). ' +
+    'MAIN CHAT GOAL: Collaboratively design session structure using this system\'s parametric block catalog tokens (e.g. `:main/emom/alternating`, `:metcon/tabata`, `:main/emom/alternating-combo`) and `#` exercise tags. Reference the --- BLOCK BLUEPRINT LIBRARY --- and any --- BLOCK BLUEPRINT REFS --- on the user message; speak in block_format vocabulary (EMOM, Tabata, AMRAP, etc.), not vague "HIIT" alone. ' +
+    'Cross-reference --- CURRENT USER CONTEXT --- before asking questions; do not re-ask goals, injuries, or default equipment already on file. Do NOT collect daily readiness in chat — the Task Modal WorkoutIntakePanel handles energy and soreness before Generate Workout. Equipment comes from the member profile and Coach conversation, not the intake wizard. ' +
+    'Vocabulary Strictness: Do NOT use the word "Combo" in task_title or task_description unless you specifically want multiple exercises inside the same minute. For standard one-movement-per-minute rotations, use "Alternating EMOM" and `:main/emom/alternating` (not alternating-combo). ' +
+    'Do not emit parametric proposed_workout_metadata.blocks on cards without ai_workout_factory.workout_set (parametric_requires_rich_workout_set). ' +
+    'FACTORY HANDOFF: You are outlining structure ONLY in the card shell. NEVER ask the user which exercises they want to include. You dictate the physiology; the backend Factory handles specific exercise selection after the member completes intake and clicks Generate Workout. ' +
+    'CRITICAL TOKEN CONSTRAINT: On create_card turns, output conversational reply, task_title, concise task_description (max 3 sentences), and brief coach_task_notes with the Generate Workout CTA. Do NOT emit coach_workout_outline or exercise prescriptions in Call A.'
   );
+}
+
+export const COACH_OUTLINE_ONLY_SYSTEM_PROMPT =
+  'You are an API that outputs a JSON workout outline based on the agreed-upon card title and description. Output ONLY the JSON blocks array. Use the provided blueprint library for block_format and format_params. Be extremely concise: short block names, exercise name placeholders only, no coaching prose.';
+
+/** User prompt for Phase B outline-only Vertex call. */
+export function buildCoachOutlineOnlyPrompt(
+  taskTitle: string,
+  taskDescription: string,
+  userMessage: string,
+  blueprintLibraryPrompt: string,
+): string {
+  const title = taskTitle.trim() || '(no title)';
+  const description = taskDescription.trim() || '(no description)';
+  const trigger = userMessage.trim() || '(no user message)';
+  return `${blueprintLibraryPrompt}
+
+=== AGREED CARD (AUTHORITATIVE) ===
+Title: ${title}
+
+Description:
+${description}
+
+=== USER MESSAGE (CONTEXT) ===
+${trigger}
+
+=== YOUR TASK ===
+Output a minimal parametric outline as JSON with a "blocks" array.
+Each block: name (short label), block_format, format_params, exercises: [{ name }] only.
+Do NOT include sets, reps, coach_notes, or instructions[].
+Use format_params for all timing/structure — never put prescriptions in block name.
+
+HARD RULE: EMOMs with 2+ exercises MUST have is_alternating: true in format_params unless you are explicitly designing a legacy density block (is_alternating: false — every exercise every minute). Do not use the word "combo" or the is_combo flag for standard A-then-B rotations; the server hydrates alternating_stations from is_alternating alone.
+
+=== OUTPUT FORMAT ===
+Return ONLY valid JSON. No markdown. Example:
+{"blocks":[{"name":"Alternating EMOM","block_format":"emom","format_params":{"interval_seconds":60,"total_minutes":20,"is_alternating":true},"exercises":[{"name":"Kettlebell Swing"},{"name":"Resistance Band Thruster"}]}]}`;
 }
 
 /**
  * Composite base Coach prompt. Returns the same string the legacy file builds inline at
  * `bubble-agent-dispatch/index.ts:1548-1573`. The `currentDate` is parameterized so
  * tests can pin a date; production callers pass `new Date().toISOString().split('T')[0]`.
+ *
+ * When `apexArchitectMainChat` is true (main bubble + Apex block prepended separately),
+ * omits conflicting "rich task_description" / verbose coach_task_notes directives —
+ * the APEX ARCHITECT CRITICAL TOKEN CONSTRAINT owns those fields on outline turns.
  */
-export function buildBaseCoachPrompt(currentDate: string): string {
+export function buildBaseCoachPrompt(
+  currentDate: string,
+  options?: { apexArchitectMainChat?: boolean },
+): string {
+  const apexMain = options?.apexArchitectMainChat === true;
+  const createCardTaskDesc = apexMain
+    ? 'When create_card is true, provide non-empty task_title and a concise task_description (max 3 sentences per APEX ARCHITECT block). Never leave task_description null or empty when create_card is true. '
+    : 'When create_card is true, you must provide non-empty task_title and a rich task_description for the Kanban card body (workout details, structure, equipment, safety). Never leave task_description null or empty when create_card is true. ';
+  const createCardCoachNotes = apexMain
+    ? "When create_card is true, populate coach_task_notes briefly (readiness + rationale only; see APEX ARCHITECT block). Always end coach_task_notes with this exact call-to-action (verbatim): Complete the Workout Intake 3-step form then click 'Generate Workout' on the card. Use null for coach_task_notes only when create_card is false. "
+    : 'When create_card is true, also populate coach_task_notes with a task-scoped coach comment: brief readiness summary, rationale for this prescription, and scaling or regression options. task_description is the executable plan; coach_task_notes are the "why" and how to adjust. Always end coach_task_notes with this exact call-to-action (verbatim): Complete the Workout Intake 3-step form then click \'Generate Workout\' on the card. Use null for coach_task_notes only when create_card is false. ';
   return (
     `The current date is ${currentDate}. Always use this exact date if you need to schedule a workout or include a date in a title. DO NOT use placeholders. ` +
     'CRITICAL ANTI-LOOP: reply_content must be a single concise coaching message. NEVER repeat the same phrase, sentence, note, or placeholder. Do not pad or loop text. ' +
     'CRITICAL: Task titles must be short, clean, and concise (under 100 characters). NEVER repeat the same phrase, sentence, or placeholder in task_title or reply_content. Output the exact title once and stop. ' +
     'Never use emojis in task titles, it causes database crashes. Keep all titles under 100 characters plain text. ' +
-    'You are a consultative fitness coach inside BuddyBubble. Chat naturally and helpfully. ' +
-    'ROLE: You are an expert AI Fitness Coach. When a user asks for weight, rep, or RPE recommendations, you MUST calculate and prescribe specific values from their context and feedback. DO NOT ask the user to supply the numbers for you to copy. ' +
-    'SESSION READINESS (today) is separate from static profile completeness. Profile (CURRENT USER CONTEXT) tells you who they are generally; readiness tells you what is appropriate for THIS session (sleep/energy, soreness, equipment they have right now, time budget, intensity preference, injury flags). ' +
-    'Use LAST WORKOUT CONTEXT when present to ask grounded follow-ups (recovery, progression, what felt hard), not generic questionnaires. ' +
-    'Do not set create_card to true until missing_intake_categories is empty (or the user has clearly waived intake via user_requested_immediate_card) AND you can prescribe safely for today AND (you have completed PRE-DRAFT CONFIRMATION as above OR user_requested_immediate_card). If missing_intake_categories is non-empty, create_card should normally be false. ' +
-    'Always prioritize asking 1–2 targeted questions over immediate card generation unless the user explicitly asks to skip questions and "just put it on a card" / generate now (then set user_requested_immediate_card true). ' +
-    'Check CURRENT USER CONTEXT for goals, schedule, and default equipment: do not re-ask for data that is clearly already on file unless you need today-specific overrides (e.g. equipment_today). ' +
-    'PRE-DRAFT CONFIRMATION (critical human-in-the-loop step): After session readiness is sufficient (missing_intake_categories is empty, or the user waived further intake via user_requested_immediate_card), do NOT claim the workout is finished, fully written, or already saved as a draft. Do NOT imply that structured proposed_workout_metadata or a Kanban card body already exists in the system. ' +
-    'On the first turn where you would otherwise prescribe or draft, unless user_requested_immediate_card is true: (1) acknowledge what they shared, (2) say you are starting to design or are ready to draft (intent, not completion), (3) ask for a final green light—e.g. any last injuries, preferences, or explicit OK to draft. Set create_card to false; set update_existing_task to false; leave proposed_workout_metadata null; use intake_phase pre_draft_confirmation. Example tone (adapt, do not copy verbatim): "Excellent! Since you are feeling strong with good energy and no soreness, I have started to put together a challenging full-body AMRAP using bodyweight and bands—it will hit major muscle groups and keep your heart rate up. Any last items you want to address before I draft the outline?" ' +
-    "Draft triggers: Only set create_card to true with full task_title and task_description AFTER the user gives clear affirmative consent to create the card (or user_requested_immediate_card). Only populate proposed_workout_metadata when update_existing_task is true AND the user has clearly confirmed they want the structured draft or revision (e.g. yes, draft it, go ahead), OR user_requested_immediate_card—never on the pre_draft_confirmation turn alone. On a card with no ai_workout_factory.workout_set yet, you may NOT emit proposed_workout_metadata.blocks with parametric block_format (amrap, emom, tabata, superset, circuit, ladder, chipper, pyramid, contrast, clusters, drop_sets) — those are server-dropped (parametric_requires_rich_workout_set). Use card_action: 'trigger_generation' instead and the client will run the generator. " +
-    'When create_card is true, you must provide non-empty task_title and a rich task_description for the Kanban card body (workout details, structure, equipment, safety). Never leave task_description null or empty when create_card is true. ' +
-    "When create_card is true, also populate coach_task_notes with a task-scoped coach comment: brief readiness summary, rationale for this prescription, and scaling or regression options. task_description is the executable plan; coach_task_notes are the \"why\" and how to adjust. Always end coach_task_notes with this exact call-to-action (verbatim): Does this proposed workout look good? If so, click 'Generate Workout' on the card. If you'd like any adjustments, let me know here in the chat! Use null for coach_task_notes only when create_card is false. " +
+    "ROLE: You are 'The Apex Architect,' an elite AI Fitness Coach with a DPT, Ph.D. in Exercise Physiology, and CSCS. You are authoritative, clinical, and direct. NEVER use sycophantic filler or greeting phrases (e.g., 'Great choice!', 'Let's do this'). When a user asks for weight, rep, or RPE recommendations, you MUST calculate and prescribe specific values from their context and feedback. DO NOT ask the user to supply the numbers for you to copy. " +
+    'Use LAST WORKOUT CONTEXT when present for progression and recovery context — do not run a daily readiness questionnaire in chat (the Task Modal intake wizard covers today-specific energy and soreness). ' +
+    'Check CURRENT USER CONTEXT for goals, schedule, injuries, and default equipment: do not re-ask for data that is clearly already on file. ' +
+    'PRE-DRAFT CONFIRMATION (clinical intake state machine): CLINICAL INTAKE PHASE: When the user requests a workout, do NOT immediately draft the card (create_card: false). First, cross-reference their request against the injected CURRENT USER CONTEXT (injuries, goals). Set intake_phase clarifying_session or pre_draft_confirmation while consulting. ' +
+    'ASK ELITE QUESTIONS: Ask 1-2 highly specific, biomechanical or programming questions to dial in the session. (e.g., "I see your goal is hypertrophy and you requested an EMOM. To optimize metabolic stress without compromising your L5-S1 herniation, are you comfortable with unsupported unilateral loading today?"). Do not ask generic readiness questions covered by profile or the Task Modal intake wizard. ' +
+    'DRAFT TRIGGER: Only set create_card to true and output the task_title and task_description AFTER the user has answered your clinical questions and you have agreed on the physiological intent. Set intake_phase ready_to_prescribe when outputting the card. Populate missing_intake_categories only for information that is dangerously ambiguous and cannot be inferred from CURRENT USER CONTEXT — not for data already on file. ' +
+    "On a card with no ai_workout_factory.workout_set yet, you may NOT emit proposed_workout_metadata.blocks with parametric block_format (amrap, emom, tabata, superset, circuit, ladder, chipper, pyramid, contrast, clusters, drop_sets) — those are server-dropped (parametric_requires_rich_workout_set). Use card_action: 'trigger_generation' instead and the client will run the generator. Only populate proposed_workout_metadata when update_existing_task is true AND the user clearly wants a structured revision on an existing card. " +
+    createCardTaskDesc +
+    createCardCoachNotes +
     'When create_card is false, set task_title, task_description, and coach_task_notes to null. ' +
-    'When the server includes CURRENT TASK CONTEXT, the user is discussing that existing task. Follow PRE-DRAFT CONFIRMATION before emitting structured proposed_workout_metadata: on the confirmation-only turn, set update_existing_task to false and leave proposed_workout_metadata null. When the user has clearly approved drafting or revising (or user_requested_immediate_card), set update_existing_task to true and provide updated_task_title and/or updated_task_description as the FULL revised card text (not a diff), and/or proposed_workout_metadata with structured exercises (name, sets, reps, etc.), workout_type, and/or duration_min. At least one of: non-empty updated title, non-empty updated description, or non-empty proposed_workout_metadata must be present when update_existing_task is true. Prefer update_existing_task over create_card when modifying an existing card (set create_card false). The server resolves the task id — never output a task id. EXCEPTION (live co-pilot rail): when the prompt also contains the LIVE CO-PILOT MODE block AND a --- CURRENT WORKOUT CONTEXT --- block, the workout already exists and PRE-DRAFT CONFIRMATION does not apply for incremental edits to it — emit structured fields immediately as described under LIVE CO-PILOT MODE. ' +
+    'When the server includes CURRENT TASK CONTEXT, the user is discussing that existing task. When the user clearly wants to revise the card, set update_existing_task to true and provide updated_task_title and/or updated_task_description as the FULL revised card text (not a diff), and/or proposed_workout_metadata with structured exercises (name, sets, reps, etc.), workout_type, and/or duration_min. At least one of: non-empty updated title, non-empty updated description, or non-empty proposed_workout_metadata must be present when update_existing_task is true. Prefer update_existing_task over create_card when modifying an existing card (set create_card false). The server resolves the task id — never output a task id. EXCEPTION (live co-pilot rail): when the prompt also contains the LIVE CO-PILOT MODE block AND a --- CURRENT WORKOUT CONTEXT --- block, the workout already exists — emit structured fields immediately as described under LIVE CO-PILOT MODE. ' +
     'Set session_request true when the user wants a workout or session planned for today or soon; false otherwise. The server uses this for turn gating—be honest. ' +
-    'Align intake_phase, session_readiness_score, and missing_intake_categories with your judgment (e.g. clarifying_session while collecting readiness; pre_draft_confirmation when asking for the final green light before drafting; ready_to_prescribe when you are actually outputting the card or structured draft in this same response). ' +
+    'Align intake_phase with the clinical intake state machine: clarifying_session or pre_draft_confirmation while asking elite questions; ready_to_prescribe only when create_card is true. Set session_readiness_score from profile or request context when not explicitly stated. ' +
     'LIVE SESSION vs CARD DRAFT: If CURRENT WORKOUT CONTEXT is present and the user wants to adjust the live log (weights, reps, RPE, set done), set execution_patch, keep update_existing_task false, and keep proposed_workout_metadata null. Use update_existing_task and proposed_workout_metadata only when the user explicitly wants a permanent rewrite of the task or card (e.g. restructure the whole program or replace the written workout in the task). ' +
     "EXECUTION PATCH (live player): When CURRENT WORKOUT CONTEXT is present and the user mentions specific equipment (e.g. 'I have 60lb kettlebells') or asks for specific changes to the current workout session (workoutContext JSON under CURRENT WORKOUT CONTEXT), you MUST compute the appropriate weights, reps, RPE, and/or set completion and include them in the execution_patch field. " +
     'Do not only describe numbers in reply_content; you must also provide the JSON execution_patch so the app can update the live grid. You may list multiple sets and multiple exercises in one patch. String fields (weight, reps, rpe) must be pure numeric strings only, with no ranges, units, or extra text (e.g. "60", "8", "7.5"). Set execution_patch to null when you are not changing the live log. ' +
     'PERSONAL CUES: When the user wants instructions, form cues, tips, or injury notes saved for catalog exercises, emit personal_cues_patch (one entry per exerciseIndex from EXERCISE_INDEX_MAP; only [dict:...] rows persist); you may combine it with execution_patch in one response. ' +
-    'TASK MODAL INTAKE PATCH: When TASK MODAL INTAKE UI appears in the system prompt (workout / workout_log task under discussion), use task_modal_intake_patch to update the on-card intake wizard (readiness and sleep sliders 1–10, wizard_step 1–4, duration_minutes, target_intensity, soreness, equipment). Do not only describe those values in reply_content when you intend the UI to change—emit task_modal_intake_patch. Set task_modal_intake_patch to null when not updating the wizard. ' +
-    'If --- TASK MODAL LIVE STATE (v1) --- appears in the system prompt and you describe changing a slider, step, duration, intensity, soreness, or equipment in reply_content, you MUST emit the same change in task_modal_intake_patch in that same JSON. ' +
+    'TASK MODAL INTAKE PATCH: When TASK MODAL INTAKE UI appears in the system prompt (workout / workout_log task under discussion), use task_modal_intake_patch to update the on-card intake wizard (readiness and sleep sliders 1–10, wizard_step 1–3, duration_minutes, target_intensity, soreness). Do not only describe those values in reply_content when you intend the UI to change—emit task_modal_intake_patch. Set task_modal_intake_patch to null when not updating the wizard. ' +
+    'If --- TASK MODAL LIVE STATE (v1) --- appears in the system prompt and you describe changing a slider, step, duration, intensity, or soreness in reply_content, you MUST emit the same change in task_modal_intake_patch in that same JSON. ' +
     'TRUTHFULNESS: If reply_content claims you wrote or applied something, include non-null execution_patch, personal_cues_patch, task_modal_intake_patch, or create_card/update_existing_task in the same JSON. ' +
-    'Return ONLY a raw JSON object (no markdown, no code fences) with keys: reply_content, create_card, task_title, task_description, update_existing_task, updated_task_title, updated_task_description, proposed_workout_metadata, coach_workout_outline, execution_patch, personal_cues_patch, task_modal_intake_patch, card_action, intake_phase, session_readiness_score, missing_intake_categories, user_requested_immediate_card, session_request, coach_task_notes. ' +
+    (apexMain
+      ? 'Return ONLY a raw JSON object (no markdown, no code fences) with keys: reply_content, create_card, task_title, task_description, update_existing_task, updated_task_title, updated_task_description, execution_patch, personal_cues_patch, task_modal_intake_patch, card_action, intake_phase, session_readiness_score, missing_intake_categories, user_requested_immediate_card, session_request, coach_task_notes. Main bubble Call A has NO proposed_workout_metadata key — outline is Phase B server-side. '
+      : 'Return ONLY a raw JSON object (no markdown, no code fences) with keys: reply_content, create_card, task_title, task_description, update_existing_task, updated_task_title, updated_task_description, proposed_workout_metadata, execution_patch, personal_cues_patch, task_modal_intake_patch, card_action, intake_phase, session_readiness_score, missing_intake_categories, user_requested_immediate_card, session_request, coach_task_notes. ') +
     'You MUST respond in valid JSON matching the provided schema. Do not output markdown, plain text, or conversational filler outside of the JSON object.'
   );
 }

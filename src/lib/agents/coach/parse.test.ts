@@ -25,6 +25,7 @@ import {
   parseMissingIntakeCategories,
   parsePersonalCuesPatchFromGemini,
   parseCoachWorkoutOutlineWithDrops,
+  parseCoachOutlineOnlyBlocksFromText,
   parseProposedWorkoutMetadata,
   parseProposedWorkoutMetadataWithDrops,
   parseSessionReadinessScore,
@@ -804,7 +805,8 @@ describe('ensureCoachTaskNotesCta', () => {
   });
 
   it('preserves notes that already include both keywords', () => {
-    const notes = 'Solid plan. Generate Workout once you have made any adjustments.';
+    const notes =
+      "Solid plan. Complete the Workout Intake 3-step form then click 'Generate Workout' on the card.";
     expect(ensureCoachTaskNotesCta(notes)).toBe(notes);
   });
 
@@ -1197,6 +1199,24 @@ describe('parseCoachJson', () => {
     const { outline, drops } = parseCoachWorkoutOutlineWithDrops({ coach_workout_outline: [] });
     expect(outline).toBeNull();
     expect(drops).toEqual([]);
+  });
+
+  it('parseCoachOutlineOnlyBlocksFromText reads Phase B blocks wrapper', () => {
+    const { outline, drops } = parseCoachOutlineOnlyBlocksFromText(
+      JSON.stringify({
+        blocks: [
+          {
+            name: 'Main',
+            block_format: 'tabata',
+            format_params: { rounds: 8, work_seconds: 20, rest_seconds: 10 },
+            exercises: [{ name: 'Burpee' }],
+          },
+        ],
+      }),
+    );
+    expect(drops).toEqual([]);
+    expect(outline).toHaveLength(1);
+    expect(outline![0].block_format).toBe('tabata');
   });
 
   it('parseCoachJson surfaces coach_workout_outline on create_card branch', () => {
