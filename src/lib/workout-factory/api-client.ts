@@ -52,6 +52,8 @@ export async function postGenerateWorkoutChain(body: {
   blockOptions?: BlockOptions;
   /** Task modal / Coach card: title+description are the prescription brief for Vertex. */
   workout_brief_authoritative?: boolean;
+  /** Apex Architect outline from tasks.metadata; Phase 3 factory handoff. */
+  coach_workout_outline?: Record<string, unknown>[] | null;
 }): Promise<GenerateWorkoutChainResponse> {
   const res = await fetch('/api/ai/generate-workout-chain', {
     method: 'POST',

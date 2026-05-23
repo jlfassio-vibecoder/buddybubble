@@ -102,6 +102,40 @@ describe('mergeBlueprintShellsWithModelBlocks', () => {
       alternating_stations: [[0], [1]],
     });
   });
+
+  it('hydrates alternating-combo EMOM when model fills three exercises', () => {
+    const shells = synthesizeProposedBlocksFromMentions([
+      {
+        token: ':main/emom/alternating-combo ',
+        section_name: 'Main',
+        section_role: 'main',
+        block_format: 'emom',
+        format_params: {
+          interval_seconds: 60,
+          total_minutes: 10,
+          is_alternating: true,
+          is_combo: true,
+        },
+      },
+    ]);
+    const merged = mergeBlueprintShellsWithModelBlocks(shells, [
+      {
+        name: 'Main',
+        exercises: [
+          { name: 'Back Squat', sets: 1, reps: '5' },
+          { name: 'Push-up', sets: 1, reps: '10' },
+          { name: 'Sit-up', sets: 1, reps: '15' },
+        ],
+      },
+    ]);
+    expect(merged[0].format_params).toEqual({
+      interval_seconds: 60,
+      total_minutes: 10,
+      is_alternating: true,
+      alternating_stations: [[0], [1, 2]],
+    });
+    expect(merged[0].format_params).not.toHaveProperty('is_combo');
+  });
 });
 
 describe('formatServerBlockShellsPromptBlock', () => {

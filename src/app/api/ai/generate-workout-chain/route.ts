@@ -21,6 +21,8 @@ type RequestBody = {
    * Also inferred server-side from a long persona.description.
    */
   workout_brief_authoritative?: boolean;
+  /** Apex Architect outline from tasks.metadata (Phase 3 factory handoff). */
+  coach_workout_outline?: Record<string, unknown>[] | null;
 };
 
 /**
@@ -49,6 +51,26 @@ export async function POST(req: Request) {
     const workspaceId = typeof body.workspace_id === 'string' ? body.workspace_id.trim() : '';
     if (!workspaceId) {
       return NextResponse.json({ error: 'workspace_id is required' }, { status: 400 });
+    }
+
+    if (
+      body.coach_workout_outline !== undefined &&
+      body.coach_workout_outline !== null &&
+      !Array.isArray(body.coach_workout_outline)
+    ) {
+      return NextResponse.json(
+        { error: 'coach_workout_outline must be an array' },
+        { status: 400 },
+      );
+    }
+
+    const coachWorkoutOutline =
+      Array.isArray(body.coach_workout_outline) && body.coach_workout_outline.length > 0
+        ? body.coach_workout_outline
+        : undefined;
+
+    if (!coachWorkoutOutline) {
+      throw new Error('OUTLINE_REQUIRED_FOR_FACTORY');
     }
 
     const { data: profileRow, error: profileError } = await supabase
@@ -86,6 +108,7 @@ export async function POST(req: Request) {
         includeFinisher: false,
         includeCooldown: false,
       },
+      ...(coachWorkoutOutline ? { coach_workout_outline: coachWorkoutOutline } : {}),
     };
 
     const result = await runGenerateWorkoutChain(chainBody, shouldLog, {
@@ -126,6 +149,7 @@ export async function POST(req: Request) {
   } catch (e) {
     console.error('[generate-workout-chain]', e);
     const msg = e instanceof Error ? e.message : 'Failed to generate workout';
-    return NextResponse.json({ error: msg }, { status: 500 });
+    const status = msg === 'OUTLINE_REQUIRED_FOR_FACTORY' ? 400 : 500;
+    return NextResponse.json({ error: msg }, { status });
   }
 }

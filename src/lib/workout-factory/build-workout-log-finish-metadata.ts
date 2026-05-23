@@ -1,6 +1,6 @@
 /**
- * Builds completed `workout_log` task metadata from WorkoutPlayer finish state.
- * Preserves parametric prescription via deep-cloned `ai_workout_factory` snapshot.
+ * Builds `workout_log` task metadata from WorkoutPlayer (draft autosave + finish).
+ * Preserves parametric prescription via deep-cloned `ai_workout_factory` snapshot when rich.
  */
 
 import type { SetDraft } from '@/components/fitness/workout-block-renderer/WorkoutPlayerExercisePanel';
@@ -21,6 +21,16 @@ export type WorkoutLogExerciseFinishPayload = {
   weight?: number;
   duration_min?: number;
   set_logs: SetLogEntry[];
+};
+
+export type BuildWorkoutLogDraftMetadataParams = {
+  /** Source workout `tasks.metadata` (WorkoutPlayer `metadata` prop). */
+  sourceMetadata: Json | null | undefined;
+  /** Active session view model (rich gate). */
+  sessionVm: WorkoutSessionViewModel;
+  sourceTaskId: string;
+  draftLogs: SetDraft[][];
+  classInstanceId: string | null;
 };
 
 export type BuildWorkoutLogFinishMetadataParams = {
@@ -49,6 +59,32 @@ function snapshotFactoryFromSource(sourceMetadata: unknown): unknown | null {
   const af = parsed.ai_workout_factory;
   if (af == null || typeof af !== 'object' || Array.isArray(af)) return null;
   return deepClone(af);
+}
+
+/**
+ * Pure builder — in-progress draft autosave (`draft_logs` + optional factory snapshot).
+ * Omits `workout_log_schema_version` and flat `exercises` (finish-only).
+ */
+export function buildWorkoutLogDraftMetadata(params: BuildWorkoutLogDraftMetadataParams): Json {
+  const { sourceMetadata, sessionVm, sourceTaskId, draftLogs, classInstanceId } = params;
+
+  const out: Record<string, unknown> = {
+    source_task_id: sourceTaskId,
+    draft_logs: draftLogs,
+  };
+
+  if (classInstanceId) {
+    out.class_instance_id = classInstanceId;
+  }
+
+  if (sessionVm.source === 'rich' && hasRichWorkoutSetInMetadata(sourceMetadata)) {
+    const factory = snapshotFactoryFromSource(sourceMetadata);
+    if (factory != null) {
+      out.ai_workout_factory = factory;
+    }
+  }
+
+  return out as Json;
 }
 
 /**

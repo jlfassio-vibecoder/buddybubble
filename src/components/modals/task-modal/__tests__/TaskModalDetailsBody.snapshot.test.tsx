@@ -10,6 +10,9 @@ import {
 vi.mock('@/components/fitness/WorkoutIntakePanel', () => ({
   WorkoutIntakePanel: () => <div data-testid="mock-workout-intake-panel" />,
 }));
+vi.mock('@/components/fitness/WorkoutOutlinePanel', () => ({
+  WorkoutOutlinePanel: () => <div data-testid="mock-workout-outline-panel" />,
+}));
 vi.mock('@/components/modals/task-modal/TaskModalCardCoverSection', () => ({
   TaskModalCardCoverSection: () => <div data-testid="mock-card-cover" />,
 }));
@@ -45,6 +48,7 @@ const baseProps: TaskModalDetailsBodyProps = {
   onGenerateWorkoutFromIntake: noop,
   aiWorkoutGenerating: false,
   workoutIntakeState: null,
+  workoutOutlineEditor: null,
   taskId: 'task-snap-1',
   cardCoverPath: '',
   cardCoverFileInputRef,

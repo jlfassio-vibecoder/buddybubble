@@ -119,6 +119,19 @@ export function vertexHappy(parsedJson: unknown): VertexHandlerWithCount {
   };
 }
 
+/** Returns canned Vertex responses in order (Call A, Call B, …). */
+export function vertexHappySequence(parsedJsonSequence: unknown[]): VertexHandlerWithCount {
+  let calls = 0;
+  return {
+    count: () => calls,
+    handler: () => {
+      const idx = Math.min(calls, Math.max(parsedJsonSequence.length - 1, 0));
+      calls += 1;
+      return jsonResponse(vertexGenerateResponse(JSON.stringify(parsedJsonSequence[idx])));
+    },
+  };
+}
+
 export type VertexHandlerWithCapturedBody = VertexHandlerWithCount & {
   lastBodyText: () => string | null;
 };

@@ -24,6 +24,7 @@
  */
 
 import { readDispatcherEnv } from '../../_shared/env.ts';
+import { computeLlmBudgetMs } from '../../_shared/dispatch/llm-budget.ts';
 import { log } from '../../_shared/obs/log.ts';
 import {
   agentCreateCardAndReply,
@@ -31,7 +32,10 @@ import {
   agentUpdateTaskAndReply,
   AGENT_CREATE_CARD_CANONICAL_NULL_PATCHES,
 } from '../../_shared/dispatch/rpc.ts';
-import { mergeCoachProposedIntoTaskMetadata } from '../../_shared/workout-metadata/merge-coach-proposed-into-task-metadata.ts';
+import {
+  applyCoachWorkoutOutlineToTaskMetadata,
+  mergeCoachProposedIntoTaskMetadata,
+} from '../../_shared/workout-metadata/merge-coach-proposed-into-task-metadata.ts';
 import {
   shouldExcludeWorkoutSentinelFromHistory,
   isWorkoutContextSentinel,
@@ -55,6 +59,9 @@ import {
   COACH_HISTORY_LIMIT,
   COACH_MAX_OUTPUT_TOKENS,
   COACH_MODEL_DEFAULT,
+  COACH_OUTLINE_ONLY_MAX_OUTPUT_TOKENS,
+  COACH_OUTLINE_ONLY_TEMPERATURE,
+  COACH_OUTLINE_ONLY_THINKING_BUDGET,
   COACH_SAFE_REPLY_TEXT,
   COACH_SLUG,
   COACH_TEMPERATURE,
@@ -67,6 +74,7 @@ import {
 import {
   buildBlockBlueprintLibraryPrompt,
   shouldInjectBlockBlueprintLibrary,
+  userMessageShowsDraftIntent,
 } from './block-blueprint-library.ts';
 import {
   fetchCoachUserContext,
@@ -102,6 +110,7 @@ import {
 } from './block-blueprint-synthesize.ts';
 import { loadExerciseDictionaryByIndex } from './exercise-dictionary-by-index.ts';
 import {
+  buildApexArchitectMainChatBlock,
   buildBaseCoachPrompt,
   buildCurrentTaskContextBlock,
   buildTaskModalIntakeUiCoachBlock,
@@ -115,10 +124,21 @@ import {
   WORKOUT_CONTEXT_HEADER,
   type ExerciseDictionaryIndexEntry,
 } from './prompts.ts';
-import { COACH_RESPONSE_SCHEMA, COACH_WORKOUT_GREETING_SCHEMA } from './schema.ts';
+import {
+  COACH_MAIN_CHAT_RESPONSE_SCHEMA,
+  COACH_OUTLINE_ONLY_SCHEMA,
+  COACH_RESPONSE_SCHEMA,
+  COACH_WORKOUT_GREETING_SCHEMA,
+} from './schema.ts';
 import { applyCoachServerGuards, type CoachGuardsFragment } from './server-guards.ts';
 import { tryBlockBlueprintLanePreflight } from './block-blueprint-lane-preflight.ts';
 import { inferCardActionTriggerGeneration } from './card-action-infer.ts';
+import {
+  buildCoachOutlinePhaseBPrompts,
+  coachOutlinePhaseBSkipReason,
+  processCoachOutlinePhaseBVertexOutput,
+} from './run-coach-outline-phase-b.ts';
+import { mergeCoachOutlineMetadataPatch } from './coach-outline-metadata.ts';
 
 /** Coach-owned scratch on `ctx.extras`. */
 type CoachExtras = {
@@ -126,6 +146,12 @@ type CoachExtras = {
   currentWorkoutContextJson: string | null;
   taskMetadataForContext: unknown | null;
   exerciseDictionaryByIndex: Record<number, ExerciseDictionaryIndexEntry | null> | null;
+  outlinePhaseB?: {
+    attempted: boolean;
+    ok: boolean;
+    error?: string;
+    drops?: import('./parse.ts').BlockShapeDrop[];
+  };
 };
 
 const FALLBACK_WORKOUT_GREETING = "Good to see you back in the gym! Let's get to work.";
@@ -177,6 +203,61 @@ function priorUserMessageCount(ctx: DispatchContext): number {
     if (row.user_id && !agentAuthIds.has(row.user_id)) count += 1;
   }
   return count;
+}
+
+function proposedMetaHasParametricBlocks(meta: Record<string, unknown> | null): boolean {
+  if (meta == null) return false;
+  const blocks = meta.blocks;
+  return Array.isArray(blocks) && blocks.length > 0;
+}
+
+/**
+ * STEP 1 quarantine removed — Hop 2 eligibility is logged via coachOutlinePhaseBSkipReason.
+ */
+function outlinePhaseBCardFields(parsed: CoachGeminiJsonResponse): {
+  title: string;
+  description: string;
+} {
+  if (parsed.create_card) {
+    return {
+      title: parsed.task_title?.trim() ?? '',
+      description: parsed.task_description?.trim() ?? '',
+    };
+  }
+  return {
+    title: parsed.updated_task_title?.trim() ?? '',
+    description: parsed.updated_task_description?.trim() ?? '',
+  };
+}
+
+async function patchTaskOutlineMetadataFields(
+  supabase: SharedSupabaseClient,
+  taskId: string,
+  patch: Parameters<typeof mergeCoachOutlineMetadataPatch>[1],
+): Promise<void> {
+  const { data: row, error: fetchErr } = await supabase
+    .from('tasks')
+    .select('metadata')
+    .eq('id', taskId)
+    .maybeSingle();
+  if (fetchErr || !row) {
+    log('warn', 'coach outline metadata patch skipped — task fetch failed', {
+      task_id: taskId,
+      error: fetchErr?.message,
+    });
+    return;
+  }
+  const next = mergeCoachOutlineMetadataPatch(row.metadata, patch);
+  const { error: updErr } = await supabase
+    .from('tasks')
+    .update({ metadata: next })
+    .eq('id', taskId);
+  if (updErr) {
+    log('warn', 'coach outline metadata patch failed', {
+      task_id: taskId,
+      error: updErr.message,
+    });
+  }
 }
 
 export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
@@ -392,11 +473,17 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
     });
 
     const today = new Date().toISOString().split('T')[0];
-    const parts: string[] = [buildBaseCoachPrompt(today)];
+    const parts: string[] = [];
+    if (!isRailSurface) {
+      parts.push(buildApexArchitectMainChatBlock());
+    }
+    parts.push(buildBaseCoachPrompt(today, { apexArchitectMainChat: !isRailSurface }));
 
+    const triggerContent = typeof ctx.message.content === 'string' ? ctx.message.content : '';
     const blockLibraryIncluded = shouldInjectBlockBlueprintLibrary({
       isRailSurface,
       blockBlueprintMentionCount: blockBlueprintMentions?.length ?? 0,
+      userMessageShowsDraftIntent: userMessageShowsDraftIntent(triggerContent),
     });
     if (blockLibraryIncluded) {
       parts.push(buildBlockBlueprintLibraryPrompt());
@@ -466,6 +553,11 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
     return { thinkingConfig: { thinkingBudget: budget } };
   },
 
+  resolveResponseSchema(ctx) {
+    const isRailSurface = isCoachRailSurfaceFromMessageMetadata(ctx.message.metadata);
+    return isRailSurface ? COACH_RESPONSE_SCHEMA : COACH_MAIN_CHAT_RESPONSE_SCHEMA;
+  },
+
   /**
    * Map history → Vertex `contents`, filter the workout sentinel, and append the
    * trigger row as the final user turn. Mirrors `bubble-agent-dispatch/index.ts:1647-1663`.
@@ -515,6 +607,158 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       });
     }
     return out;
+  },
+
+  async enrichParsed(parsed, ctx) {
+    const hasCoachOutline =
+      parsed.coach_workout_outline != null && parsed.coach_workout_outline.length > 0;
+    const proposedMeta = parsed.proposed_workout_metadata as Record<string, unknown> | null;
+    const skipReason = coachOutlinePhaseBSkipReason({
+      isRailSurface: isCoachRailSurfaceFromMessageMetadata(ctx.message.metadata),
+      isActiveWorkoutSession: isTriggerActiveWorkoutSession(ctx.message),
+      createCard: parsed.create_card,
+      updateExistingTask: parsed.update_existing_task,
+      hasCoachOutline,
+      hasProposedParametricBlocks: proposedMetaHasParametricBlocks(proposedMeta),
+      cardActionTriggerGeneration: parsed.card_action === 'trigger_generation',
+    });
+
+    if (skipReason != null) {
+      log('info', 'coach outline phase b skipped', {
+        request_id: ctx.requestId,
+        slug: COACH_SLUG,
+        message_id: ctx.message.id,
+        skip_reason: skipReason,
+        create_card: parsed.create_card,
+        update_existing_task: parsed.update_existing_task,
+      });
+      return parsed;
+    }
+
+    const env = readDispatcherEnv();
+    const dispatchStartedAt =
+      typeof ctx.extras?.dispatchStartedAtMs === 'number'
+        ? ctx.extras.dispatchStartedAtMs
+        : Date.now();
+    const llmBudgetMs = computeLlmBudgetMs(env.LLM_TIMEOUT_MS, dispatchStartedAt);
+    const { title, description } = outlinePhaseBCardFields(parsed);
+    const { systemPrompt, userPrompt } = buildCoachOutlinePhaseBPrompts({
+      title,
+      description,
+      userMessage: ctx.message.content ?? '',
+    });
+
+    log('info', 'coach outline phase b begin', {
+      request_id: ctx.requestId,
+      slug: COACH_SLUG,
+      message_id: ctx.message.id,
+      llm_budget_ms: llmBudgetMs,
+      create_card: parsed.create_card,
+      update_existing_task: parsed.update_existing_task,
+    });
+
+    const startedAt = Date.now();
+    let response: VertexGenerateResponse;
+    try {
+      response = await generateContent({
+        project: env.GCP_PROJECT_ID,
+        location: env.GCP_LOCATION,
+        model: COACH_MODEL_DEFAULT,
+        systemPrompt,
+        contents: [{ role: 'user', parts: [{ text: userPrompt }] }] as GeminiContent[],
+        generationConfig: {
+          temperature: COACH_OUTLINE_ONLY_TEMPERATURE,
+          maxOutputTokens: COACH_OUTLINE_ONLY_MAX_OUTPUT_TOKENS,
+          responseMimeType: 'application/json',
+          responseSchema: COACH_OUTLINE_ONLY_SCHEMA,
+          thinkingConfig: { thinkingBudget: COACH_OUTLINE_ONLY_THINKING_BUDGET },
+        },
+        timeoutMs: llmBudgetMs,
+        signal: ctx.signal,
+        env: { GCP_SERVICE_ACCOUNT_JSON: env.GCP_SERVICE_ACCOUNT_JSON },
+        debug: env.LLM_DEBUG,
+        slug: COACH_SLUG,
+        requestId: ctx.requestId,
+      });
+    } catch (err) {
+      log('warn', 'coach outline phase b generate failed', {
+        request_id: ctx.requestId,
+        slug: COACH_SLUG,
+        message_id: ctx.message.id,
+        error_kind: classifyError(err),
+        latency_ms: Date.now() - startedAt,
+      });
+      writeCoachExtras(ctx, {
+        ...readCoachExtras(ctx),
+        outlinePhaseB: {
+          attempted: true,
+          ok: false,
+          error: 'Outline generation failed. Add blocks manually or retry from the task card.',
+        },
+      });
+      return parsed;
+    }
+
+    const finishReason = response.candidates?.[0]?.finishReason;
+    log('info', 'coach outline phase b done', {
+      request_id: ctx.requestId,
+      slug: COACH_SLUG,
+      message_id: ctx.message.id,
+      latency_ms: Date.now() - startedAt,
+      finish_reason: finishReason,
+      token_out: response.usageMetadata?.candidatesTokenCount,
+    });
+
+    const text = extractGeminiText(response.candidates?.[0]);
+    const phaseResult = processCoachOutlinePhaseBVertexOutput({ text, finishReason });
+
+    if (!phaseResult.ok) {
+      log('warn', 'coach outline phase b failed', {
+        request_id: ctx.requestId,
+        slug: COACH_SLUG,
+        message_id: ctx.message.id,
+        error_kind: phaseResult.errorKind,
+        drop_count: phaseResult.drops?.length ?? 0,
+      });
+      writeCoachExtras(ctx, {
+        ...readCoachExtras(ctx),
+        outlinePhaseB: {
+          attempted: true,
+          ok: false,
+          error: phaseResult.message,
+          drops: phaseResult.drops,
+        },
+      });
+      return parsed;
+    }
+
+    if (phaseResult.drops.length > 0) {
+      log('warn', 'coach outline phase b drops', {
+        request_id: ctx.requestId,
+        slug: COACH_SLUG,
+        message_id: ctx.message.id,
+        drop_count: phaseResult.drops.length,
+        drops: phaseResult.drops.slice(0, 10),
+      });
+    }
+
+    log('info', 'coach outline phase b merged', {
+      request_id: ctx.requestId,
+      slug: COACH_SLUG,
+      message_id: ctx.message.id,
+      outline_block_count: phaseResult.blocks.length,
+    });
+
+    writeCoachExtras(ctx, {
+      ...readCoachExtras(ctx),
+      outlinePhaseB: { attempted: true, ok: true },
+    });
+
+    return {
+      ...parsed,
+      coach_workout_outline: phaseResult.blocks,
+      coach_workout_outline_drops: phaseResult.drops,
+    };
   },
 
   applyServerGuards(parsed, ctx) {
@@ -620,6 +864,8 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
     const hasProposedMeta =
       parsed.proposed_workout_metadata != null &&
       Object.keys(parsed.proposed_workout_metadata).length > 0;
+    const hasCoachOutline =
+      parsed.coach_workout_outline != null && parsed.coach_workout_outline.length > 0;
 
     const isRailSurface = isCoachRailSurfaceFromMessageMetadata(ctx.message.metadata);
     const supabase: SharedSupabaseClient = ctx.supabase;
@@ -644,7 +890,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       isRailSurface &&
       knownTargetTaskId !== null &&
       parsed.update_existing_task &&
-      (hasUpdateBody || hasProposedMeta) &&
+      (hasUpdateBody || hasProposedMeta || hasCoachOutline) &&
       !hasMessageMetaPatch;
 
     const shouldInsertDraft =
@@ -680,6 +926,22 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
         } else {
           pNewMeta = raw;
         }
+      }
+      if (hasCoachOutline) {
+        const outlineBase = pNewMeta ?? extras.taskMetadataForContext ?? {};
+        pNewMeta = applyCoachWorkoutOutlineToTaskMetadata(
+          outlineBase,
+          parsed.coach_workout_outline,
+        );
+        log('info', 'coach outline metadata', {
+          request_id: ctx.requestId,
+          slug: COACH_SLUG,
+          message_id: ctx.message.id,
+          outline_block_count: parsed.coach_workout_outline!.length,
+          outline_formats: parsed.coach_workout_outline!.map(
+            (b) => (b as { block_format?: string }).block_format ?? 'unknown',
+          ),
+        });
       }
       const upd = await agentUpdateTaskAndReply(supabase, {
         p_trigger_message_id: ctx.message.id,
@@ -757,6 +1019,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       p_personal_cues?: unknown;
       p_task_modal_intake_patch?: unknown;
       p_card_action?: unknown;
+      p_coach_workout_outline?: unknown;
     } = {
       p_trigger_message_id: ctx.message.id,
       p_thread_id: ctx.threadId,
@@ -771,6 +1034,18 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       rpcArgs.p_task_title = parsed.task_title;
       rpcArgs.p_task_description = parsed.task_description ?? null;
       rpcArgs.p_seed_task_comment_text = parsed.coach_task_notes ?? null;
+      if (hasCoachOutline) {
+        rpcArgs.p_coach_workout_outline = parsed.coach_workout_outline;
+        log('info', 'coach create card outline', {
+          request_id: ctx.requestId,
+          slug: COACH_SLUG,
+          message_id: ctx.message.id,
+          outline_block_count: parsed.coach_workout_outline!.length,
+          outline_formats: parsed.coach_workout_outline!.map(
+            (b) => (b as { block_format?: string }).block_format ?? 'unknown',
+          ),
+        });
+      }
     }
     if (knownTargetTaskId) {
       rpcArgs.p_create_card = false;
@@ -790,7 +1065,10 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       rpcArgs.p_create_card = false;
     }
 
-    const card = await agentCreateCardAndReply(supabase, rpcArgs);
+    const card = await agentCreateCardAndReply(supabase, {
+      ...AGENT_CREATE_CARD_CANONICAL_NULL_PATCHES,
+      ...rpcArgs,
+    });
     if (!card.ok) {
       log('error', 'coach persist card rpc failed', {
         request_id: ctx.requestId,
@@ -800,6 +1078,32 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       });
       throw new Error(`rpc_failed:${card.error}`);
     }
+
+    const outlinePhaseB = readCoachExtras(ctx).outlinePhaseB;
+    const createdTaskId =
+      card.data != null &&
+      typeof card.data === 'object' &&
+      !Array.isArray(card.data) &&
+      typeof (card.data as { created_task_id?: unknown }).created_task_id === 'string'
+        ? ((card.data as { created_task_id: string }).created_task_id as string)
+        : null;
+
+    if (parsed.create_card && createdTaskId && outlinePhaseB?.attempted) {
+      if (outlinePhaseB.ok && hasCoachOutline) {
+        await patchTaskOutlineMetadataFields(supabase, createdTaskId, {
+          status: 'ready',
+          error: null,
+          drops: parsed.coach_workout_outline_drops ?? [],
+        });
+      } else if (!outlinePhaseB.ok) {
+        await patchTaskOutlineMetadataFields(supabase, createdTaskId, {
+          status: 'needs_structure',
+          error: outlinePhaseB.error ?? 'Outline generation failed.',
+          drops: outlinePhaseB.drops ?? [],
+        });
+      }
+    }
+
     return { ok: true, data: card.data };
   },
 };

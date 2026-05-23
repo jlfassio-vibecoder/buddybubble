@@ -59,6 +59,11 @@ export function resolveCoachThinkingBudget(args: {
 export const COACH_WORKOUT_GREETING_TEMPERATURE = 0.35 as const;
 export const COACH_WORKOUT_GREETING_MAX_OUTPUT_TOKENS = 512 as const;
 
+/** Phase B: outline-only Vertex call (blocks array only). */
+export const COACH_OUTLINE_ONLY_TEMPERATURE = 0.1 as const;
+export const COACH_OUTLINE_ONLY_MAX_OUTPUT_TOKENS = 4096 as const;
+export const COACH_OUTLINE_ONLY_THINKING_BUDGET = 0 as const;
+
 /**
  * Coach-specific override for the dispatcher's thread-history loader. Caps the
  * number of prior messages included as Vertex `contents` so the input window
@@ -84,7 +89,7 @@ export const COACH_SELF_ATTESTATION_SAFE_REPLY =
 
 /** Appended server-side if the model omits it (matches the system-prompt contract). */
 export const COACH_TASK_SEED_CTA =
-  "Does this proposed workout look good? If so, click 'Generate Workout' on the card. If you'd like any adjustments, let me know here in the chat!";
+  "Complete the Workout Intake 3-step form then click 'Generate Workout' on the card.";
 
 /** User-visible reply text the dispatcher inserts when the LLM call fails. */
 export const COACH_SAFE_REPLY_TEXT =

@@ -22,12 +22,13 @@ import {
   flatExercisesMatchDerived,
 } from '@/lib/workout-factory/sync-workout-metadata';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
+import { readCoachOutlineMetadata } from '@/lib/agents/coach/coach-outline-metadata';
+import { preflightOutlineBlocks } from '@/lib/workout-factory/outline-block-preflight';
 import type { WorkoutTemplate } from '@/hooks/use-workout-templates';
 
 /** Intake wizard payload forwarded to `postGenerateWorkoutChain` as `daily_checkin`. */
 export type WorkoutIntakeWizardData = {
   readiness: number;
-  equipment: string[];
   sleepQuality: number;
   durationMinutes: number | 'Optimized for Goals';
   soreness: string[];
@@ -116,6 +117,19 @@ export function useTaskWorkoutAi({
   const handleAiGenerateWorkout = useCallback(
     async (wizardData?: WorkoutIntakeWizardData) => {
       if (!canWrite || !workspaceId || !isWorkoutItemType) return;
+
+      const outlineMeta = readCoachOutlineMetadata(metadata);
+      if (!outlineMeta.confirmedAt) {
+        toast.error('Confirm workout structure before generating.');
+        return;
+      }
+      const rawOutline = outlineMeta.outline ?? [];
+      const preflight = preflightOutlineBlocks(rawOutline);
+      if (preflight.blocks.length === 0) {
+        toast.error('Workout structure is invalid or empty. Edit and confirm structure first.');
+        return;
+      }
+
       setAiWorkoutGenerating(true);
       try {
         const duration = parseInt(workoutDurationMin, 10);
@@ -127,10 +141,12 @@ export function useTaskWorkoutAi({
                 : {}),
             }
           : null;
+        const coach_workout_outline = preflight.blocks;
         const data = await postGenerateWorkoutChain({
           workspace_id: workspaceId,
           daily_checkin: dailyCheckInPayload,
           workout_brief_authoritative: title.trim().length > 0 && description.trim().length > 0,
+          coach_workout_outline,
           persona: {
             title: title.trim() || undefined,
             description: description.trim() || undefined,
@@ -167,6 +183,7 @@ export function useTaskWorkoutAi({
       workoutDurationMin,
       title,
       description,
+      metadata,
       setTitle,
       setDescription,
       setWorkoutExercises,

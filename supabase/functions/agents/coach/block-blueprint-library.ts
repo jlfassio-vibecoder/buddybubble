@@ -1,7 +1,8 @@
 /** MIRROR FILE — canonical lives at `src/lib/agents/coach/block-blueprint-library.ts`.
  *
  * Body below is byte-for-byte identical to the canonical Vitest-side file (excluding
- * this header). Any change must be hand-mirrored — run `pnpm check:agent-mirror` to verify parity.
+ * this header). Import paths use explicit `.ts` extensions required by Deno.
+ * Any change must be hand-mirrored — run `pnpm check:agent-mirror` to verify parity.
  */
 
 export const BLOCK_FORMAT_ENUM = [
@@ -38,7 +39,9 @@ export type BlockShapeDropReason =
   | 'contrast_cardinality'
   | 'contrast_missing_rounds'
   | 'clusters_missing_params'
-  | 'drop_sets_missing_params';
+  | 'drop_sets_missing_params'
+  | 'json_parse_failed'
+  | 'missing_blocks';
 
 export type BlockShapeDrop = {
   field: string;
@@ -56,6 +59,7 @@ export const FORMAT_PARAM_KEYS_BY_FORMAT: Readonly<Record<BlockFormat, readonly 
     'total_rounds',
     'rest_in_interval_seconds',
     'is_alternating',
+    'is_combo',
     'alternating_stations',
   ],
   tabata: ['work_seconds', 'rest_seconds', 'rounds'],
@@ -251,6 +255,11 @@ export function normalizeFormatParams(format: BlockFormat, raw: unknown): Record
       else if (v === false) out.is_alternating = false;
       continue;
     }
+    if (key === 'is_combo') {
+      if (v === true) out.is_combo = true;
+      else if (v === false) out.is_combo = false;
+      continue;
+    }
     if (key === 'alternating_stations') {
       const stations = normalizeAlternatingStations(v);
       if (stations != null) out.alternating_stations = stations;
@@ -276,6 +285,7 @@ function hasPositiveIntParam(params: Record<string, unknown>, key: string): bool
 }
 
 export {
+  buildComboAlternatingStationsMatrix,
   buildDefaultAlternatingStationsMatrix,
   hydrateEmomAlternatingStations,
 } from '../../_shared/workout-metadata/hydrate-emom-alternating-stations.ts';
@@ -348,12 +358,25 @@ export function validateBlockShape(
 
 export const BLOCK_BLUEPRINT_LIBRARY_HEADER = '--- BLOCK BLUEPRINT LIBRARY ---';
 
+/** User clearly asked to draft / create the card (main-chat outline turn). */
+export function userMessageShowsDraftIntent(content: string): boolean {
+  const t = content.trim();
+  if (!t) return false;
+  return /\b(draft\s+(the\s+)?outline|please\s+draft|proceed\s+with|go\s+ahead\s+and\s+draft|create\s+(the\s+)?card|put\s+it\s+on\s+a\s+card)\b/i.test(
+    t,
+  );
+}
+
 /** True when the full block taxonomy should be appended to the Coach system prompt. */
-export function shouldInjectBlockBlueprintLibrary(args: {
+export function shouldInjectBlockBlueprintLibrary(_args: {
   isRailSurface: boolean;
   blockBlueprintMentionCount: number;
+  /** @deprecated Main chat always injects; kept for call-site compatibility. */
+  userMessageShowsDraftIntent?: boolean;
 }): boolean {
-  return args.isRailSurface || args.blockBlueprintMentionCount > 0;
+  // Rail and main bubble always receive the blueprint library so agreement turns
+  // (e.g. "That sounds good") still know EMOM/tabata format_params without draft-intent regex.
+  return true;
 }
 
 /**
@@ -375,7 +398,7 @@ export function buildBlockBlueprintLibraryPrompt(): string {
     '\n' +
     'amrap — As many rounds as possible in a time cap. Required format_params: time_cap_minutes. Optional: target_rounds, rest_between_rounds_seconds. exercises[] repeat in order until time_cap_minutes elapses.\n' +
     '\n' +
-    'emom — Every minute on the minute. Required format_params: interval_seconds AND (total_minutes OR total_rounds). Optional: rest_in_interval_seconds, is_alternating (boolean), alternating_stations (array of index arrays, 0-based within exercises[]). For simple A/B/C rotation set is_alternating true and omit alternating_stations — the server auto-builds [[0],[1],[2],…]. For combined minutes (e.g. A / B+C) supply alternating_stations explicitly such as [[0],[1,2]]. Do NOT use circuit for minute-bound alternating work. You MAY emit per-exercise work_seconds / rest_seconds; when omitted, the server derives them from interval_seconds and rest_in_interval_seconds.\n' +
+    'emom — Every minute on the minute. Required format_params: interval_seconds AND (total_minutes OR total_rounds). Optional: rest_in_interval_seconds, is_alternating (boolean), alternating_stations (array of index arrays, 0-based within exercises[]). For simple A/B/C rotation set is_alternating true and omit alternating_stations — the server auto-builds [[0],[1],[2],…]. For A / B+C combo minutes use the :main/emom/alternating-combo or :finisher/emom/alternating-combo catalog token (server pairs the last two exercises on one minute); do not emit is_combo in model JSON. For other combined minutes supply alternating_stations explicitly such as [[0],[1,2]]. Do NOT use circuit for minute-bound alternating work. You MAY emit per-exercise work_seconds / rest_seconds; when omitted, the server derives them from interval_seconds and rest_in_interval_seconds.\n' +
     '\n' +
     'tabata — Work / rest intervals. Required format_params: rounds. Optional: work_seconds (default 20), rest_seconds (default 10). Each exercise inherits work_seconds / rest_seconds / rounds from format_params; you may override per-exercise with work_seconds / rest_seconds.\n' +
     '\n' +

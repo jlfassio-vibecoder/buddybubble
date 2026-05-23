@@ -4,11 +4,13 @@ import {
   BLOCK_BLUEPRINT_LIBRARY_HEADER,
   BLOCK_FORMAT_ENUM,
   buildBlockBlueprintLibraryPrompt,
+  buildComboAlternatingStationsMatrix,
   buildDefaultAlternatingStationsMatrix,
   hydrateEmomAlternatingStations,
   mapLegacyTypeToBlockFormat,
   normalizeFormatParams,
   shouldInjectBlockBlueprintLibrary,
+  userMessageShowsDraftIntent,
   validateBlockShape,
 } from './block-blueprint-library';
 
@@ -195,6 +197,39 @@ describe('validateBlockShape', () => {
     expect(buildDefaultAlternatingStationsMatrix(3)).toEqual([[0], [1], [2]]);
   });
 
+  it('buildComboAlternatingStationsMatrix pairs last two exercises on one minute', () => {
+    expect(buildComboAlternatingStationsMatrix(2)).toEqual([[0, 1]]);
+    expect(buildComboAlternatingStationsMatrix(3)).toEqual([[0], [1, 2]]);
+    expect(buildComboAlternatingStationsMatrix(4)).toEqual([[0], [1], [2, 3]]);
+    expect(buildComboAlternatingStationsMatrix(1)).toEqual([[0]]);
+  });
+
+  it('hydrateEmomAlternatingStations injects combo matrix and strips is_combo', () => {
+    const base = { interval_seconds: 60, total_minutes: 10, is_alternating: true, is_combo: true };
+    const hydrated = hydrateEmomAlternatingStations(3, base);
+    expect(hydrated).toEqual({
+      interval_seconds: 60,
+      total_minutes: 10,
+      is_alternating: true,
+      alternating_stations: [[0], [1, 2]],
+    });
+    expect(hydrated).not.toHaveProperty('is_combo');
+    expect(validateBlockShape('emom', 3, hydrated)).toBeNull();
+  });
+
+  it('hydrateEmomAlternatingStations combo does not overwrite explicit alternating_stations', () => {
+    const base = {
+      interval_seconds: 60,
+      total_minutes: 10,
+      is_alternating: true,
+      is_combo: true,
+      alternating_stations: [[0], [1]],
+    };
+    const hydrated = hydrateEmomAlternatingStations(3, base);
+    expect(hydrated.alternating_stations).toEqual([[0], [1]]);
+    expect(hydrated).not.toHaveProperty('is_combo');
+  });
+
   it('hydrateEmomAlternatingStations injects matrix when missing', () => {
     const base = { interval_seconds: 60, total_minutes: 10, is_alternating: true };
     expect(hydrateEmomAlternatingStations(0, base)).toEqual(base);
@@ -309,10 +344,30 @@ describe('shouldInjectBlockBlueprintLibrary', () => {
     ).toBe(true);
   });
 
-  it('excludes library on main bubble without block mentions', () => {
+  it('always includes library on main bubble (no draft-intent gating)', () => {
     expect(
       shouldInjectBlockBlueprintLibrary({ isRailSurface: false, blockBlueprintMentionCount: 0 }),
-    ).toBe(false);
+    ).toBe(true);
+  });
+
+  it('includes library on main bubble draft-intent message', () => {
+    expect(
+      shouldInjectBlockBlueprintLibrary({
+        isRailSurface: false,
+        blockBlueprintMentionCount: 0,
+        userMessageShowsDraftIntent: true,
+      }),
+    ).toBe(true);
+  });
+});
+
+describe('userMessageShowsDraftIntent', () => {
+  it('matches please draft the outline', () => {
+    expect(userMessageShowsDraftIntent('Please draft the outline.')).toBe(true);
+  });
+
+  it('does not match generic readiness reply', () => {
+    expect(userMessageShowsDraftIntent('I have a lot of energy, no soreness.')).toBe(false);
   });
 });
 

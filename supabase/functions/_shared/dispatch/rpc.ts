@@ -5,8 +5,8 @@
  * the same payloads they do today. Definitions:
  *
  *   - `agent_create_card_and_reply` —
- *     `supabase/migrations/20260829120000_collapse_agent_create_card_overloads.sql`
- *     (single 15-arg signature including `p_card_action`; always pass explicit nulls).
+ *     `supabase/migrations/20260829140000_agent_create_card_coach_workout_outline.sql`
+ *     (single 16-arg signature including `p_card_action` and `p_coach_workout_outline`; always pass explicit nulls).
  *   - `agent_insert_coach_workout_draft_reply` — same migration, plus
  *     `p_execution_patch jsonb` extension; original at
  *     `supabase/migrations/20260623120000_coach_workout_draft_messages_metadata.sql:43-53`
@@ -47,9 +47,14 @@ export const AGENT_CREATE_CARD_CANONICAL_NULL_PATCHES = {
   p_personal_cues: null,
   p_task_modal_intake_patch: null,
   p_card_action: null,
+  p_coach_workout_outline: null,
 } as const satisfies Pick<
   AgentCreateCardArgs,
-  'p_execution_patch' | 'p_personal_cues' | 'p_task_modal_intake_patch' | 'p_card_action'
+  | 'p_execution_patch'
+  | 'p_personal_cues'
+  | 'p_task_modal_intake_patch'
+  | 'p_card_action'
+  | 'p_coach_workout_outline'
 >;
 
 export type AgentCreateCardArgs = {
@@ -72,6 +77,8 @@ export type AgentCreateCardArgs = {
   p_task_modal_intake_patch?: unknown;
   /** Coach UI command (e.g. `{ v: 1, kind: 'trigger_generation' }`). */
   p_card_action?: unknown;
+  /** Apex Architect agreed outline blocks → `tasks.metadata.coach_workout_outline`. */
+  p_coach_workout_outline?: unknown;
 };
 
 export type AgentInsertCoachDraftArgs = {

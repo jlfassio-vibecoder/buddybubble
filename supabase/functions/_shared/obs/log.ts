@@ -18,6 +18,7 @@ export type DispatchPhase =
   | 'llm_call'
   | 'llm_done'
   | 'parsed'
+  | 'enriched'
   | 'guarded'
   | 'persisted'
   | 'fallback'

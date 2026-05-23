@@ -142,8 +142,8 @@ The player body is a **two-pane split** (`splitPaneBody`):
 
 ### Persistence
 
-- **Draft autosave** — in-progress `SetDraft[][]` to a draft `workout_log` row when `sourceTaskId` is set (debounced).
-- **Finish** — inserts completed `workout_log` with flat exercises; copies program/schedule/assignees from source task.
+- **Draft autosave** — debounced (2s) write of `draft_logs` to an `in_progress` `workout_log` row via [`buildWorkoutLogDraftMetadata`](../../src/lib/workout-factory/build-workout-log-finish-metadata.ts); when the source workout is rich, also deep-clones `ai_workout_factory` so reload/resume from the log card keeps EMOM/Tabata structure.
+- **Finish** — [`buildWorkoutLogFinishMetadata`](../../src/lib/workout-factory/build-workout-log-finish-metadata.ts) on the draft or a new row: `workout_log_schema_version`, flat `exercises` + `set_logs`, factory snapshot; copies program/schedule/assignees from source task.
 
 ### Remaining gaps (Step 4+)
 

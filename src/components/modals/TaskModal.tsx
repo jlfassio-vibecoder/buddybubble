@@ -74,6 +74,7 @@ import {
   useTaskWorkoutAi,
   type WorkoutIntakeWizardData,
 } from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
+import { useWorkoutOutlineEditor } from '@/components/modals/task-modal/hooks/useWorkoutOutlineEditor';
 import { useWorkoutIntakeWizardState } from '@/components/modals/task-modal/hooks/useWorkoutIntakeWizardState';
 import { useTaskOriginalSnapshot } from '@/components/modals/task-modal/hooks/useTaskOriginalSnapshot';
 import { useTaskCoreTextAutosave } from '@/components/modals/task-modal/hooks/useTaskCoreTextAutosave';
@@ -857,6 +858,18 @@ export function TaskModal({
     }
   }, [saveCoreFields, isOptimisticDraftProp, onOptimisticDraftConsumed]);
 
+  const workoutOutlineEditor = useWorkoutOutlineEditor({
+    canWrite,
+    taskId,
+    workspaceId,
+    title,
+    description,
+    metadata,
+    setMetadata,
+    patchOriginalMetadataJson,
+    saveCoreFields,
+  });
+
   const handleModalHardDelete = useCallback(async () => {
     if (!taskId || !canWrite) return;
     await flushNow();
@@ -1234,7 +1247,6 @@ export function TaskModal({
           duration_minutes: workoutIntake.durationMinutes,
           target_intensity: workoutIntake.targetIntensity,
           soreness: workoutIntake.sorenessArray,
-          equipment: workoutIntake.equipmentArray,
         },
       };
       const workoutContext = buildTaskModalOutgoingWorkoutContext(metadata, title);
@@ -1253,7 +1265,6 @@ export function TaskModal({
       workoutIntake.durationMinutes,
       workoutIntake.targetIntensity,
       workoutIntake.sorenessArray,
-      workoutIntake.equipmentArray,
     ],
   );
 
@@ -1294,6 +1305,12 @@ export function TaskModal({
       onGenerateWorkoutFromIntake: handleGenerateWorkoutFromIntake,
       aiWorkoutGenerating,
       workoutIntakeState: itemType === 'workout' && canWrite ? workoutIntake : null,
+      workoutOutlineEditor:
+        itemType === 'workout' && canWrite && taskId ? workoutOutlineEditor : null,
+      intakeDisabledReason:
+        itemType === 'workout' && canWrite && taskId && !workoutOutlineEditor.canRunIntake
+          ? 'Confirm workout structure above before completing intake and generating.'
+          : undefined,
       taskId,
       cardCoverPath,
       cardCoverFileInputRef,
@@ -1438,6 +1455,7 @@ export function TaskModal({
       archiveTask,
       handleModalHardDelete,
       workoutIntake,
+      workoutOutlineEditor,
       metadata,
     ],
   );

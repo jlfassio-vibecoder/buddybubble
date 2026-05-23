@@ -7,7 +7,12 @@ import {
   hasRichWorkoutSetInMetadata,
 } from './sync-workout-metadata';
 import { buildWorkoutSessionViewModel } from './workout-session-view-model';
-import { richMetadataWithBlockFormat } from './__fixtures__/workout-session-view-model.fixtures';
+import {
+  richAlternatingEmomMetadata,
+  richMetadataWithBlockFormat,
+} from './__fixtures__/workout-session-view-model.fixtures';
+import { WORKOUT_LOG_SCHEMA_VERSION } from './build-workout-log-finish-metadata';
+import type { SetLogEntry, WorkoutExercise } from '@/lib/item-metadata';
 import type { TaskMetadataFormFields } from '@/lib/item-metadata';
 import { buildTaskMetadataPayload, finalizeWorkoutMetadataForSave } from '@/lib/item-metadata';
 
@@ -378,5 +383,108 @@ describe('finalizeWorkoutMetadataForSave', () => {
     ).workout_set.workouts[0].exerciseBlocks as Record<string, unknown>[];
     expect(blocks[0].blockFormat).toBe('straight_sets');
     expect((blocks[0].exercises as Record<string, unknown>[])[0].exerciseName).toBe('Edited Row');
+  });
+
+  function completedAlternatingEmomLogFixture(): Record<string, unknown> {
+    const base = richAlternatingEmomMetadata({
+      totalRounds: 15,
+      cycle: [[0], [1], [2]],
+    });
+    const setLogs: SetLogEntry[] = [
+      { set: 1, weight: 50, reps: 5, done: true },
+      { set: 2, weight: 50, reps: 5, done: true },
+    ];
+    const flatExercises: WorkoutExercise[] = [
+      { name: 'Deadlift', sets: 15, reps: 5, weight: 50, set_logs: setLogs },
+      { name: 'Push-up', sets: 15, reps: 10, set_logs: setLogs },
+      { name: 'Air Squat', sets: 15, reps: 15, set_logs: setLogs },
+    ];
+    return {
+      ...base,
+      workout_log_schema_version: WORKOUT_LOG_SCHEMA_VERSION,
+      source_task_id: 'source-workout-1',
+      duration_min: 15,
+      exercises: flatExercises,
+    };
+  }
+
+  it('workout_log pass-through preserves EMOM factory and set_logs on weight edit', () => {
+    const base = completedAlternatingEmomLogFixture();
+    const flatLoaded = (base.exercises as WorkoutExercise[]).map((ex) => ({ ...ex }));
+    const editedFlat = flatLoaded.map((ex, i) =>
+      i === 0
+        ? { ...ex, weight: 55, set_logs: ex.set_logs?.map((s) => ({ ...s, weight: 55 })) }
+        : ex,
+    );
+    const fields = { ...emptyFields(), workoutExercises: editedFlat };
+    const finalized = buildTaskMetadataPayload('workout_log', fields, base) as Record<
+      string,
+      unknown
+    >;
+
+    expect(finalized.workout_log_schema_version).toBe(WORKOUT_LOG_SCHEMA_VERSION);
+    expect(finalized.source_task_id).toBe('source-workout-1');
+
+    const af = finalized.ai_workout_factory as {
+      workout_set: {
+        workouts: {
+          exerciseBlocks: { blockFormat: string; formatParams: Record<string, unknown> }[];
+        }[];
+      };
+    };
+    const mainBlock = af.workout_set.workouts[0].exerciseBlocks[0];
+    expect(mainBlock.blockFormat).toBe('emom');
+    expect(mainBlock.formatParams.is_alternating).toBe(true);
+    expect(mainBlock.formatParams.alternating_stations).toEqual([[0], [1], [2]]);
+
+    const flat = finalized.exercises as WorkoutExercise[];
+    expect(flat[0].weight).toBe(55);
+    expect(flat[0].set_logs?.[0].weight).toBe(55);
+    expect(flat[0].sets).toBe(15);
+    expect(flat[0].set_logs).toHaveLength(2);
+
+    const baseAf = (base.ai_workout_factory as { workout_set: unknown }).workout_set;
+    expect((finalized.ai_workout_factory as { workout_set: unknown }).workout_set).toEqual(baseAf);
+  });
+
+  it('workout_log pass-through does not degrade factory on save without exercise edits', () => {
+    const base = completedAlternatingEmomLogFixture();
+    const flatLoaded = (base.exercises as WorkoutExercise[]).map((ex) => ({
+      ...ex,
+      set_logs: ex.set_logs?.map((s) => ({ ...s })),
+    }));
+    const fields = { ...emptyFields(), workoutExercises: flatLoaded };
+    const finalized = buildTaskMetadataPayload('workout_log', fields, base) as Record<
+      string,
+      unknown
+    >;
+
+    const mainBlock = (
+      finalized.ai_workout_factory as {
+        workout_set: { workouts: { exerciseBlocks: { blockFormat: string }[] }[] };
+      }
+    ).workout_set.workouts[0].exerciseBlocks[0];
+    expect(mainBlock.blockFormat).toBe('emom');
+
+    const flat = finalized.exercises as WorkoutExercise[];
+    expect(flat[0].weight).toBe(50);
+    expect(flat[0].set_logs).toHaveLength(2);
+    expect(flat[0].sets).toBe(15);
+  });
+
+  it('workout_log still pass-through when flat differs from prescription (logged set count)', () => {
+    const base = completedAlternatingEmomLogFixture();
+    const fields = { ...emptyFields(), workoutExercises: base.exercises as WorkoutExercise[] };
+    const finalized = buildTaskMetadataPayload('workout_log', fields, base) as Record<
+      string,
+      unknown
+    >;
+    const mainBlock = (
+      finalized.ai_workout_factory as {
+        workout_set: { workouts: { exerciseBlocks: { blockFormat: string }[] }[] };
+      }
+    ).workout_set.workouts[0].exerciseBlocks[0];
+    expect(mainBlock.blockFormat).toBe('emom');
+    expect((finalized.exercises as WorkoutExercise[])[0].sets).toBe(15);
   });
 });

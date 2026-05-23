@@ -11,8 +11,9 @@ import { MESSAGE_ATTACHMENT_FILE_ACCEPT } from '@/lib/message-attachment-limits'
 import type { SendMessageSuccess } from '@/hooks/useMessageThread';
 import type { PendingAgentResponse } from '@/hooks/useAgentResponseWait';
 import { ChatMessageRow } from './ChatMessageRow';
-import { RichMessageComposer } from './RichMessageComposer';
+import { RichMessageComposer, type RichMessageComposerBlockConfig } from './RichMessageComposer';
 import { AgentTypingIndicator } from './AgentTypingIndicator';
+import type { BlockPickerPreset } from '@/lib/agents/coach/block-blueprint-mentions-client';
 
 export type ThreadPanelPresentation = 'column' | 'sheet';
 
@@ -33,6 +34,9 @@ export type ThreadPanelProps = {
   renderMessageContent: (content: string) => ReactNode;
   sending?: boolean;
   composerFocusNonce?: number;
+  coachBlockBlueprintMentionsEnabled?: boolean;
+  blockConfig?: RichMessageComposerBlockConfig;
+  onBlockBlueprintInserted?: (preset: BlockPickerPreset) => void;
 };
 
 function ThreadPanelBody({
@@ -51,10 +55,14 @@ function ThreadPanelBody({
   renderMessageContent,
   sending = false,
   composerFocusNonce = 0,
+  coachBlockBlueprintMentionsEnabled = false,
+  blockConfig,
+  onBlockBlueprintInserted,
 }: ThreadPanelProps) {
   const [threadInput, setThreadInput] = useState('');
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const threadScrollRef = useRef<HTMLDivElement>(null);
+  const threadComposerPopoverRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (threadScrollRef.current) {
@@ -120,38 +128,57 @@ function ThreadPanelBody({
         ) : null}
       </div>
 
-      <RichMessageComposer
-        density="thread"
-        formTestId="chat-composer-thread"
-        className="border-t border-border bg-background p-4"
-        value={threadInput}
-        onChange={(next, _meta) => setThreadInput(next)}
-        onSubmitIntent={() => onSubmitIntent?.(threadInput)}
-        onSubmit={async ({ text, files }) => {
-          if ((!text.trim() && (!files || files.length === 0)) || sending) return false;
-          const sent = await onSendMessage(text, files);
-          if (!sent) return false;
-          onSuccessfulThreadSend?.(sent, text);
-          setThreadInput('');
-          setPendingFiles([]);
-          return true;
-        }}
-        pendingFiles={pendingFiles}
-        onPendingFilesChange={setPendingFiles}
-        fileAccept={MESSAGE_ATTACHMENT_FILE_ACCEPT}
-        disabled={!canPostMessages || !activeThreadParent}
-        isSending={sending}
-        canSubmit={
-          (!!threadInput.trim() || pendingFiles.length > 0) &&
-          !!canPostMessages &&
-          !!activeThreadParent &&
-          !sending
-        }
-        attachDisabled={!canPostMessages || !activeThreadParent || sending}
-        placeholder="Reply to thread…"
-        features={{ enableAtMentions: false, enableSlashTaskLinks: false }}
-        focusRequestNonce={composerFocusNonce}
-      />
+      <div ref={threadComposerPopoverRef} className="shrink-0">
+        <RichMessageComposer
+          density="thread"
+          formTestId="chat-composer-thread"
+          className="border-t border-border bg-background p-4"
+          popoverContainerRef={threadComposerPopoverRef}
+          value={threadInput}
+          onChange={(next, _meta) => setThreadInput(next)}
+          onSubmitIntent={() => onSubmitIntent?.(threadInput)}
+          onSubmit={async ({ text, files }) => {
+            if ((!text.trim() && (!files || files.length === 0)) || sending) return false;
+            const sent = await onSendMessage(text, files);
+            if (!sent) return false;
+            onSuccessfulThreadSend?.(sent, text);
+            setThreadInput('');
+            setPendingFiles([]);
+            return true;
+          }}
+          pendingFiles={pendingFiles}
+          onPendingFilesChange={setPendingFiles}
+          fileAccept={MESSAGE_ATTACHMENT_FILE_ACCEPT}
+          disabled={!canPostMessages || !activeThreadParent}
+          isSending={sending}
+          canSubmit={
+            (!!threadInput.trim() || pendingFiles.length > 0) &&
+            !!canPostMessages &&
+            !!activeThreadParent &&
+            !sending
+          }
+          attachDisabled={!canPostMessages || !activeThreadParent || sending}
+          placeholder="Reply to thread…"
+          blockConfig={coachBlockBlueprintMentionsEnabled ? blockConfig : undefined}
+          onBlockBlueprintInserted={
+            coachBlockBlueprintMentionsEnabled ? onBlockBlueprintInserted : undefined
+          }
+          features={{
+            enableAtMentions: false,
+            enableSlashTaskLinks: false,
+            enableBlockBlueprintMentions: coachBlockBlueprintMentionsEnabled,
+          }}
+          footerHint={
+            coachBlockBlueprintMentionsEnabled ? (
+              <>
+                <b>Return</b> to send • <b>Shift + Return</b> for new line • <b>:</b> for block
+                format (AMRAP, EMOM…)
+              </>
+            ) : undefined
+          }
+          focusRequestNonce={composerFocusNonce}
+        />
+      </div>
     </>
   );
 }

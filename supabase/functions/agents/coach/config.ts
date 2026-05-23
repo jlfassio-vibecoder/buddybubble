@@ -1,13 +1,6 @@
 /**
  * MIRROR FILE — canonical lives at `src/lib/agents/coach/config.ts`.
- *
- * Body below is byte-for-byte identical to the canonical Vitest-side file (excluding
- * this header). Any change must be hand-mirrored — run `pnpm check:agent-mirror` to
- * verify parity. The canonical file includes Vitest unit-test coverage for
- * the constants that get exercised in `parse.ts` / `server-guards.ts`.
- *
- * No relative imports → import paths are identical between Node and Deno builds for
- * this module.
+ * Run `pnpm check:agent-mirror` after edits.
  */
 
 /** Stable agent slug. Strategy modules are the only files allowed to hard-code this. */
@@ -48,6 +41,11 @@ export function resolveCoachThinkingBudget(args: {
 export const COACH_WORKOUT_GREETING_TEMPERATURE = 0.35 as const;
 export const COACH_WORKOUT_GREETING_MAX_OUTPUT_TOKENS = 512 as const;
 
+/** Phase B: outline-only Vertex call (blocks array only). */
+export const COACH_OUTLINE_ONLY_TEMPERATURE = 0.1 as const;
+export const COACH_OUTLINE_ONLY_MAX_OUTPUT_TOKENS = 4096 as const;
+export const COACH_OUTLINE_ONLY_THINKING_BUDGET = 0 as const;
+
 /**
  * Coach-specific override for the dispatcher's thread-history loader. Caps the
  * number of prior messages included as Vertex `contents` so the input window
@@ -73,7 +71,7 @@ export const COACH_SELF_ATTESTATION_SAFE_REPLY =
 
 /** Appended server-side if the model omits it (matches the system-prompt contract). */
 export const COACH_TASK_SEED_CTA =
-  "Does this proposed workout look good? If so, click 'Generate Workout' on the card. If you'd like any adjustments, let me know here in the chat!";
+  "Complete the Workout Intake 3-step form then click 'Generate Workout' on the card.";
 
 /** User-visible reply text the dispatcher inserts when the LLM call fails. */
 export const COACH_SAFE_REPLY_TEXT =

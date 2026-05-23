@@ -24,6 +24,8 @@ import {
   parseIntakePhase,
   parseMissingIntakeCategories,
   parsePersonalCuesPatchFromGemini,
+  parseCoachWorkoutOutlineWithDrops,
+  parseCoachOutlineOnlyBlocksFromText,
   parseProposedWorkoutMetadata,
   parseProposedWorkoutMetadataWithDrops,
   parseSessionReadinessScore,
@@ -212,6 +214,48 @@ describe('parseProposedWorkoutMetadata', () => {
     });
     expect(meta.blocks).toBeUndefined();
     expect(drops).toEqual([{ field: 'blocks[0]', reason: 'emom_missing_params' }]);
+  });
+
+  it('hydrates combo alternating EMOM when is_combo true and stations omitted', () => {
+    const { meta, drops } = parseProposedWorkoutMetadataWithDrops({
+      proposed_workout_metadata: {
+        blocks: [
+          {
+            name: 'Main',
+            block_format: 'emom',
+            format_params: {
+              interval_seconds: 60,
+              total_minutes: 12,
+              is_alternating: true,
+              is_combo: true,
+            },
+            exercises: [
+              { name: 'Back Squat', reps: '5' },
+              { name: 'Push-up', reps: '10' },
+              { name: 'Sit-up', reps: '15' },
+            ],
+          },
+        ],
+      },
+    });
+    expect(drops).toEqual([]);
+    expect(meta.blocks).toEqual([
+      {
+        name: 'Main',
+        block_format: 'emom',
+        format_params: {
+          interval_seconds: 60,
+          total_minutes: 12,
+          is_alternating: true,
+          alternating_stations: [[0], [1, 2]],
+        },
+        exercises: [
+          { name: 'Back Squat', reps: '5' },
+          { name: 'Push-up', reps: '10' },
+          { name: 'Sit-up', reps: '15' },
+        ],
+      },
+    ]);
   });
 
   it('hydrates alternating EMOM matrix when is_alternating true and stations omitted', () => {
@@ -761,7 +805,8 @@ describe('ensureCoachTaskNotesCta', () => {
   });
 
   it('preserves notes that already include both keywords', () => {
-    const notes = 'Solid plan. Generate Workout once you have made any adjustments.';
+    const notes =
+      "Solid plan. Complete the Workout Intake 3-step form then click 'Generate Workout' on the card.";
     expect(ensureCoachTaskNotesCta(notes)).toBe(notes);
   });
 
@@ -1107,6 +1152,100 @@ describe('parseCoachJson', () => {
   it('defaults missing card_action to null', () => {
     const out = parseCoachJson(JSON.stringify(makeReplyOnlyPayload()));
     expect(out.card_action).toBeNull();
+  });
+
+  it('parseCoachWorkoutOutlineWithDrops keeps EMOM alternating block', () => {
+    const { outline, drops } = parseCoachWorkoutOutlineWithDrops({
+      coach_workout_outline: [
+        {
+          name: 'Main',
+          block_format: 'emom',
+          format_params: {
+            interval_seconds: 60,
+            total_minutes: 12,
+            is_alternating: true,
+          },
+          exercises: [
+            { name: 'KB Swing', sets: 1, reps: '10' },
+            { name: 'Push-up', sets: 1, reps: '12' },
+          ],
+        },
+      ],
+    });
+    expect(drops).toEqual([]);
+    expect(outline).toHaveLength(1);
+    expect(outline![0].block_format).toBe('emom');
+    const fp = outline![0].format_params as Record<string, unknown>;
+    expect(fp.is_alternating).toBe(true);
+    expect(fp.alternating_stations).toEqual([[0], [1]]);
+  });
+
+  it('parseCoachWorkoutOutlineWithDrops drops invalid block shape', () => {
+    const { outline, drops } = parseCoachWorkoutOutlineWithDrops({
+      coach_workout_outline: [
+        {
+          name: 'Main',
+          block_format: 'emom',
+          format_params: { total_minutes: 10 },
+          exercises: [{ name: 'Swing' }],
+        },
+      ],
+    });
+    expect(outline).toBeNull();
+    expect(drops).toEqual([{ field: 'coach_workout_outline[0]', reason: 'emom_missing_params' }]);
+  });
+
+  it('parseCoachWorkoutOutlineWithDrops returns null for empty array', () => {
+    const { outline, drops } = parseCoachWorkoutOutlineWithDrops({ coach_workout_outline: [] });
+    expect(outline).toBeNull();
+    expect(drops).toEqual([]);
+  });
+
+  it('parseCoachOutlineOnlyBlocksFromText reads Phase B blocks wrapper', () => {
+    const { outline, drops } = parseCoachOutlineOnlyBlocksFromText(
+      JSON.stringify({
+        blocks: [
+          {
+            name: 'Main',
+            block_format: 'tabata',
+            format_params: { rounds: 8, work_seconds: 20, rest_seconds: 10 },
+            exercises: [{ name: 'Burpee' }],
+          },
+        ],
+      }),
+    );
+    expect(drops).toEqual([]);
+    expect(outline).toHaveLength(1);
+    expect(outline![0].block_format).toBe('tabata');
+  });
+
+  it('parseCoachJson surfaces coach_workout_outline on create_card branch', () => {
+    const out = parseCoachJson(
+      JSON.stringify({
+        reply_content: 'Card ready',
+        create_card: true,
+        task_title: 'EMOM',
+        task_description: 'Summary',
+        coach_task_notes: null,
+        coach_workout_outline: [
+          {
+            name: 'Main',
+            block_format: 'tabata',
+            format_params: { rounds: 8, work_seconds: 20, rest_seconds: 10 },
+            exercises: [{ name: 'Burpee' }],
+          },
+        ],
+        ...REQUIRED_TAIL,
+        intake_phase: 'ready_to_prescribe',
+        session_readiness_score: 80,
+        missing_intake_categories: [],
+        user_requested_immediate_card: true,
+        session_request: true,
+      }),
+    );
+    expect(out.create_card).toBe(true);
+    expect(out.coach_workout_outline).toHaveLength(1);
+    expect(out.coach_workout_outline![0].block_format).toBe('tabata');
   });
 
   it('forces card_action null on create_card branch', () => {

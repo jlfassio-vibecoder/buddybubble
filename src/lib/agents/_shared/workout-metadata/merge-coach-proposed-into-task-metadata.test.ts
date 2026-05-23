@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyBlockRole,
   flattenSessionExercisesForMetadata,
+  applyCoachWorkoutOutlineToTaskMetadata,
   mergeCoachProposedIntoTaskMetadata,
 } from './merge-coach-proposed-into-task-metadata';
 
@@ -65,6 +66,34 @@ describe('classifyBlockRole', () => {
     expect(classifyBlockRole('Flexibility')).toBe('cooldown');
     expect(classifyBlockRole('Stretch routine')).toBe('cooldown');
     expect(classifyBlockRole('Strength block')).toBe('main');
+  });
+});
+
+describe('applyCoachWorkoutOutlineToTaskMetadata', () => {
+  it('replaces coach_workout_outline without touching exercises or factory', () => {
+    const base = {
+      exercises: [{ name: 'Legacy' }],
+      ai_workout_factory: { workout_set: { workouts: [] } },
+      coach_workout_outline: [{ name: 'Old', block_format: 'amrap' }],
+    };
+    const blocks = [
+      {
+        name: 'Main',
+        block_format: 'emom',
+        format_params: { interval_seconds: 60, total_minutes: 10 },
+        exercises: [{ name: 'Swing' }],
+      },
+    ];
+    const next = applyCoachWorkoutOutlineToTaskMetadata(base, blocks);
+    expect(next.coach_workout_outline).toEqual(blocks);
+    expect(next.exercises).toEqual(base.exercises);
+    expect(next.ai_workout_factory).toEqual(base.ai_workout_factory);
+  });
+
+  it('returns clone unchanged when outline is null or empty', () => {
+    const base = { foo: 1 };
+    expect(applyCoachWorkoutOutlineToTaskMetadata(base, null)).toEqual({ foo: 1 });
+    expect(applyCoachWorkoutOutlineToTaskMetadata(base, [])).toEqual({ foo: 1 });
   });
 });
 

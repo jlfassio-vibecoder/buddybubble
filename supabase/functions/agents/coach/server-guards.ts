@@ -1,8 +1,9 @@
-/** MIRROR FILE — canonical lives at `src/lib/agents/coach/server-guards.ts`.
+/**
+ * MIRROR FILE — canonical lives at `src/lib/agents/coach/server-guards.ts`.
  *
  * Body below is byte-for-byte identical to the canonical Vitest-side file (excluding
- * this header). Import paths use explicit `.ts` extensions required by Deno.
- * Any change must be hand-mirrored — run `pnpm check:agent-mirror` to verify parity.
+ * this header) EXCEPT for relative imports that use the explicit `.ts` extension
+ * required by Deno. Any change must be hand-mirrored — run `pnpm check:agent-mirror` to verify parity.
  */
 
 import type { CoachGeminiJsonResponse } from './parse.ts';
@@ -69,7 +70,10 @@ export function assertCoachReplySelfAttestation(parsed: CoachGeminiJsonResponse)
         hasProposed));
   const hasIntake = hasTaskModalIntakePatch(parsed.task_modal_intake_patch);
   const hasCardAction = parsed.card_action === 'trigger_generation';
-  const hasPayload = hasExecution || hasPersonal || hasCard || hasIntake || hasCardAction;
+  const hasOutline =
+    parsed.coach_workout_outline != null && parsed.coach_workout_outline.length > 0;
+  const hasPayload =
+    hasExecution || hasPersonal || hasCard || hasIntake || hasCardAction || hasOutline;
   if (!hasPayload) {
     throw { kind: 'self_attestation_mismatch' as const };
   }
@@ -110,6 +114,7 @@ export function applyCoachServerGuards(
   let updatedTaskTitle = parsed.updated_task_title;
   let updatedTaskDescription = parsed.updated_task_description;
   let proposedWorkoutMetadata = parsed.proposed_workout_metadata;
+  let coachWorkoutOutline = parsed.coach_workout_outline;
   let taskModalIntakePatch = parsed.task_modal_intake_patch;
   let cardAction = parsed.card_action;
 
@@ -167,6 +172,7 @@ export function applyCoachServerGuards(
       updatedTaskTitle = null;
       updatedTaskDescription = null;
       proposedWorkoutMetadata = null;
+      coachWorkoutOutline = null;
       taskModalIntakePatch = null;
       cardAction = null;
     }
@@ -175,13 +181,17 @@ export function applyCoachServerGuards(
   // Guard 4: Narrative vs Structure. Per docs/refactor/parametric-workout-blocks §11.3,
   // when proposed_workout_metadata.blocks is non-empty, structured JSON is the prescription
   // — prose in updated_task_description is forbidden.
-  if (blocksArrayNonEmpty(proposedWorkoutMetadata as Record<string, unknown> | null)) {
+  if (
+    blocksArrayNonEmpty(proposedWorkoutMetadata as Record<string, unknown> | null) ||
+    (coachWorkoutOutline != null && coachWorkoutOutline.length > 0)
+  ) {
     updatedTaskDescription = null;
   }
 
   // Guard 5: Action exclusivity — card_action is a UI command, not a workout draft.
   if (cardAction === 'trigger_generation') {
     proposedWorkoutMetadata = null;
+    coachWorkoutOutline = null;
     updatedTaskDescription = null;
   }
 
@@ -208,6 +218,7 @@ export function applyCoachServerGuards(
     updated_task_title: updatedTaskTitle,
     updated_task_description: updatedTaskDescription,
     proposed_workout_metadata: proposedWorkoutMetadata,
+    coach_workout_outline: coachWorkoutOutline,
     task_modal_intake_patch: taskModalIntakePatch,
     card_action: cardAction,
   };

@@ -1,6 +1,6 @@
 /**
  * Coach-authored structured updates for the Task Modal **Workout intake** wizard
- * (readiness / sleep sliders, steps, duration, intensity, soreness, equipment).
+ * (readiness / sleep sliders, steps, duration, intensity, soreness).
  *
  * - Carried on `messages.metadata.task_modal_intake_patch` (JSON object) after the
  *   agent RPC merges it into the reply row — same delivery pattern as `execution_patch`.
@@ -28,24 +28,13 @@ export const WORKOUT_INTAKE_SORENESS_OPTIONS = [
   'Core',
 ] as const;
 
-export const WORKOUT_INTAKE_EQUIPMENT_OPTIONS = [
-  'Dumbbells',
-  'Kettlebell',
-  'Resistance bands',
-  'Pull-up bar',
-  'Mat',
-  'Bodyweight',
-] as const;
-
-/** Normalized patch: only keys the model (or parser) chose to set. */
 export type TaskModalIntakePatch = {
   readiness?: number;
   sleep_quality?: number;
-  wizard_step?: 1 | 2 | 3 | 4;
+  wizard_step?: 1 | 2 | 3;
   duration_minutes?: WorkoutIntakeDurationChoice;
   target_intensity?: WorkoutIntakeIntensityChoice;
   soreness?: string[];
-  equipment?: string[];
 };
 
 export type TaskModalIntakePatchDropReason =
@@ -64,7 +53,6 @@ export type TaskModalIntakePatchDrop = {
 };
 
 const SORENESS_SET = new Set<string>(WORKOUT_INTAKE_SORENESS_OPTIONS as unknown as string[]);
-const EQUIPMENT_SET = new Set<string>(WORKOUT_INTAKE_EQUIPMENT_OPTIONS as unknown as string[]);
 const INTENSITY_SET = new Set<string>(WORKOUT_INTAKE_INTENSITY_OPTIONS as unknown as string[]);
 const DURATION_NUMS = new Set<number>([15, 30, 45, 60]);
 
@@ -82,7 +70,6 @@ const TASK_MODAL_INTAKE_PATCH_KNOWN_KEYS = new Set<string>([
   'target_intensity',
   'targetIntensity',
   'soreness',
-  'equipment',
 ]);
 
 const MAX_INTAKE_DROPS = 50;
@@ -136,14 +123,14 @@ function parseReadinessSleepWithDrops(
 function parseWizardStepWithDrops(
   raw: unknown,
   drops: TaskModalIntakePatchDrop[],
-): 1 | 2 | 3 | 4 | undefined {
+): 1 | 2 | 3 | undefined {
   if (raw === undefined || raw === null) return undefined;
   const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw.trim()) : NaN;
-  if (!Number.isInteger(n) || n < 1 || n > 4) {
-    pushDrop(drops, { field: 'wizard_step', reason: 'invalid_enum', detail: '1_to_4' });
+  if (!Number.isInteger(n) || n < 1 || n > 3) {
+    pushDrop(drops, { field: 'wizard_step', reason: 'invalid_enum', detail: '1_to_3' });
     return undefined;
   }
-  return n as 1 | 2 | 3 | 4;
+  return n as 1 | 2 | 3;
 }
 
 function parseDurationWithDrops(
@@ -265,8 +252,6 @@ export function parseAndCollectTaskModalIntakePatchFromGemini(raw: unknown): {
     parseIntensityWithDrops(o.target_intensity ?? o.targetIntensity, dropped) ?? undefined;
   let soreness = parseStringArrayWithDrops(o.soreness, SORENESS_SET, 'soreness', dropped);
   soreness = normalizeSorenessWithDrops(soreness, dropped);
-  const equipment =
-    parseStringArrayWithDrops(o.equipment, EQUIPMENT_SET, 'equipment', dropped) ?? undefined;
 
   const out: TaskModalIntakePatch = {};
   if (readiness !== undefined) out.readiness = readiness;
@@ -275,7 +260,6 @@ export function parseAndCollectTaskModalIntakePatchFromGemini(raw: unknown): {
   if (duration_minutes !== undefined) out.duration_minutes = duration_minutes;
   if (target_intensity !== undefined) out.target_intensity = target_intensity;
   if (soreness !== undefined) out.soreness = soreness;
-  if (equipment !== undefined) out.equipment = equipment;
 
   const patch = Object.keys(out).length > 0 ? out : null;
   return { patch, dropped };

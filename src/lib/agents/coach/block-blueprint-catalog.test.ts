@@ -60,6 +60,16 @@ describe('block-blueprint-catalog', () => {
     expect(alt?.format_params).not.toHaveProperty('alternating_stations');
   });
 
+  it('searchBlockCatalog finds EMOM alternating-combo preset', () => {
+    const combo = searchBlockCatalog('combo');
+    expect(combo.some((e) => e.id === 'main-emom-alternating-combo')).toBe(true);
+    const preset = BLOCK_BLUEPRINT_CATALOG.find((e) => e.id === 'main-emom-alternating-combo');
+    expect(preset?.token).toBe(':main/emom/alternating-combo ');
+    expect(preset?.format_params.is_alternating).toBe(true);
+    expect(preset?.format_params.is_combo).toBe(true);
+    expect(preset?.format_params).not.toHaveProperty('alternating_stations');
+  });
+
   it('EMOM catalog includes straight and density tokens', () => {
     const straight = BLOCK_BLUEPRINT_CATALOG.find((e) => e.id === 'main-emom-straight');
     expect(straight?.token).toBe(':main/emom/straight ');
@@ -100,6 +110,15 @@ describe('blockBlueprintMentionFromPick', () => {
     expect(mention.token).toBe(':main/emom/alternating ');
     expect(mention.format_params.is_alternating).toBe(true);
     expect(mention.format_params).not.toHaveProperty('alternating_stations');
+  });
+
+  it('carries is_combo from alternating-combo EMOM preset', () => {
+    const preset = BLOCK_BLUEPRINT_CATALOG.find((e) => e.id === 'main-emom-alternating-combo');
+    expect(preset).toBeDefined();
+    const mention = blockBlueprintMentionFromPick(preset!);
+    expect(mention.token).toBe(':main/emom/alternating-combo ');
+    expect(mention.format_params.is_alternating).toBe(true);
+    expect(mention.format_params.is_combo).toBe(true);
   });
 
   it('preserves explicit catalog token', () => {

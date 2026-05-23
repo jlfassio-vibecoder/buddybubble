@@ -195,6 +195,11 @@ export interface AgentStrategy<TParsed> {
   buildSystemPrompt(ctx: DispatchContext): Promise<string>;
   buildContents(ctx: DispatchContext): Promise<GeminiContent[]>;
   parse(json: unknown, ctx: DispatchContext): TParsed;
+  /**
+   * Optional second LLM pass (e.g. Coach Phase B outline fill) after `parse` and before
+   * `applyServerGuards`. Handler stores `ctx.extras.dispatchStartedAtMs` for budget math.
+   */
+  enrichParsed?(parsed: TParsed, ctx: DispatchContext): Promise<TParsed>;
   applyServerGuards?(parsed: TParsed, ctx: DispatchContext): TParsed;
   persist(parsed: TParsed, ctx: DispatchContext): Promise<RpcEnvelope>;
 
@@ -236,4 +241,7 @@ export interface AgentStrategy<TParsed> {
     maxOutputTokens?: number;
     thinkingConfig?: { thinkingBudget: number };
   } | null;
+
+  /** Optional per-request Vertex JSON schema (e.g. Coach main bubble card shell vs rail). */
+  resolveResponseSchema?(ctx: DispatchContext): VertexResponseSchema;
 }

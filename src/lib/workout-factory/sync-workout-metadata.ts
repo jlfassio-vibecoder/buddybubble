@@ -278,3 +278,24 @@ export function applyBlockEditsToMetadata(meta: unknown, blocks: WorkoutSessionB
 
   return next as Json;
 }
+
+/**
+ * Completed `workout_log` save: preserve prescription snapshot and log keys; apply flat performance edits only.
+ * Skips flat-vs-derived reconciliation (logged sets/set_logs differ from factory prescription by design).
+ */
+export function passThroughRichWorkoutLogMetadata(
+  built: unknown,
+  flatExercises: WorkoutExercise[],
+): Json {
+  const o = { ...(parseTaskMetadata(built) as Record<string, unknown>) };
+  const af = o.ai_workout_factory;
+  if (af != null && typeof af === 'object' && !Array.isArray(af)) {
+    o.ai_workout_factory = deepClone(af);
+  }
+  if (flatExercises.length > 0) {
+    o.exercises = flatExercises;
+  } else {
+    delete o.exercises;
+  }
+  return o as Json;
+}

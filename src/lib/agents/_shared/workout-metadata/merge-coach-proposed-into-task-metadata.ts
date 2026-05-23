@@ -561,6 +561,22 @@ function isProposedEffectivelyEmpty(proposed: Record<string, unknown>): boolean 
  * Merge Coach `proposed_workout_metadata` into a full next `tasks.metadata` object.
  * Pure function — no I/O.
  */
+/**
+ * Sets `tasks.metadata.coach_workout_outline` from Apex Architect outline blocks.
+ * Does not merge into `exercises` or `ai_workout_factory`.
+ */
+export function applyCoachWorkoutOutlineToTaskMetadata(
+  base: unknown,
+  outlineBlocks: Record<string, unknown>[] | null,
+): Record<string, unknown> {
+  const baseObj: Record<string, unknown> = isPlainObject(base) ? base : {};
+  const next = deepClone(baseObj);
+  if (outlineBlocks != null && outlineBlocks.length > 0) {
+    next.coach_workout_outline = outlineBlocks;
+  }
+  return next;
+}
+
 export function mergeCoachProposedIntoTaskMetadata(input: MergeInput): MergeResult {
   const baseObj: Record<string, unknown> = isPlainObject(input.base) ? input.base : {};
   const proposed = input.proposed;
