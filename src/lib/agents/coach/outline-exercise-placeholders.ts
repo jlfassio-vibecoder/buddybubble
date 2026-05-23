@@ -5,7 +5,6 @@
  */
 
 import {
-  BLOCK_FORMAT_ENUM,
   hydrateEmomAlternatingStations,
   isBlockFormat,
   normalizeFormatParams,

@@ -9,6 +9,7 @@ import {
   type SubscriptionStatus,
 } from '@/lib/subscription-permissions';
 import { getVertexAICredentials } from '@/lib/workout-factory/vertex-ai-client';
+import { normalizeItemType } from '@/lib/item-types';
 import type { TaskRow, WorkspaceCategory } from '@/types/database';
 
 export const maxDuration = 120;
@@ -109,6 +110,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Task not found' }, { status: 404 });
     }
 
+    if (normalizeItemType(task.item_type) !== 'workout') {
+      return NextResponse.json(
+        { error: 'Outline generation is only supported for workout tasks.' },
+        { status: 400, headers: JSON_HEADERS },
+      );
+    }
+
     const { data: bubble, error: bubbleError } = await supabase
       .from('bubbles')
       .select('workspace_id')
@@ -138,10 +146,15 @@ export async function POST(req: Request) {
       clearConfirmation: true,
     });
 
-    await supabase
+    const { error: generatingUpdateErr } = await supabase
       .from('tasks')
       .update({ metadata: generatingMeta as TaskRow['metadata'] })
       .eq('id', taskId);
+
+    if (generatingUpdateErr) {
+      console.error(`${logPrefix} tasks generating update:`, generatingUpdateErr);
+      return NextResponse.json({ error: 'Could not update task' }, { status: 500 });
+    }
 
     const creds = await getVertexAICredentials(logPrefix);
     if ('error' in creds) {
@@ -167,9 +180,10 @@ export async function POST(req: Request) {
         clearConfirmation: true,
       });
     } else {
+      console.error(`${logPrefix} phase b failed:`, phaseResult.message, { task_id: taskId });
       nextMeta = mergeCoachOutlineMetadataPatch(task.metadata, {
         status: 'needs_structure',
-        error: phaseResult.message,
+        error: OUTLINE_GENERATION_USER_ERROR,
         drops: phaseResult.drops ?? [],
         clearConfirmation: true,
       });
