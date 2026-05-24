@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useReducer, useRef } from 'react';
+import { useCallback, useEffect, useReducer, useRef, type RefObject } from 'react';
 import {
   createInitialIntervalTimerState,
   deriveIntervalTimerSnapshot,
@@ -10,9 +10,11 @@ import type {
   IntervalTimerConfig,
   IntervalTimerSnapshot,
 } from '@/lib/workout-factory/interval-timer/types';
+import type { IntervalTimerEngineState } from '@/lib/workout-factory/interval-timer/types';
 
 export function useIntervalTimerEngine(config: IntervalTimerConfig): {
   snapshot: IntervalTimerSnapshot;
+  engineStateRef: RefObject<IntervalTimerEngineState>;
   start: () => void;
   pause: () => void;
   resume: () => void;
@@ -37,17 +39,34 @@ export function useIntervalTimerEngine(config: IntervalTimerConfig): {
     if (!shouldRun) return;
 
     let frame = 0;
+    let lastSecond = -1;
+    let lastPhaseKey = '';
+
     const loop = () => {
       frame = requestAnimationFrame(loop);
       const now = Date.now();
       const current = deriveIntervalTimerSnapshot(stateRef.current, now);
+
       if (
         (current.phase === 'work' || current.phase === 'rest' || current.phase === 'prepare') &&
         current.remainingMs <= 0
       ) {
         dispatch({ type: 'tick', now });
+        lastSecond = -1;
+        lastPhaseKey = '';
+        setTick();
+        return;
       }
-      setTick();
+
+      const elapsedMs = current.phaseDurationMs - current.remainingMs;
+      const currentSecond = Math.floor(elapsedMs / 1000);
+      const phaseKey = `${current.phase}:${current.roundIndex}`;
+
+      if (currentSecond !== lastSecond || phaseKey !== lastPhaseKey) {
+        lastSecond = currentSecond;
+        lastPhaseKey = phaseKey;
+        setTick();
+      }
     };
     frame = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(frame);
@@ -74,6 +93,7 @@ export function useIntervalTimerEngine(config: IntervalTimerConfig): {
 
   return {
     snapshot,
+    engineStateRef: stateRef,
     start,
     pause,
     resume,

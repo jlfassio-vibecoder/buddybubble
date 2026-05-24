@@ -7,6 +7,7 @@ import { useIntervalShellPolish } from '@/hooks/use-interval-shell-polish';
 import { useIntervalTimerEngine } from '@/hooks/use-interval-timer-engine';
 import { IntervalShellAudioToggle } from '@/components/fitness/interval-shells/IntervalShellAudioToggle';
 import { resolveTabataTimerConfig } from '@/lib/workout-factory/interval-timer/resolve-tabata-timer-config';
+import { deriveIntervalTimerSnapshot } from '@/lib/workout-factory/interval-timer/interval-timer-engine';
 import {
   intervalTimerSnapshotToRowSnapshot,
   type IntervalRowSnapshot,
@@ -45,7 +46,7 @@ function TabataIntervalShellInner({
   config: NonNullable<ReturnType<typeof resolveTabataTimerConfig>>;
   onSnapshot: TabataIntervalShellProps['onSnapshot'];
 }) {
-  const { snapshot, start, pause, resume, reset } = useIntervalTimerEngine(config);
+  const { snapshot, engineStateRef, start, pause, resume, reset } = useIntervalTimerEngine(config);
   const cueSegmentKey = `${snapshot.phase}-${snapshot.roundIndex}`;
   const { audioEnabled, toggleAudio, primeAudio } = useIntervalShellPolish({
     isRunning: snapshot.isRunning,
@@ -67,7 +68,10 @@ function TabataIntervalShellInner({
   const showRound =
     snapshot.phase !== 'idle' && snapshot.totalRounds > 0 && snapshot.phase !== 'done';
 
-  const getElapsedMs = () => Math.max(0, snapshot.phaseDurationMs - snapshot.remainingMs);
+  const getElapsedMs = () => {
+    const live = deriveIntervalTimerSnapshot(engineStateRef.current, Date.now());
+    return Math.max(0, live.phaseDurationMs - live.remainingMs);
+  };
 
   return (
     <div

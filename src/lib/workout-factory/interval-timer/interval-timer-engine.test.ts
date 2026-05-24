@@ -84,6 +84,13 @@ describe('intervalTimerReducer', () => {
     expect(s.phase).toBe('done');
   });
 
+  it('single tick fast-forwards missed Tabata phases after background', () => {
+    const cfg: TabataTimerConfig = { ...tabataConfig, totalRounds: 2 };
+    let s = intervalTimerReducer(createInitialIntervalTimerState(cfg), { type: 'start', now: 0 });
+    s = intervalTimerReducer(s, { type: 'tick', now: 90_000 });
+    expect(s.phase).toBe('done');
+  });
+
   it('pause mid-work freezes remaining', () => {
     let s = intervalTimerReducer(createInitialIntervalTimerState(tabataConfig), {
       type: 'start',

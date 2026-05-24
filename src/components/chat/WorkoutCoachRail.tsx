@@ -1,13 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PanelLeftClose } from 'lucide-react';
-import { createClient } from '@utils/supabase/client';
 import { cn } from '@/lib/utils';
-import { useMessageThread } from '@/hooks/useMessageThread';
+import type { UseMessageThreadResult } from '@/hooks/useMessageThread';
 import type { BubbleRow } from '@/types/database';
 import { rowToChatMessage } from '@/lib/chat-message-mapper';
-import { toChatUserSnapshot, type MessageThreadFilter } from '@/lib/message-thread';
+import { toChatUserSnapshot } from '@/lib/message-thread';
 import type { ChatUserSnapshot } from '@/types/chat';
 import { useUserProfileStore } from '@/store/userProfileStore';
 import { ChatMessageRow } from '@/components/chat/ChatMessageRow';
@@ -33,22 +32,20 @@ import {
   exerciseMentionFromHashPick,
   finalizeExerciseMentionsForSend,
 } from '@/lib/agents/coach/exercise-mentions-client';
-import { parseExecutionPatchFromMetadata, type ExecutionPatch } from '@/types/execution-patch';
-import { executionPatchFingerprint } from '@/lib/workout-player-execution-patch-bridge';
 import { scheduleScrollChatThreadToBottom } from '@/lib/chat-thread-auto-scroll';
 
-const CHAT_AREA_DEFAULT_AGENT_SLUG = 'coach';
+export const CHAT_AREA_DEFAULT_AGENT_SLUG = 'coach';
 /** Persisted on `messages.metadata` for root inserts; `agent-dispatch` reads this key. */
-const MESSAGE_METADATA_DEFAULT_AGENT_SLUG_KEY = 'default_agent_slug' as const;
+export const MESSAGE_METADATA_DEFAULT_AGENT_SLUG_KEY = 'default_agent_slug' as const;
 /** User-visible body for the workout open sentinel; routing uses `metadata.is_silent_sentinel` (see Edge Function). */
-const WORKOUT_COACH_SENTINEL_DISPLAY_TEXT = 'Started a workout session.';
+export const WORKOUT_COACH_SENTINEL_DISPLAY_TEXT = 'Started a workout session.';
 /**
  * Pre-metadata rows only: used to keep old test threads from showing the system string in the rail.
  * Do not use for new sends — prefer `isWorkoutPlayerSilentSentinelMessage`.
  */
 const WORKOUT_COACH_SENTINEL_LEGACY_CONTENT = '[SYSTEM_EVENT: WORKOUT_CONTEXT]';
 /** Server reads this for the opening greeting copy (`agent-dispatch`). */
-const MESSAGE_METADATA_WORKOUT_TASK_TITLE_KEY = 'workout_task_title' as const;
+export const MESSAGE_METADATA_WORKOUT_TASK_TITLE_KEY = 'workout_task_title' as const;
 
 type MessageRowForSentinel = { content?: string | null; metadata?: Json | null };
 
@@ -63,7 +60,7 @@ function isWorkoutPlayerSilentSentinelMessage(row: MessageRowForSentinel): boole
 }
 
 /** Hide from rail and skip patch logic: metadata flag (new) or legacy magic string (old DB rows). */
-function shouldHideWorkoutCoachSentinelFromRail(row: MessageRowForSentinel): boolean {
+export function shouldHideWorkoutCoachSentinelFromRail(row: MessageRowForSentinel): boolean {
   if (isWorkoutPlayerSilentSentinelMessage(row)) return true;
   if (row.content != null && row.content === WORKOUT_COACH_SENTINEL_LEGACY_CONTENT) return true;
   return false;
@@ -82,7 +79,7 @@ function isPopulatedWorkoutDataJson(wd: Json | undefined): boolean {
  * The silent sentinel + Edge Function need non-empty `workoutContext` JSON. Task cards often
  * surface `workoutExercises` as `[]` until the user builds the workout — that must still wake Coach.
  */
-function resolveWorkoutContextForSentinel(
+export function resolveWorkoutContextForSentinel(
   workoutData: Json | undefined,
   workoutTitle: string,
 ): Json {
@@ -109,6 +106,20 @@ function resolveWorkoutContextForSentinel(
   return { exercises: [], workout_task_title: title };
 }
 
+export type WorkoutCoachRailMessageThread = Pick<
+  UseMessageThreadResult,
+  | 'messages'
+  | 'userById'
+  | 'teamMembers'
+  | 'agentsByAuthUserId'
+  | 'replyCounts'
+  | 'isLoading'
+  | 'error'
+  | 'sending'
+  | 'sendMessage'
+  | 'clearError'
+>;
+
 export type WorkoutCoachRailProps = {
   workspaceId: string;
   /** Bubble for agent bindings / display name — not used as the message thread filter. */
@@ -116,14 +127,11 @@ export type WorkoutCoachRailProps = {
   /** Workout task id — `useMessageThread` uses `scope: 'task'` so chat is isolated to this card. */
   taskId: string;
   canPostMessages: boolean;
-  sessionId: string | null;
-  class_instance_id: string | null;
-  isMemberView: boolean;
-  /** Task/card title — sent in sentinel metadata for Coach’s on-open greeting. */
+  /** Task/card title — used for coach context normalization and hash picker. */
   workoutTitle: string;
   workoutData?: Json;
-  /** Merges validated `metadata.execution_patch` from the latest Coach message into `WorkoutPlayer` logs. */
-  onApplyExecutionPatch: (patch: ExecutionPatch) => void;
+  bubbleRow: BubbleRow | null;
+  messageThread: WorkoutCoachRailMessageThread;
   onCollapse?: () => void;
   className?: string;
 };
@@ -133,57 +141,20 @@ export function WorkoutCoachRail({
   bubbleId,
   taskId,
   canPostMessages,
-  sessionId,
-  class_instance_id,
-  isMemberView,
   workoutTitle,
   workoutData,
-  onApplyExecutionPatch,
+  bubbleRow,
+  messageThread,
   onCollapse,
   className,
 }: WorkoutCoachRailProps) {
   const myProfile = useUserProfileStore((s) => s.profile);
   const { subjectUserId: workspaceSubjectUserId } = useWorkspaceSessionSubject();
-  const [bubbleRow, setBubbleRow] = useState<BubbleRow | null>(null);
   const [input, setInput] = useState('');
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [activeAgent, setActiveAgent] = useState<'coach' | 'buddy'>('coach');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const composerShellRef = useRef<HTMLDivElement>(null);
-
-  // Resolve the bubble row so `useMessageThread` + mappers have names/types.
-  useEffect(() => {
-    if (!workspaceId || !bubbleId) {
-      setBubbleRow(null);
-      return;
-    }
-    let cancelled = false;
-    const supabase = createClient();
-    void supabase
-      .from('bubbles')
-      .select('*')
-      .eq('id', bubbleId)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        if (error || !data) {
-          setBubbleRow(null);
-          return;
-        }
-        setBubbleRow(data as BubbleRow);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [workspaceId, bubbleId]);
-
-  const bubbles = useMemo(() => (bubbleRow ? [bubbleRow] : []), [bubbleRow]);
-
-  const filter = useMemo<MessageThreadFilter | null>(() => {
-    const id = taskId?.trim();
-    if (!id) return null;
-    return { scope: 'task', taskId: id };
-  }, [taskId]);
 
   const {
     messages,
@@ -196,15 +167,7 @@ export function WorkoutCoachRail({
     sending,
     sendMessage,
     clearError,
-  } = useMessageThread({
-    filter,
-    workspaceId,
-    bubbles,
-    canPostMessages,
-    taskBubbleIdHint: bubbleId,
-    currentUserId: myProfile?.id ?? null,
-    threadSubjectUserId: workspaceSubjectUserId ?? myProfile?.id ?? null,
-  });
+  } = messageThread;
 
   const availableAgents = useMemo(() => [...agentsByAuthUserId.values()], [agentsByAuthUserId]);
 
@@ -273,129 +236,12 @@ export function WorkoutCoachRail({
       },
     },
   });
-  const waitMainClear = waitMain.clear;
-
-  // Latest value for the one-shot sentinel — avoids effect deps on `sendMessage` identity churn.
-  const sendMessageRef = useRef(sendMessage);
-  useLayoutEffect(() => {
-    sendMessageRef.current = sendMessage;
-  }, [sendMessage]);
-  const isMemberViewRef = useRef(isMemberView);
-  useLayoutEffect(() => {
-    isMemberViewRef.current = isMemberView;
-  }, [isMemberView]);
-
-  /** At most one sentinel dispatch per rail mount (guards `sendMessage`/message churn and unstable JSON refs). */
-  const sentinelHasFiredRef = useRef(false);
-
-  /** Last applied `execution_patch` fingerprint per Coach message (re-apply when metadata updates). */
-  const coachExecutionAppliedFingerprintRef = useRef<Map<string, string>>(new Map());
 
   /** Pending `#` exercise picks for the next Coach send (`metadata.exercise_mentions`). Cleared after successful send. */
   const exerciseMentionsPendingRef = useRef<ExerciseMentionClientPayload[]>([]);
   useEffect(() => {
-    coachExecutionAppliedFingerprintRef.current.clear();
     exerciseMentionsPendingRef.current = [];
   }, [taskId]);
-
-  useEffect(() => {
-    if (!canPostMessages) return;
-    if (!myProfile?.id) return;
-    if (!workspaceId || !bubbleId) return;
-    if (!taskId?.trim()) return;
-    if (!bubbleRow) return;
-    if (isLoading) return;
-    if (sentinelHasFiredRef.current) return;
-    const hasCoachAgent = availableAgents.some((a) => a.slug === 'coach');
-    if (!hasCoachAgent) return;
-
-    const workoutContext = resolveWorkoutContextForSentinel(
-      coachWorkoutContext as unknown as Json,
-      workoutTitle,
-    );
-
-    sentinelHasFiredRef.current = true;
-
-    const metadata: Json = {
-      [MESSAGE_METADATA_DEFAULT_AGENT_SLUG_KEY]: CHAT_AREA_DEFAULT_AGENT_SLUG,
-      [MESSAGE_METADATA_WORKOUT_TASK_TITLE_KEY]: workoutTitle.trim() || 'this workout',
-      sessionId,
-      class_instance_id,
-      workoutContext,
-      is_silent_sentinel: true,
-      workout_context: {
-        source: 'workout_player',
-        sessionId,
-        class_instance_id,
-        isMemberView: isMemberViewRef.current,
-      },
-    };
-
-    void (async () => {
-      try {
-        await sendMessageRef.current(WORKOUT_COACH_SENTINEL_DISPLAY_TEXT, undefined, undefined, {
-          metadata,
-        });
-      } catch {
-        // Strict once-per-mount: do not retry (avoids tight failure loops / egress spikes).
-        waitMainClear();
-      }
-    })();
-  }, [
-    availableAgents,
-    bubbleId,
-    bubbleRow,
-    canPostMessages,
-    class_instance_id,
-    isLoading,
-    myProfile?.id,
-    sessionId,
-    taskId,
-    coachWorkoutContext,
-    workoutTitle,
-    workspaceId,
-    waitMainClear,
-  ]);
-
-  // `execution_patch` is on the agent reply row at INSERT. Apply every unhandled Coach message
-  // in chronological order (later patches win on overlapping cells). Do not require Coach to be
-  // the terminal thread message. Parse throws are not marked so a transient error can retry.
-  useEffect(() => {
-    if (isLoading) return;
-    if (messages.length === 0) return;
-    const coachAuthUserId = availableAgents.find((a) => a.slug === 'coach')?.auth_user_id;
-    if (!coachAuthUserId) return;
-
-    const coachRows = messages.filter(
-      (m) => m.user_id === coachAuthUserId && m.id && !shouldHideWorkoutCoachSentinelFromRail(m),
-    );
-
-    for (const row of coachRows) {
-      const id = row.id;
-      if (!id) continue;
-      const meta = row.metadata;
-      const raw =
-        meta != null && typeof meta === 'object' && !Array.isArray(meta)
-          ? (meta as { execution_patch?: unknown }).execution_patch
-          : undefined;
-      const fp = executionPatchFingerprint(raw);
-      if (fp != null && coachExecutionAppliedFingerprintRef.current.get(id) === fp) {
-        continue;
-      }
-      let patch: ExecutionPatch | null = null;
-      try {
-        patch = parseExecutionPatchFromMetadata(raw);
-      } catch {
-        continue;
-      }
-      if (!patch) {
-        if (fp != null) coachExecutionAppliedFingerprintRef.current.set(id, fp);
-        continue;
-      }
-      onApplyExecutionPatch(patch);
-      if (fp != null) coachExecutionAppliedFingerprintRef.current.set(id, fp);
-    }
-  }, [availableAgents, isLoading, messages, onApplyExecutionPatch]);
 
   const bubbleName = bubbleRow?.name ?? 'Coach';
 
