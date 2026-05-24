@@ -24,6 +24,9 @@ import {
 import { createClient } from '@utils/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { useRouter } from 'next/navigation';
+import { buildActiveSessionUrl } from '@/lib/active-session/build-active-session-url';
+import { isActiveSessionRouteEnabled } from '@/lib/feature-flags/activeSessionRoute';
 import { formatUserFacingError } from '@/lib/format-error';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -1399,14 +1402,34 @@ export function WorkoutPlayerTriggers({
   sourceTaskId,
   onComplete,
 }: WorkoutPlayerTriggersProps) {
+  const router = useRouter();
   const [mode, setMode] = useState<'desktop' | 'mobile' | null>(null);
   const sessionVm = useMemo(() => buildWorkoutSessionViewModel(metadata ?? {}), [metadata]);
 
   if (sessionVm.flatExercises.length === 0) return null;
 
+  const activeSessionEnabled = isActiveSessionRouteEnabled() && sourceTaskId;
+
   return (
     <>
       <div className="flex flex-wrap gap-2">
+        {activeSessionEnabled ? (
+          <button
+            type="button"
+            onClick={() => {
+              router.push(
+                buildActiveSessionUrl(workspaceId, sourceTaskId, {
+                  from: 'modal',
+                }),
+              );
+              onComplete?.();
+            }}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-primary/10"
+          >
+            <Dumbbell className="size-4 shrink-0" aria-hidden />
+            Launch Active Session (Beta)
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => setMode('desktop')}

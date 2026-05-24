@@ -1,6 +1,6 @@
 # Active Session Engine — Architecture & Execution Plan
 
-**Status:** **Phase 0 shipped** (machine + tests on branch; UI/route not started). XState-driven **Active Session** on a dedicated route. **Coexists** with modal **WorkoutPlayer** (V1); not a replacement.
+**Status:** **Phase 1 shipped** (session route shell + read-only log surface + exit navigation). XState-driven **Active Session** on a dedicated route. **Coexists** with modal **WorkoutPlayer** (V1); not a replacement.
 
 **Product name:** **Active Session** (not "WorkoutPlayer V2")  
 **Engineering module:** `src/features/active-session/`  
@@ -87,7 +87,7 @@ src/features/active-session/
 └── index.ts                             # public re-exports (shipped)
 ```
 
-**Phase 1+ (not started):**
+**Phase 1 (shipped):**
 
 ```
 src/features/active-session/
@@ -258,35 +258,35 @@ pnpm exec tsc --noEmit
 
 ## Phase 1 — Session route shell
 
-**Status:** Not started  
+**Status:** **Shipped**  
 **Depends on:** Phase 0  
 **Goal:** Dedicated route with minimal UI; **opt-in** feature-flagged entry alongside unchanged WorkoutPlayer default.
 
 ### Tasks
 
-- [ ] **1.1** Add route: `src/app/(dashboard)/app/[workspace_id]/session/[task_id]/page.tsx`
-- [ ] **1.2** Add minimal `layout.tsx` — full viewport, safe-area, no Kanban chrome
-- [ ] **1.3** Implement `ActiveSessionShell.tsx`:
+- [x] **1.1** Add route: `src/app/(dashboard)/app/[workspace_id]/session/[task_id]/page.tsx`
+- [x] **1.2** Add minimal `layout.tsx` — full viewport, safe-area, no Kanban chrome
+- [x] **1.3** Implement `ActiveSessionShell.tsx`:
   - Load task row + metadata server-side or client `createClient` (match V1 auth patterns)
   - `useWorkoutSessionViewModel(metadata)` — unchanged
   - Wire `useActiveSession` provider
-- [ ] **1.4** Implement read-only `SessionLogSurface` (port `WorkoutPlayerBlockList` props)
-- [ ] **1.5** Implement `SessionHUD` — wall-clock elapsed from machine context
-- [ ] **1.6** Add env flag: `NEXT_PUBLIC_ACTIVE_SESSION_ROUTE=1`
-- [ ] **1.7** Add **parallel** launch paths (flag ON only; flag OFF keeps existing modal):
-  - [ ] `dashboard-shell.tsx` `handleStartWorkout` → `router.push(.../session/[id])` when flag set
-  - [ ] Class board start handler (same flag gate)
-  - [ ] Task modal: optional **Start Active Session** entry (WorkoutPlayer triggers unchanged when flag OFF)
-- [ ] **1.8** Query params: `?from=kanban|class|modal`, `?class_instance_id=`, `?sessionId=` — preserve V1 props
-- [ ] **1.9** Exit: `router.back()` or `?return=` URL on abandon; `router.replace` workspace on finish (stub OK in Phase 1)
+- [x] **1.4** Implement read-only `SessionLogSurface` (port `WorkoutPlayerBlockList` props)
+- [x] **1.5** Implement `SessionHUD` — wall-clock elapsed from machine context
+- [x] **1.6** Add env flag: `NEXT_PUBLIC_ACTIVE_SESSION_ROUTE=1`
+- [x] **1.7** Add **parallel** launch paths (flag ON only; flag OFF keeps existing modal):
+  - [x] `dashboard-shell.tsx` `handleStartWorkout` → `router.push(.../session/[id])` when flag set
+  - [x] Class board start handler (same flag gate)
+  - [x] Task modal: optional **Start Active Session** entry (WorkoutPlayer triggers unchanged when flag OFF)
+- [x] **1.8** Query params: `?from=kanban|class|modal`, `?class_instance_id=`, `?sessionId=` — preserve V1 props
+- [x] **1.9** Exit: `router.back()` or `?return=` URL on abandon; `router.replace` workspace on finish (stub OK in Phase 1)
 
 ### Acceptance criteria
 
-- [ ] Route renders block list + elapsed for a rich Tabata/EMOM card
-- [ ] Dashboard **unmounts** when session route active (verify React DevTools / no Kanban hooks firing)
-- [ ] Flag OFF → WorkoutPlayer modal unchanged (default production path)
-- [ ] Flag ON → session route available as an **alternative**; both paths can coexist in the same build
-- [ ] Mobile: full-screen, no Radix dialog
+- [x] Route renders block list + elapsed for a rich Tabata/EMOM card
+- [x] Dashboard **unmounts** when session route active (verify React DevTools / no Kanban hooks firing)
+- [x] Flag OFF → WorkoutPlayer modal unchanged (default production path)
+- [x] Flag ON → session route available as an **alternative**; both paths can coexist in the same build
+- [x] Mobile: full-screen, no Radix dialog
 
 ### Verification
 
@@ -467,13 +467,13 @@ pnpm exec tsc --noEmit
 
 ## Open questions (resolve before Phase 2–4)
 
-| #   | Question                                                     | Owner       | Decision deadline   |
-| --- | ------------------------------------------------------------ | ----------- | ------------------- |
-| Q1  | Offline / flaky network: IndexedDB queue for autosave?       | Eng         | Before Phase 2 ship |
-| Q2  | Single machine + `classContext` input vs two variants?       | Eng         | Phase 1             |
-| Q3  | Share `blockExecutor` with live-video `SessionDeck*`?        | Eng         | Phase 3             |
-| Q4  | Telemetry transport: silent message vs poll draft row only?  | Eng + Coach | Phase 4             |
-| Q5  | Server Component task fetch on session route vs client-only? | Eng         | Phase 1             |
+| #   | Question                                                     | Owner       | Decision deadline                                                                                             |
+| --- | ------------------------------------------------------------ | ----------- | ------------------------------------------------------------------------------------------------------------- |
+| Q1  | Offline / flaky network: IndexedDB queue for autosave?       | Eng         | Before Phase 2 ship                                                                                           |
+| Q2  | Single machine + `classContext` input vs two variants?       | Eng         | Phase 1                                                                                                       |
+| Q3  | Share `blockExecutor` with live-video `SessionDeck*`?        | Eng         | Phase 3                                                                                                       |
+| Q4  | Telemetry transport: silent message vs poll draft row only?  | Eng + Coach | Phase 4                                                                                                       |
+| Q5  | Server Component task fetch on session route vs client-only? | Eng         | **Resolved: Server Component fetch in `page.tsx`**; in-progress draft recovery stays client/XState in Phase 2 |
 
 ---
 
@@ -496,7 +496,7 @@ Update this table as phases ship.
 | Phase | Status      | Shipped commit / PR               | Notes                                                        |
 | ----- | ----------- | --------------------------------- | ------------------------------------------------------------ |
 | 0     | **Shipped** | `a969f70` (plan only); code local | Machine + 15 Vitest tests; commit code + `package.json` next |
-| 1     | Not started | —                                 | **Next** — session route shell + feature flag                |
+| 1     | **Shipped** | —                                 | Session route shell, read-only log, HUD, exit nav            |
 | 2     | Not started | —                                 |                                                              |
 | 3     | Not started | —                                 |                                                              |
 | 4     | Not started | —                                 |                                                              |

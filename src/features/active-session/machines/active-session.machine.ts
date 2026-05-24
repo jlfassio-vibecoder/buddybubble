@@ -120,13 +120,19 @@ export const activeSessionMachine = setup({
       },
     },
     active: {
+      on: {
+        SESSION_TICK: {
+          actions: assign(({ event }) => {
+            if (event.type !== 'SESSION_TICK') return {};
+            return { elapsedSec: event.elapsedSec };
+          }),
+        },
+        AUTOSAVE_SCHEDULED: { actions: 'markAutosaveScheduled' },
+      },
       invoke: {
         id: PERSISTENCE_ID,
         src: 'persistence',
         input: ({ context }) => ({ adapter: context.persistenceAdapter }),
-      },
-      on: {
-        AUTOSAVE_SCHEDULED: { actions: 'markAutosaveScheduled' },
       },
       initial: 'logging',
       states: {

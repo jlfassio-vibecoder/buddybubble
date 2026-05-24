@@ -49,7 +49,8 @@ export type ActiveSessionEvent =
   // Phase 3+ placeholders (not wired in Phase 0)
   | { type: 'VISIBILITY'; hidden: boolean }
   | { type: 'COACH_PATCH' }
-  | { type: 'BLOCK_INTERVAL_COMPLETE' };
+  | { type: 'BLOCK_INTERVAL_COMPLETE' }
+  | { type: 'SESSION_TICK'; elapsedSec: number };
 
 export type GuardParams = {
   context: ActiveSessionContext;

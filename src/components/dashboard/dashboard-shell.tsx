@@ -53,6 +53,8 @@ import { WorkoutPlayer } from '@/components/fitness/WorkoutPlayer';
 import { FitnessProfileSheet } from '@/components/fitness/FitnessProfileSheet';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { buildActiveSessionUrl } from '@/lib/active-session/build-active-session-url';
+import { isActiveSessionRouteEnabled } from '@/lib/feature-flags/activeSessionRoute';
 import { markLiveSessionInviteMessageEnded } from '@/lib/mark-live-session-invite-ended';
 import { WorkspaceSessionProvider } from '@/context/WorkspaceSessionContext';
 import {
@@ -1129,6 +1131,10 @@ function DashboardShellInner({
         openTrialModal();
         return;
       }
+      if (isActiveSessionRouteEnabled() && task.id) {
+        router.push(buildActiveSessionUrl(workspaceId, task.id, { from: 'kanban' }));
+        return;
+      }
       const workoutData = buildWorkoutCoachRailContext(
         task.metadata ?? {},
         task.title ?? '',
@@ -1141,7 +1147,7 @@ function DashboardShellInner({
         workoutData,
       });
     },
-    [activeWorkspace, bubbles, openTrialModal],
+    [activeWorkspace, bubbles, openTrialModal, router, workspaceId],
   );
 
   const handleStartWorkoutFromClass = useCallback(
@@ -1149,6 +1155,16 @@ function DashboardShellInner({
       const { task, sessionId, class_instance_id } = payload;
       if (shouldBlockWorkoutForExpiredMemberPreview(task.bubble_id, activeWorkspace, bubbles)) {
         openTrialModal();
+        return;
+      }
+      if (isActiveSessionRouteEnabled() && task.id) {
+        router.push(
+          buildActiveSessionUrl(workspaceId, task.id, {
+            from: 'class',
+            sessionId,
+            class_instance_id,
+          }),
+        );
         return;
       }
       const workoutData = buildWorkoutCoachRailContext(
@@ -1163,7 +1179,7 @@ function DashboardShellInner({
         workoutData,
       });
     },
-    [activeWorkspace, bubbles, openTrialModal],
+    [activeWorkspace, bubbles, openTrialModal, router, workspaceId],
   );
 
   useStorefrontTrialWorkoutAutoOpen({

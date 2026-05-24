@@ -40,6 +40,8 @@ export type WorkoutPlayerBlockListProps = {
   onToggleDone: (exIdx: number, setIdx: number) => void;
   onAddSet: (exIdx: number) => void;
   onLogAmrapRound: (blockId: string) => void;
+  /** Active Session route — prescription + set grid without inputs. */
+  readOnly?: boolean;
 };
 
 function renderIntervalShellForBlock(
@@ -70,6 +72,7 @@ export function WorkoutPlayerBlockList({
   onToggleDone,
   onAddSet,
   onLogAmrapRound,
+  readOnly = false,
 }: WorkoutPlayerBlockListProps) {
   const { blocks } = viewModel;
   const indexLookup = buildPlayerExerciseIndexLookup(blocks);
@@ -111,7 +114,9 @@ export function WorkoutPlayerBlockList({
           className: 'space-y-4',
         })}
         renderMainBlockAfterHeader={(block) =>
-          renderIntervalShellForBlock(block, handleIntervalSnapshot, onLogAmrapRound)
+          readOnly
+            ? null
+            : renderIntervalShellForBlock(block, handleIntervalSnapshot, onLogAmrapRound)
         }
         renderExercise={(ctx) => {
           const globalIndex =
@@ -150,6 +155,7 @@ export function WorkoutPlayerBlockList({
                 onAddSet={() => onAddSet(globalIndex)}
                 activeSetIndex={activeSetIndex}
                 activeSetPhase={activeSetPhase}
+                readOnly={readOnly}
               />
             </div>
           );
