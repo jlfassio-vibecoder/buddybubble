@@ -121,7 +121,6 @@ export type WorkoutCoachRailMessageThread = Pick<
 >;
 
 export type WorkoutCoachRailProps = {
-  workspaceId: string;
   /** Bubble for agent bindings / display name — not used as the message thread filter. */
   bubbleId: string;
   /** Workout task id — `useMessageThread` uses `scope: 'task'` so chat is isolated to this card. */
@@ -137,7 +136,6 @@ export type WorkoutCoachRailProps = {
 };
 
 export function WorkoutCoachRail({
-  workspaceId,
   bubbleId,
   taskId,
   canPostMessages,

@@ -8,9 +8,9 @@ import {
 } from '@/lib/workout-factory/interval-timer/interval-timer-engine';
 import type {
   IntervalTimerConfig,
+  IntervalTimerEngineState,
   IntervalTimerSnapshot,
 } from '@/lib/workout-factory/interval-timer/types';
-import type { IntervalTimerEngineState } from '@/lib/workout-factory/interval-timer/types';
 
 export function useIntervalTimerEngine(config: IntervalTimerConfig): {
   snapshot: IntervalTimerSnapshot;

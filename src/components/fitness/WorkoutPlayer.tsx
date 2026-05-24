@@ -591,7 +591,7 @@ export function WorkoutPlayer({
           { metadata: sentinelMetadata },
         );
       } catch {
-        // Strict once-per-session: do not retry (avoids tight failure loops / egress spikes).
+        coachSentinelFiredRef.current = false;
       }
     })();
   }, [
@@ -904,6 +904,7 @@ export function WorkoutPlayer({
       onClose();
     } finally {
       isClosingRef.current = false;
+      setClosing(false);
     }
   }, [onClose, runAutosave]);
 
@@ -993,16 +994,17 @@ export function WorkoutPlayer({
     return () => registerWorkoutPlayerExecutionPatchApplier(null);
   }, [open, handleApplyExecutionPatch]);
 
+  const { messages: coachMessages, isLoading: coachMessagesLoading } = coachMessageThread;
+
   // Apply Coach execution_patch rows while player is open (independent of lazy coach rail mount).
   useEffect(() => {
     if (!open) return;
-    if (coachMessageThread.isLoading) return;
-    const { messages } = coachMessageThread;
-    if (messages.length === 0) return;
+    if (coachMessagesLoading) return;
+    if (coachMessages.length === 0) return;
     const coachAuthUserId = coachAvailableAgents.find((a) => a.slug === 'coach')?.auth_user_id;
     if (!coachAuthUserId) return;
 
-    const coachRows = messages.filter(
+    const coachRows = coachMessages.filter(
       (m) => m.user_id === coachAuthUserId && m.id && !shouldHideWorkoutCoachSentinelFromRail(m),
     );
 
@@ -1031,7 +1033,7 @@ export function WorkoutPlayer({
       handleApplyExecutionPatch(patch);
       if (fp != null) coachExecutionAppliedFingerprintRef.current.set(id, fp);
     }
-  }, [open, coachAvailableAgents, coachMessageThread, handleApplyExecutionPatch]);
+  }, [open, coachAvailableAgents, coachMessages, coachMessagesLoading, handleApplyExecutionPatch]);
 
   const handleFinish = useCallback(async () => {
     if (saveTimeoutRef.current) {
@@ -1168,7 +1170,7 @@ export function WorkoutPlayer({
       activeLogTaskIdRef.current = null;
       setSaving(false);
       onComplete?.();
-      onClose();
+      await handleClose();
       return;
     }
 
@@ -1201,7 +1203,7 @@ export function WorkoutPlayer({
 
     setSaving(false);
     onComplete?.();
-    onClose();
+    await handleClose();
   }, [
     exercises,
     logs,
@@ -1213,7 +1215,7 @@ export function WorkoutPlayer({
     class_instance_id,
     activeLogTaskId,
     onComplete,
-    onClose,
+    handleClose,
     runAutosave,
   ]);
 
@@ -1291,7 +1293,6 @@ export function WorkoutPlayer({
           )}
         >
           <WorkoutCoachRail
-            workspaceId={workspaceId}
             bubbleId={bubbleId}
             taskId={sourceTaskId ?? ''}
             canPostMessages={canPostMessages}
