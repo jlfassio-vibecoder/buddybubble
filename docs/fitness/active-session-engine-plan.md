@@ -1,6 +1,6 @@
 # Active Session Engine — Architecture & Execution Plan
 
-**Status:** **Phase 1 shipped** (session route shell + read-only log surface + exit navigation). XState-driven **Active Session** on a dedicated route. **Coexists** with modal **WorkoutPlayer** (V1); not a replacement.
+**Status:** **Phase 1 shipped** · **Phase 2 next** (session route shell + read-only log surface + exit navigation). XState-driven **Active Session** on a dedicated route. **Coexists** with modal **WorkoutPlayer** (V1); not a replacement.
 
 **Product name:** **Active Session** (not "WorkoutPlayer V2")  
 **Engineering module:** `src/features/active-session/`  
@@ -87,23 +87,33 @@ src/features/active-session/
 └── index.ts                             # public re-exports (shipped)
 ```
 
-**Phase 1 (shipped):**
+**Phase 1 (shipped — `b5d6a9b`):**
 
 ```
 src/features/active-session/
-├── contracts/
-│   └── session-telemetry.ts             # SessionTelemetrySnapshot v1 (Phase 4)
 ├── components/
-│   ├── ActiveSessionShell.tsx
-│   ├── SessionHUD.tsx
-│   ├── SessionLogSurface.tsx
-│   └── SessionCoachPane.tsx
-└── hooks/
-    └── useActiveSession.ts              # thin @xstate/react wrapper
+│   ├── ActiveSessionShell.tsx           # VM hydrate, machine, exit nav
+│   ├── SessionHUD.tsx                   # elapsed via useSelector + Back/Finish
+│   ├── SessionLogSurface.tsx            # read-only WorkoutPlayerBlockList
+│   └── SessionCoachPane.tsx             # stub (Phase 2)
+├── hooks/
+│   └── useActiveSession.ts
+└── types/
+    └── session-task.ts
 
 src/app/(dashboard)/app/[workspace_id]/session/[task_id]/
-├── page.tsx
-└── layout.tsx                           # minimal chrome, safe-area
+├── page.tsx                             # Server Component task fetch (Q5)
+├── layout.tsx                           # minimal chrome, safe-area
+└── load-session-task.ts                 # auth + workspace/bubble gate
+
+src/components/dashboard/
+└── workspace-shell-gate.tsx             # skips DashboardShell on session routes
+
+src/lib/active-session/
+└── build-active-session-url.ts
+
+src/lib/feature-flags/
+└── activeSessionRoute.ts                # NEXT_PUBLIC_ACTIVE_SESSION_ROUTE
 ```
 
 **Out of scope (for now):** Deprecating or removing `WorkoutPlayer.tsx`, `workoutPlayerLaunch`, or `workout-player-execution-patch-bridge.ts`. Convergence to a single path is a **future product decision**, not part of Phases 0–4.
@@ -131,7 +141,7 @@ activeSessionMachine
 ├── persistence      → debounced draft write (2s)     [Phase 0 shipped]
 ├── finishWorkout    → finalize INSERT/UPDATE           [Phase 0 stub via adapter]
 ├── coachSync        → sentinel + execution_patch       [Phase 2]
-├── sessionClock     → wall-clock elapsed_sec           [Phase 1+]
+├── sessionClock     → wall-clock elapsed_sec (SESSION_TICK from shell; actor Phase 2+)
 └── blockExecutor    → nested intervalBlockMachine       [Phase 3]
 ```
 
@@ -203,7 +213,7 @@ type SessionTelemetrySnapshot = {
 | Phase | Theme                              | Est.   | Ship criteria                                                   |
 | ----- | ---------------------------------- | ------ | --------------------------------------------------------------- |
 | **0** | XState foundation + machine tests  | 1–2 wk | **Shipped** — 15 Vitest tests; no UI                            |
-| **1** | Session route shell + feature flag | 1 wk   | Route loads workout; V1 remains default                         |
+| **1** | Session route shell + feature flag | 1 wk   | **Shipped** — route + flag; V1 remains default                  |
 | **2** | Persistence + Coach actors         | 2 wk   | Autosave/finish/sentinel/patch in machine; flag ON for internal |
 | **3** | Interval nested machines           | 1 wk   | EMOM/Tabata/AMRAP on route; background catch-up modeled         |
 | **4** | Telemetry loop (Coach)             | 1–2 wk | Coach sees `set_logs` + interval performance in context         |
@@ -215,7 +225,7 @@ type SessionTelemetrySnapshot = {
 
 ## Phase 0 — Foundation (machine only)
 
-**Status:** **Shipped** (branch `feat/active-session-engine`; implementation commit pending push)  
+**Status:** **Shipped** (`ade54d5`)  
 **Goal:** Prove XState model against V1 race scenarios before any UI.
 
 ### Tasks
@@ -258,14 +268,14 @@ pnpm exec tsc --noEmit
 
 ## Phase 1 — Session route shell
 
-**Status:** **Shipped**  
+**Status:** **Shipped** (`b5d6a9b`)  
 **Depends on:** Phase 0  
 **Goal:** Dedicated route with minimal UI; **opt-in** feature-flagged entry alongside unchanged WorkoutPlayer default.
 
 ### Tasks
 
 - [x] **1.1** Add route: `src/app/(dashboard)/app/[workspace_id]/session/[task_id]/page.tsx`
-- [x] **1.2** Add minimal `layout.tsx` — full viewport, safe-area, no Kanban chrome
+- [x] **1.2** Add minimal `layout.tsx` — full viewport, safe-area; `WorkspaceShellGate` skips `DashboardShell` (no Kanban hooks on session routes)
 - [x] **1.3** Implement `ActiveSessionShell.tsx`:
   - Load task row + metadata server-side or client `createClient` (match V1 auth patterns)
   - `useWorkoutSessionViewModel(metadata)` — unchanged
@@ -276,9 +286,9 @@ pnpm exec tsc --noEmit
 - [x] **1.7** Add **parallel** launch paths (flag ON only; flag OFF keeps existing modal):
   - [x] `dashboard-shell.tsx` `handleStartWorkout` → `router.push(.../session/[id])` when flag set
   - [x] Class board start handler (same flag gate)
-  - [x] Task modal: optional **Start Active Session** entry (WorkoutPlayer triggers unchanged when flag OFF)
+  - [x] Task modal: **Launch Active Session (Beta)** alongside Desktop/Mobile Player (flag ON); V1 triggers unchanged when flag OFF
 - [x] **1.8** Query params: `?from=kanban|class|modal`, `?class_instance_id=`, `?sessionId=` — preserve V1 props
-- [x] **1.9** Exit: `router.back()` or `?return=` URL on abandon; `router.replace` workspace on finish (stub OK in Phase 1)
+- [x] **1.9** Exit: `safeNextPath(?return=)` or `router.back()` on abandon; `router.replace` workspace on finish (stub OK in Phase 1)
 
 ### Acceptance criteria
 
@@ -300,9 +310,9 @@ pnpm run dev
 
 ## Phase 2 — Persistence + Coach actors
 
-**Status:** Not started  
+**Status:** **Next** — not started  
 **Depends on:** Phase 1  
-**Goal:** Move autosave, finish, sentinel, and execution_patch out of V1 effects into machine actors.
+**Goal:** Move autosave, finish, sentinel, and execution_patch out of V1 effects into machine actors; wire editable log surface and in-progress draft recovery (Q5 client hydrate).
 
 ### Tasks
 
@@ -493,14 +503,14 @@ pnpm exec tsc --noEmit
 
 Update this table as phases ship.
 
-| Phase | Status      | Shipped commit / PR               | Notes                                                        |
-| ----- | ----------- | --------------------------------- | ------------------------------------------------------------ |
-| 0     | **Shipped** | `a969f70` (plan only); code local | Machine + 15 Vitest tests; commit code + `package.json` next |
-| 1     | **Shipped** | —                                 | Session route shell, read-only log, HUD, exit nav            |
-| 2     | Not started | —                                 |                                                              |
-| 3     | Not started | —                                 |                                                              |
-| 4     | Not started | —                                 |                                                              |
-| 5     | Deferred    | —                                 | Side-by-side; convergence TBD                                |
+| Phase | Status      | Shipped commit / PR | Notes                                                                |
+| ----- | ----------- | ------------------- | -------------------------------------------------------------------- |
+| 0     | **Shipped** | `ade54d5`           | XState machine + 15 Vitest tests                                     |
+| 1     | **Shipped** | `b5d6a9b`           | Route shell, read-only log, HUD, flag, WorkspaceShellGate, safe exit |
+| 2     | **Next**    | —                   | Production persistence + Coach actors + editable logs                |
+| 3     | Not started | —                   |                                                                      |
+| 4     | Not started | —                   |                                                                      |
+| 5     | Deferred    | —                   | Side-by-side; convergence TBD                                        |
 
 ---
 
@@ -511,3 +521,5 @@ Update this table as phases ship.
 | 2026-05-24 | Initial plan — architecture proposal → execution doc                                                                            |
 | 2026-05-24 | Coexistence — Active Session side-by-side with WorkoutPlayer; Phase 5 convergence deferred                                      |
 | 2026-05-24 | **Phase 0 shipped** — XState machine, persistence actor, concurrency tests; polish (fail-stop, fast-path FINISH, `finishError`) |
+| 2026-05-24 | **Phase 1 shipped** — session route, read-only log, HUD, feature flag, WorkspaceShellGate, safe `?return=`                      |
+| 2026-05-24 | Phase 1 polish — parallel V1 modal triggers, Back enabled during autosave, open-redirect fix                                    |
