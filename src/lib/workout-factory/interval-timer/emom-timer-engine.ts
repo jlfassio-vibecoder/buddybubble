@@ -64,9 +64,20 @@ export function getEmomRemainingMs(state: EmomTimerEngineState, now: number): nu
   return Math.max(0, state.config.intervalMs - elapsed);
 }
 
+function endOfCurrentIntervalMs(state: EmomTimerEngineState): number {
+  if (state.phaseAnchorMs == null) return 0;
+  return state.phaseAnchorMs + state.pausedTotalMs + state.config.intervalMs;
+}
+
+/** Upper bound on round transitions left from the current running state. */
+function maxEmomCatchUpSteps(state: EmomTimerEngineState): number {
+  return Math.max(1, state.config.totalRounds - state.roundIndex + 1);
+}
+
 function advanceToNextRoundOrDone(state: EmomTimerEngineState, now: number): EmomTimerEngineState {
   const { config, roundIndex } = state;
   const isLastRound = roundIndex >= config.totalRounds - 1;
+  const intervalEndMs = endOfCurrentIntervalMs(state) || now;
 
   if (isLastRound) {
     return {
@@ -80,7 +91,7 @@ function advanceToNextRoundOrDone(state: EmomTimerEngineState, now: number): Emo
   return {
     ...state,
     roundIndex: roundIndex + 1,
-    phaseAnchorMs: now,
+    phaseAnchorMs: intervalEndMs,
     pausedTotalMs: 0,
     pausedAtMs: null,
   };
@@ -128,8 +139,18 @@ export function emomTimerReducer(
 
     case 'tick': {
       if (state.phase !== 'running') return state;
-      if (getEmomRemainingMs(state, action.now) > 0) return state;
-      return advanceToNextRoundOrDone(state, action.now);
+      let currentState = state;
+      const maxSteps = maxEmomCatchUpSteps(state);
+      let steps = 0;
+      while (
+        steps < maxSteps &&
+        currentState.phase === 'running' &&
+        getEmomRemainingMs(currentState, action.now) <= 0
+      ) {
+        currentState = advanceToNextRoundOrDone(currentState, action.now);
+        steps += 1;
+      }
+      return currentState;
     }
 
     default:

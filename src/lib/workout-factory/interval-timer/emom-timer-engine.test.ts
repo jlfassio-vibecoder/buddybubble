@@ -55,6 +55,17 @@ describe('emomTimerReducer', () => {
     expect(s.roundIndex).toBe(2);
   });
 
+  it('single tick fast-forwards missed intervals after background', () => {
+    let s = emomTimerReducer(createInitialEmomTimerState(emomConfig), {
+      type: 'start',
+      now: 0,
+    });
+    s = emomTimerReducer(s, { type: 'tick', now: 180_000 });
+    expect(s.phase).toBe('done');
+    expect(s.roundIndex).toBe(2);
+    expect(getEmomRemainingMs(s, 180_000)).toBe(0);
+  });
+
   it('pause and resume preserve remaining without skipping round', () => {
     let s = emomTimerReducer(createInitialEmomTimerState(emomConfig), {
       type: 'start',

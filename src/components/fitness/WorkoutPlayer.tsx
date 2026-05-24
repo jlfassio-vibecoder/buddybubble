@@ -1,6 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+} from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import {
   AlignLeft,
@@ -20,16 +28,34 @@ import { formatUserFacingError } from '@/lib/format-error';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { WorkoutExercise } from '@/lib/item-metadata';
-import type { Json, UnitSystem } from '@/types/database';
+import type { Json, UnitSystem, BubbleRow } from '@/types/database';
 import { useUserProfileStore } from '@/store/userProfileStore';
 import { replaceTaskAssigneesWithUserIds } from '@/lib/task-assignees-db';
 import { WorkoutCoachRail } from '@/components/chat/WorkoutCoachRail';
+import {
+  CHAT_AREA_DEFAULT_AGENT_SLUG,
+  MESSAGE_METADATA_DEFAULT_AGENT_SLUG_KEY,
+  MESSAGE_METADATA_WORKOUT_TASK_TITLE_KEY,
+  resolveWorkoutContextForSentinel,
+  shouldHideWorkoutCoachSentinelFromRail,
+  WORKOUT_COACH_SENTINEL_DISPLAY_TEXT,
+} from '@/components/chat/WorkoutCoachRail';
 import type { ExecutionPatch } from '@/types/execution-patch';
+import { parseExecutionPatchFromMetadata } from '@/types/execution-patch';
 import { useUserExerciseNotes, type UserExerciseNotesRow } from '@/hooks/useUserExerciseNotes';
+import { useMessageThread } from '@/hooks/useMessageThread';
+import type { MessageThreadFilter } from '@/lib/message-thread';
+import { useWorkspaceSessionSubject } from '@/context/WorkspaceSessionContext';
+import {
+  buildWorkoutCoachRailContext,
+  normalizeCoachWorkoutDataProp,
+} from '@/lib/workout-factory/build-workout-coach-rail-context';
+import {
+  executionPatchFingerprint,
+  registerWorkoutPlayerExecutionPatchApplier,
+} from '@/lib/workout-player-execution-patch-bridge';
 import { useWorkoutSessionViewModel } from '@/hooks/use-workout-session-view-model';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
-import { buildWorkoutCoachRailContext } from '@/lib/workout-factory/build-workout-coach-rail-context';
-import { registerWorkoutPlayerExecutionPatchApplier } from '@/lib/workout-player-execution-patch-bridge';
 import {
   buildWorkoutLogDraftMetadata,
   buildWorkoutLogExercisePayloadFromLogs,
@@ -114,6 +140,46 @@ function logsEqualTemplate(
 
 const AUTOSAVE_MS = 2000;
 
+function WorkoutPlayerElapsedHeader({
+  active,
+  resetKey,
+  elapsedRef,
+}: {
+  active: boolean;
+  resetKey: string;
+  elapsedRef: React.MutableRefObject<number>;
+}) {
+  const [elapsed, setElapsed] = useState(0);
+  const sessionStartMsRef = useRef(Date.now());
+
+  useEffect(() => {
+    sessionStartMsRef.current = Date.now();
+    setElapsed(0);
+    elapsedRef.current = 0;
+  }, [resetKey, elapsedRef]);
+
+  useEffect(() => {
+    if (!active) return;
+
+    const tick = () => {
+      const trueElapsedSeconds = Math.floor((Date.now() - sessionStartMsRef.current) / 1000);
+      setElapsed(trueElapsedSeconds);
+      elapsedRef.current = trueElapsedSeconds;
+    };
+
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [active, resetKey, elapsedRef]);
+
+  return (
+    <>
+      <Timer className="h-3 w-3 shrink-0" aria-hidden />
+      <span className="tabular-nums">{formatElapsed(elapsed)}</span>
+    </>
+  );
+}
+
 // ── Shared player body ────────────────────────────────────────────────────────
 
 type PlayerBodyProps = {
@@ -122,7 +188,9 @@ type PlayerBodyProps = {
   exercises: WorkoutExercise[];
   logs: SetDraft[][];
   view: 'simple' | 'detailed';
-  elapsed: number;
+  clockActive: boolean;
+  clockResetKey: string;
+  elapsedRef: MutableRefObject<number>;
   saving: boolean;
   unit: string;
   onToggleView: () => void;
@@ -137,6 +205,8 @@ type PlayerBodyProps = {
   onLogAmrapRound: (blockId: string) => void;
   onFinish: () => void;
   onClose: () => void;
+  /** When true, a close flush is in progress — disable dismiss controls. */
+  closing?: boolean;
   /** Per-exercise rows from `user_exercise_notes` (by catalog id), aligned with `exercises`. */
   personalNotesByExerciseIndex: (UserExerciseNotesRow | null)[];
   /** When true (mobile sheet), footer gets bottom safe-area padding. */
@@ -149,7 +219,9 @@ function PlayerBody({
   exercises,
   logs,
   view,
-  elapsed,
+  clockActive,
+  clockResetKey,
+  elapsedRef,
   saving,
   unit,
   onToggleView,
@@ -159,6 +231,7 @@ function PlayerBody({
   onLogAmrapRound,
   onFinish,
   onClose,
+  closing = false,
   personalNotesByExerciseIndex,
   footerSafeArea = false,
 }: PlayerBodyProps) {
@@ -182,8 +255,11 @@ function PlayerBody({
               <p className="text-[10px] capitalize text-muted-foreground/80">{difficulty}</p>
             ) : null}
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Timer className="h-3 w-3 shrink-0" aria-hidden />
-              <span className="tabular-nums">{formatElapsed(elapsed)}</span>
+              <WorkoutPlayerElapsedHeader
+                active={clockActive}
+                resetKey={clockResetKey}
+                elapsedRef={elapsedRef}
+              />
               {totalSets > 0 && (
                 <>
                   <span className="text-muted-foreground/50">·</span>
@@ -219,8 +295,12 @@ function PlayerBody({
 
           {/* Close */}
           <DialogPrimitive.Close
-            onClick={onClose}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+            onClick={(e) => {
+              e.preventDefault();
+              onClose();
+            }}
+            disabled={saving || closing}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
             aria-label="Close player"
           >
             <X className="h-4 w-4" />
@@ -281,13 +361,13 @@ function PlayerBody({
           footerSafeArea ? 'pb-[max(1rem,env(safe-area-inset-bottom))]' : 'pb-3 sm:pb-3',
         )}
       >
-        <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>
+        <Button variant="ghost" size="sm" onClick={onClose} disabled={saving || closing}>
           Cancel
         </Button>
         <Button
           size="sm"
           onClick={onFinish}
-          disabled={saving || exercises.length === 0}
+          disabled={saving || closing || exercises.length === 0}
           className="gap-1.5"
         >
           <Check className="h-3.5 w-3.5" />
@@ -318,23 +398,35 @@ export function WorkoutPlayer({
 }: WorkoutPlayerProps) {
   const [logs, setLogs] = useState<SetDraft[][]>([]);
   const [view, setView] = useState<'simple' | 'detailed'>('simple');
-  const [elapsed, setElapsed] = useState(0);
   const [saving, setSaving] = useState(false);
+  const elapsedRef = useRef(0);
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('metric');
   const [resolvedMode, setResolvedMode] = useState<'desktop' | 'mobile'>('desktop');
   const [mobileUnifiedPane, setMobileUnifiedPane] = useState<'workout' | 'coach'>('workout');
   const [activeLogTaskId, setActiveLogTaskId] = useState<string | null>(null);
+  const [closing, setClosing] = useState(false);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlightAutosaveRef = useRef<Promise<void> | null>(null);
+  const isInsertingDraftRef = useRef(false);
   const activeLogTaskIdRef = useRef<string | null>(null);
+  const logsRef = useRef<SetDraft[][]>([]);
   const hasUserEditedRef = useRef(false);
   /** Bumps only when `sourceTaskId` / `bubble` / exercise template identity actually changes, not on effect churn. */
   const lastRecoveryIdentityRef = useRef<string | null>(null);
+  /** One-shot workout-open sentinel per player session (survives lazy coach rail unmount). */
+  const coachSentinelFiredRef = useRef(false);
+  const coachExecutionAppliedFingerprintRef = useRef<Map<string, string>>(new Map());
+  const [coachBubbleRow, setCoachBubbleRow] = useState<BubbleRow | null>(null);
   const profileId = useUserProfileStore((s) => s.profile?.id);
+  const { subjectUserId: workspaceSubjectUserId } = useWorkspaceSessionSubject();
 
   useEffect(() => {
     activeLogTaskIdRef.current = activeLogTaskId;
   }, [activeLogTaskId]);
+
+  useEffect(() => {
+    logsRef.current = logs;
+  }, [logs]);
 
   const sessionVm = useWorkoutSessionViewModel(metadata);
   const exercises = sessionVm.flatExercises;
@@ -382,6 +474,142 @@ export function WorkoutPlayer({
     return ctx as unknown as Json;
   }, [metadata, workoutTitle, liveSetCounts]);
 
+  const coachWorkoutContextForSentinel = useMemo(
+    () => normalizeCoachWorkoutDataProp(coachWorkoutDataForRail ?? workoutData, null, workoutTitle),
+    [coachWorkoutDataForRail, workoutData, workoutTitle],
+  );
+
+  const coachMessageFilter = useMemo<MessageThreadFilter | null>(() => {
+    if (!open || !sourceTaskId?.trim()) return null;
+    return { scope: 'task', taskId: sourceTaskId.trim() };
+  }, [open, sourceTaskId]);
+
+  useEffect(() => {
+    if (!open || !workspaceId || !bubbleId) {
+      setCoachBubbleRow(null);
+      return;
+    }
+    let cancelled = false;
+    const supabase = createClient();
+    void supabase
+      .from('bubbles')
+      .select('*')
+      .eq('id', bubbleId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error || !data) {
+          setCoachBubbleRow(null);
+          return;
+        }
+        setCoachBubbleRow(data as BubbleRow);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, workspaceId, bubbleId]);
+
+  const coachBubbles = useMemo(() => (coachBubbleRow ? [coachBubbleRow] : []), [coachBubbleRow]);
+
+  const coachMessageThread = useMessageThread({
+    filter: coachMessageFilter,
+    workspaceId: open ? workspaceId : null,
+    bubbles: coachBubbles,
+    canPostMessages,
+    taskBubbleIdHint: bubbleId,
+    currentUserId: profileId ?? null,
+    threadSubjectUserId: workspaceSubjectUserId ?? profileId ?? null,
+  });
+
+  const coachAvailableAgents = useMemo(
+    () => [...coachMessageThread.agentsByAuthUserId.values()],
+    [coachMessageThread.agentsByAuthUserId],
+  );
+
+  const coachSendMessageRef = useRef(coachMessageThread.sendMessage);
+  useLayoutEffect(() => {
+    coachSendMessageRef.current = coachMessageThread.sendMessage;
+  }, [coachMessageThread.sendMessage]);
+
+  const isMemberViewRef = useRef(isMemberView);
+  useLayoutEffect(() => {
+    isMemberViewRef.current = isMemberView;
+  }, [isMemberView]);
+
+  useEffect(() => {
+    if (!open) {
+      coachSentinelFiredRef.current = false;
+      coachExecutionAppliedFingerprintRef.current.clear();
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    coachExecutionAppliedFingerprintRef.current.clear();
+  }, [open, sourceTaskId]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!canPostMessages) return;
+    if (!profileId) return;
+    if (!workspaceId || !bubbleId) return;
+    if (!sourceTaskId?.trim()) return;
+    if (!coachBubbleRow) return;
+    if (coachMessageThread.isLoading) return;
+    if (coachSentinelFiredRef.current) return;
+    const hasCoachAgent = coachAvailableAgents.some((a) => a.slug === 'coach');
+    if (!hasCoachAgent) return;
+
+    const workoutContext = resolveWorkoutContextForSentinel(
+      coachWorkoutContextForSentinel as unknown as Json,
+      workoutTitle,
+    );
+
+    coachSentinelFiredRef.current = true;
+
+    const sentinelMetadata: Json = {
+      [MESSAGE_METADATA_DEFAULT_AGENT_SLUG_KEY]: CHAT_AREA_DEFAULT_AGENT_SLUG,
+      [MESSAGE_METADATA_WORKOUT_TASK_TITLE_KEY]: workoutTitle.trim() || 'this workout',
+      sessionId,
+      class_instance_id,
+      workoutContext,
+      is_silent_sentinel: true,
+      workout_context: {
+        source: 'workout_player',
+        sessionId,
+        class_instance_id,
+        isMemberView: isMemberViewRef.current,
+      },
+    };
+
+    void (async () => {
+      try {
+        await coachSendMessageRef.current(
+          WORKOUT_COACH_SENTINEL_DISPLAY_TEXT,
+          undefined,
+          undefined,
+          { metadata: sentinelMetadata },
+        );
+      } catch {
+        coachSentinelFiredRef.current = false;
+      }
+    })();
+  }, [
+    open,
+    canPostMessages,
+    profileId,
+    workspaceId,
+    bubbleId,
+    sourceTaskId,
+    coachBubbleRow,
+    coachMessageThread.isLoading,
+    coachAvailableAgents,
+    coachWorkoutContextForSentinel,
+    workoutTitle,
+    sessionId,
+    class_instance_id,
+  ]);
+
   useLayoutEffect(() => {
     if (mode === 'desktop' || mode === 'mobile') {
       setResolvedMode(mode);
@@ -419,10 +647,10 @@ export function WorkoutPlayer({
     if (lastRecoveryIdentityRef.current !== identity) {
       lastRecoveryIdentityRef.current = identity;
       hasUserEditedRef.current = false;
+      coachSentinelFiredRef.current = false;
     }
     let cancelled = false;
     setView('simple');
-    setElapsed(0);
     setSaving(false);
     setMobileUnifiedPane('workout');
 
@@ -547,6 +775,72 @@ export function WorkoutPlayer({
   ]);
 
   // Debounced cloud autosave of in-progress draft_logs (2s) — no UI spinner.
+  const executeAutosaveNow = useCallback(async (): Promise<void> => {
+    const draftLogs = logsRef.current;
+    if (!sourceTaskId || draftLogs.length === 0) return;
+    if (
+      !activeLogTaskIdRef.current &&
+      !hasUserEditedRef.current &&
+      logsEqualTemplate(draftLogs, exercises, sessionVm.blocks)
+    ) {
+      return;
+    }
+
+    const supabase = createClient();
+    const meta = buildWorkoutLogDraftMetadata({
+      sourceMetadata: metadata,
+      sessionVm,
+      sourceTaskId,
+      draftLogs,
+      classInstanceId: class_instance_id,
+    });
+
+    const currentDraftId = activeLogTaskIdRef.current;
+    if (!currentDraftId) {
+      if (isInsertingDraftRef.current) return;
+      isInsertingDraftRef.current = true;
+      try {
+        const { data, error } = await supabase
+          .from('tasks')
+          .insert({
+            bubble_id: bubbleId,
+            title: `${workoutTitle} — Log`,
+            item_type: 'workout_log',
+            status: 'in_progress',
+            metadata: meta,
+          })
+          .select('id')
+          .maybeSingle();
+        if (error) {
+          console.error('workout draft autosave insert failed', error);
+          return;
+        }
+        if (data?.id) {
+          activeLogTaskIdRef.current = data.id;
+          setActiveLogTaskId(data.id);
+        }
+      } finally {
+        isInsertingDraftRef.current = false;
+      }
+    } else {
+      const { error } = await supabase
+        .from('tasks')
+        .update({ metadata: meta })
+        .eq('id', currentDraftId);
+      if (error) console.error('workout draft autosave update failed', error);
+    }
+  }, [sourceTaskId, exercises, sessionVm, metadata, bubbleId, workoutTitle, class_instance_id]);
+
+  const runAutosave = useCallback(async (): Promise<void> => {
+    const p = executeAutosaveNow();
+    inFlightAutosaveRef.current = p;
+    try {
+      await p;
+    } finally {
+      if (inFlightAutosaveRef.current === p) inFlightAutosaveRef.current = null;
+    }
+  }, [executeAutosaveNow]);
+
   useEffect(() => {
     if (!open || !sourceTaskId || logs.length === 0) return;
     if (
@@ -564,49 +858,7 @@ export function WorkoutPlayer({
 
     saveTimeoutRef.current = setTimeout(() => {
       saveTimeoutRef.current = null;
-      const p = (async () => {
-        const supabase = createClient();
-        const meta = buildWorkoutLogDraftMetadata({
-          sourceMetadata: metadata,
-          sessionVm,
-          sourceTaskId,
-          draftLogs: logs,
-          classInstanceId: class_instance_id,
-        });
-
-        const currentDraftId = activeLogTaskIdRef.current;
-        if (!currentDraftId) {
-          const { data, error } = await supabase
-            .from('tasks')
-            .insert({
-              bubble_id: bubbleId,
-              title: `${workoutTitle} — Log`,
-              item_type: 'workout_log',
-              status: 'in_progress',
-              metadata: meta,
-            })
-            .select('id')
-            .maybeSingle();
-          if (error) {
-            console.error('workout draft autosave insert failed', error);
-            return;
-          }
-          if (data?.id) {
-            activeLogTaskIdRef.current = data.id;
-            setActiveLogTaskId(data.id);
-          }
-        } else {
-          const { error } = await supabase
-            .from('tasks')
-            .update({ metadata: meta })
-            .eq('id', currentDraftId);
-          if (error) console.error('workout draft autosave update failed', error);
-        }
-      })();
-      inFlightAutosaveRef.current = p;
-      void p.finally(() => {
-        if (inFlightAutosaveRef.current === p) inFlightAutosaveRef.current = null;
-      });
+      void runAutosave();
     }, AUTOSAVE_MS);
 
     return () => {
@@ -620,23 +872,43 @@ export function WorkoutPlayer({
     open,
     activeLogTaskId,
     sourceTaskId,
-    workoutTitle,
-    bubbleId,
-    class_instance_id,
-    metadata,
-    sessionVm.source,
+    runAutosave,
     exercisesStringDigest,
     blocksDigest,
     exercises,
     sessionVm.blocks,
   ]);
 
-  // Elapsed timer
-  useEffect(() => {
-    if (!open) return;
-    const id = setInterval(() => setElapsed((e) => e + 1), 1000);
-    return () => clearInterval(id);
-  }, [open]);
+  const isClosingRef = useRef(false);
+
+  const handleClose = useCallback(async () => {
+    if (isClosingRef.current) return;
+    isClosingRef.current = true;
+    setClosing(true);
+
+    try {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+      }
+
+      if (inFlightAutosaveRef.current) {
+        try {
+          await inFlightAutosaveRef.current;
+        } catch {
+          // Autosave path already logs; continue flushing latest logs.
+        }
+      }
+
+      await runAutosave();
+      onClose();
+    } finally {
+      isClosingRef.current = false;
+      setClosing(false);
+    }
+  }, [onClose, runAutosave]);
+
+  const sessionClockResetKey = `${sourceTaskId ?? 'null'}:${bubbleId}:${exercisesStringDigest}:${blocksDigest}`;
 
   const updateSet = useCallback(
     (exIdx: number, setIdx: number, field: 'weight' | 'reps' | 'rpe', value: string) => {
@@ -722,6 +994,47 @@ export function WorkoutPlayer({
     return () => registerWorkoutPlayerExecutionPatchApplier(null);
   }, [open, handleApplyExecutionPatch]);
 
+  const { messages: coachMessages, isLoading: coachMessagesLoading } = coachMessageThread;
+
+  // Apply Coach execution_patch rows while player is open (independent of lazy coach rail mount).
+  useEffect(() => {
+    if (!open) return;
+    if (coachMessagesLoading) return;
+    if (coachMessages.length === 0) return;
+    const coachAuthUserId = coachAvailableAgents.find((a) => a.slug === 'coach')?.auth_user_id;
+    if (!coachAuthUserId) return;
+
+    const coachRows = coachMessages.filter(
+      (m) => m.user_id === coachAuthUserId && m.id && !shouldHideWorkoutCoachSentinelFromRail(m),
+    );
+
+    for (const row of coachRows) {
+      const id = row.id;
+      if (!id) continue;
+      const meta = row.metadata;
+      const raw =
+        meta != null && typeof meta === 'object' && !Array.isArray(meta)
+          ? (meta as { execution_patch?: unknown }).execution_patch
+          : undefined;
+      const fp = executionPatchFingerprint(raw);
+      if (fp != null && coachExecutionAppliedFingerprintRef.current.get(id) === fp) {
+        continue;
+      }
+      let patch: ExecutionPatch | null = null;
+      try {
+        patch = parseExecutionPatchFromMetadata(raw);
+      } catch {
+        continue;
+      }
+      if (!patch) {
+        if (fp != null) coachExecutionAppliedFingerprintRef.current.set(id, fp);
+        continue;
+      }
+      handleApplyExecutionPatch(patch);
+      if (fp != null) coachExecutionAppliedFingerprintRef.current.set(id, fp);
+    }
+  }, [open, coachAvailableAgents, coachMessages, coachMessagesLoading, handleApplyExecutionPatch]);
+
   const handleFinish = useCallback(async () => {
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
@@ -734,13 +1047,15 @@ export function WorkoutPlayer({
         // Autosave path already logs; continue finalizing the workout log.
       }
     }
+    await runAutosave();
 
     setSaving(true);
     const supabase = createClient();
 
     const exercisePayload = buildWorkoutLogExercisePayloadFromLogs(exercises, logs);
 
-    const durationMins = Math.round(elapsed / 60);
+    const durationMins = Math.round(elapsedRef.current / 60);
+    const finalLogId = activeLogTaskIdRef.current ?? activeLogTaskId;
 
     let sourceRow: {
       program_id: string | null;
@@ -829,7 +1144,7 @@ export function WorkoutPlayer({
       return true;
     };
 
-    if (activeLogTaskId) {
+    if (finalLogId) {
       const { error: updateError } = await supabase
         .from('tasks')
         .update({
@@ -837,7 +1152,7 @@ export function WorkoutPlayer({
           ...programFields,
           metadata: finalMetadata,
         })
-        .eq('id', activeLogTaskId);
+        .eq('id', finalLogId);
 
       if (updateError) {
         console.error('Failed to finalize workout log', updateError);
@@ -846,7 +1161,7 @@ export function WorkoutPlayer({
         return;
       }
 
-      if (!(await syncAssignees(activeLogTaskId))) {
+      if (!(await syncAssignees(finalLogId))) {
         setSaving(false);
         return;
       }
@@ -855,7 +1170,7 @@ export function WorkoutPlayer({
       activeLogTaskIdRef.current = null;
       setSaving(false);
       onComplete?.();
-      onClose();
+      await handleClose();
       return;
     }
 
@@ -888,11 +1203,10 @@ export function WorkoutPlayer({
 
     setSaving(false);
     onComplete?.();
-    onClose();
+    await handleClose();
   }, [
     exercises,
     logs,
-    elapsed,
     metadata,
     sessionVm,
     bubbleId,
@@ -901,7 +1215,8 @@ export function WorkoutPlayer({
     class_instance_id,
     activeLogTaskId,
     onComplete,
-    onClose,
+    handleClose,
+    runAutosave,
   ]);
 
   const unit = unitSystem === 'imperial' ? 'lbs' : 'kg';
@@ -912,7 +1227,9 @@ export function WorkoutPlayer({
     exercises,
     logs,
     view,
-    elapsed,
+    clockActive: open,
+    clockResetKey: sessionClockResetKey,
+    elapsedRef,
     saving,
     unit,
     onToggleView: () => setView((v) => (v === 'simple' ? 'detailed' : 'simple')),
@@ -921,10 +1238,14 @@ export function WorkoutPlayer({
     onAddSet: addSet,
     onLogAmrapRound: logAmrapRound,
     onFinish: () => void handleFinish(),
-    onClose,
+    onClose: () => void handleClose(),
+    closing,
     personalNotesByExerciseIndex,
     footerSafeArea: resolvedMode === 'mobile',
   };
+
+  /** Coach rail mounts only when visible — unmount severs Realtime + dictionary load on mobile Workout tab. */
+  const isCoachRailVisible = resolvedMode === 'desktop' || mobileUnifiedPane === 'coach';
 
   const splitPaneBody = (
     <div className="flex min-h-0 flex-1 flex-col md:flex-row md:items-stretch">
@@ -962,28 +1283,26 @@ export function WorkoutPlayer({
         </button>
       </div>
 
-      {/* Left pane: Coach rail */}
-      <div
-        className={cn(
-          'flex min-h-0 min-w-0 flex-1 flex-col',
-          mobileUnifiedPane === 'coach' ? 'max-md:flex' : 'max-md:hidden',
-          'md:border-r md:border-border',
-          'md:max-w-[min(38%,400px)] md:shrink-0 md:basis-[min(32%,340px)] md:grow-0 md:flex-none',
-        )}
-      >
-        <WorkoutCoachRail
-          workspaceId={workspaceId}
-          bubbleId={bubbleId}
-          taskId={sourceTaskId ?? ''}
-          canPostMessages={canPostMessages}
-          sessionId={sessionId}
-          class_instance_id={class_instance_id}
-          isMemberView={isMemberView}
-          workoutTitle={workoutTitle}
-          workoutData={coachWorkoutDataForRail ?? workoutData}
-          onApplyExecutionPatch={handleApplyExecutionPatch}
-        />
-      </div>
+      {/* Left pane: Coach rail (lazy-mounted when visible) */}
+      {isCoachRailVisible ? (
+        <div
+          className={cn(
+            'flex min-h-0 min-w-0 flex-1 flex-col',
+            'md:border-r md:border-border',
+            'md:max-w-[min(38%,400px)] md:shrink-0 md:basis-[min(32%,340px)] md:grow-0 md:flex-none',
+          )}
+        >
+          <WorkoutCoachRail
+            bubbleId={bubbleId}
+            taskId={sourceTaskId ?? ''}
+            canPostMessages={canPostMessages}
+            workoutTitle={workoutTitle}
+            workoutData={coachWorkoutDataForRail ?? workoutData}
+            bubbleRow={coachBubbleRow}
+            messageThread={coachMessageThread}
+          />
+        </div>
+      ) : null}
 
       {/* Right pane: Workout body */}
       <div
@@ -1005,11 +1324,11 @@ export function WorkoutPlayer({
       <DialogPrimitive.Root
         open={open}
         onOpenChange={(o) => {
-          if (!o) onClose();
+          if (!o) void handleClose();
         }}
       >
         <DialogPrimitive.Portal>
-          <DialogPrimitive.Overlay className="fixed inset-0 z-[155] bg-black/60 backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+          <DialogPrimitive.Overlay className="fixed inset-0 z-[155] bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
           <DialogPrimitive.Content
             className={cn(
               'fixed left-[50%] top-[50%] z-[160] flex w-full translate-x-[-50%] translate-y-[-50%] flex-col overflow-hidden',
@@ -1035,11 +1354,11 @@ export function WorkoutPlayer({
     <DialogPrimitive.Root
       open={open}
       onOpenChange={(o) => {
-        if (!o) onClose();
+        if (!o) void handleClose();
       }}
     >
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-[155] bg-black/60 backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+        <DialogPrimitive.Overlay className="fixed inset-0 z-[155] bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
         <DialogPrimitive.Content
           className={cn(
             'fixed bottom-0 left-0 right-0 z-[160] flex flex-col overflow-hidden',

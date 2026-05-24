@@ -30,14 +30,31 @@ export function useEmomTimerEngine(config: EmomTimerConfig): {
     if (phase !== 'running') return;
 
     let frame = 0;
+    let lastSecond = -1;
+    let lastPhaseKey = '';
+
     const loop = () => {
       frame = requestAnimationFrame(loop);
       const now = Date.now();
       const current = deriveEmomTimerSnapshot(stateRef.current, now);
+
       if (current.phase === 'running' && current.remainingMs <= 0) {
         dispatch({ type: 'tick', now });
+        lastSecond = -1;
+        lastPhaseKey = '';
+        setTick();
+        return;
       }
-      setTick();
+
+      const elapsedMs = current.intervalMs - current.remainingMs;
+      const currentSecond = Math.floor(elapsedMs / 1000);
+      const phaseKey = `${current.phase}:${current.roundIndex}`;
+
+      if (currentSecond !== lastSecond || phaseKey !== lastPhaseKey) {
+        lastSecond = currentSecond;
+        lastPhaseKey = phaseKey;
+        setTick();
+      }
     };
     frame = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(frame);

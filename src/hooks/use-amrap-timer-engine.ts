@@ -30,14 +30,26 @@ export function useAmrapTimerEngine(config: AmrapTimerConfig): {
     if (phase !== 'running') return;
 
     let frame = 0;
+    let lastSecond = -1;
+
     const loop = () => {
       frame = requestAnimationFrame(loop);
       const now = Date.now();
       const current = deriveAmrapTimerSnapshot(stateRef.current, now);
+
       if (current.phase === 'running' && current.remainingMs <= 0) {
         dispatch({ type: 'tick', now });
+        lastSecond = -1;
+        setTick();
+        return;
       }
-      setTick();
+
+      const currentSecond = Math.floor(current.elapsedMs / 1000);
+
+      if (currentSecond !== lastSecond) {
+        lastSecond = currentSecond;
+        setTick();
+      }
     };
     frame = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(frame);

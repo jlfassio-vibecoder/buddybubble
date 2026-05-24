@@ -1,4 +1,3 @@
-// import { runExtractAndEnrichChain } from '@/lib/workout-factory/generate-workout-kanban-extract-runner';
 import { runGenerateWorkoutOutlineFill } from '@/lib/workout-factory/generate-workout-outline-fill-runner';
 import { preflightOutlineBlocks } from '@/lib/workout-factory/outline-block-preflight';
 import { prepareWorkoutChainRequest } from '@/lib/workout-factory/prepare-workout-chain-request';
@@ -9,7 +8,6 @@ const OUTLINE_REQUIRED_ERROR = 'OUTLINE_REQUIRED_FOR_FACTORY';
 
 /**
  * Workout chain generation: parametric outline fill when a valid Apex outline is present.
- * STEP 1 quarantine: Kanban extract → enrich (Hop 3b/4) disabled while rebuilding states.
  */
 export async function runGenerateWorkoutChain(
   rawBody: unknown,
@@ -46,16 +44,4 @@ export async function runGenerateWorkoutChain(
       headers: { 'Content-Type': 'application/json' },
     }),
   };
-
-  /*
-  if (shouldLog && prepared.data.coachWorkoutOutline?.length) {
-    console.warn(
-      '[generate-workout-chain] coach_workout_outline present but preflight dropped all blocks — using Kanban extract & enrich',
-    );
-  } else if (shouldLog) {
-    console.warn('[generate-workout-chain] Using Kanban extract & enrich pipeline');
-  }
-
-  return runExtractAndEnrichChain(prepared.data, creds, shouldLog, options?.createdByUserId);
-  */
 }

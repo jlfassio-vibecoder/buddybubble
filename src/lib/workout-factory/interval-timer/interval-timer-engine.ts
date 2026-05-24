@@ -69,17 +69,37 @@ export function getPhaseRemainingMs(state: IntervalTimerEngineState, now: number
   return Math.max(0, duration - elapsed);
 }
 
+function endOfCurrentPhaseMs(state: IntervalTimerEngineState): number {
+  if (state.phaseAnchorMs == null) return 0;
+  return state.phaseAnchorMs + state.pausedTotalMs + getPhaseDurationMs(state);
+}
+
+/** Upper bound on phase transitions left from the current runnable state. */
+function maxIntervalCatchUpSteps(state: IntervalTimerEngineState): number {
+  const { config, phase, roundIndex } = state;
+  const perRound = config.restMs > 0 ? 2 : 1;
+  let steps = 0;
+  if (phase === 'prepare') steps += 1;
+  const roundsRemaining = config.totalRounds - roundIndex;
+  if (phase === 'prepare' || phase === 'work') {
+    steps += roundsRemaining * perRound;
+  } else if (phase === 'rest') {
+    steps += 1 + Math.max(0, roundsRemaining - 1) * perRound;
+  }
+  return Math.max(1, steps + 1);
+}
+
 function enterPhase(
   state: IntervalTimerEngineState,
   phase: 'prepare' | 'work' | 'rest',
-  now: number,
+  anchorMs: number,
   roundIndex: number,
 ): IntervalTimerEngineState {
   return {
     ...state,
     phase,
     roundIndex,
-    phaseAnchorMs: now,
+    phaseAnchorMs: anchorMs,
     pausedTotalMs: 0,
     pausedAtMs: null,
     pausedFromPhase: null,
@@ -90,15 +110,17 @@ function advanceFromPrepare(
   state: IntervalTimerEngineState,
   now: number,
 ): IntervalTimerEngineState {
-  return enterPhase(state, 'work', now, 0);
+  const phaseEndMs = endOfCurrentPhaseMs(state) || now;
+  return enterPhase(state, 'work', phaseEndMs, 0);
 }
 
 function advanceFromWork(state: IntervalTimerEngineState, now: number): IntervalTimerEngineState {
   const { config, roundIndex } = state;
   const isLastRound = roundIndex >= config.totalRounds - 1;
+  const phaseEndMs = endOfCurrentPhaseMs(state) || now;
 
   if (config.restMs > 0) {
-    return enterPhase(state, 'rest', now, roundIndex);
+    return enterPhase(state, 'rest', phaseEndMs, roundIndex);
   }
 
   if (isLastRound) {
@@ -111,12 +133,13 @@ function advanceFromWork(state: IntervalTimerEngineState, now: number): Interval
     };
   }
 
-  return enterPhase(state, 'work', now, roundIndex + 1);
+  return enterPhase(state, 'work', phaseEndMs, roundIndex + 1);
 }
 
 function advanceFromRest(state: IntervalTimerEngineState, now: number): IntervalTimerEngineState {
   const { config, roundIndex } = state;
   const isLastRound = roundIndex >= config.totalRounds - 1;
+  const phaseEndMs = endOfCurrentPhaseMs(state) || now;
 
   if (isLastRound) {
     return {
@@ -128,7 +151,7 @@ function advanceFromRest(state: IntervalTimerEngineState, now: number): Interval
     };
   }
 
-  return enterPhase(state, 'work', now, roundIndex + 1);
+  return enterPhase(state, 'work', phaseEndMs, roundIndex + 1);
 }
 
 function advancePhase(state: IntervalTimerEngineState, now: number): IntervalTimerEngineState {
@@ -187,8 +210,18 @@ export function intervalTimerReducer(
 
     case 'tick': {
       if (!isRunnablePhase(state.phase)) return state;
-      if (getPhaseRemainingMs(state, action.now) > 0) return state;
-      return advancePhase(state, action.now);
+      let currentState = state;
+      const maxSteps = maxIntervalCatchUpSteps(state);
+      let steps = 0;
+      while (
+        steps < maxSteps &&
+        isRunnablePhase(currentState.phase) &&
+        getPhaseRemainingMs(currentState, action.now) <= 0
+      ) {
+        currentState = advancePhase(currentState, action.now);
+        steps += 1;
+      }
+      return currentState;
     }
 
     default:
