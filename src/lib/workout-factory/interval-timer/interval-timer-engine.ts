@@ -74,6 +74,21 @@ function endOfCurrentPhaseMs(state: IntervalTimerEngineState): number {
   return state.phaseAnchorMs + state.pausedTotalMs + getPhaseDurationMs(state);
 }
 
+/** Upper bound on phase transitions left from the current runnable state. */
+function maxIntervalCatchUpSteps(state: IntervalTimerEngineState): number {
+  const { config, phase, roundIndex } = state;
+  const perRound = config.restMs > 0 ? 2 : 1;
+  let steps = 0;
+  if (phase === 'prepare') steps += 1;
+  const roundsRemaining = config.totalRounds - roundIndex;
+  if (phase === 'prepare' || phase === 'work') {
+    steps += roundsRemaining * perRound;
+  } else if (phase === 'rest') {
+    steps += 1 + Math.max(0, roundsRemaining - 1) * perRound;
+  }
+  return Math.max(1, steps + 1);
+}
+
 function enterPhase(
   state: IntervalTimerEngineState,
   phase: 'prepare' | 'work' | 'rest',
@@ -196,7 +211,7 @@ export function intervalTimerReducer(
     case 'tick': {
       if (!isRunnablePhase(state.phase)) return state;
       let currentState = state;
-      const maxSteps = 10_000;
+      const maxSteps = maxIntervalCatchUpSteps(state);
       let steps = 0;
       while (
         steps < maxSteps &&
