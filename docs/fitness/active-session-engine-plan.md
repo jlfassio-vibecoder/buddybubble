@@ -1,6 +1,6 @@
 # Active Session Engine — Architecture & Execution Plan
 
-**Status:** **Proposed** — planning doc for an XState-driven **Active Session** on a dedicated route. **Coexists** with modal **WorkoutPlayer** (V1); not a replacement. Both execution paths remain available while Active Session matures.
+**Status:** **Phase 0 shipped** (machine + tests on branch; UI/route not started). XState-driven **Active Session** on a dedicated route. **Coexists** with modal **WorkoutPlayer** (V1); not a replacement.
 
 **Product name:** **Active Session** (not "WorkoutPlayer V2")  
 **Engineering module:** `src/features/active-session/`  
@@ -66,28 +66,40 @@ Both paths share the same prescription read model, timer reducers, draft/finish 
 
 ## Target file map
 
+**Phase 0 (shipped):**
+
 ```
 src/features/active-session/
 ├── machines/
-│   ├── active-session.machine.ts      # top-level coordinator
-│   ├── interval-block.machine.ts        # wraps existing reducers
-│   └── types.ts                         # context, events, guards
+│   ├── active-session.machine.ts      # top-level coordinator (shipped)
+│   ├── interval-block.machine.ts        # TODO: Phase 3 stub
+│   └── types.ts                         # context, events, guards (shipped)
 ├── actors/
-│   ├── persistence.actor.ts             # debounced autosave invoke
-│   ├── coach-sync.actor.ts              # sentinel + patch listener
-│   └── session-clock.actor.ts           # wall-clock elapsed
+│   ├── persistence.actor.ts             # debounced autosave fromCallback (shipped)
+│   ├── coach-sync.actor.ts              # finishWorkoutActor + Phase 2 coach stub
+│   └── session-clock.actor.ts           # Phase 1+ stub
+├── __tests__/
+│   ├── active-session.machine.test.ts   # V1 scenario replay + concurrency (shipped)
+│   ├── persistence.actor.test.ts        # debounce isolation (shipped)
+│   └── test-utils/
+│       ├── fixtures.ts
+│       └── mock-persistence.ts
+└── index.ts                             # public re-exports (shipped)
+```
+
+**Phase 1+ (not started):**
+
+```
+src/features/active-session/
 ├── contracts/
-│   └── session-telemetry.ts             # SessionTelemetrySnapshot v1
+│   └── session-telemetry.ts             # SessionTelemetrySnapshot v1 (Phase 4)
 ├── components/
 │   ├── ActiveSessionShell.tsx
 │   ├── SessionHUD.tsx
 │   ├── SessionLogSurface.tsx
 │   └── SessionCoachPane.tsx
-├── hooks/
-│   └── useActiveSession.ts              # thin @xstate/react wrapper
-└── __tests__/
-    ├── active-session.machine.test.ts
-    └── session-telemetry.test.ts
+└── hooks/
+    └── useActiveSession.ts              # thin @xstate/react wrapper
 
 src/app/(dashboard)/app/[workspace_id]/session/[task_id]/
 ├── page.tsx
@@ -100,34 +112,40 @@ src/app/(dashboard)/app/[workspace_id]/session/[task_id]/
 
 ## XState blueprint (reference)
 
-### Top-level states
+### Top-level states (Phase 0 implemented)
 
-| State                 | Purpose                                       |
-| --------------------- | --------------------------------------------- |
-| `hydrating`           | Load units, recover draft, build VM           |
-| `logging`             | Default — user editing set grid               |
-| `intervalRunning`     | Nested block timer active                     |
-| `backgroundSuspended` | Document hidden; queue clock catch-up         |
-| `autosaving`          | **Exclusive** — blocks finish / second insert |
-| `finishing`           | Build final metadata; UPDATE or INSERT log    |
-| `closing`             | Flush + navigate away                         |
-| `completed`           | Terminal (optional analytics)                 |
+| State                   | Purpose                                                | Phase 0                   |
+| ----------------------- | ------------------------------------------------------ | ------------------------- |
+| `hydrating`             | Load units, recover draft, build VM                    | Instant → `active` (stub) |
+| `active.logging`        | Default — user editing set grid                        | Shipped                   |
+| `active.autosaving`     | **Exclusive** — blocks finish fast-path; queues FINISH | Shipped                   |
+| `finishing`             | Finalize log via `finishWorkoutActor`                  | Shipped                   |
+| `closing` → `completed` | Terminal                                               | Shipped                   |
+| `intervalRunning`       | Nested block timer active                              | Phase 3                   |
+| `backgroundSuspended`   | Document hidden; queue clock catch-up                  | Phase 3                   |
 
 ### Parallel regions / actors
 
 ```
 activeSessionMachine
-├── persistence      → debounced draft write (2s)
-├── coachSync        → sentinel + execution_patch → COACH_PATCH events
-├── sessionClock     → wall-clock elapsed_sec
-└── blockExecutor    → optional nested intervalBlockMachine
+├── persistence      → debounced draft write (2s)     [Phase 0 shipped]
+├── finishWorkout    → finalize INSERT/UPDATE           [Phase 0 stub via adapter]
+├── coachSync        → sentinel + execution_patch       [Phase 2]
+├── sessionClock     → wall-clock elapsed_sec           [Phase 1+]
+└── blockExecutor    → nested intervalBlockMachine       [Phase 3]
 ```
 
-### Guards (must have tests)
+### Guards (Phase 0 — tested)
 
-- `finish` blocked while `autosaving`
-- `insert` only when `logTaskId === null && !pendingInsert`
-- `VISIBILITY true` → `catchUpAllTimers` before resume
+| Guard                  | Behavior                                                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `canFinishImmediately` | `FINISH` in `active.logging` → `finishing` when `!autosaveInFlight && !pendingInsert && !autosaveScheduled`  |
+| `finishQueued`         | After `AUTOSAVE_DONE`, transition to `finishing` if user pressed FINISH during autosave                      |
+| `closeQueued`          | After `AUTOSAVE_DONE`, transition to `closing` on ABANDON flush                                              |
+| **Fail-stop**          | `AUTOSAVE_FAILED` + `finishQueued` → `active.logging` (clear queue, set `autosaveError`); **no** `finishing` |
+| **Insert lock**        | Persistence actor rejects second INSERT when `pendingInsert` (actor + `setAutosaveInFlight`)                 |
+
+Phase 3+: `VISIBILITY` → `catchUpAllTimers` before resume.
 
 ---
 
@@ -184,7 +202,7 @@ type SessionTelemetrySnapshot = {
 
 | Phase | Theme                              | Est.   | Ship criteria                                                   |
 | ----- | ---------------------------------- | ------ | --------------------------------------------------------------- |
-| **0** | XState foundation + machine tests  | 1–2 wk | Machine passes V1 scenario replay tests; no UI                  |
+| **0** | XState foundation + machine tests  | 1–2 wk | **Shipped** — 15 Vitest tests; no UI                            |
 | **1** | Session route shell + feature flag | 1 wk   | Route loads workout; V1 remains default                         |
 | **2** | Persistence + Coach actors         | 2 wk   | Autosave/finish/sentinel/patch in machine; flag ON for internal |
 | **3** | Interval nested machines           | 1 wk   | EMOM/Tabata/AMRAP on route; background catch-up modeled         |
@@ -197,35 +215,37 @@ type SessionTelemetrySnapshot = {
 
 ## Phase 0 — Foundation (machine only)
 
-**Status:** Not started  
+**Status:** **Shipped** (branch `feat/active-session-engine`; implementation commit pending push)  
 **Goal:** Prove XState model against V1 race scenarios before any UI.
 
 ### Tasks
 
-- [ ] **0.1** Add dependencies: `@xstate/react`, `xstate`, `@xstate/test` (verify versions compatible with Next 16 / React 19)
-- [ ] **0.2** Create `src/features/active-session/` scaffold per file map above
-- [ ] **0.3** Define `ActiveSessionContext`, events, and guards in `machines/types.ts`
-- [ ] **0.4** Implement `active-session.machine.ts` skeleton:
-  - States: `hydrating` → `logging` ↔ `autosaving` → `finishing` → `closing`
-  - Guards: `notAutosaving`, `hasLogTaskId`, `noPendingInsert`
-- [ ] **0.5** Implement `persistence.actor.ts` as `fromCallback` debounce (2000ms) — mock Supabase in tests
-- [ ] **0.6** Port V1 scenarios to machine tests:
+- [x] **0.1** Add dependencies: `xstate@^5.31.1`, `@xstate/react@^6.1.0` (Next 16 / React 19 compatible). **`@xstate/test` deferred** — peer dep targets XState v4; Phase 0 uses `createActor` + `vi.useFakeTimers()` instead.
+- [x] **0.2** Create `src/features/active-session/` scaffold (machines, actors, tests, `index.ts`; no UI/route)
+- [x] **0.3** Define `ActiveSessionContext`, events, and guards in `machines/types.ts` (`canFinishImmediately`, `finishQueued`, `closeQueued`; `autosaveScheduled`, `finishError`)
+- [x] **0.4** Implement `active-session.machine.ts`:
+  - States: `hydrating` → `active.logging` ↔ `active.autosaving` → `finishing` → `closing` → `completed`
+  - FINISH fast-path when idle; queue + flush when autosave pending; fail-stop on `AUTOSAVE_FAILED`
+- [x] **0.5** Implement `persistence.actor.ts` as `fromCallback` debounce (`AUTOSAVE_MS = 2000`) with injectable `PersistenceAdapter`; default `createNoOpPersistenceAdapter()` (Phase 2 Supabase path TBD)
+- [x] **0.6** Port V1 scenarios to machine tests (15 tests green):
 
-| Scenario                               | Expected                                    |
-| -------------------------------------- | ------------------------------------------- |
-| Autosave INSERT then FINISH            | Single row UPDATE, no orphan draft          |
-| Concurrent FINISH + debounced autosave | Finish waits; uses `logTaskId` from context |
-| FINISH while autosaving                | Blocked or queued until `AUTOSAVE_DONE`     |
-| ABANDON mid-session                    | Flush latest logs, no duplicate INSERT      |
-| Sentinel failure                       | Retry allowed (not permanently fired)       |
+| Scenario                               | Expected                                            | Test status |
+| -------------------------------------- | --------------------------------------------------- | ----------- |
+| Autosave INSERT then FINISH            | Single finalize UPDATE, no orphan draft             | Pass        |
+| Concurrent FINISH + debounced autosave | Finish waits; uses `logTaskId` from context         | Pass        |
+| FINISH while autosaving                | Queued until `AUTOSAVE_DONE`; fail-stop on error    | Pass        |
+| ABANDON mid-session                    | Flush once; no duplicate INSERT                     | Pass        |
+| Sentinel failure                       | Retry allowed (not permanently fired)               | Pass        |
+| Fast-path FINISH (idle)                | Skips autosave when nothing pending                 | Pass        |
+| Finish finalize failure                | `finishError` surfaced; returns to `active.logging` | Pass        |
 
-- [ ] **0.7** Document machine in this file § XState blueprint; link from [views/README.md](./views/README.md)
+- [ ] **0.7** Link from [views/README.md](./views/README.md) — doc edit staged locally; commit with Phase 0 code
 
 ### Acceptance criteria
 
-- [ ] `pnpm exec vitest run src/features/active-session` — all green
-- [ ] `pnpm exec tsc --noEmit` — clean
-- [ ] No React components shipped; no route added yet
+- [x] `pnpm exec vitest run src/features/active-session` — 15 tests green
+- [x] `pnpm exec tsc --noEmit` — clean
+- [x] No React components shipped; no route added yet
 
 ### Verification
 
@@ -473,20 +493,21 @@ pnpm exec tsc --noEmit
 
 Update this table as phases ship.
 
-| Phase | Status      | Shipped commit / PR | Notes                         |
-| ----- | ----------- | ------------------- | ----------------------------- |
-| 0     | Not started | —                   |                               |
-| 1     | Not started | —                   |                               |
-| 2     | Not started | —                   |                               |
-| 3     | Not started | —                   |                               |
-| 4     | Not started | —                   |                               |
-| 5     | Deferred    | —                   | Side-by-side; convergence TBD |
+| Phase | Status      | Shipped commit / PR               | Notes                                                        |
+| ----- | ----------- | --------------------------------- | ------------------------------------------------------------ |
+| 0     | **Shipped** | `a969f70` (plan only); code local | Machine + 15 Vitest tests; commit code + `package.json` next |
+| 1     | Not started | —                                 | **Next** — session route shell + feature flag                |
+| 2     | Not started | —                                 |                                                              |
+| 3     | Not started | —                                 |                                                              |
+| 4     | Not started | —                                 |                                                              |
+| 5     | Deferred    | —                                 | Side-by-side; convergence TBD                                |
 
 ---
 
 ## Changelog
 
-| Date       | Change                                                                                     |
-| ---------- | ------------------------------------------------------------------------------------------ |
-| 2026-05-24 | Initial plan — architecture proposal → execution doc                                       |
-| 2026-05-24 | Coexistence — Active Session side-by-side with WorkoutPlayer; Phase 5 convergence deferred |
+| Date       | Change                                                                                                                          |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-05-24 | Initial plan — architecture proposal → execution doc                                                                            |
+| 2026-05-24 | Coexistence — Active Session side-by-side with WorkoutPlayer; Phase 5 convergence deferred                                      |
+| 2026-05-24 | **Phase 0 shipped** — XState machine, persistence actor, concurrency tests; polish (fail-stop, fast-path FINISH, `finishError`) |
