@@ -4,9 +4,11 @@ import { createDefaultInput, createEditedDraftLogs } from './test-utils/fixtures
 import {
   advanceAutosave,
   createMockPersistenceAdapter,
+  createStartedTestActor,
   createTestActor,
   flushPromises,
   getMachineStateValue,
+  startHydratedActor,
   waitForSessionSettled,
 } from './test-utils/mock-persistence';
 
@@ -21,8 +23,7 @@ describe('persistence actor debounce (via machine)', () => {
 
   it('debounce coalesces rapid LOGS_CHANGED into a single insert', async () => {
     const mock = createMockPersistenceAdapter();
-    const actor = createTestActor({}, mock);
-    actor.start();
+    const actor = createStartedTestActor({}, mock);
 
     expect(getMachineStateValue(actor)).toBe('active.logging');
 
@@ -65,8 +66,7 @@ describe('activeSessionMachine concurrency lock', () => {
 
   it('FINISH during autosaving does not enter finishing until AUTOSAVE_DONE', async () => {
     const mock = createMockPersistenceAdapter({ blockInsertUntilResolved: true });
-    const actor = createTestActor({}, mock);
-    actor.start();
+    const actor = createStartedTestActor({}, mock);
 
     actor.send({ type: 'LOGS_CHANGED', draftLogs: createEditedDraftLogs() });
     advanceAutosave(AUTOSAVE_MS);
@@ -90,8 +90,7 @@ describe('activeSessionMachine concurrency lock', () => {
 
   it('blocks duplicate INSERT when insert is already pending', async () => {
     const mock = createMockPersistenceAdapter({ blockInsertUntilResolved: true });
-    const actor = createTestActor({}, mock);
-    actor.start();
+    const actor = createStartedTestActor({}, mock);
 
     actor.send({ type: 'LOGS_CHANGED', draftLogs: createEditedDraftLogs() });
     advanceAutosave(AUTOSAVE_MS);
@@ -110,8 +109,7 @@ describe('activeSessionMachine concurrency lock', () => {
 
   it('FINISH after debounced autosave uses logTaskId from AUTOSAVE_DONE', async () => {
     const mock = createMockPersistenceAdapter({ logTaskId: 'log-draft-002' });
-    const actor = createTestActor({}, mock);
-    actor.start();
+    const actor = createStartedTestActor({}, mock);
 
     actor.send({ type: 'LOGS_CHANGED', draftLogs: createEditedDraftLogs() });
     advanceAutosave(AUTOSAVE_MS);
@@ -132,8 +130,7 @@ describe('activeSessionMachine concurrency lock', () => {
 
   it('fail-stops finish when autosave fails while finish is queued', async () => {
     const mock = createMockPersistenceAdapter({ failInsert: true });
-    const actor = createTestActor({}, mock);
-    actor.start();
+    const actor = createStartedTestActor({}, mock);
 
     actor.send({ type: 'LOGS_CHANGED', draftLogs: createEditedDraftLogs() });
     actor.send({ type: 'FINISH' });
@@ -147,8 +144,7 @@ describe('activeSessionMachine concurrency lock', () => {
 
   it('fast-path FINISH from idle logging skips autosave when nothing is pending', async () => {
     const mock = createMockPersistenceAdapter();
-    const actor = createTestActor({}, mock);
-    actor.start();
+    const actor = createStartedTestActor({}, mock);
 
     actor.send({ type: 'FINISH' });
     await flushPromises();
@@ -170,8 +166,7 @@ describe('activeSessionMachine V1 scenario replay', () => {
 
   it('autosave INSERT then FINISH produces insert + finish_update without orphan draft', async () => {
     const mock = createMockPersistenceAdapter({ logTaskId: 'log-draft-100' });
-    const actor = createTestActor({}, mock);
-    actor.start();
+    const actor = createStartedTestActor({}, mock);
 
     actor.send({ type: 'LOGS_CHANGED', draftLogs: createEditedDraftLogs() });
     advanceAutosave(AUTOSAVE_MS);
@@ -188,8 +183,7 @@ describe('activeSessionMachine V1 scenario replay', () => {
 
   it('concurrent FINISH + debounced autosave waits for autosave before finalize', async () => {
     const mock = createMockPersistenceAdapter({ blockInsertUntilResolved: true });
-    const actor = createTestActor({}, mock);
-    actor.start();
+    const actor = createStartedTestActor({}, mock);
 
     actor.send({ type: 'LOGS_CHANGED', draftLogs: createEditedDraftLogs() });
     actor.send({ type: 'FINISH' });
@@ -207,8 +201,7 @@ describe('activeSessionMachine V1 scenario replay', () => {
 
   it('ABANDON mid-session flushes once without duplicate insert', async () => {
     const mock = createMockPersistenceAdapter();
-    const actor = createTestActor({}, mock);
-    actor.start();
+    const actor = createStartedTestActor({}, mock);
 
     actor.send({ type: 'LOGS_CHANGED', draftLogs: createEditedDraftLogs() });
     actor.send({ type: 'ABANDON' });
@@ -220,8 +213,7 @@ describe('activeSessionMachine V1 scenario replay', () => {
   });
 
   it('sentinel failure allows retry', () => {
-    const actor = createTestActor();
-    actor.start();
+    const actor = createStartedTestActor();
 
     actor.send({ type: 'COACH_SENTINEL_SEND' });
     expect(actor.getSnapshot().context.sentinelFired).toBe(true);
@@ -236,8 +228,7 @@ describe('activeSessionMachine V1 scenario replay', () => {
 
   it('surfaces finishError when finalize fails', async () => {
     const mock = createMockPersistenceAdapter({ failUpdate: true });
-    const actor = createTestActor({}, mock);
-    actor.start();
+    const actor = createStartedTestActor({}, mock);
 
     actor.send({ type: 'LOGS_CHANGED', draftLogs: createEditedDraftLogs() });
     advanceAutosave(AUTOSAVE_MS);

@@ -4,7 +4,7 @@ import { createEditedDraftLogs } from './test-utils/fixtures';
 import {
   advanceAutosave,
   createMockPersistenceAdapter,
-  createTestActor,
+  createStartedTestActor,
   flushPromises,
   getMachineStateValue,
 } from './test-utils/mock-persistence';
@@ -20,8 +20,7 @@ describe('persistence actor', () => {
 
   it('does not fire autosave before debounce elapses', async () => {
     const mock = createMockPersistenceAdapter();
-    const actor = createTestActor({}, mock);
-    actor.start();
+    const actor = createStartedTestActor({}, mock);
 
     actor.send({ type: 'LOGS_CHANGED', draftLogs: createEditedDraftLogs() });
     vi.advanceTimersByTime(AUTOSAVE_MS - 1);
@@ -33,8 +32,7 @@ describe('persistence actor', () => {
 
   it('fires autosave after debounce elapses', async () => {
     const mock = createMockPersistenceAdapter();
-    const actor = createTestActor({}, mock);
-    actor.start();
+    const actor = createStartedTestActor({}, mock);
 
     actor.send({ type: 'LOGS_CHANGED', draftLogs: createEditedDraftLogs() });
     advanceAutosave(AUTOSAVE_MS);

@@ -1,5 +1,5 @@
 import { assign, sendTo, setup } from 'xstate';
-import { finishWorkoutActor } from '../actors/coach-sync.actor';
+import { finishWorkoutActor } from '../actors/finish-workout.actor';
 import { persistenceActor } from '../actors/persistence.actor';
 import {
   activeSessionGuards,
@@ -56,6 +56,12 @@ export const activeSessionMachine = setup({
         autosaveError: null,
       };
     }),
+    assignAutosaveSkipped: assign({
+      autosaveInFlight: false,
+      pendingInsert: false,
+      autosaveScheduled: false,
+      autosaveError: null,
+    }),
     assignAutosaveFailed: assign(({ event }) => {
       if (event.type !== 'AUTOSAVE_FAILED') return {};
       return {
@@ -102,16 +108,15 @@ export const activeSessionMachine = setup({
   initial: 'hydrating',
   states: {
     hydrating: {
-      always: {
-        target: 'active',
-        actions: assign(({ context }) => ({
-          startedAt: context.startedAt || new Date().toISOString(),
-        })),
-      },
       on: {
         HYDRATE_DONE: {
           target: 'active',
-          actions: 'assignHydrateDone',
+          actions: [
+            'assignHydrateDone',
+            assign(({ context }) => ({
+              startedAt: context.startedAt || new Date().toISOString(),
+            })),
+          ],
         },
         HYDRATE_FAILED: {
           target: 'closing',
@@ -181,6 +186,22 @@ export const activeSessionMachine = setup({
                 actions: 'assignLogTaskIdFromAutosave',
               },
             ],
+            AUTOSAVE_SKIPPED: [
+              {
+                guard: 'finishQueued',
+                target: '#activeSession.finishing',
+                actions: ['assignAutosaveSkipped', 'clearFinishQueue', 'clearFinishError'],
+              },
+              {
+                guard: 'closeQueued',
+                target: '#activeSession.closing',
+                actions: ['assignAutosaveSkipped', 'clearCloseQueue'],
+              },
+              {
+                target: 'logging',
+                actions: 'assignAutosaveSkipped',
+              },
+            ],
             AUTOSAVE_FAILED: [
               {
                 guard: 'finishQueued',
@@ -209,7 +230,7 @@ export const activeSessionMachine = setup({
         src: 'finishWorkout',
         input: ({ context }) => ({
           context,
-          adapter: context.persistenceAdapter,
+          finishWorkoutRunner: context.finishWorkoutRunner,
         }),
         onDone: {
           target: 'closing',

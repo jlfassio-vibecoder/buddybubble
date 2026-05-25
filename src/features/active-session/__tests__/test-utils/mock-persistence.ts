@@ -80,6 +80,21 @@ export function createTestActor(
   return createActor(activeSessionMachine, { input });
 }
 
+/** Move actor from `hydrating` to `active.logging` (required after removing hydrating.always). */
+export function startHydratedActor(actor: TestActor): void {
+  actor.start();
+  actor.send({ type: 'HYDRATE_DONE' });
+}
+
+export function createStartedTestActor(
+  inputOverrides: Partial<ActiveSessionInput> = {},
+  persistence?: MockPersistenceHandle,
+): TestActor {
+  const actor = createTestActor(inputOverrides, persistence);
+  startHydratedActor(actor);
+  return actor;
+}
+
 export function advanceAutosave(ms = 2000): void {
   vi.advanceTimersByTime(ms);
 }

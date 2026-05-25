@@ -1,9 +1,30 @@
 import { fromCallback } from 'xstate';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { buildWorkoutLogDraftMetadata } from '@/lib/workout-factory/build-workout-log-finish-metadata';
+import { logsEqualTemplate } from '@/lib/workout-factory/workout-log-matrix';
+import type { Json } from '@/types/database';
+import type { WorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import { AUTOSAVE_MS, type ActiveSessionEvent } from '../machines/types';
+import type { ActiveSessionContext } from '../machines/types';
 
 export type PersistenceAdapter = {
   insertDraft: () => Promise<{ logTaskId: string }>;
   updateDraft: (logTaskId: string) => Promise<void>;
+};
+
+export class AutosaveSkippedError extends Error {
+  constructor() {
+    super('autosave_skipped');
+    this.name = 'AutosaveSkippedError';
+  }
+}
+
+export type ProductionPersistenceDeps = {
+  supabase: SupabaseClient;
+  getContext: () => ActiveSessionContext;
+  sourceMetadata: Json | null;
+  sessionVm: WorkoutSessionViewModel;
+  workoutTitle: string;
 };
 
 export type PersistenceActorInput = {
@@ -20,7 +41,7 @@ export type PersistenceActorEvent =
   | ({ type: 'FLUSH_AUTOSAVE' } & PersistenceSnapshot)
   | { type: 'CANCEL_AUTOSAVE' };
 
-/** Phase 0 no-op adapter; Phase 2 replaces with Supabase-backed persistence. */
+/** Phase 0 no-op adapter; tests use mock adapter. */
 export function createNoOpPersistenceAdapter(): PersistenceAdapter {
   return {
     insertDraft: async () => ({ logTaskId: 'noop-draft' }),
@@ -28,9 +49,61 @@ export function createNoOpPersistenceAdapter(): PersistenceAdapter {
   };
 }
 
-/** @deprecated Phase 2 — use `createNoOpPersistenceAdapter` until Supabase wiring ships. */
-export function createProductionPersistenceAdapter(): PersistenceAdapter {
-  return createNoOpPersistenceAdapter();
+export function createProductionPersistenceAdapter(
+  deps: ProductionPersistenceDeps,
+): PersistenceAdapter {
+  const buildMeta = (ctx: ActiveSessionContext) =>
+    buildWorkoutLogDraftMetadata({
+      sourceMetadata: deps.sourceMetadata,
+      sessionVm: deps.sessionVm,
+      sourceTaskId: ctx.sourceTaskId,
+      draftLogs: ctx.draftLogs,
+      classInstanceId: ctx.classInstanceId ?? null,
+    });
+
+  return {
+    insertDraft: async () => {
+      const ctx = deps.getContext();
+      if (
+        ctx.logTaskId == null &&
+        !ctx.hasUserEdited &&
+        logsEqualTemplate(ctx.draftLogs, deps.sessionVm.flatExercises, deps.sessionVm.blocks)
+      ) {
+        throw new AutosaveSkippedError();
+      }
+
+      const meta = buildMeta(ctx);
+      const { data, error } = await deps.supabase
+        .from('tasks')
+        .insert({
+          bubble_id: ctx.bubbleId,
+          title: `${deps.workoutTitle} — Log`,
+          item_type: 'workout_log',
+          status: 'in_progress',
+          metadata: meta,
+        })
+        .select('id')
+        .maybeSingle();
+
+      if (error || !data?.id) {
+        throw error ?? new Error('draft_insert_failed');
+      }
+
+      return { logTaskId: data.id };
+    },
+    updateDraft: async (logTaskId: string) => {
+      const ctx = deps.getContext();
+      const meta = buildMeta(ctx);
+      const { error } = await deps.supabase
+        .from('tasks')
+        .update({ metadata: meta })
+        .eq('id', logTaskId);
+
+      if (error) {
+        throw error;
+      }
+    },
+  };
 }
 
 export const persistenceActor = fromCallback<
@@ -74,6 +147,10 @@ export const persistenceActor = fromCallback<
       sendBack({ type: 'AUTOSAVE_DONE', logTaskId: insertedId });
     } catch (error) {
       if (currentRunId !== runId) return;
+      if (error instanceof AutosaveSkippedError) {
+        sendBack({ type: 'AUTOSAVE_SKIPPED' });
+        return;
+      }
       sendBack({
         type: 'AUTOSAVE_FAILED',
         error: error instanceof Error ? error.message : String(error),

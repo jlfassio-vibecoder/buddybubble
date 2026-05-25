@@ -1,20 +1,60 @@
 'use client';
 
+import { useCallback } from 'react';
 import { Separator } from '@/components/ui/separator';
 import { WorkoutPlayerBlockList } from '@/components/fitness/workout-block-renderer/WorkoutPlayerBlockList';
 import { WorkoutPlayerExercisePanel } from '@/components/fitness/workout-block-renderer/WorkoutPlayerExercisePanel';
 import type { SetDraft } from '@/components/fitness/workout-block-renderer/WorkoutPlayerExercisePanel';
 import type { WorkoutSessionViewModel } from '@/hooks/use-workout-session-view-model';
+import {
+  appendSetRow,
+  applySetChange,
+  toggleSetDone,
+} from '@/lib/workout-factory/workout-log-mutations';
 
 type Props = {
   viewModel: WorkoutSessionViewModel;
   draftLogs: SetDraft[][];
   unit: string;
+  disabled?: boolean;
+  onDraftLogsChange: (next: SetDraft[][]) => void;
 };
 
-export function SessionLogSurface({ viewModel, draftLogs, unit }: Props) {
+export function SessionLogSurface({
+  viewModel,
+  draftLogs,
+  unit,
+  disabled = false,
+  onDraftLogsChange,
+}: Props) {
   const { flatExercises, blocks } = viewModel;
   const useBlockList = blocks.length > 0;
+
+  const onSetChange = useCallback(
+    (exIdx: number, setIdx: number, field: 'weight' | 'reps' | 'rpe', value: string) => {
+      if (disabled) return;
+      onDraftLogsChange(applySetChange(draftLogs, exIdx, setIdx, field, value));
+    },
+    [disabled, draftLogs, onDraftLogsChange],
+  );
+
+  const onToggleDone = useCallback(
+    (exIdx: number, setIdx: number) => {
+      if (disabled) return;
+      onDraftLogsChange(toggleSetDone(draftLogs, exIdx, setIdx));
+    },
+    [disabled, draftLogs, onDraftLogsChange],
+  );
+
+  const onAddSet = useCallback(
+    (exIdx: number) => {
+      if (disabled) return;
+      const exercise = flatExercises[exIdx];
+      if (!exercise) return;
+      onDraftLogsChange(appendSetRow(draftLogs, exIdx, exercise));
+    },
+    [disabled, draftLogs, flatExercises, onDraftLogsChange],
+  );
 
   return (
     <section
@@ -33,10 +73,10 @@ export function SessionLogSurface({ viewModel, draftLogs, unit }: Props) {
           view="simple"
           unit={unit}
           personalNotesByExerciseIndex={flatExercises.map(() => null)}
-          readOnly
-          onSetChange={() => {}}
-          onToggleDone={() => {}}
-          onAddSet={() => {}}
+          readOnly={disabled}
+          onSetChange={onSetChange}
+          onToggleDone={onToggleDone}
+          onAddSet={onAddSet}
           onLogAmrapRound={() => {}}
         />
       ) : (
@@ -50,10 +90,10 @@ export function SessionLogSurface({ viewModel, draftLogs, unit }: Props) {
                 view="simple"
                 unit={unit}
                 personalNotes={null}
-                readOnly
-                onSetChange={() => {}}
-                onToggleDone={() => {}}
-                onAddSet={() => {}}
+                readOnly={disabled}
+                onSetChange={(setIdx, field, value) => onSetChange(index, setIdx, field, value)}
+                onToggleDone={(setIdx) => onToggleDone(index, setIdx)}
+                onAddSet={() => onAddSet(index)}
               />
               {index < flatExercises.length - 1 ? <Separator className="mt-6" /> : null}
             </div>

@@ -13,4 +13,9 @@ export {
   persistenceActor,
   type PersistenceAdapter,
 } from './actors/persistence.actor';
-export { finishWorkoutActor } from './actors/coach-sync.actor';
+export {
+  createProductionFinishWorkoutRunner,
+  finishWorkoutActor,
+  type FinishWorkoutResult,
+  type FinishWorkoutRunner,
+} from './actors/finish-workout.actor';

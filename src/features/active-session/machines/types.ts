@@ -1,6 +1,9 @@
 import type { SetDraft } from '@/components/fitness/workout-block-renderer/WorkoutPlayerExercisePanel';
-import { createNoOpPersistenceAdapter } from '../actors/persistence.actor';
-import type { PersistenceAdapter } from '../actors/persistence.actor';
+import type { Json } from '@/types/database';
+import type { WorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
+import type { FinishWorkoutRunner } from '../actors/finish-workout.actor';
+import { createAdapterFinishWorkoutRunner } from '../actors/finish-workout.actor';
+import { createNoOpPersistenceAdapter, type PersistenceAdapter } from '../actors/persistence.actor';
 
 /** Matches WorkoutPlayer `AUTOSAVE_MS`. */
 export const AUTOSAVE_MS = 2000;
@@ -11,8 +14,12 @@ export type ActiveSessionInput = {
   bubbleId: string;
   workspaceId: string;
   classInstanceId?: string | null;
+  sourceMetadata: Json | null;
+  workoutTitle: string;
+  sessionVm: WorkoutSessionViewModel;
   draftLogs: SetDraft[][];
   persistenceAdapter?: PersistenceAdapter;
+  finishWorkoutRunner?: FinishWorkoutRunner;
 };
 
 export type ActiveSessionContext = ActiveSessionInput & {
@@ -31,6 +38,7 @@ export type ActiveSessionContext = ActiveSessionInput & {
   sentinelFired: boolean;
   sentinelFailed: boolean;
   persistenceAdapter: PersistenceAdapter;
+  finishWorkoutRunner: FinishWorkoutRunner;
 };
 
 export type ActiveSessionEvent =
@@ -41,6 +49,7 @@ export type ActiveSessionEvent =
   | { type: 'AUTOSAVE_STARTED' }
   | { type: 'AUTOSAVE_DONE'; logTaskId: string }
   | { type: 'AUTOSAVE_FAILED'; error: string }
+  | { type: 'AUTOSAVE_SKIPPED' }
   | { type: 'FINISH' }
   | { type: 'ABANDON' }
   | { type: 'COACH_SENTINEL_SEND' }
@@ -64,9 +73,12 @@ export const activeSessionGuards = {
 };
 
 export function createInitialContext(input: ActiveSessionInput): ActiveSessionContext {
+  const persistenceAdapter = input.persistenceAdapter ?? createNoOpPersistenceAdapter();
   return {
     ...input,
-    persistenceAdapter: input.persistenceAdapter ?? createNoOpPersistenceAdapter(),
+    persistenceAdapter,
+    finishWorkoutRunner:
+      input.finishWorkoutRunner ?? createAdapterFinishWorkoutRunner(persistenceAdapter),
     hydrationError: null,
     logTaskId: null,
     pendingInsert: false,
