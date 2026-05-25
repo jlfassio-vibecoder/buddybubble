@@ -99,6 +99,7 @@ export type ActiveSessionEvent =
 
 export type GuardParams = {
   context: ActiveSessionContext;
+  event?: ActiveSessionEvent;
 };
 
 export const activeSessionGuards = {
@@ -106,6 +107,15 @@ export const activeSessionGuards = {
     !context.autosaveInFlight && !context.pendingInsert && !context.autosaveScheduled,
   finishQueued: ({ context }: GuardParams) => context.finishQueued,
   closeQueued: ({ context }: GuardParams) => context.closeQueued,
+  hasIntervalBlockRef: ({ context }: GuardParams) => context.intervalBlockRef != null,
+  isActiveIntervalCommand: ({ context, event }: GuardParams) =>
+    event?.type === 'INTERVAL_COMMAND' &&
+    context.intervalBlockRef != null &&
+    context.activeIntervalBlockId === event.blockId,
+  isActiveIntervalAmrapLog: ({ context, event }: GuardParams) =>
+    event?.type === 'INTERVAL_LOG_AMRAP_ROUND' &&
+    context.intervalBlockRef != null &&
+    context.activeIntervalBlockId === event.blockId,
 };
 
 export function createInitialContext(input: ActiveSessionInput): ActiveSessionContext {

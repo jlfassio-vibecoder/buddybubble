@@ -1,4 +1,4 @@
-import { assign, sendTo, setup, stopChild } from 'xstate';
+import { assign, enqueueActions, sendTo, setup } from 'xstate';
 import { coachSyncActor, type CoachThreadSnapshot } from '../actors/coach-sync.actor';
 import { finishWorkoutActor } from '../actors/finish-workout.actor';
 import { persistenceActor } from '../actors/persistence.actor';
@@ -125,11 +125,11 @@ export const activeSessionMachine = setup({
     })),
     forwardCoachTrySentinel: sendTo(COACH_SYNC_ID, { type: 'TRY_SENTINEL' }),
     forwardCoachReset: sendTo(COACH_SYNC_ID, { type: 'RESET' }),
-    stopIntervalBlockIfRunning: ({ context }) => {
+    stopIntervalBlockIfRunning: enqueueActions(({ context, enqueue }) => {
       if (context.intervalBlockRef) {
-        stopChild(context.intervalBlockRef);
+        enqueue.stopChild(context.intervalBlockRef);
       }
-    },
+    }),
     clearIntervalBlockRef: assign({
       intervalBlockRef: null,
       activeIntervalBlockId: null,
@@ -144,45 +144,54 @@ export const activeSessionMachine = setup({
         },
       };
     }),
-    spawnIntervalBlock: assign(({ context, event, spawn }) => {
-      if (event.type !== 'INTERVAL_START') return {};
+    handleIntervalStart: enqueueActions(({ context, event, enqueue }) => {
+      if (event.type !== 'INTERVAL_START') return;
       const { input } = event;
+
       if (context.activeIntervalBlockId === input.blockId && context.intervalBlockRef) {
-        return {};
+        enqueue.sendTo(context.intervalBlockRef, { type: 'START' });
+        return;
       }
+
       if (context.intervalBlockRef) {
-        stopChild(context.intervalBlockRef);
+        enqueue.stopChild(context.intervalBlockRef);
       }
-      const ref = spawn('intervalBlock', {
-        id: `interval-${input.blockId}`,
-        input,
-      });
-      return {
-        intervalBlockRef: ref,
+
+      enqueue.assign({
+        intervalBlockRef: ({ spawn }) =>
+          spawn('intervalBlock', {
+            id: `interval-${input.blockId}`,
+            input,
+          }),
         activeIntervalBlockId: input.blockId,
         activeIntervalInput: input,
-      };
+      });
+
+      enqueue.sendTo(({ context: ctx }) => ctx.intervalBlockRef!, { type: 'START' });
     }),
-    forwardIntervalStart: sendTo(({ context }) => context.intervalBlockRef!, { type: 'START' }),
-    forwardIntervalCommand: ({ context, event }) => {
+    forwardIntervalCommand: enqueueActions(({ context, event, enqueue }) => {
       if (event.type !== 'INTERVAL_COMMAND') return;
       if (!context.intervalBlockRef || context.activeIntervalBlockId !== event.blockId) return;
+
       const type =
         event.command === 'PAUSE' ? 'PAUSE' : event.command === 'RESUME' ? 'RESUME' : 'RESET';
-      context.intervalBlockRef.send({ type });
-    },
-    forwardIntervalLogAmrapRound: ({ context, event }) => {
+
+      enqueue.sendTo(context.intervalBlockRef, { type });
+    }),
+    forwardIntervalLogAmrapRound: enqueueActions(({ context, event, enqueue }) => {
       if (event.type !== 'INTERVAL_LOG_AMRAP_ROUND') return;
       if (!context.intervalBlockRef || context.activeIntervalBlockId !== event.blockId) return;
-      context.intervalBlockRef.send({ type: 'LOG_AMRAP_ROUND' });
-    },
-    forwardIntervalVisibility: ({ context, event }) => {
+      enqueue.sendTo(context.intervalBlockRef, { type: 'LOG_AMRAP_ROUND' });
+    }),
+    forwardIntervalVisibility: enqueueActions(({ context, event, enqueue }) => {
       if (event.type !== 'VISIBILITY') return;
-      context.intervalBlockRef?.send({
+      if (!context.intervalBlockRef) return;
+
+      enqueue.sendTo(context.intervalBlockRef, {
         type: 'VISIBILITY',
         hidden: event.hidden,
       });
-    },
+    }),
   },
 }).createMachine({
   id: 'activeSession',
@@ -219,7 +228,7 @@ export const activeSessionMachine = setup({
         COACH_TRY_SENTINEL: { actions: 'forwardCoachTrySentinel' },
         COACH_RESET: { actions: 'forwardCoachReset' },
         INTERVAL_START: {
-          actions: ['spawnIntervalBlock', 'forwardIntervalStart'],
+          actions: 'handleIntervalStart',
         },
         INTERVAL_COMMAND: { actions: 'forwardIntervalCommand' },
         INTERVAL_LOG_AMRAP_ROUND: { actions: 'forwardIntervalLogAmrapRound' },
