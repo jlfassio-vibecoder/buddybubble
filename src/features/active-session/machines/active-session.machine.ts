@@ -1,8 +1,9 @@
-import { assign, sendTo, setup } from 'xstate';
+import { assign, sendTo, setup, stopChild } from 'xstate';
 import { coachSyncActor, type CoachThreadSnapshot } from '../actors/coach-sync.actor';
 import { finishWorkoutActor } from '../actors/finish-workout.actor';
 import { persistenceActor } from '../actors/persistence.actor';
 import { applyExecutionPatchToDraftLogs } from '@/lib/workout-factory/workout-log-mutations';
+import { intervalBlockMachine } from './interval-block.machine';
 import {
   activeSessionGuards,
   createInitialContext,
@@ -32,6 +33,7 @@ export const activeSessionMachine = setup({
     persistence: persistenceActor,
     finishWorkout: finishWorkoutActor,
     coachSync: coachSyncActor,
+    intervalBlock: intervalBlockMachine,
   },
   actions: {
     assignHydrateDone: assign(({ event, context }) => {
@@ -120,6 +122,57 @@ export const activeSessionMachine = setup({
     })),
     forwardCoachTrySentinel: sendTo(COACH_SYNC_ID, { type: 'TRY_SENTINEL' }),
     forwardCoachReset: sendTo(COACH_SYNC_ID, { type: 'RESET' }),
+    stopIntervalBlockIfRunning: ({ context }) => {
+      if (context.intervalBlockRef) {
+        stopChild(context.intervalBlockRef);
+      }
+    },
+    clearIntervalBlockRef: assign({
+      intervalBlockRef: null,
+      activeIntervalBlockId: null,
+      activeIntervalInput: null,
+    }),
+    assignIntervalSnapshot: assign(({ context, event }) => {
+      if (event.type !== 'INTERVAL_SNAPSHOT') return {};
+      return {
+        intervalRowSnapshots: {
+          ...context.intervalRowSnapshots,
+          [event.blockId]: event.snapshot,
+        },
+      };
+    }),
+    spawnIntervalBlock: assign(({ context, event, spawn }) => {
+      if (event.type !== 'INTERVAL_START') return {};
+      const { input } = event;
+      if (context.activeIntervalBlockId === input.blockId && context.intervalBlockRef) {
+        return {};
+      }
+      if (context.intervalBlockRef) {
+        stopChild(context.intervalBlockRef);
+      }
+      const ref = spawn('intervalBlock', {
+        id: `interval-${input.blockId}`,
+        input,
+      });
+      return {
+        intervalBlockRef: ref,
+        activeIntervalBlockId: input.blockId,
+        activeIntervalInput: input,
+      };
+    }),
+    forwardIntervalStart: sendTo(({ context }) => context.intervalBlockRef!, { type: 'START' }),
+    forwardIntervalCommand: ({ context, event }) => {
+      if (event.type !== 'INTERVAL_COMMAND') return;
+      if (!context.intervalBlockRef || context.activeIntervalBlockId !== event.blockId) return;
+      const type =
+        event.command === 'PAUSE' ? 'PAUSE' : event.command === 'RESUME' ? 'RESUME' : 'RESET';
+      context.intervalBlockRef.send({ type });
+    },
+    forwardIntervalLogAmrapRound: ({ context, event }) => {
+      if (event.type !== 'INTERVAL_LOG_AMRAP_ROUND') return;
+      if (!context.intervalBlockRef || context.activeIntervalBlockId !== event.blockId) return;
+      context.intervalBlockRef.send({ type: 'LOG_AMRAP_ROUND' });
+    },
   },
 }).createMachine({
   id: 'activeSession',
@@ -155,6 +208,15 @@ export const activeSessionMachine = setup({
         COACH_THREAD_SNAPSHOT: { actions: 'forwardCoachThreadSnapshot' },
         COACH_TRY_SENTINEL: { actions: 'forwardCoachTrySentinel' },
         COACH_RESET: { actions: 'forwardCoachReset' },
+        INTERVAL_START: {
+          actions: ['spawnIntervalBlock', 'forwardIntervalStart'],
+        },
+        INTERVAL_COMMAND: { actions: 'forwardIntervalCommand' },
+        INTERVAL_LOG_AMRAP_ROUND: { actions: 'forwardIntervalLogAmrapRound' },
+        INTERVAL_SNAPSHOT: { actions: 'assignIntervalSnapshot' },
+        BLOCK_INTERVAL_COMPLETE: {
+          actions: ['stopIntervalBlockIfRunning', 'clearIntervalBlockRef'],
+        },
       },
       invoke: [
         {
@@ -183,14 +245,28 @@ export const activeSessionMachine = setup({
               {
                 guard: 'canFinishImmediately',
                 target: '#activeSession.finishing',
-                actions: 'clearFinishError',
+                actions: [
+                  'stopIntervalBlockIfRunning',
+                  'clearIntervalBlockRef',
+                  'clearFinishError',
+                ],
               },
               {
-                actions: ['queueFinish', 'flushAutosave'],
+                actions: [
+                  'stopIntervalBlockIfRunning',
+                  'clearIntervalBlockRef',
+                  'queueFinish',
+                  'flushAutosave',
+                ],
               },
             ],
             ABANDON: {
-              actions: ['queueClose', 'flushAutosave'],
+              actions: [
+                'stopIntervalBlockIfRunning',
+                'clearIntervalBlockRef',
+                'queueClose',
+                'flushAutosave',
+              ],
             },
             COACH_SENTINEL_SEND: { actions: 'markSentinelFired' },
             COACH_SENTINEL_FAILED: { actions: 'markSentinelFailed' },

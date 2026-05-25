@@ -1,13 +1,16 @@
 import type { SetDraft } from '@/components/fitness/workout-block-renderer/WorkoutPlayerExercisePanel';
 import type { GhostSetSnapshot } from '@/lib/workout-factory/ghost-set-snapshot';
+import type { IntervalRowSnapshot } from '@/lib/workout-factory/interval-timer/types';
 import type { Json } from '@/types/database';
 import type { WorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import type { ExecutionPatch } from '@/types/execution-patch';
+import type { AnyActorRef } from 'xstate';
 import type { CoachThreadSnapshot } from '../actors/coach-sync.actor';
 import type { FinishWorkoutRunner } from '../actors/finish-workout.actor';
 import { createAdapterFinishWorkoutRunner } from '../actors/finish-workout.actor';
 import { createNoOpCoachSyncAdapter, type CoachSyncAdapter } from '../actors/coach-sync.actor';
 import { createNoOpPersistenceAdapter, type PersistenceAdapter } from '../actors/persistence.actor';
+import type { IntervalBlockInput } from '@/lib/workout-factory/interval-timer/resolve-interval-block-input';
 
 /** Matches WorkoutPlayer `AUTOSAVE_MS`. */
 export const AUTOSAVE_MS = 2000;
@@ -48,6 +51,10 @@ export type ActiveSessionContext = ActiveSessionInput & {
   persistenceAdapter: PersistenceAdapter;
   finishWorkoutRunner: FinishWorkoutRunner;
   coachSyncAdapter: CoachSyncAdapter;
+  intervalBlockRef: AnyActorRef | null;
+  activeIntervalBlockId: string | null;
+  activeIntervalInput: IntervalBlockInput | null;
+  intervalRowSnapshots: Record<string, IntervalRowSnapshot | null>;
 };
 
 export type ActiveSessionEvent =
@@ -72,10 +79,21 @@ export type ActiveSessionEvent =
   | { type: 'COACH_THREAD_SNAPSHOT'; snapshot: CoachThreadSnapshot }
   | { type: 'COACH_TRY_SENTINEL' }
   | { type: 'COACH_RESET' }
-  // Phase 3+ placeholders (not wired in Phase 0)
   | { type: 'VISIBILITY'; hidden: boolean }
   | { type: 'COACH_PATCH'; patch: ExecutionPatch }
-  | { type: 'BLOCK_INTERVAL_COMPLETE' }
+  | { type: 'BLOCK_INTERVAL_COMPLETE'; blockId: string }
+  | { type: 'INTERVAL_START'; input: IntervalBlockInput }
+  | {
+      type: 'INTERVAL_COMMAND';
+      blockId: string;
+      command: 'PAUSE' | 'RESUME' | 'RESET';
+    }
+  | { type: 'INTERVAL_LOG_AMRAP_ROUND'; blockId: string }
+  | {
+      type: 'INTERVAL_SNAPSHOT';
+      blockId: string;
+      snapshot: IntervalRowSnapshot | null;
+    }
   | { type: 'SESSION_TICK'; elapsedSec: number };
 
 export type GuardParams = {
@@ -113,5 +131,9 @@ export function createInitialContext(input: ActiveSessionInput): ActiveSessionCo
     startedAt: new Date().toISOString(),
     sentinelFired: false,
     sentinelFailed: false,
+    intervalBlockRef: null,
+    activeIntervalBlockId: null,
+    activeIntervalInput: null,
+    intervalRowSnapshots: {},
   };
 }

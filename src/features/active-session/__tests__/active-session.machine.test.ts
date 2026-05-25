@@ -276,4 +276,31 @@ describe('activeSessionMachine V1 scenario replay', () => {
     expect(getMachineStateValue(actor)).toBe('active.logging');
     expect(actor.getSnapshot().context.finishError).toBe('update_failed');
   });
+
+  it('INTERVAL_START spawns child and FINISH clears intervalBlockRef', async () => {
+    const actor = createStartedTestActor();
+
+    actor.send({
+      type: 'INTERVAL_START',
+      input: {
+        blockId: 'block-tabata',
+        format: 'tabata',
+        config: {
+          prepareMs: 0,
+          workMs: 20_000,
+          restMs: 10_000,
+          totalRounds: 2,
+        },
+      },
+    });
+
+    expect(actor.getSnapshot().context.intervalBlockRef).not.toBeNull();
+    expect(actor.getSnapshot().context.activeIntervalBlockId).toBe('block-tabata');
+
+    actor.send({ type: 'FINISH' });
+    await flushPromises();
+
+    expect(actor.getSnapshot().context.intervalBlockRef).toBeNull();
+    expect(actor.getSnapshot().context.activeIntervalBlockId).toBeNull();
+  });
 });

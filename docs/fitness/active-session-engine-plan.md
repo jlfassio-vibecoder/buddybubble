@@ -1,6 +1,6 @@
 # Active Session Engine — Architecture & Execution Plan
 
-**Status:** **Phases 0–1 shipped** · **Phase 2 in progress** (persistence, finish, editable logs, draft recovery — first half shipped) · **Phase 2.5 in progress** (Workout Logs routing + playbook seed shipped; migration deploy pending). XState-driven **Active Session** on a dedicated route. **Coexists** with modal **WorkoutPlayer** (V1); not a replacement.
+**Status:** **Phases 0–1 shipped** · **Phase 2 in progress** (persistence, finish, editable logs, Coach sync shipped; closing-state polish pending) · **Phase 2.5 in progress** (Workout Logs routing + playbook seed shipped; migration deploy pending) · **Phase 3 in progress** (Ghost UI + `last_performed_at` denorm shipped; interval nested machines next). XState-driven **Active Session** on a dedicated route. **Coexists** with modal **WorkoutPlayer** (V1); not a replacement.
 
 **Product name:** **Active Session** (not "WorkoutPlayer V2")  
 **Engineering module:** `src/features/active-session/`  
@@ -8,7 +8,7 @@
 
 **Prerequisites:** Parametric Workout Engine Steps 1–9 (shipped) · V1 `WorkoutPlayer` stabilization (refs, autosave hardening, timer catch-up — shipped on `feat/mobile-chat-thread-overlay`)
 
-**Next step:** Phase 2 second half — implement **`coach-sync.actor.ts` (2.3)** and wire **`SessionCoachPane` (2.4)**. Before broad prod dogfood: deploy **`20260830120000_backfill_fitness_workout_logs_bubble.sql` (2.5.2)** to existing workspaces.
+**Next step:** Phase 3 interval nested machines — implement **`interval-block.machine.ts` (3.1)** and wire parent `blockExecutor` spawn (**3.2**). Before broad prod dogfood: deploy **`20260830120000_backfill_fitness_workout_logs_bubble.sql` (2.5.2)** to existing workspaces.
 
 **Related:** [workout-player.md](./workout-player.md) (V1 reference) · [layout-shell-architecture.md](./views/layout-shell-architecture.md) · [parametric-step6-plan.md](./views/parametric-step6-plan.md) (Coach context / `live_set_counts`) · [rail-composer-tokens.md](../agents/coach/rail-composer-tokens.md)
 
@@ -78,7 +78,7 @@ src/features/active-session/
 │   └── types.ts                         # context, events, guards (shipped)
 ├── actors/
 │   ├── persistence.actor.ts             # debounced autosave fromCallback (shipped)
-│   ├── coach-sync.actor.ts              # finishWorkoutActor + Phase 2 coach stub
+│   ├── coach-sync.actor.ts              # sentinel + execution_patch sweep (Phase 2 shipped)
 │   └── session-clock.actor.ts           # Phase 1+ stub
 ├── __tests__/
 │   ├── active-session.machine.test.ts   # V1 scenario replay + concurrency (shipped)
@@ -96,8 +96,8 @@ src/features/active-session/
 ├── components/
 │   ├── ActiveSessionShell.tsx           # VM hydrate, machine, exit nav
 │   ├── SessionHUD.tsx                   # elapsed via useSelector + Back/Finish
-│   ├── SessionLogSurface.tsx            # read-only WorkoutPlayerBlockList
-│   └── SessionCoachPane.tsx             # stub (Phase 2)
+│   ├── SessionLogSurface.tsx            # editable WorkoutPlayerBlockList + ghostLogs
+│   └── SessionCoachPane.tsx             # WorkoutCoachRail wrapper (Phase 2 shipped)
 ├── hooks/
 │   └── useActiveSession.ts
 └── types/
@@ -142,7 +142,7 @@ src/lib/feature-flags/
 activeSessionMachine
 ├── persistence      → debounced draft write (2s)     [Phase 0 shipped]
 ├── finishWorkout    → finalize INSERT/UPDATE           [Phase 0 stub via adapter]
-├── coachSync        → sentinel + execution_patch       [Phase 2]
+├── coachSync        → sentinel + execution_patch (Phase 2 shipped; pre-session replay skipped)
 ├── sessionClock     → wall-clock elapsed_sec (SESSION_TICK from shell; actor Phase 2+)
 └── blockExecutor    → nested intervalBlockMachine       [Phase 3]
 ```
@@ -212,15 +212,15 @@ type SessionTelemetrySnapshot = {
 
 ## Phase overview
 
-| Phase   | Theme                              | Est.   | Ship criteria                                                                 |
-| ------- | ---------------------------------- | ------ | ----------------------------------------------------------------------------- |
-| **0**   | XState foundation + machine tests  | 1–2 wk | **Shipped** — 15 Vitest tests; no UI                                          |
-| **1**   | Session route shell + feature flag | 1 wk   | **Shipped** — route + flag; V1 remains default                                |
-| **2**   | Persistence + Coach actors         | 2 wk   | **In progress** — autosave/finish/editable logs shipped; Coach actors next    |
-| **2.5** | Playbook + Workout Logs routing    | —      | **In progress** — seed + routing shipped (`4a465cf`); backfill deploy pending |
-| **3**   | Interval nested machines           | 1 wk   | EMOM/Tabata/AMRAP on route; background catch-up modeled                       |
-| **4**   | Telemetry loop (Coach)             | 1–2 wk | Coach sees `set_logs` + interval performance in context                       |
-| **5**   | Optional convergence (deferred)    | TBD    | Only if product later chooses a single execution path                         |
+| Phase   | Theme                              | Est.   | Ship criteria                                                                           |
+| ------- | ---------------------------------- | ------ | --------------------------------------------------------------------------------------- |
+| **0**   | XState foundation + machine tests  | 1–2 wk | **Shipped** — 15 Vitest tests; no UI                                                    |
+| **1**   | Session route shell + feature flag | 1 wk   | **Shipped** — route + flag; V1 remains default                                          |
+| **2**   | Persistence + Coach actors         | 2 wk   | **In progress** — persistence/finish/logs + Coach sync shipped; closing polish next     |
+| **2.5** | Playbook + Workout Logs routing    | —      | **In progress** — seed + routing shipped (`4a465cf`); backfill deploy pending           |
+| **3**   | Ghost UI + intervals               | 1–2 wk | **In progress** — Ghost UI + `last_performed_at` shipped; nested interval machines next |
+| **4**   | Telemetry loop (Coach)             | 1–2 wk | Coach sees `set_logs` + interval performance in context                                 |
+| **5**   | Optional convergence (deferred)    | TBD    | Only if product later chooses a single execution path                                   |
 
 **Total (Phases 0–4):** ~5–8 weeks with testing and staged rollout. Phase 5 is **deferred** — WorkoutPlayer and Active Session continue side-by-side until explicitly revisited.
 
@@ -313,11 +313,11 @@ pnpm run dev
 
 ## Phase 2 — Persistence + Coach actors
 
-**Status:** **In progress** — first half shipped (`0c81509`)  
+**Status:** **In progress** — persistence/finish/logs shipped (`0c81509`); Coach sync shipped (`0f17dc4`)  
 **Depends on:** Phase 1  
 **Goal:** Move autosave, finish, sentinel, and execution_patch out of V1 effects into machine actors; wire editable log surface and in-progress draft recovery (Q5 client hydrate).
 
-**First half shipped:** Production `createProductionPersistenceAdapter` + `executeFinishWorkout`; client draft recovery via `recoverWorkoutSessionLogs`; editable `SessionLogSurface` (`workout-log-mutations`); `SESSION_TICK` hydration fix in `ActiveSessionShell`.
+**Shipped:** Production `createProductionPersistenceAdapter` + `executeFinishWorkout`; client draft recovery via `recoverWorkoutSessionLogs`; editable `SessionLogSurface` (`workout-log-mutations`); `SESSION_TICK` hydration fix in `ActiveSessionShell`. **`coach-sync.actor.ts`** + **`useActiveSessionCoachBridge`** + **`SessionCoachPane`** (V1-parity sentinel + `execution_patch` → `COACH_PATCH`; no V1 file edits).
 
 ### Tasks
 
@@ -327,11 +327,12 @@ pnpm run dev
 - [x] **2.2** Implement `finishing` state:
   - Reuse `buildWorkoutLogFinishMetadata`, `finalLogId` from context (not stale React state)
   - `syncAssignees` via existing `replaceTaskAssigneesWithUserIds`
-- [ ] **2.3** Implement `coach-sync.actor.ts`:
-  - Own `useMessageThread` subscription (single instance on route)
+- [x] **2.3** Implement `coach-sync.actor.ts`:
+  - Thread snapshot via `useActiveSessionCoachBridge` (not direct child actor — XState v5 `getChild` unavailable)
   - Sentinel send with retry on failure
   - Scan Coach messages → `COACH_PATCH` events with fingerprint dedupe
-- [ ] **2.4** Implement `SessionCoachPane.tsx` — consume prebuilt thread from machine/coach actor (port `WorkoutCoachRail` UI, no local thread hook)
+  - Skip `execution_patch` replay from messages before `sessionStartedAt` (Ghost UI — fresh session must not re-fill grid from task-thread history)
+- [x] **2.4** Implement `SessionCoachPane.tsx` — thin wrapper around `WorkoutCoachRail` (import only; V1 files untouched)
 - [ ] **2.5** Implement `handleClose` equivalent as `closing` state:
   - Clear debounce, await in-flight autosave, flush, navigate
   - `setClosing` equivalent = machine `closing` state (no stuck UI)
@@ -341,7 +342,7 @@ pnpm run dev
 ### Acceptance criteria
 
 - [x] Finish after autosave draft → one `completed` log, no orphan `in_progress` (dogfooded on Active Session route)
-- [ ] Coach patch applies when Coach tab not visible (mobile Workout tab)
+- [x] Coach patch applies when Coach tab not visible (mobile Workout tab) — `COACH_PATCH` via machine; patches during session only
 - [ ] Close mid-session → draft flushed (machine `closing` + `ABANDON` wired; production abandon nav TBD)
 - [x] Machine tests from Phase 0 still pass against production actors (with mocked Supabase)
 
@@ -391,17 +392,32 @@ _Note: Previous migration strategies have been deprecated in favor of this lean 
 
 ---
 
-## Phase 3 — Interval nested machines
+## Phase 3 — Ghost UI, readiness denorm, interval nested machines
 
-**Status:** Not started  
-**Depends on:** Phase 2  
-**Goal:** Model EMOM/Tabata/AMRAP as nested machines; explicit background suspension.
+**Status:** **In progress** — Ghost UI + `last_performed_at` shipped (`61d7292`); interval machines not started  
+**Depends on:** Phase 2 (minimum for Ghost hydrate/finish paths)  
+**Goal:** Read-only ghost hints for prior performance on fresh sessions; denormalize template readiness; then model EMOM/Tabata/AMRAP as nested machines with explicit background suspension.
+
+### Phase 3.0 — Ghost UI + Readiness Denormalization (shipped)
+
+**Status:** **Shipped** (`61d7292`)
+
+**Shipped:**
+
+- [x] **`ghostLogs` matrix** parallel to `draftLogs` — machine context + `HYDRATE_DONE`
+- [x] **`recoverWorkoutSessionLogs` v2-ghost mode** — blank editable `draftLogs` on fresh session; ghost from latest completed log; V1 `v1-prefill` preserved
+- [x] **Ghost placeholders** — `Last: …` per field, muted italic styling, dashed border on empty cells with ghost data (`WorkoutPlayerExercisePanel`; optional props — V1 callers unchanged)
+- [x] **`last_performed_at`** — `finish-workout.actor.ts` UPDATE on source template metadata (`source_task_id`, `item_type = 'workout'`) after log finalize
+- [x] **Stale draft guard** — skip superseded `in_progress` drafts when a newer completed log exists; delete orphan in-progress logs on finish
+- [x] **Tests** — ghost builders, recover v2/v1, finish actor template patch, coach-sync historical patch skip
+
+**Explicit non-goals (this slice):** Kanban UI reading `last_performed_at`; V1 WorkoutPlayer prefill changes; interval nested machines (below).
 
 ### Readiness Indicators / Denormalization
 
-To prevent N+1 query lag on the Kanban board, we will denormalize the last execution time. The `finish-workout.actor.ts` must execute an `UPDATE` on the original template task's metadata (using `source_task_id`) to inject `"last_performed_at": "<timestamp>"` when a session is completed.
+To prevent N+1 query lag on the Kanban board, denormalize the last execution time. **`finish-workout.actor.ts`** executes an `UPDATE` on the source template task's metadata (via `source_task_id`) to inject `"last_performed_at": "<timestamp>"` when a session is completed. **Shipped in `61d7292`.** Kanban card display is a follow-up.
 
-### Tasks
+### Phase 3.1+ — Interval nested machines (next)
 
 - [ ] **3.1** Implement `interval-block.machine.ts`:
   - Wrap `emomTimerReducer` / `intervalTimerReducer` / `amrapTimerReducer`
@@ -515,21 +531,22 @@ pnpm exec tsc --noEmit
 - [ ] Class board start with `class_instance_id`
 - [ ] Mobile Workout \| Coach tab switch during EMOM
 - [ ] Background / lock screen during Tabata
-- [ ] Coach execution_patch while on Workout tab
+- [ ] Coach execution_patch while on Workout tab (live session patches only; historical thread patches do not re-fill grid)
+- [x] Fresh session after finish → blank inputs with `Last:` ghost placeholders (Phase 3.0)
 - [ ] Network offline during autosave (document behavior; fix in follow-up if needed)
 
 ---
 
 ## Open questions (resolve before Phase 2–4)
 
-| #   | Question                                                        | Owner       | Decision deadline                                                                                                              |
-| --- | --------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Q1  | Offline / flaky network: IndexedDB queue for autosave?          | Eng         | Before Phase 2 ship                                                                                                            |
-| Q2  | Single machine + `classContext` input vs two variants?          | Eng         | Phase 1                                                                                                                        |
-| Q3  | Share `blockExecutor` with live-video `SessionDeck*`?           | Eng         | Phase 3                                                                                                                        |
-| Q4  | Telemetry transport: silent message vs poll draft row only?     | Eng + Coach | Phase 4                                                                                                                        |
-| Q5  | Server Component task fetch on session route vs client-only?    | Eng         | **Resolved: Server Component fetch in `page.tsx`**; in-progress draft recovery stays client/XState in Phase 2                  |
-| Q9  | Denormalize `last_performed_at` on template metadata on finish? | Eng         | **Resolved: yes** — `finish-workout.actor.ts` UPDATE on source template via `source_task_id`; see Phase 3 Readiness Indicators |
+| #   | Question                                                        | Owner       | Decision deadline                                                                                                       |
+| --- | --------------------------------------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Q1  | Offline / flaky network: IndexedDB queue for autosave?          | Eng         | Before Phase 2 ship                                                                                                     |
+| Q2  | Single machine + `classContext` input vs two variants?          | Eng         | Phase 1                                                                                                                 |
+| Q3  | Share `blockExecutor` with live-video `SessionDeck*`?           | Eng         | Phase 3                                                                                                                 |
+| Q4  | Telemetry transport: silent message vs poll draft row only?     | Eng + Coach | Phase 4                                                                                                                 |
+| Q5  | Server Component task fetch on session route vs client-only?    | Eng         | **Resolved: Server Component fetch in `page.tsx`**; in-progress draft recovery stays client/XState in Phase 2           |
+| Q9  | Denormalize `last_performed_at` on template metadata on finish? | Eng         | **Resolved: yes — shipped (`61d7292`)** — `finish-workout.actor.ts` UPDATE on source template; Kanban display follow-up |
 
 ---
 
@@ -549,26 +566,28 @@ pnpm exec tsc --noEmit
 
 Update this table as phases ship.
 
-| Phase | Status          | Shipped commit / PR | Notes                                                                     |
-| ----- | --------------- | ------------------- | ------------------------------------------------------------------------- |
-| 0     | **Shipped**     | `ade54d5`           | XState machine + 15 Vitest tests                                          |
-| 1     | **Shipped**     | `b5d6a9b`           | Route shell, read-only log, HUD, flag, WorkspaceShellGate, safe exit      |
-| 2     | **In progress** | `0c81509`           | Persistence, finish, editable logs, draft recovery; Coach actors next     |
-| 2.5   | **In progress** | `4a465cf`           | Workout Logs routing + playbook seed; backfill deploy + V1 parity pending |
-| 3     | Not started     | —                   | Intervals + `last_performed_at` denormalization on finish                 |
-| 4     | Not started     | —                   |                                                                           |
-| 5     | Deferred        | —                   | Side-by-side; convergence TBD                                             |
+| Phase | Status          | Shipped commit / PR | Notes                                                                             |
+| ----- | --------------- | ------------------- | --------------------------------------------------------------------------------- |
+| 0     | **Shipped**     | `ade54d5`           | XState machine + 15 Vitest tests                                                  |
+| 1     | **Shipped**     | `b5d6a9b`           | Route shell, read-only log, HUD, flag, WorkspaceShellGate, safe exit              |
+| 2     | **In progress** | `0f17dc4`           | Persistence, finish, logs, Coach sync; closing polish + integration tests pending |
+| 2.5   | **In progress** | `4a465cf`           | Workout Logs routing + playbook seed; backfill deploy + V1 parity pending         |
+| 3     | **In progress** | `61d7292`           | Ghost UI + `last_performed_at`; interval nested machines (3.1+) next              |
+| 4     | Not started     | —                   |                                                                                   |
+| 5     | Deferred        | —                   | Side-by-side; convergence TBD                                                     |
 
 ---
 
 ## Changelog
 
-| Date       | Change                                                                                                                          |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-05-24 | Initial plan — architecture proposal → execution doc                                                                            |
-| 2026-05-24 | Coexistence — Active Session side-by-side with WorkoutPlayer; Phase 5 convergence deferred                                      |
-| 2026-05-24 | **Phase 0 shipped** — XState machine, persistence actor, concurrency tests; polish (fail-stop, fast-path FINISH, `finishError`) |
-| 2026-05-24 | **Phase 1 shipped** — session route, read-only log, HUD, feature flag, WorkspaceShellGate, safe `?return=`                      |
-| 2026-05-24 | Phase 1 polish — parallel V1 modal triggers, Back enabled during autosave, open-redirect fix                                    |
-| 2026-05-24 | **Phase 2 first half shipped** — Supabase persistence/finish, draft recovery, editable log surface (`0c81509`)                  |
-| 2026-05-24 | **Phase 2.5 partial** — Workout Logs bubble routing, `targetBubbleId`, playbook seed taxonomy, backfill migration (`4a465cf`)   |
+| Date       | Change                                                                                                                                                            |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-05-24 | Initial plan — architecture proposal → execution doc                                                                                                              |
+| 2026-05-24 | Coexistence — Active Session side-by-side with WorkoutPlayer; Phase 5 convergence deferred                                                                        |
+| 2026-05-24 | **Phase 0 shipped** — XState machine, persistence actor, concurrency tests; polish (fail-stop, fast-path FINISH, `finishError`)                                   |
+| 2026-05-24 | **Phase 1 shipped** — session route, read-only log, HUD, feature flag, WorkspaceShellGate, safe `?return=`                                                        |
+| 2026-05-24 | Phase 1 polish — parallel V1 modal triggers, Back enabled during autosave, open-redirect fix                                                                      |
+| 2026-05-24 | **Phase 2 first half shipped** — Supabase persistence/finish, draft recovery, editable log surface (`0c81509`)                                                    |
+| 2026-05-24 | **Phase 2.5 partial** — Workout Logs bubble routing, `targetBubbleId`, playbook seed taxonomy, backfill migration (`4a465cf`)                                     |
+| 2026-05-24 | **Phase 2 Coach sync shipped** — `coach-sync.actor`, bridge, `SessionCoachPane`, `COACH_PATCH` + sentinel V1 parity (`0f17dc4`)                                   |
+| 2026-05-25 | **Phase 3.0 shipped** — Ghost UI (`ghostLogs`, blank v2 hydrate, `Last:` placeholders), `last_performed_at` denorm, stale-draft + coach replay guards (`61d7292`) |

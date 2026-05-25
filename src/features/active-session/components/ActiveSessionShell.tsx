@@ -14,6 +14,7 @@ import {
   type CoachSyncAdapter,
 } from '@/features/active-session';
 import { useActiveSessionCoachBridge } from '@/features/active-session/hooks/useActiveSessionCoachBridge';
+import { useActiveSessionIntervalControls } from '@/features/active-session/hooks/useActiveSessionIntervalControls';
 import { useWorkoutSessionViewModel } from '@/hooks/use-workout-session-view-model';
 import { formatUserFacingError } from '@/lib/format-error';
 import { buildBlankSessionDraftLogs } from '@/lib/workout-factory/ghost-set-snapshot';
@@ -215,6 +216,13 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
     [send],
   );
 
+  const { onIntervalStart, intervalMachineControlByBlockId } = useActiveSessionIntervalControls({
+    send,
+    activeIntervalBlockId: snapshot.context.activeIntervalBlockId,
+    activeIntervalInput: snapshot.context.activeIntervalInput,
+    intervalBlockRef: snapshot.context.intervalBlockRef,
+  });
+
   const handleAbandon = () => {
     send({ type: 'ABANDON' });
     const safeReturn = safeNextPath(returnUrl);
@@ -272,6 +280,10 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
             unit={unit}
             disabled={logSurfaceDisabled}
             onDraftLogsChange={onDraftLogsChange}
+            useIntervalMachine={isActiveSession}
+            intervalRowSnapshots={snapshot.context.intervalRowSnapshots}
+            onIntervalStart={onIntervalStart}
+            intervalMachineControlByBlockId={intervalMachineControlByBlockId}
           />
           <SessionCoachPane
             bubbleId={task.bubble_id}

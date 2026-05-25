@@ -14,3 +14,4 @@ export {
   TabataIntervalShell,
   type TabataIntervalShellProps,
 } from '@/components/fitness/interval-shells/TabataIntervalShell';
+export { type IntervalShellMachineControl } from '@/components/fitness/interval-shells/interval-shell-control';

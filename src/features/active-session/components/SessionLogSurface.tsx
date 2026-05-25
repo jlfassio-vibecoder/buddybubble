@@ -7,6 +7,11 @@ import { WorkoutPlayerExercisePanel } from '@/components/fitness/workout-block-r
 import type { SetDraft } from '@/components/fitness/workout-block-renderer/WorkoutPlayerExercisePanel';
 import type { GhostSetSnapshot } from '@/lib/workout-factory/ghost-set-snapshot';
 import type { WorkoutSessionViewModel } from '@/hooks/use-workout-session-view-model';
+import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
+import type { IntervalRowSnapshot } from '@/lib/workout-factory/interval-timer/types';
+import type { IntervalShellMachineControl } from '@/components/fitness/interval-shells/interval-shell-control';
+import { buildPlayerExerciseIndexLookup } from '@/lib/workout-factory/workout-player-exercise-index';
+import { appendAmrapRoundRows } from '@/lib/workout-factory/interval-timer/append-amrap-round-rows';
 import {
   appendSetRow,
   applySetChange,
@@ -20,6 +25,10 @@ type Props = {
   unit: string;
   disabled?: boolean;
   onDraftLogsChange: (next: SetDraft[][]) => void;
+  useIntervalMachine?: boolean;
+  intervalRowSnapshots?: Record<string, IntervalRowSnapshot | null>;
+  onIntervalStart?: (block: WorkoutSessionBlockView) => void;
+  intervalMachineControlByBlockId?: Record<string, IntervalShellMachineControl | undefined>;
 };
 
 export function SessionLogSurface({
@@ -29,6 +38,10 @@ export function SessionLogSurface({
   unit,
   disabled = false,
   onDraftLogsChange,
+  useIntervalMachine = false,
+  intervalRowSnapshots,
+  onIntervalStart,
+  intervalMachineControlByBlockId,
 }: Props) {
   const { flatExercises, blocks } = viewModel;
   const useBlockList = blocks.length > 0;
@@ -59,6 +72,17 @@ export function SessionLogSurface({
     [disabled, draftLogs, flatExercises, onDraftLogsChange],
   );
 
+  const onLogAmrapRound = useCallback(
+    (blockId: string) => {
+      if (disabled) return;
+      const indices = buildPlayerExerciseIndexLookup(blocks)
+        .filter((entry) => entry.blockId === blockId)
+        .map((entry) => entry.globalIndex);
+      onDraftLogsChange(appendAmrapRoundRows(draftLogs, indices, flatExercises));
+    },
+    [disabled, blocks, draftLogs, flatExercises, onDraftLogsChange],
+  );
+
   return (
     <section
       className="min-h-0 overflow-auto rounded-lg border border-border bg-card p-4"
@@ -81,7 +105,11 @@ export function SessionLogSurface({
           onSetChange={onSetChange}
           onToggleDone={onToggleDone}
           onAddSet={onAddSet}
-          onLogAmrapRound={() => {}}
+          onLogAmrapRound={onLogAmrapRound}
+          useIntervalMachine={useIntervalMachine}
+          intervalRowSnapshots={intervalRowSnapshots}
+          onIntervalStart={onIntervalStart}
+          intervalMachineControlByBlockId={intervalMachineControlByBlockId}
         />
       ) : (
         <div className="space-y-6">
