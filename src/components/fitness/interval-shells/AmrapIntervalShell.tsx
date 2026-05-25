@@ -15,6 +15,7 @@ import {
   useIntervalBlockAmrapRoundCount,
   useIntervalBlockEngine,
   useIntervalBlockGetElapsedMs,
+  useIntervalBlockGetRemainingMs,
 } from '@/hooks/use-interval-block-actor-display';
 import { cn } from '@/lib/utils';
 
@@ -149,6 +150,7 @@ function AmrapIntervalShellMachine({
   const engine = useIntervalBlockEngine(intervalBlockRef);
   const roundCount = useIntervalBlockAmrapRoundCount(intervalBlockRef);
   const getElapsedMs = useIntervalBlockGetElapsedMs(intervalBlockRef);
+  const getRemainingMs = useIntervalBlockGetRemainingMs(intervalBlockRef);
   const snapshot = engine ? deriveAmrapDisplayFromEngine(engine) : null;
 
   if (!snapshot || engine?.format !== 'amrap') return null;
@@ -157,7 +159,7 @@ function AmrapIntervalShellMachine({
   const { audioEnabled, toggleAudio, primeAudio } = useIntervalShellPolish({
     isRunning: snapshot.phase === 'running',
     isPaused: snapshot.isPaused,
-    remainingMs: snapshot.remainingMs,
+    getRemainingMs,
     cueSegmentKey: 'global',
     amrapTenSecondWarning: true,
   });

@@ -19,6 +19,7 @@ import {
   deriveTabataDisplayFromEngine,
   useIntervalBlockEngine,
   useIntervalBlockGetElapsedMs,
+  useIntervalBlockGetRemainingMs,
 } from '@/hooks/use-interval-block-actor-display';
 import { cn } from '@/lib/utils';
 
@@ -172,6 +173,7 @@ function TabataIntervalShellMachine({
   const { intervalBlockRef } = machineControl;
   const engine = useIntervalBlockEngine(intervalBlockRef);
   const getElapsedMs = useIntervalBlockGetElapsedMs(intervalBlockRef);
+  const getRemainingMs = useIntervalBlockGetRemainingMs(intervalBlockRef);
   const snapshot = engine ? deriveTabataDisplayFromEngine(engine) : null;
 
   if (!snapshot || engine?.format !== 'tabata') return null;
@@ -180,7 +182,7 @@ function TabataIntervalShellMachine({
   const { audioEnabled, toggleAudio, primeAudio } = useIntervalShellPolish({
     isRunning: snapshot.isRunning,
     isPaused: snapshot.isPaused,
-    remainingMs: snapshot.remainingMs,
+    getRemainingMs,
     cueSegmentKey,
   });
 

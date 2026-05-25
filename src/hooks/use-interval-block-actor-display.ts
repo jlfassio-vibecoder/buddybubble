@@ -52,6 +52,26 @@ export function useIntervalBlockGetElapsedMs(intervalBlockRef: AnyActorRef | nul
   }, [intervalBlockRef]);
 }
 
+/** Live remaining ms for audio cues — reads actor snapshot + Date.now() on demand. */
+export function useIntervalBlockGetRemainingMs(intervalBlockRef: AnyActorRef | null | undefined) {
+  return useCallback(() => {
+    if (!intervalBlockRef) return 0;
+    const { engine } = intervalBlockRef.getSnapshot().context;
+    const now = Date.now();
+
+    switch (engine.format) {
+      case 'tabata':
+        return deriveIntervalTimerSnapshot(engine.state, now).remainingMs;
+      case 'emom':
+        return deriveEmomTimerSnapshot(engine.state, now).remainingMs;
+      case 'amrap':
+        return deriveAmrapTimerSnapshot(engine.state, now).remainingMs;
+      default:
+        return 0;
+    }
+  }, [intervalBlockRef]);
+}
+
 export function deriveTabataDisplayFromEngine(engine: IntervalEngineState, now = Date.now()) {
   if (engine.format !== 'tabata') return null;
   return deriveIntervalTimerSnapshot(engine.state, now);

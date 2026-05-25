@@ -15,6 +15,7 @@ import {
   deriveEmomDisplayFromEngine,
   useIntervalBlockEngine,
   useIntervalBlockGetElapsedMs,
+  useIntervalBlockGetRemainingMs,
 } from '@/hooks/use-interval-block-actor-display';
 import { cn } from '@/lib/utils';
 
@@ -69,6 +70,7 @@ function EmomIntervalShellMachine({
   const { intervalBlockRef } = machineControl;
   const engine = useIntervalBlockEngine(intervalBlockRef);
   const getElapsedMs = useIntervalBlockGetElapsedMs(intervalBlockRef);
+  const getRemainingMs = useIntervalBlockGetRemainingMs(intervalBlockRef);
   const snapshot = engine ? deriveEmomDisplayFromEngine(engine) : null;
 
   if (!snapshot || engine?.format !== 'emom') return null;
@@ -76,7 +78,7 @@ function EmomIntervalShellMachine({
   const { audioEnabled, toggleAudio, primeAudio } = useIntervalShellPolish({
     isRunning: snapshot.isRunning,
     isPaused: snapshot.isPaused,
-    remainingMs: snapshot.remainingMs,
+    getRemainingMs,
     cueSegmentKey: String(snapshot.roundIndex),
   });
 
