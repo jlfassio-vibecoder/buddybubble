@@ -79,6 +79,7 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
       sessionId,
       sourceTaskId: task.id,
       bubbleId: task.bubble_id,
+      targetBubbleId: task.target_bubble_id,
       workspaceId,
       classInstanceId,
       sourceMetadata: task.metadata,
@@ -92,6 +93,7 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
       sessionId,
       task.id,
       task.bubble_id,
+      task.target_bubble_id,
       task.metadata,
       workspaceId,
       classInstanceId,
@@ -124,7 +126,7 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
       try {
         const result = await recoverWorkoutSessionLogs({
           supabase,
-          bubbleId: task.bubble_id,
+          logBubbleId: task.target_bubble_id,
           sourceTaskId: task.id,
           exercises: viewModel.flatExercises,
           blocks: viewModel.blocks,
@@ -144,7 +146,7 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [send, supabase, task.bubble_id, task.id, viewModel.flatExercises, viewModel.blocks]);
+  }, [send, supabase, task.target_bubble_id, task.id, viewModel.flatExercises, viewModel.blocks]);
 
   useEffect(() => {
     if (!sessionStartedAt) return;

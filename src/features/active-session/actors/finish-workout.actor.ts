@@ -159,7 +159,7 @@ export async function executeFinishWorkout(
   const { data: insertedLog, error: insertError } = await supabase
     .from('tasks')
     .insert({
-      bubble_id: context.bubbleId,
+      bubble_id: context.targetBubbleId,
       title: `${workoutTitle} — Log`,
       item_type: 'workout_log',
       status: 'completed',

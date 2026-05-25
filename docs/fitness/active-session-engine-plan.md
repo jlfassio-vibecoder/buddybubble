@@ -350,11 +350,49 @@ pnpm exec tsc --noEmit
 
 ---
 
+## Phase 2.5 — Playbook Architecture & Workout Logs Routing
+
+**Status:** Next  
+**Depends on:** Phase 2 first half  
+**Goal:** Decouple execution telemetry from template boards; seed and route all Active Session logs to Workout Logs. Add 'Vault' (slug: `vault`) to fitness seed columns. Templates are manually retired to Vault. Active Session logs continue to resolve to 'Completed' (slug: `completed`) in the Workout Logs bubble. No data migrations required; legacy test data will be manually purged.
+
+### Playbook column taxonomy (fitness templates on Workouts bubble)
+
+| Current slug | Playbook label | Semantics                                                                         |
+| ------------ | -------------- | --------------------------------------------------------------------------------- |
+| `planned`    | Active Split   | Templates in the current rotation; strict manual position order (no auto-sort)    |
+| `scheduled`  | Scheduled      | (unchanged) — future-dated templates                                              |
+| `today`      | Today          | (unchanged) — promoted scheduled-for-today                                        |
+| `completed`  | Completed      | Finished Logs (receives automated execution telemetry in the Workout Logs bubble) |
+| `vault`      | Vault          | Retired / archived templates (manual move only; never set by session finish)      |
+
+_Note: Previous migration strategies have been deprecated in favor of this lean MVP taxonomy. Existing users will manage their own board hygiene._
+
+### Tasks
+
+- [ ] **2.5.1** Update `WORKSPACE_SEED_BY_CATEGORY.fitness.columns` to include the new Vault column (`slug: 'vault'`) and rename `planned` to `Active Split`.
+- [ ] **2.5.2** Deploy `20260830120000_backfill_fitness_workout_logs_bubble.sql` to all envs (to route telemetry away from templates).
+- [ ] **2.5.3** Document playbook rule: finish never updates source template status.
+- [ ] **2.5.4** Dogfood: finish session → log in Workout Logs → Completed; template unchanged on Workouts → Active Split.
+- [ ] **2.5.5** (Follow-up) Route V1 `WorkoutPlayer` INSERTs to `targetBubbleId` for parity.
+
+### Acceptance criteria
+
+- [ ] New fitness workspaces seed Workout Logs bubble + Vault column.
+- [ ] Active Session logs land only in Workout Logs bubble under Completed.
+- [ ] Source workout templates never auto-move to Vault or Completed on finish.
+
+---
+
 ## Phase 3 — Interval nested machines
 
 **Status:** Not started  
 **Depends on:** Phase 2  
 **Goal:** Model EMOM/Tabata/AMRAP as nested machines; explicit background suspension.
+
+### Readiness Indicators / Denormalization
+
+To prevent N+1 query lag on the Kanban board, we will denormalize the last execution time. The `finish-workout.actor.ts` must execute an `UPDATE` on the original template task's metadata (using `source_task_id`) to inject `"last_performed_at": "<timestamp>"` when a session is completed.
 
 ### Tasks
 
@@ -477,13 +515,14 @@ pnpm exec tsc --noEmit
 
 ## Open questions (resolve before Phase 2–4)
 
-| #   | Question                                                     | Owner       | Decision deadline                                                                                             |
-| --- | ------------------------------------------------------------ | ----------- | ------------------------------------------------------------------------------------------------------------- |
-| Q1  | Offline / flaky network: IndexedDB queue for autosave?       | Eng         | Before Phase 2 ship                                                                                           |
-| Q2  | Single machine + `classContext` input vs two variants?       | Eng         | Phase 1                                                                                                       |
-| Q3  | Share `blockExecutor` with live-video `SessionDeck*`?        | Eng         | Phase 3                                                                                                       |
-| Q4  | Telemetry transport: silent message vs poll draft row only?  | Eng + Coach | Phase 4                                                                                                       |
-| Q5  | Server Component task fetch on session route vs client-only? | Eng         | **Resolved: Server Component fetch in `page.tsx`**; in-progress draft recovery stays client/XState in Phase 2 |
+| #   | Question                                                        | Owner       | Decision deadline                                                                                                              |
+| --- | --------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Q1  | Offline / flaky network: IndexedDB queue for autosave?          | Eng         | Before Phase 2 ship                                                                                                            |
+| Q2  | Single machine + `classContext` input vs two variants?          | Eng         | Phase 1                                                                                                                        |
+| Q3  | Share `blockExecutor` with live-video `SessionDeck*`?           | Eng         | Phase 3                                                                                                                        |
+| Q4  | Telemetry transport: silent message vs poll draft row only?     | Eng + Coach | Phase 4                                                                                                                        |
+| Q5  | Server Component task fetch on session route vs client-only?    | Eng         | **Resolved: Server Component fetch in `page.tsx`**; in-progress draft recovery stays client/XState in Phase 2                  |
+| Q9  | Denormalize `last_performed_at` on template metadata on finish? | Eng         | **Resolved: yes** — `finish-workout.actor.ts` UPDATE on source template via `source_task_id`; see Phase 3 Readiness Indicators |
 
 ---
 

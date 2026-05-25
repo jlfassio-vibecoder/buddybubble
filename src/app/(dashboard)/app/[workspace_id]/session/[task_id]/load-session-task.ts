@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { normalizeItemType } from '@/lib/item-types';
+import { resolveWorkoutLogsBubbleId } from '@/lib/fitness/resolve-workout-logs-bubble-id';
 import type { ActiveSessionTaskPayload } from '@/features/active-session/types/session-task';
 
 export async function loadActiveSessionTask(
@@ -39,10 +40,13 @@ export async function loadActiveSessionTask(
 
   if (bubbleError || !bubble || bubble.workspace_id !== workspaceId) return null;
 
+  const targetBubbleId = await resolveWorkoutLogsBubbleId(supabase, workspaceId, task.bubble_id);
+
   return {
     id: task.id,
     title: task.title,
     bubble_id: task.bubble_id,
+    target_bubble_id: targetBubbleId,
     metadata: task.metadata,
     item_type: task.item_type,
   };

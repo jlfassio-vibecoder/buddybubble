@@ -10,7 +10,8 @@ import { isSetDraftMatrix } from '@/lib/workout-factory/workout-log-matrix';
 
 export type RecoverWorkoutSessionLogsParams = {
   supabase: SupabaseClient;
-  bubbleId: string;
+  /** Bubble where workout_log rows are stored (Workout Logs channel). */
+  logBubbleId: string;
   sourceTaskId: string;
   exercises: WorkoutExercise[];
   blocks: WorkoutSessionBlockView[];
@@ -23,7 +24,7 @@ export type RecoverWorkoutSessionLogsResult = {
 
 async function prefillFromHistoricalCompletedLog(
   supabase: SupabaseClient,
-  bubbleId: string,
+  logBubbleId: string,
   sourceTaskId: string,
   exercises: WorkoutExercise[],
   blocks: WorkoutSessionBlockView[],
@@ -33,7 +34,7 @@ async function prefillFromHistoricalCompletedLog(
   const { data: historical } = await supabase
     .from('tasks')
     .select('metadata')
-    .eq('bubble_id', bubbleId)
+    .eq('bubble_id', logBubbleId)
     .eq('item_type', 'workout_log')
     .eq('status', 'completed')
     .eq('metadata->>source_task_id', sourceTaskId)
@@ -85,12 +86,12 @@ async function prefillFromHistoricalCompletedLog(
 export async function recoverWorkoutSessionLogs(
   params: RecoverWorkoutSessionLogsParams,
 ): Promise<RecoverWorkoutSessionLogsResult> {
-  const { supabase, bubbleId, sourceTaskId, exercises, blocks } = params;
+  const { supabase, logBubbleId, sourceTaskId, exercises, blocks } = params;
 
   const { data: draft, error } = await supabase
     .from('tasks')
     .select('id, metadata')
-    .eq('bubble_id', bubbleId)
+    .eq('bubble_id', logBubbleId)
     .eq('item_type', 'workout_log')
     .eq('status', 'in_progress')
     .eq('metadata->>source_task_id', sourceTaskId)
@@ -115,7 +116,7 @@ export async function recoverWorkoutSessionLogs(
 
   const draftLogs = await prefillFromHistoricalCompletedLog(
     supabase,
-    bubbleId,
+    logBubbleId,
     sourceTaskId,
     exercises,
     blocks,

@@ -76,7 +76,7 @@ export function createProductionPersistenceAdapter(
       const { data, error } = await deps.supabase
         .from('tasks')
         .insert({
-          bubble_id: ctx.bubbleId,
+          bubble_id: ctx.targetBubbleId,
           title: `${deps.workoutTitle} — Log`,
           item_type: 'workout_log',
           status: 'in_progress',

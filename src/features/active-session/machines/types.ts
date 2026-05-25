@@ -12,6 +12,7 @@ export type ActiveSessionInput = {
   sessionId: string;
   sourceTaskId: string;
   bubbleId: string;
+  targetBubbleId: string;
   workspaceId: string;
   classInstanceId?: string | null;
   sourceMetadata: Json | null;
