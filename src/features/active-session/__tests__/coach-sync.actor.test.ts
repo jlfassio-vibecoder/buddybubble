@@ -16,14 +16,17 @@ describe('coachSync actor', () => {
       ...createNoOpCoachSyncAdapter(),
     };
     const actor = createStartedTestActor({ coachSyncAdapter: adapter });
+    const sessionStartedAt = actor.getSnapshot().context.startedAt;
 
     const snapshot = {
       isLoading: false,
       coachAuthUserId: 'coach-user',
+      sessionStartedAt,
       messages: [
         {
           id: 'msg-1',
           user_id: 'coach-user',
+          created_at: new Date(Date.now() + 60_000).toISOString(),
           metadata: {
             execution_patch: [{ exerciseIndex: 0, setIndex: 0, weight: '135' }],
           },
@@ -36,6 +39,33 @@ describe('coachSync actor', () => {
     await Promise.resolve();
 
     expect(actor.getSnapshot().context.draftLogs[0][0].weight).toBe('135');
+  });
+
+  it('does not replay execution_patch from before sessionStartedAt (Ghost UI)', async () => {
+    const actor = createStartedTestActor();
+    const sessionStartedAt = actor.getSnapshot().context.startedAt;
+
+    actor.send({
+      type: 'COACH_THREAD_SNAPSHOT',
+      snapshot: {
+        isLoading: false,
+        coachAuthUserId: 'coach-user',
+        sessionStartedAt,
+        messages: [
+          {
+            id: 'msg-historical',
+            user_id: 'coach-user',
+            created_at: '2026-05-25T09:21:00.000Z',
+            metadata: {
+              execution_patch: [{ exerciseIndex: 0, setIndex: 0, weight: '50' }],
+            },
+          },
+        ],
+      } as never,
+    });
+    await Promise.resolve();
+
+    expect(actor.getSnapshot().context.draftLogs[0][0].weight).toBe('100');
   });
 
   it('skips silent workout sentinels when scanning patches', async () => {

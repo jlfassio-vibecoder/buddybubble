@@ -48,6 +48,7 @@ export type UseActiveSessionCoachBridgeArgs = {
   draftLogs: SetDraft[][];
   sessionVm: WorkoutSessionViewModel;
   sentinelFired: boolean;
+  sessionStartedAt: string | null;
 };
 
 function sendCoachSyncEvent(send: CoachBridgeSend, event: ActiveSessionEvent): void {
@@ -68,6 +69,7 @@ export function useActiveSessionCoachBridge({
   draftLogs,
   sessionVm,
   sentinelFired,
+  sessionStartedAt,
 }: UseActiveSessionCoachBridgeArgs) {
   const profile = useUserProfileStore((s) => s.profile);
   const loadProfile = useUserProfileStore((s) => s.loadProfile);
@@ -268,9 +270,17 @@ export function useActiveSessionCoachBridge({
         messages: messageThread.messages,
         isLoading: messageThread.isLoading,
         coachAuthUserId,
+        sessionStartedAt,
       },
     });
-  }, [coachAvailableAgents, enabled, messageThread.isLoading, messageThread.messages, send]);
+  }, [
+    coachAvailableAgents,
+    enabled,
+    messageThread.isLoading,
+    messageThread.messages,
+    send,
+    sessionStartedAt,
+  ]);
 
   useEffect(() => {
     if (!enabled) return;

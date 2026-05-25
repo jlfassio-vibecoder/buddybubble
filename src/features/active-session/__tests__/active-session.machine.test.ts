@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AUTOSAVE_MS, activeSessionGuards, createInitialContext } from '../machines/types';
-import { createDefaultInput, createEditedDraftLogs } from './test-utils/fixtures';
+import {
+  createDefaultInput,
+  createEditedDraftLogs,
+  createSampleDraftLogs,
+} from './test-utils/fixtures';
 import {
   advanceAutosave,
   createMockPersistenceAdapter,
@@ -42,6 +46,20 @@ describe('persistence actor debounce (via machine)', () => {
 });
 
 describe('activeSessionMachine guards', () => {
+  it('assigns ghostLogs from HYDRATE_DONE', () => {
+    const actor = createTestActor();
+    actor.start();
+    const ghostLogs = [[{ weight: '200', reps: '5', rpe: '8' }]];
+    actor.send({
+      type: 'HYDRATE_DONE',
+      draftLogs: createSampleDraftLogs(),
+      ghostLogs,
+      logTaskId: null,
+    });
+    expect(actor.getSnapshot().context.ghostLogs).toEqual(ghostLogs);
+    expect(getMachineStateValue(actor)).toBe('active.logging');
+  });
+
   it('canFinishImmediately is false while autosave is scheduled', () => {
     const context = createInitialContext(createDefaultInput());
     context.autosaveScheduled = true;

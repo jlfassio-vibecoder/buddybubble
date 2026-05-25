@@ -1,4 +1,5 @@
 import type { SetDraft } from '@/components/fitness/workout-block-renderer/WorkoutPlayerExercisePanel';
+import type { GhostSetSnapshot } from '@/lib/workout-factory/ghost-set-snapshot';
 import type { Json } from '@/types/database';
 import type { WorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import type { ExecutionPatch } from '@/types/execution-patch';
@@ -22,6 +23,7 @@ export type ActiveSessionInput = {
   workoutTitle: string;
   sessionVm: WorkoutSessionViewModel;
   draftLogs: SetDraft[][];
+  ghostLogs?: GhostSetSnapshot[][];
   persistenceAdapter?: PersistenceAdapter;
   finishWorkoutRunner?: FinishWorkoutRunner;
   coachSyncAdapter?: CoachSyncAdapter;
@@ -30,6 +32,7 @@ export type ActiveSessionInput = {
 export type ActiveSessionContext = ActiveSessionInput & {
   hydrationError: string | null;
   logTaskId: string | null;
+  ghostLogs: GhostSetSnapshot[][];
   pendingInsert: boolean;
   autosaveInFlight: boolean;
   autosaveScheduled: boolean;
@@ -48,7 +51,12 @@ export type ActiveSessionContext = ActiveSessionInput & {
 };
 
 export type ActiveSessionEvent =
-  | { type: 'HYDRATE_DONE'; draftLogs?: SetDraft[][]; logTaskId?: string | null }
+  | {
+      type: 'HYDRATE_DONE';
+      draftLogs?: SetDraft[][];
+      ghostLogs?: GhostSetSnapshot[][];
+      logTaskId?: string | null;
+    }
   | { type: 'HYDRATE_FAILED'; error: string }
   | { type: 'LOGS_CHANGED'; draftLogs: SetDraft[][] }
   | { type: 'AUTOSAVE_SCHEDULED' }
@@ -92,6 +100,7 @@ export function createInitialContext(input: ActiveSessionInput): ActiveSessionCo
       input.finishWorkoutRunner ?? createAdapterFinishWorkoutRunner(persistenceAdapter),
     hydrationError: null,
     logTaskId: null,
+    ghostLogs: input.ghostLogs ?? [],
     pendingInsert: false,
     autosaveInFlight: false,
     autosaveScheduled: false,

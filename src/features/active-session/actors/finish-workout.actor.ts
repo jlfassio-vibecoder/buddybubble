@@ -4,6 +4,7 @@ import {
   buildWorkoutLogExercisePayloadFromLogs,
   buildWorkoutLogFinishMetadata,
 } from '@/lib/workout-factory/build-workout-log-finish-metadata';
+import { mergeLastPerformedAtIntoTaskMetadata } from '@/lib/workout-factory/merge-last-performed-at';
 import { replaceTaskAssigneesWithUserIds } from '@/lib/task-assignees-db';
 import type { Json } from '@/types/database';
 import type { WorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
@@ -30,6 +31,7 @@ export type ProductionFinishWorkoutDeps = {
 };
 
 type SourceTaskRow = {
+  metadata: Json | null;
   program_id: string | null;
   program_session_key: string | null;
   scheduled_on: string | null;
@@ -38,7 +40,12 @@ type SourceTaskRow = {
   task_assignees?: { user_id: string }[] | null;
 };
 
-function programFieldsFromSource(sourceRow: SourceTaskRow | null) {
+type SourceProgramFieldsRow = Pick<
+  SourceTaskRow,
+  'program_id' | 'program_session_key' | 'scheduled_on' | 'scheduled_time' | 'visibility'
+>;
+
+function programFieldsFromSource(sourceRow: SourceProgramFieldsRow | null) {
   if (!sourceRow) return {};
   return {
     ...(sourceRow.program_id != null ? { program_id: sourceRow.program_id } : {}),
@@ -90,13 +97,13 @@ export async function executeFinishWorkout(
     classInstanceId: context.classInstanceId ?? null,
   });
 
-  let sourceRow: SourceTaskRow | null = null;
+  let sourceRow: SourceProgramFieldsRow | null = null;
   let sourceAssigneeUserIds: string[] = [];
 
   const { data: fetched, error: sourceTaskError } = await supabase
     .from('tasks')
     .select(
-      'program_id, program_session_key, scheduled_on, scheduled_time, visibility, task_assignees(user_id)',
+      'metadata, program_id, program_session_key, scheduled_on, scheduled_time, visibility, task_assignees(user_id)',
     )
     .eq('id', context.sourceTaskId)
     .maybeSingle();
@@ -123,8 +130,8 @@ export async function executeFinishWorkout(
     ];
   }
 
-  const programFields = programFieldsFromSource(sourceRow);
-  const finalLogId = context.logTaskId;
+  const performedAt = new Date().toISOString();
+  const sourceMetadataForPatch = fetched != null ? (fetched as SourceTaskRow).metadata : null;
 
   const syncAssignees = async (taskId: string) => {
     if (sourceAssigneeUserIds.length === 0) return;
@@ -135,6 +142,40 @@ export async function executeFinishWorkout(
     );
     if (syncErr) {
       throw new Error(syncErr);
+    }
+  };
+
+  const patchSourceTemplateLastPerformed = async () => {
+    const mergedMetadata = mergeLastPerformedAtIntoTaskMetadata(
+      sourceMetadataForPatch,
+      performedAt,
+    );
+    const { error: templateMetaError } = await supabase
+      .from('tasks')
+      .update({ metadata: mergedMetadata as Json })
+      .eq('id', context.sourceTaskId)
+      .eq('item_type', 'workout');
+
+    if (templateMetaError) {
+      throw templateMetaError;
+    }
+  };
+
+  const programFields = programFieldsFromSource(sourceRow);
+  const finalLogId = context.logTaskId;
+
+  const supersedeStaleInProgressLogs = async (finishedLogId: string) => {
+    const { error: staleError } = await supabase
+      .from('tasks')
+      .delete()
+      .eq('bubble_id', context.targetBubbleId)
+      .eq('item_type', 'workout_log')
+      .eq('status', 'in_progress')
+      .eq('metadata->>source_task_id', context.sourceTaskId)
+      .neq('id', finishedLogId);
+
+    if (staleError) {
+      throw staleError;
     }
   };
 
@@ -153,6 +194,8 @@ export async function executeFinishWorkout(
     }
 
     await syncAssignees(finalLogId);
+    await patchSourceTemplateLastPerformed();
+    await supersedeStaleInProgressLogs(finalLogId);
     return { logTaskId: finalLogId, op: 'finish_update' };
   }
 
@@ -174,6 +217,8 @@ export async function executeFinishWorkout(
   }
 
   await syncAssignees(insertedLog.id);
+  await patchSourceTemplateLastPerformed();
+  await supersedeStaleInProgressLogs(insertedLog.id);
   return { logTaskId: insertedLog.id, op: 'finish_insert' };
 }
 

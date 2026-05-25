@@ -17,6 +17,7 @@ import type { IntervalRowSnapshot } from '@/lib/workout-factory/interval-timer/t
 import type { WorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 import type { WorkoutExercise } from '@/lib/item-metadata';
+import type { GhostSetSnapshot } from '@/lib/workout-factory/ghost-set-snapshot';
 import type { UserExerciseNotesRow } from '@/hooks/useUserExerciseNotes';
 import { WorkoutBlockListRenderer } from '@/components/fitness/workout-block-renderer/WorkoutBlockListRenderer';
 import {
@@ -28,6 +29,7 @@ export type WorkoutPlayerBlockListProps = {
   viewModel: WorkoutSessionViewModel;
   flatExercises: WorkoutExercise[];
   logs: SetDraft[][];
+  ghostLogs?: GhostSetSnapshot[][];
   view: 'simple' | 'detailed';
   unit: string;
   personalNotesByExerciseIndex: (UserExerciseNotesRow | null)[];
@@ -65,6 +67,7 @@ export function WorkoutPlayerBlockList({
   viewModel,
   flatExercises,
   logs,
+  ghostLogs,
   view,
   unit,
   personalNotesByExerciseIndex,
@@ -147,6 +150,7 @@ export function WorkoutPlayerBlockList({
                 exercise={exercise}
                 index={globalIndex}
                 sets={logs[globalIndex] ?? []}
+                ghostSets={ghostLogs?.[globalIndex]}
                 view={view}
                 unit={unit}
                 personalNotes={personalNotesByExerciseIndex[globalIndex] ?? null}

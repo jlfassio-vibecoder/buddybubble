@@ -38,6 +38,7 @@ export const activeSessionMachine = setup({
       if (event.type !== 'HYDRATE_DONE') return {};
       return {
         draftLogs: event.draftLogs ?? context.draftLogs,
+        ghostLogs: event.ghostLogs ?? context.ghostLogs,
         logTaskId: event.logTaskId ?? context.logTaskId,
       };
     }),

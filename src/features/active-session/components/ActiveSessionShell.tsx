@@ -16,7 +16,7 @@ import {
 import { useActiveSessionCoachBridge } from '@/features/active-session/hooks/useActiveSessionCoachBridge';
 import { useWorkoutSessionViewModel } from '@/hooks/use-workout-session-view-model';
 import { formatUserFacingError } from '@/lib/format-error';
-import { buildPlayerInitialLogs } from '@/lib/workout-factory/resolve-player-log-row-count';
+import { buildBlankSessionDraftLogs } from '@/lib/workout-factory/ghost-set-snapshot';
 import { recoverWorkoutSessionLogs } from '@/lib/workout-factory/recover-workout-session-logs';
 import { safeNextPath } from '@/lib/safe-next-path';
 import type { SetDraft } from '@/components/fitness/workout-block-renderer/WorkoutPlayerExercisePanel';
@@ -59,7 +59,7 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
   const workoutTitle = task.title?.trim() || 'Workout';
 
   const templateDraftLogs = useMemo(
-    () => buildPlayerInitialLogs(viewModel.flatExercises, viewModel.blocks),
+    () => buildBlankSessionDraftLogs(viewModel.flatExercises, viewModel.blocks),
     [viewModel.flatExercises, viewModel.blocks],
   );
 
@@ -137,6 +137,7 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
     draftLogs: snapshot.context.draftLogs,
     sessionVm: viewModel,
     sentinelFired: snapshot.context.sentinelFired,
+    sessionStartedAt: snapshot.context.startedAt,
   });
 
   const isHydrating = snapshot.matches('hydrating');
@@ -166,6 +167,7 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
         send({
           type: 'HYDRATE_DONE',
           draftLogs: result.draftLogs,
+          ghostLogs: result.ghostLogs,
           logTaskId: result.logTaskId,
         });
       } catch {
@@ -266,6 +268,7 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
           <SessionLogSurface
             viewModel={viewModel}
             draftLogs={snapshot.context.draftLogs}
+            ghostLogs={snapshot.context.ghostLogs}
             unit={unit}
             disabled={logSurfaceDisabled}
             onDraftLogsChange={onDraftLogsChange}

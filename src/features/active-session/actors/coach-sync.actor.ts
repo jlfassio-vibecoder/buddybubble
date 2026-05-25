@@ -9,6 +9,8 @@ export type CoachThreadSnapshot = {
   messages: MessageRowWithEmbeddedTask[];
   isLoading: boolean;
   coachAuthUserId: string | null;
+  /** Active Session start — coach patches at or before this time are not replayed into the grid. */
+  sessionStartedAt?: string | null;
 };
 
 export type CoachSyncAdapter = {
@@ -45,6 +47,11 @@ export const coachSyncActor = fromCallback<
     if (!snapshot.coachAuthUserId) return;
     if (snapshot.messages.length === 0) return;
 
+    const sessionStartedMs =
+      snapshot.sessionStartedAt != null && snapshot.sessionStartedAt.trim()
+        ? new Date(snapshot.sessionStartedAt).getTime()
+        : null;
+
     const coachRows = snapshot.messages.filter(
       (m) =>
         m.user_id === snapshot.coachAuthUserId &&
@@ -64,6 +71,20 @@ export const coachSyncActor = fromCallback<
       if (fp != null && appliedPatchFingerprints.get(id) === fp) {
         continue;
       }
+
+      const messageCreatedMs =
+        typeof row.created_at === 'string' && row.created_at.trim()
+          ? new Date(row.created_at).getTime()
+          : null;
+      if (
+        sessionStartedMs != null &&
+        messageCreatedMs != null &&
+        messageCreatedMs <= sessionStartedMs
+      ) {
+        if (fp != null) appliedPatchFingerprints.set(id, fp);
+        continue;
+      }
+
       let patch = null;
       try {
         patch = parseExecutionPatchFromMetadata(raw);

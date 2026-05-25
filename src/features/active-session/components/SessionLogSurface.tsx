@@ -5,6 +5,7 @@ import { Separator } from '@/components/ui/separator';
 import { WorkoutPlayerBlockList } from '@/components/fitness/workout-block-renderer/WorkoutPlayerBlockList';
 import { WorkoutPlayerExercisePanel } from '@/components/fitness/workout-block-renderer/WorkoutPlayerExercisePanel';
 import type { SetDraft } from '@/components/fitness/workout-block-renderer/WorkoutPlayerExercisePanel';
+import type { GhostSetSnapshot } from '@/lib/workout-factory/ghost-set-snapshot';
 import type { WorkoutSessionViewModel } from '@/hooks/use-workout-session-view-model';
 import {
   appendSetRow,
@@ -15,6 +16,7 @@ import {
 type Props = {
   viewModel: WorkoutSessionViewModel;
   draftLogs: SetDraft[][];
+  ghostLogs: GhostSetSnapshot[][];
   unit: string;
   disabled?: boolean;
   onDraftLogsChange: (next: SetDraft[][]) => void;
@@ -23,6 +25,7 @@ type Props = {
 export function SessionLogSurface({
   viewModel,
   draftLogs,
+  ghostLogs,
   unit,
   disabled = false,
   onDraftLogsChange,
@@ -70,6 +73,7 @@ export function SessionLogSurface({
           viewModel={viewModel}
           flatExercises={flatExercises}
           logs={draftLogs}
+          ghostLogs={ghostLogs}
           view="simple"
           unit={unit}
           personalNotesByExerciseIndex={flatExercises.map(() => null)}
@@ -87,6 +91,7 @@ export function SessionLogSurface({
                 exercise={exercise}
                 index={index}
                 sets={draftLogs[index] ?? []}
+                ghostSets={ghostLogs[index]}
                 view="simple"
                 unit={unit}
                 personalNotes={null}

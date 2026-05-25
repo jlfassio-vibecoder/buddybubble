@@ -2,11 +2,18 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { SetDraft } from '@/components/fitness/workout-block-renderer/WorkoutPlayerExercisePanel';
 import type { WorkoutExercise } from '@/lib/item-metadata';
 import {
+  buildBlankSessionDraftLogs,
+  buildGhostLogsFromHistoricalMetadata,
+  type GhostSetSnapshot,
+} from '@/lib/workout-factory/ghost-set-snapshot';
+import {
   buildPlayerInitialLogRowsForExercise,
   buildPlayerInitialLogs,
 } from '@/lib/workout-factory/resolve-player-log-row-count';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 import { isSetDraftMatrix } from '@/lib/workout-factory/workout-log-matrix';
+
+export type { GhostSetSnapshot } from '@/lib/workout-factory/ghost-set-snapshot';
 
 export type RecoverWorkoutSessionLogsParams = {
   supabase: SupabaseClient;
@@ -15,12 +22,63 @@ export type RecoverWorkoutSessionLogsParams = {
   sourceTaskId: string;
   exercises: WorkoutExercise[];
   blocks: WorkoutSessionBlockView[];
+  /** V1 WorkoutPlayer prefill vs V2 Active Session ghost placeholders. */
+  mode?: 'v1-prefill' | 'v2-ghost';
 };
 
 export type RecoverWorkoutSessionLogsResult = {
   draftLogs: SetDraft[][];
+  ghostLogs: GhostSetSnapshot[][];
   logTaskId: string | null;
 };
+
+export async function fetchLatestCompletedWorkoutLog(
+  supabase: SupabaseClient,
+  logBubbleId: string,
+  sourceTaskId: string,
+): Promise<{ metadata: unknown; created_at: string } | null> {
+  const { data: historical } = await supabase
+    .from('tasks')
+    .select('metadata, created_at')
+    .eq('bubble_id', logBubbleId)
+    .eq('item_type', 'workout_log')
+    .eq('status', 'completed')
+    .eq('metadata->>source_task_id', sourceTaskId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const histMeta = historical?.metadata;
+  if (
+    !historical?.created_at ||
+    !histMeta ||
+    typeof histMeta !== 'object' ||
+    Array.isArray(histMeta)
+  ) {
+    return null;
+  }
+  return { metadata: histMeta, created_at: historical.created_at };
+}
+
+export async function fetchLatestCompletedWorkoutLogMetadata(
+  supabase: SupabaseClient,
+  logBubbleId: string,
+  sourceTaskId: string,
+): Promise<unknown | null> {
+  const row = await fetchLatestCompletedWorkoutLog(supabase, logBubbleId, sourceTaskId);
+  return row?.metadata ?? null;
+}
+
+/** V2: skip resuming in_progress draft when a completed log superseded it (orphan draft). */
+export function shouldRestoreInProgressDraft(
+  mode: 'v1-prefill' | 'v2-ghost',
+  draftCreatedAt: string,
+  latestCompletedCreatedAt: string | null,
+): boolean {
+  if (mode === 'v1-prefill') return true;
+  if (!latestCompletedCreatedAt) return true;
+  return new Date(draftCreatedAt).getTime() > new Date(latestCompletedCreatedAt).getTime();
+}
 
 async function prefillFromHistoricalCompletedLog(
   supabase: SupabaseClient,
@@ -31,19 +89,12 @@ async function prefillFromHistoricalCompletedLog(
 ): Promise<SetDraft[][]> {
   let prefilledLogs = buildPlayerInitialLogs(exercises, blocks);
 
-  const { data: historical } = await supabase
-    .from('tasks')
-    .select('metadata')
-    .eq('bubble_id', logBubbleId)
-    .eq('item_type', 'workout_log')
-    .eq('status', 'completed')
-    .eq('metadata->>source_task_id', sourceTaskId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const histMeta = historical?.metadata;
-  if (!histMeta || typeof histMeta !== 'object' || Array.isArray(histMeta)) {
+  const histMeta = await fetchLatestCompletedWorkoutLogMetadata(
+    supabase,
+    logBubbleId,
+    sourceTaskId,
+  );
+  if (!histMeta) {
     return prefilledLogs;
   }
 
@@ -86,11 +137,15 @@ async function prefillFromHistoricalCompletedLog(
 export async function recoverWorkoutSessionLogs(
   params: RecoverWorkoutSessionLogsParams,
 ): Promise<RecoverWorkoutSessionLogsResult> {
-  const { supabase, logBubbleId, sourceTaskId, exercises, blocks } = params;
+  const { supabase, logBubbleId, sourceTaskId, exercises, blocks, mode = 'v2-ghost' } = params;
+
+  const latestCompleted = await fetchLatestCompletedWorkoutLog(supabase, logBubbleId, sourceTaskId);
+  const histMeta = latestCompleted?.metadata ?? null;
+  const ghostLogs = buildGhostLogsFromHistoricalMetadata(histMeta, exercises, blocks);
 
   const { data: draft, error } = await supabase
     .from('tasks')
-    .select('id, metadata')
+    .select('id, metadata, created_at')
     .eq('bubble_id', logBubbleId)
     .eq('item_type', 'workout_log')
     .eq('status', 'in_progress')
@@ -109,18 +164,28 @@ export async function recoverWorkoutSessionLogs(
       meta && typeof meta === 'object' && !Array.isArray(meta)
         ? (meta as { draft_logs?: unknown }).draft_logs
         : undefined;
-    if (isSetDraftMatrix(raw) && raw.length === exercises.length) {
-      return { draftLogs: raw, logTaskId: draft.id };
+    const draftCreatedAt = typeof draft.created_at === 'string' ? draft.created_at : null;
+    if (
+      isSetDraftMatrix(raw) &&
+      raw.length === exercises.length &&
+      draftCreatedAt != null &&
+      shouldRestoreInProgressDraft(mode, draftCreatedAt, latestCompleted?.created_at ?? null)
+    ) {
+      return { draftLogs: raw, ghostLogs, logTaskId: draft.id };
     }
   }
 
-  const draftLogs = await prefillFromHistoricalCompletedLog(
-    supabase,
-    logBubbleId,
-    sourceTaskId,
-    exercises,
-    blocks,
-  );
+  if (mode === 'v1-prefill') {
+    const draftLogs = await prefillFromHistoricalCompletedLog(
+      supabase,
+      logBubbleId,
+      sourceTaskId,
+      exercises,
+      blocks,
+    );
+    return { draftLogs, ghostLogs, logTaskId: null };
+  }
 
-  return { draftLogs, logTaskId: null };
+  const draftLogs = buildBlankSessionDraftLogs(exercises, blocks);
+  return { draftLogs, ghostLogs, logTaskId: null };
 }

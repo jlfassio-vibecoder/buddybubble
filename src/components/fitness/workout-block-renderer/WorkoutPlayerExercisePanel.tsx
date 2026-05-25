@@ -7,6 +7,9 @@ import type { WorkoutExercise } from '@/lib/item-metadata';
 import type { IntervalRowSnapshot } from '@/lib/workout-factory/interval-timer/types';
 import type { UserExerciseNotesRow } from '@/hooks/useUserExerciseNotes';
 
+import type { GhostSetSnapshot } from '@/lib/workout-factory/ghost-set-snapshot';
+import { formatGhostFieldPlaceholder } from '@/lib/workout-factory/ghost-set-snapshot';
+
 export type SetDraft = {
   weight: string;
   reps: string;
@@ -63,6 +66,8 @@ export type WorkoutPlayerExercisePanelProps = {
   activeSetIndex?: number | null;
   activeSetPhase?: IntervalRowSnapshot['activeSetPhase'] | null;
   readOnly?: boolean;
+  /** Active Session ghost placeholders (previous performance); V1 omits. */
+  ghostSets?: GhostSetSnapshot[];
 };
 
 export function WorkoutPlayerExercisePanel({
@@ -78,6 +83,7 @@ export function WorkoutPlayerExercisePanel({
   activeSetIndex = null,
   activeSetPhase = null,
   readOnly = false,
+  ghostSets,
 }: WorkoutPlayerExercisePanelProps) {
   const targetLine = formatExerciseTargetLine(exercise, unit);
 
@@ -214,6 +220,16 @@ export function WorkoutPlayerExercisePanel({
             (activeSetPhase === 'rest' ||
               activeSetPhase === 'prepare' ||
               activeSetPhase === 'paused');
+          const ghostWeightPlaceholder = formatGhostFieldPlaceholder(
+            ghostSets?.[idx],
+            'weight',
+            unit,
+          );
+          const ghostRepsPlaceholder = formatGhostFieldPlaceholder(ghostSets?.[idx], 'reps', unit);
+          const ghostRpePlaceholder = formatGhostFieldPlaceholder(ghostSets?.[idx], 'rpe', unit);
+          const ghostInputClassName =
+            'h-8 text-center text-sm placeholder:text-muted-foreground/30 placeholder:italic placeholder:font-light';
+          const ghostWaitingBorderClassName = 'border-dashed border-muted-foreground/40';
           return (
             <div
               key={idx}
@@ -260,8 +276,11 @@ export function WorkoutPlayerExercisePanel({
                   <Input
                     value={s.weight}
                     onChange={(e) => onSetChange(idx, 'weight', e.target.value)}
-                    placeholder={`— ${unit}`}
-                    className="h-8 text-center text-sm"
+                    placeholder={ghostWeightPlaceholder ?? `— ${unit}`}
+                    className={cn(
+                      ghostInputClassName,
+                      !s.weight.trim() && ghostWeightPlaceholder && ghostWaitingBorderClassName,
+                    )}
                     type="number"
                     min={0}
                     step={0.5}
@@ -269,16 +288,22 @@ export function WorkoutPlayerExercisePanel({
                   <Input
                     value={s.reps}
                     onChange={(e) => onSetChange(idx, 'reps', e.target.value)}
-                    placeholder="—"
-                    className="h-8 text-center text-sm"
+                    placeholder={ghostRepsPlaceholder ?? '—'}
+                    className={cn(
+                      ghostInputClassName,
+                      !s.reps.trim() && ghostRepsPlaceholder && ghostWaitingBorderClassName,
+                    )}
                     type="number"
                     min={0}
                   />
                   <Input
                     value={s.rpe}
                     onChange={(e) => onSetChange(idx, 'rpe', e.target.value)}
-                    placeholder="—"
-                    className="h-8 text-center text-sm"
+                    placeholder={ghostRpePlaceholder ?? '—'}
+                    className={cn(
+                      ghostInputClassName,
+                      !s.rpe.trim() && ghostRpePlaceholder && ghostWaitingBorderClassName,
+                    )}
                     type="number"
                     min={1}
                     max={10}
