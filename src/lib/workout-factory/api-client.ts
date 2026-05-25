@@ -23,6 +23,23 @@ export type PersonalizeProgramResponse = {
   generated_at: string;
 };
 
+export class WorkoutFactoryError extends Error {
+  readonly code?: string;
+  readonly status?: number;
+  readonly validationError?: string;
+
+  constructor(
+    message: string,
+    opts?: { code?: string; status?: number; validationError?: string },
+  ) {
+    super(message);
+    this.name = 'WorkoutFactoryError';
+    this.code = opts?.code;
+    this.status = opts?.status;
+    this.validationError = opts?.validationError;
+  }
+}
+
 export async function postPersonalizeProgram(body: {
   workspace_id: string;
   program: {
@@ -62,8 +79,20 @@ export async function postGenerateWorkoutChain(body: {
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(data.error || res.statusText || 'Failed to generate workout');
+    const data = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      message?: string;
+      validation_error?: string;
+    };
+    const msg = data.message || data.error || res.statusText || 'Failed to generate workout';
+    if (res.status === 422) {
+      throw new WorkoutFactoryError(msg, {
+        code: data.error,
+        status: res.status,
+        validationError: data.validation_error,
+      });
+    }
+    throw new Error(msg);
   }
   return res.json() as Promise<GenerateWorkoutChainResponse>;
 }

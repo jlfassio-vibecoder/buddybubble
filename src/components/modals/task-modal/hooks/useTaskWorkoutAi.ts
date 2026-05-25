@@ -8,6 +8,7 @@ import type { WorkoutSetTemplate } from '@/lib/workout-factory/types/workout-con
 import {
   postGenerateWorkoutChain,
   WORKOUT_FACTORY_CHAIN_MESSAGES,
+  WorkoutFactoryError,
 } from '@/lib/workout-factory/api-client';
 import {
   metadataFieldsFromParsed,
@@ -171,7 +172,13 @@ export function useTaskWorkoutAi({
         });
         toast.success('Workout generated — review exercises and save.');
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : 'Generation failed');
+        if (e instanceof WorkoutFactoryError) {
+          toast.error(
+            'Generation failed: The workout structure is missing data (like sets/reps). Please edit the structure and try again.',
+          );
+        } else {
+          toast.error(e instanceof Error ? e.message : 'Generation failed');
+        }
       } finally {
         setAiWorkoutGenerating(false);
       }
