@@ -303,4 +303,42 @@ describe('activeSessionMachine V1 scenario replay', () => {
     expect(actor.getSnapshot().context.intervalBlockRef).toBeNull();
     expect(actor.getSnapshot().context.activeIntervalBlockId).toBeNull();
   });
+
+  it('VISIBILITY forwards to interval child and triggers background catch-up', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+
+    try {
+      const actor = createStartedTestActor();
+
+      actor.send({
+        type: 'INTERVAL_START',
+        input: {
+          blockId: 'block-tabata',
+          format: 'tabata',
+          config: {
+            prepareMs: 0,
+            workMs: 20_000,
+            restMs: 10_000,
+            totalRounds: 2,
+          },
+        },
+      });
+
+      const childRef = actor.getSnapshot().context.intervalBlockRef;
+      expect(childRef).not.toBeNull();
+      expect(childRef!.getSnapshot().matches({ running: 'active' })).toBe(true);
+
+      actor.send({ type: 'VISIBILITY', hidden: true });
+      expect(actor.getSnapshot().context.documentHidden).toBe(true);
+      expect(childRef!.getSnapshot().matches({ running: 'backgroundSuspended' })).toBe(true);
+
+      vi.setSystemTime(90_000);
+      actor.send({ type: 'VISIBILITY', hidden: false });
+      expect(actor.getSnapshot().context.documentHidden).toBe(false);
+      expect(childRef!.getSnapshot().matches('completed')).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

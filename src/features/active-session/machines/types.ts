@@ -55,6 +55,7 @@ export type ActiveSessionContext = ActiveSessionInput & {
   activeIntervalBlockId: string | null;
   activeIntervalInput: IntervalBlockInput | null;
   intervalRowSnapshots: Record<string, IntervalRowSnapshot | null>;
+  documentHidden: boolean;
 };
 
 export type ActiveSessionEvent =
@@ -135,5 +136,6 @@ export function createInitialContext(input: ActiveSessionInput): ActiveSessionCo
     activeIntervalBlockId: null,
     activeIntervalInput: null,
     intervalRowSnapshots: {},
+    documentHidden: false,
   };
 }

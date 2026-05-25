@@ -2,6 +2,7 @@ import { assign, enqueueActions, sendParent, setup } from 'xstate';
 import { intervalBlockClockActor } from '../actors/interval-block-clock.actor';
 import {
   applyIntervalEngineEvent,
+  catchUpIntervalEngine,
   createInitialIntervalBlockContext,
   isEnginePhaseDone,
 } from './interval-block-reducer';
@@ -58,6 +59,7 @@ export const intervalBlockMachine = setup({
       type: 'BLOCK_INTERVAL_COMPLETE',
       blockId: context.blockId,
     })),
+    catchUpEngine: assign(({ context }) => catchUpIntervalEngine(context, Date.now())),
   },
 }).createMachine({
   id: 'intervalBlock',
@@ -78,9 +80,32 @@ export const intervalBlockMachine = setup({
       },
     },
     running: {
-      invoke: {
-        id: CLOCK_ID,
-        src: 'intervalBlockClock',
+      initial: 'active',
+      states: {
+        active: {
+          invoke: {
+            id: CLOCK_ID,
+            src: 'intervalBlockClock',
+          },
+          on: {
+            CLOCK_FRAME: {
+              actions: ['applyEngine', 'maybeNotifyParentRowSnapshot'],
+            },
+            VISIBILITY: {
+              guard: ({ event }) => event.type === 'VISIBILITY' && event.hidden,
+              target: 'backgroundSuspended',
+            },
+          },
+        },
+        backgroundSuspended: {
+          on: {
+            VISIBILITY: {
+              guard: ({ event }) => event.type === 'VISIBILITY' && !event.hidden,
+              target: 'active',
+              actions: ['catchUpEngine', 'notifyParentRowSnapshot'],
+            },
+          },
+        },
       },
       on: {
         PAUSE: {
@@ -95,9 +120,6 @@ export const intervalBlockMachine = setup({
         RESET: {
           target: 'idle',
           actions: ['applyEngine', 'notifyParentRowSnapshot'],
-        },
-        CLOCK_FRAME: {
-          actions: ['applyEngine', 'maybeNotifyParentRowSnapshot'],
         },
         LOG_AMRAP_ROUND: {
           actions: 'applyEngine',

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { assign, createActor, fromCallback, setup } from 'xstate';
 import type { TabataTimerConfig } from '@/lib/workout-factory/interval-timer/resolve-tabata-timer-config';
 import type { EmomTimerConfig } from '@/lib/workout-factory/interval-timer/resolve-emom-timer-config';
@@ -107,6 +107,107 @@ describe('intervalBlockMachine', () => {
     if (actor.getSnapshot().context.engine.format === 'tabata') {
       expect(actor.getSnapshot().context.engine.state.phase).toBe('idle');
     }
+  });
+});
+
+describe('intervalBlockMachine visibility catch-up', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('Tabata: background then foreground fast-forwards to completed', () => {
+    const actor = createTestIntervalActor(tabataInput);
+    actor.send({ type: 'START', now: 0 });
+    expect(actor.getSnapshot().matches({ running: 'active' })).toBe(true);
+
+    actor.send({ type: 'VISIBILITY', hidden: true });
+    expect(actor.getSnapshot().matches({ running: 'backgroundSuspended' })).toBe(true);
+
+    vi.setSystemTime(90_000);
+    actor.send({ type: 'VISIBILITY', hidden: false });
+    expect(actor.getSnapshot().matches('completed')).toBe(true);
+    if (actor.getSnapshot().context.engine.format === 'tabata') {
+      expect(actor.getSnapshot().context.engine.state.phase).toBe('done');
+    }
+  });
+
+  it('EMOM alternating: background catch-up advances to correct round', () => {
+    const actor = createTestIntervalActor(emomAlternatingInput);
+    actor.send({ type: 'START', now: 0 });
+    actor.send({ type: 'VISIBILITY', hidden: true });
+
+    vi.setSystemTime(90_000);
+    actor.send({ type: 'VISIBILITY', hidden: false });
+
+    expect(actor.getSnapshot().matches({ running: 'active' })).toBe(true);
+    expect(actor.getSnapshot().context.rowSnapshot).toEqual({
+      roundIndex: 1,
+      activeSetPhase: 'work',
+      activeStationIndices: [1],
+    });
+  });
+
+  it('AMRAP: background catch-up completes when past time cap', () => {
+    const actor = createTestIntervalActor({
+      blockId: 'block-amrap',
+      format: 'amrap',
+      config: { timeCapMs: 60_000, targetRounds: null },
+    });
+    actor.send({ type: 'START', now: 0 });
+    actor.send({ type: 'VISIBILITY', hidden: true });
+
+    vi.setSystemTime(90_000);
+    actor.send({ type: 'VISIBILITY', hidden: false });
+
+    expect(actor.getSnapshot().matches('completed')).toBe(true);
+    if (actor.getSnapshot().context.engine.format === 'amrap') {
+      expect(actor.getSnapshot().context.engine.state.phase).toBe('done');
+    }
+  });
+
+  it('Tabata: mid-phase background refresh does not advance phase', () => {
+    const actor = createTestIntervalActor(tabataInput);
+    actor.send({ type: 'START', now: 0 });
+    vi.setSystemTime(5_000);
+    actor.send({ type: 'VISIBILITY', hidden: true });
+
+    vi.setSystemTime(10_000);
+    actor.send({ type: 'VISIBILITY', hidden: false });
+
+    expect(actor.getSnapshot().matches({ running: 'active' })).toBe(true);
+    expect(actor.getSnapshot().context.rowSnapshot).toEqual({
+      roundIndex: 0,
+      activeSetPhase: 'work',
+    });
+    if (actor.getSnapshot().context.engine.format === 'tabata') {
+      expect(actor.getSnapshot().context.engine.state.phase).toBe('work');
+    }
+  });
+
+  it('Tabata: paused interval ignores visibility catch-up', () => {
+    const actor = createTestIntervalActor(tabataInput);
+    actor.send({ type: 'START', now: 0 });
+    actor.send({ type: 'PAUSE', now: 5_000 });
+    expect(actor.getSnapshot().matches('paused')).toBe(true);
+
+    vi.setSystemTime(90_000);
+    actor.send({ type: 'VISIBILITY', hidden: true });
+    actor.send({ type: 'VISIBILITY', hidden: false });
+
+    expect(actor.getSnapshot().matches('paused')).toBe(true);
+    if (actor.getSnapshot().context.engine.format === 'tabata') {
+      expect(actor.getSnapshot().context.engine.state.phase).toBe('paused');
+    }
+
+    actor.send({ type: 'RESUME', now: 90_000 });
+    expect(actor.getSnapshot().matches({ running: 'active' })).toBe(true);
+    actor.send({ type: 'CLOCK_FRAME', now: 105_000 });
+    expect(actor.getSnapshot().context.rowSnapshot?.activeSetPhase).toBe('rest');
   });
 });
 

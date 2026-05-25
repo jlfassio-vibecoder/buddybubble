@@ -2,6 +2,7 @@ import { assign, sendTo, setup, stopChild } from 'xstate';
 import { coachSyncActor, type CoachThreadSnapshot } from '../actors/coach-sync.actor';
 import { finishWorkoutActor } from '../actors/finish-workout.actor';
 import { persistenceActor } from '../actors/persistence.actor';
+import { visibilityListenerActor } from '../actors/visibility-listener.actor';
 import { applyExecutionPatchToDraftLogs } from '@/lib/workout-factory/workout-log-mutations';
 import { intervalBlockMachine } from './interval-block.machine';
 import {
@@ -14,6 +15,7 @@ import {
 
 const PERSISTENCE_ID = 'persistence';
 const COACH_SYNC_ID = 'coachSync';
+const VISIBILITY_LISTENER_ID = 'visibilityListener';
 
 function persistenceSnapshot(context: ActiveSessionContext) {
   return {
@@ -34,6 +36,7 @@ export const activeSessionMachine = setup({
     finishWorkout: finishWorkoutActor,
     coachSync: coachSyncActor,
     intervalBlock: intervalBlockMachine,
+    visibilityListener: visibilityListenerActor,
   },
   actions: {
     assignHydrateDone: assign(({ event, context }) => {
@@ -173,6 +176,13 @@ export const activeSessionMachine = setup({
       if (!context.intervalBlockRef || context.activeIntervalBlockId !== event.blockId) return;
       context.intervalBlockRef.send({ type: 'LOG_AMRAP_ROUND' });
     },
+    forwardIntervalVisibility: ({ context, event }) => {
+      if (event.type !== 'VISIBILITY') return;
+      context.intervalBlockRef?.send({
+        type: 'VISIBILITY',
+        hidden: event.hidden,
+      });
+    },
   },
 }).createMachine({
   id: 'activeSession',
@@ -217,6 +227,14 @@ export const activeSessionMachine = setup({
         BLOCK_INTERVAL_COMPLETE: {
           actions: ['stopIntervalBlockIfRunning', 'clearIntervalBlockRef'],
         },
+        VISIBILITY: {
+          actions: [
+            assign(({ event }) =>
+              event.type === 'VISIBILITY' ? { documentHidden: event.hidden } : {},
+            ),
+            'forwardIntervalVisibility',
+          ],
+        },
       },
       invoke: [
         {
@@ -228,6 +246,10 @@ export const activeSessionMachine = setup({
           id: COACH_SYNC_ID,
           src: 'coachSync',
           input: ({ context }) => ({ adapter: context.coachSyncAdapter }),
+        },
+        {
+          id: VISIBILITY_LISTENER_ID,
+          src: 'visibilityListener',
         },
       ],
       initial: 'logging',

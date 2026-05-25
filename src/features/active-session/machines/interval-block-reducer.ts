@@ -251,6 +251,17 @@ function refreshDerived(ctx: IntervalBlockContext, now: number): IntervalBlockCo
   };
 }
 
+/** Fast-forward engine after tab backgrounding using absolute wall time. */
+export function catchUpIntervalEngine(
+  ctx: IntervalBlockContext,
+  now: number,
+): IntervalBlockContext {
+  if (engineNeedsReducerTick(ctx.engine, now)) {
+    return applyIntervalEngineEvent(ctx, { type: 'TICK', now });
+  }
+  return refreshDerived(ctx, now);
+}
+
 export function applyIntervalEngineEvent(
   ctx: IntervalBlockContext,
   event: IntervalBlockEvent,
