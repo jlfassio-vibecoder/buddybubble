@@ -1,13 +1,40 @@
 'use client';
 
-export function SessionCoachPane() {
+import {
+  WorkoutCoachRail,
+  type WorkoutCoachRailMessageThread,
+} from '@/components/chat/WorkoutCoachRail';
+import type { BubbleRow, Json } from '@/types/database';
+
+type Props = {
+  bubbleId: string;
+  taskId: string;
+  workoutTitle: string;
+  workoutData: Json | undefined;
+  bubbleRow: BubbleRow | null;
+  canPostMessages: boolean;
+  messageThread: WorkoutCoachRailMessageThread;
+};
+
+export function SessionCoachPane({
+  bubbleId,
+  taskId,
+  workoutTitle,
+  workoutData,
+  bubbleRow,
+  canPostMessages,
+  messageThread,
+}: Props) {
   return (
-    <aside
-      className="min-h-0 overflow-auto rounded-lg border border-border bg-muted/20 p-4"
-      aria-label="Coach"
-    >
-      <h2 className="text-sm font-semibold text-foreground">Coach</h2>
-      <p className="mt-2 text-sm text-muted-foreground">Session coaching will appear here.</p>
-    </aside>
+    <WorkoutCoachRail
+      bubbleId={bubbleId}
+      taskId={taskId}
+      canPostMessages={canPostMessages}
+      workoutTitle={workoutTitle}
+      workoutData={workoutData}
+      bubbleRow={bubbleRow}
+      messageThread={messageThread}
+      className="min-h-0 overflow-hidden rounded-lg border border-border"
+    />
   );
 }

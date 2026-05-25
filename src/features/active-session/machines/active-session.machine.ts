@@ -1,6 +1,8 @@
 import { assign, sendTo, setup } from 'xstate';
+import { coachSyncActor, type CoachThreadSnapshot } from '../actors/coach-sync.actor';
 import { finishWorkoutActor } from '../actors/finish-workout.actor';
 import { persistenceActor } from '../actors/persistence.actor';
+import { applyExecutionPatchToDraftLogs } from '@/lib/workout-factory/workout-log-mutations';
 import {
   activeSessionGuards,
   createInitialContext,
@@ -10,6 +12,7 @@ import {
 } from './types';
 
 const PERSISTENCE_ID = 'persistence';
+const COACH_SYNC_ID = 'coachSync';
 
 function persistenceSnapshot(context: ActiveSessionContext) {
   return {
@@ -28,6 +31,7 @@ export const activeSessionMachine = setup({
   actors: {
     persistence: persistenceActor,
     finishWorkout: finishWorkoutActor,
+    coachSync: coachSyncActor,
   },
   actions: {
     assignHydrateDone: assign(({ event, context }) => {
@@ -93,6 +97,13 @@ export const activeSessionMachine = setup({
     markSentinelFired: assign({ sentinelFired: true, sentinelFailed: false }),
     markSentinelFailed: assign({ sentinelFired: false, sentinelFailed: true }),
     markSentinelDone: assign({ sentinelFailed: false }),
+    applyCoachPatch: assign(({ context, event }) => {
+      if (event.type !== 'COACH_PATCH') return {};
+      return {
+        draftLogs: applyExecutionPatchToDraftLogs(context.draftLogs, event.patch),
+        hasUserEdited: true,
+      };
+    }),
     scheduleAutosave: sendTo(PERSISTENCE_ID, ({ context }) => ({
       type: 'SCHEDULE_AUTOSAVE',
       ...persistenceSnapshot(context),
@@ -101,6 +112,13 @@ export const activeSessionMachine = setup({
       type: 'FLUSH_AUTOSAVE',
       ...persistenceSnapshot(context),
     })),
+    forwardCoachThreadSnapshot: sendTo(COACH_SYNC_ID, ({ event }) => ({
+      type: 'THREAD_SNAPSHOT',
+      snapshot: (event as { type: 'COACH_THREAD_SNAPSHOT'; snapshot: CoachThreadSnapshot })
+        .snapshot,
+    })),
+    forwardCoachTrySentinel: sendTo(COACH_SYNC_ID, { type: 'TRY_SENTINEL' }),
+    forwardCoachReset: sendTo(COACH_SYNC_ID, { type: 'RESET' }),
   },
 }).createMachine({
   id: 'activeSession',
@@ -133,12 +151,22 @@ export const activeSessionMachine = setup({
           }),
         },
         AUTOSAVE_SCHEDULED: { actions: 'markAutosaveScheduled' },
+        COACH_THREAD_SNAPSHOT: { actions: 'forwardCoachThreadSnapshot' },
+        COACH_TRY_SENTINEL: { actions: 'forwardCoachTrySentinel' },
+        COACH_RESET: { actions: 'forwardCoachReset' },
       },
-      invoke: {
-        id: PERSISTENCE_ID,
-        src: 'persistence',
-        input: ({ context }) => ({ adapter: context.persistenceAdapter }),
-      },
+      invoke: [
+        {
+          id: PERSISTENCE_ID,
+          src: 'persistence',
+          input: ({ context }) => ({ adapter: context.persistenceAdapter }),
+        },
+        {
+          id: COACH_SYNC_ID,
+          src: 'coachSync',
+          input: ({ context }) => ({ adapter: context.coachSyncAdapter }),
+        },
+      ],
       initial: 'logging',
       states: {
         logging: {
@@ -166,10 +194,12 @@ export const activeSessionMachine = setup({
             COACH_SENTINEL_SEND: { actions: 'markSentinelFired' },
             COACH_SENTINEL_FAILED: { actions: 'markSentinelFailed' },
             COACH_SENTINEL_DONE: { actions: 'markSentinelDone' },
+            COACH_PATCH: { actions: ['applyCoachPatch', 'scheduleAutosave'] },
           },
         },
         autosaving: {
           on: {
+            COACH_PATCH: { actions: ['applyCoachPatch', 'scheduleAutosave'] },
             AUTOSAVE_DONE: [
               {
                 guard: 'finishQueued',

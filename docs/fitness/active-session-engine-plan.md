@@ -1,12 +1,14 @@
 # Active Session Engine — Architecture & Execution Plan
 
-**Status:** **Phase 1 shipped** · **Phase 2 next** (session route shell + read-only log surface + exit navigation). XState-driven **Active Session** on a dedicated route. **Coexists** with modal **WorkoutPlayer** (V1); not a replacement.
+**Status:** **Phases 0–1 shipped** · **Phase 2 in progress** (persistence, finish, editable logs, draft recovery — first half shipped) · **Phase 2.5 in progress** (Workout Logs routing + playbook seed shipped; migration deploy pending). XState-driven **Active Session** on a dedicated route. **Coexists** with modal **WorkoutPlayer** (V1); not a replacement.
 
 **Product name:** **Active Session** (not "WorkoutPlayer V2")  
 **Engineering module:** `src/features/active-session/`  
 **Route:** `/app/[workspace_id]/session/[task_id]`
 
 **Prerequisites:** Parametric Workout Engine Steps 1–9 (shipped) · V1 `WorkoutPlayer` stabilization (refs, autosave hardening, timer catch-up — shipped on `feat/mobile-chat-thread-overlay`)
+
+**Next step:** Phase 2 second half — implement **`coach-sync.actor.ts` (2.3)** and wire **`SessionCoachPane` (2.4)**. Before broad prod dogfood: deploy **`20260830120000_backfill_fitness_workout_logs_bubble.sql` (2.5.2)** to existing workspaces.
 
 **Related:** [workout-player.md](./workout-player.md) (V1 reference) · [layout-shell-architecture.md](./views/layout-shell-architecture.md) · [parametric-step6-plan.md](./views/parametric-step6-plan.md) (Coach context / `live_set_counts`) · [rail-composer-tokens.md](../agents/coach/rail-composer-tokens.md)
 
@@ -210,14 +212,15 @@ type SessionTelemetrySnapshot = {
 
 ## Phase overview
 
-| Phase | Theme                              | Est.   | Ship criteria                                                   |
-| ----- | ---------------------------------- | ------ | --------------------------------------------------------------- |
-| **0** | XState foundation + machine tests  | 1–2 wk | **Shipped** — 15 Vitest tests; no UI                            |
-| **1** | Session route shell + feature flag | 1 wk   | **Shipped** — route + flag; V1 remains default                  |
-| **2** | Persistence + Coach actors         | 2 wk   | Autosave/finish/sentinel/patch in machine; flag ON for internal |
-| **3** | Interval nested machines           | 1 wk   | EMOM/Tabata/AMRAP on route; background catch-up modeled         |
-| **4** | Telemetry loop (Coach)             | 1–2 wk | Coach sees `set_logs` + interval performance in context         |
-| **5** | Optional convergence (deferred)    | TBD    | Only if product later chooses a single execution path           |
+| Phase   | Theme                              | Est.   | Ship criteria                                                                 |
+| ------- | ---------------------------------- | ------ | ----------------------------------------------------------------------------- |
+| **0**   | XState foundation + machine tests  | 1–2 wk | **Shipped** — 15 Vitest tests; no UI                                          |
+| **1**   | Session route shell + feature flag | 1 wk   | **Shipped** — route + flag; V1 remains default                                |
+| **2**   | Persistence + Coach actors         | 2 wk   | **In progress** — autosave/finish/editable logs shipped; Coach actors next    |
+| **2.5** | Playbook + Workout Logs routing    | —      | **In progress** — seed + routing shipped (`4a465cf`); backfill deploy pending |
+| **3**   | Interval nested machines           | 1 wk   | EMOM/Tabata/AMRAP on route; background catch-up modeled                       |
+| **4**   | Telemetry loop (Coach)             | 1–2 wk | Coach sees `set_logs` + interval performance in context                       |
+| **5**   | Optional convergence (deferred)    | TBD    | Only if product later chooses a single execution path                         |
 
 **Total (Phases 0–4):** ~5–8 weeks with testing and staged rollout. Phase 5 is **deferred** — WorkoutPlayer and Active Session continue side-by-side until explicitly revisited.
 
@@ -310,16 +313,18 @@ pnpm run dev
 
 ## Phase 2 — Persistence + Coach actors
 
-**Status:** **Next** — not started  
+**Status:** **In progress** — first half shipped (`0c81509`)  
 **Depends on:** Phase 1  
 **Goal:** Move autosave, finish, sentinel, and execution_patch out of V1 effects into machine actors; wire editable log surface and in-progress draft recovery (Q5 client hydrate).
 
+**First half shipped:** Production `createProductionPersistenceAdapter` + `executeFinishWorkout`; client draft recovery via `recoverWorkoutSessionLogs`; editable `SessionLogSurface` (`workout-log-mutations`); `SESSION_TICK` hydration fix in `ActiveSessionShell`.
+
 ### Tasks
 
-- [ ] **2.1** Implement `persistence.actor.ts` production path:
+- [x] **2.1** Implement `persistence.actor.ts` production path:
   - Reuse `buildWorkoutLogDraftMetadata`, `createClient`, draft INSERT/UPDATE
   - Emit `AUTOSAVE_DONE { logTaskId }` | `AUTOSAVE_FAILED`
-- [ ] **2.2** Implement `finishing` state:
+- [x] **2.2** Implement `finishing` state:
   - Reuse `buildWorkoutLogFinishMetadata`, `finalLogId` from context (not stale React state)
   - `syncAssignees` via existing `replaceTaskAssigneesWithUserIds`
 - [ ] **2.3** Implement `coach-sync.actor.ts`:
@@ -335,10 +340,10 @@ pnpm run dev
 
 ### Acceptance criteria
 
-- [ ] Finish after autosave draft → one `completed` log, no orphan `in_progress`
+- [x] Finish after autosave draft → one `completed` log, no orphan `in_progress` (dogfooded on Active Session route)
 - [ ] Coach patch applies when Coach tab not visible (mobile Workout tab)
-- [ ] Close mid-session → draft flushed
-- [ ] Machine tests from Phase 0 still pass against production actors (with mocked Supabase)
+- [ ] Close mid-session → draft flushed (machine `closing` + `ABANDON` wired; production abandon nav TBD)
+- [x] Machine tests from Phase 0 still pass against production actors (with mocked Supabase)
 
 ### Verification
 
@@ -352,9 +357,11 @@ pnpm exec tsc --noEmit
 
 ## Phase 2.5 — Playbook Architecture & Workout Logs Routing
 
-**Status:** Next  
-**Depends on:** Phase 2 first half  
-**Goal:** Decouple execution telemetry from template boards; seed and route all Active Session logs to Workout Logs. Add 'Vault' (slug: `vault`) to fitness seed columns. Templates are manually retired to Vault. Active Session logs continue to resolve to 'Completed' (slug: `completed`) in the Workout Logs bubble. No data migrations required; legacy test data will be manually purged.
+**Status:** **In progress** — routing + seed shipped (`4a465cf`); backfill deploy + V1 parity pending  
+**Depends on:** Phase 2 first half (**met**)  
+**Goal:** Decouple execution telemetry from template boards; seed and route all Active Session logs to Workout Logs. Add 'Vault' (slug: `vault`) to fitness seed columns. Templates are manually retired to Vault. Active Session logs continue to resolve to 'Completed' (slug: `completed`) in the Workout Logs bubble. No column-rename migrations; legacy test data will be manually purged.
+
+**Shipped in `4a465cf`:** `resolveWorkoutLogsBubbleId`; `targetBubbleId` on session payload/context; persistence + finish INSERTs to Workout Logs bubble; draft recovery scoped to log bubble; fitness seed (`Workout Logs` bubble, Active Split, Vault); backfill migration file; Kanban personalization for Workout Logs.
 
 ### Playbook column taxonomy (fitness templates on Workouts bubble)
 
@@ -370,17 +377,17 @@ _Note: Previous migration strategies have been deprecated in favor of this lean 
 
 ### Tasks
 
-- [ ] **2.5.1** Update `WORKSPACE_SEED_BY_CATEGORY.fitness.columns` to include the new Vault column (`slug: 'vault'`) and rename `planned` to `Active Split`.
+- [x] **2.5.1** Update `WORKSPACE_SEED_BY_CATEGORY.fitness.columns` to include the new Vault column (`slug: 'vault'`) and rename `planned` to `Active Split`.
 - [ ] **2.5.2** Deploy `20260830120000_backfill_fitness_workout_logs_bubble.sql` to all envs (to route telemetry away from templates).
-- [ ] **2.5.3** Document playbook rule: finish never updates source template status.
-- [ ] **2.5.4** Dogfood: finish session → log in Workout Logs → Completed; template unchanged on Workouts → Active Split.
+- [x] **2.5.3** Document playbook rule: finish never updates source template status (see taxonomy table — Vault/Completed on templates are manual only).
+- [x] **2.5.4** Dogfood: finish session → log in Workout Logs → Completed; template unchanged on Workouts → Active Split.
 - [ ] **2.5.5** (Follow-up) Route V1 `WorkoutPlayer` INSERTs to `targetBubbleId` for parity.
 
 ### Acceptance criteria
 
-- [ ] New fitness workspaces seed Workout Logs bubble + Vault column.
-- [ ] Active Session logs land only in Workout Logs bubble under Completed.
-- [ ] Source workout templates never auto-move to Vault or Completed on finish.
+- [x] New fitness workspaces seed Workout Logs bubble + Vault column.
+- [x] Active Session logs land only in Workout Logs bubble under Completed (after backfill on existing workspaces — **2.5.2**).
+- [x] Source workout templates never auto-move to Vault or Completed on finish.
 
 ---
 
@@ -504,7 +511,7 @@ pnpm exec tsc --noEmit
 
 **Dogfood checklist (Active Session path, Phases 1–4):**
 
-- [ ] Solo Kanban start → finish → log appears on board
+- [x] Solo Kanban start → finish → log appears on board (Workout Logs → Completed; template unchanged on Workouts)
 - [ ] Class board start with `class_instance_id`
 - [ ] Mobile Workout \| Coach tab switch during EMOM
 - [ ] Background / lock screen during Tabata
@@ -542,14 +549,15 @@ pnpm exec tsc --noEmit
 
 Update this table as phases ship.
 
-| Phase | Status      | Shipped commit / PR | Notes                                                                |
-| ----- | ----------- | ------------------- | -------------------------------------------------------------------- |
-| 0     | **Shipped** | `ade54d5`           | XState machine + 15 Vitest tests                                     |
-| 1     | **Shipped** | `b5d6a9b`           | Route shell, read-only log, HUD, flag, WorkspaceShellGate, safe exit |
-| 2     | **Next**    | —                   | Production persistence + Coach actors + editable logs                |
-| 3     | Not started | —                   |                                                                      |
-| 4     | Not started | —                   |                                                                      |
-| 5     | Deferred    | —                   | Side-by-side; convergence TBD                                        |
+| Phase | Status          | Shipped commit / PR | Notes                                                                     |
+| ----- | --------------- | ------------------- | ------------------------------------------------------------------------- |
+| 0     | **Shipped**     | `ade54d5`           | XState machine + 15 Vitest tests                                          |
+| 1     | **Shipped**     | `b5d6a9b`           | Route shell, read-only log, HUD, flag, WorkspaceShellGate, safe exit      |
+| 2     | **In progress** | `0c81509`           | Persistence, finish, editable logs, draft recovery; Coach actors next     |
+| 2.5   | **In progress** | `4a465cf`           | Workout Logs routing + playbook seed; backfill deploy + V1 parity pending |
+| 3     | Not started     | —                   | Intervals + `last_performed_at` denormalization on finish                 |
+| 4     | Not started     | —                   |                                                                           |
+| 5     | Deferred        | —                   | Side-by-side; convergence TBD                                             |
 
 ---
 
@@ -562,3 +570,5 @@ Update this table as phases ship.
 | 2026-05-24 | **Phase 0 shipped** — XState machine, persistence actor, concurrency tests; polish (fail-stop, fast-path FINISH, `finishError`) |
 | 2026-05-24 | **Phase 1 shipped** — session route, read-only log, HUD, feature flag, WorkspaceShellGate, safe `?return=`                      |
 | 2026-05-24 | Phase 1 polish — parallel V1 modal triggers, Back enabled during autosave, open-redirect fix                                    |
+| 2026-05-24 | **Phase 2 first half shipped** — Supabase persistence/finish, draft recovery, editable log surface (`0c81509`)                  |
+| 2026-05-24 | **Phase 2.5 partial** — Workout Logs bubble routing, `targetBubbleId`, playbook seed taxonomy, backfill migration (`4a465cf`)   |

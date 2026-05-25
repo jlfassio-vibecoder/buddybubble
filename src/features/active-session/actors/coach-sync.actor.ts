@@ -1,8 +1,116 @@
-import { fromPromise } from 'xstate';
+import { fromCallback } from 'xstate';
+import { shouldHideWorkoutCoachSentinelFromRail } from '@/components/chat/WorkoutCoachRail';
+import { executionPatchFingerprint } from '@/lib/workout-player-execution-patch-bridge';
+import { parseExecutionPatchFromMetadata } from '@/types/execution-patch';
+import type { MessageRowWithEmbeddedTask } from '@/types/database';
+import type { ActiveSessionEvent } from '../machines/types';
 
-/** Phase 2 — coach thread subscription + sentinel + execution_patch. */
-export const coachSyncActorStub = fromPromise(async () => {
-  throw new Error('coachSyncActor is not wired until Phase 2.');
+export type CoachThreadSnapshot = {
+  messages: MessageRowWithEmbeddedTask[];
+  isLoading: boolean;
+  coachAuthUserId: string | null;
+};
+
+export type CoachSyncAdapter = {
+  fireSentinel: () => Promise<void>;
+  canAttemptSentinel: () => boolean;
+};
+
+export type CoachSyncActorInput = {
+  adapter: CoachSyncAdapter;
+};
+
+export type CoachSyncActorEvent =
+  | { type: 'THREAD_SNAPSHOT'; snapshot: CoachThreadSnapshot }
+  | { type: 'TRY_SENTINEL' }
+  | { type: 'RESET' };
+
+export function createNoOpCoachSyncAdapter(): CoachSyncAdapter {
+  return {
+    fireSentinel: async () => {},
+    canAttemptSentinel: () => false,
+  };
+}
+
+export const coachSyncActor = fromCallback<
+  ActiveSessionEvent,
+  CoachSyncActorInput,
+  CoachSyncActorEvent
+>(({ input, sendBack, receive }) => {
+  const appliedPatchFingerprints = new Map<string, string>();
+  let sentinelAttemptInFlight = false;
+
+  const sweepExecutionPatches = (snapshot: CoachThreadSnapshot) => {
+    if (snapshot.isLoading) return;
+    if (!snapshot.coachAuthUserId) return;
+    if (snapshot.messages.length === 0) return;
+
+    const coachRows = snapshot.messages.filter(
+      (m) =>
+        m.user_id === snapshot.coachAuthUserId &&
+        m.id &&
+        !shouldHideWorkoutCoachSentinelFromRail(m),
+    );
+
+    for (const row of coachRows) {
+      const id = row.id;
+      if (!id) continue;
+      const meta = row.metadata;
+      const raw =
+        meta != null && typeof meta === 'object' && !Array.isArray(meta)
+          ? (meta as { execution_patch?: unknown }).execution_patch
+          : undefined;
+      const fp = executionPatchFingerprint(raw);
+      if (fp != null && appliedPatchFingerprints.get(id) === fp) {
+        continue;
+      }
+      let patch = null;
+      try {
+        patch = parseExecutionPatchFromMetadata(raw);
+      } catch {
+        continue;
+      }
+      if (!patch) {
+        if (fp != null) appliedPatchFingerprints.set(id, fp);
+        continue;
+      }
+      sendBack({ type: 'COACH_PATCH', patch });
+      if (fp != null) appliedPatchFingerprints.set(id, fp);
+    }
+  };
+
+  receive((event) => {
+    const e = event as unknown as CoachSyncActorEvent;
+    if (e.type === 'THREAD_SNAPSHOT') {
+      sweepExecutionPatches(e.snapshot);
+      return;
+    }
+    if (e.type === 'TRY_SENTINEL') {
+      if (sentinelAttemptInFlight) return;
+      if (!input.adapter.canAttemptSentinel()) return;
+      sentinelAttemptInFlight = true;
+      sendBack({ type: 'COACH_SENTINEL_SEND' });
+      void input.adapter
+        .fireSentinel()
+        .then(() => {
+          sendBack({ type: 'COACH_SENTINEL_DONE' });
+        })
+        .catch(() => {
+          sendBack({ type: 'COACH_SENTINEL_FAILED' });
+        })
+        .finally(() => {
+          sentinelAttemptInFlight = false;
+        });
+      return;
+    }
+    if (e.type === 'RESET') {
+      appliedPatchFingerprints.clear();
+      sentinelAttemptInFlight = false;
+    }
+  });
+
+  return () => {
+    appliedPatchFingerprints.clear();
+    sentinelAttemptInFlight = false;
+  };
 });
-
-export { coachSyncActorStub as coachSyncActor };

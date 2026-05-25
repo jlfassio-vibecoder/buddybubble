@@ -226,6 +226,24 @@ describe('activeSessionMachine V1 scenario replay', () => {
     expect(actor.getSnapshot().context.sentinelFired).toBe(true);
   });
 
+  it('COACH_PATCH updates draftLogs, marks edited, and schedules autosave', async () => {
+    const mock = createMockPersistenceAdapter();
+    const actor = createStartedTestActor({}, mock);
+
+    actor.send({
+      type: 'COACH_PATCH',
+      patch: [{ exerciseIndex: 0, setIndex: 0, weight: '200' }],
+    });
+
+    expect(actor.getSnapshot().context.draftLogs[0][0].weight).toBe('200');
+    expect(actor.getSnapshot().context.hasUserEdited).toBe(true);
+
+    advanceAutosave(AUTOSAVE_MS);
+    await flushPromises();
+
+    expect(mock.ops).toEqual(['insert']);
+  });
+
   it('surfaces finishError when finalize fails', async () => {
     const mock = createMockPersistenceAdapter({ failUpdate: true });
     const actor = createStartedTestActor({}, mock);

@@ -8,9 +8,12 @@ import { createClient } from '@utils/supabase/client';
 import { useWorkoutUnitSystem } from '@/components/modals/task-modal/hooks/useWorkoutUnitSystem';
 import type { ActiveSessionTaskPayload } from '@/features/active-session/types/session-task';
 import {
+  createNoOpCoachSyncAdapter,
   createProductionFinishWorkoutRunner,
   createProductionPersistenceAdapter,
+  type CoachSyncAdapter,
 } from '@/features/active-session';
+import { useActiveSessionCoachBridge } from '@/features/active-session/hooks/useActiveSessionCoachBridge';
 import { useWorkoutSessionViewModel } from '@/hooks/use-workout-session-view-model';
 import { formatUserFacingError } from '@/lib/format-error';
 import { buildPlayerInitialLogs } from '@/lib/workout-factory/resolve-player-log-row-count';
@@ -43,6 +46,15 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
   const sessionId = sessionIdParam ?? generatedSessionIdRef.current;
   const exitIntentRef = useRef<'none' | 'finish'>('none');
   const contextRef = useRef<ActiveSessionContext | null>(null);
+  const coachAdapterImplRef = useRef<CoachSyncAdapter>(createNoOpCoachSyncAdapter());
+
+  const coachSyncAdapter = useMemo<CoachSyncAdapter>(
+    () => ({
+      fireSentinel: () => coachAdapterImplRef.current.fireSentinel(),
+      canAttemptSentinel: () => coachAdapterImplRef.current.canAttemptSentinel(),
+    }),
+    [],
+  );
 
   const workoutTitle = task.title?.trim() || 'Workout';
 
@@ -88,6 +100,7 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
       draftLogs: templateDraftLogs,
       persistenceAdapter,
       finishWorkoutRunner,
+      coachSyncAdapter,
     }),
     [
       sessionId,
@@ -102,11 +115,29 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
       templateDraftLogs,
       persistenceAdapter,
       finishWorkoutRunner,
+      coachSyncAdapter,
     ],
   );
 
   const { snapshot, send, actorRef } = useActiveSession(machineInput);
   contextRef.current = snapshot.context;
+
+  const isActiveSession = snapshot.matches('active');
+  const coachBridge = useActiveSessionCoachBridge({
+    enabled: isActiveSession,
+    send,
+    coachAdapterImplRef,
+    workspaceId,
+    bubbleId: task.bubble_id,
+    sourceTaskId: task.id,
+    sessionId,
+    classInstanceId,
+    sourceMetadata: task.metadata,
+    workoutTitle,
+    draftLogs: snapshot.context.draftLogs,
+    sessionVm: viewModel,
+    sentinelFired: snapshot.context.sentinelFired,
+  });
 
   const isHydrating = snapshot.matches('hydrating');
   const hydrationFailed = Boolean(snapshot.context.hydrationError);
@@ -239,7 +270,15 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
             disabled={logSurfaceDisabled}
             onDraftLogsChange={onDraftLogsChange}
           />
-          <SessionCoachPane />
+          <SessionCoachPane
+            bubbleId={task.bubble_id}
+            taskId={task.id}
+            workoutTitle={workoutTitle}
+            workoutData={coachBridge.coachWorkoutData}
+            bubbleRow={coachBridge.coachBubbleRow}
+            canPostMessages={coachBridge.canPostMessages}
+            messageThread={coachBridge.messageThread}
+          />
         </div>
       )}
     </div>

@@ -8,6 +8,11 @@ export {
   type ActiveSessionInput,
 } from './machines/types';
 export {
+  createNoOpCoachSyncAdapter,
+  coachSyncActor,
+  type CoachSyncAdapter,
+} from './actors/coach-sync.actor';
+export {
   createNoOpPersistenceAdapter,
   createProductionPersistenceAdapter,
   persistenceActor,
