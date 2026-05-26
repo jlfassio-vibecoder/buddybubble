@@ -41,7 +41,7 @@ Catalog copy in **`tasks.metadata`** is unchanged; personal cues are additive an
 1. Builds `exercisePayload` from exercises plus **completed** sets only (`done === true`), including `set_logs` with parsed numbers.
 2. Computes `duration_min` from the elapsed second counter.
 3. Optionally loads the source task row for program linkage and assignees.
-4. **`tasks.insert`** with `item_type: 'workout_log'`, `status: 'completed'`, metadata `{ duration_min?, exercises }`, and copied program/schedule/visibility fields.
+4. **`tasks.insert`** with `item_type: 'workout_log'`, `status: 'completed'`, metadata `{ duration_min?, exercises }`, and copied program/schedule/visibility fields. Rows are inserted into the **Workout Logs** bubble via [`resolveWorkoutLogsBubbleId`](../../src/lib/fitness/resolve-workout-logs-bubble-id.ts) (`logBubbleId`), not necessarily the source template’s bubble.
 5. **`replaceTaskAssigneesWithUserIds`** from [task-assignees-db.ts](../../src/lib/task-assignees-db.ts) when the source had assignees.
 
 Errors use **`toast.error`** with **`formatUserFacingError`**.
@@ -142,8 +142,12 @@ The player body is a **two-pane split** (`splitPaneBody`):
 
 ### Persistence
 
+- **Workout Logs routing** — draft recovery, autosave, and finish INSERT/UPDATE target the **Workout Logs** bubble (`resolveWorkoutLogsBubbleId` → `logBubbleId`). The source template stays on the **Workouts** bubble; finish never moves the template column.
 - **Draft autosave** — debounced (2s) write of `draft_logs` to an `in_progress` `workout_log` row via [`buildWorkoutLogDraftMetadata`](../../src/lib/workout-factory/build-workout-log-finish-metadata.ts); when the source workout is rich, also deep-clones `ai_workout_factory` so reload/resume from the log card keeps EMOM/Tabata structure.
+- **Draft visibility** — `status: 'in_progress'` logs appear under the fitness **In Progress** Kanban column (seed + migration [`20260526000000_add_in_progress_column_fitness.sql`](../../supabase/migrations/20260526000000_add_in_progress_column_fitness.sql)) and show an amber **In progress** badge on Kanban, chat task cards, and Task Modal ([`workout-log-task-state.ts`](../../src/lib/workout-log-task-state.ts), [`WorkoutLogInProgressBadge.tsx`](../../src/components/tasks/WorkoutLogInProgressBadge.tsx)).
 - **Finish** — [`buildWorkoutLogFinishMetadata`](../../src/lib/workout-factory/build-workout-log-finish-metadata.ts) on the draft or a new row: `workout_log_schema_version`, flat `exercises` + `set_logs`, factory snapshot; copies program/schedule/assignees from source task.
+
+**Active Session** (opt-in route) uses the same draft/finish builders and Workout Logs routing via `target_bubble_id` on the session payload — see [active-session-engine-plan.md](./active-session-engine-plan.md).
 
 ### Remaining gaps (Step 4+)
 

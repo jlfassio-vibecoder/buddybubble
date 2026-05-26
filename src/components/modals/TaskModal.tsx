@@ -24,6 +24,12 @@ import { WorkoutViewerContent } from '@/components/fitness/workout-viewer-dialog
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import { useActiveSessionLaunchFromTaskModal } from '@/hooks/use-active-session-launch-from-task-modal';
 import { cn } from '@/lib/utils';
+import {
+  isWorkoutLogInProgress,
+  WORKOUT_LOG_IN_PROGRESS_STATUS,
+  workoutLogInProgressStatusSelectOption,
+} from '@/lib/workout-log-task-state';
+import { WorkoutLogInProgressBadge } from '@/components/tasks/WorkoutLogInProgressBadge';
 import { useBoardColumnDefs } from '@/hooks/use-board-columns';
 import { useTaskBubbleUps } from '@/hooks/use-task-bubble-ups';
 import { type TaskAttachment, TASK_STATUSES } from '@/types/task-modal';
@@ -563,11 +569,24 @@ export function TaskModal({
   });
 
   const statusSelectOptions = useMemo(() => {
+    if (
+      status === WORKOUT_LOG_IN_PROGRESS_STATUS &&
+      !statusOptions.some((o) => o.value === status)
+    ) {
+      return [...statusOptions, workoutLogInProgressStatusSelectOption()];
+    }
     if (status && !statusOptions.some((o) => o.value === status)) {
       return [...statusOptions, { value: status, label: status }];
     }
     return statusOptions;
   }, [statusOptions, status]);
+
+  const workoutLogInProgressHeroBadge = useMemo(() => {
+    if (!isWorkoutLogInProgress({ item_type: itemType, status })) return null;
+    return (
+      <WorkoutLogInProgressBadge task={{ item_type: itemType, status }} variant="modal-hero" />
+    );
+  }, [itemType, status]);
 
   const applyRow = useCallback(
     (row: TaskRow, ctx: ApplyRowContext = { silent: false }) => {
@@ -1656,6 +1675,7 @@ export function TaskModal({
                   />
                 ) : null
               }
+              heroBadge={workoutLogInProgressHeroBadge}
             />
           ) : (
             <TaskModalHero
@@ -1672,6 +1692,7 @@ export function TaskModal({
               descriptionExpanded={commentsReadingContext}
               descriptionCollapseMode={commentsReadingContext ? 'preview_toggle' : 'none'}
               readingContextActions={null}
+              heroBadge={workoutLogInProgressHeroBadge}
             />
           )
         ) : null}
@@ -1754,6 +1775,7 @@ export function TaskModal({
                             />
                           ) : null
                         }
+                        heroBadge={workoutLogInProgressHeroBadge}
                       />
                     ) : (
                       <TaskModalHero
@@ -1772,6 +1794,7 @@ export function TaskModal({
                         descriptionExpanded={commentsReadingContext}
                         descriptionCollapseMode={commentsReadingContext ? 'preview_toggle' : 'none'}
                         readingContextActions={null}
+                        heroBadge={workoutLogInProgressHeroBadge}
                       />
                     )
                   ) : null}

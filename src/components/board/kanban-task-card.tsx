@@ -43,6 +43,7 @@ import { useLiveVideoStore } from '@/store/liveVideoStore';
 import { parseLiveSessionInviteFromMessageMetadata } from '@/types/live-session-invite';
 import type { TaskBubbleUpControlProps } from '@/components/tasks/bubbly-button';
 import { CardTabStrip } from '@/components/tasks/card-tab-strip';
+import { WorkoutLogInProgressBadge } from '@/components/tasks/WorkoutLogInProgressBadge';
 import { taskCardCoverPath, useTaskCardCoverUrl } from '@/lib/task-card-cover';
 
 export type KanbanTaskCardProps = {
@@ -782,6 +783,11 @@ export function KanbanTaskCard({
                       />
                       {density !== 'summary' ? <span>{typeVisual.label}</span> : null}
                     </span>
+                    <WorkoutLogInProgressBadge
+                      task={task}
+                      variant="kanban"
+                      density={density === 'summary' ? 'summary' : 'default'}
+                    />
                     <span
                       title={pChip.label}
                       className={cn(
@@ -928,6 +934,11 @@ export function KanbanTaskCard({
                           />
                           {density !== 'summary' ? <span>{typeVisual.label}</span> : null}
                         </span>
+                        <WorkoutLogInProgressBadge
+                          task={task}
+                          variant="kanban-cover"
+                          density={density === 'summary' ? 'summary' : 'default'}
+                        />
                         <span
                           title={pChip.label}
                           className={cn(

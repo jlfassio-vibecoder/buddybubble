@@ -6,8 +6,8 @@ A **Bubble** is a row in the `bubbles` table scoped to a **Social Space** (`work
 
 When a workspace is created with `category_type = 'fitness'`, default channels and shared Kanban column slugs come from [`WORKSPACE_SEED_BY_CATEGORY.fitness`](../../src/lib/workspace-seed-templates.ts):
 
-- **Bubbles (in order):** Programs, Workouts, Classes, Trainer, Analytics.
-- **Board columns (all fitness Kanban surfaces that use workspace board columns):** Library, Scheduled, Today, Completed.
+- **Bubbles (in order):** Programs, Workouts, **Workout Logs**, Classes, Trainer, Analytics.
+- **Board columns (all fitness Kanban surfaces that use workspace board columns):** Active Split (`planned`), Scheduled, Today, **In Progress** (`in_progress`), Completed, Vault.
 
 The **Analytics** bubble was also **backfilled** for older fitness workspaces that predated it; see [20260431100000_backfill_fitness_analytics_bubble.sql](../../supabase/migrations/20260431100000_backfill_fitness_analytics_bubble.sql).
 
@@ -96,16 +96,18 @@ Canonical UI rules live in [permissions.ts](../../src/lib/permissions.ts) (pure 
 
 ## Per-channel docs
 
-| Bubble    | Main board       | Channel doc                            | Component deep-dive                                             |
-| --------- | ---------------- | -------------------------------------- | --------------------------------------------------------------- |
-| Programs  | `ProgramsBoard`  | [programs.md](programs.md)             | [programs-board.md](../programs-board.md)                       |
-| Workouts  | `KanbanBoard`    | [workouts.md](workouts.md)             | [workout-player.md](../workout-player.md) (playback from board) |
-| Classes   | `ClassesBoard`   | [classes/README.md](classes/README.md) | [classes-board.md](../classes-board.md)                         |
-| Trainer   | `KanbanBoard`    | [trainer.md](trainer.md)               | (no dedicated fitness component)                                |
-| Analytics | `AnalyticsBoard` | [analytics.md](analytics.md)           | [analytics-board.md](../analytics-board.md)                     |
+| Bubble       | Main board       | Channel doc                            | Component deep-dive                                                       |
+| ------------ | ---------------- | -------------------------------------- | ------------------------------------------------------------------------- |
+| Programs     | `ProgramsBoard`  | [programs.md](programs.md)             | [programs-board.md](../programs-board.md)                                 |
+| Workouts     | `KanbanBoard`    | [workouts.md](workouts.md)             | [workout-player.md](../workout-player.md) (playback from board)           |
+| Workout Logs | `KanbanBoard`    | —                                      | [workout-player.md](../workout-player.md#persistence) (draft/finish logs) |
+| Classes      | `ClassesBoard`   | [classes/README.md](classes/README.md) | [classes-board.md](../classes-board.md)                                   |
+| Trainer      | `KanbanBoard`    | [trainer.md](trainer.md)               | (no dedicated fitness component)                                          |
+| Analytics    | `AnalyticsBoard` | [analytics.md](analytics.md)           | [analytics-board.md](../analytics-board.md)                               |
 
 ## Cross-cutting UI (not per-bubble)
 
 - **[TaskModal](../../src/components/modals/TaskModal.tsx)** — cards open here from any bubble; workout tasks use the fitness viewer/editor components.
-- **[WorkoutPlayer](../workout-player.md)** — started from the default Kanban path via `onStartWorkout` / `handleStartWorkout` (e.g. when the user runs a workout from a card on **Workouts** or another generic bubble).
+- **[WorkoutPlayer](../workout-player.md)** — started from the default Kanban path via `onStartWorkout` / `handleStartWorkout` (e.g. when the user runs a workout from a card on **Workouts** or another generic bubble). Draft and finished **`workout_log`** rows land on **Workout Logs**.
+- **[Active Session](../active-session-engine-plan.md)** — opt-in route-based execution shell (`NEXT_PUBLIC_ACTIVE_SESSION_ROUTE=1`); same ViewModel and log routing as WorkoutPlayer.
 - **[FitnessProfileSheet](../fitness-profile-sheet.md)** — workspace-level sheet (not tied to a single bubble); quick workout needs a concrete bubble, not “All”.

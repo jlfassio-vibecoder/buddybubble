@@ -71,6 +71,7 @@ import {
   buildPlayerInitialLogs,
 } from '@/lib/workout-factory/resolve-player-log-row-count';
 import { buildPlayerExerciseIndexLookup } from '@/lib/workout-factory/workout-player-exercise-index';
+import { resolveWorkoutLogsBubbleId } from '@/lib/fitness/resolve-workout-logs-bubble-id';
 import { WorkoutPlayerBlockList } from '@/components/fitness/workout-block-renderer/WorkoutPlayerBlockList';
 import {
   WorkoutPlayerExercisePanel,
@@ -415,8 +416,11 @@ export function WorkoutPlayer({
   const activeLogTaskIdRef = useRef<string | null>(null);
   const logsRef = useRef<SetDraft[][]>([]);
   const hasUserEditedRef = useRef(false);
-  /** Bumps only when `sourceTaskId` / `bubble` / exercise template identity actually changes, not on effect churn. */
+  /** Bumps only when `sourceTaskId` / log bubble / exercise template identity actually changes, not on effect churn. */
   const lastRecoveryIdentityRef = useRef<string | null>(null);
+  /** Template `bubbleId` = source card; `logBubbleId` = Workout Logs channel for workout_log rows. */
+  const logBubbleIdRef = useRef<string | null>(null);
+  const [logBubbleId, setLogBubbleId] = useState<string | null>(null);
   /** One-shot workout-open sentinel per player session (survives lazy coach rail unmount). */
   const coachSentinelFiredRef = useRef(false);
   const coachExecutionAppliedFingerprintRef = useRef<Map<string, string>>(new Map());
@@ -641,13 +645,40 @@ export function WorkoutPlayer({
       });
   }, [profileId, workspaceId]);
 
+  // Resolve Workout Logs bubble before draft recovery / log INSERTs (template bubbleId stays for Coach).
+  useEffect(() => {
+    if (!open) {
+      logBubbleIdRef.current = null;
+      setLogBubbleId(null);
+      return;
+    }
+    if (!workspaceId || !bubbleId) {
+      logBubbleIdRef.current = null;
+      setLogBubbleId(null);
+      return;
+    }
+    let cancelled = false;
+    const supabase = createClient();
+    void (async () => {
+      const id = await resolveWorkoutLogsBubbleId(supabase, workspaceId, bubbleId);
+      if (cancelled) return;
+      logBubbleIdRef.current = id;
+      setLogBubbleId(id);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, workspaceId, bubbleId]);
+
   // Reset / recover draft when player opens or when task / exercise content identity changes.
   useEffect(() => {
     if (!open) {
       lastRecoveryIdentityRef.current = null;
       return;
     }
-    const identity = `${sourceTaskId ?? 'null'}:${bubbleId}:${exercisesStringDigest}:${blocksDigest}`;
+    if (!logBubbleId) return;
+
+    const identity = `${sourceTaskId ?? 'null'}:${logBubbleId}:${exercisesStringDigest}:${blocksDigest}`;
     if (lastRecoveryIdentityRef.current !== identity) {
       lastRecoveryIdentityRef.current = identity;
       hasUserEditedRef.current = false;
@@ -671,7 +702,7 @@ export function WorkoutPlayer({
       const { data: draft, error } = await supabase
         .from('tasks')
         .select('id, metadata')
-        .eq('bubble_id', bubbleId)
+        .eq('bubble_id', logBubbleId)
         .eq('item_type', 'workout_log')
         .eq('status', 'in_progress')
         .eq('metadata->>source_task_id', sourceTaskId)
@@ -710,7 +741,7 @@ export function WorkoutPlayer({
       const { data: historical } = await supabase
         .from('tasks')
         .select('metadata')
-        .eq('bubble_id', bubbleId)
+        .eq('bubble_id', logBubbleId)
         .eq('item_type', 'workout_log')
         .eq('status', 'completed')
         .eq('metadata->>source_task_id', sourceTaskId)
@@ -775,13 +806,15 @@ export function WorkoutPlayer({
     blocksDigest,
     exercises,
     sessionVm.blocks,
-    bubbleId,
+    logBubbleId,
   ]);
 
   // Debounced cloud autosave of in-progress draft_logs (2s) — no UI spinner.
   const executeAutosaveNow = useCallback(async (): Promise<void> => {
     const draftLogs = logsRef.current;
     if (!sourceTaskId || draftLogs.length === 0) return;
+    const logBubble = logBubbleIdRef.current;
+    if (!logBubble) return;
     if (
       !activeLogTaskIdRef.current &&
       !hasUserEditedRef.current &&
@@ -807,7 +840,7 @@ export function WorkoutPlayer({
         const { data, error } = await supabase
           .from('tasks')
           .insert({
-            bubble_id: bubbleId,
+            bubble_id: logBubble,
             title: `${workoutTitle} — Log`,
             item_type: 'workout_log',
             status: 'in_progress',
@@ -833,7 +866,7 @@ export function WorkoutPlayer({
         .eq('id', currentDraftId);
       if (error) console.error('workout draft autosave update failed', error);
     }
-  }, [sourceTaskId, exercises, sessionVm, metadata, bubbleId, workoutTitle, class_instance_id]);
+  }, [sourceTaskId, exercises, sessionVm, metadata, workoutTitle, class_instance_id]);
 
   const runAutosave = useCallback(async (): Promise<void> => {
     const p = executeAutosaveNow();
@@ -846,7 +879,7 @@ export function WorkoutPlayer({
   }, [executeAutosaveNow]);
 
   useEffect(() => {
-    if (!open || !sourceTaskId || logs.length === 0) return;
+    if (!open || !sourceTaskId || logs.length === 0 || !logBubbleId) return;
     if (
       !activeLogTaskId &&
       !hasUserEditedRef.current &&
@@ -876,6 +909,7 @@ export function WorkoutPlayer({
     open,
     activeLogTaskId,
     sourceTaskId,
+    logBubbleId,
     runAutosave,
     exercisesStringDigest,
     blocksDigest,
@@ -1178,8 +1212,15 @@ export function WorkoutPlayer({
       return;
     }
 
+    const logBubble = logBubbleIdRef.current;
+    if (!logBubble) {
+      toast.error('Could not resolve workout log channel.');
+      setSaving(false);
+      return;
+    }
+
     const workoutLogTask = {
-      bubble_id: bubbleId,
+      bubble_id: logBubble,
       title: `${workoutTitle} — Log`,
       item_type: 'workout_log' as const,
       status: 'completed' as const,
@@ -1213,7 +1254,6 @@ export function WorkoutPlayer({
     logs,
     metadata,
     sessionVm,
-    bubbleId,
     workoutTitle,
     sourceTaskId,
     class_instance_id,

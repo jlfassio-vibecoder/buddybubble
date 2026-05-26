@@ -66,8 +66,9 @@ export const WORKSPACE_SEED_BY_CATEGORY: Record<
       { name: 'Active Split', slug: 'planned', position: 0 },
       { name: 'Scheduled', slug: 'scheduled', position: 1 },
       { name: 'Today', slug: 'today', position: 2 },
-      { name: 'Completed', slug: 'completed', position: 3 },
-      { name: 'Vault', slug: 'vault', position: 4 },
+      { name: 'In Progress', slug: 'in_progress', position: 3 },
+      { name: 'Completed', slug: 'completed', position: 4 },
+      { name: 'Vault', slug: 'vault', position: 5 },
     ],
   },
   class: {

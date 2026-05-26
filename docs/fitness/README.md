@@ -88,8 +88,9 @@ Deeper database and RLS behavior live under [supabase/migrations/](../../supabas
 1. [workout-exercises-editor.md](workout-exercises-editor.md) — shared list editor.
 2. [schedule-program-start-dialog.md](schedule-program-start-dialog.md) — small scheduling primitive.
 3. [workout-viewer-dialog.md](workout-viewer-dialog.md) — embeds the editor; used from Task modal.
-4. [workout-player.md](workout-player.md) — execution and logging.
-5. [programs-board.md](programs-board.md) — largest fitness surface; links schedule dialog.
-6. [analytics-board.md](analytics-board.md) — aggregates for selected program.
-7. [classes-board.md](classes-board.md) — enrollments.
-8. [fitness-profile-sheet.md](fitness-profile-sheet.md) — profile + AI quick workout.
+4. [workout-player.md](workout-player.md) — execution and logging (modal + Workout Logs routing).
+5. [active-session-engine-plan.md](active-session-engine-plan.md) — XState Active Session route (opt-in; Phases 0–3 shipped).
+6. [programs-board.md](programs-board.md) — largest fitness surface; links schedule dialog.
+7. [analytics-board.md](analytics-board.md) — aggregates for selected program.
+8. [classes-board.md](classes-board.md) — enrollments.
+9. [fitness-profile-sheet.md](fitness-profile-sheet.md) — profile + AI quick workout.

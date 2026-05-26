@@ -12,6 +12,7 @@ type Props = {
   title: string;
   actorRef: ActiveSessionActorRef;
   abandonDisabled: boolean;
+  abandonSaving?: boolean;
   finishBusy: boolean;
   onAbandon: () => void;
   onFinish: () => void;
@@ -28,6 +29,7 @@ export function SessionHUD({
   title,
   actorRef,
   abandonDisabled,
+  abandonSaving = false,
   finishBusy,
   onAbandon,
   onFinish,
@@ -55,7 +57,7 @@ export function SessionHUD({
           </span>
         </div>
         <Button variant="ghost" size="sm" onClick={onAbandon} disabled={abandonDisabled}>
-          Back
+          {abandonSaving ? 'Saving…' : 'Back'}
         </Button>
         <Button
           size="sm"
