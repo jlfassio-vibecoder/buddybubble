@@ -10,7 +10,7 @@ export type AgentEffectContext = {
   agentSlug: typeof COACH_SLUG;
 };
 
-export type CardActionKind = 'trigger_generation';
+export type CardActionKind = 'trigger_generation' | 'regenerate_from_outline';
 
 export type CardAction = { v: 1; kind: CardActionKind };
 

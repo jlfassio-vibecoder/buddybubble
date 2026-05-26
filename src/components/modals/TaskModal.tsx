@@ -21,6 +21,8 @@ import type {
   WorkspaceCategory,
 } from '@/types/database';
 import { WorkoutViewerContent } from '@/components/fitness/workout-viewer-dialog';
+import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
+import { isActiveSessionRouteEnabled } from '@/lib/feature-flags/activeSessionRoute';
 import { cn } from '@/lib/utils';
 import { useBoardColumnDefs } from '@/hooks/use-board-columns';
 import { useTaskBubbleUps } from '@/hooks/use-task-bubble-ups';
@@ -485,47 +487,6 @@ export function TaskModal({
     [setWorkoutViewerOpen, handleAiGenerateWorkout],
   );
 
-  const handleCardAction = useCallback(
-    (args: CardActionEffectPayload) => {
-      if (args.action.kind !== 'trigger_generation') return;
-      if (itemType !== 'workout' && itemType !== 'workout_log') return;
-      if (!canWrite) return;
-      if (aiWorkoutGenerating) return;
-      if (viewerWorkoutSet != null) return;
-
-      const dedupeKey = createSessionIdRef.current
-        ? `create:${createSessionIdRef.current}`
-        : `existing:${args.taskId}`;
-      let handled = handledCardActionMessageIdsByTaskRef.current.get(dedupeKey);
-      if (!handled) {
-        handled = new Set();
-        handledCardActionMessageIdsByTaskRef.current.set(dedupeKey, handled);
-      }
-      if (handled.has(args.messageId)) return;
-      handled.add(args.messageId);
-
-      logAgentRoutingEvent({
-        event: 'coach.card_action.triggered',
-        action: args.action.kind,
-        taskId: args.taskId,
-        messageId: args.messageId,
-        surface: 'standard-task-chat-rail',
-      });
-      setWorkoutSplitEngaged(true);
-      setWorkoutViewerOpen(true);
-      void handleAiGenerateWorkout(buildWizardPayload());
-    },
-    [
-      itemType,
-      canWrite,
-      aiWorkoutGenerating,
-      viewerWorkoutSet,
-      setWorkoutViewerOpen,
-      handleAiGenerateWorkout,
-      buildWizardPayload,
-    ],
-  );
-
   const { aiCardCoverGenerating, generateCardCoverWithAi, resetCardCoverAi } = useTaskCardCoverAi({
     canWrite,
     taskId,
@@ -760,6 +721,60 @@ export function TaskModal({
     onTaskRowDeleted: handleTaskRowDeleted,
   });
 
+  const handleCardAction = useCallback(
+    (args: CardActionEffectPayload) => {
+      if (
+        args.action.kind !== 'trigger_generation' &&
+        args.action.kind !== 'regenerate_from_outline'
+      ) {
+        return;
+      }
+      if (itemType !== 'workout' && itemType !== 'workout_log') return;
+      if (!canWrite) return;
+      if (aiWorkoutGenerating) return;
+      if (args.action.kind === 'trigger_generation' && viewerWorkoutSet != null) return;
+
+      const dedupeKey = createSessionIdRef.current
+        ? `create:${createSessionIdRef.current}`
+        : `existing:${args.taskId}`;
+      let handled = handledCardActionMessageIdsByTaskRef.current.get(dedupeKey);
+      if (!handled) {
+        handled = new Set();
+        handledCardActionMessageIdsByTaskRef.current.set(dedupeKey, handled);
+      }
+      if (handled.has(args.messageId)) return;
+      handled.add(args.messageId);
+
+      logAgentRoutingEvent({
+        event: 'coach.card_action.triggered',
+        action: args.action.kind,
+        taskId: args.taskId,
+        messageId: args.messageId,
+        surface: 'standard-task-chat-rail',
+      });
+      setWorkoutSplitEngaged(true);
+      setWorkoutViewerOpen(true);
+
+      void (async () => {
+        if (args.action.kind === 'regenerate_from_outline' && taskId) {
+          await loadTask(taskId, { silent: true });
+        }
+        await handleAiGenerateWorkout(buildWizardPayload());
+      })();
+    },
+    [
+      itemType,
+      canWrite,
+      aiWorkoutGenerating,
+      viewerWorkoutSet,
+      setWorkoutViewerOpen,
+      handleAiGenerateWorkout,
+      buildWizardPayload,
+      taskId,
+      loadTask,
+    ],
+  );
+
   const { flushNow } = useTaskCoreTextAutosave({
     enabled: canWrite && Boolean(taskId),
     canWrite,
@@ -904,6 +919,15 @@ export function TaskModal({
     assignedTo,
     liveStreamEnabled,
   });
+
+  const showActiveSessionLaunch = useMemo(
+    () =>
+      Boolean(taskId) &&
+      isActiveSessionRouteEnabled() &&
+      buildWorkoutSessionViewModel(metadata ?? {}).flatExercises.length > 0 &&
+      !coreDirty,
+    [taskId, metadata, coreDirty],
+  );
 
   useEffect(() => {
     if (!open || taskId) return;
@@ -2151,6 +2175,8 @@ export function TaskModal({
                 syncKey={workoutPaneSyncKey}
                 cardCoverPath={cardCoverPath.trim() || null}
                 taskId={taskId}
+                workspaceId={workspaceId}
+                showActiveSessionLaunch={showActiveSessionLaunch}
                 layout="embedded"
                 isAiGenerating={aiWorkoutGenerating}
                 cardCoverAiHint={cardCoverAiHint}

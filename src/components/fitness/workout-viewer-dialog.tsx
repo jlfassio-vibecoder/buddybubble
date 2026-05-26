@@ -24,6 +24,7 @@ import { useTaskCardCoverUrl } from '@/lib/task-card-cover';
 import { ChevronRight, Image as ImageIcon, Loader2, X } from 'lucide-react';
 import { WORKOUT_FACTORY_CHAIN_MESSAGES } from '@/lib/workout-factory/api-client';
 import { TaskModalCardCoverAiBlock } from '@/components/modals/task-modal/TaskModalCardCoverAiBlock';
+import { ActiveSessionLaunchButton } from '@/components/fitness/WorkoutPlayer';
 
 export type WorkoutViewerApplyPayload = {
   title: string;
@@ -196,6 +197,10 @@ export type WorkoutViewerDialogProps = {
   saveDisabled?: boolean;
   /** `log` uses completed-workout read UI with set_logs overlay. */
   readVariant?: 'workout' | 'log';
+  /** When set with `showActiveSessionLaunch`, renders Launch Active Session in the header. */
+  workspaceId?: string;
+  /** Parent gates on flag, taskId, exercises, and saved state (`!coreDirty`). */
+  showActiveSessionLaunch?: boolean;
 };
 
 export type WorkoutViewerContentProps = Omit<WorkoutViewerDialogProps, 'open' | 'onOpenChange'> & {
@@ -238,6 +243,8 @@ export function WorkoutViewerContent({
   saving = false,
   saveDisabled = false,
   readVariant = 'workout',
+  workspaceId,
+  showActiveSessionLaunch = false,
 }: WorkoutViewerContentProps) {
   const [mode, setMode] = useState<ViewMode>('view');
   const [localTitle, setLocalTitle] = useState(title);
@@ -359,6 +366,14 @@ export function WorkoutViewerContent({
       <div className="flex items-start justify-between gap-2">
         {titleNode}
         <div className="flex shrink-0 items-center gap-2">
+          {showActiveSessionLaunch && workspaceId && taskId ? (
+            <ActiveSessionLaunchButton
+              workspaceId={workspaceId}
+              sourceTaskId={taskId}
+              from="modal"
+              variant="compact"
+            />
+          ) : null}
           <div className="flex items-center gap-1 rounded-lg border border-border p-0.5">
             <button
               type="button"

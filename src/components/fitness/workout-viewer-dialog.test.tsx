@@ -4,6 +4,10 @@ import type { Json } from '@/types/database';
 import { richMetadataWithBlockFormat } from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
 import { WorkoutViewerContent } from './workout-viewer-dialog';
 
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn() }),
+}));
+
 function renderViewer(
   meta: Record<string, unknown>,
   opts?: { readVariant?: 'workout' | 'log'; onApply?: ReturnType<typeof vi.fn> },
@@ -157,5 +161,41 @@ describe('WorkoutViewerContent edit mode', () => {
     expect(payload.blocks!.length).toBeGreaterThan(0);
     const main = payload.blocks!.find((b: { section: string }) => b.section === 'main')!;
     expect(main.exercises[0].exerciseName).toBe('Burpee Tabata');
+  });
+});
+
+describe('WorkoutViewerContent active session launch', () => {
+  afterEach(() => cleanup());
+
+  it('shows Launch Active Session in header when showActiveSessionLaunch is true', () => {
+    const metadata = richMetadataWithBlockFormat('tabata') as Json;
+    render(
+      <WorkoutViewerContent
+        {...baseViewProps}
+        metadata={metadata}
+        canWrite
+        taskId="task-123"
+        workspaceId="ws-456"
+        showActiveSessionLaunch
+        syncKey={1}
+      />,
+    );
+    expect(screen.getByRole('button', { name: /Launch Active Session/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'View' })).toBeTruthy();
+  });
+
+  it('hides Launch Active Session when showActiveSessionLaunch is false', () => {
+    const metadata = richMetadataWithBlockFormat('tabata') as Json;
+    render(
+      <WorkoutViewerContent
+        {...baseViewProps}
+        metadata={metadata}
+        taskId="task-123"
+        workspaceId="ws-456"
+        showActiveSessionLaunch={false}
+        syncKey={1}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: /Launch Active Session/i })).toBeNull();
   });
 });

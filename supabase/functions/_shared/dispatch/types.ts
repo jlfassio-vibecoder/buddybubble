@@ -174,6 +174,8 @@ export interface DispatchContext {
   coachMergeWorkoutMetadata?: boolean;
   /** From COACH_CARD_ACTIONS env. When false, strategy strips card_action before guards. */
   coachCardActions?: boolean;
+  /** From COACH_AUTO_REGENERATE_AFTER_RAIL_MERGE env. */
+  coachAutoRegenerateAfterRailMerge?: boolean;
   /**
    * Strategy-owned scratch space, request-scoped. Each strategy SHOULD namespace its
    * keys under its own slug (e.g. `extras.coach = { ... }`) so registrations cannot

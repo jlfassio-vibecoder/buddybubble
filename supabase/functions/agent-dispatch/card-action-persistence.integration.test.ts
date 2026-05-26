@@ -30,6 +30,7 @@ import {
 } from '../_shared/test-helpers/agent-rpc-persistence-simulator.ts';
 
 const TRIGGER_GENERATION = { v: 1, kind: 'trigger_generation' } as const;
+const REGENERATE_FROM_OUTLINE = { v: 1, kind: 'regenerate_from_outline' } as const;
 
 // ---------------------------------------------------------------------------
 // Section 1 — SQL structure regression. Locks the migration pattern in place.
@@ -186,4 +187,9 @@ Deno.test('simulator: draft-reply preserves coach_draft + card_action + intake s
 Deno.test('simulator: update_task_and_reply persists card_action on reply metadata', () => {
   const meta = simulateUpdateTaskReplyMetadata({ card_action: TRIGGER_GENERATION });
   assertEquals(meta.card_action, TRIGGER_GENERATION);
+});
+
+Deno.test('simulator: regenerate_from_outline card_action persists on update_task reply', () => {
+  const meta = simulateUpdateTaskReplyMetadata({ card_action: REGENERATE_FROM_OUTLINE });
+  assertEquals(meta.card_action, REGENERATE_FROM_OUTLINE);
 });

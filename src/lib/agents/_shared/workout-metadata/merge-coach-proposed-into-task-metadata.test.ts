@@ -97,6 +97,155 @@ describe('applyCoachWorkoutOutlineToTaskMetadata', () => {
   });
 });
 
+function tabataRichBaseFixture() {
+  const tabataParams = {
+    work_seconds: 20,
+    rest_seconds: 10,
+    rounds: 8,
+  };
+  const makeBlock = (name: string) => ({
+    name,
+    blockFormat: 'tabata',
+    formatParams: tabataParams,
+    exercises: [{ order: 1, exerciseName: `${name} Exercise A` }],
+  });
+  return {
+    workout_type: 'Tabata',
+    duration_min: 30,
+    ai_workout_factory: {
+      generated_at: '2026-01-01T00:00:00Z',
+      model: 'gemini-test',
+      workout_set: {
+        title: 'Tabata set',
+        workouts: [
+          {
+            title: 'Tabata session',
+            exerciseBlocks: [
+              makeBlock('Main — Tabata Power'),
+              makeBlock('Main — Tabata Core'),
+              makeBlock('Main — Tabata Finisher'),
+            ],
+          },
+        ],
+      },
+    },
+  };
+}
+
+describe('mergeCoachProposedIntoTaskMetadata — block replace by name', () => {
+  it('20 — same Tabata block name: 1→2 exercises replaces in place', () => {
+    const base = tabataRichBaseFixture();
+    const proposedBlocks = [
+      'Main — Tabata Power',
+      'Main — Tabata Core',
+      'Main — Tabata Finisher',
+    ].map((name) => ({
+      name,
+      block_format: 'tabata',
+      format_params: { work_seconds: 20, rest_seconds: 10, rounds: 8 },
+      exercises: [{ name: `${name} A` }, { name: `${name} B` }],
+    }));
+    const { metadata, mergeLog } = mergeCoachProposedIntoTaskMetadata({
+      base,
+      proposed: { blocks: proposedBlocks },
+    });
+    const session = (metadata as { ai_workout_factory: { workout_set: { workouts: unknown[] } } })
+      .ai_workout_factory.workout_set.workouts[0] as {
+      exerciseBlocks: Array<{ name: string; exercises: Array<{ exerciseName: string }> }>;
+    };
+    expect(session.exerciseBlocks.length).toBe(3);
+    for (const block of session.exerciseBlocks) {
+      expect(block.exercises.length).toBe(2);
+    }
+    expect(mergeLog.drops.filter((d) => d.reason === 'exercise_block_replaced').length).toBe(3);
+    expect(mergeLog.touched).toContain('exerciseBlocks');
+  });
+
+  it('21 — same name identical content drops as exercise_block_already_present', () => {
+    const base = tabataRichBaseFixture();
+    const block = {
+      name: 'Main — Tabata Power',
+      block_format: 'tabata',
+      format_params: { work_seconds: 20, rest_seconds: 10, rounds: 8 },
+      exercises: [{ name: 'Main — Tabata Power Exercise A' }],
+    };
+    const first = mergeCoachProposedIntoTaskMetadata({ base, proposed: { blocks: [block] } });
+    const second = mergeCoachProposedIntoTaskMetadata({
+      base: first.metadata,
+      proposed: { blocks: [block] },
+    });
+    expect(second.mergeLog.drops.some((d) => d.reason === 'exercise_block_already_present')).toBe(
+      true,
+    );
+  });
+
+  it('22 — new block name appends (4 blocks)', () => {
+    const base = tabataRichBaseFixture();
+    const { metadata, mergeLog } = mergeCoachProposedIntoTaskMetadata({
+      base,
+      proposed: {
+        blocks: [
+          {
+            name: 'Extra Finisher',
+            exercises: [{ name: 'Burpees', sets: 3, reps: '10' }],
+          },
+        ],
+      },
+    });
+    const session = (metadata as { ai_workout_factory: { workout_set: { workouts: unknown[] } } })
+      .ai_workout_factory.workout_set.workouts[0] as {
+      exerciseBlocks: Array<{ name: string }>;
+    };
+    expect(session.exerciseBlocks.length).toBe(4);
+    expect(session.exerciseBlocks.some((b) => b.name === 'Extra Finisher')).toBe(true);
+    expect(mergeLog.touched).toContain('exerciseBlocks');
+  });
+
+  it('23 — replace_all_exercise_blocks replaces entire exerciseBlocks array', () => {
+    const base = tabataRichBaseFixture();
+    const { metadata, mergeLog } = mergeCoachProposedIntoTaskMetadata({
+      base,
+      proposed: {
+        replace_all_exercise_blocks: true,
+        blocks: [
+          {
+            name: 'Renamed Block',
+            block_format: 'amrap',
+            format_params: { time_cap_minutes: 5 },
+            exercises: [{ name: 'Burpees' }],
+          },
+        ],
+      },
+    });
+    const session = (metadata as { ai_workout_factory: { workout_set: { workouts: unknown[] } } })
+      .ai_workout_factory.workout_set.workouts[0] as {
+      exerciseBlocks: Array<{ name: string }>;
+    };
+    expect(session.exerciseBlocks.length).toBe(1);
+    expect(session.exerciseBlocks[0].name).toBe('Renamed Block');
+    expect(session.exerciseBlocks.some((b) => b.name.includes('Tabata'))).toBe(false);
+    expect(mergeLog.touched).toContain('exerciseBlocks');
+  });
+
+  it('24 — instruction-only warm-up keeps append semantics', () => {
+    const base = richBaseFixture();
+    const { metadata, mergeLog } = mergeCoachProposedIntoTaskMetadata({
+      base,
+      proposed: {
+        blocks: [{ name: 'Warm-up', instructions: ['Arm circles 30s each direction'] }],
+      },
+    });
+    const session = (metadata as { ai_workout_factory: { workout_set: { workouts: unknown[] } } })
+      .ai_workout_factory.workout_set.workouts[0] as {
+      warmupBlocks: Array<{ instructions: string[] }>;
+    };
+    expect(mergeLog.touched).toContain('warmup');
+    expect(session.warmupBlocks.some((w) => w.instructions.join(' ').includes('Arm circles'))).toBe(
+      true,
+    );
+  });
+});
+
 describe('mergeCoachProposedIntoTaskMetadata', () => {
   it('1 — rich + Finisher exercise block: MAIN and cool-down untouched; exercises grow', () => {
     const base = richBaseFixture();

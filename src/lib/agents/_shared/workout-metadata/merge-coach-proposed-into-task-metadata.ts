@@ -217,6 +217,26 @@ function exerciseBlocksDeepEqual(
   return stableStringify(a.exercises) === stableStringify(b.exercises);
 }
 
+function normalizeExerciseBlockName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+/** Case-insensitive match on `block.name` within rich `exerciseBlocks`. */
+export function findExerciseBlockIndexByName(
+  blocks: Array<Record<string, unknown>>,
+  blockName: string,
+): number {
+  const target = normalizeExerciseBlockName(blockName);
+  if (!target) return -1;
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    if (!isPlainObject(b)) continue;
+    const n = typeof b.name === 'string' ? normalizeExerciseBlockName(b.name) : '';
+    if (n === target) return i;
+  }
+  return -1;
+}
+
 function instructionBlockExists(
   arr: Array<Record<string, unknown>>,
   candidate: Record<string, unknown>,
@@ -318,9 +338,11 @@ function mergeRichBlocks(
   session: Record<string, unknown>,
   blocksRaw: unknown,
   log: MergeLog,
+  replaceAllExerciseBlocks = false,
 ): void {
   if (!Array.isArray(blocksRaw)) return;
   const exerciseBlocks = ensureExerciseBlocks(session);
+  const replacementBlocks: Record<string, unknown>[] = [];
 
   for (const bRaw of blocksRaw) {
     if (!isPlainObject(bRaw)) continue;
@@ -417,12 +439,38 @@ function mergeRichBlocks(
     if (rawFormat === 'tabata' && normalizedParams) {
       hydrateTabataExercisesFromFormatParams(mappedInner, normalizedParams);
     }
+
+    if (replaceAllExerciseBlocks) {
+      replacementBlocks.push(newBlock);
+      continue;
+    }
+
+    const existingIdx = findExerciseBlockIndexByName(exerciseBlocks, blockName);
+    if (existingIdx >= 0) {
+      if (exerciseBlocksDeepEqual(exerciseBlocks[existingIdx], newBlock)) {
+        log.drops.push({
+          field: `blocks:${blockName}`,
+          reason: 'exercise_block_already_present',
+        });
+      } else {
+        exerciseBlocks[existingIdx] = newBlock;
+        log.drops.push({ field: `blocks:${blockName}`, reason: 'exercise_block_replaced' });
+        log.touched.push('exerciseBlocks');
+      }
+      continue;
+    }
+
     const dup = exerciseBlocks.some((eb) => exerciseBlocksDeepEqual(eb, newBlock));
     if (dup) {
       log.drops.push({ field: `blocks:${blockName}`, reason: 'exercise_block_already_present' });
       continue;
     }
     exerciseBlocks.push(newBlock);
+    log.touched.push('exerciseBlocks');
+  }
+
+  if (replaceAllExerciseBlocks && replacementBlocks.length > 0) {
+    session.exerciseBlocks = replacementBlocks;
     log.touched.push('exerciseBlocks');
   }
 }
@@ -538,7 +586,8 @@ function mergeIntoRich(
   if (!isPlainObject(session)) return;
 
   const hasBlocks = Array.isArray(proposed.blocks) && proposed.blocks.length > 0;
-  if (hasBlocks) mergeRichBlocks(session, proposed.blocks, log);
+  const replaceAllExerciseBlocks = proposed.replace_all_exercise_blocks === true;
+  if (hasBlocks) mergeRichBlocks(session, proposed.blocks, log, replaceAllExerciseBlocks);
   const hasExercises = Array.isArray(proposed.exercises) && proposed.exercises.length > 0;
   if (hasExercises && !hasBlocks) mergeRichFlatExercises(session, proposed.exercises, log);
 
