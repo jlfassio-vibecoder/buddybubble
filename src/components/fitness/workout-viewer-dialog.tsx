@@ -24,7 +24,10 @@ import { useTaskCardCoverUrl } from '@/lib/task-card-cover';
 import { ChevronRight, Image as ImageIcon, Loader2, X } from 'lucide-react';
 import { WORKOUT_FACTORY_CHAIN_MESSAGES } from '@/lib/workout-factory/api-client';
 import { TaskModalCardCoverAiBlock } from '@/components/modals/task-modal/TaskModalCardCoverAiBlock';
-import { ActiveSessionLaunchButton } from '@/components/fitness/WorkoutPlayer';
+import {
+  ActiveSessionLaunchControl,
+  type ActiveSessionLaunchControlProps,
+} from '@/components/fitness/WorkoutPlayer';
 
 export type WorkoutViewerApplyPayload = {
   title: string;
@@ -197,10 +200,11 @@ export type WorkoutViewerDialogProps = {
   saveDisabled?: boolean;
   /** `log` uses completed-workout read UI with set_logs overlay. */
   readVariant?: 'workout' | 'log';
-  /** When set with `showActiveSessionLaunch`, renders Launch Active Session in the header. */
-  workspaceId?: string;
-  /** Parent gates on flag, taskId, exercises, and saved state (`!coreDirty`). */
-  showActiveSessionLaunch?: boolean;
+  /** Active Session launch control (shared gate with Details tab). */
+  activeSessionLaunch?: Pick<
+    ActiveSessionLaunchControlProps,
+    'launchUi' | 'onLaunchClick' | 'busy'
+  > | null;
 };
 
 export type WorkoutViewerContentProps = Omit<WorkoutViewerDialogProps, 'open' | 'onOpenChange'> & {
@@ -243,8 +247,7 @@ export function WorkoutViewerContent({
   saving = false,
   saveDisabled = false,
   readVariant = 'workout',
-  workspaceId,
-  showActiveSessionLaunch = false,
+  activeSessionLaunch = null,
 }: WorkoutViewerContentProps) {
   const [mode, setMode] = useState<ViewMode>('view');
   const [localTitle, setLocalTitle] = useState(title);
@@ -366,11 +369,11 @@ export function WorkoutViewerContent({
       <div className="flex items-start justify-between gap-2">
         {titleNode}
         <div className="flex shrink-0 items-center gap-2">
-          {showActiveSessionLaunch && workspaceId && taskId ? (
-            <ActiveSessionLaunchButton
-              workspaceId={workspaceId}
-              sourceTaskId={taskId}
-              from="modal"
+          {activeSessionLaunch && activeSessionLaunch.launchUi.mode !== 'hidden' ? (
+            <ActiveSessionLaunchControl
+              launchUi={activeSessionLaunch.launchUi}
+              onLaunchClick={activeSessionLaunch.onLaunchClick}
+              busy={activeSessionLaunch.busy}
               variant="compact"
             />
           ) : null}

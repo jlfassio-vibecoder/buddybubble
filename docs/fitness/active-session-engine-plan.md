@@ -290,6 +290,13 @@ pnpm exec tsc --noEmit
   - [x] `dashboard-shell.tsx` `handleStartWorkout` → `router.push(.../session/[id])` when flag set
   - [x] Class board start handler (same flag gate)
   - [x] Task modal: **Launch Active Session (Beta)** alongside Desktop/Mobile Player (flag ON); V1 triggers unchanged when flag OFF
+- [x] **1.7a** Task modal launch guardrails (workout pane header + Details tab, shared gate):
+  - Visible when `NEXT_PUBLIC_ACTIVE_SESSION_ROUTE=1`, workout/workout_log, and session VM has exercises.
+  - **Launch Active Session (Beta)** when the card is saved and core fields are clean (`!coreDirty`).
+  - **Save & Start** when create mode (no `taskId`) or edit with unsaved core fields — persists via `createTask` / `saveCoreFields`, then navigates with the returned or existing id (do not rely on a re-render before `router.push`).
+  - Disabled + tooltip when blocked: `"Save changes to start session."` (or `"Add a title to start session."` in create without title).
+  - Server route returns `notFound()` when the flag is off (direct URL cannot bypass client gates).
+  - Resolver: `src/lib/active-session/resolve-active-session-launch-ui.ts`; orchestration: `src/hooks/use-active-session-launch-from-task-modal.ts`.
 - [x] **1.8** Query params: `?from=kanban|class|modal`, `?class_instance_id=`, `?sessionId=` — preserve V1 props
 - [x] **1.9** Exit: `safeNextPath(?return=)` or `router.back()` on abandon; `router.replace` workspace on finish (stub OK in Phase 1)
 

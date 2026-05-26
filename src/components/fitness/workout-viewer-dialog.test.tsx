@@ -167,7 +167,7 @@ describe('WorkoutViewerContent edit mode', () => {
 describe('WorkoutViewerContent active session launch', () => {
   afterEach(() => cleanup());
 
-  it('shows Launch Active Session in header when showActiveSessionLaunch is true', () => {
+  it('shows Launch Active Session in header when activeSessionLaunch is launch mode', () => {
     const metadata = richMetadataWithBlockFormat('tabata') as Json;
     render(
       <WorkoutViewerContent
@@ -175,8 +175,11 @@ describe('WorkoutViewerContent active session launch', () => {
         metadata={metadata}
         canWrite
         taskId="task-123"
-        workspaceId="ws-456"
-        showActiveSessionLaunch
+        activeSessionLaunch={{
+          launchUi: { mode: 'launch', label: 'Launch Active Session (Beta)' },
+          onLaunchClick: vi.fn(),
+          busy: false,
+        }}
         syncKey={1}
       />,
     );
@@ -184,18 +187,42 @@ describe('WorkoutViewerContent active session launch', () => {
     expect(screen.getByRole('button', { name: 'View' })).toBeTruthy();
   });
 
-  it('hides Launch Active Session when showActiveSessionLaunch is false', () => {
+  it('shows disabled Save & Start when activeSessionLaunch is dirty', () => {
+    const metadata = richMetadataWithBlockFormat('tabata') as Json;
+    render(
+      <WorkoutViewerContent
+        {...baseViewProps}
+        metadata={metadata}
+        canWrite
+        taskId="task-123"
+        activeSessionLaunch={{
+          launchUi: {
+            mode: 'disabled',
+            label: 'Save & Start',
+            tooltip: 'Save changes to start session.',
+          },
+          onLaunchClick: vi.fn(),
+          busy: false,
+        }}
+        syncKey={1}
+      />,
+    );
+    const btn = screen.getByRole('button', { name: 'Save & Start' }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+  });
+
+  it('hides launch control when activeSessionLaunch is null', () => {
     const metadata = richMetadataWithBlockFormat('tabata') as Json;
     render(
       <WorkoutViewerContent
         {...baseViewProps}
         metadata={metadata}
         taskId="task-123"
-        workspaceId="ws-456"
-        showActiveSessionLaunch={false}
+        activeSessionLaunch={null}
         syncKey={1}
       />,
     );
     expect(screen.queryByRole('button', { name: /Launch Active Session/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Save & Start/i })).toBeNull();
   });
 });

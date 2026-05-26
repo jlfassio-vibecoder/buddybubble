@@ -25,8 +25,9 @@ import { createClient } from '@utils/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useRouter } from 'next/navigation';
+import { Tooltip } from '@base-ui/react/tooltip';
 import { buildActiveSessionUrl } from '@/lib/active-session/build-active-session-url';
-import { isActiveSessionRouteEnabled } from '@/lib/feature-flags/activeSessionRoute';
+import type { ActiveSessionLaunchUi } from '@/lib/active-session/resolve-active-session-launch-ui';
 import { formatUserFacingError } from '@/lib/format-error';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -1429,6 +1430,86 @@ export function ActiveSessionLaunchButton({
   );
 }
 
+export type ActiveSessionLaunchControlProps = {
+  launchUi: ActiveSessionLaunchUi;
+  onLaunchClick: () => void;
+  busy?: boolean;
+  variant?: 'default' | 'compact';
+  className?: string;
+};
+
+function activeSessionLaunchButtonClassName(
+  variant: 'default' | 'compact',
+  className?: string,
+  disabled?: boolean,
+): string {
+  const compact = variant === 'compact';
+  return cn(
+    'inline-flex items-center font-medium text-foreground transition-colors',
+    compact
+      ? 'gap-1 rounded-md border border-primary/30 bg-primary/5 px-2.5 py-1 text-xs hover:bg-primary/10'
+      : 'gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm hover:bg-primary/10',
+    disabled && 'cursor-not-allowed opacity-50 hover:bg-primary/5',
+    className,
+  );
+}
+
+export function ActiveSessionLaunchControl({
+  launchUi,
+  onLaunchClick,
+  busy = false,
+  variant = 'default',
+  className,
+}: ActiveSessionLaunchControlProps) {
+  if (launchUi.mode === 'hidden') return null;
+
+  const compact = variant === 'compact';
+  const disabled = launchUi.mode === 'disabled' || busy;
+  const label =
+    busy && launchUi.mode !== 'disabled'
+      ? 'Starting…'
+      : launchUi.mode === 'disabled'
+        ? launchUi.label
+        : launchUi.label;
+  const tooltip =
+    launchUi.mode === 'disabled' ? launchUi.tooltip : busy ? 'Starting session…' : null;
+
+  const button = (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={disabled ? undefined : onLaunchClick}
+      className={activeSessionLaunchButtonClassName(variant, className, disabled)}
+    >
+      <Dumbbell className={cn('shrink-0', compact ? 'size-3.5' : 'size-4')} aria-hidden />
+      {label}
+    </button>
+  );
+
+  if (!tooltip) {
+    return button;
+  }
+
+  return (
+    <Tooltip.Provider delay={200}>
+      <Tooltip.Root>
+        <Tooltip.Trigger render={<span className="inline-flex">{button}</span>} />
+        <Tooltip.Portal>
+          <Tooltip.Positioner side="bottom" sideOffset={6}>
+            <Tooltip.Popup
+              className={cn(
+                'z-[200] max-w-xs rounded-md border border-border bg-popover px-3 py-2 text-xs leading-snug text-popover-foreground shadow-md',
+              )}
+            >
+              {tooltip}
+            </Tooltip.Popup>
+          </Tooltip.Positioner>
+        </Tooltip.Portal>
+      </Tooltip.Root>
+    </Tooltip.Provider>
+  );
+}
+
 type WorkoutPlayerTriggersProps = {
   workoutTitle: string;
   metadata: Json;
@@ -1436,6 +1517,10 @@ type WorkoutPlayerTriggersProps = {
   workspaceId: string;
   sourceTaskId: string | null;
   onComplete?: () => void;
+  activeSessionLaunch?: Pick<
+    ActiveSessionLaunchControlProps,
+    'launchUi' | 'onLaunchClick' | 'busy'
+  > | null;
 };
 
 export function WorkoutPlayerTriggers({
@@ -1445,23 +1530,28 @@ export function WorkoutPlayerTriggers({
   workspaceId,
   sourceTaskId,
   onComplete,
+  activeSessionLaunch = null,
 }: WorkoutPlayerTriggersProps) {
   const [mode, setMode] = useState<'desktop' | 'mobile' | null>(null);
   const sessionVm = useMemo(() => buildWorkoutSessionViewModel(metadata ?? {}), [metadata]);
 
-  if (sessionVm.flatExercises.length === 0) return null;
+  const hasExercises = sessionVm.flatExercises.length > 0;
+  const showActiveSession =
+    activeSessionLaunch != null && activeSessionLaunch.launchUi.mode !== 'hidden';
 
-  const activeSessionEnabled = isActiveSessionRouteEnabled() && sourceTaskId;
+  if (!hasExercises && !showActiveSession) {
+    return null;
+  }
 
   return (
     <>
       <div className="flex flex-wrap gap-2">
-        {activeSessionEnabled ? (
-          <ActiveSessionLaunchButton
-            workspaceId={workspaceId}
-            sourceTaskId={sourceTaskId}
-            from="modal"
-            onComplete={onComplete}
+        {showActiveSession ? (
+          <ActiveSessionLaunchControl
+            launchUi={activeSessionLaunch.launchUi}
+            onLaunchClick={activeSessionLaunch.onLaunchClick}
+            busy={activeSessionLaunch.busy}
+            variant="default"
           />
         ) : null}
         <button

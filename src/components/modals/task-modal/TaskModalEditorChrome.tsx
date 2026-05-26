@@ -3,7 +3,10 @@
 import { Globe, Lock } from 'lucide-react';
 import { ItemTypeSelector } from '@/components/board/item-type-selector';
 import { ITEM_TYPES_ORDER } from '@/lib/item-type-styles';
-import { WorkoutPlayerTriggers } from '@/components/fitness/WorkoutPlayer';
+import {
+  WorkoutPlayerTriggers,
+  type ActiveSessionLaunchControlProps,
+} from '@/components/fitness/WorkoutPlayer';
 import type { ItemType, TaskVisibility } from '@/types/database';
 import { metadataFieldsFromParsed } from '@/lib/item-metadata';
 import type { Json } from '@/types/database';
@@ -29,6 +32,10 @@ export type TaskModalEditorChromeProps = {
   bubbleId: string | null;
   workspaceId: string;
   taskId: string | null;
+  activeSessionLaunch?: Pick<
+    ActiveSessionLaunchControlProps,
+    'launchUi' | 'onLaunchClick' | 'busy'
+  > | null;
   /** Fires on click in the type or visibility / workout player sections (capture phase). */
   onInteraction?: () => void;
 };
@@ -49,6 +56,7 @@ export function TaskModalEditorChrome({
   bubbleId,
   workspaceId,
   taskId,
+  activeSessionLaunch = null,
   onInteraction,
 }: TaskModalEditorChromeProps) {
   if (!showChrome) return null;
@@ -138,6 +146,7 @@ export function TaskModalEditorChrome({
                   bubbleId={bubbleId ?? ''}
                   workspaceId={workspaceId}
                   sourceTaskId={taskId}
+                  activeSessionLaunch={activeSessionLaunch}
                 />
               </div>
             </div>

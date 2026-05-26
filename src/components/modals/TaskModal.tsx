@@ -22,7 +22,7 @@ import type {
 } from '@/types/database';
 import { WorkoutViewerContent } from '@/components/fitness/workout-viewer-dialog';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
-import { isActiveSessionRouteEnabled } from '@/lib/feature-flags/activeSessionRoute';
+import { useActiveSessionLaunchFromTaskModal } from '@/hooks/use-active-session-launch-from-task-modal';
 import { cn } from '@/lib/utils';
 import { useBoardColumnDefs } from '@/hooks/use-board-columns';
 import { useTaskBubbleUps } from '@/hooks/use-task-bubble-ups';
@@ -925,13 +925,33 @@ export function TaskModal({
     liveStreamEnabled,
   });
 
-  const showActiveSessionLaunch = useMemo(
+  const activeSessionLaunch = useActiveSessionLaunchFromTaskModal({
+    workspaceId,
+    taskId,
+    itemType,
+    canWrite,
+    coreDirty,
+    saving,
+    metadata,
+    title,
+    createTask,
+    saveCoreFields,
+  });
+
+  const activeSessionLaunchControlProps = useMemo(
     () =>
-      Boolean(taskId) &&
-      isActiveSessionRouteEnabled() &&
-      buildWorkoutSessionViewModel(metadata ?? {}).flatExercises.length > 0 &&
-      !coreDirty,
-    [taskId, metadata, coreDirty],
+      activeSessionLaunch.launchUi.mode === 'hidden'
+        ? null
+        : {
+            launchUi: activeSessionLaunch.launchUi,
+            onLaunchClick: activeSessionLaunch.handleLaunchClick,
+            busy: activeSessionLaunch.isLaunching,
+          },
+    [
+      activeSessionLaunch.launchUi,
+      activeSessionLaunch.handleLaunchClick,
+      activeSessionLaunch.isLaunching,
+    ],
   );
 
   useEffect(() => {
@@ -1543,6 +1563,7 @@ export function TaskModal({
             bubbleId={bubbleId}
             workspaceId={workspaceId}
             taskId={taskId}
+            activeSessionLaunch={activeSessionLaunchControlProps}
             onInteraction={() => setHeroCinematicCollapsed(true)}
           />
           <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-2">
@@ -1798,6 +1819,7 @@ export function TaskModal({
                       bubbleId={bubbleId}
                       workspaceId={workspaceId}
                       taskId={taskId}
+                      activeSessionLaunch={activeSessionLaunchControlProps}
                       onInteraction={() => setHeroCinematicCollapsed(true)}
                     />
                   </div>
@@ -2026,6 +2048,7 @@ export function TaskModal({
                           bubbleId={bubbleId}
                           workspaceId={workspaceId}
                           taskId={taskId}
+                          activeSessionLaunch={activeSessionLaunchControlProps}
                           onInteraction={() => setHeroCinematicCollapsed(true)}
                         />
                       </div>
@@ -2180,8 +2203,7 @@ export function TaskModal({
                 syncKey={workoutPaneSyncKey}
                 cardCoverPath={cardCoverPath.trim() || null}
                 taskId={taskId}
-                workspaceId={workspaceId}
-                showActiveSessionLaunch={showActiveSessionLaunch}
+                activeSessionLaunch={activeSessionLaunchControlProps}
                 layout="embedded"
                 isAiGenerating={aiWorkoutGenerating}
                 cardCoverAiHint={cardCoverAiHint}

@@ -482,8 +482,8 @@ export function useTaskSaveAndCreate({
     ],
   );
 
-  const createTask = useCallback(async () => {
-    if (!canWrite || !bubbleId || !title.trim()) return;
+  const createTask = useCallback(async (): Promise<string | null> => {
+    if (!canWrite || !bubbleId || !title.trim()) return null;
     setSaving(true);
     setError(null);
     const supabase = createClient();
@@ -498,7 +498,7 @@ export function useTaskSaveAndCreate({
           authErr instanceof Error ? authErr : new Error('You must be signed in to create a task.'),
         ),
       );
-      return;
+      return null;
     }
 
     const maxPos = await resolveInsertPosition(supabase, bubbleId);
@@ -543,7 +543,7 @@ export function useTaskSaveAndCreate({
     setSaving(false);
     if (cErr || !data) {
       setError(formatUserFacingError(cErr ?? new Error('Create failed')));
-      return;
+      return null;
     }
     setStatus(effectiveStatus);
     const newTaskId = (data as { id: string }).id;
@@ -561,6 +561,7 @@ export function useTaskSaveAndCreate({
       toast.success('Workout log created');
     }
     onCreated?.(newTaskId);
+    return newTaskId;
   }, [
     assignedTo,
     bubbleId,
