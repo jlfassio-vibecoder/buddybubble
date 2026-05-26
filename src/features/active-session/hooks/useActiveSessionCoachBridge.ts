@@ -194,7 +194,7 @@ export function useActiveSessionCoachBridge({
       coachBubbleRow,
       isLoading: messageThread.isLoading,
       sentinelFired,
-      hasCoachAgent: coachAvailableAgents.some((a) => a.slug === 'coach'),
+      hasCoachAgent: coachAvailableAgents.some((a) => a.slug === CHAT_AREA_DEFAULT_AGENT_SLUG),
     };
   }, [
     canPostMessages,
@@ -263,7 +263,8 @@ export function useActiveSessionCoachBridge({
   useEffect(() => {
     if (!enabled) return;
     const coachAuthUserId =
-      coachAvailableAgents.find((a) => a.slug === 'coach')?.auth_user_id ?? null;
+      coachAvailableAgents.find((a) => a.slug === CHAT_AREA_DEFAULT_AGENT_SLUG)?.auth_user_id ??
+      null;
     sendCoachSyncEvent(send, {
       type: 'COACH_THREAD_SNAPSHOT',
       snapshot: {
