@@ -4,7 +4,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 import { createClient } from '@utils/supabase/client';
-import type { ItemType, Json, TaskVisibility } from '@/types/database';
+import type { ItemType, Json, TaskRow, TaskVisibility } from '@/types/database';
 import {
   buildTaskMetadataPayload,
   parseTaskMetadata,
@@ -59,7 +59,7 @@ export type UseTaskProgramPersonalizationArgs = {
   hasTodayBoardColumn: boolean;
   hasScheduledBoardColumn: boolean;
   originalRef: MutableRefObject<TaskModalOriginalSnapshot | null>;
-  loadTask: (id: string) => Promise<void>;
+  loadTask: (id: string) => Promise<TaskRow | null>;
   setActivityLog: Dispatch<SetStateAction<TaskActivityEntry[]>>;
 };
 

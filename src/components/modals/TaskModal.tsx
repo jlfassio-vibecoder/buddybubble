@@ -756,10 +756,15 @@ export function TaskModal({
       setWorkoutViewerOpen(true);
 
       void (async () => {
+        let metadataForGeneration: Json | undefined;
         if (args.action.kind === 'regenerate_from_outline' && taskId) {
-          await loadTask(taskId, { silent: true });
+          const row = await loadTask(taskId, { silent: true });
+          metadataForGeneration = row?.metadata ?? undefined;
         }
-        await handleAiGenerateWorkout(buildWizardPayload());
+        await handleAiGenerateWorkout(
+          buildWizardPayload(),
+          metadataForGeneration != null ? { metadata: metadataForGeneration } : undefined,
+        );
       })();
     },
     [

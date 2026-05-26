@@ -116,10 +116,11 @@ export function useTaskWorkoutAi({
   }, [aiWorkoutGenerating]);
 
   const handleAiGenerateWorkout = useCallback(
-    async (wizardData?: WorkoutIntakeWizardData) => {
+    async (wizardData?: WorkoutIntakeWizardData, options?: { metadata?: Json }) => {
       if (!canWrite || !workspaceId || !isWorkoutItemType) return;
 
-      const outlineMeta = readCoachOutlineMetadata(metadata);
+      const metadataForGeneration = options?.metadata ?? metadata;
+      const outlineMeta = readCoachOutlineMetadata(metadataForGeneration);
       if (!outlineMeta.confirmedAt) {
         toast.error('Confirm workout structure before generating.');
         return;

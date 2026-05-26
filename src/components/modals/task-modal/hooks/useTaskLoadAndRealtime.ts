@@ -38,10 +38,10 @@ export function useTaskLoadAndRealtime({
   setError,
   onTaskRowDeleted,
 }: UseTaskLoadAndRealtimeParams): {
-  loadTask: (id: string, options?: LoadTaskOptions) => Promise<void>;
+  loadTask: (id: string, options?: LoadTaskOptions) => Promise<TaskRow | null>;
 } {
   const loadTask = useCallback(
-    async (id: string, options?: LoadTaskOptions) => {
+    async (id: string, options?: LoadTaskOptions): Promise<TaskRow | null> => {
       const silent = options?.silent === true;
       const applyCtx: ApplyRowContext = { silent };
       if (!silent) {
@@ -62,14 +62,15 @@ export function useTaskLoadAndRealtime({
             setLoading(false);
           }
           setError(qErr.message ?? 'Card not found');
-          return;
+          return null;
         }
         if (data) {
           if (!silent) {
             setLoading(false);
           }
-          applyRow(data as TaskRow, applyCtx);
-          return;
+          const row = data as TaskRow;
+          applyRow(row, applyCtx);
+          return row;
         }
         // Row not visible yet (e.g. client opened TaskModal the moment after insert, before read-your-writes)
         if (attempt < maxAttempts - 1) {
@@ -80,6 +81,7 @@ export function useTaskLoadAndRealtime({
         setLoading(false);
       }
       setError('Card not found');
+      return null;
     },
     [applyRow, setLoading, setError],
   );
