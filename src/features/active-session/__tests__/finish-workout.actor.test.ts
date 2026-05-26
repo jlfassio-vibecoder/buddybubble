@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { SESSION_TELEMETRY_SCHEMA_VERSION } from '@/lib/workout-factory/session-telemetry';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import { createInitialContext } from '../machines/types';
 import { createDefaultInput } from './test-utils/fixtures';
@@ -37,7 +38,22 @@ describe('executeFinishWorkout', () => {
     });
 
     expect(result).toEqual({ logTaskId: 'existing-log-99', op: 'finish_update' });
-    expect(logUpdates).toEqual([{ id: 'existing-log-99', status: 'completed' }]);
+    expect(logUpdates).toEqual([
+      {
+        id: 'existing-log-99',
+        status: 'completed',
+        metadata: expect.objectContaining({
+          workout_log_schema_version: 1,
+          session_telemetry: expect.objectContaining({
+            schema_version: SESSION_TELEMETRY_SCHEMA_VERSION,
+            session_id: input.sessionId,
+            source_task_id: input.sourceTaskId,
+            workout_log_task_id: 'existing-log-99',
+            elapsed_sec: 120,
+          }),
+        }),
+      },
+    ]);
     expect(templateUpdates).toHaveLength(1);
     expect(templateUpdates[0]?.id).toBe(input.sourceTaskId);
     expect(templateUpdates[0]?.itemType).toBe('workout');
@@ -75,6 +91,15 @@ describe('executeFinishWorkout', () => {
     expect(logInserts[0]?.item_type).toBe('workout_log');
     expect(logInserts[0]?.status).toBe('completed');
     expect(logInserts[0]?.bubble_id).toBe(input.targetBubbleId);
+    expect(logInserts[0]?.metadata).toMatchObject({
+      session_telemetry: {
+        schema_version: SESSION_TELEMETRY_SCHEMA_VERSION,
+        session_id: input.sessionId,
+        source_task_id: input.sourceTaskId,
+        workout_log_task_id: null,
+        elapsed_sec: 90,
+      },
+    });
     expect(templateUpdates).toHaveLength(1);
     expect(templateUpdates[0]?.itemType).toBe('workout');
     expect(templateUpdates[0]?.metadata.last_performed_at).toBe('2026-05-24T15:30:00.000Z');

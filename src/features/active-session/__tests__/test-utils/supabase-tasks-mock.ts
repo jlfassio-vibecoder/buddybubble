@@ -12,6 +12,13 @@ export type TaskLogInsertCapture = {
   bubble_id: string;
   item_type: string;
   status: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type TaskLogUpdateCapture = {
+  id: string;
+  status?: string;
+  metadata?: Record<string, unknown>;
 };
 
 export type FinishSupabaseMockOptions = {
@@ -21,7 +28,7 @@ export type FinishSupabaseMockOptions = {
 
 export function createFinishSupabaseMock(options: FinishSupabaseMockOptions = {}) {
   const templateUpdates: TemplateUpdate[] = [];
-  const logUpdates: Array<{ id: string; status: string }> = [];
+  const logUpdates: TaskLogUpdateCapture[] = [];
   const staleDraftDeletes: Array<{ finishedLogId: string }> = [];
   const logInserts: TaskLogInsertCapture[] = [];
 
@@ -58,7 +65,11 @@ export function createFinishSupabaseMock(options: FinishSupabaseMockOptions = {}
                   return updateChain;
                 }
                 if (payload.status === 'completed') {
-                  logUpdates.push({ id: val, status: String(payload.status) });
+                  logUpdates.push({
+                    id: val,
+                    status: String(payload.status),
+                    metadata: payload.metadata as Record<string, unknown> | undefined,
+                  });
                 }
                 return Promise.resolve({ error: null });
               }
@@ -80,6 +91,7 @@ export function createFinishSupabaseMock(options: FinishSupabaseMockOptions = {}
             bubble_id: String(payload.bubble_id),
             item_type: String(payload.item_type),
             status: String(payload.status),
+            metadata: payload.metadata as Record<string, unknown> | undefined,
           });
           return {
             select: vi.fn(() => ({

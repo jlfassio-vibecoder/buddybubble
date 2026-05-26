@@ -5,9 +5,10 @@ import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import type { ActiveSessionContext } from '../machines/types';
 import type { FinishWorkoutResult } from '../actors/finish-workout.actor';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
+import { SESSION_TELEMETRY_SCHEMA_VERSION } from '@/lib/workout-factory/session-telemetry';
 import { createInitialContext } from '../machines/types';
 import { executeFinishWorkout } from '../actors/finish-workout.actor';
-import { createDefaultInput, createSampleDraftLogs } from './test-utils/fixtures';
+import { createDefaultInput, createSampleDraftLogs, TEST_SESSION_ID } from './test-utils/fixtures';
 import { createSessionTaskFixture } from './test-utils/session-task-fixture';
 import {
   flushPromises,
@@ -183,10 +184,17 @@ describe('ActiveSessionShell exit flows', () => {
 
       expect(result).toEqual({ logTaskId: 'new-log-55', op: 'finish_insert' });
       expect(logInserts).toHaveLength(1);
-      expect(logInserts[0]).toEqual({
-        bubble_id: TEST_WORKOUT_LOGS_BUBBLE_ID,
-        item_type: 'workout_log',
-        status: 'completed',
+      expect(logInserts[0]?.bubble_id).toBe(TEST_WORKOUT_LOGS_BUBBLE_ID);
+      expect(logInserts[0]?.item_type).toBe('workout_log');
+      expect(logInserts[0]?.status).toBe('completed');
+      expect(logInserts[0]?.metadata).toMatchObject({
+        session_telemetry: {
+          schema_version: SESSION_TELEMETRY_SCHEMA_VERSION,
+          session_id: TEST_SESSION_ID,
+          source_task_id: task.id,
+          workout_log_task_id: null,
+          elapsed_sec: 90,
+        },
       });
       expect(logInserts[0]?.bubble_id).not.toBe(TEST_COACH_BUBBLE_ID);
     });

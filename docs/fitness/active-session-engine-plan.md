@@ -11,13 +11,13 @@
 **True next steps (in order):**
 
 1. **Phase 2.5 ops** — deploy migrations to existing workspaces (**2.5.2**): Workout Logs bubble backfill + `in_progress` Kanban column.
-2. **Phase 4 Telemetry Loop** — `SessionTelemetrySnapshot` outbound to Coach (prescription + live performance).
+2. **Phase 4 Telemetry Loop** — [active-session-phase4-telemetry-plan.md](./active-session-phase4-telemetry-plan.md) (Sprints C1–C6).
 
 Before broad prod dogfood on existing workspaces: deploy **`20260830120000_backfill_fitness_workout_logs_bubble.sql`** and **`20260526000000_add_in_progress_column_fitness.sql`** (**2.5.2**).
 
 **Optional polish (non-blocking):** dogfood checklist sign-offs (class board, mobile tab switch, offline autosave Q1); wire `useUserExerciseNotes` on Active Session; Playwright e2e (RTL shell exit-flow tests cover abandon/finish routing today).
 
-**Related:** [workout-player.md](./workout-player.md) (V1 reference) · [layout-shell-architecture.md](./views/layout-shell-architecture.md) · [parametric-step6-plan.md](./views/parametric-step6-plan.md) (Coach context / `live_set_counts`) · [rail-composer-tokens.md](../agents/coach/rail-composer-tokens.md)
+**Related:** [workout-player.md](./workout-player.md) (V1 reference) · [active-session-phase4-telemetry-plan.md](./active-session-phase4-telemetry-plan.md) · [layout-shell-architecture.md](./views/layout-shell-architecture.md) · [parametric-step6-plan.md](./views/parametric-step6-plan.md) (Coach context / `live_set_counts`) · [rail-composer-tokens.md](../agents/coach/rail-composer-tokens.md)
 
 **V1 postmortem summary:** V1 is **stable but not modelable** — 8+ refs, 15+ effects, modal-inside-dashboard, one-way Coach patches, no outbound telemetry for progressive overload.
 
@@ -412,6 +412,7 @@ pnpm exec tsc --noEmit
 ## Phase 4 — Telemetry loop (Coach) — **NEXT MAJOR MILESTONE**
 
 **Status:** **Not started**  
+**Execution plan:** [active-session-phase4-telemetry-plan.md](./active-session-phase4-telemetry-plan.md) (Sprints **C1–C6**)  
 **Depends on:** Phases 2–3 (**met** for machine context + interval snapshots)  
 **Goal:** Coach receives live performance (`set_logs`, interval performance), not just prescription.
 

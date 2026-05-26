@@ -8,6 +8,7 @@ import type { SetLogEntry, WorkoutExercise } from '@/lib/item-metadata';
 import { parseTaskMetadata } from '@/lib/parse-task-metadata';
 import { hasRichWorkoutSetInMetadata } from '@/lib/workout-factory/sync-workout-metadata';
 import type { WorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
+import type { SessionTelemetrySnapshot } from '@/lib/workout-factory/session-telemetry';
 import type { Json } from '@/types/database';
 
 /** Schema version written on every completed workout_log from WorkoutPlayer finish. */
@@ -31,6 +32,7 @@ export type BuildWorkoutLogDraftMetadataParams = {
   sourceTaskId: string;
   draftLogs: SetDraft[][];
   classInstanceId: string | null;
+  sessionTelemetry?: SessionTelemetrySnapshot;
 };
 
 export type BuildWorkoutLogFinishMetadataParams = {
@@ -44,6 +46,7 @@ export type BuildWorkoutLogFinishMetadataParams = {
   durationMin: number;
   sourceTaskId: string | null;
   classInstanceId: string | null;
+  sessionTelemetry?: SessionTelemetrySnapshot;
 };
 
 function deepClone<T>(value: T): T {
@@ -66,7 +69,8 @@ function snapshotFactoryFromSource(sourceMetadata: unknown): unknown | null {
  * Omits `workout_log_schema_version` and flat `exercises` (finish-only).
  */
 export function buildWorkoutLogDraftMetadata(params: BuildWorkoutLogDraftMetadataParams): Json {
-  const { sourceMetadata, sessionVm, sourceTaskId, draftLogs, classInstanceId } = params;
+  const { sourceMetadata, sessionVm, sourceTaskId, draftLogs, classInstanceId, sessionTelemetry } =
+    params;
 
   const out: Record<string, unknown> = {
     source_task_id: sourceTaskId,
@@ -75,6 +79,10 @@ export function buildWorkoutLogDraftMetadata(params: BuildWorkoutLogDraftMetadat
 
   if (classInstanceId) {
     out.class_instance_id = classInstanceId;
+  }
+
+  if (sessionTelemetry) {
+    out.session_telemetry = sessionTelemetry;
   }
 
   if (sessionVm.source === 'rich' && hasRichWorkoutSetInMetadata(sourceMetadata)) {
@@ -91,8 +99,15 @@ export function buildWorkoutLogDraftMetadata(params: BuildWorkoutLogDraftMetadat
  * Pure builder — returns the `metadata` object for task insert/update on finish.
  */
 export function buildWorkoutLogFinishMetadata(params: BuildWorkoutLogFinishMetadataParams): Json {
-  const { sourceMetadata, sessionVm, exercises, durationMin, sourceTaskId, classInstanceId } =
-    params;
+  const {
+    sourceMetadata,
+    sessionVm,
+    exercises,
+    durationMin,
+    sourceTaskId,
+    classInstanceId,
+    sessionTelemetry,
+  } = params;
 
   const out: Record<string, unknown> = {
     workout_log_schema_version: WORKOUT_LOG_SCHEMA_VERSION,
@@ -107,6 +122,10 @@ export function buildWorkoutLogFinishMetadata(params: BuildWorkoutLogFinishMetad
   }
   if (classInstanceId) {
     out.class_instance_id = classInstanceId;
+  }
+
+  if (sessionTelemetry) {
+    out.session_telemetry = sessionTelemetry;
   }
 
   if (sessionVm.source === 'rich' && hasRichWorkoutSetInMetadata(sourceMetadata)) {

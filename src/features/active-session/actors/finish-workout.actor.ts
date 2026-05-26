@@ -5,6 +5,10 @@ import {
   buildWorkoutLogFinishMetadata,
 } from '@/lib/workout-factory/build-workout-log-finish-metadata';
 import { mergeLastPerformedAtIntoTaskMetadata } from '@/lib/workout-factory/merge-last-performed-at';
+import {
+  buildSessionTelemetrySnapshot,
+  type BuildSessionTelemetryContext,
+} from '@/lib/workout-factory/session-telemetry';
 import { replaceTaskAssigneesWithUserIds } from '@/lib/task-assignees-db';
 import type { Json } from '@/types/database';
 import type { WorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
@@ -88,6 +92,18 @@ export async function executeFinishWorkout(
   );
 
   const durationMin = Math.max(1, Math.round(context.elapsedSec / 60));
+  const telemetryContext: BuildSessionTelemetryContext = {
+    sessionId: context.sessionId,
+    sourceTaskId: context.sourceTaskId,
+    logTaskId: context.logTaskId,
+    draftLogs: context.draftLogs,
+    ghostLogs: context.ghostLogs,
+    elapsedSec: context.elapsedSec,
+    startedAt: context.startedAt,
+    intervalRowSnapshots: context.intervalRowSnapshots,
+    sessionVm: context.sessionVm,
+  };
+  const sessionTelemetry = buildSessionTelemetrySnapshot({ context: telemetryContext });
   const finalMetadata = buildWorkoutLogFinishMetadata({
     sourceMetadata,
     sessionVm,
@@ -95,6 +111,7 @@ export async function executeFinishWorkout(
     durationMin,
     sourceTaskId: context.sourceTaskId,
     classInstanceId: context.classInstanceId ?? null,
+    sessionTelemetry,
   });
 
   let sourceRow: SourceProgramFieldsRow | null = null;
