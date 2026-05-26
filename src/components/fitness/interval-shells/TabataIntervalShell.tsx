@@ -175,16 +175,17 @@ function TabataIntervalShellMachine({
   const getElapsedMs = useIntervalBlockGetElapsedMs(intervalBlockRef);
   const getRemainingMs = useIntervalBlockGetRemainingMs(intervalBlockRef);
   const snapshot = engine ? deriveTabataDisplayFromEngine(engine) : null;
+  const isTabata = snapshot != null && engine?.format === 'tabata';
+  const cueSegmentKey = isTabata ? `${snapshot.phase}-${snapshot.roundIndex}` : 'idle';
 
-  if (!snapshot || engine?.format !== 'tabata') return null;
-
-  const cueSegmentKey = `${snapshot.phase}-${snapshot.roundIndex}`;
   const { audioEnabled, toggleAudio, primeAudio } = useIntervalShellPolish({
-    isRunning: snapshot.isRunning,
-    isPaused: snapshot.isPaused,
+    isRunning: isTabata && snapshot.isRunning,
+    isPaused: isTabata && snapshot.isPaused,
     getRemainingMs,
     cueSegmentKey,
   });
+
+  if (!isTabata) return null;
 
   const phaseLabel = PHASE_LABELS[snapshot.phase] ?? snapshot.phase;
   const showRound =

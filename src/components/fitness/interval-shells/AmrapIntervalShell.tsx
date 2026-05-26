@@ -152,17 +152,19 @@ function AmrapIntervalShellMachine({
   const getElapsedMs = useIntervalBlockGetElapsedMs(intervalBlockRef);
   const getRemainingMs = useIntervalBlockGetRemainingMs(intervalBlockRef);
   const snapshot = engine ? deriveAmrapDisplayFromEngine(engine) : null;
+  const isAmrap = snapshot != null && engine?.format === 'amrap';
 
-  if (!snapshot || engine?.format !== 'amrap') return null;
-
-  const isActive = snapshot.phase === 'running' && !snapshot.isPaused;
   const { audioEnabled, toggleAudio, primeAudio } = useIntervalShellPolish({
-    isRunning: snapshot.phase === 'running',
-    isPaused: snapshot.isPaused,
+    isRunning: isAmrap && snapshot.phase === 'running',
+    isPaused: isAmrap && snapshot.isPaused,
     getRemainingMs,
     cueSegmentKey: 'global',
-    amrapTenSecondWarning: true,
+    amrapTenSecondWarning: isAmrap,
   });
+
+  if (!isAmrap) return null;
+
+  const isActive = snapshot.phase === 'running' && !snapshot.isPaused;
 
   const handleStart = async () => {
     await primeAudio();

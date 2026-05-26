@@ -72,15 +72,16 @@ function EmomIntervalShellMachine({
   const getElapsedMs = useIntervalBlockGetElapsedMs(intervalBlockRef);
   const getRemainingMs = useIntervalBlockGetRemainingMs(intervalBlockRef);
   const snapshot = engine ? deriveEmomDisplayFromEngine(engine) : null;
-
-  if (!snapshot || engine?.format !== 'emom') return null;
+  const isEmom = snapshot != null && engine?.format === 'emom';
 
   const { audioEnabled, toggleAudio, primeAudio } = useIntervalShellPolish({
-    isRunning: snapshot.isRunning,
-    isPaused: snapshot.isPaused,
+    isRunning: isEmom && snapshot.isRunning,
+    isPaused: isEmom && snapshot.isPaused,
     getRemainingMs,
-    cueSegmentKey: String(snapshot.roundIndex),
+    cueSegmentKey: isEmom ? String(snapshot.roundIndex) : 'idle',
   });
+
+  if (!isEmom) return null;
 
   const handleStart = async () => {
     await primeAudio();
