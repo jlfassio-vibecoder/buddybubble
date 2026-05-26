@@ -23,7 +23,7 @@ export type ResolveActiveSessionLaunchUiInput = {
 };
 
 function isWorkoutItemType(itemType: ItemType): boolean {
-  return itemType === 'workout' || itemType === 'workout_log';
+  return itemType === 'workout';
 }
 
 export function resolveActiveSessionLaunchUi(

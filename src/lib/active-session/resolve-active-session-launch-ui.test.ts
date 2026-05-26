@@ -25,6 +25,7 @@ describe('resolveActiveSessionLaunchUi', () => {
 
   it('returns hidden for non-workout item types', () => {
     expect(resolveActiveSessionLaunchUi({ ...base, itemType: 'task' }).mode).toBe('hidden');
+    expect(resolveActiveSessionLaunchUi({ ...base, itemType: 'workout_log' }).mode).toBe('hidden');
   });
 
   it('returns hidden when there are no exercises', () => {
