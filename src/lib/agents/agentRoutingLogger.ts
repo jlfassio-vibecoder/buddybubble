@@ -81,7 +81,7 @@ export type AgentEffectAppliedRoutingEvent = {
 
 export type CoachCardActionTriggeredEvent = {
   event: 'coach.card_action.triggered';
-  action: 'trigger_generation';
+  action: 'trigger_generation' | 'regenerate_from_outline';
   taskId: string;
   messageId: string;
   surface: 'standard-task-chat-rail';

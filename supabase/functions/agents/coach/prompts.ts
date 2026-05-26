@@ -1,5 +1,6 @@
 /**
  * MIRROR FILE — canonical lives at `src/lib/agents/coach/prompts.ts`.
+ * Run `pnpm check:agent-mirror` after edits.
  */
 
 /* eslint-disable max-len */
@@ -240,7 +241,9 @@ export function buildApexArchitectMainChatBlock(): string {
 }
 
 export const COACH_OUTLINE_ONLY_SYSTEM_PROMPT =
-  'You are an API that outputs a JSON workout outline based on the agreed-upon card title and description. Output ONLY the JSON blocks array. Use the provided blueprint library for block_format and format_params. Be extremely concise: short block names, exercise name placeholders only, no coaching prose.';
+  'You are an API that outputs a JSON workout outline for an agreed-upon workout card. Output ONLY a JSON object with a "blocks" array — no markdown, no prose. ' +
+  'CRITICAL — STRUCTURAL TOKEN PARITY: Scan the USER MESSAGE for catalog structural tokens matching :<section>/<block_format>/<variant> (e.g. :main/tabata/power, :finisher/tabata/vo2, :finisher/tabata/core). You MUST emit one separate, distinct block in "blocks" for EVERY such token, in the same order they appear. If the user requests 3 Tabatas, "blocks" MUST contain exactly 3 tabata blocks — never merge multiple tokens into one block. Do not omit a requested section because the card title/description summarizes the session as one unit. ' +
+  'Use the BLOCK BLUEPRINT LIBRARY for block_format and format_params per block. Match each token\'s section (main, finisher, metcon, warmup, strength, recovery, prep) in the block name (e.g. "Main — Tabata Power", "Finisher — Tabata VO2"). Keep each block concise: short name, block_format, format_params, exercises: [{ name }] placeholders only — no coaching prose, sets, reps, or instructions[].';
 
 /** User prompt for Phase B outline-only Vertex call. */
 export function buildCoachOutlineOnlyPrompt(
@@ -254,17 +257,19 @@ export function buildCoachOutlineOnlyPrompt(
   const trigger = userMessage.trim() || '(no user message)';
   return `${blueprintLibraryPrompt}
 
-=== AGREED CARD (AUTHORITATIVE) ===
+=== AGREED CARD (TITLE + SUMMARY) ===
 Title: ${title}
 
 Description:
 ${description}
 
-=== USER MESSAGE (CONTEXT) ===
+=== USER MESSAGE (STRUCTURAL REQUEST — TOKEN SOURCE OF TRUTH) ===
 ${trigger}
 
 === YOUR TASK ===
-Output a minimal parametric outline as JSON with a "blocks" array.
+Output a parametric outline as JSON with a "blocks" array.
+CATALOG TOKEN MAPPING (CRITICAL): List every :main/..., :finisher/..., :metcon/..., :warmup/..., :strength/..., :recovery/..., or :prep/... token in the USER MESSAGE. Output one blocks[] entry per token. The card description may summarize the session — still honor every structural token from the USER MESSAGE. blocks.length MUST equal the token count when tokens are present.
+
 Each block: name (short label), block_format, format_params, exercises: [{ name }] only.
 Do NOT include sets, reps, coach_notes, or instructions[].
 Use format_params for all timing/structure — never put prescriptions in block name.
@@ -273,7 +278,7 @@ HARD RULE: EMOMs with 2+ exercises MUST have is_alternating: true in format_para
 
 === OUTPUT FORMAT ===
 Return ONLY valid JSON. No markdown. Example:
-{"blocks":[{"name":"Alternating EMOM","block_format":"emom","format_params":{"interval_seconds":60,"total_minutes":20,"is_alternating":true},"exercises":[{"name":"Kettlebell Swing"},{"name":"Resistance Band Thruster"}]}]}`;
+{"blocks":[{"name":"Main — Tabata Power","block_format":"tabata","format_params":{"rounds":8,"work_seconds":20,"rest_seconds":10},"exercises":[{"name":"Kettlebell Swing"}]},{"name":"Finisher — Tabata VO2","block_format":"tabata","format_params":{"rounds":8,"work_seconds":20,"rest_seconds":10},"exercises":[{"name":"TRX Row"}]},{"name":"Finisher — Tabata Core","block_format":"tabata","format_params":{"rounds":8,"work_seconds":20,"rest_seconds":10},"exercises":[{"name":"Plank"}]}]}`;
 }
 
 /**
@@ -381,7 +386,7 @@ export function buildCurrentTaskContextBlock(
       : '(empty description)';
   const isRail = opts?.rail === true;
   const tail = isRail
-    ? 'LIVE CO-PILOT MODE (Task Modal rail). You are actively co-editing this task with the user. Treat any --- CURRENT WORKOUT CONTEXT --- block below as the user\'s existing, approved workout — they generated it on the card themselves. When they ask for additions, swaps, or rewrites (e.g. "add a finisher", "make block 3 heavier", "swap squats for hinges"): Set update_existing_task: true. Server merge is append-only: existing canvas blocks are preserved automatically — emit only what changed. Do not re-emit unchanged blocks or duplicate the workout in updated_task_description prose. For additive named sections (e.g. "add a finisher", "add a core finisher", "rewrite the warm-up", "add a mobility cool-down"), emit proposed_workout_metadata.blocks with only the new or changed block(s) — each item has name (free text like "Warm-up", "Main", "Strength A", "Finisher", "Cool down", "Mobility") plus either exercises (sets/reps) or instructions (one short line per item). Never put sets, reps, section lists, or block prescriptions in updated_task_description; use proposed_workout_metadata (blocks or exercises) for structural edits. Use blocks whenever section identity matters; reserve top-level proposed_workout_metadata.exercises for appending or replacing items inside an existing single Main block only. When emitting proposed_workout_metadata.blocks, every exercise-shaped block MUST include block_format + format_params per BLUEPRINT LIBRARY (e.g. a Finisher AMRAP uses block_format: amrap with format_params); instruction-only warm-up / cool-down blocks are exempt. Title / description text-only edits continue to use updated_task_title / updated_task_description with no proposed_workout_metadata — that path persists immediately via direct-update RPC. Do NOT open a new consent turn when the workout already exists on the card. Confirm what you did in reply_content; the structured fields are the writes. When --- BLOCK_BLUEPRINT_REFS --- appears in the system prompt, honor each token for proposed_workout_metadata.blocks[] (append-only) and combine with # exercise tags in the same user message. GENERATION HAND-OFF (critical, additive to LIVE CO-PILOT MODE): If the user gives clear consent to draft / generate / build the full workout (e.g. "draft the outline", "generate it", "put it together") AND the card has NO ai_workout_factory.workout_set yet (CURRENT WORKOUT CONTEXT is absent) AND there is no active workout session, you MUST emit card_action: \'trigger_generation\' and leave proposed_workout_metadata null and update_existing_task false. Use a brief reply_content such as "Starting the generator now — give me about a minute and the workout will appear on your card." Do NOT attempt to write the full structured workout yourself in this turn — the client will run the long-running generator. For incremental edits to a workout that already exists on the card (block_format / format_params blocks, swaps, finishers, etc.), continue using proposed_workout_metadata via the LIVE CO-PILOT MODE path.'
+    ? 'LIVE CO-PILOT MODE (Task Modal rail). You are actively co-editing this task with the user. Treat any --- CURRENT WORKOUT CONTEXT --- block below as the user\'s existing, approved workout — they generated it on the card themselves. When they ask for additions, swaps, or rewrites (e.g. "add a finisher", "make block 3 heavier", "swap squats for hinges", "two exercises per Tabata block"): Set update_existing_task: true. Server merge replaces exerciseBlocks by matching block name (case-insensitive) — same name updates exercises and format_params in place; a new section name appends. Emit proposed_workout_metadata.blocks with every affected block using the exact same name values as CURRENT WORKOUT CONTEXT. Do not re-emit unchanged blocks or duplicate the workout in updated_task_description prose. For additive named sections (e.g. "add a finisher", "add a core finisher", "rewrite the warm-up", "add a mobility cool-down"), emit proposed_workout_metadata.blocks with only the new or changed block(s) — each item has name (free text like "Warm-up", "Main", "Strength A", "Finisher", "Cool down", "Mobility") plus either exercises (sets/reps) or instructions (one short line per item). Never put sets, reps, section lists, or block prescriptions in updated_task_description; use proposed_workout_metadata (blocks or exercises) for structural edits. Use blocks whenever section identity matters; reserve top-level proposed_workout_metadata.exercises for appending or replacing items inside an existing single Main block only. When emitting proposed_workout_metadata.blocks, every exercise-shaped block MUST include block_format + format_params per BLUEPRINT LIBRARY (e.g. a Finisher AMRAP uses block_format: amrap with format_params); instruction-only warm-up / cool-down blocks are exempt. Title / description text-only edits continue to use updated_task_title / updated_task_description with no proposed_workout_metadata — that path persists immediately via direct-update RPC. Do NOT open a new consent turn when the workout already exists on the card. Confirm what you did in reply_content only when update_existing_task is true AND proposed_workout_metadata.blocks is non-empty — the structured fields are the writes. When --- BLOCK_BLUEPRINT_REFS --- appears in the system prompt, honor each token for proposed_workout_metadata.blocks[] and combine with # exercise tags in the same user message. GENERATION HAND-OFF (critical, additive to LIVE CO-PILOT MODE): If the user gives clear consent to draft / generate / build the full workout (e.g. "draft the outline", "generate it", "put it together") AND the card has NO ai_workout_factory.workout_set yet (CURRENT WORKOUT CONTEXT is absent) AND there is no active workout session, you MUST emit card_action: \'trigger_generation\' and leave proposed_workout_metadata null and update_existing_task false. Use a brief reply_content such as "Starting the generator now — give me about a minute and the workout will appear on your card." Do NOT attempt to write the full structured workout yourself in this turn — the client will run the long-running generator. For incremental edits to a workout that already exists on the card (block_format / format_params blocks, swaps, finishers, etc.), continue using proposed_workout_metadata via the LIVE CO-PILOT MODE path.'
     : 'PRE-DRAFT CONFIRMATION: Do not populate proposed_workout_metadata until the user has given clear affirmative consent to draft or revise this card (or user_requested_immediate_card). On a confirmation-only turn, set update_existing_task to false and proposed_workout_metadata to null. When they confirm, set update_existing_task to true and provide updated_task_title and/or updated_task_description with the full revised text, and/or proposed_workout_metadata with structured exercises (and workout_type, duration_min as appropriate). The user must finalize changes on the card — do not assume the database updates immediately.';
   return (
     '--- CURRENT TASK CONTEXT ---\n' +

@@ -38,6 +38,11 @@ export type DispatcherEnv = {
   /** When true, coach/strategy lets parsed `card_action` flow through guards and persist. */
   COACH_CARD_ACTIONS: boolean;
   /**
+   * When true, Coach rail auto-emits `regenerate_from_outline` card_action after block
+   * merges that touch exerciseBlocks on cards with an existing factory. Default false.
+   */
+  COACH_AUTO_REGENERATE_AFTER_RAIL_MERGE: boolean;
+  /**
    * When true, Lane 1 block-append uses a short text-only micro-call to polish the
    * templated reply. Default false (template-only, zero LLM for structure).
    */
@@ -117,6 +122,8 @@ export function readDispatcherEnv(): DispatcherEnv {
     ORGANIZER_WRITES_ENABLED: readString('ORGANIZER_WRITES_ENABLED') === '1',
     COACH_MERGE_WORKOUT_METADATA: readString('COACH_MERGE_WORKOUT_METADATA') === '1',
     COACH_CARD_ACTIONS: readString('COACH_CARD_ACTIONS') === '1',
+    COACH_AUTO_REGENERATE_AFTER_RAIL_MERGE:
+      readString('COACH_AUTO_REGENERATE_AFTER_RAIL_MERGE') === '1',
     COACH_BLOCK_APPEND_MICRO_REPLY: readString('COACH_BLOCK_APPEND_MICRO_REPLY') === '1',
   };
 }

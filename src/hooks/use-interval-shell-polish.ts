@@ -9,7 +9,10 @@ import { useTimerAudioPreference } from '@/hooks/use-timer-audio-preference';
 export function useIntervalShellPolish(options: {
   isRunning: boolean;
   isPaused: boolean;
-  remainingMs: number;
+  /** V1 path — required if getRemainingMs omitted */
+  remainingMs?: number;
+  /** Machine path — live remaining without shell re-renders */
+  getRemainingMs?: () => number;
   cueSegmentKey: string;
   amrapTenSecondWarning?: boolean;
 }): {
@@ -17,7 +20,8 @@ export function useIntervalShellPolish(options: {
   toggleAudio: () => void;
   primeAudio: () => Promise<void>;
 } {
-  const { isRunning, isPaused, remainingMs, cueSegmentKey, amrapTenSecondWarning } = options;
+  const { isRunning, isPaused, remainingMs, getRemainingMs, cueSegmentKey, amrapTenSecondWarning } =
+    options;
   const { audioEnabled, toggleAudio } = useTimerAudioPreference();
   const isActive = isRunning && !isPaused;
 
@@ -25,6 +29,7 @@ export function useIntervalShellPolish(options: {
 
   useIntervalCountdownAudio({
     remainingMs,
+    getRemainingMs,
     cueSegmentKey,
     audioEnabled,
     isActive,

@@ -99,8 +99,12 @@ export async function runGenerateWorkoutOutlineFill(
     return {
       ok: false,
       response: new Response(
-        JSON.stringify({ error: `Outline fill (Stage 1) failed: ${fillValidation.error}` }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } },
+        JSON.stringify({
+          error: 'OUTLINE_FILL_VALIDATION_FAILED',
+          message: `Outline fill (Stage 1) failed: ${fillValidation.error}`,
+          validation_error: fillValidation.error,
+        }),
+        { status: 422, headers: { 'Content-Type': 'application/json' } },
       ),
     };
   }

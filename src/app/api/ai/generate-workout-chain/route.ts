@@ -116,18 +116,13 @@ export async function POST(req: Request) {
     });
     if (!result.ok) {
       const errText = await result.response.text();
-      let status = result.response.status;
-      let message = errText;
+      const status = result.response.status || 500;
       try {
-        const j = JSON.parse(errText) as { error?: string };
-        if (j?.error) message = j.error;
+        const body = JSON.parse(errText) as Record<string, unknown>;
+        return NextResponse.json(body, { status });
       } catch {
-        // use raw
+        return NextResponse.json({ error: errText || 'Generation failed' }, { status });
       }
-      return NextResponse.json(
-        { error: message || 'Generation failed' },
-        { status: status || 500 },
-      );
     }
 
     const { workoutSet, chain_metadata, taskExercises: taskExercisesFromChain } = result.data;

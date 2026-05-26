@@ -1,6 +1,9 @@
 import type { CardAction, CardActionKind } from './types';
 
-const KNOWN_KINDS: ReadonlySet<CardActionKind> = new Set(['trigger_generation']);
+const KNOWN_KINDS: ReadonlySet<CardActionKind> = new Set([
+  'trigger_generation',
+  'regenerate_from_outline',
+]);
 
 export function parseCardActionFromMetadata(raw: unknown): CardAction | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;

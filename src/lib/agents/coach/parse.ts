@@ -120,9 +120,11 @@ export type CoachGeminiJsonResponse = {
   task_modal_intake_patch: TaskModalIntakePatch | null;
   /** Parser telemetry: fields dropped or clamped while normalizing `task_modal_intake_patch`. */
   task_modal_intake_dropped: TaskModalIntakePatchDrop[];
-  /** Optional UI command. Phase 12.1 only enum: 'trigger_generation'. */
-  card_action: 'trigger_generation' | null;
+  /** Optional UI command for the Task Modal client. */
+  card_action: CoachCardActionKind | null;
 };
+
+export type CoachCardActionKind = 'trigger_generation' | 'regenerate_from_outline';
 
 /** Payload for `p_personal_cues` on agent RPCs (matches `apply_personal_cues_for_user`). */
 export type PersonalCueResolvedForRpc = {
@@ -329,6 +331,9 @@ export function parseProposedWorkoutMetadataWithDrops(parsed: Record<string, unk
     const blockCollect = normalizeBlocksFromGeminiArray(o.blocks, 'blocks');
     drops.push(...blockCollect.drops);
     if (blockCollect.blocks.length > 0) out.blocks = blockCollect.blocks;
+  }
+  if (o.replace_all_exercise_blocks === true) {
+    out.replace_all_exercise_blocks = true;
   }
   return { meta: out, drops };
 }
@@ -542,15 +547,26 @@ export function parseExecutionPatchFromGemini(
  *
  * Exported for unit tests; `parseCoachJson` is the primary consumer.
  */
-export function parseCardActionTriggerGenerationFromGemini(
-  raw: unknown,
-): 'trigger_generation' | null {
+export function parseCardActionFromGemini(raw: unknown): CoachCardActionKind | null {
   if (typeof raw === 'string') {
-    return raw.trim() === 'trigger_generation' ? 'trigger_generation' : null;
+    const t = raw.trim();
+    if (t === 'trigger_generation' || t === 'regenerate_from_outline') return t;
+    return null;
   }
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const kind = (raw as Record<string, unknown>).kind;
-  return kind === 'trigger_generation' ? 'trigger_generation' : null;
+  if (kind === 'trigger_generation' || kind === 'regenerate_from_outline') {
+    return kind;
+  }
+  return null;
+}
+
+/** @deprecated Use `parseCardActionFromGemini`. */
+export function parseCardActionTriggerGenerationFromGemini(
+  raw: unknown,
+): 'trigger_generation' | null {
+  const parsed = parseCardActionFromGemini(raw);
+  return parsed === 'trigger_generation' ? 'trigger_generation' : null;
 }
 
 /**
@@ -692,7 +708,7 @@ export function parseCoachJson(
 }
 
 /** Versioned payload for `p_card_action` on agent RPCs (or null when empty). */
-export function cardActionForRpc(action: 'trigger_generation' | null): unknown | null {
+export function cardActionForRpc(action: CoachCardActionKind | null): unknown | null {
   if (action == null) return null;
   return { v: 1, kind: action };
 }

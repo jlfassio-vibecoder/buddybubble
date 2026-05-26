@@ -17,7 +17,9 @@ import type { IntervalRowSnapshot } from '@/lib/workout-factory/interval-timer/t
 import type { WorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 import type { WorkoutExercise } from '@/lib/item-metadata';
+import type { GhostSetSnapshot } from '@/lib/workout-factory/ghost-set-snapshot';
 import type { UserExerciseNotesRow } from '@/hooks/useUserExerciseNotes';
+import type { IntervalShellMachineControl } from '@/components/fitness/interval-shells/interval-shell-control';
 import { WorkoutBlockListRenderer } from '@/components/fitness/workout-block-renderer/WorkoutBlockListRenderer';
 import {
   WorkoutPlayerExercisePanel,
@@ -28,6 +30,7 @@ export type WorkoutPlayerBlockListProps = {
   viewModel: WorkoutSessionViewModel;
   flatExercises: WorkoutExercise[];
   logs: SetDraft[][];
+  ghostLogs?: GhostSetSnapshot[][];
   view: 'simple' | 'detailed';
   unit: string;
   personalNotesByExerciseIndex: (UserExerciseNotesRow | null)[];
@@ -40,21 +43,60 @@ export type WorkoutPlayerBlockListProps = {
   onToggleDone: (exIdx: number, setIdx: number) => void;
   onAddSet: (exIdx: number) => void;
   onLogAmrapRound: (blockId: string) => void;
+  /** Active Session: controlled row highlight snapshots from parent machine. */
+  intervalRowSnapshots?: Record<string, IntervalRowSnapshot | null>;
+  /** Active Session: machine-driven interval shells (Phase 3.2). */
+  useIntervalMachine?: boolean;
+  onIntervalStart?: (block: WorkoutSessionBlockView) => void;
+  intervalMachineControlByBlockId?: Record<string, IntervalShellMachineControl | undefined>;
+  /** Active Session route — prescription + set grid without inputs. */
+  readOnly?: boolean;
 };
 
 function renderIntervalShellForBlock(
   block: WorkoutSessionBlockView,
   onIntervalSnapshot: (blockId: string, snapshot: IntervalRowSnapshot | null) => void,
   onLogAmrapRound: (blockId: string) => void,
+  options: {
+    useIntervalMachine?: boolean;
+    onIntervalStart?: (block: WorkoutSessionBlockView) => void;
+    machineControl?: IntervalShellMachineControl;
+  },
 ) {
+  const machineControl = options.useIntervalMachine ? options.machineControl : undefined;
+  const onMachineStart = options.useIntervalMachine
+    ? () => options.onIntervalStart?.(block)
+    : undefined;
+
   if (block.blockFormat === 'tabata' && resolveTabataTimerConfig(block)) {
-    return <TabataIntervalShell block={block} onSnapshot={onIntervalSnapshot} />;
+    return (
+      <TabataIntervalShell
+        block={block}
+        onSnapshot={onIntervalSnapshot}
+        machineControl={machineControl}
+        onMachineStart={onMachineStart}
+      />
+    );
   }
   if (block.blockFormat === 'amrap' && resolveAmrapTimerConfig(block)) {
-    return <AmrapIntervalShell block={block} onLogRound={onLogAmrapRound} />;
+    return (
+      <AmrapIntervalShell
+        block={block}
+        onLogRound={onLogAmrapRound}
+        machineControl={machineControl}
+        onMachineStart={onMachineStart}
+      />
+    );
   }
   if (block.blockFormat === 'emom' && resolveEmomTimerConfig(block)) {
-    return <EmomIntervalShell block={block} onSnapshot={onIntervalSnapshot} />;
+    return (
+      <EmomIntervalShell
+        block={block}
+        onSnapshot={onIntervalSnapshot}
+        machineControl={machineControl}
+        onMachineStart={onMachineStart}
+      />
+    );
   }
   return null;
 }
@@ -63,6 +105,7 @@ export function WorkoutPlayerBlockList({
   viewModel,
   flatExercises,
   logs,
+  ghostLogs,
   view,
   unit,
   personalNotesByExerciseIndex,
@@ -70,6 +113,11 @@ export function WorkoutPlayerBlockList({
   onToggleDone,
   onAddSet,
   onLogAmrapRound,
+  intervalRowSnapshots: controlledIntervalSnapshots,
+  useIntervalMachine = false,
+  onIntervalStart,
+  intervalMachineControlByBlockId,
+  readOnly = false,
 }: WorkoutPlayerBlockListProps) {
   const { blocks } = viewModel;
   const indexLookup = buildPlayerExerciseIndexLookup(blocks);
@@ -77,13 +125,16 @@ export function WorkoutPlayerBlockList({
     indexLookup.map((e) => [`${e.blockId}:${e.exerciseIndexInBlock}`, e.globalIndex]),
   );
 
-  const [intervalSnapshots, setIntervalSnapshots] = useState<
+  const [localIntervalSnapshots, setLocalIntervalSnapshots] = useState<
     Record<string, IntervalRowSnapshot | null>
   >({});
 
+  const intervalSnapshots = controlledIntervalSnapshots ?? localIntervalSnapshots;
+
   const handleIntervalSnapshot = useCallback(
     (blockId: string, snapshot: IntervalRowSnapshot | null) => {
-      setIntervalSnapshots((prev) => {
+      if (controlledIntervalSnapshots != null) return;
+      setLocalIntervalSnapshots((prev) => {
         const cur = prev[blockId] ?? null;
         if (snapshot === null && cur === null) return prev;
         if (
@@ -97,7 +148,7 @@ export function WorkoutPlayerBlockList({
         return { ...prev, [blockId]: snapshot };
       });
     },
-    [],
+    [controlledIntervalSnapshots],
   );
 
   return (
@@ -111,7 +162,13 @@ export function WorkoutPlayerBlockList({
           className: 'space-y-4',
         })}
         renderMainBlockAfterHeader={(block) =>
-          renderIntervalShellForBlock(block, handleIntervalSnapshot, onLogAmrapRound)
+          readOnly
+            ? null
+            : renderIntervalShellForBlock(block, handleIntervalSnapshot, onLogAmrapRound, {
+                useIntervalMachine,
+                onIntervalStart,
+                machineControl: intervalMachineControlByBlockId?.[block.id],
+              })
         }
         renderExercise={(ctx) => {
           const globalIndex =
@@ -142,6 +199,7 @@ export function WorkoutPlayerBlockList({
                 exercise={exercise}
                 index={globalIndex}
                 sets={logs[globalIndex] ?? []}
+                ghostSets={ghostLogs?.[globalIndex]}
                 view={view}
                 unit={unit}
                 personalNotes={personalNotesByExerciseIndex[globalIndex] ?? null}
@@ -150,6 +208,7 @@ export function WorkoutPlayerBlockList({
                 onAddSet={() => onAddSet(globalIndex)}
                 activeSetIndex={activeSetIndex}
                 activeSetPhase={activeSetPhase}
+                readOnly={readOnly}
               />
             </div>
           );

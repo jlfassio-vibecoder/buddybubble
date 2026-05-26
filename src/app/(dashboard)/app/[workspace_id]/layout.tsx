@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { fetchPendingJoinRequestCountAndPreview } from '@/lib/workspace-join-requests';
 import { parseMemberRole } from '@/lib/permissions';
 import { createClient } from '@utils/supabase/server';
-import { DashboardShell } from '@/components/dashboard/dashboard-shell';
+import { WorkspaceShellGate } from '@/components/dashboard/workspace-shell-gate';
 import { loadBubblesDataCached, type BubblesPageData } from './load-bubbles-data';
 
 /** Placeholder while `DashboardShell` (uses `useSearchParams`) resolves — avoids SSR/client tree skew and useId mismatches. */
@@ -76,7 +76,7 @@ export default async function WorkspaceLayout({
 
   return (
     <Suspense fallback={<DashboardRouteFallback />}>
-      <DashboardShell
+      <WorkspaceShellGate
         workspaceId={workspace_id}
         initialRole={role}
         initialPendingJoinRequestCount={initialPendingJoinRequestCount}
@@ -84,7 +84,7 @@ export default async function WorkspaceLayout({
         initialBubbles={initialBubbles}
       >
         {children}
-      </DashboardShell>
+      </WorkspaceShellGate>
     </Suspense>
   );
 }

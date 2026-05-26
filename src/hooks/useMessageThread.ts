@@ -156,17 +156,13 @@ export function useMessageThread({
   const [messages, setMessages] = useState<MessageRowWithEmbeddedTask[]>([]);
   /** Keeps latest rows without forcing `sendMessage` to change on every INSERT (avoids consumer effect thrash). */
   const messagesRef = useRef<MessageRowWithEmbeddedTask[]>([]);
-  messagesRef.current = messages;
 
   const currentUserIdRef = useRef<string | null>(null);
   const onPeerThreadReplyInsertRef = useRef<typeof onPeerThreadReplyInsert>(undefined);
-  currentUserIdRef.current = currentUserId ?? null;
-  onPeerThreadReplyInsertRef.current = onPeerThreadReplyInsert;
   const [userById, setUserById] = useState<Record<string, ChatUserSnapshot>>({});
   const [teamMembers, setTeamMembers] = useState<MessageThreadTeamMember[]>([]);
   const [agentAuthUserIds, setAgentAuthUserIds] = useState<string[]>([]);
   const threadSubjectUserIdRef = useRef<string | null>(null);
-  threadSubjectUserIdRef.current = threadSubjectUserId ?? null;
   const [agentsByAuthUserId, setAgentsByAuthUserId] = useState<Map<string, AgentDefinitionLite>>(
     () => new Map(),
   );
@@ -175,10 +171,20 @@ export function useMessageThread({
   const [sending, setSending] = useState(false);
   const [taskBubbleId, setTaskBubbleId] = useState<string | null>(null);
   /** Unique suffix per hook instance to prevent realtime channel name collisions. */
-  const channelInstanceIdRef = useRef<string>('');
-  if (!channelInstanceIdRef.current) {
-    channelInstanceIdRef.current = randomUuid().replace(/-/g, '').slice(0, 10);
-  }
+  const channelInstanceIdRef = useRef(randomUuid().replace(/-/g, '').slice(0, 10));
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    currentUserIdRef.current = currentUserId ?? null;
+    onPeerThreadReplyInsertRef.current = onPeerThreadReplyInsert;
+  }, [currentUserId, onPeerThreadReplyInsert]);
+
+  useEffect(() => {
+    threadSubjectUserIdRef.current = threadSubjectUserId ?? null;
+  }, [threadSubjectUserId]);
 
   const filterKey = messageThreadFilterKey(filter);
 

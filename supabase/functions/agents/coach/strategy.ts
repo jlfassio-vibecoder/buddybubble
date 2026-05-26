@@ -36,6 +36,7 @@ import {
   applyCoachWorkoutOutlineToTaskMetadata,
   mergeCoachProposedIntoTaskMetadata,
 } from '../../_shared/workout-metadata/merge-coach-proposed-into-task-metadata.ts';
+import { syncCoachOutlineFromRichMetadata } from '../../_shared/workout-metadata/factory-session-to-coach-outline.ts';
 import {
   shouldExcludeWorkoutSentinelFromHistory,
   isWorkoutContextSentinel,
@@ -60,8 +61,8 @@ import {
   COACH_MAX_OUTPUT_TOKENS,
   COACH_MODEL_DEFAULT,
   COACH_OUTLINE_ONLY_MAX_OUTPUT_TOKENS,
+  COACH_OUTLINE_ONLY_MODEL,
   COACH_OUTLINE_ONLY_TEMPERATURE,
-  COACH_OUTLINE_ONLY_THINKING_BUDGET,
   COACH_SAFE_REPLY_TEXT,
   COACH_SLUG,
   COACH_TEMPERATURE,
@@ -78,6 +79,7 @@ import {
 } from './block-blueprint-library.ts';
 import {
   fetchCoachUserContext,
+  hasRichWorkoutSetMetadata,
   loadCurrentTaskContext,
   resolveCoachTaskMetadataForMerge,
   resolveCurrentWorkoutContextJsonFromThread,
@@ -663,7 +665,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       response = await generateContent({
         project: env.GCP_PROJECT_ID,
         location: env.GCP_LOCATION,
-        model: COACH_MODEL_DEFAULT,
+        model: COACH_OUTLINE_ONLY_MODEL,
         systemPrompt,
         contents: [{ role: 'user', parts: [{ text: userPrompt }] }] as GeminiContent[],
         generationConfig: {
@@ -671,7 +673,6 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
           maxOutputTokens: COACH_OUTLINE_ONLY_MAX_OUTPUT_TOKENS,
           responseMimeType: 'application/json',
           responseSchema: COACH_OUTLINE_ONLY_SCHEMA,
-          thinkingConfig: { thinkingBudget: COACH_OUTLINE_ONLY_THINKING_BUDGET },
         },
         timeoutMs: llmBudgetMs,
         signal: ctx.signal,
@@ -901,8 +902,13 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
 
     if (shouldDirectUpdate) {
       let pNewMeta: Record<string, unknown> | null = null;
+      let mergeExerciseBlocksTouched = false;
+      let mergeTouchedEmptyWithBlocks = false;
+      let replyText = parsed.reply_content;
+
       if (hasProposedMeta) {
         const raw = parsed.proposed_workout_metadata as Record<string, unknown>;
+        const proposedBlockCount = Array.isArray(raw.blocks) ? raw.blocks.length : 0;
         if (ctx.coachMergeWorkoutMetadata === true) {
           const mergeBase = resolveCoachTaskMetadataForMerge(
             extras.taskMetadataForContext ?? {},
@@ -913,6 +919,8 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
             proposed: raw,
           });
           pNewMeta = metadata;
+          mergeExerciseBlocksTouched = mergeLog.touched.includes('exerciseBlocks');
+          mergeTouchedEmptyWithBlocks = proposedBlockCount > 0 && mergeLog.touched.length === 0;
           log('info', 'coach merge workout metadata', {
             request_id: ctx.requestId,
             slug: COACH_SLUG,
@@ -923,6 +931,9 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
             merge_drops: mergeLog.drops,
             merge_block_formats: mergeLog.blockFormats,
           });
+          if (mergeExerciseBlocksTouched) {
+            pNewMeta = syncCoachOutlineFromRichMetadata(pNewMeta);
+          }
         } else {
           pNewMeta = raw;
         }
@@ -943,17 +954,44 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
           ),
         });
       }
+
+      if (mergeTouchedEmptyWithBlocks) {
+        replyText = `${replyText.trim()}\n\n(Structure unchanged — try again using the exact block names from your workout.)`;
+        log('info', 'coach rail merge phantom update guard', {
+          request_id: ctx.requestId,
+          slug: COACH_SLUG,
+          message_id: ctx.message.id,
+        });
+      }
+
+      let cardActionParamFinal = cardActionParam;
+      if (
+        ctx.coachAutoRegenerateAfterRailMerge === true &&
+        ctx.coachCardActions === true &&
+        !isTriggerActiveWorkoutSession(ctx.message) &&
+        pNewMeta != null &&
+        hasRichWorkoutSetMetadata(pNewMeta) &&
+        mergeExerciseBlocksTouched
+      ) {
+        cardActionParamFinal = cardActionForRpc('regenerate_from_outline');
+        log('info', 'coach rail merge triggered factory rehydrate', {
+          request_id: ctx.requestId,
+          slug: COACH_SLUG,
+          message_id: ctx.message.id,
+        });
+      }
+
       const upd = await agentUpdateTaskAndReply(supabase, {
         p_trigger_message_id: ctx.message.id,
         p_thread_id: ctx.threadId,
         p_agent_auth_user_id: ctx.agent.auth_user_id,
         p_invoker_user_id: ctx.message.user_id,
         p_target_task_id: knownTargetTaskId!,
-        p_reply_text: parsed.reply_content,
+        p_reply_text: replyText,
         p_new_title: trimmedNewTitle.length > 0 ? trimmedNewTitle : null,
         p_new_description: trimmedNewDesc.length > 0 ? trimmedNewDesc : null,
         p_new_metadata: pNewMeta,
-        p_card_action: cardActionParam,
+        p_card_action: cardActionParamFinal,
       });
       if (!upd.ok) {
         log('error', 'coach persist direct update rpc failed', {
@@ -1088,15 +1126,27 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
         ? ((card.data as { created_task_id: string }).created_task_id as string)
         : null;
 
-    if (parsed.create_card && createdTaskId && outlinePhaseB?.attempted) {
+    const outlinePersistTaskId =
+      createdTaskId ?? (knownTargetTaskId && outlinePhaseB?.attempted ? knownTargetTaskId : null);
+
+    if (outlinePersistTaskId && outlinePhaseB?.attempted) {
       if (outlinePhaseB.ok && hasCoachOutline) {
-        await patchTaskOutlineMetadataFields(supabase, createdTaskId, {
+        await patchTaskOutlineMetadataFields(supabase, outlinePersistTaskId, {
+          outline: parsed.coach_workout_outline,
           status: 'ready',
           error: null,
           drops: parsed.coach_workout_outline_drops ?? [],
         });
+        log('info', 'coach outline persisted to task', {
+          request_id: ctx.requestId,
+          slug: COACH_SLUG,
+          message_id: ctx.message.id,
+          task_id: outlinePersistTaskId,
+          outline_block_count: parsed.coach_workout_outline!.length,
+          via_create_card: createdTaskId != null,
+        });
       } else if (!outlinePhaseB.ok) {
-        await patchTaskOutlineMetadataFields(supabase, createdTaskId, {
+        await patchTaskOutlineMetadataFields(supabase, outlinePersistTaskId, {
           status: 'needs_structure',
           error: outlinePhaseB.error ?? 'Outline generation failed.',
           drops: outlinePhaseB.drops ?? [],

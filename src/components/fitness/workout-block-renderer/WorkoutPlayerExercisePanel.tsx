@@ -7,6 +7,9 @@ import type { WorkoutExercise } from '@/lib/item-metadata';
 import type { IntervalRowSnapshot } from '@/lib/workout-factory/interval-timer/types';
 import type { UserExerciseNotesRow } from '@/hooks/useUserExerciseNotes';
 
+import type { GhostSetSnapshot } from '@/lib/workout-factory/ghost-set-snapshot';
+import { formatGhostFieldPlaceholder } from '@/lib/workout-factory/ghost-set-snapshot';
+
 export type SetDraft = {
   weight: string;
   reps: string;
@@ -62,6 +65,9 @@ export type WorkoutPlayerExercisePanelProps = {
   /** Tabata / interval shell: highlight active set row (editing never disabled). */
   activeSetIndex?: number | null;
   activeSetPhase?: IntervalRowSnapshot['activeSetPhase'] | null;
+  readOnly?: boolean;
+  /** Active Session ghost placeholders (previous performance); V1 omits. */
+  ghostSets?: GhostSetSnapshot[];
 };
 
 export function WorkoutPlayerExercisePanel({
@@ -76,6 +82,8 @@ export function WorkoutPlayerExercisePanel({
   onAddSet,
   activeSetIndex = null,
   activeSetPhase = null,
+  readOnly = false,
+  ghostSets,
 }: WorkoutPlayerExercisePanelProps) {
   const targetLine = formatExerciseTargetLine(exercise, unit);
 
@@ -212,6 +220,16 @@ export function WorkoutPlayerExercisePanel({
             (activeSetPhase === 'rest' ||
               activeSetPhase === 'prepare' ||
               activeSetPhase === 'paused');
+          const ghostWeightPlaceholder = formatGhostFieldPlaceholder(
+            ghostSets?.[idx],
+            'weight',
+            unit,
+          );
+          const ghostRepsPlaceholder = formatGhostFieldPlaceholder(ghostSets?.[idx], 'reps', unit);
+          const ghostRpePlaceholder = formatGhostFieldPlaceholder(ghostSets?.[idx], 'rpe', unit);
+          const ghostInputClassName =
+            'h-8 text-center text-sm placeholder:text-muted-foreground/30 placeholder:italic placeholder:font-light';
+          const ghostWaitingBorderClassName = 'border-dashed border-muted-foreground/40';
           return (
             <div
               key={idx}
@@ -230,58 +248,96 @@ export function WorkoutPlayerExercisePanel({
               >
                 {idx + 1}
               </span>
-              <Input
-                value={s.weight}
-                onChange={(e) => onSetChange(idx, 'weight', e.target.value)}
-                placeholder={`— ${unit}`}
-                className="h-8 text-center text-sm"
-                type="number"
-                min={0}
-                step={0.5}
-              />
-              <Input
-                value={s.reps}
-                onChange={(e) => onSetChange(idx, 'reps', e.target.value)}
-                placeholder="—"
-                className="h-8 text-center text-sm"
-                type="number"
-                min={0}
-              />
-              <Input
-                value={s.rpe}
-                onChange={(e) => onSetChange(idx, 'rpe', e.target.value)}
-                placeholder="—"
-                className="h-8 text-center text-sm"
-                type="number"
-                min={1}
-                max={10}
-              />
-              <button
-                type="button"
-                onClick={() => onToggleDone(idx)}
-                aria-label={s.done ? `Mark set ${idx + 1} undone` : `Mark set ${idx + 1} done`}
-                className={cn(
-                  'flex h-8 w-8 items-center justify-center rounded-md border-2 transition-colors',
-                  s.done
-                    ? 'border-primary bg-primary text-primary-foreground'
-                    : 'border-border text-transparent hover:border-primary/40',
-                )}
-              >
-                <Check className="h-3.5 w-3.5" />
-              </button>
+              {readOnly ? (
+                <>
+                  <span className="text-center text-sm tabular-nums text-foreground">
+                    {s.weight.trim() || `— ${unit}`}
+                  </span>
+                  <span className="text-center text-sm tabular-nums text-foreground">
+                    {s.reps.trim() || '—'}
+                  </span>
+                  <span className="text-center text-sm tabular-nums text-foreground">
+                    {s.rpe.trim() || '—'}
+                  </span>
+                  <span
+                    className={cn(
+                      'flex h-8 w-8 items-center justify-center rounded-md border-2',
+                      s.done
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'border-border text-transparent',
+                    )}
+                    aria-hidden
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Input
+                    value={s.weight}
+                    onChange={(e) => onSetChange(idx, 'weight', e.target.value)}
+                    placeholder={ghostWeightPlaceholder ?? `— ${unit}`}
+                    className={cn(
+                      ghostInputClassName,
+                      !s.weight.trim() && ghostWeightPlaceholder && ghostWaitingBorderClassName,
+                    )}
+                    type="number"
+                    min={0}
+                    step={0.5}
+                  />
+                  <Input
+                    value={s.reps}
+                    onChange={(e) => onSetChange(idx, 'reps', e.target.value)}
+                    placeholder={ghostRepsPlaceholder ?? '—'}
+                    className={cn(
+                      ghostInputClassName,
+                      !s.reps.trim() && ghostRepsPlaceholder && ghostWaitingBorderClassName,
+                    )}
+                    type="number"
+                    min={0}
+                  />
+                  <Input
+                    value={s.rpe}
+                    onChange={(e) => onSetChange(idx, 'rpe', e.target.value)}
+                    placeholder={ghostRpePlaceholder ?? '—'}
+                    className={cn(
+                      ghostInputClassName,
+                      !s.rpe.trim() && ghostRpePlaceholder && ghostWaitingBorderClassName,
+                    )}
+                    type="number"
+                    min={1}
+                    max={10}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => onToggleDone(idx)}
+                    aria-label={s.done ? `Mark set ${idx + 1} undone` : `Mark set ${idx + 1} done`}
+                    className={cn(
+                      'flex h-8 w-8 items-center justify-center rounded-md border-2 transition-colors',
+                      s.done
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'border-border text-transparent hover:border-primary/40',
+                    )}
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                  </button>
+                </>
+              )}
             </div>
           );
         })}
       </div>
 
-      <button
-        type="button"
-        onClick={onAddSet}
-        className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <Plus className="h-3.5 w-3.5" />
-        Add set
-      </button>
+      {!readOnly ? (
+        <button
+          type="button"
+          onClick={onAddSet}
+          className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add set
+        </button>
+      ) : null}
     </div>
   );
 }

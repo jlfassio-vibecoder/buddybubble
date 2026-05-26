@@ -60,9 +60,9 @@ export const COACH_WORKOUT_GREETING_TEMPERATURE = 0.35 as const;
 export const COACH_WORKOUT_GREETING_MAX_OUTPUT_TOKENS = 512 as const;
 
 /** Phase B: outline-only Vertex call (blocks array only). */
-export const COACH_OUTLINE_ONLY_TEMPERATURE = 0.1 as const;
-export const COACH_OUTLINE_ONLY_MAX_OUTPUT_TOKENS = 4096 as const;
-export const COACH_OUTLINE_ONLY_THINKING_BUDGET = 0 as const;
+export const COACH_OUTLINE_ONLY_MODEL = 'gemini-2.5-pro' as const;
+export const COACH_OUTLINE_ONLY_TEMPERATURE = 0.4 as const;
+export const COACH_OUTLINE_ONLY_MAX_OUTPUT_TOKENS = 8192 as const;
 
 /**
  * Coach-specific override for the dispatcher's thread-history loader. Caps the

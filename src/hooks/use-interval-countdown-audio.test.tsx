@@ -1,7 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { resetWorkoutTimerAudioPlayerForTests } from '@/lib/timer/audio-cue-player';
-import { useIntervalCountdownAudio } from './use-interval-countdown-audio';
+import {
+  evaluateIntervalCountdownCues,
+  useIntervalCountdownAudio,
+} from './use-interval-countdown-audio';
 
 const play = vi.fn();
 const prime = vi.fn(async () => {});
@@ -117,6 +120,126 @@ describe('useIntervalCountdownAudio', () => {
     expect(play).toHaveBeenCalledWith('amrap_ten_second');
     play.mockClear();
     rerender({ remainingMs: 9_500 });
+    expect(play).not.toHaveBeenCalled();
+  });
+});
+
+describe('evaluateIntervalCountdownCues', () => {
+  afterEach(() => {
+    play.mockClear();
+  });
+
+  function makeRefs() {
+    return {
+      lastSegmentRef: { current: null as string | null },
+      lastTickSecRef: { current: null as number | null },
+      lastEndSegmentRef: { current: null as string | null },
+      tenSecWarnedRef: { current: false },
+    };
+  }
+
+  it('plays countdown ticks at 3, 2, 1 seconds', () => {
+    const refs = makeRefs();
+    const player = { play, prime, dispose: vi.fn() };
+
+    evaluateIntervalCountdownCues(player, 3, 'work-0', false, refs);
+    expect(play).toHaveBeenCalledWith('countdown_tick');
+
+    play.mockClear();
+    evaluateIntervalCountdownCues(player, 2, 'work-0', false, refs);
+    expect(play).toHaveBeenCalledWith('countdown_tick');
+
+    play.mockClear();
+    evaluateIntervalCountdownCues(player, 1, 'work-0', false, refs);
+    expect(play).toHaveBeenCalledWith('countdown_tick');
+  });
+
+  it('re-arms ticks when cueSegmentKey changes', () => {
+    const refs = makeRefs();
+    const player = { play, prime, dispose: vi.fn() };
+
+    evaluateIntervalCountdownCues(player, 3, 'work-0', false, refs);
+    play.mockClear();
+    evaluateIntervalCountdownCues(player, 3, 'rest-0', false, refs);
+    expect(play).toHaveBeenCalledWith('countdown_tick');
+  });
+});
+
+describe('useIntervalCountdownAudio live path', () => {
+  let rafCallback: FrameRequestCallback | null = null;
+
+  beforeEach(() => {
+    rafCallback = null;
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      rafCallback = cb;
+      return 1;
+    });
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'visible',
+    });
+  });
+
+  afterEach(() => {
+    play.mockClear();
+    resetWorkoutTimerAudioPlayerForTests();
+    vi.unstubAllGlobals();
+  });
+
+  const base = {
+    cueSegmentKey: 'work-0',
+    audioEnabled: true,
+    isActive: true,
+  };
+
+  function runRafFrame() {
+    expect(rafCallback).not.toBeNull();
+    rafCallback!(0);
+  }
+
+  it('plays countdown ticks via getRemainingMs rAF loop', () => {
+    let remainingMs = 3000;
+    renderHook(() =>
+      useIntervalCountdownAudio({
+        ...base,
+        getRemainingMs: () => remainingMs,
+      }),
+    );
+
+    runRafFrame();
+    expect(play).toHaveBeenCalledWith('countdown_tick');
+
+    play.mockClear();
+    remainingMs = 2000;
+    runRafFrame();
+    expect(play).toHaveBeenCalledWith('countdown_tick');
+
+    play.mockClear();
+    remainingMs = 1000;
+    runRafFrame();
+    expect(play).toHaveBeenCalledWith('countdown_tick');
+
+    play.mockClear();
+    remainingMs = 0;
+    runRafFrame();
+    expect(play).toHaveBeenCalledWith('countdown_end');
+  });
+
+  it('skips audio when document is hidden', () => {
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'hidden',
+    });
+
+    renderHook(() =>
+      useIntervalCountdownAudio({
+        ...base,
+        getRemainingMs: () => 3000,
+      }),
+    );
+
+    runRafFrame();
     expect(play).not.toHaveBeenCalled();
   });
 });

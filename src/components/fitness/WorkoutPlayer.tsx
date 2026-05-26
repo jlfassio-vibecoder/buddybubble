@@ -24,6 +24,9 @@ import {
 import { createClient } from '@utils/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { useRouter } from 'next/navigation';
+import { buildActiveSessionUrl } from '@/lib/active-session/build-active-session-url';
+import { isActiveSessionRouteEnabled } from '@/lib/feature-flags/activeSessionRoute';
 import { formatUserFacingError } from '@/lib/format-error';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -1382,6 +1385,50 @@ export function WorkoutPlayer({
 
 // ── Trigger buttons (used in TaskModal Visibility section) ────────────────────
 
+export type ActiveSessionLaunchFrom = 'modal' | 'kanban' | 'class' | string;
+
+export type ActiveSessionLaunchButtonProps = {
+  workspaceId: string;
+  sourceTaskId: string;
+  from?: ActiveSessionLaunchFrom;
+  onComplete?: () => void;
+  className?: string;
+  /** `compact` fits the embedded workout pane header; `default` matches Details tab triggers. */
+  variant?: 'default' | 'compact';
+};
+
+export function ActiveSessionLaunchButton({
+  workspaceId,
+  sourceTaskId,
+  from = 'modal',
+  onComplete,
+  className,
+  variant = 'default',
+}: ActiveSessionLaunchButtonProps) {
+  const router = useRouter();
+  const compact = variant === 'compact';
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        router.push(buildActiveSessionUrl(workspaceId, sourceTaskId, { from }));
+        onComplete?.();
+      }}
+      className={cn(
+        'inline-flex items-center font-medium text-foreground transition-colors',
+        compact
+          ? 'gap-1 rounded-md border border-primary/30 bg-primary/5 px-2.5 py-1 text-xs hover:bg-primary/10'
+          : 'gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm hover:bg-primary/10',
+        className,
+      )}
+    >
+      <Dumbbell className={cn('shrink-0', compact ? 'size-3.5' : 'size-4')} aria-hidden />
+      Launch Active Session (Beta)
+    </button>
+  );
+}
+
 type WorkoutPlayerTriggersProps = {
   workoutTitle: string;
   metadata: Json;
@@ -1404,9 +1451,19 @@ export function WorkoutPlayerTriggers({
 
   if (sessionVm.flatExercises.length === 0) return null;
 
+  const activeSessionEnabled = isActiveSessionRouteEnabled() && sourceTaskId;
+
   return (
     <>
       <div className="flex flex-wrap gap-2">
+        {activeSessionEnabled ? (
+          <ActiveSessionLaunchButton
+            workspaceId={workspaceId}
+            sourceTaskId={sourceTaskId}
+            from="modal"
+            onComplete={onComplete}
+          />
+        ) : null}
         <button
           type="button"
           onClick={() => setMode('desktop')}

@@ -59,6 +59,8 @@ export type BuildDispatchContextInput = {
   coachMergeWorkoutMetadata?: boolean;
   /** From `readDispatcherEnv().COACH_CARD_ACTIONS`. */
   coachCardActions?: boolean;
+  /** From `readDispatcherEnv().COACH_AUTO_REGENERATE_AFTER_RAIL_MERGE`. */
+  coachAutoRegenerateAfterRailMerge?: boolean;
 };
 
 /**
@@ -88,6 +90,7 @@ export async function buildDispatchContext(
     historyLimit,
     coachMergeWorkoutMetadata,
     coachCardActions,
+    coachAutoRegenerateAfterRailMerge,
   } = input;
   const threadId = message.parent_id ?? message.id;
 
@@ -163,6 +166,7 @@ export async function buildDispatchContext(
     signal: AbortSignal.timeout(llmTimeoutMs),
     coachMergeWorkoutMetadata,
     coachCardActions,
+    coachAutoRegenerateAfterRailMerge,
     extras: {},
   };
 }

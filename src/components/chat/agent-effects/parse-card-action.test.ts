@@ -20,10 +20,17 @@ describe('parseCardActionFromMetadata', () => {
     expect(parseCardActionFromMetadata({ v: 1, kind: 'reset_intake' })).toBeNull();
   });
 
-  it('returns parsed object for valid payload', () => {
+  it('returns parsed object for valid trigger_generation payload', () => {
     expect(parseCardActionFromMetadata({ v: 1, kind: 'trigger_generation' })).toEqual({
       v: 1,
       kind: 'trigger_generation',
+    });
+  });
+
+  it('returns parsed object for regenerate_from_outline payload', () => {
+    expect(parseCardActionFromMetadata({ v: 1, kind: 'regenerate_from_outline' })).toEqual({
+      v: 1,
+      kind: 'regenerate_from_outline',
     });
   });
 });

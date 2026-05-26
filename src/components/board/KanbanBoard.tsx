@@ -137,7 +137,7 @@ function loadKanbanFiltersToolbarCollapsed(workspaceId: string | null): boolean 
 type TaskWithAssigneeEmbed = TaskRow & { task_assignees?: { user_id: string }[] | null };
 
 /** Bubble names that use created_by + task_assignees personalization for non-managers. */
-const PERSONALIZED_BUBBLE_NAMES = ['Workouts', 'Programs'] as const;
+const PERSONALIZED_BUBBLE_NAMES = ['Workouts', 'Workout Logs', 'Programs'] as const;
 
 function shouldKeepForPersonalizedBubble(t: TaskWithAssigneeEmbed, viewerId: string): boolean {
   const assignees = t.task_assignees ?? [];

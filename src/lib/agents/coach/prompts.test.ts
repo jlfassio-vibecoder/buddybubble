@@ -31,8 +31,8 @@ describe('buildCurrentTaskContextBlock', () => {
     const block = buildCurrentTaskContextBlock('Leg day', 'Squats', { rail: true });
     expect(block).toContain('LIVE CO-PILOT MODE (Task Modal rail)');
     expect(block).toContain('actively co-editing this task with the user');
-    expect(block).toContain('Server merge is append-only');
-    expect(block).toContain('emit only what changed');
+    expect(block).toContain('replaces exerciseBlocks by matching block name');
+    expect(block).toContain('exact same name values as CURRENT WORKOUT CONTEXT');
     expect(block).not.toContain('full revised workout');
     expect(block).not.toContain('still require clear affirmative consent before drafting');
     expect(block).not.toContain('The user must finalize changes on the card');

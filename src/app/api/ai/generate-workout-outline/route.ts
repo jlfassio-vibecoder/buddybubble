@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@utils/supabase/server';
 import { mergeCoachOutlineMetadataPatch } from '@/lib/agents/coach/coach-outline-metadata';
+import {
+  resolveTaskOutlineUserMessage,
+  type OutlineUserMessageSource,
+} from '@/lib/agents/coach/resolve-task-outline-user-message';
 import { applyCoachWorkoutOutlineToTaskMetadata } from '@/lib/agents/_shared/workout-metadata/merge-coach-proposed-into-task-metadata';
 import { runCoachOutlinePhaseBVertex } from '@/lib/ai/coach-outline-phase-b-vertex';
 import { parseTaskMetadata } from '@/lib/item-metadata';
@@ -18,6 +22,9 @@ const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 const OUTLINE_GENERATION_USER_ERROR =
   'Structure generation failed. Try again or add blocks manually.';
+
+const OUTLINE_TRUNCATED_USER_ERROR =
+  'The workout outline was too long and got cut off. Please try asking for fewer blocks.';
 
 const AI_GENERATION_FAILED_CLIENT_BODY = {
   error: 'AI_GENERATION_FAILED',
@@ -102,7 +109,7 @@ export async function POST(req: Request) {
 
     const { data: task, error: taskError } = await supabase
       .from('tasks')
-      .select('id, bubble_id, metadata, title, description, item_type')
+      .select('id, bubble_id, metadata, title, description, item_type, created_at')
       .eq('id', taskId)
       .single();
 
@@ -161,10 +168,29 @@ export async function POST(req: Request) {
       return creds.error;
     }
 
+    let resolvedUserMessage = userMessage;
+    let contextSource: OutlineUserMessageSource = userMessage ? 'client_body' : 'none';
+
+    if (!resolvedUserMessage) {
+      const resolved = await resolveTaskOutlineUserMessage(supabase, {
+        taskId,
+        bubbleId: task.bubble_id,
+        taskCreatedAt: task.created_at,
+      });
+      resolvedUserMessage = resolved.userMessage;
+      contextSource = resolved.source;
+    }
+
+    console.warn(`${logPrefix} phase b context`, {
+      task_id: taskId,
+      context_source: contextSource,
+      user_message_chars: resolvedUserMessage?.length ?? 0,
+    });
+
     const phaseResult = await runCoachOutlinePhaseBVertex({
       title,
       description,
-      userMessage,
+      userMessage: resolvedUserMessage,
       projectId: creds.projectId,
       accessToken: creds.accessToken,
       logPrefix,
@@ -180,10 +206,14 @@ export async function POST(req: Request) {
         clearConfirmation: true,
       });
     } else {
-      console.error(`${logPrefix} phase b failed:`, phaseResult.message, { task_id: taskId });
+      const truncated = phaseResult.errorKind === 'truncated';
+      console.error(`${logPrefix} phase b failed:`, phaseResult.message, {
+        task_id: taskId,
+        error_kind: phaseResult.errorKind,
+      });
       nextMeta = mergeCoachOutlineMetadataPatch(task.metadata, {
         status: 'needs_structure',
-        error: OUTLINE_GENERATION_USER_ERROR,
+        error: truncated ? OUTLINE_TRUNCATED_USER_ERROR : OUTLINE_GENERATION_USER_ERROR,
         drops: phaseResult.drops ?? [],
         clearConfirmation: true,
       });
@@ -200,6 +230,16 @@ export async function POST(req: Request) {
     }
 
     if (!phaseResult.ok) {
+      if (phaseResult.errorKind === 'truncated') {
+        return NextResponse.json(
+          {
+            error: 'OUTLINE_TRUNCATED',
+            message: OUTLINE_TRUNCATED_USER_ERROR,
+            metadata: parseTaskMetadata(nextMeta),
+          },
+          { status: 422, headers: JSON_HEADERS },
+        );
+      }
       return NextResponse.json(
         {
           ...AI_GENERATION_FAILED_CLIENT_BODY,

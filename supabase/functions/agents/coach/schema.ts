@@ -1,5 +1,6 @@
 /**
  * MIRROR FILE — canonical lives at `src/lib/agents/coach/schema.ts`.
+ * Run `pnpm check:agent-mirror` after edits.
  */
 
 import type { VertexResponseSchema } from '../../_shared/llm/types.ts';
@@ -203,7 +204,7 @@ export const COACH_OUTLINE_ONLY_SCHEMA: VertexResponseSchema = {
     blocks: {
       type: 'ARRAY',
       description:
-        'Parametric workout outline blocks. Extremely concise — name, block_format, format_params, exercise name placeholders only.',
+        'One block per catalog structural token in the user request (:section/format/variant). Order matches token order. Concise — name, block_format, format_params, exercise name placeholders only.',
       items: COACH_OUTLINE_ONLY_BLOCK_ITEM_SCHEMA,
     },
   },
@@ -325,11 +326,17 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
           type: 'ARRAY',
           nullable: true,
           description:
-            'Polymorphic workout sections. Each block has a free-text name (e.g. Warm-up, Main, Strength, Cardio, Finisher, Cool down, Mobility). Exercise-shaped blocks include exercises; warm-up / cool-down / mobility may instead supply an instructions string list when there are no sets and reps. The server mergeCoachProposedIntoTaskMetadata appends blocks by default — emit only new or changed blocks; do not re-send unchanged sections. Routes each block by name and shape into exerciseBlocks (strength, cardio, core, finisher with sets and reps) or warmupBlocks, finisherBlocks, or cooldownBlocks (instruction-shaped). Prefer emitting blocks over flat exercises whenever the user asked for a named section (for example add a finisher). Each exercise-shaped block MUST set block_format (one of straight_sets, superset, circuit, amrap, emom, tabata, ladder, chipper, pyramid, contrast, clusters, drop_sets) and the matching format_params per the BLUEPRINT LIBRARY in the system prompt. Instruction-only blocks (instructions[] without exercises[]) may omit block_format. Use null or omit when not changing the workout structure.',
+            'Polymorphic workout sections. Each block has a free-text name (e.g. Warm-up, Main, Strength, Cardio, Finisher, Cool down, Mobility). Exercise-shaped blocks include exercises; warm-up / cool-down / mobility may instead supply an instructions string list when there are no sets and reps. Same block name as an existing exerciseBlocks entry replaces that block in place (exercises + format_params); a new name appends. Emit only new or changed blocks with stable names from CURRENT WORKOUT CONTEXT; do not re-send unchanged sections. Set replace_all_exercise_blocks true only when renaming or reordering the full parametric structure. Routes each block by name and shape into exerciseBlocks (strength, cardio, core, finisher with sets and reps) or warmupBlocks, finisherBlocks, or cooldownBlocks (instruction-shaped). Prefer emitting blocks over flat exercises whenever the user asked for a named section (for example add a finisher). Each exercise-shaped block MUST set block_format (one of straight_sets, superset, circuit, amrap, emom, tabata, ladder, chipper, pyramid, contrast, clusters, drop_sets) and the matching format_params per the BLUEPRINT LIBRARY in the system prompt. Instruction-only blocks (instructions[] without exercises[]) may omit block_format. Use null or omit when not changing the workout structure.',
           items: COACH_PROPOSED_WORKOUT_BLOCK_ITEM_SCHEMA,
         },
         workout_type: { type: 'STRING', nullable: true },
         duration_min: { type: 'INTEGER', nullable: true },
+        replace_all_exercise_blocks: {
+          type: 'BOOLEAN',
+          nullable: true,
+          description:
+            'When true and blocks is non-empty, replace the entire parametric exerciseBlocks array with the incoming blocks (warmup/finisher/cooldown instruction sections preserved). Default false — same block name replaces in place; new names append.',
+        },
       },
     },
     execution_patch: {
@@ -442,9 +449,9 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
     card_action: {
       type: 'STRING',
       nullable: true,
-      enum: ['trigger_generation'],
+      enum: ['trigger_generation', 'regenerate_from_outline'],
       description:
-        'Optional UI command sent to the chat client. Emit "trigger_generation" only when the open card has no rich workout_set yet AND the user has given clear consent to draft now AND not in an active workout session — the client will run the heavy /api/ai/generate-workout-chain on the user\'s behalf. MUST be null on every other turn. When non-null, omit proposed_workout_metadata. reply_content should briefly say you are starting the generator.',
+        'Optional UI command sent to the chat client. Emit "trigger_generation" only when the open card has no rich workout_set yet AND the user has given clear consent to draft now AND not in an active workout session — the client will run the heavy /api/ai/generate-workout-chain on the user\'s behalf. MUST be null on every other turn. When non-null, omit proposed_workout_metadata. reply_content should briefly say you are starting the generator. Do not emit "regenerate_from_outline" — the server sets it after rail block merges when factory re-hydration is needed.',
     },
   },
   // Keys must be present so Gemini does not drop task_description on create_card flows.
