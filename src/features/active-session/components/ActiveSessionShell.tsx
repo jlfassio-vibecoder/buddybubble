@@ -136,9 +136,13 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
     sourceMetadata: task.metadata,
     workoutTitle,
     draftLogs: snapshot.context.draftLogs,
+    ghostLogs: snapshot.context.ghostLogs,
+    logTaskId: snapshot.context.logTaskId,
+    elapsedSec: snapshot.context.elapsedSec,
     sessionVm: viewModel,
     sentinelFired: snapshot.context.sentinelFired,
     sessionStartedAt: snapshot.context.startedAt,
+    intervalRowSnapshots: snapshot.context.intervalRowSnapshots,
   });
 
   const isHydrating = snapshot.matches('hydrating');
@@ -310,6 +314,7 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
             bubbleRow={coachBridge.coachBubbleRow}
             canPostMessages={coachBridge.canPostMessages}
             messageThread={coachBridge.messageThread}
+            sessionTelemetry={coachBridge.sessionTelemetry}
           />
         </div>
       )}

@@ -168,12 +168,11 @@ describe('buildSessionTelemetrySnapshot', () => {
 });
 
 describe('computeSessionTelemetryFingerprint', () => {
-  it('hashes only the fingerprint input shape', () => {
+  it('hashes only performance state (not elapsed_sec)', () => {
     const input = {
       schema_version: SESSION_TELEMETRY_SCHEMA_VERSION,
       session_id: 's1',
       workout_log_task_id: 'log-1',
-      elapsed_sec: 60,
       set_logs: [
         {
           exercise_index: 0,
@@ -185,10 +184,21 @@ describe('computeSessionTelemetryFingerprint', () => {
         },
       ],
       interval_performance: [],
+      skipped_exercise_indices: [],
+      live_set_counts: [1],
     } as const;
 
     expect(computeSessionTelemetryFingerprint(input)).toBe(
       computeSessionTelemetryFingerprint({ ...input }),
     );
+  });
+
+  it('ignores elapsed_sec differences in snapshot fingerprint', () => {
+    const ctx = baseContext();
+    const slow = snapshotFor({ ...ctx, elapsedSec: 30 });
+    const fast = snapshotFor({ ...ctx, elapsedSec: 300 });
+    expect(slow.fingerprint).toBe(fast.fingerprint);
+    expect(slow.elapsed_sec).toBe(30);
+    expect(fast.elapsed_sec).toBe(300);
   });
 });

@@ -18,10 +18,11 @@ export type SessionTelemetryFingerprintInput = {
   schema_version: typeof SESSION_TELEMETRY_SCHEMA_VERSION;
   session_id: string;
   workout_log_task_id: string | null;
-  elapsed_sec: number;
   /** Done-set payload only — omit blank rows */
   set_logs: readonly SessionTelemetrySetLogRow[];
   interval_performance: readonly SessionTelemetryIntervalRow[];
+  skipped_exercise_indices: readonly number[];
+  live_set_counts: readonly number[];
 };
 
 export type SessionTelemetrySetLogRow = {
@@ -421,7 +422,26 @@ export function fnv1aHex(input: string): string {
 export function computeSessionTelemetryFingerprint(
   input: SessionTelemetryFingerprintInput,
 ): string {
-  return fnv1aHex(stableStringify(input));
+  const {
+    schema_version,
+    session_id,
+    workout_log_task_id,
+    set_logs,
+    interval_performance,
+    skipped_exercise_indices,
+    live_set_counts,
+  } = input;
+  return fnv1aHex(
+    stableStringify({
+      schema_version,
+      session_id,
+      workout_log_task_id,
+      set_logs,
+      interval_performance,
+      skipped_exercise_indices,
+      live_set_counts,
+    }),
+  );
 }
 
 export function buildSessionTelemetrySnapshot(
@@ -454,9 +474,10 @@ export function buildSessionTelemetrySnapshot(
     schema_version: SESSION_TELEMETRY_SCHEMA_VERSION,
     session_id: context.sessionId,
     workout_log_task_id: context.logTaskId,
-    elapsed_sec: context.elapsedSec,
     set_logs: doneSetLogs,
     interval_performance: intervalPerformance,
+    skipped_exercise_indices: skippedExerciseIndices,
+    live_set_counts: liveSetCounts,
   });
 
   return {

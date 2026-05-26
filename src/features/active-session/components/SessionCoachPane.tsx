@@ -4,6 +4,7 @@ import {
   WorkoutCoachRail,
   type WorkoutCoachRailMessageThread,
 } from '@/components/chat/WorkoutCoachRail';
+import type { SessionTelemetrySnapshot } from '@/lib/workout-factory/session-telemetry';
 import type { BubbleRow, Json } from '@/types/database';
 
 type Props = {
@@ -14,6 +15,7 @@ type Props = {
   bubbleRow: BubbleRow | null;
   canPostMessages: boolean;
   messageThread: WorkoutCoachRailMessageThread;
+  sessionTelemetry?: SessionTelemetrySnapshot | null;
 };
 
 export function SessionCoachPane({
@@ -24,6 +26,7 @@ export function SessionCoachPane({
   bubbleRow,
   canPostMessages,
   messageThread,
+  sessionTelemetry,
 }: Props) {
   return (
     <WorkoutCoachRail
@@ -34,6 +37,7 @@ export function SessionCoachPane({
       workoutData={workoutData}
       bubbleRow={bubbleRow}
       messageThread={messageThread}
+      sessionTelemetry={sessionTelemetry}
       className="min-h-0 overflow-hidden rounded-lg border border-border"
     />
   );
