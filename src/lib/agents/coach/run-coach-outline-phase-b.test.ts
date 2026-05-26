@@ -16,6 +16,33 @@ describe('run-coach-outline-phase-b', () => {
     expect(userPrompt).toContain('Hypertrophy focus');
   });
 
+  it('system prompt requires one block per structural catalog token', () => {
+    const { systemPrompt } = buildCoachOutlinePhaseBPrompts({
+      title: 'Tabata',
+      description: 'Integrated session',
+      userMessage: ':main/tabata/power',
+    });
+    expect(systemPrompt).toContain('STRUCTURAL TOKEN PARITY');
+    expect(systemPrompt).toContain('one separate, distinct block');
+  });
+
+  it('user prompt maps every catalog token to a blocks entry', () => {
+    const tabataTokens = ':main/tabata/power , :finisher/tabata/vo2 and :finisher/tabata/core';
+    const { userPrompt } = buildCoachOutlinePhaseBPrompts({
+      title: 'Tabata Session',
+      description: 'High-intensity Tabata intervals for power, VO2, and core.',
+      userMessage: `I'd like a workout with ${tabataTokens} using kettlebells and TRX.`,
+      blueprintLibraryPrompt: '',
+    });
+    expect(userPrompt).toContain('CATALOG TOKEN MAPPING (CRITICAL)');
+    expect(userPrompt).toContain('blocks.length MUST equal the token count');
+    expect(userPrompt).toContain('TOKEN SOURCE OF TRUTH');
+    expect(userPrompt).toContain('Main — Tabata Power');
+    expect(userPrompt).toContain('Finisher — Tabata VO2');
+    expect(userPrompt).toContain('Finisher — Tabata Core');
+    expect(userPrompt).toContain(tabataTokens);
+  });
+
   it('processCoachOutlinePhaseBVertexOutput succeeds on valid blocks JSON', () => {
     const result = processCoachOutlinePhaseBVertexOutput({
       text: JSON.stringify({

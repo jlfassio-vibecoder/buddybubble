@@ -203,7 +203,7 @@ export const COACH_OUTLINE_ONLY_SCHEMA: VertexResponseSchema = {
     blocks: {
       type: 'ARRAY',
       description:
-        'Parametric workout outline blocks. Extremely concise — name, block_format, format_params, exercise name placeholders only.',
+        'One block per catalog structural token in the user request (:section/format/variant). Order matches token order. Concise — name, block_format, format_params, exercise name placeholders only.',
       items: COACH_OUTLINE_ONLY_BLOCK_ITEM_SCHEMA,
     },
   },

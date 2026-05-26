@@ -3,16 +3,16 @@
  */
 
 import {
-  COACH_MODEL_DEFAULT,
   COACH_OUTLINE_ONLY_MAX_OUTPUT_TOKENS,
+  COACH_OUTLINE_ONLY_MODEL,
   COACH_OUTLINE_ONLY_TEMPERATURE,
-  COACH_OUTLINE_ONLY_THINKING_BUDGET,
 } from '@/lib/agents/coach/config';
 import {
   buildCoachOutlinePhaseBPrompts,
   processCoachOutlinePhaseBVertexOutput,
   type CoachOutlinePhaseBResult,
 } from '@/lib/agents/coach/run-coach-outline-phase-b';
+import type { VertexGenerateResponse } from '@/lib/agents/_shared/llm/types';
 import { COACH_OUTLINE_ONLY_SCHEMA } from '@/lib/agents/coach/schema';
 import { resolveVertexGeminiLocation } from '@/lib/ai/scene-brief-generator';
 
@@ -44,7 +44,7 @@ export async function runCoachOutlinePhaseBVertex(args: {
   const logPrefix = args.logPrefix ?? '[coach-outline-phase-b]';
   const timeoutMs = args.timeoutMs ?? 120_000;
   const location = resolveVertexGeminiLocation();
-  const modelId = COACH_MODEL_DEFAULT;
+  const modelId = COACH_OUTLINE_ONLY_MODEL;
   const endpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${args.projectId}/locations/${location}/publishers/google/models/${modelId}:generateContent`;
 
   const { systemPrompt, userPrompt } = buildCoachOutlinePhaseBPrompts({
@@ -72,7 +72,6 @@ export async function runCoachOutlinePhaseBVertex(args: {
           maxOutputTokens: COACH_OUTLINE_ONLY_MAX_OUTPUT_TOKENS,
           responseMimeType: 'application/json',
           responseSchema: COACH_OUTLINE_ONLY_SCHEMA,
-          thinkingConfig: { thinkingBudget: COACH_OUTLINE_ONLY_THINKING_BUDGET },
         },
       }),
       signal: controller.signal,
@@ -103,16 +102,29 @@ export async function runCoachOutlinePhaseBVertex(args: {
     });
   }
 
-  const candidate = (
-    data as {
-      candidates?: Array<{
-        content?: { parts?: Array<{ text?: string }> };
-        finishReason?: string;
-      }>;
-    }
-  ).candidates?.[0];
+  const vertexData = data as VertexGenerateResponse;
+  const candidate = vertexData.candidates?.[0];
   const finishReason = candidate?.finishReason ?? null;
   const text = extractGeminiText(candidate);
+  const usage = vertexData.usageMetadata;
+
+  console.warn(`${logPrefix} phase b vertex usage`, {
+    finish_reason: finishReason,
+    prompt_token_count: usage?.promptTokenCount ?? null,
+    candidates_token_count: usage?.candidatesTokenCount ?? null,
+    thoughts_token_count: usage?.thoughtsTokenCount ?? null,
+    total_token_count: usage?.totalTokenCount ?? null,
+    max_output_tokens: COACH_OUTLINE_ONLY_MAX_OUTPUT_TOKENS,
+  });
+
+  if (finishReason === 'MAX_TOKENS') {
+    const rawText = candidate?.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
+    console.log(
+      '\n=== TRUNCATED OUTPUT DUMP ===\n',
+      rawText.slice(-2000),
+      '\n=============================\n',
+    );
+  }
 
   return processCoachOutlinePhaseBVertexOutput({ text, finishReason });
 }

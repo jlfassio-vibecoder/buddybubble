@@ -60,8 +60,8 @@ import {
   COACH_MAX_OUTPUT_TOKENS,
   COACH_MODEL_DEFAULT,
   COACH_OUTLINE_ONLY_MAX_OUTPUT_TOKENS,
+  COACH_OUTLINE_ONLY_MODEL,
   COACH_OUTLINE_ONLY_TEMPERATURE,
-  COACH_OUTLINE_ONLY_THINKING_BUDGET,
   COACH_SAFE_REPLY_TEXT,
   COACH_SLUG,
   COACH_TEMPERATURE,
@@ -663,7 +663,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       response = await generateContent({
         project: env.GCP_PROJECT_ID,
         location: env.GCP_LOCATION,
-        model: COACH_MODEL_DEFAULT,
+        model: COACH_OUTLINE_ONLY_MODEL,
         systemPrompt,
         contents: [{ role: 'user', parts: [{ text: userPrompt }] }] as GeminiContent[],
         generationConfig: {
@@ -671,7 +671,6 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
           maxOutputTokens: COACH_OUTLINE_ONLY_MAX_OUTPUT_TOKENS,
           responseMimeType: 'application/json',
           responseSchema: COACH_OUTLINE_ONLY_SCHEMA,
-          thinkingConfig: { thinkingBudget: COACH_OUTLINE_ONLY_THINKING_BUDGET },
         },
         timeoutMs: llmBudgetMs,
         signal: ctx.signal,
@@ -1088,15 +1087,27 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
         ? ((card.data as { created_task_id: string }).created_task_id as string)
         : null;
 
-    if (parsed.create_card && createdTaskId && outlinePhaseB?.attempted) {
+    const outlinePersistTaskId =
+      createdTaskId ?? (knownTargetTaskId && outlinePhaseB?.attempted ? knownTargetTaskId : null);
+
+    if (outlinePersistTaskId && outlinePhaseB?.attempted) {
       if (outlinePhaseB.ok && hasCoachOutline) {
-        await patchTaskOutlineMetadataFields(supabase, createdTaskId, {
+        await patchTaskOutlineMetadataFields(supabase, outlinePersistTaskId, {
+          outline: parsed.coach_workout_outline,
           status: 'ready',
           error: null,
           drops: parsed.coach_workout_outline_drops ?? [],
         });
+        log('info', 'coach outline persisted to task', {
+          request_id: ctx.requestId,
+          slug: COACH_SLUG,
+          message_id: ctx.message.id,
+          task_id: outlinePersistTaskId,
+          outline_block_count: parsed.coach_workout_outline!.length,
+          via_create_card: createdTaskId != null,
+        });
       } else if (!outlinePhaseB.ok) {
-        await patchTaskOutlineMetadataFields(supabase, createdTaskId, {
+        await patchTaskOutlineMetadataFields(supabase, outlinePersistTaskId, {
           status: 'needs_structure',
           error: outlinePhaseB.error ?? 'Outline generation failed.',
           drops: outlinePhaseB.drops ?? [],
