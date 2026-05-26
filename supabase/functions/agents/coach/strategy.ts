@@ -108,6 +108,7 @@ import {
 } from './block-blueprint-mentions.ts';
 import {
   mergeBlueprintShellsWithModelBlocks,
+  summarizeWorkoutContextForRailBlockAppend,
   synthesizeProposedBlocksFromMentions,
 } from './block-blueprint-synthesize.ts';
 import { loadExerciseDictionaryByIndex } from './exercise-dictionary-by-index.ts';
@@ -504,7 +505,15 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
     });
 
     if (currentWorkoutContextJson) {
-      let workoutCtxBlock = `${WORKOUT_CONTEXT_HEADER}\n${currentWorkoutContextJson}`;
+      let workoutCtxBlock: string;
+      if (isRailSurface) {
+        const summary = summarizeWorkoutContextForRailBlockAppend(currentWorkoutContextJson);
+        workoutCtxBlock = summary
+          ? `${WORKOUT_CONTEXT_HEADER}\n${summary}\n`
+          : `${WORKOUT_CONTEXT_HEADER}\n${currentWorkoutContextJson}`;
+      } else {
+        workoutCtxBlock = `${WORKOUT_CONTEXT_HEADER}\n${currentWorkoutContextJson}`;
+      }
       const indexMap = formatExerciseIndexMap(
         currentWorkoutContextJson,
         exerciseDictionaryByIndex ?? undefined,
