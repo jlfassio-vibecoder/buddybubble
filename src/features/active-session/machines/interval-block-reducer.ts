@@ -16,6 +16,7 @@ import {
 } from '@/lib/workout-factory/interval-timer/interval-timer-engine';
 import {
   intervalTimerSnapshotToRowSnapshot,
+  amrapTimerSnapshotToRowSnapshot,
   type IntervalRowSnapshot,
 } from '@/lib/workout-factory/interval-timer/types';
 import { getEmomRemainingMs } from '@/lib/workout-factory/interval-timer/emom-timer-engine';
@@ -56,14 +57,21 @@ function emomSnapshotToRowSnapshot(
 export function deriveRowSnapshot(
   engine: IntervalEngineState,
   now: number,
+  opts?: { amrapRoundCount?: number },
 ): IntervalRowSnapshot | null {
   switch (engine.format) {
     case 'tabata':
       return intervalTimerSnapshotToRowSnapshot(deriveIntervalTimerSnapshot(engine.state, now));
     case 'emom':
       return emomSnapshotToRowSnapshot(deriveEmomTimerSnapshot(engine.state, now));
-    case 'amrap':
-      return null;
+    case 'amrap': {
+      const row = amrapTimerSnapshotToRowSnapshot(deriveAmrapTimerSnapshot(engine.state, now));
+      if (!row) return null;
+      return {
+        ...row,
+        roundIndex: Math.max(0, opts?.amrapRoundCount ?? 0),
+      };
+    }
   }
 }
 
@@ -242,7 +250,9 @@ function applyReducerEvent(
 }
 
 function refreshDerived(ctx: IntervalBlockContext, now: number): IntervalBlockContext {
-  const rowSnapshot = deriveRowSnapshot(ctx.engine, now);
+  const rowSnapshot = deriveRowSnapshot(ctx.engine, now, {
+    amrapRoundCount: ctx.amrapRoundCount,
+  });
   return {
     ...ctx,
     lastNowMs: now,
@@ -271,7 +281,9 @@ export function applyIntervalEngineEvent(
       ? event.now
       : event.type === 'CLOCK_FRAME'
         ? event.now
-        : Date.now();
+        : event.type === 'LOG_AMRAP_ROUND'
+          ? ctx.lastNowMs
+          : Date.now();
 
   if (event.type === 'LOG_AMRAP_ROUND') {
     if (ctx.format !== 'amrap') return ctx;

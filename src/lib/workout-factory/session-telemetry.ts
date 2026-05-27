@@ -291,9 +291,13 @@ function resolveIntervalRoundsTarget(
 }
 
 function resolveIntervalRoundsCompleted(
+  input: ReturnType<typeof resolveIntervalBlockInput>,
   snapshot: IntervalRowSnapshot,
   roundsTarget: number | null,
 ): number {
+  if (input?.format === 'amrap') {
+    return Math.max(0, snapshot.roundIndex);
+  }
   if (snapshot.activeSetPhase === 'paused') {
     return Math.max(0, snapshot.roundIndex + 1);
   }
@@ -317,7 +321,7 @@ function estimateElapsedInBlockSec(
     return Math.round((roundIndex * input.config.intervalMs) / 1000);
   }
   if (input.format === 'amrap') {
-    return 0;
+    return Math.max(0, Math.round(snapshot.elapsedInBlockSec ?? 0));
   }
   return 0;
 }
@@ -336,7 +340,9 @@ function buildIntervalPerformance(
     const format = input?.format ?? 'straight';
     const roundsTarget = resolveIntervalRoundsTarget(input);
     const lastPhase = snapshot?.activeSetPhase ?? 'idle';
-    const roundsCompleted = snapshot ? resolveIntervalRoundsCompleted(snapshot, roundsTarget) : 0;
+    const roundsCompleted = snapshot
+      ? resolveIntervalRoundsCompleted(input, snapshot, roundsTarget)
+      : 0;
     const elapsedInBlockSec = snapshot ? estimateElapsedInBlockSec(input, snapshot) : 0;
 
     rows.push({

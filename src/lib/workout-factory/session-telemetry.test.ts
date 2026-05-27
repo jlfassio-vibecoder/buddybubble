@@ -144,6 +144,42 @@ describe('buildSessionTelemetrySnapshot', () => {
     expect(snap.interval_performance[0]?.elapsed_in_block_sec).toBeGreaterThan(0);
   });
 
+  it('extracts AMRAP interval performance with elapsed block time from snapshot', () => {
+    const amrapMeta = richMetadataWithBlockFormat('amrap');
+    const sessionVm = buildWorkoutSessionViewModel(amrapMeta as Json);
+    const draftLogs = buildPlayerInitialLogs(sessionVm.flatExercises, sessionVm.blocks);
+    const amrapBlock = sessionVm.blocks.find((b) => b.blockFormat === 'amrap');
+    expect(amrapBlock).toBeTruthy();
+
+    const snap = snapshotFor({
+      sessionId: 'session-amrap',
+      sourceTaskId: 'source-amrap',
+      logTaskId: 'log-amrap',
+      draftLogs,
+      ghostLogs: [],
+      elapsedSec: 2040,
+      startedAt: STARTED_AT,
+      intervalRowSnapshots: {
+        [amrapBlock!.id]: {
+          roundIndex: 3,
+          activeSetPhase: 'work',
+          elapsedInBlockSec: 600,
+        },
+      },
+      sessionVm,
+    });
+
+    expect(snap.interval_performance).toHaveLength(1);
+    expect(snap.interval_performance[0]).toMatchObject({
+      block_id: amrapBlock!.id,
+      format: 'amrap',
+      rounds_completed: 3,
+      rounds_target: null,
+      last_phase: 'work',
+      elapsed_in_block_sec: 600,
+    });
+  });
+
   it('changes fingerprint when a done rep count changes but stays stable otherwise', () => {
     const context = baseContext();
     const draftA: SetDraft[][] = [

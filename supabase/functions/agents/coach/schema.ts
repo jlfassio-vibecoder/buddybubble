@@ -361,19 +361,19 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
             type: 'STRING',
             nullable: true,
             description:
-              'Calculated or prescribed load for this set. MUST BE PURE NUMBER STRING ONLY. Do not include units (lbs/kg), ranges, parentheses, or text. Example: "135" or "60.5".',
+              'Calculated or prescribed load for this set. MUST BE PURE NUMBER STRING ONLY. Do not include units (lbs/kg), ranges, parentheses, or text. Use whole numbers or at most 2 decimal places (e.g. "53", never "53.000000..."). Example: "135" or "60.5".',
           },
           reps: {
             type: 'STRING',
             nullable: true,
             description:
-              'Calculated or prescribed reps for this set. MUST BE PURE NUMBER STRING ONLY (single integer). Do not include ranges (e.g. "8-10"), units, or text. Example: "8".',
+              'Calculated or prescribed reps for this set. MUST BE PURE NUMBER STRING ONLY (single integer). Do not include ranges (e.g. "8-10"), units, or text. Use whole numbers only; never excessive trailing zeros. Example: "8".',
           },
           rpe: {
             type: 'STRING',
             nullable: true,
             description:
-              'Calculated or prescribed RPE (1-10) for this set. MUST BE PURE NUMBER STRING ONLY. Do not include ranges or text. Example: "7" or "8.5".',
+              'Calculated or prescribed RPE (1-10) for this set. MUST BE PURE NUMBER STRING ONLY. Do not include ranges or text. Use whole numbers or at most 2 decimal places; never excessive trailing zeros. Example: "7" or "8.5".',
           },
           done: { type: 'BOOLEAN', nullable: true },
         },

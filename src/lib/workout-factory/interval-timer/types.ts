@@ -1,4 +1,5 @@
 import type { TabataTimerConfig } from '@/lib/workout-factory/interval-timer/resolve-tabata-timer-config';
+import type { AmrapTimerSnapshot } from '@/lib/workout-factory/interval-timer/amrap-timer-engine';
 
 export type IntervalTimerPhase = 'idle' | 'prepare' | 'work' | 'rest' | 'done' | 'paused';
 
@@ -34,12 +35,14 @@ export type IntervalTimerAction =
   | { type: 'reset' }
   | { type: 'tick'; now: number };
 
-/** BlockList → WorkoutPlayerExercisePanel active row contract (Tabata + EMOM). */
+/** BlockList → WorkoutPlayerExercisePanel active row contract (Tabata + EMOM + AMRAP). */
 export type IntervalRowSnapshot = {
   roundIndex: number;
   activeSetPhase: 'work' | 'rest' | 'prepare' | 'paused';
   /** EMOM alternating only — 0-based exercise indices within block */
   activeStationIndices?: number[];
+  /** AMRAP-only — elapsed seconds within the block time cap. */
+  elapsedInBlockSec?: number;
 };
 
 export function intervalTimerSnapshotToRowSnapshot(
@@ -53,4 +56,15 @@ export function intervalTimerSnapshotToRowSnapshot(
     return { roundIndex: snapshot.roundIndex, activeSetPhase: snapshot.phase };
   }
   return null;
+}
+
+export function amrapTimerSnapshotToRowSnapshot(
+  snapshot: AmrapTimerSnapshot,
+): IntervalRowSnapshot | null {
+  if (snapshot.phase === 'idle' || snapshot.phase === 'done') return null;
+  return {
+    roundIndex: 0,
+    activeSetPhase: snapshot.phase === 'paused' ? 'paused' : 'work',
+    elapsedInBlockSec: Math.round(snapshot.elapsedMs / 1000),
+  };
 }

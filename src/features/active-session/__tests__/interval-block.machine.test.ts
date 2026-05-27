@@ -96,7 +96,27 @@ describe('intervalBlockMachine', () => {
     actor.send({ type: 'START', now: 0 });
     actor.send({ type: 'LOG_AMRAP_ROUND' });
     expect(actor.getSnapshot().context.amrapRoundCount).toBe(1);
+    expect(actor.getSnapshot().context.rowSnapshot).toEqual({
+      roundIndex: 1,
+      activeSetPhase: 'work',
+      elapsedInBlockSec: 0,
+    });
     expect(actor.getSnapshot().matches('running')).toBe(true);
+  });
+
+  it('AMRAP: row snapshot includes elapsed block time while running', () => {
+    const actor = createTestIntervalActor({
+      blockId: 'block-amrap',
+      format: 'amrap',
+      config: { timeCapMs: 900_000, targetRounds: null },
+    });
+    actor.send({ type: 'START', now: 0 });
+    actor.send({ type: 'CLOCK_FRAME', now: 600_000 });
+    expect(actor.getSnapshot().context.rowSnapshot).toEqual({
+      roundIndex: 0,
+      activeSetPhase: 'work',
+      elapsedInBlockSec: 600,
+    });
   });
 
   it('RESET returns to idle with fresh engine state', () => {

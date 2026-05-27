@@ -5,6 +5,7 @@ import {
   isActiveSessionSurfaceFromMetadata,
   parseSessionTelemetryFromMetadata,
   SESSION_TELEMETRY_HEADER,
+  SESSION_TELEMETRY_INTERVAL_HEADER,
   SESSION_TELEMETRY_RAIL_MAX_BYTES,
   summarizeTelemetryDeltas,
   type SessionTelemetrySnapshotV1,
@@ -124,14 +125,52 @@ describe('summarizeTelemetryDeltas', () => {
   it('formats multi-set exercise with planned vs actual lines', () => {
     const out = summarizeTelemetryDeltas(sampleSnapshot());
     expect(out).toContain(SESSION_TELEMETRY_HEADER);
-    expect(out).toContain('elapsed=18m');
-    expect(out).toContain('completed=4/6 sets');
+    expect(out).toContain('global_session_time_elapsed=18m');
+    expect(out).toContain('clock_scope=wall_time_since_session_start');
+    expect(out).toContain('sets_completed=4/6');
     expect(out).toContain('Ex0 Back Squat | planned=3 logged=2 done=2');
     expect(out).toContain('s0: target 135 x 8 -> actual 135x8 rpe7.5 [done]');
     expect(out).toContain('s1: target 135x8 -> actual 135x7 rpe8 [done]');
     expect(out).toContain('s2: target 135x8 -> [not_started]');
-    expect(out).toContain('INT block-main-tabata | tabata 6/8 rounds');
+    expect(out).toContain(SESSION_TELEMETRY_INTERVAL_HEADER);
+    expect(out).toContain('block_id=block-main-tabata | format=tabata');
+    expect(out).toContain('rounds_completed=6 | rounds_target=8');
+    expect(out).toContain('running_block_clock_elapsed=4m0s');
+    expect(out).toContain('clock_scope=block_local_NOT_global_session');
     expect(out).not.toContain('Ex2 RDL');
+  });
+
+  it('disambiguates global session clock from block interval clock', () => {
+    const out = summarizeTelemetryDeltas(
+      sampleSnapshot({
+        elapsed_sec: 2040,
+        performance_summary: {
+          total_sets_planned: 6,
+          total_sets_logged: 4,
+          total_sets_completed: 4,
+          total_volume_kg: 12450,
+          skipped_exercise_indices: [],
+          elapsed_sec: 2040,
+        },
+        interval_performance: [
+          {
+            block_id: 'block-amrap-main',
+            format: 'amrap',
+            rounds_completed: 3,
+            rounds_target: null,
+            last_phase: 'work',
+            elapsed_in_block_sec: 600,
+          },
+        ],
+      }),
+    );
+    expect(out).toContain('global_session_time_elapsed=34m');
+    expect(out).toContain('clock_scope=wall_time_since_session_start');
+    expect(out).toContain(SESSION_TELEMETRY_INTERVAL_HEADER);
+    expect(out).toContain('running_block_clock_elapsed=10m0s');
+    expect(out).toContain('clock_scope=block_local_NOT_global_session');
+    expect(out).not.toMatch(/\belapsed=/);
+    expect(out).not.toMatch(/\| 600s$/m);
   });
 
   it('respects byte cap and adds truncation footer', () => {

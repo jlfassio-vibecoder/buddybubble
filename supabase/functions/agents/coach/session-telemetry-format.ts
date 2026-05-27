@@ -12,6 +12,9 @@ export const SESSION_TELEMETRY_METADATA_KEY = 'session_telemetry' as const;
 
 export const SESSION_TELEMETRY_HEADER = '--- SESSION TELEMETRY (live performance) ---';
 
+export const SESSION_TELEMETRY_INTERVAL_HEADER =
+  '--- INTERVAL_BLOCK_TIMERS (authoritative for Tabata/EMOM/AMRAP status) ---';
+
 export const SESSION_TELEMETRY_RAIL_MAX_BYTES = 3_072;
 export const SESSION_TELEMETRY_FULL_MAX_BYTES = 4_096;
 
@@ -264,6 +267,13 @@ function formatElapsedMinutes(elapsedSec: number): string {
   return `${m}m`;
 }
 
+function formatDurationMmSs(totalSec: number): string {
+  const sec = Math.max(0, Math.floor(totalSec));
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}m${s}s`;
+}
+
 function formatPlannedTarget(
   planned: SessionTelemetrySnapshotV1['exercise_deltas'][number]['sets'][number]['planned'],
 ): string {
@@ -308,9 +318,9 @@ function shouldIncludeExercise(
 function buildSummaryLine(snapshot: SessionTelemetrySnapshotV1): string {
   const ps = snapshot.performance_summary;
   const elapsed = snapshot.elapsed_sec != null ? snapshot.elapsed_sec : ps.elapsed_sec;
-  const volume = ps.total_volume_kg != null ? ` | volume=${ps.total_volume_kg}kg` : '';
+  const volume = ps.total_volume_kg != null ? ` | volume_kg=${ps.total_volume_kg}` : '';
   return (
-    `elapsed=${formatElapsedMinutes(elapsed)} | completed=${ps.total_sets_completed}/${ps.total_sets_planned} sets` +
+    `global_session_time_elapsed=${formatElapsedMinutes(elapsed)} | clock_scope=wall_time_since_session_start | sets_completed=${ps.total_sets_completed}/${ps.total_sets_planned}` +
     `${volume} | skipped_exercises=[${ps.skipped_exercise_indices.join(',')}]` +
     ` | live_set_counts=[${snapshot.live_set_counts.join(',')}] | fp=${snapshot.fingerprint}`
   );
@@ -318,13 +328,16 @@ function buildSummaryLine(snapshot: SessionTelemetrySnapshotV1): string {
 
 function buildIntervalLines(snapshot: SessionTelemetrySnapshotV1): string[] {
   const rows = snapshot.interval_performance ?? [];
-  return rows.map((row) => {
-    const target =
-      row.rounds_target != null
-        ? `${row.rounds_completed}/${row.rounds_target}`
-        : `${row.rounds_completed}`;
-    return `INT ${row.block_id} | ${row.format} ${target} rounds | phase=${row.last_phase} | ${row.elapsed_in_block_sec}s`;
-  });
+  if (rows.length === 0) return [];
+
+  const lines = [SESSION_TELEMETRY_INTERVAL_HEADER];
+  for (const row of rows) {
+    const roundsTarget = row.rounds_target != null ? String(row.rounds_target) : 'null';
+    lines.push(
+      `block_id=${row.block_id} | format=${row.format} | rounds_completed=${row.rounds_completed} | rounds_target=${roundsTarget} | phase=${row.last_phase} | running_block_clock_elapsed=${formatDurationMmSs(row.elapsed_in_block_sec)} | clock_scope=block_local_NOT_global_session`,
+    );
+  }
+  return lines;
 }
 
 function buildExerciseLines(snapshot: SessionTelemetrySnapshotV1): {
