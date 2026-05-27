@@ -22,6 +22,7 @@ export type ResolveActiveSessionLaunchUiInput = {
   titleTrimmed: boolean;
 };
 
+// Copilot suggestion ignored: launch UI already gates on itemType === 'workout' only; workout_log cards return hidden (see e012ed8).
 function isWorkoutItemType(itemType: ItemType): boolean {
   return itemType === 'workout';
 }
