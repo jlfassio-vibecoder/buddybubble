@@ -1,6 +1,24 @@
 /**
- * MIRROR FILE — canonical lives at `src/lib/agents/coach/config.ts`.
- * Run `pnpm check:agent-mirror` after edits.
+ * Coach strategy constants — pure module, canonical source.
+ *
+ * This file is the single source of truth for Coach's slug, model defaults, generation
+ * params, prompt-side directives, and intake-phase / category enums. A byte-for-byte
+ * mirror lives at `supabase/functions/agents/coach/config.ts` so the Deno runtime can
+ * import the same constants without cross-runtime imports. Run `pnpm check:agent-mirror`
+ * to verify parity.
+ *
+ * Lifted from the legacy single-file Coach implementation:
+ *   - `COACH_TASK_NOTES_MAX_CHARS`, `COACH_TASK_SEED_CTA`:
+ *     `supabase/functions/bubble-agent-dispatch/index.ts:95-99`.
+ *   - `MID_WORKOUT_SUPPORT_MODE_DIRECTIVE`,
+ *     `ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE`:
+ *     `supabase/functions/bubble-agent-dispatch/index.ts:211-218`.
+ *   - `INTAKE_PHASES`, `INTAKE_CATEGORIES`:
+ *     `supabase/functions/bubble-agent-dispatch/index.ts:261-277`.
+ *   - `COACH_SAFE_REPLY_TEXT`:
+ *     `supabase/functions/bubble-agent-dispatch/index.ts:1747`.
+ *
+ * No DB clients, no Deno globals, no runtime side effects.
  */
 
 /** Stable agent slug. Strategy modules are the only files allowed to hard-code this. */
@@ -92,7 +110,14 @@ export const MID_WORKOUT_SUPPORT_MODE_DIRECTIVE =
 export const ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE =
   'EXECUTION STATE (CRITICAL): The member is in an active workout right now. You MUST set create_card to false, task_title, task_description, and coach_task_notes to null, update_existing_task to false, and proposed_workout_metadata to null. Do not describe or claim you are creating a new Kanban workout card. For live set adjustments (load, reps, RPE, done), use execution_patch only. ' +
   'If the user asks to apply a generic value across a multi-round format (e.g. Tabata, EMOM, circuit), emit execution_patch entries for every valid setIndex for that exercise (0 through live_set_counts[exerciseIndex] - 1). ' +
-  'If the user asks a general coaching question, answer in reply_content without card fields.';
+  'If the user asks a general coaching question, answer in reply_content without card fields. ' +
+  'When SESSION TELEMETRY is present, prefer logged actuals over prescription when answering "how did I do" or load guidance; still use execution_patch (not proposed_workout_metadata) for live grid updates.';
+
+export const SESSION_TELEMETRY_GROUND_TRUTH_DIRECTIVE =
+  'SESSION TELEMETRY (CRITICAL): When the SESSION TELEMETRY block appears below, treat it as ground truth for what the athlete has actually logged (weights, reps, RPE, set completion, interval rounds). ' +
+  'Prescription targets and structure live in CURRENT WORKOUT CONTEXT above; telemetry shows planned-vs-actual deltas. ' +
+  'When commenting on performance, progressive overload, or missed sets, cite logged values from SESSION TELEMETRY—not prescription alone. ' +
+  'When emitting execution_patch, indices remain bounded by live_set_counts in CURRENT WORKOUT CONTEXT; patch values should align with what telemetry shows unless the user explicitly asks to change the log.';
 
 /** Conversation-stage enum surfaced to Vertex via the response schema. */
 export type IntakePhase =

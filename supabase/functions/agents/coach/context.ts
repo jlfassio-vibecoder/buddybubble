@@ -22,8 +22,15 @@
 
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 
+import type { DispatchContext } from '../../_shared/dispatch/types.ts';
 import { log } from '../../_shared/obs/log.ts';
 import { COACH_SLUG } from './config.ts';
+import {
+  isActiveSessionSurfaceFromMetadata,
+  isActiveSessionSurfaceInThread,
+  parseSessionTelemetryFromMetadata,
+  type SessionTelemetrySnapshotV1,
+} from './session-telemetry-format.ts';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -668,4 +675,107 @@ export async function fetchCoachUserContext(
   if (!profileLine && !hasLast && !hasNext) return null;
   if (!lastWorkoutBlock) return currentUserBlock + tail;
   return currentUserBlock + '\n\n' + lastWorkoutBlock + tail;
+}
+
+export type SessionTelemetryResolveSource = 'message' | 'workout_log' | 'none';
+
+function sourceTaskIdForTelemetryLookup(
+  knownTargetTaskId: string | null,
+  taskItemType: string | null,
+  taskMetadata: unknown | null,
+): string | null {
+  const it = (taskItemType ?? '').toLowerCase();
+  if (it === 'workout' && knownTargetTaskId) return knownTargetTaskId;
+  if (it === 'workout_log') {
+    const meta = asMetadataObject(taskMetadata);
+    const raw = meta.source_task_id;
+    if (typeof raw === 'string' && raw.trim()) return raw.trim();
+  }
+  if (knownTargetTaskId) return knownTargetTaskId;
+  return null;
+}
+
+export async function loadInProgressWorkoutLogTelemetry(
+  // deno-lint-ignore no-explicit-any
+  supabase: SupabaseClient<any, 'public', any>,
+  sourceTaskId: string,
+  opts: { requestId: string },
+): Promise<SessionTelemetrySnapshotV1 | null> {
+  const { data, error } = await supabase
+    .from('tasks')
+    .select('metadata')
+    .eq('item_type', 'workout_log')
+    .eq('status', 'in_progress')
+    .eq('metadata->>source_task_id', sourceTaskId)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    log('warn', 'coach in-progress workout_log telemetry lookup failed', {
+      request_id: opts.requestId,
+      slug: COACH_SLUG,
+      source_task_id: sourceTaskId,
+      error: error.message,
+    });
+    return null;
+  }
+  if (!data || typeof data !== 'object') return null;
+  const metadata = (data as { metadata?: unknown }).metadata;
+  return parseSessionTelemetryFromMetadata(metadata);
+}
+
+export async function resolveSessionTelemetryForCoachPrompt(
+  ctx: DispatchContext,
+  opts: {
+    knownTargetTaskId: string | null;
+    taskItemType: string | null;
+    taskMetadataForContext: unknown | null;
+    isActiveSessionSurface: boolean;
+  },
+): Promise<{ snapshot: SessionTelemetrySnapshotV1 | null; source: SessionTelemetryResolveSource }> {
+  const fromMessage = parseSessionTelemetryFromMetadata(ctx.message.metadata);
+  if (fromMessage) {
+    return { snapshot: fromMessage, source: 'message' };
+  }
+
+  const linkedLogTelemetry = parseSessionTelemetryFromMetadata(
+    asMetadataObject(opts.taskMetadataForContext),
+  );
+  if (linkedLogTelemetry && (opts.taskItemType ?? '').toLowerCase() === 'workout_log') {
+    return { snapshot: linkedLogTelemetry, source: 'workout_log' };
+  }
+
+  if (!opts.isActiveSessionSurface) {
+    return { snapshot: null, source: 'none' };
+  }
+
+  const sourceTaskId = sourceTaskIdForTelemetryLookup(
+    opts.knownTargetTaskId,
+    opts.taskItemType,
+    opts.taskMetadataForContext,
+  );
+  if (!sourceTaskId) {
+    return { snapshot: null, source: 'none' };
+  }
+
+  const fromDb = await loadInProgressWorkoutLogTelemetry(
+    ctx.supabase as unknown as Parameters<typeof loadInProgressWorkoutLogTelemetry>[0],
+    sourceTaskId,
+    { requestId: ctx.requestId },
+  );
+  if (fromDb) {
+    return { snapshot: fromDb, source: 'workout_log' };
+  }
+
+  return { snapshot: null, source: 'none' };
+}
+
+export function resolveActiveSessionSurfaceForCoachPrompt(
+  triggerMetadata: unknown,
+  historyChronologicalOldestFirst: ReadonlyArray<{ metadata?: unknown }>,
+): boolean {
+  return (
+    isActiveSessionSurfaceFromMetadata(triggerMetadata) ||
+    isActiveSessionSurfaceInThread(historyChronologicalOldestFirst)
+  );
 }
