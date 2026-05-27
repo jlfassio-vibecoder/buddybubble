@@ -23,6 +23,11 @@ describe('buildCurrentTaskContextBlock', () => {
   it('default tone requires finalize on the card', () => {
     const block = buildCurrentTaskContextBlock('Leg day', 'Squats');
     expect(block).toContain('The user must finalize changes on the card');
+    expect(block).toContain('Provide a short revised description (max 3 sentences)');
+    expect(block).toContain(
+      'If you are emitting proposed_workout_metadata.blocks, updated_task_description MUST be null',
+    );
+    expect(block).not.toContain('full revised text');
     expect(block).not.toContain('LIVE CO-PILOT MODE');
     expect(block).not.toContain('actively co-editing this task with the user');
   });
@@ -30,6 +35,8 @@ describe('buildCurrentTaskContextBlock', () => {
   it('rail tone describes instant updates', () => {
     const block = buildCurrentTaskContextBlock('Leg day', 'Squats', { rail: true });
     expect(block).toContain('LIVE CO-PILOT MODE (Task Modal rail)');
+    expect(block).toContain('STRUCTURAL EDITS (blocks): Set updated_task_description to null');
+    expect(block).toContain('Never narrate work_seconds, rest_seconds, or rounds in description');
     expect(block).toContain('actively co-editing this task with the user');
     expect(block).toContain('replaces exerciseBlocks by matching block name');
     expect(block).toContain('exact same name values as CURRENT WORKOUT CONTEXT');
@@ -53,9 +60,8 @@ describe('buildCurrentTaskContextBlock', () => {
     expect(block).toContain('instruction-only');
   });
 
-  it('default tone does NOT mention blocks routing', () => {
+  it('default tone does NOT mention rail blocks routing', () => {
     const block = buildCurrentTaskContextBlock('Leg day', 'Squats');
-    expect(block).not.toContain('proposed_workout_metadata.blocks');
     expect(block).not.toContain('Use blocks whenever section identity matters');
     expect(block).not.toContain('block_format');
   });
@@ -129,6 +135,12 @@ describe('buildBaseCoachPrompt', () => {
   it('appends the live co-pilot rail EXCEPTION exactly once', () => {
     expect(prompt).toContain(
       'EXCEPTION (live co-pilot rail): when the prompt also contains the LIVE CO-PILOT MODE block',
+    );
+    expect(prompt).toContain(
+      'FULL revised card text ONLY for title/description-only edits with no proposed_workout_metadata.blocks',
+    );
+    expect(prompt).toContain(
+      'When LIVE CO-PILOT MODE applies or you emit proposed_workout_metadata.blocks, set updated_task_description to null',
     );
     const matches = prompt.match(/EXCEPTION \(live co-pilot rail\):/g) ?? [];
     expect(matches.length).toBe(1);

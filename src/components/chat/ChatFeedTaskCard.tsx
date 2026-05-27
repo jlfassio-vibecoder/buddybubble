@@ -12,6 +12,7 @@ import { taskCardCoverPath, useTaskCardCoverUrl } from '@/lib/task-card-cover';
 import type { TaskModalChatCardWorkoutActions } from '@/components/modals/task-modal/TaskModalCommentsPanel';
 import { WorkoutAiGenerateButton } from '@/components/modals/task-modal/workout-ai-generate-button';
 import { Button } from '@/components/ui/button';
+import { WorkoutLogInProgressBadge } from '@/components/tasks/WorkoutLogInProgressBadge';
 
 export type ChatFeedTaskCardProps = {
   task: TaskRow | null;
@@ -49,6 +50,7 @@ function ChatFeedCardHeader({
         >
           <Icon className={cn('h-4 w-4 shrink-0', visual.iconText)} aria-hidden />
           <span className={cn('text-xs font-semibold', visual.iconText)}>{typeLabel}</span>
+          <WorkoutLogInProgressBadge task={task} variant="chat" />
         </div>
         <div className="px-3 py-2.5 text-left">
           <p className="font-semibold text-stone-900 dark:text-foreground">{task.title}</p>
@@ -73,6 +75,7 @@ function ChatFeedCardHeader({
         >
           <Icon className={cn('h-4 w-4 shrink-0', visual.iconText)} aria-hidden />
           <span className={cn('text-xs font-semibold', visual.iconText)}>{typeLabel}</span>
+          <WorkoutLogInProgressBadge task={task} variant="chat" />
         </div>
         <div className="px-3 py-2.5 text-left">
           <p className="font-semibold text-stone-900 dark:text-foreground">{task.title}</p>
@@ -103,6 +106,7 @@ function ChatFeedCardHeader({
         <div className="flex items-center gap-2">
           <Icon className="h-4 w-4 shrink-0 text-white drop-shadow" aria-hidden />
           <span className="text-xs font-semibold text-white drop-shadow">{typeLabel}</span>
+          <WorkoutLogInProgressBadge task={task} variant="kanban-cover" />
         </div>
         <p className="font-semibold text-white drop-shadow [text-shadow:0_1px_2px_rgba(0,0,0,0.5)]">
           {task.title}

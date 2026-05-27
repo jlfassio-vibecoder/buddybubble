@@ -38,6 +38,8 @@ export type TaskModalHeroProps = {
   descriptionCollapseMode?: 'none' | 'preview_toggle';
   /** Shown on the same row as the description toggle (e.g. compact Generate workout). */
   readingContextActions?: ReactNode;
+  /** Optional badges above the title (e.g. in-progress workout log). */
+  heroBadge?: ReactNode;
   /**
    * Use the 16:9 cinematic frame even when there is no signed cover image (gradient placeholder).
    * Intended for workout / workout_log cards so layout does not fall back to the compact card header.
@@ -68,6 +70,7 @@ export function TaskModalHero({
   descriptionCollapseMode = 'none',
   readingContextActions = null,
   cinematicPlaceholder = false,
+  heroBadge = null,
 }: TaskModalHeroProps) {
   const path = coverPath?.trim() || null;
   const { url, loading } = useTaskCardCoverUrl(path);
@@ -222,6 +225,11 @@ export function TaskModalHero({
                 onBack && 'pl-12',
               )}
             >
+              {heroBadge ? (
+                <div className="pointer-events-auto mb-1.5 flex flex-wrap items-center gap-1.5">
+                  {heroBadge}
+                </div>
+              ) : null}
               <p
                 className={cn(
                   'pointer-events-auto font-semibold leading-snug [text-shadow:0_1px_2px_rgba(0,0,0,0.45)]',
@@ -300,6 +308,9 @@ export function TaskModalHero({
               </button>
             ) : null}
             <div className="min-w-0 w-full">
+              {heroBadge ? (
+                <div className="mb-1.5 flex flex-wrap items-center gap-1.5">{heroBadge}</div>
+              ) : null}
               <p className={cn('font-semibold leading-snug text-foreground', titleClampClass)}>
                 {titleText}
               </p>

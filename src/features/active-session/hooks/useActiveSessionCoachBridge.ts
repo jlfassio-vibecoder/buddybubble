@@ -12,18 +12,24 @@ import {
 import { createClient } from '@utils/supabase/client';
 import {
   CHAT_AREA_DEFAULT_AGENT_SLUG,
-  MESSAGE_METADATA_DEFAULT_AGENT_SLUG_KEY,
-  MESSAGE_METADATA_WORKOUT_TASK_TITLE_KEY,
   resolveWorkoutContextForSentinel,
   WORKOUT_COACH_SENTINEL_DISPLAY_TEXT,
 } from '@/components/chat/WorkoutCoachRail';
 import type { SetDraft } from '@/components/fitness/workout-block-renderer/WorkoutPlayerExercisePanel';
 import { useWorkspaceSessionSubject } from '@/context/WorkspaceSessionContext';
 import type { CoachSyncAdapter } from '@/features/active-session/actors/coach-sync.actor';
+import {
+  buildActiveSessionTelemetry,
+  fireActiveSessionCoachSentinel,
+  shouldSkipSentinelForTelemetryFingerprint,
+  type ActiveSessionCoachTelemetrySource,
+} from '@/features/active-session/lib/active-session-coach-telemetry';
 import type { ActiveSessionEvent } from '@/features/active-session/machines/types';
 import { useMessageThread } from '@/hooks/useMessageThread';
 import { usePermissions } from '@/hooks/use-permissions';
+import type { GhostSetSnapshot } from '@/lib/workout-factory/ghost-set-snapshot';
 import { buildWorkoutCoachRailContext } from '@/lib/workout-factory/build-workout-coach-rail-context';
+import type { IntervalRowSnapshot } from '@/lib/workout-factory/interval-timer/types';
 import { parseMemberRole } from '@/lib/permissions';
 import { useUserProfileStore } from '@/store/userProfileStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
@@ -46,9 +52,13 @@ export type UseActiveSessionCoachBridgeArgs = {
   sourceMetadata: Json | null;
   workoutTitle: string;
   draftLogs: SetDraft[][];
+  ghostLogs: GhostSetSnapshot[][];
+  logTaskId: string | null;
+  elapsedSec: number;
   sessionVm: WorkoutSessionViewModel;
   sentinelFired: boolean;
   sessionStartedAt: string | null;
+  intervalRowSnapshots: Record<string, IntervalRowSnapshot | null>;
 };
 
 function sendCoachSyncEvent(send: CoachBridgeSend, event: ActiveSessionEvent): void {
@@ -67,9 +77,13 @@ export function useActiveSessionCoachBridge({
   sourceMetadata,
   workoutTitle,
   draftLogs,
+  ghostLogs,
+  logTaskId,
+  elapsedSec,
   sessionVm,
   sentinelFired,
   sessionStartedAt,
+  intervalRowSnapshots,
 }: UseActiveSessionCoachBridgeArgs) {
   const profile = useUserProfileStore((s) => s.profile);
   const loadProfile = useUserProfileStore((s) => s.loadProfile);
@@ -79,6 +93,7 @@ export function useActiveSessionCoachBridge({
   const syncActiveFromRoute = useWorkspaceStore((s) => s.syncActiveFromRoute);
 
   const [coachBubbleRow, setCoachBubbleRow] = useState<BubbleRow | null>(null);
+  const lastSentTelemetryFingerprintRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!enabled) return;
@@ -162,6 +177,30 @@ export function useActiveSessionCoachBridge({
     [coachWorkoutData, workoutTitle],
   );
 
+  const telemetrySource = useMemo((): ActiveSessionCoachTelemetrySource => {
+    return {
+      sessionId,
+      sourceTaskId,
+      logTaskId,
+      draftLogs,
+      ghostLogs,
+      elapsedSec,
+      startedAt: sessionStartedAt ?? new Date().toISOString(),
+      intervalRowSnapshots,
+      sessionVm,
+    };
+  }, [
+    sessionId,
+    sourceTaskId,
+    logTaskId,
+    draftLogs,
+    ghostLogs,
+    elapsedSec,
+    sessionStartedAt,
+    intervalRowSnapshots,
+    sessionVm,
+  ]);
+
   const coachAvailableAgents = useMemo(
     () => [...messageThread.agentsByAuthUserId.values()],
     [messageThread.agentsByAuthUserId],
@@ -214,26 +253,17 @@ export function useActiveSessionCoachBridge({
       workoutTitle,
     );
 
-    const sentinelMetadata: Json = {
-      [MESSAGE_METADATA_DEFAULT_AGENT_SLUG_KEY]: CHAT_AREA_DEFAULT_AGENT_SLUG,
-      [MESSAGE_METADATA_WORKOUT_TASK_TITLE_KEY]: workoutTitle.trim() || 'this workout',
+    await fireActiveSessionCoachSentinel({
+      sendMessage: coachSendMessageRef.current,
+      displayText: WORKOUT_COACH_SENTINEL_DISPLAY_TEXT,
+      workoutTitle,
       sessionId,
-      class_instance_id: classInstanceId,
+      classInstanceId,
       workoutContext,
-      is_silent_sentinel: true,
-      workout_context: {
-        source: 'workout_player',
-        surface: 'active_session',
-        sessionId,
-        class_instance_id: classInstanceId,
-        isMemberView: true,
-      },
-    };
-
-    await coachSendMessageRef.current(WORKOUT_COACH_SENTINEL_DISPLAY_TEXT, undefined, undefined, {
-      metadata: sentinelMetadata,
+      telemetrySource,
+      lastSentFingerprintRef: lastSentTelemetryFingerprintRef,
     });
-  }, [classInstanceId, coachWorkoutContextForSentinel, sessionId, workoutTitle]);
+  }, [classInstanceId, coachWorkoutContextForSentinel, sessionId, telemetrySource, workoutTitle]);
 
   useLayoutEffect(() => {
     coachAdapterImplRef.current = {
@@ -256,6 +286,7 @@ export function useActiveSessionCoachBridge({
   useEffect(() => {
     if (!enabled) return;
     return () => {
+      lastSentTelemetryFingerprintRef.current = null;
       sendCoachSyncEvent(send, { type: 'COACH_RESET' });
     };
   }, [enabled, send, sourceTaskId]);
@@ -283,12 +314,44 @@ export function useActiveSessionCoachBridge({
     sessionStartedAt,
   ]);
 
+  const performanceTelemetryFingerprint = useMemo(() => {
+    return buildActiveSessionTelemetry({
+      sessionId,
+      sourceTaskId,
+      logTaskId,
+      draftLogs,
+      ghostLogs,
+      elapsedSec: 0,
+      startedAt: sessionStartedAt ?? new Date(0).toISOString(),
+      intervalRowSnapshots,
+      sessionVm,
+    }).fingerprint;
+  }, [
+    sessionId,
+    sourceTaskId,
+    logTaskId,
+    draftLogs,
+    ghostLogs,
+    intervalRowSnapshots,
+    sessionVm,
+    sessionStartedAt,
+  ]);
+
   useEffect(() => {
     if (!enabled) return;
+    if (
+      shouldSkipSentinelForTelemetryFingerprint(
+        performanceTelemetryFingerprint,
+        lastSentTelemetryFingerprintRef.current,
+      )
+    ) {
+      return;
+    }
     sendCoachSyncEvent(send, { type: 'COACH_TRY_SENTINEL' });
   }, [
     enabled,
     send,
+    performanceTelemetryFingerprint,
     canPostMessages,
     profileId,
     workspaceId,
@@ -300,10 +363,16 @@ export function useActiveSessionCoachBridge({
     coachAvailableAgents,
   ]);
 
+  const sessionTelemetry = useMemo(
+    () => buildActiveSessionTelemetry(telemetrySource),
+    [telemetrySource],
+  );
+
   return {
     canPostMessages,
     coachBubbleRow,
     coachWorkoutData,
     messageThread,
+    sessionTelemetry,
   };
 }

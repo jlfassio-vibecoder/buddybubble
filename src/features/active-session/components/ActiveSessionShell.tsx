@@ -45,7 +45,7 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
   const returnUrl = searchParams.get('return');
   const generatedSessionIdRef = useRef(crypto.randomUUID());
   const sessionId = sessionIdParam ?? generatedSessionIdRef.current;
-  const exitIntentRef = useRef<'none' | 'finish'>('none');
+  const exitIntentRef = useRef<'none' | 'finish' | 'abandon'>('none');
   const contextRef = useRef<ActiveSessionContext | null>(null);
   const coachAdapterImplRef = useRef<CoachSyncAdapter>(createNoOpCoachSyncAdapter());
 
@@ -136,21 +136,28 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
     sourceMetadata: task.metadata,
     workoutTitle,
     draftLogs: snapshot.context.draftLogs,
+    ghostLogs: snapshot.context.ghostLogs,
+    logTaskId: snapshot.context.logTaskId,
+    elapsedSec: snapshot.context.elapsedSec,
     sessionVm: viewModel,
     sentinelFired: snapshot.context.sentinelFired,
     sessionStartedAt: snapshot.context.startedAt,
+    intervalRowSnapshots: snapshot.context.intervalRowSnapshots,
   });
 
   const isHydrating = snapshot.matches('hydrating');
   const hydrationFailed = Boolean(snapshot.context.hydrationError);
   const isFinishing = snapshot.matches('finishing');
+  const isClosing = snapshot.matches('closing');
   const sessionStartedAt = snapshot.matches('active') ? snapshot.context.startedAt : null;
 
   const abandonDisabled =
-    isFinishing || snapshot.matches('closing') || snapshot.context.finishQueued;
+    isFinishing || isClosing || snapshot.context.finishQueued || snapshot.context.closeQueued;
 
+  const abandonSaving = snapshot.context.closeQueued;
   const finishBusy = abandonDisabled;
-  const logSurfaceDisabled = isHydrating || isFinishing;
+  const logSurfaceDisabled =
+    isHydrating || isFinishing || isClosing || snapshot.context.closeQueued;
 
   useEffect(() => {
     let cancelled = false;
@@ -203,7 +210,25 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
   useEffect(() => {
     if (snapshot.status !== 'done' || exitIntentRef.current !== 'finish') return;
     router.replace(`/app/${workspaceId}`);
+    exitIntentRef.current = 'none';
   }, [snapshot.status, router, workspaceId]);
+
+  useEffect(() => {
+    if (snapshot.status !== 'done' || exitIntentRef.current !== 'abandon') return;
+
+    const autosaveError = snapshot.context.autosaveError;
+    if (autosaveError) {
+      toast.error(formatUserFacingError(autosaveError));
+    }
+
+    const safeReturn = safeNextPath(returnUrl);
+    if (safeReturn) {
+      router.push(safeReturn);
+    } else {
+      router.back();
+    }
+    exitIntentRef.current = 'none';
+  }, [snapshot.status, snapshot.context.autosaveError, returnUrl, router]);
 
   const finishError = snapshot.context.finishError;
   useEffect(() => {
@@ -224,13 +249,8 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
   });
 
   const handleAbandon = () => {
+    exitIntentRef.current = 'abandon';
     send({ type: 'ABANDON' });
-    const safeReturn = safeNextPath(returnUrl);
-    if (safeReturn) {
-      router.push(safeReturn);
-      return;
-    }
-    router.back();
   };
 
   const handleFinish = () => {
@@ -261,6 +281,7 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
         title={workoutTitle}
         actorRef={actorRef}
         abandonDisabled={abandonDisabled}
+        abandonSaving={abandonSaving}
         finishBusy={finishBusy}
         onAbandon={handleAbandon}
         onFinish={handleFinish}
@@ -293,6 +314,7 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
             bubbleRow={coachBridge.coachBubbleRow}
             canPostMessages={coachBridge.canPostMessages}
             messageThread={coachBridge.messageThread}
+            sessionTelemetry={coachBridge.sessionTelemetry}
           />
         </div>
       )}

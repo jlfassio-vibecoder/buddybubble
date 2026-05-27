@@ -122,7 +122,7 @@ export const intervalBlockMachine = setup({
           actions: ['applyEngine', 'notifyParentRowSnapshot'],
         },
         LOG_AMRAP_ROUND: {
-          actions: 'applyEngine',
+          actions: ['applyEngine', 'notifyParentRowSnapshot'],
         },
       },
       always: {

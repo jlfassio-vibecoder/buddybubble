@@ -2,6 +2,10 @@ import { fromCallback } from 'xstate';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { buildWorkoutLogDraftMetadata } from '@/lib/workout-factory/build-workout-log-finish-metadata';
 import { logsEqualTemplate } from '@/lib/workout-factory/workout-log-matrix';
+import {
+  buildSessionTelemetrySnapshot,
+  type BuildSessionTelemetryContext,
+} from '@/lib/workout-factory/session-telemetry';
 import type { Json } from '@/types/database';
 import type { WorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import { AUTOSAVE_MS, type ActiveSessionEvent } from '../machines/types';
@@ -52,6 +56,18 @@ export function createNoOpPersistenceAdapter(): PersistenceAdapter {
 export function createProductionPersistenceAdapter(
   deps: ProductionPersistenceDeps,
 ): PersistenceAdapter {
+  const buildTelemetryContext = (ctx: ActiveSessionContext): BuildSessionTelemetryContext => ({
+    sessionId: ctx.sessionId,
+    sourceTaskId: ctx.sourceTaskId,
+    logTaskId: ctx.logTaskId,
+    draftLogs: ctx.draftLogs,
+    ghostLogs: ctx.ghostLogs,
+    elapsedSec: ctx.elapsedSec,
+    startedAt: ctx.startedAt,
+    intervalRowSnapshots: ctx.intervalRowSnapshots,
+    sessionVm: ctx.sessionVm,
+  });
+
   const buildMeta = (ctx: ActiveSessionContext) =>
     buildWorkoutLogDraftMetadata({
       sourceMetadata: deps.sourceMetadata,
@@ -59,6 +75,9 @@ export function createProductionPersistenceAdapter(
       sourceTaskId: ctx.sourceTaskId,
       draftLogs: ctx.draftLogs,
       classInstanceId: ctx.classInstanceId ?? null,
+      sessionTelemetry: buildSessionTelemetrySnapshot({
+        context: buildTelemetryContext(ctx),
+      }),
     });
 
   return {

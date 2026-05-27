@@ -70,6 +70,7 @@ import {
   COACH_WORKOUT_GREETING_MAX_OUTPUT_TOKENS,
   COACH_WORKOUT_GREETING_TEMPERATURE,
   MID_WORKOUT_SUPPORT_MODE_DIRECTIVE,
+  SESSION_TELEMETRY_GROUND_TRUTH_DIRECTIVE,
   resolveCoachThinkingBudget,
 } from './config.ts';
 import {
@@ -84,6 +85,9 @@ import {
   resolveCoachTaskMetadataForMerge,
   resolveCurrentWorkoutContextJsonFromThread,
   resolveKnownTargetTaskId,
+  resolveActiveSessionSurfaceForCoachPrompt,
+  resolveSessionTelemetryForCoachPrompt,
+  type SessionTelemetryResolveSource,
   extractWorkoutTaskTitleFromMetadata,
   readWorkoutContextFromMessageMetadata,
   stringifyWorkoutContextForPrompt,
@@ -108,6 +112,7 @@ import {
 } from './block-blueprint-mentions.ts';
 import {
   mergeBlueprintShellsWithModelBlocks,
+  summarizeWorkoutContextForRailBlockAppend,
   synthesizeProposedBlocksFromMentions,
 } from './block-blueprint-synthesize.ts';
 import { loadExerciseDictionaryByIndex } from './exercise-dictionary-by-index.ts';
@@ -141,6 +146,7 @@ import {
   processCoachOutlinePhaseBVertexOutput,
 } from './run-coach-outline-phase-b.ts';
 import { mergeCoachOutlineMetadataPatch } from './coach-outline-metadata.ts';
+import { formatSessionTelemetryForPrompt } from './session-telemetry-format.ts';
 
 /** Coach-owned scratch on `ctx.extras`. */
 type CoachExtras = {
@@ -148,6 +154,8 @@ type CoachExtras = {
   currentWorkoutContextJson: string | null;
   taskMetadataForContext: unknown | null;
   exerciseDictionaryByIndex: Record<number, ExerciseDictionaryIndexEntry | null> | null;
+  sessionTelemetrySource?: SessionTelemetryResolveSource;
+  sessionTelemetryBlock?: string | null;
   outlinePhaseB?: {
     attempted: boolean;
     ok: boolean;
@@ -186,6 +194,14 @@ function readCoachExtras(ctx: DispatchContext): CoachExtras {
       raw.exerciseDictionaryByIndex != null && typeof raw.exerciseDictionaryByIndex === 'object'
         ? (raw.exerciseDictionaryByIndex as Record<number, ExerciseDictionaryIndexEntry | null>)
         : null,
+    sessionTelemetrySource:
+      raw.sessionTelemetrySource === 'message' ||
+      raw.sessionTelemetrySource === 'workout_log' ||
+      raw.sessionTelemetrySource === 'none'
+        ? raw.sessionTelemetrySource
+        : undefined,
+    sessionTelemetryBlock:
+      typeof raw.sessionTelemetryBlock === 'string' ? raw.sessionTelemetryBlock : null,
   };
 }
 
@@ -467,11 +483,41 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
     const exerciseMentions = parseExerciseMentionsFromMetadata(ctx.message.metadata);
     const blockBlueprintMentions = parseBlockBlueprintMentionsFromMetadata(ctx.message.metadata);
 
+    const isActiveSessionSurface = resolveActiveSessionSurfaceForCoachPrompt(
+      ctx.message.metadata,
+      ctx.history,
+    );
+
+    const { snapshot: sessionTelemetrySnapshot, source: sessionTelemetrySource } =
+      await resolveSessionTelemetryForCoachPrompt(ctx, {
+        knownTargetTaskId,
+        taskItemType,
+        taskMetadataForContext,
+        isActiveSessionSurface,
+      });
+
+    let sessionTelemetryBlock: string | null = null;
+    if (sessionTelemetrySnapshot) {
+      sessionTelemetryBlock = formatSessionTelemetryForPrompt(sessionTelemetrySnapshot, {
+        rail: isRailSurface,
+        activeSession: isActiveSessionSurface,
+      });
+      log('info', 'coach session telemetry source', {
+        request_id: ctx.requestId,
+        slug: COACH_SLUG,
+        source: sessionTelemetrySource,
+        fingerprint: sessionTelemetrySnapshot.fingerprint,
+        bytes: new TextEncoder().encode(sessionTelemetryBlock).length,
+      });
+    }
+
     writeCoachExtras(ctx, {
       knownTargetTaskId,
       currentWorkoutContextJson,
       taskMetadataForContext,
       exerciseDictionaryByIndex,
+      sessionTelemetrySource,
+      sessionTelemetryBlock,
     });
 
     const today = new Date().toISOString().split('T')[0];
@@ -504,7 +550,15 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
     });
 
     if (currentWorkoutContextJson) {
-      let workoutCtxBlock = `${WORKOUT_CONTEXT_HEADER}\n${currentWorkoutContextJson}`;
+      let workoutCtxBlock: string;
+      if (isRailSurface) {
+        const summary = summarizeWorkoutContextForRailBlockAppend(currentWorkoutContextJson);
+        workoutCtxBlock = summary
+          ? `${WORKOUT_CONTEXT_HEADER}\n${summary}\n`
+          : `${WORKOUT_CONTEXT_HEADER}\n${currentWorkoutContextJson}`;
+      } else {
+        workoutCtxBlock = `${WORKOUT_CONTEXT_HEADER}\n${currentWorkoutContextJson}`;
+      }
       const indexMap = formatExerciseIndexMap(
         currentWorkoutContextJson,
         exerciseDictionaryByIndex ?? undefined,
@@ -516,6 +570,10 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       const blueprintBlock = formatBlockBlueprintRefsPromptBlock(blockBlueprintMentions ?? []);
       if (blueprintBlock) workoutCtxBlock += blueprintBlock;
       parts.push(workoutCtxBlock);
+      if (sessionTelemetryBlock) {
+        parts.push(sessionTelemetryBlock);
+        parts.push(SESSION_TELEMETRY_GROUND_TRUTH_DIRECTIVE);
+      }
       // Live-player / mid-workout directives forbid proposed_workout_metadata and
       // conflict with LIVE CO-PILOT rail co-editing (colon composer, block append).
       if (!isRailSurface) {
@@ -530,6 +588,10 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       }
       const blueprintBlock = formatBlockBlueprintRefsPromptBlock(blockBlueprintMentions ?? []);
       if (blueprintBlock) parts.push(blueprintBlock.trimStart());
+    }
+    if (!currentWorkoutContextJson && sessionTelemetryBlock) {
+      parts.push(sessionTelemetryBlock);
+      parts.push(SESSION_TELEMETRY_GROUND_TRUTH_DIRECTIVE);
     }
     if (currentTaskContextBlock) parts.push(currentTaskContextBlock);
     const it = (taskItemType ?? '').toLowerCase();

@@ -33,10 +33,19 @@ import {
   finalizeExerciseMentionsForSend,
 } from '@/lib/agents/coach/exercise-mentions-client';
 import { scheduleScrollChatThreadToBottom } from '@/lib/chat-thread-auto-scroll';
+import { appendSessionTelemetryToCoachMessageMetadata } from '@/lib/agents/coach/coach-telemetry-bridge';
+import type { SessionTelemetrySnapshot } from '@/lib/workout-factory/session-telemetry';
+import {
+  CHAT_AREA_DEFAULT_AGENT_SLUG,
+  MESSAGE_METADATA_DEFAULT_AGENT_SLUG_KEY,
+} from '@/components/chat/workout-coach-rail.constants';
 
-export const CHAT_AREA_DEFAULT_AGENT_SLUG = 'coach';
-/** Persisted on `messages.metadata` for root inserts; `agent-dispatch` reads this key. */
-export const MESSAGE_METADATA_DEFAULT_AGENT_SLUG_KEY = 'default_agent_slug' as const;
+export {
+  CHAT_AREA_DEFAULT_AGENT_SLUG,
+  MESSAGE_METADATA_DEFAULT_AGENT_SLUG_KEY,
+  MESSAGE_METADATA_WORKOUT_TASK_TITLE_KEY,
+} from '@/components/chat/workout-coach-rail.constants';
+
 /** User-visible body for the workout open sentinel; routing uses `metadata.is_silent_sentinel` (see Edge Function). */
 export const WORKOUT_COACH_SENTINEL_DISPLAY_TEXT = 'Started a workout session.';
 /**
@@ -44,8 +53,6 @@ export const WORKOUT_COACH_SENTINEL_DISPLAY_TEXT = 'Started a workout session.';
  * Do not use for new sends — prefer `isWorkoutPlayerSilentSentinelMessage`.
  */
 const WORKOUT_COACH_SENTINEL_LEGACY_CONTENT = '[SYSTEM_EVENT: WORKOUT_CONTEXT]';
-/** Server reads this for the opening greeting copy (`agent-dispatch`). */
-export const MESSAGE_METADATA_WORKOUT_TASK_TITLE_KEY = 'workout_task_title' as const;
 
 type MessageRowForSentinel = { content?: string | null; metadata?: Json | null };
 
@@ -133,6 +140,8 @@ export type WorkoutCoachRailProps = {
   messageThread: WorkoutCoachRailMessageThread;
   onCollapse?: () => void;
   className?: string;
+  /** Active Session only — attaches live performance telemetry to Coach sends. */
+  sessionTelemetry?: SessionTelemetrySnapshot | null;
 };
 
 export function WorkoutCoachRail({
@@ -145,6 +154,7 @@ export function WorkoutCoachRail({
   messageThread,
   onCollapse,
   className,
+  sessionTelemetry,
 }: WorkoutCoachRailProps) {
   const myProfile = useUserProfileStore((s) => s.profile);
   const { subjectUserId: workspaceSubjectUserId } = useWorkspaceSessionSubject();
@@ -313,22 +323,30 @@ export function WorkoutCoachRail({
             )
           : null;
 
+      const coachMetadata = {
+        [MESSAGE_METADATA_DEFAULT_AGENT_SLUG_KEY]: CHAT_AREA_DEFAULT_AGENT_SLUG,
+        workoutContext: resolveWorkoutContextForSentinel(
+          coachWorkoutContext as unknown as Json,
+          workoutTitle,
+        ),
+        ...(exerciseMentions && exerciseMentions.length > 0
+          ? { exercise_mentions: exerciseMentions as unknown as Json }
+          : {}),
+      } satisfies Json;
+
       const sent = await sendMessage(
         finalMessageText,
         undefined,
         files,
         activeAgent === 'coach'
           ? {
-              metadata: {
-                [MESSAGE_METADATA_DEFAULT_AGENT_SLUG_KEY]: CHAT_AREA_DEFAULT_AGENT_SLUG,
-                workoutContext: resolveWorkoutContextForSentinel(
-                  coachWorkoutContext as unknown as Json,
-                  workoutTitle,
-                ),
-                ...(exerciseMentions && exerciseMentions.length > 0
-                  ? { exercise_mentions: exerciseMentions as unknown as Json }
-                  : {}),
-              } satisfies Json,
+              metadata:
+                sessionTelemetry != null
+                  ? appendSessionTelemetryToCoachMessageMetadata(
+                      coachMetadata as Record<string, unknown>,
+                      sessionTelemetry,
+                    )
+                  : coachMetadata,
             }
           : undefined,
       );
@@ -351,6 +369,7 @@ export function WorkoutCoachRail({
       waitMain,
       workoutExerciseNameList,
       workoutTitle,
+      sessionTelemetry,
     ],
   );
 

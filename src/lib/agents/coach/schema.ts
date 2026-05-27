@@ -288,7 +288,7 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
     update_existing_task: {
       type: 'BOOLEAN',
       description:
-        'TRUE for card/task rewrites and draft flows when the user has confirmed (or user_requested_immediate_card)—not for mid-workout log tweaks. Mid-workout weight, rep, or RPE changes use execution_patch with this field FALSE. Provide updated_task_title and/or updated_task_description and/or proposed_workout_metadata (at least one non-empty) when true. Set FALSE when creating a NEW card (create_card), when only asking for pre-draft confirmation, or when only updating the live player via execution_patch. Never invent task IDs — the server resolves the task.',
+        'TRUE for card/task rewrites and draft flows when the user has confirmed (or user_requested_immediate_card)—not for mid-workout log tweaks. Mid-workout weight, rep, or RPE changes use execution_patch with this field FALSE. Provide updated_task_title and/or updated_task_description and/or proposed_workout_metadata (at least one non-empty) when true. When proposed_workout_metadata.blocks is non-empty, updated_task_description MUST be null. Set FALSE when creating a NEW card (create_card), when only asking for pre-draft confirmation, or when only updating the live player via execution_patch. Never invent task IDs — the server resolves the task.',
     },
     updated_task_title: {
       type: 'STRING',
@@ -300,8 +300,9 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
     updated_task_description: {
       type: 'STRING',
       nullable: true,
+      maxLength: 500,
       description:
-        'When update_existing_task is true: full new task description / workout brief for the existing card. Use null to leave description unchanged only if updated_task_title is non-empty.',
+        'When update_existing_task is true: short card summary only (max 3 sentences). MUST be null when proposed_workout_metadata.blocks is non-empty — Tabata/EMOM timing belongs in block_format and format_params only, never repeated in prose. On LIVE CO-PILOT rail structural block edits, always null; emit blocks only. Use null to leave description unchanged only if updated_task_title is non-empty.',
     },
     proposed_workout_metadata: {
       type: 'OBJECT',
@@ -372,19 +373,19 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
             type: 'STRING',
             nullable: true,
             description:
-              'Calculated or prescribed load for this set. MUST BE PURE NUMBER STRING ONLY. Do not include units (lbs/kg), ranges, parentheses, or text. Example: "135" or "60.5".',
+              'Calculated or prescribed load for this set. MUST BE PURE NUMBER STRING ONLY. Do not include units (lbs/kg), ranges, parentheses, or text. Use whole numbers or at most 2 decimal places (e.g. "53", never "53.000000..."). Example: "135" or "60.5".',
           },
           reps: {
             type: 'STRING',
             nullable: true,
             description:
-              'Calculated or prescribed reps for this set. MUST BE PURE NUMBER STRING ONLY (single integer). Do not include ranges (e.g. "8-10"), units, or text. Example: "8".',
+              'Calculated or prescribed reps for this set. MUST BE PURE NUMBER STRING ONLY (single integer). Do not include ranges (e.g. "8-10"), units, or text. Use whole numbers only; never excessive trailing zeros. Example: "8".',
           },
           rpe: {
             type: 'STRING',
             nullable: true,
             description:
-              'Calculated or prescribed RPE (1-10) for this set. MUST BE PURE NUMBER STRING ONLY. Do not include ranges or text. Example: "7" or "8.5".',
+              'Calculated or prescribed RPE (1-10) for this set. MUST BE PURE NUMBER STRING ONLY. Do not include ranges or text. Use whole numbers or at most 2 decimal places; never excessive trailing zeros. Example: "7" or "8.5".',
           },
           done: { type: 'BOOLEAN', nullable: true },
         },

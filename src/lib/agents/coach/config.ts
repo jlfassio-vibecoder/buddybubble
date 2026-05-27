@@ -110,7 +110,17 @@ export const MID_WORKOUT_SUPPORT_MODE_DIRECTIVE =
 export const ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE =
   'EXECUTION STATE (CRITICAL): The member is in an active workout right now. You MUST set create_card to false, task_title, task_description, and coach_task_notes to null, update_existing_task to false, and proposed_workout_metadata to null. Do not describe or claim you are creating a new Kanban workout card. For live set adjustments (load, reps, RPE, done), use execution_patch only. ' +
   'If the user asks to apply a generic value across a multi-round format (e.g. Tabata, EMOM, circuit), emit execution_patch entries for every valid setIndex for that exercise (0 through live_set_counts[exerciseIndex] - 1). ' +
-  'If the user asks a general coaching question, answer in reply_content without card fields.';
+  'If the user asks a general coaching question, answer in reply_content without card fields. ' +
+  'When SESSION TELEMETRY is present, prefer logged actuals over prescription when answering "how did I do" or load guidance; still use execution_patch (not proposed_workout_metadata) for live grid updates. ' +
+  'When INTERVAL_BLOCK_TIMERS appear in SESSION TELEMETRY, treat running_block_clock_elapsed as the authoritative block clock for pacing and completion—not global_session_time_elapsed. ' +
+  'CRITICAL FORMATTING RULE: When emitting numerical values as strings in execution_patch (such as weight, reps, rpe, or distance), you MUST use clean whole numbers or a maximum of 2 decimal places (e.g. output "53" or "53.5", NEVER "53.000000..."). Never generate infinite trailing zeros.';
+
+export const SESSION_TELEMETRY_GROUND_TRUTH_DIRECTIVE =
+  'SESSION TELEMETRY (CRITICAL): When the SESSION TELEMETRY block appears below, treat it as ground truth for what the athlete has actually logged (weights, reps, RPE, set completion, interval rounds). ' +
+  'Prescription targets and structure live in CURRENT WORKOUT CONTEXT above; telemetry shows planned-vs-actual deltas. ' +
+  'When commenting on performance, progressive overload, or missed sets, cite logged values from SESSION TELEMETRY—not prescription alone. ' +
+  'When emitting execution_patch, indices remain bounded by live_set_counts in CURRENT WORKOUT CONTEXT; patch values should align with what telemetry shows unless the user explicitly asks to change the log. ' +
+  "INTERVAL TIMERS (CRITICAL): global_session_time_elapsed is total wall-clock time since the workout session started (warm-up, strength sets, transitions, and rest all count). INTERVAL_BLOCK_TIMERS running_block_clock_elapsed is the live clock for the currently running Tabata, EMOM, or AMRAP block only. NEVER compare global_session_time_elapsed to a block time_cap_minutes from CURRENT WORKOUT CONTEXT—that produces false conclusions (e.g. declaring an AMRAP finished because the session has run longer than the block cap). To evaluate whether an interval block is active, finished, or how much time remains, use INTERVAL_BLOCK_TIMERS (phase, running_block_clock_elapsed, rounds_completed) together with that block's format_params.time_cap_minutes from CURRENT WORKOUT CONTEXT; when needed, compute remaining block time as time_cap minus running_block_clock_elapsed, not time_cap minus global_session_time_elapsed.";
 
 /** Conversation-stage enum surfaced to Vertex via the response schema. */
 export type IntakePhase =

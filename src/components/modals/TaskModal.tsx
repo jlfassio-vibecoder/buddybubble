@@ -22,8 +22,14 @@ import type {
 } from '@/types/database';
 import { WorkoutViewerContent } from '@/components/fitness/workout-viewer-dialog';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
-import { isActiveSessionRouteEnabled } from '@/lib/feature-flags/activeSessionRoute';
+import { useActiveSessionLaunchFromTaskModal } from '@/hooks/use-active-session-launch-from-task-modal';
 import { cn } from '@/lib/utils';
+import {
+  isWorkoutLogInProgress,
+  WORKOUT_LOG_IN_PROGRESS_STATUS,
+  workoutLogInProgressStatusSelectOption,
+} from '@/lib/workout-log-task-state';
+import { WorkoutLogInProgressBadge } from '@/components/tasks/WorkoutLogInProgressBadge';
 import { useBoardColumnDefs } from '@/hooks/use-board-columns';
 import { useTaskBubbleUps } from '@/hooks/use-task-bubble-ups';
 import { type TaskAttachment, TASK_STATUSES } from '@/types/task-modal';
@@ -563,11 +569,24 @@ export function TaskModal({
   });
 
   const statusSelectOptions = useMemo(() => {
+    if (
+      status === WORKOUT_LOG_IN_PROGRESS_STATUS &&
+      !statusOptions.some((o) => o.value === status)
+    ) {
+      return [...statusOptions, workoutLogInProgressStatusSelectOption()];
+    }
     if (status && !statusOptions.some((o) => o.value === status)) {
       return [...statusOptions, { value: status, label: status }];
     }
     return statusOptions;
   }, [statusOptions, status]);
+
+  const workoutLogInProgressHeroBadge = useMemo(() => {
+    if (!isWorkoutLogInProgress({ item_type: itemType, status })) return null;
+    return (
+      <WorkoutLogInProgressBadge task={{ item_type: itemType, status }} variant="modal-hero" />
+    );
+  }, [itemType, status]);
 
   const applyRow = useCallback(
     (row: TaskRow, ctx: ApplyRowContext = { silent: false }) => {
@@ -925,13 +944,33 @@ export function TaskModal({
     liveStreamEnabled,
   });
 
-  const showActiveSessionLaunch = useMemo(
+  const activeSessionLaunch = useActiveSessionLaunchFromTaskModal({
+    workspaceId,
+    taskId,
+    itemType,
+    canWrite,
+    coreDirty,
+    saving,
+    metadata,
+    title,
+    createTask,
+    saveCoreFields,
+  });
+
+  const activeSessionLaunchControlProps = useMemo(
     () =>
-      Boolean(taskId) &&
-      isActiveSessionRouteEnabled() &&
-      buildWorkoutSessionViewModel(metadata ?? {}).flatExercises.length > 0 &&
-      !coreDirty,
-    [taskId, metadata, coreDirty],
+      activeSessionLaunch.launchUi.mode === 'hidden'
+        ? null
+        : {
+            launchUi: activeSessionLaunch.launchUi,
+            onLaunchClick: activeSessionLaunch.handleLaunchClick,
+            busy: activeSessionLaunch.isLaunching,
+          },
+    [
+      activeSessionLaunch.launchUi,
+      activeSessionLaunch.handleLaunchClick,
+      activeSessionLaunch.isLaunching,
+    ],
   );
 
   useEffect(() => {
@@ -1543,6 +1582,7 @@ export function TaskModal({
             bubbleId={bubbleId}
             workspaceId={workspaceId}
             taskId={taskId}
+            activeSessionLaunch={activeSessionLaunchControlProps}
             onInteraction={() => setHeroCinematicCollapsed(true)}
           />
           <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-2">
@@ -1635,6 +1675,7 @@ export function TaskModal({
                   />
                 ) : null
               }
+              heroBadge={workoutLogInProgressHeroBadge}
             />
           ) : (
             <TaskModalHero
@@ -1651,6 +1692,7 @@ export function TaskModal({
               descriptionExpanded={commentsReadingContext}
               descriptionCollapseMode={commentsReadingContext ? 'preview_toggle' : 'none'}
               readingContextActions={null}
+              heroBadge={workoutLogInProgressHeroBadge}
             />
           )
         ) : null}
@@ -1733,6 +1775,7 @@ export function TaskModal({
                             />
                           ) : null
                         }
+                        heroBadge={workoutLogInProgressHeroBadge}
                       />
                     ) : (
                       <TaskModalHero
@@ -1751,6 +1794,7 @@ export function TaskModal({
                         descriptionExpanded={commentsReadingContext}
                         descriptionCollapseMode={commentsReadingContext ? 'preview_toggle' : 'none'}
                         readingContextActions={null}
+                        heroBadge={workoutLogInProgressHeroBadge}
                       />
                     )
                   ) : null}
@@ -1798,6 +1842,7 @@ export function TaskModal({
                       bubbleId={bubbleId}
                       workspaceId={workspaceId}
                       taskId={taskId}
+                      activeSessionLaunch={activeSessionLaunchControlProps}
                       onInteraction={() => setHeroCinematicCollapsed(true)}
                     />
                   </div>
@@ -2026,6 +2071,7 @@ export function TaskModal({
                           bubbleId={bubbleId}
                           workspaceId={workspaceId}
                           taskId={taskId}
+                          activeSessionLaunch={activeSessionLaunchControlProps}
                           onInteraction={() => setHeroCinematicCollapsed(true)}
                         />
                       </div>
@@ -2180,8 +2226,7 @@ export function TaskModal({
                 syncKey={workoutPaneSyncKey}
                 cardCoverPath={cardCoverPath.trim() || null}
                 taskId={taskId}
-                workspaceId={workspaceId}
-                showActiveSessionLaunch={showActiveSessionLaunch}
+                activeSessionLaunch={activeSessionLaunchControlProps}
                 layout="embedded"
                 isAiGenerating={aiWorkoutGenerating}
                 cardCoverAiHint={cardCoverAiHint}

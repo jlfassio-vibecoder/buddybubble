@@ -12,8 +12,8 @@ The main stage is **[`KanbanBoard`](../../src/components/board/KanbanBoard.tsx)*
 
 ## Typical content
 
-- **`item_type = workout`** (and related) **task** cards with exercise metadata; members use **TaskModal** for details, comments, and the workout viewer/editor.
-- **WorkoutPlayer** — when the user starts a workout from the board, the player records a **`workout_log`** task (see [workout-player.md](../workout-player.md)).
+- Typical **`item_type = workout`** (and related) **task** cards with exercise metadata; members use **TaskModal** for details, comments, and the workout viewer/editor.
+- **WorkoutPlayer** — when the user starts a workout from the board, the player records a **`workout_log`** task on the **Workout Logs** bubble (see [workout-player.md](../workout-player.md)).
 
 ## Permissions, state, and gating (this channel)
 

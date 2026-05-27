@@ -25,8 +25,9 @@ import { createClient } from '@utils/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useRouter } from 'next/navigation';
+import { Tooltip } from '@base-ui/react/tooltip';
 import { buildActiveSessionUrl } from '@/lib/active-session/build-active-session-url';
-import { isActiveSessionRouteEnabled } from '@/lib/feature-flags/activeSessionRoute';
+import type { ActiveSessionLaunchUi } from '@/lib/active-session/resolve-active-session-launch-ui';
 import { formatUserFacingError } from '@/lib/format-error';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -70,6 +71,7 @@ import {
   buildPlayerInitialLogs,
 } from '@/lib/workout-factory/resolve-player-log-row-count';
 import { buildPlayerExerciseIndexLookup } from '@/lib/workout-factory/workout-player-exercise-index';
+import { resolveWorkoutLogsBubbleId } from '@/lib/fitness/resolve-workout-logs-bubble-id';
 import { WorkoutPlayerBlockList } from '@/components/fitness/workout-block-renderer/WorkoutPlayerBlockList';
 import {
   WorkoutPlayerExercisePanel,
@@ -414,8 +416,11 @@ export function WorkoutPlayer({
   const activeLogTaskIdRef = useRef<string | null>(null);
   const logsRef = useRef<SetDraft[][]>([]);
   const hasUserEditedRef = useRef(false);
-  /** Bumps only when `sourceTaskId` / `bubble` / exercise template identity actually changes, not on effect churn. */
+  /** Bumps only when `sourceTaskId` / log bubble / exercise template identity actually changes, not on effect churn. */
   const lastRecoveryIdentityRef = useRef<string | null>(null);
+  /** Template `bubbleId` = source card; `logBubbleId` = Workout Logs channel for workout_log rows. */
+  const logBubbleIdRef = useRef<string | null>(null);
+  const [logBubbleId, setLogBubbleId] = useState<string | null>(null);
   /** One-shot workout-open sentinel per player session (survives lazy coach rail unmount). */
   const coachSentinelFiredRef = useRef(false);
   const coachExecutionAppliedFingerprintRef = useRef<Map<string, string>>(new Map());
@@ -640,13 +645,40 @@ export function WorkoutPlayer({
       });
   }, [profileId, workspaceId]);
 
+  // Resolve Workout Logs bubble before draft recovery / log INSERTs (template bubbleId stays for Coach).
+  useEffect(() => {
+    if (!open) {
+      logBubbleIdRef.current = null;
+      setLogBubbleId(null);
+      return;
+    }
+    if (!workspaceId || !bubbleId) {
+      logBubbleIdRef.current = null;
+      setLogBubbleId(null);
+      return;
+    }
+    let cancelled = false;
+    const supabase = createClient();
+    void (async () => {
+      const id = await resolveWorkoutLogsBubbleId(supabase, workspaceId, bubbleId);
+      if (cancelled) return;
+      logBubbleIdRef.current = id;
+      setLogBubbleId(id);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, workspaceId, bubbleId]);
+
   // Reset / recover draft when player opens or when task / exercise content identity changes.
   useEffect(() => {
     if (!open) {
       lastRecoveryIdentityRef.current = null;
       return;
     }
-    const identity = `${sourceTaskId ?? 'null'}:${bubbleId}:${exercisesStringDigest}:${blocksDigest}`;
+    if (!logBubbleId) return;
+
+    const identity = `${sourceTaskId ?? 'null'}:${logBubbleId}:${exercisesStringDigest}:${blocksDigest}`;
     if (lastRecoveryIdentityRef.current !== identity) {
       lastRecoveryIdentityRef.current = identity;
       hasUserEditedRef.current = false;
@@ -670,7 +702,7 @@ export function WorkoutPlayer({
       const { data: draft, error } = await supabase
         .from('tasks')
         .select('id, metadata')
-        .eq('bubble_id', bubbleId)
+        .eq('bubble_id', logBubbleId)
         .eq('item_type', 'workout_log')
         .eq('status', 'in_progress')
         .eq('metadata->>source_task_id', sourceTaskId)
@@ -709,7 +741,7 @@ export function WorkoutPlayer({
       const { data: historical } = await supabase
         .from('tasks')
         .select('metadata')
-        .eq('bubble_id', bubbleId)
+        .eq('bubble_id', logBubbleId)
         .eq('item_type', 'workout_log')
         .eq('status', 'completed')
         .eq('metadata->>source_task_id', sourceTaskId)
@@ -774,13 +806,15 @@ export function WorkoutPlayer({
     blocksDigest,
     exercises,
     sessionVm.blocks,
-    bubbleId,
+    logBubbleId,
   ]);
 
   // Debounced cloud autosave of in-progress draft_logs (2s) — no UI spinner.
   const executeAutosaveNow = useCallback(async (): Promise<void> => {
     const draftLogs = logsRef.current;
     if (!sourceTaskId || draftLogs.length === 0) return;
+    const logBubble = logBubbleIdRef.current;
+    if (!logBubble) return;
     if (
       !activeLogTaskIdRef.current &&
       !hasUserEditedRef.current &&
@@ -806,7 +840,7 @@ export function WorkoutPlayer({
         const { data, error } = await supabase
           .from('tasks')
           .insert({
-            bubble_id: bubbleId,
+            bubble_id: logBubble,
             title: `${workoutTitle} — Log`,
             item_type: 'workout_log',
             status: 'in_progress',
@@ -832,7 +866,7 @@ export function WorkoutPlayer({
         .eq('id', currentDraftId);
       if (error) console.error('workout draft autosave update failed', error);
     }
-  }, [sourceTaskId, exercises, sessionVm, metadata, bubbleId, workoutTitle, class_instance_id]);
+  }, [sourceTaskId, exercises, sessionVm, metadata, workoutTitle, class_instance_id]);
 
   const runAutosave = useCallback(async (): Promise<void> => {
     const p = executeAutosaveNow();
@@ -845,7 +879,7 @@ export function WorkoutPlayer({
   }, [executeAutosaveNow]);
 
   useEffect(() => {
-    if (!open || !sourceTaskId || logs.length === 0) return;
+    if (!open || !sourceTaskId || logs.length === 0 || !logBubbleId) return;
     if (
       !activeLogTaskId &&
       !hasUserEditedRef.current &&
@@ -875,6 +909,7 @@ export function WorkoutPlayer({
     open,
     activeLogTaskId,
     sourceTaskId,
+    logBubbleId,
     runAutosave,
     exercisesStringDigest,
     blocksDigest,
@@ -1177,8 +1212,15 @@ export function WorkoutPlayer({
       return;
     }
 
+    const logBubble = logBubbleIdRef.current;
+    if (!logBubble) {
+      toast.error('Could not resolve workout log channel.');
+      setSaving(false);
+      return;
+    }
+
     const workoutLogTask = {
-      bubble_id: bubbleId,
+      bubble_id: logBubble,
       title: `${workoutTitle} — Log`,
       item_type: 'workout_log' as const,
       status: 'completed' as const,
@@ -1212,7 +1254,6 @@ export function WorkoutPlayer({
     logs,
     metadata,
     sessionVm,
-    bubbleId,
     workoutTitle,
     sourceTaskId,
     class_instance_id,
@@ -1429,6 +1470,86 @@ export function ActiveSessionLaunchButton({
   );
 }
 
+export type ActiveSessionLaunchControlProps = {
+  launchUi: ActiveSessionLaunchUi;
+  onLaunchClick: () => void;
+  busy?: boolean;
+  variant?: 'default' | 'compact';
+  className?: string;
+};
+
+function activeSessionLaunchButtonClassName(
+  variant: 'default' | 'compact',
+  className?: string,
+  disabled?: boolean,
+): string {
+  const compact = variant === 'compact';
+  return cn(
+    'inline-flex items-center font-medium text-foreground transition-colors',
+    compact
+      ? 'gap-1 rounded-md border border-primary/30 bg-primary/5 px-2.5 py-1 text-xs hover:bg-primary/10'
+      : 'gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm hover:bg-primary/10',
+    disabled && 'cursor-not-allowed opacity-50 hover:bg-primary/5',
+    className,
+  );
+}
+
+export function ActiveSessionLaunchControl({
+  launchUi,
+  onLaunchClick,
+  busy = false,
+  variant = 'default',
+  className,
+}: ActiveSessionLaunchControlProps) {
+  if (launchUi.mode === 'hidden') return null;
+
+  const compact = variant === 'compact';
+  const disabled = launchUi.mode === 'disabled' || busy;
+  const label =
+    busy && launchUi.mode !== 'disabled'
+      ? 'Starting…'
+      : launchUi.mode === 'disabled'
+        ? launchUi.label
+        : launchUi.label;
+  const tooltip =
+    launchUi.mode === 'disabled' ? launchUi.tooltip : busy ? 'Starting session…' : null;
+
+  const button = (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={disabled ? undefined : onLaunchClick}
+      className={activeSessionLaunchButtonClassName(variant, className, disabled)}
+    >
+      <Dumbbell className={cn('shrink-0', compact ? 'size-3.5' : 'size-4')} aria-hidden />
+      {label}
+    </button>
+  );
+
+  if (!tooltip) {
+    return button;
+  }
+
+  return (
+    <Tooltip.Provider delay={200}>
+      <Tooltip.Root>
+        <Tooltip.Trigger render={<span className="inline-flex">{button}</span>} />
+        <Tooltip.Portal>
+          <Tooltip.Positioner side="bottom" sideOffset={6}>
+            <Tooltip.Popup
+              className={cn(
+                'z-[200] max-w-xs rounded-md border border-border bg-popover px-3 py-2 text-xs leading-snug text-popover-foreground shadow-md',
+              )}
+            >
+              {tooltip}
+            </Tooltip.Popup>
+          </Tooltip.Positioner>
+        </Tooltip.Portal>
+      </Tooltip.Root>
+    </Tooltip.Provider>
+  );
+}
+
 type WorkoutPlayerTriggersProps = {
   workoutTitle: string;
   metadata: Json;
@@ -1436,6 +1557,10 @@ type WorkoutPlayerTriggersProps = {
   workspaceId: string;
   sourceTaskId: string | null;
   onComplete?: () => void;
+  activeSessionLaunch?: Pick<
+    ActiveSessionLaunchControlProps,
+    'launchUi' | 'onLaunchClick' | 'busy'
+  > | null;
 };
 
 export function WorkoutPlayerTriggers({
@@ -1445,23 +1570,28 @@ export function WorkoutPlayerTriggers({
   workspaceId,
   sourceTaskId,
   onComplete,
+  activeSessionLaunch = null,
 }: WorkoutPlayerTriggersProps) {
   const [mode, setMode] = useState<'desktop' | 'mobile' | null>(null);
   const sessionVm = useMemo(() => buildWorkoutSessionViewModel(metadata ?? {}), [metadata]);
 
-  if (sessionVm.flatExercises.length === 0) return null;
+  const hasExercises = sessionVm.flatExercises.length > 0;
+  const showActiveSession =
+    activeSessionLaunch != null && activeSessionLaunch.launchUi.mode !== 'hidden';
 
-  const activeSessionEnabled = isActiveSessionRouteEnabled() && sourceTaskId;
+  if (!hasExercises && !showActiveSession) {
+    return null;
+  }
 
   return (
     <>
       <div className="flex flex-wrap gap-2">
-        {activeSessionEnabled ? (
-          <ActiveSessionLaunchButton
-            workspaceId={workspaceId}
-            sourceTaskId={sourceTaskId}
-            from="modal"
-            onComplete={onComplete}
+        {showActiveSession ? (
+          <ActiveSessionLaunchControl
+            launchUi={activeSessionLaunch.launchUi}
+            onLaunchClick={activeSessionLaunch.onLaunchClick}
+            busy={activeSessionLaunch.busy}
+            variant="default"
           />
         ) : null}
         <button
