@@ -196,9 +196,7 @@ export function useAgentEffectSweep({
               : undefined;
           const action = parseCardActionFromMetadata(rawAction);
           if (!action) {
-            if (rawAction !== undefined) {
-              handledCardActionMessageIdsRef.current.add(id);
-            }
+            handledCardActionMessageIdsRef.current.add(id);
             emit?.({
               kind: 'effect.parse_dropped',
               effect: 'card_action',
