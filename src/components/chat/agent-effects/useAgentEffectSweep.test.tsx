@@ -89,6 +89,39 @@ describe('useAgentEffectSweep', () => {
     );
 
     expect(onTaskModalIntakePatch).toHaveBeenCalledTimes(1);
+    expect(onCardAction).toHaveBeenCalledTimes(1);
+  });
+
+  it('still invokes onCardAction when duplicate coach row id already handled outline this run', () => {
+    const onOutlineDraftApplied = vi.fn();
+    const onCardAction = vi.fn();
+    const agents = new Map([[COACH_AUTH, makeCoachAgent()]]);
+
+    renderHook(() =>
+      useAgentEffectSweep({
+        taskId: TASK_ID,
+        isLoading: false,
+        messages: [
+          makeCoachMessage('msg-dup', {
+            outline_draft_applied: {
+              v: 1,
+              revision: 1,
+              block_count: 1,
+              blocks: [{ name: 'Main', block_format: 'emom' }],
+            },
+          }),
+          makeCoachMessage('msg-dup', {
+            card_action: { v: 1, kind: 'trigger_generation' },
+          }),
+        ],
+        agentsByAuthUserId: agents,
+        onOutlineDraftApplied,
+        onCardAction,
+      }),
+    );
+
+    expect(onOutlineDraftApplied).toHaveBeenCalledTimes(1);
+    expect(onCardAction).toHaveBeenCalledTimes(1);
   });
 
   it('invokes onOutlineDraftApplied when coach row has outline_draft_applied', () => {
