@@ -765,6 +765,72 @@ export type Database = {
           },
         ];
       };
+      class_recording_sessions: {
+        Row: {
+          agora_resource_id: string | null;
+          agora_sid: string | null;
+          agora_uid: number;
+          channel_name: string;
+          class_instance_id: string;
+          created_at: string;
+          error_message: string | null;
+          id: string;
+          raw_start_response: Json | null;
+          started_at: string | null;
+          status: string;
+          stopped_at: string | null;
+          updated_at: string;
+          workspace_id: string;
+        };
+        Insert: {
+          agora_resource_id?: string | null;
+          agora_sid?: string | null;
+          agora_uid: number;
+          channel_name: string;
+          class_instance_id: string;
+          created_at?: string;
+          error_message?: string | null;
+          id?: string;
+          raw_start_response?: Json | null;
+          started_at?: string | null;
+          status: string;
+          stopped_at?: string | null;
+          updated_at?: string;
+          workspace_id: string;
+        };
+        Update: {
+          agora_resource_id?: string | null;
+          agora_sid?: string | null;
+          agora_uid?: number;
+          channel_name?: string;
+          class_instance_id?: string;
+          created_at?: string;
+          error_message?: string | null;
+          id?: string;
+          raw_start_response?: Json | null;
+          started_at?: string | null;
+          status?: string;
+          stopped_at?: string | null;
+          updated_at?: string;
+          workspace_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'class_recording_sessions_class_instance_id_fkey';
+            columns: ['class_instance_id'];
+            isOneToOne: false;
+            referencedRelation: 'class_instances';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'class_recording_sessions_workspace_id_fkey';
+            columns: ['workspace_id'];
+            isOneToOne: false;
+            referencedRelation: 'workspaces';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       equipment_inventory: {
         Row: {
           category: string;
@@ -1428,7 +1494,15 @@ export type Database = {
           interval_wrapper_kind?: string;
           workspace_id?: string | null;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: 'live_sessions_workspace_id_fkey';
+            columns: ['workspace_id'];
+            isOneToOne: false;
+            referencedRelation: 'workspaces';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       messages: {
         Row: {
@@ -1651,6 +1725,24 @@ export type Database = {
           has_had_trial?: boolean;
           stripe_customer_id?: string;
           user_id?: string;
+        };
+        Relationships: [];
+      };
+      stripe_plan_catalog: {
+        Row: {
+          created_at: string;
+          plan_key: string;
+          stripe_product_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          plan_key: string;
+          stripe_product_id: string;
+        };
+        Update: {
+          created_at?: string;
+          plan_key?: string;
+          stripe_product_id?: string;
         };
         Relationships: [];
       };
@@ -1974,40 +2066,40 @@ export type Database = {
       };
       user_exercise_notes: {
         Row: {
-          id: string;
-          user_id: string;
-          exercise_dictionary_id: string;
-          instructions: string | null;
-          form_cues: string | null;
-          tips: string | null;
-          injury_prevention_tips: string | null;
-          updated_by_agent_user_id: string | null;
           created_at: string;
+          exercise_dictionary_id: string;
+          form_cues: string | null;
+          id: string;
+          injury_prevention_tips: string | null;
+          instructions: string | null;
+          tips: string | null;
           updated_at: string;
+          updated_by_agent_user_id: string | null;
+          user_id: string;
         };
         Insert: {
-          id?: string;
-          user_id: string;
-          exercise_dictionary_id: string;
-          instructions?: string | null;
-          form_cues?: string | null;
-          tips?: string | null;
-          injury_prevention_tips?: string | null;
-          updated_by_agent_user_id?: string | null;
           created_at?: string;
+          exercise_dictionary_id: string;
+          form_cues?: string | null;
+          id?: string;
+          injury_prevention_tips?: string | null;
+          instructions?: string | null;
+          tips?: string | null;
           updated_at?: string;
+          updated_by_agent_user_id?: string | null;
+          user_id: string;
         };
         Update: {
-          id?: string;
-          user_id?: string;
-          exercise_dictionary_id?: string;
-          instructions?: string | null;
-          form_cues?: string | null;
-          tips?: string | null;
-          injury_prevention_tips?: string | null;
-          updated_by_agent_user_id?: string | null;
           created_at?: string;
+          exercise_dictionary_id?: string;
+          form_cues?: string | null;
+          id?: string;
+          injury_prevention_tips?: string | null;
+          instructions?: string | null;
+          tips?: string | null;
           updated_at?: string;
+          updated_by_agent_user_id?: string | null;
+          user_id?: string;
         };
         Relationships: [
           {
@@ -2015,13 +2107,6 @@ export type Database = {
             columns: ['exercise_dictionary_id'];
             isOneToOne: false;
             referencedRelation: 'exercise_dictionary';
-            referencedColumns: ['id'];
-          },
-          {
-            foreignKeyName: 'user_exercise_notes_user_id_fkey';
-            columns: ['user_id'];
-            isOneToOne: false;
-            referencedRelation: 'users';
             referencedColumns: ['id'];
           },
         ];
@@ -2434,6 +2519,88 @@ export type Database = {
           },
         ];
       };
+      workspace_ai_events: {
+        Row: {
+          actor_user_id: string | null;
+          agent_slug: string;
+          bubble_id: string | null;
+          completion_tokens: number | null;
+          created_at: string;
+          error_kind: string | null;
+          event_type: string;
+          id: string;
+          latency_ms: number | null;
+          metadata: Json;
+          model: string | null;
+          prompt_tokens: number | null;
+          request_id: string | null;
+          surface: string | null;
+          task_id: string | null;
+          thoughts_tokens: number | null;
+          workspace_id: string;
+        };
+        Insert: {
+          actor_user_id?: string | null;
+          agent_slug: string;
+          bubble_id?: string | null;
+          completion_tokens?: number | null;
+          created_at?: string;
+          error_kind?: string | null;
+          event_type: string;
+          id?: string;
+          latency_ms?: number | null;
+          metadata?: Json;
+          model?: string | null;
+          prompt_tokens?: number | null;
+          request_id?: string | null;
+          surface?: string | null;
+          task_id?: string | null;
+          thoughts_tokens?: number | null;
+          workspace_id: string;
+        };
+        Update: {
+          actor_user_id?: string | null;
+          agent_slug?: string;
+          bubble_id?: string | null;
+          completion_tokens?: number | null;
+          created_at?: string;
+          error_kind?: string | null;
+          event_type?: string;
+          id?: string;
+          latency_ms?: number | null;
+          metadata?: Json;
+          model?: string | null;
+          prompt_tokens?: number | null;
+          request_id?: string | null;
+          surface?: string | null;
+          task_id?: string | null;
+          thoughts_tokens?: number | null;
+          workspace_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'workspace_ai_events_bubble_id_fkey';
+            columns: ['bubble_id'];
+            isOneToOne: false;
+            referencedRelation: 'bubbles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'workspace_ai_events_task_id_fkey';
+            columns: ['task_id'];
+            isOneToOne: false;
+            referencedRelation: 'tasks';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'workspace_ai_events_workspace_id_fkey';
+            columns: ['workspace_id'];
+            isOneToOne: false;
+            referencedRelation: 'workspaces';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       workspace_member_notes: {
         Row: {
           body: string | null;
@@ -2720,6 +2887,8 @@ export type Database = {
       agent_create_card_and_reply: {
         Args: {
           p_agent_auth_user_id: string;
+          p_card_action?: Json;
+          p_coach_workout_outline?: Json;
           p_create_card?: boolean;
           p_execution_patch?: Json;
           p_invoker_user_id: string;
@@ -2736,29 +2905,51 @@ export type Database = {
         };
         Returns: Json;
       };
-      agent_insert_coach_workout_draft_reply: {
-        Args: {
-          p_agent_auth_user_id: string;
-          p_execution_patch?: Json;
-          p_invoker_user_id: string;
-          p_personal_cues?: Json;
-          p_proposed_description?: string;
-          p_proposed_metadata?: Json;
-          p_proposed_title?: string;
-          p_reply_text: string;
-          p_target_task_id: string;
-          p_task_modal_intake_patch?: Json;
-          p_thread_id: string;
-          p_trigger_message_id: string;
-        };
-        Returns: Json;
-      };
+      agent_insert_coach_workout_draft_reply:
+        | {
+            Args: {
+              p_agent_auth_user_id: string;
+              p_execution_patch?: Json;
+              p_invoker_user_id: string;
+              p_personal_cues?: Json;
+              p_proposed_description?: string;
+              p_proposed_metadata?: Json;
+              p_proposed_title?: string;
+              p_reply_text: string;
+              p_target_task_id: string;
+              p_task_modal_intake_patch?: Json;
+              p_thread_id: string;
+              p_trigger_message_id: string;
+            };
+            Returns: Json;
+          }
+        | {
+            Args: {
+              p_agent_auth_user_id: string;
+              p_card_action?: Json;
+              p_execution_patch?: Json;
+              p_invoker_user_id: string;
+              p_personal_cues?: Json;
+              p_proposed_description?: string;
+              p_proposed_metadata?: Json;
+              p_proposed_title?: string;
+              p_reply_text: string;
+              p_target_task_id: string;
+              p_task_modal_intake_patch?: Json;
+              p_thread_id: string;
+              p_trigger_message_id: string;
+            };
+            Returns: Json;
+          };
       agent_update_task_and_reply: {
         Args: {
           p_agent_auth_user_id: string;
+          p_card_action?: Json;
           p_invoker_user_id: string;
           p_new_description?: string;
+          p_new_metadata?: Json;
           p_new_title?: string;
+          p_outline_draft_applied?: Json;
           p_reply_text: string;
           p_target_task_id: string;
           p_thread_id: string;
@@ -2795,6 +2986,10 @@ export type Database = {
         Args: { p_amrap_session_id: string };
         Returns: undefined;
       };
+      apply_personal_cues_for_user: {
+        Args: { p_agent_auth_user_id: string; p_cues: Json; p_user_id: string };
+        Returns: number;
+      };
       apply_workout_draft: { Args: { p_message_id: string }; Returns: Json };
       approve_invitation_join_request: {
         Args: { p_join_request_id: string };
@@ -2816,6 +3011,10 @@ export type Database = {
         };
         Returns: Json;
       };
+      can_join_live_session: {
+        Args: { p_session_id: string };
+        Returns: boolean;
+      };
       can_mutate_task_linked_rows: {
         Args: { _task_id: string };
         Returns: boolean;
@@ -2823,6 +3022,10 @@ export type Database = {
       can_view_bubble: { Args: { _bubble_id: string }; Returns: boolean };
       can_write_bubble: { Args: { _bubble_id: string }; Returns: boolean };
       can_write_workspace: { Args: { _workspace_id: string }; Returns: boolean };
+      copy_class_deck_to_live_session: {
+        Args: { p_class_instance_id: string; p_live_session_id: string };
+        Returns: number;
+      };
       ensure_profile_for_uid: { Args: { _uid: string }; Returns: undefined };
       exercise_dictionary_lookup_by_names: {
         Args: { p_names: string[] };
@@ -2869,6 +3072,7 @@ export type Database = {
           id: string;
           interval_wrapper_config: Json | null;
           interval_wrapper_kind: string;
+          workspace_id: string | null;
         };
         SetofOptions: {
           from: '*';
@@ -2885,6 +3089,7 @@ export type Database = {
           id: string;
           interval_wrapper_config: Json | null;
           interval_wrapper_kind: string;
+          workspace_id: string | null;
         };
         SetofOptions: {
           from: '*';
@@ -2893,10 +3098,6 @@ export type Database = {
           isSetofReturn: false;
         };
       };
-      can_join_live_session: {
-        Args: { p_session_id: string };
-        Returns: boolean;
-      };
       is_live_session_participant: {
         Args: { p_session_id: string };
         Returns: boolean;
@@ -2904,16 +3105,16 @@ export type Database = {
       is_workspace_admin: { Args: { _workspace_id: string }; Returns: boolean };
       is_workspace_guest: { Args: { _workspace_id: string }; Returns: boolean };
       is_workspace_member: { Args: { _workspace_id: string }; Returns: boolean };
-      copy_class_deck_to_live_session: {
-        Args: { p_class_instance_id: string; p_live_session_id: string };
-        Returns: number;
+      live_session_class_instance_id: {
+        Args: { p_session_id: string };
+        Returns: string;
       };
       live_session_create: {
         Args: {
           p_agora_uid: string;
           p_display_name: string;
           p_session_id: string;
-          p_workspace_id?: string | null;
+          p_workspace_id?: string;
         };
         Returns: undefined;
       };
@@ -2957,7 +3158,7 @@ export type Database = {
       seed_workspace_template: {
         Args: {
           _bubbles: Json;
-          _category_type?: string | null;
+          _category_type?: string;
           _columns: Json;
           _workspace_id: string;
         };
@@ -3005,6 +3206,10 @@ export type Database = {
           _task: Database['public']['Tables']['tasks']['Row'];
           _uid: string;
         };
+        Returns: boolean;
+      };
+      workspace_has_system_analytics_access: {
+        Args: { p_workspace_id: string };
         Returns: boolean;
       };
       workspace_id_for_bubble: { Args: { _bubble_id: string }; Returns: string };

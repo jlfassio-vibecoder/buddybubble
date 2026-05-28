@@ -156,6 +156,34 @@ export async function buildDispatchContext(
   // threads, but the strategy may want a tighter window for Vertex.
   history = tailSlice(history, historyLimit);
 
+  let workspaceId: string | null = null;
+  if (message.bubble_id) {
+    const bubbleTable = supabase.from('bubbles') as unknown as {
+      select: (cols: string) => {
+        eq: (
+          col: string,
+          val: string,
+        ) => {
+          maybeSingle: () => Promise<{ data: unknown; error: { message: string } | null }>;
+        };
+      };
+    };
+    const bubbleResult = await bubbleTable
+      .select('workspace_id')
+      .eq('id', message.bubble_id)
+      .maybeSingle();
+    if (bubbleResult.error) {
+      log('warn', 'workspace lookup failed', {
+        request_id: requestId,
+        bubble_id: message.bubble_id,
+        error: bubbleResult.error.message,
+      });
+    } else {
+      const resolved = (bubbleResult.data as { workspace_id?: string } | null)?.workspace_id;
+      workspaceId = resolved ?? null;
+    }
+  }
+
   return {
     supabase,
     requestId,
@@ -167,6 +195,7 @@ export async function buildDispatchContext(
     coachMergeWorkoutMetadata,
     coachCardActions,
     coachAutoRegenerateAfterRailMerge,
+    workspaceId,
     extras: {},
   };
 }

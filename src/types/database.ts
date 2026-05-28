@@ -85,6 +85,8 @@ export type StripeCustomerRow = Database['public']['Tables']['stripe_customers']
 export type WorkspaceSubscriptionRow =
   Database['public']['Tables']['workspace_subscriptions']['Row'];
 export type AnalyticsEventRow = Database['public']['Tables']['analytics_events']['Row'];
+export type WorkspaceAiEventRow = Database['public']['Tables']['workspace_ai_events']['Row'];
+export type StripePlanCatalogRow = Database['public']['Tables']['stripe_plan_catalog']['Row'];
 export type ExerciseDictionaryRow = Database['public']['Tables']['exercise_dictionary']['Row'];
 export type AgentDefinitionRow = Database['public']['Tables']['agent_definitions']['Row'];
 export type AgentMessageRunRow = Database['public']['Tables']['agent_message_runs']['Row'];

@@ -14,10 +14,18 @@ import {
   type ReactNode,
 } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { toast } from 'sonner';
 import { Dumbbell, X } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
-import type { BubbleMemberRole, BubbleRow, ItemType, Json, TaskRow } from '@/types/database';
+import type {
+  BubbleMemberRole,
+  BubbleRow,
+  ItemType,
+  Json,
+  TaskRow,
+  WorkspaceCategory,
+} from '@/types/database';
 import {
   ALL_BUBBLES_BUBBLE_ID,
   makeAllBubblesBubbleRow,
@@ -55,6 +63,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { buildActiveSessionUrl } from '@/lib/active-session/build-active-session-url';
 import { isActiveSessionRouteEnabled } from '@/lib/feature-flags/activeSessionRoute';
+import { isSystemAnalyticsRouteEnabled } from '@/lib/feature-flags/systemAnalyticsRoute';
 import { markLiveSessionInviteMessageEnded } from '@/lib/mark-live-session-invite-ended';
 import { WorkspaceSessionProvider } from '@/context/WorkspaceSessionContext';
 import {
@@ -101,6 +110,10 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { useUpdatePresence } from '@/hooks/use-update-presence';
 import { ActiveUsersStack } from '@/components/presence/ActiveUsersStack';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
+import {
+  resolveSubscriptionPermissions,
+  type SubscriptionStatus,
+} from '@/lib/subscription-permissions';
 import { useLiveVideoStore } from '@/store/liveVideoStore';
 import {
   DashboardLiveVideoDockBody,
@@ -573,12 +586,30 @@ function DashboardShellInner({
   useUpdatePresence({ embedMode, workspaceId });
 
   const initSubscription = useSubscriptionStore((s) => s.initSubscription);
+  const subscriptionStatus = useSubscriptionStore((s) => s.status);
   useEffect(() => {
     void initSubscription(workspaceId);
   }, [workspaceId, initSubscription]);
 
   const activeLiveVideoSession = useLiveVideoStore((s) => s.activeSession);
   const joinLiveVideoSession = useLiveVideoStore((s) => s.joinSession);
+
+  const canStartLiveVideo = useMemo(() => {
+    if (subscriptionStatus === null || subscriptionStatus === 'not_required') {
+      return true;
+    }
+    const categoryType = (workspaceCategoryForUi ?? 'business') as WorkspaceCategory;
+    const subStatus =
+      subscriptionStatus === 'no_subscription' ? null : (subscriptionStatus as SubscriptionStatus);
+    return resolveSubscriptionPermissions(categoryType, subStatus).canJoinLiveVideo;
+  }, [subscriptionStatus, workspaceCategoryForUi]);
+
+  const showSystemHealthNav = isSystemAnalyticsRouteEnabled() && (isOwner || isAdmin);
+  const showLiveVideoStartButton =
+    // Copilot suggestion ignored: production entry is intentional; gated by resolveSubscriptionPermissions().canJoinLiveVideo above.
+    !embedMode && !activeLiveVideoSession && Boolean(profile?.id) && canStartLiveVideo;
+  const showDashboardSecondaryNav =
+    Boolean(profile?.id) && !embedMode && (showLiveVideoStartButton || showSystemHealthNav);
 
   const classDeckBuilderParam = searchParams.get('class_deck_builder')?.trim() ?? '';
   const showClassDeckBuilder =
@@ -2216,19 +2247,26 @@ function DashboardShellInner({
                       </div>
 
                       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-                        {process.env.NODE_ENV === 'development' &&
-                        !embedMode &&
-                        !activeLiveVideoSession &&
-                        profile?.id ? (
-                          <div className="flex shrink-0 justify-end border-b border-border bg-muted/30 px-2 py-1">
-                            <Button
-                              type="button"
-                              size="xs"
-                              variant="secondary"
-                              onClick={handleJoinDevLiveVideo}
-                            >
-                              Start live video (dev)
-                            </Button>
+                        {showDashboardSecondaryNav ? (
+                          <div className="flex shrink-0 justify-end gap-2 border-b border-border bg-muted/30 px-2 py-1">
+                            {showLiveVideoStartButton ? (
+                              <Button
+                                type="button"
+                                size="xs"
+                                variant="secondary"
+                                onClick={handleJoinDevLiveVideo}
+                              >
+                                Start live video
+                              </Button>
+                            ) : null}
+                            {showSystemHealthNav ? (
+                              <Button size="xs" variant="secondary" asChild>
+                                <Link href={`/app/${workspaceId}/analytics/system`}>
+                                  {/* Copilot suggestion ignored: nav label "Social Space Analytics" is intentional product copy; route remains /analytics/system. */}
+                                  Social Space Analytics
+                                </Link>
+                              </Button>
+                            ) : null}
                           </div>
                         ) : null}
                         {activeLiveVideoSession && profile?.id ? (
