@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import type { Json, TaskRow, TaskVisibility } from '@/types/database';
 import type { TaskPriority } from '@/lib/task-priority';
 import { normalizeTaskPriority } from '@/lib/task-priority';
-import { normalizeItemType } from '@/lib/item-types';
 import {
   buildTaskMetadataPayload,
   metadataFieldsFromParsed,

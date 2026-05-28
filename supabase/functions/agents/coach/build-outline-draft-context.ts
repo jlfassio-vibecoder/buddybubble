@@ -50,6 +50,7 @@ function blockFormatLabel(format: string | null | undefined): string {
 }
 
 /** Compact one-line summary for prompt injection (mirrored; no outline-editor-client import). */
+// Copilot suggestion ignored: Duplicated intentionally so Coach/Edge modules stay free of outline-editor-client imports (mirror parity).
 export function outlineBlockSummaryForDraftContext(block: Record<string, unknown>): string {
   const name = typeof block.name === 'string' && block.name.trim() ? block.name.trim() : 'Block';
   const instructions = Array.isArray(block.instructions)

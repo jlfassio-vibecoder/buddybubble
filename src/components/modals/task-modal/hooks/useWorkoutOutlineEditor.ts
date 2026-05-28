@@ -286,7 +286,8 @@ export function useWorkoutOutlineEditor({
       lastSyncedOutlineFpRef.current = outlineBlocksFingerprint(normalized);
       isDirtyRef.current = false;
       setDraftBlocks(normalized);
-      const next = applyDraftToMetadata(normalized, 'ready', {
+      const status: CoachOutlineStatus = normalized.length > 0 ? 'ready' : 'empty';
+      const next = applyDraftToMetadata(normalized, status, {
         drops: args.drops?.length ? args.drops : normDrops,
       });
       const json = next as unknown as Json;

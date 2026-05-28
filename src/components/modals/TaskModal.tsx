@@ -945,6 +945,19 @@ export function TaskModal({
   const [outlineRevision, setOutlineRevision] = useState(1);
   const outlineDraftFingerprintRef = useRef<string | null>(null);
   const skipOutlineRevisionBumpRef = useRef(true);
+
+  useEffect(() => {
+    if (!open) {
+      setOutlineRevision(1);
+      outlineDraftFingerprintRef.current = null;
+      skipOutlineRevisionBumpRef.current = true;
+      return;
+    }
+    setOutlineRevision(1);
+    outlineDraftFingerprintRef.current = null;
+    skipOutlineRevisionBumpRef.current = true;
+  }, [open, taskId]);
+
   useEffect(() => {
     if (!open || !taskId || itemType !== 'workout') return;
     const fp = JSON.stringify(workoutOutlineEditor.draftBlocks);
