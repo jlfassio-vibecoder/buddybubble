@@ -55,6 +55,7 @@ import type {
   CardActionEffectPayload,
   ExecutionPatchEffectPayload,
   TaskModalIntakePatchEffectPayload,
+  OutlineDraftAppliedEffectPayload,
 } from '@/components/chat/agent-effects/types';
 import { useBuddyOnboardingSentinel } from '@/components/modals/task-modal/hooks/useBuddyOnboardingSentinel';
 import { useDeepLinkMessageScroll } from '@/components/modals/task-modal/hooks/useDeepLinkMessageScroll';
@@ -149,6 +150,11 @@ export type StandardTaskChatRailProps = {
    * Host owns cross-mount dedupe beyond a single sweep.
    */
   onCardAction?: (ctx: CardActionEffectPayload) => void;
+
+  /**
+   * Coach `metadata.outline_draft_applied` — builder / outline co-pilot structure sync.
+   */
+  onOutlineDraftApplied?: (ctx: OutlineDraftAppliedEffectPayload) => void;
 
   /**
    * Pure telemetry for agent-effect parsing / application. Host may forward to `logAgentRoutingEvent`.
@@ -323,6 +329,7 @@ function useRailThreadApi(props: StandardTaskChatRailProps): RailThreadApi {
     onExecutionPatch: props.onExecutionPatch,
     onTaskModalIntakePatch: props.onTaskModalIntakePatch,
     onCardAction: props.onCardAction,
+    onOutlineDraftApplied: props.onOutlineDraftApplied,
     onEffectTelemetry: props.onEffectTelemetry,
   });
 

@@ -110,6 +110,8 @@ export type AgentUpdateTaskAndReplyArgs = {
   /** Shallow-merge into `tasks.metadata` when non-null (rail auto-apply). */
   p_new_metadata?: Record<string, unknown> | null;
   p_card_action?: unknown;
+  /** Outline co-pilot: client sweep reads `outline_draft_applied` from reply metadata. */
+  p_outline_draft_applied?: Record<string, unknown> | null;
 };
 
 export type BuddyCreateOnboardingReplyArgs = {

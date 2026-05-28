@@ -1,6 +1,7 @@
 import { COACH_SLUG } from '@/lib/agents/coach/config';
 import type { ExecutionPatch } from '@/types/execution-patch';
 import type { TaskModalIntakePatch } from '@/lib/agents/coach/task-modal-intake-patch';
+import type { OutlineDraftAppliedV1 } from '@/lib/agents/coach/outline-draft-patch';
 
 export type AgentEffectContext = {
   taskId: string;
@@ -17,18 +18,30 @@ export type CardAction = { v: 1; kind: CardActionKind };
 export type AgentEffectTelemetryEvent =
   | {
       kind: 'effect.scanned';
-      effect: 'execution_patch' | 'task_modal_intake_patch' | 'card_action';
+      effect:
+        | 'execution_patch'
+        | 'task_modal_intake_patch'
+        | 'card_action'
+        | 'outline_draft_applied';
       messageId: string;
     }
   | {
       kind: 'effect.parse_dropped';
-      effect: 'execution_patch' | 'task_modal_intake_patch' | 'card_action';
+      effect:
+        | 'execution_patch'
+        | 'task_modal_intake_patch'
+        | 'card_action'
+        | 'outline_draft_applied';
       messageId: string;
       reason: 'missing' | 'invalid';
     }
   | {
       kind: 'effect.applied';
-      effect: 'execution_patch' | 'task_modal_intake_patch' | 'card_action';
+      effect:
+        | 'execution_patch'
+        | 'task_modal_intake_patch'
+        | 'card_action'
+        | 'outline_draft_applied';
       messageId: string;
     };
 
@@ -39,3 +52,7 @@ export type TaskModalIntakePatchEffectPayload = AgentEffectContext & {
 };
 
 export type CardActionEffectPayload = AgentEffectContext & { action: CardAction };
+
+export type OutlineDraftAppliedEffectPayload = AgentEffectContext & {
+  applied: OutlineDraftAppliedV1;
+};

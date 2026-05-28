@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CoachGeminiJsonResponse } from './parse';
-import { assertCoachReplySelfAttestation } from './server-guards';
+import { applyCoachServerGuards, assertCoachReplySelfAttestation } from './server-guards';
 
 function baseParsed(overrides: Partial<CoachGeminiJsonResponse> = {}): CoachGeminiJsonResponse {
   return {
@@ -28,9 +28,99 @@ function baseParsed(overrides: Partial<CoachGeminiJsonResponse> = {}): CoachGemi
     task_modal_intake_patch: null,
     task_modal_intake_dropped: [],
     card_action: null,
+    outline_draft_patch: null,
+    outline_draft_patch_drops: [],
     ...overrides,
   };
 }
+
+describe('applyCoachServerGuards outline co-pilot', () => {
+  it('strips proposed_workout_metadata when outlineCoPilotActive', () => {
+    const out = applyCoachServerGuards(
+      baseParsed({
+        proposed_workout_metadata: { blocks: [{ name: 'Main' }] },
+        outline_draft_patch: {
+          v: 1,
+          revision: 1,
+          mode: 'merge_by_name',
+          blocks: [{ name: 'Finisher', block_format: 'tabata' }],
+          clear_confirmation: true,
+        },
+      }),
+      {
+        knownTargetTaskId: 'task-1',
+        priorUserMessageCount: 2,
+        currentWorkoutContextJson: null,
+        isActiveWorkoutSession: false,
+        outlineCoPilotActive: true,
+      },
+    );
+    expect(out.proposed_workout_metadata).toBeNull();
+    expect(out.outline_draft_patch?.blocks[0]?.name).toBe('Finisher');
+  });
+
+  it('nulls outline_draft_patch when all blocks have verbose names', () => {
+    const out = applyCoachServerGuards(
+      baseParsed({
+        outline_draft_patch: {
+          v: 1,
+          revision: 2,
+          mode: 'merge_by_name',
+          blocks: [{ name: 'Main (AMRAP 15 min.) - 4 exercises each block' }],
+          clear_confirmation: true,
+        },
+      }),
+      {
+        knownTargetTaskId: 'task-1',
+        priorUserMessageCount: 2,
+        currentWorkoutContextJson: null,
+        isActiveWorkoutSession: false,
+        outlineCoPilotActive: true,
+      },
+    );
+    expect(out.outline_draft_patch).toBeNull();
+    expect(out.outline_draft_patch_drops.some((d) => d.reason === 'block_name_too_verbose')).toBe(
+      true,
+    );
+  });
+
+  it('throws self_attestation when outline co-pilot claims structure update without patch', () => {
+    expect(() =>
+      applyCoachServerGuards(
+        baseParsed({
+          reply_content:
+            'The workout structure has been updated with Circuit 1 AMRAP for 15 minutes.',
+          outline_draft_patch: null,
+        }),
+        {
+          knownTargetTaskId: 'task-1',
+          priorUserMessageCount: 2,
+          currentWorkoutContextJson: null,
+          isActiveWorkoutSession: false,
+          outlineCoPilotActive: true,
+        },
+      ),
+    ).toThrow();
+  });
+
+  it('throws self_attestation when outline co-pilot claims block was added without patch', () => {
+    expect(() =>
+      applyCoachServerGuards(
+        baseParsed({
+          reply_content: 'A 10-minute Finisher AMRAP block has been added to your workout outline.',
+          outline_draft_patch: null,
+        }),
+        {
+          knownTargetTaskId: 'task-1',
+          priorUserMessageCount: 2,
+          currentWorkoutContextJson: null,
+          isActiveWorkoutSession: false,
+          outlineCoPilotActive: true,
+        },
+      ),
+    ).toThrow();
+  });
+});
 
 describe('assertCoachReplySelfAttestation', () => {
   it('does not throw when reply has no attestation phrases', () => {
@@ -81,6 +171,23 @@ describe('assertCoachReplySelfAttestation', () => {
         baseParsed({
           reply_content: 'Starting the generator now on your card.',
           card_action: 'trigger_generation',
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('allows phrase when outline_draft_patch is present', () => {
+    expect(() =>
+      assertCoachReplySelfAttestation(
+        baseParsed({
+          reply_content: "I've updated your workout structure.",
+          outline_draft_patch: {
+            v: 1,
+            revision: 1,
+            mode: 'merge_by_name',
+            blocks: [{ name: 'Main' }],
+            clear_confirmation: true,
+          },
         }),
       ),
     ).not.toThrow();

@@ -18,6 +18,8 @@
  *     Task Modal intake wizard and `task_modal_intake_patch`.
  *   - `readTaskModalLiveStateFromMessageMetadata`, `buildTaskModalLiveStateBlock` —
  *     Phase 3.7: client `messages.metadata.task_modal_live_state` → system prompt.
+ *   - `readTaskModalOutlineDraftFromMessageMetadata`, `buildOutlineDraftContextBlock`,
+ *     `resolveOutlineDraftPromptParts` — outline co-pilot: `task_modal_outline_draft` → system prompt.
  *   - `WORKOUT_CONTEXT_HEADER`, `USER_CONTEXT_TAIL`, `LAST_WORKOUT_CONTEXT_HEADER`,
  *     `CURRENT_USER_CONTEXT_HEADER` — header constants reused by the strategy and the
  *     Deno-only `context.ts` module.
@@ -35,6 +37,12 @@ import {
   WORKOUT_INTAKE_INTENSITY_OPTIONS,
   WORKOUT_INTAKE_SORENESS_OPTIONS,
 } from './task-modal-intake-patch';
+import { readCoachOutlineMetadata } from './coach-outline-metadata';
+import {
+  buildOutlineDraftContextBlock,
+  buildOutlineDraftContextBlockFromStored,
+  readTaskModalOutlineDraftFromMessageMetadata,
+} from './build-outline-draft-context';
 
 /** Header line prepended to the resolved CURRENT WORKOUT CONTEXT JSON when present. */
 export const WORKOUT_CONTEXT_HEADER = '--- CURRENT WORKOUT CONTEXT ---';
@@ -265,8 +273,12 @@ export function buildApexArchitectMainChatBlock(): string {
   );
 }
 
+const COACH_OUTLINE_NUMERIC_FORMAT_RULE =
+  'CRITICAL FORMATTING RULE: When emitting numerical values (seconds, reps, rounds, minutes, weights, or any timing/count in format_params), use clean, compact whole numbers or short strings. NEVER generate infinite repeating decimals, excessive trailing zeros, or padded digit loops (e.g. output 45 or "45", never 45.000000... or 4500000000...). Stop each number immediately after the meaningful digits. ';
+
 export const COACH_OUTLINE_ONLY_SYSTEM_PROMPT =
   'You are an API that outputs a JSON workout outline for an agreed-upon workout card. Output ONLY a JSON object with a "blocks" array — no markdown, no prose. ' +
+  COACH_OUTLINE_NUMERIC_FORMAT_RULE +
   'CRITICAL — STRUCTURAL TOKEN PARITY: Scan the USER MESSAGE for catalog structural tokens matching :<section>/<block_format>/<variant> (e.g. :main/tabata/power, :finisher/tabata/vo2, :finisher/tabata/core). You MUST emit one separate, distinct block in "blocks" for EVERY such token, in the same order they appear. If the user requests 3 Tabatas, "blocks" MUST contain exactly 3 tabata blocks — never merge multiple tokens into one block. Do not omit a requested section because the card title/description summarizes the session as one unit. ' +
   'Use the BLOCK BLUEPRINT LIBRARY for block_format and format_params per block. Match each token\'s section (main, finisher, metcon, warmup, strength, recovery, prep) in the block name (e.g. "Main — Tabata Power", "Finisher — Tabata VO2"). Keep each block concise: short name, block_format, format_params, exercises: [{ name }] placeholders only — no coaching prose, sets, reps, or instructions[].';
 
@@ -300,6 +312,8 @@ Do NOT include sets, reps, coach_notes, or instructions[].
 Use format_params for all timing/structure — never put prescriptions in block name.
 
 HARD RULE: EMOMs with 2+ exercises MUST have is_alternating: true in format_params unless you are explicitly designing a legacy density block (is_alternating: false — every exercise every minute). Do not use the word "combo" or the is_combo flag for standard A-then-B rotations; the server hydrates alternating_stations from is_alternating alone.
+
+CRITICAL FORMATTING RULE: When emitting numerical values (especially seconds, reps, or weights), use clean, whole numbers. NEVER generate infinite repeating decimals or trailing zeros (e.g., output '45', never '45.000000...').
 
 === OUTPUT FORMAT ===
 Return ONLY valid JSON. No markdown. Example:
@@ -353,7 +367,7 @@ export function buildBaseCoachPrompt(
     'TRUTHFULNESS: If reply_content claims you wrote or applied something, include non-null execution_patch, personal_cues_patch, task_modal_intake_patch, or create_card/update_existing_task in the same JSON. ' +
     (apexMain
       ? 'Return ONLY a raw JSON object (no markdown, no code fences) with keys: reply_content, create_card, task_title, task_description, update_existing_task, updated_task_title, updated_task_description, execution_patch, personal_cues_patch, task_modal_intake_patch, card_action, intake_phase, session_readiness_score, missing_intake_categories, user_requested_immediate_card, session_request, coach_task_notes. Main bubble Call A has NO proposed_workout_metadata key — outline is Phase B server-side. '
-      : 'Return ONLY a raw JSON object (no markdown, no code fences) with keys: reply_content, create_card, task_title, task_description, update_existing_task, updated_task_title, updated_task_description, proposed_workout_metadata, execution_patch, personal_cues_patch, task_modal_intake_patch, card_action, intake_phase, session_readiness_score, missing_intake_categories, user_requested_immediate_card, session_request, coach_task_notes. ') +
+      : 'Return ONLY a raw JSON object (no markdown, no code fences) with keys: reply_content, create_card, task_title, task_description, update_existing_task, updated_task_title, updated_task_description, proposed_workout_metadata, execution_patch, personal_cues_patch, task_modal_intake_patch, outline_draft_patch, card_action, intake_phase, session_readiness_score, missing_intake_categories, user_requested_immediate_card, session_request, coach_task_notes. ') +
     'You MUST respond in valid JSON matching the provided schema. Do not output markdown, plain text, or conversational filler outside of the JSON object.'
   );
 }
@@ -403,16 +417,19 @@ export function buildWorkoutOpenGreetingUserText(workoutJson: string): string {
 export function buildCurrentTaskContextBlock(
   title: string,
   description: string | null,
-  opts?: { rail?: boolean },
+  opts?: { rail?: boolean; outlineStructure?: boolean },
 ): string {
   const desc =
     typeof description === 'string' && description.trim()
       ? description.trim()
       : '(empty description)';
-  const isRail = opts?.rail === true;
-  const tail = isRail
-    ? 'STRUCTURAL EDITS (blocks): Set updated_task_description to null. Never narrate work_seconds, rest_seconds, or rounds in description — use format_params on each block only. LIVE CO-PILOT MODE (Task Modal rail). You are actively co-editing this task with the user. Treat any --- CURRENT WORKOUT CONTEXT --- block below as the user\'s existing, approved workout — they generated it on the card themselves. When they ask for additions, swaps, or rewrites (e.g. "add a finisher", "make block 3 heavier", "swap squats for hinges", "two exercises per Tabata block"): Set update_existing_task: true. Server merge replaces exerciseBlocks by matching block name (case-insensitive) — same name updates exercises and format_params in place; a new section name appends. Emit proposed_workout_metadata.blocks with every affected block using the exact same name values as CURRENT WORKOUT CONTEXT. Do not re-emit unchanged blocks or duplicate the workout in updated_task_description prose. For additive named sections (e.g. "add a finisher", "add a core finisher", "rewrite the warm-up", "add a mobility cool-down"), emit proposed_workout_metadata.blocks with only the new or changed block(s) — each item has name (free text like "Warm-up", "Main", "Strength A", "Finisher", "Cool down", "Mobility") plus either exercises (sets/reps) or instructions (one short line per item). Never put sets, reps, section lists, or block prescriptions in updated_task_description; use proposed_workout_metadata (blocks or exercises) for structural edits. Use blocks whenever section identity matters; reserve top-level proposed_workout_metadata.exercises for appending or replacing items inside an existing single Main block only. When emitting proposed_workout_metadata.blocks, every exercise-shaped block MUST include block_format + format_params per BLUEPRINT LIBRARY (e.g. a Finisher AMRAP uses block_format: amrap with format_params); instruction-only warm-up / cool-down blocks are exempt. Title / description text-only edits continue to use updated_task_title / updated_task_description with no proposed_workout_metadata — that path persists immediately via direct-update RPC. Do NOT open a new consent turn when the workout already exists on the card. Confirm what you did in reply_content only when update_existing_task is true AND proposed_workout_metadata.blocks is non-empty — the structured fields are the writes. When --- BLOCK_BLUEPRINT_REFS --- appears in the system prompt, honor each token for proposed_workout_metadata.blocks[] and combine with # exercise tags in the same user message. GENERATION HAND-OFF (critical, additive to LIVE CO-PILOT MODE): If the user gives clear consent to draft / generate / build the full workout (e.g. "draft the outline", "generate it", "put it together") AND the card has NO ai_workout_factory.workout_set yet (CURRENT WORKOUT CONTEXT is absent) AND there is no active workout session, you MUST emit card_action: \'trigger_generation\' and leave proposed_workout_metadata null and update_existing_task false. Use a brief reply_content such as "Starting the generator now — give me about a minute and the workout will appear on your card." Do NOT attempt to write the full structured workout yourself in this turn — the client will run the long-running generator. For incremental edits to a workout that already exists on the card (block_format / format_params blocks, swaps, finishers, etc.), continue using proposed_workout_metadata via the LIVE CO-PILOT MODE path.'
-    : 'PRE-DRAFT CONFIRMATION: Do not populate proposed_workout_metadata until the user has given clear affirmative consent to draft or revise this card (or user_requested_immediate_card). On a confirmation-only turn, set update_existing_task to false and proposed_workout_metadata to null. When they confirm, set update_existing_task to true and provide updated_task_title and/or updated_task_description. Provide a short revised description (max 3 sentences). If you are emitting proposed_workout_metadata.blocks, updated_task_description MUST be null. Never narrate sets, reps, or timing in the description. And/or proposed_workout_metadata with structured exercises (and workout_type, duration_min as appropriate). The user must finalize changes on the card — do not assume the database updates immediately.';
+  const outlineStructure = opts?.outlineStructure === true;
+  const isRail = !outlineStructure && opts?.rail === true;
+  const tail = outlineStructure
+    ? 'OUTLINE STRUCTURE CO-PILOT (Builder / Task Modal rail). The member is editing workout **structure** (block names, block_format, format_params) before Confirm structure and before a rich ai_workout_factory workout exists on the card. Treat --- CURRENT OUTLINE DRAFT --- as the only ground truth for block names and format_params — do not invent blocks. Do NOT use LIVE CO-PILOT MODE, proposed_workout_metadata, or --- CURRENT WORKOUT CONTEXT --- for structure in this phase. Set updated_task_description to null. When changing structure, emit outline_draft_patch (merge_by_name, matching revision, changed blocks only) — not prose-only block lists in reply_content alone.'
+    : isRail
+      ? 'STRUCTURAL EDITS (blocks): Set updated_task_description to null. Never narrate work_seconds, rest_seconds, or rounds in description — use format_params on each block only. LIVE CO-PILOT MODE (Task Modal rail). You are actively co-editing this task with the user. Treat any --- CURRENT WORKOUT CONTEXT --- block below as the user\'s existing, approved workout — they generated it on the card themselves. When they ask for additions, swaps, or rewrites (e.g. "add a finisher", "make block 3 heavier", "swap squats for hinges", "two exercises per Tabata block"): Set update_existing_task: true. Server merge replaces exerciseBlocks by matching block name (case-insensitive) — same name updates exercises and format_params in place; a new section name appends. Emit proposed_workout_metadata.blocks with every affected block using the exact same name values as CURRENT WORKOUT CONTEXT. Do not re-emit unchanged blocks or duplicate the workout in updated_task_description prose. For additive named sections (e.g. "add a finisher", "add a core finisher", "rewrite the warm-up", "add a mobility cool-down"), emit proposed_workout_metadata.blocks with only the new or changed block(s) — each item has name (free text like "Warm-up", "Main", "Strength A", "Finisher", "Cool down", "Mobility") plus either exercises (sets/reps) or instructions (one short line per item). Never put sets, reps, section lists, or block prescriptions in updated_task_description; use proposed_workout_metadata (blocks or exercises) for structural edits. Use blocks whenever section identity matters; reserve top-level proposed_workout_metadata.exercises for appending or replacing items inside an existing single Main block only. When emitting proposed_workout_metadata.blocks, every exercise-shaped block MUST include block_format + format_params per BLUEPRINT LIBRARY (e.g. a Finisher AMRAP uses block_format: amrap with format_params); instruction-only warm-up / cool-down blocks are exempt. Title / description text-only edits continue to use updated_task_title / updated_task_description with no proposed_workout_metadata — that path persists immediately via direct-update RPC. Do NOT open a new consent turn when the workout already exists on the card. Confirm what you did in reply_content only when update_existing_task is true AND proposed_workout_metadata.blocks is non-empty — the structured fields are the writes. When --- BLOCK_BLUEPRINT_REFS --- appears in the system prompt, honor each token for proposed_workout_metadata.blocks[] and combine with # exercise tags in the same user message. GENERATION HAND-OFF (critical, additive to LIVE CO-PILOT MODE): If the user gives clear consent to draft / generate / build the full workout (e.g. "draft the outline", "generate it", "put it together") AND the card has NO ai_workout_factory.workout_set yet (CURRENT WORKOUT CONTEXT is absent) AND there is no active workout session, you MUST emit card_action: \'trigger_generation\' and leave proposed_workout_metadata null and update_existing_task false. Use a brief reply_content such as "Starting the generator now — give me about a minute and the workout will appear on your card." Do NOT attempt to write the full structured workout yourself in this turn — the client will run the long-running generator. For incremental edits to a workout that already exists on the card (block_format / format_params blocks, swaps, finishers, etc.), continue using proposed_workout_metadata via the LIVE CO-PILOT MODE path.'
+      : 'PRE-DRAFT CONFIRMATION: Do not populate proposed_workout_metadata until the user has given clear affirmative consent to draft or revise this card (or user_requested_immediate_card). On a confirmation-only turn, set update_existing_task to false and proposed_workout_metadata to null. When they confirm, set update_existing_task to true and provide updated_task_title and/or updated_task_description. Provide a short revised description (max 3 sentences). If you are emitting proposed_workout_metadata.blocks, updated_task_description MUST be null. Never narrate sets, reps, or timing in the description. And/or proposed_workout_metadata with structured exercises (and workout_type, duration_min as appropriate). The user must finalize changes on the card — do not assume the database updates immediately.';
   return (
     '--- CURRENT TASK CONTEXT ---\n' +
     `You are discussing an existing task titled "${title.trim()}".\n` +
@@ -581,4 +598,94 @@ export function formatExerciseIndexMap(
   } catch {
     return null;
   }
+}
+
+/** Header for outline structure co-pilot (pre-factory, pre-confirm). */
+export const OUTLINE_CO_PILOT_MODE_HEADER = '--- OUTLINE CO-PILOT MODE ---';
+
+const OUTLINE_DRAFT_PATCH_ROUTING_EXAMPLES =
+  '\n--- OUTLINE DRAFT PATCH ROUTING EXAMPLES ---\n' +
+  'GOOD (user: add 15-minute AMRAP main with 4 exercises):\n' +
+  'outline_draft_patch: { "revision": <from CURRENT OUTLINE DRAFT>, "mode": "merge_by_name", "blocks": [{ "name": "Main AMRAP", "block_format": "amrap", "format_params": { "time_cap_minutes": 15 }, "exercises": [{ "name": "Station 1" }, { "name": "Station 2" }, { "name": "Station 3" }, { "name": "Station 4" }] }] }\n' +
+  'BAD (forbidden — timing and counts in name):\n' +
+  '"name": "Main Circuit 1 (AMRAP 15 min.) - 4 Exercises Each Block..."\n' +
+  'Put member constraints only in format_params and exercises[]; reply_content may explain, but JSON name must stay short.\n';
+
+/**
+ * System-prompt contract when the member is editing workout structure only (outline phase).
+ */
+export function buildOutlineCoPilotModeCoachBlock(): string {
+  return (
+    `${OUTLINE_CO_PILOT_MODE_HEADER}\n` +
+    'OUTLINE CO-PILOT MODE: The member is authoring **workout structure** (block names, block_format, format_params) before intake and before the AI workout factory runs. ' +
+    'Your job is to collaborate on structure — not to generate full exercise prescriptions, sets/reps tables, or ai_workout_factory output in this turn. ' +
+    'Do NOT emit proposed_workout_metadata on the task rail (no rich factory on this card yet). Do NOT emit coach_workout_outline in Call A JSON (outline is server-side Phase B or client draft sync). ' +
+    'Use surgical, specific language referencing block names and format_params from --- CURRENT OUTLINE DRAFT --- when present. ' +
+    'Encourage catalog structural tokens in chat (e.g. :main/emom/alternating, :finisher/tabata) matching the BLOCK BLUEPRINT LIBRARY. ' +
+    'This mode is distinct from LIVE CO-PILOT (rich workoutContext / factory blocks) and from TASK MODAL INTAKE (task_modal_intake_patch sliders). ' +
+    'For structural edits (add/rename/reorder blocks, change block_format or format_params), emit outline_draft_patch with mode merge_by_name and only the changed or new blocks by name. ' +
+    'outline_draft_patch.revision MUST equal the revision integer from --- CURRENT OUTLINE DRAFT ---. Set proposed_workout_metadata to null. ' +
+    'Use replace_all only when replacing the entire outline. Omit outline_draft_patch when you are only answering questions without changing structure. ' +
+    "CRITICAL FORMATTING RULE: When generating block names, keep them under 5 words. Do not put workout descriptions, constraints, or instructions inside the 'name' field. " +
+    OUTLINE_DRAFT_PATCH_ROUTING_EXAMPLES
+  );
+}
+
+export type ResolveOutlineDraftPromptPartsArgs = {
+  taskItemType: string | null;
+  taskMetadataForContext: unknown | null;
+  messageMetadata: unknown;
+  taskTitle?: string | null;
+};
+
+function resolveTaskItemTypeForOutlineCoPilot(
+  taskItemType: string | null,
+  taskMetadataForContext: unknown | null,
+): string | null {
+  const it = (taskItemType ?? '').trim().toLowerCase();
+  if (it === 'workout') return 'workout';
+  if (it) return it;
+  const outlineMeta = readCoachOutlineMetadata(taskMetadataForContext);
+  if (outlineMeta.outline?.length || outlineMeta.status !== 'empty') return 'workout';
+  return taskItemType;
+}
+
+export function resolveOutlineDraftPromptParts(args: ResolveOutlineDraftPromptPartsArgs): {
+  coPilotBlock: string | null;
+  draftBlock: string | null;
+} {
+  const it = (
+    resolveTaskItemTypeForOutlineCoPilot(args.taskItemType, args.taskMetadataForContext) ?? ''
+  )
+    .trim()
+    .toLowerCase();
+  if (it !== 'workout') return { coPilotBlock: null, draftBlock: null };
+
+  const outlineMeta = readCoachOutlineMetadata(args.taskMetadataForContext);
+  if (outlineMeta.hasFactory || outlineMeta.confirmedAt) {
+    return { coPilotBlock: null, draftBlock: null };
+  }
+
+  const coPilotBlock = buildOutlineCoPilotModeCoachBlock();
+  const fromMessage = readTaskModalOutlineDraftFromMessageMetadata(args.messageMetadata);
+  let draftBlock: string | null = null;
+  if (fromMessage) {
+    draftBlock = buildOutlineDraftContextBlock(fromMessage, args.taskTitle);
+  } else if (outlineMeta.outline?.length) {
+    draftBlock = buildOutlineDraftContextBlockFromStored({
+      outline: outlineMeta.outline,
+      status: outlineMeta.status,
+      revision: 0,
+      title: args.taskTitle,
+    });
+  }
+  return { coPilotBlock, draftBlock };
+}
+
+/** When true, suppress TASK MODAL INTAKE UI blocks in favor of outline co-pilot. */
+export function shouldSuppressTaskModalIntakeForOutlineCoPilot(
+  args: ResolveOutlineDraftPromptPartsArgs,
+): boolean {
+  const { coPilotBlock } = resolveOutlineDraftPromptParts(args);
+  return coPilotBlock != null;
 }

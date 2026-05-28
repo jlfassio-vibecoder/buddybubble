@@ -126,5 +126,16 @@ export async function runCoachOutlinePhaseBVertex(args: {
     );
   }
 
-  return processCoachOutlinePhaseBVertexOutput({ text, finishReason });
+  const phaseResult = processCoachOutlinePhaseBVertexOutput({ text, finishReason });
+  if (!phaseResult.ok) {
+    console.error(`${logPrefix} phase b vertex output failed`, {
+      error_kind: phaseResult.errorKind,
+      message: phaseResult.message,
+      drop_count: phaseResult.drops?.length ?? 0,
+      drops: phaseResult.drops ?? [],
+      finish_reason: finishReason,
+      response_text_chars: text?.length ?? 0,
+    });
+  }
+  return phaseResult;
 }

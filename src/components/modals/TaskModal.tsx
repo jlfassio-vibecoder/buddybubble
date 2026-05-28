@@ -9,6 +9,7 @@ import {
   useState,
   type UIEvent,
 } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { ListTree, X } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
 import { normalizeItemType } from '@/lib/item-types';
@@ -45,6 +46,8 @@ import {
 } from '@/components/modals/task-modal/TaskModalCommentsPanel';
 import { StandardTaskChatRail } from '@/components/chat/StandardTaskChatRail';
 import { isStandardTaskChatRailEnabled } from '@/lib/feature-flags/standardTaskChatRail';
+import { isWorkoutBuilderRouteEnabled } from '@/lib/feature-flags/workoutBuilderRoute';
+import { buildWorkoutBuilderUrl } from '@/lib/workout-builder/build-workout-builder-url';
 import { TaskModalEditorChrome } from '@/components/modals/task-modal/TaskModalEditorChrome';
 import { ClassEditor } from '@/components/modals/class-modal/ClassEditor';
 import { TaskModalSubtasksPanel } from '@/components/modals/task-modal/TaskModalSubtasksPanel';
@@ -101,12 +104,16 @@ import type {
   AgentEffectTelemetryEvent,
   CardActionEffectPayload,
   ExecutionPatchEffectPayload,
+  OutlineDraftAppliedEffectPayload,
 } from '@/components/chat/agent-effects/types';
 import type { TaskModalIntakePatch } from '@/lib/agents/coach/task-modal-intake-patch';
 import { BUDDY_ONBOARDING_SYSTEM_EVENT } from '@/lib/agents/buddy-sentinel';
 import { defaultSlugForItemType } from '@/lib/agents/defaultSlugForItemType';
 import { logAgentRoutingEvent } from '@/lib/agents/agentRoutingLogger';
 import { buildTaskModalOutgoingWorkoutContext } from '@/lib/agents/coach/task-modal-outgoing-workout-context';
+import { buildTaskModalOutlineDraftPayload } from '@/lib/agents/coach/build-outline-draft-context';
+import { readCoachOutlineMetadata } from '@/lib/agents/coach/coach-outline-metadata';
+import { normalizeOutlineDraft } from '@/lib/agents/coach/outline-editor-client';
 import {
   applyWorkoutPlayerExecutionPatchIfOpen,
   executionPatchFingerprint,
@@ -262,6 +269,9 @@ export function TaskModal({
   const taskCommentMedia = useTaskCommentMediaModal();
   const [embeddedTaskIdsFromThread, setEmbeddedTaskIdsFromThread] = useState<string[]>([]);
   const standardRailEnabled = isStandardTaskChatRailEnabled();
+  const workoutBuilderRouteEnabled = isWorkoutBuilderRouteEnabled();
+  const router = useRouter();
+  const pathname = usePathname();
   const isMdUp = !useIsNarrowBelowMd();
   const [composerPortalHost, setComposerPortalHost] = useState<HTMLDivElement | null>(null);
   /** Below `md`, which pane is visible when the workout split is open. */
@@ -297,6 +307,7 @@ export function TaskModal({
    */
   const createSessionIdRef = useRef<string | null>(null);
   const handledIntakePatchMessageIdsByTaskRef = useRef<Map<string, Set<string>>>(new Map());
+  const handledOutlineAppliedMessageIdsByTaskRef = useRef<Map<string, Set<string>>>(new Map());
   /** Survives StandardTaskChatRail remounts when workout split layout toggles (Phase 12.2). */
   const handledCardActionMessageIdsByTaskRef = useRef<Map<string, Set<string>>>(new Map());
   const handledExecutionPatchFingerprintByTaskRef = useRef<Map<string, Map<string, string>>>(
@@ -309,6 +320,7 @@ export function TaskModal({
     if (open) return;
     createSessionIdRef.current = null;
     handledIntakePatchMessageIdsByTaskRef.current.clear();
+    handledOutlineAppliedMessageIdsByTaskRef.current.clear();
     handledCardActionMessageIdsByTaskRef.current.clear();
     handledExecutionPatchFingerprintByTaskRef.current.clear();
     setWorkoutSplitEngaged(false);
@@ -909,6 +921,56 @@ export function TaskModal({
     saveCoreFields,
   });
 
+  const showStructureBuilderCta = Boolean(
+    workoutBuilderRouteEnabled &&
+    standardRailEnabled &&
+    isWorkoutItemType &&
+    taskId &&
+    canWrite &&
+    !workoutOutlineEditor.isOutlineConfirmed &&
+    !workoutOutlineEditor.hasFactory,
+  );
+
+  const handleOpenStructureBuilder = useCallback(() => {
+    if (!taskId) return;
+    router.push(
+      buildWorkoutBuilderUrl(workspaceId, taskId, {
+        return: pathname ?? undefined,
+        from: 'modal',
+      }),
+    );
+    onOpenChange(false);
+  }, [taskId, workspaceId, pathname, router, onOpenChange]);
+
+  const [outlineRevision, setOutlineRevision] = useState(1);
+  const outlineDraftFingerprintRef = useRef<string | null>(null);
+  const skipOutlineRevisionBumpRef = useRef(true);
+
+  useEffect(() => {
+    if (!open) {
+      setOutlineRevision(1);
+      outlineDraftFingerprintRef.current = null;
+      skipOutlineRevisionBumpRef.current = true;
+      return;
+    }
+    setOutlineRevision(1);
+    outlineDraftFingerprintRef.current = null;
+    skipOutlineRevisionBumpRef.current = true;
+  }, [open, taskId]);
+
+  useEffect(() => {
+    if (!open || !taskId || itemType !== 'workout') return;
+    const fp = JSON.stringify(workoutOutlineEditor.draftBlocks);
+    if (skipOutlineRevisionBumpRef.current) {
+      skipOutlineRevisionBumpRef.current = false;
+      outlineDraftFingerprintRef.current = fp;
+      return;
+    }
+    if (outlineDraftFingerprintRef.current === fp) return;
+    outlineDraftFingerprintRef.current = fp;
+    setOutlineRevision((r) => r + 1);
+  }, [open, taskId, itemType, workoutOutlineEditor.draftBlocks]);
+
   const handleModalHardDelete = useCallback(async () => {
     if (!taskId || !canWrite) return;
     await flushNow();
@@ -1321,12 +1383,38 @@ export function TaskModal({
       if (workoutContext) {
         payload.workoutContext = workoutContext as Json;
       }
+      const attachOutlineDraft =
+        itemType === 'workout' &&
+        taskId &&
+        canWrite &&
+        !showStructureBuilderCta &&
+        !workoutOutlineEditor.isOutlineConfirmed &&
+        !workoutOutlineEditor.hasFactory;
+      if (attachOutlineDraft) {
+        const { blocks, drops } = normalizeOutlineDraft(workoutOutlineEditor.draftBlocks);
+        const { status } = readCoachOutlineMetadata(metadata);
+        payload.task_modal_outline_draft = buildTaskModalOutlineDraftPayload({
+          revision: outlineRevision,
+          status,
+          confirmed: false,
+          blocks,
+          drops: drops.length > 0 ? drops : workoutOutlineEditor.validationDrops,
+        }) as unknown as Json;
+      }
       return payload;
     },
     [
       itemType,
       metadata,
       title,
+      taskId,
+      canWrite,
+      showStructureBuilderCta,
+      workoutOutlineEditor.draftBlocks,
+      workoutOutlineEditor.validationDrops,
+      workoutOutlineEditor.isOutlineConfirmed,
+      workoutOutlineEditor.hasFactory,
+      outlineRevision,
       workoutIntake.step,
       workoutIntake.readiness,
       workoutIntake.sleepQuality,
@@ -1334,6 +1422,34 @@ export function TaskModal({
       workoutIntake.targetIntensity,
       workoutIntake.sorenessArray,
     ],
+  );
+
+  const handleOutlineDraftApplied = useCallback(
+    (ctx: OutlineDraftAppliedEffectPayload) => {
+      if (!taskId || itemType !== 'workout') return;
+      const dedupeKey = createSessionIdRef.current
+        ? `create:${createSessionIdRef.current}`
+        : `existing:${ctx.taskId}`;
+      let set = handledOutlineAppliedMessageIdsByTaskRef.current.get(dedupeKey);
+      if (!set) {
+        set = new Set();
+        handledOutlineAppliedMessageIdsByTaskRef.current.set(dedupeKey, set);
+      }
+      if (set.has(ctx.messageId)) return;
+      set.add(ctx.messageId);
+
+      const applied = workoutOutlineEditor.applyCoachPatch({
+        revision: ctx.applied.revision,
+        localRevision: outlineRevision,
+        blocks: ctx.applied.blocks,
+        drops: ctx.applied.drops,
+        onRevisionSynced: setOutlineRevision,
+      });
+      if (!applied && !ctx.applied.blocks?.length) {
+        void loadTask(taskId, { silent: true });
+      }
+    },
+    [taskId, itemType, outlineRevision, workoutOutlineEditor, loadTask],
   );
 
   const handleTaskModalIntakePatch = useCallback(
@@ -1373,8 +1489,13 @@ export function TaskModal({
       onGenerateWorkoutFromIntake: handleGenerateWorkoutFromIntake,
       aiWorkoutGenerating,
       workoutIntakeState: itemType === 'workout' && canWrite ? workoutIntake : null,
-      workoutOutlineEditor:
-        itemType === 'workout' && canWrite && taskId ? workoutOutlineEditor : null,
+      workoutOutlineEditor: showStructureBuilderCta
+        ? null
+        : itemType === 'workout' && canWrite && taskId
+          ? workoutOutlineEditor
+          : null,
+      showStructureBuilderCta,
+      onOpenStructureBuilder: showStructureBuilderCta ? handleOpenStructureBuilder : undefined,
       intakeDisabledReason:
         itemType === 'workout' && canWrite && taskId && !workoutOutlineEditor.canRunIntake
           ? 'Confirm workout structure above before completing intake and generating.'
@@ -1524,6 +1645,8 @@ export function TaskModal({
       handleModalHardDelete,
       workoutIntake,
       workoutOutlineEditor,
+      showStructureBuilderCta,
+      handleOpenStructureBuilder,
       metadata,
     ],
   );
@@ -1876,6 +1999,7 @@ export function TaskModal({
                             onThreadViewChange={setCommentsInThreadView}
                             onExecutionPatch={handleExecutionPatch}
                             onTaskModalIntakePatch={handleTaskModalIntakePatch}
+                            onOutlineDraftApplied={handleOutlineDraftApplied}
                             onCardAction={handleCardAction}
                             onEffectTelemetry={handleAgentEffectTelemetry}
                             onEmbeddedTaskIdsChange={setEmbeddedTaskIdsFromThread}
@@ -2025,6 +2149,7 @@ export function TaskModal({
                                   onThreadViewChange={setCommentsInThreadView}
                                   onExecutionPatch={handleExecutionPatch}
                                   onTaskModalIntakePatch={handleTaskModalIntakePatch}
+                                  onOutlineDraftApplied={handleOutlineDraftApplied}
                                   onCardAction={handleCardAction}
                                   onEffectTelemetry={handleAgentEffectTelemetry}
                                   onEmbeddedTaskIdsChange={setEmbeddedTaskIdsFromThread}
@@ -2123,6 +2248,7 @@ export function TaskModal({
                                         onThreadViewChange={setCommentsInThreadView}
                                         onExecutionPatch={handleExecutionPatch}
                                         onTaskModalIntakePatch={handleTaskModalIntakePatch}
+                                        onOutlineDraftApplied={handleOutlineDraftApplied}
                                         onCardAction={handleCardAction}
                                         onEffectTelemetry={handleAgentEffectTelemetry}
                                         onEmbeddedTaskIdsChange={setEmbeddedTaskIdsFromThread}

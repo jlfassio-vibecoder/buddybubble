@@ -8,10 +8,12 @@ import { parseExecutionPatchFromMetadata, type ExecutionPatch } from '@/types/ex
 import { executionPatchFingerprint } from '@/lib/workout-player-execution-patch-bridge';
 import { parseTaskModalIntakePatchFromMetadata } from '@/lib/agents/coach/task-modal-intake-patch';
 import { parseCardActionFromMetadata } from '@/components/chat/agent-effects/parse-card-action';
+import { parseOutlineDraftAppliedFromMetadata } from '@/components/chat/agent-effects/parse-outline-draft-applied';
 import type {
   AgentEffectTelemetryEvent,
   CardActionEffectPayload,
   ExecutionPatchEffectPayload,
+  OutlineDraftAppliedEffectPayload,
   TaskModalIntakePatchEffectPayload,
 } from '@/components/chat/agent-effects/types';
 
@@ -23,6 +25,7 @@ export type UseAgentEffectSweepArgs = {
   onExecutionPatch?: (ctx: ExecutionPatchEffectPayload) => void;
   onTaskModalIntakePatch?: (ctx: TaskModalIntakePatchEffectPayload) => void;
   onCardAction?: (ctx: CardActionEffectPayload) => void;
+  onOutlineDraftApplied?: (ctx: OutlineDraftAppliedEffectPayload) => void;
   onEffectTelemetry?: (event: AgentEffectTelemetryEvent) => void;
 };
 
@@ -45,6 +48,7 @@ export function useAgentEffectSweep({
   onExecutionPatch,
   onTaskModalIntakePatch,
   onCardAction,
+  onOutlineDraftApplied,
   onEffectTelemetry,
 }: UseAgentEffectSweepArgs): void {
   const onExecutionPatchRef = useRef(onExecutionPatch);
@@ -53,6 +57,8 @@ export function useAgentEffectSweep({
   onTaskModalIntakePatchRef.current = onTaskModalIntakePatch;
   const onCardActionRef = useRef(onCardAction);
   onCardActionRef.current = onCardAction;
+  const onOutlineDraftAppliedRef = useRef(onOutlineDraftApplied);
+  onOutlineDraftAppliedRef.current = onOutlineDraftApplied;
   const onEffectTelemetryRef = useRef(onEffectTelemetry);
   onEffectTelemetryRef.current = onEffectTelemetry;
 
@@ -69,7 +75,8 @@ export function useAgentEffectSweep({
     const onEx = onExecutionPatchRef.current;
     const onIntake = onTaskModalIntakePatchRef.current;
     const onCard = onCardActionRef.current;
-    if (!onEx && !onIntake && !onCard) return;
+    const onOutline = onOutlineDraftAppliedRef.current;
+    if (!onEx && !onIntake && !onCard && !onOutline) return;
     if (!taskId.trim()) return;
     if (isLoading || messages.length === 0) return;
 
@@ -79,6 +86,7 @@ export function useAgentEffectSweep({
 
     const coachRows = messages.filter((m) => m.user_id === coachAuthUserId && Boolean(m.id));
     const intakeHandledThisRun = new Set<string>();
+    const outlineHandledThisRun = new Set<string>();
 
     for (const row of coachRows) {
       const id = row.id;
@@ -130,25 +138,51 @@ export function useAgentEffectSweep({
 
       if (onIntake) {
         emit?.({ kind: 'effect.scanned', effect: 'task_modal_intake_patch', messageId: id });
-        if (intakeHandledThisRun.has(id)) continue;
-        const meta = row.metadata;
-        const rawIntake =
-          meta != null && typeof meta === 'object' && !Array.isArray(meta)
-            ? (meta as { task_modal_intake_patch?: unknown }).task_modal_intake_patch
-            : undefined;
-        const intakePatch = parseTaskModalIntakePatchFromMetadata(rawIntake);
-        if (!intakePatch) {
-          intakeHandledThisRun.add(id);
-          emit?.({
-            kind: 'effect.parse_dropped',
-            effect: 'task_modal_intake_patch',
-            messageId: id,
-            reason: rawIntake === undefined ? 'missing' : 'invalid',
-          });
-        } else {
-          onIntake({ ...baseCtx, patch: intakePatch });
-          intakeHandledThisRun.add(id);
-          emit?.({ kind: 'effect.applied', effect: 'task_modal_intake_patch', messageId: id });
+        if (!intakeHandledThisRun.has(id)) {
+          const meta = row.metadata;
+          const rawIntake =
+            meta != null && typeof meta === 'object' && !Array.isArray(meta)
+              ? (meta as { task_modal_intake_patch?: unknown }).task_modal_intake_patch
+              : undefined;
+          const intakePatch = parseTaskModalIntakePatchFromMetadata(rawIntake);
+          if (!intakePatch) {
+            intakeHandledThisRun.add(id);
+            emit?.({
+              kind: 'effect.parse_dropped',
+              effect: 'task_modal_intake_patch',
+              messageId: id,
+              reason: rawIntake === undefined ? 'missing' : 'invalid',
+            });
+          } else {
+            onIntake({ ...baseCtx, patch: intakePatch });
+            intakeHandledThisRun.add(id);
+            emit?.({ kind: 'effect.applied', effect: 'task_modal_intake_patch', messageId: id });
+          }
+        }
+      }
+
+      if (onOutline) {
+        emit?.({ kind: 'effect.scanned', effect: 'outline_draft_applied', messageId: id });
+        if (!outlineHandledThisRun.has(id)) {
+          const meta = row.metadata;
+          const rawApplied =
+            meta != null && typeof meta === 'object' && !Array.isArray(meta)
+              ? (meta as { outline_draft_applied?: unknown }).outline_draft_applied
+              : undefined;
+          const applied = parseOutlineDraftAppliedFromMetadata(rawApplied);
+          if (!applied) {
+            outlineHandledThisRun.add(id);
+            emit?.({
+              kind: 'effect.parse_dropped',
+              effect: 'outline_draft_applied',
+              messageId: id,
+              reason: rawApplied === undefined ? 'missing' : 'invalid',
+            });
+          } else {
+            onOutline({ ...baseCtx, applied });
+            outlineHandledThisRun.add(id);
+            emit?.({ kind: 'effect.applied', effect: 'outline_draft_applied', messageId: id });
+          }
         }
       }
 
@@ -162,7 +196,9 @@ export function useAgentEffectSweep({
               : undefined;
           const action = parseCardActionFromMetadata(rawAction);
           if (!action) {
-            handledCardActionMessageIdsRef.current.add(id);
+            if (rawAction !== undefined) {
+              handledCardActionMessageIdsRef.current.add(id);
+            }
             emit?.({
               kind: 'effect.parse_dropped',
               effect: 'card_action',

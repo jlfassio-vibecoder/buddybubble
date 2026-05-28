@@ -41,7 +41,10 @@ export type BlockShapeDropReason =
   | 'clusters_missing_params'
   | 'drop_sets_missing_params'
   | 'json_parse_failed'
-  | 'missing_blocks';
+  | 'missing_blocks'
+  | 'invalid_revision'
+  | 'block_name_too_verbose'
+  | 'block_name_clamped';
 
 export type BlockShapeDrop = {
   field: string;

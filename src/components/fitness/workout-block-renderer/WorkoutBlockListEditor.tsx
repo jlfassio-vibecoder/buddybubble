@@ -1,15 +1,26 @@
 'use client';
 
+import { canRemoveExerciseFromBlock } from '@/lib/agents/coach/outline-editor-client';
+import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 import { WorkoutBlockHeader } from '@/components/fitness/workout-block-renderer/WorkoutBlockHeader';
 import { WorkoutBlockExerciseEditRow } from '@/components/fitness/workout-block-renderer/WorkoutBlockExerciseEditRow';
 import { WorkoutInstructionBlockEdit } from '@/components/fitness/workout-block-renderer/WorkoutInstructionBlockEdit';
 import {
   blockStationLabel,
   blockUsesGroupedLayout,
+  removeExerciseFromBlock,
   updateBlock,
   updateExerciseInBlock,
   type WorkoutBlockListEditorProps,
 } from '@/components/fitness/workout-block-renderer/workout-block-editor-types';
+
+function blockViewForRemoveGuard(block: WorkoutSessionBlockView): Record<string, unknown> {
+  return {
+    block_format: block.blockFormat,
+    format_params: block.formatParams,
+    exercises: block.exercises ?? [],
+  };
+}
 
 const SECTION_LABEL = {
   warmup: 'Warm-up',
@@ -70,6 +81,8 @@ export function WorkoutBlockListEditor({
         const exercises = block.exercises ?? [];
         const grouped = blockUsesGroupedLayout(block.blockFormat, exercises.length);
 
+        const allowRemove = canWrite && canRemoveExerciseFromBlock(blockViewForRemoveGuard(block));
+
         const rows = exercises.map((ex, ei) => (
           <WorkoutBlockExerciseEditRow
             key={ex.id ?? `${block.id}-ex-${ei}`}
@@ -79,6 +92,11 @@ export function WorkoutBlockListEditor({
             idPrefix={`${idPrefix}-${block.id}`}
             exerciseIndex={ei}
             onChange={(patch) => onChange(updateExerciseInBlock(blocks, block.id, ei, patch))}
+            onRemove={
+              allowRemove
+                ? () => onChange(removeExerciseFromBlock(blocks, block.id, ei))
+                : undefined
+            }
           />
         ));
 

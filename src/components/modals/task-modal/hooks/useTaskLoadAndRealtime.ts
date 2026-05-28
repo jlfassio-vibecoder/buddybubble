@@ -19,6 +19,8 @@ export type UseTaskLoadAndRealtimeParams = {
   setError: (message: string | null) => void;
   /** Invoked when the `tasks` row is deleted while the modal is open (e.g. hard delete elsewhere). */
   onTaskRowDeleted?: () => void;
+  /** Realtime channel prefix (default `task-modal`). Use e.g. `workout-builder` on the builder route. */
+  realtimeChannelPrefix?: string;
 };
 
 type LoadTaskOptions = {
@@ -37,6 +39,7 @@ export function useTaskLoadAndRealtime({
   setLoading,
   setError,
   onTaskRowDeleted,
+  realtimeChannelPrefix = 'task-modal',
 }: UseTaskLoadAndRealtimeParams): {
   loadTask: (id: string, options?: LoadTaskOptions) => Promise<TaskRow | null>;
 } {
@@ -99,7 +102,7 @@ export function useTaskLoadAndRealtime({
     if (!open || !taskId) return;
     const supabase = createClient();
     const channel = supabase
-      .channel(`task-modal:${taskId}`)
+      .channel(`${realtimeChannelPrefix}:${taskId}`)
       .on(
         'postgres_changes',
         {
@@ -130,7 +133,7 @@ export function useTaskLoadAndRealtime({
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [open, taskId, loadTask, onTaskRowDeleted]);
+  }, [open, taskId, loadTask, onTaskRowDeleted, realtimeChannelPrefix]);
 
   return { loadTask };
 }

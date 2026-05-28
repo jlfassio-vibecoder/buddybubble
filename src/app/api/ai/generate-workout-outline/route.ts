@@ -210,6 +210,8 @@ export async function POST(req: Request) {
       console.error(`${logPrefix} phase b failed:`, phaseResult.message, {
         task_id: taskId,
         error_kind: phaseResult.errorKind,
+        drop_count: phaseResult.drops?.length ?? 0,
+        drops: phaseResult.drops ?? [],
       });
       nextMeta = mergeCoachOutlineMetadataPatch(task.metadata, {
         status: 'needs_structure',

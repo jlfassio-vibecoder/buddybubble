@@ -9,9 +9,12 @@ import {
   buildCurrentTaskContextBlock,
   buildTaskModalIntakeUiCoachBlock,
   buildTaskModalLiveStateBlock,
+  buildOutlineCoPilotModeCoachBlock,
   formatExerciseIndexMap,
   isCoachRailSurfaceFromMessageMetadata,
   readTaskModalLiveStateFromMessageMetadata,
+  resolveOutlineDraftPromptParts,
+  shouldSuppressTaskModalIntakeForOutlineCoPilot,
   taskMetadataLooksWorkoutShaped,
 } from './prompts';
 
@@ -167,7 +170,9 @@ describe('buildBaseCoachPrompt', () => {
   });
 
   it('names card_action in the JSON keys list', () => {
-    expect(prompt).toContain('task_modal_intake_patch, card_action, intake_phase');
+    expect(prompt).toContain(
+      'task_modal_intake_patch, outline_draft_patch, card_action, intake_phase',
+    );
   });
 
   it('contains flat-card parametric refusal sentence once', () => {
@@ -366,5 +371,110 @@ describe('buildTaskModalLiveStateBlock', () => {
     expect(text).toContain('duration_minutes: "45"');
     expect(text).toContain('target_intensity: "High/HIIT"');
     expect(text).toContain('"None"');
+  });
+});
+
+describe('resolveOutlineDraftPromptParts', () => {
+  it('returns co-pilot and draft blocks for unconfirmed workout without factory', () => {
+    const parts = resolveOutlineDraftPromptParts({
+      taskItemType: 'workout',
+      taskMetadataForContext: {
+        coach_workout_outline: [
+          { name: 'Main', block_format: 'emom', format_params: { interval_seconds: 60 } },
+        ],
+      },
+      messageMetadata: {
+        task_modal_outline_draft: {
+          v: 1,
+          revision: 2,
+          status: 'ready',
+          confirmed: false,
+          blocks: [{ name: 'Live Block', block_format: 'amrap' }],
+        },
+      },
+      taskTitle: 'Test',
+    });
+    expect(parts.coPilotBlock).toContain('OUTLINE CO-PILOT MODE');
+    expect(parts.draftBlock).toContain('Live Block');
+    expect(parts.draftBlock).not.toContain('Main');
+  });
+
+  it('returns null when outline is confirmed', () => {
+    const parts = resolveOutlineDraftPromptParts({
+      taskItemType: 'workout',
+      taskMetadataForContext: {
+        coach_outline_confirmed_at: '2026-01-01T00:00:00.000Z',
+        coach_workout_outline: [{ name: 'X' }],
+      },
+      messageMetadata: {},
+    });
+    expect(parts.coPilotBlock).toBeNull();
+    expect(parts.draftBlock).toBeNull();
+  });
+
+  it('returns null when rich factory exists', () => {
+    const parts = resolveOutlineDraftPromptParts({
+      taskItemType: 'workout',
+      taskMetadataForContext: {
+        ai_workout_factory: {
+          workout_set: { workouts: [{ name: 'Session', exerciseBlocks: [] }] },
+        },
+      },
+      messageMetadata: {},
+    });
+    expect(parts.coPilotBlock).toBeNull();
+  });
+
+  it('keeps co-pilot when ai_workout_factory shell exists without workout_set', () => {
+    const parts = resolveOutlineDraftPromptParts({
+      taskItemType: 'workout',
+      taskMetadataForContext: { ai_workout_factory: { version: 1 } },
+      messageMetadata: {
+        task_modal_outline_draft: {
+          v: 1,
+          revision: 1,
+          status: 'ready',
+          confirmed: false,
+          blocks: [{ name: 'Warm-up', instructions: ['Row'] }],
+        },
+      },
+    });
+    expect(parts.coPilotBlock).toContain('OUTLINE CO-PILOT MODE');
+    expect(parts.draftBlock).toContain('Warm-up');
+  });
+
+  it('infers workout item_type from outline metadata when item_type is null', () => {
+    const parts = resolveOutlineDraftPromptParts({
+      taskItemType: null,
+      taskMetadataForContext: {
+        coach_workout_outline: [{ name: 'Main', block_format: 'amrap' }],
+        coach_outline_status: 'ready',
+      },
+      messageMetadata: {},
+    });
+    expect(parts.coPilotBlock).not.toBeNull();
+  });
+
+  it('shouldSuppressTaskModalIntakeForOutlineCoPilot when outline co-pilot active', () => {
+    expect(
+      shouldSuppressTaskModalIntakeForOutlineCoPilot({
+        taskItemType: 'workout',
+        taskMetadataForContext: {},
+        messageMetadata: {},
+      }),
+    ).toBe(true);
+  });
+});
+
+describe('buildOutlineCoPilotModeCoachBlock', () => {
+  it('forbids proposed_workout_metadata on rail', () => {
+    const text = buildOutlineCoPilotModeCoachBlock();
+    expect(text).toContain('Do NOT emit proposed_workout_metadata');
+    expect(text).toContain('CURRENT OUTLINE DRAFT');
+    expect(text).toContain('CRITICAL FORMATTING RULE');
+    expect(text).toContain('under 5 words');
+    expect(text).toContain('OUTLINE DRAFT PATCH ROUTING EXAMPLES');
+    expect(text).toContain('time_cap_minutes');
+    expect(text).toContain('Main Circuit 1 (AMRAP 15 min.)');
   });
 });

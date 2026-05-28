@@ -36,6 +36,7 @@ export { WorkoutInstructionBlockEdit } from './WorkoutInstructionBlockEdit';
 export {
   blockStationLabel,
   blockUsesGroupedLayout,
+  removeExerciseFromBlock,
   updateBlock,
   updateExerciseInBlock,
 } from './workout-block-editor-types';

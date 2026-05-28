@@ -33,6 +33,20 @@ describe('preflightOutlineBlocks', () => {
     expect(blocks).toHaveLength(0);
     expect(drops.length).toBeGreaterThan(0);
   });
+
+  it('accepts circuit outline with single Phase B exercise placeholder', () => {
+    const { blocks, drops } = preflightOutlineBlocks([
+      {
+        name: 'Main Circuit',
+        block_format: 'circuit',
+        format_params: { rounds: 3 },
+        exercises: [{ name: 'Goblet Squat' }],
+      },
+    ]);
+    expect(drops).toEqual([]);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.exercises).toHaveLength(3);
+  });
 });
 
 describe('hydrateAndValidateOutlineBlocks', () => {

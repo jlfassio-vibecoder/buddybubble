@@ -3,7 +3,11 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { useState } from 'react';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import { applyBlockEditsToMetadata } from '@/lib/workout-factory/sync-workout-metadata';
-import { richMetadataWithBlockFormat } from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
+import {
+  richAlternatingEmomMetadata,
+  richMetadataWithBlockFormat,
+} from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
+import { removeExerciseFromBlock } from './workout-block-editor-types';
 import { WorkoutBlockListEditor } from './WorkoutBlockListEditor';
 
 function ControlledEditor({
@@ -117,6 +121,55 @@ describe('WorkoutBlockListEditor', () => {
     const next = onChange.mock.calls.at(-1)![0];
     const finNext = next.find((b: { id: string }) => b.id === finisher.id)!;
     expect(finNext.instructions).toEqual(['90s hollow hold']);
+  });
+
+  it('removeExerciseFromBlock drops the exercise at the given index', () => {
+    const meta = richAlternatingEmomMetadata({
+      totalRounds: 12,
+      cycle: [[0], [1], [2]],
+    });
+    const vm = buildWorkoutSessionViewModel(meta);
+    const main = vm.blocks.find((b) => b.section === 'main')!;
+    expect(main.exercises.length).toBe(3);
+
+    const next = removeExerciseFromBlock(vm.blocks, main.id, 1);
+    const mainNext = next.find((b) => b.id === main.id)!;
+    expect(mainNext.exercises.length).toBe(2);
+    expect(mainNext.exercises.map((e) => e.exerciseName)).toEqual(['Deadlift', 'Air Squat']);
+  });
+
+  it('removes an exercise via trash control and reduces block exercise count', () => {
+    const meta = richAlternatingEmomMetadata({
+      totalRounds: 12,
+      cycle: [[0], [1], [2]],
+    });
+    const vm = buildWorkoutSessionViewModel(meta);
+    const main = vm.blocks.find((b) => b.section === 'main')!;
+    const onChange = vi.fn();
+
+    render(
+      <WorkoutBlockListEditor
+        blocks={vm.blocks}
+        canWrite
+        workoutUnitSystem="metric"
+        onChange={onChange}
+        idPrefix="emom"
+      />,
+    );
+
+    const mainSection = screen.getByTestId(`editor-main-block-${main.id}`);
+    const removeBtn = within(mainSection).getByRole('button', {
+      name: /Remove exercise: Push-up/i,
+    });
+    fireEvent.click(removeBtn);
+
+    expect(onChange).toHaveBeenCalled();
+    const next = onChange.mock.calls.at(-1)![0];
+    const mainNext = next.find((b: { id: string }) => b.id === main.id)!;
+    expect(mainNext.exercises.length).toBe(2);
+    expect(
+      mainNext.exercises.some((e: { exerciseName: string }) => e.exerciseName === 'Push-up'),
+    ).toBe(false);
   });
 
   it('round-trips editor onChange through applyBlockEditsToMetadata', () => {

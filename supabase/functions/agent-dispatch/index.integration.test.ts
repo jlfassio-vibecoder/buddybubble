@@ -568,6 +568,8 @@ integrationTest(
           coachTaskResolution: {
             taskId: TEST_COACH_TARGET_TASK_ID,
             metadata: {
+              // Outline confirmed → outline co-pilot inactive; flat exercise merge still applies.
+              coach_outline_confirmed_at: '2026-01-01T00:00:00.000Z',
               workout_type: 'AMRAP',
               duration_min: 45,
               exercises: [{ name: 'Goblet Squat' }, { name: 'Push Press' }],
@@ -575,9 +577,9 @@ integrationTest(
             item_type: 'workout',
           },
           // Phase 12 (Phase B): flat workout-shaped task metadata is no longer
-          // eligible as `task_metadata` source. The resolver falls back to history,
-          // which is exactly what we want to exercise here — the auto-apply merge
-          // still operates on the task row directly (not on the resolver result),
+          // eligible as `task_metadata` workout-context source. The resolver falls back
+          // to history, which is exactly what we want to exercise here — the auto-apply
+          // merge still operates on the task row directly (not on the resolver result),
           // so the assertions on the RPC args below remain unchanged.
           rootHistoryRows: [{ metadata: { workoutContext: { partial: true } } }],
         },

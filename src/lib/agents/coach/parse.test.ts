@@ -28,6 +28,7 @@ import {
   parseCoachOutlineOnlyBlocksFromText,
   parseProposedWorkoutMetadata,
   parseProposedWorkoutMetadataWithDrops,
+  parseOutlineDraftPatchFromGemini,
   parseSessionReadinessScore,
   stripMarkdownCodeFences,
 } from './parse';
@@ -1201,6 +1202,22 @@ describe('parseCoachJson', () => {
     expect(drops).toEqual([]);
   });
 
+  it('parseCoachWorkoutOutlineWithDrops pads circuit Phase B placeholder to three exercises', () => {
+    const { outline, drops } = parseCoachWorkoutOutlineWithDrops({
+      coach_workout_outline: [
+        {
+          name: 'Main Circuit',
+          block_format: 'circuit',
+          format_params: { rounds: 3 },
+          exercises: [{ name: 'Goblet Squat' }],
+        },
+      ],
+    });
+    expect(drops).toEqual([]);
+    expect(outline).toHaveLength(1);
+    expect(outline![0].exercises).toHaveLength(3);
+  });
+
   it('parseCoachOutlineOnlyBlocksFromText reads Phase B blocks wrapper', () => {
     const { outline, drops } = parseCoachOutlineOnlyBlocksFromText(
       JSON.stringify({
@@ -1280,5 +1297,55 @@ describe('parseCoachJson', () => {
     expect(out.task_modal_intake_patch).toEqual({ readiness: 10, sleep_quality: 4 });
     expect(out.task_modal_intake_dropped.some((d) => d.reason === 'unknown_key')).toBe(true);
     expect(out.task_modal_intake_dropped.some((d) => d.reason === 'clamped')).toBe(true);
+  });
+});
+
+describe('parseOutlineDraftPatchFromGemini', () => {
+  it('parses valid outline_draft_patch', () => {
+    const { patch, drops } = parseOutlineDraftPatchFromGemini({
+      revision: 2,
+      mode: 'merge_by_name',
+      blocks: [{ name: 'Main', block_format: 'amrap', format_params: { time_cap_minutes: 10 } }],
+    });
+    expect(patch?.revision).toBe(2);
+    expect(patch?.mode).toBe('merge_by_name');
+    expect(patch?.blocks[0]?.name).toBe('Main');
+    expect(drops).toEqual([]);
+  });
+
+  it('returns null when revision missing', () => {
+    const { patch } = parseOutlineDraftPatchFromGemini({
+      blocks: [{ name: 'X' }],
+    });
+    expect(patch).toBeNull();
+  });
+
+  it('drops verbose block names and preserves routing in exercises/format_params', () => {
+    const { patch, drops } = parseOutlineDraftPatchFromGemini({
+      revision: 1,
+      mode: 'merge_by_name',
+      blocks: [
+        {
+          name: 'Main Circuit 1 (AMRAP 15 min.) - 4 Exercises Each Block',
+          block_format: 'amrap',
+          format_params: { time_cap_minutes: 15 },
+        },
+        {
+          name: 'Main AMRAP',
+          block_format: 'amrap',
+          format_params: { time_cap_minutes: 15 },
+          exercises: [
+            { name: 'Station 1' },
+            { name: 'Station 2' },
+            { name: 'Station 3' },
+            { name: 'Station 4' },
+          ],
+        },
+      ],
+    });
+    expect(patch?.blocks).toHaveLength(1);
+    expect(patch?.blocks[0]?.name).toBe('Main AMRAP');
+    expect((patch?.blocks[0]?.exercises as { name: string }[] | undefined)?.length).toBe(4);
+    expect(drops.some((d) => d.reason === 'block_name_too_verbose')).toBe(true);
   });
 });
