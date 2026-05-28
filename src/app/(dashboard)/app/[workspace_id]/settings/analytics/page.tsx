@@ -11,6 +11,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@utils/supabase/server';
 import { createServiceRoleClient } from '@/lib/supabase-service-role';
+import { isSystemAnalyticsRouteEnabled } from '@/lib/feature-flags/systemAnalyticsRoute';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { LeadCaptureSegmentCards } from '@/components/analytics/lead-capture-segment-cards';
 import { INVITE_JOURNEY_STEP_LABELS, type InviteJourneyStep } from '@/lib/analytics/invite-journey';
@@ -110,6 +111,8 @@ export default async function WorkspaceAnalyticsPage({
   const workspaceName = (ws as { name?: string } | null)?.name?.trim() || 'Socialspace';
   const categoryType = (ws as { category_type?: string } | null)?.category_type;
   const isGrowthLeadWorkspace = categoryType === 'business' || categoryType === 'fitness';
+
+  const showSystemAnalyticsLink = isSystemAnalyticsRouteEnabled() && role === 'owner';
 
   // ── Pull analytics data directly (same query as the API route) ───────────
   const db = createServiceRoleClient();
@@ -330,8 +333,20 @@ export default async function WorkspaceAnalyticsPage({
           >
             ← Back to socialspace
           </Link>
-          <h1 className="mt-4 text-2xl font-semibold tracking-tight text-foreground">Analytics</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{workspaceName} — last 30 days</p>
+          <div className="mt-4 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">Analytics</h1>
+              <p className="mt-1 text-sm text-muted-foreground">{workspaceName} — last 30 days</p>
+            </div>
+            {showSystemAnalyticsLink ? (
+              <Link
+                href={`/app/${workspace_id}/analytics/system`}
+                className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+              >
+                System Analytics →
+              </Link>
+            ) : null}
+          </div>
         </div>
 
         {/* Summary strip */}

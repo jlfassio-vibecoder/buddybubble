@@ -26,11 +26,14 @@ export type NavigationEventType = 'page_view' | 'session_start';
 /** Workspace-scoped invite / QR funnel (metadata.step = InviteJourneyStep). */
 export type InviteJourneyEventType = 'invite_journey_step';
 
+export type SystemAnalyticsEventType = 'system_analytics_recovery_clicked';
+
 export type EventType =
   | FunnelEventType
   | GateEventType
   | NavigationEventType
-  | InviteJourneyEventType;
+  | InviteJourneyEventType
+  | SystemAnalyticsEventType;
 
 // ── Feature name values (must match PremiumGate / dashboards) ─────────────────
 
@@ -41,7 +44,8 @@ export type FeatureName =
   | 'record_data'
   | 'custom_branding'
   | 'create_workspace'
-  | 'live_video';
+  | 'live_video'
+  | 'system_analytics';
 
 // ── Metadata shapes per event ─────────────────────────────────────────────────
 
@@ -96,6 +100,11 @@ export interface PageViewMeta {
 
 export interface SessionStartMeta {
   referrer?: string;
+}
+
+export interface SystemAnalyticsRecoveryClickedMeta {
+  task_id?: string | null;
+  request_id?: string | null;
 }
 
 // ── Canonical event payload (matches analytics_events row shape) ──────────────
