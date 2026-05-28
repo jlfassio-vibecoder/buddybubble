@@ -50,6 +50,12 @@ import { classifyError, extractGeminiText, generateContent } from '../_shared/ll
 import { agentCreateCardAndReply, agentUpdateTaskAndReply } from '../_shared/dispatch/rpc.ts';
 import { insertSafeReply } from '../_shared/dispatch/fallback.ts';
 import { computeLlmBudgetMs } from '../_shared/dispatch/llm-budget.ts';
+import {
+  recordWorkspaceAiEvent,
+  resolveTelemetrySurface,
+  resolveTelemetryTaskId,
+  vertexErrorKindToEventType,
+} from '../_shared/telemetry/workspace-ai-events.ts';
 import { COACH_THINKING_BUDGET } from '../agents/coach/config.ts';
 import type {
   AgentStrategy,
@@ -58,7 +64,11 @@ import type {
   PreflightAction,
   SupabaseClient,
 } from '../_shared/dispatch/types.ts';
-import type { VertexClassifiedError, VertexErrorKind } from '../_shared/llm/types.ts';
+import type {
+  VertexClassifiedError,
+  VertexErrorKind,
+  VertexGenerateResponse,
+} from '../_shared/llm/types.ts';
 
 import {
   COACH_OUTLINE_SELF_ATTESTATION_SAFE_REPLY,
@@ -304,6 +314,8 @@ export async function handleDispatchRequest(req: Request): Promise<Response> {
   }
 
   // Main path: build prompt + contents, call Vertex, parse, guard, persist.
+  let llmResponse: VertexGenerateResponse | undefined;
+  let llmStartedAt = 0;
   try {
     if (!ctx.extras) {
       (ctx as DispatchContext & { extras: Record<string, unknown> }).extras = {};
@@ -322,6 +334,7 @@ export async function handleDispatchRequest(req: Request): Promise<Response> {
       llm_timeout_configured_ms: env.LLM_TIMEOUT_MS,
     });
     const startedAt = Date.now();
+    llmStartedAt = startedAt;
     const generationOverrides = strategy.resolveGenerationConfig?.(ctx) ?? null;
     const responseSchema = strategy.resolveResponseSchema?.(ctx) ?? strategy.responseSchema;
     const response = await generateContent({
@@ -352,6 +365,7 @@ export async function handleDispatchRequest(req: Request): Promise<Response> {
       slug: strategy.slug,
       requestId,
     });
+    llmResponse = response;
     const finishReason = response.candidates?.[0]?.finishReason;
     const thoughtsTokenCount = response.usageMetadata?.thoughtsTokenCount;
     log('info', 'llm done', {
@@ -388,6 +402,27 @@ export async function handleDispatchRequest(req: Request): Promise<Response> {
 
     const persistResult = await (strategy as AgentStrategy<unknown>).persist(guarded, ctx);
     log('info', 'persisted', baseFields(requestId, record, strategy.slug, 'persisted'));
+
+    await recordWorkspaceAiEvent(supabase, {
+      workspaceId: ctx.workspaceId,
+      bubbleId: record.bubble_id,
+      taskId: resolveTelemetryTaskId(ctx),
+      actorUserId: record.user_id,
+      agentSlug: strategy.slug,
+      surface: resolveTelemetrySurface(ctx, strategy.slug),
+      eventType: 'success',
+      tokens: {
+        prompt: llmResponse.usageMetadata?.promptTokenCount ?? null,
+        completion: llmResponse.usageMetadata?.candidatesTokenCount ?? null,
+        thoughts: llmResponse.usageMetadata?.thoughtsTokenCount ?? null,
+      },
+      latencyMs: Date.now() - llmStartedAt,
+      model: strategy.model,
+      requestId,
+      metadata: {
+        finish_reason: finishReason ?? null,
+      },
+    });
 
     log('info', 'dispatch done', {
       ...baseFields(requestId, record, strategy.slug, 'done'),
@@ -432,6 +467,29 @@ export async function handleDispatchRequest(req: Request): Promise<Response> {
         http_status: status,
       });
     }
+
+    await recordWorkspaceAiEvent(supabase, {
+      workspaceId: ctx.workspaceId,
+      bubbleId: record.bubble_id,
+      taskId: resolveTelemetryTaskId(ctx),
+      actorUserId: record.user_id,
+      agentSlug: strategy.slug,
+      surface: resolveTelemetrySurface(ctx, strategy.slug),
+      eventType: vertexErrorKindToEventType(kind),
+      errorKind: kind,
+      tokens: {
+        prompt: llmResponse?.usageMetadata?.promptTokenCount ?? null,
+        completion: llmResponse?.usageMetadata?.candidatesTokenCount ?? null,
+        thoughts: llmResponse?.usageMetadata?.thoughtsTokenCount ?? null,
+      },
+      latencyMs: llmStartedAt > 0 ? Date.now() - llmStartedAt : null,
+      model: strategy.model,
+      requestId,
+      metadata: {
+        finish_reason: llmResponse?.candidates?.[0]?.finishReason ?? null,
+        ...(status !== undefined ? { http_status: status } : {}),
+      },
+    });
 
     if (isFallbackEligible(kind)) {
       const coachExtras =

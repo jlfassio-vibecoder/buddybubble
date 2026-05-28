@@ -101,6 +101,7 @@ describe('AgentStrategy contract (mirror)', () => {
       threadId: sampleMessage.id,
       history: sampleHistory,
       signal: new AbortController().signal,
+      workspaceId: null,
       extras: { smoke: { calls: 0 } },
     };
 

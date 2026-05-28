@@ -119,6 +119,30 @@ export function vertexHappy(parsedJson: unknown): VertexHandlerWithCount {
   };
 }
 
+/** Vertex response truncated by MAX_TOKENS (partial JSON body). */
+export function vertexMaxTokens(partialText = '{"reply_content":"partial'): VertexHandlerWithCount {
+  let calls = 0;
+  return {
+    count: () => calls,
+    handler: () => {
+      calls += 1;
+      return jsonResponse({
+        candidates: [
+          {
+            content: { parts: [{ text: partialText }] },
+            finishReason: 'MAX_TOKENS',
+          },
+        ],
+        usageMetadata: {
+          promptTokenCount: 512,
+          candidatesTokenCount: 2048,
+          thoughtsTokenCount: 128,
+        },
+      });
+    },
+  };
+}
+
 /** Returns canned Vertex responses in order (Call A, Call B, …). */
 export function vertexHappySequence(parsedJsonSequence: unknown[]): VertexHandlerWithCount {
   let calls = 0;

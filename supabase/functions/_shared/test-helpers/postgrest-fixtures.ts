@@ -9,6 +9,7 @@ export const TEST_SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
 export const TEST_AGENT_WEBHOOK_SECRET = 'test-agent-webhook-secret';
 
 export const TEST_BUBBLE_ID = '00000000-0000-4000-8000-000000000001';
+export const TEST_WORKSPACE_ID = '00000000-0000-4000-8000-000000000010';
 export const TEST_USER_ID = '00000000-0000-4000-8000-000000000002';
 export const TEST_AGENT_AUTHOR_ID = '00000000-0000-4000-8000-000000000003';
 
@@ -35,6 +36,8 @@ export type InstallPostgrestOptions = {
   boundSlugs?: AgentSlug[];
   rpcResponses?: Record<string, RpcResponse>;
   rootHistoryRows?: Array<Record<string, unknown>>;
+  /** When true, bubble workspace lookup returns null (telemetry skip path). */
+  bubbleWorkspaceIdNull?: boolean;
   /**
    * When set, mocks GET `/rest/v1/tasks` for `taskIdInBubble` (`select=id`) and
    * `loadCurrentTaskContext` (`select` includes `title`).
@@ -54,6 +57,9 @@ export type PostgrestFixtureHarness = {
   getRpcCalls: (name?: string) => RpcCall[];
   setRpcResponse: (name: string, response: RpcResponse) => void;
   resetRpcCalls: () => void;
+  workspaceAiEventInserts: Array<Record<string, unknown>>;
+  getWorkspaceAiEventInserts: () => Array<Record<string, unknown>>;
+  resetWorkspaceAiEventInserts: () => void;
 };
 
 const DEFAULT_RPC_RESPONSE: RpcResponse = {
@@ -202,6 +208,7 @@ export function installPostgrestRoutes(
   options: InstallPostgrestOptions = {},
 ): PostgrestFixtureHarness {
   const rpcCalls: RpcCall[] = [];
+  const workspaceAiEventInserts: Array<Record<string, unknown>> = [];
   const rpcResponses: Record<string, RpcResponse> = { ...(options.rpcResponses ?? {}) };
   const boundSlugs = options.boundSlugs ?? ['coach'];
   const rootHistoryRows = options.rootHistoryRows ?? [];
@@ -239,7 +246,22 @@ export function installPostgrestRoutes(
         call.method === 'GET' &&
         isRestPath(call.url, 'bubbles') &&
         selectParam(call.url).includes('workspace_id'),
-      () => jsonResponse({ workspace_id: null }),
+      () =>
+        jsonResponse({
+          workspace_id: options.bubbleWorkspaceIdNull ? null : TEST_WORKSPACE_ID,
+        }),
+    )
+    .route(
+      'postgrest:workspace-ai-events-insert',
+      (_req, call) => call.method === 'POST' && isRestPath(call.url, 'workspace_ai_events'),
+      (_req, call) => {
+        const parsed = call.bodyText
+          ? (JSON.parse(call.bodyText) as Record<string, unknown> | Record<string, unknown>[])
+          : null;
+        const rows = Array.isArray(parsed) ? parsed : parsed ? [parsed] : [];
+        workspaceAiEventInserts.push(...rows);
+        return jsonResponse(null, 201);
+      },
     )
     .route(
       'postgrest:loop-guard-agent-definitions',
@@ -318,6 +340,11 @@ export function installPostgrestRoutes(
     },
     resetRpcCalls: () => {
       rpcCalls.length = 0;
+    },
+    workspaceAiEventInserts,
+    getWorkspaceAiEventInserts: () => [...workspaceAiEventInserts],
+    resetWorkspaceAiEventInserts: () => {
+      workspaceAiEventInserts.length = 0;
     },
   };
 }

@@ -177,6 +177,11 @@ export interface DispatchContext {
   /** From COACH_AUTO_REGENERATE_AFTER_RAIL_MERGE env. */
   coachAutoRegenerateAfterRailMerge?: boolean;
   /**
+   * Resolved once from `bubbles.workspace_id` during `buildDispatchContext`.
+   * Used for telemetry and future workspace-scoped dispatch features.
+   */
+  workspaceId: string | null;
+  /**
    * Strategy-owned scratch space, request-scoped. Each strategy SHOULD namespace its
    * keys under its own slug (e.g. `extras.coach = { ... }`) so registrations cannot
    * collide. Phase 2 added this field; the dispatcher initializes it to `{}` per request

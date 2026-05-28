@@ -18,6 +18,7 @@ import {
   TEST_SUPABASE_SERVICE_ROLE_KEY,
   TEST_SUPABASE_URL,
   TEST_USER_ID,
+  TEST_WORKSPACE_ID,
   type InstallPostgrestOptions,
 } from '../_shared/test-helpers/postgrest-fixtures.ts';
 import {
@@ -32,6 +33,7 @@ import {
   vertexHappy,
   vertexHappyCapturingBody,
   vertexHappySequence,
+  vertexMaxTokens,
   vertexHanging,
   vertexMalformedJson,
   vertexShapeViolating,
@@ -1697,6 +1699,77 @@ integrationTest(
           (log) => log.msg === 'coach reply_content claims intake update without patch',
         );
         assertEquals(warn, undefined);
+      },
+    );
+  },
+);
+
+integrationTest('successful coach dispatch records workspace_ai_events success row', async () => {
+  await withHarness(
+    {
+      postgrest: {
+        coachTaskResolution: { taskId: TEST_COACH_TARGET_TASK_ID },
+      },
+      vertex: vertexHappy(COACH_REPLY),
+    },
+    async ({ rpc }) => {
+      const response = await handleDispatchRequest(
+        webhookRequest({
+          metadata: {
+            surface: 'standard_task_chat_rail',
+            default_agent_slug: 'coach',
+          },
+          targetTaskId: TEST_COACH_TARGET_TASK_ID,
+        }),
+      );
+      assertEquals(response.status, 200);
+      assertEquals((await readJson(response)).ok, true);
+
+      const rows = rpc.getWorkspaceAiEventInserts();
+      assertEquals(rows.length, 1);
+      assertEquals(rows[0].workspace_id, TEST_WORKSPACE_ID);
+      assertEquals(rows[0].event_type, 'success');
+      assertEquals(rows[0].agent_slug, 'coach');
+      assertEquals(rows[0].surface, 'standard_task_chat_rail');
+      assertEquals(rows[0].prompt_tokens, 101);
+      assertEquals(rows[0].completion_tokens, 22);
+    },
+  );
+});
+
+integrationTest(
+  'MAX_TOKENS Vertex response records workspace_ai_events error_truncated row',
+  async () => {
+    await withHarness(
+      {
+        postgrest: {
+          coachTaskResolution: { taskId: TEST_COACH_TARGET_TASK_ID },
+        },
+        vertex: vertexMaxTokens(),
+      },
+      async ({ rpc }) => {
+        const response = await handleDispatchRequest(
+          webhookRequest({
+            metadata: {
+              surface: 'standard_task_chat_rail',
+              default_agent_slug: 'coach',
+            },
+            targetTaskId: TEST_COACH_TARGET_TASK_ID,
+          }),
+        );
+        assertEquals(response.status, 200);
+        const body = await readJson(response);
+        assertEquals(body.ok, true);
+        assertEquals(body.fallback_reply_inserted, true);
+
+        const rows = rpc.getWorkspaceAiEventInserts();
+        assertEquals(rows.length, 1);
+        assertEquals(rows[0].workspace_id, TEST_WORKSPACE_ID);
+        assertEquals(rows[0].event_type, 'error_truncated');
+        assertEquals(rows[0].error_kind, 'truncated');
+        assertEquals(rows[0].prompt_tokens, 512);
+        assertEquals(rows[0].completion_tokens, 2048);
+        assertEquals(rows[0].thoughts_tokens, 128);
       },
     );
   },
