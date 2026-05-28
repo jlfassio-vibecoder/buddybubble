@@ -405,9 +405,9 @@ export async function handleDispatchRequest(req: Request): Promise<Response> {
 
     await recordWorkspaceAiEvent(supabase, {
       workspaceId: ctx.workspaceId,
-      bubbleId: record.bubble_id,
+      bubbleId: record?.bubble_id ?? null,
       taskId: resolveTelemetryTaskId(ctx),
-      actorUserId: record.user_id,
+      actorUserId: record?.user_id ?? null,
       agentSlug: strategy.slug,
       surface: resolveTelemetrySurface(ctx, strategy.slug),
       eventType: 'success',
@@ -470,9 +470,9 @@ export async function handleDispatchRequest(req: Request): Promise<Response> {
 
     await recordWorkspaceAiEvent(supabase, {
       workspaceId: ctx.workspaceId,
-      bubbleId: record.bubble_id,
+      bubbleId: record?.bubble_id ?? null,
       taskId: resolveTelemetryTaskId(ctx),
-      actorUserId: record.user_id,
+      actorUserId: record?.user_id ?? null,
       agentSlug: strategy.slug,
       surface: resolveTelemetrySurface(ctx, strategy.slug),
       eventType: vertexErrorKindToEventType(kind),

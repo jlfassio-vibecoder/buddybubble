@@ -34,6 +34,7 @@ const VALID_EVENT_TYPES = new Set<EventType>([
   'premium_feature_used',
   'page_view',
   'session_start',
+  'system_analytics_recovery_clicked',
 ]);
 
 export async function POST(req: Request) {

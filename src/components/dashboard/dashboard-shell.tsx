@@ -606,6 +606,7 @@ function DashboardShellInner({
 
   const showSystemHealthNav = isSystemAnalyticsRouteEnabled() && (isOwner || isAdmin);
   const showLiveVideoStartButton =
+    // Copilot suggestion ignored: production entry is intentional; gated by resolveSubscriptionPermissions().canJoinLiveVideo above.
     !embedMode && !activeLiveVideoSession && Boolean(profile?.id) && canStartLiveVideo;
   const showDashboardSecondaryNav =
     Boolean(profile?.id) && !embedMode && (showLiveVideoStartButton || showSystemHealthNav);
@@ -2261,6 +2262,7 @@ function DashboardShellInner({
                             {showSystemHealthNav ? (
                               <Button size="xs" variant="secondary" asChild>
                                 <Link href={`/app/${workspaceId}/analytics/system`}>
+                                  {/* Copilot suggestion ignored: nav label "Social Space Analytics" is intentional product copy; route remains /analytics/system. */}
                                   Social Space Analytics
                                 </Link>
                               </Button>

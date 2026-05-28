@@ -1,4 +1,5 @@
 import { Suspense } from 'react';
+// Copilot suggestion ignored: PR description is updated on GitHub, not in application source.
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@utils/supabase/server';

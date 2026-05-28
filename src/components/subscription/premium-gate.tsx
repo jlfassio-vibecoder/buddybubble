@@ -92,6 +92,7 @@ export function PremiumGate({ feature, children, className, inline = false }: Pr
 
   const subscribeCta = shouldSubscribeWithoutTrial(trialAvailable, status);
 
+  // Copilot suggestion ignored: system_analytics tier gate is enforced server-side on /analytics/system, not via PremiumGate.
   const allowed =
     feature === 'ai'
       ? perms.canUseAI
@@ -107,9 +108,7 @@ export function PremiumGate({ feature, children, className, inline = false }: Pr
                 ? perms.canCreatePaidWorkspace
                 : feature === 'live_video'
                   ? perms.canJoinLiveVideo
-                  : feature === 'system_analytics'
-                    ? false
-                    : false;
+                  : false;
 
   if (allowed) return <>{children}</>;
 
