@@ -87,6 +87,10 @@ export const PERSONAL_CUES_FIELD_MAX_CHARS = 2000 as const;
 export const COACH_SELF_ATTESTATION_SAFE_REPLY =
   "I noticed I described an update I didn't actually save. Tell me which exercise to add cues for, and I'll save them to your personal notes.";
 
+/** Outline co-pilot: model narrated a structure update without `outline_draft_patch`. */
+export const COACH_OUTLINE_SELF_ATTESTATION_SAFE_REPLY =
+  'I described a structure change but did not save it to your outline. Try again (one block at a time), or add blocks with Add from Catalog in the structure panel.';
+
 /** Appended server-side if the model omits it (matches the system-prompt contract). */
 export const COACH_TASK_SEED_CTA =
   "Complete the Workout Intake 3-step form then click 'Generate Workout' on the card.";
@@ -94,6 +98,10 @@ export const COACH_TASK_SEED_CTA =
 /** User-visible reply text the dispatcher inserts when the LLM call fails. */
 export const COACH_SAFE_REPLY_TEXT =
   'I experienced a technical hiccup calculating your workout. Could you repeat that?';
+
+/** Outline co-pilot fallback when Vertex output hits MAX_TOKENS (often verbose block names). */
+export const COACH_OUTLINE_TRUNCATED_SAFE_REPLY =
+  'I hit a length limit structuring your outline. Try one block at a time (for example: "Add Main AMRAP 15 min with 4 stations").';
 
 /**
  * Mid-workout support directive appended when CURRENT WORKOUT CONTEXT is provided.

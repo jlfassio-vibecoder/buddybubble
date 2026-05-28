@@ -37,6 +37,33 @@ export type CoachOutlinePhaseBPromptInput = {
   blueprintLibraryPrompt?: string;
 };
 
+const OUTLINE_PARSE_LOG_PREFIX = '[coach-outline-phase-b]';
+
+function logOutlineParseFailure(args: {
+  errorKind: CoachOutlinePhaseBErrorKind;
+  message: string;
+  text: string;
+  drops: BlockShapeDrop[];
+  outlineCount: number;
+}): void {
+  const { errorKind, message, text, drops, outlineCount } = args;
+  const dropsByReason = drops.reduce<Record<string, number>>((acc, d) => {
+    const key = String(d.reason);
+    acc[key] = (acc[key] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  console.error(`${OUTLINE_PARSE_LOG_PREFIX} ${errorKind}:`, message, {
+    outline_block_count: outlineCount,
+    drop_count: drops.length,
+    drops_by_reason: dropsByReason,
+    drops,
+    response_text_chars: text.length,
+    response_text_head: text.slice(0, 1200),
+    response_text_tail: text.length > 1200 ? text.slice(-1200) : undefined,
+  });
+}
+
 export function buildCoachOutlinePhaseBPrompts(input: CoachOutlinePhaseBPromptInput): {
   systemPrompt: string;
   userPrompt: string;
@@ -111,6 +138,13 @@ export function processCoachOutlinePhaseBVertexOutput(args: {
       (String(parseDrop.reason) === 'json_parse_failed' ||
         String(parseDrop.reason) === 'missing_blocks')
     ) {
+      logOutlineParseFailure({
+        errorKind: 'parse_failed',
+        message: 'Could not parse outline JSON. Retry or add blocks manually.',
+        text,
+        drops: outlineCollect.drops,
+        outlineCount: outlineCollect.outline?.length ?? 0,
+      });
       return {
         ok: false,
         errorKind: 'parse_failed',
@@ -121,6 +155,13 @@ export function processCoachOutlinePhaseBVertexOutput(args: {
   }
 
   if (outlineCollect.outline == null || outlineCollect.outline.length === 0) {
+    logOutlineParseFailure({
+      errorKind: 'no_blocks',
+      message: 'No valid workout blocks were produced. Retry or add blocks from the catalog.',
+      text,
+      drops: outlineCollect.drops,
+      outlineCount: outlineCollect.outline?.length ?? 0,
+    });
     return {
       ok: false,
       errorKind: 'no_blocks',

@@ -530,8 +530,7 @@ export function WorkoutOutlinePanel({ editor, canWrite }: WorkoutOutlinePanelPro
               <OutlineCatalogPicker
                 disabled={disabled}
                 onPick={(preset) => {
-                  addFromCatalog(preset);
-                  void saveDraft();
+                  void addFromCatalog(preset);
                 }}
               />
               <Button
@@ -540,8 +539,7 @@ export function WorkoutOutlinePanel({ editor, canWrite }: WorkoutOutlinePanelPro
                 size="sm"
                 disabled={disabled}
                 onClick={() => {
-                  addInstructionBlock('Warm-up / Prep', ['Dynamic prep']);
-                  void saveDraft();
+                  void addInstructionBlock('Warm-up / Prep', ['Dynamic prep']);
                 }}
               >
                 Add instruction block

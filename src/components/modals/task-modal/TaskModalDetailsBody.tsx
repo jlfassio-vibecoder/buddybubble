@@ -26,6 +26,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
+import { Button } from '@/components/ui/button';
+import { LayoutPanelLeft } from 'lucide-react';
 
 function pickWorkoutIntakePanelWizardProps(
   w: ReturnType<typeof useWorkoutIntakeWizardState>,
@@ -52,6 +54,9 @@ export type TaskModalDetailsBodyProps = {
   /** When set with workout + canWrite, renders controlled `WorkoutIntakePanel`. */
   workoutIntakeState: ReturnType<typeof useWorkoutIntakeWizardState> | null;
   workoutOutlineEditor: WorkoutOutlineEditorState | null;
+  /** When true, outline editing is deferred to the full-page builder (panel hidden). */
+  showStructureBuilderCta?: boolean;
+  onOpenStructureBuilder?: () => void;
   intakeDisabledReason?: string;
   taskId: string | null;
   cardCoverPath: string;
@@ -142,6 +147,8 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     aiWorkoutGenerating,
     workoutIntakeState,
     workoutOutlineEditor,
+    showStructureBuilderCta,
+    onOpenStructureBuilder,
     intakeDisabledReason,
     taskId,
     cardCoverPath,
@@ -243,7 +250,24 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
         />
       </div>
 
-      {workoutOutlineEditor ? (
+      {showStructureBuilderCta && onOpenStructureBuilder ? (
+        <div className="rounded-lg border border-border bg-muted/30 px-4 py-4">
+          <p className="text-sm text-muted-foreground">
+            Edit workout structure in the full-page builder with Coach chat alongside your
+            blueprint.
+          </p>
+          <Button
+            type="button"
+            variant="default"
+            size="sm"
+            className="mt-3 gap-2"
+            onClick={onOpenStructureBuilder}
+          >
+            <LayoutPanelLeft className="size-4 shrink-0" aria-hidden />
+            Open structure builder
+          </Button>
+        </div>
+      ) : workoutOutlineEditor ? (
         <WorkoutOutlinePanel editor={workoutOutlineEditor} canWrite={canWrite} />
       ) : null}
 

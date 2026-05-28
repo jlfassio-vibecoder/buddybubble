@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation';
 import type { BubbleRow, MemberRole } from '@/types/database';
 import { isActiveSessionPathname } from '@/lib/active-session/build-active-session-url';
+import { isWorkoutBuilderPathname } from '@/lib/workout-builder/build-workout-builder-url';
 import { DashboardShell } from './dashboard-shell';
 import type { JoinRequestPreviewItem } from '@/lib/workspace-join-requests';
 
@@ -26,7 +27,7 @@ export function WorkspaceShellGate({
 }: Props) {
   const pathname = usePathname();
 
-  if (isActiveSessionPathname(pathname)) {
+  if (isActiveSessionPathname(pathname) || isWorkoutBuilderPathname(pathname)) {
     return <>{children}</>;
   }
 

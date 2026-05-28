@@ -38,10 +38,15 @@
  */
 
 import type { CoachGeminiJsonResponse } from './parse';
+import { sanitizeOutlinePatchBlocks } from './outline-block-name-sanitize';
 
 /** Tight English phrase set: model claimed a write without structured output → fallback. */
 const SELF_ATTESTATION_PHRASE_RE =
   /\b(i['']?ve\s+(updated|added|now\s+updated)|i\s+added|applied\s+to\s+your\s+card|written\s+to\s+your\s+card|pushed\s+(those\s+)?changes\s+to\s+(the\s+)?card|saved\s+(it|them)\s+to\s+your\s+(card|workout)|finalize(d)?\s+(the\s+)?(card|workout)\s+update)\b/i;
+
+/** Outline co-pilot: prose claims a structure write without `outline_draft_patch`. */
+const OUTLINE_STRUCTURE_CLAIM_RE =
+  /\b(structure\s+has\s+been\s+updated|updated\s+(the\s+)?workout\s+structure|workout\s+structure\s+has\s+been|i\s+have\s+structured|has\s+been\s+updated\s+with|has\s+been\s+added|added\s+to\s+(the\s+)?workout\s+outline|block\s+has\s+been\s+added)\b/i;
 
 function hasTaskModalIntakePatch(p: CoachGeminiJsonResponse['task_modal_intake_patch']): boolean {
   return p != null && Object.keys(p).length > 0;
@@ -103,8 +108,15 @@ export function assertCoachReplySelfAttestation(parsed: CoachGeminiJsonResponse)
   const hasCardAction = parsed.card_action === 'trigger_generation';
   const hasOutline =
     parsed.coach_workout_outline != null && parsed.coach_workout_outline.length > 0;
+  const hasOutlineDraftPatch = parsed.outline_draft_patch != null;
   const hasPayload =
-    hasExecution || hasPersonal || hasCard || hasIntake || hasCardAction || hasOutline;
+    hasExecution ||
+    hasPersonal ||
+    hasCard ||
+    hasIntake ||
+    hasCardAction ||
+    hasOutline ||
+    hasOutlineDraftPatch;
   if (!hasPayload) {
     throw { kind: 'self_attestation_mismatch' as const };
   }
@@ -127,6 +139,8 @@ export type CoachGuardsFragment = {
    * sentinel), not merely that the task row carries planned workout JSON.
    */
   isActiveWorkoutSession: boolean;
+  /** True when outline co-pilot mode was active for this request (structure phase). */
+  outlineCoPilotActive: boolean;
 };
 
 /**
@@ -148,6 +162,30 @@ export function applyCoachServerGuards(
   let coachWorkoutOutline = parsed.coach_workout_outline;
   let taskModalIntakePatch = parsed.task_modal_intake_patch;
   let cardAction = parsed.card_action;
+  let outlineDraftPatch = parsed.outline_draft_patch;
+  let outlineDraftPatchDrops = parsed.outline_draft_patch_drops;
+
+  // Guard 0: Outline co-pilot — structure-only phase; no factory merge or Call A outline.
+  if (fragment.outlineCoPilotActive) {
+    proposedWorkoutMetadata = null;
+    coachWorkoutOutline = null;
+    if (outlineDraftPatch != null) {
+      const sanitized = sanitizeOutlinePatchBlocks(
+        outlineDraftPatch.blocks,
+        'outline_draft_patch.blocks',
+      );
+      if (sanitized.drops.length > 0) {
+        outlineDraftPatchDrops = [...outlineDraftPatchDrops, ...sanitized.drops];
+      }
+      if (sanitized.blocks.length === 0) {
+        outlineDraftPatch = null;
+      } else {
+        outlineDraftPatch = { ...outlineDraftPatch, blocks: sanitized.blocks };
+      }
+    }
+  } else {
+    outlineDraftPatch = null;
+  }
 
   // Guard 1: Open Canvas — never create a sibling card when a target task is known.
   if (fragment.knownTargetTaskId) {
@@ -252,7 +290,16 @@ export function applyCoachServerGuards(
     coach_workout_outline: coachWorkoutOutline,
     task_modal_intake_patch: taskModalIntakePatch,
     card_action: cardAction,
+    outline_draft_patch: outlineDraftPatch,
+    outline_draft_patch_drops: outlineDraftPatchDrops,
   };
+  if (
+    fragment.outlineCoPilotActive &&
+    outlineDraftPatch == null &&
+    OUTLINE_STRUCTURE_CLAIM_RE.test(parsed.reply_content)
+  ) {
+    throw { kind: 'self_attestation_mismatch' as const };
+  }
   assertCoachReplySelfAttestation(out);
   return out;
 }

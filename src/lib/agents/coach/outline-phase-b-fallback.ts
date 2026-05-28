@@ -5,7 +5,11 @@
  * Deno mirror: `supabase/functions/agents/coach/outline-phase-b-fallback.ts`.
  */
 
-import { hydrateEmomAlternatingStations, normalizeFormatParams } from './block-blueprint-library';
+// prettier-ignore
+import {
+  hydrateEmomAlternatingStations,
+  normalizeFormatParams,
+} from './block-blueprint-library';
 import {
   BLOCK_BLUEPRINT_CATALOG,
   type BlockBlueprintCatalogEntry,
@@ -51,7 +55,7 @@ export function findBlockCatalogEntryInText(text: string): BlockBlueprintCatalog
   return null;
 }
 
-function parseDurationMinutesFromText(text: string): number | null {
+export function parseDurationMinutesFromText(text: string): number | null {
   const m = text.match(/\b(\d{1,2})\s*[- ]?\s*minute/i);
   if (!m) return null;
   const n = Number.parseInt(m[1]!, 10);
@@ -83,6 +87,9 @@ export function buildFallbackOutlineBlockFromCatalog(
   let format_params: Record<string, unknown> = { ...entry.format_params };
   if (duration != null && entry.block_format === 'emom') {
     format_params = { ...format_params, total_minutes: duration };
+  }
+  if (duration != null && entry.block_format === 'amrap') {
+    format_params = { ...format_params, time_cap_minutes: duration };
   }
   format_params = normalizeFormatParams(entry.block_format, format_params);
   const exercises = inferPlaceholderExercisesFromHints(hints);

@@ -12,19 +12,21 @@ export const COACH_PROPOSED_WORKOUT_BLOCK_ITEM_SCHEMA = {
   properties: {
     name: {
       type: 'STRING',
-      maxLength: 80,
+      maxLength: 40,
       description:
-        'Short section label only (e.g. "Main EMOM", "Warm-up") — NOT workout prose, timing, or prescriptions. Put structure in block_format and format_params; Vertex Factory fills detail.',
+        'CRITICAL: Must be a very short, concise title (e.g. "Main Circuit" or "Warm-up"). NEVER generate long, descriptive, or conversational text in this field. Never encode duration, round count, or exercise count in name — use format_params and exercises[]. Short section label only — NOT workout prose, timing, or prescriptions. Put structure in block_format and format_params; Vertex Factory fills detail.',
     },
     exercises: {
       type: 'ARRAY',
       nullable: true,
+      description:
+        'Exercise count lives here: emit N objects with short placeholder names (e.g. Station 1), typically at most 12. Do not summarize count in block name.',
       items: {
         type: 'OBJECT',
         properties: {
           name: {
             type: 'STRING',
-            maxLength: 80,
+            maxLength: 40,
             description:
               'Exercise name only (e.g. "Kettlebell Swing") — short placeholder on outline turns; no coaching prose or prescription narrative.',
           },
@@ -85,9 +87,19 @@ export const COACH_PROPOSED_WORKOUT_BLOCK_ITEM_SCHEMA = {
       description:
         'Format-specific parameters. Required keys depend on block_format (see BLUEPRINT LIBRARY in system prompt): amrap requires time_cap_minutes; emom requires interval_seconds AND (total_minutes OR total_rounds); optional emom is_alternating and alternating_stations for minute-bound alternating work; tabata requires rounds; superset/circuit/contrast require rounds; ladder and pyramid require start_reps and peak_reps; chipper requires rounds and at least 3 exercises; clusters requires reps_per_cluster and clusters; drop_sets requires drop_percent and drops. Omit when straight_sets with default rest.',
       properties: {
-        time_cap_minutes: { type: 'INTEGER', nullable: true },
+        time_cap_minutes: {
+          type: 'INTEGER',
+          nullable: true,
+          description:
+            'AMRAP duration in minutes. User-facing time caps belong here only, not in block name.',
+        },
         interval_seconds: { type: 'INTEGER', nullable: true },
-        total_minutes: { type: 'INTEGER', nullable: true },
+        total_minutes: {
+          type: 'INTEGER',
+          nullable: true,
+          description:
+            'EMOM total duration in minutes. User-facing timing belongs here only, not in block name.',
+        },
         total_rounds: { type: 'INTEGER', nullable: true },
         is_alternating: {
           type: 'BOOLEAN',
@@ -105,7 +117,12 @@ export const COACH_PROPOSED_WORKOUT_BLOCK_ITEM_SCHEMA = {
             items: { type: 'INTEGER' },
           },
         },
-        rounds: { type: 'INTEGER', nullable: true },
+        rounds: {
+          type: 'INTEGER',
+          nullable: true,
+          description:
+            'Round targets for circuit, tabata, superset, etc. User-facing round counts belong here only, not in block name.',
+        },
         work_seconds: { type: 'INTEGER', nullable: true },
         rest_seconds: { type: 'INTEGER', nullable: true },
         rest_in_interval_seconds: { type: 'INTEGER', nullable: true },
@@ -135,6 +152,10 @@ export const COACH_PROPOSED_WORKOUT_BLOCK_ITEM_SCHEMA = {
     },
   },
 } as const;
+
+/** Phase B Vertex INTEGER fields — anti runaway digit loops in JSON mode. */
+const OUTLINE_REALISTIC_INTEGER_DESCRIPTION =
+  'Small whole number only (typical range 1–3600 depending on field). Must be a realistic, short integer — never floats, repeating decimals, or excessive trailing zeros (e.g. 45, never 45.000000... or 4500000000...). NEVER pad or loop digits.';
 
 /** Phase B outline fill: minimal block tree only (separate Vertex call). */
 export const COACH_OUTLINE_ONLY_BLOCK_ITEM_SCHEMA = {
@@ -166,18 +187,51 @@ export const COACH_OUTLINE_ONLY_BLOCK_ITEM_SCHEMA = {
     format_params: {
       type: 'OBJECT',
       nullable: true,
-      description: 'Format-specific params per block_format (see BLUEPRINT LIBRARY).',
+      description:
+        'Format-specific params per block_format (see BLUEPRINT LIBRARY). All numeric fields must be compact integers — never stringified number loops.',
       properties: {
-        time_cap_minutes: { type: 'INTEGER', nullable: true },
-        interval_seconds: { type: 'INTEGER', nullable: true },
-        total_minutes: { type: 'INTEGER', nullable: true },
-        total_rounds: { type: 'INTEGER', nullable: true },
+        time_cap_minutes: {
+          type: 'INTEGER',
+          nullable: true,
+          description: OUTLINE_REALISTIC_INTEGER_DESCRIPTION,
+        },
+        interval_seconds: {
+          type: 'INTEGER',
+          nullable: true,
+          description: OUTLINE_REALISTIC_INTEGER_DESCRIPTION,
+        },
+        total_minutes: {
+          type: 'INTEGER',
+          nullable: true,
+          description: OUTLINE_REALISTIC_INTEGER_DESCRIPTION,
+        },
+        total_rounds: {
+          type: 'INTEGER',
+          nullable: true,
+          description: OUTLINE_REALISTIC_INTEGER_DESCRIPTION,
+        },
         is_alternating: { type: 'BOOLEAN', nullable: true },
         is_combo: { type: 'BOOLEAN', nullable: true },
-        rounds: { type: 'INTEGER', nullable: true },
-        work_seconds: { type: 'INTEGER', nullable: true },
-        rest_seconds: { type: 'INTEGER', nullable: true },
-        rest_in_interval_seconds: { type: 'INTEGER', nullable: true },
+        rounds: {
+          type: 'INTEGER',
+          nullable: true,
+          description: OUTLINE_REALISTIC_INTEGER_DESCRIPTION,
+        },
+        work_seconds: {
+          type: 'INTEGER',
+          nullable: true,
+          description: OUTLINE_REALISTIC_INTEGER_DESCRIPTION,
+        },
+        rest_seconds: {
+          type: 'INTEGER',
+          nullable: true,
+          description: OUTLINE_REALISTIC_INTEGER_DESCRIPTION,
+        },
+        rest_in_interval_seconds: {
+          type: 'INTEGER',
+          nullable: true,
+          description: OUTLINE_REALISTIC_INTEGER_DESCRIPTION,
+        },
       },
     },
     exercises: {
@@ -204,7 +258,7 @@ export const COACH_OUTLINE_ONLY_SCHEMA: VertexResponseSchema = {
     blocks: {
       type: 'ARRAY',
       description:
-        'One block per catalog structural token in the user request (:section/format/variant). Order matches token order. Concise — name, block_format, format_params, exercise name placeholders only.',
+        'One block per catalog structural token in the user request (:section/format/variant). Order matches token order. Concise — name, block_format, format_params, exercise name placeholders only. All timing/count fields in format_params must be short integers — never infinite trailing zeros or padded digit loops.',
       items: COACH_OUTLINE_ONLY_BLOCK_ITEM_SCHEMA,
     },
   },
@@ -444,6 +498,37 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
           description:
             'Body areas sore today; items must be from the allowed soreness list in TASK MODAL INTAKE UI.',
           items: { type: 'STRING' },
+        },
+      },
+    },
+    outline_draft_patch: {
+      type: 'OBJECT',
+      nullable: true,
+      description:
+        'Optional. OUTLINE CO-PILOT MODE only (builder / Task Modal structure phase, no rich factory). Surgical workout structure edits: block names, block_format, format_params. Each patch block must include block_format + format_params when changing timing; merge_by_name keys off short name only. Include revision matching --- CURRENT OUTLINE DRAFT --- revision. Use mode merge_by_name and emit only changed or new blocks by name; use replace_all only when replacing the entire outline. Omit or null when not changing structure.',
+      properties: {
+        revision: {
+          type: 'INTEGER',
+          description:
+            'Must match the revision integer from --- CURRENT OUTLINE DRAFT --- / task_modal_outline_draft on the user message.',
+        },
+        mode: {
+          type: 'STRING',
+          nullable: true,
+          enum: ['merge_by_name', 'replace_all'],
+          description: 'Default merge_by_name: same block name updates in place; new names append.',
+        },
+        blocks: {
+          type: 'ARRAY',
+          description:
+            'Outline blocks to merge or replace. Same shape as proposed_workout_metadata.blocks. Route duration to format_params (e.g. time_cap_minutes) and exercise count to exercises[] — never in name.',
+          items: COACH_PROPOSED_WORKOUT_BLOCK_ITEM_SCHEMA,
+        },
+        clear_confirmation: {
+          type: 'BOOLEAN',
+          nullable: true,
+          description:
+            'When true (default), clears coach_outline_confirmed_at so structure stays editable.',
         },
       },
     },

@@ -3,11 +3,8 @@
  * Each row maps to the closed-world `block_format` enum — UX tokens are 3-segment strings.
  */
 
-import type { BlockFormat } from '@/lib/agents/coach/block-blueprint-library';
-import {
-  BLOCK_FORMAT_ENUM,
-  REQUIRED_FORMAT_PARAMS_BY_FORMAT,
-} from '@/lib/agents/coach/block-blueprint-library';
+import type { BlockFormat } from './block-blueprint-library';
+import { BLOCK_FORMAT_ENUM, REQUIRED_FORMAT_PARAMS_BY_FORMAT } from './block-blueprint-library';
 export type BlockCatalogGroup =
   | 'MAIN'
   | 'CONDITIONING_AND_FINISHERS'

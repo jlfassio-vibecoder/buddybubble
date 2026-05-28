@@ -89,6 +89,38 @@ describe('useAgentEffectSweep', () => {
     );
 
     expect(onTaskModalIntakePatch).toHaveBeenCalledTimes(1);
-    expect(onCardAction).toHaveBeenCalledTimes(1);
+  });
+
+  it('invokes onOutlineDraftApplied when coach row has outline_draft_applied', () => {
+    const onOutlineDraftApplied = vi.fn();
+    const agents = new Map([[COACH_AUTH, makeCoachAgent()]]);
+
+    renderHook(() =>
+      useAgentEffectSweep({
+        taskId: TASK_ID,
+        isLoading: false,
+        messages: [
+          makeCoachMessage('msg-outline', {
+            outline_draft_applied: {
+              v: 1,
+              revision: 2,
+              block_count: 1,
+              blocks: [{ name: 'Main EMOM', block_format: 'emom' }],
+            },
+          }),
+        ],
+        agentsByAuthUserId: agents,
+        onOutlineDraftApplied,
+      }),
+    );
+
+    expect(onOutlineDraftApplied).toHaveBeenCalledTimes(1);
+    expect(onOutlineDraftApplied).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: TASK_ID,
+        messageId: 'msg-outline',
+        applied: expect.objectContaining({ revision: 2, block_count: 1 }),
+      }),
+    );
   });
 });

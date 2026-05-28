@@ -16,6 +16,8 @@ import {
   validateOutlineDraftForConfirm,
 } from '@/lib/agents/coach/outline-editor-client';
 import { ensureOutlineExercisePlaceholders } from '@/lib/agents/coach/outline-exercise-placeholders';
+import { outlineDraftAppliedStaleForClient } from '@/lib/agents/coach/outline-draft-patch';
+import type { BlockShapeDrop } from '@/lib/agents/coach/parse';
 import { postGenerateWorkoutOutline } from '@/lib/ai/generate-workout-outline-client';
 import { parseTaskMetadata } from '@/lib/item-metadata';
 import { toast } from 'sonner';
@@ -47,6 +49,15 @@ function draftFromMetadata(meta: unknown): Record<string, unknown>[] {
   return ensureOutlineExercisePlaceholders(outline.map((b) => ({ ...b })));
 }
 
+function outlineBlocksFingerprint(blocks: Record<string, unknown>[]): string {
+  const { blocks: normalized } = normalizeOutlineDraft(blocks);
+  return JSON.stringify(normalized);
+}
+
+function outlineMetadataFingerprint(meta: unknown): string {
+  return outlineBlocksFingerprint(draftFromMetadata(meta));
+}
+
 export function useWorkoutOutlineEditor({
   canWrite,
   taskId,
@@ -66,18 +77,39 @@ export function useWorkoutOutlineEditor({
   const [localError, setLocalError] = useState<string | null>(null);
   const [expandedBlockIdx, setExpandedBlockIdx] = useState<number | null>(0);
   const autoRetryStartedRef = useRef(false);
+  const draftBlocksRef = useRef(draftBlocks);
+  draftBlocksRef.current = draftBlocks;
+  const isDirtyRef = useRef(false);
+  const lastSyncedOutlineFpRef = useRef(outlineMetadataFingerprint(metadata));
+  const prevTaskIdRef = useRef(taskId);
+
+  const syncDraftFromMetadata = useCallback((meta: unknown, resetDirty: boolean) => {
+    const blocks = draftFromMetadata(meta);
+    lastSyncedOutlineFpRef.current = outlineMetadataFingerprint(meta);
+    if (resetDirty) isDirtyRef.current = false;
+    setDraftBlocks(blocks);
+  }, []);
 
   useEffect(() => {
-    setDraftBlocks(draftFromMetadata(metadata));
-  }, [metadata]);
+    if (prevTaskIdRef.current !== taskId) {
+      prevTaskIdRef.current = taskId;
+      autoRetryStartedRef.current = false;
+      syncDraftFromMetadata(metadata, true);
+      return;
+    }
 
-  useEffect(() => {
-    autoRetryStartedRef.current = false;
-  }, [taskId]);
+    const incomingFp = outlineMetadataFingerprint(metadata);
+    if (incomingFp === lastSyncedOutlineFpRef.current) return;
+    if (isDirtyRef.current) return;
+
+    syncDraftFromMetadata(metadata, false);
+  }, [metadata, taskId, syncDraftFromMetadata]);
 
   const persistMetadata = useCallback(
     async (nextMeta: Record<string, unknown>) => {
       const json = nextMeta as unknown as Json;
+      lastSyncedOutlineFpRef.current = outlineMetadataFingerprint(nextMeta);
+      isDirtyRef.current = false;
       setMetadata(json);
       patchOriginalMetadataJson(JSON.stringify(nextMeta));
       if (saveCoreFields) {
@@ -96,6 +128,7 @@ export function useWorkoutOutlineEditor({
     const { blocks } = normalizeOutlineDraft(draftBlocks);
     if (blocks.length > 0) return 'ready';
     if (parsedMeta.status === 'empty' || !parsedMeta.outline?.length) return 'empty';
+    if (draftBlocks.length > 0) return 'needs_structure';
     return 'ready';
   }, [parsedMeta, localGenerating, localError, draftBlocks]);
 
@@ -123,26 +156,65 @@ export function useWorkoutOutlineEditor({
     [metadata],
   );
 
-  const addFromCatalog = useCallback((preset: BlockBlueprintCatalogEntry) => {
-    setDraftBlocks((prev) => [...prev, catalogPresetToOutlineBlock(preset)]);
-    setExpandedBlockIdx((prev) => (prev == null ? 0 : prev));
-    setLocalError(null);
-  }, []);
+  const addFromCatalog = useCallback(
+    async (preset: BlockBlueprintCatalogEntry): Promise<boolean> => {
+      if (!canWrite || !taskId) return false;
+      const block = catalogPresetToOutlineBlock(preset);
+      const nextBlocks = [...draftBlocksRef.current, block];
+      setDraftBlocks(nextBlocks);
+      setExpandedBlockIdx(nextBlocks.length - 1);
+      setLocalError(null);
+      const { blocks, drops } = normalizeOutlineDraft(nextBlocks);
+      const status: CoachOutlineStatus = blocks.length > 0 ? 'ready' : 'empty';
+      const next = applyDraftToMetadata(blocks, status, { drops });
+      try {
+        await persistMetadata(next);
+        return true;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Could not save outline';
+        setLocalError(msg);
+        toast.error(msg);
+        return false;
+      }
+    },
+    [canWrite, taskId, applyDraftToMetadata, persistMetadata],
+  );
 
-  const addInstructionBlock = useCallback((name: string, lines: string[]) => {
-    setDraftBlocks((prev) => [...prev, createInstructionBlock(name, lines)]);
-    setLocalError(null);
-  }, []);
+  const addInstructionBlock = useCallback(
+    async (name: string, lines: string[]): Promise<boolean> => {
+      if (!canWrite || !taskId) return false;
+      const block = createInstructionBlock(name, lines);
+      const nextBlocks = [...draftBlocksRef.current, block];
+      setDraftBlocks(nextBlocks);
+      setLocalError(null);
+      const { blocks, drops } = normalizeOutlineDraft(nextBlocks);
+      const status: CoachOutlineStatus = blocks.length > 0 ? 'ready' : 'empty';
+      const next = applyDraftToMetadata(blocks, status, { drops });
+      try {
+        await persistMetadata(next);
+        return true;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Could not save outline';
+        setLocalError(msg);
+        toast.error(msg);
+        return false;
+      }
+    },
+    [canWrite, taskId, applyDraftToMetadata, persistMetadata],
+  );
 
   const updateBlock = useCallback((index: number, patch: Record<string, unknown>) => {
+    isDirtyRef.current = true;
     setDraftBlocks((prev) => prev.map((b, i) => (i === index ? { ...b, ...patch } : b)));
   }, []);
 
   const removeBlock = useCallback((index: number) => {
+    isDirtyRef.current = true;
     setDraftBlocks((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
   const reorderBlocks = useCallback((from: number, to: number) => {
+    isDirtyRef.current = true;
     setDraftBlocks((prev) => {
       if (from < 0 || from >= prev.length || to < 0 || to >= prev.length) return prev;
       const next = [...prev];
@@ -197,6 +269,36 @@ export function useWorkoutOutlineEditor({
     }
   }, [canWrite, taskId, draftBlocks, metadata, persistMetadata]);
 
+  const applyCoachPatch = useCallback(
+    (args: {
+      revision: number;
+      localRevision: number;
+      blocks?: Record<string, unknown>[];
+      drops?: BlockShapeDrop[];
+      onRevisionSynced?: (nextRevision: number) => void;
+    }): boolean => {
+      if (outlineDraftAppliedStaleForClient(args.localRevision, args.revision)) {
+        toast.message('Outline update skipped — your editor has newer changes.');
+        return false;
+      }
+      const sourceBlocks = args.blocks?.length ? args.blocks : draftBlocks;
+      const { blocks: normalized, drops: normDrops } = normalizeOutlineDraft(sourceBlocks);
+      lastSyncedOutlineFpRef.current = outlineBlocksFingerprint(normalized);
+      isDirtyRef.current = false;
+      setDraftBlocks(normalized);
+      const next = applyDraftToMetadata(normalized, 'ready', {
+        drops: args.drops?.length ? args.drops : normDrops,
+      });
+      const json = next as unknown as Json;
+      setMetadata(json);
+      patchOriginalMetadataJson(JSON.stringify(next));
+      args.onRevisionSynced?.(args.revision + 1);
+      toast.success('Coach updated workout structure.');
+      return true;
+    },
+    [draftBlocks, applyDraftToMetadata, setMetadata, patchOriginalMetadataJson],
+  );
+
   const editStructure = useCallback(async () => {
     if (!canWrite) return;
     const base = parseTaskMetadata(metadata) as Record<string, unknown>;
@@ -220,6 +322,8 @@ export function useWorkoutOutlineEditor({
       patchOriginalMetadataJson(JSON.stringify(nextMeta));
       const { outline, error: outlineError } = readCoachOutlineMetadata(nextMeta);
       if (outline?.length) {
+        lastSyncedOutlineFpRef.current = outlineMetadataFingerprint(nextMeta);
+        isDirtyRef.current = false;
         setDraftBlocks(draftFromMetadata(nextMeta));
         toast.success('Structure generated — review and confirm.');
       } else {
@@ -231,7 +335,11 @@ export function useWorkoutOutlineEditor({
         setMetadata(err.metadata);
         patchOriginalMetadataJson(JSON.stringify(err.metadata));
         const { outline } = readCoachOutlineMetadata(err.metadata);
-        if (outline?.length) setDraftBlocks(draftFromMetadata(err.metadata));
+        if (outline?.length) {
+          lastSyncedOutlineFpRef.current = outlineMetadataFingerprint(err.metadata);
+          isDirtyRef.current = false;
+          setDraftBlocks(draftFromMetadata(err.metadata));
+        }
       }
       const msg = err.message || 'Structure generation failed';
       setLocalError(msg);
@@ -280,6 +388,7 @@ export function useWorkoutOutlineEditor({
     confirmStructure,
     editStructure,
     retryStructure,
+    applyCoachPatch,
     hasFactory: parsedMeta.hasFactory,
     title,
     description,

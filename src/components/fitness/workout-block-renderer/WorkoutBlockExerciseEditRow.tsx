@@ -5,6 +5,7 @@ import {
   formatRepsDisplay,
   parseRepsDraftToStorage,
 } from '@/lib/workout-factory/parse-reps-scalar';
+import { Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,6 +17,7 @@ export type WorkoutBlockExerciseEditRowProps = {
   idPrefix: string;
   exerciseIndex: number;
   onChange: (patch: Partial<Exercise>) => void;
+  onRemove?: () => void;
 };
 
 function parseOptionalNumber(s: string): number | undefined {
@@ -32,6 +34,7 @@ export function WorkoutBlockExerciseEditRow({
   idPrefix,
   exerciseIndex,
   onChange,
+  onRemove,
 }: WorkoutBlockExerciseEditRowProps) {
   const metaBits: string[] = [];
   if (typeof exercise.workSeconds === 'number' && exercise.workSeconds > 0) {
@@ -57,9 +60,19 @@ export function WorkoutBlockExerciseEditRow({
           value={exercise.exerciseName}
           disabled={!canWrite}
           onChange={(e) => onChange({ exerciseName: e.target.value })}
-          className="h-8 font-semibold"
+          className="h-8 min-w-0 flex-1 font-semibold"
           placeholder="Exercise name"
         />
+        {canWrite && onRemove ? (
+          <button
+            type="button"
+            onClick={onRemove}
+            className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:text-destructive"
+            aria-label={`Remove exercise: ${exercise.exerciseName}`}
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        ) : null}
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <div className="space-y-1">

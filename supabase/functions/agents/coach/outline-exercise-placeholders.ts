@@ -36,6 +36,31 @@ function exerciseCount(block: Record<string, unknown>): number {
   ).length;
 }
 
+function namedExercises(block: Record<string, unknown>): { name: string }[] {
+  if (!Array.isArray(block.exercises)) return [];
+  const out: { name: string }[] = [];
+  for (const ex of block.exercises) {
+    if (!ex || typeof ex !== 'object' || Array.isArray(ex)) continue;
+    const name = typeof (ex as { name?: unknown }).name === 'string' ? ex.name.trim() : '';
+    if (name) out.push({ name });
+  }
+  return out;
+}
+
+/** Minimum exercise rows required before fill / factory (outline may start with one Phase B placeholder). */
+function minOutlineExerciseCount(format: BlockFormat): number {
+  switch (format) {
+    case 'superset':
+    case 'contrast':
+      return 2;
+    case 'circuit':
+    case 'chipper':
+      return 3;
+    default:
+      return 1;
+  }
+}
+
 /** Fill missing `exercises[]` placeholders after Phase B or manual structure generation. */
 export function ensureOutlineExercisePlaceholders(
   blocks: Record<string, unknown>[],
@@ -47,11 +72,26 @@ export function ensureOutlineExercisePlaceholders(
     }
     const rawFormat = block.block_format;
     if (typeof rawFormat !== 'string' || !isBlockFormat(rawFormat)) return block;
-    if (exerciseCount(block) > 0) return block;
 
     const format = rawFormat as BlockFormat;
+    const min = minOutlineExerciseCount(format);
+    const existing = namedExercises(block);
+    if (existing.length >= min) return block;
+
     let formatParams = normalizeFormatParams(format, block.format_params);
-    const exercises = defaultExercisePlaceholders(format);
+    const templates = defaultExercisePlaceholders(format);
+    const exercises =
+      existing.length === 0
+        ? templates
+        : [
+            ...existing,
+            ...templates.slice(existing.length, min).map((row, i) => ({
+              name: row.name || `Movement ${existing.length + i + 1}`,
+            })),
+          ];
+    while (exercises.length < min) {
+      exercises.push({ name: `Movement ${exercises.length + 1}` });
+    }
     if (format === 'emom') {
       formatParams = hydrateEmomAlternatingStations(exercises.length, formatParams);
     }

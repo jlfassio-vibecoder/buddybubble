@@ -40,6 +40,13 @@ import {
   normalizeFormatParams,
   validateBlockShape,
 } from './block-blueprint-library';
+import { ensureOutlineExercisePlaceholders } from './outline-exercise-placeholders';
+import {
+  capOutlineInstructionLines,
+  clampOutlineExerciseName,
+  MAX_OUTLINE_EXERCISES_PER_BLOCK,
+  sanitizeOutlineBlockName,
+} from './outline-block-name-sanitize';
 import {
   COACH_TASK_NOTES_MAX_CHARS,
   COACH_TASK_SEED_CTA,
@@ -62,6 +69,11 @@ import {
   type TaskModalIntakePatch,
   type TaskModalIntakePatchDrop,
 } from './task-modal-intake-patch';
+import {
+  parseOutlineDraftPatchMode,
+  parseOutlineDraftPatchRevision,
+  type OutlineDraftPatchV1,
+} from './outline-draft-patch';
 
 /**
  * Normalized Coach response shape. Lifted verbatim from
@@ -122,6 +134,12 @@ export type CoachGeminiJsonResponse = {
   task_modal_intake_dropped: TaskModalIntakePatchDrop[];
   /** Optional UI command for the Task Modal client. */
   card_action: CoachCardActionKind | null;
+  /**
+   * Optional: outline structure patch (builder / outline co-pilot). Persisted to
+   * `tasks.metadata.coach_workout_outline` when revision is not stale.
+   */
+  outline_draft_patch: OutlineDraftPatchV1 | null;
+  outline_draft_patch_drops: BlockShapeDrop[];
 };
 
 export type CoachCardActionKind = 'trigger_generation' | 'regenerate_from_outline';
@@ -163,10 +181,13 @@ export function coalesceTaskDescription(parsed: Record<string, unknown>): string
 function normalizeExercisesFromGeminiArray(raw: unknown): Record<string, unknown>[] {
   const exercises: Record<string, unknown>[] = [];
   if (!Array.isArray(raw)) return exercises;
-  for (const ex of raw) {
+  const capped = raw.slice(0, MAX_OUTLINE_EXERCISES_PER_BLOCK);
+  for (const ex of capped) {
     if (!ex || typeof ex !== 'object' || Array.isArray(ex)) continue;
     const e = ex as Record<string, unknown>;
-    const name = typeof e.name === 'string' ? e.name.trim() : '';
+    const nameRaw = typeof e.name === 'string' ? e.name.trim() : '';
+    if (!nameRaw) continue;
+    const name = clampOutlineExerciseName(nameRaw);
     if (!name) continue;
     const row: Record<string, unknown> = { name };
     if (typeof e.sets === 'number' && e.sets > 0) row.sets = Math.round(e.sets);
@@ -205,10 +226,43 @@ function resolveBlockFormat(blk: Record<string, unknown>): BlockFormat | 'unknow
 
 function instructionLinesFromBlock(blk: Record<string, unknown>): string[] {
   if (!Array.isArray(blk.instructions)) return [];
-  return blk.instructions
+  const lines = blk.instructions
     .filter((x): x is string => typeof x === 'string')
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
+  return capOutlineInstructionLines(lines);
+}
+
+const OUTLINE_PARSE_LOG_PREFIX = '[coach-outline-phase-b]';
+const OUTLINE_PARSE_LOG_TEXT_MAX = 100;
+
+function truncateOutlineParseLogText(text: string, max = OUTLINE_PARSE_LOG_TEXT_MAX): string {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max)}…`;
+}
+
+function summarizeRawBlockForLog(
+  blk: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+  if (!blk) return null;
+  const name = typeof blk.name === 'string' ? truncateOutlineParseLogText(blk.name, 40) : undefined;
+  const blockFormat = blk.block_format ?? blk.type;
+  return {
+    ...(name ? { name } : {}),
+    ...(blockFormat != null ? { block_format: blockFormat } : {}),
+    block_keys: Object.keys(blk).slice(0, 8),
+  };
+}
+
+function summarizeBlocksPreviewForLog(raw: unknown): string {
+  if (raw == null) return String(raw);
+  if (Array.isArray(raw)) return `array(length=${raw.length})`;
+  if (typeof raw === 'object') {
+    return `object(keys=${Object.keys(raw as object)
+      .slice(0, 8)
+      .join(',')})`;
+  }
+  return typeof raw;
 }
 
 /** Normalizes a Gemini blocks array with validation (shared by proposed metadata and coach outline). */
@@ -229,19 +283,38 @@ function normalizeBlocksFromGeminiArray(
     const instructionOnly = instructions.length > 0 && inner.length === 0;
 
     if (instructionOnly) {
+      const nameField = `${fieldPrefix}[${i}].name`;
+      const nameResult = sanitizeOutlineBlockName(blk.name, nameField, drops);
+      if (nameResult.dropped) continue;
       const row: Record<string, unknown> = {};
-      if (typeof blk.name === 'string' && blk.name.trim()) row.name = blk.name.trim();
+      if (nameResult.name) row.name = nameResult.name;
       row.instructions = instructions;
       if (Object.keys(row).length > 0) blocks.push(row);
       continue;
     }
 
-    const blockName = typeof blk.name === 'string' ? blk.name.trim() : '';
-    if (inner.length === 0 && !blockName) continue;
+    const nameField = `${fieldPrefix}[${i}].name`;
+    const nameResult = sanitizeOutlineBlockName(blk.name, nameField, drops);
+    if (nameResult.dropped) continue;
+    const blockName = nameResult.name ?? '';
+    if (inner.length === 0 && !blockName) {
+      console.warn(`${OUTLINE_PARSE_LOG_PREFIX} block skipped (no exercises and no name)`, {
+        field: `${fieldPrefix}[${i}]`,
+        block_keys: Object.keys(blk).slice(0, 8),
+      });
+      continue;
+    }
 
     const resolved = resolveBlockFormat(blk);
     if (resolved === 'unknown') {
       drops.push({ field: `${fieldPrefix}[${i}]`, reason: 'unknown_block_format' });
+      console.warn(`${OUTLINE_PARSE_LOG_PREFIX} block dropped`, {
+        field: `${fieldPrefix}[${i}]`,
+        reason: 'unknown_block_format',
+        block_format_raw: blk.block_format,
+        block_type_raw: blk.type,
+        block_name: blockName ? truncateOutlineParseLogText(blockName, 40) : '',
+      });
       continue;
     }
     const blockFormat = resolved;
@@ -252,6 +325,14 @@ function normalizeBlocksFromGeminiArray(
     const shapeReason = validateBlockShape(blockFormat, inner.length, formatParams);
     if (shapeReason != null) {
       drops.push({ field: `${fieldPrefix}[${i}]`, reason: shapeReason });
+      console.warn(`${OUTLINE_PARSE_LOG_PREFIX} block dropped (validateBlockShape)`, {
+        field: `${fieldPrefix}[${i}]`,
+        reason: shapeReason,
+        block_format: blockFormat,
+        exercise_count: inner.length,
+        block_name: blockName ? truncateOutlineParseLogText(blockName, 40) : '',
+        format_param_keys: Object.keys(formatParams).slice(0, 8),
+      });
       continue;
     }
 
@@ -276,14 +357,29 @@ function normalizeBlocksFromGeminiArray(
 }
 
 /** Normalizes Gemini `coach_workout_outline` (Apex Architect pre-factory; parametric allowed). */
-export function parseCoachWorkoutOutlineWithDrops(parsed: Record<string, unknown>): {
+export function parseCoachWorkoutOutlineWithDrops(
+  parsed: Record<string, unknown>,
+  options?: { logZeroBlocks?: boolean },
+): {
   outline: Record<string, unknown>[] | null;
   drops: BlockShapeDrop[];
 } {
   const raw = parsed.coach_workout_outline ?? parsed['coach_workout_outline'];
   if (raw == null) return { outline: null, drops: [] };
   if (!Array.isArray(raw)) return { outline: null, drops: [] };
-  const { blocks, drops } = normalizeBlocksFromGeminiArray(raw, 'coach_workout_outline');
+  const prepared = ensureOutlineExercisePlaceholders(
+    raw.filter(
+      (b): b is Record<string, unknown> => b != null && typeof b === 'object' && !Array.isArray(b),
+    ),
+  );
+  const { blocks, drops } = normalizeBlocksFromGeminiArray(prepared, 'coach_workout_outline');
+  if (options?.logZeroBlocks && blocks.length === 0 && prepared.length > 0) {
+    console.warn(`${OUTLINE_PARSE_LOG_PREFIX} normalize produced zero blocks`, {
+      input_block_count: prepared.length,
+      drop_count: drops.length,
+      sample_raw_block: summarizeRawBlockForLog(prepared[0] ?? null),
+    });
+  }
   return { outline: blocks.length > 0 ? blocks : null, drops };
 }
 
@@ -296,14 +392,59 @@ export function parseCoachOutlineOnlyBlocksFromText(text: string): {
   let parsed: Record<string, unknown>;
   try {
     parsed = JSON.parse(cleanText) as Record<string, unknown>;
-  } catch {
+  } catch (err) {
+    console.warn(`${OUTLINE_PARSE_LOG_PREFIX} JSON.parse failed`, {
+      message: err instanceof Error ? err.message : String(err),
+      text_chars: cleanText.length,
+      text_head: truncateOutlineParseLogText(cleanText),
+    });
     return { outline: null, drops: [{ field: 'blocks', reason: 'json_parse_failed' }] };
   }
   const raw = parsed.blocks ?? parsed['blocks'];
   if (!Array.isArray(raw)) {
+    console.warn(`${OUTLINE_PARSE_LOG_PREFIX} missing blocks array`, {
+      top_level_keys: Object.keys(parsed).slice(0, 8),
+      blocks_value_type: raw === null ? 'null' : typeof raw,
+      blocks_preview: summarizeBlocksPreviewForLog(raw),
+    });
     return { outline: null, drops: [{ field: 'blocks', reason: 'missing_blocks' }] };
   }
-  return parseCoachWorkoutOutlineWithDrops({ coach_workout_outline: raw });
+  return parseCoachWorkoutOutlineWithDrops({ coach_workout_outline: raw }, { logZeroBlocks: true });
+}
+
+/** Normalizes Gemini `outline_draft_patch` (outline co-pilot rail). */
+export function parseOutlineDraftPatchFromGemini(raw: unknown): {
+  patch: OutlineDraftPatchV1 | null;
+  drops: BlockShapeDrop[];
+} {
+  if (raw == null) return { patch: null, drops: [] };
+  if (typeof raw !== 'object' || Array.isArray(raw)) return { patch: null, drops: [] };
+  const o = raw as Record<string, unknown>;
+  const revision = parseOutlineDraftPatchRevision(o.revision);
+  if (revision === null)
+    return { patch: null, drops: [{ field: 'revision', reason: 'invalid_revision' }] };
+  const blocksRaw = o.blocks;
+  if (!Array.isArray(blocksRaw) || blocksRaw.length === 0) {
+    return { patch: null, drops: [{ field: 'blocks', reason: 'missing_blocks' }] };
+  }
+  const collect = parseCoachWorkoutOutlineWithDrops({
+    coach_workout_outline: blocksRaw,
+  });
+  if (!collect.outline?.length) {
+    return { patch: null, drops: collect.drops };
+  }
+  const clearRaw = o.clear_confirmation;
+  const clear_confirmation = clearRaw !== false;
+  return {
+    patch: {
+      v: 1,
+      revision,
+      mode: parseOutlineDraftPatchMode(o.mode),
+      blocks: collect.outline,
+      clear_confirmation,
+    },
+    drops: collect.drops,
+  };
 }
 
 /** Normalizes Gemini `proposed_workout_metadata` with block-level drop telemetry. */
@@ -653,6 +794,12 @@ export function parseCoachJson(
   const card_action: CoachGeminiJsonResponse['card_action'] =
     parseCardActionTriggerGenerationFromGemini(cardActionRaw);
 
+  const outlinePatchCollect = parseOutlineDraftPatchFromGemini(
+    (parsed as Record<string, unknown>).outline_draft_patch,
+  );
+  const outline_draft_patch = outlinePatchCollect.patch;
+  const outline_draft_patch_drops = outlinePatchCollect.drops;
+
   const cuesResult = parsePersonalCuesPatchFromGemini(
     (parsed as Record<string, unknown>).personal_cues_patch,
     exerciseDictionaryByIndex,
@@ -681,6 +828,8 @@ export function parseCoachJson(
       personal_cues_resolved,
       personal_cues_dropped_unanchored,
       card_action: null,
+      outline_draft_patch,
+      outline_draft_patch_drops,
       ...intakeTail,
       ...updateTail,
     };
@@ -702,6 +851,8 @@ export function parseCoachJson(
     personal_cues_resolved,
     personal_cues_dropped_unanchored,
     card_action,
+    outline_draft_patch,
+    outline_draft_patch_drops,
     ...intakeTail,
     ...updateTail,
   };

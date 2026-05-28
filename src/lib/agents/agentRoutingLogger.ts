@@ -60,14 +60,14 @@ export type AgentResponseReceivedEvent = {
 export type AgentEffectScannedRoutingEvent = {
   event: 'agent.effect.scanned';
   surface: AgentRoutingSurface;
-  effect: 'execution_patch' | 'task_modal_intake_patch' | 'card_action';
+  effect: 'execution_patch' | 'task_modal_intake_patch' | 'card_action' | 'outline_draft_applied';
   messageId: string;
 };
 
 export type AgentEffectParseDroppedRoutingEvent = {
   event: 'agent.effect.parse_dropped';
   surface: AgentRoutingSurface;
-  effect: 'execution_patch' | 'task_modal_intake_patch' | 'card_action';
+  effect: 'execution_patch' | 'task_modal_intake_patch' | 'card_action' | 'outline_draft_applied';
   messageId: string;
   reason: 'missing' | 'invalid';
 };
@@ -75,7 +75,7 @@ export type AgentEffectParseDroppedRoutingEvent = {
 export type AgentEffectAppliedRoutingEvent = {
   event: 'agent.effect.applied';
   surface: AgentRoutingSurface;
-  effect: 'execution_patch' | 'task_modal_intake_patch' | 'card_action';
+  effect: 'execution_patch' | 'task_modal_intake_patch' | 'card_action' | 'outline_draft_applied';
   messageId: string;
 };
 

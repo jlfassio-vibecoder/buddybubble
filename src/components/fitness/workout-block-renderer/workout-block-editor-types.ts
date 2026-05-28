@@ -36,3 +36,14 @@ export function updateExerciseInBlock(
     return { ...b, exercises };
   });
 }
+
+export function removeExerciseFromBlock(
+  blocks: WorkoutSessionBlockView[],
+  blockId: string,
+  exerciseIndex: number,
+): WorkoutSessionBlockView[] {
+  return blocks.map((b) => {
+    if (b.id !== blockId) return b;
+    return { ...b, exercises: b.exercises.filter((_, i) => i !== exerciseIndex) };
+  });
+}

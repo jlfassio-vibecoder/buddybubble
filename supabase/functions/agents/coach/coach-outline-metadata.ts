@@ -38,6 +38,16 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return v != null && typeof v === 'object' && !Array.isArray(v);
 }
 
+/** True when `ai_workout_factory.workout_set.workouts[]` is non-empty (rich factory on card). */
+function hasRichWorkoutFactoryInMetadata(meta: Record<string, unknown>): boolean {
+  const af = meta.ai_workout_factory;
+  if (!isPlainObject(af)) return false;
+  const ws = af.workout_set;
+  if (!isPlainObject(ws)) return false;
+  const workouts = ws.workouts;
+  return Array.isArray(workouts) && workouts.length > 0;
+}
+
 export function readCoachOutlineMetadata(meta: unknown): CoachOutlineMetadataFields {
   const o = isPlainObject(meta) ? meta : {};
   const rawOutline = o.coach_workout_outline;
@@ -80,7 +90,7 @@ export function readCoachOutlineMetadata(meta: unknown): CoachOutlineMetadataFie
       ) as BlockShapeDrop[])
     : [];
 
-  const hasFactory = isPlainObject(o.ai_workout_factory);
+  const hasFactory = hasRichWorkoutFactoryInMetadata(o);
 
   return { outline, status, confirmedAt, error, drops, hasFactory };
 }

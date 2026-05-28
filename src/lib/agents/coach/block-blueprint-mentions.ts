@@ -60,6 +60,7 @@ export function parseBlockBlueprintMentionsFromMetadata(
 
 export function formatBlockBlueprintRefsPromptBlock(
   mentions: BlockBlueprintMentionClientPayload[],
+  options?: { outlineCoPilot?: boolean },
 ): string | null {
   if (!mentions.length) return null;
   const lines = mentions.map((m) => {
@@ -69,12 +70,17 @@ export function formatBlockBlueprintRefsPromptBlock(
       `section_role=${m.section_role}, block_format=${m.block_format}, format_params=${params}`
     );
   });
+  const outlineCoPilot = options?.outlineCoPilot === true;
+  const emitTarget = outlineCoPilot
+    ? 'outline_draft_patch.blocks (merge_by_name, revision from CURRENT OUTLINE DRAFT)'
+    : 'proposed_workout_metadata.blocks as append-only deltas';
+  const tail = outlineCoPilot
+    ? 'matching section_name, block_format, and format_params exactly. Combine with # exercise tags for exercises[] inside each block. Do not duplicate structure in reply_content alone.'
+    : 'one block per ref matching section_name, block_format, and format_params exactly. Combine with # exercise tags in the user message for exercises[] inside each block. Do not duplicate the workout in updated_task_description. Do not re-emit unchanged blocks.';
   return (
     `\n\n${BLOCK_BLUEPRINT_REFS_HEADER}\n` +
     lines.join('\n') +
-    '\n\nWhen BLOCK_BLUEPRINT_REFS is present, emit proposed_workout_metadata.blocks as append-only deltas: ' +
-    'one block per ref matching section_name, block_format, and format_params exactly. ' +
-    'Combine with # exercise tags in the user message for exercises[] inside each block. ' +
-    'Do not duplicate the workout in updated_task_description. Do not re-emit unchanged blocks.'
+    `\n\nWhen BLOCK_BLUEPRINT_REFS is present, emit ${emitTarget}: ` +
+    tail
   );
 }

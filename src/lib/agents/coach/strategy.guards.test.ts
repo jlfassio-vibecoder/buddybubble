@@ -40,6 +40,8 @@ function makeParsed(overrides: Partial<CoachGeminiJsonResponse> = {}): CoachGemi
     task_modal_intake_patch: null,
     task_modal_intake_dropped: [],
     card_action: null,
+    outline_draft_patch: null,
+    outline_draft_patch_drops: [],
     ...overrides,
   };
 }
@@ -49,6 +51,7 @@ const NO_TASK_FRAGMENT: CoachGuardsFragment = {
   priorUserMessageCount: 5,
   currentWorkoutContextJson: null,
   isActiveWorkoutSession: false,
+  outlineCoPilotActive: false,
 };
 
 describe('applyCoachServerGuards — Open Canvas guard', () => {
@@ -220,6 +223,7 @@ describe('applyCoachServerGuards — Active-workout clamp', () => {
       ...NO_TASK_FRAGMENT,
       currentWorkoutContextJson: '{"exercises":[]}',
       isActiveWorkoutSession: false,
+      outlineCoPilotActive: false,
     });
     expect(out.create_card).toBe(false);
     expect(out.task_title).toBeNull();
@@ -253,6 +257,7 @@ describe('applyCoachServerGuards — Active-workout clamp', () => {
       ...NO_TASK_FRAGMENT,
       currentWorkoutContextJson: '{"exercises":[]}',
       isActiveWorkoutSession: false,
+      outlineCoPilotActive: false,
     });
     expect(out.proposed_workout_metadata).toEqual(proposed);
     expect(out.update_existing_task).toBe(true);
@@ -278,6 +283,7 @@ describe('applyCoachServerGuards — Active-workout clamp', () => {
       ...NO_TASK_FRAGMENT,
       currentWorkoutContextJson: '{"exercises":[]}',
       isActiveWorkoutSession: true,
+      outlineCoPilotActive: false,
     });
     expect(out.create_card).toBe(false);
     expect(out.update_existing_task).toBe(false);
@@ -309,6 +315,7 @@ describe('applyCoachServerGuards — Active-workout clamp', () => {
       ...NO_TASK_FRAGMENT,
       currentWorkoutContextJson: '{}',
       isActiveWorkoutSession: false,
+      outlineCoPilotActive: false,
     });
     expect(parsed).toEqual(snapshot);
   });
@@ -378,6 +385,7 @@ describe('applyCoachServerGuards — Narrative vs Structure killswitch', () => {
       ...NO_TASK_FRAGMENT,
       currentWorkoutContextJson: '{}',
       isActiveWorkoutSession: true,
+      outlineCoPilotActive: false,
     });
     expect(out.updated_task_description).toBeNull();
     expect(out.proposed_workout_metadata).toBeNull();
@@ -388,6 +396,7 @@ const PLANNED_WORKOUT_FRAGMENT: CoachGuardsFragment = {
   ...NO_TASK_FRAGMENT,
   currentWorkoutContextJson: '{"exercises":[{"name":"Goblet Squat"}]}',
   isActiveWorkoutSession: false,
+  outlineCoPilotActive: false,
 };
 
 const FINISHER_PROSE_DUMP =
@@ -498,6 +507,7 @@ describe('applyCoachServerGuards — coach_workout_outline (Apex Phase 2)', () =
       ...NO_TASK_FRAGMENT,
       currentWorkoutContextJson: '{"exercises":[]}',
       isActiveWorkoutSession: true,
+      outlineCoPilotActive: false,
     });
     expect(out.coach_workout_outline).toBeNull();
     expect(out.proposed_workout_metadata).toBeNull();
