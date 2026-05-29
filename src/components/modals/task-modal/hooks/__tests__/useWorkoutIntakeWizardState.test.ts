@@ -81,6 +81,65 @@ describe('useWorkoutIntakeWizardState', () => {
     expect(result.current.readiness).toBe(2);
   });
 
+  it('preflight mode ignores duration and intensity patches', () => {
+    const { result } = renderHook(() =>
+      useWorkoutIntakeWizardState('existing:t1', {}, { mode: 'preflight' }),
+    );
+
+    act(() => {
+      result.current.setDurationMinutes(30);
+      result.current.setTargetIntensity('High/HIIT');
+    });
+
+    act(() => {
+      result.current.applyTaskModalIntakePatchFromMessage({
+        messageId: 'm-preflight',
+        messageCreatedAtMs: Date.now(),
+        patch: {
+          duration_minutes: 60,
+          target_intensity: 'Light/Recovery',
+          sleep_quality: 6,
+        },
+      });
+    });
+
+    expect(result.current.durationMinutes).toBe(30);
+    expect(result.current.targetIntensity).toBe('High/HIIT');
+    expect(result.current.sleepQuality).toBe(6);
+  });
+
+  it('buildPreflightPayload omits duration and intensity', () => {
+    const { result } = renderHook(() =>
+      useWorkoutIntakeWizardState('existing:t1', {}, { mode: 'preflight' }),
+    );
+
+    act(() => {
+      result.current.setReadiness(7);
+      result.current.setSleepQuality(8);
+      result.current.toggleSoreness('Legs');
+    });
+
+    expect(result.current.buildPreflightPayload()).toEqual({
+      readiness: 7,
+      sleepQuality: 8,
+      soreness: ['Legs'],
+    });
+  });
+
+  it('preflight mode clamps wizard step to 2', () => {
+    const { result } = renderHook(() =>
+      useWorkoutIntakeWizardState('existing:t1', {}, { mode: 'preflight' }),
+    );
+
+    act(() => {
+      result.current.setStep(3);
+    });
+
+    expect(result.current.step).toBe(2);
+    expect(result.current.maxStep).toBe(2);
+    expect(result.current.mode).toBe('preflight');
+  });
+
   it('emits telemetry on skip and apply', () => {
     const onPatchFieldSkipped = vi.fn();
     const onPatchFieldApplied = vi.fn();

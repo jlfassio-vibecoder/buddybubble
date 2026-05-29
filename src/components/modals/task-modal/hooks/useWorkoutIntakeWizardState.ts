@@ -14,6 +14,18 @@ import {
 
 export type WorkoutIntakeWizardStep = 1 | 2 | 3;
 
+export type WorkoutIntakeWizardMode = 'generation' | 'preflight';
+
+export type WorkoutIntakeWizardOptions = {
+  mode?: WorkoutIntakeWizardMode;
+};
+
+export type WorkoutPreflightPayload = {
+  readiness: number;
+  sleepQuality: number;
+  soreness: string[];
+};
+
 export type IntakeWritableField =
   | 'readiness'
   | 'sleep_quality'
@@ -86,12 +98,25 @@ function resetWizardValues(): {
  * @param sessionKey — `existing:<taskId>` for a normal open, or `create:<sessionUuid>` for a
  *   create flow (must stay stable across `null -> taskId` first save; see TaskModal).
  */
+function clampWizardStepForMode(
+  step: WorkoutIntakeWizardStep,
+  mode: WorkoutIntakeWizardMode,
+): WorkoutIntakeWizardStep {
+  if (mode === 'preflight' && step > 2) return 2;
+  return step;
+}
+
 export function useWorkoutIntakeWizardState(
   sessionKey: string,
   telemetry: WorkoutIntakeWizardTelemetry = {},
+  options: WorkoutIntakeWizardOptions = {},
 ) {
+  const mode = options.mode ?? 'generation';
+  const maxStep: WorkoutIntakeWizardStep = mode === 'preflight' ? 2 : 3;
   const telemetryRef = useRef(telemetry);
   telemetryRef.current = telemetry;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
 
   const [step, setStepState] = useState<WorkoutIntakeWizardStep>(1);
   const [readiness, setReadinessState] = useState(5);
@@ -158,12 +183,14 @@ export function useWorkoutIntakeWizardState(
         tryField('sleep_quality', () => setSleepQualityState(patch.sleep_quality!));
       }
       if (patch.wizard_step !== undefined) {
-        tryField('wizard_step', () => setStepState(patch.wizard_step!));
+        tryField('wizard_step', () =>
+          setStepState(clampWizardStepForMode(patch.wizard_step!, modeRef.current)),
+        );
       }
-      if (patch.duration_minutes !== undefined) {
+      if (modeRef.current !== 'preflight' && patch.duration_minutes !== undefined) {
         tryField('duration_minutes', () => setDurationMinutesState(patch.duration_minutes!));
       }
-      if (patch.target_intensity !== undefined) {
+      if (modeRef.current !== 'preflight' && patch.target_intensity !== undefined) {
         tryField('target_intensity', () => setTargetIntensityState(patch.target_intensity!));
       }
       if (patch.soreness !== undefined) {
@@ -189,7 +216,10 @@ export function useWorkoutIntakeWizardState(
   const setStep = useCallback(
     (v: WorkoutIntakeWizardStep | ((prev: WorkoutIntakeWizardStep) => WorkoutIntakeWizardStep)) => {
       markUserTouched('wizard_step');
-      setStepState(v);
+      setStepState((prev) => {
+        const next = typeof v === 'function' ? v(prev) : v;
+        return clampWizardStepForMode(next, modeRef.current);
+      });
     },
     [markUserTouched],
   );
@@ -270,8 +300,18 @@ export function useWorkoutIntakeWizardState(
     };
   }, [readiness, sleepQuality, durationMinutes, sorenessArray, targetIntensity]);
 
+  const buildPreflightPayload = useCallback((): WorkoutPreflightPayload => {
+    return {
+      readiness,
+      sleepQuality,
+      soreness: sorenessArray,
+    };
+  }, [readiness, sleepQuality, sorenessArray]);
+
   // Copilot suggestion ignored: memoizing this return object caused an effect-loop OOM in TaskModal.layout.test.tsx; consumers tolerate fresh identities.
   return {
+    mode,
+    maxStep,
     step,
     setStep,
     readiness,
@@ -289,6 +329,7 @@ export function useWorkoutIntakeWizardState(
     applyTaskModalIntakePatchFromMessage,
     markUserTouched,
     buildWizardPayload,
+    buildPreflightPayload,
     durationOptions: WORKOUT_INTAKE_DURATION_CHOICES,
     intensityOptions: WORKOUT_INTAKE_INTENSITY_OPTIONS,
     sorenessOptions: WORKOUT_INTAKE_SORENESS_OPTIONS,

@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi, afterEach } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { RefObject } from 'react';
 import { createRef } from 'react';
 import type { Json } from '@/types/database';
@@ -9,8 +9,13 @@ import {
   type TaskModalDetailsBodyProps,
 } from '@/components/modals/task-modal/TaskModalDetailsBody';
 
-vi.mock('@/components/fitness/WorkoutIntakePanel', () => ({
-  WorkoutIntakePanel: () => <div data-testid="mock-workout-intake-panel" />,
+vi.mock('@/components/fitness/workout-intake/WorkoutGenerationIntakePanel', () => ({
+  WorkoutGenerationIntakePanel: () => <div data-testid="mock-workout-generation-intake-panel" />,
+}));
+vi.mock('@/components/fitness/workout-intake/WorkoutPreflightReadinessPanel', () => ({
+  WorkoutPreflightReadinessPanel: () => (
+    <div data-testid="mock-workout-preflight-readiness-panel" />
+  ),
 }));
 vi.mock('@/components/fitness/WorkoutOutlinePanel', () => ({
   WorkoutOutlinePanel: () => <div data-testid="mock-workout-outline-panel" />,
@@ -48,6 +53,7 @@ const baseProps: TaskModalDetailsBodyProps = {
   itemType: 'task',
   canWrite: true,
   onGenerateWorkoutFromIntake: noop,
+  onSubmitPreflightAndLaunch: noop,
   aiWorkoutGenerating: false,
   workoutIntakeState: null,
   workoutOutlineEditor: null,
@@ -127,6 +133,10 @@ const baseProps: TaskModalDetailsBodyProps = {
 };
 
 describe('TaskModalDetailsBody', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   it('matches snapshot (lifted details shell + mocked sub-panels)', () => {
     const { container } = render(<TaskModalDetailsBody {...baseProps} />);
     expect(container.firstChild).toMatchInlineSnapshot(`
@@ -214,7 +224,7 @@ describe('TaskModalDetailsBody', () => {
 
     expect(screen.getByTestId('task-modal-generated-workout')).toBeTruthy();
     expect(screen.getByText('Generated workout')).toBeTruthy();
-    expect(screen.getByText(/Saved — open the workout viewer/)).toBeTruthy();
+    expect(screen.getByText(/Saved — complete the pre-session check-in above/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Open workout viewer' }));
     expect(onOpenWorkoutViewer).toHaveBeenCalledTimes(1);
   });
@@ -234,5 +244,78 @@ describe('TaskModalDetailsBody', () => {
     );
 
     expect(screen.getByText(/Unsaved changes — open the workout viewer/)).toBeTruthy();
+  });
+
+  it('renders generation intake when factory is absent', () => {
+    render(
+      <TaskModalDetailsBody
+        {...baseProps}
+        itemType="workout"
+        isWorkoutItemType
+        workoutIntakeState={
+          {
+            mode: 'generation',
+            maxStep: 3,
+            step: 1,
+            setStep: noop,
+            readiness: 5,
+            setReadiness: noop,
+            sleepQuality: 7,
+            setSleepQuality: noop,
+            durationMinutes: 'Optimized for Goals',
+            setDurationMinutes: noop,
+            targetIntensity: 'Moderate',
+            setTargetIntensity: noop,
+            soreness: new Set(['None']),
+            toggleSoreness: noop,
+            sorenessArray: ['None'],
+            durationOptions: [],
+            intensityOptions: [],
+            sorenessOptions: [],
+          } as unknown as TaskModalDetailsBodyProps['workoutIntakeState']
+        }
+      />,
+    );
+
+    expect(screen.getByTestId('mock-workout-generation-intake-panel')).toBeTruthy();
+    expect(screen.queryByTestId('mock-workout-preflight-readiness-panel')).toBeNull();
+  });
+
+  it('renders preflight panel when factory exists', () => {
+    const taskMetadata = richMetadataWithBlockFormat('emom') as Json;
+
+    render(
+      <TaskModalDetailsBody
+        {...baseProps}
+        itemType="workout"
+        isWorkoutItemType
+        taskMetadata={taskMetadata}
+        workoutIntakeState={
+          {
+            mode: 'generation',
+            maxStep: 3,
+            step: 1,
+            setStep: noop,
+            readiness: 5,
+            setReadiness: noop,
+            sleepQuality: 7,
+            setSleepQuality: noop,
+            durationMinutes: 'Optimized for Goals',
+            setDurationMinutes: noop,
+            targetIntensity: 'Moderate',
+            setTargetIntensity: noop,
+            soreness: new Set(['None']),
+            toggleSoreness: noop,
+            sorenessArray: ['None'],
+            durationOptions: [],
+            intensityOptions: [],
+            sorenessOptions: [],
+          } as unknown as TaskModalDetailsBodyProps['workoutIntakeState']
+        }
+      />,
+    );
+
+    expect(screen.getByTestId('mock-workout-preflight-readiness-panel')).toBeTruthy();
+    expect(screen.queryByTestId('mock-workout-generation-intake-panel')).toBeNull();
   });
 });

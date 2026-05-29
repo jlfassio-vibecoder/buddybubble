@@ -5,9 +5,9 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, LayoutGrid } from 'lucide-react';
 import { WorkoutOutlinePanel } from '@/components/fitness/WorkoutOutlinePanel';
 import {
-  WorkoutIntakePanel,
+  WorkoutGenerationIntakePanel,
   type WorkoutIntakePanelWizardProps,
-} from '@/components/fitness/WorkoutIntakePanel';
+} from '@/components/fitness/workout-intake/WorkoutGenerationIntakePanel';
 import { StandardTaskChatRail } from '@/components/chat/StandardTaskChatRail';
 import { isStandardTaskChatRailEnabled } from '@/lib/feature-flags/standardTaskChatRail';
 import { COACH_SLUG } from '@/lib/agents/coach/config';
@@ -39,6 +39,9 @@ function pickWorkoutIntakePanelWizardProps(
     applyTaskModalIntakePatchFromMessage,
     markUserTouched,
     buildWizardPayload,
+    buildPreflightPayload,
+    mode,
+    maxStep,
     ...rest
   } = w;
   return rest;
@@ -275,7 +278,7 @@ export function WorkoutBuilderShell({ workspaceId, task }: Props) {
     }
 
     return (
-      <WorkoutIntakePanel
+      <WorkoutGenerationIntakePanel
         {...pickWorkoutIntakePanelWizardProps(workoutIntake)}
         handleAiGenerateWorkout={handleGenerateWorkoutFromIntake}
         isGenerating={false}

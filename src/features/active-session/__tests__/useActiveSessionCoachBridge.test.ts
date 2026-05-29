@@ -5,6 +5,10 @@ import {
   MESSAGE_METADATA_SESSION_TELEMETRY_KEY,
 } from '@/lib/agents/coach/coach-telemetry-bridge';
 import {
+  SESSION_READINESS_CONTEXT_VERSION,
+  buildSessionReadinessContext,
+} from '@/lib/workout-factory/session-readiness-context';
+import {
   SESSION_TELEMETRY_SCHEMA_VERSION,
   attachElapsedToSessionTelemetry,
 } from '@/lib/workout-factory/session-telemetry';
@@ -70,6 +74,33 @@ describe('active session coach telemetry', () => {
     expect(metadata[MESSAGE_METADATA_SESSION_TELEMETRY_FINGERPRINT_KEY]).toBe(snapshot.fingerprint);
     expect(metadata.is_silent_sentinel).toBe(true);
     expect((metadata.workout_context as Record<string, unknown>).surface).toBe('active_session');
+  });
+
+  it('buildActiveSessionSentinelMetadata includes session_readiness_context when provided', () => {
+    const source = createTelemetrySource();
+    const snapshot = buildActiveSessionTelemetry(source);
+    const readiness = buildSessionReadinessContext({
+      readiness: 6,
+      sleepQuality: 8,
+      soreness: ['Back'],
+    });
+
+    const metadata = buildActiveSessionSentinelMetadata({
+      workoutTitle: 'Test Workout',
+      sessionId: TEST_SESSION_ID,
+      classInstanceId: null,
+      workoutContext: { exercises: [] },
+      sessionTelemetry: snapshot,
+      sessionReadinessContext: readiness,
+    }) as Record<string, unknown>;
+
+    expect(metadata.session_readiness_context).toMatchObject({
+      v: SESSION_READINESS_CONTEXT_VERSION,
+      readiness: 6,
+      sleep_quality: 8,
+      soreness: ['Back'],
+      source: 'task_modal_preflight',
+    });
   });
 
   it('shouldSkipSentinelForTelemetryFingerprint skips only exact fingerprint matches', () => {

@@ -12,7 +12,8 @@ import type { WorkoutIntakeWizardData } from '@/components/modals/task-modal/hoo
 import { useWorkoutIntakeWizardState } from '@/components/modals/task-modal/hooks/useWorkoutIntakeWizardState';
 import type { WorkoutIntakePanelWizardProps } from '@/components/fitness/WorkoutIntakePanel';
 import type { WorkoutTemplate } from '@/hooks/use-workout-templates';
-import { WorkoutIntakePanel } from '@/components/fitness/WorkoutIntakePanel';
+import { WorkoutGenerationIntakePanel } from '@/components/fitness/workout-intake/WorkoutGenerationIntakePanel';
+import { WorkoutPreflightReadinessPanel } from '@/components/fitness/workout-intake/WorkoutPreflightReadinessPanel';
 import { WorkoutOutlinePanel } from '@/components/fitness/WorkoutOutlinePanel';
 import { readCoachOutlineMetadata } from '@/lib/agents/coach/coach-outline-metadata';
 import type { WorkoutOutlineEditorState } from '@/components/modals/task-modal/hooks/useWorkoutOutlineEditor';
@@ -38,6 +39,9 @@ function pickWorkoutIntakePanelWizardProps(
     applyTaskModalIntakePatchFromMessage,
     markUserTouched,
     buildWizardPayload,
+    buildPreflightPayload,
+    mode,
+    maxStep,
     ...rest
   } = w;
   return rest;
@@ -51,6 +55,8 @@ export type TaskModalDetailsBodyProps = {
   itemType: ItemType;
   canWrite: boolean;
   onGenerateWorkoutFromIntake: (data: WorkoutIntakeWizardData) => void;
+  onSubmitPreflightAndLaunch: () => void | Promise<void>;
+  preflightSubmitting?: boolean;
   aiWorkoutGenerating: boolean;
   /** When set with workout + canWrite, renders controlled `WorkoutIntakePanel`. */
   workoutIntakeState: ReturnType<typeof useWorkoutIntakeWizardState> | null;
@@ -147,6 +153,8 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     itemType,
     canWrite,
     onGenerateWorkoutFromIntake,
+    onSubmitPreflightAndLaunch,
+    preflightSubmitting = false,
     aiWorkoutGenerating,
     workoutIntakeState,
     workoutOutlineEditor,
@@ -277,11 +285,20 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
         <WorkoutOutlinePanel editor={workoutOutlineEditor} canWrite={canWrite} />
       ) : null}
 
-      {workoutIntakeState ? (
-        <WorkoutIntakePanel
+      {workoutIntakeState && !hasFactory ? (
+        <WorkoutGenerationIntakePanel
           {...pickWorkoutIntakePanelWizardProps(workoutIntakeState)}
           handleAiGenerateWorkout={onGenerateWorkoutFromIntake}
           isGenerating={aiWorkoutGenerating}
+          disabledReason={intakeDisabledReason}
+        />
+      ) : null}
+
+      {workoutIntakeState && hasFactory ? (
+        <WorkoutPreflightReadinessPanel
+          {...pickWorkoutIntakePanelWizardProps(workoutIntakeState)}
+          onSubmitPreflight={onSubmitPreflightAndLaunch}
+          isSubmitting={preflightSubmitting}
           disabledReason={intakeDisabledReason}
         />
       ) : null}
@@ -292,7 +309,7 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
           <p className="text-sm text-muted-foreground">
             {coreDirty
               ? 'Unsaved changes — open the workout viewer to review and save before starting a session.'
-              : 'Saved — open the workout viewer to review blocks or launch Active Session.'}
+              : 'Saved — complete the pre-session check-in above or open the workout viewer to review blocks.'}
           </p>
           {onOpenWorkoutViewer ? (
             <Button type="button" variant="outline" size="sm" onClick={onOpenWorkoutViewer}>

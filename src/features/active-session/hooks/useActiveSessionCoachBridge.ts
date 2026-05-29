@@ -31,6 +31,7 @@ import { useMessageThread } from '@/hooks/useMessageThread';
 import { usePermissions } from '@/hooks/use-permissions';
 import type { GhostSetSnapshot } from '@/lib/workout-factory/ghost-set-snapshot';
 import { buildWorkoutCoachRailContext } from '@/lib/workout-factory/build-workout-coach-rail-context';
+import { readSessionReadinessContext } from '@/lib/workout-factory/session-readiness-context';
 import type { IntervalRowSnapshot } from '@/lib/workout-factory/interval-timer/types';
 import { parseMemberRole } from '@/lib/permissions';
 import { useUserProfileStore } from '@/store/userProfileStore';
@@ -297,6 +298,7 @@ export function useActiveSessionCoachBridge({
       coachWorkoutContextForSentinel as unknown as Json,
       workoutTitle,
     );
+    const sessionReadinessContext = readSessionReadinessContext(sourceMetadata);
 
     await fireActiveSessionCoachSentinel({
       sendMessage: coachSendMessageRef.current,
@@ -308,12 +310,14 @@ export function useActiveSessionCoachBridge({
       performanceTelemetrySnapshot,
       elapsedSec: elapsedSecRef.current,
       lastSentFingerprintRef: lastSentTelemetryFingerprintRef,
+      sessionReadinessContext,
     });
   }, [
     classInstanceId,
     coachWorkoutContextForSentinel,
     performanceTelemetrySnapshot,
     sessionId,
+    sourceMetadata,
     workoutTitle,
   ]);
 
