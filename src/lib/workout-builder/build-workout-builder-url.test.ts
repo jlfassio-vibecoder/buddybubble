@@ -51,4 +51,13 @@ describe('buildWorkoutBuilderGeneratedHandoffUrl', () => {
     expect(url).toContain('/app/ws-1?bubble=b1&');
     expect(url).toContain(`${WORKOUT_BUILDER_TASK_HANDOFF_QUERY}=task-1`);
   });
+
+  it('appends handoff query before hash fragment', () => {
+    const url = buildWorkoutBuilderGeneratedHandoffUrl('ws-1', 'task-1', {
+      returnPath: '/app/ws-1#board',
+    });
+    expect(url).toBe(
+      `/app/ws-1?${WORKOUT_BUILDER_TASK_HANDOFF_QUERY}=task-1&${WORKOUT_BUILDER_OPEN_WORKOUT_VIEWER_QUERY}=1#board`,
+    );
+  });
 });

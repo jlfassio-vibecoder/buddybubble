@@ -33,9 +33,12 @@ export function buildWorkoutBuilderGeneratedHandoffUrl(
   opts?: { returnPath?: string | null },
 ): string {
   const base = safeNextPath(opts?.returnPath ?? null) ?? `/app/${encodeURIComponent(workspaceId)}`;
+  const hashIndex = base.indexOf('#');
+  const pathAndQuery = hashIndex === -1 ? base : base.slice(0, hashIndex);
+  const hash = hashIndex === -1 ? '' : base.slice(hashIndex);
   const params = new URLSearchParams();
   params.set(WORKOUT_BUILDER_TASK_HANDOFF_QUERY, taskId);
   params.set(WORKOUT_BUILDER_OPEN_WORKOUT_VIEWER_QUERY, '1');
-  const sep = base.includes('?') ? '&' : '?';
-  return `${base}${sep}${params.toString()}`;
+  const sep = pathAndQuery.includes('?') ? '&' : '?';
+  return `${pathAndQuery}${sep}${params.toString()}${hash}`;
 }
