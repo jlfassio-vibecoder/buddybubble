@@ -107,6 +107,22 @@ describe('active session coach telemetry', () => {
     expect(shouldSkipSentinelForTelemetryFingerprint('abc123', null)).toBe(false);
     expect(shouldSkipSentinelForTelemetryFingerprint('abc123', 'def456')).toBe(false);
     expect(shouldSkipSentinelForTelemetryFingerprint('abc123', 'abc123')).toBe(true);
+    expect(
+      shouldSkipSentinelForTelemetryFingerprint(
+        'abc123',
+        'abc123',
+        '2026-05-28T10:00:00.000Z',
+        '2026-05-28T11:00:00.000Z',
+      ),
+    ).toBe(false);
+    expect(
+      shouldSkipSentinelForTelemetryFingerprint(
+        'abc123',
+        'abc123',
+        '2026-05-28T10:00:00.000Z',
+        '2026-05-28T10:00:00.000Z',
+      ),
+    ).toBe(true);
   });
 
   it('attachElapsedToSessionTelemetry updates elapsed fields without changing fingerprint', () => {
@@ -177,6 +193,63 @@ describe('active session coach telemetry', () => {
     expect(secondMetadata.session_telemetry_fingerprint).not.toBe(
       firstMetadata.session_telemetry_fingerprint,
     );
+  });
+
+  it('fireActiveSessionCoachSentinel sends again when fingerprint matches but captured_at differs', async () => {
+    const sendMessage = vi.fn(async () => ({
+      id: 'msg-1',
+    })) as FireActiveSessionCoachSentinelDeps['sendMessage'];
+    const lastSentFingerprintRef = { current: null as string | null };
+    const lastSentReadinessCapturedAtRef = { current: null as string | null };
+    const source = createTelemetrySource({ elapsedSec: 0 });
+    const performanceTelemetrySnapshot = buildActiveSessionTelemetry(source);
+    const readinessA = buildSessionReadinessContext({
+      readiness: 6,
+      sleepQuality: 8,
+      soreness: ['Back'],
+    });
+    const readinessB = {
+      ...readinessA,
+      captured_at: '2026-05-28T11:00:00.000Z',
+    };
+
+    const baseDeps = {
+      sendMessage,
+      displayText: WORKOUT_COACH_SENTINEL_DISPLAY_TEXT,
+      workoutTitle: 'Test Workout',
+      sessionId: TEST_SESSION_ID,
+      classInstanceId: null,
+      workoutContext: { exercises: [] },
+      lastSentFingerprintRef,
+      lastSentReadinessCapturedAtRef,
+    };
+
+    const sentFirst = await fireActiveSessionCoachSentinel({
+      ...baseDeps,
+      performanceTelemetrySnapshot,
+      elapsedSec: 0,
+      sessionReadinessContext: readinessA,
+    });
+    expect(sentFirst).toBe(true);
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+
+    const sentDuplicate = await fireActiveSessionCoachSentinel({
+      ...baseDeps,
+      performanceTelemetrySnapshot,
+      elapsedSec: 0,
+      sessionReadinessContext: readinessA,
+    });
+    expect(sentDuplicate).toBe(false);
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+
+    const sentNewReadiness = await fireActiveSessionCoachSentinel({
+      ...baseDeps,
+      performanceTelemetrySnapshot,
+      elapsedSec: 0,
+      sessionReadinessContext: readinessB,
+    });
+    expect(sentNewReadiness).toBe(true);
+    expect(sendMessage).toHaveBeenCalledTimes(2);
   });
 
   it('buildActiveSessionTelemetry reflects logged set counts', () => {

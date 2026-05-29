@@ -119,6 +119,7 @@ export function useActiveSessionCoachBridge({
 
   const [coachBubbleRow, setCoachBubbleRow] = useState<BubbleRow | null>(null);
   const lastSentTelemetryFingerprintRef = useRef<string | null>(null);
+  const lastSentReadinessCapturedAtRef = useRef<string | null>(null);
   const sendRef = useRef(send);
   const coachResetSessionKeyRef = useRef<string | null>(null);
   const lastSentFingerprintRef = useRef<string | null>(null);
@@ -247,6 +248,13 @@ export function useActiveSessionCoachBridge({
 
   const performanceTelemetryFingerprint = performanceTelemetrySnapshot.fingerprint;
 
+  const sessionReadinessCapturedAt = useMemo(
+    () => readSessionReadinessContext(sourceMetadata)?.captured_at ?? null,
+    [sourceMetadata],
+  );
+
+  const sentinelDedupeKey = `${performanceTelemetryFingerprint}:${sessionReadinessCapturedAt ?? ''}`;
+
   const coachAvailableAgents = useMemo(
     () => [...messageThread.agentsByAuthUserId.values()],
     [messageThread.agentsByAuthUserId],
@@ -310,6 +318,7 @@ export function useActiveSessionCoachBridge({
       performanceTelemetrySnapshot,
       elapsedSec: elapsedSecRef.current,
       lastSentFingerprintRef: lastSentTelemetryFingerprintRef,
+      lastSentReadinessCapturedAtRef,
       sessionReadinessContext,
     });
   }, [
@@ -345,6 +354,7 @@ export function useActiveSessionCoachBridge({
     if (coachResetSessionKeyRef.current === sessionKey) return;
     coachResetSessionKeyRef.current = sessionKey;
     lastSentTelemetryFingerprintRef.current = null;
+    lastSentReadinessCapturedAtRef.current = null;
     lastSentFingerprintRef.current = null;
     lastDispatchedThreadSnapshotFingerprintRef.current = null;
     sendCoachSyncEvent(sendRef.current, { type: 'COACH_RESET' });
@@ -397,7 +407,7 @@ export function useActiveSessionCoachBridge({
       return;
     }
 
-    if (lastSentFingerprintRef.current === performanceTelemetryFingerprint) {
+    if (lastSentFingerprintRef.current === sentinelDedupeKey) {
       return;
     }
 
@@ -407,13 +417,15 @@ export function useActiveSessionCoachBridge({
 
     trySentinelDebounceRef.current = setTimeout(() => {
       trySentinelDebounceRef.current = null;
-      if (lastSentFingerprintRef.current === performanceTelemetryFingerprint) {
+      if (lastSentFingerprintRef.current === sentinelDedupeKey) {
         return;
       }
       if (
         shouldSkipSentinelForTelemetryFingerprint(
           performanceTelemetryFingerprint,
           lastSentTelemetryFingerprintRef.current,
+          sessionReadinessCapturedAt,
+          lastSentReadinessCapturedAtRef.current,
         )
       ) {
         return;
@@ -427,7 +439,7 @@ export function useActiveSessionCoachBridge({
       if (gate.isLoading) return;
       if (gate.sentinelFired) return;
       if (!gate.hasCoachAgent) return;
-      lastSentFingerprintRef.current = performanceTelemetryFingerprint;
+      lastSentFingerprintRef.current = sentinelDedupeKey;
       sendCoachSyncEvent(sendRef.current, { type: 'COACH_TRY_SENTINEL' });
     }, 150);
 
@@ -437,7 +449,7 @@ export function useActiveSessionCoachBridge({
         trySentinelDebounceRef.current = null;
       }
     };
-  }, [enabled, performanceTelemetryFingerprint]);
+  }, [enabled, sentinelDedupeKey]);
 
   return {
     canPostMessages,

@@ -43,6 +43,7 @@ import {
   buildOutlineDraftContextBlockFromStored,
   readTaskModalOutlineDraftFromMessageMetadata,
 } from './build-outline-draft-context';
+import { ACTIVE_SESSION_SURFACE_VALUE } from './session-telemetry-format';
 
 /** Header line prepended to the resolved CURRENT WORKOUT CONTEXT JSON when present. */
 export const WORKOUT_CONTEXT_HEADER = '--- CURRENT WORKOUT CONTEXT ---';
@@ -73,6 +74,39 @@ export const TASK_MODAL_INTAKE_UI_HEADER =
 
 /** Header for client-supplied Task Modal wizard snapshot on the trigger message. */
 export const TASK_MODAL_LIVE_STATE_HEADER = '--- TASK MODAL LIVE STATE (v1) ---';
+
+/** Header for pre-session readiness captured on Task Modal preflight before Active Session. */
+export const SESSION_READINESS_CONTEXT_HEADER = '--- PRE-SESSION READINESS (member check-in) ---';
+
+/** Validated snapshot from `messages.metadata.session_readiness_context` (v1). */
+export type SessionReadinessContextV1 = {
+  v: 1;
+  captured_at: string;
+  readiness: number;
+  sleep_quality: number;
+  soreness: string[];
+  source: 'task_modal_preflight';
+};
+
+const SESSION_READINESS_CONTEXT_VERSION = 1 as const;
+const SORENESS_SET_READINESS = new Set<string>(
+  WORKOUT_INTAKE_SORENESS_OPTIONS as unknown as string[],
+);
+
+function clampIntReadiness(n: number, lo: number, hi: number): number {
+  if (!Number.isFinite(n)) return lo;
+  return Math.max(lo, Math.min(hi, Math.round(n)));
+}
+
+function normalizeSorenessReadiness(raw: string[]): string[] {
+  const filtered = raw.map((s) => s.trim()).filter((s) => s && SORENESS_SET_READINESS.has(s));
+  const unique = [...new Set(filtered)];
+  if (unique.includes('None') && unique.length > 1) {
+    return normalizeSorenessReadiness(unique.filter((s) => s !== 'None'));
+  }
+  if (unique.length === 0) return ['None'];
+  return unique.sort();
+}
 
 /** Validated snapshot from `messages.metadata.task_modal_live_state` (v1). */
 export type TaskModalLiveStateV1 = {
@@ -193,6 +227,50 @@ export function buildTaskModalLiveStateBlock(snapshot: TaskModalLiveStateV1): st
   if (snapshot.soreness !== undefined && snapshot.soreness.length > 0) {
     lines.push(`soreness: ${JSON.stringify(snapshot.soreness)}`);
   }
+  return lines.join('\n');
+}
+
+/**
+ * Reads and validates `metadata.session_readiness_context` from the trigger message.
+ * Returns `null` when absent, wrong version, or invalid shape.
+ */
+export function readSessionReadinessContextFromMessageMetadata(
+  meta: unknown,
+): SessionReadinessContextV1 | null {
+  if (meta == null || typeof meta !== 'object' || Array.isArray(meta)) return null;
+  const root = meta as Record<string, unknown>;
+  const raw = root.session_readiness_context;
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  if (o.v !== SESSION_READINESS_CONTEXT_VERSION) return null;
+  if (typeof o.captured_at !== 'string' || !o.captured_at.trim()) return null;
+  if (o.source !== 'task_modal_preflight') return null;
+  if (typeof o.readiness !== 'number' || !Number.isFinite(o.readiness)) return null;
+  if (typeof o.sleep_quality !== 'number' || !Number.isFinite(o.sleep_quality)) return null;
+  if (!Array.isArray(o.soreness)) return null;
+  if (!o.soreness.every((s) => typeof s === 'string')) return null;
+
+  return {
+    v: SESSION_READINESS_CONTEXT_VERSION,
+    captured_at: o.captured_at,
+    readiness: clampIntReadiness(o.readiness, 1, 10),
+    sleep_quality: clampIntReadiness(o.sleep_quality, 1, 10),
+    soreness: normalizeSorenessReadiness(o.soreness),
+    source: 'task_modal_preflight',
+  };
+}
+
+/** Deterministic system-prompt block for validated pre-session readiness. */
+export function buildSessionReadinessContextBlock(ctx: SessionReadinessContextV1): string {
+  const lines: string[] = [
+    SESSION_READINESS_CONTEXT_HEADER,
+    "The member completed the Task Modal pre-session check-in before starting Active Session. Treat these as ground truth for today's readiness — do NOT re-ask readiness, sleep quality, or soreness sliders.",
+    `readiness (1–10): ${ctx.readiness}`,
+    `sleep_quality (1–10): ${ctx.sleep_quality}`,
+    `soreness: ${JSON.stringify(ctx.soreness)}`,
+    `captured_at: ${ctx.captured_at}`,
+    `source: ${ctx.source}`,
+  ];
   return lines.join('\n');
 }
 
@@ -376,6 +454,7 @@ export type WorkoutOpenGreetingPromptArgs = {
   workoutTitle: string;
   isoNow: string;
   userContextBlock?: string | null;
+  sessionReadinessBlock?: string | null;
 };
 
 /**
@@ -395,6 +474,14 @@ export function buildWorkoutOpenGreetingPrompt(args: WorkoutOpenGreetingPromptAr
     'Do NOT paste or reference any SYSTEM_EVENT string or technical trigger text.',
     `Reference timestamp (UTC): ${args.isoNow}`,
   ];
+  if (args.sessionReadinessBlock) {
+    parts.push(
+      'The member already completed a pre-session check-in (readiness, sleep, soreness) — see PRE-SESSION READINESS below.',
+      'Briefly acknowledge their today readiness, sleep, and soreness in natural language.',
+      'Do NOT ask them to rate readiness, sleep quality, or soreness again — no intake sliders or questionnaire.',
+      args.sessionReadinessBlock,
+    );
+  }
   if (args.userContextBlock) {
     parts.push('--- USER CONTEXT ---\n' + args.userContextBlock);
   }
@@ -405,8 +492,15 @@ export function buildWorkoutOpenGreetingPrompt(args: WorkoutOpenGreetingPromptAr
  * Single user-turn text passed to the workout-open preflight call. Mirrors the legacy
  * line at `bubble-agent-dispatch/index.ts:1502`.
  */
-export function buildWorkoutOpenGreetingUserText(workoutJson: string): string {
-  return `Structured workout data (JSON; may be truncated):\n${workoutJson || '{}'}`;
+export function buildWorkoutOpenGreetingUserText(
+  workoutJson: string,
+  readinessJson?: string | null,
+): string {
+  const lines = [`Structured workout data (JSON; may be truncated):\n${workoutJson || '{}'}`];
+  if (readinessJson && readinessJson.trim()) {
+    lines.push(`Pre-session readiness check-in (JSON):\n${readinessJson}`);
+  }
+  return lines.join('\n\n');
 }
 
 /**
@@ -688,4 +782,14 @@ export function shouldSuppressTaskModalIntakeForOutlineCoPilot(
 ): boolean {
   const { coPilotBlock } = resolveOutlineDraftPromptParts(args);
   return coPilotBlock != null;
+}
+
+/** When true, suppress TASK MODAL INTAKE UI because preflight readiness was captured on Active Session. */
+export function shouldSuppressTaskModalIntakeForPreflightReadiness(meta: unknown): boolean {
+  const readiness = readSessionReadinessContextFromMessageMetadata(meta);
+  if (!readiness) return false;
+  if (meta == null || typeof meta !== 'object' || Array.isArray(meta)) return false;
+  const wctx = (meta as Record<string, unknown>).workout_context;
+  if (wctx == null || typeof wctx !== 'object' || Array.isArray(wctx)) return false;
+  return (wctx as Record<string, unknown>).surface === ACTIVE_SESSION_SURFACE_VALUE;
 }

@@ -89,8 +89,13 @@ export function buildActiveSessionSentinelMetadata(params: {
 export function shouldSkipSentinelForTelemetryFingerprint(
   fingerprint: string,
   lastSentFingerprint: string | null,
+  readinessCapturedAt?: string | null,
+  lastSentReadinessCapturedAt?: string | null,
 ): boolean {
-  return lastSentFingerprint != null && lastSentFingerprint === fingerprint;
+  if (lastSentFingerprint == null || lastSentFingerprint !== fingerprint) return false;
+  const currentCapturedAt = readinessCapturedAt ?? null;
+  const lastCapturedAt = lastSentReadinessCapturedAt ?? null;
+  return currentCapturedAt === lastCapturedAt;
 }
 
 export type FireActiveSessionCoachSentinelDeps = {
@@ -109,6 +114,7 @@ export type FireActiveSessionCoachSentinelDeps = {
   performanceTelemetrySnapshot: SessionTelemetrySnapshot;
   elapsedSec: number;
   lastSentFingerprintRef: { current: string | null };
+  lastSentReadinessCapturedAtRef?: { current: string | null };
   sessionReadinessContext?: SessionReadinessContext | null;
 };
 
@@ -117,10 +123,13 @@ export async function fireActiveSessionCoachSentinel(
   deps: FireActiveSessionCoachSentinelDeps,
 ): Promise<boolean> {
   const { performanceTelemetrySnapshot } = deps;
+  const readinessCapturedAt = deps.sessionReadinessContext?.captured_at ?? null;
   if (
     shouldSkipSentinelForTelemetryFingerprint(
       performanceTelemetrySnapshot.fingerprint,
       deps.lastSentFingerprintRef.current,
+      readinessCapturedAt,
+      deps.lastSentReadinessCapturedAtRef?.current ?? null,
     )
   ) {
     return false;
@@ -142,5 +151,8 @@ export async function fireActiveSessionCoachSentinel(
 
   await deps.sendMessage(deps.displayText, undefined, undefined, { metadata: sentinelMetadata });
   deps.lastSentFingerprintRef.current = performanceTelemetrySnapshot.fingerprint;
+  if (deps.lastSentReadinessCapturedAtRef) {
+    deps.lastSentReadinessCapturedAtRef.current = readinessCapturedAt;
+  }
   return true;
 }
