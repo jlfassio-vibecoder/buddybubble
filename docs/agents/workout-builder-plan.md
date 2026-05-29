@@ -18,11 +18,11 @@ This document is the execution plan for **Option B: a dedicated `/builder/[taskI
 
 ### Entry and exit
 
-| Entry                                      | Behavior                                                                                                                    |
-| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| TaskModal (workout, outline not confirmed) | CTA: **Open structure builder** → `router.push(buildWorkoutBuilderUrl(...))`; close or minimize modal to avoid dual editors |
-| Kanban / deep link (optional)              | Card action or URL opens builder directly when feature flag is on                                                           |
-| After **Confirm structure**                | Navigate back to board or open TaskModal Details for intake + factory generation                                            |
+| Entry                                      | Behavior                                                                                                                                                                 |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| TaskModal (workout, outline not confirmed) | CTA: **Open structure builder** → `router.push(buildWorkoutBuilderUrl(...))`; close or minimize modal to avoid dual editors                                              |
+| Kanban / deep link (optional)              | Card action or URL opens builder directly when feature flag is on                                                                                                        |
+| After **Confirm structure**                | Stay on the builder route: structure panel switches to confirmed read-only summary and **Workout intake** renders below for factory generation (no auto-navigation away) |
 
 ### Co-Pilot data flow (revision + patch)
 

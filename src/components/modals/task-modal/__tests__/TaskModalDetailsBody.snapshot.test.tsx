@@ -1,7 +1,9 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
 import type { RefObject } from 'react';
 import { createRef } from 'react';
+import type { Json } from '@/types/database';
+import { richMetadataWithBlockFormat } from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
 import {
   TaskModalDetailsBody,
   type TaskModalDetailsBodyProps,
@@ -192,5 +194,45 @@ describe('TaskModalDetailsBody', () => {
         />
       </div>
     `);
+  });
+
+  it('shows saved factory summary from taskMetadata when outline editor is null', () => {
+    const onOpenWorkoutViewer = vi.fn();
+    const taskMetadata = richMetadataWithBlockFormat('emom') as Json;
+
+    render(
+      <TaskModalDetailsBody
+        {...baseProps}
+        itemType="workout"
+        isWorkoutItemType
+        workoutOutlineEditor={null}
+        taskMetadata={taskMetadata}
+        onOpenWorkoutViewer={onOpenWorkoutViewer}
+        coreDirty={false}
+      />,
+    );
+
+    expect(screen.getByTestId('task-modal-generated-workout')).toBeTruthy();
+    expect(screen.getByText('Generated workout')).toBeTruthy();
+    expect(screen.getByText(/Saved — open the workout viewer/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Open workout viewer' }));
+    expect(onOpenWorkoutViewer).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows unsaved warning when factory metadata is dirty', () => {
+    const taskMetadata = richMetadataWithBlockFormat('emom') as Json;
+
+    render(
+      <TaskModalDetailsBody
+        {...baseProps}
+        itemType="workout"
+        isWorkoutItemType
+        workoutOutlineEditor={null}
+        taskMetadata={taskMetadata}
+        coreDirty
+      />,
+    );
+
+    expect(screen.getByText(/Unsaved changes — open the workout viewer/)).toBeTruthy();
   });
 });

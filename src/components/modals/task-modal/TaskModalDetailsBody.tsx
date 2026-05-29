@@ -14,6 +14,7 @@ import type { WorkoutIntakePanelWizardProps } from '@/components/fitness/Workout
 import type { WorkoutTemplate } from '@/hooks/use-workout-templates';
 import { WorkoutIntakePanel } from '@/components/fitness/WorkoutIntakePanel';
 import { WorkoutOutlinePanel } from '@/components/fitness/WorkoutOutlinePanel';
+import { readCoachOutlineMetadata } from '@/lib/agents/coach/coach-outline-metadata';
 import type { WorkoutOutlineEditorState } from '@/components/modals/task-modal/hooks/useWorkoutOutlineEditor';
 import { TaskModalCardCoverSection } from '@/components/modals/task-modal/TaskModalCardCoverSection';
 import { TaskModalItemMetadataSections } from '@/components/modals/task-modal/TaskModalItemMetadataSections';
@@ -57,6 +58,8 @@ export type TaskModalDetailsBodyProps = {
   /** When true, outline editing is deferred to the full-page builder (panel hidden). */
   showStructureBuilderCta?: boolean;
   onOpenStructureBuilder?: () => void;
+  /** Opens the TaskModal workout viewer split (when factory workout is saved). */
+  onOpenWorkoutViewer?: () => void;
   intakeDisabledReason?: string;
   taskId: string | null;
   cardCoverPath: string;
@@ -149,6 +152,7 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     workoutOutlineEditor,
     showStructureBuilderCta,
     onOpenStructureBuilder,
+    onOpenWorkoutViewer,
     intakeDisabledReason,
     taskId,
     cardCoverPath,
@@ -227,6 +231,8 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     taskMetadata,
   } = props;
 
+  const hasFactory = readCoachOutlineMetadata(taskMetadata).hasFactory;
+
   return (
     <div className="min-w-0 space-y-4" data-testid="task-modal-details-body">
       <div className="space-y-2">
@@ -278,6 +284,22 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
           isGenerating={aiWorkoutGenerating}
           disabledReason={intakeDisabledReason}
         />
+      ) : null}
+
+      {hasFactory ? (
+        <div className="mt-8 space-y-3" data-testid="task-modal-generated-workout">
+          <p className="text-xs font-medium text-foreground">Generated workout</p>
+          <p className="text-sm text-muted-foreground">
+            {coreDirty
+              ? 'Unsaved changes — open the workout viewer to review and save before starting a session.'
+              : 'Saved — open the workout viewer to review blocks or launch Active Session.'}
+          </p>
+          {onOpenWorkoutViewer ? (
+            <Button type="button" variant="outline" size="sm" onClick={onOpenWorkoutViewer}>
+              Open workout viewer
+            </Button>
+          ) : null}
+        </div>
       ) : null}
 
       <TaskModalCardCoverSection

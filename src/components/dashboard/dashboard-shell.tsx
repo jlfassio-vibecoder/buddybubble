@@ -143,6 +143,7 @@ import { FloatingMediaBar } from '@/features/live-video/ui/FloatingMediaBar';
 import { JOIN_LIVE_CLASS_PARAM } from '@/lib/class-links';
 import { isDashboardProfileComplete } from '@/lib/profile-helpers';
 import { useStorefrontTrialWorkoutAutoOpen } from '@/hooks/use-storefront-trial-workout-auto-open';
+import { useBuilderGeneratedTaskHandoff } from '@/hooks/use-builder-generated-task-handoff';
 import {
   shouldBlockWorkoutForExpiredMemberPreview,
   shouldSoftLockTrialSurfaces,
@@ -1222,6 +1223,8 @@ function DashboardShellInner({
     bubbles,
     openTaskModal,
   });
+
+  useBuilderGeneratedTaskHandoff({ openTaskModal });
 
   const calendarContext = useMemo(
     () => ({
