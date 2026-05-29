@@ -4,7 +4,10 @@ import {
   MESSAGE_METADATA_SESSION_TELEMETRY_FINGERPRINT_KEY,
   MESSAGE_METADATA_SESSION_TELEMETRY_KEY,
 } from '@/lib/agents/coach/coach-telemetry-bridge';
-import { SESSION_TELEMETRY_SCHEMA_VERSION } from '@/lib/workout-factory/session-telemetry';
+import {
+  SESSION_TELEMETRY_SCHEMA_VERSION,
+  attachElapsedToSessionTelemetry,
+} from '@/lib/workout-factory/session-telemetry';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import {
   buildActiveSessionSentinelMetadata,
@@ -75,12 +78,25 @@ describe('active session coach telemetry', () => {
     expect(shouldSkipSentinelForTelemetryFingerprint('abc123', 'abc123')).toBe(true);
   });
 
+  it('attachElapsedToSessionTelemetry updates elapsed fields without changing fingerprint', () => {
+    const source = createTelemetrySource({ elapsedSec: 0 });
+    const base = buildActiveSessionTelemetry(source);
+    const withElapsed = attachElapsedToSessionTelemetry(base, 120);
+
+    expect(withElapsed.fingerprint).toBe(base.fingerprint);
+    expect(withElapsed.elapsed_sec).toBe(120);
+    expect(withElapsed.performance_summary.elapsed_sec).toBe(120);
+    expect(base.elapsed_sec).toBe(0);
+    expect(base.performance_summary.elapsed_sec).toBe(0);
+  });
+
   it('fireActiveSessionCoachSentinel sends telemetry metadata once per fingerprint', async () => {
     const sendMessage = vi.fn(async () => ({
       id: 'msg-1',
     })) as FireActiveSessionCoachSentinelDeps['sendMessage'];
     const lastSentFingerprintRef = { current: null as string | null };
-    const source = createTelemetrySource();
+    const source = createTelemetrySource({ elapsedSec: 0 });
+    const performanceTelemetrySnapshot = buildActiveSessionTelemetry(source);
 
     const baseDeps = {
       sendMessage,
@@ -94,7 +110,8 @@ describe('active session coach telemetry', () => {
 
     const sentFirst = await fireActiveSessionCoachSentinel({
       ...baseDeps,
-      telemetrySource: source,
+      performanceTelemetrySnapshot,
+      elapsedSec: 90,
     });
     expect(sentFirst).toBe(true);
     expect(sendMessage).toHaveBeenCalledTimes(1);
@@ -102,18 +119,25 @@ describe('active session coach telemetry', () => {
       ?.metadata as Record<string, unknown>;
     expect(firstMetadata.session_telemetry).toBeDefined();
     expect(firstMetadata.session_telemetry_fingerprint).toBe(lastSentFingerprintRef.current);
+    expect((firstMetadata.session_telemetry as Record<string, unknown>).elapsed_sec).toBe(90);
 
     const sentDuplicate = await fireActiveSessionCoachSentinel({
       ...baseDeps,
-      telemetrySource: source,
+      performanceTelemetrySnapshot,
+      elapsedSec: 120,
     });
     expect(sentDuplicate).toBe(false);
     expect(sendMessage).toHaveBeenCalledTimes(1);
 
-    const editedSource = createTelemetrySource({ draftLogs: createEditedDraftLogs() });
+    const editedSource = createTelemetrySource({
+      draftLogs: createEditedDraftLogs(),
+      elapsedSec: 0,
+    });
+    const editedSnapshot = buildActiveSessionTelemetry(editedSource);
     const sentAfterEdit = await fireActiveSessionCoachSentinel({
       ...baseDeps,
-      telemetrySource: editedSource,
+      performanceTelemetrySnapshot: editedSnapshot,
+      elapsedSec: 90,
     });
     expect(sentAfterEdit).toBe(true);
     expect(sendMessage).toHaveBeenCalledTimes(2);

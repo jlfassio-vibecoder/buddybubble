@@ -11,6 +11,36 @@ describe('coachSync actor', () => {
     vi.useRealTimers();
   });
 
+  it('applies execution_patch from slim CoachThreadMessageSlice without embedded tasks', async () => {
+    const adapter: CoachSyncAdapter = {
+      ...createNoOpCoachSyncAdapter(),
+    };
+    const actor = createStartedTestActor({ coachSyncAdapter: adapter });
+    const sessionStartedAt = actor.getSnapshot().context.startedAt;
+
+    const snapshot = {
+      isLoading: false,
+      coachAuthUserId: 'coach-user',
+      sessionStartedAt,
+      messages: [
+        {
+          id: 'msg-slim',
+          user_id: 'coach-user',
+          created_at: new Date(Date.now() + 60_000).toISOString(),
+          metadata: {
+            execution_patch: [{ exerciseIndex: 0, setIndex: 0, reps: '8' }],
+          },
+          content: 'Coach patch',
+        },
+      ],
+    };
+
+    actor.send({ type: 'COACH_THREAD_SNAPSHOT', snapshot: snapshot as never });
+    await Promise.resolve();
+
+    expect(actor.getSnapshot().context.draftLogs[0][0].reps).toBe('8');
+  });
+
   it('emits COACH_PATCH once per message fingerprint', async () => {
     const adapter: CoachSyncAdapter = {
       ...createNoOpCoachSyncAdapter(),

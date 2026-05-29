@@ -2,11 +2,19 @@ import { fromCallback } from 'xstate';
 import { shouldHideWorkoutCoachSentinelFromRail } from '@/components/chat/WorkoutCoachRail';
 import { executionPatchFingerprint } from '@/lib/workout-player-execution-patch-bridge';
 import { parseExecutionPatchFromMetadata } from '@/types/execution-patch';
-import type { MessageRowWithEmbeddedTask } from '@/types/database';
+import type { Json } from '@/types/database';
 import type { ActiveSessionEvent } from '../machines/types';
 
+export type CoachThreadMessageSlice = {
+  id: string;
+  user_id: string;
+  created_at: string;
+  metadata: Json | null;
+  content?: string | null;
+};
+
 export type CoachThreadSnapshot = {
-  messages: MessageRowWithEmbeddedTask[];
+  messages: CoachThreadMessageSlice[];
   isLoading: boolean;
   coachAuthUserId: string | null;
   /** Active Session start — coach patches at or before this time are not replayed into the grid. */

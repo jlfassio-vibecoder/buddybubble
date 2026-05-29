@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -46,8 +46,11 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
   const generatedSessionIdRef = useRef(crypto.randomUUID());
   const sessionId = sessionIdParam ?? generatedSessionIdRef.current;
   const exitIntentRef = useRef<'none' | 'finish' | 'abandon'>('none');
+  const [abandonExitTick, setAbandonExitTick] = useState(0);
   const contextRef = useRef<ActiveSessionContext | null>(null);
   const coachAdapterImplRef = useRef<CoachSyncAdapter>(createNoOpCoachSyncAdapter());
+  const hasHydratedRef = useRef(false);
+  const hydrationTaskIdRef = useRef<string | null>(null);
 
   const coachSyncAdapter = useMemo<CoachSyncAdapter>(
     () => ({
@@ -121,6 +124,8 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
   );
 
   const { snapshot, send, actorRef } = useActiveSession(machineInput);
+  const sendRef = useRef(send);
+  sendRef.current = send;
   contextRef.current = snapshot.context;
 
   const isActiveSession = snapshot.matches('active');
@@ -159,7 +164,18 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
   const logSurfaceDisabled =
     isHydrating || isFinishing || isClosing || snapshot.context.closeQueued;
 
+  const exerciseCount = viewModel.flatExercises.length;
+  const blockCount = viewModel.blocks.length;
+
   useEffect(() => {
+    if (hydrationTaskIdRef.current !== task.id) {
+      hydrationTaskIdRef.current = task.id;
+      hasHydratedRef.current = false;
+    }
+    if (hasHydratedRef.current) return;
+
+    if (exerciseCount === 0 && blockCount === 0) return;
+
     let cancelled = false;
 
     void (async () => {
@@ -172,22 +188,24 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
           blocks: viewModel.blocks,
         });
         if (cancelled) return;
-        send({
+        sendRef.current({
           type: 'HYDRATE_DONE',
           draftLogs: result.draftLogs,
           ghostLogs: result.ghostLogs,
           logTaskId: result.logTaskId,
         });
+        hasHydratedRef.current = true;
       } catch {
         if (cancelled) return;
-        send({ type: 'HYDRATE_FAILED', error: 'draft_recovery_failed' });
+        sendRef.current({ type: 'HYDRATE_FAILED', error: 'draft_recovery_failed' });
+        hasHydratedRef.current = true;
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [send, supabase, task.target_bubble_id, task.id, viewModel.flatExercises, viewModel.blocks]);
+  }, [supabase, task.target_bubble_id, task.id, exerciseCount, blockCount]);
 
   useEffect(() => {
     if (!sessionStartedAt) return;
@@ -213,9 +231,7 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
     exitIntentRef.current = 'none';
   }, [snapshot.status, router, workspaceId]);
 
-  useEffect(() => {
-    if (snapshot.status !== 'done' || exitIntentRef.current !== 'abandon') return;
-
+  const exitAfterAbandon = useCallback(() => {
     const autosaveError = snapshot.context.autosaveError;
     if (autosaveError) {
       toast.error(formatUserFacingError(autosaveError));
@@ -224,11 +240,23 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
     const safeReturn = safeNextPath(returnUrl);
     if (safeReturn) {
       router.push(safeReturn);
-    } else {
-      router.back();
+      return;
     }
+
+    const fromLaunch = searchParams.get('from')?.trim();
+    if (fromLaunch === 'modal' || fromLaunch === 'kanban') {
+      router.push(`/app/${workspaceId}`);
+      return;
+    }
+
+    router.back();
+  }, [router, returnUrl, searchParams, snapshot.context.autosaveError, workspaceId]);
+
+  useEffect(() => {
+    if (snapshot.status !== 'done' || exitIntentRef.current !== 'abandon') return;
+    exitAfterAbandon();
     exitIntentRef.current = 'none';
-  }, [snapshot.status, snapshot.context.autosaveError, returnUrl, router]);
+  }, [snapshot.status, exitAfterAbandon, abandonExitTick]);
 
   const finishError = snapshot.context.finishError;
   useEffect(() => {
@@ -250,6 +278,10 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
 
   const handleAbandon = () => {
     exitIntentRef.current = 'abandon';
+    if (snapshot.status === 'done') {
+      setAbandonExitTick((tick) => tick + 1);
+      return;
+    }
     send({ type: 'ABANDON' });
   };
 
@@ -314,7 +346,8 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
             bubbleRow={coachBridge.coachBubbleRow}
             canPostMessages={coachBridge.canPostMessages}
             messageThread={coachBridge.messageThread}
-            sessionTelemetry={coachBridge.sessionTelemetry}
+            sessionTelemetryBase={coachBridge.performanceTelemetrySnapshot}
+            elapsedSec={snapshot.context.elapsedSec}
           />
         </div>
       )}

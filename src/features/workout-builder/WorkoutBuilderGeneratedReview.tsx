@@ -62,7 +62,7 @@ export function WorkoutBuilderGeneratedReview({
   useEffect(() => {
     setMode('preview');
     setDraftBlocks(cloneWorkoutSessionBlocksForEditor(blocks));
-  }, [syncKey, blocks]);
+  }, [syncKey]);
 
   const enterEdit = useCallback(() => {
     setDraftBlocks(cloneWorkoutSessionBlocksForEditor(blocks));

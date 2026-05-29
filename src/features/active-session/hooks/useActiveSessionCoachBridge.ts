@@ -17,12 +17,14 @@ import {
 } from '@/components/chat/WorkoutCoachRail';
 import type { SetDraft } from '@/components/fitness/workout-block-renderer/WorkoutPlayerExercisePanel';
 import { useWorkspaceSessionSubject } from '@/context/WorkspaceSessionContext';
-import type { CoachSyncAdapter } from '@/features/active-session/actors/coach-sync.actor';
+import type {
+  CoachSyncAdapter,
+  CoachThreadMessageSlice,
+} from '@/features/active-session/actors/coach-sync.actor';
 import {
   buildActiveSessionTelemetry,
   fireActiveSessionCoachSentinel,
   shouldSkipSentinelForTelemetryFingerprint,
-  type ActiveSessionCoachTelemetrySource,
 } from '@/features/active-session/lib/active-session-coach-telemetry';
 import type { ActiveSessionEvent } from '@/features/active-session/machines/types';
 import { useMessageThread } from '@/hooks/useMessageThread';
@@ -33,7 +35,7 @@ import type { IntervalRowSnapshot } from '@/lib/workout-factory/interval-timer/t
 import { parseMemberRole } from '@/lib/permissions';
 import { useUserProfileStore } from '@/store/userProfileStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
-import type { BubbleRow, Json } from '@/types/database';
+import type { BubbleRow, Json, MessageRowWithEmbeddedTask } from '@/types/database';
 import type { WorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 
 type CoachBridgeSend = (event: ActiveSessionEvent) => void;
@@ -65,6 +67,28 @@ function sendCoachSyncEvent(send: CoachBridgeSend, event: ActiveSessionEvent): v
   send(event);
 }
 
+function buildCoachThreadSnapshotFingerprint(params: {
+  isLoading: boolean;
+  messages: { id?: string | null }[];
+  coachAuthUserId: string | null;
+  sessionStartedAt: string | null;
+}): string {
+  const lastId = params.messages.at(-1)?.id ?? '';
+  return `${params.isLoading ? 'L' : 'R'}:${params.messages.length}:${lastId}:${params.coachAuthUserId ?? ''}:${params.sessionStartedAt ?? ''}`;
+}
+
+function toCoachThreadMessageSlices(
+  messages: MessageRowWithEmbeddedTask[],
+): CoachThreadMessageSlice[] {
+  return messages.map((m) => ({
+    id: m.id,
+    user_id: m.user_id,
+    created_at: m.created_at,
+    metadata: m.metadata,
+    content: m.content,
+  }));
+}
+
 export function useActiveSessionCoachBridge({
   enabled,
   send,
@@ -94,6 +118,13 @@ export function useActiveSessionCoachBridge({
 
   const [coachBubbleRow, setCoachBubbleRow] = useState<BubbleRow | null>(null);
   const lastSentTelemetryFingerprintRef = useRef<string | null>(null);
+  const sendRef = useRef(send);
+  const coachResetSessionKeyRef = useRef<string | null>(null);
+  const lastSentFingerprintRef = useRef<string | null>(null);
+  const lastDispatchedThreadSnapshotFingerprintRef = useRef<string | null>(null);
+  const trySentinelDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const elapsedSecRef = useRef(elapsedSec);
+  elapsedSecRef.current = elapsedSec;
 
   useEffect(() => {
     if (!enabled) return;
@@ -156,6 +187,12 @@ export function useActiveSessionCoachBridge({
     threadSubjectUserId: workspaceSubjectUserId ?? profileId,
   });
 
+  const messageThreadRef = useRef(messageThread);
+  useLayoutEffect(() => {
+    sendRef.current = send;
+    messageThreadRef.current = messageThread;
+  }, [send, messageThread]);
+
   const liveSetCounts = useMemo(() => {
     if (draftLogs.length === 0 || draftLogs.length !== sessionVm.flatExercises.length) {
       return undefined;
@@ -177,29 +214,37 @@ export function useActiveSessionCoachBridge({
     [coachWorkoutData, workoutTitle],
   );
 
-  const telemetrySource = useMemo((): ActiveSessionCoachTelemetrySource => {
-    return {
+  const intervalRowSnapshotsKey = useMemo(
+    () => JSON.stringify(intervalRowSnapshots),
+    [intervalRowSnapshots],
+  );
+
+  const performanceTelemetrySnapshot = useMemo(
+    () =>
+      buildActiveSessionTelemetry({
+        sessionId,
+        sourceTaskId,
+        logTaskId,
+        draftLogs,
+        ghostLogs,
+        elapsedSec: 0,
+        startedAt: sessionStartedAt ?? new Date(0).toISOString(),
+        intervalRowSnapshots,
+        sessionVm,
+      }),
+    [
       sessionId,
       sourceTaskId,
       logTaskId,
       draftLogs,
       ghostLogs,
-      elapsedSec,
-      startedAt: sessionStartedAt ?? new Date().toISOString(),
-      intervalRowSnapshots,
+      intervalRowSnapshotsKey,
       sessionVm,
-    };
-  }, [
-    sessionId,
-    sourceTaskId,
-    logTaskId,
-    draftLogs,
-    ghostLogs,
-    elapsedSec,
-    sessionStartedAt,
-    intervalRowSnapshots,
-    sessionVm,
-  ]);
+      sessionStartedAt,
+    ],
+  );
+
+  const performanceTelemetryFingerprint = performanceTelemetrySnapshot.fingerprint;
 
   const coachAvailableAgents = useMemo(
     () => [...messageThread.agentsByAuthUserId.values()],
@@ -260,10 +305,17 @@ export function useActiveSessionCoachBridge({
       sessionId,
       classInstanceId,
       workoutContext,
-      telemetrySource,
+      performanceTelemetrySnapshot,
+      elapsedSec: elapsedSecRef.current,
       lastSentFingerprintRef: lastSentTelemetryFingerprintRef,
     });
-  }, [classInstanceId, coachWorkoutContextForSentinel, sessionId, telemetrySource, workoutTitle]);
+  }, [
+    classInstanceId,
+    coachWorkoutContextForSentinel,
+    performanceTelemetrySnapshot,
+    sessionId,
+    workoutTitle,
+  ]);
 
   useLayoutEffect(() => {
     coachAdapterImplRef.current = {
@@ -285,94 +337,110 @@ export function useActiveSessionCoachBridge({
 
   useEffect(() => {
     if (!enabled) return;
-    return () => {
-      lastSentTelemetryFingerprintRef.current = null;
-      sendCoachSyncEvent(send, { type: 'COACH_RESET' });
-    };
-  }, [enabled, send, sourceTaskId]);
+    const sessionKey = sourceTaskId;
+    if (coachResetSessionKeyRef.current === sessionKey) return;
+    coachResetSessionKeyRef.current = sessionKey;
+    lastSentTelemetryFingerprintRef.current = null;
+    lastSentFingerprintRef.current = null;
+    lastDispatchedThreadSnapshotFingerprintRef.current = null;
+    sendCoachSyncEvent(sendRef.current, { type: 'COACH_RESET' });
+  }, [enabled, sourceTaskId]);
 
-  useEffect(() => {
-    if (!enabled) return;
+  const coachThreadSnapshotFingerprint = useMemo(() => {
     const coachAuthUserId =
       coachAvailableAgents.find((a) => a.slug === CHAT_AREA_DEFAULT_AGENT_SLUG)?.auth_user_id ??
       null;
-    sendCoachSyncEvent(send, {
+    return buildCoachThreadSnapshotFingerprint({
+      isLoading: messageThread.isLoading,
+      messages: messageThread.messages,
+      coachAuthUserId,
+      sessionStartedAt,
+    });
+  }, [coachAvailableAgents, messageThread.isLoading, messageThread.messages, sessionStartedAt]);
+
+  useEffect(() => {
+    if (!enabled) {
+      lastDispatchedThreadSnapshotFingerprintRef.current = null;
+      return;
+    }
+    if (lastDispatchedThreadSnapshotFingerprintRef.current === coachThreadSnapshotFingerprint) {
+      return;
+    }
+    lastDispatchedThreadSnapshotFingerprintRef.current = coachThreadSnapshotFingerprint;
+
+    const thread = messageThreadRef.current;
+    const coachAuthUserId =
+      [...thread.agentsByAuthUserId.values()].find((a) => a.slug === CHAT_AREA_DEFAULT_AGENT_SLUG)
+        ?.auth_user_id ?? null;
+    sendCoachSyncEvent(sendRef.current, {
       type: 'COACH_THREAD_SNAPSHOT',
       snapshot: {
-        messages: messageThread.messages,
-        isLoading: messageThread.isLoading,
+        messages: toCoachThreadMessageSlices(thread.messages),
+        isLoading: thread.isLoading,
         coachAuthUserId,
         sessionStartedAt,
       },
     });
-  }, [
-    coachAvailableAgents,
-    enabled,
-    messageThread.isLoading,
-    messageThread.messages,
-    send,
-    sessionStartedAt,
-  ]);
-
-  const performanceTelemetryFingerprint = useMemo(() => {
-    return buildActiveSessionTelemetry({
-      sessionId,
-      sourceTaskId,
-      logTaskId,
-      draftLogs,
-      ghostLogs,
-      elapsedSec: 0,
-      startedAt: sessionStartedAt ?? new Date(0).toISOString(),
-      intervalRowSnapshots,
-      sessionVm,
-    }).fingerprint;
-  }, [
-    sessionId,
-    sourceTaskId,
-    logTaskId,
-    draftLogs,
-    ghostLogs,
-    intervalRowSnapshots,
-    sessionVm,
-    sessionStartedAt,
-  ]);
+  }, [enabled, coachThreadSnapshotFingerprint, sessionStartedAt]);
 
   useEffect(() => {
-    if (!enabled) return;
-    if (
-      shouldSkipSentinelForTelemetryFingerprint(
-        performanceTelemetryFingerprint,
-        lastSentTelemetryFingerprintRef.current,
-      )
-    ) {
+    if (!enabled) {
+      lastSentFingerprintRef.current = null;
+      if (trySentinelDebounceRef.current) {
+        clearTimeout(trySentinelDebounceRef.current);
+        trySentinelDebounceRef.current = null;
+      }
       return;
     }
-    sendCoachSyncEvent(send, { type: 'COACH_TRY_SENTINEL' });
-  }, [
-    enabled,
-    send,
-    performanceTelemetryFingerprint,
-    canPostMessages,
-    profileId,
-    workspaceId,
-    bubbleId,
-    sourceTaskId,
-    coachBubbleRow,
-    messageThread.isLoading,
-    sentinelFired,
-    coachAvailableAgents,
-  ]);
 
-  const sessionTelemetry = useMemo(
-    () => buildActiveSessionTelemetry(telemetrySource),
-    [telemetrySource],
-  );
+    if (lastSentFingerprintRef.current === performanceTelemetryFingerprint) {
+      return;
+    }
+
+    if (trySentinelDebounceRef.current) {
+      clearTimeout(trySentinelDebounceRef.current);
+    }
+
+    trySentinelDebounceRef.current = setTimeout(() => {
+      trySentinelDebounceRef.current = null;
+      if (lastSentFingerprintRef.current === performanceTelemetryFingerprint) {
+        return;
+      }
+      if (
+        shouldSkipSentinelForTelemetryFingerprint(
+          performanceTelemetryFingerprint,
+          lastSentTelemetryFingerprintRef.current,
+        )
+      ) {
+        return;
+      }
+      const gate = sentinelGateRef.current;
+      if (!gate.canPostMessages) return;
+      if (!gate.profileId) return;
+      if (!gate.workspaceId || !gate.bubbleId) return;
+      if (!gate.sourceTaskId.trim()) return;
+      if (!gate.coachBubbleRow) return;
+      if (gate.isLoading) return;
+      if (gate.sentinelFired) return;
+      if (!gate.hasCoachAgent) return;
+      lastSentFingerprintRef.current = performanceTelemetryFingerprint;
+      sendCoachSyncEvent(sendRef.current, { type: 'COACH_TRY_SENTINEL' });
+    }, 150);
+
+    return () => {
+      if (trySentinelDebounceRef.current) {
+        clearTimeout(trySentinelDebounceRef.current);
+        trySentinelDebounceRef.current = null;
+      }
+    };
+  }, [enabled, performanceTelemetryFingerprint]);
 
   return {
     canPostMessages,
     coachBubbleRow,
     coachWorkoutData,
     messageThread,
-    sessionTelemetry,
+    performanceTelemetrySnapshot,
+    elapsedSec,
   };
 }

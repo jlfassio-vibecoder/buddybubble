@@ -8,6 +8,7 @@ import { sessionTelemetryMetadataFields } from '@/lib/agents/coach/coach-telemet
 import type { GhostSetSnapshot } from '@/lib/workout-factory/ghost-set-snapshot';
 import type { IntervalRowSnapshot } from '@/lib/workout-factory/interval-timer/types';
 import {
+  attachElapsedToSessionTelemetry,
   buildSessionTelemetrySnapshot,
   type SessionTelemetrySnapshot,
 } from '@/lib/workout-factory/session-telemetry';
@@ -92,7 +93,9 @@ export type FireActiveSessionCoachSentinelDeps = {
   sessionId: string;
   classInstanceId: string | null;
   workoutContext: Json;
-  telemetrySource: ActiveSessionCoachTelemetrySource;
+  /** Performance snapshot (elapsedSec: 0) — fingerprint stable across SESSION_TICK. */
+  performanceTelemetrySnapshot: SessionTelemetrySnapshot;
+  elapsedSec: number;
   lastSentFingerprintRef: { current: string | null };
 };
 
@@ -100,15 +103,20 @@ export type FireActiveSessionCoachSentinelDeps = {
 export async function fireActiveSessionCoachSentinel(
   deps: FireActiveSessionCoachSentinelDeps,
 ): Promise<boolean> {
-  const sessionTelemetry = buildActiveSessionTelemetry(deps.telemetrySource);
+  const { performanceTelemetrySnapshot } = deps;
   if (
     shouldSkipSentinelForTelemetryFingerprint(
-      sessionTelemetry.fingerprint,
+      performanceTelemetrySnapshot.fingerprint,
       deps.lastSentFingerprintRef.current,
     )
   ) {
     return false;
   }
+
+  const sessionTelemetry = attachElapsedToSessionTelemetry(
+    performanceTelemetrySnapshot,
+    deps.elapsedSec,
+  );
 
   const sentinelMetadata = buildActiveSessionSentinelMetadata({
     workoutTitle: deps.workoutTitle,
@@ -119,6 +127,6 @@ export async function fireActiveSessionCoachSentinel(
   });
 
   await deps.sendMessage(deps.displayText, undefined, undefined, { metadata: sentinelMetadata });
-  deps.lastSentFingerprintRef.current = sessionTelemetry.fingerprint;
+  deps.lastSentFingerprintRef.current = performanceTelemetrySnapshot.fingerprint;
   return true;
 }
