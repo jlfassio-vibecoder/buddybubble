@@ -461,6 +461,11 @@ export function TaskModal({
     setMetadata,
   });
 
+  useEffect(() => {
+    if (!open || !taskId || !initialOpenWorkoutViewer || loading) return;
+    setWorkoutSplitEngaged(true);
+  }, [open, taskId, initialOpenWorkoutViewer, loading]);
+
   const showWorkoutSplitPane = Boolean(
     open &&
     workoutViewerOpen &&
@@ -504,6 +509,11 @@ export function TaskModal({
     },
     [setWorkoutViewerOpen, handleAiGenerateWorkout],
   );
+
+  const handleOpenWorkoutViewerFromDetails = useCallback(() => {
+    setWorkoutSplitEngaged(true);
+    setWorkoutViewerOpen(true);
+  }, [setWorkoutViewerOpen]);
 
   const { aiCardCoverGenerating, generateCardCoverWithAi, resetCardCoverAi } = useTaskCardCoverAi({
     canWrite,
@@ -1496,6 +1506,7 @@ export function TaskModal({
           : null,
       showStructureBuilderCta,
       onOpenStructureBuilder: showStructureBuilderCta ? handleOpenStructureBuilder : undefined,
+      onOpenWorkoutViewer: handleOpenWorkoutViewerFromDetails,
       intakeDisabledReason:
         itemType === 'workout' && canWrite && taskId && !workoutOutlineEditor.canRunIntake
           ? 'Confirm workout structure above before completing intake and generating.'
@@ -1647,6 +1658,7 @@ export function TaskModal({
       workoutOutlineEditor,
       showStructureBuilderCta,
       handleOpenStructureBuilder,
+      handleOpenWorkoutViewerFromDetails,
       metadata,
     ],
   );
