@@ -113,10 +113,10 @@ function resetWizardValues(): {
  */
 function clampWizardStepForMode(
   step: WorkoutIntakeWizardStep,
-  mode: WorkoutIntakeWizardMode,
+  _mode: WorkoutIntakeWizardMode,
 ): WorkoutIntakeWizardStep {
-  const max = mode === 'preflight' ? 2 : 2;
-  if (step > max) return max as WorkoutIntakeWizardStep;
+  const max: WorkoutIntakeWizardStep = 2;
+  if (step > max) return max;
   return step;
 }
 
@@ -126,7 +126,7 @@ export function useWorkoutIntakeWizardState(
   options: WorkoutIntakeWizardOptions = {},
 ) {
   const mode = options.mode ?? 'generation';
-  const maxStep: WorkoutIntakeWizardStep = mode === 'preflight' ? 2 : 2;
+  const maxStep: WorkoutIntakeWizardStep = 2;
   const telemetryRef = useRef(telemetry);
   telemetryRef.current = telemetry;
   const modeRef = useRef(mode);

@@ -1149,7 +1149,7 @@ export function TaskModal({
     if (hasWorkoutFactory && !preflightCompletedThisOpen && launchUi.mode !== 'disabled') {
       launchUi = {
         mode: 'disabled',
-        label: launchUi.mode === 'save_and_start' ? launchUi.label : launchUi.label,
+        label: launchUi.label,
         tooltip: 'Complete the pre-session check-in to start.',
       };
     }
