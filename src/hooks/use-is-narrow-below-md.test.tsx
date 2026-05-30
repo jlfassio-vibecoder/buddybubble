@@ -21,14 +21,14 @@ describe('useIsNarrowBelowMd', () => {
     vi.restoreAllMocks();
   });
 
-  it('queries NARROW_MAX_QUERY and returns true when matchMedia reports a match', async () => {
+  it('queries NARROW_MAX_QUERY and returns true after layout effect when matchMedia matches', async () => {
     const matchMediaSpy = vi
       .spyOn(window, 'matchMedia')
       .mockImplementation((query: string) => mediaQueryListStub(query, query === NARROW_MAX_QUERY));
 
     const { result } = renderHook(() => useIsNarrowBelowMd());
 
-    expect(result.current).toBe(true);
+    await waitFor(() => expect(result.current).toBe(true));
     expect(matchMediaSpy).toHaveBeenCalledWith(NARROW_MAX_QUERY);
   });
 
@@ -39,6 +39,7 @@ describe('useIsNarrowBelowMd', () => {
 
     const { result } = renderHook(() => useIsNarrowBelowMd());
 
+    expect(result.current).toBe(false);
     await waitFor(() => expect(result.current).toBe(false));
   });
 });

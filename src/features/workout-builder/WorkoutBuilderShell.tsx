@@ -4,10 +4,8 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, LayoutGrid } from 'lucide-react';
 import { WorkoutOutlinePanel } from '@/components/fitness/WorkoutOutlinePanel';
-import {
-  WorkoutGenerationIntakePanel,
-  type WorkoutIntakePanelWizardProps,
-} from '@/components/fitness/workout-intake/WorkoutGenerationIntakePanel';
+import { WorkoutGenerationIntakePanel } from '@/components/fitness/workout-intake/WorkoutGenerationIntakePanel';
+import { pickWorkoutIntakePanelWizardProps } from '@/components/fitness/workout-intake/pick-workout-intake-panel-props';
 import { StandardTaskChatRail } from '@/components/chat/StandardTaskChatRail';
 import { isStandardTaskChatRailEnabled } from '@/lib/feature-flags/standardTaskChatRail';
 import { COACH_SLUG } from '@/lib/agents/coach/config';
@@ -30,22 +28,6 @@ import {
   useTaskWorkoutAi,
   type WorkoutIntakeWizardData,
 } from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
-
-function pickWorkoutIntakePanelWizardProps(
-  w: ReturnType<typeof useWorkoutIntakeWizardState>,
-): WorkoutIntakePanelWizardProps {
-  const {
-    applyTaskModalIntakePatch,
-    applyTaskModalIntakePatchFromMessage,
-    markUserTouched,
-    buildWizardPayload,
-    buildPreflightPayload,
-    mode,
-    maxStep,
-    ...rest
-  } = w;
-  return rest;
-}
 
 type Props = {
   workspaceId: string;
@@ -280,6 +262,7 @@ export function WorkoutBuilderShell({ workspaceId, task }: Props) {
     return (
       <WorkoutGenerationIntakePanel
         {...pickWorkoutIntakePanelWizardProps(workoutIntake)}
+        buildWizardPayload={workoutIntake.buildWizardPayload}
         handleAiGenerateWorkout={handleGenerateWorkoutFromIntake}
         isGenerating={false}
         disabledReason={intakeDisabledReason}

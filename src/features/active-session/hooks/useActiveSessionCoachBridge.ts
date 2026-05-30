@@ -203,7 +203,9 @@ export function useActiveSessionCoachBridge({
   }, [draftLogs, sessionVm.flatExercises.length]);
 
   const coachWorkoutData = useMemo(() => {
-    const ctx = buildWorkoutCoachRailContext(sourceMetadata, workoutTitle, liveSetCounts);
+    const ctx = buildWorkoutCoachRailContext(sourceMetadata, workoutTitle, liveSetCounts, {
+      includeFactoryBlob: false,
+    });
     const hasExercises = Array.isArray(ctx.exercises) && (ctx.exercises as unknown[]).length > 0;
     const hasRich =
       typeof ctx.workout_structure_summary === 'string' || ctx.ai_workout_factory != null;

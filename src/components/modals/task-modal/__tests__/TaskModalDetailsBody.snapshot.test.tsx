@@ -8,6 +8,14 @@ import {
   TaskModalDetailsBody,
   type TaskModalDetailsBodyProps,
 } from '@/components/modals/task-modal/TaskModalDetailsBody';
+import {
+  WORKOUT_INTAKE_DURATION_CHOICES,
+  WORKOUT_INTAKE_SORENESS_OPTIONS,
+} from '@/lib/agents/coach/task-modal-intake-patch';
+import {
+  WORKOUT_GENERATION_PHASE_INTENT_OPTIONS,
+  WORKOUT_GENERATION_PROGRESSION_TREND_OPTIONS,
+} from '@/lib/workout-factory/generation-intake-context';
 
 vi.mock('@/components/fitness/workout-intake/WorkoutGenerationIntakePanel', () => ({
   WorkoutGenerationIntakePanel: () => <div data-testid="mock-workout-generation-intake-panel" />,
@@ -45,6 +53,44 @@ vi.mock('@/components/modals/task-modal/TaskModalDetailsFooterActions', () => ({
 const noop = () => {};
 const cardCoverFileInputRef: RefObject<HTMLInputElement | null> = createRef();
 
+const mockWorkoutIntakePanelProps = {
+  step: 1 as const,
+  setStep: noop,
+  readiness: 5,
+  setReadiness: noop,
+  sleepQuality: 7,
+  setSleepQuality: noop,
+  durationMinutes: 'Optimized for Goals' as const,
+  setDurationMinutes: noop,
+  phaseIntent: 'standard_progression' as const,
+  setPhaseIntent: noop,
+  soreness: new Set(['None']),
+  toggleSoreness: noop,
+  sorenessArray: ['None'],
+  progressionTrend: 'Appropriately Challenging' as const,
+  setProgressionTrend: noop,
+  anchorLiftName: '',
+  setAnchorLiftName: noop,
+  anchorLiftWeight: null,
+  setAnchorLiftWeight: noop,
+  anchorLiftReps: null,
+  setAnchorLiftReps: noop,
+  temporaryLimitations: '',
+  setTemporaryLimitations: noop,
+  durationOptions: WORKOUT_INTAKE_DURATION_CHOICES,
+  phaseIntentOptions: WORKOUT_GENERATION_PHASE_INTENT_OPTIONS,
+  sorenessOptions: WORKOUT_INTAKE_SORENESS_OPTIONS,
+  progressionTrendOptions: WORKOUT_GENERATION_PROGRESSION_TREND_OPTIONS,
+};
+
+const mockBuildWizardPayload = () => ({
+  durationMinutes: 'Optimized for Goals' as const,
+  phaseIntent: 'standard_progression' as const,
+  progressionTrend: 'Appropriately Challenging' as const,
+  anchorLift: null,
+  temporaryLimitations: null,
+});
+
 const baseProps: TaskModalDetailsBodyProps = {
   title: 'Snapshot task',
   onTitleChange: noop,
@@ -55,7 +101,8 @@ const baseProps: TaskModalDetailsBodyProps = {
   onGenerateWorkoutFromIntake: noop,
   onSubmitPreflightAndLaunch: noop,
   aiWorkoutGenerating: false,
-  workoutIntakeState: null,
+  workoutIntakePanelProps: null,
+  buildWizardPayload: mockBuildWizardPayload,
   workoutOutlineEditor: null,
   taskId: 'task-snap-1',
   cardCoverPath: '',
@@ -252,28 +299,8 @@ describe('TaskModalDetailsBody', () => {
         {...baseProps}
         itemType="workout"
         isWorkoutItemType
-        workoutIntakeState={
-          {
-            mode: 'generation',
-            maxStep: 3,
-            step: 1,
-            setStep: noop,
-            readiness: 5,
-            setReadiness: noop,
-            sleepQuality: 7,
-            setSleepQuality: noop,
-            durationMinutes: 'Optimized for Goals',
-            setDurationMinutes: noop,
-            targetIntensity: 'Moderate',
-            setTargetIntensity: noop,
-            soreness: new Set(['None']),
-            toggleSoreness: noop,
-            sorenessArray: ['None'],
-            durationOptions: [],
-            intensityOptions: [],
-            sorenessOptions: [],
-          } as unknown as TaskModalDetailsBodyProps['workoutIntakeState']
-        }
+        workoutIntakePanelProps={mockWorkoutIntakePanelProps}
+        buildWizardPayload={mockBuildWizardPayload}
       />,
     );
 
@@ -290,28 +317,8 @@ describe('TaskModalDetailsBody', () => {
         itemType="workout"
         isWorkoutItemType
         taskMetadata={taskMetadata}
-        workoutIntakeState={
-          {
-            mode: 'generation',
-            maxStep: 3,
-            step: 1,
-            setStep: noop,
-            readiness: 5,
-            setReadiness: noop,
-            sleepQuality: 7,
-            setSleepQuality: noop,
-            durationMinutes: 'Optimized for Goals',
-            setDurationMinutes: noop,
-            targetIntensity: 'Moderate',
-            setTargetIntensity: noop,
-            soreness: new Set(['None']),
-            toggleSoreness: noop,
-            sorenessArray: ['None'],
-            durationOptions: [],
-            intensityOptions: [],
-            sorenessOptions: [],
-          } as unknown as TaskModalDetailsBodyProps['workoutIntakeState']
-        }
+        workoutIntakePanelProps={mockWorkoutIntakePanelProps}
+        buildWizardPayload={mockBuildWizardPayload}
       />,
     );
 

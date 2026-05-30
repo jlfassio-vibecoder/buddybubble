@@ -7,7 +7,7 @@
 
 import {
   WORKOUT_INTAKE_DURATION_CHOICES,
-  WORKOUT_INTAKE_INTENSITY_OPTIONS,
+  WORKOUT_GENERATION_PHASE_INTENT_OPTIONS,
   WORKOUT_INTAKE_SORENESS_OPTIONS,
 } from './task-modal-intake-patch.ts';
 import { readCoachOutlineMetadata } from './coach-outline-metadata.ts';
@@ -90,15 +90,25 @@ export type TaskModalLiveStateV1 = {
   sleep_quality?: number;
   /** Display / schema: numeric durations as quoted strings in Coach JSON. */
   duration_minutes?: number | string;
-  target_intensity?: string;
+  phase_intent?: string;
   soreness?: string[];
+  progression_trend?: string;
+  anchor_lift?: { name: string; weight: number; reps: number };
+  temporary_limitations?: string;
 };
 
 const DURATION_STRING_SET = new Set(
   WORKOUT_INTAKE_DURATION_CHOICES.map((d) => (typeof d === 'number' ? String(d) : d)),
 );
-const INTENSITY_SET_LIVE = new Set<string>(WORKOUT_INTAKE_INTENSITY_OPTIONS as unknown as string[]);
+const PHASE_INTENT_SET_LIVE = new Set<string>(
+  WORKOUT_GENERATION_PHASE_INTENT_OPTIONS as unknown as string[],
+);
 const SORENESS_SET_LIVE = new Set<string>(WORKOUT_INTAKE_SORENESS_OPTIONS as unknown as string[]);
+const PROGRESSION_TREND_SET_LIVE = new Set<string>([
+  'Feeling Easy',
+  'Appropriately Challenging',
+  'Hitting a Plateau',
+]);
 
 function clampIntLive(n: number, lo: number, hi: number): number {
   if (!Number.isFinite(n)) return lo;
@@ -153,10 +163,10 @@ export function readTaskModalLiveStateFromMessageMetadata(
     if (t && DURATION_STRING_SET.has(t)) out.duration_minutes = t;
   }
 
-  const tiRaw = o.target_intensity ?? o.targetIntensity;
-  if (typeof tiRaw === 'string') {
-    const t = tiRaw.trim();
-    if (INTENSITY_SET_LIVE.has(t)) out.target_intensity = t;
+  const piRaw = o.phase_intent ?? o.phaseIntent;
+  if (typeof piRaw === 'string') {
+    const t = piRaw.trim();
+    if (PHASE_INTENT_SET_LIVE.has(t)) out.phase_intent = t;
   }
 
   const sore = o.soreness;
@@ -168,6 +178,35 @@ export function readTaskModalLiveStateFromMessageMetadata(
       if (SORENESS_SET_LIVE.has(s)) arr.push(s);
     }
     if (arr.length) out.soreness = [...new Set(arr)].sort();
+  }
+
+  const ptRaw = o.progression_trend ?? o.progressionTrend;
+  if (typeof ptRaw === 'string') {
+    const t = ptRaw.trim();
+    if (PROGRESSION_TREND_SET_LIVE.has(t)) out.progression_trend = t;
+  }
+
+  const alRaw = o.anchor_lift ?? o.anchorLift;
+  if (alRaw != null && typeof alRaw === 'object' && !Array.isArray(alRaw)) {
+    const al = alRaw as Record<string, unknown>;
+    const name = typeof al.name === 'string' ? al.name.trim() : '';
+    const weight =
+      typeof al.weight === 'number' && Number.isFinite(al.weight) && al.weight > 0
+        ? Math.round(al.weight)
+        : null;
+    const reps =
+      typeof al.reps === 'number' && Number.isFinite(al.reps) && al.reps > 0
+        ? Math.round(al.reps)
+        : null;
+    if (name && weight != null && reps != null) {
+      out.anchor_lift = { name, weight, reps };
+    }
+  }
+
+  const tlRaw = o.temporary_limitations ?? o.temporaryLimitations;
+  if (typeof tlRaw === 'string') {
+    const t = tlRaw.trim();
+    if (t) out.temporary_limitations = t;
   }
 
   return out;
@@ -194,11 +233,20 @@ export function buildTaskModalLiveStateBlock(snapshot: TaskModalLiveStateV1): st
   if (snapshot.duration_minutes !== undefined) {
     lines.push(`duration_minutes: ${formatDurationForLiveBlock(snapshot.duration_minutes)}`);
   }
-  if (snapshot.target_intensity !== undefined) {
-    lines.push(`target_intensity: ${JSON.stringify(snapshot.target_intensity)}`);
+  if (snapshot.phase_intent !== undefined) {
+    lines.push(`phase_intent: ${JSON.stringify(snapshot.phase_intent)}`);
   }
   if (snapshot.soreness !== undefined && snapshot.soreness.length > 0) {
     lines.push(`soreness: ${JSON.stringify(snapshot.soreness)}`);
+  }
+  if (snapshot.progression_trend !== undefined) {
+    lines.push(`progression_trend: ${JSON.stringify(snapshot.progression_trend)}`);
+  }
+  if (snapshot.anchor_lift !== undefined) {
+    lines.push(`anchor_lift: ${JSON.stringify(snapshot.anchor_lift)}`);
+  }
+  if (snapshot.temporary_limitations !== undefined) {
+    lines.push(`temporary_limitations: ${JSON.stringify(snapshot.temporary_limitations)}`);
   }
   return lines.join('\n');
 }
@@ -274,15 +322,15 @@ export function buildTaskModalIntakeUiCoachBlock(): string {
   const durationLine = WORKOUT_INTAKE_DURATION_CHOICES.map((d) =>
     d === 'Optimized for Goals' ? '"Optimized for Goals"' : `"${d}"`,
   ).join(', ');
-  const intensityLine = WORKOUT_INTAKE_INTENSITY_OPTIONS.map((s) => `"${s}"`).join(', ');
+  const phaseIntentLine = WORKOUT_GENERATION_PHASE_INTENT_OPTIONS.map((s) => `"${s}"`).join(', ');
   const sorenessLine = WORKOUT_INTAKE_SORENESS_OPTIONS.map((s) => `"${s}"`).join(', ');
   return (
     `${TASK_MODAL_INTAKE_UI_HEADER}\n` +
-    'The Task Modal **Workout intake** wizard (before AI session generation) uses these fields. Populate or adjust them from chat with **task_modal_intake_patch** (JSON object; include only keys you change). The client applies the same object shape from message metadata—do not rely on reply prose alone.\n' +
+    'The Task Modal **Workout intake** wizard (before AI session generation) uses these fields. Pre-factory cards collect **macro planning** context (phase intent, progression trend, optional anchor lift, temporary limitations) — not daily readiness sliders. Populate or adjust them from chat with **task_modal_intake_patch** (JSON object; include only keys you change). The client applies the same object shape from message metadata—do not rely on reply prose alone.\n' +
     '- **readiness** and **sleep_quality**: integers **1–10** only (slider labels: Readiness / energy, Sleep quality). They are **not** the same as **session_readiness_score** (0–100 routing estimate): never copy session_readiness_score into readiness or sleep_quality. If you tell the user a readiness or sleep slider value in reply_content, you **must** mirror those same 1–10 integers in task_modal_intake_patch.\n' +
     '- **wizard_step**: optional integer **1–3** to show that step after applying other fields.\n' +
     `- **duration_minutes**: string, exactly one of: ${durationLine}.\n` +
-    `- **target_intensity**: string, exactly one of: ${intensityLine}.\n` +
+    `- **phase_intent**: RPE ceiling for the planned session; exactly one of: ${phaseIntentLine}. technical_baseline = technique/baseline work (RPE 6–7); standard_progression = progressive overload (RPE 7–8); aggressive_overload = peaking/overreach (RPE 8–9+).\n` +
     `- **soreness**: string array; each item must be one of: ${sorenessLine}. Use ["None"] when nothing is sore; do not mix "None" with other areas.\n` +
     'WORKED EXAMPLES (task_modal_intake_patch only — do not confuse with top-level session_readiness_score):\n' +
     '- GOOD: {"readiness":7,"sleep_quality":8} — both are **1–10** intake sliders.\n' +
@@ -413,7 +461,7 @@ export function buildBaseCoachPrompt(
     "EXECUTION PATCH (live player): When CURRENT WORKOUT CONTEXT is present and the user mentions specific equipment (e.g. 'I have 60lb kettlebells') or asks for specific changes to the current workout session (workoutContext JSON under CURRENT WORKOUT CONTEXT), you MUST compute the appropriate weights, reps, RPE, and/or set completion and include them in the execution_patch field. " +
     'Do not only describe numbers in reply_content; you must also provide the JSON execution_patch so the app can update the live grid. You may list multiple sets and multiple exercises in one patch. String fields (weight, reps, rpe) must be pure numeric strings only, with no ranges, units, or extra text (e.g. "60", "8", "7.5"). Set execution_patch to null when you are not changing the live log. ' +
     'PERSONAL CUES: When the user wants instructions, form cues, tips, or injury notes saved for catalog exercises, emit personal_cues_patch (one entry per exerciseIndex from EXERCISE_INDEX_MAP; only [dict:...] rows persist); you may combine it with execution_patch in one response. ' +
-    'TASK MODAL INTAKE PATCH: When TASK MODAL INTAKE UI appears in the system prompt (workout / workout_log task under discussion), use task_modal_intake_patch to update the on-card intake wizard (readiness and sleep sliders 1–10, wizard_step 1–3, duration_minutes, target_intensity, soreness). Do not only describe those values in reply_content when you intend the UI to change—emit task_modal_intake_patch. Set task_modal_intake_patch to null when not updating the wizard. ' +
+    'TASK MODAL INTAKE PATCH: When TASK MODAL INTAKE UI appears in the system prompt (workout / workout_log task under discussion), use task_modal_intake_patch to update the on-card intake wizard (readiness and sleep sliders 1–10, wizard_step 1–3, duration_minutes, phase_intent, soreness). Do not only describe those values in reply_content when you intend the UI to change—emit task_modal_intake_patch. Set task_modal_intake_patch to null when not updating the wizard. ' +
     'If --- TASK MODAL LIVE STATE (v1) --- appears in the system prompt and you describe changing a slider, step, duration, intensity, or soreness in reply_content, you MUST emit the same change in task_modal_intake_patch in that same JSON. ' +
     'TRUTHFULNESS: If reply_content claims you wrote or applied something, include non-null execution_patch, personal_cues_patch, task_modal_intake_patch, or create_card/update_existing_task in the same JSON. ' +
     (apexMain

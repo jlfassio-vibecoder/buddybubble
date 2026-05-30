@@ -82,7 +82,7 @@ Fill the outline blocks with specific exercises, sets, reps, and work/rest inter
 - Do NOT change block_format or format_params on any block.
 - Exercise-shaped blocks MUST include a populated exercises[] array with real movement names and prescriptions.
 - Instruction-only blocks (instructions[] without exercises) may keep or lightly refine instruction lines only.
-- Scale volume and intensity to readiness, sleep, duration, and soreness from intake when present.
+- Scale volume and intensity to phase intent, progression trend, anchor lift, temporary limitations, and session duration from intake when present.
 
 === OUTPUT FORMAT ===
 Return ONLY valid JSON. No markdown, no explanations. Start with { and end with }.

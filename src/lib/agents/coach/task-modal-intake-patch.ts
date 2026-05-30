@@ -19,6 +19,15 @@ export const WORKOUT_INTAKE_INTENSITY_OPTIONS = [
 ] as const;
 export type WorkoutIntakeIntensityChoice = (typeof WORKOUT_INTAKE_INTENSITY_OPTIONS)[number];
 
+/** RPE-ceiling phase intent for generation intake Step 1 (macro planning). */
+export const WORKOUT_GENERATION_PHASE_INTENT_OPTIONS = [
+  'technical_baseline',
+  'standard_progression',
+  'aggressive_overload',
+] as const;
+export type WorkoutGenerationPhaseIntentPatch =
+  (typeof WORKOUT_GENERATION_PHASE_INTENT_OPTIONS)[number];
+
 export const WORKOUT_INTAKE_SORENESS_OPTIONS = [
   'None',
   'Legs',
@@ -33,7 +42,9 @@ export type TaskModalIntakePatch = {
   sleep_quality?: number;
   wizard_step?: 1 | 2 | 3;
   duration_minutes?: WorkoutIntakeDurationChoice;
+  /** @deprecated Legacy cardio labels — prefer phase_intent for generation intake. */
   target_intensity?: WorkoutIntakeIntensityChoice;
+  phase_intent?: WorkoutGenerationPhaseIntentPatch;
   soreness?: string[];
 };
 
@@ -54,6 +65,9 @@ export type TaskModalIntakePatchDrop = {
 
 const SORENESS_SET = new Set<string>(WORKOUT_INTAKE_SORENESS_OPTIONS as unknown as string[]);
 const INTENSITY_SET = new Set<string>(WORKOUT_INTAKE_INTENSITY_OPTIONS as unknown as string[]);
+const PHASE_INTENT_SET = new Set<string>(
+  WORKOUT_GENERATION_PHASE_INTENT_OPTIONS as unknown as string[],
+);
 const DURATION_NUMS = new Set<number>([15, 30, 45, 60]);
 
 // Copilot suggestion ignored: camelCase keys are for replaying persisted metadata and hand-edited JSON, not Gemini’s primary snake_case contract.
@@ -69,6 +83,8 @@ const TASK_MODAL_INTAKE_PATCH_KNOWN_KEYS = new Set<string>([
   'durationMinutes',
   'target_intensity',
   'targetIntensity',
+  'phase_intent',
+  'phaseIntent',
   'soreness',
 ]);
 
@@ -170,6 +186,25 @@ function parseIntensityWithDrops(
   return undefined;
 }
 
+function parsePhaseIntentWithDrops(
+  raw: unknown,
+  drops: TaskModalIntakePatchDrop[],
+): WorkoutGenerationPhaseIntentPatch | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== 'string') {
+    pushDrop(drops, { field: 'phase_intent', reason: 'invalid_type' });
+    return undefined;
+  }
+  const t = raw.trim();
+  if (PHASE_INTENT_SET.has(t)) return t as WorkoutGenerationPhaseIntentPatch;
+  pushDrop(drops, {
+    field: 'phase_intent',
+    reason: 'invalid_enum',
+    detail: sliceDetail(t, 32),
+  });
+  return undefined;
+}
+
 function parseStringArrayWithDrops(
   raw: unknown,
   allowed: Set<string>,
@@ -250,6 +285,8 @@ export function parseAndCollectTaskModalIntakePatchFromGemini(raw: unknown): {
     parseDurationWithDrops(o.duration_minutes ?? o.durationMinutes, dropped) ?? undefined;
   const target_intensity =
     parseIntensityWithDrops(o.target_intensity ?? o.targetIntensity, dropped) ?? undefined;
+  const phase_intent =
+    parsePhaseIntentWithDrops(o.phase_intent ?? o.phaseIntent, dropped) ?? undefined;
   let soreness = parseStringArrayWithDrops(o.soreness, SORENESS_SET, 'soreness', dropped);
   soreness = normalizeSorenessWithDrops(soreness, dropped);
 
@@ -259,6 +296,7 @@ export function parseAndCollectTaskModalIntakePatchFromGemini(raw: unknown): {
   if (wizard_step !== undefined) out.wizard_step = wizard_step;
   if (duration_minutes !== undefined) out.duration_minutes = duration_minutes;
   if (target_intensity !== undefined) out.target_intensity = target_intensity;
+  if (phase_intent !== undefined) out.phase_intent = phase_intent;
   if (soreness !== undefined) out.soreness = soreness;
 
   const patch = Object.keys(out).length > 0 ? out : null;

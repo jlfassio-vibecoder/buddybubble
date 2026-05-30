@@ -2132,16 +2132,16 @@ function DashboardShellInner({
                     } as CSSProperties
                   }
                 >
-                  {layoutMobile ? (
+                  {!embedMode ? (
                     <MobileHeader
                       title={buddyBubbleTitle}
-                      trailing={embedMode ? null : <ActiveUsersStack localUserId={profile?.id} />}
+                      trailing={<ActiveUsersStack localUserId={profile?.id} />}
                     />
                   ) : null}
-                  {layoutMobile && !mobileNavOpen ? (
+                  {!embedMode && !mobileNavOpen ? (
                     <MobileEdgeSwipeOpener onOpen={() => mobileShell.setDrawerOpen(true)} />
                   ) : null}
-                  {layoutMobile ? (
+                  {!embedMode ? (
                     <MobileSidebarSheet
                       open={mobileNavOpen}
                       onOpenChange={setMobileNavOpen}
@@ -2155,7 +2155,7 @@ function DashboardShellInner({
                   <div
                     className={cn(
                       'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden',
-                      layoutMobile && 'max-md:pb-[var(--mobile-tab-bar-h)]',
+                      !embedMode && 'max-md:pb-[var(--mobile-tab-bar-h)]',
                       'md:pb-0',
                     )}
                   >
@@ -2425,7 +2425,7 @@ function DashboardShellInner({
                     </div>
                   </div>
 
-                  {layoutMobile ? <MobileTabBar /> : null}
+                  {!embedMode ? <MobileTabBar /> : null}
 
                   <CardTypeSelectorModal
                     open={cardTypeSelectorOpen}

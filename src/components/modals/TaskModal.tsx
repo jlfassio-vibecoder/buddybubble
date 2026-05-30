@@ -117,6 +117,11 @@ import {
   buildSessionReadinessContext,
   mergeSessionReadinessIntoMetadata,
 } from '@/lib/workout-factory/session-readiness-context';
+import {
+  generationIntakeContextToDailyCheckin,
+  buildGenerationIntakeContext,
+} from '@/lib/workout-factory/generation-intake-context';
+import { pickWorkoutIntakePanelWizardProps } from '@/components/fitness/workout-intake/pick-workout-intake-panel-props';
 import { normalizeOutlineDraft } from '@/lib/agents/coach/outline-editor-client';
 import {
   applyWorkoutPlayerExecutionPatchIfOpen,
@@ -355,6 +360,64 @@ export function TaskModal({
   const intakeMode = hasWorkoutFactory ? 'preflight' : 'generation';
   const workoutIntake = useWorkoutIntakeWizardState(sessionKey, {}, { mode: intakeMode });
   const buildWizardPayload = workoutIntake.buildWizardPayload;
+
+  const generationLiveState = useMemo(
+    () =>
+      generationIntakeContextToDailyCheckin(
+        buildGenerationIntakeContext({
+          durationMinutes: workoutIntake.durationMinutes,
+          phaseIntent: workoutIntake.phaseIntent,
+          progressionTrend: workoutIntake.progressionTrend,
+          anchorLiftName: workoutIntake.anchorLiftName,
+          anchorLiftWeight: workoutIntake.anchorLiftWeight,
+          anchorLiftReps: workoutIntake.anchorLiftReps,
+          temporaryLimitations: workoutIntake.temporaryLimitations,
+        }),
+      ),
+    [
+      workoutIntake.durationMinutes,
+      workoutIntake.phaseIntent,
+      workoutIntake.progressionTrend,
+      workoutIntake.anchorLiftName,
+      workoutIntake.anchorLiftWeight,
+      workoutIntake.anchorLiftReps,
+      workoutIntake.temporaryLimitations,
+    ],
+  );
+
+  const workoutIntakePanelProps = useMemo(() => {
+    if (itemType !== 'workout' || !canWrite) return null;
+    return pickWorkoutIntakePanelWizardProps(workoutIntake);
+  }, [
+    itemType,
+    canWrite,
+    workoutIntake.step,
+    workoutIntake.readiness,
+    workoutIntake.sleepQuality,
+    workoutIntake.durationMinutes,
+    workoutIntake.phaseIntent,
+    workoutIntake.sorenessArray,
+    workoutIntake.progressionTrend,
+    workoutIntake.anchorLiftName,
+    workoutIntake.anchorLiftWeight,
+    workoutIntake.anchorLiftReps,
+    workoutIntake.temporaryLimitations,
+    workoutIntake.setStep,
+    workoutIntake.setReadiness,
+    workoutIntake.setSleepQuality,
+    workoutIntake.setDurationMinutes,
+    workoutIntake.setPhaseIntent,
+    workoutIntake.toggleSoreness,
+    workoutIntake.setProgressionTrend,
+    workoutIntake.setAnchorLiftName,
+    workoutIntake.setAnchorLiftWeight,
+    workoutIntake.setAnchorLiftReps,
+    workoutIntake.setTemporaryLimitations,
+    workoutIntake.durationOptions,
+    workoutIntake.phaseIntentOptions,
+    workoutIntake.progressionTrendOptions,
+    workoutIntake.sorenessOptions,
+  ]);
 
   const [eventLocation, setEventLocation] = useState('');
   const [eventUrl, setEventUrl] = useState('');
@@ -1443,13 +1506,14 @@ export function TaskModal({
       const payload: Record<string, Json> = {
         task_modal_live_state: hasWorkoutFactory
           ? liveStateBase
-          : {
-              ...liveStateBase,
-              duration_minutes: workoutIntake.durationMinutes,
-              target_intensity: workoutIntake.targetIntensity,
-            },
+          : ({
+              v: 1,
+              item_type: itemType,
+              wizard_step: workoutIntake.step,
+              ...generationLiveState,
+            } as Json),
       };
-      const workoutContext = buildTaskModalOutgoingWorkoutContext(metadata, title);
+      const workoutContext = buildTaskModalOutgoingWorkoutContext(metadata, title, { coreDirty });
       if (workoutContext) {
         payload.workoutContext = workoutContext as Json;
       }
@@ -1479,6 +1543,7 @@ export function TaskModal({
       title,
       taskId,
       canWrite,
+      coreDirty,
       showStructureBuilderCta,
       workoutOutlineEditor.draftBlocks,
       workoutOutlineEditor.validationDrops,
@@ -1486,11 +1551,10 @@ export function TaskModal({
       workoutOutlineEditor.hasFactory,
       hasWorkoutFactory,
       outlineRevision,
+      generationLiveState,
       workoutIntake.step,
       workoutIntake.readiness,
       workoutIntake.sleepQuality,
-      workoutIntake.durationMinutes,
-      workoutIntake.targetIntensity,
       workoutIntake.sorenessArray,
     ],
   );
@@ -1561,7 +1625,8 @@ export function TaskModal({
       onSubmitPreflightAndLaunch: handlePreflightSubmitAndLaunch,
       preflightSubmitting: activeSessionLaunch.isLaunching,
       aiWorkoutGenerating,
-      workoutIntakeState: itemType === 'workout' && canWrite ? workoutIntake : null,
+      workoutIntakePanelProps,
+      buildWizardPayload: workoutIntake.buildWizardPayload,
       workoutOutlineEditor: showStructureBuilderCta
         ? null
         : itemType === 'workout' && canWrite && taskId
@@ -1723,7 +1788,8 @@ export function TaskModal({
       loading,
       archiveTask,
       handleModalHardDelete,
-      workoutIntake,
+      workoutIntakePanelProps,
+      workoutIntake.buildWizardPayload,
       workoutOutlineEditor,
       showStructureBuilderCta,
       handleOpenStructureBuilder,

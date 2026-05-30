@@ -81,14 +81,14 @@ describe('useWorkoutIntakeWizardState', () => {
     expect(result.current.readiness).toBe(2);
   });
 
-  it('preflight mode ignores duration and intensity patches', () => {
+  it('preflight mode ignores duration and phase intent patches', () => {
     const { result } = renderHook(() =>
       useWorkoutIntakeWizardState('existing:t1', {}, { mode: 'preflight' }),
     );
 
     act(() => {
       result.current.setDurationMinutes(30);
-      result.current.setTargetIntensity('High/HIIT');
+      result.current.setPhaseIntent('aggressive_overload');
     });
 
     act(() => {
@@ -97,14 +97,14 @@ describe('useWorkoutIntakeWizardState', () => {
         messageCreatedAtMs: Date.now(),
         patch: {
           duration_minutes: 60,
-          target_intensity: 'Light/Recovery',
+          phase_intent: 'technical_baseline',
           sleep_quality: 6,
         },
       });
     });
 
     expect(result.current.durationMinutes).toBe(30);
-    expect(result.current.targetIntensity).toBe('High/HIIT');
+    expect(result.current.phaseIntent).toBe('aggressive_overload');
     expect(result.current.sleepQuality).toBe(6);
   });
 
@@ -138,6 +138,32 @@ describe('useWorkoutIntakeWizardState', () => {
     expect(result.current.step).toBe(2);
     expect(result.current.maxStep).toBe(2);
     expect(result.current.mode).toBe('preflight');
+  });
+
+  it('generation mode uses maxStep 2 and buildWizardPayload emits macro fields', () => {
+    const { result } = renderHook(() =>
+      useWorkoutIntakeWizardState('existing:t1', {}, { mode: 'generation' }),
+    );
+
+    expect(result.current.maxStep).toBe(2);
+
+    act(() => {
+      result.current.setDurationMinutes(30);
+      result.current.setPhaseIntent('aggressive_overload');
+      result.current.setProgressionTrend('Hitting a Plateau');
+      result.current.setAnchorLiftName('Back Squat');
+      result.current.setAnchorLiftWeight(225);
+      result.current.setAnchorLiftReps(5);
+      result.current.setTemporaryLimitations('Left shoulder tweak');
+    });
+
+    expect(result.current.buildWizardPayload()).toEqual({
+      durationMinutes: 30,
+      phaseIntent: 'aggressive_overload',
+      progressionTrend: 'Hitting a Plateau',
+      anchorLift: { name: 'Back Squat', weight: 225, reps: 5 },
+      temporaryLimitations: 'Left shoulder tweak',
+    });
   });
 
   it('emits telemetry on skip and apply', () => {

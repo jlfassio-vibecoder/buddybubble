@@ -1374,7 +1374,7 @@ integrationTest(
               readiness: 7,
               sleep_quality: 6,
               duration_minutes: 45,
-              target_intensity: 'Moderate',
+              phase_intent: 'standard_progression',
               soreness: ['None'],
               equipment: ['Dumbbells'],
             },

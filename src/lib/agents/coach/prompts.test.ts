@@ -342,7 +342,7 @@ describe('readTaskModalLiveStateFromMessageMetadata', () => {
         readiness: 4,
         sleep_quality: '8',
         duration_minutes: 30,
-        target_intensity: 'Moderate',
+        phase_intent: 'standard_progression',
         soreness: ['Legs', 'bogus'],
       },
     });
@@ -353,7 +353,7 @@ describe('readTaskModalLiveStateFromMessageMetadata', () => {
       readiness: 4,
       sleep_quality: 8,
       duration_minutes: 30,
-      target_intensity: 'Moderate',
+      phase_intent: 'standard_progression',
       soreness: ['Legs'],
     });
   });
@@ -368,14 +368,14 @@ describe('buildTaskModalLiveStateBlock', () => {
       readiness: 5,
       sleep_quality: 6,
       duration_minutes: 45,
-      target_intensity: 'High/HIIT',
+      phase_intent: 'aggressive_overload',
       soreness: ['None'],
     });
     expect(text).toContain('--- TASK MODAL LIVE STATE (v1) ---');
     expect(text).toContain('item_type: workout_log');
     expect(text).toContain('wizard_step: 3');
     expect(text).toContain('duration_minutes: "45"');
-    expect(text).toContain('target_intensity: "High/HIIT"');
+    expect(text).toContain('phase_intent: "aggressive_overload"');
     expect(text).toContain('"None"');
   });
 });

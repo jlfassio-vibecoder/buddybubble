@@ -9,8 +9,7 @@ import type { TaskAttachment } from '@/types/task-modal';
 import type { TaskPriority } from '@/lib/task-priority';
 import type { ProgramWeek, WorkoutExercise } from '@/lib/item-metadata';
 import type { WorkoutIntakeWizardData } from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
-import { useWorkoutIntakeWizardState } from '@/components/modals/task-modal/hooks/useWorkoutIntakeWizardState';
-import type { WorkoutIntakePanelWizardProps } from '@/components/fitness/WorkoutIntakePanel';
+import type { WorkoutIntakePanelWizardProps } from '@/components/fitness/workout-intake/WorkoutGenerationIntakePanel';
 import type { WorkoutTemplate } from '@/hooks/use-workout-templates';
 import { WorkoutGenerationIntakePanel } from '@/components/fitness/workout-intake/WorkoutGenerationIntakePanel';
 import { WorkoutPreflightReadinessPanel } from '@/components/fitness/workout-intake/WorkoutPreflightReadinessPanel';
@@ -31,22 +30,6 @@ import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
 import { LayoutPanelLeft } from 'lucide-react';
 
-function pickWorkoutIntakePanelWizardProps(
-  w: ReturnType<typeof useWorkoutIntakeWizardState>,
-): WorkoutIntakePanelWizardProps {
-  const {
-    applyTaskModalIntakePatch,
-    applyTaskModalIntakePatchFromMessage,
-    markUserTouched,
-    buildWizardPayload,
-    buildPreflightPayload,
-    mode,
-    maxStep,
-    ...rest
-  } = w;
-  return rest;
-}
-
 export type TaskModalDetailsBodyProps = {
   title: string;
   onTitleChange: (value: string) => void;
@@ -58,8 +41,9 @@ export type TaskModalDetailsBodyProps = {
   onSubmitPreflightAndLaunch: () => void | Promise<void>;
   preflightSubmitting?: boolean;
   aiWorkoutGenerating: boolean;
-  /** When set with workout + canWrite, renders controlled `WorkoutIntakePanel`. */
-  workoutIntakeState: ReturnType<typeof useWorkoutIntakeWizardState> | null;
+  /** Memoized wizard panel props (workout + canWrite only). */
+  workoutIntakePanelProps: WorkoutIntakePanelWizardProps | null;
+  buildWizardPayload: () => WorkoutIntakeWizardData;
   workoutOutlineEditor: WorkoutOutlineEditorState | null;
   /** When true, outline editing is deferred to the full-page builder (panel hidden). */
   showStructureBuilderCta?: boolean;
@@ -156,7 +140,8 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     onSubmitPreflightAndLaunch,
     preflightSubmitting = false,
     aiWorkoutGenerating,
-    workoutIntakeState,
+    workoutIntakePanelProps,
+    buildWizardPayload,
     workoutOutlineEditor,
     showStructureBuilderCta,
     onOpenStructureBuilder,
@@ -285,18 +270,19 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
         <WorkoutOutlinePanel editor={workoutOutlineEditor} canWrite={canWrite} />
       ) : null}
 
-      {workoutIntakeState && !hasFactory ? (
+      {workoutIntakePanelProps && !hasFactory ? (
         <WorkoutGenerationIntakePanel
-          {...pickWorkoutIntakePanelWizardProps(workoutIntakeState)}
+          {...workoutIntakePanelProps}
+          buildWizardPayload={buildWizardPayload}
           handleAiGenerateWorkout={onGenerateWorkoutFromIntake}
           isGenerating={aiWorkoutGenerating}
           disabledReason={intakeDisabledReason}
         />
       ) : null}
 
-      {workoutIntakeState && hasFactory ? (
+      {workoutIntakePanelProps && hasFactory ? (
         <WorkoutPreflightReadinessPanel
-          {...pickWorkoutIntakePanelWizardProps(workoutIntakeState)}
+          {...workoutIntakePanelProps}
           onSubmitPreflight={onSubmitPreflightAndLaunch}
           isSubmitting={preflightSubmitting}
           disabledReason={intakeDisabledReason}

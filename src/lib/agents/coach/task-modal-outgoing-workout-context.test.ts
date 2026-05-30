@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildTaskModalOutgoingWorkoutContext } from './task-modal-outgoing-workout-context';
+import { hasRichWorkoutSetInMetadata } from '@/lib/workout-factory/sync-workout-metadata';
+import { richMetadataWithBlockFormat } from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
+import type { Json } from '@/types/database';
 
 describe('buildTaskModalOutgoingWorkoutContext', () => {
   it('returns null when metadata has no rich workout set', () => {
@@ -8,23 +11,37 @@ describe('buildTaskModalOutgoingWorkoutContext', () => {
     expect(buildTaskModalOutgoingWorkoutContext({ workout_type: 'AMRAP' }, 'Leg day')).toBeNull();
   });
 
-  it('returns ai_workout_factory snapshot for unsaved generated workouts', () => {
+  it('returns null when saved (coreDirty false) so Edge uses persisted tasks.metadata', () => {
     const workoutSet = {
       workouts: [{ name: 'Main', exerciseBlocks: [{ name: 'Main', exercises: [] }] }],
     };
-    const ctx = buildTaskModalOutgoingWorkoutContext(
-      {
-        workout_type: 'Complex',
-        duration_min: 45,
-        ai_workout_factory: { workout_set: workoutSet, model: 'gemini' },
-      },
-      '80lb KB Lower Body Complex',
-    );
-    expect(ctx).toEqual({
-      ai_workout_factory: { workout_set: workoutSet, model: 'gemini' },
+    const metadata = {
       workout_type: 'Complex',
       duration_min: 45,
-      workout_task_title: '80lb KB Lower Body Complex',
+      ai_workout_factory: {
+        workout_set: workoutSet,
+        chain_metadata: { pipeline: 'parametric_outline_fill' },
+        model: 'gemini',
+      },
+    };
+    expect(
+      buildTaskModalOutgoingWorkoutContext(metadata, 'Leg day', { coreDirty: false }),
+    ).toBeNull();
+  });
+
+  it('returns slim factory context when unsaved (coreDirty true)', () => {
+    const metadata = richMetadataWithBlockFormat('tabata') as Json;
+    const parsed = metadata as Record<string, unknown>;
+    const af = parsed.ai_workout_factory as Record<string, unknown>;
+    const ctx = buildTaskModalOutgoingWorkoutContext(metadata, 'Tabata day', {
+      coreDirty: true,
     });
+    expect(ctx).not.toBeNull();
+    expect(ctx!.ai_workout_factory).toEqual({ workout_set: af.workout_set });
+    expect(ctx!.workout_task_title).toBe('Tabata day');
+    expect(ctx!.ai_workout_factory).not.toHaveProperty('chain_metadata');
+    expect(hasRichWorkoutSetInMetadata({ ai_workout_factory: ctx!.ai_workout_factory })).toBe(true);
+    expect(typeof ctx!.workout_structure_summary).toBe('string');
+    expect(Array.isArray(ctx!.exercises)).toBe(true);
   });
 });
