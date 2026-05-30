@@ -311,7 +311,11 @@ describe('taskMetadataLooksWorkoutShaped', () => {
 describe('buildTaskModalIntakeUiCoachBlock', () => {
   it('includes worked GOOD/BAD examples for scale, duration strings, and soreness', () => {
     const block = buildTaskModalIntakeUiCoachBlock();
-    expect(block).toContain('GOOD: {"readiness":7,"sleep_quality":8}');
+    expect(block).toContain('GENERATION MODE');
+    expect(block).toContain('PREFLIGHT MODE');
+    expect(block).toContain('progression_trend');
+    expect(block).toContain('GOOD (generation):');
+    expect(block).toContain('GOOD (preflight): {"readiness":7,"sleep_quality":8}');
     expect(block).toContain('GOOD: {"duration_minutes":"30"}');
     expect(block).toContain('BAD: {"duration_minutes":30}');
     expect(block).toContain('BAD: {"readiness":72}');

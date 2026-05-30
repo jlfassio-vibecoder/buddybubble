@@ -11,22 +11,15 @@ describe('buildTaskModalOutgoingWorkoutContext', () => {
     expect(buildTaskModalOutgoingWorkoutContext({ workout_type: 'AMRAP' }, 'Leg day')).toBeNull();
   });
 
-  it('returns null when saved (coreDirty false) so Edge uses persisted tasks.metadata', () => {
-    const workoutSet = {
-      workouts: [{ name: 'Main', exerciseBlocks: [{ name: 'Main', exercises: [] }] }],
-    };
-    const metadata = {
-      workout_type: 'Complex',
-      duration_min: 45,
-      ai_workout_factory: {
-        workout_set: workoutSet,
-        chain_metadata: { pipeline: 'parametric_outline_fill' },
-        model: 'gemini',
-      },
-    };
-    expect(
-      buildTaskModalOutgoingWorkoutContext(metadata, 'Leg day', { coreDirty: false }),
-    ).toBeNull();
+  it('returns slim context when saved (coreDirty false)', () => {
+    const metadata = richMetadataWithBlockFormat('tabata') as Json;
+    const parsed = metadata as Record<string, unknown>;
+    const af = parsed.ai_workout_factory as Record<string, unknown>;
+    const ctx = buildTaskModalOutgoingWorkoutContext(metadata, 'Tabata day', { coreDirty: false });
+    expect(ctx).not.toBeNull();
+    expect(ctx!.ai_workout_factory).toEqual({ workout_set: af.workout_set });
+    expect(typeof ctx!.workout_structure_summary).toBe('string');
+    expect(Array.isArray(ctx!.exercises)).toBe(true);
   });
 
   it('returns slim factory context when unsaved (coreDirty true)', () => {

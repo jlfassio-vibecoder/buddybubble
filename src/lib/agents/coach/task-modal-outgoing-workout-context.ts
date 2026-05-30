@@ -5,24 +5,22 @@ import { slimAiWorkoutFactoryForCoachContext } from '@/lib/workout-factory/slim-
 import { hasRichWorkoutSetInMetadata } from '@/lib/workout-factory/sync-workout-metadata';
 
 export type BuildTaskModalOutgoingWorkoutContextOptions = {
-  /** When false (saved to DB), omit outgoing context — Edge uses persisted tasks.metadata. */
+  /** @deprecated Ignored; slim context is always attached when a rich workout set exists. */
   coreDirty?: boolean;
 };
 
 /**
- * Coach rail trigger metadata for Task Modal: generated workouts may exist only in
- * local form state until the user saves. Attach on outgoing @coach messages so
- * Edge dispatch can enter live co-pilot mode and merge append-only block edits.
+ * Coach rail trigger metadata for Task Modal when the card carries a rich generated workout.
+ * Attaches a **slimmed** context on outgoing @coach messages (structure summary, flat
+ * exercises, workout_set-only factory stub, title/type/duration) — not the full
+ * ai_workout_factory blob with chain_metadata. Enables live co-pilot without OOM-scale payloads.
  */
 export function buildTaskModalOutgoingWorkoutContext(
   metadata: Json,
   title: string,
-  options?: BuildTaskModalOutgoingWorkoutContextOptions,
+  _options?: BuildTaskModalOutgoingWorkoutContextOptions,
 ): Record<string, unknown> | null {
   if (!hasRichWorkoutSetInMetadata(metadata)) return null;
-
-  const coreDirty = options?.coreDirty ?? false;
-  if (!coreDirty) return null;
 
   const parsed = parseTaskMetadata(metadata) as Record<string, unknown>;
   const af = parsed.ai_workout_factory;

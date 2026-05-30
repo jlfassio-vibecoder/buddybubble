@@ -315,8 +315,8 @@ export function taskMetadataLooksWorkoutShaped(metadata: unknown): boolean {
 }
 
 /**
- * When the member is on a workout or workout_log task, the Task Modal shows a three-step
- * intake wizard. Appended to the system prompt after CURRENT TASK CONTEXT.
+ * When the member is on a workout or workout_log task, the Task Modal shows an intake
+ * wizard (generation macro-planning, then preflight readiness). Appended after CURRENT TASK CONTEXT.
  */
 export function buildTaskModalIntakeUiCoachBlock(): string {
   const durationLine = WORKOUT_INTAKE_DURATION_CHOICES.map((d) =>
@@ -324,21 +324,30 @@ export function buildTaskModalIntakeUiCoachBlock(): string {
   ).join(', ');
   const phaseIntentLine = WORKOUT_GENERATION_PHASE_INTENT_OPTIONS.map((s) => `"${s}"`).join(', ');
   const sorenessLine = WORKOUT_INTAKE_SORENESS_OPTIONS.map((s) => `"${s}"`).join(', ');
+  const progressionLine = '"Feeling Easy", "Appropriately Challenging", "Hitting a Plateau"';
   return (
     `${TASK_MODAL_INTAKE_UI_HEADER}\n` +
-    'The Task Modal **Workout intake** wizard (before AI session generation) uses these fields. Pre-factory cards collect **macro planning** context (phase intent, progression trend, optional anchor lift, temporary limitations) — not daily readiness sliders. Populate or adjust them from chat with **task_modal_intake_patch** (JSON object; include only keys you change). The client applies the same object shape from message metadata—do not rely on reply prose alone.\n' +
-    '- **readiness** and **sleep_quality**: integers **1–10** only (slider labels: Readiness / energy, Sleep quality). They are **not** the same as **session_readiness_score** (0–100 routing estimate): never copy session_readiness_score into readiness or sleep_quality. If you tell the user a readiness or sleep slider value in reply_content, you **must** mirror those same 1–10 integers in task_modal_intake_patch.\n' +
-    '- **wizard_step**: optional integer **1–3** to show that step after applying other fields.\n' +
+    'The Task Modal **Workout intake** wizard has two modes. Use **--- TASK MODAL LIVE STATE (v1) ---** (and whether the card already has a generated workout) to infer which applies.\n\n' +
+    '**GENERATION MODE** (before **Generate Workout** — no `ai_workout_factory` on the card yet): **macro planning only** — do **not** ask for or patch readiness/sleep sliders in this mode.\n' +
+    `- **phase_intent** (Phase Intent / RPE ceiling): exactly one of: ${phaseIntentLine}.\n` +
     `- **duration_minutes**: string, exactly one of: ${durationLine}.\n` +
-    `- **phase_intent**: RPE ceiling for the planned session; exactly one of: ${phaseIntentLine}. technical_baseline = technique/baseline work (RPE 6–7); standard_progression = progressive overload (RPE 7–8); aggressive_overload = peaking/overreach (RPE 8–9+).\n` +
+    `- **progression_trend** (Progression Trend): exactly one of: ${progressionLine}.\n` +
+    '- **anchor_lift** (optional Anchor Lift): object `{ name, weight, reps }` when the member cites a benchmark lift.\n' +
+    '- **temporary_limitations** (optional): free-text constraints for this planned session.\n' +
+    '- **wizard_step**: optional integer **1–2** for the generation wizard.\n\n' +
+    '**PREFLIGHT MODE** (after the workout is generated — pre-session check-in before Active Session): **daily readiness** sliders only — do **not** patch macro-planning fields here.\n' +
+    '- **readiness** and **sleep_quality**: integers **1–10** only (slider labels: Readiness / energy, Sleep quality). They are **not** the same as **session_readiness_score** (0–100 routing estimate): never copy session_readiness_score into readiness or sleep_quality. If you tell the user a readiness or sleep slider value in reply_content, you **must** mirror those same 1–10 integers in task_modal_intake_patch.\n' +
     `- **soreness**: string array; each item must be one of: ${sorenessLine}. Use ["None"] when nothing is sore; do not mix "None" with other areas.\n` +
+    '- **wizard_step**: optional integer **1–2** for the preflight wizard.\n\n' +
+    'Populate or adjust the visible wizard from chat with **task_modal_intake_patch** (JSON object; include only keys you change). The client applies the same object shape from message metadata—do not rely on reply prose alone.\n' +
     'WORKED EXAMPLES (task_modal_intake_patch only — do not confuse with top-level session_readiness_score):\n' +
-    '- GOOD: {"readiness":7,"sleep_quality":8} — both are **1–10** intake sliders.\n' +
+    '- GOOD (generation): {"phase_intent":"standard_progression","duration_minutes":"45","progression_trend":"Appropriately Challenging"}.\n' +
+    '- GOOD (preflight): {"readiness":7,"sleep_quality":8} — both are **1–10** intake sliders.\n' +
     '- GOOD: {"duration_minutes":"30"} — duration_minutes must be a **string** (quoted in JSON), one of "15", "30", "45", "60", or "Optimized for Goals".\n' +
     '- BAD: {"duration_minutes":30} — bare integer is invalid for the schema; use the string "30" instead.\n' +
     '- BAD: {"readiness":72} — 72 looks like **session_readiness_score (0–100)**; use 1–10 for readiness instead (e.g. map high energy to 8–10, not 70+).\n' +
     '- BAD: {"readiness":"feeling great"} — free-text is invalid; use an integer 1–10 (or digit string like "7").\n' +
-    '- GOOD: {"soreness":["Legs"]} or {"soreness":["None"]} when nothing is sore.\n' +
+    '- GOOD: {"soreness":["Legs"]} or {"soreness":["None"]} when nothing is sore (preflight).\n' +
     '- BAD: {"soreness":["None","Legs"]} — never mix **None** with specific areas; drop None or pick only body areas.\n' +
     'Use null / omit task_modal_intake_patch when you are not updating the wizard.'
   );
@@ -461,8 +470,8 @@ export function buildBaseCoachPrompt(
     "EXECUTION PATCH (live player): When CURRENT WORKOUT CONTEXT is present and the user mentions specific equipment (e.g. 'I have 60lb kettlebells') or asks for specific changes to the current workout session (workoutContext JSON under CURRENT WORKOUT CONTEXT), you MUST compute the appropriate weights, reps, RPE, and/or set completion and include them in the execution_patch field. " +
     'Do not only describe numbers in reply_content; you must also provide the JSON execution_patch so the app can update the live grid. You may list multiple sets and multiple exercises in one patch. String fields (weight, reps, rpe) must be pure numeric strings only, with no ranges, units, or extra text (e.g. "60", "8", "7.5"). Set execution_patch to null when you are not changing the live log. ' +
     'PERSONAL CUES: When the user wants instructions, form cues, tips, or injury notes saved for catalog exercises, emit personal_cues_patch (one entry per exerciseIndex from EXERCISE_INDEX_MAP; only [dict:...] rows persist); you may combine it with execution_patch in one response. ' +
-    'TASK MODAL INTAKE PATCH: When TASK MODAL INTAKE UI appears in the system prompt (workout / workout_log task under discussion), use task_modal_intake_patch to update the on-card intake wizard (readiness and sleep sliders 1–10, wizard_step 1–3, duration_minutes, phase_intent, soreness). Do not only describe those values in reply_content when you intend the UI to change—emit task_modal_intake_patch. Set task_modal_intake_patch to null when not updating the wizard. ' +
-    'If --- TASK MODAL LIVE STATE (v1) --- appears in the system prompt and you describe changing a slider, step, duration, intensity, or soreness in reply_content, you MUST emit the same change in task_modal_intake_patch in that same JSON. ' +
+    'TASK MODAL INTAKE PATCH: When TASK MODAL INTAKE UI appears in the system prompt (workout / workout_log task under discussion), use task_modal_intake_patch to update the on-card intake wizard. In **generation mode** (no factory yet): phase_intent, duration_minutes, progression_trend, optional anchor_lift / temporary_limitations, wizard_step 1–2 — not readiness/sleep. In **preflight mode** (workout already generated): readiness and sleep sliders 1–10, soreness, wizard_step 1–2 — not macro-planning fields. Do not only describe those values in reply_content when you intend the UI to change—emit task_modal_intake_patch. Set task_modal_intake_patch to null when not updating the wizard. ' +
+    'If --- TASK MODAL LIVE STATE (v1) --- appears in the system prompt and you describe changing a wizard field in reply_content, you MUST emit the same change in task_modal_intake_patch in that same JSON. ' +
     'TRUTHFULNESS: If reply_content claims you wrote or applied something, include non-null execution_patch, personal_cues_patch, task_modal_intake_patch, or create_card/update_existing_task in the same JSON. ' +
     (apexMain
       ? 'Return ONLY a raw JSON object (no markdown, no code fences) with keys: reply_content, create_card, task_title, task_description, update_existing_task, updated_task_title, updated_task_description, execution_patch, personal_cues_patch, task_modal_intake_patch, card_action, intake_phase, session_readiness_score, missing_intake_categories, user_requested_immediate_card, session_request, coach_task_notes. Main bubble Call A has NO proposed_workout_metadata key — outline is Phase B server-side. '
