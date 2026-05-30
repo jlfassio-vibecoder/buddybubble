@@ -8,6 +8,7 @@ import {
   TaskModalDetailsBody,
   type TaskModalDetailsBodyProps,
 } from '@/components/modals/task-modal/TaskModalDetailsBody';
+import type { WorkoutIntakePanelWizardProps } from '@/components/fitness/workout-intake/WorkoutGenerationIntakePanel';
 import {
   WORKOUT_INTAKE_DURATION_CHOICES,
   WORKOUT_INTAKE_SORENESS_OPTIONS,
@@ -81,7 +82,7 @@ const mockWorkoutIntakePanelProps = {
   phaseIntentOptions: WORKOUT_GENERATION_PHASE_INTENT_OPTIONS,
   sorenessOptions: WORKOUT_INTAKE_SORENESS_OPTIONS,
   progressionTrendOptions: WORKOUT_GENERATION_PROGRESSION_TREND_OPTIONS,
-};
+} satisfies WorkoutIntakePanelWizardProps;
 
 const mockBuildWizardPayload = () => ({
   durationMinutes: 'Optimized for Goals' as const,
