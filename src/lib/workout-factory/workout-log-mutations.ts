@@ -63,3 +63,11 @@ export function appendSetRow(
   ];
   return next;
 }
+
+export function removeSetRow(draftLogs: SetDraft[][], exIdx: number): SetDraft[][] {
+  const exRow = draftLogs[exIdx];
+  if (!exRow || exRow.length <= 1) return draftLogs;
+  const next = draftLogs.map((rows) => [...rows]);
+  next[exIdx] = exRow.slice(0, -1);
+  return next;
+}

@@ -59,6 +59,31 @@ describe('outline-editor-client', () => {
     expect(summary).toContain('Tabata');
   });
 
+  it('validateOutlineDraftForConfirm rejects instruction block with non-routing name', () => {
+    const result = validateOutlineDraftForConfirm([
+      { name: 'Prep', instructions: ['Dynamic prep'] },
+    ]);
+    expect(result.ok).toBe(false);
+    expect(
+      result.drops.some(
+        (d) => d.reason === 'instruction_only_requires_warmup_finisher_or_cooldown_role',
+      ),
+    ).toBe(true);
+  });
+
+  it('validateOutlineDraftForConfirm accepts instruction block with Warm-up name', () => {
+    const result = validateOutlineDraftForConfirm([
+      { name: 'Warm-up', instructions: ['5 min bike'] },
+      {
+        name: 'Main EMOM',
+        block_format: 'emom',
+        format_params: { interval_seconds: 60, total_minutes: 10, is_alternating: true },
+        exercises: [{ name: 'Swing' }, { name: 'Thruster' }],
+      },
+    ]);
+    expect(result.ok).toBe(true);
+  });
+
   it('ensureOutlineExercisePlaceholders fills EMOM block with no exercises', () => {
     const out = ensureOutlineExercisePlaceholders([
       {

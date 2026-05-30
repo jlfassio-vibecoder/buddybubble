@@ -842,7 +842,7 @@ export function TaskModal({
       ) {
         return;
       }
-      if (itemType !== 'workout' && itemType !== 'workout_log') return;
+      if (itemType !== 'workout') return;
       if (!canWrite) return;
       if (aiWorkoutGenerating) return;
       if (args.action.kind === 'trigger_generation' && viewerWorkoutSet != null) return;
@@ -1001,12 +1001,13 @@ export function TaskModal({
     setMetadata,
     patchOriginalMetadataJson,
     saveCoreFields,
+    enabled: open && itemType === 'workout' && Boolean(taskId),
   });
 
   const showStructureBuilderCta = Boolean(
     workoutBuilderRouteEnabled &&
     standardRailEnabled &&
-    isWorkoutItemType &&
+    itemType === 'workout' &&
     taskId &&
     canWrite &&
     !workoutOutlineEditor.isOutlineConfirmed &&
@@ -1131,6 +1132,9 @@ export function TaskModal({
     activeSessionLaunch.handleLaunchClick();
   }, [
     workoutIntake.buildPreflightPayload,
+    workoutIntake.readiness,
+    workoutIntake.sleepQuality,
+    workoutIntake.sorenessArray,
     coreDirty,
     taskId,
     saveCoreFields,

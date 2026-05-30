@@ -18,7 +18,10 @@ import { useActiveSessionIntervalControls } from '@/features/active-session/hook
 import { useWorkoutSessionViewModel } from '@/hooks/use-workout-session-view-model';
 import { formatUserFacingError } from '@/lib/format-error';
 import { buildBlankSessionDraftLogs } from '@/lib/workout-factory/ghost-set-snapshot';
-import { recoverWorkoutSessionLogs } from '@/lib/workout-factory/recover-workout-session-logs';
+import {
+  buildWorkoutSessionHydrationFingerprint,
+  recoverWorkoutSessionLogs,
+} from '@/lib/workout-factory/recover-workout-session-logs';
 import { safeNextPath } from '@/lib/safe-next-path';
 import type { SetDraft } from '@/components/fitness/workout-block-renderer/WorkoutPlayerExercisePanel';
 import type { ActiveSessionContext } from '../machines/types';
@@ -51,6 +54,7 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
   const coachAdapterImplRef = useRef<CoachSyncAdapter>(createNoOpCoachSyncAdapter());
   const hasHydratedRef = useRef(false);
   const hydrationTaskIdRef = useRef<string | null>(null);
+  const hydrationStructureRef = useRef<string | null>(null);
 
   const coachSyncAdapter = useMemo<CoachSyncAdapter>(
     () => ({
@@ -164,17 +168,24 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
   const logSurfaceDisabled =
     isHydrating || isFinishing || isClosing || snapshot.context.closeQueued;
 
-  const exerciseCount = viewModel.flatExercises.length;
-  const blockCount = viewModel.blocks.length;
+  const sessionStructureFingerprint = useMemo(
+    () => buildWorkoutSessionHydrationFingerprint(viewModel.flatExercises, viewModel.blocks),
+    [viewModel.flatExercises, viewModel.blocks],
+  );
 
   useEffect(() => {
     if (hydrationTaskIdRef.current !== task.id) {
       hydrationTaskIdRef.current = task.id;
       hasHydratedRef.current = false;
+      hydrationStructureRef.current = null;
+    }
+    if (hydrationStructureRef.current !== sessionStructureFingerprint) {
+      hydrationStructureRef.current = sessionStructureFingerprint;
+      hasHydratedRef.current = false;
     }
     if (hasHydratedRef.current) return;
 
-    if (exerciseCount === 0 && blockCount === 0) return;
+    if (viewModel.flatExercises.length === 0 && viewModel.blocks.length === 0) return;
 
     let cancelled = false;
 
@@ -205,7 +216,7 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [supabase, task.target_bubble_id, task.id, exerciseCount, blockCount]);
+  }, [supabase, task.target_bubble_id, task.id, sessionStructureFingerprint]);
 
   useEffect(() => {
     if (!sessionStartedAt) return;

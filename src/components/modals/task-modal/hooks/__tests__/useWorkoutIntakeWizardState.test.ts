@@ -126,6 +126,23 @@ describe('useWorkoutIntakeWizardState', () => {
     });
   });
 
+  it('buildPreflightPayload tracks soreness toggles via memoized sorenessArray', () => {
+    const { result } = renderHook(() =>
+      useWorkoutIntakeWizardState('existing:t1', {}, { mode: 'preflight' }),
+    );
+
+    const first = result.current.buildPreflightPayload();
+    expect(first.soreness).toEqual(['None']);
+
+    act(() => {
+      result.current.toggleSoreness('Legs');
+    });
+
+    const second = result.current.buildPreflightPayload();
+    expect(second.soreness).toEqual(['Legs']);
+    expect(second.readiness).toBe(first.readiness);
+  });
+
   it('preflight mode clamps wizard step to 2', () => {
     const { result } = renderHook(() =>
       useWorkoutIntakeWizardState('existing:t1', {}, { mode: 'preflight' }),

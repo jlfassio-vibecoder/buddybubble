@@ -82,6 +82,7 @@ Fill the outline blocks with specific exercises, sets, reps, and work/rest inter
 - Do NOT change block_format or format_params on any block.
 - Exercise-shaped blocks MUST include a populated exercises[] array with real movement names and prescriptions.
 - Instruction-only blocks (instructions[] without exercises) may keep or lightly refine instruction lines only.
+- Instruction-only blocks must NOT include block_format, format_params, or exercises[].
 - Scale volume and intensity to phase intent, progression trend, anchor lift, temporary limitations, and session duration from intake when present.
 
 === OUTPUT FORMAT ===
@@ -89,6 +90,10 @@ Return ONLY valid JSON. No markdown, no explanations. Start with { and end with 
 
 {
   "blocks": [
+    {
+      "name": "Warm-up",
+      "instructions": ["5 min easy bike", "Dynamic prep"]
+    },
     {
       "name": "Main EMOM",
       "block_format": "emom",
@@ -198,5 +203,7 @@ export function validateFillParametricOutlineOutput(
 }
 
 export const FILL_PARAMETRIC_OUTLINE_SYSTEM_PROMPT = `You are the Biomechanist and Mathematician. You are given a strict, pre-approved structural outline of workout blocks. Your job is to fill these blocks with specific exercises, sets, reps, and work/rest intervals based on the user's intake, equipment, and profile. DO NOT add, remove, or reorder blocks. DO NOT change block_format or format_params.
+
+Instruction-only blocks (warm-up, cool-down, mobility with instructions[] and no exercises[]) must remain instruction-only — never convert them into exercise prescriptions or add block_format.
 
 Output ONLY valid JSON matching the user-provided schema. No markdown, no commentary.`;
