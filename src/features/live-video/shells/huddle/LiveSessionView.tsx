@@ -33,8 +33,9 @@ import { useLiveSessionRuntime } from '@/features/live-video/theater/live-sessio
 import { useLiveTheaterLayoutPlanContext } from '@/features/live-video/theater/live-theater-layout-context';
 import { SessionHeader } from '@/features/live-video/shells/huddle/SessionHeader';
 import { SessionControls } from '@/features/live-video/shells/huddle/SessionControls';
-import { SessionDeckBuilder } from '@/features/live-video/shells/huddle/SessionDeckBuilder';
-import { UpNextCard } from '@/features/live-video/shells/huddle/UpNextCard';
+import { WorkoutQueueRegion } from '@/features/live-video/ui/WorkoutQueueRegion';
+import { Tier3ExercisesReopenPill } from '@/features/live-video/ui/Tier3ExercisesReopenPill';
+import { useTier3DrawerOpen } from '@/features/live-video/hooks/useTier3DrawerOpen';
 import { Button } from '@/components/ui/button';
 import { LiveSessionWorkoutPlayer } from '@/features/live-video/shells/huddle/LiveSessionWorkoutPlayer';
 import { LiveDeckExerciseInjector } from '@/features/live-video/shells/huddle/LiveDeckExerciseInjector';
@@ -178,6 +179,11 @@ function LiveSessionViewInner({
 
   const { client, leaveChannel, isMicMuted, isCameraOff, toggleMic } = useAgoraSession();
 
+  const handleLeaveDock = useCallback(() => {
+    leaveChannel();
+    onAfterLeave?.();
+  }, [leaveChannel, onAfterLeave]);
+
   const onRosterLocalMuteRequested = useCallback(() => {
     if (!isMicMuted) {
       toggleMic();
@@ -215,6 +221,16 @@ function LiveSessionViewInner({
   const hostSideEditorOpen = isHost && activeSnapshotId != null;
   const participantLoggerOpen = !isHost && state.activeDeckItemId != null;
   const sideEditorOpen = hostSideEditorOpen || participantLoggerOpen;
+
+  const selectionKey = isHost ? activeSnapshotId : state.activeDeckItemId;
+  const { open: isDrawerOpen, onOpenChange: setDrawerOpen } = useTier3DrawerOpen({
+    selectionKey,
+    selectionActive: sideEditorOpen,
+  });
+
+  const handleDrawerClose = useCallback(() => {
+    setDrawerOpen(false);
+  }, [setDrawerOpen]);
 
   const uiMode = state.globalStartedAt != null || state.status !== 'idle' ? 'live' : 'builder';
 
@@ -349,6 +365,9 @@ function LiveSessionViewInner({
   const showWrapperBoardSplit =
     !compact && preferredShell === 'theater_board_split' && wrapperPhaseMatches;
   const showSideEditor = !compact && sideEditorOpen && !showWrapperBoardSplit;
+  const showHuddleSplit = !compact && (showWrapperBoardSplit || sideEditorOpen);
+  const showTier3Column = isDrawerOpen && showSideEditor;
+  const showReopenPill = !compact && !isDrawerOpen && sideEditorOpen;
 
   const resolvedDisplayName = displayNameProp?.trim() || localUserId;
 
@@ -370,7 +389,7 @@ function LiveSessionViewInner({
   };
 
   const videoFillsPrimarySlot =
-    compact || (!sideEditorOpen && !showWrapperBoardSplit) || showWrapperBoardSplit;
+    compact || showWrapperBoardSplit || !sideEditorOpen || (showSideEditor && !isDrawerOpen);
 
   const videoOverlays = useMemo(
     () => (
@@ -413,6 +432,8 @@ function LiveSessionViewInner({
       compact,
       sideEditorOpen,
       showWrapperBoardSplit,
+      showSideEditor,
+      isDrawerOpen,
       videoFillsPrimarySlot,
       onAfterLeave,
       localUserId,
@@ -436,20 +457,31 @@ function LiveSessionViewInner({
           canWrite={canWriteTasks}
           onPersistSuccess={onWorkoutDeckPersisted}
           onHostLayoutFocusBoard={focusBoard}
+          onClose={handleDrawerClose}
         />
       ) : (
-        <ParticipantWorkoutLogger className={compact ? 'min-h-0 flex-1' : 'h-full min-h-0'} />
+        <ParticipantWorkoutLogger
+          className={compact ? 'min-h-0 flex-1' : 'h-full min-h-0'}
+          onClose={handleDrawerClose}
+        />
       ),
-    [isHost, compact, workspaceId, supabase, canWriteTasks, onWorkoutDeckPersisted, focusBoard],
+    [
+      isHost,
+      compact,
+      workspaceId,
+      supabase,
+      canWriteTasks,
+      onWorkoutDeckPersisted,
+      focusBoard,
+      handleDrawerClose,
+    ],
   );
 
   const handleSheetOpenChange = useCallback(
     (open: boolean) => {
-      if (!open && isHost) {
-        deckSel?.setActiveSnapshotId(null);
-      }
+      setDrawerOpen(open);
     },
-    [deckSel, isHost],
+    [setDrawerOpen],
   );
 
   const showEmbeddedBoardSelection = Boolean(selectingFromBoard && boardSelectionPanel != null);
@@ -497,15 +529,19 @@ function LiveSessionViewInner({
           </div>
         </div>
 
-        <SessionDeckBuilder state={state} className="min-h-0 min-w-0 shrink-0" />
-
-        {uiMode === 'live' && !selectingFromBoard ? <UpNextCard className="shrink-0" /> : null}
+        {huddle.showWorkoutQueueStrip ? (
+          <WorkoutQueueRegion
+            state={state}
+            uiMode={uiMode}
+            selectingFromBoard={selectingFromBoard}
+          />
+        ) : null}
 
         {showEmbeddedBoardSelection ? (
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             {boardSelectionPanel}
           </div>
-        ) : showSideEditor || showWrapperBoardSplit ? (
+        ) : showHuddleSplit ? (
           <ResizablePanelGroup
             direction="horizontal"
             groupRef={huddleSplitGroupRef}
@@ -514,49 +550,58 @@ function LiveSessionViewInner({
             onLayoutChanged={onHuddleSplitLayoutChanged}
             className="min-h-0 flex-1 rounded-lg"
           >
-            <ResizablePanel
-              id={HUDDLE_EDITOR_PANEL_ID}
-              minSize="22%"
-              maxSize="55%"
-              className="flex min-h-0 min-w-0 flex-col overflow-hidden"
-            >
-              {showWrapperBoardSplit && renderWrapper ? (
-                <div
-                  className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto bg-background p-3 text-foreground"
-                  data-region="interval-board-panel"
+            {showTier3Column || showWrapperBoardSplit ? (
+              <>
+                <ResizablePanel
+                  id={HUDDLE_EDITOR_PANEL_ID}
+                  minSize="22%"
+                  maxSize="55%"
+                  className="flex min-h-0 min-w-0 flex-col overflow-hidden"
                 >
-                  {hostNavActions != null ? (
-                    <div className="shrink-0 rounded-lg border border-border bg-muted/40 px-2 py-1 text-sm">
-                      {hostNavActions}
+                  {showWrapperBoardSplit && renderWrapper ? (
+                    <div
+                      className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto bg-background p-3 text-foreground"
+                      data-region="interval-board-panel"
+                    >
+                      {hostNavActions != null ? (
+                        <div className="shrink-0 rounded-lg border border-border bg-muted/40 px-2 py-1 text-sm">
+                          {hostNavActions}
+                        </div>
+                      ) : null}
+                      {sessionDrawerNode != null ? (
+                        <div className="shrink-0">{sessionDrawerNode}</div>
+                      ) : null}
+                      <div className="min-h-0 flex-1">
+                        <WrapperErrorBoundary resetKey={effectiveWrapperKind}>
+                          <ActiveIntervalWrapper {...wrapperProps} />
+                        </WrapperErrorBoundary>
+                      </div>
+                      {chatDrawerLeaderboard != null ? (
+                        <div className="shrink-0">{chatDrawerLeaderboard}</div>
+                      ) : null}
                     </div>
-                  ) : null}
-                  {sessionDrawerNode != null ? (
-                    <div className="shrink-0">{sessionDrawerNode}</div>
-                  ) : null}
-                  <div className="min-h-0 flex-1">
-                    <WrapperErrorBoundary resetKey={effectiveWrapperKind}>
-                      <ActiveIntervalWrapper {...wrapperProps} />
-                    </WrapperErrorBoundary>
-                  </div>
-                  {chatDrawerLeaderboard != null ? (
-                    <div className="shrink-0">{chatDrawerLeaderboard}</div>
-                  ) : null}
-                </div>
-              ) : (
-                workoutPlayer
-              )}
-            </ResizablePanel>
-            <ResizableHandle direction="horizontal" withHandle className="shrink-0" />
+                  ) : (
+                    workoutPlayer
+                  )}
+                </ResizablePanel>
+                <ResizableHandle direction="horizontal" withHandle className="shrink-0" />
+              </>
+            ) : null}
             <ResizablePanel
               id={HUDDLE_VIDEO_PANEL_ID}
               minSize="45%"
-              className="flex min-h-0 min-w-0 flex-col overflow-hidden"
+              className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
             >
-              <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">{videoStage}</div>
+              <div className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col">
+                {videoStage}
+                {showReopenPill ? (
+                  <Tier3ExercisesReopenPill onClick={() => setDrawerOpen(true)} />
+                ) : null}
+              </div>
             </ResizablePanel>
           </ResizablePanelGroup>
         ) : (
-          videoStage
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{videoStage}</div>
         )}
         {!showWrapperBoardSplit && !selectingFromBoard && sessionDrawerNode != null ? (
           <div className="shrink-0 rounded-lg border border-border bg-card/60 p-3">
@@ -595,6 +640,7 @@ function LiveSessionViewInner({
               disableActions={!isHost}
               onHostEndLiveSessionForAll={isHost ? onHostEndLiveSessionForAll : undefined}
               onHostStartRecording={isHost ? onHostStartRecording : undefined}
+              onLeaveDock={onAfterLeave != null ? handleLeaveDock : undefined}
               liveDbReady={liveDbReady}
               hostClassRecordingPipelineBusy={isHost ? hostClassRecordingPipelineBusy : false}
               hostAsyncWorkoutEnabled={isHost ? hostAsyncWorkoutEnabled : undefined}
@@ -628,8 +674,16 @@ function LiveSessionViewInner({
       </div>
 
       {compact ? (
-        <Sheet open={sideEditorOpen} onOpenChange={handleSheetOpenChange}>
-          <SheetContent side="bottom" className="flex h-[85vh] min-h-0 flex-col gap-0 p-0">
+        <Sheet
+          modal={false}
+          open={isDrawerOpen && sideEditorOpen}
+          onOpenChange={handleSheetOpenChange}
+        >
+          <SheetContent
+            side="bottom"
+            hideCloseButton
+            className="flex h-[85vh] min-h-0 flex-col gap-0 p-0"
+          >
             <div className="shrink-0 border-b border-border px-4 py-3">
               <SheetTitle>{isHost ? 'Edit exercises' : 'Log workout'}</SheetTitle>
             </div>

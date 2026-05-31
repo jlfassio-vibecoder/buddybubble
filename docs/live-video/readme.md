@@ -4,6 +4,8 @@ This document describes the current BuddyBubble live video implementation. It is
 
 For the original implementation plan and changelog, see `docs/live-video-blueprint.md`.
 
+For **canonical display and mount rules** in the connected huddle (Tier 1–3, live vs builder surfaces, AMRAP viewport economy), see **[display-contract.md](./display-contract.md)**.
+
 ## Status
 
 Live video is currently implemented as a workout huddle inside the authenticated dashboard:
@@ -139,7 +141,11 @@ Broadcast events:
 - `STATE_BROADCAST`
 - `SYNC_REQUEST`
 
-The host is the authority. Participants only accept state broadcasts from `hostUserId`. On subscribe, participants send a sync request so the host can rebroadcast the latest state.
+The Realtime channel is created with `{ broadcast: { ack: false } }` — delivery is best-effort with no application-level ack.
+
+The host is the authority. Participants only accept state broadcasts from `hostUserId`. On first `SUBSCRIBED`, the host sends one `STATE_BROADCAST` of current state; each participant sends one `SYNC_REQUEST` (guarded by `syncRequestSentRef`, reset on channel reconnect). The host responds to each valid `SYNC_REQUEST` with a single rebroadcast. There is no periodic host resync, no visibility-change rebroadcast, and no rebroadcast when Agora remote users join.
+
+Incoming broadcasts drop strictly older `SessionState.generation` values (`incoming < current` in `handleIncomingStateBroadcast`); equal generation still applies (intra-session reordering is not filtered).
 
 The state model tracks:
 
@@ -165,10 +171,13 @@ Relevant files:
 
 Beyond the three transient layers above, the dock writes a durable Postgres row per session into `public.live_sessions` and a row per joined user into `public.live_session_participants`. This registry is what wrapper-bearing phases (AMRAP today, future kinds) read at runtime.
 
-`DashboardLiveVideoDockRouter` calls one of two RPCs the first time Agora connects for a given `sessionId`:
+Registration timing differs by role:
 
-- Host: `live_session_create(p_session_id, p_display_name, p_agora_uid, p_workspace_id)` (idempotent: upserts both the `live_sessions` row and the host `live_session_participants` row; requires caller membership in `p_workspace_id`).
-- Participant: `live_session_participant_join(p_session_id, p_display_name, p_agora_uid, p_role)` (retried up to 24 times at 150 ms while waiting for the host's `live_sessions` row to appear).
+- **Host:** `DashboardLiveVideoDockRouter` calls `live_session_create(p_session_id, p_display_name, p_agora_uid, p_workspace_id)` on first Agora connect (idempotent upsert of `live_sessions` + host participant row; requires workspace membership).
+- **Participant:** `live_session_participant_join` runs in **`ParticipantPreJoinSummary`** when the user taps **Join video** (before `joinChannel`). It retries up to **8** times at **500 ms** on Postgres FK `23503` when the host row is missing. After exhaustion, the UI shows a **“host session is still starting”** status; the user can tap **Join video** again manually. There is no `postgres_changes` wait on `live_sessions`.
+- **Dock participant path:** once Agora is connected, the router sets `liveDbReady` without a second join loop (registration is assumed to have succeeded in pre-join).
+
+`AgoraSessionProvider` separately retries token **`404`** responses up to **10** times at **500 ms** when Tier C lookup races host/participant registration.
 
 Once registration succeeds the dock flips an internal `liveDbReady` flag. `LiveSessionView` blocks `get_live_session_join_hints` and `live_session_list_participants` reads until `liveDbReady === true` to avoid a connect-before-register race.
 
@@ -266,6 +275,8 @@ The huddle is split into pre-join and connected states.
 `ParticipantPreJoinSummary` shows the live deck as read-only. On join, it calls the `assign_user_to_session_deck` RPC so the participant is assigned to every task in the session deck before opening video.
 
 ### Connected huddle
+
+Mount semantics for the connected huddle (queue collapse, Tier 3 panel, interval phases) are defined in **[display-contract.md](./display-contract.md)**.
 
 `LiveSessionView` renders the video-first huddle after Agora is connecting or connected:
 
@@ -557,7 +568,7 @@ AGORA_APP_ID=
 AGORA_APP_CERTIFICATE=
 ```
 
-These are documented in `.env.example`. They must not be exposed with `NEXT_PUBLIC_`.
+These are documented in `.env.example`. They must not be exposed with `NEXT_PUBLIC_`. The token response also returns `appId` to the browser (required by the Agora Web SDK); that echo is not a `NEXT_PUBLIC_` leak but means every authenticated client that joins video receives the app id.
 
 The feature also depends on the normal app Supabase configuration:
 
@@ -589,28 +600,17 @@ The deck persistence and assignment flow relies on:
 
 ## Debug Logging
 
-Several live video tripwire logs are intentionally still present. The table below tracks which gating each log uses today; future cleanup should converge them all on `process.env.NODE_ENV === 'development'` or remove them.
+**Verified May 2026:** most blueprint `[DEBUG]` tripwires (Agora mount/leave, media toggle, token fetched, harness render, session-state broadcast traces) were **removed** from production paths. Hot paths now log **`console.error` / `console.warn` on failure only** (token exhaustion, join errors, Realtime channel errors, wrapper failures).
 
-| Log string                                                                 | File                                                                                 | Gated to dev?                          |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------- |
-| `[DEBUG] AgoraSessionProvider Mounted - Initializing connection bounds`    | `src/features/live-video/AgoraSessionProvider.tsx` (mount effect)                    | No (unconditional)                     |
-| `[DEBUG] AgoraSessionProvider Unmounted - TRIPPING DISCONNECT / Cleanup`   | `src/features/live-video/AgoraSessionProvider.tsx` (`leaveChannel`)                  | No (unconditional)                     |
-| `[DEBUG] Toggling media` (audio or video, enabled or disabled)             | `src/features/live-video/AgoraSessionProvider.tsx` (`toggleMic` / `toggleCamera`)    | No (unconditional)                     |
-| `[DEBUG] Token fetched successfully`                                       | `src/features/live-video/AgoraSessionProvider.tsx` (`joinChannel` after token parse) | No (unconditional)                     |
-| `[DEBUG] BaseVideoHarness Rendered with child shell:`                      | `src/features/live-video/BaseVideoHarness.tsx`                                       | No (unconditional)                     |
-| `[DEBUG] DashboardLiveVideoDockRouter Render - Role: …`                    | `src/components/dashboard/dashboard-live-video-dock.tsx`                             | Dev only                               |
-| `[DEBUG] LiveVideoSessionShell Rendered - Layout Plan applied`             | `src/features/live-video/theater/live-video-session-shell.tsx`                       | Dev only                               |
-| `[DEBUG] Token API hit for channel:`                                       | `src/app/api/live-video/token/route.ts`                                              | Dev only                               |
-| `[DEBUG][API] Tier C:` (session 404, forbidden, channel-binding tripwires) | `src/app/api/live-video/token/route.ts`                                              | Dev only                               |
-| `[DEBUG][LiveVideo Token] 404 from token API; retrying…`                   | `src/features/live-video/AgoraSessionProvider.tsx`                                   | Dev only                               |
-| `[DEBUG] useSessionState broadcast received: …`                            | `src/features/live-video/hooks/useSessionState.ts` (incoming broadcast)              | Dev only                               |
-| `[DEBUG] Participant received active item:`                                | `src/features/live-video/hooks/useSessionState.ts` (incoming broadcast, participant) | Dev only                               |
-| `[DEBUG] useSessionState setAspectRatio (host): ratio=…`                   | `src/features/live-video/hooks/useSessionState.ts` (host setter)                     | Dev only                               |
-| `[DEBUG] Host broadcast active item:`                                      | `src/features/live-video/hooks/useSessionState.ts` (host setter)                     | Dev only                               |
-| `[DEBUG][LiveVideo State] Evaluating broadcast generation: …`              | `src/features/live-video/hooks/useSessionState.ts` (incoming broadcast)              | No (unconditional generation tripwire) |
-| `[DEBUG][LiveVideo State] Dropped stale out-of-order broadcast.`           | `src/features/live-video/hooks/useSessionState.ts` (incoming broadcast)              | No (unconditional generation tripwire) |
+Remaining dev-gated diagnostics:
 
-Keep them stable while debugging lifecycle behavior; the generation-enforcer tripwires in particular are intentionally unconditional so out-of-order drops are visible without rebuilding.
+| Log string                                                                 | File                                               | Gated to dev? |
+| -------------------------------------------------------------------------- | -------------------------------------------------- | ------------- |
+| `[DEBUG] Token API hit for channel:`                                       | `src/app/api/live-video/token/route.ts`            | Yes           |
+| `[DEBUG][API] Tier C:` (session 404, forbidden, channel-binding tripwires) | `src/app/api/live-video/token/route.ts`            | Yes           |
+| `[useSessionState] Realtime channel` (warn / exhausted retries)            | `src/features/live-video/hooks/useSessionState.ts` | Yes           |
+
+`handleIncomingStateBroadcast` still drops strictly older `generation` values but **does not log** the drop (silent). See `docs/live-video-blueprint.md` changelog if re-adding lifecycle tripwires for a debug pass.
 
 ## Manual QA
 
@@ -663,17 +663,20 @@ Not currently covered by automated tests:
 
 ## Known Limitations
 
-- **Tier C (when `sessionId` is sent):** the request must include `workspaceId`, which must match a non-null `live_sessions.workspace_id` when present. Token issuance requires an existing `live_sessions` row and a passing `can_join_live_session` check (host always, including legacy rows with null `workspace_id`; participants must be in `live_session_participants`, the session must have a non-null `workspace_id`, and on paid workspace categories the workspace subscription must be `trialing` or `active`). **`channelId` binding to the session is still a logged tripwire only** until `live_sessions` stores a canonical channel id.
-- Supabase Realtime broadcasts are best-effort (`ack: false`); participants request sync on subscribe, but delivery ordering is still eventual.
-- `SessionState.generation` is now compared on incoming broadcasts to drop strictly older payloads (see `useSessionState.handleIncomingStateBroadcast`), but it is still only incremented inside `endSession`. Other transitions reuse the previous generation, so the check protects against full-session-reset reordering only — not against intra-session pause/resume or active-deck-item reordering.
+**Verified against deployed code (May 2026).** Items marked _(open)_ remain true in `src/features/live-video/hooks/useSessionState.ts`, the dock, and related paths unless noted resolved.
+
+- **Tier C (when `sessionId` is sent):** the request must include `workspaceId`, which must match a non-null `live_sessions.workspace_id` when present. Token issuance requires an existing `live_sessions` row and a passing `can_join_live_session` check (host always, including legacy rows with null `workspace_id`; participants must be in `live_session_participants`, the session must have a non-null `workspace_id`, and on paid workspace categories the workspace subscription must be `trialing` or `active`). **`channelId` binding to the session is still a logged tripwire only** until `live_sessions` stores a canonical channel id. **Resolved for production joins:** dashboard `AgoraSessionProvider` always passes `sessionId`. **Still workspace-scoped:** callers that omit `sessionId` (e.g. scaffold signed-out preview, paths without durable session rows) only get workspace membership + channel validation.
+- **Realtime sync _(open)_:** Supabase Realtime broadcasts use `ack: false`. Each participant sends one `SYNC_REQUEST` per channel subscribe (reset on reconnect); the host rebroadcasts on request and on its own state transitions, but there is no periodic resync, visibility rebroadcast, or Agora remote-user join rebroadcast. Lost pause/resume or `activeDeckItemId` events can leave participants stale until the next host action or reconnect.
+- **`SessionState.generation` \*(open, partial):** incoming broadcasts with strictly lower `generation` are dropped silently in `handleIncomingStateBroadcast`. `generation` is still only incremented in `endSession`, so intra-session pause/resume and active-deck reordering are not protected.
 - Participant clocks are approximate and use host broadcast timestamps, not NTP-grade synchronization.
 - `agora-access-token` is still used for server token generation, with a code comment noting a future migration to `agora-token`.
 - Media connection state and workout session state are deliberately separate; leaving Agora video does not necessarily end the shared workout or mark invite metadata ended.
 - Only the `workout` mode is implemented at the `liveVideoStore` / invite-metadata level. Wrapper kinds (`amrap`, `amrap_minimal`, `simple_countdown`) are layered on top via `live_sessions.interval_wrapper_kind`.
-- The durable `live_sessions` and `live_session_participants` rows have no `closed_at` column and no reaper; they accumulate indefinitely.
-- Participant `live_session_participant_join` retries up to 24 times at 150 ms before silently giving up; if the host has not yet executed `live_session_create`, the participant will see no error surface and must leave/rejoin.
+- **Durable session lifecycle _(open)_:** `live_sessions` / `live_session_participants` have no `closed_at` column and no reaper; rows accumulate after sessions end.
+- **Participant registration race _(partially mitigated)_:** pre-join `live_session_participant_join` retries **8×500 ms** with a user-visible “host still starting” message and manual retry; token fetch retries **404** up to **10×500 ms**. No automatic retry after Agora is connected if registration never succeeded; host `live_session_create` failure leaves `liveDbReady` false with console error only.
+- **Active deck row deletion _(open)_:** if the host deletes the deck row matching `state.activeDeckItemId`, participants can be left with a stale selection until the host picks another card or clears the active item.
+- **Host end ordering _(open)_:** `onHostEndLiveSessionForAll` awaits `agora-recording-stop` before patching invite `endedAt` for class instances, so a slow stop call can leave join buttons active briefly.
 - Cloud recording start/stop is host-triggered without an explicit consent UX for participants.
-- Debug logging remains in live paths while the feature stabilizes; see the Debug Logging table for current gating per log line.
 
 ## Extension Notes
 

@@ -38,6 +38,8 @@ export type BaseVideoHarnessProps = {
   renderRemoteRailBottomOverlay?: (agoraUidStr: string) => ReactNode;
   /** When set, the tile for this Agora uid shows a placeholder instead of live video. */
   excludeUidForTiles?: string | null;
+  /** Tighter padding when embedded in the live theater dock (live session UI). */
+  compactChrome?: boolean;
 };
 
 /** Stage tiles: match shell background so `fit: 'contain'` letterboxing blends with the dock. */
@@ -59,6 +61,7 @@ type RailParticipant =
  */
 export function BaseVideoHarness(props: BaseVideoHarnessProps) {
   const fullWidth = Boolean(props.fullWidth);
+  const compactChrome = Boolean(props.compactChrome);
 
   const {
     isConnected,
@@ -140,11 +143,16 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
           ? 'Connected (no local video)'
           : 'Idle';
 
+  const hideConnectedLeaveRow = fullWidth && isConnected;
+  // Leave/Exit lives in SessionControls ("Exit workout") when the dock passes onAfterLeave.
+
   return (
     <div
       className={cn(
         fullWidth
-          ? 'mx-0 flex w-full min-w-0 max-w-none flex-1 min-h-0 flex-col items-stretch gap-4 px-2 py-4 sm:gap-6 sm:px-4 sm:py-6'
+          ? compactChrome
+            ? 'mx-0 flex w-full min-w-0 max-w-none flex-1 min-h-0 flex-col items-stretch gap-2 px-0 py-0 sm:px-1 sm:py-1'
+            : 'mx-0 flex w-full min-w-0 max-w-none flex-1 min-h-0 flex-col items-stretch gap-4 px-2 py-4 sm:gap-6 sm:px-4 sm:py-6'
           : 'mx-auto flex w-full max-w-4xl flex-1 min-h-0 flex-col items-center gap-6 px-4 py-6',
         props.className,
       )}
@@ -166,10 +174,10 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
            * Agora has no pixels to paint. Use stretch + justify-center so height is
            * definite and width follows aspect (w-auto), centered on the main axis.
            */}
-          <div className="flex min-h-0 min-w-0 h-full w-full flex-1 flex-row items-stretch justify-center">
+          <div className="flex min-h-0 min-w-0 h-full flex-[1_1_0%] flex-row items-stretch justify-center">
             <div
               className={cn(
-                'relative w-auto max-w-full min-h-0 shrink-0 overflow-hidden rounded-xl bg-transparent transition-[aspect-ratio] duration-300',
+                'relative h-full max-h-full w-auto max-w-full min-h-0 overflow-hidden rounded-xl bg-transparent transition-[aspect-ratio] duration-300',
                 aspectClass,
               )}
               data-live-video-stage
@@ -243,7 +251,7 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
           {allRailParticipants.length > 0 ? (
             // Copilot suggestion ignored: responsive stack/smaller min-width deferred; theater shell already treats mobile sessions separately.
             <div
-              className="flex h-full min-w-[240px] max-w-[400px] flex-[1] shrink-0 flex-col gap-3 overflow-y-auto overscroll-contain rounded-xl border border-border bg-card/70 p-2 shadow-sm"
+              className="flex h-full w-[220px] shrink-0 flex-none flex-col gap-3 overflow-y-auto overscroll-contain rounded-xl border border-border bg-card/70 p-2 shadow-sm md:w-[260px]"
               aria-label="Participant thumbnails"
             >
               {allRailParticipants.map((p) =>
@@ -299,32 +307,34 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
             </div>
           ) : null}
         </div>
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          {/*
-           * Harness no longer owns the primary Join CTA — that lives in
-           * `PreJoinBuilder` so the pre-join surface stays content-first.
-           * Keep Join visible only when the harness is rendered disconnected
-           * (e.g. legacy scaffold paths); hide it once Agora is live.
-           */}
-          {!isConnected && !isConnecting ? (
-            <Button type="button" size="sm" variant="secondary" onClick={joinChannel}>
-              Join
-            </Button>
-          ) : null}
-          {isConnected || isConnecting ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                leaveChannel();
-                props.onAfterLeave?.();
-              }}
-            >
-              Leave
-            </Button>
-          ) : null}
-        </div>
+        {!hideConnectedLeaveRow ? (
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {/*
+             * Harness no longer owns the primary Join CTA — that lives in
+             * `PreJoinBuilder` so the pre-join surface stays content-first.
+             * Keep Join visible only when the harness is rendered disconnected
+             * (e.g. legacy scaffold paths); hide it once Agora is live.
+             */}
+            {!isConnected && !isConnecting ? (
+              <Button type="button" size="sm" variant="secondary" onClick={joinChannel}>
+                Join
+              </Button>
+            ) : null}
+            {isConnected || isConnecting ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  leaveChannel();
+                  props.onAfterLeave?.();
+                }}
+              >
+                Leave
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       {props.children != null ? (

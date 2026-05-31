@@ -44,6 +44,8 @@ describe('deriveLiveTheaterLayoutPlan', () => {
     const p = deriveLiveTheaterLayoutPlan({ ...base, hasLiveVideoSession: false });
     expect(p.active).toBe(false);
     expect(p.shell.kind).toBe('inactive');
+    expect(p.huddle.compactVideoPadding).toBe(false);
+    expect(p.huddle.showWorkoutQueueStrip).toBe(false);
   });
 
   it('is inactive when not layout hydrated', () => {
@@ -72,7 +74,8 @@ describe('deriveLiveTheaterLayoutPlan', () => {
     expect(p.phase).toBe('live_video');
     expect(p.shell.kind).toBe('theater_focus');
     expect(p.shell.showHorizontalBoardStage).toBe(false);
-    expect(p.huddle.maximizeVideoInDock).toBe(true);
+    expect(p.huddle.compactVideoPadding).toBe(true);
+    expect(p.huddle.showWorkoutQueueStrip).toBe(true);
   });
 
   it('theater_focus when builder and not selecting (desktop)', () => {
@@ -84,6 +87,8 @@ describe('deriveLiveTheaterLayoutPlan', () => {
     expect(p.shell.kind).toBe('theater_focus');
     expect(p.shell.showHorizontalBoardStage).toBe(false);
     expect(p.huddle.minimizeVideoInDock).toBe(true);
+    expect(p.huddle.compactVideoPadding).toBe(false);
+    expect(p.huddle.showWorkoutQueueStrip).toBe(true);
   });
 
   it('vertical compact on mobile', () => {

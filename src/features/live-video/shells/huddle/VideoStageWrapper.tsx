@@ -3,6 +3,7 @@
 import { type ReactNode } from 'react';
 import { BaseVideoHarness } from '@/features/live-video/BaseVideoHarness';
 import { useLiveSessionRuntime } from '@/features/live-video/theater/live-session-runtime-context';
+import { useLiveTheaterLayoutPlanContext } from '@/features/live-video/theater/live-theater-layout-context';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -47,13 +48,15 @@ export function VideoStageWrapper({
   floatingMediaExtras,
 }: VideoStageWrapperProps) {
   const runtime = useLiveSessionRuntime();
+  const { huddle } = useLiveTheaterLayoutPlanContext();
   const aspectRatio = runtime.aspectRatio;
 
   return (
-    <div className={cn('flex min-h-0 w-full flex-col items-center overflow-hidden', className)}>
-      <div className="flex w-full min-h-0 flex-1 flex-col items-center justify-center">
+    <div className={cn('flex min-h-0 flex-1 flex-col overflow-hidden', className)}>
+      <div className="flex min-h-0 w-full flex-1 flex-col items-stretch justify-stretch">
         <BaseVideoHarness
           fullWidth
+          compactChrome={huddle.compactVideoPadding}
           onAfterLeave={onAfterLeave}
           localUserId={localUserId}
           hostUserId={hostUserId}

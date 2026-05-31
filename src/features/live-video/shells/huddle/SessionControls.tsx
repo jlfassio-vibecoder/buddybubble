@@ -22,6 +22,11 @@ export type SessionControlsProps = {
   disableActions?: boolean;
   /** Host: runs after `actions.endSession()` (e.g. mark chat invite ended). */
   onHostEndLiveSessionForAll?: () => void | Promise<void>;
+  /**
+   * Leaves Agora and closes the local dock only (does not end the shared workout for others).
+   * Matches pre-join "Exit workout" in `PreJoinBuilder` / `ParticipantPreJoinSummary`.
+   */
+  onLeaveDock?: () => void;
   /** Host: runs with Start Session to begin cloud recording (includes current stage aspect ratio). */
   onHostStartRecording?: (opts: {
     aspectRatio: SessionState['aspectRatio'];
@@ -51,6 +56,7 @@ export function SessionControls({
   disableActions = false,
   onHostEndLiveSessionForAll,
   onHostStartRecording,
+  onLeaveDock,
   liveDbReady = true,
   hostClassRecordingPipelineBusy = false,
   hostAsyncWorkoutEnabled,
@@ -300,6 +306,17 @@ export function SessionControls({
               Return to Huddle
             </Button>
           </div>
+        ) : null}
+        {onLeaveDock ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="font-medium"
+            onClick={onLeaveDock}
+          >
+            Exit workout
+          </Button>
         ) : null}
       </div>
     </div>

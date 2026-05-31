@@ -7,10 +7,15 @@ This document is a living record. The "Foundational P1/P3 Cleanup" pass landed t
 
 - **§2 Subsystems the doc omits — RESOLVED.** docs/live-video/readme.md now has dedicated sections for Durable Session Registry, Interval Wrappers, AMRAP Feature Module, Cloud Recording, Class Draft-Deck Merge, and Identifier Model. The "Architecture" framing was updated to call out the durable registry as a fourth layer.
 - **§3 Stale identifier comments — RESOLVED.** src/features/live-video/agora-session-context.tsx now states the channel id is `bb-live-${workspaceId}-${shortId}` and is NOT `public.live_sessions.id`. src/features/live-video/wrappers/types.ts now documents `liveSessionId` as the durable session UUID, explicitly distinguished from the Agora channel id.
-- **§4.2 SessionState.generation is documented but inert — PARTIALLY RESOLVED.** `useSessionState.handleIncomingStateBroadcast` now compares incoming vs current `generation` and drops strictly older broadcasts, with two unconditional `[DEBUG][LiveVideo State]` tripwires for visibility. **Remaining gap:** `generation` is still only incremented in `endSession`, so the enforcer protects against full-session-reset reordering only — not against intra-session reordering of pause/resume or `setActiveDeckItem`. To fully close §4.2, increment `generation` on every state-machine transition (or migrate intra-session ordering to a vector clock / per-field generation).
-- **§6 Documentation drift — RESOLVED.** Readme now includes Known Limitations updates (token-route scope, partial generation enforcement, no durable session close, 24-step participant join retry without surface error, no recording consent UX) and a Debug Logging table that marks each tripwire as dev-gated or unconditional, including the two new generation-enforcer logs.
+- **§4.2 SessionState.generation is documented but inert — PARTIALLY RESOLVED.** `useSessionState.handleIncomingStateBroadcast` compares incoming vs current `generation` and drops strictly older broadcasts **silently** (the `[DEBUG][LiveVideo State]` tripwires were removed). **Remaining gap:** `generation` is still only incremented in `endSession`, so the enforcer protects against full-session-reset reordering only — not against intra-session reordering of pause/resume or `setActiveDeckItem`.
+- **§4.1 Token authorization — PARTIALLY RESOLVED (May 2026 verify).** When the client sends `sessionId` + `workspaceId`, `src/app/api/live-video/token/route.ts` enforces Tier C via `can_join_live_session`. Dashboard production joins always pass `sessionId`. **Remaining gap:** callers without `sessionId` (scaffold signed-out preview, legacy dev paths) still get workspace membership + channel regex only; `channelId` ↔ session binding is still a dev tripwire, not enforced.
+- **§4.7 Debug logs — RESOLVED (May 2026 verify).** Blueprint lifecycle `[DEBUG]` strings were removed from `AgoraSessionProvider`, `BaseVideoHarness`, `useSessionState`, and dock/shell render paths. Only token-route Tier C logs remain (dev-gated).
+- **§4.9 Participant join retry — PARTIALLY RESOLVED (May 2026 verify).** The dock no longer runs a 24×150 ms `live_session_participant_join` loop. Pre-join `ParticipantPreJoinSummary` retries **8×500 ms** with a user-visible “host still starting” message and manual retry; `AgoraSessionProvider` retries token **404** up to **10×500 ms**. **Remaining gap:** no `postgres_changes` wait on `live_sessions`; host `live_session_create` failure still surfaces only via console error and leaves `liveDbReady` false.
+- **§6 Documentation drift — RESOLVED.** Readme now includes Known Limitations updates (token-route scope, partial generation enforcement, no durable session close, participant join UX, no recording consent UX) and a Debug Logging section verified against code.
 
-Items still open after this pass: §4.1 (token route session-scoped auth), §4.3 (host re-broadcast loop), §4.4 (durable lifecycle close), §4.5 (host-end ordering), §4.6 (`AGORA_APP_ID` exposure note), §4.7 (gating remaining unconditional debug logs), §4.8 (deck-item deletion races), §4.9 (24× retry surface), §5 (test coverage). All of §7 P1 items 2–4 are still outstanding; P1 item 1 is partially landed (see §4.2 above) and P1 item 5 (stale comments) is done.
+**May 2026 code verification — still open:** §4.3 (Realtime `ack: false`, no periodic host rebroadcast), §4.4 (no durable session close), §4.5 (host-end recording-stop before `endedAt`), §4.8 (orphaned `activeDeckItemId`), §5 (test coverage). §4.2 intra-session generation gap remains.
+
+Items still open after this pass: §4.3, §4.4, §4.5, §4.8, §5 (test coverage). §4.1 channel binding and sessionId-less callers. §4.2 intra-session generation. §4.9 postgres wait + host create failure UX. §7 P1 item 3 (liveDbReady failure UX) partially landed via pre-join message. §7 P1 item 4 (host-end ordering) still open. §7 P2 periodic rebroadcast, closed_at, tests still open.
 
 1. What the doc describes well
    The three "independent state layers" framing (liveVideoStore, AgoraSessionProvider, useSessionState) matches the code 1:1: src/store/liveVideoStore.ts, src/features/live-video/AgoraSessionProvider.tsx, src/features/live-video/hooks/useSessionState.ts.
@@ -85,49 +90,49 @@ src/features/live-video/wrappers/types.ts:8 — /\** Agora channel id === live*s
 The readme now has a dedicated "Identifier Model" section listing all four ids and which surface owns each.
 
 4. Real architectural risks
-   4.1 Token authorization is workspace-level, not session-level
-   The doc calls this out in "Known Limitations", but it deserves more weight. src/app/api/live-video/token/route.ts only requires:
+   4.1 Token authorization — PARTIALLY RESOLVED (verified May 2026)
+   When the client sends **`sessionId`** (UUID) and **`workspaceId`**, `src/app/api/live-video/token/route.ts` enforces **Tier C**: `live_sessions` row must exist (404 for retry when missing), then `can_join_live_session` must pass. Dashboard production `AgoraSessionProvider` always passes `sessionId`.
 
-The user is authenticated.
-channelId matches ^[a-zA-Z0-9_-]{1,64}$.
-If a workspaceId is supplied, the user has a workspace_members row.
-There is no check that the user was actually invited to this sessionId / channelId. Any workspace member who learns or guesses a channel id (bb-live-${workspaceId}-${shortId} is 8 hex chars of randomness ≈ 32 bits) can mint a publisher token and join. With workspace_members typically including dozens of accounts and channel ids broadcast as plaintext in chat metadata, this isn't a serious active risk today, but it is a real future risk for private bubbles or ticketed classes. The durable live_sessions / is_live_session_participant infrastructure already exists; the token route should consult it (or a ?sessionId= parameter) before issuing publisher tokens for non-host roles, especially for class instances.
+   **Still open:**
+   - Callers **without** `sessionId` (e.g. scaffold signed-out preview, some dev paths) only require auth + channel regex + optional workspace membership — same as pre–Tier C behavior.
+   - **`channelId` binding** to the session is logged in dev only; not enforced until `live_sessions` stores a canonical channel id.
+   - Non-UUID `sessionId` strings (e.g. `live-scaffold-${workspaceId}` on the runtime provider) are not sent to the token route; scaffold Agora join omits `sessionId` entirely.
 
-4.2 Session-level "generation" counter is documented but inert — PARTIALLY RESOLVED
-SessionState.generation is documented as "Monotonic generation counter to help clients ignore stale out-of-order events" (sessionStateMachine.ts:22). In practice:
+     4.2 Session-level "generation" counter — PARTIALLY RESOLVED (verified May 2026)
+     `handleIncomingStateBroadcast` drops when `incomingGeneration < currentGeneration` (see `useSessionState.ts` ~124–128). **No console tripwire** on drop.
 
-It is only incremented in endSession (sessionStateMachine.ts:117).
-It is never compared against prev.generation in useSessionState.handleIncomingStateBroadcast. — RESOLVED in this pass: the handler now coerces both sides to numbers, logs `[DEBUG][LiveVideo State] Evaluating broadcast generation:` with `{ incoming, current }`, and drops the broadcast (with a `[DEBUG][LiveVideo State] Dropped stale out-of-order broadcast.` log) when `incoming < current`. Tripwires are intentionally unconditional so production drops are visible without a rebuild.
-The only consumers are a debug log and WorkoutTimerShell's status banner.
-Out-of-order broadcasts will silently overwrite local state.
+   **Remaining gap:** `generation` only increments in `endSession` (`sessionStateMachine.ts` ~117). Intra-session pause/resume / `setActiveDeckItem` reordering is not filtered. Separate `generation` in `shared-timer-sync.types.ts` (`useSharedTimerSync`) remains a naming footgun.
 
-Remaining gap: because `generation` only increments in `endSession`, the enforcer only protects against a stale broadcast from a previous session being applied after a fresh `endSession`. Intra-session reordering of pause/resume / `setActiveDeckItem` still passes through (incoming generation equals current). To fully close this, either bump `generation` on every transition in `sessionStateMachine.ts` or move intra-session ordering to a per-field/vector-clock model. There is a separate generation field in shared-timer-sync.types.ts (used by useSharedTimerSync) which is meaningfully checked, so the naming collision is also a footgun.
+   4.3 Realtime delivery is best-effort with no host re-broadcast loop — **STILL OPEN** (verified May 2026)
+   `useSessionState` uses `{ broadcast: { ack: false } }` (~214). Participants send one `SYNC_REQUEST` per subscribe (`syncRequestSentRef`, ~279–290); reset on reconnect (~210). Host rebroadcasts on own transitions, on `SYNC_REQUEST`, and once on host `SUBSCRIBED` (~272–277). **No** periodic resync, visibility handler, or Agora remote-user join rebroadcast.
 
-4.3 Realtime delivery is best-effort with no host re-broadcast loop
-useSessionState configures { broadcast: { ack: false } } and relies on a single SYNC_REQUEST from each participant on subscribe. If the host is offline or the network drops during the participant's first subscribe(), the participant has no retry mechanism — syncRequestSentRef is set to true after one send. The retry logic in subscribeAttempt resets it on reconnect, but there is no periodic resync, no host-side resend on long pauses, and no application-level message ack. For workout phases this is usually fine (state changes are infrequent), but pause/resume and setActiveDeckItem events are user-visible single events that can be lost.
+   4.4 No durable lifecycle close — **STILL OPEN** (verified May 2026)
+   No `closed_at` on `live_sessions` / `live_session_participants` in migrations; rows accumulate after `endSession`, dock unmount, and invite `endedAt`.
 
-The live_sessions.interval_wrapper_kind UPDATE fallback in LiveSessionView.tsx:191-222 is the right pattern; consider applying it to phase/active-deck-item by either persisting them on live_sessions or making the host occasionally rebroadcast (e.g. on visibility change or on first remote-user join event from Agora).
+   4.5 Cleanup ordering on host-end — **STILL OPEN** (verified May 2026)
+   `onHostEndLiveSessionForAll` in `dashboard-shell.tsx` (~910–937) still `await`s `agora-recording-stop` before `markClassInstanceLiveSessionEnded` / chat task PATCHes when `sourceInstanceId` is set.
 
-4.4 No durable lifecycle close
-Nothing deletes or marks closed in live_sessions / live_session_participants after a session ends. endSession in the state machine resets SessionState, the dock unmounts, the chat invite gets endedAt, and agora-recording-stop is invoked, but the rows in live_sessions and live_session_participants accumulate indefinitely. There's also no ended_at column on live_sessions. If this feature scales, you will need either a closed_at column (with retention) or a periodic reaper Edge Function. Worth adding to "Known Limitations".
+   4.6 AGORA*APP_ID exposure footprint
+   Token route returns `appId` to the browser (Agora SDK requirement). Readme Environment section now notes this; it is not a `NEXT_PUBLIC*` leak.
 
-4.5 Cleanup ordering on host-end
-onHostEndLiveSessionForAll in dashboard-shell.tsx:736-775 calls agora-recording-stop before marking the invite ended, but only when sourceInstanceId is truthy. If agora-recording-stop hangs (it's a network call into Agora REST), participants can re-click Join from the chat card during the wait. Consider marking endedAt first (cheap, idempotent) and then firing the recording-stop request.
+   4.7 Debug logs — **RESOLVED** (verified May 2026)
+   Blueprint `[DEBUG]` lifecycle strings removed from Agora provider, harness, session-state hook, and dock/shell render paths. Remaining: dev-gated `[DEBUG]` on token route and dev-only `[useSessionState] Realtime channel` warnings.
 
-4.6 AGORA_APP_ID exposure footprint
-Even though the certificate stays server-side, the token route returns appId to the browser. That's fine for Agora's design, but the readme says AGORA_APP_ID is "server-only" — strictly speaking, it is also delivered to every authenticated browser via the token response. Worth clarifying in the doc to avoid confusion when someone tries to gate it.
+   4.8 Deck-item id lifecycle and deletion races — **STILL OPEN** (verified May 2026)
+   `ParticipantWorkoutLogger` returns the same “waiting for host” copy when `activeDeckItemId` is set but the deck row is missing (~297–307).
 
-4.7 Debug logs still unconditional in hot paths
-Per the doc, several [DEBUG] strings are kept "until the feature stabilizes." Currently, AgoraSessionProvider mount/leave logs and toggleMic / toggleCamera logs (AgoraSessionProvider.tsx:107, 144, 161, 360), the BaseVideoHarness render log, and dashboard-live-video-dock.tsx:295 are unconditional console.logs in production. The token route already gates its own [DEBUG] Token API hit for channel: to dev. Recommend the readme either (a) update the list to mark which are still unconditional vs. dev-only, or (b) add a tracking item to gate the remaining ones now that durable sessions are in production.
+   4.9 Participant registration retry — **PARTIALLY RESOLVED** (verified May 2026)
+   **Removed:** dock 24×150 ms `live_session_participant_join` loop.
 
-4.8 Deck-item id lifecycle and deletion races
-live_session_deck_items RLS DELETE only requires can_write_bubble, which means any host or co-editor can delete a deck row. Participants cache state.activeDeckItemId (the row id) and withSessionDeckDisplayTasks returns null tasks for orphaned rows. If the host deletes the row while it's the active item, participants will see state.activeDeckItemId referencing a non-existent row until the next host broadcast. Not catastrophic, but worth explicitly handling in LiveSessionView / ParticipantWorkoutLogger.
+   **Current behavior:**
+   - `ParticipantPreJoinSummary`: 8×500 ms FK retry; `waitingForHost` UI + manual **Join video** retry.
+   - `AgoraSessionProvider`: 10×500 ms token 404 retry.
+   - Dock participant: sets `liveDbReady` on connect without re-running join RPC.
 
-4.9 24× retry with 150 ms backoff is brittle
-live_session_participant_join participant retry loop in dashboard-live-video-dock.tsx:249-270 busy-loops 24 times at 150 ms. If the host hasn't yet executed live_session_create, all 24 fail and the participant ends up with liveDbReady === false permanently for that mount. There is no surface error to the user and no manual retry — they have to leave and rejoin. Consider:
+   **Remaining gap:** no `postgres_changes` INSERT wait on `live_sessions`; host `live_session_create` error does not surface in UI.
 
-Surfacing a "Waiting for host to start the session…" indicator in LiveSessionView when liveDbReady === false.
-Subscribing to a postgres_changes INSERT on live_sessions filtered by id=eq.<sessionId> and retrying once that arrives, instead of (or in addition to) the polling loop. 5. Test coverage is materially lower than the docs imply
+5. Test coverage is materially lower than the docs imply — **STILL OPEN** (verified May 2026)
+
 The "Automated Tests" section reads as if live-theater-layout.test.ts is the only test, which is true under src/features/live-video/. But the operational risk surface is large and untested:
 
 Agora provider lifecycle (joinSeq invalidation under StrictMode, abort during token fetch, permission denied paths).
@@ -148,22 +153,25 @@ New section: "Cloud Recording" — the four agora-recording-\_ Edge Functions, c
 New section: "Class Draft-Deck Merge" — bb-class-deck:<class_instance_id> namespace, copy_class_deck_to_live_session RPC, host-only invocation in the dock. ✓
 New section: "Identifier Model" — the four-id table from §3 above, with the explicit note that live_sessions.id === sessionId (UUID), not channelId. ✓
 Updated "Architecture" — the "three independent state layers" framing now calls out the durable registry as a fourth layer that gates wrapper-bearing phases. ✓
-Updated "Known Limitations" — added: token route is workspace-scoped, not session-scoped; SessionState.generation enforcement is partial (drops strictly older only, not intra-session); no durable session close / retention; live_session_participant_join uses a 24-step retry loop without user-visible error state; recording start/stop has no participant consent UX. ✓
-Updated "Debug Logging" — replaced the prose list with a table that marks each tripwire as unconditional or dev-gated and includes the two new generation-enforcer logs. ✓
-Fixed the misleading comments in agora-session-context.tsx:7-8 and wrappers/types.ts:8. ✓ 7. Prioritized recommendations
-P1 — code changes worth doing soon
+Updated "Known Limitations" — verified May 2026 against Realtime + registration code (Tier C scope, partial generation, no durable close, pre-join join retry UX, deck orphan id, host-end ordering). ✓
+Updated "Debug Logging" — verified May 2026; most blueprint tripwires removed. ✓
+Fixed the misleading comments in agora-session-context.tsx:7-8 and wrappers/types.ts:8. ✓
 
-Implement the documented SessionState.generation ordering check in useSessionState.handleIncomingStateBroadcast, or remove the docstring claim. Today the contract is silently violated. — PARTIALLY DONE (strictly-older drop landed with tripwires; remaining work: bump generation on every transition so intra-session reorder is also caught).
-Add session-scoped authorization to /api/live-video/token for non-host roles (consult is_live_session_participant or accept and verify a sessionId). This is the single biggest security delta. — OPEN.
-Surface liveDbReady === false to the participant UI after the 24-step retry budget is exhausted, with a manual retry. Today it's a silent failure. — OPEN.
+7. Prioritized recommendations
+   P1 — code changes worth doing soon
+
+Implement full SessionState.generation ordering (increment on every transition) or remove the docstring claim. Today strictly-older drops work; intra-session reorder does not. — PARTIALLY DONE.
+~~Add session-scoped authorization to /api/live-video/token~~ Tier C when `sessionId` is sent — DONE for production dashboard path. Still open: enforce `channelId` binding; tighten sessionId-less callers. — PARTIALLY DONE.
+~~Surface participant registration failure~~ Pre-join `waitingForHost` + manual retry landed; still open: host `live_session_create` failure UX, `postgres_changes` wait, connected-state `liveDbReady === false` indicator. — PARTIALLY DONE.
 Reorder onHostEndLiveSessionForAll to mark invite ended before awaiting agora-recording-stop. — OPEN.
 Fix the two stale source comments about channelId vs live_sessions.id. — DONE.
 P2 — robustness
 
-Add a periodic host re-broadcast (e.g. on visibility change, on remote-user join, every N seconds while paused) for STATE_BROADCAST to compensate for ack: false.
-Add closed_at / retention policy for live_sessions and live_session_participants.
-Gate the remaining unconditional [DEBUG] logs to process.env.NODE_ENV === 'development' (excluding the new generation-enforcer tripwires, which are intentionally unconditional for production diagnostics).
-Add agora-uid test vectors and a token-route integration test.
+Add a periodic host re-broadcast (e.g. on visibility change, on remote-user join, every N seconds while paused) for STATE_BROADCAST to compensate for ack: false. — OPEN (verified May 2026).
+Add closed_at / retention policy for live_sessions and live_session_participants. — OPEN.
+~~Gate unconditional [DEBUG] logs~~ Removed from hot paths; token route dev-gated. — DONE.
+Add agora-uid test vectors and a token-route integration test. — OPEN.
 P3 — documentation
 
-Land the readme additions in §6 above so future agents see the full system. — DONE in this pass; the readme now includes Durable Session Registry, Interval Wrappers, AMRAP Feature Module, Cloud Recording, Class Draft-Deck Merge, Identifier Model, and a Debug Logging table, plus expanded Architecture and Known Limitations sections.
+Land the readme additions in §6 above so future agents see the full system. — DONE.
+Re-verify Known Limitations and Debug Logging against code when changing Realtime or registration paths. — DONE May 2026 (this pass).

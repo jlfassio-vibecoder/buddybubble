@@ -38,6 +38,8 @@ import { SessionDeckWorkoutSummary } from '@/features/live-video/shells/huddle/S
 export type SessionDeckBuilderProps = {
   state: SessionState;
   className?: string;
+  /** When true, strip yields zero intrinsic height so parent grid collapse can animate. */
+  isCollapsed?: boolean;
   /**
    * Class async playback: show the hydrated draft deck as read-only tiles; clicking selects the
    * active card for `ParticipantWorkoutLogger` (no reorder/remove).
@@ -213,15 +215,20 @@ function SortableDeckTile({
   );
 }
 
-const stripContainerClass = (selectingFromBoard: boolean) =>
-  cn(
+const stripContainerClass = (selectingFromBoard: boolean, isCollapsed?: boolean) => {
+  if (isCollapsed) {
+    return 'flex w-full min-h-0 overflow-hidden opacity-0 border-0 p-0';
+  }
+  return cn(
     'flex w-full items-center gap-4 overflow-x-auto border-y border-border bg-muted/20 p-4 custom-scrollbar',
     selectingFromBoard ? 'min-h-[min(200px,28vh)]' : 'min-h-[120px]',
   );
+};
 
 export function SessionDeckBuilder({
   state,
   className,
+  isCollapsed = false,
   asyncMemberReadOnlyQueue = false,
   asyncQueueSessionId = null,
   selectedAsyncDeckItemId = null,
@@ -373,15 +380,30 @@ export function SessionDeckBuilder({
 
   if (!showHostDeckUi) {
     return (
-      <div className={cn('flex w-full min-h-0 shrink-0 flex-col gap-2', className)}>
-        <div className="flex shrink-0 items-baseline justify-between gap-2 px-0.5">
+      <div
+        className={cn(
+          'flex w-full min-h-0 flex-col',
+          !isCollapsed && 'shrink-0 gap-2',
+          isCollapsed && 'min-h-0 gap-0',
+          className,
+        )}
+      >
+        <div
+          className={cn(
+            'flex shrink-0 items-baseline justify-between gap-2 px-0.5',
+            isCollapsed && 'hidden',
+          )}
+        >
           <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {stripTitle}
           </h2>
         </div>
-        {participantStatus}
+        {isCollapsed ? null : participantStatus}
         <div className="min-h-0">
-          <div className={stripContainerClass(false)}>
+          <div
+            data-testid="session-deck-strip-container"
+            className={stripContainerClass(false, isCollapsed)}
+          >
             {deckToRender.map((snapshot) => (
               <ReadonlyDeckTile
                 key={snapshot.deckRowKey}
@@ -411,8 +433,20 @@ export function SessionDeckBuilder({
   }
 
   return (
-    <div className={cn('flex w-full min-h-0 shrink-0 flex-col gap-2', className)}>
-      <div className="flex shrink-0 items-baseline justify-between gap-2 px-0.5">
+    <div
+      className={cn(
+        'flex w-full min-h-0 flex-col',
+        !isCollapsed && 'shrink-0 gap-2',
+        isCollapsed && 'min-h-0 gap-0',
+        className,
+      )}
+    >
+      <div
+        className={cn(
+          'flex shrink-0 items-baseline justify-between gap-2 px-0.5',
+          isCollapsed && 'hidden',
+        )}
+      >
         <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {stripTitle}
         </h2>
@@ -420,7 +454,10 @@ export function SessionDeckBuilder({
       <div className="min-h-0">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
           <SortableContext items={ids} strategy={horizontalListSortingStrategy}>
-            <div className={stripContainerClass(selectingFromBoard)}>
+            <div
+              data-testid="session-deck-strip-container"
+              className={stripContainerClass(selectingFromBoard, isCollapsed)}
+            >
               {deckToRender.map((snapshot) => (
                 <SortableDeckTile
                   key={snapshot.deckRowKey}

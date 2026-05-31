@@ -15,10 +15,13 @@ import type { WorkoutExercise } from '@/lib/item-metadata';
 import { cn } from '@/lib/utils';
 import type { Database } from '@/types/database';
 import { useUserProfileStore } from '@/store/userProfileStore';
+import type { ReactNode } from 'react';
+import { Tier3DrawerCloseHeader } from '@/features/live-video/ui/Tier3DrawerCloseHeader';
 import { toast } from 'sonner';
 
 export type ParticipantWorkoutLoggerProps = {
   className?: string;
+  onClose?: () => void;
 };
 
 export type ParticipantWorkoutLoggerCoreProps = {
@@ -31,6 +34,7 @@ export type ParticipantWorkoutLoggerCoreProps = {
   userId: string | null;
   /** Copy when no queue card is active (async members pick their own card). */
   noActiveSelectionMessage?: string;
+  onClose?: () => void;
 };
 
 function maxLoggedSetNumber(
@@ -80,6 +84,22 @@ function draftKey(exerciseName: string, setNumber: number): DraftKey {
   return `${exerciseName}\0${setNumber}`;
 }
 
+function tier3LoggerShell(
+  body: ReactNode,
+  {
+    className,
+    onClose,
+    innerClassName,
+  }: { className?: string; onClose?: () => void; innerClassName?: string },
+) {
+  return (
+    <div className={cn('flex min-h-0 flex-1 flex-col overflow-hidden', className)}>
+      {onClose ? <Tier3DrawerCloseHeader onClose={onClose} /> : null}
+      <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col', innerClassName)}>{body}</div>
+    </div>
+  );
+}
+
 export function ParticipantWorkoutLoggerCore({
   className,
   sessionId,
@@ -89,6 +109,7 @@ export function ParticipantWorkoutLoggerCore({
   activeDeckItemId,
   userId,
   noActiveSelectionMessage = 'Waiting for Host to select a workout…',
+  onClose,
 }: ParticipantWorkoutLoggerCoreProps) {
   const isAmrapPhase = phase === 'amrap';
 
@@ -269,77 +290,54 @@ export function ParticipantWorkoutLoggerCore({
   }
 
   if (!activeDeckItemId) {
-    return (
-      <div
-        className={cn(
-          'flex min-h-0 flex-1 items-center justify-center rounded-lg border border-dashed border-border bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground',
-          className,
-        )}
-      >
+    return tier3LoggerShell(
+      <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-dashed border-border bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
         {noActiveSelectionMessage}
-      </div>
+      </div>,
+      { className, onClose },
     );
   }
 
   if (deck.loading) {
-    return (
-      <div
-        className={cn(
-          'flex min-h-0 flex-1 items-center justify-center rounded-lg border border-border bg-muted/10 px-4 py-8 text-sm text-muted-foreground',
-          className,
-        )}
-      >
+    return tier3LoggerShell(
+      <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-border bg-muted/10 px-4 py-8 text-sm text-muted-foreground">
         Loading workout…
-      </div>
+      </div>,
+      { className, onClose },
     );
   }
 
   if (!activeRow || !activeTask) {
-    return (
-      <div
-        className={cn(
-          'flex min-h-0 flex-1 items-center justify-center rounded-lg border border-dashed border-border bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground',
-          className,
-        )}
-      >
+    return tier3LoggerShell(
+      <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-dashed border-border bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
         {noActiveSelectionMessage}
-      </div>
+      </div>,
+      { className, onClose },
     );
   }
 
   if (activeTask.item_type !== 'workout' && activeTask.item_type !== 'workout_log') {
-    return (
-      <div
-        className={cn(
-          'flex min-h-0 flex-1 items-center justify-center rounded-lg border border-border bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground',
-          className,
-        )}
-      >
+    return tier3LoggerShell(
+      <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-border bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
         This card is not a workout — logging is only available for workout cards.
-      </div>
+      </div>,
+      { className, onClose },
     );
   }
 
   if (exercises.length === 0) {
-    return (
-      <div
-        className={cn(
-          'flex min-h-0 flex-1 items-center justify-center rounded-lg border border-dashed border-border bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground',
-          className,
-        )}
-      >
+    return tier3LoggerShell(
+      <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-dashed border-border bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
         No exercises on this card.
-      </div>
+      </div>,
+      { className, onClose },
     );
   }
 
   if (isAmrapPhase) {
     const prepSetNumber = 1;
-    return (
-      <div
-        className={cn('flex min-h-0 flex-1 flex-col gap-4 overflow-hidden', className)}
-        data-region="participant-workout-logger-amrap"
-      >
+    return tier3LoggerShell(
+      <>
         {logsError ? (
           <p className="shrink-0 text-xs text-destructive" role="alert">
             {logsError.message}
@@ -439,12 +437,13 @@ export function ParticipantWorkoutLoggerCore({
             );
           })}
         </div>
-      </div>
+      </>,
+      { className, onClose, innerClassName: 'gap-4 overflow-hidden' },
     );
   }
 
-  return (
-    <div className={cn('flex min-h-0 flex-1 flex-col gap-4 overflow-hidden', className)}>
+  return tier3LoggerShell(
+    <>
       {logsError ? (
         <p className="shrink-0 text-xs text-destructive" role="alert">
           {logsError.message}
@@ -534,11 +533,12 @@ export function ParticipantWorkoutLoggerCore({
           );
         })}
       </div>
-    </div>
+    </>,
+    { className, onClose, innerClassName: 'gap-4 overflow-hidden' },
   );
 }
 
-export function ParticipantWorkoutLogger({ className }: ParticipantWorkoutLoggerProps) {
+export function ParticipantWorkoutLogger({ className, onClose }: ParticipantWorkoutLoggerProps) {
   const { state, sessionId, supabase, isHost } = useLiveSessionRuntime();
   const userId = useUserProfileStore((s) => s.profile?.id ?? null);
 
@@ -551,6 +551,7 @@ export function ParticipantWorkoutLogger({ className }: ParticipantWorkoutLogger
       phase={state.phase}
       activeDeckItemId={state.activeDeckItemId}
       userId={userId}
+      onClose={onClose}
     />
   );
 }

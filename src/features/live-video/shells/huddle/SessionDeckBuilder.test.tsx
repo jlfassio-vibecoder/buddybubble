@@ -96,4 +96,14 @@ describe('SessionDeckBuilder', () => {
       expect(strip.textContent).toContain(main.subtitle);
     }
   });
+
+  it('uses zero-height strip classes when isCollapsed', () => {
+    mockDeckCtx.deck = [deckSnapshot(richMetadataWithBlockFormat('tabata'))];
+
+    const { getByTestId } = render(<SessionDeckBuilder state={initialSessionState} isCollapsed />);
+
+    const stripContainer = getByTestId('session-deck-strip-container');
+    expect(stripContainer.className).toContain('min-h-0');
+    expect(stripContainer.className).not.toContain('min-h-[120px]');
+  });
 });

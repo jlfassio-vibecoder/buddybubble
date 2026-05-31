@@ -35,7 +35,10 @@ export type LiveTheaterShellPlan = {
 
 export type LiveTheaterHuddlePlan = {
   phase: LiveTheaterPhase;
-  maximizeVideoInDock: boolean;
+  /** Tighter BaseVideoHarness padding during live broadcast. */
+  compactVideoPadding: boolean;
+  /** Whether Tier 1 queue region mounts in connected huddle (collapse handled by WorkoutQueueRegion). */
+  showWorkoutQueueStrip: boolean;
   minimizeVideoInDock: boolean;
   /** Prefer flex layouts over legacy CSS grid row tricks. */
   useFlexColumnLayout: boolean;
@@ -78,7 +81,8 @@ export function deriveLiveTheaterLayoutPlan(
 
   const inactiveHuddle: LiveTheaterHuddlePlan = {
     phase: 'live_video',
-    maximizeVideoInDock: false,
+    compactVideoPadding: false,
+    showWorkoutQueueStrip: false,
     minimizeVideoInDock: false,
     useFlexColumnLayout: false,
     useLegacySelectionScrollClamp: false,
@@ -112,7 +116,8 @@ export function deriveLiveTheaterLayoutPlan(
       },
       huddle: {
         phase,
-        maximizeVideoInDock: phase === 'live_video',
+        compactVideoPadding: phase === 'live_video',
+        showWorkoutQueueStrip: true,
         minimizeVideoInDock: phase === 'deck_building',
         useFlexColumnLayout: true,
         useLegacySelectionScrollClamp: false,
@@ -132,7 +137,8 @@ export function deriveLiveTheaterLayoutPlan(
       },
       huddle: {
         phase: 'deck_building',
-        maximizeVideoInDock: false,
+        compactVideoPadding: false,
+        showWorkoutQueueStrip: true,
         minimizeVideoInDock: true,
         useFlexColumnLayout: true,
         useLegacySelectionScrollClamp: false,
@@ -153,7 +159,8 @@ export function deriveLiveTheaterLayoutPlan(
     },
     huddle: {
       phase,
-      maximizeVideoInDock: phase === 'live_video',
+      compactVideoPadding: phase === 'live_video',
+      showWorkoutQueueStrip: true,
       minimizeVideoInDock: phase === 'deck_building',
       useFlexColumnLayout: true,
       useLegacySelectionScrollClamp: false,
