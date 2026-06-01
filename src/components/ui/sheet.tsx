@@ -6,7 +6,7 @@ import { X } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
-const SheetModalContext = React.createContext(true);
+const SheetModalContext = React.createContext<boolean | null>(null);
 
 type SheetProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.Root>;
 
@@ -36,6 +36,8 @@ SheetOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 type SheetContentProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
   side?: 'left' | 'right' | 'bottom';
+  /** When set, overrides `Sheet` `modal` for overlay rendering (default: inherit from `Sheet`). */
+  modal?: boolean;
   /** Hide the default top-right close control (e.g. custom chrome inside the sheet). */
   hideCloseButton?: boolean;
 };
@@ -43,8 +45,9 @@ type SheetContentProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.C
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   SheetContentProps
->(({ side = 'left', className, children, hideCloseButton, ...props }, ref) => {
-  const modal = React.useContext(SheetModalContext);
+>(({ side = 'left', className, children, hideCloseButton, modal: modalProp, ...props }, ref) => {
+  const modalFromContext = React.useContext(SheetModalContext);
+  const modal = modalProp ?? modalFromContext ?? false;
 
   return (
     <SheetPortal>
