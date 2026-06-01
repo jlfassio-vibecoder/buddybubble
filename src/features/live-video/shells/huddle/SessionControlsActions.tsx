@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import type { SessionState } from '@/features/live-video/state/sessionStateMachine';
@@ -44,6 +44,13 @@ function ControlsSeparator() {
   return <div className="mx-2 h-4 w-px shrink-0 bg-border" aria-hidden />;
 }
 
+/** Survives SessionControlsActions remounts within the same live session tab. */
+const recordingHintShownSessionIds = new Set<string>();
+
+function recordingHintToastId(sessionId: string): string {
+  return `live-recording-off-hint:${sessionId}`;
+}
+
 export function SessionControlsActions({
   state,
   actions,
@@ -58,8 +65,6 @@ export function SessionControlsActions({
   hostDeckInjector,
   className,
 }: SessionControlsActionsProps) {
-  const recordingHintShownRef = useRef(false);
-
   const {
     supabase,
     sessionId: liveSessionRowId,
@@ -74,17 +79,21 @@ export function SessionControlsActions({
   const isIdle = state.status === 'idle';
 
   useEffect(() => {
+    const sessionId = liveSessionRowId.trim();
     if (
-      recordingHintShownRef.current ||
+      !sessionId ||
+      recordingHintShownSessionIds.has(sessionId) ||
       disableActions ||
       onHostStartRecording == null ||
       hostAsyncWorkoutEnabled !== false
     ) {
       return;
     }
-    recordingHintShownRef.current = true;
-    toast.message('Recording off. Enable async workout to record.');
-  }, [disableActions, hostAsyncWorkoutEnabled, onHostStartRecording]);
+    recordingHintShownSessionIds.add(sessionId);
+    toast.message('Recording off. Enable async workout to record.', {
+      id: recordingHintToastId(sessionId),
+    });
+  }, [disableActions, hostAsyncWorkoutEnabled, liveSessionRowId, onHostStartRecording]);
 
   const handleEndSessionForAll = () => {
     if (amrapAttachReady) {
