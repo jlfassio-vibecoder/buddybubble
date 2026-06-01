@@ -249,6 +249,10 @@ function OutlineBlockCard({
           {isInstruction ? (
             <div className="space-y-1">
               <Label className="text-xs">Instructions (one per line)</Label>
+              <p className="text-[11px] text-muted-foreground">
+                Use Warm-up, Cool-down, Finisher, or Mobility in the block name so this section
+                routes correctly.
+              </p>
               <Textarea
                 disabled={disabled || !canWrite}
                 rows={3}
@@ -539,7 +543,7 @@ export function WorkoutOutlinePanel({ editor, canWrite }: WorkoutOutlinePanelPro
                 size="sm"
                 disabled={disabled}
                 onClick={() => {
-                  void addInstructionBlock('Warm-up / Prep', ['Dynamic prep']);
+                  void addInstructionBlock('Warm-up', ['Dynamic prep']);
                 }}
               >
                 Add instruction block

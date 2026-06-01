@@ -502,3 +502,18 @@ export function buildSessionTelemetrySnapshot(
     fingerprint,
   };
 }
+
+/** O(1) overlay — does not recompute set_logs, deltas, or fingerprint. */
+export function attachElapsedToSessionTelemetry(
+  base: SessionTelemetrySnapshot,
+  elapsedSec: number,
+): SessionTelemetrySnapshot {
+  return {
+    ...base,
+    elapsed_sec: elapsedSec,
+    performance_summary: {
+      ...base.performance_summary,
+      elapsed_sec: elapsedSec,
+    },
+  };
+}

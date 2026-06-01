@@ -7,7 +7,7 @@
 
 import {
   WORKOUT_INTAKE_DURATION_CHOICES,
-  WORKOUT_INTAKE_INTENSITY_OPTIONS,
+  WORKOUT_GENERATION_PHASE_INTENT_OPTIONS,
   WORKOUT_INTAKE_SORENESS_OPTIONS,
 } from './task-modal-intake-patch.ts';
 import { readCoachOutlineMetadata } from './coach-outline-metadata.ts';
@@ -16,6 +16,7 @@ import {
   buildOutlineDraftContextBlockFromStored,
   readTaskModalOutlineDraftFromMessageMetadata,
 } from './build-outline-draft-context.ts';
+import { ACTIVE_SESSION_SURFACE_VALUE } from './session-telemetry-format.ts';
 
 /** Header line prepended to the resolved CURRENT WORKOUT CONTEXT JSON when present. */
 export const WORKOUT_CONTEXT_HEADER = '--- CURRENT WORKOUT CONTEXT ---';
@@ -47,6 +48,39 @@ export const TASK_MODAL_INTAKE_UI_HEADER =
 /** Header for client-supplied Task Modal wizard snapshot on the trigger message. */
 export const TASK_MODAL_LIVE_STATE_HEADER = '--- TASK MODAL LIVE STATE (v1) ---';
 
+/** Header for pre-session readiness captured on Task Modal preflight before Active Session. */
+export const SESSION_READINESS_CONTEXT_HEADER = '--- PRE-SESSION READINESS (member check-in) ---';
+
+/** Validated snapshot from `messages.metadata.session_readiness_context` (v1). */
+export type SessionReadinessContextV1 = {
+  v: 1;
+  captured_at: string;
+  readiness: number;
+  sleep_quality: number;
+  soreness: string[];
+  source: 'task_modal_preflight';
+};
+
+const SESSION_READINESS_CONTEXT_VERSION = 1 as const;
+const SORENESS_SET_READINESS = new Set<string>(
+  WORKOUT_INTAKE_SORENESS_OPTIONS as unknown as string[],
+);
+
+function clampIntReadiness(n: number, lo: number, hi: number): number {
+  if (!Number.isFinite(n)) return lo;
+  return Math.max(lo, Math.min(hi, Math.round(n)));
+}
+
+function normalizeSorenessReadiness(raw: string[]): string[] {
+  const filtered = raw.map((s) => s.trim()).filter((s) => s && SORENESS_SET_READINESS.has(s));
+  const unique = [...new Set(filtered)];
+  if (unique.includes('None') && unique.length > 1) {
+    return normalizeSorenessReadiness(unique.filter((s) => s !== 'None'));
+  }
+  if (unique.length === 0) return ['None'];
+  return unique.sort();
+}
+
 /** Validated snapshot from `messages.metadata.task_modal_live_state` (v1). */
 export type TaskModalLiveStateV1 = {
   v: 1;
@@ -56,15 +90,25 @@ export type TaskModalLiveStateV1 = {
   sleep_quality?: number;
   /** Display / schema: numeric durations as quoted strings in Coach JSON. */
   duration_minutes?: number | string;
-  target_intensity?: string;
+  phase_intent?: string;
   soreness?: string[];
+  progression_trend?: string;
+  anchor_lift?: { name: string; weight: number; reps: number };
+  temporary_limitations?: string;
 };
 
 const DURATION_STRING_SET = new Set(
   WORKOUT_INTAKE_DURATION_CHOICES.map((d) => (typeof d === 'number' ? String(d) : d)),
 );
-const INTENSITY_SET_LIVE = new Set<string>(WORKOUT_INTAKE_INTENSITY_OPTIONS as unknown as string[]);
+const PHASE_INTENT_SET_LIVE = new Set<string>(
+  WORKOUT_GENERATION_PHASE_INTENT_OPTIONS as unknown as string[],
+);
 const SORENESS_SET_LIVE = new Set<string>(WORKOUT_INTAKE_SORENESS_OPTIONS as unknown as string[]);
+const PROGRESSION_TREND_SET_LIVE = new Set<string>([
+  'Feeling Easy',
+  'Appropriately Challenging',
+  'Hitting a Plateau',
+]);
 
 function clampIntLive(n: number, lo: number, hi: number): number {
   if (!Number.isFinite(n)) return lo;
@@ -119,10 +163,10 @@ export function readTaskModalLiveStateFromMessageMetadata(
     if (t && DURATION_STRING_SET.has(t)) out.duration_minutes = t;
   }
 
-  const tiRaw = o.target_intensity ?? o.targetIntensity;
-  if (typeof tiRaw === 'string') {
-    const t = tiRaw.trim();
-    if (INTENSITY_SET_LIVE.has(t)) out.target_intensity = t;
+  const piRaw = o.phase_intent ?? o.phaseIntent;
+  if (typeof piRaw === 'string') {
+    const t = piRaw.trim();
+    if (PHASE_INTENT_SET_LIVE.has(t)) out.phase_intent = t;
   }
 
   const sore = o.soreness;
@@ -134,6 +178,35 @@ export function readTaskModalLiveStateFromMessageMetadata(
       if (SORENESS_SET_LIVE.has(s)) arr.push(s);
     }
     if (arr.length) out.soreness = [...new Set(arr)].sort();
+  }
+
+  const ptRaw = o.progression_trend ?? o.progressionTrend;
+  if (typeof ptRaw === 'string') {
+    const t = ptRaw.trim();
+    if (PROGRESSION_TREND_SET_LIVE.has(t)) out.progression_trend = t;
+  }
+
+  const alRaw = o.anchor_lift ?? o.anchorLift;
+  if (alRaw != null && typeof alRaw === 'object' && !Array.isArray(alRaw)) {
+    const al = alRaw as Record<string, unknown>;
+    const name = typeof al.name === 'string' ? al.name.trim() : '';
+    const weight =
+      typeof al.weight === 'number' && Number.isFinite(al.weight) && al.weight > 0
+        ? Math.round(al.weight)
+        : null;
+    const reps =
+      typeof al.reps === 'number' && Number.isFinite(al.reps) && al.reps > 0
+        ? Math.round(al.reps)
+        : null;
+    if (name && weight != null && reps != null) {
+      out.anchor_lift = { name, weight, reps };
+    }
+  }
+
+  const tlRaw = o.temporary_limitations ?? o.temporaryLimitations;
+  if (typeof tlRaw === 'string') {
+    const t = tlRaw.trim();
+    if (t) out.temporary_limitations = t;
   }
 
   return out;
@@ -160,12 +233,65 @@ export function buildTaskModalLiveStateBlock(snapshot: TaskModalLiveStateV1): st
   if (snapshot.duration_minutes !== undefined) {
     lines.push(`duration_minutes: ${formatDurationForLiveBlock(snapshot.duration_minutes)}`);
   }
-  if (snapshot.target_intensity !== undefined) {
-    lines.push(`target_intensity: ${JSON.stringify(snapshot.target_intensity)}`);
+  if (snapshot.phase_intent !== undefined) {
+    lines.push(`phase_intent: ${JSON.stringify(snapshot.phase_intent)}`);
   }
   if (snapshot.soreness !== undefined && snapshot.soreness.length > 0) {
     lines.push(`soreness: ${JSON.stringify(snapshot.soreness)}`);
   }
+  if (snapshot.progression_trend !== undefined) {
+    lines.push(`progression_trend: ${JSON.stringify(snapshot.progression_trend)}`);
+  }
+  if (snapshot.anchor_lift !== undefined) {
+    lines.push(`anchor_lift: ${JSON.stringify(snapshot.anchor_lift)}`);
+  }
+  if (snapshot.temporary_limitations !== undefined) {
+    lines.push(`temporary_limitations: ${JSON.stringify(snapshot.temporary_limitations)}`);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Reads and validates `metadata.session_readiness_context` from the trigger message.
+ * Returns `null` when absent, wrong version, or invalid shape.
+ */
+export function readSessionReadinessContextFromMessageMetadata(
+  meta: unknown,
+): SessionReadinessContextV1 | null {
+  if (meta == null || typeof meta !== 'object' || Array.isArray(meta)) return null;
+  const root = meta as Record<string, unknown>;
+  const raw = root.session_readiness_context;
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  if (o.v !== SESSION_READINESS_CONTEXT_VERSION) return null;
+  if (typeof o.captured_at !== 'string' || !o.captured_at.trim()) return null;
+  if (o.source !== 'task_modal_preflight') return null;
+  if (typeof o.readiness !== 'number' || !Number.isFinite(o.readiness)) return null;
+  if (typeof o.sleep_quality !== 'number' || !Number.isFinite(o.sleep_quality)) return null;
+  if (!Array.isArray(o.soreness)) return null;
+  if (!o.soreness.every((s) => typeof s === 'string')) return null;
+
+  return {
+    v: SESSION_READINESS_CONTEXT_VERSION,
+    captured_at: o.captured_at,
+    readiness: clampIntReadiness(o.readiness, 1, 10),
+    sleep_quality: clampIntReadiness(o.sleep_quality, 1, 10),
+    soreness: normalizeSorenessReadiness(o.soreness),
+    source: 'task_modal_preflight',
+  };
+}
+
+/** Deterministic system-prompt block for validated pre-session readiness. */
+export function buildSessionReadinessContextBlock(ctx: SessionReadinessContextV1): string {
+  const lines: string[] = [
+    SESSION_READINESS_CONTEXT_HEADER,
+    "The member completed the Task Modal pre-session check-in before starting Active Session. Treat these as ground truth for today's readiness — do NOT re-ask readiness, sleep quality, or soreness sliders.",
+    `readiness (1–10): ${ctx.readiness}`,
+    `sleep_quality (1–10): ${ctx.sleep_quality}`,
+    `soreness: ${JSON.stringify(ctx.soreness)}`,
+    `captured_at: ${ctx.captured_at}`,
+    `source: ${ctx.source}`,
+  ];
   return lines.join('\n');
 }
 
@@ -189,30 +315,39 @@ export function taskMetadataLooksWorkoutShaped(metadata: unknown): boolean {
 }
 
 /**
- * When the member is on a workout or workout_log task, the Task Modal shows a three-step
- * intake wizard. Appended to the system prompt after CURRENT TASK CONTEXT.
+ * When the member is on a workout or workout_log task, the Task Modal shows an intake
+ * wizard (generation macro-planning, then preflight readiness). Appended after CURRENT TASK CONTEXT.
  */
 export function buildTaskModalIntakeUiCoachBlock(): string {
   const durationLine = WORKOUT_INTAKE_DURATION_CHOICES.map((d) =>
     d === 'Optimized for Goals' ? '"Optimized for Goals"' : `"${d}"`,
   ).join(', ');
-  const intensityLine = WORKOUT_INTAKE_INTENSITY_OPTIONS.map((s) => `"${s}"`).join(', ');
+  const phaseIntentLine = WORKOUT_GENERATION_PHASE_INTENT_OPTIONS.map((s) => `"${s}"`).join(', ');
   const sorenessLine = WORKOUT_INTAKE_SORENESS_OPTIONS.map((s) => `"${s}"`).join(', ');
+  const progressionLine = '"Feeling Easy", "Appropriately Challenging", "Hitting a Plateau"';
   return (
     `${TASK_MODAL_INTAKE_UI_HEADER}\n` +
-    'The Task Modal **Workout intake** wizard (before AI session generation) uses these fields. Populate or adjust them from chat with **task_modal_intake_patch** (JSON object; include only keys you change). The client applies the same object shape from message metadata—do not rely on reply prose alone.\n' +
-    '- **readiness** and **sleep_quality**: integers **1–10** only (slider labels: Readiness / energy, Sleep quality). They are **not** the same as **session_readiness_score** (0–100 routing estimate): never copy session_readiness_score into readiness or sleep_quality. If you tell the user a readiness or sleep slider value in reply_content, you **must** mirror those same 1–10 integers in task_modal_intake_patch.\n' +
-    '- **wizard_step**: optional integer **1–3** to show that step after applying other fields.\n' +
+    'The Task Modal **Workout intake** wizard has two modes. Use **--- TASK MODAL LIVE STATE (v1) ---** (and whether the card already has a generated workout) to infer which applies.\n\n' +
+    '**GENERATION MODE** (before **Generate Workout** — no `ai_workout_factory` on the card yet): **macro planning only** — do **not** ask for or patch readiness/sleep sliders in this mode.\n' +
+    `- **phase_intent** (Phase Intent / RPE ceiling): exactly one of: ${phaseIntentLine}.\n` +
     `- **duration_minutes**: string, exactly one of: ${durationLine}.\n` +
-    `- **target_intensity**: string, exactly one of: ${intensityLine}.\n` +
+    `- **progression_trend** (Progression Trend): exactly one of: ${progressionLine}.\n` +
+    '- **anchor_lift** (optional Anchor Lift): object `{ name, weight, reps }` when the member cites a benchmark lift.\n' +
+    '- **temporary_limitations** (optional): free-text constraints for this planned session.\n' +
+    '- **wizard_step**: optional integer **1–2** for the generation wizard.\n\n' +
+    '**PREFLIGHT MODE** (after the workout is generated — pre-session check-in before Active Session): **daily readiness** sliders only — do **not** patch macro-planning fields here.\n' +
+    '- **readiness** and **sleep_quality**: integers **1–10** only (slider labels: Readiness / energy, Sleep quality). They are **not** the same as **session_readiness_score** (0–100 routing estimate): never copy session_readiness_score into readiness or sleep_quality. If you tell the user a readiness or sleep slider value in reply_content, you **must** mirror those same 1–10 integers in task_modal_intake_patch.\n' +
     `- **soreness**: string array; each item must be one of: ${sorenessLine}. Use ["None"] when nothing is sore; do not mix "None" with other areas.\n` +
+    '- **wizard_step**: optional integer **1–2** for the preflight wizard.\n\n' +
+    'Populate or adjust the visible wizard from chat with **task_modal_intake_patch** (JSON object; include only keys you change). The client applies the same object shape from message metadata—do not rely on reply prose alone.\n' +
     'WORKED EXAMPLES (task_modal_intake_patch only — do not confuse with top-level session_readiness_score):\n' +
-    '- GOOD: {"readiness":7,"sleep_quality":8} — both are **1–10** intake sliders.\n' +
+    '- GOOD (generation): {"phase_intent":"standard_progression","duration_minutes":"45","progression_trend":"Appropriately Challenging"}.\n' +
+    '- GOOD (preflight): {"readiness":7,"sleep_quality":8} — both are **1–10** intake sliders.\n' +
     '- GOOD: {"duration_minutes":"30"} — duration_minutes must be a **string** (quoted in JSON), one of "15", "30", "45", "60", or "Optimized for Goals".\n' +
     '- BAD: {"duration_minutes":30} — bare integer is invalid for the schema; use the string "30" instead.\n' +
     '- BAD: {"readiness":72} — 72 looks like **session_readiness_score (0–100)**; use 1–10 for readiness instead (e.g. map high energy to 8–10, not 70+).\n' +
     '- BAD: {"readiness":"feeling great"} — free-text is invalid; use an integer 1–10 (or digit string like "7").\n' +
-    '- GOOD: {"soreness":["Legs"]} or {"soreness":["None"]} when nothing is sore.\n' +
+    '- GOOD: {"soreness":["Legs"]} or {"soreness":["None"]} when nothing is sore (preflight).\n' +
     '- BAD: {"soreness":["None","Legs"]} — never mix **None** with specific areas; drop None or pick only body areas.\n' +
     'Use null / omit task_modal_intake_patch when you are not updating the wizard.'
   );
@@ -335,8 +470,8 @@ export function buildBaseCoachPrompt(
     "EXECUTION PATCH (live player): When CURRENT WORKOUT CONTEXT is present and the user mentions specific equipment (e.g. 'I have 60lb kettlebells') or asks for specific changes to the current workout session (workoutContext JSON under CURRENT WORKOUT CONTEXT), you MUST compute the appropriate weights, reps, RPE, and/or set completion and include them in the execution_patch field. " +
     'Do not only describe numbers in reply_content; you must also provide the JSON execution_patch so the app can update the live grid. You may list multiple sets and multiple exercises in one patch. String fields (weight, reps, rpe) must be pure numeric strings only, with no ranges, units, or extra text (e.g. "60", "8", "7.5"). Set execution_patch to null when you are not changing the live log. ' +
     'PERSONAL CUES: When the user wants instructions, form cues, tips, or injury notes saved for catalog exercises, emit personal_cues_patch (one entry per exerciseIndex from EXERCISE_INDEX_MAP; only [dict:...] rows persist); you may combine it with execution_patch in one response. ' +
-    'TASK MODAL INTAKE PATCH: When TASK MODAL INTAKE UI appears in the system prompt (workout / workout_log task under discussion), use task_modal_intake_patch to update the on-card intake wizard (readiness and sleep sliders 1–10, wizard_step 1–3, duration_minutes, target_intensity, soreness). Do not only describe those values in reply_content when you intend the UI to change—emit task_modal_intake_patch. Set task_modal_intake_patch to null when not updating the wizard. ' +
-    'If --- TASK MODAL LIVE STATE (v1) --- appears in the system prompt and you describe changing a slider, step, duration, intensity, or soreness in reply_content, you MUST emit the same change in task_modal_intake_patch in that same JSON. ' +
+    'TASK MODAL INTAKE PATCH: When TASK MODAL INTAKE UI appears in the system prompt (workout / workout_log task under discussion), use task_modal_intake_patch to update the on-card intake wizard. In **generation mode** (no factory yet): phase_intent, duration_minutes, progression_trend, optional anchor_lift / temporary_limitations, wizard_step 1–2 — not readiness/sleep. In **preflight mode** (workout already generated): readiness and sleep sliders 1–10, soreness, wizard_step 1–2 — not macro-planning fields. Do not only describe those values in reply_content when you intend the UI to change—emit task_modal_intake_patch. Set task_modal_intake_patch to null when not updating the wizard. ' +
+    'If --- TASK MODAL LIVE STATE (v1) --- appears in the system prompt and you describe changing a wizard field in reply_content, you MUST emit the same change in task_modal_intake_patch in that same JSON. ' +
     'TRUTHFULNESS: If reply_content claims you wrote or applied something, include non-null execution_patch, personal_cues_patch, task_modal_intake_patch, or create_card/update_existing_task in the same JSON. ' +
     (apexMain
       ? 'Return ONLY a raw JSON object (no markdown, no code fences) with keys: reply_content, create_card, task_title, task_description, update_existing_task, updated_task_title, updated_task_description, execution_patch, personal_cues_patch, task_modal_intake_patch, card_action, intake_phase, session_readiness_score, missing_intake_categories, user_requested_immediate_card, session_request, coach_task_notes. Main bubble Call A has NO proposed_workout_metadata key — outline is Phase B server-side. '
@@ -349,6 +484,7 @@ export type WorkoutOpenGreetingPromptArgs = {
   workoutTitle: string;
   isoNow: string;
   userContextBlock?: string | null;
+  sessionReadinessBlock?: string | null;
 };
 
 /**
@@ -368,6 +504,14 @@ export function buildWorkoutOpenGreetingPrompt(args: WorkoutOpenGreetingPromptAr
     'Do NOT paste or reference any SYSTEM_EVENT string or technical trigger text.',
     `Reference timestamp (UTC): ${args.isoNow}`,
   ];
+  if (args.sessionReadinessBlock) {
+    parts.push(
+      'The member already completed a pre-session check-in (readiness, sleep, soreness) — see PRE-SESSION READINESS below.',
+      'Briefly acknowledge their today readiness, sleep, and soreness in natural language.',
+      'Do NOT ask them to rate readiness, sleep quality, or soreness again — no intake sliders or questionnaire.',
+      args.sessionReadinessBlock,
+    );
+  }
   if (args.userContextBlock) {
     parts.push('--- USER CONTEXT ---\n' + args.userContextBlock);
   }
@@ -378,8 +522,15 @@ export function buildWorkoutOpenGreetingPrompt(args: WorkoutOpenGreetingPromptAr
  * Single user-turn text passed to the workout-open preflight call. Mirrors the legacy
  * line at `bubble-agent-dispatch/index.ts:1502`.
  */
-export function buildWorkoutOpenGreetingUserText(workoutJson: string): string {
-  return `Structured workout data (JSON; may be truncated):\n${workoutJson || '{}'}`;
+export function buildWorkoutOpenGreetingUserText(
+  workoutJson: string,
+  readinessJson?: string | null,
+): string {
+  const lines = [`Structured workout data (JSON; may be truncated):\n${workoutJson || '{}'}`];
+  if (readinessJson && readinessJson.trim()) {
+    lines.push(`Pre-session readiness check-in (JSON):\n${readinessJson}`);
+  }
+  return lines.join('\n\n');
 }
 
 /**
@@ -661,4 +812,14 @@ export function shouldSuppressTaskModalIntakeForOutlineCoPilot(
 ): boolean {
   const { coPilotBlock } = resolveOutlineDraftPromptParts(args);
   return coPilotBlock != null;
+}
+
+/** When true, suppress TASK MODAL INTAKE UI because preflight readiness was captured on Active Session. */
+export function shouldSuppressTaskModalIntakeForPreflightReadiness(meta: unknown): boolean {
+  const readiness = readSessionReadinessContextFromMessageMetadata(meta);
+  if (!readiness) return false;
+  if (meta == null || typeof meta !== 'object' || Array.isArray(meta)) return false;
+  const wctx = (meta as Record<string, unknown>).workout_context;
+  if (wctx == null || typeof wctx !== 'object' || Array.isArray(wctx)) return false;
+  return (wctx as Record<string, unknown>).surface === ACTIVE_SESSION_SURFACE_VALUE;
 }

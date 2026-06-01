@@ -274,6 +274,51 @@ describe('useTaskWorkoutAi handleAiGenerateWorkout', () => {
     });
   });
 
+  it('forwards macro planning daily_checkin to postGenerateWorkoutChain', async () => {
+    const outline = [
+      {
+        name: 'Main EMOM',
+        block_format: 'emom',
+        format_params: {
+          interval_seconds: 60,
+          total_minutes: 10,
+          is_alternating: true,
+        },
+        exercises: [{ name: 'Swing' }, { name: 'Thruster' }],
+      },
+    ];
+    const meta = {
+      coach_workout_outline: outline,
+      coach_outline_confirmed_at: '2026-05-22T12:00:00.000Z',
+      exercises: [],
+    } as Json;
+
+    const { result } = renderHook(() => useTaskWorkoutAiHarness(meta));
+
+    await act(async () => {
+      await result.current.handleAiGenerateWorkout({
+        durationMinutes: 30,
+        phaseIntent: 'standard_progression',
+        progressionTrend: 'Appropriately Challenging',
+        anchorLift: { name: 'Squat', weight: 185, reps: 5 },
+        temporaryLimitations: 'Minor knee irritation',
+      });
+    });
+
+    expect(mockPostGenerateWorkoutChain).toHaveBeenCalledTimes(1);
+    const payload = mockPostGenerateWorkoutChain.mock.calls[0][0] as {
+      daily_checkin?: Record<string, unknown>;
+    };
+    expect(payload.daily_checkin).toMatchObject({
+      duration_minutes: 30,
+      target_duration_min: 30,
+      phase_intent: 'standard_progression',
+      progression_trend: 'Appropriately Challenging',
+      anchor_lift: { name: 'Squat', weight: 185, reps: 5 },
+      temporary_limitations: 'Minor knee irritation',
+    });
+  });
+
   it('forwards coach_workout_outline from task metadata to postGenerateWorkoutChain', async () => {
     const outline = [
       {

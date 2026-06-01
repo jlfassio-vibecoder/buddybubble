@@ -15,7 +15,8 @@ type Props = {
   bubbleRow: BubbleRow | null;
   canPostMessages: boolean;
   messageThread: WorkoutCoachRailMessageThread;
-  sessionTelemetry?: SessionTelemetrySnapshot | null;
+  sessionTelemetryBase?: SessionTelemetrySnapshot | null;
+  elapsedSec?: number;
 };
 
 export function SessionCoachPane({
@@ -26,7 +27,8 @@ export function SessionCoachPane({
   bubbleRow,
   canPostMessages,
   messageThread,
-  sessionTelemetry,
+  sessionTelemetryBase,
+  elapsedSec,
 }: Props) {
   return (
     <WorkoutCoachRail
@@ -37,7 +39,8 @@ export function SessionCoachPane({
       workoutData={workoutData}
       bubbleRow={bubbleRow}
       messageThread={messageThread}
-      sessionTelemetry={sessionTelemetry}
+      sessionTelemetryBase={sessionTelemetryBase}
+      elapsedSec={elapsedSec}
       className="min-h-0 overflow-hidden rounded-lg border border-border"
     />
   );

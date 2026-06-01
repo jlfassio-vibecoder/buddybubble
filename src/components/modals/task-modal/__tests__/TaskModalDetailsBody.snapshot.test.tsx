@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi, afterEach } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { RefObject } from 'react';
 import { createRef } from 'react';
 import type { Json } from '@/types/database';
@@ -8,9 +8,23 @@ import {
   TaskModalDetailsBody,
   type TaskModalDetailsBodyProps,
 } from '@/components/modals/task-modal/TaskModalDetailsBody';
+import type { WorkoutIntakePanelWizardProps } from '@/components/fitness/workout-intake/WorkoutGenerationIntakePanel';
+import {
+  WORKOUT_INTAKE_DURATION_CHOICES,
+  WORKOUT_INTAKE_SORENESS_OPTIONS,
+} from '@/lib/agents/coach/task-modal-intake-patch';
+import {
+  WORKOUT_GENERATION_PHASE_INTENT_OPTIONS,
+  WORKOUT_GENERATION_PROGRESSION_TREND_OPTIONS,
+} from '@/lib/workout-factory/generation-intake-context';
 
-vi.mock('@/components/fitness/WorkoutIntakePanel', () => ({
-  WorkoutIntakePanel: () => <div data-testid="mock-workout-intake-panel" />,
+vi.mock('@/components/fitness/workout-intake/WorkoutGenerationIntakePanel', () => ({
+  WorkoutGenerationIntakePanel: () => <div data-testid="mock-workout-generation-intake-panel" />,
+}));
+vi.mock('@/components/fitness/workout-intake/WorkoutPreflightReadinessPanel', () => ({
+  WorkoutPreflightReadinessPanel: () => (
+    <div data-testid="mock-workout-preflight-readiness-panel" />
+  ),
 }));
 vi.mock('@/components/fitness/WorkoutOutlinePanel', () => ({
   WorkoutOutlinePanel: () => <div data-testid="mock-workout-outline-panel" />,
@@ -40,6 +54,44 @@ vi.mock('@/components/modals/task-modal/TaskModalDetailsFooterActions', () => ({
 const noop = () => {};
 const cardCoverFileInputRef: RefObject<HTMLInputElement | null> = createRef();
 
+const mockWorkoutIntakePanelProps = {
+  step: 1 as const,
+  setStep: noop,
+  readiness: 5,
+  setReadiness: noop,
+  sleepQuality: 7,
+  setSleepQuality: noop,
+  durationMinutes: 'Optimized for Goals' as const,
+  setDurationMinutes: noop,
+  phaseIntent: 'standard_progression' as const,
+  setPhaseIntent: noop,
+  soreness: new Set(['None']),
+  toggleSoreness: noop,
+  sorenessArray: ['None'],
+  progressionTrend: 'Appropriately Challenging' as const,
+  setProgressionTrend: noop,
+  anchorLiftName: '',
+  setAnchorLiftName: noop,
+  anchorLiftWeight: null,
+  setAnchorLiftWeight: noop,
+  anchorLiftReps: null,
+  setAnchorLiftReps: noop,
+  temporaryLimitations: '',
+  setTemporaryLimitations: noop,
+  durationOptions: WORKOUT_INTAKE_DURATION_CHOICES,
+  phaseIntentOptions: WORKOUT_GENERATION_PHASE_INTENT_OPTIONS,
+  sorenessOptions: WORKOUT_INTAKE_SORENESS_OPTIONS,
+  progressionTrendOptions: WORKOUT_GENERATION_PROGRESSION_TREND_OPTIONS,
+} satisfies WorkoutIntakePanelWizardProps;
+
+const mockBuildWizardPayload = () => ({
+  durationMinutes: 'Optimized for Goals' as const,
+  phaseIntent: 'standard_progression' as const,
+  progressionTrend: 'Appropriately Challenging' as const,
+  anchorLift: null,
+  temporaryLimitations: null,
+});
+
 const baseProps: TaskModalDetailsBodyProps = {
   title: 'Snapshot task',
   onTitleChange: noop,
@@ -48,8 +100,10 @@ const baseProps: TaskModalDetailsBodyProps = {
   itemType: 'task',
   canWrite: true,
   onGenerateWorkoutFromIntake: noop,
+  onSubmitPreflightAndLaunch: noop,
   aiWorkoutGenerating: false,
-  workoutIntakeState: null,
+  workoutIntakePanelProps: null,
+  buildWizardPayload: mockBuildWizardPayload,
   workoutOutlineEditor: null,
   taskId: 'task-snap-1',
   cardCoverPath: '',
@@ -127,6 +181,10 @@ const baseProps: TaskModalDetailsBodyProps = {
 };
 
 describe('TaskModalDetailsBody', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   it('matches snapshot (lifted details shell + mocked sub-panels)', () => {
     const { container } = render(<TaskModalDetailsBody {...baseProps} />);
     expect(container.firstChild).toMatchInlineSnapshot(`
@@ -214,7 +272,7 @@ describe('TaskModalDetailsBody', () => {
 
     expect(screen.getByTestId('task-modal-generated-workout')).toBeTruthy();
     expect(screen.getByText('Generated workout')).toBeTruthy();
-    expect(screen.getByText(/Saved — open the workout viewer/)).toBeTruthy();
+    expect(screen.getByText(/Saved — complete the pre-session check-in above/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Open workout viewer' }));
     expect(onOpenWorkoutViewer).toHaveBeenCalledTimes(1);
   });
@@ -234,5 +292,38 @@ describe('TaskModalDetailsBody', () => {
     );
 
     expect(screen.getByText(/Unsaved changes — open the workout viewer/)).toBeTruthy();
+  });
+
+  it('renders generation intake when factory is absent', () => {
+    render(
+      <TaskModalDetailsBody
+        {...baseProps}
+        itemType="workout"
+        isWorkoutItemType
+        workoutIntakePanelProps={mockWorkoutIntakePanelProps}
+        buildWizardPayload={mockBuildWizardPayload}
+      />,
+    );
+
+    expect(screen.getByTestId('mock-workout-generation-intake-panel')).toBeTruthy();
+    expect(screen.queryByTestId('mock-workout-preflight-readiness-panel')).toBeNull();
+  });
+
+  it('renders preflight panel when factory exists', () => {
+    const taskMetadata = richMetadataWithBlockFormat('emom') as Json;
+
+    render(
+      <TaskModalDetailsBody
+        {...baseProps}
+        itemType="workout"
+        isWorkoutItemType
+        taskMetadata={taskMetadata}
+        workoutIntakePanelProps={mockWorkoutIntakePanelProps}
+        buildWizardPayload={mockBuildWizardPayload}
+      />,
+    );
+
+    expect(screen.getByTestId('mock-workout-preflight-readiness-panel')).toBeTruthy();
+    expect(screen.queryByTestId('mock-workout-generation-intake-panel')).toBeNull();
   });
 });

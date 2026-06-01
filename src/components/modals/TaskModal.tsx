@@ -113,6 +113,15 @@ import { logAgentRoutingEvent } from '@/lib/agents/agentRoutingLogger';
 import { buildTaskModalOutgoingWorkoutContext } from '@/lib/agents/coach/task-modal-outgoing-workout-context';
 import { buildTaskModalOutlineDraftPayload } from '@/lib/agents/coach/build-outline-draft-context';
 import { readCoachOutlineMetadata } from '@/lib/agents/coach/coach-outline-metadata';
+import {
+  buildSessionReadinessContext,
+  mergeSessionReadinessIntoMetadata,
+} from '@/lib/workout-factory/session-readiness-context';
+import {
+  generationIntakeContextToDailyCheckin,
+  buildGenerationIntakeContext,
+} from '@/lib/workout-factory/generation-intake-context';
+import { pickWorkoutIntakePanelWizardProps } from '@/components/fitness/workout-intake/pick-workout-intake-panel-props';
 import { normalizeOutlineDraft } from '@/lib/agents/coach/outline-editor-client';
 import {
   applyWorkoutPlayerExecutionPatchIfOpen,
@@ -337,8 +346,7 @@ export function TaskModal({
     return `create:${createSessionIdRef.current}`;
   }, [open, taskId]);
 
-  const workoutIntake = useWorkoutIntakeWizardState(sessionKey);
-  const buildWizardPayload = workoutIntake.buildWizardPayload;
+  const [preflightCompletedThisOpen, setPreflightCompletedThisOpen] = useState(false);
   const [visibility, setVisibility] = useState<TaskVisibility>('private');
   /** Workspace member user id, or null = unassigned */
   const [assignedTo, setAssignedTo] = useState<string | null>(null);
@@ -347,6 +355,70 @@ export function TaskModal({
   useEffect(() => {
     metadataRef.current = metadata;
   }, [metadata]);
+
+  const hasWorkoutFactory = readCoachOutlineMetadata(metadata).hasFactory;
+  const intakeMode = hasWorkoutFactory ? 'preflight' : 'generation';
+  const workoutIntake = useWorkoutIntakeWizardState(sessionKey, {}, { mode: intakeMode });
+  const buildWizardPayload = workoutIntake.buildWizardPayload;
+
+  const generationLiveState = useMemo(
+    () =>
+      generationIntakeContextToDailyCheckin(
+        buildGenerationIntakeContext({
+          durationMinutes: workoutIntake.durationMinutes,
+          phaseIntent: workoutIntake.phaseIntent,
+          progressionTrend: workoutIntake.progressionTrend,
+          anchorLiftName: workoutIntake.anchorLiftName,
+          anchorLiftWeight: workoutIntake.anchorLiftWeight,
+          anchorLiftReps: workoutIntake.anchorLiftReps,
+          temporaryLimitations: workoutIntake.temporaryLimitations,
+        }),
+      ),
+    [
+      workoutIntake.durationMinutes,
+      workoutIntake.phaseIntent,
+      workoutIntake.progressionTrend,
+      workoutIntake.anchorLiftName,
+      workoutIntake.anchorLiftWeight,
+      workoutIntake.anchorLiftReps,
+      workoutIntake.temporaryLimitations,
+    ],
+  );
+
+  const workoutIntakePanelProps = useMemo(() => {
+    if (itemType !== 'workout' || !canWrite) return null;
+    return pickWorkoutIntakePanelWizardProps(workoutIntake);
+  }, [
+    itemType,
+    canWrite,
+    workoutIntake.step,
+    workoutIntake.readiness,
+    workoutIntake.sleepQuality,
+    workoutIntake.durationMinutes,
+    workoutIntake.phaseIntent,
+    workoutIntake.sorenessArray,
+    workoutIntake.progressionTrend,
+    workoutIntake.anchorLiftName,
+    workoutIntake.anchorLiftWeight,
+    workoutIntake.anchorLiftReps,
+    workoutIntake.temporaryLimitations,
+    workoutIntake.setStep,
+    workoutIntake.setReadiness,
+    workoutIntake.setSleepQuality,
+    workoutIntake.setDurationMinutes,
+    workoutIntake.setPhaseIntent,
+    workoutIntake.toggleSoreness,
+    workoutIntake.setProgressionTrend,
+    workoutIntake.setAnchorLiftName,
+    workoutIntake.setAnchorLiftWeight,
+    workoutIntake.setAnchorLiftReps,
+    workoutIntake.setTemporaryLimitations,
+    workoutIntake.durationOptions,
+    workoutIntake.phaseIntentOptions,
+    workoutIntake.progressionTrendOptions,
+    workoutIntake.sorenessOptions,
+  ]);
+
   const [eventLocation, setEventLocation] = useState('');
   const [eventUrl, setEventUrl] = useState('');
   const [experienceSeason, setExperienceSeason] = useState('');
@@ -770,7 +842,7 @@ export function TaskModal({
       ) {
         return;
       }
-      if (itemType !== 'workout' && itemType !== 'workout_log') return;
+      if (itemType !== 'workout') return;
       if (!canWrite) return;
       if (aiWorkoutGenerating) return;
       if (args.action.kind === 'trigger_generation' && viewerWorkoutSet != null) return;
@@ -929,12 +1001,13 @@ export function TaskModal({
     setMetadata,
     patchOriginalMetadataJson,
     saveCoreFields,
+    enabled: open && itemType === 'workout' && Boolean(taskId),
   });
 
   const showStructureBuilderCta = Boolean(
     workoutBuilderRouteEnabled &&
     standardRailEnabled &&
-    isWorkoutItemType &&
+    itemType === 'workout' &&
     taskId &&
     canWrite &&
     !workoutOutlineEditor.isOutlineConfirmed &&
@@ -1016,6 +1089,16 @@ export function TaskModal({
     liveStreamEnabled,
   });
 
+  useEffect(() => {
+    if (!open) {
+      setPreflightCompletedThisOpen(false);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    setPreflightCompletedThisOpen(false);
+  }, [sessionKey]);
+
   const activeSessionLaunch = useActiveSessionLaunchFromTaskModal({
     workspaceId,
     taskId,
@@ -1029,21 +1112,60 @@ export function TaskModal({
     saveCoreFields,
   });
 
-  const activeSessionLaunchControlProps = useMemo(
-    () =>
-      activeSessionLaunch.launchUi.mode === 'hidden'
-        ? null
-        : {
-            launchUi: activeSessionLaunch.launchUi,
-            onLaunchClick: activeSessionLaunch.handleLaunchClick,
-            busy: activeSessionLaunch.isLaunching,
-          },
-    [
-      activeSessionLaunch.launchUi,
-      activeSessionLaunch.handleLaunchClick,
-      activeSessionLaunch.isLaunching,
-    ],
-  );
+  const handlePreflightSubmitAndLaunch = useCallback(async () => {
+    const payload = workoutIntake.buildPreflightPayload();
+    const mergedMetadata = mergeSessionReadinessIntoMetadata(
+      metadataRef.current,
+      buildSessionReadinessContext(payload),
+    );
+    setMetadata(mergedMetadata);
+
+    if (coreDirty || !taskId) {
+      const ok = taskId ? await saveCoreFields(mergedMetadata) : !!(await createTask());
+      if (!ok) return;
+    } else {
+      const ok = await saveCoreFields(mergedMetadata);
+      if (!ok) return;
+    }
+
+    setPreflightCompletedThisOpen(true);
+    activeSessionLaunch.handleLaunchClick();
+  }, [
+    workoutIntake.buildPreflightPayload,
+    workoutIntake.readiness,
+    workoutIntake.sleepQuality,
+    workoutIntake.sorenessArray,
+    coreDirty,
+    taskId,
+    saveCoreFields,
+    createTask,
+    activeSessionLaunch.handleLaunchClick,
+  ]);
+
+  const activeSessionLaunchControlProps = useMemo(() => {
+    if (activeSessionLaunch.launchUi.mode === 'hidden') return null;
+
+    let launchUi = activeSessionLaunch.launchUi;
+    if (hasWorkoutFactory && !preflightCompletedThisOpen && launchUi.mode !== 'disabled') {
+      launchUi = {
+        mode: 'disabled',
+        label: launchUi.label,
+        tooltip: 'Complete the pre-session check-in to start.',
+      };
+    }
+
+    return {
+      launchUi,
+      onLaunchClick: activeSessionLaunch.handleLaunchClick,
+      busy: activeSessionLaunch.isLaunching,
+    };
+  }, [
+    activeSessionLaunch.launchUi,
+    activeSessionLaunch.handleLaunchClick,
+    activeSessionLaunch.isLaunching,
+    hasWorkoutFactory,
+    preflightCompletedThisOpen,
+  ]);
 
   useEffect(() => {
     if (!open || taskId) return;
@@ -1377,19 +1499,25 @@ export function TaskModal({
   const buildStandardTaskChatRailOutgoingMetadata = useCallback(
     ({ content: _content, files: _files }: { content: string; files: File[] }) => {
       if (itemType !== 'workout' && itemType !== 'workout_log') return null;
-      const payload: Record<string, Json> = {
-        task_modal_live_state: {
-          v: 1,
-          item_type: itemType,
-          wizard_step: workoutIntake.step,
-          readiness: workoutIntake.readiness,
-          sleep_quality: workoutIntake.sleepQuality,
-          duration_minutes: workoutIntake.durationMinutes,
-          target_intensity: workoutIntake.targetIntensity,
-          soreness: workoutIntake.sorenessArray,
-        },
+      const liveStateBase = {
+        v: 1,
+        item_type: itemType,
+        wizard_step: workoutIntake.step,
+        readiness: workoutIntake.readiness,
+        sleep_quality: workoutIntake.sleepQuality,
+        soreness: workoutIntake.sorenessArray,
       };
-      const workoutContext = buildTaskModalOutgoingWorkoutContext(metadata, title);
+      const payload: Record<string, Json> = {
+        task_modal_live_state: hasWorkoutFactory
+          ? liveStateBase
+          : ({
+              v: 1,
+              item_type: itemType,
+              wizard_step: workoutIntake.step,
+              ...generationLiveState,
+            } as Json),
+      };
+      const workoutContext = buildTaskModalOutgoingWorkoutContext(metadata, title, { coreDirty });
       if (workoutContext) {
         payload.workoutContext = workoutContext as Json;
       }
@@ -1419,17 +1547,18 @@ export function TaskModal({
       title,
       taskId,
       canWrite,
+      coreDirty,
       showStructureBuilderCta,
       workoutOutlineEditor.draftBlocks,
       workoutOutlineEditor.validationDrops,
       workoutOutlineEditor.isOutlineConfirmed,
       workoutOutlineEditor.hasFactory,
+      hasWorkoutFactory,
       outlineRevision,
+      generationLiveState,
       workoutIntake.step,
       workoutIntake.readiness,
       workoutIntake.sleepQuality,
-      workoutIntake.durationMinutes,
-      workoutIntake.targetIntensity,
       workoutIntake.sorenessArray,
     ],
   );
@@ -1497,8 +1626,11 @@ export function TaskModal({
       itemType,
       canWrite,
       onGenerateWorkoutFromIntake: handleGenerateWorkoutFromIntake,
+      onSubmitPreflightAndLaunch: handlePreflightSubmitAndLaunch,
+      preflightSubmitting: activeSessionLaunch.isLaunching,
       aiWorkoutGenerating,
-      workoutIntakeState: itemType === 'workout' && canWrite ? workoutIntake : null,
+      workoutIntakePanelProps,
+      buildWizardPayload: workoutIntake.buildWizardPayload,
       workoutOutlineEditor: showStructureBuilderCta
         ? null
         : itemType === 'workout' && canWrite && taskId
@@ -1508,7 +1640,11 @@ export function TaskModal({
       onOpenStructureBuilder: showStructureBuilderCta ? handleOpenStructureBuilder : undefined,
       onOpenWorkoutViewer: handleOpenWorkoutViewerFromDetails,
       intakeDisabledReason:
-        itemType === 'workout' && canWrite && taskId && !workoutOutlineEditor.canRunIntake
+        itemType === 'workout' &&
+        canWrite &&
+        taskId &&
+        !hasWorkoutFactory &&
+        !workoutOutlineEditor.canRunIntake
           ? 'Confirm workout structure above before completing intake and generating.'
           : undefined,
       taskId,
@@ -1599,6 +1735,8 @@ export function TaskModal({
       itemType,
       canWrite,
       handleGenerateWorkoutFromIntake,
+      handlePreflightSubmitAndLaunch,
+      activeSessionLaunch.isLaunching,
       aiWorkoutGenerating,
       taskId,
       cardCoverPath,
@@ -1654,11 +1792,13 @@ export function TaskModal({
       loading,
       archiveTask,
       handleModalHardDelete,
-      workoutIntake,
+      workoutIntakePanelProps,
+      workoutIntake.buildWizardPayload,
       workoutOutlineEditor,
       showStructureBuilderCta,
       handleOpenStructureBuilder,
       handleOpenWorkoutViewerFromDetails,
+      hasWorkoutFactory,
       metadata,
     ],
   );

@@ -85,6 +85,24 @@ Use a **single object** with nullable fields in Vertex schema (simplest for Gemi
 
 **Biomechanics / safety (validator, not schema):** cap `time_cap_minutes` vs session `duration_min`; cap EMOM `total_minutes`; ensure superset `exercises.length >= 2`.
 
+### 3.3.1 Instruction-only outline blocks
+
+The Builder outline editor supports two block families:
+
+| Family               | Shape                                                  | `block_format`                                             |
+| -------------------- | ------------------------------------------------------ | ---------------------------------------------------------- |
+| **Parametric**       | `name`, `block_format`, `format_params`, `exercises[]` | Required                                                   |
+| **Instruction-only** | `name`, `instructions[]`                               | **Omitted** (warm-up, cool-down, mobility, finisher prose) |
+
+**Pipeline (`POST /api/ai/generate-workout-chain` outline fill):**
+
+1. **Preflight** — [`parseCoachWorkoutOutlineWithDrops`](../../../src/lib/agents/coach/parse.ts) accepts instruction-only blocks without `block_format`.
+2. **Stage 1 fill** — [`validateFillParametricOutlineOutput`](../../../src/lib/workout-factory/prompt-chain/fill-parametric-outline.ts) skips exercise prescription checks for instruction-only blocks; Vertex may refine `instructions[]` only.
+3. **Post-fill hydrate** — [`hydrateAndValidateOutlineBlocks`](../../../src/lib/workout-factory/outline-block-preflight.ts) must mirror parse: pass instruction-only blocks through without requiring `block_format` or `validateBlockShape`.
+4. **Assembly** — [`buildWorkoutInSetFromOutlineFill`](../../../src/lib/workout-factory/map-outline-fill-to-workout.ts) routes instruction blocks into `warmupBlocks` / `finisherBlocks` / `cooldownBlocks` by block **name** (`classifyBlockRole`). Names must include Warm-up, Cool-down, Finisher, or Mobility — confirm-time validation in [`validateOutlineDraftForConfirm`](../../../src/lib/agents/coach/outline-editor-client.ts) rejects non-routing names.
+
+**UI:** [`createInstructionBlock`](../../../src/lib/agents/coach/outline-editor-client.ts) in the Workout Builder / Task Modal outline panel.
+
 ### 3.4 Persisted shape (`ExerciseBlock` extension)
 
 Extend [`ExerciseBlock`](../../../src/lib/workout-factory/types/workout-contract.ts) (and `ai-program` mirror) — **after merge**, not in Coach output:

@@ -7,14 +7,20 @@ import {
   buildApexArchitectMainChatBlock,
   buildBaseCoachPrompt,
   buildCurrentTaskContextBlock,
+  buildSessionReadinessContextBlock,
   buildTaskModalIntakeUiCoachBlock,
   buildTaskModalLiveStateBlock,
   buildOutlineCoPilotModeCoachBlock,
+  buildWorkoutOpenGreetingPrompt,
+  buildWorkoutOpenGreetingUserText,
   formatExerciseIndexMap,
   isCoachRailSurfaceFromMessageMetadata,
+  readSessionReadinessContextFromMessageMetadata,
   readTaskModalLiveStateFromMessageMetadata,
   resolveOutlineDraftPromptParts,
+  SESSION_READINESS_CONTEXT_HEADER,
   shouldSuppressTaskModalIntakeForOutlineCoPilot,
+  shouldSuppressTaskModalIntakeForPreflightReadiness,
   taskMetadataLooksWorkoutShaped,
 } from './prompts';
 
@@ -305,7 +311,11 @@ describe('taskMetadataLooksWorkoutShaped', () => {
 describe('buildTaskModalIntakeUiCoachBlock', () => {
   it('includes worked GOOD/BAD examples for scale, duration strings, and soreness', () => {
     const block = buildTaskModalIntakeUiCoachBlock();
-    expect(block).toContain('GOOD: {"readiness":7,"sleep_quality":8}');
+    expect(block).toContain('GENERATION MODE');
+    expect(block).toContain('PREFLIGHT MODE');
+    expect(block).toContain('progression_trend');
+    expect(block).toContain('GOOD (generation):');
+    expect(block).toContain('GOOD (preflight): {"readiness":7,"sleep_quality":8}');
     expect(block).toContain('GOOD: {"duration_minutes":"30"}');
     expect(block).toContain('BAD: {"duration_minutes":30}');
     expect(block).toContain('BAD: {"readiness":72}');
@@ -336,7 +346,7 @@ describe('readTaskModalLiveStateFromMessageMetadata', () => {
         readiness: 4,
         sleep_quality: '8',
         duration_minutes: 30,
-        target_intensity: 'Moderate',
+        phase_intent: 'standard_progression',
         soreness: ['Legs', 'bogus'],
       },
     });
@@ -347,7 +357,7 @@ describe('readTaskModalLiveStateFromMessageMetadata', () => {
       readiness: 4,
       sleep_quality: 8,
       duration_minutes: 30,
-      target_intensity: 'Moderate',
+      phase_intent: 'standard_progression',
       soreness: ['Legs'],
     });
   });
@@ -362,14 +372,14 @@ describe('buildTaskModalLiveStateBlock', () => {
       readiness: 5,
       sleep_quality: 6,
       duration_minutes: 45,
-      target_intensity: 'High/HIIT',
+      phase_intent: 'aggressive_overload',
       soreness: ['None'],
     });
     expect(text).toContain('--- TASK MODAL LIVE STATE (v1) ---');
     expect(text).toContain('item_type: workout_log');
     expect(text).toContain('wizard_step: 3');
     expect(text).toContain('duration_minutes: "45"');
-    expect(text).toContain('target_intensity: "High/HIIT"');
+    expect(text).toContain('phase_intent: "aggressive_overload"');
     expect(text).toContain('"None"');
   });
 });
@@ -476,5 +486,141 @@ describe('buildOutlineCoPilotModeCoachBlock', () => {
     expect(text).toContain('OUTLINE DRAFT PATCH ROUTING EXAMPLES');
     expect(text).toContain('time_cap_minutes');
     expect(text).toContain('Main Circuit 1 (AMRAP 15 min.)');
+  });
+});
+
+describe('readSessionReadinessContextFromMessageMetadata', () => {
+  it('returns null for absent or invalid shapes', () => {
+    expect(readSessionReadinessContextFromMessageMetadata(null)).toBeNull();
+    expect(readSessionReadinessContextFromMessageMetadata({})).toBeNull();
+    expect(
+      readSessionReadinessContextFromMessageMetadata({
+        session_readiness_context: { v: 2 },
+      }),
+    ).toBeNull();
+    expect(
+      readSessionReadinessContextFromMessageMetadata({
+        session_readiness_context: {
+          v: 1,
+          captured_at: '2026-05-28T10:00:00.000Z',
+          readiness: 7,
+          sleep_quality: 8,
+          soreness: ['Legs'],
+          source: 'other',
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it('parses valid v1 and clamps readiness fields', () => {
+    const ctx = readSessionReadinessContextFromMessageMetadata({
+      session_readiness_context: {
+        v: 1,
+        captured_at: '2026-05-28T10:00:00.000Z',
+        readiness: 12,
+        sleep_quality: 0,
+        soreness: ['Legs', 'None', 'Invalid'],
+        source: 'task_modal_preflight',
+      },
+    });
+    expect(ctx).toEqual({
+      v: 1,
+      captured_at: '2026-05-28T10:00:00.000Z',
+      readiness: 10,
+      sleep_quality: 1,
+      soreness: ['Legs'],
+      source: 'task_modal_preflight',
+    });
+  });
+
+  it('normalizes empty soreness to None', () => {
+    const ctx = readSessionReadinessContextFromMessageMetadata({
+      session_readiness_context: {
+        v: 1,
+        captured_at: '2026-05-28T10:00:00.000Z',
+        readiness: 5,
+        sleep_quality: 6,
+        soreness: [],
+        source: 'task_modal_preflight',
+      },
+    });
+    expect(ctx?.soreness).toEqual(['None']);
+  });
+});
+
+describe('buildSessionReadinessContextBlock', () => {
+  it('formats deterministic readiness lines', () => {
+    const block = buildSessionReadinessContextBlock({
+      v: 1,
+      captured_at: '2026-05-28T10:00:00.000Z',
+      readiness: 7,
+      sleep_quality: 8,
+      soreness: ['Legs'],
+      source: 'task_modal_preflight',
+    });
+    expect(block).toContain(SESSION_READINESS_CONTEXT_HEADER);
+    expect(block).toContain('readiness (1–10): 7');
+    expect(block).toContain('sleep_quality (1–10): 8');
+    expect(block).toContain('soreness: ["Legs"]');
+    expect(block).toContain('do NOT re-ask readiness');
+  });
+});
+
+describe('buildWorkoutOpenGreetingPrompt readiness', () => {
+  it('includes pre-session instructions when readiness block present', () => {
+    const block = buildSessionReadinessContextBlock({
+      v: 1,
+      captured_at: '2026-05-28T10:00:00.000Z',
+      readiness: 7,
+      sleep_quality: 8,
+      soreness: ['Legs'],
+      source: 'task_modal_preflight',
+    });
+    const prompt = buildWorkoutOpenGreetingPrompt({
+      workoutTitle: 'Leg Day',
+      isoNow: '2026-05-28T14:00:00.000Z',
+      sessionReadinessBlock: block,
+    });
+    expect(prompt).toContain('pre-session check-in');
+    expect(prompt).toContain('Do NOT ask them to rate readiness');
+    expect(prompt).toContain(SESSION_READINESS_CONTEXT_HEADER);
+  });
+
+  it('buildWorkoutOpenGreetingUserText appends readiness JSON when provided', () => {
+    const text = buildWorkoutOpenGreetingUserText('{"exercises":[]}', '{"readiness":7}');
+    expect(text).toContain('Structured workout data');
+    expect(text).toContain('Pre-session readiness check-in (JSON)');
+    expect(text).toContain('{"readiness":7}');
+  });
+});
+
+describe('shouldSuppressTaskModalIntakeForPreflightReadiness', () => {
+  it('suppresses only when readiness is on active_session surface', () => {
+    expect(
+      shouldSuppressTaskModalIntakeForPreflightReadiness({
+        session_readiness_context: {
+          v: 1,
+          captured_at: '2026-05-28T10:00:00.000Z',
+          readiness: 7,
+          sleep_quality: 8,
+          soreness: ['Legs'],
+          source: 'task_modal_preflight',
+        },
+        workout_context: { source: 'workout_player', surface: 'active_session' },
+      }),
+    ).toBe(true);
+    expect(
+      shouldSuppressTaskModalIntakeForPreflightReadiness({
+        session_readiness_context: {
+          v: 1,
+          captured_at: '2026-05-28T10:00:00.000Z',
+          readiness: 7,
+          sleep_quality: 8,
+          soreness: ['Legs'],
+          source: 'task_modal_preflight',
+        },
+        workout_context: { source: 'workout_player' },
+      }),
+    ).toBe(false);
   });
 });

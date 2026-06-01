@@ -1,16 +1,19 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import type { Json } from '@/types/database';
 import { BLOCK_BLUEPRINT_CATALOG } from '@/lib/agents/coach/block-blueprint-catalog';
 import { useWorkoutOutlineEditor } from '@/components/modals/task-modal/hooks/useWorkoutOutlineEditor';
+import { postGenerateWorkoutOutline } from '@/lib/ai/generate-workout-outline-client';
 
 vi.mock('sonner', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+  toast: { success: vi.fn(), error: vi.fn(), message: vi.fn() },
 }));
 
 vi.mock('@/lib/ai/generate-workout-outline-client', () => ({
   postGenerateWorkoutOutline: vi.fn(),
 }));
+
+const mockPostGenerateWorkoutOutline = vi.mocked(postGenerateWorkoutOutline);
 
 const emomBlock = {
   name: 'Warm-up',
@@ -32,6 +35,7 @@ function buildHookArgs(overrides: {
   patchOriginalMetadataJson?: ReturnType<typeof vi.fn>;
   saveCoreFields?: ReturnType<typeof vi.fn>;
   taskId?: string;
+  enabled?: boolean;
 }) {
   return {
     canWrite: true,
@@ -43,10 +47,93 @@ function buildHookArgs(overrides: {
     setMetadata: overrides.setMetadata ?? vi.fn(),
     patchOriginalMetadataJson: overrides.patchOriginalMetadataJson ?? vi.fn(),
     saveCoreFields: overrides.saveCoreFields,
+    enabled: overrides.enabled,
   };
 }
 
 describe('useWorkoutOutlineEditor', () => {
+  beforeEach(() => {
+    mockPostGenerateWorkoutOutline.mockReset();
+  });
+
+  it('does not auto-call postGenerateWorkoutOutline on mount with empty outline', () => {
+    renderHook(() =>
+      useWorkoutOutlineEditor(
+        buildHookArgs({
+          metadata: {} as Json,
+        }),
+      ),
+    );
+
+    expect(mockPostGenerateWorkoutOutline).not.toHaveBeenCalled();
+  });
+
+  it('calls postGenerateWorkoutOutline when retryStructure is invoked explicitly', async () => {
+    mockPostGenerateWorkoutOutline.mockResolvedValue({
+      metadata: {
+        coach_workout_outline: [emomBlock],
+        coach_outline_status: 'ready',
+      } as unknown as Json,
+    });
+
+    const { result } = renderHook(() =>
+      useWorkoutOutlineEditor(
+        buildHookArgs({
+          metadata: {} as Json,
+        }),
+      ),
+    );
+
+    await act(async () => {
+      await result.current.retryStructure();
+    });
+
+    expect(mockPostGenerateWorkoutOutline).toHaveBeenCalledTimes(1);
+    expect(mockPostGenerateWorkoutOutline).toHaveBeenCalledWith({
+      workspace_id: 'ws-1',
+      task_id: 'task-1',
+    });
+  });
+
+  it('retryStructure no-ops when enabled is false', async () => {
+    const { result } = renderHook(() =>
+      useWorkoutOutlineEditor(
+        buildHookArgs({
+          metadata: {} as Json,
+          enabled: false,
+        }),
+      ),
+    );
+
+    await act(async () => {
+      await result.current.retryStructure();
+    });
+
+    expect(mockPostGenerateWorkoutOutline).not.toHaveBeenCalled();
+  });
+
+  it('retryStructure no-ops when ai_workout_factory exists', async () => {
+    const metadata = {
+      ai_workout_factory: {
+        workout_set: { workouts: [{ name: 'Session', exercises: [] }] },
+      },
+    } as unknown as Json;
+
+    const { result } = renderHook(() =>
+      useWorkoutOutlineEditor(
+        buildHookArgs({
+          metadata,
+        }),
+      ),
+    );
+
+    await act(async () => {
+      await result.current.retryStructure();
+    });
+
+    expect(mockPostGenerateWorkoutOutline).not.toHaveBeenCalled();
+  });
+
   it('confirmStructure passes coach_outline_confirmed_at into saveCoreFields', async () => {
     const saveCoreFields = vi.fn().mockResolvedValue(true);
     const setMetadata = vi.fn();

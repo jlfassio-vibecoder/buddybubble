@@ -26,7 +26,9 @@ export function buildWorkoutCoachRailContext(
   metadata: unknown,
   title: string,
   liveSetCounts?: number[],
+  options?: { includeFactoryBlob?: boolean },
 ): Record<string, unknown> {
+  const includeFactoryBlob = options?.includeFactoryBlob !== false;
   const vm = buildWorkoutSessionViewModel(metadata ?? {});
   const parsed = parseTaskMetadata(metadata) as Record<string, unknown>;
   const taskTitle = title.trim() || 'this workout';
@@ -61,7 +63,7 @@ export function buildWorkoutCoachRailContext(
     if (summary) {
       out.workout_structure_summary = summary;
     }
-    if (hasRichWorkoutSetInMetadata(metadata)) {
+    if (includeFactoryBlob && hasRichWorkoutSetInMetadata(metadata)) {
       const af = parsed.ai_workout_factory;
       if (af != null && typeof af === 'object' && !Array.isArray(af)) {
         out.ai_workout_factory = af;

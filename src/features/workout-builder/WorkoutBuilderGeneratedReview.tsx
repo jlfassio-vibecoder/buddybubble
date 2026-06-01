@@ -1,12 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { WorkoutViewerApplyPayload } from '@/components/fitness/workout-viewer-dialog';
 import {
   WorkoutBlockListEditor,
   WorkoutBlockListRenderer,
 } from '@/components/fitness/workout-block-renderer';
-import { cloneWorkoutSessionBlocksForEditor } from '@/lib/workout-factory/clone-workout-session-blocks';
+import {
+  cloneWorkoutSessionBlocksForEditor,
+  workoutSessionBlocksContentKey,
+} from '@/lib/workout-factory/clone-workout-session-blocks';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -59,10 +62,14 @@ export function WorkoutBuilderGeneratedReview({
     cloneWorkoutSessionBlocksForEditor(blocks),
   );
 
+  const blocksContentKey = useMemo(() => workoutSessionBlocksContentKey(blocks), [blocks]);
+  const blocksRef = useRef(blocks);
+  blocksRef.current = blocks;
+
   useEffect(() => {
     setMode('preview');
-    setDraftBlocks(cloneWorkoutSessionBlocksForEditor(blocks));
-  }, [syncKey, blocks]);
+    setDraftBlocks(cloneWorkoutSessionBlocksForEditor(blocksRef.current));
+  }, [syncKey, blocksContentKey]);
 
   const enterEdit = useCallback(() => {
     setDraftBlocks(cloneWorkoutSessionBlocksForEditor(blocks));

@@ -121,7 +121,7 @@ Output ONLY valid JSON matching the user-provided schema. No markdown, no commen
 
 HYBRID EXTRACTION / GENERATION POLICY:
 - If the user provides a detailed list of exercises, extract those exercises faithfully and preserve order.
-- If the user provides a sparse concept (for example: AMRAP, EMOM, Tabata, kettlebell complex, full-body strength, recovery session) alongside Daily check-in context and profile constraints, you MUST DESIGN the missing workout details: specific exercises, sections, prescriptions, and safe defaults.
+- If the user provides a sparse concept (for example: AMRAP, EMOM, Tabata, kettlebell complex, full-body strength, recovery session) alongside macro planning context and profile constraints, you MUST DESIGN the missing workout details: specific exercises, sections, prescriptions, and safe defaults.
 
 CRITICAL VALIDATION RULES:
 - The JSON schema requires every exercise in section "main" to include at least one of: sets, reps, or work_seconds.
@@ -131,7 +131,7 @@ CRITICAL VALIDATION RULES:
 CHECK-IN UTILIZATION:
 - Respect the equipment list exactly; do not choose unavailable equipment.
 - Avoid or reduce loading for sore muscle groups.
-- Scale total volume and intensity to durationMinutes, readiness, sleepQuality, and targetIntensity.
+- Scale total volume and intensity to durationMinutes, phase intent (phase_intent RPE ceiling), progression trend, anchor lift, and temporary limitations.
 - For time-based workouts, include work_seconds and useful reps targets where appropriate.
 
 Generate one coherent workout only.`;

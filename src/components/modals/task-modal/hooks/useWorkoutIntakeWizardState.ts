@@ -6,20 +6,39 @@ import {
   parseTaskModalIntakePatchFromMetadata,
   type TaskModalIntakePatch,
   type WorkoutIntakeDurationChoice,
-  type WorkoutIntakeIntensityChoice,
   WORKOUT_INTAKE_DURATION_CHOICES,
-  WORKOUT_INTAKE_INTENSITY_OPTIONS,
   WORKOUT_INTAKE_SORENESS_OPTIONS,
 } from '@/lib/agents/coach/task-modal-intake-patch';
+import {
+  buildGenerationIntakeContext,
+  defaultGenerationIntakeValues,
+  defaultGenerationPhaseIntent,
+  WORKOUT_GENERATION_PHASE_INTENT_OPTIONS,
+  WORKOUT_GENERATION_PROGRESSION_TREND_OPTIONS,
+  type WorkoutGenerationPhaseIntent,
+  type WorkoutGenerationProgressionTrend,
+} from '@/lib/workout-factory/generation-intake-context';
 
 export type WorkoutIntakeWizardStep = 1 | 2 | 3;
+
+export type WorkoutIntakeWizardMode = 'generation' | 'preflight';
+
+export type WorkoutIntakeWizardOptions = {
+  mode?: WorkoutIntakeWizardMode;
+};
+
+export type WorkoutPreflightPayload = {
+  readiness: number;
+  sleepQuality: number;
+  soreness: string[];
+};
 
 export type IntakeWritableField =
   | 'readiness'
   | 'sleep_quality'
   | 'wizard_step'
   | 'duration_minutes'
-  | 'target_intensity'
+  | 'phase_intent'
   | 'soreness';
 
 export type FieldWriteMeta = {
@@ -49,7 +68,7 @@ const ALL_FIELDS: IntakeWritableField[] = [
   'sleep_quality',
   'wizard_step',
   'duration_minutes',
-  'target_intensity',
+  'phase_intent',
   'soreness',
 ];
 
@@ -66,16 +85,22 @@ function resetWizardValues(): {
   readiness: number;
   sleepQuality: number;
   durationMinutes: WorkoutIntakeDurationChoice;
-  targetIntensity: WorkoutIntakeIntensityChoice;
+  phaseIntent: WorkoutGenerationPhaseIntent;
   soreness: Set<string>;
+  progressionTrend: WorkoutGenerationProgressionTrend;
+  anchorLiftName: string;
+  anchorLiftWeight: number | null;
+  anchorLiftReps: number | null;
+  temporaryLimitations: string;
 } {
   return {
     step: 1,
     readiness: 5,
     sleepQuality: 7,
     durationMinutes: 'Optimized for Goals',
-    targetIntensity: 'Moderate',
+    phaseIntent: defaultGenerationPhaseIntent(),
     soreness: new Set(['None']),
+    ...defaultGenerationIntakeValues(),
   };
 }
 
@@ -86,21 +111,43 @@ function resetWizardValues(): {
  * @param sessionKey — `existing:<taskId>` for a normal open, or `create:<sessionUuid>` for a
  *   create flow (must stay stable across `null -> taskId` first save; see TaskModal).
  */
+function clampWizardStepForMode(
+  step: WorkoutIntakeWizardStep,
+  _mode: WorkoutIntakeWizardMode,
+): WorkoutIntakeWizardStep {
+  const max: WorkoutIntakeWizardStep = 2;
+  if (step > max) return max;
+  return step;
+}
+
 export function useWorkoutIntakeWizardState(
   sessionKey: string,
   telemetry: WorkoutIntakeWizardTelemetry = {},
+  options: WorkoutIntakeWizardOptions = {},
 ) {
+  const mode = options.mode ?? 'generation';
+  const maxStep: WorkoutIntakeWizardStep = 2;
   const telemetryRef = useRef(telemetry);
   telemetryRef.current = telemetry;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
 
   const [step, setStepState] = useState<WorkoutIntakeWizardStep>(1);
   const [readiness, setReadinessState] = useState(5);
   const [sleepQuality, setSleepQualityState] = useState(7);
   const [durationMinutes, setDurationMinutesState] =
     useState<WorkoutIntakeDurationChoice>('Optimized for Goals');
-  const [targetIntensity, setTargetIntensityState] =
-    useState<WorkoutIntakeIntensityChoice>('Moderate');
+  const [phaseIntent, setPhaseIntentState] = useState<WorkoutGenerationPhaseIntent>(
+    defaultGenerationPhaseIntent(),
+  );
   const [soreness, setSorenessState] = useState<Set<string>>(() => new Set(['None']));
+  const [progressionTrend, setProgressionTrendState] = useState<WorkoutGenerationProgressionTrend>(
+    defaultGenerationIntakeValues().progressionTrend,
+  );
+  const [anchorLiftName, setAnchorLiftNameState] = useState('');
+  const [anchorLiftWeight, setAnchorLiftWeightState] = useState<number | null>(null);
+  const [anchorLiftReps, setAnchorLiftRepsState] = useState<number | null>(null);
+  const [temporaryLimitations, setTemporaryLimitationsState] = useState('');
 
   const writePolicyRef = useRef<WizardWritePolicyState>(emptyPolicy());
   const prevSessionKeyRef = useRef<string | null>(null);
@@ -118,8 +165,13 @@ export function useWorkoutIntakeWizardState(
     setReadinessState(v.readiness);
     setSleepQualityState(v.sleepQuality);
     setDurationMinutesState(v.durationMinutes);
-    setTargetIntensityState(v.targetIntensity);
+    setPhaseIntentState(v.phaseIntent);
     setSorenessState(v.soreness);
+    setProgressionTrendState(v.progressionTrend);
+    setAnchorLiftNameState(v.anchorLiftName);
+    setAnchorLiftWeightState(v.anchorLiftWeight);
+    setAnchorLiftRepsState(v.anchorLiftReps);
+    setTemporaryLimitationsState(v.temporaryLimitations);
     writePolicyRef.current = emptyPolicy();
   }, [sessionKey]);
 
@@ -158,13 +210,15 @@ export function useWorkoutIntakeWizardState(
         tryField('sleep_quality', () => setSleepQualityState(patch.sleep_quality!));
       }
       if (patch.wizard_step !== undefined) {
-        tryField('wizard_step', () => setStepState(patch.wizard_step!));
+        tryField('wizard_step', () =>
+          setStepState(clampWizardStepForMode(patch.wizard_step!, modeRef.current)),
+        );
       }
-      if (patch.duration_minutes !== undefined) {
+      if (modeRef.current !== 'preflight' && patch.duration_minutes !== undefined) {
         tryField('duration_minutes', () => setDurationMinutesState(patch.duration_minutes!));
       }
-      if (patch.target_intensity !== undefined) {
-        tryField('target_intensity', () => setTargetIntensityState(patch.target_intensity!));
+      if (modeRef.current !== 'preflight' && patch.phase_intent !== undefined) {
+        tryField('phase_intent', () => setPhaseIntentState(patch.phase_intent!));
       }
       if (patch.soreness !== undefined) {
         tryField('soreness', () => setSorenessState(new Set(patch.soreness)));
@@ -189,7 +243,10 @@ export function useWorkoutIntakeWizardState(
   const setStep = useCallback(
     (v: WorkoutIntakeWizardStep | ((prev: WorkoutIntakeWizardStep) => WorkoutIntakeWizardStep)) => {
       markUserTouched('wizard_step');
-      setStepState(v);
+      setStepState((prev) => {
+        const next = typeof v === 'function' ? v(prev) : v;
+        return clampWizardStepForMode(next, modeRef.current);
+      });
     },
     [markUserTouched],
   );
@@ -222,14 +279,14 @@ export function useWorkoutIntakeWizardState(
     [markUserTouched],
   );
 
-  const setTargetIntensity = useCallback(
+  const setPhaseIntent = useCallback(
     (
       v:
-        | WorkoutIntakeIntensityChoice
-        | ((prev: WorkoutIntakeIntensityChoice) => WorkoutIntakeIntensityChoice),
+        | WorkoutGenerationPhaseIntent
+        | ((prev: WorkoutGenerationPhaseIntent) => WorkoutGenerationPhaseIntent),
     ) => {
-      markUserTouched('target_intensity');
-      setTargetIntensityState(v);
+      markUserTouched('phase_intent');
+      setPhaseIntentState(v);
     },
     [markUserTouched],
   );
@@ -254,6 +311,26 @@ export function useWorkoutIntakeWizardState(
     [markUserTouched],
   );
 
+  const setProgressionTrend = useCallback((v: WorkoutGenerationProgressionTrend) => {
+    setProgressionTrendState(v);
+  }, []);
+
+  const setAnchorLiftName = useCallback((v: string) => {
+    setAnchorLiftNameState(v);
+  }, []);
+
+  const setAnchorLiftWeight = useCallback((v: number | null) => {
+    setAnchorLiftWeightState(v);
+  }, []);
+
+  const setAnchorLiftReps = useCallback((v: number | null) => {
+    setAnchorLiftRepsState(v);
+  }, []);
+
+  const setTemporaryLimitations = useCallback((v: string) => {
+    setTemporaryLimitationsState(v);
+  }, []);
+
   const sorenessArray = useMemo(() => {
     const arr = [...soreness].filter((s) => s !== 'None');
     if (soreness.has('None') && arr.length === 0) return ['None'];
@@ -261,17 +338,37 @@ export function useWorkoutIntakeWizardState(
   }, [soreness]);
 
   const buildWizardPayload = useCallback((): WorkoutIntakeWizardData => {
+    return buildGenerationIntakeContext({
+      durationMinutes,
+      phaseIntent,
+      progressionTrend,
+      anchorLiftName,
+      anchorLiftWeight,
+      anchorLiftReps,
+      temporaryLimitations,
+    });
+  }, [
+    durationMinutes,
+    phaseIntent,
+    progressionTrend,
+    anchorLiftName,
+    anchorLiftWeight,
+    anchorLiftReps,
+    temporaryLimitations,
+  ]);
+
+  const buildPreflightPayload = useCallback((): WorkoutPreflightPayload => {
     return {
       readiness,
       sleepQuality,
-      durationMinutes,
       soreness: sorenessArray,
-      targetIntensity,
     };
-  }, [readiness, sleepQuality, durationMinutes, sorenessArray, targetIntensity]);
+  }, [readiness, sleepQuality, sorenessArray]);
 
   // Copilot suggestion ignored: memoizing this return object caused an effect-loop OOM in TaskModal.layout.test.tsx; consumers tolerate fresh identities.
   return {
+    mode,
+    maxStep,
     step,
     setStep,
     readiness,
@@ -280,18 +377,30 @@ export function useWorkoutIntakeWizardState(
     setSleepQuality,
     durationMinutes,
     setDurationMinutes,
-    targetIntensity,
-    setTargetIntensity,
+    phaseIntent,
+    setPhaseIntent,
     soreness,
     toggleSoreness,
     sorenessArray,
+    progressionTrend,
+    setProgressionTrend,
+    anchorLiftName,
+    setAnchorLiftName,
+    anchorLiftWeight,
+    setAnchorLiftWeight,
+    anchorLiftReps,
+    setAnchorLiftReps,
+    temporaryLimitations,
+    setTemporaryLimitations,
     applyTaskModalIntakePatch,
     applyTaskModalIntakePatchFromMessage,
     markUserTouched,
     buildWizardPayload,
+    buildPreflightPayload,
     durationOptions: WORKOUT_INTAKE_DURATION_CHOICES,
-    intensityOptions: WORKOUT_INTAKE_INTENSITY_OPTIONS,
+    phaseIntentOptions: WORKOUT_GENERATION_PHASE_INTENT_OPTIONS,
     sorenessOptions: WORKOUT_INTAKE_SORENESS_OPTIONS,
+    progressionTrendOptions: WORKOUT_GENERATION_PROGRESSION_TREND_OPTIONS,
   };
 }
 

@@ -9,10 +9,10 @@ import type { TaskAttachment } from '@/types/task-modal';
 import type { TaskPriority } from '@/lib/task-priority';
 import type { ProgramWeek, WorkoutExercise } from '@/lib/item-metadata';
 import type { WorkoutIntakeWizardData } from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
-import { useWorkoutIntakeWizardState } from '@/components/modals/task-modal/hooks/useWorkoutIntakeWizardState';
-import type { WorkoutIntakePanelWizardProps } from '@/components/fitness/WorkoutIntakePanel';
+import type { WorkoutIntakePanelWizardProps } from '@/components/fitness/workout-intake/WorkoutGenerationIntakePanel';
 import type { WorkoutTemplate } from '@/hooks/use-workout-templates';
-import { WorkoutIntakePanel } from '@/components/fitness/WorkoutIntakePanel';
+import { WorkoutGenerationIntakePanel } from '@/components/fitness/workout-intake/WorkoutGenerationIntakePanel';
+import { WorkoutPreflightReadinessPanel } from '@/components/fitness/workout-intake/WorkoutPreflightReadinessPanel';
 import { WorkoutOutlinePanel } from '@/components/fitness/WorkoutOutlinePanel';
 import { readCoachOutlineMetadata } from '@/lib/agents/coach/coach-outline-metadata';
 import type { WorkoutOutlineEditorState } from '@/components/modals/task-modal/hooks/useWorkoutOutlineEditor';
@@ -30,19 +30,6 @@ import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
 import { LayoutPanelLeft } from 'lucide-react';
 
-function pickWorkoutIntakePanelWizardProps(
-  w: ReturnType<typeof useWorkoutIntakeWizardState>,
-): WorkoutIntakePanelWizardProps {
-  const {
-    applyTaskModalIntakePatch,
-    applyTaskModalIntakePatchFromMessage,
-    markUserTouched,
-    buildWizardPayload,
-    ...rest
-  } = w;
-  return rest;
-}
-
 export type TaskModalDetailsBodyProps = {
   title: string;
   onTitleChange: (value: string) => void;
@@ -51,9 +38,12 @@ export type TaskModalDetailsBodyProps = {
   itemType: ItemType;
   canWrite: boolean;
   onGenerateWorkoutFromIntake: (data: WorkoutIntakeWizardData) => void;
+  onSubmitPreflightAndLaunch: () => void | Promise<void>;
+  preflightSubmitting?: boolean;
   aiWorkoutGenerating: boolean;
-  /** When set with workout + canWrite, renders controlled `WorkoutIntakePanel`. */
-  workoutIntakeState: ReturnType<typeof useWorkoutIntakeWizardState> | null;
+  /** Memoized wizard panel props (workout + canWrite only). */
+  workoutIntakePanelProps: WorkoutIntakePanelWizardProps | null;
+  buildWizardPayload: () => WorkoutIntakeWizardData;
   workoutOutlineEditor: WorkoutOutlineEditorState | null;
   /** When true, outline editing is deferred to the full-page builder (panel hidden). */
   showStructureBuilderCta?: boolean;
@@ -147,8 +137,11 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     itemType,
     canWrite,
     onGenerateWorkoutFromIntake,
+    onSubmitPreflightAndLaunch,
+    preflightSubmitting = false,
     aiWorkoutGenerating,
-    workoutIntakeState,
+    workoutIntakePanelProps,
+    buildWizardPayload,
     workoutOutlineEditor,
     showStructureBuilderCta,
     onOpenStructureBuilder,
@@ -277,11 +270,21 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
         <WorkoutOutlinePanel editor={workoutOutlineEditor} canWrite={canWrite} />
       ) : null}
 
-      {workoutIntakeState ? (
-        <WorkoutIntakePanel
-          {...pickWorkoutIntakePanelWizardProps(workoutIntakeState)}
+      {workoutIntakePanelProps && !hasFactory ? (
+        <WorkoutGenerationIntakePanel
+          {...workoutIntakePanelProps}
+          buildWizardPayload={buildWizardPayload}
           handleAiGenerateWorkout={onGenerateWorkoutFromIntake}
           isGenerating={aiWorkoutGenerating}
+          disabledReason={intakeDisabledReason}
+        />
+      ) : null}
+
+      {workoutIntakePanelProps && hasFactory ? (
+        <WorkoutPreflightReadinessPanel
+          {...workoutIntakePanelProps}
+          onSubmitPreflight={onSubmitPreflightAndLaunch}
+          isSubmitting={preflightSubmitting}
           disabledReason={intakeDisabledReason}
         />
       ) : null}
@@ -292,7 +295,7 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
           <p className="text-sm text-muted-foreground">
             {coreDirty
               ? 'Unsaved changes — open the workout viewer to review and save before starting a session.'
-              : 'Saved — open the workout viewer to review blocks or launch Active Session.'}
+              : 'Saved — complete the pre-session check-in above or open the workout viewer to review blocks.'}
           </p>
           {onOpenWorkoutViewer ? (
             <Button type="button" variant="outline" size="sm" onClick={onOpenWorkoutViewer}>

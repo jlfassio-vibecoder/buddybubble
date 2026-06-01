@@ -98,6 +98,21 @@ export function hydrateAndValidateOutlineBlocks(blocks: Record<string, unknown>[
       drops.push({ field: `blocks[${i}]`, reason: 'unknown_block_format' });
       continue;
     }
+
+    const innerCount = exerciseCount(blk);
+    const instructions = instructionLinesFromBlock(blk);
+    const instructionOnly = instructions.length > 0 && innerCount === 0;
+
+    if (instructionOnly) {
+      const row: Record<string, unknown> = {};
+      const name = typeof blk.name === 'string' ? blk.name.trim() : '';
+      if (name) row.name = name;
+      row.instructions = instructions;
+      if (Object.keys(row).length > 0) out.push(row);
+      else drops.push({ field: `blocks[${i}]`, reason: 'unknown_block_format' });
+      continue;
+    }
+
     const blockFormat = resolveBlockFormat(blk);
     if (blockFormat == null) {
       drops.push({ field: `blocks[${i}]`, reason: 'unknown_block_format' });
@@ -105,21 +120,16 @@ export function hydrateAndValidateOutlineBlocks(blocks: Record<string, unknown>[
     }
 
     const inner = Array.isArray(blk.exercises) ? blk.exercises : [];
-    const innerCount = exerciseCount(blk);
-    const instructions = instructionLinesFromBlock(blk);
-    const instructionOnly = instructions.length > 0 && innerCount === 0;
 
     let formatParams = normalizeFormatParams(blockFormat, blk.format_params);
     if (blockFormat === 'emom' && innerCount > 0) {
       formatParams = hydrateEmomAlternatingStations(innerCount, formatParams);
     }
 
-    if (!instructionOnly) {
-      const shapeReason = validateBlockShape(blockFormat, innerCount, formatParams);
-      if (shapeReason != null) {
-        drops.push({ field: `blocks[${i}]`, reason: shapeReason });
-        continue;
-      }
+    const shapeReason = validateBlockShape(blockFormat, innerCount, formatParams);
+    if (shapeReason != null) {
+      drops.push({ field: `blocks[${i}]`, reason: shapeReason });
+      continue;
     }
 
     const row: Record<string, unknown> = { ...blk, block_format: blockFormat };

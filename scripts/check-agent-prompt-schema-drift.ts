@@ -161,6 +161,10 @@ const REGISTRY: ReadonlyArray<Contract> = [
       'inter_set_rest_seconds',
       'coach_notes',
       'drop_percent',
+      // task_modal_intake_patch generation-mode fields (prompt prose; nested under patch object).
+      'progression_trend',
+      'anchor_lift',
+      'temporary_limitations',
     ],
   },
   {

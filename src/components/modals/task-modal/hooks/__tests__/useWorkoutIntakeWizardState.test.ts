@@ -81,6 +81,108 @@ describe('useWorkoutIntakeWizardState', () => {
     expect(result.current.readiness).toBe(2);
   });
 
+  it('preflight mode ignores duration and phase intent patches', () => {
+    const { result } = renderHook(() =>
+      useWorkoutIntakeWizardState('existing:t1', {}, { mode: 'preflight' }),
+    );
+
+    act(() => {
+      result.current.setDurationMinutes(30);
+      result.current.setPhaseIntent('aggressive_overload');
+    });
+
+    act(() => {
+      result.current.applyTaskModalIntakePatchFromMessage({
+        messageId: 'm-preflight',
+        messageCreatedAtMs: Date.now(),
+        patch: {
+          duration_minutes: 60,
+          phase_intent: 'technical_baseline',
+          sleep_quality: 6,
+        },
+      });
+    });
+
+    expect(result.current.durationMinutes).toBe(30);
+    expect(result.current.phaseIntent).toBe('aggressive_overload');
+    expect(result.current.sleepQuality).toBe(6);
+  });
+
+  it('buildPreflightPayload omits duration and intensity', () => {
+    const { result } = renderHook(() =>
+      useWorkoutIntakeWizardState('existing:t1', {}, { mode: 'preflight' }),
+    );
+
+    act(() => {
+      result.current.setReadiness(7);
+      result.current.setSleepQuality(8);
+      result.current.toggleSoreness('Legs');
+    });
+
+    expect(result.current.buildPreflightPayload()).toEqual({
+      readiness: 7,
+      sleepQuality: 8,
+      soreness: ['Legs'],
+    });
+  });
+
+  it('buildPreflightPayload tracks soreness toggles via memoized sorenessArray', () => {
+    const { result } = renderHook(() =>
+      useWorkoutIntakeWizardState('existing:t1', {}, { mode: 'preflight' }),
+    );
+
+    const first = result.current.buildPreflightPayload();
+    expect(first.soreness).toEqual(['None']);
+
+    act(() => {
+      result.current.toggleSoreness('Legs');
+    });
+
+    const second = result.current.buildPreflightPayload();
+    expect(second.soreness).toEqual(['Legs']);
+    expect(second.readiness).toBe(first.readiness);
+  });
+
+  it('preflight mode clamps wizard step to 2', () => {
+    const { result } = renderHook(() =>
+      useWorkoutIntakeWizardState('existing:t1', {}, { mode: 'preflight' }),
+    );
+
+    act(() => {
+      result.current.setStep(3);
+    });
+
+    expect(result.current.step).toBe(2);
+    expect(result.current.maxStep).toBe(2);
+    expect(result.current.mode).toBe('preflight');
+  });
+
+  it('generation mode uses maxStep 2 and buildWizardPayload emits macro fields', () => {
+    const { result } = renderHook(() =>
+      useWorkoutIntakeWizardState('existing:t1', {}, { mode: 'generation' }),
+    );
+
+    expect(result.current.maxStep).toBe(2);
+
+    act(() => {
+      result.current.setDurationMinutes(30);
+      result.current.setPhaseIntent('aggressive_overload');
+      result.current.setProgressionTrend('Hitting a Plateau');
+      result.current.setAnchorLiftName('Back Squat');
+      result.current.setAnchorLiftWeight(225);
+      result.current.setAnchorLiftReps(5);
+      result.current.setTemporaryLimitations('Left shoulder tweak');
+    });
+
+    expect(result.current.buildWizardPayload()).toEqual({
+      durationMinutes: 30,
+      phaseIntent: 'aggressive_overload',
+      progressionTrend: 'Hitting a Plateau',
+      anchorLift: { name: 'Back Squat', weight: 225, reps: 5 },
+      temporaryLimitations: 'Left shoulder tweak',
+    });
+  });
+
   it('emits telemetry on skip and apply', () => {
     const onPatchFieldSkipped = vi.fn();
     const onPatchFieldApplied = vi.fn();
