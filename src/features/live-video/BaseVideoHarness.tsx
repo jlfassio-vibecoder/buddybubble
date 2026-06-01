@@ -6,8 +6,8 @@ import { LocalVideoPreview } from '@/features/live-video/LocalVideoPreview';
 import { RemoteVideoPreview } from '@/features/live-video/RemoteVideoPreview';
 import { FloatingMediaBar } from '@/features/live-video/ui/FloatingMediaBar';
 import { GamifiedParticipantRail } from '@/features/live-video/ui/GamifiedParticipantRail';
-import { useRailParticipants } from '@/features/live-video/hooks/useRailParticipants';
 import type { LiveAspectRatioId } from '@/features/live-video/shells/shared/shared-timer-sync.types';
+import { agoraUidFromUuid } from '@/lib/live-video/agora-uid';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -74,10 +74,9 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
   const mediaControlsEnabled =
     isConnected && role === 'publisher' && !isConnecting && localVideoTrack != null;
 
-  const { localIsHost, hostRtcUid, localRtcUid, allRailParticipants } = useRailParticipants(
-    props.localUserId,
-    props.hostUserId,
-  );
+  const hostRtcUid = agoraUidFromUuid(props.hostUserId);
+  const localRtcUid = agoraUidFromUuid(props.localUserId);
+  const localIsHost = localRtcUid === hostRtcUid;
 
   const exclude = props.excludeUidForTiles;
   const localTileExcluded = exclude != null && String(localRtcUid) === String(exclude);
@@ -224,15 +223,13 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
             </div>
           </div>
 
-          {allRailParticipants.length > 0 ? (
-            <GamifiedParticipantRail
-              localUserId={props.localUserId}
-              hostUserId={props.hostUserId}
-              excludeUidForTiles={exclude}
-              localRailPipOverlay={props.localRailPipOverlay}
-              renderRemoteRailBottomOverlay={props.renderRemoteRailBottomOverlay}
-            />
-          ) : null}
+          <GamifiedParticipantRail
+            localUserId={props.localUserId}
+            hostUserId={props.hostUserId}
+            excludeUidForTiles={exclude}
+            localRailPipOverlay={props.localRailPipOverlay}
+            renderRemoteRailBottomOverlay={props.renderRemoteRailBottomOverlay}
+          />
         </div>
         {!hideConnectedLeaveRow ? (
           <div className="flex flex-wrap items-center justify-center gap-2">

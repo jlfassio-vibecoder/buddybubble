@@ -360,8 +360,8 @@ function LiveSessionViewInner({
   const showWrapperBoardSplit =
     !compact && preferredShell === 'theater_board_split' && wrapperPhaseMatches;
   const showSideEditor = !compact && sideEditorOpen && !showWrapperBoardSplit;
-  const showHuddleSplit = !compact && (showWrapperBoardSplit || sideEditorOpen);
   const showTier3Column = isDrawerOpen && showSideEditor;
+  const showHuddleSplit = !compact && (showWrapperBoardSplit || showTier3Column);
   const showReopenPill = !compact && !isDrawerOpen && sideEditorOpen;
 
   const resolvedDisplayName = displayNameProp?.trim() || localUserId;
@@ -602,7 +602,12 @@ function LiveSessionViewInner({
             </ResizablePanel>
           </ResizablePanelGroup>
         ) : (
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{videoStage}</div>
+          <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            {videoStage}
+            {showReopenPill ? (
+              <Tier3ExercisesReopenPill onClick={() => setDrawerOpen(true)} />
+            ) : null}
+          </div>
         )}
         {!showWrapperBoardSplit && !selectingFromBoard && sessionDrawerNode != null ? (
           <div className="shrink-0 rounded-lg border border-border bg-card/60 p-3">
