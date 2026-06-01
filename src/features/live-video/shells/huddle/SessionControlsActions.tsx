@@ -1,6 +1,8 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { ChevronDown } from 'lucide-react';
+import { toast } from 'sonner';
 import type { SessionState } from '@/features/live-video/state/sessionStateMachine';
 import type { SessionActions } from '@/features/live-video/hooks/useSessionState';
 import {
@@ -12,7 +14,13 @@ import { SESSION_COMMAND_EVENT } from '@/features/live-video/state/session-sync.
 import { useWorkoutDeckSelectionOptional } from '@/features/live-video/shells/huddle/workout-deck-selection-context';
 import { useWrapperAttach } from '@/features/live-video/contexts/WrapperAttachContext';
 import type { Json } from '@/types/database';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 
 export type SessionControlsActionsProps = {
@@ -32,8 +40,8 @@ export type SessionControlsActionsProps = {
   className?: string;
 };
 
-function phaseButtonVariant(active: boolean) {
-  return active ? 'secondary' : 'outline';
+function ControlsSeparator() {
+  return <div className="mx-2 h-4 w-px shrink-0 bg-border" aria-hidden />;
 }
 
 export function SessionControlsActions({
@@ -50,6 +58,8 @@ export function SessionControlsActions({
   hostDeckInjector,
   className,
 }: SessionControlsActionsProps) {
+  const recordingHintShownRef = useRef(false);
+
   const {
     supabase,
     sessionId: liveSessionRowId,
@@ -62,6 +72,19 @@ export function SessionControlsActions({
   const amrapAttachReady = !disableActions && liveDbReady && liveSessionRowId.trim().length > 0;
 
   const isIdle = state.status === 'idle';
+
+  useEffect(() => {
+    if (
+      recordingHintShownRef.current ||
+      disableActions ||
+      onHostStartRecording == null ||
+      hostAsyncWorkoutEnabled !== false
+    ) {
+      return;
+    }
+    recordingHintShownRef.current = true;
+    toast.message('Recording off. Enable async workout to record.');
+  }, [disableActions, hostAsyncWorkoutEnabled, onHostStartRecording]);
 
   const handleEndSessionForAll = () => {
     if (amrapAttachReady) {
@@ -96,144 +119,134 @@ export function SessionControlsActions({
     void onHostEndLiveSessionForAll?.();
   };
 
+  const handleReturnToHuddle = () => {
+    if (amrapAttachReady) {
+      void supabase
+        .rpc('host_detach_amrap_session', { p_session_id: liveSessionRowId.trim() })
+        .then(({ error }) => {
+          if (error) {
+            if (process.env.NODE_ENV === 'development') {
+              console.error(
+                '[SessionControlsActions] host_detach_amrap_session',
+                error.message,
+                error.code,
+                error.details,
+                error.hint,
+              );
+            } else {
+              console.error('[SessionControlsActions] host_detach_amrap_session failed');
+            }
+          }
+        });
+    }
+    setOverride(null);
+    actions.transitionToPhase('lobby');
+  };
+
+  const handleStartAmrapBlock = () => {
+    if (!amrapAttachReady) return;
+    void (async () => {
+      const snap = pickActiveSnapshot(deckSel?.deck ?? [], deckSel?.activeSnapshotId ?? null);
+      const blockPayload = buildAmrapBlockSnapshot(snap);
+      const { data, error } = await supabase.rpc('amrap_create_for_session', {
+        p_live_session_id: liveSessionRowId.trim(),
+        p_duration_seconds: 600,
+        p_block_snapshot: (blockPayload ?? null) as Json,
+        p_wrapper_kind: 'amrap',
+      });
+      if (error) {
+        if (process.env.NODE_ENV === 'development') {
+          console.error(
+            '[SessionControlsActions] amrap_create_for_session',
+            error.message,
+            error.code,
+            error.details,
+            error.hint,
+          );
+        } else {
+          console.error('[SessionControlsActions] amrap_create_for_session failed');
+        }
+        return;
+      }
+      if (typeof data === 'string') {
+        setOverride({ kind: 'amrap', config: { amrap_session_id: data } });
+        actions.transitionToPhase('amrap');
+      }
+    })();
+  };
+
   const inHuddle = state.phase === 'lobby';
   const activeBlock = !inHuddle && state.status !== 'idle';
   const phaseDisabled = isIdle || disableActions;
   const canPauseBlock = activeBlock && state.status === 'running' && state.blockStartedAt !== null;
   const canResumeBlock = activeBlock && state.status === 'paused';
 
+  const showLifecycle = isIdle || !disableActions;
+  const showBlockControls = !isIdle && (inHuddle || activeBlock);
+  const showSeparator = showBlockControls && showLifecycle;
+
   return (
     <div className={cn('flex min-w-0 flex-wrap items-center justify-end gap-2', className)}>
       {hostClassRecordingPipelineBusy && !disableActions ? (
         <span
-          className="inline-flex items-center gap-1.5 rounded-full border border-red-500/45 bg-red-500/10 px-2.5 py-0.5 text-xs font-medium text-red-700 dark:text-red-400"
+          className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground"
           role="status"
           aria-live="polite"
         >
           <span
-            className="inline-block h-2 w-2 shrink-0 rounded-full bg-red-600 animate-pulse dark:bg-red-500"
+            className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-destructive"
             aria-hidden
           />
-          Recording
+          REC
         </span>
       ) : null}
-      {!disableActions && isHost && onHostStartRecording && hostAsyncWorkoutEnabled === false ? (
-        <span
-          className="max-w-[14rem] text-center text-[11px] leading-snug text-muted-foreground sm:max-w-none sm:text-xs"
-          role="status"
-        >
-          Recording off — enable async workout to record
-        </span>
-      ) : null}
-      {isIdle ? (
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          className="font-medium"
-          disabled={disableActions}
-          onClick={() => {
-            actions.startSession();
-            void onHostStartRecording?.({ aspectRatio: state.aspectRatio });
-          }}
-        >
-          Start Session
-        </Button>
-      ) : !disableActions ? (
-        <Button
-          type="button"
-          size="sm"
-          variant="destructive"
-          className="font-medium"
-          onClick={handleEndSessionForAll}
-        >
-          End Session for All
-        </Button>
+
+      {hostDeckInjector != null ? (
+        <div className="flex shrink-0 items-center">{hostDeckInjector}</div>
       ) : null}
 
-      {!isIdle && inHuddle ? (
-        <>
-          <Button
-            type="button"
-            size="sm"
-            variant={phaseButtonVariant(state.phase === 'warmup')}
-            className={cn(
-              state.phase === 'warmup' &&
-                'ring-2 ring-primary ring-offset-2 ring-offset-background',
-            )}
+      {!isIdle && inHuddle && !activeBlock ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger
             disabled={phaseDisabled}
-            onClick={() => actions.transitionToPhase('warmup')}
-          >
-            Warm-up
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={phaseButtonVariant(state.phase === 'amrap')}
             className={cn(
-              state.phase === 'amrap' && 'ring-2 ring-primary ring-offset-2 ring-offset-background',
+              buttonVariants({ variant: 'secondary', size: 'sm' }),
+              'gap-1 font-medium',
             )}
-            disabled={phaseDisabled || (!disableActions && !liveDbReady)}
-            onClick={() => {
-              if (!amrapAttachReady) return;
-              void (async () => {
-                const snap = pickActiveSnapshot(
-                  deckSel?.deck ?? [],
-                  deckSel?.activeSnapshotId ?? null,
-                );
-                const blockPayload = buildAmrapBlockSnapshot(snap);
-                const { data, error } = await supabase.rpc('amrap_create_for_session', {
-                  p_live_session_id: liveSessionRowId.trim(),
-                  p_duration_seconds: 600,
-                  p_block_snapshot: (blockPayload ?? null) as Json,
-                  p_wrapper_kind: 'amrap',
-                });
-                if (error) {
-                  if (process.env.NODE_ENV === 'development') {
-                    console.error(
-                      '[SessionControlsActions] amrap_create_for_session',
-                      error.message,
-                      error.code,
-                      error.details,
-                      error.hint,
-                    );
-                  } else {
-                    console.error('[SessionControlsActions] amrap_create_for_session failed');
-                  }
-                  return;
-                }
-                if (typeof data === 'string') {
-                  setOverride({ kind: 'amrap', config: { amrap_session_id: data } });
-                  actions.transitionToPhase('amrap');
-                }
-              })();
-            }}
           >
-            AMRAP block
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={phaseButtonVariant(state.phase === 'tabata')}
-            className={cn(
-              state.phase === 'tabata' &&
-                'ring-2 ring-primary ring-offset-2 ring-offset-background',
-            )}
-            disabled={phaseDisabled}
-            onClick={() => actions.transitionToPhase('tabata')}
-          >
-            Tabata block
-          </Button>
-        </>
+            Intervals
+            <ChevronDown className="size-3.5 opacity-70" aria-hidden />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-40">
+            <DropdownMenuItem
+              disabled={phaseDisabled}
+              onClick={() => actions.transitionToPhase('warmup')}
+            >
+              Warm-up
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={phaseDisabled || !amrapAttachReady}
+              onClick={handleStartAmrapBlock}
+            >
+              AMRAP block
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={phaseDisabled}
+              onClick={() => actions.transitionToPhase('tabata')}
+            >
+              Tabata block
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       ) : null}
 
-      {!isIdle && !inHuddle ? (
+      {activeBlock ? (
         <>
           {state.status === 'running' ? (
             <Button
               type="button"
               size="sm"
-              variant="secondary"
+              variant="default"
               className="font-medium"
               disabled={disableActions || !canPauseBlock}
               onClick={() => actions.pauseSession()}
@@ -256,32 +269,10 @@ export function SessionControlsActions({
           <Button
             type="button"
             size="sm"
-            variant="outline"
+            variant="secondary"
             className="font-medium"
             disabled={disableActions}
-            onClick={() => {
-              if (amrapAttachReady) {
-                void supabase
-                  .rpc('host_detach_amrap_session', { p_session_id: liveSessionRowId.trim() })
-                  .then(({ error }) => {
-                    if (error) {
-                      if (process.env.NODE_ENV === 'development') {
-                        console.error(
-                          '[SessionControlsActions] host_detach_amrap_session',
-                          error.message,
-                          error.code,
-                          error.details,
-                          error.hint,
-                        );
-                      } else {
-                        console.error('[SessionControlsActions] host_detach_amrap_session failed');
-                      }
-                    }
-                  });
-              }
-              setOverride(null);
-              actions.transitionToPhase('lobby');
-            }}
+            onClick={handleReturnToHuddle}
           >
             Return to Huddle
           </Button>
@@ -292,15 +283,39 @@ export function SessionControlsActions({
         <div className="flex shrink-0 flex-wrap items-center gap-2">{hostNavActions}</div>
       ) : null}
 
-      {hostDeckInjector != null ? (
-        <div className="flex shrink-0 items-center">{hostDeckInjector}</div>
+      {showSeparator ? <ControlsSeparator /> : null}
+
+      {isIdle ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="default"
+          className="font-medium"
+          disabled={disableActions}
+          onClick={() => {
+            actions.startSession();
+            void onHostStartRecording?.({ aspectRatio: state.aspectRatio });
+          }}
+        >
+          Start Session
+        </Button>
+      ) : !disableActions ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="destructive"
+          className="font-medium"
+          onClick={handleEndSessionForAll}
+        >
+          End Session for All
+        </Button>
       ) : null}
 
       {onLeaveDock ? (
         <Button
           type="button"
           size="sm"
-          variant="outline"
+          variant="ghost"
           className="font-medium"
           onClick={onLeaveDock}
         >

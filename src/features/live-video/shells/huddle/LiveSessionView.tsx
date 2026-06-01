@@ -29,6 +29,9 @@ import { useSessionTeardown } from '@/features/live-video/hooks/useSessionTeardo
 import { useLiveSessionRuntime } from '@/features/live-video/theater/live-session-runtime-context';
 import { useLiveTheaterLayoutPlanContext } from '@/features/live-video/theater/live-theater-layout-context';
 import { LiveSessionTopBar } from '@/features/live-video/shells/huddle/LiveSessionTopBar';
+import { SessionHeader } from '@/features/live-video/shells/huddle/SessionHeader';
+import { SessionClockMini } from '@/features/live-video/shells/huddle/SessionClockMini';
+import { SessionControlsActions } from '@/features/live-video/shells/huddle/SessionControlsActions';
 import { WorkoutQueueRegion } from '@/features/live-video/ui/WorkoutQueueRegion';
 import { Tier3ExercisesReopenPill } from '@/features/live-video/ui/Tier3ExercisesReopenPill';
 import { useTier3DrawerOpen } from '@/features/live-video/hooks/useTier3DrawerOpen';
@@ -510,26 +513,46 @@ function LiveSessionViewInner({
         )}
       >
         <LiveSessionTopBar
-          isSelectingFromBoard={selectingFromBoard}
-          uiMode={uiMode}
-          state={state}
-          actions={actions}
-          disableActions={!isHost}
-          onHostEndLiveSessionForAll={isHost ? onHostEndLiveSessionForAll : undefined}
-          onHostStartRecording={isHost ? onHostStartRecording : undefined}
-          onLeaveDock={onAfterLeave != null ? handleLeaveDock : undefined}
-          liveDbReady={liveDbReady}
-          hostClassRecordingPipelineBusy={isHost ? hostClassRecordingPipelineBusy : false}
-          hostAsyncWorkoutEnabled={isHost ? hostAsyncWorkoutEnabled : undefined}
-          hostNavActions={!showWrapperBoardSplit ? hostNavActions : null}
-          hostDeckInjector={
-            !selectingFromBoard && isHost && canWriteTasks ? (
-              <LiveDeckExerciseInjector
-                workspaceId={workspaceId}
-                workoutsBubbleId={workoutsBubbleId ?? null}
-                canWrite={canWriteTasks}
+          left={
+            <SessionHeader
+              className="min-w-0 border-b-0 pb-0 text-left"
+              isSelectingFromBoard={selectingFromBoard}
+              uiMode={uiMode}
+              status={state.status}
+            />
+          }
+          center={
+            state.status !== 'idle' ? (
+              <SessionClockMini
+                state={state}
+                compact
+                className="mx-auto min-w-0 shrink-0 sm:mx-0"
               />
             ) : null
+          }
+          right={
+            <SessionControlsActions
+              state={state}
+              actions={actions}
+              disableActions={!isHost}
+              onHostEndLiveSessionForAll={isHost ? onHostEndLiveSessionForAll : undefined}
+              onHostStartRecording={isHost ? onHostStartRecording : undefined}
+              onLeaveDock={onAfterLeave != null ? handleLeaveDock : undefined}
+              liveDbReady={liveDbReady}
+              hostClassRecordingPipelineBusy={isHost ? hostClassRecordingPipelineBusy : false}
+              hostAsyncWorkoutEnabled={isHost ? hostAsyncWorkoutEnabled : undefined}
+              hostNavActions={!showWrapperBoardSplit ? hostNavActions : null}
+              hostDeckInjector={
+                !selectingFromBoard && isHost && canWriteTasks ? (
+                  <LiveDeckExerciseInjector
+                    workspaceId={workspaceId}
+                    workoutsBubbleId={workoutsBubbleId ?? null}
+                    canWrite={canWriteTasks}
+                  />
+                ) : null
+              }
+              className="sm:justify-end"
+            />
           }
         />
 

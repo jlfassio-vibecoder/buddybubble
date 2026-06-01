@@ -1,52 +1,36 @@
-import { describe, expect, it, afterEach, vi } from 'vitest';
+import { describe, expect, it, afterEach } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { LiveSessionTopBar } from './LiveSessionTopBar';
-import { initialSessionState } from '@/features/live-video/state/sessionStateMachine';
-
-vi.mock('./SessionHeader', () => ({
-  SessionHeader: () => <div data-testid="session-header" />,
-}));
-
-vi.mock('./SessionClockMini', () => ({
-  SessionClockMini: ({ compact }: { compact?: boolean }) => (
-    <div data-testid="session-clock" data-compact={String(Boolean(compact))} />
-  ),
-}));
-
-vi.mock('./SessionControlsActions', () => ({
-  SessionControlsActions: ({ onLeaveDock }: { onLeaveDock?: () => void }) => (
-    <div data-testid="session-controls-actions">
-      {onLeaveDock ? (
-        <button type="button" onClick={onLeaveDock}>
-          Exit workout
-        </button>
-      ) : null}
-    </div>
-  ),
-}));
 
 afterEach(() => {
   cleanup();
 });
 
 describe('LiveSessionTopBar', () => {
-  const baseProps = {
-    isSelectingFromBoard: false,
-    uiMode: 'live' as const,
-    state: initialSessionState,
-    actions: {} as never,
-  };
-
-  it('renders header, compact center clock, and controls', () => {
-    render(<LiveSessionTopBar {...baseProps} />);
-    expect(screen.getByTestId('session-header')).toBeTruthy();
-    expect(screen.getByTestId('session-clock').getAttribute('data-compact')).toBe('true');
-    expect(screen.getByTestId('session-controls-actions')).toBeTruthy();
+  it('renders left, center, and right zones', () => {
+    render(
+      <LiveSessionTopBar
+        left={<div data-testid="z-left" />}
+        center={<div data-testid="z-center" />}
+        right={<div data-testid="z-right" />}
+      />,
+    );
+    expect(screen.getByTestId('z-left')).toBeTruthy();
+    expect(screen.getByTestId('z-center')).toBeTruthy();
+    expect(screen.getByTestId('z-right')).toBeTruthy();
   });
 
-  it('shows Exit workout when onLeaveDock is provided', () => {
-    const onLeaveDock = vi.fn();
-    render(<LiveSessionTopBar {...baseProps} onLeaveDock={onLeaveDock} />);
-    expect(screen.getByRole('button', { name: /exit workout/i })).toBeTruthy();
+  it('omits optional zones when not provided', () => {
+    render(<LiveSessionTopBar left={<div data-testid="z-left" />} />);
+    expect(screen.getByTestId('z-left')).toBeTruthy();
+    expect(screen.queryByTestId('z-center')).toBeNull();
+    expect(screen.queryByTestId('z-right')).toBeNull();
+  });
+
+  it('applies className to the shell container', () => {
+    const { container } = render(
+      <LiveSessionTopBar left={<div />} className="test-top-bar-class" />,
+    );
+    expect((container.firstChild as HTMLElement).className).toContain('test-top-bar-class');
   });
 });

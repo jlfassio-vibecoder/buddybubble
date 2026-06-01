@@ -38,14 +38,20 @@ export function SessionClockMini({ state, className, compact = false }: SessionC
   }, [state.globalStartedAt]);
 
   return (
-    <div className={cn('flex min-w-[7rem] flex-col gap-0.5', className)}>
+    <div
+      className={cn(
+        'flex min-w-[7rem]',
+        compact ? 'items-center gap-3' : 'flex-col gap-0.5',
+        className,
+      )}
+    >
       <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
         Session
       </span>
       <div
         className={cn(
-          'font-mono tabular-nums leading-none tracking-tight text-foreground',
-          compact ? 'text-2xl' : 'text-3xl text-white',
+          'font-mono tabular-nums leading-none tracking-tight',
+          compact ? 'text-sm text-foreground' : 'text-3xl text-white',
         )}
       >
         {label}
