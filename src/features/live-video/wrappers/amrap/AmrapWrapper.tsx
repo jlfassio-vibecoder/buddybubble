@@ -88,6 +88,7 @@ function AmrapBody({
     engine.workStartedAt,
     engine.leaderboardSnapshotRaw,
     engine.resultsFinalizedAt,
+    engine.selfParticipant?.workoutLogTaskId,
   ]);
 
   useEffect(() => {
@@ -139,6 +140,7 @@ function AmrapBody({
         onCopy={() => void ps.copyResults()}
         copyToast={ps.copyResultsToast}
         roundDurations={ps.roundDurations}
+        savedToAnalytics={ps.savedToAnalytics}
       />
     </div>
   );

@@ -63,6 +63,7 @@ describe('deriveLiveTheaterLayoutPlan', () => {
     expect(p.phase).toBe('deck_building');
     expect(p.shell.kind).toBe('theater_board_split');
     expect(p.shell.showHorizontalBoardStage).toBe(true);
+    expect(p.shell.hideDashboardTopChrome).toBe(false);
     expect(p.huddle.minimizeVideoInDock).toBe(true);
   });
 
@@ -74,6 +75,7 @@ describe('deriveLiveTheaterLayoutPlan', () => {
     expect(p.phase).toBe('live_video');
     expect(p.shell.kind).toBe('theater_focus');
     expect(p.shell.showHorizontalBoardStage).toBe(false);
+    expect(p.shell.hideDashboardTopChrome).toBe(true);
     expect(p.huddle.compactVideoPadding).toBe(true);
     expect(p.huddle.showWorkoutQueueStrip).toBe(true);
   });
@@ -86,9 +88,37 @@ describe('deriveLiveTheaterLayoutPlan', () => {
     expect(p.phase).toBe('deck_building');
     expect(p.shell.kind).toBe('theater_focus');
     expect(p.shell.showHorizontalBoardStage).toBe(false);
+    expect(p.shell.hideDashboardTopChrome).toBe(false);
     expect(p.huddle.minimizeVideoInDock).toBe(true);
     expect(p.huddle.compactVideoPadding).toBe(false);
     expect(p.huddle.showWorkoutQueueStrip).toBe(true);
+  });
+
+  it('vertical compact on mobile live hides dashboard top chrome', () => {
+    const p = deriveLiveTheaterLayoutPlan({
+      ...base,
+      layoutMobile: true,
+      sessionUiKind: 'live',
+    });
+    expect(p.shell.kind).toBe('vertical_compact_session');
+    expect(p.phase).toBe('live_video');
+    expect(p.shell.hideDashboardTopChrome).toBe(true);
+  });
+
+  it('vertical compact on mobile builder keeps dashboard top chrome', () => {
+    const p = deriveLiveTheaterLayoutPlan({
+      ...base,
+      layoutMobile: true,
+      sessionUiKind: 'builder',
+    });
+    expect(p.shell.kind).toBe('vertical_compact_session');
+    expect(p.phase).toBe('deck_building');
+    expect(p.shell.hideDashboardTopChrome).toBe(false);
+  });
+
+  it('inactive session keeps dashboard top chrome hidden flag false', () => {
+    const p = deriveLiveTheaterLayoutPlan({ ...base, hasLiveVideoSession: false });
+    expect(p.shell.hideDashboardTopChrome).toBe(false);
   });
 
   it('vertical compact on mobile', () => {

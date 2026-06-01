@@ -138,6 +138,7 @@ export type Database = {
           is_host: boolean;
           joined_at: string;
           user_id: string | null;
+          workout_log_task_id: string | null;
         };
         Insert: {
           amrap_session_id: string;
@@ -146,6 +147,7 @@ export type Database = {
           is_host?: boolean;
           joined_at?: string;
           user_id?: string | null;
+          workout_log_task_id?: string | null;
         };
         Update: {
           amrap_session_id?: string;
@@ -154,6 +156,7 @@ export type Database = {
           is_host?: boolean;
           joined_at?: string;
           user_id?: string | null;
+          workout_log_task_id?: string | null;
         };
         Relationships: [
           {
@@ -161,6 +164,13 @@ export type Database = {
             columns: ['amrap_session_id'];
             isOneToOne: false;
             referencedRelation: 'amrap_sessions';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'amrap_participants_workout_log_task_id_fkey';
+            columns: ['workout_log_task_id'];
+            isOneToOne: false;
+            referencedRelation: 'tasks';
             referencedColumns: ['id'];
           },
         ];

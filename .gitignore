@@ -25,3 +25,6 @@ skills/
 next-env.d.ts
 
 # Copilot suggestion ignored: do not add a one-off filename rule for deleted scratch files; rely on review and Husky instead of bloating .gitignore.
+
+# Local Cursor plan drafts (tracked: .cursor/rules/, .cursor/settings.json)
+.cursor/plans/

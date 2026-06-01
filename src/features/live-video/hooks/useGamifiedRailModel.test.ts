@@ -52,8 +52,16 @@ function mockEngine(participants: AmrapSessionEngine['participants']): AmrapSess
       copyResults: async () => {},
       copyResultsToast: null,
       isHost: false,
+      savedToAnalytics: false,
     },
   };
+}
+
+function mockParticipant(
+  overrides: Omit<AmrapSessionEngine['participants'][number], 'workoutLogTaskId'> &
+    Partial<Pick<AmrapSessionEngine['participants'][number], 'workoutLogTaskId'>>,
+): AmrapSessionEngine['participants'][number] {
+  return { workoutLogTaskId: null, ...overrides };
 }
 
 describe('buildGamifiedRailModel', () => {
@@ -82,7 +90,7 @@ describe('buildGamifiedRailModel', () => {
 
   it('sorts on-video tiles by rank and lists offline participants', () => {
     const engine = mockEngine([
-      {
+      mockParticipant({
         id: 'p1',
         name: 'Alice',
         rounds: 3,
@@ -90,8 +98,8 @@ describe('buildGamifiedRailModel', () => {
         isHost: false,
         isSelf: false,
         userId: P1_ID,
-      },
-      {
+      }),
+      mockParticipant({
         id: 'p2',
         name: 'Bob',
         rounds: 2,
@@ -99,8 +107,8 @@ describe('buildGamifiedRailModel', () => {
         isHost: false,
         isSelf: true,
         userId: P2_ID,
-      },
-      {
+      }),
+      mockParticipant({
         id: 'p3',
         name: 'Carol',
         rounds: 1,
@@ -108,7 +116,7 @@ describe('buildGamifiedRailModel', () => {
         isHost: false,
         isSelf: false,
         userId: null,
-      },
+      }),
     ]);
 
     const model = buildGamifiedRailModel({
@@ -130,7 +138,7 @@ describe('buildGamifiedRailModel', () => {
 
   it('maps self participant to local rail tile', () => {
     const engine = mockEngine([
-      {
+      mockParticipant({
         id: 'self',
         name: 'Me',
         rounds: 4,
@@ -138,7 +146,7 @@ describe('buildGamifiedRailModel', () => {
         isHost: false,
         isSelf: true,
         userId: P2_ID,
-      },
+      }),
     ]);
 
     const model = buildGamifiedRailModel({

@@ -37,6 +37,7 @@ const mockEngine: AmrapSessionEngine = {
       isHost: false,
       isSelf: true,
       userId: 'user-1',
+      workoutLogTaskId: null,
     },
   ],
   selfParticipant: {
@@ -47,6 +48,7 @@ const mockEngine: AmrapSessionEngine = {
     isHost: false,
     isSelf: true,
     userId: 'user-1',
+    workoutLogTaskId: null,
   },
   startTimer: null,
   resetTimer: null,
@@ -73,6 +75,7 @@ const mockEngine: AmrapSessionEngine = {
     copyResults: vi.fn(),
     copyResultsToast: null,
     isHost: true,
+    savedToAnalytics: false,
   },
 };
 
@@ -122,13 +125,30 @@ beforeEach(() => {
 });
 
 describe('GamifiedParticipantRail', () => {
-  it('renders rank badge, rounds, lap chips, and host finalize banner', () => {
+  it('renders rank badge, rounds, lap chips, and host recap banner', () => {
     render(<GamifiedParticipantRail localUserId="local" hostUserId="host" />);
     expect(screen.getByLabelText('Rank 1')).toBeTruthy();
     expect(screen.getByText(/2 rnds/)).toBeTruthy();
     expect(screen.getByText(/R1 0:45/)).toBeTruthy();
     expect(screen.getByRole('region', { name: /amrap results actions/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /lock & save/i })).toBeTruthy();
+  });
+
+  it('renders participant recap banner when host is false', () => {
+    mockAmrapRailOptional.mockReturnValue({
+      ...defaultAmrapRail(),
+      isHost: false,
+      engine: {
+        ...mockEngine,
+        finalizeSession: null,
+        pageState: { ...mockEngine.pageState, isHost: false },
+      },
+    });
+
+    render(<GamifiedParticipantRail localUserId="local" hostUserId="host" />);
+    expect(screen.getByText('Waiting for host to lock results')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /view provisional results/i })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /lock & save/i })).toBeNull();
   });
 
   it('renders classic rail without session runtime (scaffold-safe)', () => {

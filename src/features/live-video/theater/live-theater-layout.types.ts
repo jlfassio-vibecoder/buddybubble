@@ -31,6 +31,8 @@ export type LiveTheaterShellPlan = {
   showHorizontalBoardStage: boolean;
   /** Stop driving theater layout via persisted kanbanCollapsed / hideMainStage hacks. */
   mutePersistedKanbanCollapseForSession: boolean;
+  /** Suppress DashboardShell title strip + secondary nav (desktop) and MobileHeader (mobile). */
+  hideDashboardTopChrome: boolean;
 };
 
 export type LiveTheaterHuddlePlan = {
@@ -58,6 +60,12 @@ export function sessionUiKindFromSessionState(state: SessionState): 'builder' | 
   return state.globalStartedAt != null || state.status !== 'idle' ? 'live' : 'builder';
 }
 
+function hideDashboardTopChromeForShell(kind: ShellChromeKind, phase: LiveTheaterPhase): boolean {
+  return (
+    (kind === 'theater_focus' || kind === 'vertical_compact_session') && phase === 'live_video'
+  );
+}
+
 export function deriveLiveTheaterLayoutPlan(
   inputs: LiveTheaterLayoutInputs,
 ): LiveTheaterLayoutPlan {
@@ -77,6 +85,7 @@ export function deriveLiveTheaterLayoutPlan(
     kind: 'inactive',
     showHorizontalBoardStage: false,
     mutePersistedKanbanCollapseForSession: false,
+    hideDashboardTopChrome: false,
   };
 
   const inactiveHuddle: LiveTheaterHuddlePlan = {
@@ -113,6 +122,7 @@ export function deriveLiveTheaterLayoutPlan(
         kind: 'vertical_compact_session',
         showHorizontalBoardStage: false,
         mutePersistedKanbanCollapseForSession,
+        hideDashboardTopChrome: hideDashboardTopChromeForShell('vertical_compact_session', phase),
       },
       huddle: {
         phase,
@@ -134,6 +144,7 @@ export function deriveLiveTheaterLayoutPlan(
         kind: 'theater_board_split',
         showHorizontalBoardStage: true,
         mutePersistedKanbanCollapseForSession,
+        hideDashboardTopChrome: false,
       },
       huddle: {
         phase: 'deck_building',
@@ -156,6 +167,7 @@ export function deriveLiveTheaterLayoutPlan(
       kind: 'theater_focus',
       showHorizontalBoardStage: false,
       mutePersistedKanbanCollapseForSession,
+      hideDashboardTopChrome: hideDashboardTopChromeForShell('theater_focus', phase),
     },
     huddle: {
       phase,

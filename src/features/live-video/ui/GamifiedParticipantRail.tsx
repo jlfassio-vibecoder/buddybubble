@@ -10,7 +10,7 @@ import {
   useRailParticipants,
 } from '@/features/live-video/hooks/useRailParticipants';
 import { useLiveSessionRuntimeOptional } from '@/features/live-video/theater/live-session-runtime-context';
-import { AmrapRailFinalizeBanner } from '@/features/amrap/components/AmrapRailFinalizeBanner';
+import { AmrapRailRecapBanner } from '@/features/amrap/components/AmrapRailRecapBanner';
 import { GamifiedRailOfflineList } from '@/features/live-video/ui/GamifiedRailOfflineList';
 import { GamifiedRailTile } from '@/features/live-video/ui/GamifiedRailTile';
 import { cn } from '@/lib/utils';
@@ -77,7 +77,7 @@ export function GamifiedParticipantRail({
       )}
       aria-label="Participant thumbnails"
     >
-      <AmrapRailFinalizeBanner />
+      <AmrapRailRecapBanner />
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain">
         {tiles.map(({ rail, entry }) => {
           const uidStr = rail.kind === 'remote' ? String(rail.user.uid) : String(localRtcUid);

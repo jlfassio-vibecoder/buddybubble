@@ -17,6 +17,7 @@ export interface ViewResultsModalProps {
   onCopy: () => void;
   copyToast: 'success' | 'error' | null;
   roundDurations: number[];
+  savedToAnalytics?: boolean;
 }
 
 export default function ViewResultsModal({
@@ -27,6 +28,7 @@ export default function ViewResultsModal({
   onCopy,
   copyToast,
   roundDurations: _roundDurations,
+  savedToAnalytics = false,
 }: ViewResultsModalProps) {
   if (typeof document === 'undefined') {
     return null;
@@ -46,6 +48,9 @@ export default function ViewResultsModal({
         ) : null}
         {copyToast === 'error' ? (
           <p className="text-xs text-destructive">Copy failed — try selecting the text manually.</p>
+        ) : null}
+        {savedToAnalytics ? (
+          <p className="text-xs font-medium text-emerald-600">Saved to your Analytics ✓</p>
         ) : null}
         <DialogFooter className="gap-2 sm:justify-between">
           <Button type="button" variant="outline" size="sm" onClick={() => onCopy()}>
