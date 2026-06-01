@@ -27,7 +27,7 @@ const minimalPersona: WorkoutPersona = {
 
 describe('buildWorkoutInSetFromOutlineFill', () => {
   it('routes warm-up instruction block to warmupBlocks', () => {
-    const blocks = [
+    const filled = [
       {
         name: 'Warm-up',
         instructions: ['5 min bike', 'Dynamic leg swings'],
@@ -39,6 +39,7 @@ describe('buildWorkoutInSetFromOutlineFill', () => {
         exercises: [{ name: 'Back Squat', sets: 3, reps: '8' }],
       },
     ];
+    const { blocks } = hydrateAndValidateOutlineBlocks(filled);
     const workout = buildWorkoutInSetFromOutlineFill(blocks, minimalPersona);
     expect(workout.warmupBlocks).toHaveLength(1);
     expect(workout.warmupBlocks?.[0]?.exerciseName).toBe('Warm-up');

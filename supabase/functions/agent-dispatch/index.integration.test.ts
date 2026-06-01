@@ -41,6 +41,7 @@ import {
   type VertexHandlerWithCount,
 } from '../_shared/test-helpers/vertex-fixtures.ts';
 import { simulateCreateCardReplyMetadata } from '../_shared/test-helpers/agent-rpc-persistence-simulator.ts';
+import { SESSION_READINESS_CONTEXT_HEADER } from '../agents/coach/prompts.ts';
 
 /** Present only when `buildBlockBlueprintLibraryPrompt()` is injected (not Apex prose references). */
 const BLOCK_LIBRARY_INJECTED_MARKER =
@@ -63,6 +64,11 @@ const COACH_REPLY = {
   proposed_workout_metadata: null,
   execution_patch: null,
   card_action: null,
+};
+
+const WORKOUT_GREETING_REPLY = {
+  reply_content:
+    'Good morning! Leg Day is up — I see you checked in with solid energy and sleep. Ask me about any exercise when you need help.',
 };
 
 const ORGANIZER_REPLY = {
@@ -224,15 +230,23 @@ function agentLogsFromRouted(logs: CapturedAgentLog[]): CapturedAgentLog[] {
 
 function parseCapturedVertexRequest(bodyText: string): {
   systemPrompt: string;
+  userText: string;
   thinkingBudget: number | undefined;
 } {
   const body = JSON.parse(bodyText) as {
     system_instruction?: { parts?: Array<{ text?: string }> };
+    contents?: Array<{ role?: string; parts?: Array<{ text?: string }> }>;
     generationConfig?: { thinkingConfig?: { thinkingBudget?: number } };
   };
   const systemPrompt = body.system_instruction?.parts?.map((p) => p.text ?? '').join('') ?? '';
+  const userText =
+    body.contents
+      ?.filter((c) => c.role === 'user')
+      .flatMap((c) => c.parts?.map((p) => p.text ?? '') ?? [])
+      .join('\n') ?? '';
   return {
     systemPrompt,
+    userText,
     thinkingBudget: body.generationConfig?.thinkingConfig?.thinkingBudget,
   };
 }
@@ -299,6 +313,58 @@ integrationTest('happy coach mention persists one reply', async () => {
     assertEquals(calls[0].args.p_reply_text, COACH_REPLY.reply_content);
   });
 });
+
+integrationTest(
+  'Active Session workout sentinel preflight injects session readiness into greeting prompt',
+  async () => {
+    const vertex = vertexHappyCapturingBody(WORKOUT_GREETING_REPLY);
+    await withHarness({ vertex }, async ({ vertex: vtx, rpc }) => {
+      const response = await handleDispatchRequest(
+        webhookRequest({
+          id: '00000000-0000-4000-8000-000000000897',
+          content: 'Started a workout session.',
+          metadata: {
+            default_agent_slug: 'coach',
+            is_silent_sentinel: true,
+            workoutTaskTitle: 'Leg Day',
+            workoutContext: { exercises: [{ name: 'Back Squat', sets: 3, reps: 10 }] },
+            workout_context: {
+              source: 'workout_player',
+              surface: 'active_session',
+              sessionId: '00000000-0000-4000-8000-000000000901',
+            },
+            session_readiness_context: {
+              v: 1,
+              captured_at: '2026-05-28T10:00:00.000Z',
+              readiness: 7,
+              sleep_quality: 8,
+              soreness: ['Legs'],
+              source: 'task_modal_preflight',
+            },
+          },
+        }),
+      );
+      assertEquals(response.status, 200);
+      const body = await readJson(response);
+      assertEquals(body.ok, true);
+      assertEquals(body.preflight_short_circuit, true);
+      assertEquals(vtx?.count() ?? 0, 1);
+
+      const bodyText = vtx!.lastBodyText();
+      assertExists(bodyText);
+      const req = parseCapturedVertexRequest(bodyText);
+      assertEquals(req.systemPrompt.includes(SESSION_READINESS_CONTEXT_HEADER), true);
+      assertEquals(req.systemPrompt.includes('Do NOT ask them to rate readiness'), true);
+      assertEquals(req.systemPrompt.includes('readiness (1–10): 7'), true);
+      assertEquals(req.userText.includes('Pre-session readiness check-in (JSON)'), true);
+      assertEquals(req.userText.includes('"readiness":7'), true);
+
+      const calls = rpc.getRpcCalls('agent_create_card_and_reply');
+      assertEquals(calls.length, 1);
+      assertEquals(calls[0].args.p_reply_text, WORKOUT_GREETING_REPLY.reply_content);
+    });
+  },
+);
 
 integrationTest('429 from Vertex retries once and then persists', async () => {
   const vertex = vertex429ThenHappy(COACH_REPLY);
@@ -1308,7 +1374,7 @@ integrationTest(
               readiness: 7,
               sleep_quality: 6,
               duration_minutes: 45,
-              target_intensity: 'Moderate',
+              phase_intent: 'standard_progression',
               soreness: ['None'],
               equipment: ['Dumbbells'],
             },

@@ -15,6 +15,7 @@ import { appendAmrapRoundRows } from '@/lib/workout-factory/interval-timer/appen
 import {
   appendSetRow,
   applySetChange,
+  removeSetRow,
   toggleSetDone,
 } from '@/lib/workout-factory/workout-log-mutations';
 
@@ -72,6 +73,14 @@ export function SessionLogSurface({
     [disabled, draftLogs, flatExercises, onDraftLogsChange],
   );
 
+  const onRemoveSet = useCallback(
+    (exIdx: number) => {
+      if (disabled) return;
+      onDraftLogsChange(removeSetRow(draftLogs, exIdx));
+    },
+    [disabled, draftLogs, onDraftLogsChange],
+  );
+
   const onLogAmrapRound = useCallback(
     (blockId: string) => {
       if (disabled) return;
@@ -105,6 +114,7 @@ export function SessionLogSurface({
           onSetChange={onSetChange}
           onToggleDone={onToggleDone}
           onAddSet={onAddSet}
+          onRemoveSet={onRemoveSet}
           onLogAmrapRound={onLogAmrapRound}
           useIntervalMachine={useIntervalMachine}
           intervalRowSnapshots={intervalRowSnapshots}
@@ -127,6 +137,7 @@ export function SessionLogSurface({
                 onSetChange={(setIdx, field, value) => onSetChange(index, setIdx, field, value)}
                 onToggleDone={(setIdx) => onToggleDone(index, setIdx)}
                 onAddSet={() => onAddSet(index)}
+                onRemoveSet={() => onRemoveSet(index)}
               />
               {index < flatExercises.length - 1 ? <Separator className="mt-6" /> : null}
             </div>

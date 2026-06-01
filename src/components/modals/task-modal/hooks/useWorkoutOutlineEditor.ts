@@ -41,6 +41,8 @@ export type UseWorkoutOutlineEditorArgs = {
   setMetadata: Dispatch<SetStateAction<Json>>;
   patchOriginalMetadataJson: (metadataJson: string) => void;
   saveCoreFields?: (metadataOverride?: Json) => Promise<boolean>;
+  /** When false, skip sync effects and block mutating actions (non-workout TaskModal cards). */
+  enabled?: boolean;
 };
 
 function draftFromMetadata(meta: unknown): Record<string, unknown>[] {
@@ -68,6 +70,7 @@ export function useWorkoutOutlineEditor({
   setMetadata,
   patchOriginalMetadataJson,
   saveCoreFields,
+  enabled = true,
 }: UseWorkoutOutlineEditorArgs) {
   const parsedMeta = useMemo(() => readCoachOutlineMetadata(metadata), [metadata]);
   const [draftBlocks, setDraftBlocks] = useState<Record<string, unknown>[]>(() =>
@@ -76,7 +79,6 @@ export function useWorkoutOutlineEditor({
   const [localGenerating, setLocalGenerating] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [expandedBlockIdx, setExpandedBlockIdx] = useState<number | null>(0);
-  const autoRetryStartedRef = useRef(false);
   const draftBlocksRef = useRef(draftBlocks);
   draftBlocksRef.current = draftBlocks;
   const isDirtyRef = useRef(false);
@@ -91,9 +93,10 @@ export function useWorkoutOutlineEditor({
   }, []);
 
   useEffect(() => {
+    if (!enabled) return;
+
     if (prevTaskIdRef.current !== taskId) {
       prevTaskIdRef.current = taskId;
-      autoRetryStartedRef.current = false;
       syncDraftFromMetadata(metadata, true);
       return;
     }
@@ -103,7 +106,7 @@ export function useWorkoutOutlineEditor({
     if (isDirtyRef.current) return;
 
     syncDraftFromMetadata(metadata, false);
-  }, [metadata, taskId, syncDraftFromMetadata]);
+  }, [enabled, metadata, taskId, syncDraftFromMetadata]);
 
   const persistMetadata = useCallback(
     async (nextMeta: Record<string, unknown>) => {
@@ -158,7 +161,7 @@ export function useWorkoutOutlineEditor({
 
   const addFromCatalog = useCallback(
     async (preset: BlockBlueprintCatalogEntry): Promise<boolean> => {
-      if (!canWrite || !taskId) return false;
+      if (!enabled || !canWrite || !taskId) return false;
       const block = catalogPresetToOutlineBlock(preset);
       const nextBlocks = [...draftBlocksRef.current, block];
       setDraftBlocks(nextBlocks);
@@ -177,12 +180,12 @@ export function useWorkoutOutlineEditor({
         return false;
       }
     },
-    [canWrite, taskId, applyDraftToMetadata, persistMetadata],
+    [enabled, canWrite, taskId, applyDraftToMetadata, persistMetadata],
   );
 
   const addInstructionBlock = useCallback(
     async (name: string, lines: string[]): Promise<boolean> => {
-      if (!canWrite || !taskId) return false;
+      if (!enabled || !canWrite || !taskId) return false;
       const block = createInstructionBlock(name, lines);
       const nextBlocks = [...draftBlocksRef.current, block];
       setDraftBlocks(nextBlocks);
@@ -200,32 +203,44 @@ export function useWorkoutOutlineEditor({
         return false;
       }
     },
-    [canWrite, taskId, applyDraftToMetadata, persistMetadata],
+    [enabled, canWrite, taskId, applyDraftToMetadata, persistMetadata],
   );
 
-  const updateBlock = useCallback((index: number, patch: Record<string, unknown>) => {
-    isDirtyRef.current = true;
-    setDraftBlocks((prev) => prev.map((b, i) => (i === index ? { ...b, ...patch } : b)));
-  }, []);
+  const updateBlock = useCallback(
+    (index: number, patch: Record<string, unknown>) => {
+      if (!enabled) return;
+      isDirtyRef.current = true;
+      setDraftBlocks((prev) => prev.map((b, i) => (i === index ? { ...b, ...patch } : b)));
+    },
+    [enabled],
+  );
 
-  const removeBlock = useCallback((index: number) => {
-    isDirtyRef.current = true;
-    setDraftBlocks((prev) => prev.filter((_, i) => i !== index));
-  }, []);
+  const removeBlock = useCallback(
+    (index: number) => {
+      if (!enabled) return;
+      isDirtyRef.current = true;
+      setDraftBlocks((prev) => prev.filter((_, i) => i !== index));
+    },
+    [enabled],
+  );
 
-  const reorderBlocks = useCallback((from: number, to: number) => {
-    isDirtyRef.current = true;
-    setDraftBlocks((prev) => {
-      if (from < 0 || from >= prev.length || to < 0 || to >= prev.length) return prev;
-      const next = [...prev];
-      const [item] = next.splice(from, 1);
-      next.splice(to, 0, item);
-      return next;
-    });
-  }, []);
+  const reorderBlocks = useCallback(
+    (from: number, to: number) => {
+      if (!enabled) return;
+      isDirtyRef.current = true;
+      setDraftBlocks((prev) => {
+        if (from < 0 || from >= prev.length || to < 0 || to >= prev.length) return prev;
+        const next = [...prev];
+        const [item] = next.splice(from, 1);
+        next.splice(to, 0, item);
+        return next;
+      });
+    },
+    [enabled],
+  );
 
   const saveDraft = useCallback(async () => {
-    if (!canWrite || !taskId) return false;
+    if (!enabled || !canWrite || !taskId) return false;
     const { blocks, drops } = normalizeOutlineDraft(draftBlocks);
     const status: CoachOutlineStatus = blocks.length > 0 ? 'ready' : 'empty';
     const next = applyDraftToMetadata(blocks, status, { drops });
@@ -239,10 +254,10 @@ export function useWorkoutOutlineEditor({
       toast.error(msg);
       return false;
     }
-  }, [canWrite, taskId, draftBlocks, applyDraftToMetadata, persistMetadata]);
+  }, [enabled, canWrite, taskId, draftBlocks, applyDraftToMetadata, persistMetadata]);
 
   const confirmStructure = useCallback(async () => {
-    if (!canWrite || !taskId) return false;
+    if (!enabled || !canWrite || !taskId) return false;
     const validation = validateOutlineDraftForConfirm(draftBlocks);
     if (!validation.ok) {
       toast.error('Fix validation issues before confirming structure.');
@@ -267,7 +282,7 @@ export function useWorkoutOutlineEditor({
       toast.error(msg);
       return false;
     }
-  }, [canWrite, taskId, draftBlocks, metadata, persistMetadata]);
+  }, [enabled, canWrite, taskId, draftBlocks, metadata, persistMetadata]);
 
   const applyCoachPatch = useCallback(
     (args: {
@@ -277,6 +292,7 @@ export function useWorkoutOutlineEditor({
       drops?: BlockShapeDrop[];
       onRevisionSynced?: (nextRevision: number) => void;
     }): boolean => {
+      if (!enabled) return false;
       if (outlineDraftAppliedStaleForClient(args.localRevision, args.revision)) {
         toast.message('Outline update skipped — your editor has newer changes.');
         return false;
@@ -297,21 +313,26 @@ export function useWorkoutOutlineEditor({
       toast.success('Coach updated workout structure.');
       return true;
     },
-    [draftBlocks, applyDraftToMetadata, setMetadata, patchOriginalMetadataJson],
+    [enabled, draftBlocks, applyDraftToMetadata, setMetadata, patchOriginalMetadataJson],
   );
 
   const editStructure = useCallback(async () => {
-    if (!canWrite) return;
+    if (!enabled || !canWrite) return;
     const base = parseTaskMetadata(metadata) as Record<string, unknown>;
     const next = mergeCoachOutlineMetadataPatch(base, {
       clearConfirmation: true,
       status: draftBlocks.length > 0 ? 'ready' : 'empty',
     });
     await persistMetadata(next);
-  }, [canWrite, metadata, draftBlocks.length, persistMetadata]);
+  }, [enabled, canWrite, metadata, draftBlocks.length, persistMetadata]);
 
   const retryStructure = useCallback(async () => {
+    if (!enabled) return;
     if (!canWrite || !taskId || !workspaceId) return;
+    if (parsedMeta.hasFactory) {
+      toast.message('A generated workout already exists for this session.');
+      return;
+    }
     setLocalGenerating(true);
     setLocalError(null);
     try {
@@ -348,25 +369,14 @@ export function useWorkoutOutlineEditor({
     } finally {
       setLocalGenerating(false);
     }
-  }, [canWrite, taskId, workspaceId, setMetadata, patchOriginalMetadataJson]);
-
-  useEffect(() => {
-    if (!canWrite || !taskId || autoRetryStartedRef.current || parsedMeta.hasFactory) return;
-    if (parsedMeta.confirmedAt || parsedMeta.outline?.length) return;
-    if (parsedMeta.status !== 'needs_structure' && parsedMeta.status !== 'empty') return;
-    if (!title.trim() && !description.trim()) return;
-    autoRetryStartedRef.current = true;
-    void retryStructure();
   }, [
+    enabled,
     canWrite,
     taskId,
+    workspaceId,
     parsedMeta.hasFactory,
-    parsedMeta.confirmedAt,
-    parsedMeta.outline,
-    parsedMeta.status,
-    title,
-    description,
-    retryStructure,
+    setMetadata,
+    patchOriginalMetadataJson,
   ]);
 
   return {

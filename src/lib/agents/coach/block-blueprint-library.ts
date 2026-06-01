@@ -44,7 +44,8 @@ export type BlockShapeDropReason =
   | 'missing_blocks'
   | 'invalid_revision'
   | 'block_name_too_verbose'
-  | 'block_name_clamped';
+  | 'block_name_clamped'
+  | 'instruction_only_requires_warmup_finisher_or_cooldown_role';
 
 export type BlockShapeDrop = {
   field: string;

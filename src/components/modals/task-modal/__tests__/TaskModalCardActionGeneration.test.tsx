@@ -109,12 +109,11 @@ describe('TaskModal card_action generation hand-off', () => {
   it('invokes generate once when card_action arrives on a flat card', async () => {
     const handleAiGenerateWorkout = vi.fn();
     const buildWizardPayload = vi.fn(() => ({
-      readiness: 8,
-      equipment: ['Dumbbells'],
-      sleepQuality: 7,
       durationMinutes: 45 as const,
-      soreness: ['None'],
-      targetIntensity: 'Moderate',
+      phaseIntent: 'standard_progression' as const,
+      progressionTrend: 'Appropriately Challenging' as const,
+      anchorLift: null,
+      temporaryLimitations: null,
     }));
 
     function Host() {

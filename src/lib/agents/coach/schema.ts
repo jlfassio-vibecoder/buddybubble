@@ -476,7 +476,7 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
       type: 'OBJECT',
       nullable: true,
       description:
-        'Optional. When TASK MODAL INTAKE UI appears in the system prompt (workout / workout_log task card), use this object to update the on-card intake wizard from chat. Keys are optional — include only fields you are changing. readiness and sleep_quality are integers 1–10 (Task Modal sliders). They are NOT the same as session_readiness_score (0–100 internal estimate): never put session_readiness_score values into readiness/sleep_quality; if you mention readiness in reply_content for the sliders, you MUST mirror the same integers here. wizard_step: 1–3. duration_minutes: 15, 30, 45, 60, or the exact string Optimized for Goals. target_intensity: Light/Recovery | Moderate | High/HIIT. soreness: subset of None, Legs, Back, Shoulders, Chest, Core. Omit or null when not updating the wizard.',
+        'Optional. When TASK MODAL INTAKE UI appears in the system prompt (workout / workout_log task card), use this object to update the on-card intake wizard from chat. Keys are optional — include only fields you are changing. readiness and sleep_quality are integers 1–10 (Task Modal sliders). They are NOT the same as session_readiness_score (0–100 internal estimate): never put session_readiness_score values into readiness/sleep_quality; if you mention readiness in reply_content for the sliders, you MUST mirror the same integers here. wizard_step: 1–3. duration_minutes: 15, 30, 45, 60, or the exact string Optimized for Goals. phase_intent: technical_baseline | standard_progression | aggressive_overload (RPE ceilings for macro planning). soreness: subset of None, Legs, Back, Shoulders, Chest, Core. Omit or null when not updating the wizard.',
       properties: {
         readiness: {
           type: 'INTEGER',
@@ -499,10 +499,11 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
           description:
             'Session length: exactly one of the strings "15", "30", "45", "60", or "Optimized for Goals" (verbatim). Never emit a bare integer—always quote (e.g. "30" not 30).',
         },
-        target_intensity: {
+        phase_intent: {
           type: 'STRING',
           nullable: true,
-          description: 'One of: Light/Recovery, Moderate, High/HIIT.',
+          description:
+            'One of: technical_baseline (RPE 6–7), standard_progression (RPE 7–8), aggressive_overload (RPE 8–9+).',
         },
         soreness: {
           type: 'ARRAY',

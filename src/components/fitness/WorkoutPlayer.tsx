@@ -66,6 +66,7 @@ import {
   buildWorkoutLogFinishMetadata,
 } from '@/lib/workout-factory/build-workout-log-finish-metadata';
 import { appendAmrapRoundRows } from '@/lib/workout-factory/interval-timer/append-amrap-round-rows';
+import { appendSetRow, removeSetRow } from '@/lib/workout-factory/workout-log-mutations';
 import {
   buildPlayerInitialLogRowsForExercise,
   buildPlayerInitialLogs,
@@ -207,6 +208,7 @@ type PlayerBodyProps = {
   ) => void;
   onToggleDone: (exIdx: number, setIdx: number) => void;
   onAddSet: (exIdx: number) => void;
+  onRemoveSet: (exIdx: number) => void;
   onLogAmrapRound: (blockId: string) => void;
   onFinish: () => void;
   onClose: () => void;
@@ -233,6 +235,7 @@ function PlayerBody({
   onSetChange,
   onToggleDone,
   onAddSet,
+  onRemoveSet,
   onLogAmrapRound,
   onFinish,
   onClose,
@@ -335,6 +338,7 @@ function PlayerBody({
             onSetChange={onSetChange}
             onToggleDone={onToggleDone}
             onAddSet={onAddSet}
+            onRemoveSet={onRemoveSet}
             onLogAmrapRound={onLogAmrapRound}
           />
         ) : (
@@ -351,6 +355,7 @@ function PlayerBody({
                   onSetChange={(si, f, v) => onSetChange(i, si, f, v)}
                   onToggleDone={(si) => onToggleDone(i, si)}
                   onAddSet={() => onAddSet(i)}
+                  onRemoveSet={() => onRemoveSet(i)}
                 />
                 {i < exercises.length - 1 && <Separator className="mt-6" />}
               </div>
@@ -975,24 +980,18 @@ export function WorkoutPlayer({
     (exIdx: number) => {
       hasUserEditedRef.current = true;
       setLogs((prev) => {
-        const next = prev.map((s) => [...s]);
         const ex = exercises[exIdx];
-        if (next[exIdx]) {
-          next[exIdx] = [
-            ...next[exIdx],
-            {
-              weight: ex?.weight != null ? String(ex.weight) : '',
-              reps: typeof ex?.reps === 'number' ? String(ex.reps) : '',
-              rpe: '',
-              done: false,
-            },
-          ];
-        }
-        return next;
+        if (!ex) return prev;
+        return appendSetRow(prev, exIdx, ex);
       });
     },
     [exercises],
   );
+
+  const removeSet = useCallback((exIdx: number) => {
+    hasUserEditedRef.current = true;
+    setLogs((prev) => removeSetRow(prev, exIdx));
+  }, []);
 
   const logAmrapRound = useCallback(
     (blockId: string) => {
@@ -1280,6 +1279,7 @@ export function WorkoutPlayer({
     onSetChange: updateSet,
     onToggleDone: toggleDone,
     onAddSet: addSet,
+    onRemoveSet: removeSet,
     onLogAmrapRound: logAmrapRound,
     onFinish: () => void handleFinish(),
     onClose: () => void handleClose(),

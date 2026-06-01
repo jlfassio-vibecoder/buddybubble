@@ -5,9 +5,11 @@ import {
 } from '@/components/chat/workout-coach-rail.constants';
 import type { SetDraft } from '@/components/fitness/workout-block-renderer/WorkoutPlayerExercisePanel';
 import { sessionTelemetryMetadataFields } from '@/lib/agents/coach/coach-telemetry-bridge';
+import type { SessionReadinessContext } from '@/lib/workout-factory/session-readiness-context';
 import type { GhostSetSnapshot } from '@/lib/workout-factory/ghost-set-snapshot';
 import type { IntervalRowSnapshot } from '@/lib/workout-factory/interval-timer/types';
 import {
+  attachElapsedToSessionTelemetry,
   buildSessionTelemetrySnapshot,
   type SessionTelemetrySnapshot,
 } from '@/lib/workout-factory/session-telemetry';
@@ -52,8 +54,16 @@ export function buildActiveSessionSentinelMetadata(params: {
   classInstanceId: string | null;
   workoutContext: Json;
   sessionTelemetry: SessionTelemetrySnapshot;
+  sessionReadinessContext?: SessionReadinessContext | null;
 }): Json {
-  const { workoutTitle, sessionId, classInstanceId, workoutContext, sessionTelemetry } = params;
+  const {
+    workoutTitle,
+    sessionId,
+    classInstanceId,
+    workoutContext,
+    sessionTelemetry,
+    sessionReadinessContext,
+  } = params;
 
   return {
     [MESSAGE_METADATA_DEFAULT_AGENT_SLUG_KEY]: CHAT_AREA_DEFAULT_AGENT_SLUG,
@@ -69,6 +79,9 @@ export function buildActiveSessionSentinelMetadata(params: {
       class_instance_id: classInstanceId,
       isMemberView: true,
     },
+    ...(sessionReadinessContext
+      ? { session_readiness_context: sessionReadinessContext as unknown as Json }
+      : {}),
     ...sessionTelemetryMetadataFields(sessionTelemetry),
   } satisfies Json;
 }
@@ -76,8 +89,13 @@ export function buildActiveSessionSentinelMetadata(params: {
 export function shouldSkipSentinelForTelemetryFingerprint(
   fingerprint: string,
   lastSentFingerprint: string | null,
+  readinessCapturedAt?: string | null,
+  lastSentReadinessCapturedAt?: string | null,
 ): boolean {
-  return lastSentFingerprint != null && lastSentFingerprint === fingerprint;
+  if (lastSentFingerprint == null || lastSentFingerprint !== fingerprint) return false;
+  const currentCapturedAt = readinessCapturedAt ?? null;
+  const lastCapturedAt = lastSentReadinessCapturedAt ?? null;
+  return currentCapturedAt === lastCapturedAt;
 }
 
 export type FireActiveSessionCoachSentinelDeps = {
@@ -92,23 +110,35 @@ export type FireActiveSessionCoachSentinelDeps = {
   sessionId: string;
   classInstanceId: string | null;
   workoutContext: Json;
-  telemetrySource: ActiveSessionCoachTelemetrySource;
+  /** Performance snapshot (elapsedSec: 0) — fingerprint stable across SESSION_TICK. */
+  performanceTelemetrySnapshot: SessionTelemetrySnapshot;
+  elapsedSec: number;
   lastSentFingerprintRef: { current: string | null };
+  lastSentReadinessCapturedAtRef?: { current: string | null };
+  sessionReadinessContext?: SessionReadinessContext | null;
 };
 
 /** Returns true when a sentinel message was sent; false when deduped. */
 export async function fireActiveSessionCoachSentinel(
   deps: FireActiveSessionCoachSentinelDeps,
 ): Promise<boolean> {
-  const sessionTelemetry = buildActiveSessionTelemetry(deps.telemetrySource);
+  const { performanceTelemetrySnapshot } = deps;
+  const readinessCapturedAt = deps.sessionReadinessContext?.captured_at ?? null;
   if (
     shouldSkipSentinelForTelemetryFingerprint(
-      sessionTelemetry.fingerprint,
+      performanceTelemetrySnapshot.fingerprint,
       deps.lastSentFingerprintRef.current,
+      readinessCapturedAt,
+      deps.lastSentReadinessCapturedAtRef?.current ?? null,
     )
   ) {
     return false;
   }
+
+  const sessionTelemetry = attachElapsedToSessionTelemetry(
+    performanceTelemetrySnapshot,
+    deps.elapsedSec,
+  );
 
   const sentinelMetadata = buildActiveSessionSentinelMetadata({
     workoutTitle: deps.workoutTitle,
@@ -116,9 +146,13 @@ export async function fireActiveSessionCoachSentinel(
     classInstanceId: deps.classInstanceId,
     workoutContext: deps.workoutContext,
     sessionTelemetry,
+    sessionReadinessContext: deps.sessionReadinessContext ?? null,
   });
 
   await deps.sendMessage(deps.displayText, undefined, undefined, { metadata: sentinelMetadata });
-  deps.lastSentFingerprintRef.current = sessionTelemetry.fingerprint;
+  deps.lastSentFingerprintRef.current = performanceTelemetrySnapshot.fingerprint;
+  if (deps.lastSentReadinessCapturedAtRef) {
+    deps.lastSentReadinessCapturedAtRef.current = readinessCapturedAt;
+  }
   return true;
 }

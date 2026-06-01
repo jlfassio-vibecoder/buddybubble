@@ -84,6 +84,16 @@ describe('buildWorkoutCoachRailContext', () => {
     const ctx = buildWorkoutCoachRailContext(metadata, 'Tabata day');
     expect(ctx.emom_alternating_guide).toBeUndefined();
   });
+
+  it('omits ai_workout_factory when includeFactoryBlob is false', () => {
+    const metadata = richMetadataWithBlockFormat('tabata');
+    const ctx = buildWorkoutCoachRailContext(metadata, 'Tabata day', undefined, {
+      includeFactoryBlob: false,
+    });
+    expect(ctx.ai_workout_factory).toBeUndefined();
+    expect(typeof ctx.workout_structure_summary).toBe('string');
+    expect((ctx.exercises as unknown[]).length).toBeGreaterThan(0);
+  });
 });
 
 describe('validateLiveSetCounts', () => {

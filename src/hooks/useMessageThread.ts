@@ -1218,19 +1218,36 @@ export function useMessageThread({
     [bubbles, canPostMessages, filter, threadSubjectUserId, workspaceId],
   );
 
-  return {
-    messages,
-    userById,
-    teamMembers,
-    agentAuthUserIds,
-    agentsByAuthUserId,
-    replyCounts,
-    isLoading,
-    error,
-    sending,
-    sendMessage,
-    clearError,
-    setError,
-    silentRefreshMessages,
-  };
+  return useMemo(
+    () => ({
+      messages,
+      userById,
+      teamMembers,
+      agentAuthUserIds,
+      agentsByAuthUserId,
+      replyCounts,
+      isLoading,
+      error,
+      sending,
+      sendMessage,
+      clearError,
+      setError,
+      silentRefreshMessages,
+    }),
+    [
+      messages,
+      userById,
+      teamMembers,
+      agentAuthUserIds,
+      agentsByAuthUserId,
+      replyCounts,
+      isLoading,
+      error,
+      sending,
+      sendMessage,
+      clearError,
+      setError,
+      silentRefreshMessages,
+    ],
+  );
 }

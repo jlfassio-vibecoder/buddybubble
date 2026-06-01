@@ -125,7 +125,7 @@ export function buildBuddyWorkoutPersona(params: BuildBuddyWorkoutPersonaParams)
   let description = overrides?.description ?? '';
   if (dailyCheckIn && Object.keys(dailyCheckIn).length > 0) {
     const checkInText = JSON.stringify(dailyCheckIn);
-    description = [description.trim(), `Daily check-in context: ${checkInText}`]
+    description = [description.trim(), `Macro planning context: ${checkInText}`]
       .filter(Boolean)
       .join('\n\n');
   }

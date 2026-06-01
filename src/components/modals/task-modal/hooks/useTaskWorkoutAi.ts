@@ -24,16 +24,27 @@ import {
 } from '@/lib/workout-factory/sync-workout-metadata';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import { readCoachOutlineMetadata } from '@/lib/agents/coach/coach-outline-metadata';
+import { generationIntakeContextToDailyCheckin } from '@/lib/workout-factory/generation-intake-context';
 import { preflightOutlineBlocks } from '@/lib/workout-factory/outline-block-preflight';
 import type { WorkoutTemplate } from '@/hooks/use-workout-templates';
 
-/** Intake wizard payload forwarded to `postGenerateWorkoutChain` as `daily_checkin`. */
-export type WorkoutIntakeWizardData = {
-  readiness: number;
-  sleepQuality: number;
-  durationMinutes: number | 'Optimized for Goals';
-  soreness: string[];
-  targetIntensity: string;
+import type { WorkoutIntakeDurationChoice } from '@/lib/agents/coach/task-modal-intake-patch';
+import type {
+  WorkoutGenerationAnchorLift,
+  WorkoutGenerationIntakeContext,
+  WorkoutGenerationPhaseIntent,
+  WorkoutGenerationProgressionTrend,
+} from '@/lib/workout-factory/generation-intake-context';
+
+/** Generation intake wizard payload forwarded to `postGenerateWorkoutChain` as `daily_checkin`. */
+export type WorkoutIntakeWizardData = WorkoutGenerationIntakeContext;
+
+export type {
+  WorkoutGenerationAnchorLift,
+  WorkoutGenerationIntakeContext,
+  WorkoutGenerationPhaseIntent,
+  WorkoutGenerationProgressionTrend,
+  WorkoutIntakeDurationChoice,
 };
 
 export type UseTaskWorkoutAiArgs = {
@@ -136,12 +147,7 @@ export function useTaskWorkoutAi({
       try {
         const duration = parseInt(workoutDurationMin, 10);
         const dailyCheckInPayload = wizardData
-          ? {
-              ...wizardData,
-              ...(typeof wizardData.durationMinutes === 'number'
-                ? { target_duration_min: wizardData.durationMinutes }
-                : {}),
-            }
+          ? generationIntakeContextToDailyCheckin(wizardData)
           : null;
         const coach_workout_outline = preflight.blocks;
         const data = await postGenerateWorkoutChain({

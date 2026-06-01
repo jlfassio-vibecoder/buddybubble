@@ -42,6 +42,7 @@ export type WorkoutPlayerBlockListProps = {
   ) => void;
   onToggleDone: (exIdx: number, setIdx: number) => void;
   onAddSet: (exIdx: number) => void;
+  onRemoveSet?: (exIdx: number) => void;
   onLogAmrapRound: (blockId: string) => void;
   /** Active Session: controlled row highlight snapshots from parent machine. */
   intervalRowSnapshots?: Record<string, IntervalRowSnapshot | null>;
@@ -112,6 +113,7 @@ export function WorkoutPlayerBlockList({
   onSetChange,
   onToggleDone,
   onAddSet,
+  onRemoveSet,
   onLogAmrapRound,
   intervalRowSnapshots: controlledIntervalSnapshots,
   useIntervalMachine = false,
@@ -206,6 +208,7 @@ export function WorkoutPlayerBlockList({
                 onSetChange={(si, f, v) => onSetChange(globalIndex, si, f, v)}
                 onToggleDone={(si) => onToggleDone(globalIndex, si)}
                 onAddSet={() => onAddSet(globalIndex)}
+                onRemoveSet={onRemoveSet ? () => onRemoveSet(globalIndex) : undefined}
                 activeSetIndex={activeSetIndex}
                 activeSetPhase={activeSetPhase}
                 readOnly={readOnly}

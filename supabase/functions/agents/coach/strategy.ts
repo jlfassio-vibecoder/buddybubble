@@ -142,6 +142,9 @@ import {
   readTaskModalLiveStateFromMessageMetadata,
   resolveOutlineDraftPromptParts,
   shouldSuppressTaskModalIntakeForOutlineCoPilot,
+  shouldSuppressTaskModalIntakeForPreflightReadiness,
+  buildSessionReadinessContextBlock,
+  readSessionReadinessContextFromMessageMetadata,
   taskMetadataLooksWorkoutShaped,
   WORKOUT_CONTEXT_HEADER,
   type ExerciseDictionaryIndexEntry,
@@ -356,12 +359,16 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       }
 
       const isoNow = new Date().toISOString();
+      const readiness = readSessionReadinessContextFromMessageMetadata(meta);
+      const sessionReadinessBlock = readiness ? buildSessionReadinessContextBlock(readiness) : null;
       const systemPrompt = buildWorkoutOpenGreetingPrompt({
         workoutTitle,
         isoNow,
         userContextBlock,
+        sessionReadinessBlock,
       });
-      const userText = buildWorkoutOpenGreetingUserText(workoutJson);
+      const readinessJson = readiness ? JSON.stringify(readiness) : null;
+      const userText = buildWorkoutOpenGreetingUserText(workoutJson, readinessJson);
 
       let replyText = FALLBACK_WORKOUT_GREETING;
       try {
@@ -671,14 +678,22 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
     const it = (taskItemType ?? '').toLowerCase();
     const suppressIntakeForOutline =
       shouldSuppressTaskModalIntakeForOutlineCoPilot(outlinePromptArgs);
+    const suppressIntakeForPreflightReadiness = shouldSuppressTaskModalIntakeForPreflightReadiness(
+      ctx.message.metadata,
+    );
+    if (suppressIntakeForPreflightReadiness) {
+      const readinessCtx = readSessionReadinessContextFromMessageMetadata(ctx.message.metadata);
+      if (readinessCtx) parts.push(buildSessionReadinessContextBlock(readinessCtx));
+    }
     const showTaskModalIntakeUi =
       !suppressIntakeForOutline &&
+      !suppressIntakeForPreflightReadiness &&
       (it === 'workout' ||
         it === 'workout_log' ||
         taskMetadataLooksWorkoutShaped(taskMetadataForContext));
     if (showTaskModalIntakeUi) parts.push(buildTaskModalIntakeUiCoachBlock());
     const liveState = readTaskModalLiveStateFromMessageMetadata(ctx.message.metadata);
-    if (showTaskModalIntakeUi && liveState) parts.push(buildTaskModalLiveStateBlock(liveState));
+    if (liveState) parts.push(buildTaskModalLiveStateBlock(liveState));
     if (userContextBlock) parts.push(userContextBlock);
     return parts.join('\n\n');
   },

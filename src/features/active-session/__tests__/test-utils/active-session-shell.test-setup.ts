@@ -40,9 +40,14 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => shellTestState.searchParams,
 }));
 
-vi.mock('@/lib/workout-factory/recover-workout-session-logs', () => ({
-  recoverWorkoutSessionLogs: vi.fn(async () => shellTestState.hydrateResult),
-}));
+vi.mock('@/lib/workout-factory/recover-workout-session-logs', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/lib/workout-factory/recover-workout-session-logs')>();
+  return {
+    ...actual,
+    recoverWorkoutSessionLogs: vi.fn(async () => shellTestState.hydrateResult),
+  };
+});
 
 vi.mock('@/components/modals/task-modal/hooks/useWorkoutUnitSystem', () => ({
   useWorkoutUnitSystem: () => ({ workoutUnitSystem: 'metric' }),

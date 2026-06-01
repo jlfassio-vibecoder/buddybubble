@@ -34,7 +34,10 @@ import {
 } from '@/lib/agents/coach/exercise-mentions-client';
 import { scheduleScrollChatThreadToBottom } from '@/lib/chat-thread-auto-scroll';
 import { appendSessionTelemetryToCoachMessageMetadata } from '@/lib/agents/coach/coach-telemetry-bridge';
-import type { SessionTelemetrySnapshot } from '@/lib/workout-factory/session-telemetry';
+import {
+  attachElapsedToSessionTelemetry,
+  type SessionTelemetrySnapshot,
+} from '@/lib/workout-factory/session-telemetry';
 import {
   CHAT_AREA_DEFAULT_AGENT_SLUG,
   MESSAGE_METADATA_DEFAULT_AGENT_SLUG_KEY,
@@ -140,8 +143,10 @@ export type WorkoutCoachRailProps = {
   messageThread: WorkoutCoachRailMessageThread;
   onCollapse?: () => void;
   className?: string;
-  /** Active Session only — attaches live performance telemetry to Coach sends. */
-  sessionTelemetry?: SessionTelemetrySnapshot | null;
+  /** Active Session only — performance snapshot (elapsedSec: 0); overlay at send time. */
+  sessionTelemetryBase?: SessionTelemetrySnapshot | null;
+  /** Active Session only — live elapsed seconds for coach message metadata overlay. */
+  elapsedSec?: number;
 };
 
 export function WorkoutCoachRail({
@@ -154,7 +159,8 @@ export function WorkoutCoachRail({
   messageThread,
   onCollapse,
   className,
-  sessionTelemetry,
+  sessionTelemetryBase,
+  elapsedSec = 0,
 }: WorkoutCoachRailProps) {
   const myProfile = useUserProfileStore((s) => s.profile);
   const { subjectUserId: workspaceSubjectUserId } = useWorkspaceSessionSubject();
@@ -341,10 +347,10 @@ export function WorkoutCoachRail({
         activeAgent === 'coach'
           ? {
               metadata:
-                sessionTelemetry != null
+                sessionTelemetryBase != null
                   ? appendSessionTelemetryToCoachMessageMetadata(
                       coachMetadata as Record<string, unknown>,
-                      sessionTelemetry,
+                      attachElapsedToSessionTelemetry(sessionTelemetryBase, elapsedSec),
                     )
                   : coachMetadata,
             }
@@ -369,7 +375,8 @@ export function WorkoutCoachRail({
       waitMain,
       workoutExerciseNameList,
       workoutTitle,
-      sessionTelemetry,
+      sessionTelemetryBase,
+      elapsedSec,
     ],
   );
 

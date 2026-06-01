@@ -3,6 +3,7 @@
  */
 
 import type { BlockBlueprintCatalogEntry } from '@/lib/agents/coach/block-blueprint-catalog';
+import { classifyBlockRole } from '@/lib/agents/_shared/workout-metadata/merge-coach-proposed-into-task-metadata';
 import {
   BLOCK_FORMAT_ENUM,
   FORMAT_PARAM_KEYS_BY_FORMAT,
@@ -232,6 +233,8 @@ export function blockShapeDropMessage(drop: BlockShapeDrop): string {
     contrast_missing_rounds: 'Contrast needs rounds',
     clusters_missing_params: 'Clusters need reps per cluster and cluster count',
     drop_sets_missing_params: 'Drop sets need drop percent and drop count',
+    instruction_only_requires_warmup_finisher_or_cooldown_role:
+      'Instruction blocks need Warm-up, Cool-down, Finisher, or Mobility in the block name',
   };
   return messages[drop.reason] ?? `${drop.field}: ${drop.reason}`;
 }
@@ -242,10 +245,35 @@ export function validateOutlineDraftForConfirm(blocks: Record<string, unknown>[]
   drops: BlockShapeDrop[];
 } {
   const { blocks: normalized, drops } = normalizeOutlineDraft(blocks);
-  if (normalized.length === 0) {
-    return { ok: false, blocks: normalized, drops };
+  const roleDrops: BlockShapeDrop[] = [];
+
+  for (let i = 0; i < normalized.length; i++) {
+    const block = normalized[i]!;
+    const instructions = Array.isArray(block.instructions)
+      ? block.instructions.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+      : [];
+    const isInstructionOnly =
+      instructions.length > 0 &&
+      (typeof block.block_format !== 'string' || !block.block_format.trim());
+    if (!isInstructionOnly) continue;
+
+    const name = typeof block.name === 'string' ? block.name.trim() : '';
+    if (classifyBlockRole(name) === 'main') {
+      roleDrops.push({
+        field: `blocks[${i}].name`,
+        reason: 'instruction_only_requires_warmup_finisher_or_cooldown_role',
+      });
+    }
   }
-  return { ok: true, blocks: normalized, drops };
+
+  const allDrops = [...drops, ...roleDrops];
+  if (normalized.length === 0) {
+    return { ok: false, blocks: normalized, drops: allDrops };
+  }
+  if (roleDrops.length > 0) {
+    return { ok: false, blocks: normalized, drops: allDrops };
+  }
+  return { ok: true, blocks: normalized, drops: allDrops };
 }
 
 export { parseCoachWorkoutOutlineWithDrops };

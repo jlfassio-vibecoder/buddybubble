@@ -15,6 +15,30 @@ import { isSetDraftMatrix } from '@/lib/workout-factory/workout-log-matrix';
 
 export type { GhostSetSnapshot } from '@/lib/workout-factory/ghost-set-snapshot';
 
+/** Stable digest of session shape for draft log recovery — length-only deps miss in-place edits. */
+export function buildWorkoutSessionHydrationFingerprint(
+  exercises: WorkoutExercise[],
+  blocks: WorkoutSessionBlockView[],
+): string {
+  const exercisePart = exercises
+    .map((e) => {
+      const reps = e.reps ?? '';
+      const sets = e.sets ?? '';
+      const weight = e.weight ?? '';
+      return `${e.name}\t${sets}\t${reps}\t${weight}`;
+    })
+    .join('\n');
+  const blockPart = blocks
+    .map((b) => {
+      const exNames = b.exercises.map((x) => x.exerciseName.trim() || 'Exercise').join(',');
+      const instr = b.instructions.join('|');
+      const params = JSON.stringify(b.formatParams ?? {});
+      return `${b.id}\t${b.section}\t${b.name}\t${b.blockFormat ?? ''}\t${params}\t${exNames}\t${instr}`;
+    })
+    .join('\n');
+  return `${exercisePart}::${blockPart}`;
+}
+
 export type RecoverWorkoutSessionLogsParams = {
   supabase: SupabaseClient;
   /** Bubble where workout_log rows are stored (Workout Logs channel). */

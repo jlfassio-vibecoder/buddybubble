@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { WorkoutExercise } from '@/lib/item-metadata';
 import {
+  buildWorkoutSessionHydrationFingerprint,
   recoverWorkoutSessionLogs,
   shouldRestoreInProgressDraft,
 } from './recover-workout-session-logs';
@@ -207,5 +208,39 @@ describe('shouldRestoreInProgressDraft', () => {
         '2026-05-25T09:00:00.000Z',
       ),
     ).toBe(true);
+  });
+});
+
+describe('buildWorkoutSessionHydrationFingerprint', () => {
+  it('changes when exercise content changes but count stays the same', () => {
+    const blocks: import('@/lib/workout-factory/workout-session-view-model').WorkoutSessionBlockView[] =
+      [];
+    const a: WorkoutExercise[] = [{ name: 'Squat', sets: 3, reps: 5, weight: 135 }];
+    const b: WorkoutExercise[] = [{ name: 'Squat', sets: 3, reps: 8, weight: 135 }];
+    expect(buildWorkoutSessionHydrationFingerprint(a, blocks)).not.toBe(
+      buildWorkoutSessionHydrationFingerprint(b, blocks),
+    );
+  });
+
+  it('changes when block content changes but block count stays the same', () => {
+    const exercises: WorkoutExercise[] = [{ name: 'Squat', sets: 3, reps: 5 }];
+    const blockA = {
+      id: 'main-0',
+      section: 'main' as const,
+      order: 1,
+      name: 'Strength',
+      blockFormat: 'straight_sets' as const,
+      formatParams: { rounds: 3 },
+      subtitle: null,
+      exercises: [{ order: 1, exerciseName: 'Squat', sets: 3, reps: '5' }],
+      instructions: [],
+    };
+    const blockB = {
+      ...blockA,
+      formatParams: { rounds: 5 },
+    };
+    expect(buildWorkoutSessionHydrationFingerprint(exercises, [blockA])).not.toBe(
+      buildWorkoutSessionHydrationFingerprint(exercises, [blockB]),
+    );
   });
 });

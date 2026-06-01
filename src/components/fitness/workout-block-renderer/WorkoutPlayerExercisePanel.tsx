@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, Info, Plus } from 'lucide-react';
+import { Check, Info, Minus, Plus } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import type { WorkoutExercise } from '@/lib/item-metadata';
@@ -62,6 +62,7 @@ export type WorkoutPlayerExercisePanelProps = {
   onSetChange: (setIdx: number, field: 'weight' | 'reps' | 'rpe', value: string) => void;
   onToggleDone: (setIdx: number) => void;
   onAddSet: () => void;
+  onRemoveSet?: () => void;
   /** Tabata / interval shell: highlight active set row (editing never disabled). */
   activeSetIndex?: number | null;
   activeSetPhase?: IntervalRowSnapshot['activeSetPhase'] | null;
@@ -80,6 +81,7 @@ export function WorkoutPlayerExercisePanel({
   onSetChange,
   onToggleDone,
   onAddSet,
+  onRemoveSet,
   activeSetIndex = null,
   activeSetPhase = null,
   readOnly = false,
@@ -328,15 +330,38 @@ export function WorkoutPlayerExercisePanel({
         })}
       </div>
 
-      {!readOnly ? (
-        <button
-          type="button"
-          onClick={onAddSet}
-          className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Add set
-        </button>
+      {!readOnly && (onAddSet || onRemoveSet) ? (
+        <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr_2.5rem] items-center gap-2 px-1">
+          <span />
+          <button
+            type="button"
+            onClick={onAddSet}
+            className="flex items-center gap-1.5 justify-self-start px-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add set
+          </button>
+          <span />
+          {onRemoveSet ? (
+            <button
+              type="button"
+              onClick={onRemoveSet}
+              disabled={sets.length <= 1}
+              aria-label="Remove last set"
+              aria-disabled={sets.length <= 1}
+              className={cn(
+                'flex items-center gap-1.5 justify-self-end px-1 text-xs text-muted-foreground transition-colors hover:text-foreground',
+                sets.length <= 1 && 'pointer-events-none opacity-50',
+              )}
+            >
+              <Minus className="h-3.5 w-3.5" />
+              Remove set
+            </button>
+          ) : (
+            <span />
+          )}
+          <span />
+        </div>
       ) : null}
     </div>
   );
