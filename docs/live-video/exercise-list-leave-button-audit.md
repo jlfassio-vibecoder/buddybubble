@@ -25,11 +25,11 @@ In parallel, **`BaseVideoHarness`** hides its **Leave** row when `fullWidth && i
 
 **Important:** [§0 User-reported behavior](#0-user-reported-behavior-may-2026-qa) captured pre-fix QA. **Re-validation is required** after Phase 2 before closing gaps G0–G2. Tier 3 (logger/player beside video) is **unchanged** and may still read as “exercises in broadcast.”
 
-| Surface                                   | Product intent                              | Current code (post–Phase 2)                               | Pre-fix QA (May 2026)        |
-| ----------------------------------------- | ------------------------------------------- | --------------------------------------------------------- | ---------------------------- |
-| Workout queue in **preview huddle**       | **Open by default**                         | `WorkoutQueueRegion` open when `uiMode === 'builder'`     | **Not visible** ❌ — re-test |
-| Workout queue in **live video broadcast** | **Collapsed by default** (toggle to expand) | Region mounted; `isOpen = false` on live; no `UpNextCard` | **Visible** ❌ — re-test     |
-| Leave / Exit workout (connected)          | Always available                            | `SessionControls.onLeaveDock` wired (Phase 1)             | Was missing — likely fixed   |
+| Surface                                   | Product intent                              | Current code (post–Phase 2)                                           | Pre-fix QA (May 2026)        |
+| ----------------------------------------- | ------------------------------------------- | --------------------------------------------------------------------- | ---------------------------- |
+| Workout queue in **preview huddle**       | **Open by default**                         | `WorkoutQueueRegion` open when `uiMode === 'builder'`                 | **Not visible** ❌ — re-test |
+| Workout queue in **live video broadcast** | **Collapsed by default** (toggle to expand) | Region mounted; `isOpen = false` on live; no `UpNextCard`             | **Visible** ❌ — re-test     |
+| Leave / Exit workout (connected)          | Always available                            | `LiveSessionTopBar` → `SessionControlsActions.onLeaveDock` (Sprint 3) | Was missing — likely fixed   |
 
 ---
 

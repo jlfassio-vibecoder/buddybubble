@@ -273,7 +273,6 @@ export function useAmrapSession(options: UseAmrapSessionOptions): AmrapSessionEn
     loading: false,
     error: error ?? participantsError,
     slots: {
-      chatDrawerLeaderboard: null,
       sessionDrawer: null,
       hostNavActions: null,
     },

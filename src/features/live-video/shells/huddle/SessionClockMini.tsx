@@ -8,6 +8,8 @@ import { cn } from '@/lib/utils';
 export type SessionClockMiniProps = {
   state: SessionState;
   className?: string;
+  /** Smaller clock for horizontal top app bar. */
+  compact?: boolean;
 };
 
 function getGlobalElapsedMs(state: SessionState, now: number): number {
@@ -18,7 +20,7 @@ function getGlobalElapsedMs(state: SessionState, now: number): number {
 /**
  * Continuous session clock (wall time since Start Session). Independent of block pause/resume.
  */
-export function SessionClockMini({ state, className }: SessionClockMiniProps) {
+export function SessionClockMini({ state, className, compact = false }: SessionClockMiniProps) {
   const [label, setLabel] = useState('00:00.0');
 
   useEffect(() => {
@@ -40,7 +42,12 @@ export function SessionClockMini({ state, className }: SessionClockMiniProps) {
       <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
         Session
       </span>
-      <div className="text-3xl font-mono tabular-nums leading-none tracking-tight text-white">
+      <div
+        className={cn(
+          'font-mono tabular-nums leading-none tracking-tight text-foreground',
+          compact ? 'text-2xl' : 'text-3xl text-white',
+        )}
+      >
         {label}
       </div>
     </div>

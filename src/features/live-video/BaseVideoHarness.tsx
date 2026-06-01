@@ -1,13 +1,13 @@
 'use client';
 
-import type { IAgoraRTCRemoteUser } from 'agora-rtc-sdk-ng';
 import { useMemo, type ReactNode } from 'react';
 import { useAgoraSession } from '@/features/live-video/agora-session-context';
 import { LocalVideoPreview } from '@/features/live-video/LocalVideoPreview';
 import { RemoteVideoPreview } from '@/features/live-video/RemoteVideoPreview';
 import { FloatingMediaBar } from '@/features/live-video/ui/FloatingMediaBar';
+import { GamifiedParticipantRail } from '@/features/live-video/ui/GamifiedParticipantRail';
+import { useRailParticipants } from '@/features/live-video/hooks/useRailParticipants';
 import type { LiveAspectRatioId } from '@/features/live-video/shells/shared/shared-timer-sync.types';
-import { agoraUidFromUuid } from '@/lib/live-video/agora-uid';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -45,16 +45,9 @@ export type BaseVideoHarnessProps = {
 /** Stage tiles: match shell background so `fit: 'contain'` letterboxing blends with the dock. */
 const stagePreviewClass =
   'absolute inset-0 h-full w-full min-h-0 min-w-0 bg-background [&_.agora_video_player]:bg-background [&_video]:bg-background';
-const railTileClass =
-  'relative w-full aspect-video shrink-0 overflow-hidden rounded-lg border border-border bg-black shadow-md';
 
 const videoHiddenPlaceholderClass =
   'absolute inset-0 z-[1] flex items-center justify-center bg-black/80 text-xs text-muted-foreground';
-
-/** Unified rail entries for local PiP + remotes (future sortable leaderboard). */
-type RailParticipant =
-  | { kind: 'local'; key: string }
-  | { kind: 'remote'; key: string | number; user: IAgoraRTCRemoteUser };
 
 /**
  * Theater layout: host fills the aspect-locked main stage; participants render in a sibling rail.
@@ -81,9 +74,10 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
   const mediaControlsEnabled =
     isConnected && role === 'publisher' && !isConnecting && localVideoTrack != null;
 
-  const hostRtcUid = agoraUidFromUuid(props.hostUserId);
-  const localRtcUid = agoraUidFromUuid(props.localUserId);
-  const localIsHost = localRtcUid === hostRtcUid;
+  const { localIsHost, hostRtcUid, localRtcUid, allRailParticipants } = useRailParticipants(
+    props.localUserId,
+    props.hostUserId,
+  );
 
   const exclude = props.excludeUidForTiles;
   const localTileExcluded = exclude != null && String(localRtcUid) === String(exclude);
@@ -100,24 +94,6 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
 
   const hostRemoteTileExcluded =
     exclude != null && hostRemote != null && String(hostRemote.uid) === String(exclude);
-
-  const railRemotes = useMemo(() => {
-    if (localIsHost) return sortedRemotes;
-    return sortedRemotes.filter((u) => Number(u.uid) !== hostRtcUid);
-  }, [localIsHost, sortedRemotes, hostRtcUid]);
-
-  const railHasLocalPip = !localIsHost;
-
-  const allRailParticipants = useMemo((): RailParticipant[] => {
-    const list: RailParticipant[] = [];
-    if (railHasLocalPip) {
-      list.push({ kind: 'local', key: 'local-pip' });
-    }
-    for (const user of railRemotes) {
-      list.push({ kind: 'remote', key: user.uid, user });
-    }
-    return list;
-  }, [railHasLocalPip, railRemotes]);
 
   const aspectClass = (() => {
     switch (props.aspectRatio ?? '16:9') {
@@ -249,62 +225,13 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
           </div>
 
           {allRailParticipants.length > 0 ? (
-            // Copilot suggestion ignored: responsive stack/smaller min-width deferred; theater shell already treats mobile sessions separately.
-            <div
-              className="flex h-full w-[220px] shrink-0 flex-none flex-col gap-3 overflow-y-auto overscroll-contain rounded-xl border border-border bg-card/70 p-2 shadow-sm md:w-[260px]"
-              aria-label="Participant thumbnails"
-            >
-              {allRailParticipants.map((p) =>
-                p.kind === 'local' ? (
-                  <div key={p.key} className={railTileClass}>
-                    {localTileExcluded ? (
-                      <div className={cn(videoHiddenPlaceholderClass, 'text-[10px]')}>
-                        Video hidden
-                      </div>
-                    ) : (
-                      <>
-                        <LocalVideoPreview
-                          track={localVideoTrack}
-                          isMicMuted={isMicMuted}
-                          isCameraOff={isCameraOff}
-                          className="absolute inset-0 h-full w-full min-h-0 min-w-0"
-                        />
-                        {localVideoTrack == null ? (
-                          <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center bg-black/70 text-[10px] text-muted-foreground">
-                            {localIdleLabel}
-                          </div>
-                        ) : null}
-                        {props.localRailPipOverlay != null ? (
-                          <div className="pointer-events-none absolute inset-0 z-[44] flex items-end justify-end p-2">
-                            {props.localRailPipOverlay}
-                          </div>
-                        ) : null}
-                      </>
-                    )}
-                  </div>
-                ) : (
-                  <div key={p.key} className={railTileClass}>
-                    {exclude != null && String(p.user.uid) === String(exclude) ? (
-                      <div className={cn(videoHiddenPlaceholderClass, 'text-[10px]')}>
-                        Video hidden
-                      </div>
-                    ) : (
-                      <>
-                        <RemoteVideoPreview
-                          user={p.user}
-                          className="absolute inset-0 h-full w-full min-h-0 min-w-0 rounded-none border-0"
-                        />
-                        {props.renderRemoteRailBottomOverlay != null ? (
-                          <div className="pointer-events-none absolute inset-0 z-[44] flex items-end justify-end p-2">
-                            {props.renderRemoteRailBottomOverlay(String(p.user.uid))}
-                          </div>
-                        ) : null}
-                      </>
-                    )}
-                  </div>
-                ),
-              )}
-            </div>
+            <GamifiedParticipantRail
+              localUserId={props.localUserId}
+              hostUserId={props.hostUserId}
+              excludeUidForTiles={exclude}
+              localRailPipOverlay={props.localRailPipOverlay}
+              renderRemoteRailBottomOverlay={props.renderRemoteRailBottomOverlay}
+            />
           ) : null}
         </div>
         {!hideConnectedLeaveRow ? (

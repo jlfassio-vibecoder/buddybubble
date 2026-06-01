@@ -5,13 +5,10 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Layout } from 'react-resizable-panels';
 import { useGroupRef } from 'react-resizable-panels';
 import {
-  ChatDrawerProvider,
-  useChatDrawer,
-} from '@/features/live-video/contexts/ChatDrawerContext';
-import {
   HostNavActionsProvider,
   useHostNavActions,
 } from '@/features/live-video/contexts/HostNavActionsContext';
+import { AmrapRailProvider } from '@/features/live-video/contexts/AmrapRailContext';
 import {
   WrapperAttachProvider,
   useWrapperAttach,
@@ -31,8 +28,7 @@ import { useLiveSessionRoster } from '@/features/live-video/hooks/useLiveSession
 import { useSessionTeardown } from '@/features/live-video/hooks/useSessionTeardown';
 import { useLiveSessionRuntime } from '@/features/live-video/theater/live-session-runtime-context';
 import { useLiveTheaterLayoutPlanContext } from '@/features/live-video/theater/live-theater-layout-context';
-import { SessionHeader } from '@/features/live-video/shells/huddle/SessionHeader';
-import { SessionControls } from '@/features/live-video/shells/huddle/SessionControls';
+import { LiveSessionTopBar } from '@/features/live-video/shells/huddle/LiveSessionTopBar';
 import { WorkoutQueueRegion } from '@/features/live-video/ui/WorkoutQueueRegion';
 import { Tier3ExercisesReopenPill } from '@/features/live-video/ui/Tier3ExercisesReopenPill';
 import { useTier3DrawerOpen } from '@/features/live-video/hooks/useTier3DrawerOpen';
@@ -156,7 +152,6 @@ function LiveSessionViewInner({
   const { override } = useWrapperAttach();
   const { hostNavActions } = useHostNavActions();
   const { sessionDrawerNode } = useSessionDrawer();
-  const { chatDrawerLeaderboard } = useChatDrawer();
   const {
     topLeftOverlay,
     topRightOverlay,
@@ -514,20 +509,29 @@ function LiveSessionViewInner({
           className,
         )}
       >
-        <div className="flex shrink-0 flex-col gap-2">
-          <div className="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-border pb-3">
-            <SessionHeader
-              className="min-w-0 flex-1 border-b-0 pb-0 text-left"
-              isSelectingFromBoard={selectingFromBoard}
-              uiMode={uiMode}
-            />
-            {!showWrapperBoardSplit && hostNavActions != null ? (
-              <div className="shrink-0 rounded-lg border border-border bg-muted/40 px-2 py-1 text-sm">
-                {hostNavActions}
-              </div>
-            ) : null}
-          </div>
-        </div>
+        <LiveSessionTopBar
+          isSelectingFromBoard={selectingFromBoard}
+          uiMode={uiMode}
+          state={state}
+          actions={actions}
+          disableActions={!isHost}
+          onHostEndLiveSessionForAll={isHost ? onHostEndLiveSessionForAll : undefined}
+          onHostStartRecording={isHost ? onHostStartRecording : undefined}
+          onLeaveDock={onAfterLeave != null ? handleLeaveDock : undefined}
+          liveDbReady={liveDbReady}
+          hostClassRecordingPipelineBusy={isHost ? hostClassRecordingPipelineBusy : false}
+          hostAsyncWorkoutEnabled={isHost ? hostAsyncWorkoutEnabled : undefined}
+          hostNavActions={!showWrapperBoardSplit ? hostNavActions : null}
+          hostDeckInjector={
+            !selectingFromBoard && isHost && canWriteTasks ? (
+              <LiveDeckExerciseInjector
+                workspaceId={workspaceId}
+                workoutsBubbleId={workoutsBubbleId ?? null}
+                canWrite={canWriteTasks}
+              />
+            ) : null
+          }
+        />
 
         {huddle.showWorkoutQueueStrip ? (
           <WorkoutQueueRegion
@@ -576,9 +580,6 @@ function LiveSessionViewInner({
                           <ActiveIntervalWrapper {...wrapperProps} />
                         </WrapperErrorBoundary>
                       </div>
-                      {chatDrawerLeaderboard != null ? (
-                        <div className="shrink-0">{chatDrawerLeaderboard}</div>
-                      ) : null}
                     </div>
                   ) : (
                     workoutPlayer
@@ -622,36 +623,6 @@ function LiveSessionViewInner({
               </WrapperErrorBoundary>
             </div>
           )
-        ) : null}
-        {selectingFromBoard ? null : (
-          <div className="flex shrink-0 flex-col gap-2">
-            {isHost && canWriteTasks ? (
-              <div className="flex justify-start">
-                <LiveDeckExerciseInjector
-                  workspaceId={workspaceId}
-                  workoutsBubbleId={workoutsBubbleId ?? null}
-                  canWrite={canWriteTasks}
-                />
-              </div>
-            ) : null}
-            <SessionControls
-              state={state}
-              actions={actions}
-              disableActions={!isHost}
-              onHostEndLiveSessionForAll={isHost ? onHostEndLiveSessionForAll : undefined}
-              onHostStartRecording={isHost ? onHostStartRecording : undefined}
-              onLeaveDock={onAfterLeave != null ? handleLeaveDock : undefined}
-              liveDbReady={liveDbReady}
-              hostClassRecordingPipelineBusy={isHost ? hostClassRecordingPipelineBusy : false}
-              hostAsyncWorkoutEnabled={isHost ? hostAsyncWorkoutEnabled : undefined}
-              className="shrink-0"
-            />
-          </div>
-        )}
-        {!selectingFromBoard && wrapperPhaseMatches && chatDrawerLeaderboard != null ? (
-          <div className="shrink-0 rounded-lg border border-border bg-card/60 p-3">
-            {chatDrawerLeaderboard}
-          </div>
         ) : null}
         {selectingFromBoard && deckSel ? (
           <div className="flex shrink-0 flex-col gap-2 border-t border-border pt-3">
@@ -709,13 +680,13 @@ export function LiveSessionView(props: LiveSessionViewProps) {
     <TimerBackgroundProvider>
       <VideoOverlaySlotsProvider>
         <SessionDrawerProvider>
-          <ChatDrawerProvider>
+          <AmrapRailProvider>
             <WrapperAttachProvider>
               <HostNavActionsProvider>
                 <LiveSessionViewInner {...props} />
               </HostNavActionsProvider>
             </WrapperAttachProvider>
-          </ChatDrawerProvider>
+          </AmrapRailProvider>
         </SessionDrawerProvider>
       </VideoOverlaySlotsProvider>
     </TimerBackgroundProvider>

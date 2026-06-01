@@ -57,7 +57,6 @@ export interface AmrapSessionEngine {
   error: string | null;
 
   slots: {
-    chatDrawerLeaderboard: ReactNode;
     sessionDrawer: ReactNode;
     hostNavActions: ReactNode;
   };

@@ -38,6 +38,26 @@ describe('WorkoutQueueRegion', () => {
     expect(collapsedAttr(screen.getByTestId('deck-builder'))).toBe('true');
   });
 
+  it('collapses when phase leaves lobby', () => {
+    const { rerender } = render(
+      <WorkoutQueueRegion
+        state={{ ...initialSessionState, phase: 'lobby' }}
+        uiMode="builder"
+        selectingFromBoard={false}
+      />,
+    );
+    expect(collapsedAttr(screen.getByTestId('deck-builder'))).toBe('false');
+
+    rerender(
+      <WorkoutQueueRegion
+        state={{ ...initialSessionState, phase: 'amrap' }}
+        uiMode="builder"
+        selectingFromBoard={false}
+      />,
+    );
+    expect(collapsedAttr(screen.getByTestId('deck-builder'))).toBe('true');
+  });
+
   it('allows manual toggle until uiMode changes', () => {
     render(
       <WorkoutQueueRegion

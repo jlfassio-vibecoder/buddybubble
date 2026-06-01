@@ -19,6 +19,10 @@ export function WorkoutQueueRegion({ state, uiMode, className }: WorkoutQueueReg
   const panelId = useId();
 
   useEffect(() => {
+    if (state.phase !== 'lobby') setIsOpen(false);
+  }, [state.phase]);
+
+  useEffect(() => {
     setIsOpen(uiMode !== 'live');
   }, [uiMode]);
 

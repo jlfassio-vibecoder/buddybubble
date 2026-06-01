@@ -31,9 +31,9 @@ const ASPECT_RATIO_OPTIONS: ReadonlyArray<{ id: '16:9' | '9:16' | '1:1'; label: 
 ];
 
 /**
- * Claims the flex-1 row between Header and SessionControls. Owns the local aspect
- * ratio selector so the video frame stays structurally static when the session
- * clock starts (no phase-driven height changes).
+ * Claims the flex-1 main stage row below the Top App Bar and Tier 1 queue. Owns the
+ * local aspect ratio selector so the video frame stays structurally static when the
+ * session clock starts (no phase-driven height changes).
  */
 export function VideoStageWrapper({
   className,

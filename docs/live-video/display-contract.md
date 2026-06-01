@@ -39,7 +39,7 @@ This contract defines **what mounts where** in the connected huddle (`LiveSessio
 | **Component cooperation** | `SessionDeckBuilder.isCollapsed={!isOpen}` zeros strip min-heights                    |
 | **Pre-join parity**       | `PreJoinBuilder` keeps bare `SessionDeckBuilder` (always open, no toggle)—intentional |
 
-**Phase 2 as-built:** Matches above. **Gap (Phase 3b):** No coupling to `state.phase` (AMRAP/warm-up/tabata)—see §6 Rule V3.
+**Phase 2 as-built:** Matches above. **Phase 3b:** Tier 1 also collapses when `state.phase !== 'lobby'` (Rule V3).
 
 ### Tier 2 — Up Next summary (`UpNextCard`)
 
@@ -264,17 +264,17 @@ The main video stage must retain a **contracted minimum visible height** in the 
 
 ## 7. Gap analysis — Phase 2 as-built vs contract
 
-| Area                     | As-built (Phase 2)       | Contract target                                        | Phase |
-| ------------------------ | ------------------------ | ------------------------------------------------------ | ----- |
-| Tier 1 collapse on live  | `uiMode` only            | + collapse on `state.phase !== 'lobby'`                | 3b    |
-| Tier 2                   | Removed from LSV         | Frozen                                                 | Done  |
-| Tier 3                   | Resizable split          | Non-modal panel + Selection=Auto-Open                  | **3** |
-| Tier 3 live auto-open    | Split opens (width cost) | Panel auto-open; no backdrop; video bright/interactive | **3** |
-| AMRAP footer leaderboard | Inline below controls    | **Banned** → Gamified Rail                             | 4     |
-| Stage bottom lap strip   | Up to 52vh               | **Banned** → rail tile chips                           | 4     |
-| Header + footer          | Two bands                | Merged Top App Bar                                     | 4     |
-| `showWrapperBoardSplit`  | Dormant                  | Remain dormant unless contract amended                 | —     |
-| Warm-up/Tabata           | Overlays only            | Unchanged                                              | —     |
+| Area                     | As-built (Phase 2)    | Contract target                                        | Phase |
+| ------------------------ | --------------------- | ------------------------------------------------------ | ----- |
+| Tier 1 collapse on live  | `uiMode` only         | + collapse on `state.phase !== 'lobby'`                | Done  |
+| Tier 2                   | Removed from LSV      | Frozen                                                 | Done  |
+| Tier 3                   | Non-modal push panel  | Non-modal panel + Selection=Auto-Open                  | Done  |
+| Tier 3 live auto-open    | Panel auto-open       | Panel auto-open; no backdrop; video bright/interactive | Done  |
+| AMRAP footer leaderboard | Inline below controls | **Banned** → Gamified Rail                             | Done  |
+| Stage bottom lap strip   | Up to 52vh            | **Banned** → rail tile chips                           | Done  |
+| Header + footer          | Two bands             | Merged Top App Bar                                     | Done  |
+| `showWrapperBoardSplit`  | Dormant               | Remain dormant unless contract amended                 | —     |
+| Warm-up/Tabata           | Overlays only         | Unchanged                                              | —     |
 
 ---
 
