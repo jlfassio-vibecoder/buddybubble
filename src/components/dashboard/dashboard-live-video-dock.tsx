@@ -25,6 +25,7 @@ import {
   parseClassRecordingFromInstanceMetadata,
 } from '@/types/live-session-invite';
 import type { SessionAspectRatioId } from '@/features/live-video/state/sessionStateMachine';
+import { cn } from '@/lib/utils';
 
 export type DashboardLiveVideoDockProps = {
   session: LiveVideoActiveSession;
@@ -435,6 +436,7 @@ function DashboardLiveVideoDockRouter({
       <LiveSessionView
         localUserId={localUserId}
         hostUserId={session.hostUserId}
+        onAfterLeave={onLeaveSession}
         onHostEndLiveSessionForAll={onHostEndLiveSessionForAll}
         workspaceId={session.workspaceId}
         supabase={supabase}
@@ -485,11 +487,18 @@ export function DashboardLiveVideoDockBody({
   workoutsBubbleId,
 }: DashboardLiveVideoDockProps) {
   const supabase = useMemo(() => createClient(), []);
+  const { isConnected, isConnecting } = useAgoraSession();
+  const compactDockChrome = isConnected || isConnecting;
 
   if (session.mode !== 'workout') return null;
 
   return (
-    <div className="relative isolate flex min-h-0 min-w-0 flex-1 overflow-hidden border-b border-border bg-background/95 px-2 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+    <div
+      className={cn(
+        'relative isolate flex min-h-0 min-w-0 flex-1 overflow-hidden border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80',
+        compactDockChrome ? 'px-0 py-0' : 'px-2 py-2',
+      )}
+    >
       <div
         aria-hidden
         className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-primary/8 to-transparent"

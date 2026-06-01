@@ -1,11 +1,11 @@
 'use client';
 
-import type { IAgoraRTCRemoteUser } from 'agora-rtc-sdk-ng';
 import { useMemo, type ReactNode } from 'react';
 import { useAgoraSession } from '@/features/live-video/agora-session-context';
 import { LocalVideoPreview } from '@/features/live-video/LocalVideoPreview';
 import { RemoteVideoPreview } from '@/features/live-video/RemoteVideoPreview';
 import { FloatingMediaBar } from '@/features/live-video/ui/FloatingMediaBar';
+import { GamifiedParticipantRail } from '@/features/live-video/ui/GamifiedParticipantRail';
 import type { LiveAspectRatioId } from '@/features/live-video/shells/shared/shared-timer-sync.types';
 import { agoraUidFromUuid } from '@/lib/live-video/agora-uid';
 import { Button } from '@/components/ui/button';
@@ -38,27 +38,23 @@ export type BaseVideoHarnessProps = {
   renderRemoteRailBottomOverlay?: (agoraUidStr: string) => ReactNode;
   /** When set, the tile for this Agora uid shows a placeholder instead of live video. */
   excludeUidForTiles?: string | null;
+  /** Tighter padding when embedded in the live theater dock (live session UI). */
+  compactChrome?: boolean;
 };
 
 /** Stage tiles: match shell background so `fit: 'contain'` letterboxing blends with the dock. */
 const stagePreviewClass =
   'absolute inset-0 h-full w-full min-h-0 min-w-0 bg-background [&_.agora_video_player]:bg-background [&_video]:bg-background';
-const railTileClass =
-  'relative w-full aspect-video shrink-0 overflow-hidden rounded-lg border border-border bg-black shadow-md';
 
 const videoHiddenPlaceholderClass =
   'absolute inset-0 z-[1] flex items-center justify-center bg-black/80 text-xs text-muted-foreground';
-
-/** Unified rail entries for local PiP + remotes (future sortable leaderboard). */
-type RailParticipant =
-  | { kind: 'local'; key: string }
-  | { kind: 'remote'; key: string | number; user: IAgoraRTCRemoteUser };
 
 /**
  * Theater layout: host fills the aspect-locked main stage; participants render in a sibling rail.
  */
 export function BaseVideoHarness(props: BaseVideoHarnessProps) {
   const fullWidth = Boolean(props.fullWidth);
+  const compactChrome = Boolean(props.compactChrome);
 
   const {
     isConnected,
@@ -98,24 +94,6 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
   const hostRemoteTileExcluded =
     exclude != null && hostRemote != null && String(hostRemote.uid) === String(exclude);
 
-  const railRemotes = useMemo(() => {
-    if (localIsHost) return sortedRemotes;
-    return sortedRemotes.filter((u) => Number(u.uid) !== hostRtcUid);
-  }, [localIsHost, sortedRemotes, hostRtcUid]);
-
-  const railHasLocalPip = !localIsHost;
-
-  const allRailParticipants = useMemo((): RailParticipant[] => {
-    const list: RailParticipant[] = [];
-    if (railHasLocalPip) {
-      list.push({ kind: 'local', key: 'local-pip' });
-    }
-    for (const user of railRemotes) {
-      list.push({ kind: 'remote', key: user.uid, user });
-    }
-    return list;
-  }, [railHasLocalPip, railRemotes]);
-
   const aspectClass = (() => {
     switch (props.aspectRatio ?? '16:9') {
       case '9:16':
@@ -140,11 +118,16 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
           ? 'Connected (no local video)'
           : 'Idle';
 
+  const hideConnectedLeaveRow = fullWidth && isConnected;
+  // Leave/Exit lives in SessionControls ("Exit workout") when the dock passes onAfterLeave.
+
   return (
     <div
       className={cn(
         fullWidth
-          ? 'mx-0 flex w-full min-w-0 max-w-none flex-1 min-h-0 flex-col items-stretch gap-4 px-2 py-4 sm:gap-6 sm:px-4 sm:py-6'
+          ? compactChrome
+            ? 'mx-0 flex w-full min-w-0 max-w-none flex-1 min-h-0 flex-col items-stretch gap-2 px-0 py-0 sm:px-1 sm:py-1'
+            : 'mx-0 flex w-full min-w-0 max-w-none flex-1 min-h-0 flex-col items-stretch gap-4 px-2 py-4 sm:gap-6 sm:px-4 sm:py-6'
           : 'mx-auto flex w-full max-w-4xl flex-1 min-h-0 flex-col items-center gap-6 px-4 py-6',
         props.className,
       )}
@@ -166,10 +149,10 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
            * Agora has no pixels to paint. Use stretch + justify-center so height is
            * definite and width follows aspect (w-auto), centered on the main axis.
            */}
-          <div className="flex min-h-0 min-w-0 h-full w-full flex-1 flex-row items-stretch justify-center">
+          <div className="flex min-h-0 min-w-0 h-full flex-[1_1_0%] flex-row items-stretch justify-center">
             <div
               className={cn(
-                'relative w-auto max-w-full min-h-0 shrink-0 overflow-hidden rounded-xl bg-transparent transition-[aspect-ratio] duration-300',
+                'relative h-full max-h-full w-auto max-w-full min-h-0 overflow-hidden rounded-xl bg-transparent transition-[aspect-ratio] duration-300',
                 aspectClass,
               )}
               data-live-video-stage
@@ -240,91 +223,42 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
             </div>
           </div>
 
-          {allRailParticipants.length > 0 ? (
-            // Copilot suggestion ignored: responsive stack/smaller min-width deferred; theater shell already treats mobile sessions separately.
-            <div
-              className="flex h-full min-w-[240px] max-w-[400px] flex-[1] shrink-0 flex-col gap-3 overflow-y-auto overscroll-contain rounded-xl border border-border bg-card/70 p-2 shadow-sm"
-              aria-label="Participant thumbnails"
-            >
-              {allRailParticipants.map((p) =>
-                p.kind === 'local' ? (
-                  <div key={p.key} className={railTileClass}>
-                    {localTileExcluded ? (
-                      <div className={cn(videoHiddenPlaceholderClass, 'text-[10px]')}>
-                        Video hidden
-                      </div>
-                    ) : (
-                      <>
-                        <LocalVideoPreview
-                          track={localVideoTrack}
-                          isMicMuted={isMicMuted}
-                          isCameraOff={isCameraOff}
-                          className="absolute inset-0 h-full w-full min-h-0 min-w-0"
-                        />
-                        {localVideoTrack == null ? (
-                          <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center bg-black/70 text-[10px] text-muted-foreground">
-                            {localIdleLabel}
-                          </div>
-                        ) : null}
-                        {props.localRailPipOverlay != null ? (
-                          <div className="pointer-events-none absolute inset-0 z-[44] flex items-end justify-end p-2">
-                            {props.localRailPipOverlay}
-                          </div>
-                        ) : null}
-                      </>
-                    )}
-                  </div>
-                ) : (
-                  <div key={p.key} className={railTileClass}>
-                    {exclude != null && String(p.user.uid) === String(exclude) ? (
-                      <div className={cn(videoHiddenPlaceholderClass, 'text-[10px]')}>
-                        Video hidden
-                      </div>
-                    ) : (
-                      <>
-                        <RemoteVideoPreview
-                          user={p.user}
-                          className="absolute inset-0 h-full w-full min-h-0 min-w-0 rounded-none border-0"
-                        />
-                        {props.renderRemoteRailBottomOverlay != null ? (
-                          <div className="pointer-events-none absolute inset-0 z-[44] flex items-end justify-end p-2">
-                            {props.renderRemoteRailBottomOverlay(String(p.user.uid))}
-                          </div>
-                        ) : null}
-                      </>
-                    )}
-                  </div>
-                ),
-              )}
-            </div>
-          ) : null}
+          <GamifiedParticipantRail
+            localUserId={props.localUserId}
+            hostUserId={props.hostUserId}
+            excludeUidForTiles={exclude}
+            localRailPipOverlay={props.localRailPipOverlay}
+            renderRemoteRailBottomOverlay={props.renderRemoteRailBottomOverlay}
+          />
         </div>
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          {/*
-           * Harness no longer owns the primary Join CTA — that lives in
-           * `PreJoinBuilder` so the pre-join surface stays content-first.
-           * Keep Join visible only when the harness is rendered disconnected
-           * (e.g. legacy scaffold paths); hide it once Agora is live.
-           */}
-          {!isConnected && !isConnecting ? (
-            <Button type="button" size="sm" variant="secondary" onClick={joinChannel}>
-              Join
-            </Button>
-          ) : null}
-          {isConnected || isConnecting ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                leaveChannel();
-                props.onAfterLeave?.();
-              }}
-            >
-              Leave
-            </Button>
-          ) : null}
-        </div>
+        {!hideConnectedLeaveRow ? (
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {/*
+             * Harness no longer owns the primary Join CTA — that lives in
+             * `PreJoinBuilder` so the pre-join surface stays content-first.
+             * Keep Join visible only when the harness is rendered disconnected
+             * (e.g. legacy scaffold paths); hide it once Agora is live.
+             */}
+            {!isConnected && !isConnecting ? (
+              <Button type="button" size="sm" variant="secondary" onClick={joinChannel}>
+                Join
+              </Button>
+            ) : null}
+            {isConnected || isConnecting ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  leaveChannel();
+                  props.onAfterLeave?.();
+                }}
+              >
+                Leave
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       {props.children != null ? (

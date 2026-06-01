@@ -9,6 +9,7 @@ import { mergeWorkoutExercisesIntoTaskMetadata } from '@/features/live-video/she
 import { usePersistDeckSnapshot } from '@/features/live-video/shells/huddle/usePersistDeckSnapshot';
 import { metadataFieldsFromParsed } from '@/lib/item-metadata';
 import type { WorkoutExercise } from '@/lib/item-metadata';
+import { Tier3DrawerCloseHeader } from '@/features/live-video/ui/Tier3DrawerCloseHeader';
 import { cn } from '@/lib/utils';
 import { useUserProfileStore } from '@/store/userProfileStore';
 import type { ItemType, UnitSystem } from '@/types/database';
@@ -24,6 +25,7 @@ export type LiveSessionWorkoutPlayerProps = {
    * (e.g. `focusBoard()` + tripwire logging from the parent).
    */
   onHostLayoutFocusBoard?: () => void;
+  onClose?: () => void;
 };
 
 function isWorkoutItemType(t: ItemType | string): boolean {
@@ -37,6 +39,7 @@ export function LiveSessionWorkoutPlayer({
   canWrite,
   onPersistSuccess,
   onHostLayoutFocusBoard,
+  onClose,
 }: LiveSessionWorkoutPlayerProps) {
   const ctx = useWorkoutDeckSelectionOptional();
   const profileId = useUserProfileStore((s) => s.profile?.id);
@@ -118,26 +121,22 @@ export function LiveSessionWorkoutPlayer({
 
   if (!activeSnapshot) {
     return (
-      <div
-        className={cn(
-          'rounded-lg border border-dashed border-border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground',
-          className,
-        )}
-      >
-        Add workouts from the board, then select a card above to edit exercises.
+      <div className={cn('flex min-h-0 flex-1 flex-col overflow-hidden', className)}>
+        {onClose ? <Tier3DrawerCloseHeader onClose={onClose} /> : null}
+        <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-dashed border-border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
+          Add workouts from the board, then select a card above to edit exercises.
+        </div>
       </div>
     );
   }
 
   if (!isWorkoutItemType(activeSnapshot.task.item_type)) {
     return (
-      <div
-        className={cn(
-          'rounded-lg border border-border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground',
-          className,
-        )}
-      >
-        Selected card is not a workout — exercise editing is only available for workout cards.
+      <div className={cn('flex min-h-0 flex-1 flex-col overflow-hidden', className)}>
+        {onClose ? <Tier3DrawerCloseHeader onClose={onClose} /> : null}
+        <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
+          Selected card is not a workout — exercise editing is only available for workout cards.
+        </div>
       </div>
     );
   }
@@ -146,6 +145,7 @@ export function LiveSessionWorkoutPlayer({
 
   return (
     <div className={cn('flex min-h-0 flex-1 flex-col gap-3 overflow-hidden', className)}>
+      {onClose ? <Tier3DrawerCloseHeader onClose={onClose} /> : null}
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1">
         <WorkoutExercisesEditor
           key={activeSnapshot.snapshotId}
