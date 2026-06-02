@@ -1,5 +1,6 @@
 'use client';
 
+import type { SessionState } from '@/features/live-video/state/sessionStateMachine';
 import { cn } from '@/lib/utils';
 
 export type SessionHeaderProps = {
@@ -12,6 +13,8 @@ export type SessionHeaderProps = {
   titleOverride?: string;
   /** Override default subtitle lines when provided. */
   subtitleOverride?: string;
+  /** Session lifecycle status — drives contextual live subtitle copy. */
+  status?: SessionState['status'];
 };
 
 export function SessionHeader({
@@ -20,15 +23,18 @@ export function SessionHeader({
   uiMode = 'builder',
   titleOverride,
   subtitleOverride,
+  status = 'idle',
 }: SessionHeaderProps) {
   const defaultTitle =
     uiMode === 'live' ? 'Live Session — The Huddle' : 'Workout Builder — The Huddle';
   const title = titleOverride?.trim() || defaultTitle;
   const defaultSubtitle = isSelectingFromBoard
     ? 'Tap cards on the board to add them to your queue, then tap Done selecting.'
-    : uiMode === 'live'
-      ? 'Session in progress'
-      : 'Queue exercises from your board below';
+    : status !== 'idle'
+      ? 'Session running'
+      : uiMode === 'live'
+        ? 'Session in progress'
+        : 'Queue exercises from your board below';
   const subtitle = subtitleOverride?.trim() || defaultSubtitle;
 
   return (

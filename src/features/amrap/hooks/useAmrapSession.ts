@@ -129,6 +129,7 @@ export function useAmrapSession(options: UseAmrapSessionOptions): AmrapSessionEn
           isHost: p.is_host,
           isSelf: p.user_id != null && p.user_id === authUserId,
           userId: p.user_id,
+          workoutLogTaskId: p.workout_log_task_id ?? null,
         };
       });
   }, [participants, authUserId, timerState.workStartedAt, amrapRoundRows]);
@@ -226,6 +227,8 @@ export function useAmrapSession(options: UseAmrapSessionOptions): AmrapSessionEn
     }
   }, [viewResultsText]);
 
+  const savedToAnalytics = Boolean(selfParticipant?.workoutLogTaskId);
+
   const pageState = useMemo(
     () => ({
       showViewResultsModal,
@@ -239,6 +242,7 @@ export function useAmrapSession(options: UseAmrapSessionOptions): AmrapSessionEn
       copyResults,
       copyResultsToast,
       isHost,
+      savedToAnalytics,
     }),
     [
       showViewResultsModal,
@@ -248,6 +252,7 @@ export function useAmrapSession(options: UseAmrapSessionOptions): AmrapSessionEn
       copyResults,
       copyResultsToast,
       isHost,
+      savedToAnalytics,
     ],
   );
 

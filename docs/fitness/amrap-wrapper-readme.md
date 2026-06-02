@@ -270,12 +270,13 @@ Roster for the AMRAP block.
 
 Relevant columns:
 
-| Column             | Purpose                           |
-| ------------------ | --------------------------------- |
-| `amrap_session_id` | AMRAP session id.                 |
-| `user_id`          | Auth user id.                     |
-| `display_name`     | Name shown in roster/leaderboard. |
-| `is_host`          | Host marker.                      |
+| Column                | Purpose                                                                       |
+| --------------------- | ----------------------------------------------------------------------------- |
+| `amrap_session_id`    | AMRAP session id.                                                             |
+| `user_id`             | Auth user id.                                                                 |
+| `display_name`        | Name shown in roster/leaderboard.                                             |
+| `is_host`             | Host marker.                                                                  |
+| `workout_log_task_id` | Completed `workout_log` task auto-created on host finalize; null until saved. |
 
 ### `amrap_session_rounds`
 
@@ -291,19 +292,19 @@ Relevant columns:
 
 ## RPCs
 
-| RPC                                                                                 | Caller                     | Purpose                                                                                                                        |
-| ----------------------------------------------------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `live_session_create(p_session_id, p_display_name, p_agora_uid)`                    | Host                       | Creates `live_sessions` and upserts host `live_session_participants`.                                                          |
-| `live_session_participant_join(p_session_id, p_display_name, p_agora_uid, p_role)`  | Participant/host           | Upserts live participant row after Agora connection.                                                                           |
-| `get_live_session_join_hints(p_session_id)`                                         | Any client with session id | Returns wrapper kind/config before or alongside full row access.                                                               |
-| `live_session_list_participants(p_session_id)`                                      | Host/participant           | Lists live participants; used to find host `agora_uid`.                                                                        |
-| `amrap_create_for_session(p_live_session_id, p_duration_seconds, p_block_snapshot)` | Host                       | Ensures AMRAP session, upserts host AMRAP participant, attaches wrapper config on `live_sessions`, returns `amrap_session_id`. |
-| `amrap_join_session(p_amrap_session_id, p_display_name)`                            | Participant                | Upserts caller into AMRAP roster.                                                                                              |
-| `amrap_start_timer(p_amrap_session_id)`                                             | Host                       | Sets timer phase to `work` and `work_started_at = now()`.                                                                      |
-| `amrap_reset_timer(p_amrap_session_id)`                                             | Host                       | Deletes rounds, resets timer to `idle`, and clears `leaderboard_snapshot` / `results_finalized_at`.                            |
-| `amrap_log_round(p_amrap_session_id, p_participant_id)`                             | Participant/host self      | Inserts one round for the caller's own AMRAP participant row.                                                                  |
-| `amrap_finalize_session(p_amrap_session_id, p_snapshot)`                            | Host                       | Idempotent: sets `timer_phase = finished`, `leaderboard_snapshot`, `results_finalized_at` once.                                |
-| `host_detach_amrap_session(p_session_id)`                                           | Host                       | Clears `live_sessions.interval_wrapper_kind/config`; leaves AMRAP rows intact.                                                 |
+| RPC                                                                                 | Caller                     | Purpose                                                                                                                                                                                              |
+| ----------------------------------------------------------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `live_session_create(p_session_id, p_display_name, p_agora_uid)`                    | Host                       | Creates `live_sessions` and upserts host `live_session_participants`.                                                                                                                                |
+| `live_session_participant_join(p_session_id, p_display_name, p_agora_uid, p_role)`  | Participant/host           | Upserts live participant row after Agora connection.                                                                                                                                                 |
+| `get_live_session_join_hints(p_session_id)`                                         | Any client with session id | Returns wrapper kind/config before or alongside full row access.                                                                                                                                     |
+| `live_session_list_participants(p_session_id)`                                      | Host/participant           | Lists live participants; used to find host `agora_uid`.                                                                                                                                              |
+| `amrap_create_for_session(p_live_session_id, p_duration_seconds, p_block_snapshot)` | Host                       | Ensures AMRAP session, upserts host AMRAP participant, attaches wrapper config on `live_sessions`, returns `amrap_session_id`.                                                                       |
+| `amrap_join_session(p_amrap_session_id, p_display_name)`                            | Participant                | Upserts caller into AMRAP roster.                                                                                                                                                                    |
+| `amrap_start_timer(p_amrap_session_id)`                                             | Host                       | Sets timer phase to `work` and `work_started_at = now()`.                                                                                                                                            |
+| `amrap_reset_timer(p_amrap_session_id)`                                             | Host                       | Deletes rounds, resets timer to `idle`, and clears `leaderboard_snapshot` / `results_finalized_at`.                                                                                                  |
+| `amrap_log_round(p_amrap_session_id, p_participant_id)`                             | Participant/host self      | Inserts one round for the caller's own AMRAP participant row.                                                                                                                                        |
+| `amrap_finalize_session(p_amrap_session_id, p_snapshot)`                            | Host                       | Idempotent: locks leaderboard, auto-creates per-participant `workout_log` tasks (rounds > 0) in the Workout Logs bubble; merges `workout_exercise_logs` actuals (LBS/reps/RPE) per set when present. |
+| `host_detach_amrap_session(p_session_id)`                                           | Host                       | Clears `live_sessions.interval_wrapper_kind/config`; leaves AMRAP rows intact.                                                                                                                       |
 
 Most AMRAP tables have RLS enabled. Writes happen through `security definer` RPCs and are gated by host ownership or live session membership.
 
@@ -374,7 +375,9 @@ AMRAP timer state comes from `amrap_sessions`:
 
 This gives every client the same server-clock origin without broadcasting timer ticks.
 
-After the block ends, the **host** can run **Lock & Save Results**, which calls `amrap_finalize_session` with a viewer-agnostic JSON payload (dense-rank groups from `computeAmrapLeaderboard`, with `isSelf` stripped before persist). Each client re-applies `isSelf` when parsing via `parseLeaderboardSnapshot(raw, authUserId)`. The chat-drawer leaderboard and results text prefer that frozen snapshot when parsing succeeds; otherwise they fall back to live math (legacy sessions).
+After the block ends, the **host** can run **Lock & Save Results**, which calls `amrap_finalize_session` with a viewer-agnostic JSON payload (dense-rank groups from `computeAmrapLeaderboard`, with `isSelf` stripped before persist). The RPC also auto-creates a completed `workout_log` task for each participant with rounds > 0 (shared workspace model: logs land in the **Workout Logs** bubble, assigned to that user). **Set merge:** for each exercise, AMRAP round N maps to `set_number` N in `workout_exercise_logs` (scoped by `live_session_id`, participant `user_id`, exercise name, set number, and `created_at >= coalesce(work_started_at, amrap_sessions.created_at)` — **not** by `task_id`, so deck card switches mid-block still merge). When a persisted actual row exists for that set, its `weight_lbs`, `reps`, and `rpe` are written into `metadata.exercises[].set_logs`; unlogged sets fall back to block prescription. Merge contract is implemented in SQL and mirrored in [`src/lib/fitness/merge-amrap-workout-log-exercises.ts`](../../src/lib/fitness/merge-amrap-workout-log-exercises.ts) (`filterAmrapActualLogsForBlock` + `mergeAmrapWorkoutLogExercises`). Participants see **View results** in `AmrapRailRecapBanner`; when their row has `workout_log_task_id`, `ViewResultsModal` shows "Saved to your Analytics ✓". Each client re-applies `isSelf` when parsing via `parseLeaderboardSnapshot(raw, authUserId)`. Results text prefers the frozen snapshot when parsing succeeds; otherwise it falls back to live math (legacy sessions).
+
+`amrap_reset_timer` clears rounds and unfinalized snapshot state but **does not** delete auto-saved `workout_log` tasks (analytics are durable).
 
 ## Workout Block Snapshot
 

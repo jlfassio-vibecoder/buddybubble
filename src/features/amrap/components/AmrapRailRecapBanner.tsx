@@ -4,18 +4,28 @@ import { Button } from '@/components/ui/button';
 import { useAmrapRailOptional } from '@/features/live-video/contexts/AmrapRailContext';
 import { cn } from '@/lib/utils';
 
-export type AmrapRailFinalizeBannerProps = {
+export type AmrapRailRecapBannerProps = {
   className?: string;
 };
 
-export function AmrapRailFinalizeBanner({ className }: AmrapRailFinalizeBannerProps) {
+export function AmrapRailRecapBanner({ className }: AmrapRailRecapBannerProps) {
   const rail = useAmrapRailOptional();
   const engine = rail?.engine;
   const isHost = rail?.isHost ?? false;
 
-  if (!isHost || engine == null || engine.timerPhase !== 'finished') {
+  if (engine == null || engine.timerPhase !== 'finished') {
     return null;
   }
+
+  const finalized = engine.resultsFinalizedAt != null;
+
+  const statusLine = isHost
+    ? 'AMRAP complete'
+    : finalized
+      ? 'Results locked'
+      : 'Waiting for host to lock results';
+
+  const viewResultsLabel = isHost || finalized ? 'View results' : 'View provisional results';
 
   return (
     <div
@@ -23,9 +33,9 @@ export function AmrapRailFinalizeBanner({ className }: AmrapRailFinalizeBannerPr
       role="region"
       aria-label="AMRAP results actions"
     >
-      <p className="mb-2 text-[11px] font-medium text-foreground">AMRAP complete</p>
+      <p className="mb-2 text-[11px] font-medium text-foreground">{statusLine}</p>
       <div className="flex flex-wrap gap-1.5">
-        {engine.finalizeSession ? (
+        {isHost && engine.finalizeSession ? (
           <Button
             type="button"
             size="sm"
@@ -42,7 +52,7 @@ export function AmrapRailFinalizeBanner({ className }: AmrapRailFinalizeBannerPr
           className="h-7 text-xs"
           onClick={() => engine.pageState.handleOpenViewResults()}
         >
-          View results
+          {viewResultsLabel}
         </Button>
       </div>
     </div>

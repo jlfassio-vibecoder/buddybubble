@@ -15,6 +15,8 @@ export interface AmrapParticipantEngine {
   isSelf: boolean;
   /** Supabase auth.uid for the participant; null for guests without auth.uid(). */
   userId: string | null;
+  /** Auto-saved workout_log task id after host finalize; null until saved. */
+  workoutLogTaskId: string | null;
 }
 
 export type AmrapLapEntry = { round: number; durationLabel: string };
@@ -70,5 +72,6 @@ export interface AmrapSessionEngine {
     copyResults: () => Promise<void>;
     copyResultsToast: 'success' | 'error' | null;
     isHost: boolean;
+    savedToAnalytics: boolean;
   };
 }
