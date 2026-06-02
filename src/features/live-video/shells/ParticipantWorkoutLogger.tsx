@@ -12,6 +12,8 @@ import { useLiveSessionRuntime } from '@/features/live-video/theater/live-sessio
 import { formatUserFacingError } from '@/lib/format-error';
 import { metadataFieldsFromParsed } from '@/lib/item-metadata';
 import type { WorkoutExercise } from '@/lib/item-metadata';
+import { resolveParticipantLoggerSlotCount } from '@/lib/workout-factory/resolve-player-log-row-count';
+import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import { cn } from '@/lib/utils';
 import type { Database } from '@/types/database';
 import { useUserProfileStore } from '@/store/userProfileStore';
@@ -36,20 +38,6 @@ export type ParticipantWorkoutLoggerCoreProps = {
   noActiveSelectionMessage?: string;
   onClose?: () => void;
 };
-
-function maxLoggedSetNumber(
-  logs: { exercise_name: string; set_number: number }[],
-  exerciseName: string,
-) {
-  return logs
-    .filter((l) => l.exercise_name === exerciseName)
-    .reduce((m, l) => Math.max(m, l.set_number), 0);
-}
-
-function setSlotCount(ex: WorkoutExercise, logs: { exercise_name: string; set_number: number }[]) {
-  const prescribed = Math.max(1, ex.sets ?? 3);
-  return Math.max(prescribed, maxLoggedSetNumber(logs, ex.name));
-}
 
 /** Task prescription strings for prefilling inputs when no `workout_exercise_logs` row yet. */
 function prescriptionStringsForExercise(ex: WorkoutExercise): {
@@ -84,6 +72,11 @@ function draftKey(exerciseName: string, setNumber: number): DraftKey {
   return `${exerciseName}\0${setNumber}`;
 }
 
+/** Live interval blocks that sync `workout_exercise_logs` via Realtime (unified interval engine). */
+function isIntervalPhase(phase: SessionPhase): boolean {
+  return phase === 'amrap' || phase === 'tabata';
+}
+
 function tier3LoggerShell(
   body: ReactNode,
   {
@@ -112,6 +105,7 @@ export function ParticipantWorkoutLoggerCore({
   onClose,
 }: ParticipantWorkoutLoggerCoreProps) {
   const isAmrapPhase = phase === 'amrap';
+  const isIntervalPhaseActive = isIntervalPhase(phase);
 
   const deck = useLiveSessionDeck({
     supabase,
@@ -142,10 +136,16 @@ export function ParticipantWorkoutLoggerCore({
     enabled: Boolean(!isHost && userId && taskId),
   });
 
+  const sessionVm = useMemo(
+    () => (activeTask ? buildWorkoutSessionViewModel(activeTask.metadata) : null),
+    [activeTask],
+  );
+
   const exercises = useMemo(() => {
+    if (sessionVm) return sessionVm.flatExercises;
     if (!activeTask) return [];
     return metadataFieldsFromParsed(activeTask.metadata).workoutExercises;
-  }, [activeTask]);
+  }, [activeTask, sessionVm]);
 
   const [drafts, setDrafts] = useState<
     Record<DraftKey, { weight: string; reps: string; rpe: string }>
@@ -157,15 +157,15 @@ export function ParticipantWorkoutLoggerCore({
 
   const prevPhaseRef = useRef(phase);
   useEffect(() => {
-    if (prevPhaseRef.current === 'amrap' && phase !== 'amrap') {
+    if (isIntervalPhase(prevPhaseRef.current) && !isIntervalPhase(phase)) {
       void refreshWorkoutLogs();
     }
     prevPhaseRef.current = phase;
   }, [phase, refreshWorkoutLogs]);
 
-  /** Duplication runs in the AMRAP wrapper with a separate `useWorkoutLogs` instance — refresh on log inserts. */
+  /** Refresh when interval blocks write or update `workout_exercise_logs` (AMRAP, Tabata, etc.). */
   useEffect(() => {
-    if (!isAmrapPhase || isHost || !userId || !taskId || !sessionId.trim()) return;
+    if (!isIntervalPhaseActive || isHost || !userId || !taskId || !sessionId.trim()) return;
 
     void refreshWorkoutLogs();
 
@@ -200,7 +200,7 @@ export function ParticipantWorkoutLoggerCore({
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [isAmrapPhase, isHost, userId, taskId, sessionId, supabase, refreshWorkoutLogs]);
+  }, [isIntervalPhaseActive, isHost, userId, taskId, sessionId, supabase, refreshWorkoutLogs]);
 
   const logFor = useCallback(
     (exerciseName: string, setNumber: number) =>
@@ -451,7 +451,10 @@ export function ParticipantWorkoutLoggerCore({
       ) : null}
       <div className="min-h-0 flex-1 space-y-6 overflow-y-auto pr-1">
         {exercises.map((ex, exIdx) => {
-          const slots = setSlotCount(ex, logs);
+          const slots =
+            sessionVm != null
+              ? resolveParticipantLoggerSlotCount(ex, exIdx, sessionVm.blocks, logs)
+              : Math.max(1, ex.sets ?? 3);
           return (
             <section key={`${ex.name}-${exIdx}`} className="space-y-3">
               <h3 className="text-sm font-semibold leading-tight text-foreground">{ex.name}</h3>

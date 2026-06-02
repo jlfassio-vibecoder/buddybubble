@@ -18,17 +18,22 @@ function mockRemote(uid: number): IAgoraRTCRemoteUser {
 
 function mockEngine(participants: AmrapSessionEngine['participants']): AmrapSessionEngine {
   return {
+    intervalType: 'amrap',
     timerPhase: 'work',
     remainingSec: 300,
     totalSec: 600,
     workStartedAt: '2026-01-01T00:00:00.000Z',
     blockSnapshot: null,
+    mechanicsState: null,
+    segmentLabel: '',
+    currentRoundIndex: 0,
     resultsFinalizedAt: null,
     leaderboardSnapshotRaw: null,
     participants,
     selfParticipant: participants.find((p) => p.isSelf) ?? null,
     startTimer: null,
     resetTimer: null,
+    advanceSegment: null,
     logRound: null,
     finalizeSession: null,
     participantRoundLaps: [

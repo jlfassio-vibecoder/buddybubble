@@ -3,7 +3,11 @@ import {
   richAlternatingEmomMetadata,
   richMetadataWithBlockFormat,
 } from './__fixtures__/workout-session-view-model.fixtures';
-import { buildPlayerInitialLogs, resolvePlayerLogRowCount } from './resolve-player-log-row-count';
+import {
+  buildPlayerInitialLogs,
+  expandExercisesForPlayerLogRows,
+  resolvePlayerLogRowCount,
+} from './resolve-player-log-row-count';
 import { buildWorkoutSessionViewModel } from './workout-session-view-model';
 
 describe('resolvePlayerLogRowCount', () => {
@@ -90,6 +94,17 @@ describe('resolvePlayerLogRowCount', () => {
         { blockFormat: 'circuit', formatParams: { rounds: 3 }, exerciseIndexInBlock: 0 },
       ),
     ).toBe(3);
+  });
+});
+
+describe('expandExercisesForPlayerLogRows', () => {
+  it('sets exercise.sets to Tabata formatParams.rounds', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('tabata'));
+    const expanded = expandExercisesForPlayerLogRows(vm.flatExercises, vm.blocks);
+    expect(expanded).toHaveLength(vm.flatExercises.length);
+    for (const ex of expanded) {
+      expect(ex.sets).toBe(8);
+    }
   });
 });
 

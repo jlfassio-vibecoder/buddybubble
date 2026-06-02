@@ -7,6 +7,13 @@ export function parseUuidField(config: unknown, field: string): string | null {
   return isUuidString(value) ? value : null;
 }
 
+export function parseIntervalSessionIdFromWrapperConfig(config: unknown): string | null {
+  return (
+    parseUuidField(config, 'interval_session_id') ?? parseUuidField(config, 'amrap_session_id')
+  );
+}
+
+/** @deprecated Use parseIntervalSessionIdFromWrapperConfig */
 export function parseAmrapSessionIdFromWrapperConfig(config: unknown): string | null {
-  return parseUuidField(config, 'amrap_session_id');
+  return parseIntervalSessionIdFromWrapperConfig(config);
 }

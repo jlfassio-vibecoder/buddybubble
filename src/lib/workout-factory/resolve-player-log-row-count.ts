@@ -109,3 +109,43 @@ export function buildPlayerInitialLogRowsForExercise(
   const blockContext = blockContextForGlobalIndex(globalIndex, blocks, lookup);
   return makeSetRowsForExercise(exercise, blockContext);
 }
+
+/**
+ * Prescription exercises with `sets` aligned to WorkoutPlayer row counts (Tabata rounds, EMOM minutes, etc.).
+ * Used for live interval `block_snapshot` and participant logger slot expansion.
+ */
+export function expandExercisesForPlayerLogRows(
+  exercises: WorkoutExercise[],
+  blocks: WorkoutSessionBlockView[],
+): WorkoutExercise[] {
+  const lookup = buildPlayerExerciseIndexLookup(blocks);
+  return exercises.map((exercise, globalIndex) => {
+    const blockContext = blockContextForGlobalIndex(globalIndex, blocks, lookup);
+    const sets = resolvePlayerLogRowCount(exercise, blockContext);
+    return { ...exercise, sets };
+  });
+}
+
+function maxLoggedSetNumber(
+  logs: readonly { exercise_name: string; set_number: number }[],
+  exerciseName: string,
+): number {
+  return logs
+    .filter((l) => l.exercise_name === exerciseName)
+    .reduce((m, l) => Math.max(m, l.set_number), 0);
+}
+
+/**
+ * Live participant logger: same row count as WorkoutPlayer, never fewer than persisted log rows.
+ */
+export function resolveParticipantLoggerSlotCount(
+  exercise: WorkoutExercise,
+  globalIndex: number,
+  blocks: WorkoutSessionBlockView[],
+  logs: readonly { exercise_name: string; set_number: number }[],
+): number {
+  const lookup = buildPlayerExerciseIndexLookup(blocks);
+  const blockContext = blockContextForGlobalIndex(globalIndex, blocks, lookup);
+  const prescribed = resolvePlayerLogRowCount(exercise, blockContext);
+  return Math.max(prescribed, maxLoggedSetNumber(logs, exercise.name));
+}

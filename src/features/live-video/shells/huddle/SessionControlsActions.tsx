@@ -13,6 +13,11 @@ import { useLiveSessionRuntime } from '@/features/live-video/theater/live-sessio
 import { SESSION_COMMAND_EVENT } from '@/features/live-video/state/session-sync.types';
 import { useWorkoutDeckSelectionOptional } from '@/features/live-video/shells/huddle/workout-deck-selection-context';
 import { useWrapperAttach } from '@/features/live-video/contexts/WrapperAttachContext';
+import {
+  buildTabataAttachPayload,
+  isTabataDeckSnapshot,
+} from '@/features/live-video/wrappers/interval/utils/buildTabataAttachPayload';
+import { tabataMechanicsStateToJson } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
 import type { Json } from '@/types/database';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
@@ -75,6 +80,8 @@ export function SessionControlsActions({
   const { setOverride } = useWrapperAttach();
   const deckSel = useWorkoutDeckSelectionOptional();
   const amrapAttachReady = !disableActions && liveDbReady && liveSessionRowId.trim().length > 0;
+  const activeDeckSnap = pickActiveSnapshot(deckSel?.deck ?? [], deckSel?.activeSnapshotId ?? null);
+  const tabataAttachReady = amrapAttachReady && isTabataDeckSnapshot(activeDeckSnap);
 
   const isIdle = state.status === 'idle';
 
@@ -178,8 +185,40 @@ export function SessionControlsActions({
         return;
       }
       if (typeof data === 'string') {
-        setOverride({ kind: 'amrap', config: { amrap_session_id: data } });
+        setOverride({ kind: 'amrap', config: { interval_session_id: data } });
         actions.transitionToPhase('amrap');
+      }
+    })();
+  };
+
+  const handleStartTabataBlock = () => {
+    if (!tabataAttachReady) return;
+    void (async () => {
+      const snap = pickActiveSnapshot(deckSel?.deck ?? [], deckSel?.activeSnapshotId ?? null);
+      const payload = buildTabataAttachPayload(snap);
+      if (!payload) return;
+      const { data, error } = await supabase.rpc('tabata_create_for_session', {
+        p_live_session_id: liveSessionRowId.trim(),
+        p_block_snapshot: payload.blockSnapshot as Json,
+        p_mechanics_state: tabataMechanicsStateToJson(payload.mechanicsState) as Json,
+      });
+      if (error) {
+        if (process.env.NODE_ENV === 'development') {
+          console.error(
+            '[SessionControlsActions] tabata_create_for_session',
+            error.message,
+            error.code,
+            error.details,
+            error.hint,
+          );
+        } else {
+          console.error('[SessionControlsActions] tabata_create_for_session failed');
+        }
+        return;
+      }
+      if (typeof data === 'string') {
+        setOverride({ kind: 'tabata', config: { interval_session_id: data } });
+        actions.transitionToPhase('tabata');
       }
     })();
   };
@@ -240,8 +279,8 @@ export function SessionControlsActions({
               AMRAP block
             </DropdownMenuItem>
             <DropdownMenuItem
-              disabled={phaseDisabled}
-              onClick={() => actions.transitionToPhase('tabata')}
+              disabled={phaseDisabled || !tabataAttachReady}
+              onClick={handleStartTabataBlock}
             >
               Tabata block
             </DropdownMenuItem>
