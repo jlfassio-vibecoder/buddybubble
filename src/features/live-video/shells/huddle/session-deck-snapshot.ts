@@ -9,6 +9,7 @@ import {
   applyFlatWorkoutEditsToMetadata,
   hasRichWorkoutSetInMetadata,
 } from '@/lib/workout-factory/sync-workout-metadata';
+import { applyEmomBlockFlatExercisesToMetadata } from '@/lib/workout-factory/patch-emom-block-metadata';
 
 export type SessionDeckSnapshot = {
   /**
@@ -145,6 +146,10 @@ export function mergeWorkoutExercisesIntoTaskMetadata(
   task: TaskRow,
   nextExercises: WorkoutExercise[],
 ): TaskRow['metadata'] {
+  const emomMerged = applyEmomBlockFlatExercisesToMetadata(task.metadata, nextExercises);
+  if (emomMerged) {
+    return stripLegacyWorkoutMetadataKeys(emomMerged) as TaskRow['metadata'];
+  }
   const merged = applyFlatWorkoutEditsToMetadata(task.metadata, nextExercises);
   // Session-only path: no buildTaskMetadataPayload / finalizeWorkoutMetadataForSave — still strip legacy linkage keys.
   return stripLegacyWorkoutMetadataKeys(merged) as TaskRow['metadata'];

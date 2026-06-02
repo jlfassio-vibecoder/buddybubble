@@ -39,7 +39,9 @@ function tryDecodeJsonEnvAsBase64(s: string): string | undefined {
 }
 
 function resolveServiceAccountJsonRaw(logPrefix: string): string | undefined {
-  const inline = readProcessEnv('GOOGLE_APPLICATION_CREDENTIALS_JSON');
+  const inline =
+    readProcessEnv('GOOGLE_APPLICATION_CREDENTIALS_JSON') ||
+    readProcessEnv('GCP_SERVICE_ACCOUNT_JSON');
   if (inline) {
     const bom = stripBom(inline);
     const fromB64 = tryDecodeJsonEnvAsBase64(bom);
@@ -83,6 +85,7 @@ function resolveServiceAccountJsonRaw(logPrefix: string): string | undefined {
 function hasAnyServiceAccountEnv(): boolean {
   return !!(
     readProcessEnv('GOOGLE_APPLICATION_CREDENTIALS_JSON') ||
+    readProcessEnv('GCP_SERVICE_ACCOUNT_JSON') ||
     readProcessEnv('GOOGLE_APPLICATION_CREDENTIALS_BASE64') ||
     readProcessEnv('GOOGLE_APPLICATION_CREDENTIALS')
   );
@@ -92,6 +95,7 @@ export function resolveGoogleProjectId(): string | undefined {
   return (
     readProcessEnv('GOOGLE_PROJECT_ID') ||
     readProcessEnv('GOOGLE_CLOUD_PROJECT_ID') ||
+    readProcessEnv('GCP_PROJECT_ID') ||
     readProcessEnv('PUBLIC_FIREBASE_PROJECT_ID')
   );
 }
@@ -101,6 +105,7 @@ export function resolveGoogleLocation(): string {
     readProcessEnv('GOOGLE_LOCATION') ||
     readProcessEnv('GOOGLE_CLOUD_LOCATION') ||
     readProcessEnv('VERTEX_LOCATION') ||
+    readProcessEnv('GCP_LOCATION') ||
     'global'
   );
 }
@@ -158,11 +163,11 @@ export async function getVertexAICredentials(
       console.error(`${logPrefix} Vertex auth detail:`, errMsg);
     }
     const hint = hasSa
-      ? 'Check service account JSON (valid JSON, unexpired key, private_key newlines). Or set GOOGLE_APPLICATION_CREDENTIALS to a .json file path locally. Ensure roles/aiplatform.user on the GCP project.'
+      ? 'Check service account JSON (valid JSON, unexpired key, private_key newlines). Grant roles/aiplatform.user on the GCP project used by GOOGLE_PROJECT_ID / GCP_PROJECT_ID.'
       : isVercel
-        ? 'AI generation on Vercel requires GOOGLE_APPLICATION_CREDENTIALS_JSON or GOOGLE_APPLICATION_CREDENTIALS_BASE64 (service account with Vertex AI User).'
+        ? 'On Vercel production, set GOOGLE_APPLICATION_CREDENTIALS_JSON or GCP_SERVICE_ACCOUNT_JSON (full service account JSON) plus GOOGLE_PROJECT_ID or GCP_PROJECT_ID. Local gcloud login does not apply on serverless.'
         : 'Set GOOGLE_APPLICATION_CREDENTIALS to your service account JSON path, or GOOGLE_APPLICATION_CREDENTIALS_JSON / BASE64, or run: gcloud auth application-default login';
-    const devSuffix = process.env.NODE_ENV === 'development' ? ` [${errMsg}]` : '';
+    const devSuffix = process.env.NODE_ENV === 'development' && errMsg ? ` [${errMsg}]` : '';
     return {
       error: new Response(
         JSON.stringify({

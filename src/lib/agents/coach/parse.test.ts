@@ -200,7 +200,7 @@ describe('parseProposedWorkoutMetadata', () => {
     ]);
   });
 
-  it('drops EMOM missing interval_seconds', () => {
+  it('defaults EMOM interval_seconds when duration present but interval omitted', () => {
     const { meta, drops } = parseProposedWorkoutMetadataWithDrops({
       proposed_workout_metadata: {
         blocks: [
@@ -213,8 +213,15 @@ describe('parseProposedWorkoutMetadata', () => {
         ],
       },
     });
-    expect(meta.blocks).toBeUndefined();
-    expect(drops).toEqual([{ field: 'blocks[0]', reason: 'emom_missing_params' }]);
+    expect(drops).toEqual([]);
+    expect(meta.blocks).toEqual([
+      {
+        name: 'Main',
+        block_format: 'emom',
+        format_params: { interval_seconds: 60, total_minutes: 16 },
+        exercises: [{ name: 'Push-up' }],
+      },
+    ]);
   });
 
   it('hydrates combo alternating EMOM when is_combo true and stations omitted', () => {
@@ -1081,7 +1088,7 @@ describe('parseCoachJson', () => {
               {
                 name: 'Main',
                 block_format: 'emom',
-                format_params: { total_minutes: 10 },
+                format_params: { interval_seconds: 60 },
                 exercises: [{ name: 'Swing' }],
               },
             ],
@@ -1181,7 +1188,7 @@ describe('parseCoachJson', () => {
     expect(fp.alternating_stations).toEqual([[0], [1]]);
   });
 
-  it('parseCoachWorkoutOutlineWithDrops drops invalid block shape', () => {
+  it('parseCoachWorkoutOutlineWithDrops defaults EMOM interval when duration present', () => {
     const { outline, drops } = parseCoachWorkoutOutlineWithDrops({
       coach_workout_outline: [
         {
@@ -1192,8 +1199,9 @@ describe('parseCoachJson', () => {
         },
       ],
     });
-    expect(outline).toBeNull();
-    expect(drops).toEqual([{ field: 'coach_workout_outline[0]', reason: 'emom_missing_params' }]);
+    expect(drops).toEqual([]);
+    expect(outline).toHaveLength(1);
+    expect((outline![0].format_params as Record<string, unknown>).interval_seconds).toBe(60);
   });
 
   it('parseCoachWorkoutOutlineWithDrops returns null for empty array', () => {

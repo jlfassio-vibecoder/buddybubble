@@ -12,7 +12,11 @@ import Stripe from 'stripe';
 import { STRIPE_PLAN_META, type StripePlanKey } from '@/lib/stripe-plans';
 import { STRIPE_PLAN_IDS_LIVE } from '@/lib/stripe-plan-ids-live';
 import { parseTestStripeCatalogFromEnv } from '@/lib/stripe-test-catalog';
-import { assertStripeEnvironment, stripeRuntimeMode } from '@/lib/stripe-runtime';
+import {
+  assertStripeEnvironment,
+  normalizeStripeEnvKey,
+  stripeRuntimeMode,
+} from '@/lib/stripe-runtime';
 
 // Re-export for server routes that only need types / helpers from shared modules
 export type { StripePlanKey } from '@/lib/stripe-plans';
@@ -36,7 +40,7 @@ export function getStripe(): Stripe {
     _stripeEnvChecked = true;
   }
   if (!_stripe) {
-    const key = process.env.STRIPE_SECRET_KEY;
+    const key = normalizeStripeEnvKey(process.env.STRIPE_SECRET_KEY);
     if (!key) throw new Error('Missing STRIPE_SECRET_KEY environment variable');
     _stripe = new Stripe(key, { apiVersion: '2026-03-25.dahlia' });
   }

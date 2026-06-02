@@ -65,6 +65,8 @@ export const FORMAT_PARAM_KEYS_BY_FORMAT: Readonly<Record<BlockFormat, readonly 
     'is_alternating',
     'is_combo',
     'alternating_stations',
+    'stations',
+    'track_active_pacing',
   ],
   tabata: ['work_seconds', 'rest_seconds', 'rounds'],
   ladder: ['start_reps', 'peak_reps', 'step_reps', 'direction', 'rounds'],
@@ -162,6 +164,43 @@ function positiveNumber(value: unknown): number | null {
   return null;
 }
 
+type EmomStationDraftNormalized =
+  | { is_rest: true }
+  | {
+      is_rest: false;
+      exercise_index: number;
+      target_type: 'reps' | 'time';
+      target_value: number | null;
+    };
+
+function normalizeEmomStationDraft(raw: unknown): EmomStationDraftNormalized | null {
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  if (o.is_rest === true) return { is_rest: true };
+  if (o.is_rest !== false) return null;
+  if (typeof o.exercise_index !== 'number' || !Number.isFinite(o.exercise_index)) return null;
+  const exercise_index = Math.max(0, Math.round(o.exercise_index));
+  const target_type = o.target_type === 'time' ? 'time' : o.target_type === 'reps' ? 'reps' : null;
+  if (!target_type) return null;
+  let target_value: number | null = null;
+  if (o.target_value != null) {
+    const n = Number(o.target_value);
+    if (Number.isFinite(n) && n >= 0) target_value = Math.round(n);
+  }
+  return { is_rest: false, exercise_index, target_type, target_value };
+}
+
+/** Normalize rich EMOM `stations` cycle; null when malformed. */
+function normalizeEmomStationsDrafts(raw: unknown): EmomStationDraftNormalized[] | null {
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const out: EmomStationDraftNormalized[] = [];
+  for (const item of raw) {
+    const parsed = normalizeEmomStationDraft(item);
+    if (parsed) out.push(parsed);
+  }
+  return out.length > 0 ? out : null;
+}
+
 /** Normalize alternating EMOM station cycle; null when malformed. */
 function normalizeAlternatingStations(raw: unknown): number[][] | null {
   if (!Array.isArray(raw) || raw.length === 0) return null;
@@ -202,6 +241,9 @@ function validateEmomAlternatingStations(
   }
   return true;
 }
+
+/** Coach / outline ingest default when the model omits interval but supplies duration. */
+export const EMOM_DEFAULT_INTERVAL_SECONDS = 60;
 
 const INTEGER_PARAM_KEYS = new Set([
   'time_cap_minutes',
@@ -269,6 +311,16 @@ export function normalizeFormatParams(format: BlockFormat, raw: unknown): Record
       if (stations != null) out.alternating_stations = stations;
       continue;
     }
+    if (key === 'stations') {
+      const stations = normalizeEmomStationsDrafts(v);
+      if (stations != null) out.stations = stations;
+      continue;
+    }
+    if (key === 'track_active_pacing') {
+      if (v === true) out.track_active_pacing = true;
+      else if (v === false) out.track_active_pacing = false;
+      continue;
+    }
     if (INTEGER_PARAM_KEYS.has(key)) {
       const n = positiveInt(v);
       if (n != null) out[key] = n;
@@ -276,6 +328,14 @@ export function normalizeFormatParams(format: BlockFormat, raw: unknown): Record
   }
   if (out.is_alternating !== true) {
     delete out.alternating_stations;
+  }
+  if (format === 'emom') {
+    const hasDuration =
+      (typeof out.total_minutes === 'number' && out.total_minutes > 0) ||
+      (typeof out.total_rounds === 'number' && out.total_rounds > 0);
+    if (hasDuration && typeof out.interval_seconds !== 'number') {
+      out.interval_seconds = EMOM_DEFAULT_INTERVAL_SECONDS;
+    }
   }
   // Defensive: only emit keys in allow-list even if raw had extras
   for (const k of Object.keys(out)) {
