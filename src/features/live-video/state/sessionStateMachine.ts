@@ -1,5 +1,5 @@
 /** Workout block the host has selected (lobby = no block yet). */
-export type SessionPhase = 'lobby' | 'warmup' | 'amrap' | 'tabata';
+export type SessionPhase = 'lobby' | 'warmup' | 'amrap' | 'tabata' | 'emom';
 
 /** Global session: idle until Start Session; running/paused until End Session. */
 export type SessionStatus = 'idle' | 'running' | 'paused';

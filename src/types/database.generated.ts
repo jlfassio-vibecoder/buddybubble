@@ -2323,6 +2323,7 @@ export type Database = {
       };
       workout_exercise_logs: {
         Row: {
+          active_seconds: number | null;
           created_at: string;
           exercise_name: string;
           id: string;
@@ -2335,6 +2336,7 @@ export type Database = {
           weight_lbs: number | null;
         };
         Insert: {
+          active_seconds?: number | null;
           created_at?: string;
           exercise_name: string;
           id?: string;
@@ -2347,6 +2349,7 @@ export type Database = {
           weight_lbs?: number | null;
         };
         Update: {
+          active_seconds?: number | null;
           created_at?: string;
           exercise_name?: string;
           id?: string;
@@ -3003,6 +3006,14 @@ export type Database = {
         Returns: undefined;
       };
       tabata_create_for_session: {
+        Args: {
+          p_block_snapshot?: Json;
+          p_live_session_id: string;
+          p_mechanics_state?: Json;
+        };
+        Returns: string;
+      };
+      emom_create_for_session: {
         Args: {
           p_block_snapshot?: Json;
           p_live_session_id: string;

@@ -8,7 +8,7 @@ import type {
 export const SESSION_STATE_BROADCAST_EVENT = 'STATE_BROADCAST' as const;
 export const SESSION_SYNC_REQUEST_EVENT = 'SYNC_REQUEST' as const;
 
-const PHASES: SessionPhase[] = ['lobby', 'warmup', 'amrap', 'tabata'];
+const PHASES: SessionPhase[] = ['lobby', 'warmup', 'amrap', 'tabata', 'emom'];
 const STATUSES: SessionStatus[] = ['idle', 'running', 'paused'];
 const ASPECT_RATIOS: SessionAspectRatioId[] = ['16:9', '9:16', '1:1'];
 

@@ -21,6 +21,8 @@ export type LogSetParams = {
   weightLbs: number | null;
   reps: number | null;
   rpe: number | null;
+  /** EMOM Slap Target: seconds to complete reps in the minute. */
+  activeSeconds?: number | null;
 };
 
 export type UseWorkoutLogsResult = {
@@ -91,6 +93,7 @@ export function useWorkoutLogs(options: UseWorkoutLogsOptions): UseWorkoutLogsRe
         weight_lbs: params.weightLbs,
         reps: params.reps,
         rpe: params.rpe,
+        ...(params.activeSeconds != null ? { active_seconds: params.activeSeconds } : {}),
       };
 
       const { error: upErr } = await supabase.from('workout_exercise_logs').upsert(row, {

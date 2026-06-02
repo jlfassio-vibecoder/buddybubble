@@ -11,16 +11,23 @@ import {
   parseLeaderboardSnapshot,
   serializeLeaderboardGroupsForFinalize,
 } from '@/features/amrap/utils/parseLeaderboardSnapshot';
+import { useLiveSessionRuntime } from '@/features/live-video/theater/live-session-runtime-context';
+import { useEmomAthleteLogging } from '@/features/live-video/wrappers/interval/hooks/useEmomAthleteLogging';
 import { useIntervalParticipants } from '@/features/live-video/wrappers/interval/hooks/useIntervalParticipants';
 import { useIntervalRoundEvents } from '@/features/live-video/wrappers/interval/hooks/useIntervalRoundEvents';
 import { useIntervalTimerState } from '@/features/live-video/wrappers/interval/hooks/useIntervalTimerState';
+import { computeEmomSelfMinuteSplits } from '@/features/live-video/wrappers/interval/utils/computeEmomSelfMinuteSplits';
+import {
+  beginEmomSegmentTimer,
+  emomMechanicsStateToJson,
+} from '@/features/live-video/wrappers/interval/mechanics/emom-mechanics-state';
 import {
   beginTabataSegmentTimer,
   tabataMechanicsStateToJson,
-  type TabataMechanicsState,
 } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
 import type {
   IntervalLapEntry,
+  IntervalMechanicsState,
   IntervalParticipantEngine,
   IntervalSessionEngine,
   ParticipantRoundLapGroup,
@@ -76,7 +83,7 @@ export function useIntervalSession(options: UseIntervalSessionOptions): Interval
   const {
     intervalSessionId: intervalSessionIdProp,
     amrapSessionId,
-    liveSessionId: _liveSessionId,
+    liveSessionId,
     displayName,
     authUserId,
     role,
@@ -87,7 +94,21 @@ export function useIntervalSession(options: UseIntervalSessionOptions): Interval
   const intervalSessionId = intervalSessionIdProp ?? amrapSessionId ?? '';
 
   const supabase = useMemo(() => createClient(), []);
+  const { state } = useLiveSessionRuntime();
+  const isHost = role === 'host';
+
   const timerState = useIntervalTimerState(intervalSessionId);
+
+  const emomLogging = useEmomAthleteLogging({
+    supabase,
+    sessionId: liveSessionId,
+    userId: authUserId,
+    phase: state.phase,
+    isHost,
+    activeDeckItemId: state.activeDeckItemId,
+    enableLogRealtime: false,
+    enabled: timerState.intervalType === 'emom',
+  });
   const { rows: roundEventRows } = useIntervalRoundEvents(intervalSessionId);
   const { participants, error: participantsError } = useIntervalParticipants(
     intervalSessionId,
@@ -175,12 +196,27 @@ export function useIntervalSession(options: UseIntervalSessionOptions): Interval
     [participantRoundLaps],
   );
 
-  const isHost = role === 'host';
+  const selfMinuteSplitEntries = useMemo(() => {
+    if (timerState.intervalType !== 'emom') return [];
+    return computeEmomSelfMinuteSplits({
+      logs: emomLogging.logs,
+      blocks: emomLogging.blocks,
+      formatParams: emomLogging.formatParams,
+    });
+  }, [timerState.intervalType, emomLogging.logs, emomLogging.blocks, emomLogging.formatParams]);
+
+  const emomRoundDurations = useMemo(
+    () => selfMinuteSplitEntries.map((e) => e.activeSeconds),
+    [selfMinuteSplitEntries],
+  );
+
+  const displayRoundDurations =
+    timerState.intervalType === 'emom' ? emomRoundDurations : roundDurations;
 
   const startTimer = useCallback(async () => {
     if (timerState.intervalType === 'tabata') {
       const base = timerState.mechanicsState;
-      if (!base) {
+      if (!base || !('round_index' in base)) {
         setError('Tabata config missing');
         return;
       }
@@ -188,6 +224,20 @@ export function useIntervalSession(options: UseIntervalSessionOptions): Interval
       const { error: rpcError } = await supabase.rpc('interval_advance_segment', {
         p_interval_session_id: intervalSessionId,
         p_mechanics_state: tabataMechanicsStateToJson(next) as Json,
+      });
+      if (rpcError) setError(rpcError.message);
+      return;
+    }
+    if (timerState.intervalType === 'emom') {
+      const base = timerState.mechanicsState;
+      if (!base || !('minute_index' in base)) {
+        setError('EMOM config missing');
+        return;
+      }
+      const next = beginEmomSegmentTimer(base, Date.now());
+      const { error: rpcError } = await supabase.rpc('interval_advance_segment', {
+        p_interval_session_id: intervalSessionId,
+        p_mechanics_state: emomMechanicsStateToJson(next) as Json,
       });
       if (rpcError) setError(rpcError.message);
       return;
@@ -206,10 +256,12 @@ export function useIntervalSession(options: UseIntervalSessionOptions): Interval
   }, [intervalSessionId, supabase]);
 
   const advanceSegment = useCallback(
-    async (next: TabataMechanicsState) => {
+    async (next: IntervalMechanicsState) => {
+      const json =
+        'minute_index' in next ? emomMechanicsStateToJson(next) : tabataMechanicsStateToJson(next);
       const { error: rpcError } = await supabase.rpc('interval_advance_segment', {
         p_interval_session_id: intervalSessionId,
-        p_mechanics_state: tabataMechanicsStateToJson(next) as Json,
+        p_mechanics_state: json as Json,
       });
       if (rpcError) setError(rpcError.message);
     },
@@ -257,16 +309,24 @@ export function useIntervalSession(options: UseIntervalSessionOptions): Interval
 
   const savedToAnalytics = Boolean(selfParticipant?.workoutLogTaskId);
 
+  const handleOpenViewResults = useCallback(async () => {
+    if (timerState.intervalType === 'emom') {
+      await emomLogging.refreshWorkoutLogs();
+    }
+    setShowViewResultsModal(true);
+  }, [timerState.intervalType, emomLogging.refreshWorkoutLogs]);
+
   const pageState = useMemo(
     () => ({
       showViewResultsModal,
-      handleOpenViewResults: () => setShowViewResultsModal(true),
+      handleOpenViewResults,
       handleCloseViewResults: () => {
         setShowViewResultsModal(false);
         onDismissFinishedRecap?.();
       },
       viewResultsText,
-      roundDurations,
+      roundDurations: displayRoundDurations,
+      minuteSplitEntries: selfMinuteSplitEntries,
       copyResults,
       copyResultsToast,
       isHost,
@@ -274,9 +334,11 @@ export function useIntervalSession(options: UseIntervalSessionOptions): Interval
     }),
     [
       showViewResultsModal,
+      handleOpenViewResults,
       onDismissFinishedRecap,
       viewResultsText,
-      roundDurations,
+      displayRoundDurations,
+      selfMinuteSplitEntries,
       copyResults,
       copyResultsToast,
       isHost,
@@ -287,7 +349,7 @@ export function useIntervalSession(options: UseIntervalSessionOptions): Interval
   const canFinalize =
     isHost && timerState.phase === 'finished' && timerState.resultsFinalizedAt == null;
 
-  const isTabata = timerState.intervalType === 'tabata';
+  const isSegmented = timerState.intervalType === 'tabata' || timerState.intervalType === 'emom';
 
   return {
     intervalType: timerState.intervalType,
@@ -305,11 +367,12 @@ export function useIntervalSession(options: UseIntervalSessionOptions): Interval
     selfParticipant,
     startTimer: isHost ? startTimer : null,
     resetTimer: isHost ? resetTimer : null,
-    advanceSegment: isHost && isTabata ? advanceSegment : null,
-    logRound: !isTabata && selfParticipant ? logRound : null,
+    advanceSegment: isHost && isSegmented ? advanceSegment : null,
+    logRound: !isSegmented && selfParticipant ? logRound : null,
     finalizeSession: canFinalize ? finalizeSession : null,
     participantRoundLaps,
     roundLapEntries,
+    selfMinuteSplitEntries,
     loading: false,
     error: error ?? participantsError,
     slots: {

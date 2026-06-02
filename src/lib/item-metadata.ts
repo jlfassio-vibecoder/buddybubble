@@ -32,6 +32,8 @@ export type SetLogEntry = {
   reps?: number;
   /** Rate of perceived exertion, 1–10. */
   rpe?: number;
+  /** EMOM: seconds to complete reps in the minute (Slap Target). */
+  active_seconds?: number;
   done: boolean;
 };
 

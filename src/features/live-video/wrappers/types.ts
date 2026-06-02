@@ -3,7 +3,8 @@ export type IntervalWrapperKind =
   | 'simple_countdown'
   | 'amrap'
   | 'amrap_minimal'
-  | 'tabata';
+  | 'tabata'
+  | 'emom';
 
 export type WrapperBaseProps = {
   intervalWrapperKind: IntervalWrapperKind;

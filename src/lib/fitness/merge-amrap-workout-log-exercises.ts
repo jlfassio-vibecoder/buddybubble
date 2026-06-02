@@ -8,6 +8,7 @@ export type AmrapActualLogRow = {
   weight_lbs: number | null;
   reps: number | null;
   rpe: number | null;
+  active_seconds?: number | null;
   /** ISO timestamp; used by {@link filterAmrapActualLogsForBlock} only. */
   created_at?: string;
   /** Deck task id when logged; ignored during merge (supports mid-AMRAP card switches). */
@@ -90,9 +91,11 @@ function buildSetLogEntry(
     const weight = finiteNumberOrNull(actual.weight_lbs);
     const reps = finiteNumberOrNull(actual.reps);
     const rpe = finiteNumberOrNull(actual.rpe);
+    const activeSeconds = finiteNumberOrNull(actual.active_seconds ?? null);
     if (weight != null) entry.weight = weight;
     if (reps != null) entry.reps = reps;
     if (rpe != null) entry.rpe = rpe;
+    if (activeSeconds != null) entry.active_seconds = activeSeconds;
     return entry;
   }
 
