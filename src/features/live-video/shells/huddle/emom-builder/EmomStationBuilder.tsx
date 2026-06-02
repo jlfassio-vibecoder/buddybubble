@@ -54,7 +54,11 @@ export function EmomStationBuilder({
   };
 
   const addStation = () => {
-    const defaultIndex = exerciseOptions[0]?.index ?? 0;
+    if (exerciseOptions.length === 0) {
+      onStationsChange([...stations, { is_rest: true }]);
+      return;
+    }
+    const defaultIndex = exerciseOptions[0]!.index;
     onStationsChange([
       ...stations,
       {
@@ -192,7 +196,14 @@ export function EmomStationBuilder({
       </ul>
 
       {canWrite ? (
-        <Button type="button" size="sm" variant="outline" className="w-full" onClick={addStation}>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="w-full"
+          aria-label="Add station to cycle"
+          onClick={addStation}
+        >
           <Plus className="mr-1 h-4 w-4" />
           Add station
         </Button>

@@ -196,9 +196,10 @@ function normalizeEmomStationsDrafts(raw: unknown): EmomStationDraftNormalized[]
   const out: EmomStationDraftNormalized[] = [];
   for (const item of raw) {
     const parsed = normalizeEmomStationDraft(item);
-    if (parsed) out.push(parsed);
+    if (parsed == null) return null;
+    out.push(parsed);
   }
-  return out.length > 0 ? out : null;
+  return out;
 }
 
 /** Normalize alternating EMOM station cycle; null when malformed. */

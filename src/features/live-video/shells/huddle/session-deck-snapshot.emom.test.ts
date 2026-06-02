@@ -89,6 +89,51 @@ describe('mergeWorkoutExercisesIntoTaskMetadata EMOM guard', () => {
     expect(stations[1].exercise_index).toBeUndefined();
   });
 
+  it('partitions flat edits across main blocks without duplicating into EMOM', () => {
+    const base = richMetadataWithBlockFormat('straight_sets') as Record<string, unknown>;
+    const af = base.ai_workout_factory as Record<string, unknown>;
+    const ws = af.workout_set as Record<string, unknown>;
+    const workouts = ws.workouts as Record<string, unknown>[];
+    workouts[0].exerciseBlocks = [
+      {
+        order: 1,
+        name: 'Strength',
+        blockFormat: 'straight_sets',
+        formatParams: {},
+        exercises: [{ order: 1, exerciseName: 'Squat', sets: 3, reps: '5' }],
+      },
+      {
+        order: 2,
+        name: 'Finisher',
+        blockFormat: 'emom',
+        formatParams: FORMAT_PARAMS_BY_BLOCK.emom,
+        exercises: [
+          { order: 1, exerciseName: 'Burpee', sets: 1, reps: '10' },
+          { order: 2, exerciseName: 'Row', sets: 1, reps: '12' },
+        ],
+      },
+    ];
+
+    const task = { ...emomTask(), metadata: base } as TaskRow;
+    const snap = createSessionDeckSnapshot(task);
+
+    const nextMeta = mergeWorkoutExercisesIntoTaskMetadata(snap.task, [
+      { name: 'Back Squat', sets: 3, reps: '5' },
+      { name: 'Burpee', sets: 1, reps: '10' },
+      { name: 'Row erg', sets: 1, reps: '12' },
+    ]);
+
+    const vm = buildWorkoutSessionViewModel(nextMeta);
+    const strength = vm.blocks.find((b) => b.name === 'Strength');
+    const emom = findEmomMainBlock(vm.blocks);
+    expect(strength?.exercises).toHaveLength(1);
+    expect(strength?.exercises[0]?.exerciseName).toBe('Back Squat');
+    expect(emom?.exercises).toHaveLength(2);
+    expect(emom?.exercises.map((e) => e.exerciseName)).toEqual(['Burpee', 'Row erg']);
+    expect(vm.flatExercises).toHaveLength(3);
+    expect(vm.flatExercises.map((e) => e.name)).toEqual(['Back Squat', 'Burpee', 'Row erg']);
+  });
+
   it('finds EMOM in a non-main-named exercise block (e.g. Finisher)', () => {
     const base = richMetadataWithBlockFormat('straight_sets') as Record<string, unknown>;
     const af = base.ai_workout_factory as Record<string, unknown>;

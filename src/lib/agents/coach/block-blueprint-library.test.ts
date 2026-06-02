@@ -108,6 +108,22 @@ describe('normalizeFormatParams', () => {
     });
   });
 
+  it('rejects entire stations array when any entry is invalid', () => {
+    expect(
+      normalizeFormatParams('emom', {
+        interval_seconds: 60,
+        total_minutes: 12,
+        stations: [
+          { is_rest: false, exercise_index: 0, target_type: 'reps', target_value: 10 },
+          { invalid: true },
+        ],
+      }),
+    ).toEqual({
+      interval_seconds: 60,
+      total_minutes: 12,
+    });
+  });
+
   it('preserves rich EMOM stations and track_active_pacing', () => {
     expect(
       normalizeFormatParams('emom', {

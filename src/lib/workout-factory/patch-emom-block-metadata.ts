@@ -17,12 +17,13 @@ import {
   buildWorkoutSessionViewModel,
   type WorkoutSessionBlockView,
 } from '@/lib/workout-factory/workout-session-view-model';
+import { partitionFlatExercisesByMainBlocks } from '@/lib/workout-factory/workout-player-exercise-index';
 
 function isEmomBlock(block: WorkoutSessionBlockView): boolean {
   return block.blockFormat?.trim().toLowerCase() === 'emom';
 }
 
-/** First EMOM parametric block in deck order (any section: main, finisher, warmup, etc.). */
+/** First parametric EMOM block in deck order (`block_format`; block name may be Main, Finisher, etc.). */
 export function findEmomMainBlock(
   blocks: WorkoutSessionBlockView[],
 ): WorkoutSessionBlockView | null {
@@ -74,10 +75,10 @@ export function applyEmomBlockFlatExercisesToMetadata(
   const emomBlock = findEmomMainBlock(vm.blocks);
   if (!emomBlock) return null;
 
-  const exerciseCount = flatExercises.length;
-  const factoryExercises = flatExercises.map((we, i) =>
-    workoutExerciseToFactoryExercise(we, i + 1),
-  );
+  const partitioned = partitionFlatExercisesByMainBlocks(flatExercises, vm.blocks);
+  const emomFlatSlice = partitioned.get(emomBlock.id) ?? [];
+  const exerciseCount = emomFlatSlice.length;
+
   const rawParams = emomBlock.formatParams ?? {};
   const richStations = parseEmomStationsFromParams(rawParams);
   const paramsForHydrate =
@@ -88,11 +89,16 @@ export function applyEmomBlockFlatExercisesToMetadata(
         }
       : rawParams;
   const draft = hydrateEmomAuthoringDraft(paramsForHydrate, exerciseCount);
-  const formatParams = buildEmomFormatParamsFromDraft(draft);
-  const nextBlocks = vm.blocks.map((b) =>
-    b.id === emomBlock.id
-      ? { ...b, exercises: factoryExercises, formatParams: { ...formatParams } }
-      : b,
-  );
+  const emomFormatParams = buildEmomFormatParamsFromDraft(draft);
+
+  const nextBlocks = vm.blocks.map((b) => {
+    if (b.section !== 'main') return b;
+    const slice = partitioned.get(b.id) ?? [];
+    const factoryExercises = slice.map((we, i) => workoutExerciseToFactoryExercise(we, i + 1));
+    if (b.id === emomBlock.id) {
+      return { ...b, exercises: factoryExercises, formatParams: { ...emomFormatParams } };
+    }
+    return { ...b, exercises: factoryExercises };
+  });
   return applyBlockEditsToMetadata(meta, nextBlocks);
 }

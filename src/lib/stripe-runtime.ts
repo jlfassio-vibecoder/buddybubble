@@ -88,5 +88,5 @@ export function assertStripeEnvironment(): void {
 }
 
 export function stripeRuntimeMode(): StripeKeyMode {
-  return stripeKeyModeFromSecretKey(normalizeStripeEnvKey(process.env.STRIPE_SECRET_KEY)) ?? 'live';
+  return stripeKeyModeFromSecretKey(process.env.STRIPE_SECRET_KEY) ?? 'live';
 }

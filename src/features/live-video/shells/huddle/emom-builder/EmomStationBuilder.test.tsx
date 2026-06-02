@@ -1,9 +1,13 @@
-import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 import { EmomStationBuilder } from '@/features/live-video/shells/huddle/emom-builder/EmomStationBuilder';
 
 describe('EmomStationBuilder', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   it('lists Rest first then exercise options', () => {
     render(
       <EmomStationBuilder
@@ -52,5 +56,21 @@ describe('EmomStationBuilder', () => {
       />,
     );
     expect(screen.getByText(/3 stations repeat to fill 12 minutes/i)).toBeTruthy();
+  });
+
+  it('adds a rest station when there are no exercise options', () => {
+    const onStationsChange = vi.fn();
+    render(
+      <EmomStationBuilder
+        stations={[]}
+        exerciseOptions={[]}
+        totalMinutes={10}
+        canWrite
+        hasRestInCycle={false}
+        onStationsChange={onStationsChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Add station to cycle' }));
+    expect(onStationsChange).toHaveBeenCalledWith([{ is_rest: true }]);
   });
 });

@@ -8,7 +8,7 @@ import { useWorkoutDeckSelectionOptional } from '@/features/live-video/shells/hu
 import { EmomBlockEditor } from '@/features/live-video/shells/huddle/emom-builder/EmomBlockEditor';
 import { mergeWorkoutExercisesIntoTaskMetadata } from '@/features/live-video/shells/huddle/session-deck-snapshot';
 import { usePersistDeckSnapshot } from '@/features/live-video/shells/huddle/usePersistDeckSnapshot';
-import { metadataFieldsFromParsed } from '@/lib/item-metadata';
+import { metadataFieldsFromParsed, stripLegacyWorkoutMetadataKeys } from '@/lib/item-metadata';
 import type { WorkoutExercise } from '@/lib/item-metadata';
 import { findEmomMainBlock } from '@/lib/workout-factory/patch-emom-block-metadata';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
@@ -102,7 +102,7 @@ export function LiveSessionWorkoutPlayer({
       if (!ctx || !activeSnapshot) return;
       ctx.updateSnapshotTask(activeSnapshot.snapshotId, {
         ...activeSnapshot.task,
-        metadata: nextMetadata,
+        metadata: stripLegacyWorkoutMetadataKeys(nextMetadata) as TaskRow['metadata'],
       });
     },
     [activeSnapshot, ctx],
