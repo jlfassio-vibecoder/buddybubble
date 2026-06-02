@@ -4,17 +4,13 @@ import { useEffect, useRef } from 'react';
 
 import type { SessionStatus } from '@/features/live-video/state/sessionStateMachine';
 import {
-  freezeTabataMechanicsStateForPause,
-  isTabataSegmentRunnable,
-  unfreezeTabataMechanicsStateForResume,
-} from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
+  freezeEmomMechanicsStateForPause,
+  isEmomSegmentRunnable,
+  unfreezeEmomMechanicsStateForResume,
+} from '@/features/live-video/wrappers/interval/mechanics/emom-mechanics-state';
 import type { IntervalSessionEngine } from '@/features/live-video/wrappers/interval/types/interval-engine';
 
-/**
- * When the host pauses/resumes the global block, checkpoint Tabata mechanics_state
- * so all clients freeze/unfreeze the segment countdown.
- */
-export function useTabataBlockPauseSync(options: {
+export function useEmomBlockPauseSync(options: {
   isHost: boolean;
   sessionStatus: SessionStatus;
   engine: IntervalSessionEngine;
@@ -30,7 +26,11 @@ export function useTabataBlockPauseSync(options: {
     }
 
     const ms = engine.mechanicsState;
-    if (!ms || !('round_index' in ms) || !isTabataSegmentRunnable(ms)) {
+    if (!ms || ms.segment === undefined || !('minute_index' in ms)) {
+      prevStatusRef.current = sessionStatus;
+      return;
+    }
+    if (!isEmomSegmentRunnable(ms)) {
       prevStatusRef.current = sessionStatus;
       return;
     }
@@ -44,7 +44,7 @@ export function useTabataBlockPauseSync(options: {
 
     if (prev === 'running' && sessionStatus === 'paused') {
       syncingRef.current = true;
-      const frozen = freezeTabataMechanicsStateForPause(ms, now);
+      const frozen = freezeEmomMechanicsStateForPause(ms, now);
       void engine.advanceSegment(frozen).finally(() => {
         syncingRef.current = false;
       });
@@ -53,7 +53,7 @@ export function useTabataBlockPauseSync(options: {
 
     if (prev === 'paused' && sessionStatus === 'running') {
       syncingRef.current = true;
-      const resumed = unfreezeTabataMechanicsStateForResume(ms, now);
+      const resumed = unfreezeEmomMechanicsStateForResume(ms, now);
       void engine.advanceSegment(resumed).finally(() => {
         syncingRef.current = false;
       });

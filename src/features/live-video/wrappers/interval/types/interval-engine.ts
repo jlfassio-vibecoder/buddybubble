@@ -1,8 +1,11 @@
 import type { ReactNode } from 'react';
 
 import type { AmrapBlockSnapshotPayload } from '@/features/amrap/utils/buildAmrapBlockSnapshot';
+import type { EmomMechanicsState } from '@/features/live-video/wrappers/interval/mechanics/emom-mechanics-state';
 import type { TabataMechanicsState } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
 import type { Json } from '@/types/database';
+
+export type IntervalMechanicsState = TabataMechanicsState | EmomMechanicsState;
 
 export type IntervalType = 'amrap' | 'tabata' | 'emom';
 
@@ -21,6 +24,13 @@ export interface IntervalParticipantEngine {
 
 export type IntervalLapEntry = { round: number; durationLabel: string };
 
+/** EMOM self pacing: active work duration per minute (from workout_exercise_logs). */
+export type EmomMinuteSplitEntry = {
+  minuteIndex: number;
+  activeSeconds: number;
+  durationLabel: string;
+};
+
 export interface ParticipantRoundLapGroup {
   participantId: string;
   displayName: string;
@@ -35,7 +45,7 @@ export interface IntervalSessionEngine {
   totalSec: number;
   workStartedAt: string | null;
   blockSnapshot: AmrapBlockSnapshotPayload | null;
-  mechanicsState: TabataMechanicsState | null;
+  mechanicsState: IntervalMechanicsState | null;
   segmentLabel: string;
   currentRoundIndex: number;
   resultsFinalizedAt: string | null;
@@ -46,12 +56,13 @@ export interface IntervalSessionEngine {
 
   startTimer: (() => Promise<void>) | null;
   resetTimer: (() => Promise<void>) | null;
-  advanceSegment: ((next: TabataMechanicsState) => Promise<void>) | null;
+  advanceSegment: ((next: IntervalMechanicsState) => Promise<void>) | null;
   logRound: (() => Promise<void>) | null;
   finalizeSession: (() => Promise<void>) | null;
 
   participantRoundLaps: ParticipantRoundLapGroup[];
   roundLapEntries: IntervalLapEntry[];
+  selfMinuteSplitEntries: EmomMinuteSplitEntry[];
 
   loading: boolean;
   error: string | null;
@@ -63,10 +74,11 @@ export interface IntervalSessionEngine {
 
   pageState: {
     showViewResultsModal: boolean;
-    handleOpenViewResults: () => void;
+    handleOpenViewResults: () => void | Promise<void>;
     handleCloseViewResults: () => void;
     viewResultsText: string;
     roundDurations: number[];
+    minuteSplitEntries: EmomMinuteSplitEntry[];
     copyResults: () => Promise<void>;
     copyResultsToast: 'success' | 'error' | null;
     isHost: boolean;

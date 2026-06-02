@@ -5,19 +5,23 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useHostNavActions } from '@/features/live-video/contexts/HostNavActionsContext';
 import { useVideoOverlaySlots } from '@/features/live-video/contexts/VideoOverlaySlotsContext';
 import { useLiveSessionRuntime } from '@/features/live-video/theater/live-session-runtime-context';
-import TabataHostActions from '@/features/live-video/wrappers/interval/mechanics/TabataHostActions';
-import TabataTimerOverlay from '@/features/live-video/wrappers/interval/mechanics/TabataTimerOverlay';
+import EmomHostActions from '@/features/live-video/wrappers/interval/mechanics/EmomHostActions';
+import EmomTimerOverlay from '@/features/live-video/wrappers/interval/mechanics/EmomTimerOverlay';
 import {
-  computeNextTabataMechanicsState,
-  isTabataHostAutoAdvanceSegment,
-  isTabataSegmentElapsed,
-  isTabataTimerFrozen,
-  type TabataMechanicsState,
-} from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
-import { useTabataBlockPauseSync } from '@/features/live-video/wrappers/interval/mechanics/useTabataBlockPauseSync';
+  computeNextEmomMechanicsState,
+  isEmomHostAutoAdvanceSegment,
+  isEmomSegmentElapsed,
+  isEmomTimerFrozen,
+  type EmomMechanicsState,
+} from '@/features/live-video/wrappers/interval/mechanics/emom-mechanics-state';
+import { useEmomBlockPauseSync } from '@/features/live-video/wrappers/interval/mechanics/useEmomBlockPauseSync';
 import type { IntervalMechanicsContext } from '@/features/live-video/wrappers/interval/types/interval-engine';
 
-export function TabataMechanics({
+function isEmomState(ms: unknown): ms is EmomMechanicsState {
+  return ms != null && typeof ms === 'object' && 'minute_index' in ms && 'total_minutes' in ms;
+}
+
+export function EmomMechanics({
   engine,
   intervalSessionId: _intervalSessionId,
   liveSessionId: _liveSessionId,
@@ -28,7 +32,7 @@ export function TabataMechanics({
 }: IntervalMechanicsContext) {
   const { state } = useLiveSessionRuntime();
 
-  useTabataBlockPauseSync({
+  useEmomBlockPauseSync({
     isHost,
     sessionStatus: state.status,
     engine,
@@ -40,27 +44,25 @@ export function TabataMechanics({
   }, [engine]);
 
   const advancingRef = useRef(false);
-
-  const tabataState =
-    engine.mechanicsState && 'round_index' in engine.mechanicsState ? engine.mechanicsState : null;
+  const emomState = useMemo(
+    () => (isEmomState(engine.mechanicsState) ? engine.mechanicsState : null),
+    [engine.mechanicsState],
+  );
 
   useEffect(() => {
-    if (!isHost || !engine.advanceSegment || !tabataState) return;
+    if (!isHost || !engine.advanceSegment || !emomState) return;
     if (state.status === 'paused') return;
-    if (!isTabataHostAutoAdvanceSegment(tabataState)) return;
+    if (!isEmomHostAutoAdvanceSegment(emomState)) return;
 
     const check = () => {
       const e = engineRef.current;
-      const ms =
-        e.mechanicsState && 'round_index' in e.mechanicsState
-          ? (e.mechanicsState as TabataMechanicsState)
-          : null;
+      const ms = isEmomState(e.mechanicsState) ? e.mechanicsState : null;
       if (!ms || !e.advanceSegment || advancingRef.current) return;
-      if (isTabataTimerFrozen(ms)) return;
-      if (!isTabataSegmentElapsed(ms, Date.now())) return;
+      if (isEmomTimerFrozen(ms)) return;
+      if (!isEmomSegmentElapsed(ms, Date.now())) return;
 
       advancingRef.current = true;
-      const next = computeNextTabataMechanicsState(ms, Date.now());
+      const next = computeNextEmomMechanicsState(ms, Date.now());
       void e.advanceSegment(next).finally(() => {
         advancingRef.current = false;
       });
@@ -69,7 +71,7 @@ export function TabataMechanics({
     check();
     const id = window.setInterval(check, 200);
     return () => window.clearInterval(id);
-  }, [isHost, state.status, engine.advanceSegment, engine.timerPhase, tabataState]);
+  }, [isHost, state.status, engine.advanceSegment, engine.timerPhase, emomState]);
 
   const { setHostNavActions } = useHostNavActions();
   const { setTopLeftOverlay } = useVideoOverlaySlots();
@@ -80,20 +82,21 @@ export function TabataMechanics({
       setHostNavActions(null);
       return;
     }
-    setHostNavActions(<TabataHostActions engine={e} />);
+    setHostNavActions(<EmomHostActions engine={e} />);
     return () => setHostNavActions(null);
   }, [engine.startTimer, engine.resetTimer, engine.timerPhase, setHostNavActions]);
 
   useEffect(() => {
-    setTopLeftOverlay(<TabataTimerOverlay engine={engineRef.current} />);
+    setTopLeftOverlay(<EmomTimerOverlay engine={engineRef.current} />);
     return () => setTopLeftOverlay(null);
   }, [
     engine.remainingSec,
     engine.timerPhase,
     engine.segmentLabel,
     engine.currentRoundIndex,
-    tabataState?.segment,
-    tabataState?.is_paused,
+    emomState?.segment,
+    emomState?.is_paused,
+    emomState?.minute_index,
     setTopLeftOverlay,
   ]);
 
@@ -101,5 +104,5 @@ export function TabataMechanics({
     if (engine.error) onWrapperError?.(engine.error);
   }, [engine.error, onWrapperError]);
 
-  return <div className="sr-only" data-region="interval-tabata-mechanics" />;
+  return <div className="sr-only" data-region="interval-emom-mechanics" />;
 }

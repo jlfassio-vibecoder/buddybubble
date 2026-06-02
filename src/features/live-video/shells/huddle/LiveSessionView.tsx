@@ -48,6 +48,7 @@ import type { IntervalWrapperKind, WrapperBaseProps } from '@/features/live-vide
 import { WrapperErrorBoundary } from '@/features/live-video/wrappers/WrapperErrorBoundary';
 import { getIntervalWrapper } from '@/features/live-video/wrappers/registry';
 import { AmrapMechanics } from '@/features/live-video/wrappers/interval/AmrapMechanics';
+import { EmomMechanics } from '@/features/live-video/wrappers/interval/mechanics/EmomMechanics';
 import { TabataMechanics } from '@/features/live-video/wrappers/interval/mechanics/TabataMechanics';
 import { BaseIntervalWrapper } from '@/features/live-video/wrappers/interval/BaseIntervalWrapper';
 import { useWorkoutDeckSelectionOptional } from '@/features/live-video/shells/huddle/workout-deck-selection-context';
@@ -266,11 +267,17 @@ function LiveSessionViewInner({
   const [wrapperConfig, setWrapperConfig] = useState<unknown>(null);
 
   const effectiveWrapperKind: IntervalWrapperKind =
-    override?.kind === 'amrap' || override?.kind === 'amrap_minimal' || override?.kind === 'tabata'
+    override?.kind === 'amrap' ||
+    override?.kind === 'amrap_minimal' ||
+    override?.kind === 'tabata' ||
+    override?.kind === 'emom'
       ? override.kind
       : wrapperKind;
   const effectiveWrapperConfig: unknown =
-    override?.kind === 'amrap' || override?.kind === 'amrap_minimal' || override?.kind === 'tabata'
+    override?.kind === 'amrap' ||
+    override?.kind === 'amrap_minimal' ||
+    override?.kind === 'tabata' ||
+    override?.kind === 'emom'
       ? override.config
       : wrapperConfig;
 
@@ -359,7 +366,8 @@ function LiveSessionViewInner({
     (effectiveWrapperKind === 'amrap' || effectiveWrapperKind === 'amrap_minimal') &&
     state.phase === 'amrap';
   const isTabataInterval = effectiveWrapperKind === 'tabata' && state.phase === 'tabata';
-  const wrapperPhaseMatches = isAmrapInterval || isTabataInterval;
+  const isEmomInterval = effectiveWrapperKind === 'emom' && state.phase === 'emom';
+  const wrapperPhaseMatches = isAmrapInterval || isTabataInterval || isEmomInterval;
 
   const excludeUidForTiles = useExcludeUidForTiles(
     wrapperPhaseMatches ? effectiveWrapperKind : 'none',
@@ -425,10 +433,25 @@ function LiveSessionViewInner({
         />
       );
     }
+    if (isEmomInterval) {
+      return (
+        <BaseIntervalWrapper
+          {...wrapperProps}
+          renderMechanics={(ctx) => <EmomMechanics {...ctx} />}
+        />
+      );
+    }
     const Comp = entry?.component;
     if (!Comp) return null;
     return <Comp {...wrapperProps} />;
-  }, [wrapperPhaseMatches, isAmrapInterval, isTabataInterval, wrapperProps, entry?.component]);
+  }, [
+    wrapperPhaseMatches,
+    isAmrapInterval,
+    isTabataInterval,
+    isEmomInterval,
+    wrapperProps,
+    entry?.component,
+  ]);
 
   const renderWrapper = intervalWrapperNode != null;
 
@@ -440,7 +463,9 @@ function LiveSessionViewInner({
       <>
         <ActivePhaseOverlays
           state={state}
-          suppressTabataPlaceholder={effectiveWrapperKind === 'tabata'}
+          suppressTabataPlaceholder={
+            effectiveWrapperKind === 'tabata' || effectiveWrapperKind === 'emom'
+          }
         />
         {topLeftOverlay}
         {topRightOverlay}

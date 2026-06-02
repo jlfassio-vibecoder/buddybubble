@@ -14,9 +14,14 @@ import { SESSION_COMMAND_EVENT } from '@/features/live-video/state/session-sync.
 import { useWorkoutDeckSelectionOptional } from '@/features/live-video/shells/huddle/workout-deck-selection-context';
 import { useWrapperAttach } from '@/features/live-video/contexts/WrapperAttachContext';
 import {
+  buildEmomAttachPayload,
+  isEmomDeckSnapshot,
+} from '@/features/live-video/wrappers/interval/utils/buildEmomAttachPayload';
+import {
   buildTabataAttachPayload,
   isTabataDeckSnapshot,
 } from '@/features/live-video/wrappers/interval/utils/buildTabataAttachPayload';
+import { emomMechanicsStateToJson } from '@/features/live-video/wrappers/interval/mechanics/emom-mechanics-state';
 import { tabataMechanicsStateToJson } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
 import type { Json } from '@/types/database';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -82,6 +87,7 @@ export function SessionControlsActions({
   const amrapAttachReady = !disableActions && liveDbReady && liveSessionRowId.trim().length > 0;
   const activeDeckSnap = pickActiveSnapshot(deckSel?.deck ?? [], deckSel?.activeSnapshotId ?? null);
   const tabataAttachReady = amrapAttachReady && isTabataDeckSnapshot(activeDeckSnap);
+  const emomAttachReady = amrapAttachReady && isEmomDeckSnapshot(activeDeckSnap);
 
   const isIdle = state.status === 'idle';
 
@@ -191,6 +197,38 @@ export function SessionControlsActions({
     })();
   };
 
+  const handleStartEmomBlock = () => {
+    if (!emomAttachReady) return;
+    void (async () => {
+      const snap = pickActiveSnapshot(deckSel?.deck ?? [], deckSel?.activeSnapshotId ?? null);
+      const payload = buildEmomAttachPayload(snap);
+      if (!payload) return;
+      const { data, error } = await supabase.rpc('emom_create_for_session', {
+        p_live_session_id: liveSessionRowId.trim(),
+        p_block_snapshot: payload.blockSnapshot as Json,
+        p_mechanics_state: emomMechanicsStateToJson(payload.mechanicsState) as Json,
+      });
+      if (error) {
+        if (process.env.NODE_ENV === 'development') {
+          console.error(
+            '[SessionControlsActions] emom_create_for_session',
+            error.message,
+            error.code,
+            error.details,
+            error.hint,
+          );
+        } else {
+          console.error('[SessionControlsActions] emom_create_for_session failed');
+        }
+        return;
+      }
+      if (typeof data === 'string') {
+        setOverride({ kind: 'emom', config: { interval_session_id: data } });
+        actions.transitionToPhase('emom');
+      }
+    })();
+  };
+
   const handleStartTabataBlock = () => {
     if (!tabataAttachReady) return;
     void (async () => {
@@ -283,6 +321,12 @@ export function SessionControlsActions({
               onClick={handleStartTabataBlock}
             >
               Tabata block
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={phaseDisabled || !emomAttachReady}
+              onClick={handleStartEmomBlock}
+            >
+              EMOM block
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

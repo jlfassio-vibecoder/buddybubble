@@ -12,6 +12,11 @@ import { useLiveSessionRuntime } from '@/features/live-video/theater/live-sessio
 import { formatUserFacingError } from '@/lib/format-error';
 import { metadataFieldsFromParsed } from '@/lib/item-metadata';
 import type { WorkoutExercise } from '@/lib/item-metadata';
+import { EmomSelfMinuteSplitsList } from '@/features/live-video/shells/EmomSelfMinuteSplitsList';
+import { EmomSlapTarget } from '@/features/live-video/shells/EmomSlapTarget';
+import { useEmomAthleteLogging } from '@/features/live-video/wrappers/interval/hooks/useEmomAthleteLogging';
+import { computeEmomSelfMinuteSplits } from '@/features/live-video/wrappers/interval/utils/computeEmomSelfMinuteSplits';
+import { useLiveSessionRuntimeOptional } from '@/features/live-video/theater/live-session-runtime-context';
 import { resolveParticipantLoggerSlotCount } from '@/lib/workout-factory/resolve-player-log-row-count';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import { cn } from '@/lib/utils';
@@ -74,7 +79,7 @@ function draftKey(exerciseName: string, setNumber: number): DraftKey {
 
 /** Live interval blocks that sync `workout_exercise_logs` via Realtime (unified interval engine). */
 function isIntervalPhase(phase: SessionPhase): boolean {
-  return phase === 'amrap' || phase === 'tabata';
+  return phase === 'amrap' || phase === 'tabata' || phase === 'emom';
 }
 
 function tier3LoggerShell(
@@ -105,7 +110,32 @@ export function ParticipantWorkoutLoggerCore({
   onClose,
 }: ParticipantWorkoutLoggerCoreProps) {
   const isAmrapPhase = phase === 'amrap';
+  const isEmomPhase = phase === 'emom';
   const isIntervalPhaseActive = isIntervalPhase(phase);
+
+  const runtime = useLiveSessionRuntimeOptional();
+  const sessionPaused = runtime?.state.status === 'paused';
+
+  const emomLogging = useEmomAthleteLogging({
+    supabase,
+    sessionId,
+    userId,
+    phase,
+    isHost,
+    activeDeckItemId,
+  });
+
+  const emomSelfSplits = useMemo(
+    () =>
+      isEmomPhase
+        ? computeEmomSelfMinuteSplits({
+            logs: emomLogging.logs,
+            blocks: emomLogging.blocks,
+            formatParams: emomLogging.formatParams,
+          })
+        : [],
+    [isEmomPhase, emomLogging.logs, emomLogging.blocks, emomLogging.formatParams],
+  );
 
   const deck = useLiveSessionDeck({
     supabase,
@@ -119,26 +149,37 @@ export function ParticipantWorkoutLoggerCore({
   );
 
   const activeTask = activeRow?.tasks ?? null;
-  const taskId = activeTask?.id ?? '';
+  const taskId = isEmomPhase ? emomLogging.taskId : (activeTask?.id ?? '');
 
   const {
-    logs,
-    loading: logsLoading,
-    error: logsError,
-    logSet,
-    saving,
+    logs: standardLogs,
+    loading: standardLogsLoading,
+    error: standardLogsError,
+    logSet: standardLogSet,
+    saving: standardSaving,
     refresh: refreshWorkoutLogs,
   } = useWorkoutLogs({
     supabase,
     sessionId,
     taskId,
     userId,
-    enabled: Boolean(!isHost && userId && taskId),
+    enabled: Boolean(!isHost && userId && taskId && !isEmomPhase),
   });
 
+  const logs = isEmomPhase ? emomLogging.logs : standardLogs;
+  const logSet = isEmomPhase ? emomLogging.logSet : standardLogSet;
+  const logsLoading = isEmomPhase ? emomLogging.logsLoading : standardLogsLoading;
+  const logsError = isEmomPhase ? emomLogging.logsError : standardLogsError;
+  const saving = isEmomPhase ? emomLogging.saving : standardSaving;
+
   const sessionVm = useMemo(
-    () => (activeTask ? buildWorkoutSessionViewModel(activeTask.metadata) : null),
-    [activeTask],
+    () =>
+      isEmomPhase && emomLogging.sessionVm
+        ? emomLogging.sessionVm
+        : activeTask
+          ? buildWorkoutSessionViewModel(activeTask.metadata)
+          : null,
+    [isEmomPhase, emomLogging.sessionVm, activeTask],
   );
 
   const exercises = useMemo(() => {
@@ -157,14 +198,20 @@ export function ParticipantWorkoutLoggerCore({
 
   const prevPhaseRef = useRef(phase);
   useEffect(() => {
-    if (isIntervalPhase(prevPhaseRef.current) && !isIntervalPhase(phase)) {
-      void refreshWorkoutLogs();
+    const prevPhase = prevPhaseRef.current;
+    if (isIntervalPhase(prevPhase) && !isIntervalPhase(phase)) {
+      if (prevPhase === 'emom') {
+        void emomLogging.refreshWorkoutLogs();
+      } else {
+        void refreshWorkoutLogs();
+      }
     }
     prevPhaseRef.current = phase;
-  }, [phase, refreshWorkoutLogs]);
+  }, [phase, emomLogging.refreshWorkoutLogs, refreshWorkoutLogs]);
 
   /** Refresh when interval blocks write or update `workout_exercise_logs` (AMRAP, Tabata, etc.). */
   useEffect(() => {
+    if (isEmomPhase) return;
     if (!isIntervalPhaseActive || isHost || !userId || !taskId || !sessionId.trim()) return;
 
     void refreshWorkoutLogs();
@@ -200,7 +247,16 @@ export function ParticipantWorkoutLoggerCore({
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [isIntervalPhaseActive, isHost, userId, taskId, sessionId, supabase, refreshWorkoutLogs]);
+  }, [
+    isEmomPhase,
+    isIntervalPhaseActive,
+    isHost,
+    userId,
+    taskId,
+    sessionId,
+    supabase,
+    refreshWorkoutLogs,
+  ]);
 
   const logFor = useCallback(
     (exerciseName: string, setNumber: number) =>
@@ -448,6 +504,20 @@ export function ParticipantWorkoutLoggerCore({
         <p className="shrink-0 text-xs text-destructive" role="alert">
           {logsError.message}
         </p>
+      ) : null}
+      {isEmomPhase && emomLogging.intervalSessionId ? (
+        <>
+          <EmomSlapTarget
+            intervalSessionId={emomLogging.intervalSessionId}
+            blocks={emomLogging.blocks}
+            flatExerciseNames={emomLogging.flatExerciseNames}
+            formatParams={emomLogging.formatParams}
+            logSet={logSet}
+            getExistingLog={emomLogging.getExistingLog}
+            disabled={sessionPaused}
+          />
+          <EmomSelfMinuteSplitsList entries={emomSelfSplits} className="shrink-0" />
+        </>
       ) : null}
       <div className="min-h-0 flex-1 space-y-6 overflow-y-auto pr-1">
         {exercises.map((ex, exIdx) => {

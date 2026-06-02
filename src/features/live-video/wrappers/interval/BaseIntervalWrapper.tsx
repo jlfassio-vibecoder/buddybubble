@@ -105,10 +105,12 @@ function BaseIntervalBody({
           isOpen={ps.showViewResultsModal}
           onClose={ps.handleCloseViewResults}
           isHost={ps.isHost}
+          intervalType={engine.intervalType}
           resultsText={ps.viewResultsText}
           onCopy={() => void ps.copyResults()}
           copyToast={ps.copyResultsToast}
           roundDurations={ps.roundDurations}
+          minuteSplitEntries={ps.minuteSplitEntries}
           savedToAnalytics={ps.savedToAnalytics}
         />
       </div>

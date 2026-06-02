@@ -3,12 +3,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createClient } from '@utils/supabase/client';
 import {
+  deriveEmomSegmentRemainingSec,
+  emomSegmentLabel,
+  parseEmomMechanicsState,
+} from '@/features/live-video/wrappers/interval/mechanics/emom-mechanics-state';
+import {
   deriveTabataSegmentRemainingSec,
   parseTabataMechanicsState,
   tabataSegmentLabel,
-  type TabataMechanicsState,
 } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
 import type {
+  IntervalMechanicsState,
   IntervalTimerPhase,
   IntervalType,
 } from '@/features/live-video/wrappers/interval/types/interval-engine';
@@ -42,7 +47,7 @@ export interface IntervalTimerState {
   totalSec: number;
   workStartedAt: string | null;
   blockSnapshot: AmrapBlockSnapshotPayload | null;
-  mechanicsState: TabataMechanicsState | null;
+  mechanicsState: IntervalMechanicsState | null;
   segmentLabel: string;
   currentRoundIndex: number;
   leaderboardSnapshotRaw: Json | null;
@@ -115,26 +120,38 @@ export function useIntervalTimerState(intervalSessionId: string): IntervalTimerS
     return 'amrap';
   }, [sessionRow?.interval_type]);
 
-  const mechanicsState = useMemo(
-    () => parseTabataMechanicsState(sessionRow?.mechanics_state),
-    [sessionRow?.mechanics_state],
-  );
+  const mechanicsState = useMemo((): IntervalMechanicsState | null => {
+    const raw = sessionRow?.mechanics_state;
+    if (intervalType === 'emom') return parseEmomMechanicsState(raw);
+    if (intervalType === 'tabata') return parseTabataMechanicsState(raw);
+    return null;
+  }, [sessionRow?.mechanics_state, intervalType]);
 
   const segmentLabel = useMemo(() => {
-    if (intervalType === 'tabata' && mechanicsState) {
+    if (intervalType === 'tabata' && mechanicsState && 'round_index' in mechanicsState) {
       return tabataSegmentLabel(mechanicsState.segment, {
+        isPaused: mechanicsState.is_paused,
+      });
+    }
+    if (intervalType === 'emom' && mechanicsState && 'minute_index' in mechanicsState) {
+      return emomSegmentLabel(mechanicsState.segment, {
         isPaused: mechanicsState.is_paused,
       });
     }
     return '';
   }, [intervalType, mechanicsState]);
 
-  const currentRoundIndex = mechanicsState?.round_index ?? 0;
+  const currentRoundIndex = useMemo(() => {
+    if (!mechanicsState) return 0;
+    if ('minute_index' in mechanicsState) return mechanicsState.minute_index;
+    if ('round_index' in mechanicsState) return mechanicsState.round_index;
+    return 0;
+  }, [mechanicsState]);
 
   useEffect(() => {
     if (!sessionRow) return;
 
-    if (intervalType === 'tabata' && mechanicsState) {
+    if (intervalType === 'tabata' && mechanicsState && 'round_index' in mechanicsState) {
       const frozenRemaining = deriveTabataSegmentRemainingSec(mechanicsState, Date.now());
       setRemainingSec(frozenRemaining);
       if (mechanicsState.is_paused) {
@@ -142,6 +159,19 @@ export function useIntervalTimerState(intervalSessionId: string): IntervalTimerS
       }
       const tick = () => {
         setRemainingSec(deriveTabataSegmentRemainingSec(mechanicsState, Date.now()));
+      };
+      const id = setInterval(tick, 250);
+      return () => clearInterval(id);
+    }
+
+    if (intervalType === 'emom' && mechanicsState && 'minute_index' in mechanicsState) {
+      const frozenRemaining = deriveEmomSegmentRemainingSec(mechanicsState, Date.now());
+      setRemainingSec(frozenRemaining);
+      if (mechanicsState.is_paused) {
+        return;
+      }
+      const tick = () => {
+        setRemainingSec(deriveEmomSegmentRemainingSec(mechanicsState, Date.now()));
       };
       const id = setInterval(tick, 250);
       return () => clearInterval(id);
@@ -169,12 +199,18 @@ export function useIntervalTimerState(intervalSessionId: string): IntervalTimerS
   }, [sessionRow, intervalType, mechanicsState]);
 
   const totalSec = useMemo(() => {
-    if (intervalType === 'tabata' && mechanicsState) {
+    if (intervalType === 'tabata' && mechanicsState && 'work_seconds' in mechanicsState) {
       if (mechanicsState.segment === 'setup') return mechanicsState.setup_seconds;
       if (mechanicsState.segment === 'rest') return mechanicsState.rest_seconds;
       if (mechanicsState.segment === 'work') return mechanicsState.work_seconds;
       if (mechanicsState.segment === 'idle') return mechanicsState.setup_seconds;
       return mechanicsState.work_seconds;
+    }
+    if (intervalType === 'emom' && mechanicsState && 'interval_seconds' in mechanicsState) {
+      if (mechanicsState.segment === 'setup') return mechanicsState.setup_seconds;
+      if (mechanicsState.segment === 'minute') return mechanicsState.interval_seconds;
+      if (mechanicsState.segment === 'idle') return mechanicsState.setup_seconds;
+      return mechanicsState.interval_seconds;
     }
     return sessionRow?.duration_seconds ?? 0;
   }, [intervalType, mechanicsState, sessionRow?.duration_seconds]);
@@ -182,7 +218,15 @@ export function useIntervalTimerState(intervalSessionId: string): IntervalTimerS
   const phase: IntervalTimerPhase = useMemo(() => {
     if (!sessionRow) return 'idle';
     if (sessionRow.timer_phase === 'finished') return 'finished';
-    if (intervalType === 'tabata' && mechanicsState) {
+    if (intervalType === 'tabata' && mechanicsState && 'round_index' in mechanicsState) {
+      if (mechanicsState.segment === 'done') return 'finished';
+      if (mechanicsState.segment === 'idle') return 'idle';
+      if (mechanicsState.segment === 'setup' && !mechanicsState.segment_started_at) {
+        return 'idle';
+      }
+      return 'work';
+    }
+    if (intervalType === 'emom' && mechanicsState && 'minute_index' in mechanicsState) {
       if (mechanicsState.segment === 'done') return 'finished';
       if (mechanicsState.segment === 'idle') return 'idle';
       if (mechanicsState.segment === 'setup' && !mechanicsState.segment_started_at) {
