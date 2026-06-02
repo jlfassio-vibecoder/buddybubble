@@ -375,22 +375,37 @@ function LiveSessionViewInner({
 
   const resolvedDisplayName = displayNameProp?.trim() || localUserId;
 
-  const wrapperProps: WrapperBaseProps = {
-    intervalWrapperKind: effectiveWrapperKind,
-    intervalWrapperConfig: effectiveWrapperConfig,
-    hostParticipantId,
-    videoTileExcludeUid: excludeUidForTiles,
-    liveSessionId,
-    participantId: String(agoraUidFromUuid(localUserId)),
-    role: isHost ? 'host' : 'participant',
-    displayName: resolvedDisplayName,
-    authUserId: localUserId,
-    onWrapperError: (err) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[LiveSessionView] interval wrapper error', err);
-      }
-    },
-  };
+  const onWrapperError = useCallback((err: string) => {
+    if (process.env.NODE_ENV === 'development') {
+      console.error('[LiveSessionView] interval wrapper error', err);
+    }
+  }, []);
+
+  const wrapperProps: WrapperBaseProps = useMemo(
+    () => ({
+      intervalWrapperKind: effectiveWrapperKind,
+      intervalWrapperConfig: effectiveWrapperConfig,
+      hostParticipantId,
+      videoTileExcludeUid: excludeUidForTiles,
+      liveSessionId,
+      participantId: String(agoraUidFromUuid(localUserId)),
+      role: isHost ? 'host' : 'participant',
+      displayName: resolvedDisplayName,
+      authUserId: localUserId,
+      onWrapperError,
+    }),
+    [
+      effectiveWrapperKind,
+      effectiveWrapperConfig,
+      hostParticipantId,
+      excludeUidForTiles,
+      liveSessionId,
+      localUserId,
+      isHost,
+      resolvedDisplayName,
+      onWrapperError,
+    ],
+  );
 
   const intervalWrapperNode = useMemo(() => {
     if (!wrapperPhaseMatches) return null;

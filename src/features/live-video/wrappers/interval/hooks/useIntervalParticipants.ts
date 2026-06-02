@@ -41,15 +41,20 @@ export function useIntervalParticipants(
   const supabase = useMemo(() => createClient(), []);
   const [participants, setParticipants] = useState<IntervalParticipantRow[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const hasJoinedRef = useRef(false);
+  const joinedSessionIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (hasJoinedRef.current || role === 'host') return;
-    if (!intervalSessionId.trim()) return;
-    hasJoinedRef.current = true;
+    if (role === 'host') return;
+    const sessionId = intervalSessionId.trim();
+    if (!sessionId) {
+      joinedSessionIdRef.current = null;
+      return;
+    }
+    if (joinedSessionIdRef.current === sessionId) return;
+    joinedSessionIdRef.current = sessionId;
     void supabase
       .rpc('amrap_join_session', {
-        p_amrap_session_id: intervalSessionId,
+        p_amrap_session_id: sessionId,
         p_display_name: displayName,
       })
       .then(({ error: rpcError }) => {

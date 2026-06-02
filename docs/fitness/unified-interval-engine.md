@@ -89,7 +89,7 @@ Rename and generalize the session table. Conceptual shape (illustrative, **not**
 | ---------------------- | -------------------------------- | ------------------------------------------------------------------------------------------ |
 | `id`                   | uuid PK                          |                                                                                            |
 | `live_session_id`      | uuid unique FK → `live_sessions` | One active interval block per live session (unchanged from AMRAP).                         |
-| `interval_type`        | `interval_type` enum             | `'amrap' \| 'tabata' \| 'emom' \| 'standard'`.                                             |
+| `interval_type`        | `interval_type` enum             | `'amrap' \| 'tabata' \| 'emom'` (Phase 0); `'standard'` planned.                           |
 | `duration_seconds`     | integer                          | Total cap (AMRAP) or derived total (`rounds × (work+rest)`).                               |
 | `timer_phase`          | text check                       | Generalized lifecycle: `'idle' \| 'setup' \| 'work' \| 'finished'`. Coarse, type-agnostic. |
 | `work_started_at`      | timestamptz                      | Server clock anchor — authoritative for all types.                                         |
@@ -119,13 +119,14 @@ Rename and generalize the session table. Conceptual shape (illustrative, **not**
 ### 3.2 The `interval_type` enum
 
 ```text
-interval_type := 'amrap' | 'tabata' | 'emom' | 'standard'
+interval_type := 'amrap' | 'tabata' | 'emom'   -- Phase 0 migration (`20260904120000`)
 ```
 
 - `'amrap'` — open clock, manual rounds.
 - `'tabata'` — fixed `rounds`, symmetric work/rest (defaults 20/10), auto-advance.
 - `'emom'` — fixed `rounds`/minutes, work-dominant segment per minute, auto-advance.
-- `'standard'` — straight sets with a shared session clock (no segmentation); lets non-interval live workouts ride the same finalize/auto-save rail.
+
+**Planned (not in DB enum yet):** `'standard'` — straight sets with a shared session clock (no segmentation); lets non-interval live workouts ride the same finalize/auto-save rail.
 
 `interval_type` is the **single dispatch key** for: the UI mechanics component, the finalize round-derivation strategy, and the realtime tick interpretation.
 

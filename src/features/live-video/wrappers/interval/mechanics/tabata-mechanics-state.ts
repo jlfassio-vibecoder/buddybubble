@@ -260,11 +260,11 @@ export function computeNextTabataMechanicsState(
 
   if (state.segment === 'work') {
     const isLastRound = state.round_index >= state.total_rounds;
-    if (state.rest_seconds > 0) {
-      return withSegmentAnchor(state, 'rest', state.round_index, anchorMs);
-    }
     if (isLastRound) {
       return { ...stripPauseFields(state), segment: 'done', segment_started_at: null };
+    }
+    if (state.rest_seconds > 0) {
+      return withSegmentAnchor(state, 'rest', state.round_index, anchorMs);
     }
     return withSegmentAnchor(state, 'work', state.round_index + 1, anchorMs);
   }
