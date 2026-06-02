@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { createSessionDeckSnapshot } from '@/features/live-video/shells/huddle/session-deck-snapshot';
-import { buildEmomAttachPayload } from '@/features/live-video/wrappers/interval/utils/buildEmomAttachPayload';
+import {
+  buildEmomAttachPayload,
+  isEmomDeckSnapshot,
+} from '@/features/live-video/wrappers/interval/utils/buildEmomAttachPayload';
 import { richMetadataWithBlockFormat } from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
 import type { TaskRow } from '@/types/database';
 
@@ -34,5 +37,19 @@ describe('buildEmomAttachPayload', () => {
   it('returns null for non-emom deck', () => {
     const task = { ...emomTask(), metadata: richMetadataWithBlockFormat('tabata') } as TaskRow;
     expect(buildEmomAttachPayload(createSessionDeckSnapshot(task))).toBeNull();
+  });
+});
+
+describe('isEmomDeckSnapshot', () => {
+  it('matches buildEmomAttachPayload nullability', () => {
+    const emomSnap = createSessionDeckSnapshot(emomTask());
+    expect(isEmomDeckSnapshot(emomSnap)).toBe(buildEmomAttachPayload(emomSnap) != null);
+
+    const tabataTask = {
+      ...emomTask(),
+      metadata: richMetadataWithBlockFormat('tabata'),
+    } as TaskRow;
+    const tabataSnap = createSessionDeckSnapshot(tabataTask);
+    expect(isEmomDeckSnapshot(tabataSnap)).toBe(buildEmomAttachPayload(tabataSnap) != null);
   });
 });

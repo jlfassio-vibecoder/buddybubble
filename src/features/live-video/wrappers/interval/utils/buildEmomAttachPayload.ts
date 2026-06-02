@@ -48,5 +48,7 @@ export function buildEmomAttachPayload(snap: SessionDeckSnapshot | null): EmomAt
 }
 
 export function isEmomDeckSnapshot(snap: SessionDeckSnapshot | null): boolean {
-  return buildEmomAttachPayload(snap) != null;
+  if (!snap) return false;
+  const vm = buildWorkoutSessionViewModel(snap.task.metadata);
+  return vm.blocks.some((b) => b.blockFormat?.trim().toLowerCase() === 'emom');
 }

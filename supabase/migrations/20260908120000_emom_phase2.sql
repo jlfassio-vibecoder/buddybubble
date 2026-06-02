@@ -684,6 +684,10 @@ begin
   elsif v_interval_type = 'emom' then
     v_setup_seconds := coalesce((v_mechanics_state->>'setup_seconds')::integer, 10);
 
+    delete from public.workout_exercise_logs wel
+    where wel.session_id = v_live_session_id::text
+      and wel.active_seconds is not null;
+
     update public.live_interval_sessions s
     set timer_phase = 'idle',
         work_started_at = null,

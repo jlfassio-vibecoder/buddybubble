@@ -97,6 +97,8 @@ export function useIntervalSession(options: UseIntervalSessionOptions): Interval
   const { state } = useLiveSessionRuntime();
   const isHost = role === 'host';
 
+  const timerState = useIntervalTimerState(intervalSessionId);
+
   const emomLogging = useEmomAthleteLogging({
     supabase,
     sessionId: liveSessionId,
@@ -105,9 +107,8 @@ export function useIntervalSession(options: UseIntervalSessionOptions): Interval
     isHost,
     activeDeckItemId: state.activeDeckItemId,
     enableLogRealtime: false,
+    enabled: timerState.intervalType === 'emom',
   });
-
-  const timerState = useIntervalTimerState(intervalSessionId);
   const { rows: roundEventRows } = useIntervalRoundEvents(intervalSessionId);
   const { participants, error: participantsError } = useIntervalParticipants(
     intervalSessionId,

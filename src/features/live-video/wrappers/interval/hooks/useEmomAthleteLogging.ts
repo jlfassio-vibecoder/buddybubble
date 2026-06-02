@@ -35,6 +35,8 @@ export type UseEmomAthleteLoggingOptions = {
    * Disable when another component already owns the subscription (e.g. interval engine).
    */
   enableLogRealtime?: boolean;
+  /** When false, skips EMOM deck/log work (e.g. AMRAP/Tabata interval sessions). */
+  enabled?: boolean;
 };
 
 function removeWorkoutLogRealtimeChannel(
@@ -58,8 +60,9 @@ export function useEmomAthleteLogging(options: UseEmomAthleteLoggingOptions) {
     isHost,
     activeDeckItemId,
     enableLogRealtime = true,
+    enabled = true,
   } = options;
-  const isEmomPhase = phase === 'emom';
+  const isEmomPhase = enabled && phase === 'emom';
 
   const [intervalSessionId, setIntervalSessionId] = useState('');
 
