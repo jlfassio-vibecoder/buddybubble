@@ -3,6 +3,7 @@
  * Order matches flattening in workoutInSetToTaskExercises / getExercisesFromWorkout.
  */
 
+import type { WorkoutExercise } from '@/lib/item-metadata';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 
 export type PlayerExerciseIndexEntry = {
@@ -35,6 +36,44 @@ export function buildPlayerExerciseIndexLookup(
   }
 
   return out;
+}
+
+/**
+ * Splits a flat exercise list back into per main-block slices (same order as flattening).
+ * When length matches the lookup, maps by global index; otherwise uses prior per-block counts
+ * (remainder goes to the last main block).
+ */
+export function partitionFlatExercisesByMainBlocks(
+  flatExercises: WorkoutExercise[],
+  blocks: WorkoutSessionBlockView[],
+): Map<string, WorkoutExercise[]> {
+  const lookup = buildPlayerExerciseIndexLookup(blocks);
+  const result = new Map<string, WorkoutExercise[]>();
+
+  if (flatExercises.length === lookup.length) {
+    for (const entry of lookup) {
+      const ex = flatExercises[entry.globalIndex];
+      if (!ex) continue;
+      const list = result.get(entry.blockId) ?? [];
+      list.push(ex);
+      result.set(entry.blockId, list);
+    }
+    return result;
+  }
+
+  const mainBlocks = blocks.filter((b) => b.section === 'main');
+  let offset = 0;
+  for (let i = 0; i < mainBlocks.length; i++) {
+    const block = mainBlocks[i]!;
+    const prevCount = block.exercises?.length ?? 0;
+    const isLast = i === mainBlocks.length - 1;
+    const slice = isLast
+      ? flatExercises.slice(offset)
+      : flatExercises.slice(offset, offset + prevCount);
+    result.set(block.id, slice);
+    offset += isLast ? slice.length : prevCount;
+  }
+  return result;
 }
 
 /** Map globalIndex → entry for O(1) lookup when rendering. */

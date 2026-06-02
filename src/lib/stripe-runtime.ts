@@ -6,19 +6,34 @@
 
 export type StripeKeyMode = 'test' | 'live';
 
+/** Trim whitespace and optional wrapping quotes from Vercel/Dashboard paste. */
+export function normalizeStripeEnvKey(key: string | undefined): string | undefined {
+  if (key == null) return undefined;
+  let k = key.trim();
+  if (
+    (k.length >= 2 && k.startsWith('"') && k.endsWith('"')) ||
+    (k.startsWith("'") && k.endsWith("'"))
+  ) {
+    k = k.slice(1, -1).trim();
+  }
+  return k.length > 0 ? k : undefined;
+}
+
 export function stripeKeyModeFromSecretKey(secretKey: string | undefined): StripeKeyMode | null {
-  if (!secretKey) return null;
-  if (secretKey.startsWith('sk_test_')) return 'test';
-  if (secretKey.startsWith('sk_live_')) return 'live';
+  const k = normalizeStripeEnvKey(secretKey);
+  if (!k) return null;
+  if (k.startsWith('sk_test_') || k.startsWith('rk_test_')) return 'test';
+  if (k.startsWith('sk_live_') || k.startsWith('rk_live_')) return 'live';
   return null;
 }
 
 export function stripeKeyModeFromPublishableKey(
   publishableKey: string | undefined,
 ): StripeKeyMode | null {
-  if (!publishableKey) return null;
-  if (publishableKey.startsWith('pk_test_')) return 'test';
-  if (publishableKey.startsWith('pk_live_')) return 'live';
+  const k = normalizeStripeEnvKey(publishableKey);
+  if (!k) return null;
+  if (k.startsWith('pk_test_')) return 'test';
+  if (k.startsWith('pk_live_')) return 'live';
   return null;
 }
 
@@ -36,13 +51,18 @@ export function billingDeployEnvironment(): 'production' | 'preview' | 'local' {
  * - Vercel production must not use test keys.
  */
 export function assertStripeEnvironment(): void {
-  const secret = process.env.STRIPE_SECRET_KEY;
-  const publishable = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+  const secret = normalizeStripeEnvKey(process.env.STRIPE_SECRET_KEY);
+  const publishable = normalizeStripeEnvKey(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
 
   const secretMode = stripeKeyModeFromSecretKey(secret);
   if (!secretMode) {
+    const hint = secret
+      ? secret.startsWith('whsec_')
+        ? 'STRIPE_WEBHOOK_SECRET (whsec_) was set on STRIPE_SECRET_KEY — use the secret key (sk_live_ or sk_test_) from API keys instead.'
+        : 'Unrecognized prefix.'
+      : 'STRIPE_SECRET_KEY is empty or unset.';
     throw new Error(
-      'STRIPE_SECRET_KEY must start with sk_test_ (Stripe test mode) or sk_live_ (live mode).',
+      `STRIPE_SECRET_KEY must start with sk_test_, sk_live_, rk_test_, or rk_live_. ${hint}`,
     );
   }
 

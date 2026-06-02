@@ -5,15 +5,18 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { WorkoutExercisesEditor } from '@/components/fitness/workout-exercises-editor';
 import { Button } from '@/components/ui/button';
 import { useWorkoutDeckSelectionOptional } from '@/features/live-video/shells/huddle/workout-deck-selection-context';
+import { EmomBlockEditor } from '@/features/live-video/shells/huddle/emom-builder/EmomBlockEditor';
 import { mergeWorkoutExercisesIntoTaskMetadata } from '@/features/live-video/shells/huddle/session-deck-snapshot';
 import { usePersistDeckSnapshot } from '@/features/live-video/shells/huddle/usePersistDeckSnapshot';
-import { metadataFieldsFromParsed } from '@/lib/item-metadata';
+import { metadataFieldsFromParsed, stripLegacyWorkoutMetadataKeys } from '@/lib/item-metadata';
 import type { WorkoutExercise } from '@/lib/item-metadata';
+import { findEmomMainBlock } from '@/lib/workout-factory/patch-emom-block-metadata';
+import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import { EmomHostTier3AthleteSection } from '@/features/live-video/shells/EmomHostTier3AthleteSection';
 import { Tier3DrawerCloseHeader } from '@/features/live-video/ui/Tier3DrawerCloseHeader';
 import { cn } from '@/lib/utils';
 import { useUserProfileStore } from '@/store/userProfileStore';
-import type { Database, ItemType, UnitSystem } from '@/types/database';
+import type { Database, ItemType, TaskRow, UnitSystem } from '@/types/database';
 
 export type LiveSessionWorkoutPlayerProps = {
   className?: string;
@@ -94,6 +97,23 @@ export function LiveSessionWorkoutPlayer({
     [activeSnapshot, ctx],
   );
 
+  const onEmomMetadataCommit = useCallback(
+    (nextMetadata: TaskRow['metadata']) => {
+      if (!ctx || !activeSnapshot) return;
+      ctx.updateSnapshotTask(activeSnapshot.snapshotId, {
+        ...activeSnapshot.task,
+        metadata: stripLegacyWorkoutMetadataKeys(nextMetadata) as TaskRow['metadata'],
+      });
+    },
+    [activeSnapshot, ctx],
+  );
+
+  const hasEmomBlock = useMemo(() => {
+    if (!activeSnapshot) return false;
+    const vm = buildWorkoutSessionViewModel(activeSnapshot.task.metadata);
+    return findEmomMainBlock(vm.blocks) != null;
+  }, [activeSnapshot]);
+
   const handleApplySessionOnly = useCallback(() => {
     if (!ctx || !activeSnapshot?.dirty) return;
     onHostLayoutFocusBoard?.();
@@ -150,7 +170,15 @@ export function LiveSessionWorkoutPlayer({
     <div className={cn('flex min-h-0 flex-1 flex-col gap-3 overflow-hidden', className)}>
       {onClose ? <Tier3DrawerCloseHeader onClose={onClose} /> : null}
       <EmomHostTier3AthleteSection supabase={supabase as SupabaseClient<Database>} />
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1">
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1 space-y-4">
+        {hasEmomBlock ? (
+          <EmomBlockEditor
+            key={`${activeSnapshot.snapshotId}-emom`}
+            task={activeSnapshot.task}
+            canWrite={canWrite}
+            onCommit={onEmomMetadataCommit}
+          />
+        ) : null}
         <WorkoutExercisesEditor
           key={activeSnapshot.snapshotId}
           idPrefix={`huddle-deck-${activeSnapshot.snapshotId}`}

@@ -52,7 +52,7 @@ function getPrimarySession(meta: Record<string, unknown>): Record<string, unknow
   return isPlainObject(s0) ? s0 : null;
 }
 
-function workoutExerciseToFactoryExercise(we: WorkoutExercise, order: number): Exercise {
+export function workoutExerciseToFactoryExercise(we: WorkoutExercise, order: number): Exercise {
   const name = we.name.trim() || 'Exercise';
   const repsRaw = we.reps;
   const repsNorm = normalizeRepsForStorage(repsRaw);
