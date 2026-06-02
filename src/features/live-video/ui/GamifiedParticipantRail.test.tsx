@@ -21,11 +21,15 @@ const mockAmrapRailOptional = vi.hoisted(() =>
 );
 
 const mockEngine: AmrapSessionEngine = {
+  intervalType: 'amrap',
   timerPhase: 'finished',
   remainingSec: 0,
   totalSec: 600,
   workStartedAt: null,
   blockSnapshot: null,
+  mechanicsState: null,
+  segmentLabel: '',
+  currentRoundIndex: 0,
   resultsFinalizedAt: null,
   leaderboardSnapshotRaw: null,
   participants: [
@@ -52,6 +56,7 @@ const mockEngine: AmrapSessionEngine = {
   },
   startTimer: null,
   resetTimer: null,
+  advanceSegment: null,
   logRound: null,
   finalizeSession: vi.fn(),
   participantRoundLaps: [

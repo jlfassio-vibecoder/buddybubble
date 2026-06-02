@@ -3,8 +3,8 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 
 export type WrapperAttachOverride = {
-  kind: 'amrap' | 'amrap_minimal';
-  config: { amrap_session_id: string };
+  kind: 'amrap' | 'amrap_minimal' | 'tabata';
+  config: { interval_session_id: string };
 } | null;
 
 type Value = {

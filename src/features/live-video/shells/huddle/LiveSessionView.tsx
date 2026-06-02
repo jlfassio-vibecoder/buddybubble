@@ -47,6 +47,9 @@ import { VideoStageWrapper } from '@/features/live-video/shells/huddle/VideoStag
 import type { IntervalWrapperKind, WrapperBaseProps } from '@/features/live-video/wrappers/types';
 import { WrapperErrorBoundary } from '@/features/live-video/wrappers/WrapperErrorBoundary';
 import { getIntervalWrapper } from '@/features/live-video/wrappers/registry';
+import { AmrapMechanics } from '@/features/live-video/wrappers/interval/AmrapMechanics';
+import { TabataMechanics } from '@/features/live-video/wrappers/interval/mechanics/TabataMechanics';
+import { BaseIntervalWrapper } from '@/features/live-video/wrappers/interval/BaseIntervalWrapper';
 import { useWorkoutDeckSelectionOptional } from '@/features/live-video/shells/huddle/workout-deck-selection-context';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
@@ -263,9 +266,11 @@ function LiveSessionViewInner({
   const [wrapperConfig, setWrapperConfig] = useState<unknown>(null);
 
   const effectiveWrapperKind: IntervalWrapperKind =
-    override?.kind === 'amrap' || override?.kind === 'amrap_minimal' ? override.kind : wrapperKind;
+    override?.kind === 'amrap' || override?.kind === 'amrap_minimal' || override?.kind === 'tabata'
+      ? override.kind
+      : wrapperKind;
   const effectiveWrapperConfig: unknown =
-    override?.kind === 'amrap' || override?.kind === 'amrap_minimal'
+    override?.kind === 'amrap' || override?.kind === 'amrap_minimal' || override?.kind === 'tabata'
       ? override.config
       : wrapperConfig;
 
@@ -350,11 +355,12 @@ function LiveSessionViewInner({
 
   // P2: `videoDrawerDefaultOpen = !entry?.hasVideoBackground` is N/A here (no separate video drawer); use registry metadata when a drawer shell exists.
   const entry = getIntervalWrapper(effectiveWrapperKind);
-  const wrapperPhaseMatches =
+  const isAmrapInterval =
     (effectiveWrapperKind === 'amrap' || effectiveWrapperKind === 'amrap_minimal') &&
     state.phase === 'amrap';
-  const ActiveIntervalWrapper = wrapperPhaseMatches ? entry?.component : undefined;
-  const renderWrapper = ActiveIntervalWrapper != null;
+  const isTabataInterval = effectiveWrapperKind === 'tabata' && state.phase === 'tabata';
+  const wrapperPhaseMatches = isAmrapInterval || isTabataInterval;
+
   const excludeUidForTiles = useExcludeUidForTiles(
     wrapperPhaseMatches ? effectiveWrapperKind : 'none',
     hostParticipantId,
@@ -386,18 +392,46 @@ function LiveSessionViewInner({
     },
   };
 
+  const intervalWrapperNode = useMemo(() => {
+    if (!wrapperPhaseMatches) return null;
+    if (isAmrapInterval) {
+      return (
+        <BaseIntervalWrapper
+          {...wrapperProps}
+          renderMechanics={(ctx) => <AmrapMechanics {...ctx} />}
+        />
+      );
+    }
+    if (isTabataInterval) {
+      return (
+        <BaseIntervalWrapper
+          {...wrapperProps}
+          renderMechanics={(ctx) => <TabataMechanics {...ctx} />}
+        />
+      );
+    }
+    const Comp = entry?.component;
+    if (!Comp) return null;
+    return <Comp {...wrapperProps} />;
+  }, [wrapperPhaseMatches, isAmrapInterval, isTabataInterval, wrapperProps, entry?.component]);
+
+  const renderWrapper = intervalWrapperNode != null;
+
   const videoFillsPrimarySlot =
     compact || showWrapperBoardSplit || !sideEditorOpen || (showSideEditor && !isDrawerOpen);
 
   const videoOverlays = useMemo(
     () => (
       <>
-        <ActivePhaseOverlays state={state} />
+        <ActivePhaseOverlays
+          state={state}
+          suppressTabataPlaceholder={effectiveWrapperKind === 'tabata'}
+        />
         {topLeftOverlay}
         {topRightOverlay}
       </>
     ),
-    [state, topLeftOverlay, topRightOverlay],
+    [state, topLeftOverlay, topRightOverlay, effectiveWrapperKind],
   );
 
   const rosterFloatingTrigger = useMemo(
@@ -600,7 +634,7 @@ function LiveSessionViewInner({
                       ) : null}
                       <div className="min-h-0 flex-1">
                         <WrapperErrorBoundary resetKey={effectiveWrapperKind}>
-                          <ActiveIntervalWrapper {...wrapperProps} />
+                          {intervalWrapperNode}
                         </WrapperErrorBoundary>
                       </div>
                     </div>
@@ -641,13 +675,13 @@ function LiveSessionViewInner({
           entry?.inlineUi === false ? (
             <div className="sr-only">
               <WrapperErrorBoundary resetKey={effectiveWrapperKind}>
-                <ActiveIntervalWrapper {...wrapperProps} />
+                {intervalWrapperNode}
               </WrapperErrorBoundary>
             </div>
           ) : (
             <div className="shrink-0 rounded-lg border border-border bg-card/60 p-3 min-h-[120px]">
               <WrapperErrorBoundary resetKey={effectiveWrapperKind}>
-                <ActiveIntervalWrapper {...wrapperProps} />
+                {intervalWrapperNode}
               </WrapperErrorBoundary>
             </div>
           )

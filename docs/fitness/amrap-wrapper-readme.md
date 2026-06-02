@@ -10,6 +10,8 @@ Source areas:
 
 This document describes the AMRAP interval wrapper that mounts inside a live workout session after the host clicks **Start Session** and then **AMRAP block**.
 
+> **Phase 0 (unified interval engine):** Persistence lives in `live_interval_sessions`, `live_interval_participants`, and `interval_round_events` (formerly `amrap_*` tables). Wrapper config uses `interval_session_id`. Finalize and round logging use `interval_finalize_session` and `interval_log_round`. UI mounts via `BaseIntervalWrapper` + `AmrapMechanics`. See [unified-interval-engine.md](./unified-interval-engine.md).
+
 The AMRAP wrapper is not a standalone page. It is an extension of the live-video huddle. It depends on:
 
 - Agora for audio/video and participant media tracks.

@@ -20,7 +20,11 @@ export function AmrapRailRecapBanner({ className }: AmrapRailRecapBannerProps) {
   const finalized = engine.resultsFinalizedAt != null;
 
   const statusLine = isHost
-    ? 'AMRAP complete'
+    ? engine.intervalType === 'tabata'
+      ? 'Tabata complete'
+      : engine.intervalType === 'emom'
+        ? 'EMOM complete'
+        : 'AMRAP complete'
     : finalized
       ? 'Results locked'
       : 'Waiting for host to lock results';

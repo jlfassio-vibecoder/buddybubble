@@ -14,13 +14,23 @@ const PLACEHOLDER_TABATA_TOTAL_MS = 4 * 60 * 1000;
 
 export type ActivePhaseOverlaysProps = {
   state: SessionState;
+  /** When the unified Tabata wrapper is attached, hide the legacy placeholder overlay. */
+  suppressTabataPlaceholder?: boolean;
 };
 
-function phaseShowsOverlays(phase: SessionState['phase']): boolean {
-  return phase === 'warmup' || phase === 'tabata';
+function phaseShowsOverlays(
+  phase: SessionState['phase'],
+  suppressTabataPlaceholder: boolean,
+): boolean {
+  if (phase === 'warmup') return true;
+  if (phase === 'tabata') return !suppressTabataPlaceholder;
+  return false;
 }
 
-export function ActivePhaseOverlays({ state }: ActivePhaseOverlaysProps) {
+export function ActivePhaseOverlays({
+  state,
+  suppressTabataPlaceholder = false,
+}: ActivePhaseOverlaysProps) {
   const { remoteUsers } = useAgoraSession();
   const participantCount = remoteUsers.length + 1;
 
@@ -31,7 +41,7 @@ export function ActivePhaseOverlays({ state }: ActivePhaseOverlaysProps) {
   const totalMs = phase === 'tabata' ? PLACEHOLDER_TABATA_TOTAL_MS : undefined;
 
   useEffect(() => {
-    if (!phaseShowsOverlays(phase)) return;
+    if (!phaseShowsOverlays(phase, suppressTabataPlaceholder)) return;
 
     const tick = () => {
       const now = Date.now();
@@ -43,9 +53,9 @@ export function ActivePhaseOverlays({ state }: ActivePhaseOverlaysProps) {
     tick();
     const id = window.setInterval(tick, 100);
     return () => window.clearInterval(id);
-  }, [state, phase, formatMode, totalMs]);
+  }, [state, phase, formatMode, totalMs, suppressTabataPlaceholder]);
 
-  if (!phaseShowsOverlays(phase)) {
+  if (!phaseShowsOverlays(phase, suppressTabataPlaceholder)) {
     return null;
   }
 

@@ -130,29 +130,29 @@ export type Database = {
           },
         ];
       };
-      amrap_participants: {
+      live_interval_participants: {
         Row: {
-          amrap_session_id: string;
           display_name: string;
           id: string;
+          interval_session_id: string;
           is_host: boolean;
           joined_at: string;
           user_id: string | null;
           workout_log_task_id: string | null;
         };
         Insert: {
-          amrap_session_id: string;
           display_name: string;
           id?: string;
+          interval_session_id: string;
           is_host?: boolean;
           joined_at?: string;
           user_id?: string | null;
           workout_log_task_id?: string | null;
         };
         Update: {
-          amrap_session_id?: string;
           display_name?: string;
           id?: string;
+          interval_session_id?: string;
           is_host?: boolean;
           joined_at?: string;
           user_id?: string | null;
@@ -161,9 +161,9 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: 'amrap_participants_amrap_session_id_fkey';
-            columns: ['amrap_session_id'];
+            columns: ['interval_session_id'];
             isOneToOne: false;
-            referencedRelation: 'amrap_sessions';
+            referencedRelation: 'live_interval_sessions';
             referencedColumns: ['id'];
           },
           {
@@ -175,50 +175,52 @@ export type Database = {
           },
         ];
       };
-      amrap_session_rounds: {
+      interval_round_events: {
         Row: {
-          amrap_session_id: string;
           id: string;
+          interval_session_id: string;
           logged_at: string;
           participant_id: string;
         };
         Insert: {
-          amrap_session_id: string;
           id?: string;
+          interval_session_id: string;
           logged_at?: string;
           participant_id: string;
         };
         Update: {
-          amrap_session_id?: string;
           id?: string;
+          interval_session_id?: string;
           logged_at?: string;
           participant_id?: string;
         };
         Relationships: [
           {
             foreignKeyName: 'amrap_session_rounds_amrap_session_id_fkey';
-            columns: ['amrap_session_id'];
+            columns: ['interval_session_id'];
             isOneToOne: false;
-            referencedRelation: 'amrap_sessions';
+            referencedRelation: 'live_interval_sessions';
             referencedColumns: ['id'];
           },
           {
             foreignKeyName: 'amrap_session_rounds_participant_id_fkey';
             columns: ['participant_id'];
             isOneToOne: false;
-            referencedRelation: 'amrap_participants';
+            referencedRelation: 'live_interval_participants';
             referencedColumns: ['id'];
           },
         ];
       };
-      amrap_sessions: {
+      live_interval_sessions: {
         Row: {
           block_snapshot: Json | null;
           created_at: string;
           duration_seconds: number;
           id: string;
+          interval_type: Database['public']['Enums']['interval_type'];
           leaderboard_snapshot: Json | null;
           live_session_id: string;
+          mechanics_state: Json;
           results_finalized_at: string | null;
           timer_phase: string;
           work_started_at: string | null;
@@ -228,8 +230,10 @@ export type Database = {
           created_at?: string;
           duration_seconds: number;
           id?: string;
+          interval_type?: Database['public']['Enums']['interval_type'];
           leaderboard_snapshot?: Json | null;
           live_session_id: string;
+          mechanics_state?: Json;
           results_finalized_at?: string | null;
           timer_phase?: string;
           work_started_at?: string | null;
@@ -239,8 +243,10 @@ export type Database = {
           created_at?: string;
           duration_seconds?: number;
           id?: string;
+          interval_type?: Database['public']['Enums']['interval_type'];
           leaderboard_snapshot?: Json | null;
           live_session_id?: string;
+          mechanics_state?: Json;
           results_finalized_at?: string | null;
           timer_phase?: string;
           work_started_at?: string | null;
@@ -2976,17 +2982,17 @@ export type Database = {
         };
         Returns: string;
       };
-      amrap_finalize_session: {
-        Args: { p_amrap_session_id: string; p_snapshot: Json };
+      interval_finalize_session: {
+        Args: { p_interval_session_id: string; p_snapshot: Json };
+        Returns: undefined;
+      };
+      interval_log_round: {
+        Args: { p_interval_session_id: string; p_participant_id: string };
         Returns: undefined;
       };
       amrap_join_session: {
         Args: { p_amrap_session_id: string; p_display_name: string };
         Returns: string;
-      };
-      amrap_log_round: {
-        Args: { p_amrap_session_id: string; p_participant_id: string };
-        Returns: undefined;
       };
       amrap_reset_timer: {
         Args: { p_amrap_session_id: string };
@@ -2994,6 +3000,21 @@ export type Database = {
       };
       amrap_start_timer: {
         Args: { p_amrap_session_id: string };
+        Returns: undefined;
+      };
+      tabata_create_for_session: {
+        Args: {
+          p_block_snapshot?: Json;
+          p_live_session_id: string;
+          p_mechanics_state?: Json;
+        };
+        Returns: string;
+      };
+      interval_advance_segment: {
+        Args: {
+          p_interval_session_id: string;
+          p_mechanics_state: Json;
+        };
         Returns: undefined;
       };
       apply_personal_cues_for_user: {
@@ -3229,7 +3250,7 @@ export type Database = {
       };
     };
     Enums: {
-      [_ in never]: never;
+      interval_type: 'amrap' | 'tabata' | 'emom';
     };
     CompositeTypes: {
       [_ in never]: never;
