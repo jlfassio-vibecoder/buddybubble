@@ -198,13 +198,16 @@ export function useEmomAthleteLogging(options: UseEmomAthleteLoggingOptions) {
   const flatExerciseNames: EmomFlatExerciseTarget[] = useMemo(() => {
     if (!sessionVm) return [];
     const lookup = buildPlayerExerciseIndexLookup(sessionVm.blocks);
-    return sessionVm.flatExercises.map((ex, globalIndex) => {
+    return sessionVm.flatExercises.flatMap((ex, globalIndex) => {
       const ctx = blockContextForGlobalIndex(globalIndex, sessionVm.blocks, lookup);
-      return {
-        name: ex.name,
-        globalIndex,
-        exerciseIndexInBlock: ctx?.exerciseIndexInBlock ?? 0,
-      };
+      if (ctx?.blockFormat?.trim().toLowerCase() !== 'emom') return [];
+      return [
+        {
+          name: ex.name,
+          globalIndex,
+          exerciseIndexInBlock: ctx.exerciseIndexInBlock,
+        },
+      ];
     });
   }, [sessionVm]);
 

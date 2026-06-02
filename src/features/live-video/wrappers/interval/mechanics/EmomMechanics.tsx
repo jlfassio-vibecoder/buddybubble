@@ -77,19 +77,19 @@ export function EmomMechanics({
   const { setTopLeftOverlay } = useVideoOverlaySlots();
 
   useEffect(() => {
-    const e = engineRef.current;
-    if (!e.startTimer && !e.resetTimer) {
+    if (!engine.startTimer && !engine.resetTimer) {
       setHostNavActions(null);
       return;
     }
-    setHostNavActions(<EmomHostActions engine={e} />);
+    setHostNavActions(<EmomHostActions engine={engine} />);
     return () => setHostNavActions(null);
-  }, [engine.startTimer, engine.resetTimer, engine.timerPhase, setHostNavActions]);
+  }, [engine, engine.startTimer, engine.resetTimer, engine.timerPhase, setHostNavActions]);
 
   useEffect(() => {
-    setTopLeftOverlay(<EmomTimerOverlay engine={engineRef.current} />);
+    setTopLeftOverlay(<EmomTimerOverlay engine={engine} />);
     return () => setTopLeftOverlay(null);
   }, [
+    engine,
     engine.remainingSec,
     engine.timerPhase,
     engine.segmentLabel,

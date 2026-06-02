@@ -10,6 +10,7 @@ export function playSlapChime(): void {
       );
       chimeAudio.volume = 0.35;
     }
+    chimeAudio.currentTime = 0;
     void chimeAudio.play().catch(() => {});
   } catch {
     // ignore

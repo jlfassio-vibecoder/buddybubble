@@ -480,15 +480,31 @@ begin
       continue;
     end if;
 
-    select
-      coalesce(sum(wel.active_seconds), 0)::integer,
-      coalesce(avg(wel.active_seconds), 0)
-    into v_active_seconds_total, v_active_seconds_avg
-    from public.workout_exercise_logs wel
-    where wel.user_id = v_participant.user_id
-      and wel.session_id = v_live_session_id::text
-      and wel.task_id = v_origin_task_id::text
-      and wel.active_seconds is not null;
+    if v_interval_type = 'emom' then
+      select
+        coalesce(sum(per_minute.active_seconds), 0)::integer,
+        coalesce(avg(per_minute.active_seconds), 0)
+      into v_active_seconds_total, v_active_seconds_avg
+      from (
+        select max(wel.active_seconds) as active_seconds
+        from public.workout_exercise_logs wel
+        where wel.user_id = v_participant.user_id
+          and wel.session_id = v_live_session_id::text
+          and wel.task_id = v_origin_task_id::text
+          and wel.active_seconds is not null
+        group by wel.set_number
+      ) per_minute;
+    else
+      select
+        coalesce(sum(wel.active_seconds), 0)::integer,
+        coalesce(avg(wel.active_seconds), 0)
+      into v_active_seconds_total, v_active_seconds_avg
+      from public.workout_exercise_logs wel
+      where wel.user_id = v_participant.user_id
+        and wel.session_id = v_live_session_id::text
+        and wel.task_id = v_origin_task_id::text
+        and wel.active_seconds is not null;
+    end if;
 
     select coalesce(jsonb_agg(ex_row order by ex_ord), '[]'::jsonb)
     into v_log_exercises
@@ -647,14 +663,16 @@ declare
   v_host uuid;
   v_interval_type public.interval_type;
   v_mechanics_state jsonb;
+  v_block_snapshot jsonb;
+  v_origin_task_id uuid;
   v_setup_seconds integer;
 begin
   if auth.uid() is null then
     raise exception 'not authenticated';
   end if;
 
-  select s.live_session_id, s.interval_type, s.mechanics_state
-  into v_live_session_id, v_interval_type, v_mechanics_state
+  select s.live_session_id, s.interval_type, s.mechanics_state, s.block_snapshot
+  into v_live_session_id, v_interval_type, v_mechanics_state, v_block_snapshot
   from public.live_interval_sessions s
   where s.id = p_amrap_session_id;
 
@@ -684,9 +702,24 @@ begin
   elsif v_interval_type = 'emom' then
     v_setup_seconds := coalesce((v_mechanics_state->>'setup_seconds')::integer, 10);
 
-    delete from public.workout_exercise_logs wel
-    where wel.session_id = v_live_session_id::text
-      and wel.active_seconds is not null;
+    v_origin_task_id := null;
+    if v_block_snapshot is not null
+      and nullif(trim(v_block_snapshot->>'origin_task_id'), '') is not null
+    then
+      begin
+        v_origin_task_id := (v_block_snapshot->>'origin_task_id')::uuid;
+      exception
+        when others then
+          v_origin_task_id := null;
+      end;
+    end if;
+
+    if v_origin_task_id is not null then
+      delete from public.workout_exercise_logs wel
+      where wel.session_id = v_live_session_id::text
+        and wel.task_id = v_origin_task_id
+        and wel.active_seconds is not null;
+    end if;
 
     update public.live_interval_sessions s
     set timer_phase = 'idle',

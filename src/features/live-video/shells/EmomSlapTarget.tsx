@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useEmomActiveMinute } from '@/features/live-video/wrappers/interval/hooks/useEmomActiveMinute';
 import { vibrateSlapTarget, playSlapChime } from '@/lib/fitness/play-slap-chime';
 import { resolveEmomLocalHighlightSetIndex } from '@/lib/workout-factory/interval-timer/resolve-emom-alternating';
+import { isAlternatingEmomParams } from '@/lib/workout-factory/types/emom-format-params';
 import type { LogSetParams } from '@/features/live-video/hooks/useWorkoutLogs';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 
@@ -47,8 +48,6 @@ export function EmomSlapTarget({
     }
   }, [minuteIndex, restingForMinute]);
 
-  const emomBlock = blocks.find((b) => b.blockFormat?.trim().toLowerCase() === 'emom') ?? null;
-
   const handleDone = useCallback(async () => {
     if (disabled || segment !== 'minute' || !segmentStartedAt || minuteIndex < 1) return;
     const startedMs = new Date(segmentStartedAt).getTime();
@@ -64,8 +63,9 @@ export function EmomSlapTarget({
     setSaving(true);
 
     const minuteIndex0 = minuteIndex - 1;
+    const isAlternating = isAlternatingEmomParams(formatParams);
     const targets = flatExerciseNames.filter(({ exerciseIndexInBlock }) => {
-      if (!emomBlock) return true;
+      if (!isAlternating) return true;
       const localSet = resolveEmomLocalHighlightSetIndex(
         exerciseIndexInBlock,
         minuteIndex0,
@@ -74,15 +74,14 @@ export function EmomSlapTarget({
       return localSet != null;
     });
 
+    let hadError = false;
     for (const { name, exerciseIndexInBlock } of targets) {
-      const localSet = resolveEmomLocalHighlightSetIndex(
-        exerciseIndexInBlock,
-        minuteIndex0,
-        formatParams,
-      );
+      const localSet = isAlternating
+        ? resolveEmomLocalHighlightSetIndex(exerciseIndexInBlock, minuteIndex0, formatParams)
+        : null;
       const setNumber = localSet != null ? localSet + 1 : minuteIndex;
       const existing = getExistingLog(name, setNumber);
-      await logSet({
+      const { error } = await logSet({
         exerciseName: name,
         setNumber,
         weightLbs: existing?.weight_lbs ?? null,
@@ -90,17 +89,17 @@ export function EmomSlapTarget({
         rpe: existing?.rpe ?? null,
         activeSeconds,
       });
+      if (error) hadError = true;
     }
 
     setSaving(false);
-    setRestingForMinute(minuteIndex);
+    if (!hadError) setRestingForMinute(minuteIndex);
   }, [
     segment,
     segmentStartedAt,
     minuteIndex,
     intervalSeconds,
     flatExerciseNames,
-    emomBlock,
     formatParams,
     logSet,
     getExistingLog,

@@ -1,3 +1,4 @@
+-- Copilot suggestion ignored: migration filename is pinned in applied history; renaming would break ordering.
 -- EMOM Slap Target: per-set active period (seconds to complete reps in a minute).
 
 begin;
