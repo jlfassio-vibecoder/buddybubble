@@ -121,6 +121,12 @@ export type PreflightAction =
       rpcArgs: Record<string, unknown>;
     }
   | {
+      kind: 'short_circuit_with_buddy_reply';
+      replyContent: string;
+      /** True only when the user hit storefront turn/char caps (not RPC-unavailable paths). */
+      storefrontLimit?: boolean;
+    }
+  | {
       kind: 'short_circuit_with_persist';
       lane: BlockBlueprintPreflightLane;
       replyText: string;

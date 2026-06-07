@@ -122,6 +122,14 @@ export type BuddyCreateOnboardingReplyArgs = {
   p_card_title: string | null;
   p_card_desc: string | null;
   p_action_type: string | null;
+  p_target_task_id: string | null;
+  p_surface: string | null;
+};
+
+export type IncrementStorefrontBuddyUsageArgs = {
+  p_workspace_id: string;
+  p_char_count: number;
+  p_auth_user_id: string;
 };
 
 export type OrganizerCreateReplyAndTaskArgs = {
@@ -195,6 +203,13 @@ export function buddyCreateOnboardingReply(
   args: BuddyCreateOnboardingReplyArgs,
 ): Promise<RpcResult> {
   return callRpc(supabase, 'buddy_create_onboarding_reply', args);
+}
+
+export function incrementStorefrontBuddyUsage(
+  supabase: SupabaseClient,
+  args: IncrementStorefrontBuddyUsageArgs,
+): Promise<RpcResult> {
+  return callRpc(supabase, 'increment_storefront_buddy_usage', args);
 }
 
 export function organizerCreateReplyAndTask(

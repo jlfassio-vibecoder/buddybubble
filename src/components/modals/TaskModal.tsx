@@ -151,8 +151,8 @@ export type TaskModalProps = {
   canManageClasses?: boolean;
   /** When set with class flow, `ClassEditor` opens in edit mode for this `class_instances.id`. */
   classEditorInstanceId?: string | null;
-  /** Called after a class is created from `ClassEditor` (not a `tasks` row). */
-  onClassCreated?: (ids: { offeringId: string; instanceId: string }) => void;
+  /** Called after a class is created from `ClassEditor` (includes parent `tasks` canvas id). */
+  onClassCreated?: (ids: { offeringId: string; instanceId: string; taskId: string }) => void;
   /** Called after a class is updated from `ClassEditor` (refresh lists). */
   onClassSaved?: () => void;
   /** Called after a task is created so the parent can keep the modal in edit mode. */
@@ -1805,81 +1805,7 @@ export function TaskModal({
 
   if (!open) return null;
 
-  const showClassEditorShell = itemType === 'class' && canManageClasses;
-  if (showClassEditorShell) {
-    const classShellTitle = classEditorInstanceId ? `Edit ${modalTypeNoun}` : modalTitle;
-    const classShellSubtitle = classEditorInstanceId
-      ? `Update the scheduled ${itemTypeNounLower} for this workspace`
-      : modalSubtitle;
-
-    return (
-      <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 max-md:p-0 max-md:items-stretch">
-        <button
-          type="button"
-          className="absolute inset-0 bg-black/40"
-          aria-label="Close"
-          onClick={() => handleOpenChange(false)}
-        />
-        <div
-          className={cn(
-            'relative z-10 flex min-h-0 w-full flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl transition-[max-width] duration-200 ease-out',
-            'max-md:flex-1 max-md:min-h-0 max-md:max-h-none max-md:max-w-none max-md:rounded-none max-md:border-x-0 max-md:border-t-0',
-            'md:max-h-[min(90dvh,100dvh)] md:max-w-2xl',
-          )}
-        >
-          <div className="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-border px-6 py-4">
-            <div className="min-w-0 flex-1">
-              <h2 className="text-lg font-bold text-foreground">{classShellTitle}</h2>
-              {classShellSubtitle ? (
-                <p className="text-xs text-muted-foreground">{classShellSubtitle}</p>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              aria-label="Close"
-              onClick={() => handleOpenChange(false)}
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-          <TaskModalEditorChrome
-            showChrome
-            showTypeAndVisibility
-            itemType={itemType}
-            onItemTypeChange={setItemType}
-            canManageClasses={canManageClasses}
-            canWrite={canWrite}
-            visibility={visibility}
-            onVisibilityChange={setVisibility}
-            workoutTitle={title}
-            workoutMetadata={metadata}
-            bubbleId={bubbleId}
-            workspaceId={workspaceId}
-            taskId={taskId}
-            activeSessionLaunch={activeSessionLaunchControlProps}
-            onInteraction={() => setHeroCinematicCollapsed(true)}
-          />
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-2">
-            <ClassEditor
-              layout="embedded"
-              workspaceId={workspaceId}
-              canWrite={canManageClasses}
-              mode={classEditorInstanceId ? 'edit' : 'create'}
-              instanceId={classEditorInstanceId ?? undefined}
-              onCreated={(ids) => {
-                onClassCreated?.(ids);
-              }}
-              onSaved={() => {
-                onClassSaved?.();
-              }}
-              onClose={() => handleOpenChange(false)}
-            />
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const showClassEditorInDetails = itemType === 'class' && canManageClasses;
 
   const showEditorChrome = !taskId || viewMode === 'full';
   const commentsSplitLayout =
@@ -2371,7 +2297,25 @@ export function TaskModal({
 
                         {!loading || !taskId ? (
                           <>
-                            {tab === 'details' && <TaskModalDetailsBody {...detailsBodyProps} />}
+                            {tab === 'details' && showClassEditorInDetails ? (
+                              <ClassEditor
+                                layout="embedded"
+                                workspaceId={workspaceId}
+                                bubbleId={bubbleId}
+                                canWrite={canManageClasses}
+                                mode={classEditorInstanceId ? 'edit' : 'create'}
+                                instanceId={classEditorInstanceId ?? undefined}
+                                onCreated={(ids) => {
+                                  onClassCreated?.(ids);
+                                }}
+                                onSaved={() => {
+                                  onClassSaved?.();
+                                }}
+                                onClose={() => handleOpenChange(false)}
+                              />
+                            ) : tab === 'details' ? (
+                              <TaskModalDetailsBody {...detailsBodyProps} />
+                            ) : null}
 
                             {tab === 'comments' &&
                               (taskId ? (

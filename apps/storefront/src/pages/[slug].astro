@@ -1,10 +1,16 @@
 ---
 import '../styles/global.css';
-import PublicCard from '../components/PublicCard.astro';
+import PublicFeed from '../components/PublicFeed';
 import StorefrontHero from '../components/hero/StorefrontHero.jsx';
 import { resolveCrmOriginForStorefront } from '../lib/crm-origin';
 import { getPublicEnv } from '../lib/public-env';
+import type { PublicFeedItem, PublicClassCardData, TaskCardShape } from '../lib/public-feed-types';
+import { sortPublicFeedItems } from '../lib/public-feed-types';
+import { normalizeClassInstanceRow } from '../lib/supabase-embed';
 import { createStorefrontClient } from '../lib/supabase';
+
+const supabaseUrl = getPublicEnv('PUBLIC_SUPABASE_URL');
+const supabaseAnonKey = getPublicEnv('PUBLIC_SUPABASE_ANON_KEY');
 
 type PublicBranding = {
   hero_url?: string;
@@ -56,12 +62,20 @@ const previewEligible =
 const branding = parseBranding(ws.public_branding);
 const accent = branding.primary_color?.trim() || '#2563eb';
 
+const { data: workspaceBubbles } = await supabase
+  .from('bubbles')
+  .select('id')
+  .eq('workspace_id', ws.id);
+
+const bubbleIds = workspaceBubbles?.map((b) => (b as { id: string }).id) ?? [];
+
 /** Public cards for this workspace via tasks → bubbles (inner) → workspace */
 const { data: tasksJoined, error: tasksErr } = await supabase
   .from('tasks')
   .select(
     `
     id,
+    bubble_id,
     title,
     description,
     item_type,
@@ -74,37 +88,106 @@ const { data: tasksJoined, error: tasksErr } = await supabase
   `,
   )
   .eq('visibility', 'public')
+  .neq('item_type', 'class')
   .eq('bubbles.workspace_id', ws.id)
   .order('created_at', { ascending: false });
 
-let publicCards =
-  (tasksJoined as
-    | {
-        id: string;
-        title: string;
-        description: string | null;
-        item_type: string;
-        metadata: unknown;
-        scheduled_on: string | null;
-        created_at: string;
-      }[]
-    | null) ?? [];
+type TaskJoinedRow = TaskCardShape & { bubble_id: string };
+
+let publicTaskRows: TaskJoinedRow[] = (tasksJoined as TaskJoinedRow[] | null) ?? [];
 
 if (tasksErr) {
-  const { data: bubbles } = await supabase.from('bubbles').select('id').eq('workspace_id', ws.id);
-  const bubbleIds = bubbles?.map((b) => (b as { id: string }).id) ?? [];
   if (bubbleIds.length === 0) {
-    publicCards = [];
+    publicTaskRows = [];
   } else {
     const { data: fallbackTasks } = await supabase
       .from('tasks')
-      .select('id, title, description, item_type, metadata, scheduled_on, created_at')
+      .select(
+        'id, bubble_id, title, description, item_type, metadata, scheduled_on, created_at',
+      )
       .eq('visibility', 'public')
+      .neq('item_type', 'class')
       .in('bubble_id', bubbleIds)
       .order('created_at', { ascending: false });
-    publicCards = (fallbackTasks as typeof publicCards) ?? [];
+    publicTaskRows = (fallbackTasks as TaskJoinedRow[]) ?? [];
   }
 }
+
+const nowIso = new Date().toISOString();
+
+const { data: publicClassRows, error: classesErr } = await supabase
+  .from('class_instances')
+  .select(
+    `
+    id,
+    task_id,
+    scheduled_at,
+    status,
+    offering:class_offerings (
+      name,
+      description,
+      duration_min,
+      location
+    ),
+    tasks (
+      bubble_id
+    )
+  `,
+  )
+  .eq('workspace_id', ws.id)
+  .eq('visibility', 'public')
+  .eq('status', 'available')
+  .gte('scheduled_at', nowIso)
+  .order('scheduled_at', { ascending: true });
+
+const normalizedClassRows = (publicClassRows ?? [])
+  .map((row) => normalizeClassInstanceRow(row))
+  .filter((row): row is NonNullable<ReturnType<typeof normalizeClassInstanceRow>> => row != null);
+
+const publicFeed: PublicFeedItem[] = sortPublicFeedItems([
+  ...publicTaskRows.map((row): PublicFeedItem => {
+    const card: TaskCardShape = {
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      item_type: row.item_type,
+      metadata: row.metadata,
+      scheduled_on: row.scheduled_on,
+      created_at: row.created_at,
+    };
+    return {
+      kind: 'task',
+      taskId: row.id,
+      bubbleId: row.bubble_id,
+      sortAt: row.scheduled_on?.trim() || row.created_at,
+      card,
+    };
+  }),
+  ...(!classesErr && normalizedClassRows.length
+    ? normalizedClassRows
+        .filter((row) => row.offering?.name && row.task_id && row.tasks?.bubble_id)
+        .map((row): PublicFeedItem => {
+          const instance: PublicClassCardData = {
+            id: row.id,
+            task_id: row.task_id,
+            scheduled_at: row.scheduled_at,
+            offering: {
+              name: row.offering!.name,
+              description: row.offering!.description,
+              duration_min: row.offering!.duration_min,
+              location: row.offering!.location,
+            },
+          };
+          return {
+            kind: 'class',
+            taskId: row.task_id,
+            bubbleId: row.tasks!.bubble_id,
+            sortAt: row.scheduled_at,
+            instance,
+          };
+        })
+    : []),
+]);
 
 const crmLoginBase = `${resolveCrmOriginForStorefront(getPublicEnv('PUBLIC_APP_ORIGIN'), Astro.url.hostname)}/login`;
 const joinHref = `${crmLoginBase}?next=${encodeURIComponent(`/app/${ws.id}`)}`;
@@ -206,19 +289,14 @@ const heroImage = branding.hero_url?.trim() ?? '';
       <div class="mb-8 flex flex-wrap items-end justify-between gap-4">
         <h2 class="text-sm font-semibold uppercase tracking-wide text-zinc-500">Public cards</h2>
       </div>
-      {
-        publicCards.length === 0 ? (
-          <p class="rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-12 text-center text-sm text-zinc-600 shadow-sm">
-            No public cards yet. Check back soon.
-          </p>
-        ) : (
-          <div class="columns-1 gap-6 sm:columns-2 lg:columns-3">
-            {publicCards.map((card) => (
-              <PublicCard card={card} />
-            ))}
-          </div>
-        )
-      }
+      <PublicFeed
+        client:only="react"
+        workspaceId={ws.id}
+        initialFeed={publicFeed}
+        bubbleIds={bubbleIds}
+        supabaseUrl={supabaseUrl}
+        supabaseAnonKey={supabaseAnonKey}
+      />
     </main>
   </body>
 </html>

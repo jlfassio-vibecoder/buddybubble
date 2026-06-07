@@ -674,7 +674,9 @@ export type Database = {
           offering_id: string;
           scheduled_at: string;
           status: string;
+          task_id: string;
           updated_at: string;
+          visibility: string;
           workspace_id: string;
         };
         Insert: {
@@ -687,7 +689,9 @@ export type Database = {
           offering_id: string;
           scheduled_at: string;
           status?: string;
+          task_id: string;
           updated_at?: string;
+          visibility?: string;
           workspace_id: string;
         };
         Update: {
@@ -700,7 +704,9 @@ export type Database = {
           offering_id?: string;
           scheduled_at?: string;
           status?: string;
+          task_id?: string;
           updated_at?: string;
+          visibility?: string;
           workspace_id?: string;
         };
         Relationships: [

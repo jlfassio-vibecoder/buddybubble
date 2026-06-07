@@ -10,7 +10,12 @@
  */
 
 import { createClient } from '@utils/supabase/client';
-import type { ClassEnrollmentStatus, ClassInstanceStatus, Json } from '@/types/database';
+import type {
+  ClassEnrollmentStatus,
+  ClassInstanceStatus,
+  Json,
+  TaskVisibility,
+} from '@/types/database';
 
 // ── Domain types ─────────────────────────────────────────────────────────────
 
@@ -31,6 +36,10 @@ export type ClassInstance = {
   capacity: number | null;
   status: ClassInstanceStatus;
   instructor_notes: string | null;
+  /** Parent tasks canvas row (`class_instances.task_id`). */
+  task_id: string;
+  /** Storefront visibility (`class_instances.visibility`). */
+  visibility: TaskVisibility;
   /** Instance-level JSON (e.g. `live_session` for card-based live video). */
   metadata: Json;
   offering: ClassOffering;
@@ -130,6 +139,8 @@ export class ManualClassProvider implements FitnessClassProvider {
         capacity: r.capacity as number | null,
         status: r.status as ClassInstanceStatus,
         instructor_notes: r.instructor_notes as string | null,
+        task_id: r.task_id as string,
+        visibility: (r.visibility as string) === 'public' ? 'public' : 'private',
         metadata: (r.metadata as Json) ?? {},
         offering,
         enrollment_count: countByInstance.get(r.id as string) ?? 0,

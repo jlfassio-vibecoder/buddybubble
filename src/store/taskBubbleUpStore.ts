@@ -200,6 +200,7 @@ export const useTaskBubbleUpStore = create<TaskBubbleUpStoreState>((set) => ({
   scopes: {},
 
   setAuthUserId: (id) => {
+    if (useTaskBubbleUpStore.getState().authUserId === id) return;
     set({ authUserId: id });
     scheduleLoadUnion();
   },

@@ -236,18 +236,30 @@ importers:
       astro:
         specifier: ^6.1.4
         version: 6.3.1(@types/node@22.19.17)(@upstash/redis@1.37.0)(@vercel/functions@3.5.1)(@vercel/kv@3.0.0)(jiti@2.6.1)(lightningcss@1.32.0)(rollup@4.60.1)(tsx@4.21.0)(yaml@2.9.0)
+      clsx:
+        specifier: ^2.1.1
+        version: 2.1.1
       lucide-react:
         specifier: ^1.7.0
         version: 1.14.0(react@19.2.5)
+      motion:
+        specifier: ^12.23.24
+        version: 12.38.0(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       react:
         specifier: 19.2.5
         version: 19.2.5
       react-dom:
         specifier: 19.2.5
         version: 19.2.5(react@19.2.5)
+      tailwind-merge:
+        specifier: ^3.3.1
+        version: 3.5.0
       tailwindcss:
         specifier: ^4.2.2
         version: 4.2.2
+      zustand:
+        specifier: ^5.0.8
+        version: 5.0.12(@types/react@19.2.14)(react@19.2.5)(use-sync-external-store@1.6.0(react@19.2.5))
     devDependencies:
       '@astrojs/check':
         specifier: ^0.9.8

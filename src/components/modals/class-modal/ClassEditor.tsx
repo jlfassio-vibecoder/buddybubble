@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, Fragment } from 'react';
+import { Globe, Lock } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
-import type { Json } from '@/types/database';
+import type { Json, TaskVisibility } from '@/types/database';
 import { cn } from '@/lib/utils';
 import { formatUserFacingError } from '@/lib/format-error';
 import { Button } from '@/components/ui/button';
@@ -12,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import {
   useClassSaveAndCreate,
+  type ClassCreatedIds,
   type ClassSavePayload,
 } from '@/components/modals/class-modal/hooks/useClassSaveAndCreate';
 import { PrivacyToggle } from '@/components/ui/privacy-toggle';
@@ -170,11 +172,12 @@ function applyFitnessToOfferingMetadata(
 
 export type ClassEditorProps = {
   workspaceId: string;
+  bubbleId?: string | null;
   canWrite: boolean;
   mode: 'create' | 'edit';
   instanceId?: string;
   offeringId?: string;
-  onCreated?: (ids: { offeringId: string; instanceId: string }) => void;
+  onCreated?: (ids: ClassCreatedIds) => void;
   onSaved?: () => void;
   onClose: () => void;
   /** Nested inside TaskModal: drop outer card chrome and duplicate close row. */
@@ -183,6 +186,7 @@ export type ClassEditorProps = {
 
 export function ClassEditor({
   workspaceId,
+  bubbleId = null,
   canWrite,
   mode,
   instanceId,
@@ -216,6 +220,7 @@ export function ClassEditor({
   const [rawInstanceMetadata, setRawInstanceMetadata] = useState<Json>({});
   const [liveStreamEnabled, setLiveStreamEnabled] = useState(false);
   const [asyncWorkoutEnabled, setAsyncWorkoutEnabled] = useState(false);
+  const [visibility, setVisibility] = useState<TaskVisibility>('private');
   const classWorkoutDeckScrollRef = useRef<HTMLDivElement>(null);
   const profileId = useUserProfileStore((s) => s.profile?.id ?? null);
   const [instructorId, setInstructorId] = useState<string | null>(null);
@@ -227,6 +232,7 @@ export function ClassEditor({
   } = useWorkspaceInstructors(workspaceId);
 
   const { createClass, saveClass } = useClassSaveAndCreate({
+    bubbleId,
     setError,
     setSaving,
     onCreated,
@@ -271,6 +277,7 @@ export function ClassEditor({
 
       setResolvedInstanceId(data.id as string);
       setResolvedOfferingId(offering.id as string);
+      setVisibility((data.visibility as string) === 'public' ? 'public' : 'private');
       setName((offering.name as string) ?? '');
       setDescription((offering.description as string) ?? '');
       setDurationMin(String((offering.duration_min as number) ?? 60));
@@ -395,6 +402,7 @@ export function ClassEditor({
         capacity: cap,
         instructor_id: instructorId?.trim() ? instructorId.trim() : null,
         instructor_notes: instructorNotes.trim() || null,
+        visibility,
         metadata: rawInstanceMetadata,
       },
     };
@@ -410,6 +418,7 @@ export function ClassEditor({
     instructorNotes,
     intensity,
     targetedFocus,
+    visibility,
     workspaceId,
     rawOfferingMetadata,
     rawInstanceMetadata,
@@ -804,6 +813,41 @@ export function ClassEditor({
                   onRecordingMetadataUpdated={onRecordingMetadataUpdated}
                 />
               ) : null}
+
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">Visibility</p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={disabledForm}
+                    onClick={() => setVisibility('private')}
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                      visibility === 'private'
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
+                    }`}
+                  >
+                    <Lock className="size-4 shrink-0" aria-hidden />
+                    Private
+                  </button>
+                  <button
+                    type="button"
+                    disabled={disabledForm}
+                    onClick={() => setVisibility('public')}
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                      visibility === 'public'
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
+                    }`}
+                  >
+                    <Globe className="size-4 shrink-0" aria-hidden />
+                    Public
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Public classes appear on your Astro storefront.
+                </p>
+              </div>
 
               <PrivacyToggle
                 id="class-live-stream"
