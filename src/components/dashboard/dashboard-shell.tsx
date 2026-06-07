@@ -1086,8 +1086,21 @@ function DashboardShellInner({
         setTaskModalAutoEdit(false);
         setTaskModalOpenWorkoutViewer(false);
         setTaskModalCommentThreadMessageId(null);
-        setTaskModalTaskId(null);
-        setTaskModalInitialCreateItemType(opts?.itemType ?? null);
+
+        let resolvedTaskId: string | null = null;
+        const editInstanceId = opts?.classEditorInstanceId?.trim();
+        if (editInstanceId) {
+          const supabase = createClient();
+          const { data } = await supabase
+            .from('class_instances')
+            .select('task_id')
+            .eq('id', editInstanceId)
+            .maybeSingle();
+          resolvedTaskId = (data?.task_id as string | undefined) ?? null;
+        }
+
+        setTaskModalTaskId(resolvedTaskId);
+        setTaskModalInitialCreateItemType(opts?.itemType ?? 'class');
         setTaskModalInitialCreateTitle(opts?.title ?? null);
         setTaskModalInitialCreateWorkoutDurationMin(
           opts?.workoutDurationMin !== undefined ? opts.workoutDurationMin : null,
@@ -2500,9 +2513,10 @@ function DashboardShellInner({
                           canWrite={canWriteTasks}
                           canManageClasses={canManageWorkspaceClasses}
                           classEditorInstanceId={taskModalClassEditorInstanceId}
-                          onClassCreated={() => {
+                          onClassCreated={(ids) => {
+                            setTaskModalTaskId(ids.taskId);
+                            setTaskModalClassEditorInstanceId(ids.instanceId);
                             bumpTaskViews();
-                            onTaskModalOpenChange(false);
                           }}
                           onClassSaved={bumpTaskViews}
                           onCreated={(id) => {

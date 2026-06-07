@@ -32,17 +32,56 @@ export type StorefrontBrowserClientOptions = {
   anonKey?: string;
 };
 
-/** Browser Supabase client for the marketing site (anon key + RLS). Returns null if env is missing or placeholder. */
+const BROWSER_SINGLETON_KEY = '__storefront_supabase_browser__' as const;
+
+type GlobalWithClient = typeof globalThis & {
+  [BROWSER_SINGLETON_KEY]?: SupabaseClient;
+};
+
+function resolveStorefrontEnv(opts?: StorefrontBrowserClientOptions): {
+  url: string;
+  anonKey: string;
+} | null {
+  const url = (opts?.url ?? import.meta.env.PUBLIC_SUPABASE_URL)?.trim();
+  const anonKey = (opts?.anonKey ?? import.meta.env.PUBLIC_SUPABASE_ANON_KEY)?.trim();
+  if (!url || !anonKey || isStorefrontSupabasePlaceholder(url, anonKey)) {
+    return null;
+  }
+  return { url, anonKey };
+}
+
+/**
+ * One browser Supabase client per tab. Reused by auth, feed, comments, and CRM bubble-up hooks.
+ */
+export function getStorefrontBrowserClient(
+  opts?: StorefrontBrowserClientOptions,
+): SupabaseClient | null {
+  if (typeof window !== 'undefined') {
+    const existing = (globalThis as GlobalWithClient)[BROWSER_SINGLETON_KEY];
+    if (existing) return existing;
+  }
+
+  const env = resolveStorefrontEnv(opts);
+  if (!env) return null;
+
+  const client = createClient(env.url, env.anonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: false,
+    },
+  });
+
+  if (typeof window !== 'undefined') {
+    (globalThis as GlobalWithClient)[BROWSER_SINGLETON_KEY] = client;
+  }
+
+  return client;
+}
+
+/** @deprecated Prefer {@link getStorefrontBrowserClient} — kept for call-site compatibility. */
 export function createStorefrontBrowserClient(
   opts?: StorefrontBrowserClientOptions,
 ): SupabaseClient | null {
-  const url = (opts?.url ?? import.meta.env.PUBLIC_SUPABASE_URL)?.trim();
-  const anonKey = (opts?.anonKey ?? import.meta.env.PUBLIC_SUPABASE_ANON_KEY)?.trim();
-  if (!url || !anonKey) {
-    return null;
-  }
-  if (isStorefrontSupabasePlaceholder(url, anonKey)) {
-    return null;
-  }
-  return createClient(url, anonKey);
+  return getStorefrontBrowserClient(opts);
 }

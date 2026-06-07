@@ -121,6 +121,10 @@ export type PreflightAction =
       rpcArgs: Record<string, unknown>;
     }
   | {
+      kind: 'short_circuit_with_buddy_reply';
+      replyContent: string;
+    }
+  | {
       kind: 'short_circuit_with_persist';
       lane: BlockBlueprintPreflightLane;
       replyText: string;

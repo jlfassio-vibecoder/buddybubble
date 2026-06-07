@@ -51,6 +51,12 @@ const BY_TYPE: Record<string, PublicCardVisual> = {
     border: 'border-blue-500',
     chip: 'border border-blue-200/90 bg-blue-100 text-blue-900',
   },
+  class: {
+    label: 'Class',
+    bg: 'bg-teal-50/50',
+    border: 'border-teal-500',
+    chip: 'border border-teal-200/90 bg-teal-100 text-teal-900',
+  },
 };
 
 export function getPublicCardVisual(itemType: string): PublicCardVisual {

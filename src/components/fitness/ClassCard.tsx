@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Clock, ListOrdered, MapPin, Pencil, Play, Users, Video } from 'lucide-react';
+import { Clock, Globe, ListOrdered, Lock, MapPin, Pencil, Play, Users, Video } from 'lucide-react';
 
 import { PremiumGate } from '@/components/subscription/premium-gate';
 import { Button } from '@/components/ui/button';
@@ -140,21 +140,36 @@ export function ClassCard({
     <div className="rounded-lg border border-border bg-card p-3 shadow-sm">
       <div className="mb-2 flex items-start justify-between gap-2">
         <p className="min-w-0 font-medium leading-snug text-foreground">{offering.name}</p>
-        {enrolled && (
-          <span className="shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-semibold text-primary">
-            Enrolled
-          </span>
-        )}
-        {waitlisted && (
-          <span className="shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-600 dark:text-amber-400">
-            Waitlist
-          </span>
-        )}
-        {instance.status === 'cancelled' && (
-          <span className="shrink-0 rounded-full bg-destructive/15 px-2 py-0.5 text-[11px] font-semibold text-destructive">
-            Cancelled
-          </span>
-        )}
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+          {canManageClasses ? (
+            instance.visibility === 'public' ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/15 px-2 py-0.5 text-[11px] font-semibold text-sky-700 dark:text-sky-300">
+                <Globe className="h-3 w-3 shrink-0" aria-hidden />
+                Public
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+                <Lock className="h-3 w-3 shrink-0" aria-hidden />
+                Private
+              </span>
+            )
+          ) : null}
+          {enrolled && (
+            <span className="shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-semibold text-primary">
+              Enrolled
+            </span>
+          )}
+          {waitlisted && (
+            <span className="shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+              Waitlist
+            </span>
+          )}
+          {instance.status === 'cancelled' && (
+            <span className="shrink-0 rounded-full bg-destructive/15 px-2 py-0.5 text-[11px] font-semibold text-destructive">
+              Cancelled
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">

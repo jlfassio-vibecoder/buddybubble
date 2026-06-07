@@ -34,3 +34,11 @@ export const BUDDY_ONBOARDING_SENTINEL = '[SYSTEM_EVENT: ONBOARDING_STARTED]' as
  */
 export const BUDDY_IMPLICIT_TRIGGER_USER_TEXT =
   'The user just landed on this feature for the first time (implicit onboarding trigger). Greet them briefly, orient them, offer ONE concrete first step, and consider proposing a small starter card.';
+
+/** Anonymous storefront @Buddy free-tier caps (enforced in agent-dispatch preflight). */
+export const STOREFRONT_BUDDY_MAX_TURNS = 3;
+export const STOREFRONT_BUDDY_MAX_CHARS = 500;
+export const STOREFRONT_BUDDY_LIMIT_REPLY =
+  "You've used up your free Buddy questions! Please create a free account to keep chatting.";
+export const STOREFRONT_BUDDY_UNAVAILABLE_REPLY =
+  'Buddy is temporarily unavailable. Please try again in a moment.';

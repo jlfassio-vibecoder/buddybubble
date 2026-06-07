@@ -26,7 +26,11 @@
  */
 
 import { log } from '../../_shared/obs/log.ts';
-import { buddyCreateOnboardingReply } from '../../_shared/dispatch/rpc.ts';
+import {
+  buddyCreateOnboardingReply,
+  incrementStorefrontBuddyUsage,
+} from '../../_shared/dispatch/rpc.ts';
+import type { PreflightAction } from '../../_shared/dispatch/types.ts';
 import {
   isBuddyOnboardingSentinel,
   shouldExcludeBuddyOnboardingFromHistory,
@@ -49,6 +53,10 @@ import {
   BUDDY_SAFE_REPLY_TEXT,
   BUDDY_SLUG,
   BUDDY_TEMPERATURE,
+  STOREFRONT_BUDDY_LIMIT_REPLY,
+  STOREFRONT_BUDDY_MAX_CHARS,
+  STOREFRONT_BUDDY_MAX_TURNS,
+  STOREFRONT_BUDDY_UNAVAILABLE_REPLY,
 } from './config.ts';
 import { parseBuddyResponse, type BuddyParsedResponse } from './parse.ts';
 import { buddySystemPrompt } from './prompts.ts';
@@ -153,6 +161,11 @@ function resolveBuddyParentId(ctx: DispatchContext): string {
   return typeof pid === 'string' && pid.length > 0 ? pid : ctx.message.id;
 }
 
+function resolveBuddySurface(ctx: DispatchContext): string | null {
+  const surface = ctx.message.metadata?.surface;
+  return typeof surface === 'string' && surface.trim().length > 0 ? surface.trim() : null;
+}
+
 async function persistBuddyReply(
   ctx: DispatchContext,
   args: {
@@ -171,7 +184,109 @@ async function persistBuddyReply(
     p_card_title: args.cardTitle,
     p_card_desc: args.cardDescription,
     p_action_type: args.actionType,
+    p_target_task_id: ctx.message.target_task_id ?? null,
+    p_surface: resolveBuddySurface(ctx),
   });
+}
+
+/** Persist a Buddy reply without LLM (storefront usage limit short-circuit). */
+export async function buddyPersistShortCircuitReply(
+  ctx: DispatchContext,
+  replyContent: string,
+): Promise<RpcResult> {
+  return persistBuddyReply(ctx, {
+    replyContent,
+    cardTitle: null,
+    cardDescription: null,
+    actionType: null,
+  });
+}
+
+function storefrontBuddyUsagePayload(usage: RpcResult): Record<string, unknown> | null {
+  if (!usage.ok) return null;
+  const candidate = usage.data ?? usage.raw;
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    return null;
+  }
+  return candidate as Record<string, unknown>;
+}
+
+function buddyStorefrontUnavailableShortCircuit(): PreflightAction {
+  return {
+    kind: 'short_circuit_with_buddy_reply',
+    replyContent: STOREFRONT_BUDDY_UNAVAILABLE_REPLY,
+  };
+}
+
+async function buddyStorefrontUsagePreflight(
+  ctx: DispatchContext,
+): Promise<PreflightAction | null> {
+  if (resolveBuddySurface(ctx) !== 'storefront') return null;
+  if (!ctx.workspaceId) return null;
+
+  const charCount = (ctx.message.content ?? '').trim().length;
+  let usage: RpcResult;
+  try {
+    usage = await incrementStorefrontBuddyUsage(ctx.supabase, {
+      p_workspace_id: ctx.workspaceId,
+      p_char_count: charCount,
+      p_auth_user_id: ctx.message.user_id,
+    });
+  } catch (err) {
+    log('error', 'storefront buddy usage rpc threw', {
+      request_id: ctx.requestId,
+      slug: BUDDY_SLUG,
+      message_id: ctx.message.id,
+      bubble_id: ctx.message.bubble_id ?? undefined,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return buddyStorefrontUnavailableShortCircuit();
+  }
+
+  if (!usage.ok) {
+    log('error', 'storefront buddy usage rpc failed', {
+      request_id: ctx.requestId,
+      slug: BUDDY_SLUG,
+      message_id: ctx.message.id,
+      bubble_id: ctx.message.bubble_id ?? undefined,
+      error: usage.error,
+    });
+    return buddyStorefrontUnavailableShortCircuit();
+  }
+
+  const payload = storefrontBuddyUsagePayload(usage);
+  if (!payload) {
+    log('error', 'storefront buddy usage rpc returned non-object payload', {
+      request_id: ctx.requestId,
+      slug: BUDDY_SLUG,
+      message_id: ctx.message.id,
+      bubble_id: ctx.message.bubble_id ?? undefined,
+    });
+    return buddyStorefrontUnavailableShortCircuit();
+  }
+
+  if (payload.metered !== true) return null;
+
+  const turnCount = payload.turn_count;
+  const charTotal = payload.char_total;
+  if (typeof turnCount !== 'number' || typeof charTotal !== 'number') {
+    log('error', 'storefront buddy usage rpc missing meter fields', {
+      request_id: ctx.requestId,
+      slug: BUDDY_SLUG,
+      message_id: ctx.message.id,
+      bubble_id: ctx.message.bubble_id ?? undefined,
+    });
+    return buddyStorefrontUnavailableShortCircuit();
+  }
+
+  if (turnCount > STOREFRONT_BUDDY_MAX_TURNS || charTotal > STOREFRONT_BUDDY_MAX_CHARS) {
+    return {
+      kind: 'short_circuit_with_buddy_reply',
+      replyContent: STOREFRONT_BUDDY_LIMIT_REPLY,
+    };
+  }
+
+  return null;
 }
 
 export const BuddyStrategy: AgentStrategy<BuddyParsedResponse> = {
@@ -204,9 +319,9 @@ export const BuddyStrategy: AgentStrategy<BuddyParsedResponse> = {
     continuationLookback: 'bubble',
   },
 
-  // No preflight — Buddy's only implicit trigger is the onboarding sentinel, which
-  // the routing layer matches via `implicitTrigger`. There is no preflight LLM call
-  // (unlike Coach's workout-player greeting).
+  async preflight(ctx) {
+    return buddyStorefrontUsagePreflight(ctx);
+  },
 
   buildSystemPrompt(_ctx) {
     return Promise.resolve(buddySystemPrompt);

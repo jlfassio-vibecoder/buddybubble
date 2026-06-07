@@ -77,6 +77,7 @@ import {
   COACH_SLUG,
 } from '../agents/coach/config.ts';
 import { REGISTRY_ITERATION_ORDER, getStrategy } from '../agents/index.ts';
+import { buddyPersistShortCircuitReply } from '../agents/buddy/strategy.ts';
 import { buildDispatchContext } from './build-context.ts';
 import { resolveAgent } from './resolve.ts';
 
@@ -168,6 +169,28 @@ async function runShortCircuit(
   log('info', 'preflight short-circuit ok', {
     ...baseFields(ctx.requestId, ctx.message, ctx.agent.slug, 'preflight'),
     latency_ms: latency,
+  });
+  return jsonResponse({ ok: true, preflight_short_circuit: true, result: result.data }, 200);
+}
+
+async function runBuddyShortCircuit(
+  ctx: DispatchContext,
+  action: Extract<PreflightAction, { kind: 'short_circuit_with_buddy_reply' }>,
+): Promise<Response> {
+  const startedAt = Date.now();
+  const result = await buddyPersistShortCircuitReply(ctx, action.replyContent);
+  const latency = Date.now() - startedAt;
+  if (!result.ok) {
+    log('error', 'buddy preflight short-circuit persist failed', {
+      ...baseFields(ctx.requestId, ctx.message, ctx.agent.slug, 'preflight'),
+      error: result.error,
+    });
+    return jsonResponse({ ok: false, error: 'rpc_failed', detail: result.error }, 500);
+  }
+  log('info', 'buddy preflight short-circuit ok', {
+    ...baseFields(ctx.requestId, ctx.message, ctx.agent.slug, 'preflight'),
+    latency_ms: latency,
+    storefront_limit: true,
   });
   return jsonResponse({ ok: true, preflight_short_circuit: true, result: result.data }, 200);
 }
@@ -301,6 +324,9 @@ export async function handleDispatchRequest(req: Request): Promise<Response> {
   }
   if (preflight && preflight.kind === 'short_circuit_with_reply') {
     return runShortCircuit(ctx, preflight);
+  }
+  if (preflight && preflight.kind === 'short_circuit_with_buddy_reply') {
+    return runBuddyShortCircuit(ctx, preflight);
   }
   if (preflight && preflight.kind === 'short_circuit_with_persist') {
     return runShortCircuitPersist(ctx, preflight);
