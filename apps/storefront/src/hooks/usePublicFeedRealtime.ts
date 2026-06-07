@@ -93,6 +93,9 @@ async function fetchClassFeedItem(
 
   if (error || !data) return null;
 
+  const rawVisibility = (data as { visibility?: string }).visibility;
+  if (rawVisibility !== 'public') return null;
+
   const row = normalizeClassInstanceRow(data);
   if (!row) return null;
 

@@ -242,6 +242,25 @@ export function useClassSaveAndCreate({
         return false;
       }
 
+      const { error: taskErr } = await supabase
+        .from('tasks')
+        .update({
+          title: payload.offering.name,
+          description: payload.offering.description,
+          visibility: payload.instance.visibility,
+          scheduled_on: schedule.scheduled_on,
+          scheduled_time: schedule.scheduled_time,
+        })
+        .eq('id', taskId);
+
+      if (taskErr) {
+        const msg = rlsFriendlyMessage(formatUserFacingError(taskErr));
+        setError(msg);
+        toast.error(msg);
+        setSaving(false);
+        return false;
+      }
+
       const { error: iErr } = await supabase
         .from('class_instances')
         .update({
@@ -257,25 +276,6 @@ export function useClassSaveAndCreate({
 
       if (iErr) {
         const msg = rlsFriendlyMessage(formatUserFacingError(iErr));
-        setError(msg);
-        toast.error(msg);
-        setSaving(false);
-        return false;
-      }
-
-      const { error: taskErr } = await supabase
-        .from('tasks')
-        .update({
-          title: payload.offering.name,
-          description: payload.offering.description,
-          visibility: payload.instance.visibility,
-          scheduled_on: schedule.scheduled_on,
-          scheduled_time: schedule.scheduled_time,
-        })
-        .eq('id', taskId);
-
-      if (taskErr) {
-        const msg = rlsFriendlyMessage(formatUserFacingError(taskErr));
         setError(msg);
         toast.error(msg);
         setSaving(false);
