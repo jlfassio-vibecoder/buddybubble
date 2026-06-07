@@ -206,34 +206,32 @@ export function usePublicFeedRealtime(
 
     const channel = supabase
       .channel(`storefront-feed:${workspaceId}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'tasks', filter: 'visibility=eq.public' },
-        (payload) => {
-          const row = (payload.new ?? payload.old) as TaskRowPayload | undefined;
-          const taskId = row?.id;
-          if (!taskId) return;
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, (payload) => {
+        const row = (payload.new ?? payload.old) as TaskRowPayload | undefined;
+        const taskId = row?.id;
+        if (!taskId) return;
 
-          if (payload.eventType === 'DELETE') {
-            setItems((prev) => removeTask(prev, taskId));
-            return;
-          }
+        if (payload.eventType === 'DELETE') {
+          setItems((prev) => removeTask(prev, taskId));
+          return;
+        }
 
-          const bubbleId = row?.bubble_id;
-          const bubbleScope = bubbleIdSetRef.current;
-          if (bubbleScope.size > 0 && (!bubbleId || !bubbleScope.has(bubbleId))) {
-            setItems((prev) => removeTask(prev, taskId));
-            return;
-          }
+        const bubbleScope = bubbleIdSetRef.current;
+        if (bubbleScope.size === 0) return;
 
-          if (row?.visibility !== 'public' || (row?.item_type || '').toLowerCase() === 'class') {
-            setItems((prev) => removeTask(prev, taskId));
-            return;
-          }
+        const bubbleId = row?.bubble_id;
+        if (!bubbleId || !bubbleScope.has(bubbleId)) {
+          setItems((prev) => removeTask(prev, taskId));
+          return;
+        }
 
-          scheduleTaskRefresh(taskId, bubbleId);
-        },
-      )
+        if (row?.visibility !== 'public' || (row?.item_type || '').toLowerCase() === 'class') {
+          setItems((prev) => removeTask(prev, taskId));
+          return;
+        }
+
+        scheduleTaskRefresh(taskId, bubbleId);
+      })
       .on(
         'postgres_changes',
         {

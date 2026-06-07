@@ -190,7 +190,7 @@ async function runBuddyShortCircuit(
   log('info', 'buddy preflight short-circuit ok', {
     ...baseFields(ctx.requestId, ctx.message, ctx.agent.slug, 'preflight'),
     latency_ms: latency,
-    storefront_limit: true,
+    storefront_limit: action.storefrontLimit === true,
   });
   return jsonResponse({ ok: true, preflight_short_circuit: true, result: result.data }, 200);
 }

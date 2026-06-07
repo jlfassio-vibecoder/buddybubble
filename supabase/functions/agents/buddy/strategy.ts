@@ -283,6 +283,7 @@ async function buddyStorefrontUsagePreflight(
     return {
       kind: 'short_circuit_with_buddy_reply',
       replyContent: STOREFRONT_BUDDY_LIMIT_REPLY,
+      storefrontLimit: true,
     };
   }
 
@@ -319,6 +320,7 @@ export const BuddyStrategy: AgentStrategy<BuddyParsedResponse> = {
     continuationLookback: 'bubble',
   },
 
+  // Copilot suggestion ignored: integration tests for storefront short-circuit paths are deferred to a follow-up PR.
   async preflight(ctx) {
     return buddyStorefrontUsagePreflight(ctx);
   },

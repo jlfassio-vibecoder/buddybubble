@@ -1091,11 +1091,15 @@ function DashboardShellInner({
         const editInstanceId = opts?.classEditorInstanceId?.trim();
         if (editInstanceId) {
           const supabase = createClient();
-          const { data } = await supabase
+          const { data, error } = await supabase
             .from('class_instances')
             .select('task_id')
             .eq('id', editInstanceId)
             .maybeSingle();
+          if (error) {
+            toast.error('Could not load the class task. Please try again.');
+            return;
+          }
           resolvedTaskId = (data?.task_id as string | undefined) ?? null;
         }
 
