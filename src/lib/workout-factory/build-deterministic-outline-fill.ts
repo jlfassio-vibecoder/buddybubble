@@ -74,9 +74,8 @@ export function buildDeterministicOutlineFillFromPreflight(
     if (isInstructionOnlyPreflightBlock(pre)) {
       const row: Record<string, unknown> = {};
       if (typeof pre.name === 'string' && pre.name.trim()) row.name = pre.name.trim();
-      if (Array.isArray(pre.instructions)) {
-        row.instructions = pre.instructions.filter((x): x is string => typeof x === 'string');
-      }
+      const instructions = instructionLinesFromBlock(pre);
+      if (instructions.length > 0) row.instructions = instructions;
       return row;
     }
 

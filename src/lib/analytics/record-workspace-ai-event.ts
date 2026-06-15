@@ -75,7 +75,7 @@ export function outlineFillFailureToEventType(args: {
 
 export function vertexRouteErrorToEventType(err: unknown): {
   eventType: WorkspaceAiEventType;
-  errorKind: WorkspaceAiErrorKind;
+  errorKind: WorkspaceAiErrorKind | null;
 } {
   const msg = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
   if (msg.includes('abort') || msg.includes('timeout')) {
@@ -87,7 +87,7 @@ export function vertexRouteErrorToEventType(err: unknown): {
   if (msg.includes('ai api error')) {
     return { eventType: 'error_http', errorKind: 'http' };
   }
-  return { eventType: 'error_other', errorKind: 'http' };
+  return { eventType: 'error_other', errorKind: null };
 }
 
 export function buildOutlineFillEventMetadata(

@@ -74,6 +74,15 @@ describe('buildDeterministicOutlineFillFromPreflight', () => {
     });
   });
 
+  it('strips whitespace-only instruction lines in instruction-only blocks', () => {
+    const preflight = [{ name: 'Warm-up', instructions: ['5 min bike', '   ', 'Dynamic prep'] }];
+    const out = buildDeterministicOutlineFillFromPreflight(preflight);
+    expect(out[0]).toEqual({
+      name: 'Warm-up',
+      instructions: ['5 min bike', 'Dynamic prep'],
+    });
+  });
+
   it('preserves Tabata name-only when rounds are in format_params', () => {
     const preflight = [
       {

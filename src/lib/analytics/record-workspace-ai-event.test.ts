@@ -58,6 +58,13 @@ describe('vertexRouteErrorToEventType', () => {
       errorKind: 'http',
     });
   });
+
+  it('leaves errorKind null for unclassified failures', () => {
+    expect(vertexRouteErrorToEventType(new Error('unexpected failure'))).toEqual({
+      eventType: 'error_other',
+      errorKind: null,
+    });
+  });
 });
 
 describe('buildOutlineFillEventMetadata', () => {
