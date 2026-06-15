@@ -19,6 +19,15 @@ const emomOutline = [
   },
 ];
 
+const circuitOutline = [
+  {
+    name: 'Main Circuit',
+    block_format: 'circuit',
+    format_params: { rounds: 3, rest_between_rounds_seconds: 60 },
+    exercises: [{ name: 'Push-up' }, { name: 'Squat' }, { name: 'Row' }],
+  },
+];
+
 const minimalPersona: WorkoutPersona = {
   title: 'Test',
   description: 'Session',
@@ -74,6 +83,31 @@ describe('validateFillParametricOutlineOutput', () => {
     expect(v.valid).toBe(true);
     if (v.valid) {
       expect(v.data.blocks[0]?.exercises).toHaveLength(2);
+    }
+  });
+
+  it('accepts numeric reps without sets (circuit / AMRAP model shape)', () => {
+    const preflight = preflightOutlineBlocks(circuitOutline).blocks;
+    const filled = {
+      blocks: [
+        {
+          name: 'Main Circuit',
+          block_format: 'circuit',
+          format_params: { rounds: 3, rest_between_rounds_seconds: 60 },
+          exercises: [
+            { name: 'Push-up', reps: 12 },
+            { name: 'Goblet Squat', reps: 15 },
+            { name: 'Dumbbell Row', reps: 10 },
+          ],
+        },
+      ],
+    };
+    const v = validateFillParametricOutlineOutput(filled, preflight);
+    expect(v.valid).toBe(true);
+    if (v.valid) {
+      expect(v.data.blocks[0]?.exercises?.[0]?.reps).toBe('12');
+      expect(v.data.blocks[0]?.exercises?.[1]?.reps).toBe('15');
+      expect(v.data.blocks[0]?.exercises?.[2]?.reps).toBe('10');
     }
   });
 
