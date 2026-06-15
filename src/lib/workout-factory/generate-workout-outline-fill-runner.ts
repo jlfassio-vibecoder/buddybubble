@@ -26,6 +26,9 @@ import { callVertexAI } from '@/lib/workout-factory/vertex-ai-client';
 
 const OUTLINE_FILL_VERTEX_MODEL = 'google/gemini-3.1-flash-lite-preview';
 
+/** Bounded repair retries before surfacing 422 OUTLINE_FILL_VALIDATION_FAILED. */
+export const MAX_FILL_ATTEMPTS = 2;
+
 function isVertexCreds(
   creds: VertexAICredentials,
 ): creds is { projectId: string; region: string; accessToken: string } {
@@ -74,35 +77,82 @@ export async function runGenerateWorkoutOutlineFill(
     console.warn('[generate-workout-chain] Outline fill: Stage 1 (Vertex)...');
   }
 
-  const userPrompt = buildFillParametricOutlinePrompt(
+  const baseUserPrompt = buildFillParametricOutlinePrompt(
     prepared.persona,
     preflight.blocks,
     equipmentList,
   );
 
-  const fillResponse = await callVertexAI({
-    systemPrompt: FILL_PARAMETRIC_OUTLINE_SYSTEM_PROMPT,
-    userPrompt,
-    accessToken,
-    projectId,
-    region,
-    model: OUTLINE_FILL_VERTEX_MODEL,
-    temperature: 0.2,
-    maxTokens: 8192,
-    timeoutMs: 120000,
-    logPrefix: '[generate-workout-chain][outline-fill]',
-  });
+  // The fill model is non-deterministic against a strict structural contract; a single
+  // drift (renamed block, dropped prescription, malformed JSON) would otherwise hard-fail
+  // with a 422. Retry once with the validation error fed back before surfacing the error.
+  let fillValidation: ReturnType<typeof validateFillParametricOutlineOutput> | undefined;
+  let lastError = 'unknown validation error';
 
-  const fillParsed = parseJSONWithRepair(fillResponse);
-  const fillValidation = validateFillParametricOutlineOutput(fillParsed.data, preflight.blocks);
-  if (!fillValidation.valid) {
+  for (let attempt = 1; attempt <= MAX_FILL_ATTEMPTS; attempt++) {
+    const userPrompt =
+      attempt === 1
+        ? baseUserPrompt
+        : `${baseUserPrompt}
+
+=== PREVIOUS ATTEMPT REJECTED ===
+Your last response failed validation: ${lastError}
+Return corrected JSON only. Preserve every block name, block_format, and format_params exactly as given, and include sets, reps, or work_seconds for each exercise.`;
+
+    if (shouldLog && attempt > 1) {
+      console.warn(
+        `[generate-workout-chain] Outline fill: Stage 1 retry ${attempt}/${MAX_FILL_ATTEMPTS} after: ${lastError}`,
+      );
+    }
+
+    const fillResponse = await callVertexAI({
+      systemPrompt: FILL_PARAMETRIC_OUTLINE_SYSTEM_PROMPT,
+      userPrompt,
+      accessToken,
+      projectId,
+      region,
+      model: OUTLINE_FILL_VERTEX_MODEL,
+      temperature: 0.2,
+      maxTokens: 8192,
+      timeoutMs: 120000,
+      logPrefix: '[generate-workout-chain][outline-fill]',
+    });
+
+    let parsedData: unknown;
+    try {
+      parsedData = parseJSONWithRepair(fillResponse).data;
+    } catch (parseErr) {
+      lastError = parseErr instanceof Error ? parseErr.message : 'unparseable JSON';
+      console.warn('[generate-workout-chain][outline-fill]', {
+        event: attempt < MAX_FILL_ATTEMPTS ? 'fill_attempt_failed' : 'fill_exhausted',
+        attempt,
+        maxAttempts: MAX_FILL_ATTEMPTS,
+        validation_error: lastError,
+      });
+      if (attempt < MAX_FILL_ATTEMPTS) continue;
+      throw parseErr;
+    }
+
+    const validation = validateFillParametricOutlineOutput(parsedData, preflight.blocks);
+    fillValidation = validation;
+    if (validation.valid) break;
+    lastError = validation.error;
+    console.warn('[generate-workout-chain][outline-fill]', {
+      event: attempt < MAX_FILL_ATTEMPTS ? 'fill_attempt_failed' : 'fill_exhausted',
+      attempt,
+      maxAttempts: MAX_FILL_ATTEMPTS,
+      validation_error: lastError,
+    });
+  }
+
+  if (!fillValidation || !fillValidation.valid) {
     return {
       ok: false,
       response: new Response(
         JSON.stringify({
           error: 'OUTLINE_FILL_VALIDATION_FAILED',
-          message: `Outline fill (Stage 1) failed: ${fillValidation.error}`,
-          validation_error: fillValidation.error,
+          message: `Outline fill (Stage 1) failed: ${lastError}`,
+          validation_error: lastError,
         }),
         { status: 422, headers: { 'Content-Type': 'application/json' } },
       ),

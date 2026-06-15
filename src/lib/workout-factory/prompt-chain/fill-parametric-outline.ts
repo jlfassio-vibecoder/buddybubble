@@ -35,6 +35,9 @@ function exerciseHasPrescription(ex: Record<string, unknown>): boolean {
   const work = ex.work_seconds;
   if (typeof sets === 'number' && sets > 0) return true;
   if (typeof reps === 'string' && reps.trim().length > 0) return true;
+  // Models frequently emit numeric reps (e.g. circuit/AMRAP exercises without "sets").
+  // The downstream mapper coerces numeric reps via String(), so accept them here too.
+  if (typeof reps === 'number' && Number.isFinite(reps) && reps > 0) return true;
   if (typeof work === 'number' && work > 0) return true;
   return false;
 }
@@ -187,6 +190,10 @@ export function validateFillParametricOutlineOutput(
               };
               if (typeof e.sets === 'number') out.sets = e.sets;
               if (typeof e.reps === 'string') out.reps = e.reps;
+              // Preserve numeric reps (coerced to string) instead of dropping them,
+              // which would otherwise collapse a real rep target to the "1" default downstream.
+              else if (typeof e.reps === 'number' && Number.isFinite(e.reps))
+                out.reps = String(e.reps);
               if (typeof e.equipment === 'string') out.equipment = e.equipment;
               if (typeof e.work_seconds === 'number') out.work_seconds = e.work_seconds;
               if (typeof e.rest_seconds === 'number') out.rest_seconds = e.rest_seconds;
