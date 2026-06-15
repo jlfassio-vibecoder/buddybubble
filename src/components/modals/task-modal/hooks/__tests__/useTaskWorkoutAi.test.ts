@@ -8,6 +8,15 @@ import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-sess
 import { useTaskWorkoutAi } from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
 
 const mockPostGenerateWorkoutChain = vi.hoisted(() => vi.fn());
+const mockToastError = vi.hoisted(() => vi.fn());
+const mockToastSuccess = vi.hoisted(() => vi.fn());
+
+vi.mock('sonner', () => ({
+  toast: {
+    error: mockToastError,
+    success: mockToastSuccess,
+  },
+}));
 
 vi.mock('@/lib/workout-factory/api-client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/workout-factory/api-client')>();
@@ -16,6 +25,8 @@ vi.mock('@/lib/workout-factory/api-client', async (importOriginal) => {
     postGenerateWorkoutChain: mockPostGenerateWorkoutChain,
   };
 });
+
+import { WorkoutFactoryError } from '@/lib/workout-factory/api-client';
 
 function richTabataFixture(): Record<string, unknown> {
   return {
@@ -261,6 +272,8 @@ describe('useTaskWorkoutAi handleWorkoutViewerApply', () => {
 describe('useTaskWorkoutAi handleAiGenerateWorkout', () => {
   beforeEach(() => {
     mockPostGenerateWorkoutChain.mockReset();
+    mockToastError.mockReset();
+    mockToastSuccess.mockReset();
     mockPostGenerateWorkoutChain.mockResolvedValue({
       workoutSet: { title: 'Gen', description: '', difficulty: 'intermediate', workouts: [] },
       chain_metadata: {
@@ -353,6 +366,69 @@ describe('useTaskWorkoutAi handleAiGenerateWorkout', () => {
     expect(payload.coach_workout_outline?.[0]?.name).toBe('Main EMOM');
   });
 
+  it('forwards task_id to postGenerateWorkoutChain', async () => {
+    const outline = [
+      {
+        name: 'Main',
+        block_format: 'straight_sets',
+        exercises: [{ name: 'Squat' }],
+      },
+    ];
+    const meta = {
+      coach_workout_outline: outline,
+      coach_outline_confirmed_at: '2026-05-22T12:00:00.000Z',
+      exercises: [],
+    } as Json;
+
+    const { result } = renderHook(() => useTaskWorkoutAiHarness(meta));
+
+    await act(async () => {
+      await result.current.handleAiGenerateWorkout();
+    });
+
+    const payload = mockPostGenerateWorkoutChain.mock.calls[0][0] as { task_id?: string };
+    expect(payload.task_id).toBe('task-1');
+  });
+
+  it('shows fallback success toast when chain_metadata.fill_fallback is true', async () => {
+    const outline = [
+      {
+        name: 'Main',
+        block_format: 'straight_sets',
+        exercises: [{ name: 'Squat' }],
+      },
+    ];
+    const meta = {
+      coach_workout_outline: outline,
+      coach_outline_confirmed_at: '2026-05-22T12:00:00.000Z',
+      exercises: [],
+    } as Json;
+
+    mockPostGenerateWorkoutChain.mockResolvedValueOnce({
+      workoutSet: { title: 'Gen', description: '', difficulty: 'intermediate', workouts: [] },
+      chain_metadata: {
+        generated_at: '2026-01-01',
+        model_used: 'test',
+        pipeline: 'parametric_outline_fill',
+        fill_fallback: true,
+        fill_fallback_reason: 'parse failed',
+      },
+      taskExercises: [],
+      suggestedTitle: 'Gen',
+      suggestedDescription: '',
+    });
+
+    const { result } = renderHook(() => useTaskWorkoutAiHarness(meta));
+
+    await act(async () => {
+      await result.current.handleAiGenerateWorkout();
+    });
+
+    expect(mockToastSuccess).toHaveBeenCalledWith(
+      'Workout generated with default prescriptions — review exercises before saving.',
+    );
+  });
+
   it('blocks generate when outline is not confirmed', async () => {
     const outline = [
       {
@@ -373,5 +449,124 @@ describe('useTaskWorkoutAi handleAiGenerateWorkout', () => {
     });
 
     expect(mockPostGenerateWorkoutChain).not.toHaveBeenCalled();
+  });
+
+  it('shows prescription-friendly toast with Regenerate on 422 prescription failure', async () => {
+    const outline = [
+      {
+        name: 'Main EMOM',
+        block_format: 'emom',
+        format_params: {
+          interval_seconds: 60,
+          total_minutes: 10,
+          is_alternating: true,
+        },
+        exercises: [{ name: 'Swing' }, { name: 'Thruster' }],
+      },
+    ];
+    const meta = {
+      coach_workout_outline: outline,
+      coach_outline_confirmed_at: '2026-05-22T12:00:00.000Z',
+      exercises: [],
+    } as Json;
+
+    mockPostGenerateWorkoutChain.mockRejectedValueOnce(
+      new WorkoutFactoryError('Outline fill failed', {
+        code: 'OUTLINE_FILL_VALIDATION_FAILED',
+        status: 422,
+        validationError: 'needs sets, reps, or work_seconds',
+        failureKind: 'validation',
+        validationReason: 'prescription',
+      }),
+    );
+
+    const { result } = renderHook(() => useTaskWorkoutAiHarness(meta));
+
+    await act(async () => {
+      await result.current.handleAiGenerateWorkout();
+    });
+
+    expect(mockToastError).toHaveBeenCalledWith(
+      "AI couldn't finish exercise prescriptions. Your structure looks fine — try again.",
+      expect.objectContaining({
+        action: expect.objectContaining({ label: 'Regenerate' }),
+      }),
+    );
+  });
+
+  it('shows structure mismatch toast on 422 structure failure', async () => {
+    const outline = [
+      {
+        name: 'Main',
+        block_format: 'straight_sets',
+        exercises: [{ name: 'Squat' }],
+      },
+    ];
+    const meta = {
+      coach_workout_outline: outline,
+      coach_outline_confirmed_at: '2026-05-22T12:00:00.000Z',
+      exercises: [],
+    } as Json;
+
+    mockPostGenerateWorkoutChain.mockRejectedValueOnce(
+      new WorkoutFactoryError('Outline fill failed', {
+        code: 'OUTLINE_FILL_VALIDATION_FAILED',
+        status: 422,
+        validationError: 'block count changed',
+        failureKind: 'validation',
+        validationReason: 'structure',
+      }),
+    );
+
+    const { result } = renderHook(() => useTaskWorkoutAiHarness(meta));
+
+    await act(async () => {
+      await result.current.handleAiGenerateWorkout();
+    });
+
+    expect(mockToastError).toHaveBeenCalledWith(
+      'Generation hit a structure mismatch. Confirm structure or edit blocks, then try again.',
+      expect.objectContaining({
+        action: expect.objectContaining({ label: 'Regenerate' }),
+      }),
+    );
+  });
+
+  it('shows parse-friendly toast with Regenerate on 422 parse failure', async () => {
+    const outline = [
+      {
+        name: 'Main',
+        block_format: 'straight_sets',
+        exercises: [{ name: 'Squat' }],
+      },
+    ];
+    const meta = {
+      coach_workout_outline: outline,
+      coach_outline_confirmed_at: '2026-05-22T12:00:00.000Z',
+      exercises: [],
+    } as Json;
+
+    mockPostGenerateWorkoutChain.mockRejectedValueOnce(
+      new WorkoutFactoryError('Outline fill failed', {
+        code: 'OUTLINE_FILL_VALIDATION_FAILED',
+        status: 422,
+        validationError: 'Failed to parse JSON',
+        failureKind: 'parse',
+        validationReason: 'parse',
+      }),
+    );
+
+    const { result } = renderHook(() => useTaskWorkoutAiHarness(meta));
+
+    await act(async () => {
+      await result.current.handleAiGenerateWorkout();
+    });
+
+    expect(mockToastError).toHaveBeenCalledWith(
+      "We had trouble reading the AI's response format. Please try generating the workout again.",
+      expect.objectContaining({
+        action: expect.objectContaining({ label: 'Regenerate' }),
+      }),
+    );
   });
 });

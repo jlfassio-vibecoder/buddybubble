@@ -9,6 +9,7 @@ import {
   postGenerateWorkoutChain,
   WORKOUT_FACTORY_CHAIN_MESSAGES,
   WorkoutFactoryError,
+  workoutFactoryErrorMessage,
 } from '@/lib/workout-factory/api-client';
 import {
   metadataFieldsFromParsed,
@@ -93,6 +94,10 @@ export function useTaskWorkoutAi({
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [aiWorkoutGenerating, setAiWorkoutGenerating] = useState(false);
   const [aiWorkoutProgressIdx, setAiWorkoutProgressIdx] = useState(0);
+  const lastWizardDataRef = useRef<WorkoutIntakeWizardData | undefined>(undefined);
+  const handleAiGenerateWorkoutRef = useRef<
+    (wizardData?: WorkoutIntakeWizardData, options?: { metadata?: Json }) => Promise<void>
+  >(() => Promise.resolve());
 
   const resetWorkoutAiUi = useCallback(() => {
     setTemplatePickerOpen(false);
@@ -143,6 +148,8 @@ export function useTaskWorkoutAi({
         return;
       }
 
+      lastWizardDataRef.current = wizardData;
+
       setAiWorkoutGenerating(true);
       try {
         const duration = parseInt(workoutDurationMin, 10);
@@ -152,6 +159,7 @@ export function useTaskWorkoutAi({
         const coach_workout_outline = preflight.blocks;
         const data = await postGenerateWorkoutChain({
           workspace_id: workspaceId,
+          task_id: taskId ?? undefined,
           daily_checkin: dailyCheckInPayload,
           workout_brief_authoritative: title.trim().length > 0 && description.trim().length > 0,
           coach_workout_outline,
@@ -177,12 +185,22 @@ export function useTaskWorkoutAi({
             },
           } as unknown as Json;
         });
-        toast.success('Workout generated — review exercises and save.');
+        toast.success(
+          'fill_fallback' in data.chain_metadata && data.chain_metadata.fill_fallback
+            ? 'Workout generated with default prescriptions — review exercises before saving.'
+            : 'Workout generated — review exercises and save.',
+        );
       } catch (e) {
         if (e instanceof WorkoutFactoryError) {
-          toast.error(
-            'Generation failed: The workout structure is missing data (like sets/reps). Please edit the structure and try again.',
-          );
+          const { message, showRegenerate } = workoutFactoryErrorMessage(e);
+          toast.error(message, {
+            action: showRegenerate
+              ? {
+                  label: 'Regenerate',
+                  onClick: () => void handleAiGenerateWorkoutRef.current(lastWizardDataRef.current),
+                }
+              : undefined,
+          });
         } else {
           toast.error(e instanceof Error ? e.message : 'Generation failed');
         }
@@ -198,6 +216,7 @@ export function useTaskWorkoutAi({
       title,
       description,
       metadata,
+      taskId,
       setTitle,
       setDescription,
       setWorkoutExercises,
@@ -205,6 +224,10 @@ export function useTaskWorkoutAi({
       setMetadata,
     ],
   );
+
+  useEffect(() => {
+    handleAiGenerateWorkoutRef.current = handleAiGenerateWorkout;
+  }, [handleAiGenerateWorkout]);
 
   const viewerWorkoutSet = useMemo(
     (): WorkoutSetTemplate | null => buildWorkoutSessionViewModel(metadata).workoutSet,

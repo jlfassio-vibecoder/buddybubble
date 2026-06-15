@@ -313,6 +313,9 @@ export interface WorkoutChainMetadataOutlineFill {
   generated_at: string;
   model_used: string;
   total_tokens?: number;
+  /** True when Vertex fill failed and server used deterministic preflight defaults (P3). */
+  fill_fallback?: boolean;
+  fill_fallback_reason?: string;
 }
 
 export type WorkoutChainMetadata =

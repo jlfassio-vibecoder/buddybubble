@@ -61,7 +61,13 @@ describe('SystemAnalyticsDashboard', () => {
         workspaceName="Test Studio"
         window="30d"
         filter="all"
-        summary={{ successCount: 5, errorCount: 1, totalTokens: 160, avgLatencyMs: 1200 }}
+        summary={{
+          successCount: 5,
+          fallbackCount: 0,
+          errorCount: 1,
+          totalTokens: 160,
+          avgLatencyMs: 1200,
+        }}
         errorRows={[baseRow]}
         hasMore={false}
         nextCursor={null}
@@ -82,7 +88,13 @@ describe('SystemAnalyticsDashboard', () => {
         workspaceName="Test Studio"
         window="30d"
         filter="all"
-        summary={{ successCount: 0, errorCount: 1, totalTokens: 0, avgLatencyMs: null }}
+        summary={{
+          successCount: 0,
+          fallbackCount: 0,
+          errorCount: 1,
+          totalTokens: 0,
+          avgLatencyMs: null,
+        }}
         errorRows={[{ ...baseRow, task_id: null }]}
         hasMore={false}
         nextCursor={null}
@@ -101,7 +113,13 @@ describe('SystemAnalyticsDashboard', () => {
         workspaceName="Test Studio"
         window="30d"
         filter="all"
-        summary={{ successCount: 0, errorCount: 1, totalTokens: 160, avgLatencyMs: null }}
+        summary={{
+          successCount: 0,
+          fallbackCount: 0,
+          errorCount: 1,
+          totalTokens: 160,
+          avgLatencyMs: null,
+        }}
         errorRows={[baseRow]}
         hasMore={false}
         nextCursor={null}
@@ -127,7 +145,13 @@ describe('SystemAnalyticsDashboard', () => {
         workspaceName="Test Studio"
         window="30d"
         filter="all"
-        summary={{ successCount: 1, errorCount: 0, totalTokens: 0, avgLatencyMs: null }}
+        summary={{
+          successCount: 1,
+          fallbackCount: 0,
+          errorCount: 0,
+          totalTokens: 0,
+          avgLatencyMs: null,
+        }}
         errorRows={[]}
         hasMore={false}
         nextCursor={null}

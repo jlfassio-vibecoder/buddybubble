@@ -52,7 +52,10 @@ describe('runGenerateWorkoutChain', () => {
 
     expect(mockPrepare).toHaveBeenCalledWith({ foo: 'bar' }, false);
     expect(mockGetCreds).toHaveBeenCalled();
-    expect(mockRunOutlineFill).toHaveBeenCalledWith(chainRequest, creds, false, undefined);
+    expect(mockRunOutlineFill).toHaveBeenCalledWith(chainRequest, creds, false, {
+      createdByUserId: undefined,
+      requestId: undefined,
+    });
     expect(mockRunExtract).not.toHaveBeenCalled();
     expect(out).toBe(success);
   });
@@ -69,12 +72,10 @@ describe('runGenerateWorkoutChain', () => {
       createdByUserId: '9b2d0c4e-0e3e-4c5a-9a1a-0e3e4c5a9a1a',
     });
 
-    expect(mockRunOutlineFill).toHaveBeenCalledWith(
-      chainRequest,
-      creds,
-      false,
-      '9b2d0c4e-0e3e-4c5a-9a1a-0e3e4c5a9a1a',
-    );
+    expect(mockRunOutlineFill).toHaveBeenCalledWith(chainRequest, creds, false, {
+      createdByUserId: '9b2d0c4e-0e3e-4c5a-9a1a-0e3e4c5a9a1a',
+      requestId: undefined,
+    });
   });
 
   it('returns OUTLINE_REQUIRED_FOR_FACTORY when coachWorkoutOutline is absent', async () => {
@@ -123,7 +124,7 @@ describe('runGenerateWorkoutChain', () => {
 
     const out = await runGenerateWorkoutChain({}, false);
 
-    expect(out).toEqual({ ok: false, response: errResponse });
+    expect(out).toEqual({ ok: false, response: errResponse, telemetry: null });
     expect(mockGetCreds).not.toHaveBeenCalled();
     expect(mockRunExtract).not.toHaveBeenCalled();
     expect(mockRunOutlineFill).not.toHaveBeenCalled();
@@ -136,7 +137,7 @@ describe('runGenerateWorkoutChain', () => {
 
     const out = await runGenerateWorkoutChain({}, false);
 
-    expect(out).toEqual({ ok: false, response: credsErr });
+    expect(out).toEqual({ ok: false, response: credsErr, telemetry: null });
     expect(mockRunExtract).not.toHaveBeenCalled();
     expect(mockRunOutlineFill).not.toHaveBeenCalled();
   });

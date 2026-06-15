@@ -41,6 +41,7 @@ export type SystemAnalyticsEventRow = {
 
 export type SystemAnalyticsSummary = {
   successCount: number;
+  fallbackCount: number;
   errorCount: number;
   totalTokens: number;
   avgLatencyMs: number | null;
@@ -96,6 +97,7 @@ export function computeSystemAnalyticsSummary(
   }>,
 ): SystemAnalyticsSummary {
   let successCount = 0;
+  let fallbackCount = 0;
   let errorCount = 0;
   let totalTokens = 0;
   let latencySum = 0;
@@ -104,6 +106,8 @@ export function computeSystemAnalyticsSummary(
   for (const row of rows) {
     if (row.event_type === 'success') {
       successCount += 1;
+    } else if (row.event_type === 'success_fallback') {
+      fallbackCount += 1;
     } else {
       errorCount += 1;
     }
@@ -117,6 +121,7 @@ export function computeSystemAnalyticsSummary(
 
   return {
     successCount,
+    fallbackCount,
     errorCount,
     totalTokens,
     avgLatencyMs: latencyCount > 0 ? Math.round(latencySum / latencyCount) : null,

@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PreparedWorkoutChainRequest } from '@/lib/workout-factory/prepare-workout-chain-request';
 import type { WorkoutPersona } from '@/lib/workout-factory/types/ai-workout';
+import { OUTLINE_FILL_MAX_OUTPUT_TOKENS } from '@/lib/workout-factory/outline-fill-config';
 
-const mockCallVertexAI = vi.hoisted(() => vi.fn());
+const mockCallVertexAIWithMetadata = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/workout-factory/vertex-ai-client', () => ({
-  callVertexAI: mockCallVertexAI,
+  callVertexAIWithMetadata: mockCallVertexAIWithMetadata,
 }));
 
 import {
@@ -48,38 +49,32 @@ const minimalPersona: WorkoutPersona = {
   tabataBalancedMode: false,
 };
 
-function validFilledJson(): string {
-  return JSON.stringify({
-    blocks: [
-      {
-        name: 'Main EMOM',
-        block_format: 'emom',
-        format_params: {
-          interval_seconds: 60,
-          total_minutes: 16,
-          is_alternating: true,
-        },
-        exercises: [
-          { name: 'Kettlebell Swing', reps: '12', work_seconds: 45, rest_seconds: 15 },
-          { name: 'Goblet Squat', reps: '10', work_seconds: 45, rest_seconds: 15 },
-        ],
-      },
-    ],
-  });
+function vertexResult(content: string, finishReason = 'stop', completionTokens = 120) {
+  return {
+    content,
+    finishReason,
+    usage: {
+      promptTokens: 500,
+      completionTokens,
+      totalTokens: 500 + completionTokens,
+    },
+  };
 }
 
 function invalidFilledJson(): string {
   return JSON.stringify({
+    blocks: [{ exercises: [{ name: 'Kettlebell Swing' }] }],
+  });
+}
+
+function validFillOnlyJson(): string {
+  return JSON.stringify({
     blocks: [
       {
-        name: 'Main EMOM',
-        block_format: 'emom',
-        format_params: {
-          interval_seconds: 60,
-          total_minutes: 16,
-          is_alternating: true,
-        },
-        exercises: [{ name: 'Swing' }, { name: 'Squat' }],
+        exercises: [
+          { name: 'Kettlebell Swing', reps: '12', work_seconds: 45, rest_seconds: 15 },
+          { name: 'Goblet Squat', reps: '10', work_seconds: 45, rest_seconds: 15 },
+        ],
       },
     ],
   });
@@ -110,59 +105,118 @@ const creds = { projectId: 'p', region: 'r', accessToken: 't' };
 
 describe('runGenerateWorkoutOutlineFill', () => {
   beforeEach(() => {
-    mockCallVertexAI.mockReset();
+    mockCallVertexAIWithMetadata.mockReset();
   });
 
   it('succeeds on first attempt without retry', async () => {
-    mockCallVertexAI.mockResolvedValueOnce(validFilledJson());
+    mockCallVertexAIWithMetadata.mockResolvedValueOnce(vertexResult(validFillOnlyJson()));
 
     const out = await runGenerateWorkoutOutlineFill(buildPreparedRequest(), creds, false);
 
     expect(out.ok).toBe(true);
-    expect(mockCallVertexAI).toHaveBeenCalledTimes(1);
+    expect(mockCallVertexAIWithMetadata).toHaveBeenCalledTimes(1);
+    expect(mockCallVertexAIWithMetadata.mock.calls[0]?.[0]?.maxTokens).toBe(
+      OUTLINE_FILL_MAX_OUTPUT_TOKENS,
+    );
+    if (out.ok) {
+      expect(out.telemetry.pipeline).toBe('parametric_outline_fill');
+      expect(out.telemetry.outlineBlockCount).toBe(1);
+      expect(out.telemetry.exerciseCount).toBe(2);
+    }
   });
 
   it('retries with error feedback when first attempt fails validation', async () => {
-    mockCallVertexAI
-      .mockResolvedValueOnce(invalidFilledJson())
-      .mockResolvedValueOnce(validFilledJson());
+    mockCallVertexAIWithMetadata
+      .mockResolvedValueOnce(vertexResult(invalidFilledJson()))
+      .mockResolvedValueOnce(vertexResult(validFillOnlyJson()));
 
     const out = await runGenerateWorkoutOutlineFill(buildPreparedRequest(), creds, false);
 
     expect(out.ok).toBe(true);
-    expect(mockCallVertexAI).toHaveBeenCalledTimes(2);
-    const secondCall = mockCallVertexAI.mock.calls[1]?.[0] as { userPrompt?: string };
+    expect(mockCallVertexAIWithMetadata).toHaveBeenCalledTimes(2);
+    const secondCall = mockCallVertexAIWithMetadata.mock.calls[1]?.[0] as {
+      userPrompt?: string;
+    };
     expect(secondCall.userPrompt).toContain('PREVIOUS ATTEMPT REJECTED');
-    expect(secondCall.userPrompt).toMatch(/sets, reps, or work_seconds/);
+    expect(secondCall.userPrompt).toMatch(/exercise count/);
   });
 
-  it('returns 422 when both attempts fail validation', async () => {
-    mockCallVertexAI
-      .mockResolvedValueOnce(invalidFilledJson())
-      .mockResolvedValueOnce(invalidFilledJson());
+  it('succeeds via deterministic fallback when both attempts fail validation', async () => {
+    mockCallVertexAIWithMetadata
+      .mockResolvedValueOnce(vertexResult(invalidFilledJson()))
+      .mockResolvedValueOnce(vertexResult(invalidFilledJson()));
 
     const out = await runGenerateWorkoutOutlineFill(buildPreparedRequest(), creds, false);
+
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(mockCallVertexAIWithMetadata).toHaveBeenCalledTimes(MAX_FILL_ATTEMPTS);
+    expect(out.telemetry.fillFallback).toBe(true);
+    expect(out.data.chain_metadata.pipeline).toBe('parametric_outline_fill');
+    if (out.data.chain_metadata.pipeline !== 'parametric_outline_fill') return;
+    expect(out.data.chain_metadata.fill_fallback).toBe(true);
+    expect(out.data.workoutSet.workouts[0]?.exerciseBlocks).toHaveLength(1);
+  });
+
+  it('returns 422 when both attempts fail and deterministic fallback is disabled', async () => {
+    const prev = process.env.OUTLINE_FILL_DETERMINISTIC_FALLBACK;
+    process.env.OUTLINE_FILL_DETERMINISTIC_FALLBACK = 'false';
+
+    mockCallVertexAIWithMetadata
+      .mockResolvedValueOnce(vertexResult(invalidFilledJson()))
+      .mockResolvedValueOnce(vertexResult(invalidFilledJson()));
+
+    const out = await runGenerateWorkoutOutlineFill(buildPreparedRequest(), creds, false);
+
+    if (prev === undefined) delete process.env.OUTLINE_FILL_DETERMINISTIC_FALLBACK;
+    else process.env.OUTLINE_FILL_DETERMINISTIC_FALLBACK = prev;
 
     expect(out.ok).toBe(false);
     if (out.ok) return;
     expect(out.response.status).toBe(422);
-    expect(mockCallVertexAI).toHaveBeenCalledTimes(MAX_FILL_ATTEMPTS);
-    const body = (await out.response.json()) as {
-      error?: string;
-      validation_error?: string;
-    };
-    expect(body.error).toBe('OUTLINE_FILL_VALIDATION_FAILED');
-    expect(body.validation_error).toMatch(/sets, reps, or work_seconds/);
+    expect(out.telemetry.fillFallback).toBeUndefined();
   });
 
-  it('retries after parse error and succeeds on second attempt', async () => {
-    mockCallVertexAI
-      .mockResolvedValueOnce('not valid json {{{')
-      .mockResolvedValueOnce(validFilledJson());
+  it('succeeds via deterministic fallback when both attempts fail to parse', async () => {
+    mockCallVertexAIWithMetadata
+      .mockResolvedValueOnce(vertexResult('not valid json {{{'))
+      .mockResolvedValueOnce(vertexResult('still not json {{{'));
 
     const out = await runGenerateWorkoutOutlineFill(buildPreparedRequest(), creds, false);
 
     expect(out.ok).toBe(true);
-    expect(mockCallVertexAI).toHaveBeenCalledTimes(2);
+    if (!out.ok) return;
+    expect(out.telemetry.fillFallback).toBe(true);
+    expect(out.data.chain_metadata.pipeline).toBe('parametric_outline_fill');
+    if (out.data.chain_metadata.pipeline !== 'parametric_outline_fill') return;
+    expect(out.data.chain_metadata.fill_fallback).toBe(true);
+  });
+
+  it('retries after parse error and succeeds on second attempt', async () => {
+    mockCallVertexAIWithMetadata
+      .mockResolvedValueOnce(vertexResult('not valid json {{{'))
+      .mockResolvedValueOnce(vertexResult(validFillOnlyJson()));
+
+    const out = await runGenerateWorkoutOutlineFill(buildPreparedRequest(), creds, false);
+
+    expect(out.ok).toBe(true);
+    expect(mockCallVertexAIWithMetadata).toHaveBeenCalledTimes(2);
+  });
+
+  it('adds compact-output hint on retry after length truncation', async () => {
+    mockCallVertexAIWithMetadata
+      .mockResolvedValueOnce(
+        vertexResult('not valid json {{{', 'length', OUTLINE_FILL_MAX_OUTPUT_TOKENS),
+      )
+      .mockResolvedValueOnce(vertexResult(validFillOnlyJson()));
+
+    const out = await runGenerateWorkoutOutlineFill(buildPreparedRequest(), creds, false);
+
+    expect(out.ok).toBe(true);
+    const secondCall = mockCallVertexAIWithMetadata.mock.calls[1]?.[0] as {
+      userPrompt?: string;
+    };
+    expect(secondCall.userPrompt).toMatch(/Keep output compact/);
+    if (out.ok) expect(out.telemetry.truncated).toBe(true);
   });
 });

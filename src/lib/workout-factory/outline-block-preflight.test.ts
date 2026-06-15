@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   assertFillPreservesStructure,
+  graftFillBlocksOntoPreflight,
   hydrateAndValidateOutlineBlocks,
   preflightOutlineBlocks,
 } from '@/lib/workout-factory/outline-block-preflight';
@@ -123,6 +124,72 @@ describe('hydrateAndValidateOutlineBlocks', () => {
     const { blocks, drops } = hydrateAndValidateOutlineBlocks(vertexFill);
     expect(drops).toEqual([]);
     expect(blocks).toHaveLength(preflight.length);
+  });
+});
+
+describe('graftFillBlocksOntoPreflight', () => {
+  it('ignores model block rename and uses preflight name', () => {
+    const preflight = preflightOutlineBlocks(emomOutline).blocks;
+    const model = [
+      {
+        name: 'Main EMOM (Conditioning)',
+        block_format: 'emom',
+        format_params: { interval_seconds: 90, total_minutes: 16 },
+        exercises: [
+          { name: 'Kettlebell Swing', reps: '12' },
+          { name: 'Goblet Squat', reps: '10' },
+          { name: 'Push-up', reps: '8' },
+        ],
+      },
+    ];
+    const out = graftFillBlocksOntoPreflight(preflight, model);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.blocks[0]?.name).toBe('Main EMOM');
+    expect((out.blocks[0]?.format_params as Record<string, unknown>)?.interval_seconds).toBe(60);
+  });
+
+  it('rejects block count mismatch', () => {
+    const preflight = preflightOutlineBlocks(emomOutline).blocks;
+    const out = graftFillBlocksOntoPreflight(preflight, []);
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.error).toMatch(/block count changed/);
+  });
+
+  it('rejects exercise count mismatch vs expanded circuit preflight', () => {
+    const preflight = preflightOutlineBlocks([
+      {
+        name: 'Main Circuit',
+        block_format: 'circuit',
+        format_params: { rounds: 3 },
+        exercises: [{ name: 'Goblet Squat' }],
+      },
+    ]).blocks;
+    const out = graftFillBlocksOntoPreflight(preflight, [
+      { exercises: [{ name: 'A' }, { name: 'B' }] },
+    ]);
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.error).toMatch(/exercise count changed/);
+  });
+
+  it('rejects when model adds exercises to instruction-only block', () => {
+    const raw = [{ name: 'Warm-up', instructions: ['5 min bike'] }, ...emomOutline];
+    const preflight = preflightOutlineBlocks(raw).blocks;
+    const out = graftFillBlocksOntoPreflight(preflight, [
+      { instructions: ['5 min bike'], exercises: [{ name: 'Bike', reps: '5' }] },
+      {
+        exercises: [
+          { name: 'Swing', reps: '12' },
+          { name: 'Squat', reps: '10' },
+          { name: 'Push-up', reps: '8' },
+        ],
+      },
+    ]);
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.error).toMatch(/instruction-only shape changed/);
   });
 });
 

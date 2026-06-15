@@ -2,7 +2,7 @@
 
 _Scope: `POST /api/ai/generate-workout-chain` (parametric outline-fill pipeline) and its supporting modules._
 
-_Status: P0 fixes implemented in this PR (§4); test coverage and production logging added (§7). P1+ remain recommendations._
+_Status: P0–P2 fixes implemented (§4). P3 deterministic fill fallback implemented (§4.11)._
 
 ---
 
@@ -14,7 +14,7 @@ The production errors
 /api/ai/generate-workout-chain:1  Failed to load resource: the server responded with a status of 422 ()
 ```
 
-are **not** a transport/auth/routing problem. The endpoint emits `422` from exactly **one** place: the Vertex _Stage‑1 outline fill_ output failed server-side validation (`OUTLINE_FILL_VALIDATION_FAILED`) after **both** repair attempts are exhausted.
+are **not** a transport/auth/routing problem. The endpoint historically emitted `422` when the Vertex _Stage‑1 outline fill_ output failed server-side validation after **both** repair attempts were exhausted. **P3** adds a deterministic preflight fallback (200) by default; `422` is opt-in via `OUTLINE_FILL_DETERMINISTIC_FALLBACK=false`.
 
 Historically, the workflow failed “frequently and inconsistently” because it paired a **strict, exact-match validation contract** with a **single, non-deterministic, small-model LLM call** and **no semantic retry**. P0 fixes (§4) add numeric-rep tolerance and a bounded 2-attempt repair loop with error feedback. Remaining triggers (renamed blocks, time-domain prescription strictness, truncation) are P1/P2.
 
@@ -40,65 +40,59 @@ prepareWorkoutChainRequest()  (persona/mode validation, zone/equipment)  → 400
 preflightOutlineBlocks()  (Coach parse boundary → normalized blocks)
         ▼
 runGenerateWorkoutOutlineFill()
-  • callVertexAI attempt 1 (gemini-3.1-flash-lite-preview, temp 0.2, 8192 tok)
+  • callVertexAI attempt 1 (gemini-3.1-flash-lite-preview, temp 0.2, 12288 tok)
   • parseJSONWithRepair()                            → retry on parse fail
+  • graftFillBlocksOntoPreflight()                   → server owns name/format/params (P1)
   • validateFillParametricOutlineOutput()            → retry on validation fail
   • callVertexAI attempt 2 (prompt includes prior validation_error)
-  • parse + validate again                           → ★ 422 if still failing ★
+  • parse + graft + validate again                   → deterministic fallback or ★ 422 if disabled ★
   • hydrateAndValidateOutlineBlocks()                → 500 on post-fill drops
   • buildWorkoutInSetFromOutlineFill() + assemble    → 200
 ```
 
-The 422 site (after `MAX_FILL_ATTEMPTS = 2`):
+The 422 site when deterministic fallback is disabled (`OUTLINE_FILL_DETERMINISTIC_FALLBACK=false`):
 
-```136:147:src/lib/workout-factory/generate-workout-outline-fill-runner.ts
-  if (!fillValidation || !fillValidation.valid) {
-    return {
-      ok: false,
-      response: new Response(
-        JSON.stringify({
-          error: 'OUTLINE_FILL_VALIDATION_FAILED',
-          message: `Outline fill (Stage 1) failed: ${lastError}`,
-          validation_error: lastError,
-        }),
-        { status: 422, headers: { 'Content-Type': 'application/json' } },
-      ),
-    };
-  }
+```typescript
+// generate-workout-outline-fill-runner.ts — after fill_exhausted, if fallback disabled
+return {
+  ok: false,
+  response: new Response(
+    JSON.stringify({
+      error: 'OUTLINE_FILL_VALIDATION_FAILED',
+      failure_kind: lastFailureKind,
+      validation_reason: validationReason,
+      message: `Outline fill (Stage 1) failed: ${lastError}`,
+      validation_error: lastError,
+    }),
+    { status: 422, headers: { 'Content-Type': 'application/json' } },
+  ),
+};
 ```
 
 ---
 
 ## 3. Root cause of the 422s
 
-`validateFillParametricOutlineOutput` enforces two classes of rules against the model output:
+`validateFillParametricOutlineOutput` enforces two classes of rules against the **grafted** model output (P1: structural fields come from preflight, not the model):
 
-1. **Structure preservation** (`assertFillPreservesStructure`): identical block count, exact (trimmed) block names, identical `block_format`, byte-stable normalized `format_params`, and unchanged instruction-only vs exercise-shaped “shape”.
-2. **Per-exercise prescription**: every exercise in every exercise-shaped block must carry `sets > 0`, a non-empty string or numeric `reps`, or `work_seconds > 0`.
+1. **Structural cardinality** (`graftFillBlocksOntoPreflight`): equal block count, equal exercise count per block, instruction-only blocks must not gain exercises.
+2. **Per-exercise prescription**: for formats other than EMOM/Tabata with complete `format_params`, every exercise must carry `sets > 0`, a non-empty string or numeric `reps`, or `work_seconds > 0`. EMOM/Tabata with timing in `format_params` require only a non-empty movement name (P1).
 
 Both run against the output of up to **two** calls to `gemini-3.1-flash-lite-preview` (a small preview model) at `temperature: 0.2`, with repair retry on parse/validation failure (§4.3). Remaining triggers after P0:
 
-| #   | Trigger                                                       | Why it fires                                                                                                                                                                                                                                    | Severity                 |
-| --- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| A   | **Numeric `reps`** (`"reps": 12` instead of `"12"`)           | `exerciseHasPrescription` only accepted _string_ reps; circuit/AMRAP exercises that have reps-but-no-sets failed. The downstream mapper happily coerces numeric reps with `String()`, so validation was stricter than the rest of the pipeline. | **High** (fixed)         |
-| B   | **Per-exercise prescription required for time-domain blocks** | EMOM/Tabata derive work/rest/rounds from `format_params` (see `hydrateEmom*`/`hydrateTabata*`). A model that lists movement names only (legitimate for those formats) is rejected, even though the assembler would have hydrated them.          | High (design — see §5)   |
-| C   | **Block name reworded**                                       | LLM emits `"Main EMOM (Conditioning)"` vs outline’s `"Main EMOM"`; exact-match → reject. The server already holds the authoritative names from preflight and does not need the model to echo them.                                              | Medium (design — see §5) |
-| D   | **Truncated / malformed JSON**                                | 8192-token cap + verbose fills → cut-off JSON; `parseJSONWithRepair` patches some cases but a structurally broken tail yields wrong block count / dropped fields → reject (or a thrown parse error → **500**, not 422).                         | Medium                   |
-| E   | **`format_params` echoed imperfectly**                        | Model nudges a value (e.g. `interval_seconds` 60→90). Caught by the byte-stable comparison. This one is _correct_ to reject.                                                                                                                    | Low                      |
+| #   | Trigger                                                       | Why it fires                                                                                                                                                                                                                                    | Severity           |
+| --- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| A   | **Numeric `reps`** (`"reps": 12` instead of `"12"`)           | `exerciseHasPrescription` only accepted _string_ reps; circuit/AMRAP exercises that have reps-but-no-sets failed. The downstream mapper happily coerces numeric reps with `String()`, so validation was stricter than the rest of the pipeline. | **High** (fixed)   |
+| B   | **Per-exercise prescription required for time-domain blocks** | EMOM/Tabata derive work/rest/rounds from `format_params`. A model that lists movement names only is now accepted when timing params are present (P1).                                                                                           | **High** (fixed)   |
+| C   | **Block name reworded**                                       | Server grafts preflight structure; model block renames are ignored (P1).                                                                                                                                                                        | **Medium** (fixed) |
+| D   | **Truncated / malformed JSON**                                | Cap raised to 12288 (P2); truncation detected via finish_reason + near-cap tokens; factory events in `workspace_ai_events` (P2). Fill-only schema mitigates token pressure (P1).                                                                | Medium (mitigated) |
+| E   | **`format_params` echoed imperfectly**                        | Server grafts authoritative `format_params`; model drift is ignored (P1).                                                                                                                                                                       | **Low** (fixed)    |
 
-A/B/C/D are non-deterministic, so the endpoint succeeds sometimes and 422s other times for the _same_ outline — exactly the “inconsistent, fails frequently” symptom reported.
+A/B/C/D are non-deterministic; before P3 the endpoint succeeded sometimes and 422'd other times for the _same_ outline. **P3:** after two failed attempts the server assembles from preflight with default prescriptions (200); user-facing 422 on fill exhaustion is **debug-only** when `OUTLINE_FILL_DETERMINISTIC_FALLBACK=false`.
 
-### Secondary aggravator — misleading UX
+### Secondary aggravator — misleading UX (fixed in P1)
 
-On any 422 the task modal shows:
-
-```183:185:src/components/modals/task-modal/hooks/useTaskWorkoutAi.ts
-          toast.error(
-            'Generation failed: The workout structure is missing data (like sets/reps). Please edit the structure and try again.',
-          );
-```
-
-This tells the user to edit a structure that is usually valid (it passed client-side `preflightOutlineBlocks`). The real failure is the model fill, so the suggested remedy does not help and erodes trust.
+Previously, on any 422 the task modal showed a generic “edit your structure” message even when client preflight had passed. P1 adds `failure_kind` / `validation_reason` on the 422 payload and maps them to accurate toasts with a Sonner **Regenerate** action in `useTaskWorkoutAi`.
 
 ---
 
@@ -116,7 +110,7 @@ Same file, output builder: numeric `reps` are now coerced to string instead of b
 
 ### 4.3 Bounded repair retry before surfacing 422 (Triggers A–D)
 
-`src/lib/workout-factory/generate-workout-outline-fill-runner.ts` — the Vertex call + parse + validate is now wrapped in a 2-attempt loop. On a failed attempt the validation error (or parse error) is fed back into the prompt (`=== PREVIOUS ATTEMPT REJECTED ===`) and the model is asked to correct it. Parse failures are also retried (previously a parse throw became a 500 with no second chance). Only after the final attempt fails does the endpoint return the 422. This converts the most common one-off drifts from hard failures into transparent self-corrections.
+`src/lib/workout-factory/generate-workout-outline-fill-runner.ts` — the Vertex call + parse + validate is now wrapped in a 2-attempt loop. On a failed attempt the validation error (or parse error) is fed back into the prompt (`=== PREVIOUS ATTEMPT REJECTED ===`) and the model is asked to correct it. Parse failures are also retried (previously a parse throw became a 500 with no second chance). After the final attempt fails, **P3** assembles from preflight (200) unless fallback is disabled, in which case the endpoint returns 422.
 
 ### 4.4 Production logging for fill failures
 
@@ -128,6 +122,36 @@ Same file, output builder: numeric `reps` are now coerced to string instead of b
 - `generate-workout-outline-fill-runner.test.ts` — single-shot success, validation retry, parse retry, exhausted 422
 
 > Trade-off: a true failure now costs up to two model calls (added latency/cost on the failure path only). The success path is unchanged.
+
+### 4.6 Structural grafting (P1 — Triggers C/E)
+
+`outline-block-preflight.ts` — `graftFillBlocksOntoPreflight` overlays model `exercises[]` / `instructions[]` onto authoritative preflight blocks by index. The fill prompt asks for fill-only JSON (no echo of `name`, `block_format`, or `format_params`).
+
+### 4.7 Time-domain prescription relaxation (P1 — Trigger B)
+
+`exercisePrescriptionRequired` — EMOM/Tabata blocks with complete timing in `format_params` accept name-only exercises, matching assembler hydration behavior.
+
+### 4.8 Differentiated 422 UX (P1)
+
+- Server: 422 payload includes `failure_kind` and `validation_reason`; parse exhaustion returns 422 instead of 500.
+- Client: `WorkoutFactoryError` + `workoutFactoryErrorMessage` in `api-client.ts`; `useTaskWorkoutAi` shows accurate toasts with **Regenerate**.
+
+### 4.9 Outline-fill token cap (P2 — Trigger D)
+
+- `OUTLINE_FILL_MAX_OUTPUT_TOKENS = 12288` in `outline-fill-config.ts` (aligned with Coach outline-only cap).
+- `callVertexAIWithMetadata()` returns finish_reason and token usage; runner detects truncation and adds compact-output retry hint.
+
+### 4.10 Factory System Analytics telemetry (P2)
+
+- `record-workspace-ai-event.ts` writes best-effort rows to `workspace_ai_events` from `generate-workout-chain` route.
+- `agent_slug: workout_factory`, `surface: generate_workout_chain`; optional `task_id` forwarded from task modal.
+- Fill failure logs enriched with `validation_reason`, block/exercise counts, token usage, and `request_id`.
+
+### 4.11 Deterministic fill fallback (P3)
+
+- After exhausted Vertex fill attempts, `buildDeterministicOutlineFillFromPreflight` assembles workouts from authoritative preflight blocks with format-aware default prescriptions (returns **200** instead of 422).
+- Kill switch: `OUTLINE_FILL_DETERMINISTIC_FALLBACK=false` restores 422 for debugging.
+- `chain_metadata.fill_fallback` + differentiated success toast when fallback used.
 
 ---
 
@@ -144,44 +168,77 @@ The pipeline asks a **probabilistic** component (an LLM, specifically a _lite pr
 
 **Specific design gaps**
 
-1. **The server re-validates data it owns.** Block `name`, `block_format`, and `format_params` come from the preflight outline the server already holds. Requiring the model to echo them perfectly — and rejecting on mismatch — adds failure modes for zero benefit. The server could **graft** the model’s `exercises[]` onto the authoritative preflight blocks by index and ignore model-supplied structural fields entirely. This would eliminate Triggers C and E as failure causes outright.
+1. **The server re-validates data it owns.** ✅ P1: `graftFillBlocksOntoPreflight` grafts model fill onto authoritative preflight blocks; structural echo no longer required.
 
-2. **Validation is stricter than consumption (Trigger B).** The assembler hydrates EMOM/Tabata prescriptions from `format_params`, yet the validator demands per-exercise prescriptions for those same blocks. Validation should mirror what the assembler can actually produce: for time-domain formats whose timing lives in `format_params`, a named exercise should be sufficient. (The existing test `rejects exercises without prescription fields` encodes the current strict behavior, so this change must be made deliberately with the test updated — hence it is flagged as a recommendation, not auto-applied.)
+2. **Validation is stricter than consumption (Trigger B).** ✅ P1: EMOM/Tabata with timing in `format_params` accept name-only exercises.
 
-3. **No retry/fallback ladder on the fill stage.** Addressed by the 2-attempt repair retry in §4.3. A fuller design would add a deterministic fallback: if both attempts fail, assemble the workout from the preflight outline with default prescriptions rather than returning nothing.
+3. **No retry/fallback ladder on the fill stage.** ✅ P3: 2-attempt repair retry (§4.3) plus deterministic preflight fallback (§4.11) before optional 422.
 
-4. **Output token cap risk (Trigger D).** `maxTokens: 8192` for a fill that echoes the entire outline plus exercises is tight for multi-block sessions. Truncation manifests as opaque validation/parse errors. Consider raising the cap, or — better — not requiring the model to echo the structure at all (see gap #1), which drastically shrinks the output.
+4. **Output token cap risk (Trigger D).** ✅ P2: cap raised to 12288; truncation detection + compact retry hint; fill-only schema (P1).
 
-5. **Error taxonomy is coarse and partly misleading.** `OUTLINE_FILL_VALIDATION_FAILED` is reused for “renamed a block”, “numeric reps”, and “truncated JSON” — very different operational causes. The client then maps _all_ 422s to a single “edit your structure” message that is usually wrong. Distinct error codes + an accurate user message (and a one-click “Regenerate”) would improve both diagnosis and UX.
+5. **Error taxonomy is coarse and partly misleading.** ✅ P1: `failure_kind` / `validation_reason` on 422; client toasts + Regenerate.
 
-6. **Observability.** P0 adds structured `console.warn` for fill attempt failures and exhausted retries (§4.4). Metrics/dashboard remain P2.
+6. **Observability.** ✅ P2: factory fill outcomes recorded in `workspace_ai_events`; structured logs include validation_reason and token usage. Edge agent-dispatch metrics unchanged.
 
 ---
 
 ## 6. Gap analysis & prioritized recommendations
 
-| Priority | Gap                                                      | Recommendation                                                                                                   | Status                                       |
-| -------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| P0       | Numeric reps rejected / dropped                          | Accept + preserve numeric reps                                                                                   | ✅ Done (§4.1–4.2)                           |
-| P0       | Single-shot fill, no semantic retry                      | Repair retry with error feedback                                                                                 | ✅ Done (§4.3)                               |
-| P1       | Server re-validates fields it owns (names/format)        | Graft model `exercises[]` onto authoritative preflight blocks by index; stop comparing/echoing structural fields | Recommended                                  |
-| P1       | Validator stricter than assembler for time-domain blocks | Relax per-exercise prescription for EMOM/Tabata when `format_params` carry timing; update the encoding test      | Recommended                                  |
-| P1       | Misleading client error on 422                           | Differentiate error codes; show accurate message + “Regenerate” affordance                                       | Recommended                                  |
-| P2       | Truncation under 8192-token cap                          | Raise cap and/or shrink output by not echoing structure                                                          | Recommended                                  |
-| P2       | No production observability of failure reasons           | Log `validation_error` reason (and attempt count) unconditionally; add a metric                                  | Partial (§4.4 logging done; metrics pending) |
-| P3       | Deterministic fallback absent                            | On final fill failure, assemble from preflight outline with default prescriptions instead of 422                 | Optional                                     |
+| Priority | Gap                                                      | Recommendation                                                                                                   | Status                         |
+| -------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| P0       | Numeric reps rejected / dropped                          | Accept + preserve numeric reps                                                                                   | ✅ Done (§4.1–4.2)             |
+| P0       | Single-shot fill, no semantic retry                      | Repair retry with error feedback                                                                                 | ✅ Done (§4.3)                 |
+| P1       | Server re-validates fields it owns (names/format)        | Graft model `exercises[]` onto authoritative preflight blocks by index; stop comparing/echoing structural fields | ✅ Done (§4.6)                 |
+| P1       | Validator stricter than assembler for time-domain blocks | Relax per-exercise prescription for EMOM/Tabata when `format_params` carry timing; update the encoding test      | ✅ Done (§4.7)                 |
+| P1       | Misleading client error on 422                           | Differentiate error codes; show accurate message + “Regenerate” affordance                                       | ✅ Done (§4.8)                 |
+| P2       | Truncation under 8192-token cap                          | Raise cap and/or shrink output by not echoing structure                                                          | ✅ Done (§4.9; fill-only §4.6) |
+| P2       | No production observability of failure reasons           | Log `validation_error` reason (and attempt count) unconditionally; add a metric                                  | ✅ Done (§4.10)                |
+| P3       | Deterministic fallback absent                            | On final fill failure, assemble from preflight outline with default prescriptions instead of 422                 | ✅ Done (§4.11)                |
 
 ---
 
 ## 7. Verification performed
 
-- `npx vitest run` on `fill-parametric-outline.test.ts`, `generate-workout-outline-fill-runner.test.ts`, and `generate-workout-chain-runner.test.ts` → **18 passed**.
+- `npx vitest run` on build-deterministic-outline-fill, outline-block-preflight, fill-parametric-outline, generate-workout-outline-fill-runner, generate-workout-chain-runner, vertex-ai-client, outline-fill-telemetry, record-workspace-ai-event, map-outline-fill-to-workout, and useTaskWorkoutAi tests → **65+ passed**.
 - `npx tsc --noEmit` → clean.
 - `npx eslint` on changed files → clean.
 
 ## 8. Files touched
 
+**P0**
+
 - `src/lib/workout-factory/prompt-chain/fill-parametric-outline.ts` — numeric reps accepted (prescription check) and preserved (output builder).
 - `src/lib/workout-factory/prompt-chain/fill-parametric-outline.test.ts` — numeric-rep test case.
 - `src/lib/workout-factory/generate-workout-outline-fill-runner.ts` — bounded repair retry, exported `MAX_FILL_ATTEMPTS`, production logging.
 - `src/lib/workout-factory/generate-workout-outline-fill-runner.test.ts` — retry loop tests (new).
+
+**P1**
+
+- `src/lib/workout-factory/outline-block-preflight.ts` — `graftFillBlocksOntoPreflight`, `exercisePrescriptionRequired`, `classifyOutlineFillValidationReason`.
+- `src/lib/workout-factory/outline-block-preflight.test.ts` — graft unit tests.
+- `src/lib/workout-factory/prompt-chain/fill-parametric-outline.ts` — graft integration, fill-only prompt, relaxed EMOM/Tabata validation.
+- `src/lib/workout-factory/prompt-chain/fill-parametric-outline.test.ts` — graft + time-domain tests.
+- `src/lib/workout-factory/generate-workout-outline-fill-runner.ts` — richer 422 payload, updated retry prompt, parse exhaustion → 422.
+- `src/lib/workout-factory/generate-workout-outline-fill-runner.test.ts` — failure_kind / validation_reason assertions.
+- `src/lib/workout-factory/api-client.ts` — `WorkoutFactoryError` fields, `workoutFactoryErrorMessage`.
+- `src/components/modals/task-modal/hooks/useTaskWorkoutAi.ts` — differentiated toasts + Regenerate action.
+- `src/components/modals/task-modal/hooks/__tests__/useTaskWorkoutAi.test.ts` — 422 UX tests.
+
+**P2**
+
+- `src/lib/workout-factory/outline-fill-config.ts` — `OUTLINE_FILL_MAX_OUTPUT_TOKENS`, model constant.
+- `src/lib/workout-factory/vertex-ai-client.ts` — `callVertexAIWithMetadata`, `parseVertexChatCompletionResponse`.
+- `src/lib/workout-factory/outline-fill-telemetry.ts` — telemetry struct + truncation helper.
+- `src/lib/workout-factory/generate-workout-outline-fill-runner.ts` — metadata API, truncation-aware retry, telemetry return.
+- `src/lib/analytics/record-workspace-ai-event.ts` — `workspace_ai_events` writer for factory.
+- `src/app/api/ai/generate-workout-chain/route.ts` — telemetry recording, optional `task_id`.
+- `src/lib/workout-factory/api-client.ts` + `useTaskWorkoutAi.ts` — forward `task_id`.
+- `src/features/analytics/system/system-analytics-labels.ts` — `generate_workout_chain` surface label.
+
+**P3**
+
+- `src/lib/workout-factory/build-deterministic-outline-fill.ts` — preflight → default prescription assembler.
+- `src/lib/workout-factory/build-deterministic-outline-fill.test.ts` — format default tests.
+- `src/lib/workout-factory/generate-workout-outline-fill-runner.ts` — fallback path + `fill_fallback` metadata.
+- `src/lib/workout-factory/types/ai-workout.ts` — `fill_fallback` chain metadata fields.
+- `src/components/modals/task-modal/hooks/useTaskWorkoutAi.ts` — fallback success toast.

@@ -78,6 +78,163 @@ function structuralSnapshot(blk: Record<string, unknown>): {
   };
 }
 
+function isInstructionOnlyPreflightBlock(blk: Record<string, unknown>): boolean {
+  const instructions = instructionLinesFromBlock(blk);
+  if (instructions.length === 0) return false;
+  return exerciseCount(blk) === 0;
+}
+
+const EXERCISE_OVERLAY_KEYS = [
+  'name',
+  'sets',
+  'reps',
+  'equipment',
+  'work_seconds',
+  'rest_seconds',
+  'rounds',
+  'rpe',
+  'coach_notes',
+] as const;
+
+function overlayExerciseFields(
+  preflightEx: Record<string, unknown>,
+  modelEx: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...preflightEx };
+  for (const key of EXERCISE_OVERLAY_KEYS) {
+    if (key in modelEx && modelEx[key] !== undefined) {
+      out[key] = modelEx[key];
+    }
+  }
+  return out;
+}
+
+function modelBlockHasNamedExercises(blk: Record<string, unknown>): boolean {
+  if (!Array.isArray(blk.exercises)) return false;
+  return blk.exercises.some(
+    (ex) =>
+      ex &&
+      typeof ex === 'object' &&
+      !Array.isArray(ex) &&
+      typeof (ex as { name?: unknown }).name === 'string' &&
+      (ex as { name: string }).name.trim().length > 0,
+  );
+}
+
+/**
+ * Graft model fill content onto authoritative preflight blocks by index.
+ * Preflight owns name / block_format / format_params; model supplies exercises or instructions.
+ */
+export function graftFillBlocksOntoPreflight(
+  preflightBlocks: Record<string, unknown>[],
+  modelBlocks: Record<string, unknown>[],
+): { ok: true; blocks: Record<string, unknown>[] } | { ok: false; error: string } {
+  if (preflightBlocks.length !== modelBlocks.length) {
+    return {
+      ok: false,
+      error: `block count changed (${preflightBlocks.length} → ${modelBlocks.length})`,
+    };
+  }
+
+  const blocks: Record<string, unknown>[] = [];
+
+  for (let i = 0; i < preflightBlocks.length; i++) {
+    const pre = preflightBlocks[i]!;
+    const model = modelBlocks[i]!;
+
+    if (isInstructionOnlyPreflightBlock(pre)) {
+      if (modelBlockHasNamedExercises(model)) {
+        return { ok: false, error: `blocks[${i}] instruction-only shape changed` };
+      }
+      const modelInstructions = instructionLinesFromBlock(model);
+      const preInstructions = instructionLinesFromBlock(pre);
+      const row: Record<string, unknown> = {};
+      const name = typeof pre.name === 'string' ? pre.name.trim() : '';
+      if (name) row.name = name;
+      row.instructions = modelInstructions.length > 0 ? modelInstructions : preInstructions;
+      blocks.push(row);
+      continue;
+    }
+
+    const preExercises = Array.isArray(pre.exercises) ? pre.exercises : [];
+    const modelExercisesRaw = Array.isArray(model.exercises) ? model.exercises : [];
+
+    if (modelExercisesRaw.length === 0) {
+      return { ok: false, error: `blocks[${i}] missing exercises[]` };
+    }
+    if (modelExercisesRaw.length !== preExercises.length) {
+      return {
+        ok: false,
+        error: `blocks[${i}] exercise count changed (${preExercises.length} → ${modelExercisesRaw.length})`,
+      };
+    }
+
+    const graftedExercises: Record<string, unknown>[] = [];
+    for (let j = 0; j < preExercises.length; j++) {
+      const modelEx = modelExercisesRaw[j];
+      if (!modelEx || typeof modelEx !== 'object' || Array.isArray(modelEx)) {
+        return { ok: false, error: `blocks[${i}].exercises[${j}] invalid` };
+      }
+      const preEx =
+        preExercises[j] && typeof preExercises[j] === 'object' && !Array.isArray(preExercises[j])
+          ? (preExercises[j] as Record<string, unknown>)
+          : {};
+      graftedExercises.push(overlayExerciseFields(preEx, modelEx as Record<string, unknown>));
+    }
+
+    const row: Record<string, unknown> = { ...pre, exercises: graftedExercises };
+    blocks.push(row);
+  }
+
+  return { ok: true, blocks };
+}
+
+function hasPositiveIntParam(params: Record<string, unknown>, key: string): boolean {
+  return typeof params[key] === 'number' && (params[key] as number) > 0;
+}
+
+/** False when EMOM/Tabata timing in format_params lets the assembler hydrate prescriptions. */
+export function exercisePrescriptionRequired(block: Record<string, unknown>): boolean {
+  const fmt = block.block_format;
+  if (fmt !== 'emom' && fmt !== 'tabata') return true;
+  const rawParams = block.format_params;
+  if (!rawParams || typeof rawParams !== 'object' || Array.isArray(rawParams)) return true;
+  const params = rawParams as Record<string, unknown>;
+  if (fmt === 'emom') {
+    const hasInterval = hasPositiveIntParam(params, 'interval_seconds');
+    const hasDuration =
+      hasPositiveIntParam(params, 'total_minutes') || hasPositiveIntParam(params, 'total_rounds');
+    if (hasInterval && hasDuration) return false;
+    return true;
+  }
+  if (hasPositiveIntParam(params, 'rounds')) return false;
+  return true;
+}
+
+export type OutlineFillValidationReason = 'structure' | 'prescription' | 'parse' | 'unknown';
+
+/** Map graft/validation error text to client-facing validation_reason. */
+export function classifyOutlineFillValidationReason(error: string): OutlineFillValidationReason {
+  const lower = error.toLowerCase();
+  if (lower.includes('parse json') || lower.includes('unparseable json')) return 'parse';
+  if (lower.includes('needs sets, reps, or work_seconds') || lower.includes('missing name')) {
+    return 'prescription';
+  }
+  if (
+    lower.includes('block count') ||
+    lower.includes('instruction-only') ||
+    lower.includes('exercise count') ||
+    lower.includes('missing exercises') ||
+    lower.includes('block_format') ||
+    lower.includes('format_params') ||
+    lower.includes('must be an object') ||
+    lower.includes('non-empty array')
+  ) {
+    return 'structure';
+  }
+  return 'unknown';
+}
+
 /** Normalize incoming outline via Coach parse (same boundary as create_card persist). */
 export function preflightOutlineBlocks(raw: Record<string, unknown>[]): OutlinePreflightResult {
   const { outline, drops } = parseCoachWorkoutOutlineWithDrops({ coach_workout_outline: raw });

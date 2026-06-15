@@ -11,6 +11,7 @@ import { isCoachRailSurfaceFromMessageMetadata } from '../../agents/coach/prompt
 
 export type WorkspaceAiEventType =
   | 'success'
+  | 'success_fallback'
   | 'error_truncated'
   | 'error_attestation'
   | 'error_parse'

@@ -2,6 +2,7 @@ import type { SystemAnalyticsErrorFilter } from '@/features/analytics/system/sys
 
 export const SYSTEM_ANALYTICS_EVENT_TYPE_LABELS: Record<string, string> = {
   success: 'Success',
+  success_fallback: 'Success (fallback)',
   error_truncated: 'Truncated (MAX_TOKENS)',
   error_attestation: 'Self-attestation mismatch',
   error_parse: 'Parse error',
@@ -27,6 +28,7 @@ export const SYSTEM_ANALYTICS_SURFACE_LABELS: Record<string, string> = {
   standard_task_chat_rail: 'Task chat rail',
   workout_builder: 'Workout builder',
   generate_workout_outline: 'Generate outline',
+  generate_workout_chain: 'Generate workout chain',
 };
 
 export const SYSTEM_ANALYTICS_FILTER_LABELS: Record<SystemAnalyticsErrorFilter, string> = {
