@@ -28,6 +28,24 @@ const circuitOutline = [
   },
 ];
 
+const straightSetsOutline = [
+  {
+    name: 'Main Strength',
+    block_format: 'straight_sets',
+    format_params: { rest_between_sets_seconds: 90 },
+    exercises: [{ name: 'Back Squat' }],
+  },
+];
+
+const tabataOutline = [
+  {
+    name: 'Finisher Tabata',
+    block_format: 'tabata',
+    format_params: { rounds: 8, work_seconds: 20, rest_seconds: 10 },
+    exercises: [{ name: 'Burpee' }],
+  },
+];
+
 const minimalPersona: WorkoutPersona = {
   title: 'Test',
   description: 'Session',
@@ -51,11 +69,11 @@ const minimalPersona: WorkoutPersona = {
 };
 
 describe('buildFillParametricOutlinePrompt', () => {
-  it('includes instruction-only output example', () => {
+  it('includes fill-only output example without structural echo in output format', () => {
     const prompt = buildFillParametricOutlinePrompt(minimalPersona, emomOutline, ['Dumbbells']);
-    expect(prompt).toContain('"name": "Warm-up"');
     expect(prompt).toContain('"instructions"');
-    expect(prompt).toContain('must NOT include block_format');
+    expect(prompt).toContain('Do NOT echo block names');
+    expect(prompt).toMatch(/OUTPUT FORMAT[\s\S]*"exercises"/);
   });
 });
 
@@ -65,13 +83,6 @@ describe('validateFillParametricOutlineOutput', () => {
     const filled = {
       blocks: [
         {
-          name: 'Main EMOM',
-          block_format: 'emom',
-          format_params: {
-            interval_seconds: 60,
-            total_minutes: 16,
-            is_alternating: true,
-          },
           exercises: [
             { name: 'Kettlebell Swing', reps: '12', work_seconds: 45, rest_seconds: 15 },
             { name: 'Goblet Squat', reps: '10', work_seconds: 45, rest_seconds: 15 },
@@ -82,6 +93,7 @@ describe('validateFillParametricOutlineOutput', () => {
     const v = validateFillParametricOutlineOutput(filled, preflight);
     expect(v.valid).toBe(true);
     if (v.valid) {
+      expect(v.data.blocks[0]?.name).toBe('Main EMOM');
       expect(v.data.blocks[0]?.exercises).toHaveLength(2);
     }
   });
@@ -91,9 +103,6 @@ describe('validateFillParametricOutlineOutput', () => {
     const filled = {
       blocks: [
         {
-          name: 'Main Circuit',
-          block_format: 'circuit',
-          format_params: { rounds: 3, rest_between_rounds_seconds: 60 },
           exercises: [
             { name: 'Push-up', reps: 12 },
             { name: 'Goblet Squat', reps: 15 },
@@ -106,39 +115,43 @@ describe('validateFillParametricOutlineOutput', () => {
     expect(v.valid).toBe(true);
     if (v.valid) {
       expect(v.data.blocks[0]?.exercises?.[0]?.reps).toBe('12');
-      expect(v.data.blocks[0]?.exercises?.[1]?.reps).toBe('15');
-      expect(v.data.blocks[0]?.exercises?.[2]?.reps).toBe('10');
     }
   });
 
-  it('rejects changed block count', () => {
-    const preflight = preflightOutlineBlocks(emomOutline).blocks;
-    const v = validateFillParametricOutlineOutput({ blocks: [] }, preflight);
-    expect(v.valid).toBe(false);
-    if (!v.valid) expect(v.error).toMatch(/non-empty/);
-  });
-
-  it('rejects exercises without prescription fields', () => {
+  it('accepts EMOM name-only exercises when format_params carry timing', () => {
     const preflight = preflightOutlineBlocks(emomOutline).blocks;
     const filled = {
-      blocks: [
-        {
-          ...emomOutline[0],
-          exercises: [{ name: 'Swing' }, { name: 'Squat' }],
-        },
-      ],
+      blocks: [{ exercises: [{ name: 'Kettlebell Swing' }, { name: 'Goblet Squat' }] }],
+    };
+    const v = validateFillParametricOutlineOutput(filled, preflight);
+    expect(v.valid).toBe(true);
+  });
+
+  it('accepts Tabata name-only exercises when format_params carry rounds', () => {
+    const preflight = preflightOutlineBlocks(tabataOutline).blocks;
+    const filled = {
+      blocks: [{ exercises: [{ name: 'Burpee' }] }],
+    };
+    const v = validateFillParametricOutlineOutput(filled, preflight);
+    expect(v.valid).toBe(true);
+  });
+
+  it('rejects straight_sets name-only exercises', () => {
+    const preflight = preflightOutlineBlocks(straightSetsOutline).blocks;
+    const filled = {
+      blocks: [{ exercises: [{ name: 'Back Squat' }] }],
     };
     const v = validateFillParametricOutlineOutput(filled, preflight);
     expect(v.valid).toBe(false);
-    if (!v.valid) expect(v.error).toMatch(/sets, reps, or work_seconds/);
+    if (!v.valid) expect(v.error).toMatch(/needs sets, reps, or work_seconds/);
   });
 
-  it('rejects mutated format_params', () => {
+  it('ignores model format_params drift and uses preflight params', () => {
     const preflight = preflightOutlineBlocks(emomOutline).blocks;
     const filled = {
       blocks: [
         {
-          name: 'Main EMOM',
+          name: 'Renamed EMOM',
           block_format: 'emom',
           format_params: { interval_seconds: 90, total_minutes: 16, is_alternating: true },
           exercises: [
@@ -149,8 +162,20 @@ describe('validateFillParametricOutlineOutput', () => {
       ],
     };
     const v = validateFillParametricOutlineOutput(filled, preflight);
+    expect(v.valid).toBe(true);
+    if (v.valid) {
+      expect(v.data.blocks[0]?.name).toBe('Main EMOM');
+      expect((v.data.blocks[0]?.format_params as Record<string, unknown>)?.interval_seconds).toBe(
+        60,
+      );
+    }
+  });
+
+  it('rejects changed block count', () => {
+    const preflight = preflightOutlineBlocks(emomOutline).blocks;
+    const v = validateFillParametricOutlineOutput({ blocks: [] }, preflight);
     expect(v.valid).toBe(false);
-    if (!v.valid) expect(v.error).toMatch(/format_params/);
+    if (!v.valid) expect(v.error).toMatch(/non-empty/);
   });
 
   it('accepts valid fill when preflight includes instruction + exercise blocks', () => {
@@ -158,11 +183,8 @@ describe('validateFillParametricOutlineOutput', () => {
     const preflight = preflightOutlineBlocks(raw).blocks;
     const filled = {
       blocks: [
-        { name: 'Warm-up', instructions: ['5 min easy bike', 'Dynamic prep'] },
+        { instructions: ['5 min easy bike', 'Dynamic prep'] },
         {
-          name: 'Main EMOM',
-          block_format: 'emom',
-          format_params: emomOutline[0]!.format_params,
           exercises: [
             { name: 'Kettlebell Swing', reps: '12', work_seconds: 45 },
             { name: 'Goblet Squat', reps: '10', work_seconds: 45 },
@@ -180,14 +202,10 @@ describe('validateFillParametricOutlineOutput', () => {
     const filled = {
       blocks: [
         {
-          name: 'Warm-up',
           instructions: ['5 min bike'],
           exercises: [{ name: 'Bike', reps: '5 min' }],
         },
         {
-          name: 'Main EMOM',
-          block_format: 'emom',
-          format_params: emomOutline[0]!.format_params,
           exercises: [
             { name: 'Swing', reps: '12', work_seconds: 45 },
             { name: 'Squat', reps: '10', work_seconds: 45 },

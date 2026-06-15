@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@utils/supabase/server';
+import { recordOutlineFillWorkspaceAiEvent } from '@/lib/analytics/record-workspace-ai-event';
 import { buildBuddyWorkoutPersona } from '@/lib/workout-factory/buddy-persona';
 import { runGenerateWorkoutChain } from '@/lib/workout-factory/generate-workout-chain-runner';
 import { workoutInSetToTaskExercises } from '@/lib/workout-factory/map-ai-workout-to-task-exercises';
@@ -11,6 +12,7 @@ export const maxDuration = 300;
 
 type RequestBody = {
   workspace_id: string;
+  task_id?: string;
   /** Merged into persona after profile defaults (optional). */
   persona?: Partial<WorkoutPersona>;
   /** Daily check-in / readiness — JSON forwarded into architect context. */
@@ -30,6 +32,7 @@ type RequestBody = {
  */
 export async function POST(req: Request) {
   const shouldLog = process.env.NODE_ENV === 'development';
+  const requestId = crypto.randomUUID();
 
   try {
     const supabase = await createClient();
@@ -52,6 +55,8 @@ export async function POST(req: Request) {
     if (!workspaceId) {
       return NextResponse.json({ error: 'workspace_id is required' }, { status: 400 });
     }
+
+    const taskId = typeof body.task_id === 'string' ? body.task_id.trim() : '';
 
     if (
       body.coach_workout_outline !== undefined &&
@@ -113,13 +118,26 @@ export async function POST(req: Request) {
 
     const result = await runGenerateWorkoutChain(chainBody, shouldLog, {
       createdByUserId: user.id,
+      requestId,
     });
+
+    if (result.telemetry) {
+      await recordOutlineFillWorkspaceAiEvent({
+        workspaceId,
+        taskId: taskId || null,
+        actorUserId: user.id,
+        requestId,
+        telemetry: result.telemetry,
+        success: result.ok,
+      });
+    }
+
     if (!result.ok) {
       const errText = await result.response.text();
       const status = result.response.status || 500;
       try {
-        const body = JSON.parse(errText) as Record<string, unknown>;
-        return NextResponse.json(body, { status });
+        const errBody = JSON.parse(errText) as Record<string, unknown>;
+        return NextResponse.json(errBody, { status });
       } catch {
         return NextResponse.json({ error: errText || 'Generation failed' }, { status });
       }
@@ -142,7 +160,7 @@ export async function POST(req: Request) {
       suggestedDescription: workoutSet.description,
     });
   } catch (e) {
-    console.error('[generate-workout-chain]', e);
+    console.error('[generate-workout-chain]', { request_id: requestId, error: e });
     const msg = e instanceof Error ? e.message : 'Failed to generate workout';
     const status = msg === 'OUTLINE_REQUIRED_FOR_FACTORY' ? 400 : 500;
     return NextResponse.json({ error: msg }, { status });

@@ -107,7 +107,7 @@ export function SystemAnalyticsDashboard({
     }
   };
 
-  const totalGenerations = summary.successCount + summary.errorCount;
+  const totalGenerations = summary.successCount + summary.fallbackCount + summary.errorCount;
 
   return (
     <div className="mx-auto w-full max-w-5xl">
@@ -140,8 +140,9 @@ export function SystemAnalyticsDashboard({
         ))}
       </div>
 
-      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-5">
         <StatCard label="Successful" value={summary.successCount} />
+        <StatCard label="Fallback" value={summary.fallbackCount} />
         <StatCard label="Errors" value={summary.errorCount} />
         <StatCard label="Total tokens" value={summary.totalTokens.toLocaleString()} />
         <StatCard

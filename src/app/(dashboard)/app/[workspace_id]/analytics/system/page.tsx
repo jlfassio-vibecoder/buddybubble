@@ -102,7 +102,7 @@ export default async function SystemAnalyticsPage({ params, searchParams }: Page
     )
     .eq('workspace_id', workspace_id)
     .gte('created_at', since)
-    .neq('event_type', 'success')
+    .not('event_type', 'in', '(success,success_fallback)')
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
     .limit(51);

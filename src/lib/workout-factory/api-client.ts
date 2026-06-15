@@ -27,17 +27,54 @@ export class WorkoutFactoryError extends Error {
   readonly code?: string;
   readonly status?: number;
   readonly validationError?: string;
+  readonly failureKind?: 'validation' | 'parse';
+  readonly validationReason?: 'structure' | 'prescription' | 'parse' | 'unknown';
 
   constructor(
     message: string,
-    opts?: { code?: string; status?: number; validationError?: string },
+    opts?: {
+      code?: string;
+      status?: number;
+      validationError?: string;
+      failureKind?: 'validation' | 'parse';
+      validationReason?: 'structure' | 'prescription' | 'parse' | 'unknown';
+    },
   ) {
     super(message);
     this.name = 'WorkoutFactoryError';
     this.code = opts?.code;
     this.status = opts?.status;
     this.validationError = opts?.validationError;
+    this.failureKind = opts?.failureKind;
+    this.validationReason = opts?.validationReason;
   }
+}
+
+export function workoutFactoryErrorMessage(err: WorkoutFactoryError): {
+  message: string;
+  showRegenerate: boolean;
+} {
+  if (err.status === 422) {
+    if (err.validationReason === 'structure') {
+      return {
+        message:
+          'Generation hit a structure mismatch. Confirm structure or edit blocks, then try again.',
+        showRegenerate: true,
+      };
+    }
+    if (err.failureKind === 'parse' || err.validationReason === 'parse') {
+      return {
+        message:
+          "We had trouble reading the AI's response format. Please try generating the workout again.",
+        showRegenerate: true,
+      };
+    }
+    return {
+      message: "AI couldn't finish exercise prescriptions. Your structure looks fine — try again.",
+      showRegenerate: true,
+    };
+  }
+  return { message: err.message, showRegenerate: false };
 }
 
 export async function postPersonalizeProgram(body: {
@@ -64,6 +101,7 @@ export async function postPersonalizeProgram(body: {
 
 export async function postGenerateWorkoutChain(body: {
   workspace_id: string;
+  task_id?: string;
   persona?: Partial<WorkoutPersona>;
   daily_checkin?: Record<string, unknown> | null;
   blockOptions?: BlockOptions;
@@ -83,6 +121,8 @@ export async function postGenerateWorkoutChain(body: {
       error?: string;
       message?: string;
       validation_error?: string;
+      failure_kind?: 'validation' | 'parse';
+      validation_reason?: 'structure' | 'prescription' | 'parse' | 'unknown';
     };
     const msg = data.message || data.error || res.statusText || 'Failed to generate workout';
     if (res.status === 422) {
@@ -90,6 +130,8 @@ export async function postGenerateWorkoutChain(body: {
         code: data.error,
         status: res.status,
         validationError: data.validation_error,
+        failureKind: data.failure_kind,
+        validationReason: data.validation_reason,
       });
     }
     throw new Error(msg);

@@ -218,7 +218,63 @@ export interface VertexAICallOptions {
   logPrefix?: string;
 }
 
-export async function callVertexAI(options: VertexAICallOptions): Promise<string> {
+export type VertexAIResult = {
+  content: string;
+  finishReason: string | null;
+  usage: {
+    promptTokens: number | null;
+    completionTokens: number | null;
+    totalTokens: number | null;
+  };
+};
+
+function readUsageField(usage: Record<string, unknown> | undefined, key: string): number | null {
+  if (!usage) return null;
+  const v = usage[key];
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+/** Parse OpenAI-compatible chat/completions JSON into content + metadata. */
+export function parseVertexChatCompletionResponse(apiData: unknown): VertexAIResult {
+  if (apiData && typeof apiData === 'object' && 'choices' in apiData) {
+    const root = apiData as {
+      choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
+      usage?: Record<string, unknown>;
+    };
+    const choice = root.choices?.[0];
+    const content = choice?.message?.content;
+    if (typeof content === 'string' && content.length > 0) {
+      const usage = root.usage;
+      return {
+        content,
+        finishReason:
+          choice && typeof choice.finish_reason === 'string' ? choice.finish_reason : null,
+        usage: {
+          promptTokens: readUsageField(usage, 'prompt_tokens'),
+          completionTokens: readUsageField(usage, 'completion_tokens'),
+          totalTokens: readUsageField(usage, 'total_tokens'),
+        },
+      };
+    }
+  }
+  if (
+    apiData &&
+    typeof apiData === 'object' &&
+    'content' in apiData &&
+    typeof (apiData as { content: string }).content === 'string'
+  ) {
+    return {
+      content: (apiData as { content: string }).content,
+      finishReason: null,
+      usage: { promptTokens: null, completionTokens: null, totalTokens: null },
+    };
+  }
+  throw new Error('Unexpected API response format');
+}
+
+export async function callVertexAIWithMetadata(
+  options: VertexAICallOptions,
+): Promise<VertexAIResult> {
   const {
     systemPrompt,
     userPrompt,
@@ -314,21 +370,17 @@ export async function callVertexAI(options: VertexAICallOptions): Promise<string
       `AI API returned non-JSON. Body: ${rawBody.substring(0, MAX_ERROR_LOG_LENGTH)}`,
     );
   }
-  if (apiData && typeof apiData === 'object' && 'choices' in apiData) {
-    const choices = (apiData as { choices?: Array<{ message?: { content?: string } }> }).choices;
-    if (choices?.[0]?.message?.content) {
-      return choices[0].message.content;
-    }
+
+  try {
+    return parseVertexChatCompletionResponse(apiData);
+  } catch {
+    throw new Error(
+      `Unexpected API response format. Body: ${rawBody.substring(0, MAX_ERROR_LOG_LENGTH)}`,
+    );
   }
-  if (
-    apiData &&
-    typeof apiData === 'object' &&
-    'content' in apiData &&
-    typeof (apiData as { content: string }).content === 'string'
-  ) {
-    return (apiData as { content: string }).content;
-  }
-  throw new Error(
-    `Unexpected API response format. Body: ${rawBody.substring(0, MAX_ERROR_LOG_LENGTH)}`,
-  );
+}
+
+export async function callVertexAI(options: VertexAICallOptions): Promise<string> {
+  const result = await callVertexAIWithMetadata(options);
+  return result.content;
 }
