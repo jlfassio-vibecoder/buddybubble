@@ -192,7 +192,7 @@ export function validateFillParametricOutlineOutput(
               if (typeof e.reps === 'string') out.reps = e.reps;
               // Preserve numeric reps (coerced to string) instead of dropping them,
               // which would otherwise collapse a real rep target to the "1" default downstream.
-              else if (typeof e.reps === 'number' && Number.isFinite(e.reps))
+              else if (typeof e.reps === 'number' && Number.isFinite(e.reps) && e.reps > 0)
                 out.reps = String(e.reps);
               if (typeof e.equipment === 'string') out.equipment = e.equipment;
               if (typeof e.work_seconds === 'number') out.work_seconds = e.work_seconds;

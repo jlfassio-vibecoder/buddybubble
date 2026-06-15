@@ -2,7 +2,7 @@
 
 _Scope: `POST /api/ai/generate-workout-chain` (parametric outline-fill pipeline) and its supporting modules._
 
-_Status: P0 fixes shipped (§4); test coverage and production logging added (§7). P1+ remain recommendations._
+_Status: P0 fixes implemented in this PR (§4); test coverage and production logging added (§7). P1+ remain recommendations._
 
 ---
 

@@ -125,6 +125,7 @@ Return corrected JSON only. Preserve every block name, block_format, and format_
       lastError = parseErr instanceof Error ? parseErr.message : 'unparseable JSON';
       console.warn('[generate-workout-chain][outline-fill]', {
         event: attempt < MAX_FILL_ATTEMPTS ? 'fill_attempt_failed' : 'fill_exhausted',
+        failure_kind: 'parse',
         attempt,
         maxAttempts: MAX_FILL_ATTEMPTS,
         validation_error: lastError,
@@ -139,6 +140,7 @@ Return corrected JSON only. Preserve every block name, block_format, and format_
     lastError = validation.error;
     console.warn('[generate-workout-chain][outline-fill]', {
       event: attempt < MAX_FILL_ATTEMPTS ? 'fill_attempt_failed' : 'fill_exhausted',
+      failure_kind: 'validation',
       attempt,
       maxAttempts: MAX_FILL_ATTEMPTS,
       validation_error: lastError,
