@@ -28,6 +28,7 @@ import {
   useTaskWorkoutAi,
   type WorkoutIntakeWizardData,
 } from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
+import { resolveWorkoutViewerNarrative } from '@/lib/workout-factory/workout-viewer-narrative';
 
 type Props = {
   workspaceId: string;
@@ -197,6 +198,16 @@ export function WorkoutBuilderShell({ workspaceId, task }: Props) {
 
   const workoutTitle = title.trim() || 'Workout';
 
+  const viewerNarrative = useMemo(
+    () =>
+      resolveWorkoutViewerNarrative({
+        taskDescription: description.trim(),
+        metadata,
+        blocks: sessionVm.blocks,
+      }),
+    [description, metadata, sessionVm.blocks],
+  );
+
   const navigateBack = useCallback(() => {
     const returnUrl = safeNextPath(searchParams.get('return'));
     if (returnUrl) {
@@ -234,16 +245,15 @@ export function WorkoutBuilderShell({ workspaceId, task }: Props) {
           taskId={taskId}
           title={title}
           description={description}
+          coachBrief={viewerNarrative.coachBrief}
           canWrite={canWrite}
           workoutUnitSystem={workoutUnitSystem}
           blocks={sessionVm.blocks}
           syncKey={generatedReviewSyncKey}
           chrome={{
             difficulty: sessionVm.workoutSet?.difficulty,
-            setTitle: sessionVm.workoutSet?.title,
-            setDescription: sessionVm.workoutSet?.description ?? undefined,
-            sessionTitle: sessionVm.session?.title,
-            sessionDescription: sessionVm.session?.description ?? undefined,
+            structureRationale: viewerNarrative.structureRationale ?? undefined,
+            sessionAdaptations: viewerNarrative.sessionAdaptations ?? undefined,
             cardTitle: workoutTitle,
           }}
           onApplyEdits={handleWorkoutViewerApply}

@@ -123,12 +123,7 @@ export function buildBuddyWorkoutPersona(params: BuildBuddyWorkoutPersonaParams)
   const weeklyTimeMinutes = overrides?.weeklyTimeMinutes ?? sessionDuration * sessionsPerWeek;
 
   let description = overrides?.description ?? '';
-  if (dailyCheckIn && Object.keys(dailyCheckIn).length > 0) {
-    const checkInText = JSON.stringify(dailyCheckIn);
-    description = [description.trim(), `Macro planning context: ${checkInText}`]
-      .filter(Boolean)
-      .join('\n\n');
-  }
+  // Macro intake stays on daily_checkin for Vertex prompts — not appended to athlete-facing description.
 
   const persona: WorkoutPersona = {
     title: overrides?.title,

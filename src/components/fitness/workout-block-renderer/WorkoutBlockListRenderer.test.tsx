@@ -106,4 +106,24 @@ describe('WorkoutBlockListRenderer', () => {
     }
     expect(queryByText('Goblet Squat')).toBeNull();
   });
+
+  it('renders structure and session narrative chrome without legacy description fields', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('circuit'));
+    const { getByText, queryByText } = render(
+      <WorkoutBlockListRenderer
+        blocks={vm.blocks}
+        density="full"
+        chrome={{
+          structureRationale: 'Main work: 3-round circuit.',
+          sessionAdaptations: '45-minute session target. Training phase: Build.',
+        }}
+      />,
+    );
+
+    expect(getByText('Structure')).toBeTruthy();
+    expect(getByText('Main work: 3-round circuit.')).toBeTruthy();
+    expect(getByText('Session adjustments')).toBeTruthy();
+    expect(getByText('45-minute session target. Training phase: Build.')).toBeTruthy();
+    expect(queryByText('Coach brief')).toBeNull();
+  });
 });

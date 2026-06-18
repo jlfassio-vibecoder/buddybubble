@@ -5,6 +5,7 @@ import { WorkoutBlockHeader } from '@/components/fitness/workout-block-renderer/
 import { WorkoutBlockExerciseGroup } from '@/components/fitness/workout-block-renderer/WorkoutBlockExerciseGroup';
 import { WorkoutInstructionSection } from '@/components/fitness/workout-block-renderer/WorkoutInstructionSection';
 import type { WorkoutBlockListRendererProps } from '@/components/fitness/workout-block-renderer/workout-block-renderer-types';
+import { WORKOUT_NARRATIVE_SECTION_LABEL_CLASS } from '@/lib/workout-factory/workout-viewer-narrative';
 
 export type {
   WorkoutBlockExerciseRenderContext,
@@ -21,45 +22,29 @@ function WorkoutBlockListChromeSection({
 }) {
   if (density !== 'full') return null;
 
-  const cardTitle = chrome.cardTitle?.trim() ?? '';
-  const setTitle = chrome.setTitle?.trim() ?? '';
-  const setTitleDiffers = setTitle.length > 0 && setTitle !== cardTitle;
-  const setDescription = chrome.setDescription?.trim() ?? '';
-  const sessionTitle = chrome.sessionTitle?.trim() ?? '';
-  const sessionDescription = chrome.sessionDescription?.trim() ?? '';
   const difficulty = chrome.difficulty?.trim() ?? '';
+  const structureRationale = chrome.structureRationale?.trim() ?? '';
+  const sessionAdaptations = chrome.sessionAdaptations?.trim() ?? '';
 
-  const hasSetBlock = setTitleDiffers || setDescription.length > 0;
-  const hasSessionBlock = sessionTitle.length > 0 || sessionDescription.length > 0;
-
-  if (!difficulty && !hasSetBlock && !hasSessionBlock) return null;
+  if (!difficulty && !structureRationale && !sessionAdaptations) return null;
 
   return (
     <>
       {difficulty ? (
         <p className="text-[11px] capitalize text-muted-foreground">Difficulty · {difficulty}</p>
       ) : null}
-      {hasSetBlock ? (
+      {structureRationale ? (
         <div className="space-y-1 rounded-xl bg-muted/25 px-3 py-2.5 ring-1 ring-border/10">
-          {setTitleDiffers ? (
-            <p className="text-sm font-medium text-foreground">{setTitle}</p>
-          ) : null}
-          {setDescription ? (
-            <p className="text-xs leading-relaxed text-muted-foreground">{setDescription}</p>
-          ) : null}
+          <p className={WORKOUT_NARRATIVE_SECTION_LABEL_CLASS}>Structure</p>
+          <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
+            {structureRationale}
+          </p>
         </div>
       ) : null}
-      {hasSessionBlock ? (
+      {sessionAdaptations ? (
         <div className="space-y-1">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Session
-          </p>
-          {sessionTitle ? (
-            <p className="text-sm font-semibold text-foreground">{sessionTitle}</p>
-          ) : null}
-          {sessionDescription ? (
-            <p className="text-sm leading-relaxed text-muted-foreground">{sessionDescription}</p>
-          ) : null}
+          <p className={WORKOUT_NARRATIVE_SECTION_LABEL_CLASS}>Session adjustments</p>
+          <p className="text-sm leading-relaxed text-muted-foreground">{sessionAdaptations}</p>
         </div>
       ) : null}
     </>

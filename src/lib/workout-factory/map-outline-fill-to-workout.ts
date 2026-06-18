@@ -99,7 +99,6 @@ export function buildWorkoutInSetFromOutlineFill(
   persona: WorkoutPersona,
 ): WorkoutInSet {
   const title = persona.title?.trim() || 'Workout';
-  const description = persona.description?.trim() || '';
 
   const warmupBlocks: WarmupBlock[] = [];
   const finisherBlocks: WarmupBlock[] = [];
@@ -179,7 +178,7 @@ export function buildWorkoutInSetFromOutlineFill(
 
   return {
     title,
-    description,
+    description: '',
     ...(warmupBlocks.length > 0 ? { warmupBlocks } : {}),
     ...(exerciseBlocks.length > 0 ? { exerciseBlocks } : {}),
     ...(finisherBlocks.length > 0 ? { finisherBlocks } : {}),
