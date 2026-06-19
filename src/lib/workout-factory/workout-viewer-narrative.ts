@@ -25,11 +25,43 @@ export type WorkoutViewerNarrative = {
 export function stripMacroPlanningContextSuffix(text: string): string {
   const trimmed = text.trim();
   if (!trimmed) return '';
+  const suffixStart = findLegacyMacroPlanningContextSuffixStart(trimmed);
+  if (suffixStart === null) return trimmed;
+  if (suffixStart === 0) return '';
+  return trimmed.slice(0, suffixStart).trim();
+}
+
+function tryParseMacroPlanningContextJson(jsonPart: string): Record<string, unknown> | null {
+  if (!jsonPart.startsWith('{')) return null;
+  try {
+    const parsed = JSON.parse(jsonPart) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Index of a validated legacy macro JSON suffix, or null when none. */
+function findLegacyMacroPlanningContextSuffixStart(text: string): number | null {
   const marker = `\n\n${MACRO_PLANNING_CONTEXT_PREFIX}`;
-  const idx = trimmed.indexOf(marker);
-  if (idx >= 0) return trimmed.slice(0, idx).trim();
-  if (trimmed.startsWith(MACRO_PLANNING_CONTEXT_PREFIX)) return '';
-  return trimmed;
+  let searchEnd = text.length;
+
+  while (searchEnd >= 0) {
+    const idx = text.lastIndexOf(marker, searchEnd);
+    if (idx < 0) break;
+    const jsonPart = text.slice(idx + marker.length).trim();
+    if (tryParseMacroPlanningContextJson(jsonPart)) return idx;
+    searchEnd = idx - 1;
+  }
+
+  if (text.startsWith(MACRO_PLANNING_CONTEXT_PREFIX)) {
+    const jsonPart = text.slice(MACRO_PLANNING_CONTEXT_PREFIX.length).trim();
+    if (tryParseMacroPlanningContextJson(jsonPart)) return 0;
+  }
+
+  return null;
 }
 
 function sectionLabel(block: WorkoutSessionBlockView): string {
@@ -183,19 +215,20 @@ export function resolveWorkoutViewerNarrative(args: {
   const af = readAiWorkoutFactory(meta);
   const chainMeta = af ? readOutlineFillChainMetadata(af) : null;
 
-  let structureRationale =
-    (typeof af?.structure_rationale === 'string' && af.structure_rationale.trim()) ||
-    (typeof chainMeta?.structure_rationale === 'string' && chainMeta.structure_rationale.trim()) ||
-    null;
+  let structureRationale = buildWorkoutStructureRationale(args.blocks);
+
+  if (!structureRationale) {
+    structureRationale =
+      (typeof af?.structure_rationale === 'string' && af.structure_rationale.trim()) ||
+      (typeof chainMeta?.structure_rationale === 'string' &&
+        chainMeta.structure_rationale.trim()) ||
+      null;
+  }
 
   let sessionAdaptations =
     (typeof af?.session_adaptations === 'string' && af.session_adaptations.trim()) ||
     (typeof chainMeta?.session_adaptations === 'string' && chainMeta.session_adaptations.trim()) ||
     null;
-
-  if (!structureRationale) {
-    structureRationale = buildWorkoutStructureRationale(args.blocks);
-  }
 
   if (!sessionAdaptations) {
     const intake =
@@ -216,17 +249,14 @@ export function resolveWorkoutViewerNarrative(args: {
 
 function parseMacroPlanningContextJson(description: string): Record<string, unknown> | null {
   const trimmed = description.trim();
+  const suffixStart = findLegacyMacroPlanningContextSuffixStart(trimmed);
+  if (suffixStart === null) return null;
+
   const marker = `\n\n${MACRO_PLANNING_CONTEXT_PREFIX}`;
-  const idx = trimmed.indexOf(marker);
-  if (idx < 0) return null;
-  const jsonPart = trimmed.slice(idx + marker.length).trim();
-  if (!jsonPart.startsWith('{')) return null;
-  try {
-    const parsed = JSON.parse(jsonPart) as unknown;
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
+  const jsonPart =
+    suffixStart === 0
+      ? trimmed.slice(MACRO_PLANNING_CONTEXT_PREFIX.length).trim()
+      : trimmed.slice(suffixStart + marker.length).trim();
+
+  return tryParseMacroPlanningContextJson(jsonPart);
 }

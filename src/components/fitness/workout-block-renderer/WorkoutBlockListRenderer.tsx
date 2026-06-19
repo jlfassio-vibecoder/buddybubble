@@ -44,7 +44,9 @@ function WorkoutBlockListChromeSection({
       {sessionAdaptations ? (
         <div className="space-y-1">
           <p className={WORKOUT_NARRATIVE_SECTION_LABEL_CLASS}>Session adjustments</p>
-          <p className="text-sm leading-relaxed text-muted-foreground">{sessionAdaptations}</p>
+          <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
+            {sessionAdaptations}
+          </p>
         </div>
       ) : null}
     </>
