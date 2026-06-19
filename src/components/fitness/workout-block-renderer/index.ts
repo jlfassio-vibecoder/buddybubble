@@ -1,3 +1,5 @@
+export { WorkoutCoachBriefSection } from './WorkoutCoachBriefSection';
+
 export { WorkoutBlockListRenderer } from './WorkoutBlockListRenderer';
 export type {
   WorkoutBlockExerciseRenderContext,

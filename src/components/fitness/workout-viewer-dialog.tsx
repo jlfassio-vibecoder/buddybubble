@@ -23,6 +23,8 @@ import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-sess
 import { useTaskCardCoverUrl } from '@/lib/task-card-cover';
 import { ChevronRight, Image as ImageIcon, Loader2, X } from 'lucide-react';
 import { WORKOUT_FACTORY_CHAIN_MESSAGES } from '@/lib/workout-factory/api-client';
+import { resolveWorkoutViewerNarrative } from '@/lib/workout-factory/workout-viewer-narrative';
+import { WorkoutCoachBriefSection } from '@/components/fitness/workout-block-renderer/WorkoutCoachBriefSection';
 import { TaskModalCardCoverAiBlock } from '@/components/modals/task-modal/TaskModalCardCoverAiBlock';
 import {
   ActiveSessionLaunchControl,
@@ -112,11 +114,7 @@ function ViewReadHeader({
   return (
     <div className="space-y-3">
       <h2 className="text-2xl font-bold tracking-tight text-foreground">{displayTitle}</h2>
-      {displayDescription ? (
-        <div className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">
-          {displayDescription}
-        </div>
-      ) : null}
+      {displayDescription ? <WorkoutCoachBriefSection brief={displayDescription} /> : null}
     </div>
   );
 }
@@ -303,7 +301,16 @@ export function WorkoutViewerContent({
   const hasWorkoutViewerContent = workoutSet != null || localExercises.length > 0;
   const showUnsavedPersistenceNotice = !taskId && (hasWorkoutViewerContent || isAiGenerating);
   const displayTitle = localTitle.trim() || title.trim() || 'Untitled workout';
-  const displayDescription = (localDescription || description).trim();
+  const narrative = useMemo(
+    () =>
+      resolveWorkoutViewerNarrative({
+        taskDescription: (localDescription || description).trim(),
+        metadata,
+        blocks: sessionVm.blocks,
+      }),
+    [localDescription, description, metadata, sessionVm.blocks],
+  );
+  const displayDescription = narrative.coachBrief;
   const coverPath = cardCoverPath?.trim() ? cardCoverPath.trim() : null;
   const heroFullBleed = layout === 'dialog';
   const showEmbeddedAiCover = Boolean(
@@ -459,10 +466,8 @@ export function WorkoutViewerContent({
                   density="full"
                   chrome={{
                     difficulty: sessionVm.workoutSet?.difficulty,
-                    setTitle: sessionVm.workoutSet?.title,
-                    setDescription: sessionVm.workoutSet?.description ?? undefined,
-                    sessionTitle: sessionVm.session?.title,
-                    sessionDescription: sessionVm.session?.description ?? undefined,
+                    structureRationale: narrative.structureRationale ?? undefined,
+                    sessionAdaptations: narrative.sessionAdaptations ?? undefined,
                     cardTitle: displayTitle,
                   }}
                   data-testid="workout-viewer-block-list"

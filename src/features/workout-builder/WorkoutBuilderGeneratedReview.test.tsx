@@ -35,6 +35,23 @@ describe('WorkoutBuilderGeneratedReview', () => {
     expect(screen.getByTestId('workout-builder-block-editor')).toBeTruthy();
   });
 
+  it('renders Coach brief label in preview when coachBrief is provided', () => {
+    const metadata = richMetadataWithBlockFormat('emom') as Json;
+    const sessionVm = buildWorkoutSessionViewModel(metadata);
+
+    render(
+      <WorkoutBuilderGeneratedReview
+        {...baseProps}
+        blocks={sessionVm.blocks}
+        coachBrief="Heavy lower body focus"
+        coreDirty
+      />,
+    );
+
+    expect(screen.getByText('Coach brief')).toBeTruthy();
+    expect(screen.getByText('Heavy lower body focus')).toBeTruthy();
+  });
+
   it('calls onApplyEdits when Apply changes is clicked', () => {
     const metadata = richMetadataWithBlockFormat('emom') as Json;
     const sessionVm = buildWorkoutSessionViewModel(metadata);

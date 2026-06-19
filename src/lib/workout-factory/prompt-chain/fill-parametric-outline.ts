@@ -8,6 +8,7 @@ import {
   exercisePrescriptionRequired,
   graftFillBlocksOntoPreflight,
 } from '@/lib/workout-factory/outline-block-preflight';
+import { formatGenerationIntakeAdaptations } from '@/lib/workout-factory/workout-viewer-narrative';
 
 function instructionLinesFromBlock(blk: Record<string, unknown>): string[] {
   if (!Array.isArray(blk.instructions)) return [];
@@ -89,9 +90,14 @@ export function buildFillParametricOutlinePrompt(
   persona: WorkoutPersona,
   preflightBlocks: Record<string, unknown>[],
   equipmentList: string[],
+  dailyCheckIn?: Record<string, unknown> | null,
 ): string {
   const title = persona.title?.trim() || '(no title)';
   const description = persona.description?.trim() || '';
+  const intakeAdaptations = formatGenerationIntakeAdaptations(dailyCheckIn ?? null);
+  const macroSection = intakeAdaptations
+    ? `\n\nPre-session calibration (apply to prescriptions):\n${intakeAdaptations}`
+    : '';
   const med =
     [
       persona.medical.injuries?.trim() && `Injuries: ${persona.medical.injuries}`,
@@ -112,7 +118,7 @@ ${JSON.stringify(preflightBlocks, null, 2)}
 Title: ${title}
 
 Session context:
-${description}
+${description}${macroSection}
 
 === ATHLETE SAFETY ===
 ${med}

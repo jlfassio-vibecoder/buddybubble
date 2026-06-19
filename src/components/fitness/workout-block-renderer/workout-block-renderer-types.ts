@@ -12,11 +12,12 @@ export type WorkoutBlockExerciseRenderContext = {
 
 export type WorkoutBlockListChrome = {
   difficulty?: string;
-  setTitle?: string;
-  setDescription?: string;
-  sessionTitle?: string;
-  sessionDescription?: string;
+  /** Coach @conversation brief — shown in card header, not repeated here. */
   cardTitle?: string;
+  /** Block/format reasoning derived from parametric outline. */
+  structureRationale?: string;
+  /** Pre-session intake calibration (phase, anchor, duration, limitations). */
+  sessionAdaptations?: string;
 };
 
 export type WorkoutBlockListRendererProps = {

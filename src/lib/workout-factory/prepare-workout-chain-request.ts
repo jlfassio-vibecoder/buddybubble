@@ -52,6 +52,8 @@ export interface PreparedWorkoutChainRequest {
   step1UserPromptOverride: string | undefined;
   /** Apex Architect outline from tasks.metadata (Phase 3.1 wiring; filler in 3.2). */
   coachWorkoutOutline?: Record<string, unknown>[];
+  /** Pre-session intake wizard payload (macro planning, anchor lift, etc.). */
+  dailyCheckIn?: Record<string, unknown> | null;
 }
 
 const defaultBlockOptions: BlockOptions = {
@@ -69,6 +71,8 @@ type IncomingBody = WorkoutPersona & {
   availableEquipmentNames?: string[];
   /** Apex Architect parametric outline from tasks.metadata. */
   coach_workout_outline?: unknown;
+  /** Pre-session intake from generation wizard. */
+  daily_checkin?: Record<string, unknown> | null;
 };
 
 function parseCoachWorkoutOutlineFromBody(raw: unknown): Record<string, unknown>[] | undefined {
@@ -109,8 +113,17 @@ export async function prepareWorkoutChainRequest(
     step1UserPromptOverride: rawOverride,
     availableEquipmentNames,
     coach_workout_outline: rawCoachOutline,
+    daily_checkin: rawDailyCheckin,
     ...persona
   } = body;
+
+  const dailyCheckIn =
+    rawDailyCheckin &&
+    typeof rawDailyCheckin === 'object' &&
+    !Array.isArray(rawDailyCheckin) &&
+    Object.keys(rawDailyCheckin).length > 0
+      ? rawDailyCheckin
+      : null;
 
   const coachWorkoutOutline = parseCoachWorkoutOutlineFromBody(rawCoachOutline);
 
@@ -563,6 +576,7 @@ export async function prepareWorkoutChainRequest(
       providedArchitect,
       step1UserPromptOverride,
       ...(coachWorkoutOutline ? { coachWorkoutOutline } : {}),
+      ...(dailyCheckIn ? { dailyCheckIn } : {}),
     },
   };
 }

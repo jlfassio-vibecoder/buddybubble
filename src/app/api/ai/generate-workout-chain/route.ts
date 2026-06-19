@@ -4,6 +4,7 @@ import { recordOutlineFillWorkspaceAiEvent } from '@/lib/analytics/record-worksp
 import { buildBuddyWorkoutPersona } from '@/lib/workout-factory/buddy-persona';
 import { runGenerateWorkoutChain } from '@/lib/workout-factory/generate-workout-chain-runner';
 import { workoutInSetToTaskExercises } from '@/lib/workout-factory/map-ai-workout-to-task-exercises';
+import { stripMacroPlanningContextSuffix } from '@/lib/workout-factory/workout-viewer-narrative';
 import type { WorkoutPersona } from '@/lib/workout-factory/types/ai-workout';
 import type { BlockOptions } from '@/lib/workout-factory/types/ai-workout';
 import type { FitnessProfileRow } from '@/types/database';
@@ -107,6 +108,7 @@ export async function POST(req: Request) {
     const chainBody: Record<string, unknown> = {
       ...persona,
       availableEquipmentNames,
+      daily_checkin: body.daily_checkin ?? null,
       blockOptions: body.blockOptions ?? {
         includeWarmup: true,
         mainBlockCount: 1,
@@ -157,7 +159,7 @@ export async function POST(req: Request) {
       chain_metadata,
       taskExercises,
       suggestedTitle: workoutSet.title,
-      suggestedDescription: workoutSet.description,
+      suggestedDescription: stripMacroPlanningContextSuffix(personaDesc) || undefined,
     });
   } catch (e) {
     console.error('[generate-workout-chain]', { request_id: requestId, error: e });

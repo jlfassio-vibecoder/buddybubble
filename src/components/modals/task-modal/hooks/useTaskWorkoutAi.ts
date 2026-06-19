@@ -26,6 +26,7 @@ import {
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import { readCoachOutlineMetadata } from '@/lib/agents/coach/coach-outline-metadata';
 import { generationIntakeContextToDailyCheckin } from '@/lib/workout-factory/generation-intake-context';
+import { stripMacroPlanningContextSuffix } from '@/lib/workout-factory/workout-viewer-narrative';
 import { preflightOutlineBlocks } from '@/lib/workout-factory/outline-block-preflight';
 import type { WorkoutTemplate } from '@/hooks/use-workout-templates';
 
@@ -170,11 +171,17 @@ export function useTaskWorkoutAi({
           },
         });
         setTitle((t) => (t.trim() ? t : data.suggestedTitle || t));
-        setDescription((d) => (d.trim() ? d : data.suggestedDescription || d));
+        setDescription((d) => {
+          if (d.trim()) return d;
+          const suggested = data.suggestedDescription?.trim();
+          return suggested ? stripMacroPlanningContextSuffix(suggested) : d;
+        });
         setWorkoutExercises(data.taskExercises);
         setWorkoutType((wt) => (wt.trim() ? wt : 'Generated'));
         setMetadata((prev) => {
           const o = parseTaskMetadata(prev) as Record<string, unknown>;
+          const outlineMeta =
+            data.chain_metadata.pipeline === 'parametric_outline_fill' ? data.chain_metadata : null;
           return {
             ...o,
             ai_workout_factory: {
@@ -182,6 +189,12 @@ export function useTaskWorkoutAi({
               model: data.chain_metadata.model_used,
               workout_set: data.workoutSet,
               chain_metadata: data.chain_metadata,
+              ...(outlineMeta?.structure_rationale
+                ? { structure_rationale: outlineMeta.structure_rationale }
+                : {}),
+              ...(outlineMeta?.session_adaptations
+                ? { session_adaptations: outlineMeta.session_adaptations }
+                : {}),
             },
           } as unknown as Json;
         });

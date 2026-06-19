@@ -6,6 +6,7 @@ import {
   WorkoutBlockListEditor,
   WorkoutBlockListRenderer,
 } from '@/components/fitness/workout-block-renderer';
+import { WorkoutCoachBriefSection } from '@/components/fitness/workout-block-renderer/WorkoutCoachBriefSection';
 import {
   cloneWorkoutSessionBlocksForEditor,
   workoutSessionBlocksContentKey,
@@ -19,10 +20,8 @@ type ReviewMode = 'preview' | 'edit';
 
 export type WorkoutBuilderGeneratedReviewChrome = {
   difficulty?: string;
-  setTitle?: string;
-  setDescription?: string;
-  sessionTitle?: string;
-  sessionDescription?: string;
+  structureRationale?: string;
+  sessionAdaptations?: string;
   cardTitle: string;
 };
 
@@ -30,6 +29,8 @@ type WorkoutBuilderGeneratedReviewProps = {
   taskId: string;
   title: string;
   description: string;
+  /** Resolved coach brief for preview (from `resolveWorkoutViewerNarrative`). */
+  coachBrief?: string;
   canWrite: boolean;
   workoutUnitSystem: UnitSystem;
   blocks: WorkoutSessionBlockView[];
@@ -46,6 +47,7 @@ export function WorkoutBuilderGeneratedReview({
   taskId,
   title,
   description,
+  coachBrief,
   canWrite,
   workoutUnitSystem,
   blocks,
@@ -150,13 +152,16 @@ export function WorkoutBuilderGeneratedReview({
         </div>
 
         {mode === 'preview' && blocks.length > 0 ? (
-          <WorkoutBlockListRenderer
-            blocks={blocks}
-            taskId={taskId}
-            density="full"
-            chrome={chrome}
-            data-testid="workout-builder-block-list"
-          />
+          <div className="space-y-4">
+            {coachBrief?.trim() ? <WorkoutCoachBriefSection brief={coachBrief} /> : null}
+            <WorkoutBlockListRenderer
+              blocks={blocks}
+              taskId={taskId}
+              density="full"
+              chrome={chrome}
+              data-testid="workout-builder-block-list"
+            />
+          </div>
         ) : mode === 'edit' && useRichBlockEdit ? (
           <div data-testid="workout-builder-block-editor">
             <WorkoutBlockListEditor

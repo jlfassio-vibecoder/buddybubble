@@ -316,6 +316,12 @@ export interface WorkoutChainMetadataOutlineFill {
   /** True when Vertex fill failed and server used deterministic preflight defaults (P3). */
   fill_fallback?: boolean;
   fill_fallback_reason?: string;
+  /** Why blocks/formats were chosen (deterministic from outline). */
+  structure_rationale?: string;
+  /** Human-readable pre-session intake adjustments. */
+  session_adaptations?: string;
+  /** Structured intake snapshot for re-generation. */
+  generation_intake_context?: Record<string, unknown>;
 }
 
 export type WorkoutChainMetadata =

@@ -39,6 +39,11 @@ import type { WorkoutSetTemplate } from '@/lib/workout-factory/types/ai-workout'
 import type { WorkoutChainGenerationResponse } from '@/lib/workout-factory/workout-chain-response';
 import type { VertexAICredentials } from '@/lib/workout-factory/vertex-ai-client';
 import { callVertexAIWithMetadata } from '@/lib/workout-factory/vertex-ai-client';
+import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
+import {
+  buildWorkoutStructureRationale,
+  formatGenerationIntakeAdaptations,
+} from '@/lib/workout-factory/workout-viewer-narrative';
 
 /** Bounded repair retries before surfacing 422 OUTLINE_FILL_VALIDATION_FAILED. */
 export const MAX_FILL_ATTEMPTS = 2;
@@ -108,13 +113,29 @@ function assembleOutlineFillSuccess(
 ): WorkoutChainGenerationResponse {
   const workoutInSet = buildWorkoutInSetFromOutlineFill(hydratedBlocks, prepared.persona);
   const taskExercises = outlineFillToTaskExercises(workoutInSet);
+  const difficulty = prepared.persona.demographics.experienceLevel as
+    | 'beginner'
+    | 'intermediate'
+    | 'advanced';
+
+  const narrativeVm = buildWorkoutSessionViewModel({
+    ai_workout_factory: {
+      workout_set: {
+        title: workoutInSet.title,
+        description: '',
+        difficulty,
+        workouts: [workoutInSet],
+      },
+    },
+  });
+  const structureRationale = buildWorkoutStructureRationale(narrativeVm.blocks);
+  const sessionAdaptations = formatGenerationIntakeAdaptations(prepared.dailyCheckIn ?? null);
+  const generationIntakeContext = prepared.dailyCheckIn ?? undefined;
+
   const workoutSet: WorkoutSetTemplate = normalizeWorkoutSet({
     title: workoutInSet.title,
-    description: workoutInSet.description,
-    difficulty: prepared.persona.demographics.experienceLevel as
-      | 'beginner'
-      | 'intermediate'
-      | 'advanced',
+    description: '',
+    difficulty,
     workouts: [workoutInSet],
   });
   const fillOutput = outlineBlocksToFillOutput(hydratedBlocks);
@@ -128,6 +149,9 @@ function assembleOutlineFillSuccess(
       enrich_workout_biomechanics: null,
       generated_at: new Date().toISOString(),
       model_used: 'vertex-ai',
+      ...(structureRationale ? { structure_rationale: structureRationale } : {}),
+      ...(sessionAdaptations ? { session_adaptations: sessionAdaptations } : {}),
+      ...(generationIntakeContext ? { generation_intake_context: generationIntakeContext } : {}),
       ...(fillFallback ? { fill_fallback: true, fill_fallback_reason: fillFallback.reason } : {}),
     },
   };
@@ -235,6 +259,7 @@ export async function runGenerateWorkoutOutlineFill(
     prepared.persona,
     preflight.blocks,
     equipmentList,
+    prepared.dailyCheckIn,
   );
 
   let fillValidation: ReturnType<typeof validateFillParametricOutlineOutput> | undefined;
