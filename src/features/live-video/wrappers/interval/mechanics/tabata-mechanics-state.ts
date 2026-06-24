@@ -81,6 +81,10 @@ export function parseTabataMechanicsState(raw: unknown): TabataMechanicsState | 
   };
 }
 
+export function isTabataMechanicsState(ms: unknown): ms is TabataMechanicsState {
+  return parseTabataMechanicsState(ms) !== null;
+}
+
 export function isTabataSegmentRunnable(state: TabataMechanicsState): boolean {
   return state.segment === 'setup' || state.segment === 'work' || state.segment === 'rest';
 }
@@ -118,6 +122,16 @@ export function buildInitialTabataMechanicsState(config: TabataTimerConfig): Tab
 export function tabataBlockDurationSeconds(state: TabataMechanicsState): number {
   const { total_rounds, work_seconds, rest_seconds, setup_seconds } = state;
   return setup_seconds + total_rounds * work_seconds + Math.max(0, total_rounds - 1) * rest_seconds;
+}
+
+/**
+ * Mirrors `interval_finalize_session` tabata branch:
+ * `coalesce(nullif(round_index, 0), total_rounds, 0)`.
+ * When `round_index` is 0 (pre-start), SQL falls back to prescribed `total_rounds`.
+ */
+export function deriveTabataEffectiveRoundsForFinalize(state: TabataMechanicsState): number {
+  const rounds = state.round_index > 0 ? state.round_index : state.total_rounds;
+  return Math.max(0, rounds);
 }
 
 function segmentDurationSec(state: TabataMechanicsState): number {

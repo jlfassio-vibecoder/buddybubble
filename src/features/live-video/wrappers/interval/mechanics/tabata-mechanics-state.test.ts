@@ -5,8 +5,10 @@ import {
   beginTabataSegmentTimer,
   buildInitialTabataMechanicsState,
   computeNextTabataMechanicsState,
+  deriveTabataEffectiveRoundsForFinalize,
   deriveTabataSegmentRemainingSec,
   freezeTabataMechanicsStateForPause,
+  isTabataMechanicsState,
   parseTabataMechanicsState,
   tabataBlockDurationSeconds,
   tabataSegmentLabel,
@@ -14,6 +16,40 @@ import {
 } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
 
 const CONFIG = { totalRounds: 8, workSeconds: 20, restSeconds: 10 };
+
+describe('isTabataMechanicsState', () => {
+  it('returns true for a valid Tabata object', () => {
+    const state = buildInitialTabataMechanicsState(CONFIG);
+    expect(isTabataMechanicsState(state)).toBe(true);
+  });
+
+  it('returns false for an EMOM-shaped object', () => {
+    expect(
+      isTabataMechanicsState({
+        segment: 'minute',
+        minute_index: 3,
+        total_minutes: 10,
+        interval_seconds: 60,
+        setup_seconds: 10,
+        segment_started_at: null,
+      }),
+    ).toBe(false);
+  });
+
+  it('returns false when segment is invalid despite Tabata-like keys', () => {
+    expect(
+      isTabataMechanicsState({
+        segment: 'minute',
+        round_index: 1,
+        total_rounds: 8,
+        work_seconds: 20,
+        rest_seconds: 10,
+        setup_seconds: 10,
+        segment_started_at: null,
+      }),
+    ).toBe(false);
+  });
+});
 
 describe('parseTabataMechanicsState', () => {
   it('parses valid state', () => {
@@ -184,5 +220,52 @@ describe('tabataBlockDurationSeconds', () => {
 describe('tabataSegmentLabel', () => {
   it('labels setup as Get Ready', () => {
     expect(tabataSegmentLabel('setup')).toBe('Get Ready');
+  });
+});
+
+describe('deriveTabataEffectiveRoundsForFinalize', () => {
+  it('falls back to total_rounds when round_index is 0', () => {
+    const state = buildInitialTabataMechanicsState(CONFIG);
+    expect(deriveTabataEffectiveRoundsForFinalize(state)).toBe(8);
+  });
+
+  it('uses round_index for partial block', () => {
+    const state = {
+      ...buildInitialTabataMechanicsState(CONFIG),
+      segment: 'rest' as const,
+      round_index: 3,
+      segment_started_at: '2026-06-01T18:30:10.000Z',
+    };
+    expect(deriveTabataEffectiveRoundsForFinalize(state)).toBe(3);
+  });
+
+  it('uses round_index when block completes', () => {
+    const state = {
+      ...buildInitialTabataMechanicsState(CONFIG),
+      segment: 'done' as const,
+      round_index: 8,
+      segment_started_at: null,
+    };
+    expect(deriveTabataEffectiveRoundsForFinalize(state)).toBe(8);
+  });
+
+  it('tracks FSM position through setup to work rounds', () => {
+    const t0 = Date.parse('2026-06-01T18:30:00.000Z');
+    const attached = buildInitialTabataMechanicsState(CONFIG);
+    expect(deriveTabataEffectiveRoundsForFinalize(attached)).toBe(8);
+
+    const started = beginTabataSegmentTimer(attached, t0);
+    const work1 = computeNextTabataMechanicsState(started, t0 + 10_000);
+    expect(work1.segment).toBe('work');
+    expect(work1.round_index).toBe(1);
+    expect(deriveTabataEffectiveRoundsForFinalize(work1)).toBe(1);
+
+    const rest1 = computeNextTabataMechanicsState(work1, t0 + 30_000);
+    expect(rest1.segment).toBe('rest');
+    expect(deriveTabataEffectiveRoundsForFinalize(rest1)).toBe(1);
+
+    const work2 = computeNextTabataMechanicsState(rest1, t0 + 40_000);
+    expect(work2.round_index).toBe(2);
+    expect(deriveTabataEffectiveRoundsForFinalize(work2)).toBe(2);
   });
 });

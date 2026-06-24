@@ -5,6 +5,7 @@ import { useEffect, useRef } from 'react';
 import type { SessionStatus } from '@/features/live-video/state/sessionStateMachine';
 import {
   freezeTabataMechanicsStateForPause,
+  isTabataMechanicsState,
   isTabataSegmentRunnable,
   unfreezeTabataMechanicsStateForResume,
 } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
@@ -30,7 +31,7 @@ export function useTabataBlockPauseSync(options: {
     }
 
     const ms = engine.mechanicsState;
-    if (!ms || !('round_index' in ms) || !isTabataSegmentRunnable(ms)) {
+    if (!ms || !isTabataMechanicsState(ms) || !isTabataSegmentRunnable(ms)) {
       prevStatusRef.current = sessionStatus;
       return;
     }

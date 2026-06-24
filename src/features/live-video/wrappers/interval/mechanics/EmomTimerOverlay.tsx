@@ -3,15 +3,7 @@
 import type { EmomMechanicsState } from '@/features/live-video/wrappers/interval/mechanics/emom-mechanics-state';
 import { emomMinuteDisplayLabel } from '@/features/live-video/wrappers/interval/mechanics/emom-mechanics-state';
 import type { IntervalSessionEngine } from '@/features/live-video/wrappers/interval/types/interval-engine';
-
-function fmt(remainingSec: number): string {
-  const s = Math.max(0, Math.floor(remainingSec));
-  const mm = Math.floor(s / 60)
-    .toString()
-    .padStart(2, '0');
-  const ss = (s % 60).toString().padStart(2, '0');
-  return `${mm}:${ss}`;
-}
+import { formatCountdownMmSs } from '@/lib/timer';
 
 function isEmomState(ms: IntervalSessionEngine['mechanicsState']): ms is EmomMechanicsState {
   return ms != null && 'minute_index' in ms && 'total_minutes' in ms;
@@ -37,7 +29,7 @@ export default function EmomTimerOverlay({ engine }: { engine: IntervalSessionEn
           className="mt-1 font-bold tabular-nums text-5xl leading-none tracking-tight text-white"
           aria-live="polite"
         >
-          {fmt(engine.remainingSec)}
+          {formatCountdownMmSs(engine.remainingSec)}
         </p>
       </div>
     </div>
