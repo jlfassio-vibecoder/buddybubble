@@ -3,7 +3,10 @@ import type { Database } from '@/types/database';
 
 import type { TabataMechanicsState } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
 
-type LogRow = Database['public']['Tables']['workout_exercise_logs']['Row'];
+type LogRow = Pick<
+  Database['public']['Tables']['workout_exercise_logs']['Row'],
+  'exercise_name' | 'set_number' | 'weight_lbs' | 'reps' | 'rpe'
+>;
 
 export type TabataWorkSetRowValues = {
   weightLbs: number | null;

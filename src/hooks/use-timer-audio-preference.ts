@@ -15,7 +15,7 @@ export function useTimerAudioPreference(): {
   const audioEnabled = useSyncExternalStore(
     subscribeTimerAudioEnabled,
     readTimerAudioEnabled,
-    () => true,
+    readTimerAudioEnabled,
   );
 
   const setAudioEnabled = useCallback((enabled: boolean) => {

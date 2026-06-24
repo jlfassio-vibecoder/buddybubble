@@ -33,7 +33,9 @@ export function useTabataOverlayAudio(engine: IntervalSessionEngine): {
 
   useEffect(() => {
     if (!wasActiveRef.current && isActive) {
-      void getWorkoutTimerAudioPlayer().prime();
+      void getWorkoutTimerAudioPlayer()
+        .prime()
+        .catch(() => {});
     }
     wasActiveRef.current = isActive;
   }, [isActive]);

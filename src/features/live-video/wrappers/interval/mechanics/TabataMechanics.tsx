@@ -86,13 +86,14 @@ export function TabataMechanics({
   const { setTopLeftOverlay } = useVideoOverlaySlots();
 
   useEffect(() => {
-    if (!engine.startTimer && !engine.resetTimer) {
+    const e = engineRef.current;
+    if (!e.startTimer && !e.resetTimer) {
       setHostNavActions(null);
       return;
     }
-    setHostNavActions(<TabataHostActions engine={engine} />);
+    setHostNavActions(<TabataHostActions engine={e} />);
     return () => setHostNavActions(null);
-  }, [engine, engine.startTimer, engine.resetTimer, engine.timerPhase, setHostNavActions]);
+  }, [engine.startTimer, engine.resetTimer, engine.timerPhase, setHostNavActions]);
 
   useEffect(() => {
     setTopLeftOverlay(<TabataTimerOverlay engine={engine} />);
