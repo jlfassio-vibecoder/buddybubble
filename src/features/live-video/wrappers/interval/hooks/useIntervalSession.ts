@@ -32,6 +32,7 @@ import type {
   IntervalSessionEngine,
   ParticipantRoundLapGroup,
 } from '@/features/live-video/wrappers/interval/types/interval-engine';
+import { isMissingRpcError } from '@/lib/supabase-schema-errors';
 import type { Database, Json } from '@/types/database';
 
 type IntervalParticipantRow = Database['public']['Tables']['live_interval_participants']['Row'] & {
@@ -254,10 +255,15 @@ export function useIntervalSession(options: UseIntervalSessionOptions): Interval
     });
     if (!aliasError) return;
 
-    const { error: legacyError } = await supabase.rpc('amrap_reset_timer', {
-      p_amrap_session_id: intervalSessionId,
-    });
-    if (legacyError) setError(legacyError.message);
+    if (isMissingRpcError(aliasError, 'interval_reset_timer')) {
+      const { error: legacyError } = await supabase.rpc('amrap_reset_timer', {
+        p_amrap_session_id: intervalSessionId,
+      });
+      if (legacyError) setError(legacyError.message);
+      return;
+    }
+
+    setError(aliasError.message);
   }, [intervalSessionId, supabase]);
 
   const advanceSegment = useCallback(

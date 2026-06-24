@@ -73,6 +73,8 @@ export function useTabataAthleteMechanics(
         if (cancelled) return;
         if (data?.interval_type === 'tabata') {
           setMechanicsState(parseTabataMechanicsState(data.mechanics_state));
+        } else {
+          setMechanicsState(null);
         }
       });
     return () => {
@@ -96,6 +98,8 @@ export function useTabataAthleteMechanics(
           const row = payload.new as Database['public']['Tables']['live_interval_sessions']['Row'];
           if (row.interval_type === 'tabata') {
             setMechanicsState(parseTabataMechanicsState(row.mechanics_state));
+          } else {
+            setMechanicsState(null);
           }
         },
       )
