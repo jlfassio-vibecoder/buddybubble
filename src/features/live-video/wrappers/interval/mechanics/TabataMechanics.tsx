@@ -16,6 +16,7 @@ import {
 } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
 import { useTabataBlockPauseSync } from '@/features/live-video/wrappers/interval/mechanics/useTabataBlockPauseSync';
 import { useTabataOverlayAudio } from '@/features/live-video/wrappers/interval/mechanics/useTabataOverlayAudio';
+import { useTabataOverlayPause } from '@/features/live-video/wrappers/interval/mechanics/useTabataOverlayPause';
 import { useTabataWorkSetSync } from '@/features/live-video/wrappers/interval/mechanics/useTabataWorkSetSync';
 import type { IntervalMechanicsContext } from '@/features/live-video/wrappers/interval/types/interval-engine';
 
@@ -82,6 +83,12 @@ export function TabataMechanics({
 
   useTabataOverlayAudio(engine);
 
+  const overlayPause = useTabataOverlayPause({
+    isHost,
+    sessionStatus: state.status,
+    engine,
+  });
+
   const { setHostNavActions } = useHostNavActions();
   const { setTopLeftOverlay } = useVideoOverlaySlots();
 
@@ -96,10 +103,18 @@ export function TabataMechanics({
   }, [engine.startTimer, engine.resetTimer, engine.timerPhase, setHostNavActions]);
 
   useEffect(() => {
-    setTopLeftOverlay(<TabataTimerOverlay engine={engine} />);
+    setTopLeftOverlay(
+      <TabataTimerOverlay
+        engine={engine}
+        showHostControls={overlayPause.showHostControls}
+        canPause={overlayPause.canPause}
+        canResume={overlayPause.canResume}
+        onPause={overlayPause.pause}
+        onResume={overlayPause.resume}
+      />,
+    );
     return () => setTopLeftOverlay(null);
   }, [
-    engine,
     engine.remainingSec,
     engine.totalSec,
     engine.timerPhase,
@@ -108,6 +123,9 @@ export function TabataMechanics({
     tabataState?.segment,
     tabataState?.is_paused,
     tabataState?.round_index,
+    overlayPause.showHostControls,
+    overlayPause.canPause,
+    overlayPause.canResume,
     setTopLeftOverlay,
   ]);
 

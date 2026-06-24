@@ -144,6 +144,6 @@ export function useTabataWorkSetSync(options: {
     taskKey,
     supabase,
     exercises,
-    engine.remainingSec,
+    engine.remainingSec, // re-run while segment active so failed upserts can retry
   ]);
 }

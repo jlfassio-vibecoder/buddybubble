@@ -18,6 +18,17 @@ export function isMissingColumnSchemaCacheError(err: unknown, column: string): b
   );
 }
 
+/** True when PostgREST reports an RPC is absent from the schema cache (pre-migration deploy). */
+export function isMissingRpcError(err: unknown, rpcName?: string): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { code?: string };
+  if (e.code === 'PGRST202') return true;
+  const text = postgrestErrorText(err).toLowerCase();
+  if (!text.includes('function') || !text.includes('does not exist')) return false;
+  if (rpcName && !text.includes(rpcName.toLowerCase())) return false;
+  return true;
+}
+
 function postgrestErrorText(err: unknown): string {
   if (!err || typeof err !== 'object') return '';
   const e = err as Record<string, unknown>;

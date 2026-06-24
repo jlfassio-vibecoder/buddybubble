@@ -296,6 +296,28 @@ export function emomMinuteDisplayLabel(state: EmomMechanicsState): string | null
   return `Round ${state.minute_index} of ${state.total_minutes}`;
 }
 
+export type EmomLoggerActiveSetPhase = 'work' | 'paused';
+
+export type EmomLoggerActiveSet = {
+  setNumber: number;
+  phase: EmomLoggerActiveSetPhase;
+};
+
+/** Active set row for participant logger highlight (`set_number` is 1-based minute index). */
+export function deriveEmomLoggerActiveSet(state: EmomMechanicsState): EmomLoggerActiveSet | null {
+  if (state.segment === 'idle' || state.segment === 'done' || state.segment === 'setup') {
+    return null;
+  }
+  if (state.minute_index < 1) return null;
+  if (state.is_paused === true) {
+    return { setNumber: state.minute_index, phase: 'paused' };
+  }
+  if (state.segment === 'minute' && state.segment_started_at != null) {
+    return { setNumber: state.minute_index, phase: 'work' };
+  }
+  return null;
+}
+
 export function emomMechanicsStateToJson(state: EmomMechanicsState): Record<string, unknown> {
   const base: Record<string, unknown> = {
     segment: state.segment,

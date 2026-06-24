@@ -15,6 +15,9 @@ import type { WorkoutExercise } from '@/lib/item-metadata';
 import { EmomSelfMinuteSplitsList } from '@/features/live-video/shells/EmomSelfMinuteSplitsList';
 import { EmomSlapTarget } from '@/features/live-video/shells/EmomSlapTarget';
 import { useEmomAthleteLogging } from '@/features/live-video/wrappers/interval/hooks/useEmomAthleteLogging';
+import { useEmomActiveMinute } from '@/features/live-video/wrappers/interval/hooks/useEmomActiveMinute';
+import { deriveEmomLoggerActiveSet } from '@/features/live-video/wrappers/interval/mechanics/emom-mechanics-state';
+import { useTabataAthleteMechanics } from '@/features/live-video/wrappers/interval/mechanics/useTabataAthleteMechanics';
 import { computeEmomSelfMinuteSplits } from '@/features/live-video/wrappers/interval/utils/computeEmomSelfMinuteSplits';
 import { useLiveSessionRuntimeOptional } from '@/features/live-video/theater/live-session-runtime-context';
 import { resolveParticipantLoggerSlotCount } from '@/lib/workout-factory/resolve-player-log-row-count';
@@ -111,6 +114,7 @@ export function ParticipantWorkoutLoggerCore({
 }: ParticipantWorkoutLoggerCoreProps) {
   const isAmrapPhase = phase === 'amrap';
   const isEmomPhase = phase === 'emom';
+  const isTabataPhase = phase === 'tabata';
   const isIntervalPhaseActive = isIntervalPhase(phase);
 
   const runtime = useLiveSessionRuntimeOptional();
@@ -123,6 +127,23 @@ export function ParticipantWorkoutLoggerCore({
     phase,
     isHost,
     activeDeckItemId,
+  });
+
+  const emomActiveMinute = useEmomActiveMinute(
+    isEmomPhase && !isHost ? emomLogging.intervalSessionId : null,
+    { supabase, enabled: isEmomPhase && !isHost && Boolean(emomLogging.intervalSessionId.trim()) },
+  );
+
+  const emomLoggerActive = useMemo(() => {
+    if (!isEmomPhase || isHost || emomActiveMinute.mechanics == null) return null;
+    return deriveEmomLoggerActiveSet(emomActiveMinute.mechanics);
+  }, [isEmomPhase, isHost, emomActiveMinute.mechanics]);
+
+  const tabataAthlete = useTabataAthleteMechanics({
+    supabase,
+    sessionId,
+    phase,
+    isHost,
   });
 
   const emomSelfSplits = useMemo(
@@ -509,6 +530,7 @@ export function ParticipantWorkoutLoggerCore({
         <>
           <EmomSlapTarget
             intervalSessionId={emomLogging.intervalSessionId}
+            activeMinute={emomActiveMinute}
             blocks={emomLogging.blocks}
             flatExerciseNames={emomLogging.flatExerciseNames}
             formatParams={emomLogging.formatParams}
@@ -516,7 +538,11 @@ export function ParticipantWorkoutLoggerCore({
             getExistingLog={emomLogging.getExistingLog}
             disabled={sessionPaused}
           />
-          <EmomSelfMinuteSplitsList entries={emomSelfSplits} className="shrink-0" />
+          <EmomSelfMinuteSplitsList
+            entries={emomSelfSplits}
+            activeMinuteIndex={!isHost ? (emomLoggerActive?.setNumber ?? null) : null}
+            className="shrink-0"
+          />
         </>
       ) : null}
       <div className="min-h-0 flex-1 space-y-6 overflow-y-auto pr-1">
@@ -554,10 +580,37 @@ export function ParticipantWorkoutLoggerCore({
                     log?.rpe != null ? String(log.rpe) : presc.rpe,
                   );
 
+                  const isTabataActiveRow =
+                    isTabataPhase &&
+                    !isHost &&
+                    tabataAthlete.activeSetNumber === setNumber &&
+                    tabataAthlete.activeSetPhase != null;
+                  const isEmomActiveRow =
+                    isEmomPhase &&
+                    !isHost &&
+                    emomLoggerActive?.setNumber === setNumber &&
+                    emomLoggerActive.phase != null;
+                  const isActiveRow = isTabataActiveRow || isEmomActiveRow;
+                  const activePhase = isTabataActiveRow
+                    ? tabataAthlete.activeSetPhase
+                    : isEmomActiveRow
+                      ? emomLoggerActive?.phase
+                      : null;
+                  const activeWork = isActiveRow && activePhase === 'work';
+                  const activeMuted =
+                    isActiveRow &&
+                    (activePhase === 'rest' ||
+                      activePhase === 'prepare' ||
+                      activePhase === 'paused');
+
                   return (
                     <div
                       key={setNumber}
-                      className="flex flex-wrap items-end gap-2 rounded-md border border-border bg-background/80 p-2 sm:flex-nowrap"
+                      className={cn(
+                        'flex flex-wrap items-end gap-2 rounded-md border border-border bg-background/80 p-2 sm:flex-nowrap',
+                        activeWork && 'bg-primary/10 ring-2 ring-primary',
+                        activeMuted && 'bg-muted/30 ring-1 ring-primary/40',
+                      )}
                     >
                       <span className="w-10 shrink-0 text-xs font-medium text-muted-foreground">
                         Set {setNumber}

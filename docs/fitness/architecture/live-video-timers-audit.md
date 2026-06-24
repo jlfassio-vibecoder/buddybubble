@@ -3,21 +3,21 @@
 **Status:** Living audit (2026-05-20; Tabata/EMOM unified interval updated 2026-06-24)  
 **Context:** Step 7 (Execution UX) plans interval timer shells (AMRAP, EMOM, Tabata) around the parametric [`WorkoutPlayer`](../../../src/components/fitness/WorkoutPlayer.tsx). This document inventories what already exists in live video before building anything new.
 
-**Related:** [AMRAP wrapper README](../amrap-wrapper-readme.md) · [parametric-step6-plan.md](../parametric-step6-plan.md) · [Workout UI landscape](../README.md) · [live-video blueprint](../../live-video-blueprint.md) · [Tabata timer overlay assessment](../timers/live-video/tabata-timer-overlay-assessment.md)
+**Related:** [AMRAP wrapper README](../amrap-wrapper-readme.md) · [parametric-step6-plan.md](../parametric-step6-plan.md) · [Workout UI landscape](../README.md) · [live-video blueprint](../../live-video-blueprint.md) · [Tabata timer overlay assessment](../timers/live-video/tabata-timer-overlay-assessment.md) · [Tabata dual-engine boundary](../timers/live-video/tabata-dual-engine-boundary.md)
 
 ---
 
 ## Executive summary
 
-| Asset                            | Maturity                                                               | Step 7 relevance                                                                                                    |
-| -------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **AMRAP interval wrapper**       | Production (`AmrapWrapper` + DB-backed engine)                         | **High salvage** — countdown, round logging, infinite-set duplication pattern                                       |
-| **Session phase machine**        | Production (broadcast + pure reducer)                                  | **Partial** — phases `lobby \| warmup \| amrap \| tabata \| emom`                                                   |
-| **Block elapsed clock**          | Production (`TimerDisplay`, `ActivePhaseOverlays`, `SessionClockMini`) | **Partial** — count-up/countdown display; legacy Tabata placeholder (4:00) suppressed when unified wrapper attached |
-| **Simple countdown wrapper**     | Stub UI only                                                           | **Low** — registry entry exists, no timer logic                                                                     |
-| **EMOM live timer**              | Production (unified interval wrapper)                                  | `BaseIntervalWrapper` + `EmomMechanics` + minute-segment FSM via `live_interval_sessions`                           |
-| **Tabata live timer**            | Production (unified interval wrapper)                                  | `BaseIntervalWrapper` + `TabataMechanics` + work/rest FSM bound via `buildTabataAttachPayload`                      |
-| **Offline WorkoutPlayer timers** | Elapsed wall clock only (`setInterval` 1s)                             | **Separate path** — M6.1 row counts; no interval shells yet                                                         |
+| Asset                            | Maturity                                                               | Step 7 relevance                                                                                                          |
+| -------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **AMRAP interval wrapper**       | Production (`AmrapWrapper` + DB-backed engine)                         | **High salvage** — countdown, round logging, infinite-set duplication pattern                                             |
+| **Session phase machine**        | Production (broadcast + pure reducer)                                  | **Partial** — phases `lobby \| warmup \| amrap \| tabata \| emom`                                                         |
+| **Block elapsed clock**          | Production (`TimerDisplay`, `ActivePhaseOverlays`, `SessionClockMini`) | **Partial** — count-up/countdown display; legacy Tabata placeholder (4:00) suppressed when unified wrapper attached       |
+| **Simple countdown wrapper**     | Stub UI only                                                           | **Low** — registry entry exists, no timer logic                                                                           |
+| **EMOM live timer**              | Production (unified interval wrapper)                                  | `BaseIntervalWrapper` + `EmomMechanics` + minute-segment FSM; overlay accents/progress/audio (Batch H parity with Tabata) |
+| **Tabata live timer**            | Production (unified interval wrapper)                                  | `BaseIntervalWrapper` + `TabataMechanics` + overlay pause (`useIntervalOverlayPause`)                                     |
+| **Offline WorkoutPlayer timers** | Elapsed wall clock only (`setInterval` 1s)                             | **Separate path** — M6.1 row counts; no interval shells yet                                                               |
 
 **Bottom line:** Production-grade live interval execution exists for **AMRAP** (original wrapper) and for **Tabata/EMOM** via the unified `live_interval_sessions` path (`BaseIntervalWrapper` + polymorphic mechanics). The legacy `ActivePhaseOverlays` Tabata placeholder is suppressed when the unified Tabata wrapper is attached (`suppressTabataPlaceholder` in `LiveSessionView`). Offline **WorkoutPlayer** interval shells remain a separate Step 7 deliverable.
 
@@ -262,7 +262,7 @@ Migrations under `supabase/migrations/20260801*`:
 - RPCs: `amrap_create_for_session`, `amrap_start_timer`, `amrap_reset_timer`, `amrap_log_round`, `amrap_join_session`, finalize/leaderboard helpers
 - Live attach: `live_sessions.interval_wrapper_kind`, `interval_wrapper_config` (JSON with `amrap_session_id`)
 
-EMOM/Tabata use **`live_interval_sessions`** (unified interval engine migration `20260904120000`). See [Tabata timer overlay assessment](../timers/live-video/tabata-timer-overlay-assessment.md) for Tabata-specific architecture.
+EMOM/Tabata use **`live_interval_sessions`** (unified interval engine migration `20260904120000`). See [Tabata timer overlay assessment](../timers/live-video/tabata-timer-overlay-assessment.md) for live overlay architecture, [Tabata dual-engine boundary](../timers/live-video/tabata-dual-engine-boundary.md) for live vs offline WorkoutPlayer engines, `emom-overlay-display.ts` / `EmomTimerOverlay.tsx` for EMOM HUD parity (Batch H), and `interval_reset_timer` for unified reset (G3.5).
 
 ---
 

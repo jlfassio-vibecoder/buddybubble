@@ -343,3 +343,11 @@ Owns everything **type-agnostic**, mirroring what `AmrapWrapper` + `useAmrapSess
 - **UI is polymorphic by composition:** `<BaseIntervalWrapper>` owns subscriptions + finalize; render-prop `<AmrapMechanics>` / `<TabataMechanics>` / `<EmomMechanics>` / `<StandardMechanics>` own the variable 20% (timer UI, round semantics, set-duplication).
 
 This locks the **shared backbone** while leaving each interval's mechanics free to be itself — AMRAP stays open-ended and manual; Tabata/EMOM stay strictly segmented and auto-advancing — without bending one into the other.
+
+---
+
+## 9. Dual-engine boundary (Tabata live vs offline)
+
+Live Tabata mechanics (`tabata-mechanics-state.ts` + Postgres) and offline Tabata (`interval-timer-engine.ts` + WorkoutPlayer) are **intentionally separate** FSMs. They share presentation utilities only (`formatCountdownMmSs`, timer audio preference).
+
+See [tabata-dual-engine-boundary.md](./timers/live-video/tabata-dual-engine-boundary.md) for segment name mapping, data flows, and non-goals.

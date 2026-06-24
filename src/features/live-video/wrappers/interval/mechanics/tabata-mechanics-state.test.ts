@@ -6,11 +6,13 @@ import {
   buildInitialTabataMechanicsState,
   computeNextTabataMechanicsState,
   deriveTabataEffectiveRoundsForFinalize,
+  deriveTabataLoggerActiveSet,
   deriveTabataSegmentRemainingSec,
   freezeTabataMechanicsStateForPause,
   isTabataMechanicsState,
   parseTabataMechanicsState,
   tabataBlockDurationSeconds,
+  tabataRoundDisplayLabel,
   tabataSegmentLabel,
   unfreezeTabataMechanicsStateForResume,
 } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
@@ -220,6 +222,61 @@ describe('tabataBlockDurationSeconds', () => {
 describe('tabataSegmentLabel', () => {
   it('labels setup as Get Ready', () => {
     expect(tabataSegmentLabel('setup')).toBe('Get Ready');
+  });
+});
+
+describe('tabataRoundDisplayLabel', () => {
+  it('returns null during setup and idle', () => {
+    expect(tabataRoundDisplayLabel(buildInitialTabataMechanicsState(CONFIG))).toBeNull();
+    expect(
+      tabataRoundDisplayLabel({
+        ...buildInitialTabataMechanicsState(CONFIG),
+        segment: 'idle',
+      }),
+    ).toBeNull();
+  });
+
+  it('formats round label during work', () => {
+    const work = {
+      ...buildInitialTabataMechanicsState(CONFIG),
+      segment: 'work' as const,
+      round_index: 3,
+      segment_started_at: '2026-06-01T18:30:12.000Z',
+    };
+    expect(tabataRoundDisplayLabel(work)).toBe('Round 3 / 8');
+  });
+});
+
+describe('deriveTabataLoggerActiveSet', () => {
+  it('returns work highlight during anchored work segment', () => {
+    const work = {
+      ...buildInitialTabataMechanicsState(CONFIG),
+      segment: 'work' as const,
+      round_index: 2,
+      segment_started_at: '2026-06-01T18:30:12.000Z',
+    };
+    expect(deriveTabataLoggerActiveSet(work)).toEqual({ setNumber: 2, phase: 'work' });
+  });
+
+  it('returns paused highlight when frozen', () => {
+    const paused = {
+      ...buildInitialTabataMechanicsState(CONFIG),
+      segment: 'work' as const,
+      round_index: 2,
+      segment_started_at: '2026-06-01T18:30:12.000Z',
+      is_paused: true as const,
+    };
+    expect(deriveTabataLoggerActiveSet(paused)).toEqual({ setNumber: 2, phase: 'paused' });
+  });
+
+  it('returns null during rest', () => {
+    const rest = {
+      ...buildInitialTabataMechanicsState(CONFIG),
+      segment: 'rest' as const,
+      round_index: 2,
+      segment_started_at: '2026-06-01T18:30:32.000Z',
+    };
+    expect(deriveTabataLoggerActiveSet(rest)).toBeNull();
   });
 });
 

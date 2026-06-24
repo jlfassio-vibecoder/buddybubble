@@ -134,6 +134,36 @@ export function deriveTabataEffectiveRoundsForFinalize(state: TabataMechanicsSta
   return Math.max(0, rounds);
 }
 
+export type TabataLoggerActiveSetPhase = 'work' | 'rest' | 'prepare' | 'paused';
+
+export type TabataLoggerActiveSet = {
+  setNumber: number;
+  phase: TabataLoggerActiveSetPhase;
+};
+
+/** Secondary overlay/logger label; null during setup, idle, or when rounds unknown. */
+export function tabataRoundDisplayLabel(state: TabataMechanicsState): string | null {
+  if (state.segment === 'setup' || state.segment === 'idle' || state.total_rounds <= 0) {
+    return null;
+  }
+  return `Round ${Math.max(state.round_index, 1)} / ${state.total_rounds}`;
+}
+
+/** Active work-set row for participant logger highlight (`set_number` is 1-based). */
+export function deriveTabataLoggerActiveSet(
+  state: TabataMechanicsState,
+): TabataLoggerActiveSet | null {
+  if (state.segment === 'idle' || state.segment === 'done') return null;
+  if (state.round_index < 1) return null;
+  if (state.is_paused === true) {
+    return { setNumber: state.round_index, phase: 'paused' };
+  }
+  if (state.segment === 'work' && state.segment_started_at != null) {
+    return { setNumber: state.round_index, phase: 'work' };
+  }
+  return null;
+}
+
 function segmentDurationSec(state: TabataMechanicsState): number {
   if (state.segment === 'setup') return state.setup_seconds;
   if (state.segment === 'work') return state.work_seconds;

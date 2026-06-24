@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 
+import { runIntervalMechanicsAdvance } from '@/features/live-video/wrappers/interval/mechanics/interval-mechanics-advance-guard';
 import type { SessionStatus } from '@/features/live-video/state/sessionStateMachine';
 import {
   freezeEmomMechanicsStateForPause,
@@ -17,15 +18,20 @@ export function useEmomBlockPauseSync(options: {
 }): void {
   const { isHost, sessionStatus, engine } = options;
   const prevStatusRef = useRef<SessionStatus>(sessionStatus);
-  const syncingRef = useRef(false);
+  const engineRef = useRef(engine);
 
   useEffect(() => {
-    if (!isHost || !engine.advanceSegment) {
+    engineRef.current = engine;
+  }, [engine]);
+
+  useEffect(() => {
+    const e = engineRef.current;
+    if (!isHost || !e.advanceSegment) {
       prevStatusRef.current = sessionStatus;
       return;
     }
 
-    const ms = engine.mechanicsState;
+    const ms = e.mechanicsState;
     if (!ms || ms.segment === undefined || !('minute_index' in ms)) {
       prevStatusRef.current = sessionStatus;
       return;
@@ -38,25 +44,17 @@ export function useEmomBlockPauseSync(options: {
     const prev = prevStatusRef.current;
     prevStatusRef.current = sessionStatus;
 
-    if (syncingRef.current) return;
-
     const now = Date.now();
 
     if (prev === 'running' && sessionStatus === 'paused') {
-      syncingRef.current = true;
       const frozen = freezeEmomMechanicsStateForPause(ms, now);
-      void engine.advanceSegment(frozen).finally(() => {
-        syncingRef.current = false;
-      });
+      void runIntervalMechanicsAdvance(() => e.advanceSegment!(frozen));
       return;
     }
 
     if (prev === 'paused' && sessionStatus === 'running') {
-      syncingRef.current = true;
       const resumed = unfreezeEmomMechanicsStateForResume(ms, now);
-      void engine.advanceSegment(resumed).finally(() => {
-        syncingRef.current = false;
-      });
+      void runIntervalMechanicsAdvance(() => e.advanceSegment!(resumed));
     }
-  }, [isHost, sessionStatus, engine, engine.advanceSegment, engine.mechanicsState]);
+  }, [isHost, sessionStatus, engine.advanceSegment, engine.mechanicsState]);
 }

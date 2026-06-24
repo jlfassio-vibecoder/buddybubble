@@ -1,7 +1,11 @@
 'use client';
 
 import { IntervalShellAudioToggle } from '@/components/fitness/interval-shells/IntervalShellAudioToggle';
-import { isTabataMechanicsState } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
+import { IntervalOverlayHostControls } from '@/features/live-video/wrappers/interval/mechanics/IntervalOverlayHostControls';
+import {
+  isTabataMechanicsState,
+  tabataRoundDisplayLabel,
+} from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
 import {
   tabataOverlayShowProgress,
   tabataSegmentPhaseAccentClass,
@@ -17,21 +21,29 @@ export type TabataTimerOverlayProps = {
   engine: IntervalSessionEngine;
   audioEnabled?: boolean;
   onToggleAudio?: () => void;
+  showHostControls?: boolean;
+  canPause?: boolean;
+  canResume?: boolean;
+  onPause?: () => void;
+  onResume?: () => void;
 };
 
 export default function TabataTimerOverlay({
   engine,
   audioEnabled: audioEnabledProp,
   onToggleAudio,
+  showHostControls = false,
+  canPause = false,
+  canResume = false,
+  onPause,
+  onResume,
 }: TabataTimerOverlayProps) {
   const preference = useTimerAudioPreference();
   const audioEnabled = onToggleAudio != null ? (audioEnabledProp ?? true) : preference.audioEnabled;
   const handleToggleAudio = onToggleAudio ?? preference.toggleAudio;
 
   const ms = isTabataMechanicsState(engine.mechanicsState) ? engine.mechanicsState : null;
-  const showRound =
-    ms != null && ms.segment !== 'setup' && ms.segment !== 'idle' && ms.total_rounds > 0;
-  const roundLabel = showRound ? `Round ${Math.max(ms.round_index, 1)} / ${ms.total_rounds}` : null;
+  const roundLabel = ms != null ? tabataRoundDisplayLabel(ms) : null;
 
   const isFinished = engine.timerPhase === 'finished';
   const phaseText = isFinished ? 'Finished' : engine.segmentLabel.toUpperCase() || 'Ready';
@@ -54,7 +66,16 @@ export default function TabataTimerOverlay({
       <div className="pointer-events-auto absolute top-4 left-4 max-w-[min(100vw-2rem,20rem)] rounded-xl border border-white/10 bg-black/50 p-4 text-white shadow-lg backdrop-blur-md">
         <div className="flex items-start justify-between gap-2">
           <p className="text-[10px] font-medium uppercase tracking-wider text-white/50">Tabata</p>
-          <IntervalShellAudioToggle audioEnabled={audioEnabled} onToggle={handleToggleAudio} />
+          <div className="flex shrink-0 items-center gap-1">
+            <IntervalOverlayHostControls
+              showHostControls={showHostControls}
+              canPause={canPause}
+              canResume={canResume}
+              onPause={onPause ?? (() => {})}
+              onResume={onResume ?? (() => {})}
+            />
+            <IntervalShellAudioToggle audioEnabled={audioEnabled} onToggle={handleToggleAudio} />
+          </div>
         </div>
         <p
           className={cn(
