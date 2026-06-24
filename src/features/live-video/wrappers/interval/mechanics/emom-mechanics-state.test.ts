@@ -5,6 +5,7 @@ import {
   beginEmomSegmentTimer,
   buildInitialEmomMechanicsState,
   computeNextEmomMechanicsState,
+  deriveEmomLoggerActiveSet,
   deriveEmomSegmentRemainingSec,
   emomBlockDurationSeconds,
   freezeEmomMechanicsStateForPause,
@@ -110,5 +111,32 @@ describe('polymorphic pause', () => {
     const resumed = unfreezeEmomMechanicsStateForResume(frozen, resumeAt);
     expect(resumed.is_paused).toBeUndefined();
     expect(deriveEmomSegmentRemainingSec(resumed, resumeAt)).toBe(52);
+  });
+});
+
+describe('deriveEmomLoggerActiveSet', () => {
+  it('returns work highlight during anchored minute', () => {
+    const minute = {
+      ...buildInitialEmomMechanicsState(CONFIG),
+      segment: 'minute' as const,
+      minute_index: 4,
+      segment_started_at: '2026-06-01T18:30:12.000Z',
+    };
+    expect(deriveEmomLoggerActiveSet(minute)).toEqual({ setNumber: 4, phase: 'work' });
+  });
+
+  it('returns paused highlight when frozen', () => {
+    const paused = {
+      ...buildInitialEmomMechanicsState(CONFIG),
+      segment: 'minute' as const,
+      minute_index: 2,
+      segment_started_at: '2026-06-01T18:30:12.000Z',
+      is_paused: true as const,
+    };
+    expect(deriveEmomLoggerActiveSet(paused)).toEqual({ setNumber: 2, phase: 'paused' });
+  });
+
+  it('returns null during setup', () => {
+    expect(deriveEmomLoggerActiveSet(buildInitialEmomMechanicsState(CONFIG))).toBeNull();
   });
 });

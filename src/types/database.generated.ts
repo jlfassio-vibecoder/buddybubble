@@ -3007,6 +3007,10 @@ export type Database = {
         Args: { p_amrap_session_id: string };
         Returns: undefined;
       };
+      interval_reset_timer: {
+        Args: { p_interval_session_id: string };
+        Returns: undefined;
+      };
       amrap_start_timer: {
         Args: { p_amrap_session_id: string };
         Returns: undefined;

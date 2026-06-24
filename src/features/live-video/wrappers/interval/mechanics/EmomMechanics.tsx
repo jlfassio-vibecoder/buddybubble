@@ -12,13 +12,16 @@ import {
   isEmomHostAutoAdvanceSegment,
   isEmomSegmentElapsed,
   isEmomTimerFrozen,
+  parseEmomMechanicsState,
   type EmomMechanicsState,
 } from '@/features/live-video/wrappers/interval/mechanics/emom-mechanics-state';
 import { useEmomBlockPauseSync } from '@/features/live-video/wrappers/interval/mechanics/useEmomBlockPauseSync';
+import { useEmomOverlayAudio } from '@/features/live-video/wrappers/interval/mechanics/useEmomOverlayAudio';
+import { useEmomOverlayPause } from '@/features/live-video/wrappers/interval/mechanics/useEmomOverlayPause';
 import type { IntervalMechanicsContext } from '@/features/live-video/wrappers/interval/types/interval-engine';
 
 function isEmomState(ms: unknown): ms is EmomMechanicsState {
-  return ms != null && typeof ms === 'object' && 'minute_index' in ms && 'total_minutes' in ms;
+  return parseEmomMechanicsState(ms) != null;
 }
 
 export function EmomMechanics({
@@ -73,30 +76,51 @@ export function EmomMechanics({
     return () => window.clearInterval(id);
   }, [isHost, state.status, engine.advanceSegment, engine.timerPhase, emomState]);
 
+  useEmomOverlayAudio(engine);
+
+  const overlayPause = useEmomOverlayPause({
+    isHost,
+    sessionStatus: state.status,
+    engine,
+  });
+
   const { setHostNavActions } = useHostNavActions();
   const { setTopLeftOverlay } = useVideoOverlaySlots();
 
   useEffect(() => {
-    if (!engine.startTimer && !engine.resetTimer) {
+    const e = engineRef.current;
+    if (!e.startTimer && !e.resetTimer) {
       setHostNavActions(null);
       return;
     }
-    setHostNavActions(<EmomHostActions engine={engine} />);
+    setHostNavActions(<EmomHostActions engine={e} />);
     return () => setHostNavActions(null);
-  }, [engine, engine.startTimer, engine.resetTimer, engine.timerPhase, setHostNavActions]);
+  }, [engine.startTimer, engine.resetTimer, engine.timerPhase, setHostNavActions]);
 
   useEffect(() => {
-    setTopLeftOverlay(<EmomTimerOverlay engine={engine} />);
+    setTopLeftOverlay(
+      <EmomTimerOverlay
+        engine={engine}
+        showHostControls={overlayPause.showHostControls}
+        canPause={overlayPause.canPause}
+        canResume={overlayPause.canResume}
+        onPause={overlayPause.pause}
+        onResume={overlayPause.resume}
+      />,
+    );
     return () => setTopLeftOverlay(null);
   }, [
-    engine,
     engine.remainingSec,
+    engine.totalSec,
     engine.timerPhase,
     engine.segmentLabel,
     engine.currentRoundIndex,
     emomState?.segment,
     emomState?.is_paused,
     emomState?.minute_index,
+    overlayPause.showHostControls,
+    overlayPause.canPause,
+    overlayPause.canResume,
     setTopLeftOverlay,
   ]);
 

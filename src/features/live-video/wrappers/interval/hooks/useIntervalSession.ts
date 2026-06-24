@@ -249,10 +249,15 @@ export function useIntervalSession(options: UseIntervalSessionOptions): Interval
   }, [intervalSessionId, supabase, timerState.intervalType, timerState.mechanicsState]);
 
   const resetTimer = useCallback(async () => {
-    const { error: rpcError } = await supabase.rpc('amrap_reset_timer', {
+    const { error: aliasError } = await supabase.rpc('interval_reset_timer', {
+      p_interval_session_id: intervalSessionId,
+    });
+    if (!aliasError) return;
+
+    const { error: legacyError } = await supabase.rpc('amrap_reset_timer', {
       p_amrap_session_id: intervalSessionId,
     });
-    if (rpcError) setError(rpcError.message);
+    if (legacyError) setError(legacyError.message);
   }, [intervalSessionId, supabase]);
 
   const advanceSegment = useCallback(

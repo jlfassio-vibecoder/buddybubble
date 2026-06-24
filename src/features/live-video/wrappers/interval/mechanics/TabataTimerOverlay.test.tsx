@@ -157,6 +157,55 @@ describe('TabataTimerOverlay', () => {
     expect(fill.getAttribute('style')).toContain('50%');
   });
 
+  it('shows host Pause during work when controls enabled', () => {
+    const workState = {
+      ...buildInitialTabataMechanicsState(TABATA_CONFIG),
+      segment: 'work' as const,
+      round_index: 1,
+      segment_started_at: '2026-06-01T18:30:12.000Z',
+    };
+    render(
+      <TabataTimerOverlay
+        engine={makeEngine({ segmentLabel: 'Work', mechanicsState: workState })}
+        showHostControls
+        canPause
+        onPause={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId('interval-overlay-pause')).toBeTruthy();
+    expect(screen.queryByTestId('interval-overlay-resume')).toBeNull();
+  });
+
+  it('shows host Resume when paused and hides Pause when finished', () => {
+    const pausedState = {
+      ...buildInitialTabataMechanicsState(TABATA_CONFIG),
+      segment: 'work' as const,
+      round_index: 1,
+      segment_started_at: '2026-06-01T18:30:12.000Z',
+      is_paused: true as const,
+      elapsed_in_segment: 8,
+    };
+    const { rerender } = render(
+      <TabataTimerOverlay
+        engine={makeEngine({ segmentLabel: 'Paused', mechanicsState: pausedState })}
+        showHostControls
+        canResume
+        onResume={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId('interval-overlay-resume')).toBeTruthy();
+
+    rerender(
+      <TabataTimerOverlay
+        engine={makeEngine({ timerPhase: 'finished', segmentLabel: 'Complete' })}
+        showHostControls={false}
+        canPause={false}
+        onPause={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId('interval-overlay-pause')).toBeNull();
+  });
+
   it('renders audio toggle when onToggleAudio is provided', () => {
     const onToggleAudio = vi.fn();
     const { rerender } = render(

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import type { EmomActiveMinuteState } from '@/features/live-video/wrappers/interval/hooks/useEmomActiveMinute';
 import { useEmomActiveMinute } from '@/features/live-video/wrappers/interval/hooks/useEmomActiveMinute';
 import { vibrateSlapTarget, playSlapChime } from '@/lib/fitness/play-slap-chime';
 import { resolveEmomLocalHighlightSetIndex } from '@/lib/workout-factory/interval-timer/resolve-emom-alternating';
@@ -12,6 +13,8 @@ import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-sess
 
 type EmomSlapTargetProps = {
   intervalSessionId: string;
+  /** When provided, skips internal `useEmomActiveMinute` subscription. */
+  activeMinute?: EmomActiveMinuteState;
   blocks: WorkoutSessionBlockView[];
   flatExerciseNames: { name: string; globalIndex: number; exerciseIndexInBlock: number }[];
   formatParams: Record<string, unknown>;
@@ -30,15 +33,19 @@ type EmomSlapTargetProps = {
 
 export function EmomSlapTarget({
   intervalSessionId,
-  blocks,
+  activeMinute: activeMinuteProp,
+  blocks: _blocks,
   flatExerciseNames,
   formatParams,
   logSet,
   getExistingLog,
   disabled = false,
 }: EmomSlapTargetProps) {
+  const internalMinute = useEmomActiveMinute(intervalSessionId, {
+    enabled: activeMinuteProp == null && intervalSessionId.trim().length > 0,
+  });
   const { segment, minuteIndex, segmentStartedAt, remainingSec, intervalSeconds } =
-    useEmomActiveMinute(intervalSessionId);
+    activeMinuteProp ?? internalMinute;
   const [restingForMinute, setRestingForMinute] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
 

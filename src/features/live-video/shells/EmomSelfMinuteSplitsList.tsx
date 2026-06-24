@@ -5,11 +5,16 @@ import { cn } from '@/lib/utils';
 
 export type EmomSelfMinuteSplitsListProps = {
   entries: EmomMinuteSplitEntry[];
+  activeMinuteIndex?: number | null;
   className?: string;
 };
 
 /** Read-only self pacing chips (not a huddle-wide leaderboard). */
-export function EmomSelfMinuteSplitsList({ entries, className }: EmomSelfMinuteSplitsListProps) {
+export function EmomSelfMinuteSplitsList({
+  entries,
+  activeMinuteIndex = null,
+  className,
+}: EmomSelfMinuteSplitsListProps) {
   if (entries.length === 0) return null;
 
   return (
@@ -24,7 +29,11 @@ export function EmomSelfMinuteSplitsList({ entries, className }: EmomSelfMinuteS
       {entries.map((e) => (
         <li
           key={e.minuteIndex}
-          className="rounded-md bg-background/80 px-2 py-1 text-[11px] tabular-nums text-muted-foreground"
+          className={cn(
+            'rounded-md bg-background/80 px-2 py-1 text-[11px] tabular-nums text-muted-foreground',
+            activeMinuteIndex === e.minuteIndex &&
+              'bg-primary/10 ring-1 ring-primary text-foreground',
+          )}
         >
           <span className="font-medium text-foreground/80">M{e.minuteIndex}</span> {e.durationLabel}
         </li>
