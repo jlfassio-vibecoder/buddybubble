@@ -3,6 +3,7 @@ export {
   formatSessionTime,
   type SessionTimeFormat,
 } from '@/lib/timer/format-session-time';
+export { formatCountdownMmSs } from '@/lib/timer/format-countdown-mm-ss';
 export {
   createAudioCuePlayer,
   getWorkoutTimerAudioPlayer,

@@ -10,20 +10,22 @@ import TabataTimerOverlay from '@/features/live-video/wrappers/interval/mechanic
 import {
   computeNextTabataMechanicsState,
   isTabataHostAutoAdvanceSegment,
+  isTabataMechanicsState,
   isTabataSegmentElapsed,
   isTabataTimerFrozen,
-  type TabataMechanicsState,
 } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
 import { useTabataBlockPauseSync } from '@/features/live-video/wrappers/interval/mechanics/useTabataBlockPauseSync';
+import { useTabataOverlayAudio } from '@/features/live-video/wrappers/interval/mechanics/useTabataOverlayAudio';
+import { useTabataWorkSetSync } from '@/features/live-video/wrappers/interval/mechanics/useTabataWorkSetSync';
 import type { IntervalMechanicsContext } from '@/features/live-video/wrappers/interval/types/interval-engine';
 
 export function TabataMechanics({
   engine,
   intervalSessionId: _intervalSessionId,
-  liveSessionId: _liveSessionId,
+  liveSessionId,
   isHost,
-  authUserId: _authUserId,
-  supabase: _supabase,
+  authUserId,
+  supabase,
   onWrapperError,
 }: IntervalMechanicsContext) {
   const { state } = useLiveSessionRuntime();
@@ -34,6 +36,14 @@ export function TabataMechanics({
     engine,
   });
 
+  useTabataWorkSetSync({
+    engine,
+    liveSessionId,
+    userId: authUserId,
+    supabase,
+    isHost,
+  });
+
   const engineRef = useRef(engine);
   useEffect(() => {
     engineRef.current = engine;
@@ -41,8 +51,10 @@ export function TabataMechanics({
 
   const advancingRef = useRef(false);
 
-  const tabataState =
-    engine.mechanicsState && 'round_index' in engine.mechanicsState ? engine.mechanicsState : null;
+  const tabataState = useMemo(
+    () => (isTabataMechanicsState(engine.mechanicsState) ? engine.mechanicsState : null),
+    [engine.mechanicsState],
+  );
 
   useEffect(() => {
     if (!isHost || !engine.advanceSegment || !tabataState) return;
@@ -51,10 +63,7 @@ export function TabataMechanics({
 
     const check = () => {
       const e = engineRef.current;
-      const ms =
-        e.mechanicsState && 'round_index' in e.mechanicsState
-          ? (e.mechanicsState as TabataMechanicsState)
-          : null;
+      const ms = isTabataMechanicsState(e.mechanicsState) ? e.mechanicsState : null;
       if (!ms || !e.advanceSegment || advancingRef.current) return;
       if (isTabataTimerFrozen(ms)) return;
       if (!isTabataSegmentElapsed(ms, Date.now())) return;
@@ -71,6 +80,8 @@ export function TabataMechanics({
     return () => window.clearInterval(id);
   }, [isHost, state.status, engine.advanceSegment, engine.timerPhase, tabataState]);
 
+  useTabataOverlayAudio(engine);
+
   const { setHostNavActions } = useHostNavActions();
   const { setTopLeftOverlay } = useVideoOverlaySlots();
 
@@ -85,15 +96,18 @@ export function TabataMechanics({
   }, [engine.startTimer, engine.resetTimer, engine.timerPhase, setHostNavActions]);
 
   useEffect(() => {
-    setTopLeftOverlay(<TabataTimerOverlay engine={engineRef.current} />);
+    setTopLeftOverlay(<TabataTimerOverlay engine={engine} />);
     return () => setTopLeftOverlay(null);
   }, [
+    engine,
     engine.remainingSec,
+    engine.totalSec,
     engine.timerPhase,
     engine.segmentLabel,
     engine.currentRoundIndex,
     tabataState?.segment,
     tabataState?.is_paused,
+    tabataState?.round_index,
     setTopLeftOverlay,
   ]);
 

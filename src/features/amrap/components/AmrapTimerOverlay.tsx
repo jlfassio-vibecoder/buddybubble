@@ -1,15 +1,7 @@
 'use client';
 
 import type { AmrapSessionEngine } from '@/features/amrap/types/amrap-engine';
-
-function fmt(remainingSec: number): string {
-  const s = Math.max(0, Math.floor(remainingSec));
-  const mm = Math.floor(s / 60)
-    .toString()
-    .padStart(2, '0');
-  const ss = (s % 60).toString().padStart(2, '0');
-  return `${mm}:${ss}`;
-}
+import { formatCountdownMmSs } from '@/lib/timer';
 
 export default function AmrapTimerOverlay({ engine }: { engine: AmrapSessionEngine }) {
   return (
@@ -23,7 +15,7 @@ export default function AmrapTimerOverlay({ engine }: { engine: AmrapSessionEngi
           className="mt-1 font-bold tabular-nums text-5xl leading-none tracking-tight text-white"
           aria-live="polite"
         >
-          {fmt(engine.remainingSec)}
+          {formatCountdownMmSs(engine.remainingSec)}
         </p>
       </div>
     </div>

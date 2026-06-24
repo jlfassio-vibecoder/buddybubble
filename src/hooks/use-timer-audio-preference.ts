@@ -1,23 +1,30 @@
 'use client';
 
-import { useCallback, useState } from 'react';
-import { readTimerAudioEnabled, writeTimerAudioEnabled } from '@/lib/timer/timer-audio-preference';
+import { useCallback, useSyncExternalStore } from 'react';
+import {
+  readTimerAudioEnabled,
+  subscribeTimerAudioEnabled,
+  writeTimerAudioEnabled,
+} from '@/lib/timer/timer-audio-preference';
 
 export function useTimerAudioPreference(): {
   audioEnabled: boolean;
   setAudioEnabled: (enabled: boolean) => void;
   toggleAudio: () => void;
 } {
-  const [audioEnabled, setAudioEnabledState] = useState(() => readTimerAudioEnabled());
+  const audioEnabled = useSyncExternalStore(
+    subscribeTimerAudioEnabled,
+    readTimerAudioEnabled,
+    readTimerAudioEnabled,
+  );
 
   const setAudioEnabled = useCallback((enabled: boolean) => {
     writeTimerAudioEnabled(enabled);
-    setAudioEnabledState(enabled);
   }, []);
 
   const toggleAudio = useCallback(() => {
-    setAudioEnabled(!audioEnabled);
-  }, [audioEnabled, setAudioEnabled]);
+    writeTimerAudioEnabled(!readTimerAudioEnabled());
+  }, []);
 
   return { audioEnabled, setAudioEnabled, toggleAudio };
 }
