@@ -29,7 +29,7 @@ const FORMAT_LABELS: Record<string, string> = {
   circuit: 'Circuit',
   amrap: 'AMRAP',
   emom: 'EMOM',
-  tabata: 'Tabata',
+  tabata: 'Intervals',
   ladder: 'Ladder',
   chipper: 'Chipper',
   pyramid: 'Pyramid',

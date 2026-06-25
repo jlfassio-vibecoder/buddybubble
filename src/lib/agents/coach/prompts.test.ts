@@ -5,6 +5,8 @@ import {
   EXERCISE_INDEX_MAP_HEADER,
   COACH_RAIL_SURFACE_VALUE,
   buildApexArchitectMainChatBlock,
+  buildCoachOutlineOnlyPrompt,
+  COACH_OUTLINE_ONLY_SYSTEM_PROMPT,
   buildBaseCoachPrompt,
   buildCurrentTaskContextBlock,
   buildSessionReadinessContextBlock,
@@ -100,7 +102,7 @@ describe('buildApexArchitectMainChatBlock', () => {
     expect(block).toContain('CSCS');
     expect(block).toContain('Triad of Performance');
     expect(block).toContain(':main/emom/alternating');
-    expect(block).toContain(':metcon/tabata');
+    expect(block).toContain(':finisher/hiit/classic');
   });
 
   it('does not mention LIVE CO-PILOT MODE', () => {
@@ -126,6 +128,35 @@ describe('buildApexArchitectMainChatBlock', () => {
     expect(block).toContain('Vocabulary Strictness');
     expect(block).toContain('Alternating EMOM');
     expect(block).toContain(':main/emom/alternating');
+  });
+
+  it('includes interval terminology (Tabata strict vs preset names)', () => {
+    expect(block).toContain('INTERVAL TERMINOLOGY');
+    expect(block).toContain('never say "Tabata-style"');
+    expect(block).toContain('Classic HIIT');
+  });
+});
+
+describe('COACH_OUTLINE_ONLY_SYSTEM_PROMPT', () => {
+  it('requires interval_preset and uses Classic HIIT example for 30/30', () => {
+    expect(COACH_OUTLINE_ONLY_SYSTEM_PROMPT).toContain('INTERVAL TERMINOLOGY');
+    expect(COACH_OUTLINE_ONLY_SYSTEM_PROMPT).toContain('interval_preset');
+    expect(COACH_OUTLINE_ONLY_SYSTEM_PROMPT).toContain('Finisher — Classic HIIT');
+    expect(COACH_OUTLINE_ONLY_SYSTEM_PROMPT).toContain('Main — Tabata');
+  });
+});
+
+describe('buildCoachOutlineOnlyPrompt', () => {
+  it('example JSON mixes Tabata 20/10 and Classic HIIT 30/30 blocks', () => {
+    const prompt = buildCoachOutlineOnlyPrompt(
+      'HIIT session',
+      'Finishers',
+      'Add tabata and classic hiit',
+      BLOCK_BLUEPRINT_LIBRARY_HEADER,
+    );
+    expect(prompt).toContain('"interval_preset":"classic_hiit"');
+    expect(prompt).toContain('"interval_preset":"tabata"');
+    expect(prompt).toContain('Finisher — Classic HIIT');
   });
 });
 

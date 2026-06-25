@@ -120,7 +120,7 @@ function WorkoutTimerHarnessHud({}: {}) {
                     className={state.phase === 'tabata' ? '' : 'border-border/80 bg-background/50'}
                     onClick={() => runtime.actions.transitionToPhase('tabata')}
                   >
-                    Tabata block
+                    Intervals block
                   </Button>
                 </div>
               </div>

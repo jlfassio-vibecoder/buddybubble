@@ -142,8 +142,8 @@ export function buildBuddyWorkoutPersona(params: BuildBuddyWorkoutPersonaParams)
     hiitOptions: overrides?.hiitOptions,
     amrapDensityMode: overrides?.amrapDensityMode,
     amrapDensityOptions: overrides?.amrapDensityOptions,
-    tabataBalancedMode: overrides?.tabataBalancedMode,
-    tabataBalancedOptions: overrides?.tabataBalancedOptions,
+    intervalBalancedMode: overrides?.intervalBalancedMode,
+    intervalBalancedOptions: overrides?.intervalBalancedOptions,
     ...(briefAuthoritative ? { kanbanBriefAuthoritative: true as const } : {}),
   };
 

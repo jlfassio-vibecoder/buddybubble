@@ -63,8 +63,8 @@ describe('formatBlockSubtitle', () => {
     ).toBe('16 Min EMOM (Every 60s)');
   });
 
-  it('formats Tabata bare and with full params', () => {
-    expect(formatBlockSubtitle('tabata', {})).toBe('Tabata');
+  it('formats Intervals bare and with full params', () => {
+    expect(formatBlockSubtitle('tabata', {})).toBe('Intervals');
     expect(
       formatBlockSubtitle('tabata', {
         rounds: 8,
@@ -72,14 +72,33 @@ describe('formatBlockSubtitle', () => {
         rest_seconds: 10,
       }),
     ).toBe('Tabata · 8 Rounds (20/10s)');
-    expect(formatBlockSubtitle('tabata', { rounds: 4 })).toBe('Tabata · 4 Rounds');
+    expect(formatBlockSubtitle('tabata', { rounds: 4 })).toBe('Intervals · 4 Rounds');
     expect(
       formatBlockSubtitle('tabata', {
         rounds: 8,
         work_seconds: 0,
         rest_seconds: 10,
       }),
-    ).toBe('Tabata · 8 Rounds');
+    ).toBe('Intervals · 8 Rounds');
+  });
+
+  it('formats Intervals with named interval presets', () => {
+    expect(
+      formatBlockSubtitle('tabata', {
+        interval_preset: 'classic_hiit',
+        rounds: 8,
+        work_seconds: 30,
+        rest_seconds: 30,
+      }),
+    ).toBe('Classic HIIT · 8 Rounds (30/30s)');
+    expect(
+      formatBlockSubtitle('tabata', {
+        interval_preset: 'classic_hiit',
+        rounds: 8,
+        work_seconds: 25,
+        rest_seconds: 30,
+      }),
+    ).toBe('Intervals · 8 Rounds (25/30s)');
   });
 
   it('formats superset and circuit with and without rounds', () => {

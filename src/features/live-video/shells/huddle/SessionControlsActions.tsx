@@ -320,7 +320,7 @@ export function SessionControlsActions({
               disabled={phaseDisabled || !tabataAttachReady}
               onClick={handleStartTabataBlock}
             >
-              Tabata block
+              Intervals block
             </DropdownMenuItem>
             <DropdownMenuItem
               disabled={phaseDisabled || !emomAttachReady}

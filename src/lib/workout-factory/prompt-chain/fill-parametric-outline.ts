@@ -2,6 +2,7 @@
  * Stage 1 (parametric outline fill): Vertex prompt + output validation.
  */
 
+import { INTERVAL_MODALITY_FACTORY_PROMPT } from '@/lib/workout-factory/interval-timer/interval-preset-catalog';
 import type { WorkoutPersona } from '@/lib/workout-factory/types/ai-workout';
 import type { OutlineFillOutput } from '@/lib/workout-factory/types/outline-fill-types';
 import {
@@ -134,7 +135,7 @@ Fill each outline block in order with exercises or instruction lines appropriate
 - Do NOT echo block names, block_format, or format_params — the server applies structure from the outline.
 - Exercise-shaped blocks MUST include exercises[] with one entry per placeholder exercise in the outline (same count, same order).
 - Instruction-only blocks: output instructions[] only (no exercises[], no block_format).
-- For EMOM/Tabata blocks, movement names alone are sufficient when format_params carry timing; optional per-exercise work_seconds/rest_seconds/reps.
+- For EMOM/Intervals (block_format tabata) blocks, movement names alone are sufficient when format_params carry timing; optional per-exercise work_seconds/rest_seconds/reps.
 - For straight_sets, circuit, and other formats, include sets, reps, or work_seconds on each exercise.
 - Scale volume and intensity to phase intent, progression trend, anchor lift, temporary limitations, and session duration from intake when present.
 
@@ -220,6 +221,8 @@ export function validateFillParametricOutlineOutput(
 }
 
 export const FILL_PARAMETRIC_OUTLINE_SYSTEM_PROMPT = `You are the Biomechanist and Mathematician. You are given a strict, pre-approved structural outline of workout blocks. Your job is to fill each block with specific exercises and prescriptions (or instruction lines) based on the user's intake, equipment, and profile.
+
+${INTERVAL_MODALITY_FACTORY_PROMPT}
 
 Do NOT add, remove, or reorder blocks. Do NOT echo block names, block_format, or format_params in your JSON — return fill content only (exercises[] and/or instructions[]) in outline order.
 

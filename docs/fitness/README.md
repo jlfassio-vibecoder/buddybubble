@@ -60,6 +60,12 @@ flowchart LR
 - **`UnitSystem`** — `metric` | `imperial` on `fitness_profiles` and workout UIs: [database.ts](../../src/types/database.ts).
 - **AI / program factory types** — [workout-factory/](../../src/lib/workout-factory/) (e.g. `WorkoutSetTemplate`, program schedule utils) used by the workout viewer.
 
+## Interval timers
+
+- **[unified-interval-engine.md](unified-interval-engine.md)** — Tabata/EMOM live + offline engines, attach payload, mechanics state.
+- **[interval-ratio-presets-design.md](interval-ratio-presets-design.md)** — Industry work/rest presets (Classic HIIT, Power Sprints, Fighters, etc.) on `block_format: tabata`; outline editor + Coach rail tokens.
+- **[multi-exercise-interval-circuit-plan.md](multi-exercise-interval-circuit-plan.md)** — Planned: N exercises × M circuit rounds (Coach cardinality, timer rotation, logging parity).
+
 Deeper database and RLS behavior live under [supabase/migrations/](../../supabase/migrations/); this doc set focuses on UI behavior and file-level entry points.
 
 ## Workout rendering landscape (parametric blocks)

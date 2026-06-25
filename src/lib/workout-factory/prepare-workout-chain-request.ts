@@ -14,20 +14,23 @@ import type {
   HiitSessionDurationTier,
   HiitWorkRestRatio,
   AmrapDensityOptions,
-  TabataBalancedOptions,
-  TabataBalancedPairingPattern,
+  IntervalBalancedOptions,
+  IntervalBalancedPairingPattern,
 } from '@/lib/workout-factory/types/ai-workout';
+import {
+  getIntervalPresetDefinition,
+  INTERVAL_PRESET_ROUND_BOUNDS,
+  isIntervalPresetId,
+} from '@/lib/workout-factory/interval-timer/interval-preset-catalog';
+import {
+  intervalBalancedExerciseCount,
+  intervalBalancedSessionMinutes,
+} from '@/lib/workout-factory/interval-balanced-duration';
 import {
   getZoneByIdServer,
   getAllEquipmentItemsServer,
 } from '@/lib/workout-factory/server-equipment-stub';
 import { amrapDensityTierMinutes } from '@/lib/workout-factory/amrap-density-tier';
-import {
-  TABATA_BALANCED_MAX_ROUNDS,
-  TABATA_BALANCED_MIN_ROUNDS,
-  tabataBalancedExerciseCount,
-  tabataBalancedSessionMinutes,
-} from '@/lib/workout-factory/tabata-balanced-duration';
 
 export interface WorkoutChainZoneContext {
   zoneName: string;
@@ -42,8 +45,8 @@ export interface PreparedWorkoutChainRequest {
   hiitMode: boolean;
   /** Normalized density AMRAP options when amrapDensityMode is true. */
   amrapDensityOptions: AmrapDensityOptions | undefined;
-  /** Normalized balanced Tabata options when tabataBalancedMode is true. */
-  tabataBalancedOptions: TabataBalancedOptions | undefined;
+  /** Normalized interval-balanced options when intervalBalancedMode is true. */
+  intervalBalancedOptions: IntervalBalancedOptions | undefined;
   zoneContext: WorkoutChainZoneContext | undefined;
   /** Equipment list for context (e.g. equipment-aware prompts). */
   availableEquipment: string[];
@@ -181,16 +184,17 @@ export async function prepareWorkoutChainRequest(
 
   const amrapDensityModeRaw = !!persona.amrapDensityMode;
   const hiitModeRaw = !!persona.hiitMode;
-  const tabataBalancedModeRaw = !!persona.tabataBalancedMode;
+  const intervalBalancedModeRaw = !!persona.intervalBalancedMode;
 
   const metabolicModeCount =
-    (amrapDensityModeRaw ? 1 : 0) + (hiitModeRaw ? 1 : 0) + (tabataBalancedModeRaw ? 1 : 0);
+    (amrapDensityModeRaw ? 1 : 0) + (hiitModeRaw ? 1 : 0) + (intervalBalancedModeRaw ? 1 : 0);
   if (metabolicModeCount > 1) {
     return {
       ok: false,
       response: new Response(
         JSON.stringify({
-          error: 'At most one of hiitMode, amrapDensityMode, and tabataBalancedMode can be enabled',
+          error:
+            'At most one of hiitMode, amrapDensityMode, and intervalBalancedMode can be enabled',
         }),
         { status: 400, headers: { 'Content-Type': 'application/json' } },
       ),
@@ -198,8 +202,8 @@ export async function prepareWorkoutChainRequest(
   }
 
   const amrapDensityMode = amrapDensityModeRaw;
-  const tabataBalancedMode = tabataBalancedModeRaw;
-  const hiitMode = !amrapDensityMode && !tabataBalancedMode && hiitModeRaw;
+  const intervalBalancedMode = intervalBalancedModeRaw;
+  const hiitMode = !amrapDensityMode && !intervalBalancedMode && hiitModeRaw;
 
   const defaultHiitCircuitStructure: HiitCircuitStructure = {
     includeWarmup: true,
@@ -382,53 +386,59 @@ export async function prepareWorkoutChainRequest(
     };
   }
 
-  let tabataBalancedOptions: TabataBalancedOptions | undefined;
-  if (tabataBalancedMode) {
-    const rawTabata = persona.tabataBalancedOptions;
-    if (!rawTabata || typeof rawTabata !== 'object') {
+  let intervalBalancedOptions: IntervalBalancedOptions | undefined;
+  if (intervalBalancedMode) {
+    const rawInterval = persona.intervalBalancedOptions;
+    if (!rawInterval || typeof rawInterval !== 'object') {
       return {
         ok: false,
-        response: new Response(JSON.stringify({ error: 'tabataBalancedOptions is required' }), {
+        response: new Response(JSON.stringify({ error: 'intervalBalancedOptions is required' }), {
           status: 400,
           headers: { 'Content-Type': 'application/json' },
         }),
       };
     }
-    const validPatterns: TabataBalancedPairingPattern[] = [
+    const presetId = rawInterval.intervalPresetId;
+    if (!isIntervalPresetId(presetId)) {
+      return {
+        ok: false,
+        response: new Response(
+          JSON.stringify({ error: 'intervalBalancedOptions.intervalPresetId is invalid' }),
+          { status: 400, headers: { 'Content-Type': 'application/json' } },
+        ),
+      };
+    }
+    const validPatterns: IntervalBalancedPairingPattern[] = [
       'single',
       'antagonist_pair',
       'agonist_pair',
       'four_station',
       'eight_station',
     ];
-    const pattern = rawTabata.pairingPattern;
+    const pattern = rawInterval.pairingPattern;
     if (!validPatterns.includes(pattern)) {
       return {
         ok: false,
         response: new Response(
-          JSON.stringify({ error: 'tabataBalancedOptions.pairingPattern is invalid' }),
+          JSON.stringify({ error: 'intervalBalancedOptions.pairingPattern is invalid' }),
           { status: 400, headers: { 'Content-Type': 'application/json' } },
         ),
       };
     }
-    const rc = rawTabata.roundCount;
-    if (
-      typeof rc !== 'number' ||
-      rc !== Math.floor(rc) ||
-      rc < TABATA_BALANCED_MIN_ROUNDS ||
-      rc > TABATA_BALANCED_MAX_ROUNDS
-    ) {
+    const bounds = INTERVAL_PRESET_ROUND_BOUNDS[presetId];
+    const rc = rawInterval.roundCount;
+    if (typeof rc !== 'number' || rc !== Math.floor(rc) || rc < bounds.min || rc > bounds.max) {
       return {
         ok: false,
         response: new Response(
           JSON.stringify({
-            error: `tabataBalancedOptions.roundCount must be an integer between ${TABATA_BALANCED_MIN_ROUNDS} and ${TABATA_BALANCED_MAX_ROUNDS}`,
+            error: `intervalBalancedOptions.roundCount must be an integer between ${bounds.min} and ${bounds.max} for preset ${presetId}`,
           }),
           { status: 400, headers: { 'Content-Type': 'application/json' } },
         ),
       };
     }
-    const nEx = tabataBalancedExerciseCount(pattern);
+    const nEx = intervalBalancedExerciseCount(pattern);
     if (nEx > 1 && rc % nEx !== 0) {
       return {
         ok: false,
@@ -440,7 +450,12 @@ export async function prepareWorkoutChainRequest(
         ),
       };
     }
-    tabataBalancedOptions = { pairingPattern: pattern, roundCount: rc };
+    intervalBalancedOptions = {
+      intervalPresetId: presetId,
+      pairingPattern: pattern,
+      roundCount: rc,
+    };
+    getIntervalPresetDefinition(presetId);
   }
 
   if (typeof persona.sessionDurationMinutes !== 'number') {
@@ -466,14 +481,17 @@ export async function prepareWorkoutChainRequest(
         ),
       };
     }
-  } else if (tabataBalancedMode && tabataBalancedOptions) {
-    const expectedMin = tabataBalancedSessionMinutes(tabataBalancedOptions.roundCount);
+  } else if (intervalBalancedMode && intervalBalancedOptions) {
+    const expectedMin = intervalBalancedSessionMinutes(
+      intervalBalancedOptions.intervalPresetId,
+      intervalBalancedOptions.roundCount,
+    );
     if (persona.sessionDurationMinutes !== expectedMin) {
       return {
         ok: false,
         response: new Response(
           JSON.stringify({
-            error: `sessionDurationMinutes must be ${expectedMin} for the selected Tabata round count (main block only)`,
+            error: `sessionDurationMinutes must be ${expectedMin} for the selected interval preset round count (main block only)`,
           }),
           { status: 400, headers: { 'Content-Type': 'application/json' } },
         ),
@@ -558,8 +576,8 @@ export async function prepareWorkoutChainRequest(
     hiitOptions: hiitMode ? hiitOptions : undefined,
     amrapDensityMode,
     amrapDensityOptions: amrapDensityMode ? amrapDensityOptions : undefined,
-    tabataBalancedMode,
-    tabataBalancedOptions: tabataBalancedMode ? tabataBalancedOptions : undefined,
+    intervalBalancedMode,
+    intervalBalancedOptions: intervalBalancedMode ? intervalBalancedOptions : undefined,
   };
 
   return {
@@ -570,7 +588,7 @@ export async function prepareWorkoutChainRequest(
       hiitOptions,
       hiitMode,
       amrapDensityOptions,
-      tabataBalancedOptions,
+      intervalBalancedOptions,
       zoneContext,
       availableEquipment,
       providedArchitect,

@@ -28,10 +28,10 @@ export function buildExtractWorkoutFromBriefPrompt(persona: WorkoutPersona): str
   const isTimeBased = !!(
     persona.hiitMode ||
     persona.amrapDensityMode ||
-    persona.tabataBalancedMode
+    persona.intervalBalancedMode
   );
   const timeBasedInstructions = isTimeBased
-    ? "\nCRITICAL FORMATTING: This is a HIIT/Time-based workout (AMRAP, EMOM, Tabata). Do NOT omit 'reps'. For Tabata/intervals, include BOTH 'work_seconds' (e.g., 20) and a target for 'reps' (e.g., '15+'). For AMRAP circuits, provide the specific 'reps' required for each movement to complete one round. You can use 'work_seconds' to define the total time cap or interval length."
+    ? "\nCRITICAL FORMATTING: This is a HIIT/Time-based workout (AMRAP, EMOM, Intervals). Do NOT omit 'reps'. For work/rest interval blocks (block_format tabata), include BOTH 'work_seconds' and a target for 'reps' (e.g., '15+'). Say Tabata only for strict 20/10 work/rest — use preset names (Classic HIIT, etc.) or Intervals for other ratios. For AMRAP circuits, provide the specific 'reps' required for each movement to complete one round."
     : '';
 
   return `=== WORKOUT BRIEF (AUTHORITATIVE) ===

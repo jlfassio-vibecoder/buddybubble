@@ -31,6 +31,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import { TabataFormatParamsEditor } from '@/components/fitness/TabataFormatParamsEditor';
 
 export type WorkoutOutlinePanelProps = {
   editor: WorkoutOutlineEditorState;
@@ -276,11 +277,25 @@ function OutlineBlockCard({
             </div>
           ) : (
             <>
-              <OutlineFormatParamsForm
-                block={block}
-                disabled={disabled || !canWrite}
-                onChange={(format_params) => onChange({ format_params })}
-              />
+              {typeof block.block_format === 'string' && block.block_format === 'tabata' ? (
+                <TabataFormatParamsEditor
+                  params={
+                    block.format_params &&
+                    typeof block.format_params === 'object' &&
+                    !Array.isArray(block.format_params)
+                      ? (block.format_params as Record<string, unknown>)
+                      : {}
+                  }
+                  disabled={disabled || !canWrite}
+                  onChange={(format_params) => onChange({ format_params })}
+                />
+              ) : (
+                <OutlineFormatParamsForm
+                  block={block}
+                  disabled={disabled || !canWrite}
+                  onChange={(format_params) => onChange({ format_params })}
+                />
+              )}
               <div className="space-y-2">
                 <p className="text-xs font-medium text-muted-foreground">Exercise placeholders</p>
                 {exercises.map((ex, exIdx) => {
