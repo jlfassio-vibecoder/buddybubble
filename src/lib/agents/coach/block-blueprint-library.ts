@@ -151,6 +151,16 @@ function reconcileTabataIntervalPreset(out: Record<string, unknown>): Record<str
   if (derived !== 'custom') {
     return { ...out, interval_preset: derived };
   }
+  const presetId = out.interval_preset;
+  if (
+    work == null &&
+    rest == null &&
+    typeof presetId === 'string' &&
+    presetId !== 'custom' &&
+    TABATA_INTERVAL_PRESET_IDS.has(presetId)
+  ) {
+    return out;
+  }
   if (out.interval_preset === 'custom') {
     return { ...out, interval_preset: 'custom' };
   }

@@ -66,6 +66,18 @@ describe('normalizeFormatParams', () => {
     });
   });
 
+  it('preserves interval_preset when only rounds are present', () => {
+    expect(
+      normalizeFormatParams('tabata', {
+        rounds: 8,
+        interval_preset: 'tabata',
+      }),
+    ).toEqual({
+      rounds: 8,
+      interval_preset: 'tabata',
+    });
+  });
+
   it('normalizes tabata interval_preset and strips invalid values', () => {
     expect(
       normalizeFormatParams('tabata', {

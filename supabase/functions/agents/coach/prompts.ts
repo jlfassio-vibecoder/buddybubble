@@ -1,33 +1,6 @@
 /**
- * Coach prompt builders — pure module, canonical source.
- *
- * Exports include:
- *   - `buildBaseCoachPrompt(currentDate)` — composite base prompt lifted verbatim from
- *     `supabase/functions/bubble-agent-dispatch/index.ts:1548-1573`. The only delta vs
- *     the legacy implementation is that the date is parameterized so unit tests can pin
- *     it; the legacy file derives `currentDate` inline at request time.
- *   - `buildWorkoutOpenGreetingPrompt({ workoutTitle, isoNow, userContextBlock? })` —
- *     the prompt-parts assembly from `bubble-agent-dispatch/index.ts:1486-1501`.
- *   - `buildWorkoutOpenGreetingUserText(workoutJson)` — the single user-turn payload
- *     from `bubble-agent-dispatch/index.ts:1502`.
- *   - `buildCurrentTaskContextBlock(title, description, opts?)` — the CURRENT TASK CONTEXT
- *     block from `bubble-agent-dispatch/index.ts:1621-1625`; `opts.rail` swaps the trailing
- *     instruction to the live co-pilot variant for `StandardTaskChatRail`.
- *   - `buildTaskModalIntakeUiCoachBlock()` — when the resolved task is workout /
- *     workout_log, appended after CURRENT TASK CONTEXT so the model maps chat to the
- *     Task Modal intake wizard and `task_modal_intake_patch`.
- *   - `readTaskModalLiveStateFromMessageMetadata`, `buildTaskModalLiveStateBlock` —
- *     Phase 3.7: client `messages.metadata.task_modal_live_state` → system prompt.
- *   - `readTaskModalOutlineDraftFromMessageMetadata`, `buildOutlineDraftContextBlock`,
- *     `resolveOutlineDraftPromptParts` — outline co-pilot: `task_modal_outline_draft` → system prompt.
- *   - `WORKOUT_CONTEXT_HEADER`, `USER_CONTEXT_TAIL`, `LAST_WORKOUT_CONTEXT_HEADER`,
- *     `CURRENT_USER_CONTEXT_HEADER` — header constants reused by the strategy and the
- *     Deno-only `context.ts` module.
- *
- * A byte-for-byte mirror lives at `supabase/functions/agents/coach/prompts.ts`. Run
- * `pnpm check:agent-mirror` to verify parity.
- *
- * Pure module: depends on `./config` and `./task-modal-intake-patch` (intake enum lists).
+ * MIRROR FILE — canonical lives at `src/lib/agents/coach/prompts.ts`.
+ * Run `pnpm check:agent-mirror` after edits.
  */
 
 /* eslint-disable max-len */

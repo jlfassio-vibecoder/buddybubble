@@ -71,6 +71,7 @@ describe('computeRestFromWorkAndRatio', () => {
   it('rounds fractional rest for 2:1 and 5:1', () => {
     expect(computeRestFromWorkAndRatio(45, '2:1')).toBe(23);
     expect(computeRestFromWorkAndRatio(47, '5:1')).toBe(9);
+    expect(computeRestFromWorkAndRatio(2, '5:1')).toBe(1);
   });
 
   it('returns 0 for invalid work', () => {
@@ -171,6 +172,18 @@ describe('reconcileIntervalPreset', () => {
       work_seconds: 25,
       rest_seconds: 30,
       interval_preset: 'custom',
+    });
+  });
+
+  it('preserves known preset id when work/rest are not yet provided', () => {
+    expect(
+      reconcileIntervalPreset({
+        rounds: 8,
+        interval_preset: 'tabata',
+      }),
+    ).toEqual({
+      rounds: 8,
+      interval_preset: 'tabata',
     });
   });
 });

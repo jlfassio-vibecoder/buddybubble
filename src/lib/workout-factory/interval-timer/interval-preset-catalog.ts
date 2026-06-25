@@ -199,9 +199,15 @@ export function resolveIntervalPresetLabel(params: Record<string, unknown>): str
 export function reconcileIntervalPreset(params: Record<string, unknown>): Record<string, unknown> {
   const derived = deriveIntervalPresetFromParams(params);
   const presetId = params.interval_preset;
+  const hasWorkRest =
+    positiveInt(params.work_seconds) != null && positiveInt(params.rest_seconds) != null;
 
   if (derived !== 'custom') {
     return { ...params, interval_preset: derived };
+  }
+
+  if (!hasWorkRest && isIntervalPresetId(presetId)) {
+    return params;
   }
 
   if (presetId === 'custom') {
@@ -235,7 +241,7 @@ export function computeRestFromWorkAndRatio(
     case '1:5':
       return work * 5;
     case '5:1':
-      return Math.round(work / 5);
+      return Math.max(1, Math.round(work / 5));
     default:
       return 0;
   }

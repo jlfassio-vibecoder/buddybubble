@@ -77,19 +77,19 @@ export function TabataFormatParamsEditor({
   };
 
   const handleWorkChange = (raw: string) => {
-    const work_seconds = raw === '' ? undefined : Number(raw);
+    const work_seconds = parseOptionalPositiveInt(raw);
     onChange(
       mergeTabataFormatParams(params, { work_seconds }, { restLocked, ratio: selectedRatio }),
     );
   };
 
   const handleRestChange = (raw: string) => {
-    const rest_seconds = raw === '' ? undefined : Number(raw);
+    const rest_seconds = parseOptionalPositiveInt(raw);
     onChange(mergeTabataFormatParams(params, { rest_seconds }, { manualRestEdit: true }));
   };
 
   const handleRoundsChange = (raw: string) => {
-    const rounds = raw === '' ? undefined : Number(raw);
+    const rounds = parseOptionalPositiveInt(raw);
     onChange(mergeTabataFormatParams(params, { rounds }, { restLocked, ratio: selectedRatio }));
   };
 
@@ -230,6 +230,14 @@ export function TabataFormatParamsEditor({
 function readRounds(params: Record<string, unknown>): number | undefined {
   const rounds = params.rounds;
   return typeof rounds === 'number' && Number.isFinite(rounds) ? rounds : undefined;
+}
+
+function parseOptionalPositiveInt(raw: string): number | undefined {
+  if (raw === '') return undefined;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return undefined;
+  const rounded = Math.round(n);
+  return rounded > 0 ? rounded : undefined;
 }
 
 function getIntervalPresetDefinitionRatio(id: KnownIntervalPresetId): IntervalWorkRestRatio {

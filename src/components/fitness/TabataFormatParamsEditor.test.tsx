@@ -63,4 +63,16 @@ describe('TabataFormatParamsEditor', () => {
     expect(preview.textContent).toContain('total');
     expect(preview.textContent).toContain('GET READY');
   });
+
+  it('does not emit NaN when work input is temporarily invalid', () => {
+    const onChange = vi.fn();
+    render(
+      <TabataFormatParamsEditor params={applyIntervalPreset('classic_hiit')} onChange={onChange} />,
+    );
+
+    fireEvent.change(screen.getByTestId('tabata-work-input'), { target: { value: '-' } });
+
+    const lastCall = onChange.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(Number.isNaN(lastCall.work_seconds)).toBe(false);
+  });
 });
