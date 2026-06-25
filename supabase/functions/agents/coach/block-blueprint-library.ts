@@ -420,7 +420,7 @@ export {
   buildComboAlternatingStationsMatrix,
   buildDefaultAlternatingStationsMatrix,
   hydrateEmomAlternatingStations,
-} from '../../_shared/workout-metadata/hydrate-emom-alternating-stations';
+} from '../../_shared/workout-metadata/hydrate-emom-alternating-stations.ts';
 
 /** Returns drop reason or null when shape is valid. */
 export function validateBlockShape(

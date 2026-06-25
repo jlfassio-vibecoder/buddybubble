@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseAsyncSessionFromInstanceMetadata } from './live-session-invite';
+import { parseAsyncSessionFromInstanceMetadata } from './live-session-invite.ts';
 
 /**
  * Deno edge mirror of `parseAsyncSessionFromInstanceMetadata` — keep behavior aligned with

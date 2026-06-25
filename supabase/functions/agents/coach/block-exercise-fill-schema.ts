@@ -5,7 +5,7 @@
  * Any change must be hand-mirrored — run `pnpm check:agent-mirror` to verify parity.
  */
 
-import type { VertexResponseSchema } from '../../_shared/llm/types';
+import type { VertexResponseSchema } from '../../_shared/llm/types.ts';
 
 export const COACH_BLOCK_EXERCISE_FILL_SCHEMA: VertexResponseSchema = {
   type: 'OBJECT',
