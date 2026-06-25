@@ -140,6 +140,7 @@ describe('buildApexArchitectMainChatBlock', () => {
 describe('COACH_OUTLINE_ONLY_SYSTEM_PROMPT', () => {
   it('requires interval_preset and uses Classic HIIT example for 30/30', () => {
     expect(COACH_OUTLINE_ONLY_SYSTEM_PROMPT).toContain('INTERVAL TERMINOLOGY');
+    expect(COACH_OUTLINE_ONLY_SYSTEM_PROMPT).toContain('INTERVAL CIRCUIT CARDINALITY');
     expect(COACH_OUTLINE_ONLY_SYSTEM_PROMPT).toContain('interval_preset');
     expect(COACH_OUTLINE_ONLY_SYSTEM_PROMPT).toContain('Finisher — Classic HIIT');
     expect(COACH_OUTLINE_ONLY_SYSTEM_PROMPT).toContain('Main — Tabata');
@@ -157,6 +158,10 @@ describe('buildCoachOutlineOnlyPrompt', () => {
     expect(prompt).toContain('"interval_preset":"classic_hiit"');
     expect(prompt).toContain('"interval_preset":"tabata"');
     expect(prompt).toContain('Finisher — Classic HIIT');
+    expect(prompt).toContain('INTERVAL CIRCUIT COUNT');
+    expect(prompt).toContain('"rounds":3');
+    expect(prompt).toContain('"Burpees"');
+    expect(prompt).toContain('"High Knees"');
   });
 });
 

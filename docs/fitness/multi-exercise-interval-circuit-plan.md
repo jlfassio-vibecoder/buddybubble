@@ -1,12 +1,13 @@
 # Feature plan: Multi-exercise interval circuits (Classic HIIT rotation)
 
-**Status:** Planned (2026-06-25)  
+**Status:** Phase F1 shipped (2026-06-25); Phase F2–F3 planned  
 **Follows:** [interval-ratio-presets-design.md](./interval-ratio-presets-design.md) Phase E (terminology, presets, `interval_preset` ingest)  
 **Charter:** Fix interval blocks where the user prescribes **N exercises × M circuit rounds** (e.g. 4 movements × 3 rounds = 12 work intervals). Today Coach often collapses to one compound exercise, and the Tabata engine treats `format_params.rounds` as **total work/rest cycles for a single stream**, not circuit rounds across stations.
 
 **Related:**
 
 - [Tabata dual-engine boundary](./timers/live-video/tabata-dual-engine-boundary.md)
+- [Live interval preset overlay plan](./timers/live-video/live-interval-preset-overlay-plan.md) — HUD + snapshot (Phase L1–L3)
 - [Unified Interval Engine](./unified-interval-engine.md)
 - [rail-composer-tokens.md](../agents/coach/rail-composer-tokens.md) §3.2 / §5.5
 - Offline shell: `TabataIntervalShell.tsx` · Live: `TabataMechanics.tsx` · Log rows: `resolve-player-log-row-count.ts`
@@ -170,7 +171,7 @@ Reference implementations to study:
 
 ## 6. Implementation phases
 
-### Phase F1 — Coach cardinality (1–2 days)
+### Phase F1 — Coach cardinality (1–2 days) — shipped
 
 - Prompt + example updates (Coach + Deno mirror).
 - Optional `validateBlockShape` warning when tabata block has 1 exercise but block name/description implies circuit.
@@ -178,7 +179,7 @@ Reference implementations to study:
 
 **Exit:** User request “4 exercises, 3 rounds” → outline/card metadata has `exercises.length === 4`.
 
-### Phase F2 — Timer + logging semantics (2–3 days)
+### Phase F2 — Timer + logging semantics (2–3 days) — planned
 
 - `resolveTabataTimerConfig` / `computeTabataBlockDurationFromParams` multiply by exercise count when N>1.
 - Live `tabata-mechanics-state` + offline `interval-timer-engine` rotate active station per work segment.

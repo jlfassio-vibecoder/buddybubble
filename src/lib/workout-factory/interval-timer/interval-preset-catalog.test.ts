@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  INTERVAL_CIRCUIT_CARDINALITY_PROMPT_BLOCK,
   INTERVAL_PRESET_CATALOG,
   INTERVAL_PRESET_IDS,
   INTERVAL_PRESET_ROUND_BOUNDS,
@@ -21,6 +22,13 @@ describe('INTERVAL_PRESET_CATALOG', () => {
   it('defines six industry presets', () => {
     expect(INTERVAL_PRESET_IDS).toHaveLength(6);
     expect(INTERVAL_PRESET_CATALOG.map((p) => p.id)).toEqual([...INTERVAL_PRESET_IDS]);
+  });
+});
+
+describe('INTERVAL_CIRCUIT_CARDINALITY_PROMPT_BLOCK', () => {
+  it('documents circuit rounds and distinct exercise placeholders', () => {
+    expect(INTERVAL_CIRCUIT_CARDINALITY_PROMPT_BLOCK).toContain('CIRCUIT ROUNDS');
+    expect(INTERVAL_CIRCUIT_CARDINALITY_PROMPT_BLOCK).toContain('exactly N distinct');
   });
 });
 

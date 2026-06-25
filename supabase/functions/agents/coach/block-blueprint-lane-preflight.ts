@@ -337,7 +337,7 @@ export async function tryBlockBlueprintLanePreflight(
     return lane2;
   }
 
-  const blocks = buildDeterministicCoachBlocks(gate.assigned);
+  const blocks = buildDeterministicCoachBlocks(gate.assigned, messageText);
   const { p_new_metadata } = buildMergedTaskMetadataForBlockAppend(taskMetadataForMerge, blocks);
   const templateReply = templateBlockAppendReply(blocks);
   const replyText = await maybePolishLane1Reply(

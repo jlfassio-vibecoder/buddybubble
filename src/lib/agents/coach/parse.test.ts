@@ -1244,6 +1244,55 @@ describe('parseCoachJson', () => {
     expect(outline![0].block_format).toBe('tabata');
   });
 
+  it('accepts multi-exercise classic hiit circuit outline', () => {
+    const { outline, drops } = parseCoachOutlineOnlyBlocksFromText(
+      JSON.stringify({
+        blocks: [
+          {
+            name: 'Finisher — Classic HIIT',
+            block_format: 'tabata',
+            format_params: {
+              rounds: 3,
+              work_seconds: 30,
+              rest_seconds: 30,
+              interval_preset: 'classic_hiit',
+            },
+            exercises: [
+              { name: 'Burpees' },
+              { name: 'Mountain Climbers' },
+              { name: 'Jump Squats' },
+              { name: 'High Knees' },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(drops).toEqual([]);
+    expect((outline?.[0]?.exercises as unknown[]).length).toBe(4);
+  });
+
+  it('drops tabata circuit when block name implies more exercises than emitted', () => {
+    const { outline, drops } = parseCoachOutlineOnlyBlocksFromText(
+      JSON.stringify({
+        blocks: [
+          {
+            name: 'Finisher — Classic HIIT',
+            block_format: 'tabata',
+            format_params: {
+              rounds: 3,
+              work_seconds: 30,
+              rest_seconds: 30,
+              interval_preset: 'classic_hiit',
+            },
+            exercises: [{ name: 'Burpees to Mountain Climbers' }],
+          },
+        ],
+      }),
+    );
+    expect(outline).toBeNull();
+    expect(drops.some((d) => d.reason === 'tabata_circuit_cardinality')).toBe(true);
+  });
+
   it('parseCoachJson surfaces coach_workout_outline on create_card branch', () => {
     const out = parseCoachJson(
       JSON.stringify({

@@ -40,6 +40,7 @@ import {
   normalizeFormatParams,
   validateBlockShape,
 } from './block-blueprint-library';
+import { validateTabataCircuitCardinality } from './interval-circuit-cardinality';
 import { ensureOutlineExercisePlaceholders } from './outline-exercise-placeholders';
 import {
   capOutlineInstructionLines,
@@ -334,6 +335,26 @@ function normalizeBlocksFromGeminiArray(
         format_param_keys: Object.keys(formatParams).slice(0, 8),
       });
       continue;
+    }
+    if (blockFormat === 'tabata') {
+      const firstName =
+        inner.length === 1 && inner[0] && typeof inner[0] === 'object' && !Array.isArray(inner[0])
+          ? String((inner[0] as { name?: unknown }).name ?? '')
+          : '';
+      const circuitReason = validateTabataCircuitCardinality(inner.length, {
+        blockName,
+        singleExerciseName: firstName,
+      });
+      if (circuitReason != null) {
+        drops.push({ field: `${fieldPrefix}[${i}]`, reason: circuitReason });
+        console.warn(`${OUTLINE_PARSE_LOG_PREFIX} block dropped (tabata circuit cardinality)`, {
+          field: `${fieldPrefix}[${i}]`,
+          reason: circuitReason,
+          exercise_count: inner.length,
+          block_name: blockName ? truncateOutlineParseLogText(blockName, 40) : '',
+        });
+        continue;
+      }
     }
 
     const row: Record<string, unknown> = { block_format: blockFormat };

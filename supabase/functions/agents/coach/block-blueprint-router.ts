@@ -1,8 +1,6 @@
-/** MIRROR FILE — canonical lives at `src/lib/agents/coach/block-blueprint-router.ts`.
- *
- * Body below is byte-for-byte identical to the canonical Vitest-side file (excluding
- * this header). Import paths use explicit `.ts` extensions required by Deno.
- * Any change must be hand-mirrored — run `pnpm check:agent-mirror` to verify parity.
+/**
+ * Three-lane router for rail `:` block blueprint composer turns.
+ * Mirror: `supabase/functions/agents/coach/block-blueprint-router.ts`. Run `pnpm check:agent-mirror`.
  */
 
 import { mergeCoachProposedIntoTaskMetadata } from '../../_shared/workout-metadata/merge-coach-proposed-into-task-metadata.ts';
@@ -16,6 +14,10 @@ import {
   type CoachProposedBlockShell,
   synthesizeProposedBlocksFromMentions,
 } from './block-blueprint-synthesize.ts';
+import {
+  genericIntervalCircuitPlaceholderName,
+  parseStatedExerciseCount,
+} from './interval-circuit-cardinality.ts';
 
 export type BlockBlueprintRouterLane = 'lane1' | 'lane2';
 
@@ -203,16 +205,28 @@ export function defaultRepsForFormat(format: BlockFormat): string {
 
 export function buildDeterministicCoachBlocks(
   assigned: AssignedBlockExercises[],
+  messageText?: string,
 ): CoachProposedBlockShell[] {
+  const statedCount = messageText ? parseStatedExerciseCount(messageText) : null;
   return assigned.map(({ mention, exercises }) => {
     const shell = synthesizeProposedBlocksFromMentions([mention])[0]!;
+    const mapped = exercises.map((m) => ({
+      name: m.name,
+      sets: 1,
+      reps: defaultRepsForFormat(mention.block_format),
+    }));
+    if (mention.block_format === 'tabata' && statedCount != null && mapped.length < statedCount) {
+      for (let i = mapped.length; i < statedCount; i++) {
+        mapped.push({
+          name: genericIntervalCircuitPlaceholderName(i),
+          sets: 1,
+          reps: defaultRepsForFormat(mention.block_format),
+        });
+      }
+    }
     return {
       ...shell,
-      exercises: exercises.map((m) => ({
-        name: m.name,
-        sets: 1,
-        reps: defaultRepsForFormat(mention.block_format),
-      })),
+      exercises: mapped,
     };
   });
 }

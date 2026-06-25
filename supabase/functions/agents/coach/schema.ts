@@ -1,6 +1,18 @@
 /**
- * MIRROR FILE — canonical lives at `src/lib/agents/coach/schema.ts`.
- * Run `pnpm check:agent-mirror` after edits.
+ * Coach response schemas — pure module, canonical source.
+ *
+ * Two `VertexResponseSchema` literals:
+ *   - `COACH_RESPONSE_SCHEMA` — the main JSON-mode schema lifted verbatim from
+ *     `supabase/functions/bubble-agent-dispatch/index.ts:704-860`.
+ *   - `COACH_WORKOUT_GREETING_SCHEMA` — the preflight workout-open greeting schema
+ *     lifted from `supabase/functions/bubble-agent-dispatch/index.ts:910-920`.
+ *
+ * A byte-for-byte mirror lives at `supabase/functions/agents/coach/schema.ts`. Run
+ * `pnpm check:agent-mirror` to verify parity.
+ *
+ * The schema body is intentionally written as a plain object literal (not as a typed
+ * cast) so the Vertex API receives exactly the keys the legacy implementation sent. The
+ * `VertexResponseSchema` cast at the bottom only constrains the export surface.
  */
 
 import type { VertexResponseSchema } from '../../_shared/llm/types.ts';
@@ -215,7 +227,9 @@ export const COACH_OUTLINE_ONLY_BLOCK_ITEM_SCHEMA = {
         rounds: {
           type: 'INTEGER',
           nullable: true,
-          description: OUTLINE_REALISTIC_INTEGER_DESCRIPTION,
+          description:
+            'Circuit rounds for tabata when multiple exercises (passes through the exercise list — not total work intervals). ' +
+            OUTLINE_REALISTIC_INTEGER_DESCRIPTION,
         },
         work_seconds: {
           type: 'INTEGER',
@@ -242,7 +256,8 @@ export const COACH_OUTLINE_ONLY_BLOCK_ITEM_SCHEMA = {
           name: {
             type: 'STRING',
             maxLength: 80,
-            description: 'Exercise name placeholder only.',
+            description:
+              'Exercise name placeholder only. For tabata blocks: one entry per circuit station; array length must match user-stated exercise count.',
           },
         },
         required: ['name'],

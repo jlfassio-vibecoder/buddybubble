@@ -227,7 +227,9 @@ export const COACH_OUTLINE_ONLY_BLOCK_ITEM_SCHEMA = {
         rounds: {
           type: 'INTEGER',
           nullable: true,
-          description: OUTLINE_REALISTIC_INTEGER_DESCRIPTION,
+          description:
+            'Circuit rounds for tabata when multiple exercises (passes through the exercise list — not total work intervals). ' +
+            OUTLINE_REALISTIC_INTEGER_DESCRIPTION,
         },
         work_seconds: {
           type: 'INTEGER',
@@ -254,7 +256,8 @@ export const COACH_OUTLINE_ONLY_BLOCK_ITEM_SCHEMA = {
           name: {
             type: 'STRING',
             maxLength: 80,
-            description: 'Exercise name placeholder only.',
+            description:
+              'Exercise name placeholder only. For tabata blocks: one entry per circuit station; array length must match user-stated exercise count.',
           },
         },
         required: ['name'],
