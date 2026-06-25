@@ -5,6 +5,7 @@
  * AI Workout Generation types (ported from Interval Timers Workout Factory).
  */
 
+import type { KnownIntervalPresetId } from '@/lib/workout-factory/interval-timer/interval-preset-catalog';
 import type {
   WorkoutInSet as WorkoutInSetContract,
   WorkoutSetTemplate as WorkoutSetTemplateContract,
@@ -74,15 +75,16 @@ export interface AmrapDensityOptions {
   sessionDurationTier: HiitSessionDurationTier;
 }
 
-export type TabataBalancedPairingPattern =
+export type IntervalBalancedPairingPattern =
   | 'single'
   | 'antagonist_pair'
   | 'agonist_pair'
   | 'four_station'
   | 'eight_station';
 
-export interface TabataBalancedOptions {
-  pairingPattern: TabataBalancedPairingPattern;
+export interface IntervalBalancedOptions {
+  intervalPresetId: KnownIntervalPresetId;
+  pairingPattern: IntervalBalancedPairingPattern;
   roundCount: number;
 }
 
@@ -120,8 +122,8 @@ export interface WorkoutPersona {
   hiitOptions?: HiitOptions;
   amrapDensityMode?: boolean;
   amrapDensityOptions?: AmrapDensityOptions;
-  tabataBalancedMode?: boolean;
-  tabataBalancedOptions?: TabataBalancedOptions;
+  intervalBalancedMode?: boolean;
+  intervalBalancedOptions?: IntervalBalancedOptions;
   /**
    * When true (Coach Kanban handoff), Vertex treats `title` + `description` as the strict
    * prescription brief; profile equipment/goals are secondary safety context only.
@@ -158,8 +160,8 @@ export interface WorkoutConfig {
   hiitOptions?: HiitOptions;
   amrapDensityMode?: boolean;
   amrapDensityOptions?: AmrapDensityOptions;
-  tabataBalancedMode?: boolean;
-  tabataBalancedOptions?: TabataBalancedOptions;
+  intervalBalancedMode?: boolean;
+  intervalBalancedOptions?: IntervalBalancedOptions;
 }
 
 export interface WorkoutSessionSpec {

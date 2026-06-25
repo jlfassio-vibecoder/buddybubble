@@ -4,6 +4,8 @@
 
 import type { BlockBlueprintCatalogEntry } from '@/lib/agents/coach/block-blueprint-catalog';
 import { classifyBlockRole } from '@/lib/agents/_shared/workout-metadata/merge-coach-proposed-into-task-metadata';
+import { formatBlockSubtitle } from '@/lib/workout-factory/format-block-subtitle';
+import { WORK_REST_BLOCK_FORMAT_LABEL } from '@/lib/workout-factory/interval-timer/interval-preset-catalog';
 import {
   BLOCK_FORMAT_ENUM,
   FORMAT_PARAM_KEYS_BY_FORMAT,
@@ -30,7 +32,7 @@ const FORMAT_LABELS: Record<BlockFormat, string> = {
   circuit: 'Circuit',
   amrap: 'AMRAP',
   emom: 'EMOM',
-  tabata: 'Tabata',
+  tabata: WORK_REST_BLOCK_FORMAT_LABEL,
   ladder: 'Ladder',
   chipper: 'Chipper',
   pyramid: 'Pyramid',
@@ -55,6 +57,7 @@ const PARAM_LABELS: Record<string, string> = {
   is_alternating: 'Alternating stations',
   work_seconds: 'Work (sec)',
   rest_seconds: 'Rest (sec)',
+  interval_preset: 'Interval preset',
   start_reps: 'Start reps',
   peak_reps: 'Peak reps',
   step_reps: 'Step reps',
@@ -66,7 +69,11 @@ const PARAM_LABELS: Record<string, string> = {
   drops: 'Drop count',
 };
 
-const EDITOR_HIDDEN_FORMAT_PARAM_KEYS = new Set(['is_combo', 'alternating_stations']);
+const EDITOR_HIDDEN_FORMAT_PARAM_KEYS = new Set([
+  'is_combo',
+  'alternating_stations',
+  'interval_preset',
+]);
 
 function defaultExercisePlaceholders(format: BlockFormat): { name: string }[] {
   switch (format) {
@@ -173,6 +180,10 @@ export function outlineBlockSummary(block: Record<string, unknown>): string {
     !Array.isArray(block.format_params)
       ? (block.format_params as Record<string, unknown>)
       : {};
+  if (block.block_format === 'tabata') {
+    const subtitle = formatBlockSubtitle('tabata', params);
+    if (subtitle) return `${name} — ${subtitle}`;
+  }
   const hints: string[] = [];
   if (typeof params.rounds === 'number') hints.push(`${params.rounds} rounds`);
   if (typeof params.time_cap_minutes === 'number') hints.push(`${params.time_cap_minutes} min cap`);

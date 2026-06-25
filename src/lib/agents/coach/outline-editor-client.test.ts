@@ -19,6 +19,19 @@ describe('outline-editor-client', () => {
     expect((block.exercises as unknown[]).length).toBe(2);
   });
 
+  it('catalogPresetToOutlineBlock seeds classic HIIT finisher with preset params', () => {
+    const preset = BLOCK_BLUEPRINT_CATALOG.find((e) => e.id === 'finisher-classic-hiit');
+    expect(preset).toBeDefined();
+    const block = catalogPresetToOutlineBlock(preset!);
+    expect(block.name).toBe('Finisher');
+    expect(block.block_format).toBe('tabata');
+    const params = block.format_params as Record<string, unknown>;
+    expect(params.work_seconds).toBe(30);
+    expect(params.rest_seconds).toBe(30);
+    expect(params.rounds).toBe(8);
+    expect(params.interval_preset).toBe('classic_hiit');
+  });
+
   it('createInstructionBlock returns instruction-only shape', () => {
     const block = createInstructionBlock('Warm-up', ['Row 500m', 'Dynamic prep']);
     expect(block.name).toBe('Warm-up');
@@ -56,7 +69,23 @@ describe('outline-editor-client', () => {
       exercises: [{ name: 'Burpee' }],
     });
     expect(summary).toContain('Finisher');
-    expect(summary).toContain('Tabata');
+    expect(summary).toContain('Intervals');
+    expect(summary).toContain('8 Rounds');
+  });
+
+  it('outlineBlockSummary uses tabata subtitle with work/rest', () => {
+    const summary = outlineBlockSummary({
+      name: 'Main',
+      block_format: 'tabata',
+      format_params: {
+        interval_preset: 'classic_hiit',
+        rounds: 8,
+        work_seconds: 30,
+        rest_seconds: 30,
+      },
+      exercises: [{ name: 'Burpee' }],
+    });
+    expect(summary).toBe('Main — Classic HIIT · 8 Rounds (30/30s)');
   });
 
   it('validateOutlineDraftForConfirm rejects instruction block with non-routing name', () => {

@@ -7,6 +7,8 @@ import {
   searchBlockCatalog,
 } from './block-blueprint-catalog';
 import { blockBlueprintMentionFromPick } from './block-blueprint-mentions-client';
+import { applyIntervalPreset } from '@/lib/workout-factory/interval-timer/interval-preset-catalog';
+import type { KnownIntervalPresetId } from '@/lib/workout-factory/interval-timer/interval-preset-catalog';
 
 describe('block-blueprint-catalog', () => {
   it('passes integrity checks', () => {
@@ -24,7 +26,14 @@ describe('block-blueprint-catalog', () => {
     const tabataHits = tab.filter((e) => e.block_format === 'tabata');
     expect(tabataHits.length).toBeGreaterThan(0);
     expect(
-      tabataHits.every((e) => e.token.includes('tabata') || e.searchAliases.includes('tab')),
+      tabataHits.every(
+        (e) =>
+          e.token.includes('tabata') ||
+          e.token.includes('hiit') ||
+          e.token.includes('interval') ||
+          e.searchAliases.includes('tab') ||
+          e.searchAliases.includes('hiit'),
+      ),
     ).toBe(true);
   });
 
@@ -99,6 +108,48 @@ describe('block-blueprint-catalog', () => {
     const items = groupCatalogForDisplay(BLOCK_BLUEPRINT_CATALOG, { grouped: false });
     expect(items.every((i) => i.type === 'entry')).toBe(true);
     expect(items).toHaveLength(BLOCK_BLUEPRINT_CATALOG.length);
+  });
+});
+
+describe('interval preset catalog rows', () => {
+  const INTERVAL_PRESET_ROWS: { id: string; presetId: KnownIntervalPresetId }[] = [
+    { id: 'finisher-classic-hiit', presetId: 'classic_hiit' },
+    { id: 'finisher-hypertrophy-density', presetId: 'hypertrophy_density' },
+    { id: 'cardio-heavy-aerobic', presetId: 'heavy_aerobic' },
+    { id: 'main-power-sprints', presetId: 'power_sprints' },
+    { id: 'main-fighters-rounds', presetId: 'fighters' },
+  ];
+
+  it('passes catalog integrity with new interval preset rows', () => {
+    expect(() => assertCatalogIntegrity()).not.toThrow();
+  });
+
+  it.each(INTERVAL_PRESET_ROWS)(
+    '$id format_params match applyIntervalPreset($presetId)',
+    ({ id, presetId }) => {
+      const row = BLOCK_BLUEPRINT_CATALOG.find((e) => e.id === id);
+      expect(row).toBeDefined();
+      expect(row?.block_format).toBe('tabata');
+      expect(row?.format_params).toEqual(applyIntervalPreset(presetId));
+    },
+  );
+
+  it('searchBlockCatalog finds interval preset tokens by path segments', () => {
+    expect(searchBlockCatalog('hiit/classic').some((e) => e.id === 'finisher-classic-hiit')).toBe(
+      true,
+    );
+    expect(searchBlockCatalog('interval/power').some((e) => e.id === 'main-power-sprints')).toBe(
+      true,
+    );
+  });
+
+  it('blockBlueprintMentionFromPick carries classic HIIT preset params', () => {
+    const preset = BLOCK_BLUEPRINT_CATALOG.find((e) => e.id === 'finisher-classic-hiit');
+    expect(preset).toBeDefined();
+    const mention = blockBlueprintMentionFromPick(preset!);
+    expect(mention.token).toBe(':finisher/hiit/classic ');
+    expect(mention.block_format).toBe('tabata');
+    expect(mention.format_params).toEqual(applyIntervalPreset('classic_hiit'));
   });
 });
 

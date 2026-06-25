@@ -68,7 +68,7 @@ export const FORMAT_PARAM_KEYS_BY_FORMAT: Readonly<Record<BlockFormat, readonly 
     'stations',
     'track_active_pacing',
   ],
-  tabata: ['work_seconds', 'rest_seconds', 'rounds'],
+  tabata: ['work_seconds', 'rest_seconds', 'rounds', 'interval_preset'],
   ladder: ['start_reps', 'peak_reps', 'step_reps', 'direction', 'rounds'],
   chipper: ['rounds', 'time_cap_minutes'],
   pyramid: [
@@ -123,6 +123,60 @@ const LEGACY_TYPE_TO_FORMAT: Readonly<Record<string, BlockFormat>> = {
   drop_sets: 'drop_sets',
   drop_set: 'drop_sets',
 };
+
+/** W/R per preset id — keep in sync with interval-preset-catalog.ts */
+const TABATA_PRESET_WR: Readonly<Record<string, { work: number; rest: number }>> = {
+  tabata: { work: 20, rest: 10 },
+  classic_hiit: { work: 30, rest: 30 },
+  hypertrophy_density: { work: 40, rest: 20 },
+  heavy_aerobic: { work: 60, rest: 60 },
+  power_sprints: { work: 10, rest: 50 },
+  fighters: { work: 300, rest: 60 },
+};
+
+function reconcileTabataIntervalPreset(out: Record<string, unknown>): Record<string, unknown> {
+  const work = positiveInt(out.work_seconds);
+  const rest = positiveInt(out.rest_seconds);
+  let derived: string = 'custom';
+  if (work != null && rest != null) {
+    for (const id of TABATA_INTERVAL_PRESET_IDS) {
+      if (id === 'custom') continue;
+      const wr = TABATA_PRESET_WR[id];
+      if (wr && work === wr.work && rest === wr.rest) {
+        derived = id;
+        break;
+      }
+    }
+  }
+  if (derived !== 'custom') {
+    return { ...out, interval_preset: derived };
+  }
+  const presetId = out.interval_preset;
+  if (
+    work == null &&
+    rest == null &&
+    typeof presetId === 'string' &&
+    presetId !== 'custom' &&
+    TABATA_INTERVAL_PRESET_IDS.has(presetId)
+  ) {
+    return out;
+  }
+  if (out.interval_preset === 'custom') {
+    return { ...out, interval_preset: 'custom' };
+  }
+  return { ...out, interval_preset: 'custom' };
+}
+
+/** Closed-world tabata preset ids (mirrored in interval-preset-catalog.ts). */
+const TABATA_INTERVAL_PRESET_IDS = new Set<string>([
+  'tabata',
+  'classic_hiit',
+  'hypertrophy_density',
+  'heavy_aerobic',
+  'power_sprints',
+  'fighters',
+  'custom',
+]);
 
 const LADDER_DIRECTIONS = new Set(['ascending', 'descending']);
 
@@ -322,6 +376,13 @@ export function normalizeFormatParams(format: BlockFormat, raw: unknown): Record
       else if (v === false) out.track_active_pacing = false;
       continue;
     }
+    if (key === 'interval_preset') {
+      if (typeof v === 'string') {
+        const preset = v.trim();
+        if (TABATA_INTERVAL_PRESET_IDS.has(preset)) out.interval_preset = preset;
+      }
+      continue;
+    }
     if (INTEGER_PARAM_KEYS.has(key)) {
       const n = positiveInt(v);
       if (n != null) out[key] = n;
@@ -337,6 +398,12 @@ export function normalizeFormatParams(format: BlockFormat, raw: unknown): Record
     if (hasDuration && typeof out.interval_seconds !== 'number') {
       out.interval_seconds = EMOM_DEFAULT_INTERVAL_SECONDS;
     }
+  }
+  if (format === 'tabata') {
+    for (const k of Object.keys(out)) {
+      if (!allowed.has(k)) delete out[k];
+    }
+    return reconcileTabataIntervalPreset(out);
   }
   // Defensive: only emit keys in allow-list even if raw had extras
   for (const k of Object.keys(out)) {
@@ -465,7 +532,7 @@ export function buildBlockBlueprintLibraryPrompt(): string {
     '\n' +
     'emom — Every minute on the minute. Required format_params: interval_seconds AND (total_minutes OR total_rounds). Optional: rest_in_interval_seconds, is_alternating (boolean), alternating_stations (array of index arrays, 0-based within exercises[]). For simple A/B/C rotation set is_alternating true and omit alternating_stations — the server auto-builds [[0],[1],[2],…]. For A / B+C combo minutes use the :main/emom/alternating-combo or :finisher/emom/alternating-combo catalog token (server pairs the last two exercises on one minute); do not emit is_combo in model JSON. For other combined minutes supply alternating_stations explicitly such as [[0],[1,2]]. Do NOT use circuit for minute-bound alternating work. You MAY emit per-exercise work_seconds / rest_seconds; when omitted, the server derives them from interval_seconds and rest_in_interval_seconds.\n' +
     '\n' +
-    'tabata — Work / rest intervals. Required format_params: rounds. Optional: work_seconds (default 20), rest_seconds (default 10). Set work_seconds, rest_seconds, and rounds on format_params only. Do not repeat timing in updated_task_description, coach_notes, or block names. Per-exercise work_seconds/rest_seconds are optional numeric overrides only — never prose.\n' +
+    'tabata — Work/rest intervals (user-facing: "Intervals"; internal block_format tabata). Required format_params: rounds, interval_preset. Optional: work_seconds, rest_seconds. Preset ids: tabata (ONLY 20/10 — strict Izumi Tabata), classic_hiit (30/30), hypertrophy_density (40/20), heavy_aerobic (60/60), power_sprints (10/50), fighters (300/60), custom. ALWAYS emit interval_preset. User/coach vocabulary: say "Tabata" ONLY for 20/10/8; use preset names (e.g. Classic HIIT) or "Intervals" for other W/R. Never "Tabata-style" for non-20/10. Block names use preset label (Finisher — Classic HIIT), not Tabata unless 20/10. Set work_seconds, rest_seconds, and rounds on format_params only. Do not repeat timing in updated_task_description, coach_notes, or block names. Per-exercise work_seconds/rest_seconds are optional numeric overrides only — never prose.\n' +
     '\n' +
     'ladder — Ascending or descending rep rungs on one or more movements. Required format_params: start_reps, peak_reps. Optional: step_reps (default 1), direction (ascending or descending), rounds. Hydrate exercises[] with per-set or per-round rep targets from start_reps toward peak_reps by step_reps; do not put the scheme only in reply_content.\n' +
     '\n' +

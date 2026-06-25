@@ -51,7 +51,7 @@ export function defaultFormatParamsFor(
     case 'emom':
       return { interval_seconds: 60, total_minutes: 10 };
     case 'tabata':
-      return { rounds: 8, work_seconds: 20, rest_seconds: 10 };
+      return { rounds: 8, work_seconds: 20, rest_seconds: 10, interval_preset: 'tabata' };
     case 'superset':
     case 'circuit':
       return { rounds: 3 };
@@ -241,6 +241,48 @@ export const BLOCK_BLUEPRINT_CATALOG: readonly BlockBlueprintCatalogEntry[] = [
     'tabata',
     { searchAliases: ['hiit', 'interval'] },
   ),
+  // power_sprints — see interval-preset-catalog
+  entry(
+    'main-power-sprints',
+    'main',
+    'interval',
+    'power',
+    'Main · Power Sprints',
+    'MAIN',
+    'Main',
+    'tabata',
+    {
+      format_params: {
+        work_seconds: 10,
+        rest_seconds: 50,
+        rounds: 6,
+        interval_preset: 'power_sprints',
+      },
+      searchAliases: ['sprints', 'power', 'phosphagen', 'interval'],
+      physiological_focus: 'ATP-PC (phosphagen)',
+    },
+  ),
+  // fighters — see interval-preset-catalog
+  entry(
+    'main-fighters-rounds',
+    'main',
+    'interval',
+    'fighters',
+    'Main · Fighters / Grapplers',
+    'MAIN',
+    'Main',
+    'tabata',
+    {
+      format_params: {
+        work_seconds: 300,
+        rest_seconds: 60,
+        rounds: 5,
+        interval_preset: 'fighters',
+      },
+      searchAliases: ['fighters', 'grapplers', 'rounds', 'interval'],
+      physiological_focus: 'Sport-specific endurance',
+    },
+  ),
   entry(
     'main-ladder-strength',
     'main',
@@ -376,6 +418,48 @@ export const BLOCK_BLUEPRINT_CATALOG: readonly BlockBlueprintCatalogEntry[] = [
     'tabata',
     { searchAliases: ['tab', 'abs'], physiological_focus: 'core' },
   ),
+  // classic_hiit — see interval-preset-catalog
+  entry(
+    'finisher-classic-hiit',
+    'finisher',
+    'hiit',
+    'classic',
+    'Finisher · Classic HIIT',
+    'CONDITIONING_AND_FINISHERS',
+    'Finisher',
+    'tabata',
+    {
+      format_params: {
+        work_seconds: 30,
+        rest_seconds: 30,
+        rounds: 8,
+        interval_preset: 'classic_hiit',
+      },
+      searchAliases: ['hiit', 'classic', '1:1', 'interval'],
+      physiological_focus: 'Glycolytic / lactate tolerance',
+    },
+  ),
+  // hypertrophy_density — see interval-preset-catalog
+  entry(
+    'finisher-hypertrophy-density',
+    'finisher',
+    'hiit',
+    'density',
+    'Finisher · Hypertrophy / Density',
+    'CONDITIONING_AND_FINISHERS',
+    'Finisher',
+    'tabata',
+    {
+      format_params: {
+        work_seconds: 40,
+        rest_seconds: 20,
+        rounds: 8,
+        interval_preset: 'hypertrophy_density',
+      },
+      searchAliases: ['hiit', 'density', 'hypertrophy', '2:1'],
+      physiological_focus: 'Localized muscular endurance',
+    },
+  ),
   entry(
     'finisher-emom-alternating',
     'finisher',
@@ -477,6 +561,27 @@ export const BLOCK_BLUEPRINT_CATALOG: readonly BlockBlueprintCatalogEntry[] = [
     'Finisher',
     'tabata',
     { searchAliases: ['tab', 'hiit'] },
+  ),
+  // heavy_aerobic — see interval-preset-catalog
+  entry(
+    'cardio-heavy-aerobic',
+    'cardio',
+    'hiit',
+    'aerobic',
+    'Cardio · Heavy Aerobic',
+    'CONDITIONING_AND_FINISHERS',
+    'Finisher',
+    'tabata',
+    {
+      format_params: {
+        work_seconds: 60,
+        rest_seconds: 60,
+        rounds: 6,
+        interval_preset: 'heavy_aerobic',
+      },
+      searchAliases: ['aerobic', 'cardio', 'hiit', '1:1'],
+      physiological_focus: 'Oxidative (cardio engine)',
+    },
   ),
   entry(
     'cardio-circuit-conditioning',

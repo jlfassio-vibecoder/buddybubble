@@ -42,8 +42,68 @@ describe('normalizeFormatParams', () => {
       rest_seconds: 10,
       time_cap_minutes: 12,
     });
-    expect(out).toEqual({ rounds: 8, work_seconds: 20, rest_seconds: 10 });
+    expect(out).toEqual({
+      rounds: 8,
+      work_seconds: 20,
+      rest_seconds: 10,
+      interval_preset: 'tabata',
+    });
     expect(out).not.toHaveProperty('time_cap_minutes');
+  });
+
+  it('reconciles interval_preset from W/R on ingest', () => {
+    expect(
+      normalizeFormatParams('tabata', {
+        rounds: 12,
+        work_seconds: 30,
+        rest_seconds: 30,
+      }),
+    ).toEqual({
+      rounds: 12,
+      work_seconds: 30,
+      rest_seconds: 30,
+      interval_preset: 'classic_hiit',
+    });
+  });
+
+  it('preserves interval_preset when only rounds are present', () => {
+    expect(
+      normalizeFormatParams('tabata', {
+        rounds: 8,
+        interval_preset: 'tabata',
+      }),
+    ).toEqual({
+      rounds: 8,
+      interval_preset: 'tabata',
+    });
+  });
+
+  it('normalizes tabata interval_preset and strips invalid values', () => {
+    expect(
+      normalizeFormatParams('tabata', {
+        rounds: 8,
+        work_seconds: 30,
+        rest_seconds: 30,
+        interval_preset: 'classic_hiit',
+      }),
+    ).toEqual({
+      rounds: 8,
+      work_seconds: 30,
+      rest_seconds: 30,
+      interval_preset: 'classic_hiit',
+    });
+    expect(
+      normalizeFormatParams('tabata', {
+        rounds: 8,
+        interval_preset: 'custom',
+      }),
+    ).toEqual({ rounds: 8, interval_preset: 'custom' });
+    expect(
+      normalizeFormatParams('tabata', {
+        rounds: 8,
+        interval_preset: 'not_a_preset',
+      }),
+    ).toEqual({ rounds: 8, interval_preset: 'custom' });
   });
 
   it('normalizes ladder direction and rep params', () => {

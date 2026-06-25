@@ -46,7 +46,7 @@ const minimalPersona: WorkoutPersona = {
   goals: { primary: 'General fitness', secondary: '' },
   hiitMode: false,
   amrapDensityMode: false,
-  tabataBalancedMode: false,
+  intervalBalancedMode: false,
 };
 
 function vertexResult(content: string, finishReason = 'stop', completionTokens = 120) {
@@ -92,7 +92,7 @@ function buildPreparedRequest(): PreparedWorkoutChainRequest {
     hiitOptions: undefined,
     hiitMode: false,
     amrapDensityOptions: undefined,
-    tabataBalancedOptions: undefined,
+    intervalBalancedOptions: undefined,
     zoneContext: undefined,
     availableEquipment: ['Dumbbells'],
     providedArchitect: undefined,

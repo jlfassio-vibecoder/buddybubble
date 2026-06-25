@@ -37,9 +37,11 @@ describe('run-coach-outline-phase-b', () => {
     expect(userPrompt).toContain('CATALOG TOKEN MAPPING (CRITICAL)');
     expect(userPrompt).toContain('blocks.length MUST equal the token count');
     expect(userPrompt).toContain('TOKEN SOURCE OF TRUTH');
-    expect(userPrompt).toContain('Main — Tabata Power');
+    expect(userPrompt).toContain('Main — Tabata');
+    expect(userPrompt).toContain('Finisher — Classic HIIT');
     expect(userPrompt).toContain('Finisher — Tabata VO2');
-    expect(userPrompt).toContain('Finisher — Tabata Core');
+    expect(userPrompt).toContain('"interval_preset":"tabata"');
+    expect(userPrompt).toContain('"interval_preset":"classic_hiit"');
     expect(userPrompt).toContain(tabataTokens);
   });
 

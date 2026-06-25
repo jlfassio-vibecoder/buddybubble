@@ -3,6 +3,7 @@
  * Used by RichWorkoutReadView and any future workout block headings.
  */
 
+import { resolveIntervalPresetLabel } from '@/lib/workout-factory/interval-timer/interval-preset-catalog';
 import { formatAlternatingEmomTaxonomy } from '@/lib/workout-factory/format-alternating-taxonomy';
 import { isAlternatingEmomParams } from '@/lib/workout-factory/types/emom-format-params';
 
@@ -40,16 +41,17 @@ function formatEmom(params: Record<string, unknown>): string {
 }
 
 function formatTabata(params: Record<string, unknown>): string {
+  const label = resolveIntervalPresetLabel(params);
   const rounds = positiveInt(params.rounds);
   const work = positiveInt(params.work_seconds);
   const rest = positiveInt(params.rest_seconds);
   if (rounds != null && work != null && rest != null) {
-    return `Tabata · ${rounds} Rounds (${work}/${rest}s)`;
+    return `${label} · ${rounds} Rounds (${work}/${rest}s)`;
   }
   if (rounds != null) {
-    return `Tabata · ${rounds} Rounds`;
+    return `${label} · ${rounds} Rounds`;
   }
-  return 'Tabata';
+  return label;
 }
 
 function formatRoundsLabel(formatLabel: string, params: Record<string, unknown>): string {

@@ -351,3 +351,13 @@ This locks the **shared backbone** while leaving each interval's mechanics free 
 Live Tabata mechanics (`tabata-mechanics-state.ts` + Postgres) and offline Tabata (`interval-timer-engine.ts` + WorkoutPlayer) are **intentionally separate** FSMs. They share presentation utilities only (`formatCountdownMmSs`, timer audio preference).
 
 See [tabata-dual-engine-boundary.md](./timers/live-video/tabata-dual-engine-boundary.md) for segment name mapping, data flows, and non-goals.
+
+---
+
+## 10. Work-to-rest preset catalog
+
+Industry ratio presets (Classic HIIT 1:1, Power Sprints 1:5, Fighters 5:1, etc.) reuse the **same** `block_format: tabata` engine with different `format_params`; authoring uses the preset picker in the outline editor (`TabataFormatParamsEditor`) and optional `interval_preset` key.
+
+**Shipped:** Phase A (catalog + subtitles), Phase B (outline builder UX), Phase C (Coach `:` picker tokens — e.g. `:finisher/hiit/classic ` for 30/30 × 8).
+
+See [interval-ratio-presets-design.md](./interval-ratio-presets-design.md) and [rail-composer-tokens.md](../agents/coach/rail-composer-tokens.md) §5.5.

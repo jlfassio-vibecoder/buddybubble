@@ -22,7 +22,7 @@ const minimalPersona: WorkoutPersona = {
   goals: { primary: 'General fitness', secondary: '' },
   hiitMode: false,
   amrapDensityMode: false,
-  tabataBalancedMode: false,
+  intervalBalancedMode: false,
 };
 
 describe('buildWorkoutInSetFromOutlineFill', () => {
