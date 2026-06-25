@@ -72,7 +72,12 @@ describe('mergeBlueprintShellsWithModelBlocks', () => {
       },
     ]);
     expect(merged[0].block_format).toBe('tabata');
-    expect(merged[0].format_params).toEqual({ rounds: 8, work_seconds: 20, rest_seconds: 10 });
+    expect(merged[0].format_params).toMatchObject({
+      rounds: 8,
+      work_seconds: 20,
+      rest_seconds: 10,
+      interval_preset: 'tabata',
+    });
     expect(merged[0].exercises).toEqual([{ name: 'Burpees', sets: 1, reps: 8 }]);
   });
 

@@ -69,7 +69,8 @@ describe('outline-editor-client', () => {
       exercises: [{ name: 'Burpee' }],
     });
     expect(summary).toContain('Finisher');
-    expect(summary).toContain('Tabata');
+    expect(summary).toContain('Intervals');
+    expect(summary).toContain('8 Rounds');
   });
 
   it('outlineBlockSummary uses tabata subtitle with work/rest', () => {
