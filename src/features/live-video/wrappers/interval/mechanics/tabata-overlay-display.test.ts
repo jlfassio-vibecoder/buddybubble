@@ -116,7 +116,7 @@ describe('resolveTabataOverlaySubtitle', () => {
     ).toBe('Round 2 of 12 · Mountain Climbers');
   });
 
-  it('returns static subtitle for single exercise', () => {
+  it('returns dynamic subtitle for single exercise during work', () => {
     const mechanics = {
       ...buildInitialTabataMechanicsState({ totalRounds: 8, workSeconds: 30, restSeconds: 30 }),
       segment: 'work' as const,
@@ -129,7 +129,60 @@ describe('resolveTabataOverlaySubtitle', () => {
         exercises: [{ name: 'Squat', sets: 8 }],
         formatParams: { rounds: 8, work_seconds: 30, rest_seconds: 30 },
       }),
-    ).toBe('8 Rounds (30/30s)');
+    ).toBe('Round 1 of 8 · Squat');
+  });
+
+  it('returns dynamic subtitle for strict Tabata during work', () => {
+    const mechanics = {
+      ...buildInitialTabataMechanicsState({ totalRounds: 8, workSeconds: 20, restSeconds: 10 }),
+      segment: 'work' as const,
+      round_index: 3,
+      segment_started_at: '2026-06-01T18:30:12.000Z',
+    };
+    expect(
+      resolveTabataOverlaySubtitle({
+        mechanics,
+        exercises: [{ name: 'Movement', sets: 8 }],
+        formatParams: {
+          rounds: 8,
+          work_seconds: 20,
+          rest_seconds: 10,
+          interval_preset: 'tabata',
+        },
+      }),
+    ).toBe('Round 3 of 8 · Movement');
+  });
+
+  it('returns dynamic subtitle without exercise suffix when exercises array is empty', () => {
+    const mechanics = {
+      ...buildInitialTabataMechanicsState({ totalRounds: 8, workSeconds: 20, restSeconds: 10 }),
+      segment: 'work' as const,
+      round_index: 2,
+      segment_started_at: '2026-06-01T18:30:12.000Z',
+    };
+    expect(
+      resolveTabataOverlaySubtitle({
+        mechanics,
+        exercises: [],
+        formatParams: { rounds: 8, work_seconds: 20, rest_seconds: 10, interval_preset: 'tabata' },
+      }),
+    ).toBe('Round 2 of 8');
+  });
+
+  it('returns dynamic subtitle during rest for single exercise', () => {
+    const mechanics = {
+      ...buildInitialTabataMechanicsState({ totalRounds: 8, workSeconds: 20, restSeconds: 10 }),
+      segment: 'rest' as const,
+      round_index: 4,
+      segment_started_at: '2026-06-01T18:30:32.000Z',
+    };
+    expect(
+      resolveTabataOverlaySubtitle({
+        mechanics,
+        exercises: [{ name: 'Burpees', sets: 8 }],
+        formatParams: { rounds: 8, work_seconds: 20, rest_seconds: 10, interval_preset: 'tabata' },
+      }),
+    ).toBe('Round 4 of 8 · Burpees');
   });
 });
 
