@@ -7,7 +7,8 @@ import {
 import type { TabataFormatParams } from '@/lib/workout-factory/types/tabata-format-params';
 
 export type IntervalBlockSnapshotBase = {
-  origin_task_id: string;
+  /** Omitted for on-the-fly quick-launch sessions without a backing task row. */
+  origin_task_id?: string | null;
   title: string;
   workout_type: string | null;
   duration_min: number | null;
@@ -55,13 +56,16 @@ export function parseTabataFormatParams(raw: unknown): TabataFormatParams | null
 function parseBlockSnapshotBase(raw: unknown): IntervalBlockSnapshotBase | null {
   if (raw == null || typeof raw !== 'object') return null;
   const o = raw as Record<string, unknown>;
-  if (typeof o.origin_task_id !== 'string' || typeof o.title !== 'string') return null;
+  if (typeof o.title !== 'string') return null;
+  const originTaskId = o.origin_task_id;
   const wt = o.workout_type;
   const dm = o.duration_min;
   const ex = o.exercises;
   const exercises: WorkoutExercise[] = Array.isArray(ex) ? (ex as WorkoutExercise[]) : [];
   return {
-    origin_task_id: o.origin_task_id,
+    ...(typeof originTaskId === 'string' && originTaskId.trim() !== ''
+      ? { origin_task_id: originTaskId }
+      : {}),
     title: o.title,
     workout_type: typeof wt === 'string' ? wt : null,
     duration_min: typeof dm === 'number' && Number.isFinite(dm) ? dm : null,

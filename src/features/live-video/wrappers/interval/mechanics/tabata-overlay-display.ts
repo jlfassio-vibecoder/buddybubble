@@ -23,19 +23,36 @@ export function resolveTabataOverlayHeader(formatParams: TabataFormatParams | un
   return resolveIntervalPresetLabel(formatParams);
 }
 
+function resolveTabataStaticOverlaySubtitle(
+  formatParams: TabataFormatParams | undefined,
+  mechanics: TabataMechanicsState,
+): string | null {
+  const circuitRounds = positiveInt(formatParams?.rounds);
+  const rounds = circuitRounds ?? mechanics.total_rounds;
+  const work = positiveInt(formatParams?.work_seconds) ?? mechanics.work_seconds;
+  const rest = positiveInt(formatParams?.rest_seconds) ?? mechanics.rest_seconds;
+  if (rounds == null || work == null || rest == null) return null;
+  return `${rounds} Rounds (${work}/${rest}s)`;
+}
+
 export function resolveTabataOverlaySubtitle(args: {
   formatParams?: TabataFormatParams;
   mechanics: TabataMechanicsState | null;
   exercises: WorkoutExercise[];
+  /** When true, returns static W/R subtitle during setup/idle (host pre-start chip). */
+  includePreStart?: boolean;
 }): string | null {
-  const { formatParams, mechanics, exercises } = args;
+  const { formatParams, mechanics, exercises, includePreStart = false } = args;
   if (mechanics == null) return null;
-  if (
-    mechanics.segment === 'setup' ||
-    mechanics.segment === 'idle' ||
-    mechanics.segment === 'done' ||
-    mechanics.round_index < 1
-  ) {
+
+  if (mechanics.segment === 'setup' || mechanics.segment === 'idle') {
+    if (includePreStart) {
+      return resolveTabataStaticOverlaySubtitle(formatParams, mechanics);
+    }
+    return null;
+  }
+
+  if (mechanics.segment === 'done' || mechanics.round_index < 1) {
     return null;
   }
 
@@ -47,12 +64,7 @@ export function resolveTabataOverlaySubtitle(args: {
     return `Round ${mechanics.round_index} of ${mechanics.total_rounds} · ${label}`;
   }
 
-  const circuitRounds = positiveInt(formatParams?.rounds);
-  const rounds = circuitRounds ?? mechanics.total_rounds;
-  const work = positiveInt(formatParams?.work_seconds) ?? mechanics.work_seconds;
-  const rest = positiveInt(formatParams?.rest_seconds) ?? mechanics.rest_seconds;
-  if (rounds == null || work == null || rest == null) return null;
-  return `${rounds} Rounds (${work}/${rest}s)`;
+  return resolveTabataStaticOverlaySubtitle(formatParams, mechanics);
 }
 
 export function tabataSegmentPhaseAccentClass(

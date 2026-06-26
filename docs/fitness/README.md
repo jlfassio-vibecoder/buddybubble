@@ -66,7 +66,7 @@ flowchart LR
 - **[interval-ratio-presets-design.md](interval-ratio-presets-design.md)** — Industry work/rest presets (Classic HIIT, Power Sprints, Fighters, etc.) on `block_format: tabata`; outline editor + Coach rail tokens.
 <!-- Copilot suggestion ignored: PR description wording belongs in the GitHub PR body, not this fitness docs index. -->
 - **[multi-exercise-interval-circuit-plan.md](multi-exercise-interval-circuit-plan.md)** — Multi-station interval circuits (Coach cardinality F1 shipped; timer rotation F2–F3).
-- **[timers/live-video/live-interval-preset-overlay-plan.md](timers/live-video/live-interval-preset-overlay-plan.md)** — Live Agora HUD: Interval Preset Catalog labels + snapshot types (Phase L1–L3).
+- **[timers/live-video/live-interval-preset-overlay-plan.md](timers/live-video/live-interval-preset-overlay-plan.md)** — Live Agora HUD preset labels + circuit subtitles (**L1–L3 shipped**). Gap baseline: [tabata-timer-overlay-assessment.md](timers/live-video/tabata-timer-overlay-assessment.md).
 
 Deeper database and RLS behavior live under [supabase/migrations/](../../supabase/migrations/); this doc set focuses on UI behavior and file-level entry points.
 

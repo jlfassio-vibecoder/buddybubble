@@ -50,6 +50,53 @@ describe('resolveTabataOverlaySubtitle', () => {
     ).toBeNull();
   });
 
+  it('returns static subtitle during setup when includePreStart is true', () => {
+    const mechanics = buildInitialTabataMechanicsState({
+      totalRounds: 8,
+      workSeconds: 30,
+      restSeconds: 30,
+    });
+    expect(
+      resolveTabataOverlaySubtitle({
+        mechanics,
+        exercises: [{ name: 'Squat', sets: 8 }],
+        formatParams: {
+          rounds: 8,
+          work_seconds: 30,
+          rest_seconds: 30,
+          interval_preset: 'classic_hiit',
+        },
+        includePreStart: true,
+      }),
+    ).toBe('8 Rounds (30/30s)');
+  });
+
+  it('returns circuit-round static subtitle pre-start for multi-exercise blocks', () => {
+    const mechanics = buildInitialTabataMechanicsState({
+      totalRounds: 12,
+      workSeconds: 30,
+      restSeconds: 30,
+    });
+    expect(
+      resolveTabataOverlaySubtitle({
+        mechanics,
+        exercises: [
+          { name: 'Burpees', sets: 3 },
+          { name: 'Mountain Climbers', sets: 3 },
+          { name: 'Jump Squats', sets: 3 },
+          { name: 'Push-ups', sets: 3 },
+        ],
+        formatParams: {
+          rounds: 3,
+          work_seconds: 30,
+          rest_seconds: 30,
+          interval_preset: 'classic_hiit',
+        },
+        includePreStart: true,
+      }),
+    ).toBe('3 Rounds (30/30s)');
+  });
+
   it('returns dynamic circuit subtitle during work', () => {
     const mechanics = {
       ...buildInitialTabataMechanicsState({ totalRounds: 12, workSeconds: 30, restSeconds: 30 }),
