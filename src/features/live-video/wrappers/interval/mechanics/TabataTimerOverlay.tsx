@@ -2,11 +2,9 @@
 
 import { IntervalShellAudioToggle } from '@/components/fitness/interval-shells/IntervalShellAudioToggle';
 import { IntervalOverlayHostControls } from '@/features/live-video/wrappers/interval/mechanics/IntervalOverlayHostControls';
+import { isTabataMechanicsState } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
 import {
-  isTabataMechanicsState,
-  tabataRoundDisplayLabel,
-} from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
-import {
+  resolveTabataOverlaySubtitle,
   tabataOverlayShowProgress,
   tabataSegmentPhaseAccentClass,
   tabataSegmentProgressFillClass,
@@ -14,8 +12,20 @@ import {
 } from '@/features/live-video/wrappers/interval/mechanics/tabata-overlay-display';
 import type { IntervalSessionEngine } from '@/features/live-video/wrappers/interval/types/interval-engine';
 import { useTimerAudioPreference } from '@/hooks/use-timer-audio-preference';
+import { resolveIntervalPresetLabel } from '@/lib/workout-factory/interval-timer/interval-preset-catalog';
+import type { TabataFormatParams } from '@/lib/workout-factory/types/tabata-format-params';
 import { formatCountdownMmSs } from '@/lib/timer';
+
 import { cn } from '@/lib/utils';
+
+const LEGACY_TABATA_OVERLAY_HEADER = 'Tabata';
+
+function resolveTabataOverlayHeader(formatParams: TabataFormatParams | undefined): string {
+  if (formatParams == null || Object.keys(formatParams).length === 0) {
+    return LEGACY_TABATA_OVERLAY_HEADER;
+  }
+  return resolveIntervalPresetLabel(formatParams);
+}
 
 export type TabataTimerOverlayProps = {
   engine: IntervalSessionEngine;
@@ -43,7 +53,10 @@ export default function TabataTimerOverlay({
   const handleToggleAudio = onToggleAudio ?? preference.toggleAudio;
 
   const ms = isTabataMechanicsState(engine.mechanicsState) ? engine.mechanicsState : null;
-  const roundLabel = ms != null ? tabataRoundDisplayLabel(ms) : null;
+  const formatParams = engine.blockSnapshot?.format_params;
+  const exercises = engine.blockSnapshot?.exercises ?? [];
+  const headerLabel = resolveTabataOverlayHeader(formatParams);
+  const subtitle = resolveTabataOverlaySubtitle({ formatParams, mechanics: ms, exercises });
 
   const isFinished = engine.timerPhase === 'finished';
   const phaseText = isFinished ? 'Finished' : engine.segmentLabel.toUpperCase() || 'Ready';
@@ -65,7 +78,12 @@ export default function TabataTimerOverlay({
     <div className="pointer-events-none absolute inset-0 z-[43]">
       <div className="pointer-events-auto absolute top-4 left-4 max-w-[min(100vw-2rem,20rem)] rounded-xl border border-white/10 bg-black/50 p-4 text-white shadow-lg backdrop-blur-md">
         <div className="flex items-start justify-between gap-2">
-          <p className="text-[10px] font-medium uppercase tracking-wider text-white/50">Tabata</p>
+          <p
+            className="text-[10px] font-medium uppercase tracking-wider text-white/50"
+            data-testid="tabata-overlay-header-label"
+          >
+            {headerLabel}
+          </p>
           <div className="flex shrink-0 items-center gap-1">
             <IntervalOverlayHostControls
               showHostControls={showHostControls}
@@ -86,8 +104,13 @@ export default function TabataTimerOverlay({
         >
           {phaseText}
         </p>
-        {roundLabel ? (
-          <p className="mt-0.5 text-xs font-medium text-white/60">{roundLabel}</p>
+        {subtitle ? (
+          <p
+            className="mt-0.5 text-xs font-medium text-white/60"
+            data-testid="tabata-overlay-subtitle"
+          >
+            {subtitle}
+          </p>
         ) : null}
         {showProgress ? (
           <div

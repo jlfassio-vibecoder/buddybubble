@@ -278,6 +278,20 @@ describe('deriveTabataLoggerActiveSet', () => {
     };
     expect(deriveTabataLoggerActiveSet(rest)).toBeNull();
   });
+
+  it('returns circuit-aware set number and exercise index for multi-exercise', () => {
+    const work = {
+      ...buildInitialTabataMechanicsState({ totalRounds: 12, workSeconds: 30, restSeconds: 30 }),
+      segment: 'work' as const,
+      round_index: 5,
+      segment_started_at: '2026-06-01T18:30:12.000Z',
+    };
+    expect(deriveTabataLoggerActiveSet(work, 4)).toEqual({
+      setNumber: 2,
+      phase: 'work',
+      activeExerciseIndex: 0,
+    });
+  });
 });
 
 describe('deriveTabataEffectiveRoundsForFinalize', () => {

@@ -286,6 +286,7 @@ function OutlineBlockCard({
                       ? (block.format_params as Record<string, unknown>)
                       : {}
                   }
+                  exerciseCount={exercises.length}
                   disabled={disabled || !canWrite}
                   onChange={(format_params) => onChange({ format_params })}
                 />

@@ -17,28 +17,13 @@ import type {
   IntervalTimerPhase,
   IntervalType,
 } from '@/features/live-video/wrappers/interval/types/interval-engine';
-import type { AmrapBlockSnapshotPayload } from '@/features/amrap/utils/buildAmrapBlockSnapshot';
-import type { WorkoutExercise } from '@/lib/item-metadata';
+import {
+  parseIntervalBlockSnapshot,
+  type ParsedIntervalBlockSnapshot,
+} from '@/features/live-video/wrappers/interval/utils/tabata-block-snapshot';
 import type { Database, Json } from '@/types/database';
 
 type IntervalSessionRow = Database['public']['Tables']['live_interval_sessions']['Row'];
-
-function parseBlockSnapshot(raw: unknown): AmrapBlockSnapshotPayload | null {
-  if (raw == null || typeof raw !== 'object') return null;
-  const o = raw as Record<string, unknown>;
-  if (typeof o.origin_task_id !== 'string' || typeof o.title !== 'string') return null;
-  const wt = o.workout_type;
-  const dm = o.duration_min;
-  const ex = o.exercises;
-  const exercises: WorkoutExercise[] = Array.isArray(ex) ? (ex as WorkoutExercise[]) : [];
-  return {
-    origin_task_id: o.origin_task_id,
-    title: o.title,
-    workout_type: typeof wt === 'string' ? wt : null,
-    duration_min: typeof dm === 'number' && Number.isFinite(dm) ? dm : null,
-    exercises,
-  };
-}
 
 export interface IntervalTimerState {
   intervalType: IntervalType;
@@ -46,7 +31,7 @@ export interface IntervalTimerState {
   remainingSec: number;
   totalSec: number;
   workStartedAt: string | null;
-  blockSnapshot: AmrapBlockSnapshotPayload | null;
+  blockSnapshot: ParsedIntervalBlockSnapshot | null;
   mechanicsState: IntervalMechanicsState | null;
   segmentLabel: string;
   currentRoundIndex: number;
@@ -241,7 +226,7 @@ export function useIntervalTimerState(intervalSessionId: string): IntervalTimerS
   }, [sessionRow, intervalType, mechanicsState, remainingSec]);
 
   const blockSnapshot = useMemo(
-    () => parseBlockSnapshot(sessionRow?.block_snapshot),
+    () => parseIntervalBlockSnapshot(sessionRow?.block_snapshot),
     [sessionRow?.block_snapshot],
   );
 

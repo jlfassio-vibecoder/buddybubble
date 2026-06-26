@@ -11,6 +11,10 @@ import {
 } from '@/features/live-video/wrappers/interval/mechanics/tabata-work-set-sync';
 import { isTabataMechanicsState } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
 import type { IntervalSessionEngine } from '@/features/live-video/wrappers/interval/types/interval-engine';
+import {
+  deriveTabataActiveExerciseIndex,
+  deriveTabataCircuitRound,
+} from '@/lib/workout-factory/interval-timer/tabata-circuit-rotation';
 import type { Database } from '@/types/database';
 
 type LogRow = Pick<
@@ -85,10 +89,19 @@ export function useTabataWorkSetSync(options: {
 
     if (!shouldSyncTabataWorkSet(tabataState)) return;
 
-    const syncKey = tabataWorkSetSyncKey(tabataState);
+    const syncKey = tabataWorkSetSyncKey(tabataState, exercises.length);
     if (!syncKey || lastSyncedKeyRef.current === syncKey || syncingRef.current) return;
 
-    const setNumber = tabataState.round_index;
+    const exerciseCount = exercises.length;
+    const setNumber =
+      exerciseCount > 1
+        ? deriveTabataCircuitRound(tabataState.round_index, exerciseCount)
+        : tabataState.round_index;
+    const activeIndex =
+      exerciseCount > 1
+        ? deriveTabataActiveExerciseIndex(tabataState.round_index, exerciseCount)
+        : null;
+    const targets = activeIndex != null && exerciseCount > 1 ? [exercises[activeIndex]] : exercises;
     const sid = liveSessionId.trim();
     const tid = taskId.trim();
     const uid = userId;
@@ -107,7 +120,7 @@ export function useTabataWorkSetSync(options: {
         }
 
         let hadError = false;
-        for (const ex of exercises) {
+        for (const ex of targets) {
           const values = buildTabataWorkSetRowValues(ex, setNumber, freshLogs);
           if (!values) continue;
 

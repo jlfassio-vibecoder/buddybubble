@@ -1,3 +1,8 @@
+import {
+  deriveTabataCircuitRound,
+  deriveTabataActiveExerciseIndex,
+} from '@/lib/workout-factory/interval-timer/tabata-circuit-rotation';
+
 export type TabataSegment = 'idle' | 'setup' | 'work' | 'rest' | 'done';
 
 /** Mandatory pre-round countdown before round 1 work. */
@@ -139,6 +144,8 @@ export type TabataLoggerActiveSetPhase = 'work' | 'rest' | 'prepare' | 'paused';
 export type TabataLoggerActiveSet = {
   setNumber: number;
   phase: TabataLoggerActiveSetPhase;
+  /** 0-based station index for multi-exercise circuits. */
+  activeExerciseIndex?: number;
 };
 
 /** Secondary overlay/logger label; null during setup, idle, or when rounds unknown. */
@@ -152,14 +159,33 @@ export function tabataRoundDisplayLabel(state: TabataMechanicsState): string | n
 /** Active work-set row for participant logger highlight (`set_number` is 1-based). */
 export function deriveTabataLoggerActiveSet(
   state: TabataMechanicsState,
+  exerciseCount = 1,
 ): TabataLoggerActiveSet | null {
   if (state.segment === 'idle' || state.segment === 'done') return null;
   if (state.round_index < 1) return null;
+
+  const setNumber =
+    exerciseCount > 1
+      ? deriveTabataCircuitRound(state.round_index, exerciseCount)
+      : state.round_index;
+  const activeExerciseIndex =
+    exerciseCount > 1
+      ? (deriveTabataActiveExerciseIndex(state.round_index, exerciseCount) ?? undefined)
+      : undefined;
+
   if (state.is_paused === true) {
-    return { setNumber: state.round_index, phase: 'paused' };
+    return {
+      setNumber,
+      phase: 'paused',
+      ...(activeExerciseIndex != null ? { activeExerciseIndex } : {}),
+    };
   }
   if (state.segment === 'work' && state.segment_started_at != null) {
-    return { setNumber: state.round_index, phase: 'work' };
+    return {
+      setNumber,
+      phase: 'work',
+      ...(activeExerciseIndex != null ? { activeExerciseIndex } : {}),
+    };
   }
   return null;
 }

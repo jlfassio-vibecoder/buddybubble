@@ -10,6 +10,7 @@ import {
   type TabataLoggerActiveSetPhase,
   type TabataMechanicsState,
 } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
+import { parseIntervalBlockSnapshot } from '@/features/live-video/wrappers/interval/utils/tabata-block-snapshot';
 import { parseIntervalSessionIdFromWrapperConfig } from '@/features/live-video/wrappers/parseWrapperConfig';
 import type { Database } from '@/types/database';
 
@@ -26,6 +27,7 @@ export type TabataAthleteMechanicsState = {
   mechanics: TabataMechanicsState | null;
   activeSetNumber: number | null;
   activeSetPhase: TabataLoggerActiveSetPhase | null;
+  activeExerciseIndex: number | null;
 };
 
 export function useTabataAthleteMechanics(
@@ -36,6 +38,7 @@ export function useTabataAthleteMechanics(
 
   const [intervalSessionId, setIntervalSessionId] = useState('');
   const [mechanicsState, setMechanicsState] = useState<TabataMechanicsState | null>(null);
+  const [exerciseCount, setExerciseCount] = useState(1);
 
   useEffect(() => {
     if (!isTabataParticipant || !sessionId.trim()) {
@@ -61,20 +64,24 @@ export function useTabataAthleteMechanics(
   useEffect(() => {
     if (!isTabataParticipant || !intervalSessionId.trim()) {
       setMechanicsState(null);
+      setExerciseCount(1);
       return;
     }
     let cancelled = false;
     void supabase
       .from('live_interval_sessions')
-      .select('mechanics_state, interval_type')
+      .select('mechanics_state, interval_type, block_snapshot')
       .eq('id', intervalSessionId)
       .maybeSingle()
       .then(({ data }) => {
         if (cancelled) return;
         if (data?.interval_type === 'tabata') {
           setMechanicsState(parseTabataMechanicsState(data.mechanics_state));
+          const snapshot = parseIntervalBlockSnapshot(data.block_snapshot);
+          setExerciseCount(snapshot?.exercises.length ?? 1);
         } else {
           setMechanicsState(null);
+          setExerciseCount(1);
         }
       });
     return () => {
@@ -98,8 +105,11 @@ export function useTabataAthleteMechanics(
           const row = payload.new as Database['public']['Tables']['live_interval_sessions']['Row'];
           if (row.interval_type === 'tabata') {
             setMechanicsState(parseTabataMechanicsState(row.mechanics_state));
+            const snapshot = parseIntervalBlockSnapshot(row.block_snapshot);
+            setExerciseCount(snapshot?.exercises.length ?? 1);
           } else {
             setMechanicsState(null);
+            setExerciseCount(1);
           }
         },
       )
@@ -110,8 +120,9 @@ export function useTabataAthleteMechanics(
   }, [isTabataParticipant, intervalSessionId, supabase]);
 
   const active = useMemo(
-    () => (mechanicsState != null ? deriveTabataLoggerActiveSet(mechanicsState) : null),
-    [mechanicsState],
+    () =>
+      mechanicsState != null ? deriveTabataLoggerActiveSet(mechanicsState, exerciseCount) : null,
+    [mechanicsState, exerciseCount],
   );
 
   return {
@@ -119,5 +130,6 @@ export function useTabataAthleteMechanics(
     mechanics: mechanicsState,
     activeSetNumber: active?.setNumber ?? null,
     activeSetPhase: active?.phase ?? null,
+    activeExerciseIndex: active?.activeExerciseIndex ?? null,
   };
 }

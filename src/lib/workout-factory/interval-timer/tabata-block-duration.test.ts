@@ -49,6 +49,15 @@ describe('computeTabataBlockDurationFromParams', () => {
       }),
     ).toBeNull();
   });
+
+  it('uses work_segments for multi-exercise circuit duration', () => {
+    expect(
+      computeTabataBlockDurationFromParams(
+        { work_seconds: 30, rest_seconds: 30, rounds: 3 },
+        { exerciseCount: 4 },
+      ),
+    ).toBe(10 + 12 * 30 + 11 * 30);
+  });
 });
 
 describe('formatTabataBlockDurationPreview', () => {

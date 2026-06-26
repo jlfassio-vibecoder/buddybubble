@@ -36,6 +36,8 @@ const tabataInput: IntervalBlockInput = {
     workMs: 20_000,
     restMs: 10_000,
     totalRounds: 2,
+    circuitRounds: 2,
+    exerciseCount: 1,
   } satisfies TabataTimerConfig,
 };
 

@@ -120,6 +120,8 @@ export function TabataMechanics({
     engine.timerPhase,
     engine.segmentLabel,
     engine.currentRoundIndex,
+    engine.blockSnapshot?.format_params,
+    engine.blockSnapshot?.exercises,
     tabataState?.segment,
     tabataState?.is_paused,
     tabataState?.round_index,
