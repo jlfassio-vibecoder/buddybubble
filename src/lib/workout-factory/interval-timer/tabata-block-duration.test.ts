@@ -48,6 +48,13 @@ describe('computeTabataBlockDurationFromParams', () => {
         rounds: 8,
       }),
     ).toBeNull();
+    expect(
+      computeTabataBlockDurationFromParams({
+        work_seconds: 20,
+        rest_seconds: 0,
+        rounds: 8,
+      }),
+    ).toBeNull();
   });
 
   it('uses work_segments for multi-exercise circuit duration', () => {

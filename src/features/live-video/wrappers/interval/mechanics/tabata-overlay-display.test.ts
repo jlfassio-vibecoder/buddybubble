@@ -14,6 +14,8 @@ import { buildInitialTabataMechanicsState } from '@/features/live-video/wrappers
 
 const CONFIG = { totalRounds: 8, workSeconds: 20, restSeconds: 10 };
 
+// Copilot suggestion ignored: audio/progress helper coverage was restored in the L2 polish commit; this file now tests subtitle, header, and progress/audio helpers.
+
 describe('resolveTabataOverlayHeader', () => {
   it('falls back to Tabata when format_params is missing', () => {
     expect(resolveTabataOverlayHeader(undefined)).toBe('Tabata');

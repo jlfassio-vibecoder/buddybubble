@@ -3,20 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   deriveTabataActiveExerciseIndex,
   deriveTabataCircuitRound,
-  resolveTabataExerciseCount,
   resolveTabataWorkSegmentTotal,
 } from './tabata-circuit-rotation';
-
-describe('resolveTabataExerciseCount', () => {
-  it('returns count when positive', () => {
-    expect(resolveTabataExerciseCount(4)).toBe(4);
-    expect(resolveTabataExerciseCount(1)).toBe(1);
-  });
-
-  it('falls back to 1 when empty', () => {
-    expect(resolveTabataExerciseCount(0)).toBe(1);
-  });
-});
 
 describe('resolveTabataWorkSegmentTotal', () => {
   it('multiplies circuit rounds by exercise count when N > 1', () => {

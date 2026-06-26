@@ -74,7 +74,6 @@ export function parseIntervalBlockSnapshot(raw: unknown): ParsedIntervalBlockSna
   const base = parseBlockSnapshotBase(raw);
   if (!base) return null;
 
-  if (raw == null || typeof raw !== 'object') return base;
   const o = raw as Record<string, unknown>;
   const blockFormat = o.block_format === 'tabata' ? ('tabata' as const) : undefined;
   const formatParams = parseTabataFormatParams(o.format_params);

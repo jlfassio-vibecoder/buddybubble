@@ -1,9 +1,5 @@
 /** Circuit rotation semantics for block_format tabata (multi-exercise intervals). */
 
-export function resolveTabataExerciseCount(exerciseCount: number): number {
-  return exerciseCount > 0 ? exerciseCount : 1;
-}
-
 /**
  * Total work segments for the timer FSM.
  * Multiplies circuit rounds by station count when exerciseCount > 1.
