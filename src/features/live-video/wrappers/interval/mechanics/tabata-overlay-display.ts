@@ -1,5 +1,6 @@
 import type { WorkoutExercise } from '@/lib/item-metadata';
 import { deriveTabataActiveExerciseIndex } from '@/lib/workout-factory/interval-timer/tabata-circuit-rotation';
+import { resolveIntervalPresetLabel } from '@/lib/workout-factory/interval-timer/interval-preset-catalog';
 import type { TabataFormatParams } from '@/lib/workout-factory/types/tabata-format-params';
 import type {
   TabataMechanicsState,
@@ -11,6 +12,15 @@ function positiveInt(v: unknown): number | null {
   if (typeof v !== 'number' || !Number.isFinite(v)) return null;
   const n = Math.round(v);
   return n > 0 ? n : null;
+}
+
+const LEGACY_TABATA_OVERLAY_HEADER = 'Tabata';
+
+export function resolveTabataOverlayHeader(formatParams: TabataFormatParams | undefined): string {
+  if (formatParams == null || Object.keys(formatParams).length === 0) {
+    return LEGACY_TABATA_OVERLAY_HEADER;
+  }
+  return resolveIntervalPresetLabel(formatParams);
 }
 
 export function resolveTabataOverlaySubtitle(args: {

@@ -4,6 +4,7 @@ import { IntervalShellAudioToggle } from '@/components/fitness/interval-shells/I
 import { IntervalOverlayHostControls } from '@/features/live-video/wrappers/interval/mechanics/IntervalOverlayHostControls';
 import { isTabataMechanicsState } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
 import {
+  resolveTabataOverlayHeader,
   resolveTabataOverlaySubtitle,
   tabataOverlayShowProgress,
   tabataSegmentPhaseAccentClass,
@@ -12,20 +13,9 @@ import {
 } from '@/features/live-video/wrappers/interval/mechanics/tabata-overlay-display';
 import type { IntervalSessionEngine } from '@/features/live-video/wrappers/interval/types/interval-engine';
 import { useTimerAudioPreference } from '@/hooks/use-timer-audio-preference';
-import { resolveIntervalPresetLabel } from '@/lib/workout-factory/interval-timer/interval-preset-catalog';
-import type { TabataFormatParams } from '@/lib/workout-factory/types/tabata-format-params';
 import { formatCountdownMmSs } from '@/lib/timer';
 
 import { cn } from '@/lib/utils';
-
-const LEGACY_TABATA_OVERLAY_HEADER = 'Tabata';
-
-function resolveTabataOverlayHeader(formatParams: TabataFormatParams | undefined): string {
-  if (formatParams == null || Object.keys(formatParams).length === 0) {
-    return LEGACY_TABATA_OVERLAY_HEADER;
-  }
-  return resolveIntervalPresetLabel(formatParams);
-}
 
 export type TabataTimerOverlayProps = {
   engine: IntervalSessionEngine;

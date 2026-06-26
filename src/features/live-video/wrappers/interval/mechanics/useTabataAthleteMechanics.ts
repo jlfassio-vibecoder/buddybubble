@@ -78,7 +78,7 @@ export function useTabataAthleteMechanics(
         if (data?.interval_type === 'tabata') {
           setMechanicsState(parseTabataMechanicsState(data.mechanics_state));
           const snapshot = parseIntervalBlockSnapshot(data.block_snapshot);
-          setExerciseCount(snapshot?.exercises.length ?? 1);
+          setExerciseCount(snapshot?.exercises?.length || 1);
         } else {
           setMechanicsState(null);
           setExerciseCount(1);
@@ -106,7 +106,7 @@ export function useTabataAthleteMechanics(
           if (row.interval_type === 'tabata') {
             setMechanicsState(parseTabataMechanicsState(row.mechanics_state));
             const snapshot = parseIntervalBlockSnapshot(row.block_snapshot);
-            setExerciseCount(snapshot?.exercises.length ?? 1);
+            setExerciseCount(snapshot?.exercises?.length || 1);
           } else {
             setMechanicsState(null);
             setExerciseCount(1);

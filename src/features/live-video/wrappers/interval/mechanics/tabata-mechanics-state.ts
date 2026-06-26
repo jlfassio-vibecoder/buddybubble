@@ -148,14 +148,6 @@ export type TabataLoggerActiveSet = {
   activeExerciseIndex?: number;
 };
 
-/** Secondary overlay/logger label; null during setup, idle, or when rounds unknown. */
-export function tabataRoundDisplayLabel(state: TabataMechanicsState): string | null {
-  if (state.segment === 'setup' || state.segment === 'idle' || state.total_rounds <= 0) {
-    return null;
-  }
-  return `Round ${Math.max(state.round_index, 1)} / ${state.total_rounds}`;
-}
-
 /** Active work-set row for participant logger highlight (`set_number` is 1-based). */
 export function deriveTabataLoggerActiveSet(
   state: TabataMechanicsState,
