@@ -1271,7 +1271,7 @@ describe('parseCoachJson', () => {
     expect((outline?.[0]?.exercises as unknown[]).length).toBe(4);
   });
 
-  it('drops tabata circuit when block name implies more exercises than emitted', () => {
+  it('accepts single-exercise tabata outline with legitimate to/and in movement name', () => {
     const { outline, drops } = parseCoachOutlineOnlyBlocksFromText(
       JSON.stringify({
         blocks: [
@@ -1284,13 +1284,13 @@ describe('parseCoachJson', () => {
               rest_seconds: 30,
               interval_preset: 'classic_hiit',
             },
-            exercises: [{ name: 'Burpees to Mountain Climbers' }],
+            exercises: [{ name: 'Clean and Jerk' }],
           },
         ],
       }),
     );
-    expect(outline).toBeNull();
-    expect(drops.some((d) => d.reason === 'tabata_circuit_cardinality')).toBe(true);
+    expect(drops).toEqual([]);
+    expect(outline).toHaveLength(1);
   });
 
   it('parseCoachJson surfaces coach_workout_outline on create_card branch', () => {

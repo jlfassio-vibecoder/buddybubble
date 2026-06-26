@@ -5,7 +5,10 @@
 
 import type { CoachProposedBlockShell } from './block-blueprint-synthesize.ts';
 import { INTERVAL_CIRCUIT_CARDINALITY_PROMPT_BLOCK } from './config.ts';
-import { parseStatedExerciseCount } from './interval-circuit-cardinality.ts';
+import {
+  messageSegmentForBlockToken,
+  parseStatedExerciseCount,
+} from './interval-circuit-cardinality.ts';
 
 export function buildBlockExerciseFillSystemPrompt(): string {
   return (
@@ -28,14 +31,34 @@ export function buildBlockExerciseFillSystemPrompt(): string {
 export function buildBlockExerciseFillUserText(args: {
   userMessage: string;
   shells: CoachProposedBlockShell[];
+  /** Composer block tokens in shell order — scopes stated exercise counts per block. */
+  blockTokens?: readonly string[] | null;
   workoutIndexSummary?: string | null;
 }): string {
   const shellLines = args.shells.map((s) => JSON.stringify(s));
-  const statedCount = parseStatedExerciseCount(args.userMessage);
+  const blockTokens = args.blockTokens ?? null;
+  const multiBlock = Boolean(blockTokens && blockTokens.length > 1);
+  const tabataCardinalityHints = args.shells
+    .map((shell, i) => {
+      if (shell.block_format !== 'tabata') return null;
+      const segment =
+        multiBlock && blockTokens?.[i]
+          ? messageSegmentForBlockToken(args.userMessage, blockTokens[i]!, blockTokens)
+          : args.userMessage;
+      const statedCount = parseStatedExerciseCount(segment);
+      if (statedCount == null) return null;
+      return `Block "${shell.name}": user stated ${statedCount} exercises/stations in this block's message segment — exercises.length MUST equal ${statedCount} with distinct movement names.`;
+    })
+    .filter((line): line is string => line != null);
+  const globalStatedCount =
+    tabataCardinalityHints.length === 0 && !multiBlock
+      ? parseStatedExerciseCount(args.userMessage)
+      : null;
   const parts = [
     `User message:\n${args.userMessage.trim()}`,
-    statedCount != null
-      ? `Stated exercise/station count from user message: ${statedCount}. For tabata shells, exercises.length MUST equal this count with distinct movement names.`
+    ...tabataCardinalityHints,
+    globalStatedCount != null
+      ? `Stated exercise/station count from user message: ${globalStatedCount}. For tabata shells, exercises.length MUST equal this count with distinct movement names.`
       : null,
     `Fixed block shells (structure is not editable):\n${shellLines.join('\n')}`,
   ].filter((p): p is string => p != null);

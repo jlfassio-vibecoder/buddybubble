@@ -28,7 +28,7 @@
  * A byte-for-byte mirror lives at `supabase/functions/agents/coach/parse.ts`. Run
  * `pnpm check:agent-mirror` to verify parity.
  *
- * Pure module: only depends on `./config`. No DB, no Deno globals, no logging.
+ * Pure module: no DB or Deno globals. May log parse drops via console.warn.
  */
 
 import {

@@ -185,6 +185,45 @@ describe('buildDeterministicCoachBlocks', () => {
       'Movement 4',
     ]);
   });
+
+  it('pads tabata placeholders using stated count scoped to each block token', () => {
+    const msg =
+      'add :main/hiit/classic with 2 exercises #Squats add :finisher/hiit/classic with 4 exercises #Burpees #Mountain Climbers ';
+    const mainMention = {
+      ...TABATA_MENTION,
+      token: ':main/hiit/classic ',
+      section_name: 'Main',
+      section_role: 'main' as const,
+      format_params: {
+        work_seconds: 30,
+        rest_seconds: 30,
+        rounds: 3,
+        interval_preset: 'classic_hiit',
+      },
+    };
+    const finisherMention = {
+      ...TABATA_MENTION,
+      token: ':finisher/hiit/classic ',
+      format_params: {
+        work_seconds: 30,
+        rest_seconds: 30,
+        rounds: 3,
+        interval_preset: 'classic_hiit',
+      },
+    };
+    const assigned = assignExerciseMentionsToBlocks(
+      msg,
+      [mainMention, finisherMention],
+      [
+        { token: '#Squats ', name: 'Squats', source: 'dictionary' as const },
+        { token: '#Burpees ', name: 'Burpees', source: 'dictionary' as const },
+        { token: '#Mountain Climbers ', name: 'Mountain Climbers', source: 'dictionary' as const },
+      ],
+    );
+    const blocks = buildDeterministicCoachBlocks(assigned, msg);
+    expect(blocks[0]!.exercises).toHaveLength(2);
+    expect(blocks[1]!.exercises).toHaveLength(4);
+  });
 });
 
 describe('resolveBlockBlueprintRouterGate', () => {

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   genericIntervalCircuitPlaceholderName,
   looksLikeCompoundIntervalExerciseName,
+  messageSegmentForBlockToken,
   parseExerciseCountFromBlockName,
   parseStatedExerciseCount,
   validateTabataCircuitCardinality,
@@ -26,6 +27,16 @@ describe('parseStatedExerciseCount', () => {
   });
 });
 
+describe('messageSegmentForBlockToken', () => {
+  it('scopes stated count to the block token segment', () => {
+    const msg =
+      'add :main/hiit/classic with 2 exercises #Squats add :finisher/hiit/classic with 4 exercises #Burpees ';
+    const tokens = [':main/hiit/classic ', ':finisher/hiit/classic '];
+    expect(parseStatedExerciseCount(messageSegmentForBlockToken(msg, tokens[0]!, tokens))).toBe(2);
+    expect(parseStatedExerciseCount(messageSegmentForBlockToken(msg, tokens[1]!, tokens))).toBe(4);
+  });
+});
+
 describe('validateTabataCircuitCardinality', () => {
   it('drops when block name encodes more exercises than emitted', () => {
     expect(validateTabataCircuitCardinality(1, { blockName: 'Main Circuit 4 exercises' })).toBe(
@@ -33,12 +44,20 @@ describe('validateTabataCircuitCardinality', () => {
     );
   });
 
-  it('drops compound single exercise when count requested', () => {
+  it('drops compound single exercise when multi-station count requested', () => {
     expect(
       validateTabataCircuitCardinality(1, {
+        requestedCount: 4,
         singleExerciseName: 'Burpees to Mountain Climbers',
       }),
     ).toBe('tabata_circuit_cardinality');
+  });
+
+  it('allows legitimate single-movement names with to/and when no multi-station count', () => {
+    expect(validateTabataCircuitCardinality(1, { singleExerciseName: 'Toe to Bar' })).toBeNull();
+    expect(
+      validateTabataCircuitCardinality(1, { singleExerciseName: 'Clean and Jerk' }),
+    ).toBeNull();
   });
 
   it('passes when exercise count matches stated count', () => {

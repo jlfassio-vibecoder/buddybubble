@@ -184,6 +184,7 @@ async function runLane2ExerciseFill(
               text: buildBlockExerciseFillUserText({
                 userMessage,
                 shells,
+                blockTokens: gate.blockMentions.map((m) => m.token),
                 workoutIndexSummary: summary,
               }),
             },

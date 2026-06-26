@@ -37,6 +37,28 @@ export function parseStatedExerciseCount(text: string): number | null {
   return parseCountToken(match[1]);
 }
 
+function tokenIndex(messageText: string, token: string): number {
+  const i = messageText.indexOf(token);
+  return i >= 0 ? i : Number.MAX_SAFE_INTEGER;
+}
+
+/** Message slice from blockToken through the next block token (or end). */
+export function messageSegmentForBlockToken(
+  messageText: string,
+  blockToken: string,
+  allBlockTokens: readonly string[],
+): string {
+  const sorted = [...allBlockTokens].sort(
+    (a, b) => tokenIndex(messageText, a) - tokenIndex(messageText, b),
+  );
+  const idx = sorted.indexOf(blockToken);
+  if (idx < 0) return messageText;
+  const start = tokenIndex(messageText, blockToken);
+  const end =
+    idx + 1 < sorted.length ? tokenIndex(messageText, sorted[idx + 1]!) : messageText.length;
+  return messageText.slice(start, end);
+}
+
 export function parseExerciseCountFromBlockName(blockName: string): number | null {
   const match = blockName.match(BLOCK_NAME_COUNT_PATTERN);
   if (!match?.[1]) return null;
@@ -63,6 +85,8 @@ export function validateTabataCircuitCardinality(
   }
   if (
     exerciseCount === 1 &&
+    requested != null &&
+    requested > 1 &&
     looksLikeCompoundIntervalExerciseName(hints?.singleExerciseName ?? '')
   ) {
     return 'tabata_circuit_cardinality';

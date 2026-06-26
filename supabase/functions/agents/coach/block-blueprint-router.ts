@@ -16,6 +16,7 @@ import {
 } from './block-blueprint-synthesize.ts';
 import {
   genericIntervalCircuitPlaceholderName,
+  messageSegmentForBlockToken,
   parseStatedExerciseCount,
 } from './interval-circuit-cardinality.ts';
 
@@ -207,7 +208,8 @@ export function buildDeterministicCoachBlocks(
   assigned: AssignedBlockExercises[],
   messageText?: string,
 ): CoachProposedBlockShell[] {
-  const statedCount = messageText ? parseStatedExerciseCount(messageText) : null;
+  const blockTokens = assigned.map(({ mention }) => mention.token);
+  const multiBlock = Boolean(messageText && blockTokens.length > 1);
   return assigned.map(({ mention, exercises }) => {
     const shell = synthesizeProposedBlocksFromMentions([mention])[0]!;
     const mapped = exercises.map((m) => ({
@@ -215,6 +217,11 @@ export function buildDeterministicCoachBlocks(
       sets: 1,
       reps: defaultRepsForFormat(mention.block_format),
     }));
+    const segment =
+      messageText && multiBlock
+        ? messageSegmentForBlockToken(messageText, mention.token, blockTokens)
+        : (messageText ?? '');
+    const statedCount = messageText ? parseStatedExerciseCount(segment) : null;
     if (mention.block_format === 'tabata' && statedCount != null && mapped.length < statedCount) {
       for (let i = mapped.length; i < statedCount; i++) {
         mapped.push({

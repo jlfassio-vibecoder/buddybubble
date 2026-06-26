@@ -1,5 +1,5 @@
 /**
- * Coach response parser — pure module, canonical source.
+ * Coach response parser — Deno mirror of `src/lib/agents/coach/parse.ts`.
  *
  * Lifts every parse helper from the legacy Coach implementation verbatim:
  *
@@ -25,10 +25,9 @@
  * or `Error('gemini_invalid_json_shape')` to match the legacy contract; the dispatcher
  * catches and classifies these via `_shared/llm/vertex-gemini.classifyError`.
  *
- * A byte-for-byte mirror lives at `supabase/functions/agents/coach/parse.ts`. Run
- * `pnpm check:agent-mirror` to verify parity.
+ * Run `pnpm check:agent-mirror` to verify parity with the Vitest-canonical module.
  *
- * Pure module: only depends on `./config`. No DB, no Deno globals, no logging.
+ * No DB or Deno globals. May log parse drops via console.warn.
  */
 
 import {
@@ -39,15 +38,15 @@ import {
   hydrateEmomAlternatingStations,
   normalizeFormatParams,
   validateBlockShape,
-} from './block-blueprint-library.ts';
+} from './block-blueprint-library';
 import { validateTabataCircuitCardinality } from './interval-circuit-cardinality.ts';
-import { ensureOutlineExercisePlaceholders } from './outline-exercise-placeholders.ts';
+import { ensureOutlineExercisePlaceholders } from './outline-exercise-placeholders';
 import {
   capOutlineInstructionLines,
   clampOutlineExerciseName,
   MAX_OUTLINE_EXERCISES_PER_BLOCK,
   sanitizeOutlineBlockName,
-} from './outline-block-name-sanitize.ts';
+} from './outline-block-name-sanitize';
 import {
   COACH_TASK_NOTES_MAX_CHARS,
   COACH_TASK_SEED_CTA,
@@ -56,25 +55,25 @@ import {
   PERSONAL_CUES_FIELD_MAX_CHARS,
   type IntakeCategory,
   type IntakePhase,
-} from './config.ts';
+} from './config';
 
-export type { BlockShapeDrop } from './block-blueprint-library.ts';
-import type { ExerciseDictionaryIndexEntry } from './prompts.ts';
+export type { BlockShapeDrop } from './block-blueprint-library';
+import type { ExerciseDictionaryIndexEntry } from './prompts';
 import {
   coerceExecutionPatchNumericField,
   sanitizeNumericStringForPatch,
-} from './execution-patch-numeric.ts';
+} from './execution-patch-numeric';
 import {
   parseAndCollectTaskModalIntakePatchFromGemini,
   taskModalIntakePatchForRpc,
   type TaskModalIntakePatch,
   type TaskModalIntakePatchDrop,
-} from './task-modal-intake-patch.ts';
+} from './task-modal-intake-patch';
 import {
   parseOutlineDraftPatchMode,
   parseOutlineDraftPatchRevision,
   type OutlineDraftPatchV1,
-} from './outline-draft-patch.ts';
+} from './outline-draft-patch';
 
 /**
  * Normalized Coach response shape. Lifted verbatim from
@@ -908,4 +907,4 @@ export function personalCuesPatchForRpc(
   }));
 }
 
-export { taskModalIntakePatchForRpc } from './task-modal-intake-patch.ts';
+export { taskModalIntakePatchForRpc } from './task-modal-intake-patch';
