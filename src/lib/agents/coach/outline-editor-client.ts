@@ -236,6 +236,8 @@ export function blockShapeDropMessage(drop: BlockShapeDrop): string {
     emom_alternating_invalid_stations: 'EMOM alternating stations are invalid',
     amrap_missing_time_cap: 'AMRAP needs a time cap (minutes)',
     tabata_missing_rounds: 'Tabata needs rounds',
+    tabata_circuit_cardinality:
+      'Interval circuit needs one exercise placeholder per stated station count',
     ladder_missing_reps: 'Ladder needs start and peak reps',
     chipper_cardinality: 'Chipper requires at least 3 exercises',
     chipper_missing_rounds: 'Chipper needs rounds',

@@ -14,6 +14,11 @@ import {
   type CoachProposedBlockShell,
   synthesizeProposedBlocksFromMentions,
 } from './block-blueprint-synthesize';
+import {
+  genericIntervalCircuitPlaceholderName,
+  messageSegmentForBlockToken,
+  parseStatedExerciseCount,
+} from './interval-circuit-cardinality';
 
 export type BlockBlueprintRouterLane = 'lane1' | 'lane2';
 
@@ -201,16 +206,34 @@ export function defaultRepsForFormat(format: BlockFormat): string {
 
 export function buildDeterministicCoachBlocks(
   assigned: AssignedBlockExercises[],
+  messageText?: string,
 ): CoachProposedBlockShell[] {
+  const blockTokens = assigned.map(({ mention }) => mention.token);
+  const multiBlock = Boolean(messageText && blockTokens.length > 1);
   return assigned.map(({ mention, exercises }) => {
     const shell = synthesizeProposedBlocksFromMentions([mention])[0]!;
+    const mapped = exercises.map((m) => ({
+      name: m.name,
+      sets: 1,
+      reps: defaultRepsForFormat(mention.block_format),
+    }));
+    const segment =
+      messageText && multiBlock
+        ? messageSegmentForBlockToken(messageText, mention.token, blockTokens)
+        : (messageText ?? '');
+    const statedCount = messageText ? parseStatedExerciseCount(segment) : null;
+    if (mention.block_format === 'tabata' && statedCount != null && mapped.length < statedCount) {
+      for (let i = mapped.length; i < statedCount; i++) {
+        mapped.push({
+          name: genericIntervalCircuitPlaceholderName(i),
+          sets: 1,
+          reps: defaultRepsForFormat(mention.block_format),
+        });
+      }
+    }
     return {
       ...shell,
-      exercises: exercises.map((m) => ({
-        name: m.name,
-        sets: 1,
-        reps: defaultRepsForFormat(mention.block_format),
-      })),
+      exercises: mapped,
     };
   });
 }

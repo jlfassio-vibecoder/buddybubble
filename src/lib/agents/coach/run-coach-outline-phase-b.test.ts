@@ -42,7 +42,19 @@ describe('run-coach-outline-phase-b', () => {
     expect(userPrompt).toContain('Finisher — Tabata VO2');
     expect(userPrompt).toContain('"interval_preset":"tabata"');
     expect(userPrompt).toContain('"interval_preset":"classic_hiit"');
+    expect(userPrompt).toContain('INTERVAL CIRCUIT COUNT');
     expect(userPrompt).toContain(tabataTokens);
+  });
+
+  it('user prompt documents circuit rounds for multi-exercise interval requests', () => {
+    const { userPrompt } = buildCoachOutlinePhaseBPrompts({
+      title: 'Classic HIIT',
+      description: '30/30 finisher',
+      userMessage: 'Classic HIIT 30/30, 4 bodyweight exercises, 3 rounds',
+      blueprintLibraryPrompt: '',
+    });
+    expect(userPrompt).toContain('exercises.length MUST equal N');
+    expect(userPrompt).toContain('circuit rounds');
   });
 
   it('processCoachOutlinePhaseBVertexOutput succeeds on valid blocks JSON', () => {

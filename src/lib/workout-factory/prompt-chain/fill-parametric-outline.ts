@@ -2,7 +2,10 @@
  * Stage 1 (parametric outline fill): Vertex prompt + output validation.
  */
 
-import { INTERVAL_MODALITY_FACTORY_PROMPT } from '@/lib/workout-factory/interval-timer/interval-preset-catalog';
+import {
+  INTERVAL_CIRCUIT_CARDINALITY_PROMPT_BLOCK,
+  INTERVAL_MODALITY_FACTORY_PROMPT,
+} from '@/lib/workout-factory/interval-timer/interval-preset-catalog';
 import type { WorkoutPersona } from '@/lib/workout-factory/types/ai-workout';
 import type { OutlineFillOutput } from '@/lib/workout-factory/types/outline-fill-types';
 import {
@@ -135,7 +138,7 @@ Fill each outline block in order with exercises or instruction lines appropriate
 - Do NOT echo block names, block_format, or format_params — the server applies structure from the outline.
 - Exercise-shaped blocks MUST include exercises[] with one entry per placeholder exercise in the outline (same count, same order).
 - Instruction-only blocks: output instructions[] only (no exercises[], no block_format).
-- For EMOM/Intervals (block_format tabata) blocks, movement names alone are sufficient when format_params carry timing; optional per-exercise work_seconds/rest_seconds/reps.
+- For EMOM/Intervals (block_format tabata) blocks, movement names alone are sufficient when format_params carry timing; optional per-exercise work_seconds/rest_seconds/reps. Fill each placeholder with a distinct movement — never merge into one compound name.
 - For straight_sets, circuit, and other formats, include sets, reps, or work_seconds on each exercise.
 - Scale volume and intensity to phase intent, progression trend, anchor lift, temporary limitations, and session duration from intake when present.
 
@@ -224,8 +227,12 @@ export const FILL_PARAMETRIC_OUTLINE_SYSTEM_PROMPT = `You are the Biomechanist a
 
 ${INTERVAL_MODALITY_FACTORY_PROMPT}
 
+${INTERVAL_CIRCUIT_CARDINALITY_PROMPT_BLOCK}
+
 Do NOT add, remove, or reorder blocks. Do NOT echo block names, block_format, or format_params in your JSON — return fill content only (exercises[] and/or instructions[]) in outline order.
 
 Instruction-only blocks (warm-up, cool-down, mobility) must remain instruction-only — output instructions[] only, never exercises[].
+
+For tabata blocks: fill each outline placeholder with a distinct movement name — never merge multiple placeholders into one compound exercise name.
 
 Output ONLY valid JSON matching the user-provided schema. No markdown, no commentary.`;

@@ -160,7 +160,7 @@ export function formatServerBlockShellsPromptBlock(
     '\n\nblock_format and format_params above are FIXED by the client composer token. ' +
     'Your job on this turn: set update_existing_task true; emit proposed_workout_metadata.blocks ' +
     'with the same name, block_format, and format_params plus exercises[] filled from the user message ' +
-    '(and # exercise tags when present). Keep reply_content to one short confirmation. ' +
+    '(and # exercise tags when present). For tabata blocks, when the user states N exercises/movements/stations, emit exactly N distinct exercises[] entries (generic names OK). Never merge multiple movements into one compound name. Keep reply_content to one short confirmation. ' +
     'Do not emit updated_task_description workout prose or unchanged blocks.'
   );
 }

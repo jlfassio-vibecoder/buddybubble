@@ -2,9 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { preflightOutlineBlocks } from '@/lib/workout-factory/outline-block-preflight';
 import {
   buildFillParametricOutlinePrompt,
+  FILL_PARAMETRIC_OUTLINE_SYSTEM_PROMPT,
   validateFillParametricOutlineOutput,
 } from '@/lib/workout-factory/prompt-chain/fill-parametric-outline';
 import type { WorkoutPersona } from '@/lib/workout-factory/types/ai-workout';
+
+describe('FILL_PARAMETRIC_OUTLINE_SYSTEM_PROMPT', () => {
+  it('includes interval circuit cardinality guidance', () => {
+    expect(FILL_PARAMETRIC_OUTLINE_SYSTEM_PROMPT).toContain('INTERVAL CIRCUIT CARDINALITY');
+    expect(FILL_PARAMETRIC_OUTLINE_SYSTEM_PROMPT).toContain('distinct movement name');
+  });
+});
 
 const emomOutline = [
   {
