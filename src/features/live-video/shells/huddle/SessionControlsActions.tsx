@@ -1,13 +1,14 @@
 'use client';
 
-import { useEffect, type ReactNode } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { useCallback, useEffect, useMemo, type ReactNode } from 'react';
+import { ChevronDown, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import type { SessionState } from '@/features/live-video/state/sessionStateMachine';
 import type { SessionActions } from '@/features/live-video/hooks/useSessionState';
 import {
   pickActiveSnapshot,
   buildAmrapBlockSnapshot,
+  isAmrapDeckSnapshot,
 } from '@/features/amrap/utils/buildAmrapBlockSnapshot';
 import { useLiveSessionRuntime } from '@/features/live-video/theater/live-session-runtime-context';
 import { SESSION_COMMAND_EVENT } from '@/features/live-video/state/session-sync.types';
@@ -18,17 +19,21 @@ import {
   isEmomDeckSnapshot,
 } from '@/features/live-video/wrappers/interval/utils/buildEmomAttachPayload';
 import {
+  buildStrictTabataQuickLaunchPayload,
   buildTabataAttachPayload,
   isTabataDeckSnapshot,
+  type TabataAttachPayload,
 } from '@/features/live-video/wrappers/interval/utils/buildTabataAttachPayload';
 import { emomMechanicsStateToJson } from '@/features/live-video/wrappers/interval/mechanics/emom-mechanics-state';
 import { tabataMechanicsStateToJson } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
+import { resolveIntervalPresetLabel } from '@/lib/workout-factory/interval-timer/interval-preset-catalog';
 import type { Json } from '@/types/database';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
@@ -88,6 +93,28 @@ export function SessionControlsActions({
   const activeDeckSnap = pickActiveSnapshot(deckSel?.deck ?? [], deckSel?.activeSnapshotId ?? null);
   const tabataAttachReady = amrapAttachReady && isTabataDeckSnapshot(activeDeckSnap);
   const emomAttachReady = amrapAttachReady && isEmomDeckSnapshot(activeDeckSnap);
+  const amrapDeckReady = amrapAttachReady && isAmrapDeckSnapshot(activeDeckSnap);
+
+  type DeckLaunchKind = 'tabata' | 'emom' | 'amrap';
+
+  const deckLaunch = useMemo((): { kind: DeckLaunchKind; label: string } | null => {
+    if (!activeDeckSnap || !amrapAttachReady) return null;
+    if (tabataAttachReady) {
+      const payload = buildTabataAttachPayload(activeDeckSnap);
+      if (!payload) return null;
+      return {
+        kind: 'tabata',
+        label: resolveIntervalPresetLabel(payload.blockSnapshot.format_params),
+      };
+    }
+    if (emomAttachReady) {
+      return { kind: 'emom', label: 'EMOM' };
+    }
+    if (amrapDeckReady) {
+      return { kind: 'amrap', label: 'AMRAP' };
+    }
+    return null;
+  }, [activeDeckSnap, amrapAttachReady, tabataAttachReady, emomAttachReady, amrapDeckReady]);
 
   const isIdle = state.status === 'idle';
 
@@ -107,6 +134,36 @@ export function SessionControlsActions({
       id: recordingHintToastId(sessionId),
     });
   }, [disableActions, hostAsyncWorkoutEnabled, liveSessionRowId, onHostStartRecording]);
+
+  const attachTabataSession = useCallback(
+    async (payload: TabataAttachPayload) => {
+      if (!payload || !amrapAttachReady) return;
+      const { data, error } = await supabase.rpc('tabata_create_for_session', {
+        p_live_session_id: liveSessionRowId.trim(),
+        p_block_snapshot: payload.blockSnapshot as Json,
+        p_mechanics_state: tabataMechanicsStateToJson(payload.mechanicsState) as Json,
+      });
+      if (error) {
+        if (process.env.NODE_ENV === 'development') {
+          console.error(
+            '[SessionControlsActions] tabata_create_for_session',
+            error.message,
+            error.code,
+            error.details,
+            error.hint,
+          );
+        } else {
+          console.error('[SessionControlsActions] tabata_create_for_session failed');
+        }
+        return;
+      }
+      if (typeof data === 'string') {
+        setOverride({ kind: 'tabata', config: { interval_session_id: data } });
+        actions.transitionToPhase('tabata');
+      }
+    },
+    [actions, amrapAttachReady, liveSessionRowId, setOverride, supabase],
+  );
 
   const handleEndSessionForAll = () => {
     if (amrapAttachReady) {
@@ -229,36 +286,41 @@ export function SessionControlsActions({
     })();
   };
 
-  const handleStartTabataBlock = () => {
-    if (!tabataAttachReady) return;
-    void (async () => {
-      const snap = pickActiveSnapshot(deckSel?.deck ?? [], deckSel?.activeSnapshotId ?? null);
+  const handleLaunchDeckBlock = () => {
+    if (!deckLaunch) return;
+    const snap = pickActiveSnapshot(deckSel?.deck ?? [], deckSel?.activeSnapshotId ?? null);
+
+    if (deckLaunch.kind === 'tabata') {
       const payload = buildTabataAttachPayload(snap);
-      if (!payload) return;
-      const { data, error } = await supabase.rpc('tabata_create_for_session', {
-        p_live_session_id: liveSessionRowId.trim(),
-        p_block_snapshot: payload.blockSnapshot as Json,
-        p_mechanics_state: tabataMechanicsStateToJson(payload.mechanicsState) as Json,
-      });
-      if (error) {
-        if (process.env.NODE_ENV === 'development') {
-          console.error(
-            '[SessionControlsActions] tabata_create_for_session',
-            error.message,
-            error.code,
-            error.details,
-            error.hint,
-          );
-        } else {
-          console.error('[SessionControlsActions] tabata_create_for_session failed');
-        }
+      if (!payload) {
+        console.error(
+          '[SessionControlsActions] handleLaunchDeckBlock: stale tabata deck snapshot — rebuild payload returned null',
+        );
         return;
       }
-      if (typeof data === 'string') {
-        setOverride({ kind: 'tabata', config: { interval_session_id: data } });
-        actions.transitionToPhase('tabata');
-      }
-    })();
+      void attachTabataSession(payload);
+      return;
+    }
+
+    if (deckLaunch.kind === 'emom') {
+      if (!emomAttachReady) return;
+      handleStartEmomBlock();
+      return;
+    }
+
+    if (deckLaunch.kind === 'amrap') {
+      if (!amrapDeckReady) return;
+      handleStartAmrapBlock();
+    }
+  };
+
+  const handleQuickLaunchStrictTabata = () => {
+    void attachTabataSession(buildStrictTabataQuickLaunchPayload());
+  };
+
+  const handleQuickLaunchCustomInterval = () => {
+    // TODO: Live host custom W/R modal (work_seconds, rest_seconds, rounds) then attachTabataSession.
+    toast.message('Custom interval launcher coming soon.');
   };
 
   const inHuddle = state.phase === 'lobby';
@@ -270,6 +332,7 @@ export function SessionControlsActions({
   const showLifecycle = isIdle || !disableActions;
   const showBlockControls = !isIdle && (inHuddle || activeBlock);
   const showSeparator = showBlockControls && showLifecycle;
+  const showIntervalLaunchControls = !isIdle && inHuddle && !activeBlock && amrapAttachReady;
 
   return (
     <div className={cn('flex min-w-0 flex-wrap items-center justify-end gap-2', className)}>
@@ -291,45 +354,71 @@ export function SessionControlsActions({
         <div className="flex shrink-0 items-center">{hostDeckInjector}</div>
       ) : null}
 
-      {!isIdle && inHuddle && !activeBlock ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            disabled={phaseDisabled}
-            className={cn(
-              buttonVariants({ variant: 'secondary', size: 'sm' }),
-              'gap-1 font-medium',
-            )}
-          >
-            Intervals
-            <ChevronDown className="size-3.5 opacity-70" aria-hidden />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-40">
-            <DropdownMenuItem
+      {showIntervalLaunchControls ? (
+        <>
+          {deckLaunch ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="default"
+              className="font-medium"
               disabled={phaseDisabled}
-              onClick={() => actions.transitionToPhase('warmup')}
+              data-testid="interval-deck-launch-button"
+              onClick={handleLaunchDeckBlock}
             >
-              Warm-up
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={phaseDisabled || !amrapAttachReady}
-              onClick={handleStartAmrapBlock}
+              ▶ Launch {deckLaunch.label}
+            </Button>
+          ) : null}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              disabled={phaseDisabled}
+              className={cn(
+                buttonVariants({ variant: 'secondary', size: 'sm' }),
+                'gap-1.5 font-medium',
+              )}
+              data-testid="interval-quick-launch-trigger"
             >
-              AMRAP block
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={phaseDisabled || !tabataAttachReady}
-              onClick={handleStartTabataBlock}
-            >
-              Intervals block
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={phaseDisabled || !emomAttachReady}
-              onClick={handleStartEmomBlock}
-            >
-              EMOM block
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+              <Zap className="size-3.5" aria-hidden />
+              Quick Launch
+              <ChevronDown className="size-3.5 opacity-70" aria-hidden />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-48">
+              <DropdownMenuItem
+                disabled={phaseDisabled}
+                onClick={handleQuickLaunchStrictTabata}
+                data-testid="quick-launch-strict-tabata"
+              >
+                Strict Tabata (20s/10s)
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={phaseDisabled}
+                onClick={handleQuickLaunchCustomInterval}
+                data-testid="quick-launch-custom-interval"
+              >
+                Custom Interval…
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                disabled={phaseDisabled}
+                onClick={() => actions.transitionToPhase('warmup')}
+              >
+                Warm-up
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={phaseDisabled || !amrapDeckReady}
+                onClick={handleStartAmrapBlock}
+              >
+                AMRAP block
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={phaseDisabled || !emomAttachReady}
+                onClick={handleStartEmomBlock}
+              >
+                EMOM block
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </>
       ) : null}
 
       {activeBlock ? (

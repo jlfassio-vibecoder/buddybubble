@@ -7,7 +7,8 @@ import {
 import type { TabataFormatParams } from '@/lib/workout-factory/types/tabata-format-params';
 
 export type IntervalBlockSnapshotBase = {
-  origin_task_id: string;
+  /** Omitted for on-the-fly quick-launch sessions without a backing task row. */
+  origin_task_id?: string | null;
   title: string;
   workout_type: string | null;
   duration_min: number | null;

@@ -55,7 +55,10 @@ export function useTabataWorkSetSync(options: {
 }): void {
   const { engine, liveSessionId, userId, supabase, isHost } = options;
 
-  const taskId = engine.blockSnapshot?.origin_task_id ?? '';
+  const taskId =
+    typeof engine.blockSnapshot?.origin_task_id === 'string'
+      ? engine.blockSnapshot.origin_task_id.trim()
+      : '';
   const exercises = engine.blockSnapshot?.exercises ?? [];
   const enabled = Boolean(
     !isHost &&

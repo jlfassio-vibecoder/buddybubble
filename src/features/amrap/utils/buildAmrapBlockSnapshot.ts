@@ -1,5 +1,6 @@
 import { metadataFieldsFromParsed, type WorkoutExercise } from '@/lib/item-metadata';
 import type { SessionDeckSnapshot } from '@/features/live-video/shells/huddle/session-deck-snapshot';
+import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 
 export type AmrapBlockSnapshotPayload = {
   origin_task_id: string;
@@ -34,4 +35,10 @@ export function buildAmrapBlockSnapshot(
     duration_min: Number.isFinite(mins) && mins > 0 ? mins : null,
     exercises: fields.workoutExercises ?? [],
   };
+}
+
+export function isAmrapDeckSnapshot(snap: SessionDeckSnapshot | null): boolean {
+  if (!snap) return false;
+  const vm = buildWorkoutSessionViewModel(snap.task.metadata);
+  return vm.blocks.some((b) => b.blockFormat?.trim().toLowerCase() === 'amrap');
 }

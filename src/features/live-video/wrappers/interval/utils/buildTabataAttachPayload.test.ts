@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { createSessionDeckSnapshot } from '@/features/live-video/shells/huddle/session-deck-snapshot';
-import { buildTabataAttachPayload } from '@/features/live-video/wrappers/interval/utils/buildTabataAttachPayload';
+import {
+  buildStrictTabataQuickLaunchPayload,
+  buildTabataAttachPayload,
+} from '@/features/live-video/wrappers/interval/utils/buildTabataAttachPayload';
 import { richMetadataWithBlockFormat } from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
 import type { TaskRow } from '@/types/database';
 
@@ -117,5 +120,24 @@ describe('buildTabataAttachPayload', () => {
   it('returns null for non-tabata deck', () => {
     const task = { ...tabataTask(), metadata: richMetadataWithBlockFormat('amrap') } as TaskRow;
     expect(buildTabataAttachPayload(createSessionDeckSnapshot(task))).toBeNull();
+  });
+});
+
+describe('buildStrictTabataQuickLaunchPayload', () => {
+  it('returns locked 20/10 x 8 tabata preset independent of deck', () => {
+    const payload = buildStrictTabataQuickLaunchPayload();
+    expect(payload).not.toBeNull();
+    expect(payload!.blockSnapshot.format_params).toEqual({
+      work_seconds: 20,
+      rest_seconds: 10,
+      rounds: 8,
+      interval_preset: 'tabata',
+    });
+    expect(payload!.mechanicsState).toMatchObject({
+      total_rounds: 8,
+      work_seconds: 20,
+      rest_seconds: 10,
+    });
+    expect(payload!.blockSnapshot.origin_task_id).toBeUndefined();
   });
 });

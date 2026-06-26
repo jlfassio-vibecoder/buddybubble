@@ -8,6 +8,7 @@ import {
   type TabataBlockSnapshotPayload,
 } from '@/features/live-video/wrappers/interval/utils/tabata-block-snapshot';
 import type { SessionDeckSnapshot } from '@/features/live-video/shells/huddle/session-deck-snapshot';
+import { applyIntervalPreset } from '@/lib/workout-factory/interval-timer/interval-preset-catalog';
 import { resolveTabataTimerConfig } from '@/lib/workout-factory/interval-timer/resolve-tabata-timer-config';
 import { expandExercisesForPlayerLogRows } from '@/lib/workout-factory/resolve-player-log-row-count';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
@@ -53,4 +54,26 @@ export function buildTabataAttachPayload(snap: SessionDeckSnapshot | null): Taba
 
 export function isTabataDeckSnapshot(snap: SessionDeckSnapshot | null): boolean {
   return buildTabataAttachPayload(snap) != null;
+}
+
+/** On-the-fly strict Izumi Tabata (20/10 × 8) — bypasses deck card prescription. */
+export function buildStrictTabataQuickLaunchPayload(): TabataAttachPayload {
+  const formatParams = applyIntervalPreset('tabata');
+  const mechanicsState = buildInitialTabataMechanicsState({
+    totalRounds: formatParams.rounds,
+    workSeconds: formatParams.work_seconds,
+    restSeconds: formatParams.rest_seconds,
+  });
+
+  return {
+    blockSnapshot: {
+      title: 'Strict Tabata',
+      workout_type: null,
+      duration_min: null,
+      exercises: [{ name: 'Movement', sets: formatParams.rounds, reps: 10 }],
+      block_format: 'tabata',
+      format_params: formatParams,
+    },
+    mechanicsState,
+  };
 }

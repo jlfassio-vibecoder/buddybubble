@@ -1,12 +1,13 @@
 # Tabata Timer Overlay — Architectural Assessment & Gap Analysis
 
-**Status:** Assessment (2026-06-24; last updated 2026-06-24 — Batches A–I complete)  
+**Status:** Assessment (2026-06-24; last updated 2026-06-25 — Batches A–I + Phase L1–L3 complete)  
 **Primary subject:** [`TabataTimerOverlay.tsx`](../../../../src/features/live-video/wrappers/interval/mechanics/TabataTimerOverlay.tsx)  
 **Scope:** The overlay component and its full live-video dependency chain (engine → mechanics → slot injection → render)
 
 **Related docs:**
 
 - [Unified Interval Engine](../../unified-interval-engine.md)
+- [Live interval preset overlay plan](./live-interval-preset-overlay-plan.md) — Phase L1–L3 (preset HUD, circuit subtitles, Smart Deck host launch)
 - [Live Video Timers Audit (2026-05-20)](../../architecture/live-video-timers-audit.md) — partially superseded by Tabata Phase 1
 - [AMRAP wrapper README](../../amrap-wrapper-readme.md)
 
@@ -20,26 +21,27 @@ The overlay is **functionally wired and production-shaped** for core countdown U
 
 **Maturity:** UI shell **~100% complete** for HUD + participant logger parity; only intentionally closed items remain (tenths, G1 broadcast ticks).
 
-| Layer                             | Maturity                | Notes                                                              |
-| --------------------------------- | ----------------------- | ------------------------------------------------------------------ |
-| Overlay presentation              | Shipped (polished)      | Segment accents, progress bar, audio toggle; `formatCountdownMmSs` |
-| Segment state machine             | Shipped + tested        | `tabata-mechanics-state.ts`                                        |
-| Host auto-advance                 | Shipped                 | 200 ms poll in `TabataMechanics`                                   |
-| Block pause sync                  | Shipped                 | `useTabataBlockPauseSync`                                          |
-| Parametric attach                 | Shipped + tested        | `buildTabataAttachPayload`                                         |
-| Type guard / overlay deps         | **Resolved (Batch A)**  | `isTabataMechanicsState()`; EMOM-parity overlay mounting           |
-| Shared countdown formatter        | **Resolved (Batch B)**  | `formatCountdownMmSs` in `@/lib/timer`                             |
-| Overlay/component tests           | **Resolved (Batch B)**  | `TabataTimerOverlay.test.tsx` (9+ cases)                           |
-| Auto set logging                  | **Resolved (Batch C)**  | `useTabataWorkSetSync` — work entry → `set_number = round_index`   |
-| Finalize effective_rounds         | **Resolved (Batch C)**  | `deriveTabataEffectiveRoundsForFinalize` mirrors SQL               |
-| Segment accent / progress / audio | **Resolved (Batch D)**  | `tabata-overlay-display.ts`, `useTabataOverlayAudio`               |
-| Dual-engine boundary doc          | **Resolved (Batch E)**  | [tabata-dual-engine-boundary.md](./tabata-dual-engine-boundary.md) |
-| Round display helper              | **Resolved (Batch F)**  | `tabataRoundDisplayLabel()`                                        |
-| Participant logger active-set     | **Resolved (Batch G)**  | `useTabataAthleteMechanics` + `deriveTabataLoggerActiveSet`        |
-| EMOM overlay parity               | **Resolved (Batch H)**  | `emom-overlay-display.ts`, `useEmomOverlayAudio`                   |
-| In-overlay pause/resume           | **Resolved (Batch I)**  | `useIntervalOverlayPause`, `IntervalOverlayHostControls`           |
-| EMOM logger minute highlight      | **Resolved (Sprint 2)** | `deriveEmomLoggerActiveSet`, lifted `useEmomActiveMinute`          |
-| Offline feature parity            | **Complete (in-scope)** | Interval-only overlay pause matches offline shell control model    |
+| Layer                             | Maturity                | Notes                                                                           |
+| --------------------------------- | ----------------------- | ------------------------------------------------------------------------------- |
+| Overlay presentation              | Shipped (polished)      | Segment accents, progress bar, audio toggle; `formatCountdownMmSs`              |
+| Segment state machine             | Shipped + tested        | `tabata-mechanics-state.ts`                                                     |
+| Host auto-advance                 | Shipped                 | 200 ms poll in `TabataMechanics`                                                |
+| Block pause sync                  | Shipped                 | `useTabataBlockPauseSync`                                                       |
+| Parametric attach                 | Shipped + tested        | `buildTabataAttachPayload`                                                      |
+| Type guard / overlay deps         | **Resolved (Batch A)**  | `isTabataMechanicsState()`; EMOM-parity overlay mounting                        |
+| Shared countdown formatter        | **Resolved (Batch B)**  | `formatCountdownMmSs` in `@/lib/timer`                                          |
+| Overlay/component tests           | **Resolved (Batch B)**  | `TabataTimerOverlay.test.tsx` (17+ cases incl. preset fixtures)                 |
+| Auto set logging                  | **Resolved (Batch C)**  | `useTabataWorkSetSync` — work entry → `set_number = round_index`                |
+| Finalize effective_rounds         | **Resolved (Batch C)**  | `deriveTabataEffectiveRoundsForFinalize` mirrors SQL                            |
+| Segment accent / progress / audio | **Resolved (Batch D)**  | `tabata-overlay-display.ts`, `useTabataOverlayAudio`                            |
+| Dual-engine boundary doc          | **Resolved (Batch E)**  | [tabata-dual-engine-boundary.md](./tabata-dual-engine-boundary.md)              |
+| Preset-aware HUD header/subtitle  | **Resolved (L1–L2)**    | `resolveTabataOverlayHeader` / `resolveTabataOverlaySubtitle`                   |
+| Host Smart Deck launch UX         | **Resolved (L3)**       | Primary `▶ Launch {preset}` + Quick Launch dropdown in `SessionControlsActions` |
+| Participant logger active-set     | **Resolved (Batch G)**  | `useTabataAthleteMechanics` + `deriveTabataLoggerActiveSet`                     |
+| EMOM overlay parity               | **Resolved (Batch H)**  | `emom-overlay-display.ts`, `useEmomOverlayAudio`                                |
+| In-overlay pause/resume           | **Resolved (Batch I)**  | `useIntervalOverlayPause`, `IntervalOverlayHostControls`                        |
+| EMOM logger minute highlight      | **Resolved (Sprint 2)** | `deriveEmomLoggerActiveSet`, lifted `useEmomActiveMinute`                       |
+| Offline feature parity            | **Complete (in-scope)** | Interval-only overlay pause matches offline shell control model                 |
 
 ---
 
@@ -47,13 +49,13 @@ The overlay is **functionally wired and production-shaped** for core countdown U
 
 ### Direct imports (TabataTimerOverlay)
 
-| Dependency                                                                                                               | Role                                                 |
-| ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
-| [`interval-engine.ts`](../../../../src/features/live-video/wrappers/interval/types/interval-engine.ts)                   | `IntervalSessionEngine` type contract                |
-| [`tabata-mechanics-state.ts`](../../../../src/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state.ts) | `isTabataMechanicsState()` type guard                |
-| [`tabata-overlay-display.ts`](../../../../src/features/live-video/wrappers/interval/mechanics/tabata-overlay-display.ts) | Segment accent, progress ratio, audio-active helpers |
-| [`@/lib/timer`](../../../../src/lib/timer/index.ts)                                                                      | `formatCountdownMmSs` for MM:SS display              |
-| [`IntervalShellAudioToggle`](../../../../src/components/fitness/interval-shells/IntervalShellAudioToggle.tsx)            | Optional mute toggle (when `onToggleAudio` provided) |
+| Dependency                                                                                                               | Role                                                                   |
+| ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| [`interval-engine.ts`](../../../../src/features/live-video/wrappers/interval/types/interval-engine.ts)                   | `IntervalSessionEngine` type contract                                  |
+| [`tabata-mechanics-state.ts`](../../../../src/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state.ts) | `isTabataMechanicsState()` type guard                                  |
+| [`tabata-overlay-display.ts`](../../../../src/features/live-video/wrappers/interval/mechanics/tabata-overlay-display.ts) | Preset header/subtitle, segment accent, progress, audio-active helpers |
+| [`@/lib/timer`](../../../../src/lib/timer/index.ts)                                                                      | `formatCountdownMmSs` for MM:SS display                                |
+| [`IntervalShellAudioToggle`](../../../../src/components/fitness/interval-shells/IntervalShellAudioToggle.tsx)            | Optional mute toggle (when `onToggleAudio` provided)                   |
 
 ### Upstream consumers
 
@@ -120,9 +122,10 @@ flowchart TB
 | [`useTabataBlockPauseSync.ts`](../../../../src/features/live-video/wrappers/interval/mechanics/useTabataBlockPauseSync.ts) | Syncs global session pause/resume → mechanics_state checkpoint                                              |
 | [`useTabataWorkSetSync.ts`](../../../../src/features/live-video/wrappers/interval/mechanics/useTabataWorkSetSync.ts)       | Participant auto-upsert on work-segment entry (`set_number = round_index`)                                  |
 | [`useTabataOverlayAudio.ts`](../../../../src/features/live-video/wrappers/interval/mechanics/useTabataOverlayAudio.ts)     | Countdown audio cues + persisted mute preference                                                            |
-| [`tabata-overlay-display.ts`](../../../../src/features/live-video/wrappers/interval/mechanics/tabata-overlay-display.ts)   | Pure accent/progress/cue-key helpers for overlay                                                            |
+| [`tabata-overlay-display.ts`](../../../../src/features/live-video/wrappers/interval/mechanics/tabata-overlay-display.ts)   | Pure preset/subtitle + accent/progress/cue-key helpers for overlay                                          |
 | [`tabata-work-set-sync.ts`](../../../../src/features/live-video/wrappers/interval/mechanics/tabata-work-set-sync.ts)       | Pure trigger/dedup/copy helpers for work-set sync                                                           |
-| [`TabataHostActions.tsx`](../../../../src/features/live-video/wrappers/interval/mechanics/TabataHostActions.tsx)           | Host Start/Reset buttons (nav bar, not overlay)                                                             |
+| [`TabataHostActions.tsx`](../../../../src/features/live-video/wrappers/interval/mechanics/TabataHostActions.tsx)           | Host Start/Reset buttons (nav bar)                                                                          |
+| [`SessionControlsActions.tsx`](../../../../src/features/live-video/shells/huddle/SessionControlsActions.tsx)               | Smart Deck primary launch + Quick Launch overrides (`SessionControlsActions`)                               |
 | [`buildTabataAttachPayload.ts`](../../../../src/features/live-video/wrappers/interval/utils/buildTabataAttachPayload.ts)   | Deck attach: `resolveTabataTimerConfig` → initial `mechanics_state`                                         |
 | [`VideoOverlaySlotsContext.tsx`](../../../../src/features/live-video/contexts/VideoOverlaySlotsContext.tsx)                | Slot API: `topLeftOverlay`, `topRightOverlay`, etc.                                                         |
 | [`HostNavActionsContext.tsx`](../../../../src/features/live-video/contexts/HostNavActionsContext.tsx)                      | Host control strip (Start/Reset)                                                                            |
@@ -154,24 +157,24 @@ flowchart TB
 
 ### Fields consumed
 
-| Engine field     | Usage in overlay                                              |
-| ---------------- | ------------------------------------------------------------- |
-| `timerPhase`     | `'finished'` → show "Finished" instead of segment label       |
-| `segmentLabel`   | Uppercased phase text ("WORK", "REST", "GET READY", "Paused") |
-| `remainingSec`   | Large countdown via `formatCountdownMmSs`                     |
-| `mechanicsState` | Narrowed via `isTabataMechanicsState()` for round label       |
+| Engine field     | Usage in overlay                                                |
+| ---------------- | --------------------------------------------------------------- |
+| `timerPhase`     | `'finished'` → show "Finished" instead of segment label         |
+| `segmentLabel`   | Uppercased phase text ("WORK", "REST", "GET READY", "Paused")   |
+| `remainingSec`   | Large countdown via `formatCountdownMmSs`                       |
+| `blockSnapshot`  | `format_params` + `exercises` for preset header and subtitle    |
+| `mechanicsState` | Narrowed via `isTabataMechanicsState()` for subtitle + progress |
 
-### Round label logic
+### Subtitle logic (Phase L1–L3)
 
-Round display is shown when:
+Subtitle copy is driven by `resolveTabataOverlaySubtitle` in `tabata-overlay-display.ts`:
 
-- `mechanicsState` parses as Tabata (`total_rounds` present)
-- `segment` is not `setup` or `idle`
-- `total_rounds > 0`
+- **Pre-start (`setup` / `idle`):** hidden on the participant HUD (L2 contract); static W/R available only via `includePreStart: true` for host-side helpers if needed.
+- **Single-exercise work/rest:** same static W/R line.
+- **Multi-exercise circuit work/rest:** dynamic line, e.g. `Round 2 of 12 · Mountain Climbers`.
+- **Legacy sessions** (no `format_params`): header falls back to **Tabata**; subtitle derives W/R from `mechanics_state`.
 
-Label format: `Round {max(round_index, 1)} / {total_rounds}`
-
-During setup/idle, only the segment label and countdown appear (setup countdown uses `setup_seconds` from mechanics state via the hook layer).
+Header label uses `resolveTabataOverlayHeader` → `resolveIntervalPresetLabel` (strict 20/10 → **Tabata**, Classic HIIT → **Classic HIIT**, custom W/R → **Intervals**).
 
 ### Rendering & a11y
 
@@ -257,13 +260,20 @@ During setup/idle, only the segment label and countdown appear (setup countdown 
 | G3.5 | `amrap_reset_timer` name for Tabata reset | **Resolved (Sprint 2)** — `interval_reset_timer` alias RPC                                                   |
 | G3.6 | Outdated audit doc                        | **Resolved (Batch B)** — [live-video-timers-audit.md](../../architecture/live-video-timers-audit.md) updated |
 
+### G5 — Interval preset semantics (overlay + host UX)
+
+| Gap                                                 | Status                                                                                                                                                                   |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----- | -------------------------------------------- |
+| Hardcoded **Tabata** HUD label for non-20/10 blocks | **Resolved (L1–L3)** — `resolveTabataOverlayHeader` + `resolveTabataOverlaySubtitle`; see [live-interval-preset-overlay-plan.md](./live-interval-preset-overlay-plan.md) |
+| Host deck launch without preset context             | **Resolved (L3)** — Smart Deck primary `▶ Launch {preset                                                                                                                 | AMRAP | EMOM}` + Quick Launch strict Tabata override |
+
 ### G4 — Parity with EMOM overlay (nearest sibling)
 
 | Concern          | EMOM                        | Tabata                                | Delta                  |
 | ---------------- | --------------------------- | ------------------------------------- | ---------------------- |
 | Visual shell     | Identical classes           | Identical classes                     | None                   |
 | Type guard       | `isEmomState()` (local)     | `isTabataMechanicsState()` (exported) | **Resolved (Batch A)** |
-| Secondary label  | `emomMinuteDisplayLabel()`  | `tabataRoundDisplayLabel()`           | **Resolved (Batch F)** |
+| Secondary label  | `emomMinuteDisplayLabel()`  | `resolveTabataOverlaySubtitle()`      | **Resolved (L1–L2)**   |
 | Overlay deps     | Includes full `engine`      | Includes full `engine`                | **Resolved (Batch A)** |
 | Segment in deps  | `minute_index`, `is_paused` | `round_index`, `is_paused`            | **Resolved (Batch A)** |
 | Countdown format | `formatCountdownMmSs`       | `formatCountdownMmSs`                 | **Resolved (Batch B)** |
@@ -284,31 +294,32 @@ When the unified wrapper **is** attached (`suppressTabataPlaceholder={true}`), `
 
 ## Test coverage matrix
 
-| Area                                      | Tests       | Location                                |
-| ----------------------------------------- | ----------- | --------------------------------------- |
-| Mechanics state FSM                       | Yes         | `tabata-mechanics-state.test.ts`        |
-| Attach payload / parametric binding       | Yes         | `buildTabataAttachPayload.test.ts`      |
-| `TabataTimerOverlay` render               | **Yes**     | `TabataTimerOverlay.test.tsx` (9 cases) |
-| `tabata-overlay-display` helpers          | **Yes**     | `tabata-overlay-display.test.ts`        |
-| `useTabataWorkSetSync` / work-set helpers | **Yes**     | `useTabataWorkSetSync.test.ts`          |
-| `deriveTabataEffectiveRoundsForFinalize`  | **Yes**     | `tabata-mechanics-state.test.ts`        |
-| `tabataRoundDisplayLabel` / logger active | **Yes**     | `tabata-mechanics-state.test.ts`        |
-| `EmomTimerOverlay` render                 | **Yes**     | `EmomTimerOverlay.test.tsx` (9 cases)   |
-| `emom-overlay-display` helpers            | **Yes**     | `emom-overlay-display.test.ts`          |
-| `TabataMechanics` integration             | **No**      | —                                       |
-| `useIntervalTimerState` Tabata tick       | **No**      | —                                       |
-| E2E live Tabata flow                      | **Unknown** | No dedicated spec found                 |
+| Area                                      | Tests       | Location                                  |
+| ----------------------------------------- | ----------- | ----------------------------------------- |
+| Mechanics state FSM                       | Yes         | `tabata-mechanics-state.test.ts`          |
+| Attach payload / parametric binding       | Yes         | `buildTabataAttachPayload.test.ts`        |
+| `TabataTimerOverlay` render               | **Yes**     | `TabataTimerOverlay.test.tsx` (17+ cases) |
+| `TabataHostActions` Start/Reset           | **Yes**     | `TabataHostActions.test.tsx`              |
+| `tabata-overlay-display` helpers          | **Yes**     | `tabata-overlay-display.test.ts`          |
+| `useTabataWorkSetSync` / work-set helpers | **Yes**     | `useTabataWorkSetSync.test.ts`            |
+| `deriveTabataEffectiveRoundsForFinalize`  | **Yes**     | `tabata-mechanics-state.test.ts`          |
+| `EmomTimerOverlay` render                 | **Yes**     | `EmomTimerOverlay.test.tsx` (9 cases)     |
+| `emom-overlay-display` helpers            | **Yes**     | `emom-overlay-display.test.ts`            |
+| `TabataMechanics` integration             | **No**      | —                                         |
+| `useIntervalTimerState` Tabata tick       | **No**      | —                                         |
+| E2E live Tabata flow                      | **Unknown** | No dedicated spec found                   |
 
-Suggested overlay unit tests (minimal high-value set) — **implemented in Batch B; extended in Batch D:**
+Suggested overlay unit tests — **implemented in Batch B; extended in Batch D and L1–L3:**
 
 1. Renders "Finished" when `timerPhase === 'finished'`.
-2. Hides round label during `setup` and `idle`.
-3. Shows `Round 3 / 8` during `work` with `round_index: 3`.
+2. Subtitle hidden during `setup` / `idle` on participant HUD (Classic HIIT header still visible).
+3. Dynamic circuit subtitle during work (`Round N of M · exercise`).
 4. Formats `remainingSec` as `00:07` / `01:05`.
 5. Exposes `aria-live="polite"` on countdown element.
 6. Work/rest segment accent classes on phase label.
 7. Progress fill width at ~50% when half elapsed.
 8. Audio toggle mute/unmute `aria-label` when `onToggleAudio` provided.
+9. Preset headers: Tabata (strict), Classic HIIT, Intervals (custom).
 
 ---
 
@@ -347,6 +358,7 @@ src/features/live-video/wrappers/interval/
 │   ├── TabataTimerOverlay.test.tsx
 │   ├── TabataMechanics.tsx         ← mounts overlay
 │   ├── TabataHostActions.tsx
+│   ├── TabataHostActions.test.tsx
 │   ├── tabata-mechanics-state.ts
 │   ├── tabata-mechanics-state.test.ts
 │   ├── tabata-overlay-display.ts
@@ -386,6 +398,7 @@ pnpm exec vitest run \
   src/features/live-video/wrappers/interval/mechanics/useTabataWorkSetSync.test.ts \
   src/features/live-video/wrappers/interval/mechanics/tabata-overlay-display.test.ts \
   src/features/live-video/wrappers/interval/mechanics/TabataTimerOverlay.test.tsx \
+  src/features/live-video/wrappers/interval/mechanics/TabataHostActions.test.tsx \
   src/features/live-video/wrappers/interval/utils/buildTabataAttachPayload.test.ts
 
 # Broader interval wrapper regression
@@ -399,9 +412,9 @@ pnpm exec vitest run src/features/live-video/wrappers/interval
 | Item                              | Value                                                                                                            |
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | Assessment date                   | 2026-06-24                                                                                                       |
-| Last updated                      | 2026-06-24 (Batch A P0 + Batch B P3 + Batch C P1 + Batch D P2)                                                   |
-| Lines in `TabataTimerOverlay.tsx` | ~85                                                                                                              |
+| Last updated                      | 2026-06-25 (Phase L1–L3 preset overlay + Smart Deck host launch)                                                 |
+| Lines in `TabataTimerOverlay.tsx` | ~125                                                                                                             |
 | Direct dependencies               | `interval-engine`, `tabata-mechanics-state`, `tabata-overlay-display`, `@/lib/timer`, `IntervalShellAudioToggle` |
-| Transitive files in live chain    | 14 primary                                                                                                       |
-| Overlay component tests           | 9 (`TabataTimerOverlay.test.tsx`)                                                                                |
+| Transitive files in live chain    | 16 primary                                                                                                       |
+| Overlay component tests           | 17+ (`TabataTimerOverlay.test.tsx`)                                                                              |
 | State machine unit tests          | Yes                                                                                                              |
