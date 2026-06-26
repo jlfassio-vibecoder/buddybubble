@@ -3,7 +3,7 @@
  * Mirror: `supabase/functions/agents/coach/interval-circuit-cardinality.ts`.
  */
 
-import type { BlockShapeDropReason } from './block-blueprint-library';
+import type { BlockShapeDropReason } from './block-blueprint-library.ts';
 
 const WORD_NUMBERS: Readonly<Record<string, number>> = {
   one: 1,

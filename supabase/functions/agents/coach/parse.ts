@@ -38,15 +38,15 @@ import {
   hydrateEmomAlternatingStations,
   normalizeFormatParams,
   validateBlockShape,
-} from './block-blueprint-library';
+} from './block-blueprint-library.ts';
 import { validateTabataCircuitCardinality } from './interval-circuit-cardinality.ts';
-import { ensureOutlineExercisePlaceholders } from './outline-exercise-placeholders';
+import { ensureOutlineExercisePlaceholders } from './outline-exercise-placeholders.ts';
 import {
   capOutlineInstructionLines,
   clampOutlineExerciseName,
   MAX_OUTLINE_EXERCISES_PER_BLOCK,
   sanitizeOutlineBlockName,
-} from './outline-block-name-sanitize';
+} from './outline-block-name-sanitize.ts';
 import {
   COACH_TASK_NOTES_MAX_CHARS,
   COACH_TASK_SEED_CTA,
@@ -55,25 +55,25 @@ import {
   PERSONAL_CUES_FIELD_MAX_CHARS,
   type IntakeCategory,
   type IntakePhase,
-} from './config';
+} from './config.ts';
 
-export type { BlockShapeDrop } from './block-blueprint-library';
-import type { ExerciseDictionaryIndexEntry } from './prompts';
+export type { BlockShapeDrop } from './block-blueprint-library.ts';
+import type { ExerciseDictionaryIndexEntry } from './prompts.ts';
 import {
   coerceExecutionPatchNumericField,
   sanitizeNumericStringForPatch,
-} from './execution-patch-numeric';
+} from './execution-patch-numeric.ts';
 import {
   parseAndCollectTaskModalIntakePatchFromGemini,
   taskModalIntakePatchForRpc,
   type TaskModalIntakePatch,
   type TaskModalIntakePatchDrop,
-} from './task-modal-intake-patch';
+} from './task-modal-intake-patch.ts';
 import {
   parseOutlineDraftPatchMode,
   parseOutlineDraftPatchRevision,
   type OutlineDraftPatchV1,
-} from './outline-draft-patch';
+} from './outline-draft-patch.ts';
 
 /**
  * Normalized Coach response shape. Lifted verbatim from
@@ -907,4 +907,4 @@ export function personalCuesPatchForRpc(
   }));
 }
 
-export { taskModalIntakePatchForRpc } from './task-modal-intake-patch';
+export { taskModalIntakePatchForRpc } from './task-modal-intake-patch.ts';
