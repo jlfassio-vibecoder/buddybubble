@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-import type { AmrapBlockSnapshotPayload } from '@/features/amrap/utils/buildAmrapBlockSnapshot';
+import type { ParsedIntervalBlockSnapshot } from '@/features/live-video/wrappers/interval/utils/tabata-block-snapshot';
 import type { EmomMechanicsState } from '@/features/live-video/wrappers/interval/mechanics/emom-mechanics-state';
 import type { TabataMechanicsState } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
 import type { Json } from '@/types/database';
@@ -44,7 +44,7 @@ export interface IntervalSessionEngine {
   remainingSec: number;
   totalSec: number;
   workStartedAt: string | null;
-  blockSnapshot: AmrapBlockSnapshotPayload | null;
+  blockSnapshot: ParsedIntervalBlockSnapshot | null;
   mechanicsState: IntervalMechanicsState | null;
   segmentLabel: string;
   currentRoundIndex: number;

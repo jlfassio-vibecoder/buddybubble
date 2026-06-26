@@ -584,7 +584,9 @@ export function ParticipantWorkoutLoggerCore({
                     isTabataPhase &&
                     !isHost &&
                     tabataAthlete.activeSetNumber === setNumber &&
-                    tabataAthlete.activeSetPhase != null;
+                    tabataAthlete.activeSetPhase != null &&
+                    (tabataAthlete.activeExerciseIndex == null ||
+                      tabataAthlete.activeExerciseIndex === exIdx);
                   const isEmomActiveRow =
                     isEmomPhase &&
                     !isHost &&

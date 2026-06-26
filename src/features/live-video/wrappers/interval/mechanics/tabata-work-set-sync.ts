@@ -2,6 +2,7 @@ import type { WorkoutExercise } from '@/lib/item-metadata';
 import type { Database } from '@/types/database';
 
 import type { TabataMechanicsState } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
+import { deriveTabataActiveExerciseIndex } from '@/lib/workout-factory/interval-timer/tabata-circuit-rotation';
 
 type LogRow = Pick<
   Database['public']['Tables']['workout_exercise_logs']['Row'],
@@ -45,9 +46,16 @@ export function shouldSyncTabataWorkSet(state: TabataMechanicsState): boolean {
   );
 }
 
-/** Dedup key: one upsert per work-segment anchor. */
-export function tabataWorkSetSyncKey(state: TabataMechanicsState): string | null {
+/** Dedup key: one upsert per work-segment anchor (and station for circuits). */
+export function tabataWorkSetSyncKey(
+  state: TabataMechanicsState,
+  exerciseCount = 1,
+): string | null {
   if (!shouldSyncTabataWorkSet(state)) return null;
+  const activeIndex = deriveTabataActiveExerciseIndex(state.round_index, exerciseCount);
+  if (exerciseCount > 1 && activeIndex != null) {
+    return `${state.round_index}:${activeIndex}:${state.segment_started_at}`;
+  }
   return `${state.round_index}:${state.segment_started_at}`;
 }
 

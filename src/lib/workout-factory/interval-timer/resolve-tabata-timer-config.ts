@@ -1,10 +1,16 @@
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
+import { resolveTabataWorkSegmentTotal } from '@/lib/workout-factory/interval-timer/tabata-circuit-rotation';
 
 export type TabataTimerConfig = {
   prepareMs: number;
   workMs: number;
   restMs: number;
+  /** Total work segments for the timer FSM. */
   totalRounds: number;
+  /** format_params.rounds — circuit passes through the exercise list. */
+  circuitRounds: number;
+  /** block.exercises.length (0 allowed). */
+  exerciseCount: number;
 };
 
 function positiveInt(v: unknown): number | null {
@@ -24,13 +30,18 @@ export function resolveTabataTimerConfig(block: WorkoutSessionBlockView): Tabata
   if (format !== 'tabata') return null;
 
   const params = block.formatParams;
-  const totalRounds = positiveInt(params.rounds);
-  if (totalRounds == null) return null;
+  const circuitRounds = positiveInt(params.rounds);
+  if (circuitRounds == null) return null;
+
+  const exerciseCount = block.exercises.length;
+  const totalRounds = resolveTabataWorkSegmentTotal(circuitRounds, exerciseCount);
 
   return {
     prepareMs: 0,
     workMs: secondsToMs(params.work_seconds, 20),
     restMs: secondsToMs(params.rest_seconds, 10),
     totalRounds,
+    circuitRounds,
+    exerciseCount,
   };
 }

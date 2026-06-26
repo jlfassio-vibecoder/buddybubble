@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildInitialTabataMechanicsState } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
 import {
+  resolveTabataOverlayHeader,
+  resolveTabataOverlaySubtitle,
   tabataOverlayAudioIsActive,
   tabataOverlayCueSegmentKey,
   tabataOverlayShowProgress,
@@ -9,8 +10,81 @@ import {
   tabataSegmentProgressFillClass,
   tabataSegmentProgressRatio,
 } from '@/features/live-video/wrappers/interval/mechanics/tabata-overlay-display';
+import { buildInitialTabataMechanicsState } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
 
 const CONFIG = { totalRounds: 8, workSeconds: 20, restSeconds: 10 };
+
+// Copilot suggestion ignored: audio/progress helper coverage was restored in the L2 polish commit; this file now tests subtitle, header, and progress/audio helpers.
+
+describe('resolveTabataOverlayHeader', () => {
+  it('falls back to Tabata when format_params is missing', () => {
+    expect(resolveTabataOverlayHeader(undefined)).toBe('Tabata');
+    expect(resolveTabataOverlayHeader({})).toBe('Tabata');
+  });
+
+  it('resolves preset label when format_params are present', () => {
+    expect(
+      resolveTabataOverlayHeader({
+        rounds: 8,
+        work_seconds: 30,
+        rest_seconds: 30,
+        interval_preset: 'classic_hiit',
+      }),
+    ).toBe('Classic HIIT');
+  });
+});
+
+describe('resolveTabataOverlaySubtitle', () => {
+  it('returns null during setup', () => {
+    const mechanics = buildInitialTabataMechanicsState({
+      totalRounds: 12,
+      workSeconds: 30,
+      restSeconds: 30,
+    });
+    expect(
+      resolveTabataOverlaySubtitle({
+        mechanics,
+        exercises: [{ name: 'A', sets: 3 }],
+        formatParams: { rounds: 3, work_seconds: 30, rest_seconds: 30 },
+      }),
+    ).toBeNull();
+  });
+
+  it('returns dynamic circuit subtitle during work', () => {
+    const mechanics = {
+      ...buildInitialTabataMechanicsState({ totalRounds: 12, workSeconds: 30, restSeconds: 30 }),
+      segment: 'work' as const,
+      round_index: 2,
+      segment_started_at: '2026-06-01T18:30:12.000Z',
+    };
+    expect(
+      resolveTabataOverlaySubtitle({
+        mechanics,
+        exercises: [
+          { name: 'Burpees', sets: 3 },
+          { name: 'Mountain Climbers', sets: 3 },
+        ],
+        formatParams: { rounds: 3, work_seconds: 30, rest_seconds: 30 },
+      }),
+    ).toBe('Round 2 of 12 · Mountain Climbers');
+  });
+
+  it('returns static subtitle for single exercise', () => {
+    const mechanics = {
+      ...buildInitialTabataMechanicsState({ totalRounds: 8, workSeconds: 30, restSeconds: 30 }),
+      segment: 'work' as const,
+      round_index: 1,
+      segment_started_at: '2026-06-01T18:30:12.000Z',
+    };
+    expect(
+      resolveTabataOverlaySubtitle({
+        mechanics,
+        exercises: [{ name: 'Squat', sets: 8 }],
+        formatParams: { rounds: 8, work_seconds: 30, rest_seconds: 30 },
+      }),
+    ).toBe('8 Rounds (30/30s)');
+  });
+});
 
 describe('tabataSegmentPhaseAccentClass', () => {
   it('returns segment-specific accent classes', () => {

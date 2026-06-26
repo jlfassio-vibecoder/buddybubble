@@ -12,7 +12,6 @@ import {
   isTabataMechanicsState,
   parseTabataMechanicsState,
   tabataBlockDurationSeconds,
-  tabataRoundDisplayLabel,
   tabataSegmentLabel,
   unfreezeTabataMechanicsStateForResume,
 } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
@@ -225,28 +224,6 @@ describe('tabataSegmentLabel', () => {
   });
 });
 
-describe('tabataRoundDisplayLabel', () => {
-  it('returns null during setup and idle', () => {
-    expect(tabataRoundDisplayLabel(buildInitialTabataMechanicsState(CONFIG))).toBeNull();
-    expect(
-      tabataRoundDisplayLabel({
-        ...buildInitialTabataMechanicsState(CONFIG),
-        segment: 'idle',
-      }),
-    ).toBeNull();
-  });
-
-  it('formats round label during work', () => {
-    const work = {
-      ...buildInitialTabataMechanicsState(CONFIG),
-      segment: 'work' as const,
-      round_index: 3,
-      segment_started_at: '2026-06-01T18:30:12.000Z',
-    };
-    expect(tabataRoundDisplayLabel(work)).toBe('Round 3 / 8');
-  });
-});
-
 describe('deriveTabataLoggerActiveSet', () => {
   it('returns work highlight during anchored work segment', () => {
     const work = {
@@ -277,6 +254,20 @@ describe('deriveTabataLoggerActiveSet', () => {
       segment_started_at: '2026-06-01T18:30:32.000Z',
     };
     expect(deriveTabataLoggerActiveSet(rest)).toBeNull();
+  });
+
+  it('returns circuit-aware set number and exercise index for multi-exercise', () => {
+    const work = {
+      ...buildInitialTabataMechanicsState({ totalRounds: 12, workSeconds: 30, restSeconds: 30 }),
+      segment: 'work' as const,
+      round_index: 5,
+      segment_started_at: '2026-06-01T18:30:12.000Z',
+    };
+    expect(deriveTabataLoggerActiveSet(work, 4)).toEqual({
+      setNumber: 2,
+      phase: 'work',
+      activeExerciseIndex: 0,
+    });
   });
 });
 

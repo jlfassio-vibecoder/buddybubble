@@ -1,8 +1,59 @@
+import type { WorkoutExercise } from '@/lib/item-metadata';
+import { deriveTabataActiveExerciseIndex } from '@/lib/workout-factory/interval-timer/tabata-circuit-rotation';
+import { resolveIntervalPresetLabel } from '@/lib/workout-factory/interval-timer/interval-preset-catalog';
+import type { TabataFormatParams } from '@/lib/workout-factory/types/tabata-format-params';
 import type {
   TabataMechanicsState,
   TabataSegment,
 } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
 import type { IntervalSessionEngine } from '@/features/live-video/wrappers/interval/types/interval-engine';
+
+function positiveInt(v: unknown): number | null {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return null;
+  const n = Math.round(v);
+  return n > 0 ? n : null;
+}
+
+const LEGACY_TABATA_OVERLAY_HEADER = 'Tabata';
+
+export function resolveTabataOverlayHeader(formatParams: TabataFormatParams | undefined): string {
+  if (formatParams == null || Object.keys(formatParams).length === 0) {
+    return LEGACY_TABATA_OVERLAY_HEADER;
+  }
+  return resolveIntervalPresetLabel(formatParams);
+}
+
+export function resolveTabataOverlaySubtitle(args: {
+  formatParams?: TabataFormatParams;
+  mechanics: TabataMechanicsState | null;
+  exercises: WorkoutExercise[];
+}): string | null {
+  const { formatParams, mechanics, exercises } = args;
+  if (mechanics == null) return null;
+  if (
+    mechanics.segment === 'setup' ||
+    mechanics.segment === 'idle' ||
+    mechanics.segment === 'done' ||
+    mechanics.round_index < 1
+  ) {
+    return null;
+  }
+
+  const exerciseCount = exercises.length;
+  if (exerciseCount > 1 && (mechanics.segment === 'work' || mechanics.segment === 'rest')) {
+    const activeIndex = deriveTabataActiveExerciseIndex(mechanics.round_index, exerciseCount);
+    const exerciseName = activeIndex != null ? exercises[activeIndex]?.name?.trim() : '';
+    const label = exerciseName || 'Movement';
+    return `Round ${mechanics.round_index} of ${mechanics.total_rounds} · ${label}`;
+  }
+
+  const circuitRounds = positiveInt(formatParams?.rounds);
+  const rounds = circuitRounds ?? mechanics.total_rounds;
+  const work = positiveInt(formatParams?.work_seconds) ?? mechanics.work_seconds;
+  const rest = positiveInt(formatParams?.rest_seconds) ?? mechanics.rest_seconds;
+  if (rounds == null || work == null || rest == null) return null;
+  return `${rounds} Rounds (${work}/${rest}s)`;
+}
 
 export function tabataSegmentPhaseAccentClass(
   segment: TabataSegment,

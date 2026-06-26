@@ -1,18 +1,19 @@
 import {
-  buildAmrapBlockSnapshot,
-  type AmrapBlockSnapshotPayload,
-} from '@/features/amrap/utils/buildAmrapBlockSnapshot';
-import {
   buildInitialTabataMechanicsState,
   type TabataMechanicsState,
 } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
+import {
+  buildTabataBlockSnapshotBase,
+  tabataFormatParamsFromRecord,
+  type TabataBlockSnapshotPayload,
+} from '@/features/live-video/wrappers/interval/utils/tabata-block-snapshot';
 import type { SessionDeckSnapshot } from '@/features/live-video/shells/huddle/session-deck-snapshot';
 import { resolveTabataTimerConfig } from '@/lib/workout-factory/interval-timer/resolve-tabata-timer-config';
 import { expandExercisesForPlayerLogRows } from '@/lib/workout-factory/resolve-player-log-row-count';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 
 export type TabataAttachPayload = {
-  blockSnapshot: AmrapBlockSnapshotPayload;
+  blockSnapshot: TabataBlockSnapshotPayload;
   mechanicsState: TabataMechanicsState;
 } | null;
 
@@ -27,10 +28,11 @@ export function buildTabataAttachPayload(snap: SessionDeckSnapshot | null): Taba
   const timerConfig = resolveTabataTimerConfig(tabataBlock);
   if (!timerConfig) return null;
 
-  const blockSnapshotBase = buildAmrapBlockSnapshot(snap);
+  const blockSnapshotBase = buildTabataBlockSnapshotBase(snap);
   if (!blockSnapshotBase) return null;
 
   const exercises = expandExercisesForPlayerLogRows(vm.flatExercises, vm.blocks);
+  const formatParams = tabataFormatParamsFromRecord(tabataBlock.formatParams);
 
   const mechanicsState = buildInitialTabataMechanicsState({
     totalRounds: timerConfig.totalRounds,
@@ -39,7 +41,12 @@ export function buildTabataAttachPayload(snap: SessionDeckSnapshot | null): Taba
   });
 
   return {
-    blockSnapshot: { ...blockSnapshotBase, exercises },
+    blockSnapshot: {
+      ...blockSnapshotBase,
+      exercises,
+      block_format: 'tabata',
+      format_params: formatParams,
+    },
     mechanicsState,
   };
 }

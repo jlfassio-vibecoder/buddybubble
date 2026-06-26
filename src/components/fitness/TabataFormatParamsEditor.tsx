@@ -28,6 +28,8 @@ export type TabataFormatParamsEditorProps = {
   params: Record<string, unknown>;
   onChange: (params: Record<string, unknown>) => void;
   disabled?: boolean;
+  /** When > 1, duration preview uses circuit work-segment totals. */
+  exerciseCount?: number;
 };
 
 function numInputValue(v: unknown): string {
@@ -38,6 +40,7 @@ export function TabataFormatParamsEditor({
   params,
   onChange,
   disabled = false,
+  exerciseCount = 0,
 }: TabataFormatParamsEditorProps) {
   const [restLocked, setRestLocked] = useState(true);
   const [selectedRatio, setSelectedRatio] = useState<IntervalWorkRestRatio>(() =>
@@ -61,7 +64,7 @@ export function TabataFormatParamsEditor({
   const showWorkHint = workSeconds >= 120 || activePresetId === 'fighters';
 
   const subtitle = formatBlockSubtitle('tabata', params);
-  const durationSec = computeTabataBlockDurationFromParams(params);
+  const durationSec = computeTabataBlockDurationFromParams(params, { exerciseCount });
   const durationLabel = durationSec != null ? formatTabataBlockDurationPreview(durationSec) : null;
 
   const handlePresetSelect = (id: KnownIntervalPresetId) => {

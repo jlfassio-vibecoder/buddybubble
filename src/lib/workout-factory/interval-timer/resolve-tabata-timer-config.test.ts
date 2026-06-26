@@ -14,7 +14,45 @@ describe('resolveTabataTimerConfig', () => {
       workMs: 20_000,
       restMs: 10_000,
       totalRounds: 8,
+      circuitRounds: 8,
+      exerciseCount: 1,
     });
+  });
+
+  it('multiplies totalRounds by exercise count when N > 1', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('circuit'));
+    const block = vm.blocks.find((b) => b.blockFormat === 'circuit')!;
+    const cfg = resolveTabataTimerConfig({
+      ...block,
+      blockFormat: 'tabata',
+      formatParams: {
+        rounds: 3,
+        work_seconds: 30,
+        rest_seconds: 30,
+        interval_preset: 'classic_hiit',
+      },
+    });
+    expect(cfg).toEqual({
+      prepareMs: 0,
+      workMs: 30_000,
+      restMs: 30_000,
+      totalRounds: 9,
+      circuitRounds: 3,
+      exerciseCount: 3,
+    });
+  });
+
+  it('does not multiply when exercise array is empty', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('tabata'));
+    const block = vm.blocks.find((b) => b.blockFormat === 'tabata')!;
+    const cfg = resolveTabataTimerConfig({
+      ...block,
+      exercises: [],
+      formatParams: { rounds: 3, work_seconds: 30, rest_seconds: 30 },
+    });
+    expect(cfg?.totalRounds).toBe(3);
+    expect(cfg?.circuitRounds).toBe(3);
+    expect(cfg?.exerciseCount).toBe(0);
   });
 
   it('returns null when rounds missing', () => {
@@ -43,5 +81,6 @@ describe('resolveTabataTimerConfig', () => {
     expect(cfg?.workMs).toBe(20_000);
     expect(cfg?.restMs).toBe(10_000);
     expect(cfg?.totalRounds).toBe(4);
+    expect(cfg?.circuitRounds).toBe(4);
   });
 });

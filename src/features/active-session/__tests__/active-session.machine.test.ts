@@ -290,6 +290,8 @@ describe('activeSessionMachine V1 scenario replay', () => {
           workMs: 20_000,
           restMs: 10_000,
           totalRounds: 2,
+          circuitRounds: 2,
+          exerciseCount: 1,
         },
       },
     });
@@ -321,6 +323,8 @@ describe('activeSessionMachine V1 scenario replay', () => {
             workMs: 20_000,
             restMs: 10_000,
             totalRounds: 2,
+            circuitRounds: 2,
+            exerciseCount: 1,
           },
         },
       });

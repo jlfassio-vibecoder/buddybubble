@@ -10,8 +10,33 @@ import type {
   IntervalSessionEngine,
   IntervalTimerPhase,
 } from '@/features/live-video/wrappers/interval/types/interval-engine';
+import type { ParsedIntervalBlockSnapshot } from '@/features/live-video/wrappers/interval/utils/tabata-block-snapshot';
 
 const TABATA_CONFIG = { totalRounds: 8, workSeconds: 20, restSeconds: 10 };
+
+const CIRCUIT_EXERCISES = [
+  { name: 'Burpees', sets: 3, reps: 10 },
+  { name: 'Mountain Climbers', sets: 3, reps: 10 },
+  { name: 'Jump Squats', sets: 3, reps: 10 },
+  { name: 'Push-ups', sets: 3, reps: 10 },
+];
+
+function circuitBlockSnapshot(): ParsedIntervalBlockSnapshot {
+  return {
+    origin_task_id: 'task-1',
+    title: 'Finisher',
+    workout_type: null,
+    duration_min: null,
+    exercises: CIRCUIT_EXERCISES,
+    block_format: 'tabata',
+    format_params: {
+      rounds: 3,
+      work_seconds: 30,
+      rest_seconds: 30,
+      interval_preset: 'classic_hiit',
+    },
+  };
+}
 
 function makeEngine(
   overrides: {
@@ -20,6 +45,7 @@ function makeEngine(
     remainingSec?: number;
     totalSec?: number;
     mechanicsState?: TabataMechanicsState | null;
+    blockSnapshot?: ParsedIntervalBlockSnapshot | null;
   } = {},
 ): IntervalSessionEngine {
   return {
@@ -28,6 +54,7 @@ function makeEngine(
     remainingSec: 20,
     totalSec: 20,
     mechanicsState: buildInitialTabataMechanicsState(TABATA_CONFIG),
+    blockSnapshot: null,
     ...overrides,
   } as IntervalSessionEngine;
 }
@@ -50,7 +77,7 @@ describe('TabataTimerOverlay', () => {
     expect(screen.getByText('Finished')).toBeTruthy();
   });
 
-  it('hides round label during setup and idle', () => {
+  it('hides subtitle during setup and idle', () => {
     const setupState = {
       ...buildInitialTabataMechanicsState(TABATA_CONFIG),
       segment: 'setup' as const,
@@ -60,7 +87,7 @@ describe('TabataTimerOverlay', () => {
         engine={makeEngine({ segmentLabel: 'Get Ready', mechanicsState: setupState })}
       />,
     );
-    expect(screen.queryByText(/Round \d+ \/ \d+/)).toBeNull();
+    expect(screen.queryByTestId('tabata-overlay-subtitle')).toBeNull();
 
     const idleState = {
       ...buildInitialTabataMechanicsState(TABATA_CONFIG),
@@ -71,10 +98,10 @@ describe('TabataTimerOverlay', () => {
         engine={makeEngine({ segmentLabel: 'Ready', mechanicsState: idleState })}
       />,
     );
-    expect(screen.queryByText(/Round \d+ \/ \d+/)).toBeNull();
+    expect(screen.queryByTestId('tabata-overlay-subtitle')).toBeNull();
   });
 
-  it('shows round label during work', () => {
+  it('shows static subtitle for single-exercise work segment', () => {
     const workState = {
       ...buildInitialTabataMechanicsState(TABATA_CONFIG),
       segment: 'work' as const,
@@ -83,10 +110,22 @@ describe('TabataTimerOverlay', () => {
     };
     render(
       <TabataTimerOverlay
-        engine={makeEngine({ segmentLabel: 'Work', mechanicsState: workState })}
+        engine={makeEngine({
+          segmentLabel: 'Work',
+          mechanicsState: workState,
+          blockSnapshot: {
+            origin_task_id: 'task-1',
+            title: 'Tabata',
+            workout_type: null,
+            duration_min: null,
+            exercises: [{ name: 'Squat', sets: 8, reps: 10 }],
+            block_format: 'tabata',
+            format_params: { rounds: 8, work_seconds: 20, rest_seconds: 10 },
+          },
+        })}
       />,
     );
-    expect(screen.getByText('Round 3 / 8')).toBeTruthy();
+    expect(screen.getByTestId('tabata-overlay-subtitle').textContent).toBe('8 Rounds (20/10s)');
   });
 
   it('formats remainingSec as MM:SS', () => {
@@ -225,5 +264,121 @@ describe('TabataTimerOverlay', () => {
       />,
     );
     expect(screen.getByLabelText('Unmute timer sounds')).toBeTruthy();
+  });
+
+  it('falls back to Tabata header when format_params is missing (legacy sessions)', () => {
+    const workState = {
+      ...buildInitialTabataMechanicsState(TABATA_CONFIG),
+      segment: 'work' as const,
+      round_index: 1,
+      segment_started_at: '2026-06-01T18:30:12.000Z',
+    };
+    render(
+      <TabataTimerOverlay
+        engine={makeEngine({ blockSnapshot: null, mechanicsState: workState })}
+      />,
+    );
+    expect(screen.getByTestId('tabata-overlay-header-label').textContent).toBe('Tabata');
+    expect(screen.getByTestId('tabata-overlay-subtitle').textContent).toBe('8 Rounds (20/10s)');
+  });
+
+  it('renders Classic HIIT header with static subtitle for single exercise', () => {
+    const workState = {
+      ...buildInitialTabataMechanicsState({ totalRounds: 8, workSeconds: 30, restSeconds: 30 }),
+      segment: 'work' as const,
+      round_index: 1,
+      segment_started_at: '2026-06-01T18:30:12.000Z',
+    };
+    render(
+      <TabataTimerOverlay
+        engine={makeEngine({
+          mechanicsState: workState,
+          blockSnapshot: {
+            origin_task_id: 'task-1',
+            title: 'Finisher',
+            workout_type: null,
+            duration_min: null,
+            exercises: [{ name: 'Squat', sets: 8, reps: 10 }],
+            block_format: 'tabata',
+            format_params: {
+              rounds: 8,
+              work_seconds: 30,
+              rest_seconds: 30,
+              interval_preset: 'classic_hiit',
+            },
+          },
+        })}
+      />,
+    );
+    expect(screen.getByTestId('tabata-overlay-header-label').textContent).toBe('Classic HIIT');
+    expect(screen.getByTestId('tabata-overlay-subtitle').textContent).toBe('8 Rounds (30/30s)');
+  });
+
+  it('renders Intervals header for custom W/R preset parameters', () => {
+    const workState = {
+      ...buildInitialTabataMechanicsState({ totalRounds: 6, workSeconds: 45, restSeconds: 15 }),
+      segment: 'work' as const,
+      round_index: 1,
+      segment_started_at: '2026-06-01T18:30:12.000Z',
+    };
+    render(
+      <TabataTimerOverlay
+        engine={makeEngine({
+          mechanicsState: workState,
+          blockSnapshot: {
+            origin_task_id: 'task-1',
+            title: 'Finisher',
+            workout_type: null,
+            duration_min: null,
+            exercises: [{ name: 'Squat', sets: 6, reps: 10 }],
+            block_format: 'tabata',
+            format_params: {
+              rounds: 6,
+              work_seconds: 45,
+              rest_seconds: 15,
+              interval_preset: 'custom',
+            },
+          },
+        })}
+      />,
+    );
+    expect(screen.getByTestId('tabata-overlay-header-label').textContent).toBe('Intervals');
+    expect(screen.getByTestId('tabata-overlay-subtitle').textContent).toBe('6 Rounds (45/15s)');
+  });
+
+  it('renders dynamic circuit subtitle with active exercise name', () => {
+    const workState = {
+      ...buildInitialTabataMechanicsState({ totalRounds: 12, workSeconds: 30, restSeconds: 30 }),
+      segment: 'work' as const,
+      round_index: 2,
+      segment_started_at: '2026-06-01T18:30:12.000Z',
+    };
+    render(
+      <TabataTimerOverlay
+        engine={makeEngine({
+          mechanicsState: workState,
+          blockSnapshot: circuitBlockSnapshot(),
+        })}
+      />,
+    );
+    expect(screen.getByTestId('tabata-overlay-subtitle').textContent).toBe(
+      'Round 2 of 12 · Mountain Climbers',
+    );
+  });
+
+  it('hides circuit subtitle during setup', () => {
+    const setupState = {
+      ...buildInitialTabataMechanicsState({ totalRounds: 12, workSeconds: 30, restSeconds: 30 }),
+      segment: 'setup' as const,
+    };
+    render(
+      <TabataTimerOverlay
+        engine={makeEngine({
+          mechanicsState: setupState,
+          blockSnapshot: circuitBlockSnapshot(),
+        })}
+      />,
+    );
+    expect(screen.queryByTestId('tabata-overlay-subtitle')).toBeNull();
   });
 });

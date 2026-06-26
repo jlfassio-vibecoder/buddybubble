@@ -12,6 +12,8 @@ const tabataConfig: TabataTimerConfig = {
   workMs: 20_000,
   restMs: 10_000,
   totalRounds: 8,
+  circuitRounds: 8,
+  exerciseCount: 1,
 };
 
 function reduceAll(

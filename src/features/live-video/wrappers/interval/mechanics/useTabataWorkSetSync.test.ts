@@ -50,6 +50,11 @@ describe('tabataWorkSetSyncKey', () => {
     expect(tabataWorkSetSyncKey(state)).toBe(tabataWorkSetSyncKey(state));
   });
 
+  it('includes active exercise index for multi-exercise circuits', () => {
+    const state = workState(2);
+    expect(tabataWorkSetSyncKey(state, 4)).toBe('2:1:2026-06-01T18:30:12.000Z');
+  });
+
   it('returns null when sync should not run', () => {
     expect(tabataWorkSetSyncKey(buildInitialTabataMechanicsState(CONFIG))).toBeNull();
   });
