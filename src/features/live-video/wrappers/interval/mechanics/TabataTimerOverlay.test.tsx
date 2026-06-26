@@ -101,7 +101,7 @@ describe('TabataTimerOverlay', () => {
     expect(screen.queryByTestId('tabata-overlay-subtitle')).toBeNull();
   });
 
-  it('shows static subtitle for single-exercise work segment', () => {
+  it('shows dynamic subtitle for single-exercise work segment', () => {
     const workState = {
       ...buildInitialTabataMechanicsState(TABATA_CONFIG),
       segment: 'work' as const,
@@ -125,7 +125,7 @@ describe('TabataTimerOverlay', () => {
         })}
       />,
     );
-    expect(screen.getByTestId('tabata-overlay-subtitle').textContent).toBe('8 Rounds (20/10s)');
+    expect(screen.getByTestId('tabata-overlay-subtitle').textContent).toBe('Round 3 of 8 · Squat');
   });
 
   it('formats remainingSec as MM:SS', () => {
@@ -279,10 +279,10 @@ describe('TabataTimerOverlay', () => {
       />,
     );
     expect(screen.getByTestId('tabata-overlay-header-label').textContent).toBe('Tabata');
-    expect(screen.getByTestId('tabata-overlay-subtitle').textContent).toBe('8 Rounds (20/10s)');
+    expect(screen.getByTestId('tabata-overlay-subtitle').textContent).toBe('Round 1 of 8');
   });
 
-  it('renders Classic HIIT header with static subtitle for single exercise', () => {
+  it('renders Classic HIIT header with dynamic subtitle for single exercise', () => {
     const workState = {
       ...buildInitialTabataMechanicsState({ totalRounds: 8, workSeconds: 30, restSeconds: 30 }),
       segment: 'work' as const,
@@ -311,7 +311,7 @@ describe('TabataTimerOverlay', () => {
       />,
     );
     expect(screen.getByTestId('tabata-overlay-header-label').textContent).toBe('Classic HIIT');
-    expect(screen.getByTestId('tabata-overlay-subtitle').textContent).toBe('8 Rounds (30/30s)');
+    expect(screen.getByTestId('tabata-overlay-subtitle').textContent).toBe('Round 1 of 8 · Squat');
   });
 
   it('renders Intervals header for custom W/R preset parameters', () => {
@@ -343,7 +343,7 @@ describe('TabataTimerOverlay', () => {
       />,
     );
     expect(screen.getByTestId('tabata-overlay-header-label').textContent).toBe('Intervals');
-    expect(screen.getByTestId('tabata-overlay-subtitle').textContent).toBe('6 Rounds (45/15s)');
+    expect(screen.getByTestId('tabata-overlay-subtitle').textContent).toBe('Round 1 of 6 · Squat');
   });
 
   it('renders dynamic circuit subtitle with active exercise name', () => {

@@ -35,6 +35,32 @@ function resolveTabataStaticOverlaySubtitle(
   return `${rounds} Rounds (${work}/${rest}s)`;
 }
 
+function resolveTabataActiveExerciseLabel(
+  roundIndex: number,
+  exercises: WorkoutExercise[],
+): string | null {
+  const exerciseCount = exercises.length;
+  if (exerciseCount > 1) {
+    const activeIndex = deriveTabataActiveExerciseIndex(roundIndex, exerciseCount);
+    const exerciseName = activeIndex != null ? exercises[activeIndex]?.name?.trim() : '';
+    return exerciseName || 'Movement';
+  }
+  if (exerciseCount === 1) {
+    const name = exercises[0]?.name?.trim();
+    return name || null;
+  }
+  return null;
+}
+
+function resolveTabataDynamicOverlaySubtitle(
+  mechanics: TabataMechanicsState,
+  exercises: WorkoutExercise[],
+): string {
+  const base = `Round ${mechanics.round_index} of ${mechanics.total_rounds}`;
+  const label = resolveTabataActiveExerciseLabel(mechanics.round_index, exercises);
+  return label ? `${base} · ${label}` : base;
+}
+
 export function resolveTabataOverlaySubtitle(args: {
   formatParams?: TabataFormatParams;
   mechanics: TabataMechanicsState | null;
@@ -56,15 +82,11 @@ export function resolveTabataOverlaySubtitle(args: {
     return null;
   }
 
-  const exerciseCount = exercises.length;
-  if (exerciseCount > 1 && (mechanics.segment === 'work' || mechanics.segment === 'rest')) {
-    const activeIndex = deriveTabataActiveExerciseIndex(mechanics.round_index, exerciseCount);
-    const exerciseName = activeIndex != null ? exercises[activeIndex]?.name?.trim() : '';
-    const label = exerciseName || 'Movement';
-    return `Round ${mechanics.round_index} of ${mechanics.total_rounds} · ${label}`;
+  if (mechanics.segment === 'work' || mechanics.segment === 'rest') {
+    return resolveTabataDynamicOverlaySubtitle(mechanics, exercises);
   }
 
-  return resolveTabataStaticOverlaySubtitle(formatParams, mechanics);
+  return null;
 }
 
 export function tabataSegmentPhaseAccentClass(
