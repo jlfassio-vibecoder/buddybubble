@@ -263,9 +263,9 @@ Header label uses `resolveTabataOverlayHeader` → `resolveIntervalPresetLabel` 
 ### G5 — Interval preset semantics (overlay + host UX)
 
 | Gap                                                 | Status                                                                                                                                                                   |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----- | -------------------------------------------- |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Hardcoded **Tabata** HUD label for non-20/10 blocks | **Resolved (L1–L3)** — `resolveTabataOverlayHeader` + `resolveTabataOverlaySubtitle`; see [live-interval-preset-overlay-plan.md](./live-interval-preset-overlay-plan.md) |
-| Host deck launch without preset context             | **Resolved (L3)** — Smart Deck primary `▶ Launch {preset                                                                                                                 | AMRAP | EMOM}` + Quick Launch strict Tabata override |
+| Host deck launch without preset context             | **Resolved (L3)** — Smart Deck primary `▶ Launch {preset}` (tabata, AMRAP, or EMOM) + Quick Launch strict Tabata override                                                |
 
 ### G4 — Parity with EMOM overlay (nearest sibling)
 

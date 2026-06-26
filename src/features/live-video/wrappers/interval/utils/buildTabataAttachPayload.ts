@@ -56,9 +56,12 @@ export function isTabataDeckSnapshot(snap: SessionDeckSnapshot | null): boolean 
   return buildTabataAttachPayload(snap) != null;
 }
 
+/** Locked Izumi Tabata rounds — independent of catalog `defaultRounds` drift. */
+const STRICT_TABATA_ROUNDS = 8;
+
 /** On-the-fly strict Izumi Tabata (20/10 × 8) — bypasses deck card prescription. */
 export function buildStrictTabataQuickLaunchPayload(): TabataAttachPayload {
-  const formatParams = applyIntervalPreset('tabata');
+  const formatParams = applyIntervalPreset('tabata', { rounds: STRICT_TABATA_ROUNDS });
   const mechanicsState = buildInitialTabataMechanicsState({
     totalRounds: formatParams.rounds,
     workSeconds: formatParams.work_seconds,

@@ -5,6 +5,7 @@ import {
   buildStrictTabataQuickLaunchPayload,
   buildTabataAttachPayload,
 } from '@/features/live-video/wrappers/interval/utils/buildTabataAttachPayload';
+import { parseIntervalBlockSnapshot } from '@/features/live-video/wrappers/interval/utils/tabata-block-snapshot';
 import { richMetadataWithBlockFormat } from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
 import type { TaskRow } from '@/types/database';
 
@@ -139,5 +140,14 @@ describe('buildStrictTabataQuickLaunchPayload', () => {
       rest_seconds: 10,
     });
     expect(payload!.blockSnapshot.origin_task_id).toBeUndefined();
+  });
+
+  it('parses quick-launch block_snapshot without origin_task_id', () => {
+    const payload = buildStrictTabataQuickLaunchPayload();
+    const parsed = parseIntervalBlockSnapshot(payload!.blockSnapshot);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.title).toBe('Strict Tabata');
+    expect(parsed!.origin_task_id).toBeUndefined();
+    expect(parsed!.format_params).toMatchObject({ rounds: 8, work_seconds: 20, rest_seconds: 10 });
   });
 });
