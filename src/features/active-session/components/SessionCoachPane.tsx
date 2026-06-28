@@ -31,17 +31,19 @@ export function SessionCoachPane({
   elapsedSec,
 }: Props) {
   return (
-    <WorkoutCoachRail
-      bubbleId={bubbleId}
-      taskId={taskId}
-      canPostMessages={canPostMessages}
-      workoutTitle={workoutTitle}
-      workoutData={workoutData}
-      bubbleRow={bubbleRow}
-      messageThread={messageThread}
-      sessionTelemetryBase={sessionTelemetryBase}
-      elapsedSec={elapsedSec}
-      className="min-h-0 overflow-hidden rounded-lg border border-border"
-    />
+    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border">
+      <WorkoutCoachRail
+        bubbleId={bubbleId}
+        taskId={taskId}
+        canPostMessages={canPostMessages}
+        workoutTitle={workoutTitle}
+        workoutData={workoutData}
+        bubbleRow={bubbleRow}
+        messageThread={messageThread}
+        sessionTelemetryBase={sessionTelemetryBase}
+        elapsedSec={elapsedSec}
+        className="min-h-0 flex-1 overflow-hidden"
+      />
+    </div>
   );
 }

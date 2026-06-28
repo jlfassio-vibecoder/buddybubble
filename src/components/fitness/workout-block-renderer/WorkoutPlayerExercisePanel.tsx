@@ -230,7 +230,7 @@ export function WorkoutPlayerExercisePanel({
           const ghostRepsPlaceholder = formatGhostFieldPlaceholder(ghostSets?.[idx], 'reps', unit);
           const ghostRpePlaceholder = formatGhostFieldPlaceholder(ghostSets?.[idx], 'rpe', unit);
           const ghostInputClassName =
-            'h-8 text-center text-sm placeholder:text-muted-foreground/30 placeholder:italic placeholder:font-light';
+            'h-8 text-center text-sm placeholder:text-muted-foreground/50 placeholder:italic placeholder:font-light';
           const ghostWaitingBorderClassName = 'border-dashed border-muted-foreground/40';
           return (
             <div

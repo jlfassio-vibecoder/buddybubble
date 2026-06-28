@@ -60,6 +60,20 @@ describe('activeSessionMachine guards', () => {
     expect(getMachineStateValue(actor)).toBe('active.logging');
   });
 
+  it('preserves ghostLogs when draftLogs change', () => {
+    const actor = createTestActor();
+    actor.start();
+    const ghostLogs = [[{ weight: '200', reps: '5', rpe: '8' }]];
+    actor.send({
+      type: 'HYDRATE_DONE',
+      draftLogs: createSampleDraftLogs(),
+      ghostLogs,
+      logTaskId: null,
+    });
+    actor.send({ type: 'LOGS_CHANGED', draftLogs: createEditedDraftLogs() });
+    expect(actor.getSnapshot().context.ghostLogs).toEqual(ghostLogs);
+  });
+
   it('canFinishImmediately is false while autosave is scheduled', () => {
     const context = createInitialContext(createDefaultInput());
     context.autosaveScheduled = true;

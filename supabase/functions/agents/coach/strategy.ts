@@ -41,6 +41,8 @@ import {
   shouldExcludeWorkoutSentinelFromHistory,
   isWorkoutContextSentinel,
   WORKOUT_CONTEXT_LEGACY_SENTINEL,
+  extractWorkoutOpenSessionId,
+  countPriorWorkoutOpenSentinels,
 } from '../../_shared/dispatch/sentinel.ts';
 import type {
   AgentStrategy,
@@ -137,6 +139,7 @@ import {
   buildTaskModalLiveStateBlock,
   buildWorkoutOpenGreetingPrompt,
   buildWorkoutOpenGreetingUserText,
+  buildWorkoutStructureBlockFromContextJson,
   formatExerciseIndexMap,
   isCoachRailSurfaceFromMessageMetadata,
   readTaskModalLiveStateFromMessageMetadata,
@@ -164,7 +167,10 @@ import {
   processCoachOutlinePhaseBVertexOutput,
 } from './run-coach-outline-phase-b.ts';
 import { mergeCoachOutlineMetadataPatch } from './coach-outline-metadata.ts';
-import { formatSessionTelemetryForPrompt } from './session-telemetry-format.ts';
+import {
+  formatSessionTelemetryForPrompt,
+  parseSessionTelemetryFromMetadata,
+} from './session-telemetry-format.ts';
 
 /** Coach-owned scratch on `ctx.extras`. */
 type CoachExtras = {
@@ -339,6 +345,14 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       const workoutTitle = extractWorkoutTaskTitleFromMetadata(meta);
       const workoutJson = stringifyWorkoutContextForPrompt(meta['workoutContext']);
 
+      const openSessionId = extractWorkoutOpenSessionId(meta);
+      if (
+        openSessionId &&
+        countPriorWorkoutOpenSentinels(ctx.history, openSessionId, ctx.message.id) > 0
+      ) {
+        return { kind: 'skip', reason: 'duplicate_workout_open_sentinel' };
+      }
+
       let userContextBlock: string | null = null;
       if (ctx.message.bubble_id) {
         try {
@@ -361,14 +375,54 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       const isoNow = new Date().toISOString();
       const readiness = readSessionReadinessContextFromMessageMetadata(meta);
       const sessionReadinessBlock = readiness ? buildSessionReadinessContextBlock(readiness) : null;
-      const systemPrompt = buildWorkoutOpenGreetingPrompt({
-        workoutTitle,
-        isoNow,
-        userContextBlock,
-        sessionReadinessBlock,
-      });
-      const readinessJson = readiness ? JSON.stringify(readiness) : null;
-      const userText = buildWorkoutOpenGreetingUserText(workoutJson, readinessJson);
+
+      let sessionTelemetryBlock: string | null = null;
+      let workoutStructureBlock: string | null = null;
+      let systemPrompt = '';
+      let userText = buildWorkoutOpenGreetingUserText(workoutJson, null);
+
+      try {
+        const telemetrySnapshot = parseSessionTelemetryFromMetadata(meta);
+        const formattedTelemetry = telemetrySnapshot
+          ? formatSessionTelemetryForPrompt(telemetrySnapshot, { activeSession: true })
+          : '';
+        sessionTelemetryBlock = formattedTelemetry.trim() ? formattedTelemetry : null;
+        let workoutStructureSourceJson = '';
+        try {
+          workoutStructureSourceJson = JSON.stringify(meta['workoutContext'] ?? null);
+        } catch {
+          workoutStructureSourceJson = '';
+        }
+        workoutStructureBlock = buildWorkoutStructureBlockFromContextJson(
+          workoutStructureSourceJson,
+        );
+        const readinessJson = readiness ? JSON.stringify(readiness) : null;
+        userText = buildWorkoutOpenGreetingUserText(workoutJson, readinessJson);
+        systemPrompt = buildWorkoutOpenGreetingPrompt({
+          workoutTitle,
+          isoNow,
+          userContextBlock,
+          sessionReadinessBlock,
+          workoutStructureBlock,
+          sessionTelemetryBlock,
+        });
+      } catch (err) {
+        log('error', 'coach workout greeting context assembly failed', {
+          request_id: ctx.requestId,
+          slug: COACH_SLUG,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        const readinessJson = readiness ? JSON.stringify(readiness) : null;
+        userText = buildWorkoutOpenGreetingUserText(workoutJson, readinessJson);
+        systemPrompt = buildWorkoutOpenGreetingPrompt({
+          workoutTitle,
+          isoNow,
+          userContextBlock,
+          sessionReadinessBlock,
+          workoutStructureBlock: null,
+          sessionTelemetryBlock: null,
+        });
+      }
 
       let replyText = FALLBACK_WORKOUT_GREETING;
       try {
@@ -394,7 +448,15 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
           const parsed = JSON.parse(cleaned) as Record<string, unknown>;
           const rc = parsed.reply_content;
           const cleanedReply = typeof rc === 'string' ? rc.trim() : '';
-          if (cleanedReply.length > 0) replyText = cleanedReply;
+          if (cleanedReply.length > 0) {
+            replyText = cleanedReply;
+          } else {
+            log('warn', 'coach workout greeting empty reply_content', {
+              request_id: ctx.requestId,
+              slug: COACH_SLUG,
+              response_length: cleaned.length,
+            });
+          }
         } catch (parseErr) {
           log('warn', 'coach workout greeting parse fallback', {
             request_id: ctx.requestId,

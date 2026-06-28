@@ -601,7 +601,7 @@ export const COACH_WORKOUT_GREETING_SCHEMA: VertexResponseSchema = {
     reply_content: {
       type: 'STRING',
       description:
-        'Single visible chat message: time-of-day greeting, name the workout, invite questions; 2–5 sentences, plain text.',
+        'Single visible chat message: personalized time-of-day greeting, name the workout, optional readiness acknowledgment, 1–2 concrete or structure-based target suggestions, and a closing question about filling targets or adjusting loads; 2–5 sentences, plain text; no generic gym clichés.',
     },
   },
   required: ['reply_content'],

@@ -274,17 +274,21 @@ function formatDurationMmSs(totalSec: number): string {
   return `${m}m${s}s`;
 }
 
+function coerceTrimmedString(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value).trim();
+  return '';
+}
+
 function formatPlannedTarget(
   planned: SessionTelemetrySnapshotV1['exercise_deltas'][number]['sets'][number]['planned'],
 ): string {
   if (!planned) return '—';
-  const label =
-    typeof planned.target_label === 'string' && planned.target_label.trim()
-      ? planned.target_label.trim()
-      : '';
+  const label = coerceTrimmedString(planned.target_label);
   if (label) return label;
-  const w = planned.weight?.trim() ?? '';
-  const r = planned.reps?.trim() ?? '';
+  const w = coerceTrimmedString(planned.weight);
+  const r = coerceTrimmedString(planned.reps);
   if (w && r) return `${w}x${r}`;
   if (r) return r;
   if (w) return w;
@@ -294,9 +298,9 @@ function formatPlannedTarget(
 function formatActual(
   actual: SessionTelemetrySnapshotV1['exercise_deltas'][number]['sets'][number]['actual'],
 ): string {
-  const w = actual.weight?.trim() ?? '';
-  const r = actual.reps?.trim() ?? '';
-  const rpe = actual.rpe?.trim() ?? '';
+  const w = coerceTrimmedString(actual.weight);
+  const r = coerceTrimmedString(actual.reps);
+  const rpe = coerceTrimmedString(actual.rpe);
   let base = '—';
   if (w && r) base = `${w}x${r}`;
   else if (r) base = r;
@@ -452,21 +456,25 @@ export function formatSessionTelemetryForPrompt(
   snapshot: SessionTelemetrySnapshotV1,
   opts?: { rail?: boolean; activeSession?: boolean; maxBytes?: number },
 ): string {
-  const summarize = shouldSummarizeSessionTelemetry({
-    rail: opts?.rail === true,
-    activeSession: opts?.activeSession === true,
-  });
-  const maxBytes =
-    opts?.maxBytes ??
-    (summarize ? SESSION_TELEMETRY_RAIL_MAX_BYTES : SESSION_TELEMETRY_FULL_MAX_BYTES);
+  try {
+    const summarize = shouldSummarizeSessionTelemetry({
+      rail: opts?.rail === true,
+      activeSession: opts?.activeSession === true,
+    });
+    const maxBytes =
+      opts?.maxBytes ??
+      (summarize ? SESSION_TELEMETRY_RAIL_MAX_BYTES : SESSION_TELEMETRY_FULL_MAX_BYTES);
 
-  if (summarize) {
-    return summarizeTelemetryDeltas(snapshot, maxBytes);
-  }
+    if (summarize) {
+      return summarizeTelemetryDeltas(snapshot, maxBytes);
+    }
 
-  const summary = summarizeTelemetryDeltas(snapshot, maxBytes);
-  if (summary.trim().length > SESSION_TELEMETRY_HEADER.length + 10) {
-    return summary;
+    const summary = summarizeTelemetryDeltas(snapshot, maxBytes);
+    if (summary.trim().length > SESSION_TELEMETRY_HEADER.length + 10) {
+      return summary;
+    }
+    return compactJsonFallback(snapshot, maxBytes);
+  } catch {
+    return '';
   }
-  return compactJsonFallback(snapshot, maxBytes);
 }

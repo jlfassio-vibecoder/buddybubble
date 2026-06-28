@@ -17,7 +17,10 @@ import {
   buildActiveSessionSentinelMetadata,
   buildActiveSessionTelemetry,
   fireActiveSessionCoachSentinel,
+  shouldSkipSentinelForSession,
   shouldSkipSentinelForTelemetryFingerprint,
+  threadHasCoachWorkoutOpenReplyForSession,
+  threadHasWorkoutOpenSentinelForSession,
   type ActiveSessionCoachTelemetrySource,
   type FireActiveSessionCoachSentinelDeps,
 } from '../lib/active-session-coach-telemetry';
@@ -103,6 +106,95 @@ describe('active session coach telemetry', () => {
     });
   });
 
+  it('shouldSkipSentinelForSession skips only exact session matches', () => {
+    expect(shouldSkipSentinelForSession('session-a', null)).toBe(false);
+    expect(shouldSkipSentinelForSession('session-a', 'session-b')).toBe(false);
+    expect(shouldSkipSentinelForSession('session-a', 'session-a')).toBe(true);
+    expect(shouldSkipSentinelForSession('', 'session-a')).toBe(false);
+  });
+
+  it('threadHasWorkoutOpenSentinelForSession detects prior open sentinel for session', () => {
+    const metadata = buildActiveSessionSentinelMetadata({
+      workoutTitle: 'Test Workout',
+      sessionId: TEST_SESSION_ID,
+      classInstanceId: null,
+      workoutContext: { exercises: [] },
+      sessionTelemetry: buildActiveSessionTelemetry(createTelemetrySource()),
+    });
+    expect(threadHasWorkoutOpenSentinelForSession([], TEST_SESSION_ID)).toBe(false);
+    expect(
+      threadHasWorkoutOpenSentinelForSession([{ metadata: metadata as never }], TEST_SESSION_ID),
+    ).toBe(true);
+    expect(
+      threadHasWorkoutOpenSentinelForSession([{ metadata: metadata as never }], 'other-session-id'),
+    ).toBe(false);
+  });
+
+  it('threadHasCoachWorkoutOpenReplyForSession requires coach reply after sentinel', () => {
+    const metadata = buildActiveSessionSentinelMetadata({
+      workoutTitle: 'Test Workout',
+      sessionId: TEST_SESSION_ID,
+      classInstanceId: null,
+      workoutContext: { exercises: [] },
+      sessionTelemetry: buildActiveSessionTelemetry(createTelemetrySource()),
+    });
+    const coachId = 'coach-auth-user';
+    const sentinelRow = {
+      user_id: 'member-user',
+      created_at: '2026-05-24T15:30:00.000Z',
+      metadata: metadata as never,
+    };
+    expect(threadHasCoachWorkoutOpenReplyForSession([sentinelRow], TEST_SESSION_ID, coachId)).toBe(
+      false,
+    );
+    expect(
+      threadHasCoachWorkoutOpenReplyForSession(
+        [
+          sentinelRow,
+          {
+            user_id: coachId,
+            created_at: '2026-05-24T15:30:01.000Z',
+            metadata: null,
+          },
+        ],
+        TEST_SESSION_ID,
+        coachId,
+      ),
+    ).toBe(true);
+    expect(threadHasWorkoutOpenSentinelForSession([sentinelRow], TEST_SESSION_ID)).toBe(true);
+  });
+
+  it('threadHasCoachWorkoutOpenReplyForSession ignores sentinel without parseable created_at', () => {
+    const metadata = buildActiveSessionSentinelMetadata({
+      workoutTitle: 'Test Workout',
+      sessionId: TEST_SESSION_ID,
+      classInstanceId: null,
+      workoutContext: { exercises: [] },
+      sessionTelemetry: buildActiveSessionTelemetry(createTelemetrySource()),
+    });
+    const coachId = 'coach-auth-user';
+    const sentinelRow = {
+      user_id: 'member-user',
+      created_at: '',
+      metadata: metadata as never,
+    };
+    expect(
+      threadHasCoachWorkoutOpenReplyForSession(
+        [
+          sentinelRow,
+          {
+            user_id: coachId,
+            created_at: '2026-05-24T10:00:00.000Z',
+            metadata: null,
+          },
+        ],
+        TEST_SESSION_ID,
+        coachId,
+      ),
+    ).toBe(false);
+    expect(threadHasWorkoutOpenSentinelForSession([sentinelRow], TEST_SESSION_ID)).toBe(true);
+  });
+
   it('shouldSkipSentinelForTelemetryFingerprint skips only exact fingerprint matches', () => {
     expect(shouldSkipSentinelForTelemetryFingerprint('abc123', null)).toBe(false);
     expect(shouldSkipSentinelForTelemetryFingerprint('abc123', 'def456')).toBe(false);
@@ -137,11 +229,11 @@ describe('active session coach telemetry', () => {
     expect(base.performance_summary.elapsed_sec).toBe(0);
   });
 
-  it('fireActiveSessionCoachSentinel sends telemetry metadata once per fingerprint', async () => {
+  it('fireActiveSessionCoachSentinel sends telemetry metadata once per session', async () => {
     const sendMessage = vi.fn(async () => ({
       id: 'msg-1',
     })) as FireActiveSessionCoachSentinelDeps['sendMessage'];
-    const lastSentFingerprintRef = { current: null as string | null };
+    const lastSentSessionIdRef = { current: null as string | null };
     const source = createTelemetrySource({ elapsedSec: 0 });
     const performanceTelemetrySnapshot = buildActiveSessionTelemetry(source);
 
@@ -152,7 +244,7 @@ describe('active session coach telemetry', () => {
       sessionId: TEST_SESSION_ID,
       classInstanceId: null,
       workoutContext: { exercises: [] },
-      lastSentFingerprintRef,
+      lastSentSessionIdRef,
     };
 
     const sentFirst = await fireActiveSessionCoachSentinel({
@@ -165,7 +257,7 @@ describe('active session coach telemetry', () => {
     const firstMetadata = (sendMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[3]
       ?.metadata as Record<string, unknown>;
     expect(firstMetadata.session_telemetry).toBeDefined();
-    expect(firstMetadata.session_telemetry_fingerprint).toBe(lastSentFingerprintRef.current);
+    expect(lastSentSessionIdRef.current).toBe(TEST_SESSION_ID);
     expect((firstMetadata.session_telemetry as Record<string, unknown>).elapsed_sec).toBe(90);
 
     const sentDuplicate = await fireActiveSessionCoachSentinel({
@@ -186,21 +278,51 @@ describe('active session coach telemetry', () => {
       performanceTelemetrySnapshot: editedSnapshot,
       elapsedSec: 90,
     });
-    expect(sentAfterEdit).toBe(true);
-    expect(sendMessage).toHaveBeenCalledTimes(2);
-    const secondMetadata = (sendMessage as ReturnType<typeof vi.fn>).mock.calls[1]?.[3]
-      ?.metadata as Record<string, unknown>;
-    expect(secondMetadata.session_telemetry_fingerprint).not.toBe(
-      firstMetadata.session_telemetry_fingerprint,
-    );
+    expect(sentAfterEdit).toBe(false);
+    expect(sendMessage).toHaveBeenCalledTimes(1);
   });
 
-  it('fireActiveSessionCoachSentinel sends again when fingerprint matches but captured_at differs', async () => {
+  it('fireActiveSessionCoachSentinel sends again for a new session id', async () => {
     const sendMessage = vi.fn(async () => ({
       id: 'msg-1',
     })) as FireActiveSessionCoachSentinelDeps['sendMessage'];
-    const lastSentFingerprintRef = { current: null as string | null };
-    const lastSentReadinessCapturedAtRef = { current: null as string | null };
+    const lastSentSessionIdRef = { current: null as string | null };
+    const source = createTelemetrySource({ elapsedSec: 0 });
+    const performanceTelemetrySnapshot = buildActiveSessionTelemetry(source);
+
+    const baseDeps = {
+      sendMessage,
+      displayText: WORKOUT_COACH_SENTINEL_DISPLAY_TEXT,
+      workoutTitle: 'Test Workout',
+      sessionId: TEST_SESSION_ID,
+      classInstanceId: null,
+      workoutContext: { exercises: [] },
+      lastSentSessionIdRef,
+    };
+
+    const sentFirst = await fireActiveSessionCoachSentinel({
+      ...baseDeps,
+      performanceTelemetrySnapshot,
+      elapsedSec: 0,
+    });
+    expect(sentFirst).toBe(true);
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+
+    const sentNewSession = await fireActiveSessionCoachSentinel({
+      ...baseDeps,
+      sessionId: '00000000-0000-4000-8000-000000000999',
+      performanceTelemetrySnapshot,
+      elapsedSec: 0,
+    });
+    expect(sentNewSession).toBe(true);
+    expect(sendMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('fireActiveSessionCoachSentinel sends once per session regardless of readiness changes', async () => {
+    const sendMessage = vi.fn(async () => ({
+      id: 'msg-1',
+    })) as FireActiveSessionCoachSentinelDeps['sendMessage'];
+    const lastSentSessionIdRef = { current: null as string | null };
     const source = createTelemetrySource({ elapsedSec: 0 });
     const performanceTelemetrySnapshot = buildActiveSessionTelemetry(source);
     const readinessA = buildSessionReadinessContext({
@@ -220,8 +342,7 @@ describe('active session coach telemetry', () => {
       sessionId: TEST_SESSION_ID,
       classInstanceId: null,
       workoutContext: { exercises: [] },
-      lastSentFingerprintRef,
-      lastSentReadinessCapturedAtRef,
+      lastSentSessionIdRef,
     };
 
     const sentFirst = await fireActiveSessionCoachSentinel({
@@ -248,8 +369,8 @@ describe('active session coach telemetry', () => {
       elapsedSec: 0,
       sessionReadinessContext: readinessB,
     });
-    expect(sentNewReadiness).toBe(true);
-    expect(sendMessage).toHaveBeenCalledTimes(2);
+    expect(sentNewReadiness).toBe(false);
+    expect(sendMessage).toHaveBeenCalledTimes(1);
   });
 
   it('buildActiveSessionTelemetry reflects logged set counts', () => {

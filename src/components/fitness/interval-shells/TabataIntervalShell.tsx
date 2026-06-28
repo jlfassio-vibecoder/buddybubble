@@ -7,6 +7,7 @@ import { useIntervalShellPolish } from '@/hooks/use-interval-shell-polish';
 import { useIntervalTimerEngine } from '@/hooks/use-interval-timer-engine';
 import { IntervalShellAudioToggle } from '@/components/fitness/interval-shells/IntervalShellAudioToggle';
 import { resolveTabataTimerConfig } from '@/lib/workout-factory/interval-timer/resolve-tabata-timer-config';
+import { resolveIntervalPresetLabel } from '@/lib/workout-factory/interval-timer/interval-preset-catalog';
 import { deriveIntervalTimerSnapshot } from '@/lib/workout-factory/interval-timer/interval-timer-engine';
 import {
   intervalTimerSnapshotToRowSnapshot,
@@ -141,6 +142,7 @@ export function TabataIntervalShell({
   onMachineStart,
 }: TabataIntervalShellProps) {
   const config = useMemo(() => resolveTabataTimerConfig(block), [block]);
+  const presetLabel = useMemo(() => resolveIntervalPresetLabel(block.formatParams), [block]);
 
   if (!config) return null;
 
@@ -155,7 +157,9 @@ export function TabataIntervalShell({
   }
 
   if (onMachineStart) {
-    return <IntervalStartOnlyShell blockId={block.id} label="Tabata" onStart={onMachineStart} />;
+    return (
+      <IntervalStartOnlyShell blockId={block.id} label={presetLabel} onStart={onMachineStart} />
+    );
   }
 
   return <TabataIntervalShellHook blockId={block.id} config={config} onSnapshot={onSnapshot} />;
