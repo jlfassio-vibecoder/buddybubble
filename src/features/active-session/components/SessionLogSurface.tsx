@@ -94,7 +94,7 @@ export function SessionLogSurface({
 
   return (
     <section
-      className="min-h-0 overflow-auto rounded-lg border border-border bg-card p-4"
+      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain rounded-lg border border-border bg-card p-4"
       aria-label="Workout log"
     >
       {flatExercises.length === 0 ? (

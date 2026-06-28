@@ -24,7 +24,8 @@ import type {
 import {
   buildActiveSessionTelemetry,
   fireActiveSessionCoachSentinel,
-  shouldSkipSentinelForTelemetryFingerprint,
+  shouldSkipSentinelForSession,
+  threadHasCoachWorkoutOpenReplyForSession,
 } from '@/features/active-session/lib/active-session-coach-telemetry';
 import type { ActiveSessionEvent } from '@/features/active-session/machines/types';
 import { useMessageThread } from '@/hooks/useMessageThread';
@@ -60,6 +61,7 @@ export type UseActiveSessionCoachBridgeArgs = {
   elapsedSec: number;
   sessionVm: WorkoutSessionViewModel;
   sentinelFired: boolean;
+  sentinelFailed?: boolean;
   sessionStartedAt: string | null;
   intervalRowSnapshots: Record<string, IntervalRowSnapshot | null>;
 };
@@ -107,6 +109,7 @@ export function useActiveSessionCoachBridge({
   elapsedSec,
   sessionVm,
   sentinelFired,
+  sentinelFailed = false,
   sessionStartedAt,
   intervalRowSnapshots,
 }: UseActiveSessionCoachBridgeArgs) {
@@ -118,11 +121,10 @@ export function useActiveSessionCoachBridge({
   const syncActiveFromRoute = useWorkspaceStore((s) => s.syncActiveFromRoute);
 
   const [coachBubbleRow, setCoachBubbleRow] = useState<BubbleRow | null>(null);
-  const lastSentTelemetryFingerprintRef = useRef<string | null>(null);
-  const lastSentReadinessCapturedAtRef = useRef<string | null>(null);
+  const lastSentSessionIdRef = useRef<string | null>(null);
   const sendRef = useRef(send);
   const coachResetSessionKeyRef = useRef<string | null>(null);
-  const lastSentFingerprintRef = useRef<string | null>(null);
+  const lastSentTryKeyRef = useRef<string | null>(null);
   const lastDispatchedThreadSnapshotFingerprintRef = useRef<string | null>(null);
   const trySentinelDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const elapsedSecRef = useRef(elapsedSec);
@@ -248,19 +250,28 @@ export function useActiveSessionCoachBridge({
     ],
   );
 
-  const performanceTelemetryFingerprint = performanceTelemetrySnapshot.fingerprint;
-
-  const sessionReadinessCapturedAt = useMemo(
-    () => readSessionReadinessContext(sourceMetadata)?.captured_at ?? null,
-    [sourceMetadata],
-  );
-
-  const sentinelDedupeKey = `${performanceTelemetryFingerprint}:${sessionReadinessCapturedAt ?? ''}`;
+  const sentinelDedupeKey = `${sessionId}:${sourceTaskId}`;
 
   const coachAvailableAgents = useMemo(
     () => [...messageThread.agentsByAuthUserId.values()],
     [messageThread.agentsByAuthUserId],
   );
+
+  const coachAuthUserId =
+    coachAvailableAgents.find((a) => a.slug === CHAT_AREA_DEFAULT_AGENT_SLUG)?.auth_user_id ?? null;
+
+  /** Re-run try-sentinel when thread/coach gates transition from blocked → ready. */
+  const sentinelAttemptGateKey = [
+    sentinelDedupeKey,
+    canPostMessages ? '1' : '0',
+    profileId ?? '',
+    workspaceId,
+    bubbleId,
+    coachBubbleRow?.id ?? '',
+    messageThread.isLoading ? 'L' : 'R',
+    sentinelFired ? 'F' : '0',
+    coachAuthUserId ?? '',
+  ].join(':');
 
   const coachSendMessageRef = useRef(messageThread.sendMessage);
   useLayoutEffect(() => {
@@ -319,8 +330,7 @@ export function useActiveSessionCoachBridge({
       workoutContext,
       performanceTelemetrySnapshot,
       elapsedSec: elapsedSecRef.current,
-      lastSentFingerprintRef: lastSentTelemetryFingerprintRef,
-      lastSentReadinessCapturedAtRef,
+      lastSentSessionIdRef,
       sessionReadinessContext,
     });
   }, [
@@ -352,15 +362,14 @@ export function useActiveSessionCoachBridge({
 
   useEffect(() => {
     if (!enabled) return;
-    const sessionKey = sourceTaskId;
+    const sessionKey = `${sourceTaskId}:${sessionId}`;
     if (coachResetSessionKeyRef.current === sessionKey) return;
     coachResetSessionKeyRef.current = sessionKey;
-    lastSentTelemetryFingerprintRef.current = null;
-    lastSentReadinessCapturedAtRef.current = null;
-    lastSentFingerprintRef.current = null;
+    lastSentSessionIdRef.current = null;
+    lastSentTryKeyRef.current = null;
     lastDispatchedThreadSnapshotFingerprintRef.current = null;
     sendCoachSyncEvent(sendRef.current, { type: 'COACH_RESET' });
-  }, [enabled, sourceTaskId]);
+  }, [enabled, sourceTaskId, sessionId]);
 
   const coachThreadSnapshotFingerprint = useMemo(() => {
     const coachAuthUserId =
@@ -400,8 +409,14 @@ export function useActiveSessionCoachBridge({
   }, [enabled, coachThreadSnapshotFingerprint, sessionStartedAt]);
 
   useEffect(() => {
+    if (sentinelFailed) {
+      lastSentTryKeyRef.current = null;
+    }
+  }, [sentinelFailed]);
+
+  useEffect(() => {
     if (!enabled) {
-      lastSentFingerprintRef.current = null;
+      lastSentTryKeyRef.current = null;
       if (trySentinelDebounceRef.current) {
         clearTimeout(trySentinelDebounceRef.current);
         trySentinelDebounceRef.current = null;
@@ -409,7 +424,7 @@ export function useActiveSessionCoachBridge({
       return;
     }
 
-    if (lastSentFingerprintRef.current === sentinelDedupeKey) {
+    if (lastSentTryKeyRef.current === sentinelDedupeKey) {
       return;
     }
 
@@ -419,17 +434,10 @@ export function useActiveSessionCoachBridge({
 
     trySentinelDebounceRef.current = setTimeout(() => {
       trySentinelDebounceRef.current = null;
-      if (lastSentFingerprintRef.current === sentinelDedupeKey) {
+      if (lastSentTryKeyRef.current === sentinelDedupeKey) {
         return;
       }
-      if (
-        shouldSkipSentinelForTelemetryFingerprint(
-          performanceTelemetryFingerprint,
-          lastSentTelemetryFingerprintRef.current,
-          sessionReadinessCapturedAt,
-          lastSentReadinessCapturedAtRef.current,
-        )
-      ) {
+      if (shouldSkipSentinelForSession(sessionId, lastSentSessionIdRef.current)) {
         return;
       }
       const gate = sentinelGateRef.current;
@@ -441,7 +449,20 @@ export function useActiveSessionCoachBridge({
       if (gate.isLoading) return;
       if (gate.sentinelFired) return;
       if (!gate.hasCoachAgent) return;
-      lastSentFingerprintRef.current = sentinelDedupeKey;
+
+      const threadMessages = messageThreadRef.current.messages;
+      const coachUserId =
+        [...messageThreadRef.current.agentsByAuthUserId.values()].find(
+          (a) => a.slug === CHAT_AREA_DEFAULT_AGENT_SLUG,
+        )?.auth_user_id ?? null;
+      if (threadHasCoachWorkoutOpenReplyForSession(threadMessages, sessionId, coachUserId)) {
+        lastSentSessionIdRef.current = sessionId;
+        lastSentTryKeyRef.current = sentinelDedupeKey;
+        sendCoachSyncEvent(sendRef.current, { type: 'COACH_SENTINEL_ALREADY_PRESENT' });
+        return;
+      }
+
+      lastSentTryKeyRef.current = sentinelDedupeKey;
       sendCoachSyncEvent(sendRef.current, { type: 'COACH_TRY_SENTINEL' });
     }, 150);
 
@@ -451,7 +472,7 @@ export function useActiveSessionCoachBridge({
         trySentinelDebounceRef.current = null;
       }
     };
-  }, [enabled, sentinelDedupeKey]);
+  }, [enabled, sentinelAttemptGateKey, sentinelDedupeKey, sessionId]);
 
   return {
     canPostMessages,

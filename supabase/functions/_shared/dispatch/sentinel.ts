@@ -90,3 +90,35 @@ export function shouldExcludeBuddyOnboardingFromHistory(row: Pick<HistoryRow, 'c
 export function isBuddyOnboardingSentinel(message: Pick<NormalizedMessage, 'content'>): boolean {
   return isExactSentinel(message, ONBOARDING_SYSTEM_EVENT);
 }
+
+/** Read active-session id from workout-open sentinel metadata. */
+export function extractWorkoutOpenSessionId(metadata: unknown): string | null {
+  const m = asMetadataObject(metadata);
+  if (!m) return null;
+  if (typeof m.sessionId === 'string' && m.sessionId.trim()) return m.sessionId.trim();
+  const wctx = asMetadataObject(m.workout_context);
+  if (wctx && typeof wctx.sessionId === 'string' && wctx.sessionId.trim()) {
+    return wctx.sessionId.trim();
+  }
+  return null;
+}
+
+/** Count prior workout-open sentinels in thread history for the same session. */
+export function countPriorWorkoutOpenSentinels(
+  history: ReadonlyArray<Pick<HistoryRow, 'id' | 'content' | 'metadata'>>,
+  sessionId: string,
+  excludeMessageId?: string | null,
+): number {
+  if (!sessionId.trim()) return 0;
+  let count = 0;
+  for (const row of history) {
+    // History loaders use `.neq('id', triggerId)`; this is a defensive second guard.
+    if (excludeMessageId != null && excludeMessageId !== '' && row.id === excludeMessageId) {
+      continue;
+    }
+    if (!isWorkoutContextSentinel(row)) continue;
+    const sid = extractWorkoutOpenSessionId(row.metadata);
+    if (sid === sessionId) count += 1;
+  }
+  return count;
+}

@@ -41,7 +41,10 @@ import {
   type VertexHandlerWithCount,
 } from '../_shared/test-helpers/vertex-fixtures.ts';
 import { simulateCreateCardReplyMetadata } from '../_shared/test-helpers/agent-rpc-persistence-simulator.ts';
-import { SESSION_READINESS_CONTEXT_HEADER } from '../agents/coach/prompts.ts';
+import {
+  SESSION_READINESS_CONTEXT_HEADER,
+  WORKOUT_STRUCTURE_CONTEXT_HEADER,
+} from '../agents/coach/prompts.ts';
 
 /** Present only when `buildBlockBlueprintLibraryPrompt()` is injected (not Apex prose references). */
 const BLOCK_LIBRARY_INJECTED_MARKER =
@@ -355,6 +358,8 @@ integrationTest(
       const req = parseCapturedVertexRequest(bodyText);
       assertEquals(req.systemPrompt.includes(SESSION_READINESS_CONTEXT_HEADER), true);
       assertEquals(req.systemPrompt.includes('Do NOT ask them to rate readiness'), true);
+      assertEquals(req.systemPrompt.includes('Do NOT use generic gym clichés'), true);
+      assertEquals(req.systemPrompt.includes(WORKOUT_STRUCTURE_CONTEXT_HEADER), true);
       assertEquals(req.systemPrompt.includes('readiness (1–10): 7'), true);
       assertEquals(req.userText.includes('Pre-session readiness check-in (JSON)'), true);
       assertEquals(req.userText.includes('"readiness":7'), true);
@@ -365,6 +370,66 @@ integrationTest(
     });
   },
 );
+
+integrationTest('Active Session duplicate workout sentinel skips greeting preflight', async () => {
+  const sessionId = '00000000-0000-4000-8000-000000000901';
+  const targetTaskId = '00000000-0000-4000-8000-000000000801';
+  const vertex = vertexHappyCapturingBody(WORKOUT_GREETING_REPLY);
+  await withHarness(
+    {
+      vertex,
+      postgrest: {
+        rootHistoryRows: [
+          {
+            id: '00000000-0000-4000-8000-000000000890',
+            user_id: TEST_USER_ID,
+            content: 'Started a workout session.',
+            created_at: '2026-05-08T20:00:00.000Z',
+            parent_id: null,
+            target_task_id: targetTaskId,
+            attached_task_id: null,
+            metadata: {
+              is_silent_sentinel: true,
+              sessionId,
+              workout_context: {
+                source: 'workout_player',
+                surface: 'active_session',
+                sessionId,
+              },
+            },
+          },
+        ],
+      },
+    },
+    async ({ vertex: vtx, rpc }) => {
+      const response = await handleDispatchRequest(
+        webhookRequest({
+          id: '00000000-0000-4000-8000-000000000897',
+          content: 'Started a workout session.',
+          targetTaskId,
+          metadata: {
+            default_agent_slug: 'coach',
+            is_silent_sentinel: true,
+            workoutTaskTitle: 'Leg Day',
+            workoutContext: { exercises: [{ name: 'Back Squat', sets: 3, reps: 10 }] },
+            sessionId,
+            workout_context: {
+              source: 'workout_player',
+              surface: 'active_session',
+              sessionId,
+            },
+          },
+        }),
+      );
+      assertEquals(response.status, 200);
+      const body = await readJson(response);
+      assertEquals(body.ok, true);
+      assertEquals(body.skipped, 'duplicate_workout_open_sentinel');
+      assertEquals(vtx?.count() ?? 0, 0);
+      assertEquals(rpc.getRpcCalls('agent_create_card_and_reply').length, 0);
+    },
+  );
+});
 
 integrationTest('429 from Vertex retries once and then persists', async () => {
   const vertex = vertex429ThenHappy(COACH_REPLY);

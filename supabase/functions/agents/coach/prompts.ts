@@ -525,21 +525,73 @@ export type WorkoutOpenGreetingPromptArgs = {
   isoNow: string;
   userContextBlock?: string | null;
   sessionReadinessBlock?: string | null;
+  workoutStructureBlock?: string | null;
+  sessionTelemetryBlock?: string | null;
 };
+
+export const WORKOUT_STRUCTURE_CONTEXT_HEADER = '--- WORKOUT STRUCTURE ---';
+
+function formatExerciseLineFromContext(exercise: unknown, index: number): string | null {
+  if (exercise == null || typeof exercise !== 'object' || Array.isArray(exercise)) return null;
+  const e = exercise as Record<string, unknown>;
+  const name =
+    typeof e.name === 'string' && e.name.trim() ? e.name.trim() : `Exercise ${index + 1}`;
+  const parts: string[] = [name];
+  if (typeof e.sets === 'number' && Number.isFinite(e.sets)) parts.push(`${e.sets} sets`);
+  if (e.reps != null && String(e.reps).trim()) parts.push(`${String(e.reps).trim()} reps`);
+  if (e.weight != null && String(e.weight).trim()) parts.push(`${String(e.weight).trim()} load`);
+  return parts.join(' — ');
+}
+
+/** Build a compact structure block from workoutContext JSON already on the sentinel. */
+export function buildWorkoutStructureBlockFromContextJson(workoutJson: string): string | null {
+  if (!workoutJson.trim()) return null;
+  try {
+    const parsed = JSON.parse(workoutJson) as Record<string, unknown>;
+    const summary = parsed.workout_structure_summary;
+    if (typeof summary === 'string' && summary.trim()) {
+      return `${WORKOUT_STRUCTURE_CONTEXT_HEADER}\n${summary.trim()}`;
+    }
+    const exercises = parsed.exercises;
+    if (Array.isArray(exercises) && exercises.length > 0) {
+      const lines = exercises
+        .slice(0, 24)
+        .map((ex, i) => formatExerciseLineFromContext(ex, i))
+        .filter((line): line is string => line != null);
+      if (lines.length > 0) {
+        return `${WORKOUT_STRUCTURE_CONTEXT_HEADER}\n${lines.join('\n')}`;
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
 
 /**
  * Build the system prompt for the workout-open silent-greeting preflight call.
  * Mirrors the parts assembly at `bubble-agent-dispatch/index.ts:1486-1501`.
  */
 export function buildWorkoutOpenGreetingPrompt(args: WorkoutOpenGreetingPromptArgs): string {
+  const hasTelemetry =
+    typeof args.sessionTelemetryBlock === 'string' && args.sessionTelemetryBlock.trim().length > 0;
+  const hasStructure =
+    typeof args.workoutStructureBlock === 'string' && args.workoutStructureBlock.trim().length > 0;
+
   const parts: string[] = [
     'You are Coach in BuddyBubble. The member just opened the in-app workout player and is about to perform the workout.',
     `Workout title: "${args.workoutTitle}".`,
     'Write exactly ONE short chat message (2–5 sentences) that will appear in the bubble thread.',
-    'Start with a natural time-of-day greeting (infer from the timestamp or use a neutral greeting).',
-    'Name the workout. Acknowledge they are about to start it.',
-    'Invite them to ask questions about exercises, weights, reps, or sets.',
-    'You may briefly offer to help log or review their results if they want.',
+    'Start with a natural, personalized time-of-day greeting (infer from the timestamp or use a neutral greeting).',
+    'Name the workout and acknowledge they are about to start it.',
+    'Do NOT use generic gym clichés such as "Good to see you back in the gym" or "Let\'s get to work" as your opener or main message.',
+    hasTelemetry
+      ? 'Use SESSION TELEMETRY below when suggesting concrete targets for unfilled sets (ghost/previous performance, logged counts, or planned vs actual hints).'
+      : hasStructure
+        ? 'SESSION TELEMETRY is sparse or missing — suggest general starting targets from WORKOUT STRUCTURE below (main lifts, rep schemes, block order).'
+        : 'Telemetry and structure details are limited — suggest sensible general targets from the workout title and any exercise hints in the JSON user payload.',
+    'Offer 1–2 specific target suggestions when you can infer them; keep them practical and brief.',
+    'Close with ONE inviting question about whether they want help filling targets, adjusting loads, or dialing in the session.',
     'Do NOT offer to create a Kanban card, draft a card, or run a long intake questionnaire.',
     'Do NOT paste or reference any SYSTEM_EVENT string or technical trigger text.',
     `Reference timestamp (UTC): ${args.isoNow}`,
@@ -551,6 +603,12 @@ export function buildWorkoutOpenGreetingPrompt(args: WorkoutOpenGreetingPromptAr
       'Do NOT ask them to rate readiness, sleep quality, or soreness again — no intake sliders or questionnaire.',
       args.sessionReadinessBlock,
     );
+  }
+  if (hasStructure) {
+    parts.push(args.workoutStructureBlock?.trim() ?? '');
+  }
+  if (hasTelemetry) {
+    parts.push(args.sessionTelemetryBlock?.trim() ?? '');
   }
   if (args.userContextBlock) {
     parts.push('--- USER CONTEXT ---\n' + args.userContextBlock);

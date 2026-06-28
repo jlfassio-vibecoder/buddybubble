@@ -215,4 +215,50 @@ describe('formatSessionTelemetryForPrompt', () => {
       SESSION_TELEMETRY_RAIL_MAX_BYTES,
     );
   });
+
+  it('formats numeric planned weight/reps without throwing', () => {
+    const snap = sampleSnapshot({
+      performance_summary: {
+        ...sampleSnapshot().performance_summary,
+        skipped_exercise_indices: [0],
+      },
+      exercise_deltas: [
+        {
+          exercise_index: 0,
+          name: 'Back Squat',
+          planned_set_count: 1,
+          logged_set_count: 0,
+          completed_set_count: 0,
+          sets: [
+            {
+              set_index: 0,
+              planned: {
+                weight: 135 as unknown as string,
+                reps: 8 as unknown as string,
+                target_label: null,
+              },
+              actual: { weight: null, reps: null, rpe: null, done: false },
+              status: 'skipped',
+            },
+          ],
+        },
+      ],
+      live_set_counts: [0],
+    });
+    const out = formatSessionTelemetryForPrompt(snap, { activeSession: true });
+    expect(out).toContain('target 135x8');
+  });
+
+  it('returns empty string for malformed snapshot without throwing', () => {
+    const malformed = {
+      schema_version: 1,
+      session_id: 's',
+      source_task_id: 't',
+      fingerprint: 'fp',
+      performance_summary: null,
+      exercise_deltas: [],
+      live_set_counts: [],
+    } as unknown as ReturnType<typeof sampleSnapshot>;
+    expect(formatSessionTelemetryForPrompt(malformed, { activeSession: true })).toBe('');
+  });
 });

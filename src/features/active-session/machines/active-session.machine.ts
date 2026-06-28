@@ -226,6 +226,7 @@ export const activeSessionMachine = setup({
         AUTOSAVE_SCHEDULED: { actions: 'markAutosaveScheduled' },
         COACH_THREAD_SNAPSHOT: { actions: 'forwardCoachThreadSnapshot' },
         COACH_TRY_SENTINEL: { actions: 'forwardCoachTrySentinel' },
+        COACH_SENTINEL_ALREADY_PRESENT: { actions: 'markSentinelFired' },
         COACH_RESET: { actions: 'forwardCoachReset' },
         INTERVAL_START: {
           actions: 'handleIntervalStart',

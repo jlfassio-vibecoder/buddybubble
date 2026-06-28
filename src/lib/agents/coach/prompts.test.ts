@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
+import { SESSION_TELEMETRY_HEADER } from './session-telemetry-format';
 import { BLOCK_BLUEPRINT_LIBRARY_HEADER } from './block-blueprint-library';
 import {
   APEX_ARCHITECT_MAIN_CHAT_HEADER,
@@ -15,12 +16,14 @@ import {
   buildOutlineCoPilotModeCoachBlock,
   buildWorkoutOpenGreetingPrompt,
   buildWorkoutOpenGreetingUserText,
+  buildWorkoutStructureBlockFromContextJson,
   formatExerciseIndexMap,
   isCoachRailSurfaceFromMessageMetadata,
   readSessionReadinessContextFromMessageMetadata,
   readTaskModalLiveStateFromMessageMetadata,
   resolveOutlineDraftPromptParts,
   SESSION_READINESS_CONTEXT_HEADER,
+  WORKOUT_STRUCTURE_CONTEXT_HEADER,
   shouldSuppressTaskModalIntakeForOutlineCoPilot,
   shouldSuppressTaskModalIntakeForPreflightReadiness,
   taskMetadataLooksWorkoutShaped,
@@ -614,12 +617,47 @@ describe('buildWorkoutOpenGreetingPrompt readiness', () => {
     });
     const prompt = buildWorkoutOpenGreetingPrompt({
       workoutTitle: 'Leg Day',
-      isoNow: '2026-05-28T14:00:00.000Z',
+      isoNow: '2026-06-25T14:00:00.000Z',
       sessionReadinessBlock: block,
     });
     expect(prompt).toContain('pre-session check-in');
     expect(prompt).toContain('Do NOT ask them to rate readiness');
     expect(prompt).toContain(SESSION_READINESS_CONTEXT_HEADER);
+    expect(prompt).toContain('Do NOT use generic gym clichés');
+    expect(prompt).toContain('Close with ONE inviting question');
+  });
+
+  it('includes structure and telemetry blocks when provided', () => {
+    const structureBlock = buildWorkoutStructureBlockFromContextJson(
+      JSON.stringify({
+        exercises: [{ name: 'Back Squat', sets: 3, reps: 10, weight: 135 }],
+      }),
+    );
+    expect(structureBlock).toContain(WORKOUT_STRUCTURE_CONTEXT_HEADER);
+    expect(structureBlock).toContain('Back Squat');
+
+    const prompt = buildWorkoutOpenGreetingPrompt({
+      workoutTitle: 'Leg Day',
+      isoNow: '2026-06-25T14:00:00.000Z',
+      workoutStructureBlock: structureBlock,
+      sessionTelemetryBlock: `${SESSION_TELEMETRY_HEADER}\nElapsed: 0m | Sets logged: 0`,
+    });
+    expect(prompt).toContain(WORKOUT_STRUCTURE_CONTEXT_HEADER);
+    expect(prompt).toContain(SESSION_TELEMETRY_HEADER);
+    expect(prompt).toContain('Use SESSION TELEMETRY below');
+  });
+
+  it('falls back to structure-only guidance when telemetry is missing', () => {
+    const structureBlock = buildWorkoutStructureBlockFromContextJson(
+      JSON.stringify({ workout_structure_summary: 'Main: Back Squat 3x10' }),
+    );
+    const prompt = buildWorkoutOpenGreetingPrompt({
+      workoutTitle: 'Leg Day',
+      isoNow: '2026-06-25T14:00:00.000Z',
+      workoutStructureBlock: structureBlock,
+    });
+    expect(prompt).toContain('SESSION TELEMETRY is sparse or missing');
+    expect(prompt).toContain('Main: Back Squat 3x10');
   });
 
   it('buildWorkoutOpenGreetingUserText appends readiness JSON when provided', () => {

@@ -150,6 +150,7 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
     elapsedSec: snapshot.context.elapsedSec,
     sessionVm: viewModel,
     sentinelFired: snapshot.context.sentinelFired,
+    sentinelFailed: snapshot.context.sentinelFailed,
     sessionStartedAt: snapshot.context.startedAt,
     intervalRowSnapshots: snapshot.context.intervalRowSnapshots,
   });
@@ -319,7 +320,7 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
       <SessionHUD
         title={workoutTitle}
         actorRef={actorRef}
@@ -337,29 +338,33 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
         </div>
       ) : (
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
-          <SessionLogSurface
-            viewModel={viewModel}
-            draftLogs={snapshot.context.draftLogs}
-            ghostLogs={snapshot.context.ghostLogs}
-            unit={unit}
-            disabled={logSurfaceDisabled}
-            onDraftLogsChange={onDraftLogsChange}
-            useIntervalMachine={isActiveSession}
-            intervalRowSnapshots={snapshot.context.intervalRowSnapshots}
-            onIntervalStart={onIntervalStart}
-            intervalMachineControlByBlockId={intervalMachineControlByBlockId}
-          />
-          <SessionCoachPane
-            bubbleId={task.bubble_id}
-            taskId={task.id}
-            workoutTitle={workoutTitle}
-            workoutData={coachBridge.coachWorkoutData}
-            bubbleRow={coachBridge.coachBubbleRow}
-            canPostMessages={coachBridge.canPostMessages}
-            messageThread={coachBridge.messageThread}
-            sessionTelemetryBase={coachBridge.performanceTelemetrySnapshot}
-            elapsedSec={snapshot.context.elapsedSec}
-          />
+          <div className="flex min-h-0 min-w-0 flex-col">
+            <SessionLogSurface
+              viewModel={viewModel}
+              draftLogs={snapshot.context.draftLogs}
+              ghostLogs={snapshot.context.ghostLogs}
+              unit={unit}
+              disabled={logSurfaceDisabled}
+              onDraftLogsChange={onDraftLogsChange}
+              useIntervalMachine={isActiveSession}
+              intervalRowSnapshots={snapshot.context.intervalRowSnapshots}
+              onIntervalStart={onIntervalStart}
+              intervalMachineControlByBlockId={intervalMachineControlByBlockId}
+            />
+          </div>
+          <div className="flex min-h-0 min-w-0 flex-col">
+            <SessionCoachPane
+              bubbleId={task.bubble_id}
+              taskId={task.id}
+              workoutTitle={workoutTitle}
+              workoutData={coachBridge.coachWorkoutData}
+              bubbleRow={coachBridge.coachBubbleRow}
+              canPostMessages={coachBridge.canPostMessages}
+              messageThread={coachBridge.messageThread}
+              sessionTelemetryBase={coachBridge.performanceTelemetrySnapshot}
+              elapsedSec={snapshot.context.elapsedSec}
+            />
+          </div>
         </div>
       )}
     </div>

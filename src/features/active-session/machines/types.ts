@@ -75,6 +75,7 @@ export type ActiveSessionEvent =
   | { type: 'FINISH' }
   | { type: 'ABANDON' }
   | { type: 'COACH_SENTINEL_SEND' }
+  | { type: 'COACH_SENTINEL_ALREADY_PRESENT' }
   | { type: 'COACH_SENTINEL_FAILED' }
   | { type: 'COACH_SENTINEL_DONE' }
   | { type: 'COACH_THREAD_SNAPSHOT'; snapshot: CoachThreadSnapshot }
