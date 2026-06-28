@@ -249,6 +249,34 @@ describe('formatSessionTelemetryForPrompt', () => {
     expect(out).toContain('target 135x8');
   });
 
+  it('ignores non-primitive planned fields when coercing strings', () => {
+    const snap = sampleSnapshot({
+      exercise_deltas: [
+        {
+          exercise_index: 0,
+          name: 'Back Squat',
+          planned_set_count: 1,
+          logged_set_count: 0,
+          completed_set_count: 0,
+          sets: [
+            {
+              set_index: 0,
+              planned: {
+                weight: {} as unknown as string,
+                reps: [] as unknown as string,
+                target_label: {} as unknown as string,
+              },
+              actual: { weight: null, reps: null, rpe: null, done: false },
+              status: 'not_started',
+            },
+          ],
+        },
+      ],
+    });
+    const out = formatSessionTelemetryForPrompt(snap, { activeSession: true });
+    expect(out).not.toContain('[object Object]');
+  });
+
   it('returns empty string for malformed snapshot without throwing', () => {
     const malformed = {
       schema_version: 1,

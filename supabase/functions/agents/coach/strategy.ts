@@ -387,7 +387,15 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
           ? formatSessionTelemetryForPrompt(telemetrySnapshot, { activeSession: true })
           : '';
         sessionTelemetryBlock = formattedTelemetry.trim() ? formattedTelemetry : null;
-        workoutStructureBlock = buildWorkoutStructureBlockFromContextJson(workoutJson);
+        let workoutStructureSourceJson = '';
+        try {
+          workoutStructureSourceJson = JSON.stringify(meta['workoutContext'] ?? null);
+        } catch {
+          workoutStructureSourceJson = '';
+        }
+        workoutStructureBlock = buildWorkoutStructureBlockFromContextJson(
+          workoutStructureSourceJson,
+        );
         const readinessJson = readiness ? JSON.stringify(readiness) : null;
         userText = buildWorkoutOpenGreetingUserText(workoutJson, readinessJson);
         systemPrompt = buildWorkoutOpenGreetingPrompt({

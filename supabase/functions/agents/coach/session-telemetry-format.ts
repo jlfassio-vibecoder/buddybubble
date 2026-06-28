@@ -277,7 +277,8 @@ function formatDurationMmSs(totalSec: number): string {
 function coerceTrimmedString(value: unknown): string {
   if (value == null) return '';
   if (typeof value === 'string') return value.trim();
-  return String(value).trim();
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value).trim();
+  return '';
 }
 
 function formatPlannedTarget(

@@ -26,6 +26,7 @@ import {
   fireActiveSessionCoachSentinel,
   shouldSkipSentinelForSession,
   threadHasCoachWorkoutOpenReplyForSession,
+  threadHasWorkoutOpenSentinelForSession,
 } from '@/features/active-session/lib/active-session-coach-telemetry';
 import type { ActiveSessionEvent } from '@/features/active-session/machines/types';
 import { useMessageThread } from '@/hooks/useMessageThread';
@@ -455,6 +456,14 @@ export function useActiveSessionCoachBridge({
         [...messageThreadRef.current.agentsByAuthUserId.values()].find(
           (a) => a.slug === CHAT_AREA_DEFAULT_AGENT_SLUG,
         )?.auth_user_id ?? null;
+      if (threadHasWorkoutOpenSentinelForSession(threadMessages, sessionId)) {
+        lastSentSessionIdRef.current = sessionId;
+        lastSentTryKeyRef.current = sentinelDedupeKey;
+        if (threadHasCoachWorkoutOpenReplyForSession(threadMessages, sessionId, coachUserId)) {
+          sendCoachSyncEvent(sendRef.current, { type: 'COACH_SENTINEL_ALREADY_PRESENT' });
+        }
+        return;
+      }
       if (threadHasCoachWorkoutOpenReplyForSession(threadMessages, sessionId, coachUserId)) {
         lastSentSessionIdRef.current = sessionId;
         lastSentTryKeyRef.current = sentinelDedupeKey;

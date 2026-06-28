@@ -164,6 +164,37 @@ describe('active session coach telemetry', () => {
     expect(threadHasWorkoutOpenSentinelForSession([sentinelRow], TEST_SESSION_ID)).toBe(true);
   });
 
+  it('threadHasCoachWorkoutOpenReplyForSession ignores sentinel without parseable created_at', () => {
+    const metadata = buildActiveSessionSentinelMetadata({
+      workoutTitle: 'Test Workout',
+      sessionId: TEST_SESSION_ID,
+      classInstanceId: null,
+      workoutContext: { exercises: [] },
+      sessionTelemetry: buildActiveSessionTelemetry(createTelemetrySource()),
+    });
+    const coachId = 'coach-auth-user';
+    const sentinelRow = {
+      user_id: 'member-user',
+      created_at: '',
+      metadata: metadata as never,
+    };
+    expect(
+      threadHasCoachWorkoutOpenReplyForSession(
+        [
+          sentinelRow,
+          {
+            user_id: coachId,
+            created_at: '2026-05-24T10:00:00.000Z',
+            metadata: null,
+          },
+        ],
+        TEST_SESSION_ID,
+        coachId,
+      ),
+    ).toBe(false);
+    expect(threadHasWorkoutOpenSentinelForSession([sentinelRow], TEST_SESSION_ID)).toBe(true);
+  });
+
   it('shouldSkipSentinelForTelemetryFingerprint skips only exact fingerprint matches', () => {
     expect(shouldSkipSentinelForTelemetryFingerprint('abc123', null)).toBe(false);
     expect(shouldSkipSentinelForTelemetryFingerprint('abc123', 'def456')).toBe(false);

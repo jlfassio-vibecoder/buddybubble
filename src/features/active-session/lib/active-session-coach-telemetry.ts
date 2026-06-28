@@ -139,6 +139,12 @@ export function threadHasWorkoutOpenSentinelForSession(
   return false;
 }
 
+function parseMessageTimestampMs(createdAt: string | undefined): number | null {
+  if (typeof createdAt !== 'string' || !createdAt.trim()) return null;
+  const ms = Date.parse(createdAt.trim());
+  return Number.isFinite(ms) ? ms : null;
+}
+
 function findLatestWorkoutOpenSentinelCreatedAt(
   messages: ReadonlyArray<{ metadata: Json | null; created_at?: string }>,
   sessionId: string,
@@ -146,7 +152,6 @@ function findLatestWorkoutOpenSentinelCreatedAt(
   if (!sessionId.trim()) return null;
   let latestCreatedAt: string | null = null;
   let latestMs = -1;
-  let found = false;
   for (const message of messages) {
     const meta = message.metadata;
     if (meta == null || typeof meta !== 'object' || Array.isArray(meta)) continue;
@@ -157,16 +162,14 @@ function findLatestWorkoutOpenSentinelCreatedAt(
     if ((wctx as Record<string, unknown>).source !== 'workout_player') continue;
     const sid = readWorkoutOpenSessionIdFromMetadata(meta);
     if (sid !== sessionId) continue;
-    found = true;
-    const createdAt =
-      typeof message.created_at === 'string' && message.created_at.trim() ? message.created_at : '';
-    const ms = createdAt ? new Date(createdAt).getTime() : 0;
+    const ms = parseMessageTimestampMs(message.created_at);
+    if (ms === null) continue;
     if (ms >= latestMs) {
       latestMs = ms;
-      latestCreatedAt = createdAt || latestCreatedAt;
+      latestCreatedAt = message.created_at!.trim();
     }
   }
-  return found ? (latestCreatedAt ?? '') : null;
+  return latestCreatedAt;
 }
 
 /**
@@ -185,7 +188,8 @@ export function threadHasCoachWorkoutOpenReplyForSession(
   if (!coachAuthUserId?.trim()) return false;
   const sentinelCreatedAt = findLatestWorkoutOpenSentinelCreatedAt(messages, sessionId);
   if (sentinelCreatedAt === null) return false;
-  const sentinelMs = sentinelCreatedAt ? new Date(sentinelCreatedAt).getTime() : 0;
+  const sentinelMs = Date.parse(sentinelCreatedAt);
+  if (!Number.isFinite(sentinelMs)) return false;
   for (const message of messages) {
     if (message.user_id !== coachAuthUserId) continue;
     const meta = message.metadata;
@@ -193,12 +197,9 @@ export function threadHasCoachWorkoutOpenReplyForSession(
       const o = meta as Record<string, unknown>;
       if (o.is_silent_sentinel === true) continue;
     }
-    const createdAt =
-      typeof message.created_at === 'string' && message.created_at.trim()
-        ? message.created_at
-        : null;
-    if (!createdAt) continue;
-    if (new Date(createdAt).getTime() >= sentinelMs) return true;
+    const msgMs = parseMessageTimestampMs(message.created_at);
+    if (msgMs === null) continue;
+    if (msgMs >= sentinelMs) return true;
   }
   return false;
 }
