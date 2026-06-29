@@ -7,7 +7,13 @@ import {
   richAlternatingEmomMetadata,
   richMetadataWithBlockFormat,
 } from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
-import { removeExerciseFromBlock } from './workout-block-editor-types';
+import {
+  removeExerciseFromBlock,
+  reorderExercisesInBlock,
+  appendMainBlock,
+  createDefaultMainBlock,
+} from './workout-block-editor-types';
+import { applyBlockExerciseDragEnd } from './MainBlockExerciseList';
 import { WorkoutBlockListEditor } from './WorkoutBlockListEditor';
 
 function ControlledEditor({
@@ -274,5 +280,214 @@ describe('WorkoutBlockListEditor', () => {
 
     expect(main2.exercises.length).toBe(2);
     expect(main2.exercises[1].exerciseName).toBe('Air Squat');
+  });
+
+  it('shows drag grips when block has multiple exercises and canWrite', () => {
+    const meta = richAlternatingEmomMetadata({
+      totalRounds: 12,
+      cycle: [[0], [1], [2]],
+    });
+    const vm = buildWorkoutSessionViewModel(meta);
+
+    render(
+      <WorkoutBlockListEditor
+        blocks={vm.blocks}
+        canWrite
+        workoutUnitSystem="metric"
+        onChange={() => {}}
+        idPrefix="emom-dnd"
+      />,
+    );
+
+    expect(screen.getAllByRole('button', { name: 'Drag to reorder exercise' })).toHaveLength(3);
+  });
+
+  it('hides drag grips when canWrite is false', () => {
+    const meta = richAlternatingEmomMetadata({
+      totalRounds: 12,
+      cycle: [[0], [1], [2]],
+    });
+    const vm = buildWorkoutSessionViewModel(meta);
+
+    render(
+      <WorkoutBlockListEditor
+        blocks={vm.blocks}
+        canWrite={false}
+        workoutUnitSystem="metric"
+        onChange={() => {}}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: 'Drag to reorder exercise' })).toBeNull();
+  });
+
+  it('hides drag grips when block has only one exercise', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('tabata'));
+
+    render(
+      <WorkoutBlockListEditor
+        blocks={vm.blocks}
+        canWrite
+        workoutUnitSystem="metric"
+        onChange={() => {}}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: 'Drag to reorder exercise' })).toBeNull();
+  });
+
+  it('reorder updates draft immutably via drag-end handler', () => {
+    const meta = richAlternatingEmomMetadata({
+      totalRounds: 12,
+      cycle: [[0], [1], [2]],
+    });
+    const vm = buildWorkoutSessionViewModel(meta);
+    const main = vm.blocks.find((b) => b.section === 'main')!;
+    const sortIds = ['sort-0', 'sort-1', 'sort-2'];
+
+    const result = applyBlockExerciseDragEnd(sortIds, vm.blocks, main.id, 'sort-2', 'sort-0');
+    expect(result).not.toBeNull();
+    expect(result!.nextBlocks).not.toBe(vm.blocks);
+
+    const mainNext = result!.nextBlocks.find((b) => b.id === main.id)!;
+    expect(mainNext.exercises.map((e) => e.exerciseName)).toEqual([
+      'Air Squat',
+      'Deadlift',
+      'Push-up',
+    ]);
+
+    render(
+      <WorkoutBlockListEditor
+        blocks={result!.nextBlocks}
+        canWrite
+        workoutUnitSystem="metric"
+        onChange={() => {}}
+        idPrefix="reorder"
+      />,
+    );
+
+    const mainSection = screen.getByTestId(`editor-main-block-${main.id}`);
+    const nameInputs = within(mainSection).getAllByLabelText('Exercise name') as HTMLInputElement[];
+    expect(nameInputs[0]!.value).toBe('Air Squat');
+    expect(nameInputs[1]!.value).toBe('Deadlift');
+    expect(nameInputs[2]!.value).toBe('Push-up');
+  });
+
+  it('round-trips reorder through applyBlockEditsToMetadata', () => {
+    const meta = richAlternatingEmomMetadata({
+      totalRounds: 12,
+      cycle: [[0], [1], [2]],
+    });
+    const vm = buildWorkoutSessionViewModel(meta);
+    const main = vm.blocks.find((b) => b.section === 'main')!;
+    const reordered = reorderExercisesInBlock(vm.blocks, main.id, 2, 0);
+
+    const next = applyBlockEditsToMetadata(meta, reordered);
+    const vm2 = buildWorkoutSessionViewModel(next);
+    const main2 = vm2.blocks.find((b) => b.section === 'main')!;
+
+    expect(main2.exercises.map((e) => e.exerciseName)).toEqual([
+      'Air Squat',
+      'Deadlift',
+      'Push-up',
+    ]);
+  });
+
+  it('shows Add main block when canWrite', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('tabata'));
+
+    render(
+      <WorkoutBlockListEditor
+        blocks={vm.blocks}
+        canWrite
+        workoutUnitSystem="metric"
+        onChange={() => {}}
+      />,
+    );
+
+    expect(screen.getByTestId('add-main-block')).toBeTruthy();
+  });
+
+  it('hides Add main block when canWrite is false', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('tabata'));
+
+    render(
+      <WorkoutBlockListEditor
+        blocks={vm.blocks}
+        canWrite={false}
+        workoutUnitSystem="metric"
+        onChange={() => {}}
+      />,
+    );
+
+    expect(screen.queryByTestId('add-main-block')).toBeNull();
+  });
+
+  it('adds a main block via Add main block button', () => {
+    const meta = richMetadataWithBlockFormat('tabata');
+    const onChangeSpy = vi.fn();
+
+    render(<ControlledEditor initialMeta={meta} onChangeSpy={onChangeSpy} />);
+
+    fireEvent.click(screen.getByTestId('add-main-block'));
+
+    expect(onChangeSpy).toHaveBeenCalled();
+    const next = onChangeSpy.mock.calls.at(-1)![0];
+    expect(next.filter((b: { section: string }) => b.section === 'main')).toHaveLength(2);
+  });
+
+  it('hides Remove block when only one main block exists', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('tabata'));
+
+    render(
+      <WorkoutBlockListEditor
+        blocks={vm.blocks}
+        canWrite
+        workoutUnitSystem="metric"
+        onChange={() => {}}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: 'Remove block' })).toBeNull();
+  });
+
+  it('shows Remove block on each main block when multiple exist', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('tabata'));
+    const blocks = appendMainBlock(vm.blocks, createDefaultMainBlock(2));
+
+    render(
+      <WorkoutBlockListEditor
+        blocks={blocks}
+        canWrite
+        workoutUnitSystem="metric"
+        onChange={() => {}}
+      />,
+    );
+
+    expect(screen.getAllByRole('button', { name: 'Remove block' })).toHaveLength(2);
+  });
+
+  it('removes a main block via Remove block control', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('tabata'));
+    const blocks = appendMainBlock(vm.blocks, createDefaultMainBlock(2));
+    const straightSetsMain = blocks
+      .filter((b) => b.section === 'main')
+      .find((b) => b.blockFormat === 'straight_sets')!;
+    const onChange = vi.fn();
+
+    render(
+      <WorkoutBlockListEditor
+        blocks={blocks}
+        canWrite
+        workoutUnitSystem="metric"
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId(`remove-main-block-${straightSetsMain.id}`));
+
+    expect(onChange).toHaveBeenCalled();
+    const next = onChange.mock.calls.at(-1)![0];
+    expect(next.filter((b: { section: string }) => b.section === 'main')).toHaveLength(1);
   });
 });

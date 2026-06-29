@@ -7,18 +7,17 @@ import {
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 import { Button } from '@/components/ui/button';
 import { WorkoutBlockHeader } from '@/components/fitness/workout-block-renderer/WorkoutBlockHeader';
-import { WorkoutBlockExerciseEditRow } from '@/components/fitness/workout-block-renderer/WorkoutBlockExerciseEditRow';
 import { WorkoutInstructionBlockEdit } from '@/components/fitness/workout-block-renderer/WorkoutInstructionBlockEdit';
+import { MainBlockExerciseList } from '@/components/fitness/workout-block-renderer/MainBlockExerciseList';
 import {
-  addExerciseToBlock,
-  blockStationLabel,
+  appendMainBlock,
   blockUsesGroupedLayout,
-  createDefaultBlockExercise,
-  removeExerciseFromBlock,
+  createDefaultMainBlock,
+  removeMainBlockById,
   updateBlock,
-  updateExerciseInBlock,
   type WorkoutBlockListEditorProps,
 } from '@/components/fitness/workout-block-renderer/workout-block-editor-types';
+import { Trash2 } from 'lucide-react';
 
 function blockViewForExerciseGuard(block: WorkoutSessionBlockView): Record<string, unknown> {
   return {
@@ -51,6 +50,8 @@ export function WorkoutBlockListEditor({
     .filter((b) => b.section === 'main')
     .slice()
     .sort((a, b) => a.order - b.order);
+
+  const allowRemoveBlock = canWrite && mainBlocks.length > 1;
 
   const renderInstructionSection = (section: 'warmup' | 'finisher' | 'cooldown') => {
     const sectionBlocks = blocks
@@ -86,48 +87,9 @@ export function WorkoutBlockListEditor({
       {mainBlocks.map((block) => {
         const exercises = block.exercises ?? [];
         const grouped = blockUsesGroupedLayout(block.blockFormat, exercises.length);
-
         const allowRemove =
           canWrite && canRemoveExerciseFromBlock(blockViewForExerciseGuard(block));
         const allowAdd = canWrite && canAddExerciseToBlock(blockViewForExerciseGuard(block));
-
-        const addExerciseButton = allowAdd ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs"
-            data-testid={`add-exercise-${block.id}`}
-            onClick={() =>
-              onChange(
-                addExerciseToBlock(
-                  blocks,
-                  block.id,
-                  createDefaultBlockExercise(block, exercises.length),
-                ),
-              )
-            }
-          >
-            Add exercise
-          </Button>
-        ) : null;
-
-        const rows = exercises.map((ex, ei) => (
-          <WorkoutBlockExerciseEditRow
-            key={ex.id ?? `${block.id}-ex-${ei}`}
-            exercise={ex}
-            stationLabel={blockStationLabel(block.blockFormat, ei)}
-            canWrite={canWrite}
-            idPrefix={`${idPrefix}-${block.id}`}
-            exerciseIndex={ei}
-            onChange={(patch) => onChange(updateExerciseInBlock(blocks, block.id, ei, patch))}
-            onRemove={
-              allowRemove
-                ? () => onChange(removeExerciseFromBlock(blocks, block.id, ei))
-                : undefined
-            }
-          />
-        ));
 
         return (
           <section
@@ -135,21 +97,50 @@ export function WorkoutBlockListEditor({
             className="space-y-3"
             data-testid={`editor-main-block-${block.id}`}
           >
-            <WorkoutBlockHeader name={block.name} subtitle={block.subtitle} />
-            {grouped ? (
-              <div className="space-y-2 rounded-xl p-2 ring-1 ring-border/20">
-                {rows}
-                {addExerciseButton}
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {rows}
-                {addExerciseButton}
-              </div>
-            )}
+            <div className="flex items-start justify-between gap-2">
+              <WorkoutBlockHeader name={block.name} subtitle={block.subtitle} />
+              {allowRemoveBlock ? (
+                <button
+                  type="button"
+                  aria-label="Remove block"
+                  data-testid={`remove-main-block-${block.id}`}
+                  className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:text-destructive"
+                  onClick={() => onChange(removeMainBlockById(blocks, block.id))}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              ) : null}
+            </div>
+            <MainBlockExerciseList
+              block={block}
+              blocks={blocks}
+              canWrite={canWrite}
+              idPrefix={idPrefix}
+              allowAdd={allowAdd}
+              allowRemove={allowRemove}
+              grouped={grouped}
+              onChange={onChange}
+            />
           </section>
         );
       })}
+
+      {canWrite ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs"
+          data-testid="add-main-block"
+          onClick={() => {
+            const nextOrder =
+              mainBlocks.length > 0 ? Math.max(...mainBlocks.map((b) => b.order)) + 1 : 1;
+            onChange(appendMainBlock(blocks, createDefaultMainBlock(nextOrder)));
+          }}
+        >
+          Add main block
+        </Button>
+      ) : null}
 
       {renderInstructionSection('finisher')}
       {renderInstructionSection('cooldown')}

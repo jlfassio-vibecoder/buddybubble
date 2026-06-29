@@ -36,9 +36,12 @@ export { WorkoutBlockExerciseEditRow } from './WorkoutBlockExerciseEditRow';
 export type { WorkoutBlockExerciseEditRowProps } from './WorkoutBlockExerciseEditRow';
 export { WorkoutInstructionBlockEdit } from './WorkoutInstructionBlockEdit';
 export {
+  appendMainBlock,
   blockStationLabel,
   blockUsesGroupedLayout,
+  createDefaultMainBlock,
   removeExerciseFromBlock,
+  removeMainBlockById,
   updateBlock,
   updateExerciseInBlock,
 } from './workout-block-editor-types';
