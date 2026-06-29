@@ -63,6 +63,8 @@ export function WorkoutBlockListRenderer({
   'data-testid': dataTestId,
   getMainBlockSectionProps,
   renderMainBlockAfterHeader,
+  cuesByKey,
+  cuesLoading = false,
 }: WorkoutBlockListRendererProps) {
   if (blocks.length === 0) return null;
 
@@ -111,6 +113,8 @@ export function WorkoutBlockListRenderer({
             density={density === 'compact' ? 'compact' : 'full'}
             renderExercise={renderExercise}
             globalFlatIndexStart={mainFlatIndexStarts[blockIndex] ?? 0}
+            cuesByKey={cuesByKey}
+            cuesLoading={cuesLoading}
           />
         );
 

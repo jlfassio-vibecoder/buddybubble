@@ -19,6 +19,8 @@ import {
   WorkoutLogReadSummary,
 } from '@/components/fitness/workout-block-renderer';
 import { useWorkoutSessionViewModel } from '@/hooks/use-workout-session-view-model';
+import { useExerciseCueResolution } from '@/hooks/useExerciseCueResolution';
+import { useUserProfileStore } from '@/store/userProfileStore';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 import { useTaskCardCoverUrl } from '@/lib/task-card-cover';
 import { ChevronRight, Image as ImageIcon, Loader2, X } from 'lucide-react';
@@ -255,6 +257,15 @@ export function WorkoutViewerContent({
 
   const sessionVm = useWorkoutSessionViewModel(metadata ?? {});
 
+  const profileId = useUserProfileStore((s) => s.profile?.id ?? null);
+  const cuesEnabled = mode === 'view' && readVariant !== 'log';
+  const { cuesByKey, loading: cuesLoading } = useExerciseCueResolution({
+    enabled: cuesEnabled,
+    userId: profileId,
+    blocks: sessionVm.blocks,
+    flatExercises: sessionVm.flatExercises,
+  });
+
   const useRichBlockEdit =
     readVariant !== 'log' && sessionVm.source === 'rich' && sessionVm.blocks.length > 0;
 
@@ -471,6 +482,8 @@ export function WorkoutViewerContent({
                   blocks={sessionVm.blocks}
                   taskId={taskId}
                   density="full"
+                  cuesByKey={cuesByKey}
+                  cuesLoading={cuesLoading}
                   chrome={{
                     difficulty: sessionVm.workoutSet?.difficulty,
                     structureRationale: narrative.structureRationale ?? undefined,
@@ -498,6 +511,8 @@ export function WorkoutViewerContent({
                     exercises={localExercises}
                     taskId={taskId}
                     density="full"
+                    cuesByKey={cuesByKey}
+                    cuesLoading={cuesLoading}
                   />
                 </div>
               )}

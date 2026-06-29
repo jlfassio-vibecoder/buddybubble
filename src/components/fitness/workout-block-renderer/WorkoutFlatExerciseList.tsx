@@ -1,6 +1,8 @@
 'use client';
 
 import type { WorkoutExercise } from '@/lib/item-metadata';
+import type { ResolvedCueBundle } from '@/lib/workout-factory/resolve-exercise-cue-bundle';
+import { flatExerciseResolutionKey } from '@/lib/workout-factory/resolve-exercise-cue-bundle';
 import {
   exerciseThumbnailSrcFromTask,
   formatExercisePrescriptionLineFromTask,
@@ -14,6 +16,8 @@ export type WorkoutFlatExerciseListProps = {
   density?: 'full' | 'compact';
   emptyMessage?: string;
   className?: string;
+  cuesByKey?: Record<string, ResolvedCueBundle>;
+  cuesLoading?: boolean;
 };
 
 export function WorkoutFlatExerciseList({
@@ -22,6 +26,8 @@ export function WorkoutFlatExerciseList({
   density = 'full',
   emptyMessage = 'No exercises on this card yet.',
   className,
+  cuesByKey,
+  cuesLoading = false,
 }: WorkoutFlatExerciseListProps) {
   if (exercises.length === 0) {
     return <p className="text-sm text-muted-foreground">{emptyMessage}</p>;
@@ -32,9 +38,10 @@ export function WorkoutFlatExerciseList({
       {exercises.map((ex, idx) => {
         const metaLine = formatExercisePrescriptionLineFromTask(ex);
         const notes = ex.coach_notes || ex.notes || null;
+        const key = flatExerciseResolutionKey(ex, idx);
 
         return (
-          <li key={idx}>
+          <li key={ex.id ?? key}>
             <WorkoutReadExerciseRow
               name={ex.name}
               metaLine={metaLine}
@@ -42,6 +49,8 @@ export function WorkoutFlatExerciseList({
               thumbnailUrl={exerciseThumbnailSrcFromTask(ex)}
               taskId={taskId}
               density={density}
+              resolvedCues={cuesByKey?.[key] ?? null}
+              cuePanelEnabled={!cuesLoading && Object.keys(cuesByKey ?? {}).length > 0}
             />
           </li>
         );

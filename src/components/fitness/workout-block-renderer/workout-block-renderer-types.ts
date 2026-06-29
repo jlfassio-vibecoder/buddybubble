@@ -1,5 +1,6 @@
 import type { HTMLAttributes, ReactNode } from 'react';
 import type { Exercise } from '@/lib/workout-factory/types/ai-program';
+import type { ResolvedCueBundle } from '@/lib/workout-factory/resolve-exercise-cue-bundle';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 
 export type WorkoutBlockExerciseRenderContext = {
@@ -32,4 +33,8 @@ export type WorkoutBlockListRendererProps = {
   getMainBlockSectionProps?: (block: WorkoutSessionBlockView) => HTMLAttributes<HTMLElement>;
   /** Rendered between block header and exercise list (e.g. interval timer shell). */
   renderMainBlockAfterHeader?: (block: WorkoutSessionBlockView) => ReactNode;
+  /** Resolved exercise cues for view-mode accordion (M1). */
+  cuesByKey?: Record<string, ResolvedCueBundle>;
+  /** When true, cue toggles stay hidden until resolution completes. */
+  cuesLoading?: boolean;
 };

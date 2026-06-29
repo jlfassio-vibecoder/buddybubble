@@ -16,6 +16,9 @@ export {
 } from './WorkoutReadExerciseRow';
 export type { WorkoutReadExerciseRowProps } from './WorkoutReadExerciseRow';
 
+export { WorkoutExerciseCuePanel, cueBadgeState } from './WorkoutExerciseCuePanel';
+export type { WorkoutExerciseCuePanelProps } from './WorkoutExerciseCuePanel';
+
 export { WorkoutBlockHeader } from './WorkoutBlockHeader';
 
 export { WorkoutInstructionSection } from './WorkoutInstructionSection';
