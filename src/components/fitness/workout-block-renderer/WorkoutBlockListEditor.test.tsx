@@ -12,6 +12,7 @@ import {
   reorderExercisesInBlock,
   appendMainBlock,
   createDefaultMainBlock,
+  updateExerciseInBlock,
 } from './workout-block-editor-types';
 import { applyBlockExerciseDragEnd } from './MainBlockExerciseList';
 import { WorkoutBlockListEditor } from './WorkoutBlockListEditor';
@@ -438,6 +439,7 @@ describe('WorkoutBlockListEditor', () => {
 
   it('hides Remove block when only one main block exists', () => {
     const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('tabata'));
+    const main = vm.blocks.find((b) => b.section === 'main')!;
 
     render(
       <WorkoutBlockListEditor
@@ -448,12 +450,13 @@ describe('WorkoutBlockListEditor', () => {
       />,
     );
 
-    expect(screen.queryByRole('button', { name: 'Remove block' })).toBeNull();
+    expect(screen.queryByTestId(`remove-main-block-${main.id}`)).toBeNull();
   });
 
   it('shows Remove block on each main block when multiple exist', () => {
     const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('tabata'));
     const blocks = appendMainBlock(vm.blocks, createDefaultMainBlock(2));
+    const mainIds = blocks.filter((b) => b.section === 'main').map((b) => b.id);
 
     render(
       <WorkoutBlockListEditor
@@ -464,7 +467,9 @@ describe('WorkoutBlockListEditor', () => {
       />,
     );
 
-    expect(screen.getAllByRole('button', { name: 'Remove block' })).toHaveLength(2);
+    for (const id of mainIds) {
+      expect(screen.getByTestId(`remove-main-block-${id}`)).toBeTruthy();
+    }
   });
 
   it('removes a main block via Remove block control', () => {
@@ -489,5 +494,116 @@ describe('WorkoutBlockListEditor', () => {
     expect(onChange).toHaveBeenCalled();
     const next = onChange.mock.calls.at(-1)![0];
     expect(next.filter((b: { section: string }) => b.section === 'main')).toHaveLength(1);
+  });
+
+  it('shows Split button when exercise name contains a comma', () => {
+    const meta = richMetadataWithBlockFormat('tabata');
+    const vm = buildWorkoutSessionViewModel(meta);
+    const main = vm.blocks.find((b) => b.section === 'main')!;
+    const blocks = updateExerciseInBlock(vm.blocks, main.id, 0, {
+      exerciseName: 'Burpees, Squats',
+    });
+
+    render(
+      <WorkoutBlockListEditor
+        blocks={blocks}
+        canWrite
+        workoutUnitSystem="metric"
+        onChange={() => {}}
+        idPrefix="split"
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Split into rows' })).toBeTruthy();
+  });
+
+  it('splits comma-separated exercise via Split button', () => {
+    const meta = richMetadataWithBlockFormat('tabata');
+    const vm = buildWorkoutSessionViewModel(meta);
+    const main = vm.blocks.find((b) => b.section === 'main')!;
+    const blocks = updateExerciseInBlock(vm.blocks, main.id, 0, {
+      exerciseName: 'Burpees, Squats',
+    });
+    const onChange = vi.fn();
+
+    render(
+      <WorkoutBlockListEditor
+        blocks={blocks}
+        canWrite
+        workoutUnitSystem="metric"
+        onChange={onChange}
+        idPrefix="split"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Split into rows' }));
+
+    expect(onChange).toHaveBeenCalled();
+    const next = onChange.mock.calls.at(-1)![0];
+    const mainNext = next.find((b: { id: string }) => b.id === main.id)!;
+    expect(mainNext.exercises).toHaveLength(2);
+    expect(mainNext.exercises.map((e: { exerciseName: string }) => e.exerciseName)).toEqual([
+      'Burpees',
+      'Squats',
+    ]);
+  });
+
+  it('adds a warm-up section when missing', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('tabata'));
+    const blocks = vm.blocks.filter((b) => b.section !== 'warmup');
+    const onChange = vi.fn();
+
+    render(
+      <WorkoutBlockListEditor
+        blocks={blocks}
+        canWrite
+        workoutUnitSystem="metric"
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('add-warmup'));
+
+    expect(onChange).toHaveBeenCalled();
+    const next = onChange.mock.calls.at(-1)![0];
+    expect(next.some((b: { section: string }) => b.section === 'warmup')).toBe(true);
+  });
+
+  it('removes an instruction block via Remove block control', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('tabata'));
+    const finisher = vm.blocks.find((b) => b.section === 'finisher')!;
+    const onChange = vi.fn();
+
+    render(
+      <WorkoutBlockListEditor
+        blocks={vm.blocks}
+        canWrite
+        workoutUnitSystem="metric"
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId(`remove-instruction-${finisher.id}`));
+
+    expect(onChange).toHaveBeenCalled();
+    const next = onChange.mock.calls.at(-1)![0];
+    expect(next.some((b: { section: string }) => b.section === 'finisher')).toBe(false);
+  });
+
+  it('hides instruction add buttons when section exists or read-only', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('tabata'));
+
+    render(
+      <WorkoutBlockListEditor
+        blocks={vm.blocks}
+        canWrite={false}
+        workoutUnitSystem="metric"
+        onChange={() => {}}
+      />,
+    );
+
+    expect(screen.queryByTestId('add-warmup')).toBeNull();
+    expect(screen.queryByTestId('add-finisher')).toBeNull();
+    expect(screen.queryByTestId('add-cooldown')).toBeNull();
   });
 });

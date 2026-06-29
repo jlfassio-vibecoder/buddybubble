@@ -4,7 +4,7 @@
 
 **Parent:** [parametric-step5-plan.md](./parametric-step5-plan.md) (Step 5 umbrella).
 
-**Follow-up (shipped):** [parametric-step5-m2-plan.md](./parametric-step5-m2-plan.md) — viewer Edit + Apply wiring.
+**Follow-up (shipped):** [parametric-step5-m2-plan.md](./parametric-step5-m2-plan.md) — viewer Edit + Apply wiring · [workout-block-editor-structural-editing-plan.md](../workout-block-editor-structural-editing-plan.md) — Gap G2 structural editing (P0–P3).
 
 ---
 
@@ -41,19 +41,22 @@ flowchart LR
 | `blocksViewToProgramWorkout`    | Partition/sort blocks into session arrays                                                  |
 | **`applyBlockEditsToMetadata`** | Rich-only entry; flat cache via `workoutInSetToTaskExercises`; no-op on flat-only metadata |
 
-**Out of scope:** add/remove blocks or exercises; `formatParams` editing (M4); writing `subtitle` (computed on read).
+**Structural editing (Gap G2):** Shipped in follow-up PRs — add/remove/reorder exercises (DnD), main + instruction block CRUD, comma split. See [workout-block-editor-structural-editing-plan.md](../workout-block-editor-structural-editing-plan.md).
+
+**Still out of scope for M3/M1 baseline:** `formatParams` editing (M4); writing `subtitle` (computed on read).
 
 ### M1 — Editor (`src/components/fitness/workout-block-renderer/`)
 
-| Module                            | Role                                                                  |
-| --------------------------------- | --------------------------------------------------------------------- |
-| `workout-block-editor-types.ts`   | Props, `updateBlock`, `updateExerciseInBlock`, grouped layout helpers |
-| `WorkoutBlockExerciseEditRow.tsx` | Name, sets, reps, RPE, rest, coach notes; read-only work/rounds chips |
-| `WorkoutInstructionBlockEdit.tsx` | Section label + instructions textarea (fixed line count vs loaded)    |
-| `WorkoutBlockListEditor.tsx`      | Orchestrator: warmup → main → finisher → cooldown                     |
-| `index.ts`                        | Public exports                                                        |
+| Module                            | Role                                                                                  |
+| --------------------------------- | ------------------------------------------------------------------------------------- |
+| `workout-block-editor-types.ts`   | Props, immutable field + structural helpers (exercise/block CRUD, split, DnD support) |
+| `WorkoutBlockExerciseEditRow.tsx` | Name, sets, reps, RPE, rest, coach notes; remove + Split affordance                   |
+| `WorkoutInstructionBlockEdit.tsx` | Section label + instructions textarea (fixed line count vs loaded)                    |
+| `WorkoutBlockListEditor.tsx`      | Orchestrator: warmup → main → finisher → cooldown + structural add/remove controls    |
+| `MainBlockExerciseList.tsx`       | Per-block exercise list with DnD                                                      |
+| `index.ts`                        | Public exports                                                                        |
 
-**Out of scope:** weight input (no factory field); DnD reorder; `onBlockFormatParamsChange` (M4).
+**Out of scope (M1 baseline):** weight input (no factory field); `onBlockFormatParamsChange` (M4). DnD and structural CRUD shipped in Gap G2 follow-up.
 
 ### M0 (prerequisite, prior commit)
 

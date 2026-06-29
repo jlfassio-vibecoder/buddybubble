@@ -22,6 +22,8 @@ import {
   moveArrayItem,
   removeExerciseFromBlock,
   reorderExercisesInBlock,
+  splitExerciseInBlock,
+  canSplitExerciseNames,
   updateExerciseInBlock,
 } from '@/components/fitness/workout-block-renderer/workout-block-editor-types';
 
@@ -190,6 +192,17 @@ export function MainBlockExerciseList({
       onRemove: allowRemove
         ? () => onChange(removeExerciseFromBlock(blocks, block.id, ei))
         : undefined,
+      canSplit: canSplitExerciseNames(block, ex.exerciseName.split(',')),
+      onSplit:
+        canWrite && canSplitExerciseNames(block, ex.exerciseName.split(','))
+          ? () => {
+              const names = ex.exerciseName
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean);
+              onChange(splitExerciseInBlock(blocks, block.id, ei, names));
+            }
+          : undefined,
     };
 
     if (sortableReady) {

@@ -5,8 +5,9 @@ import {
   formatRepsDisplay,
   parseRepsDraftToStorage,
 } from '@/lib/workout-factory/parse-reps-scalar';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Split } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
@@ -18,6 +19,8 @@ export type WorkoutBlockExerciseEditRowProps = {
   exerciseIndex: number;
   onChange: (patch: Partial<Exercise>) => void;
   onRemove?: () => void;
+  onSplit?: () => void;
+  canSplit?: boolean;
 };
 
 function parseOptionalNumber(s: string): number | undefined {
@@ -35,6 +38,8 @@ export function WorkoutBlockExerciseEditRow({
   exerciseIndex,
   onChange,
   onRemove,
+  onSplit,
+  canSplit = false,
 }: WorkoutBlockExerciseEditRowProps) {
   const metaBits: string[] = [];
   if (typeof exercise.workSeconds === 'number' && exercise.workSeconds > 0) {
@@ -43,6 +48,12 @@ export function WorkoutBlockExerciseEditRow({
   if (typeof exercise.rounds === 'number' && exercise.rounds > 0) {
     metaBits.push(`${exercise.rounds} rounds`);
   }
+
+  const splitParts = exercise.exerciseName
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const showSplit = canWrite && canSplit && onSplit && splitParts.length >= 2;
 
   return (
     <div className="rounded-xl bg-muted/40 p-3 ring-1 ring-border/15">
@@ -63,6 +74,20 @@ export function WorkoutBlockExerciseEditRow({
           className="h-8 min-w-0 flex-1 font-semibold"
           placeholder="Exercise name"
         />
+        {showSplit ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 shrink-0 px-2 text-xs text-muted-foreground"
+            aria-label="Split into rows"
+            data-testid={`${idPrefix}-split-${exerciseIndex}`}
+            onClick={onSplit}
+          >
+            <Split className="mr-1 h-3.5 w-3.5" />
+            Split
+          </Button>
+        ) : null}
         {canWrite && onRemove ? (
           <button
             type="button"

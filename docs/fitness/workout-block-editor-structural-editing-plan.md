@@ -1,7 +1,7 @@
 # Workout block editor — structural editing plan (Gap G2)
 
-**Status:** Planned  
-**Context:** `WorkoutBlockListEditor` (edit mode in [WorkoutViewerContent](../../src/components/fitness/workout-viewer-dialog.tsx)) supports field edits only. Users cannot add exercises to a block, reorder stations, or add/remove blocks — e.g. when AI merges multiple movements into one name field (`"Burpees, Air Squats, Mountain Climbers"`).
+**Status:** Shipped (P0–P3)  
+**Context:** Gap **G2** resolved. `WorkoutBlockListEditor` (edit mode in [WorkoutViewerContent](../../src/components/fitness/workout-viewer-dialog.tsx)) supports structural editing: add/remove/reorder exercises (DnD), add/remove main blocks, comma-split on hallucinated names, and add/remove instruction sections (warm-up / finisher / cool-down). Commits via **Apply** → `applyBlockEditsToMetadata`.
 
 **Parent:** [parametric-step5-plan.md](views/parametric-step5-plan.md) (M1–M3 shipped field edit; structural edit was explicitly out of scope) · [workout-viewer-dialog.md](workout-viewer-dialog.md)
 
@@ -11,16 +11,16 @@
 
 ## Current state
 
-| Layer                                                                                                                  | What exists today                                                                                                                |
-| ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| [WorkoutBlockListEditor.tsx](../../src/components/fitness/workout-block-renderer/WorkoutBlockListEditor.tsx)           | Renders warmup → main → finisher → cooldown; field edits only                                                                    |
-| [workout-block-editor-types.ts](../../src/components/fitness/workout-block-renderer/workout-block-editor-types.ts)     | Immutable helpers: `updateBlock`, `updateExerciseInBlock`, `removeExerciseFromBlock`                                             |
-| [WorkoutBlockExerciseEditRow.tsx](../../src/components/fitness/workout-block-renderer/WorkoutBlockExerciseEditRow.tsx) | Trash icon wired when `onRemove` is passed                                                                                       |
-| [outline-editor-client.ts](../../src/lib/agents/coach/outline-editor-client.ts)                                        | **`canAddExerciseToBlock`** / **`canRemoveExerciseFromBlock`** — format-aware cardinality rules (already used for remove gating) |
-| [WorkoutOutlinePanel.tsx](../../src/components/fitness/WorkoutOutlinePanel.tsx)                                        | Reference UX: “Add exercise” appends `{ name: 'Movement N' }` with guard checks                                                  |
-| [WorkoutViewerContent](../../src/components/fitness/workout-viewer-dialog.tsx)                                         | Owns `localBlocks` draft; `onChange={setLocalBlocks}`; commits on **Apply** via `applyBlockEditsToMetadata`                      |
+| Layer                                                                                                                  | What exists today                                                                                                       |
+| ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| [WorkoutBlockListEditor.tsx](../../src/components/fitness/workout-block-renderer/WorkoutBlockListEditor.tsx)           | Warmup → main → finisher → cooldown; field + structural edits (add/remove blocks, DnD reorder, split, instruction CRUD) |
+| [workout-block-editor-types.ts](../../src/components/fitness/workout-block-renderer/workout-block-editor-types.ts)     | Immutable helpers: field updates, exercise add/remove/reorder/split, main + instruction block CRUD                      |
+| [WorkoutBlockExerciseEditRow.tsx](../../src/components/fitness/workout-block-renderer/WorkoutBlockExerciseEditRow.tsx) | Edit row with remove trash + **Split** when name contains commas                                                        |
+| [MainBlockExerciseList.tsx](../../src/components/fitness/workout-block-renderer/MainBlockExerciseList.tsx)             | Per-block DnD (`SortableBlockExerciseRow`), add-exercise footer                                                         |
+| [outline-editor-client.ts](../../src/lib/agents/coach/outline-editor-client.ts)                                        | **`canAddExerciseToBlock`** / **`canRemoveExerciseFromBlock`** — format-aware cardinality rules                         |
+| [WorkoutViewerContent](../../src/components/fitness/workout-viewer-dialog.tsx)                                         | Owns `localBlocks` draft; `onChange={setLocalBlocks}`; commits on **Apply** via `applyBlockEditsToMetadata`             |
 
-**Gap:** No add-exercise UI, no add/remove block, no reorder. Remove works in code but is hidden when `canRemoveExerciseFromBlock` returns false (e.g. Tabata with 1 exercise, superset at 2 exercises).
+**Remaining (post-P3):** EMOM `alternating_stations` re-hydrate on Apply after reorder; catalog picker for new main blocks; `validateBlockShape` soft warning on Apply.
 
 **Type note:** Block rows use factory **`Exercise`** (`exerciseName`, `sets`, `reps`), not flat **`WorkoutExercise`**. New rows must match [`Exercise`](../../src/lib/workout-factory/types/ai-program.ts).
 

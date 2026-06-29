@@ -6,12 +6,16 @@ import {
 } from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
 import {
   addExerciseToBlock,
+  appendInstructionBlock,
   appendMainBlock,
   createDefaultBlockExercise,
   createDefaultMainBlock,
+  createInstructionBlock,
   removeExerciseFromBlock,
+  removeInstructionBlockById,
   removeMainBlockById,
   reorderExercisesInBlock,
+  splitExerciseInBlock,
 } from './workout-block-editor-types';
 
 describe('workout-block-editor-types structural helpers', () => {
@@ -140,5 +144,74 @@ describe('workout-block-editor-types structural helpers', () => {
     const main = vm.blocks.find((b) => b.section === 'main')!;
 
     expect(removeMainBlockById(vm.blocks, main.id)).toBe(vm.blocks);
+  });
+
+  it('splitExerciseInBlock replaces one row with multiple inherited rows', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('tabata'));
+    const main = vm.blocks.find((b) => b.section === 'main')!;
+    const source = main.exercises[0]!;
+
+    const next = splitExerciseInBlock(vm.blocks, main.id, 0, ['Burpees', 'Squats']);
+    const mainNext = next.find((b) => b.id === main.id)!;
+
+    expect(mainNext.exercises).toHaveLength(2);
+    expect(mainNext.exercises.map((e) => e.exerciseName)).toEqual(['Burpees', 'Squats']);
+    expect(mainNext.exercises.map((e) => e.order)).toEqual([1, 2]);
+    expect(mainNext.exercises[0]!.sets).toBe(source.sets);
+    expect(mainNext.exercises[0]!.reps).toBe(source.reps);
+    expect(next).not.toBe(vm.blocks);
+  });
+
+  it('splitExerciseInBlock is no-op for a single name', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('tabata'));
+    const main = vm.blocks.find((b) => b.section === 'main')!;
+
+    expect(splitExerciseInBlock(vm.blocks, main.id, 0, ['Burpees'])).toBe(vm.blocks);
+  });
+
+  it('createInstructionBlock returns empty instructions array', () => {
+    const block = createInstructionBlock('warmup', 1);
+
+    expect(block.section).toBe('warmup');
+    expect(block.name).toBe('Warm-up');
+    expect(block.instructions).toEqual([]);
+    expect(block.exercises).toEqual([]);
+  });
+
+  it('appendInstructionBlock inserts warmup at start', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('tabata'));
+    const withoutWarmup = vm.blocks.filter((b) => b.section !== 'warmup');
+
+    const next = appendInstructionBlock(withoutWarmup, createInstructionBlock('warmup', 1));
+    const warmups = next.filter((b) => b.section === 'warmup');
+
+    expect(warmups).toHaveLength(1);
+    expect(warmups[0]!.order).toBe(1);
+    expect(next[0]!.section).toBe('warmup');
+    expect(next).not.toBe(withoutWarmup);
+  });
+
+  it('appendInstructionBlock is no-op when section already exists', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('tabata'));
+
+    expect(appendInstructionBlock(vm.blocks, createInstructionBlock('warmup', 1))).toBe(vm.blocks);
+  });
+
+  it('splitExerciseInBlock is no-op when cardinality would be invalid', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('superset'));
+    const main = vm.blocks.find((b) => b.section === 'main')!;
+
+    expect(splitExerciseInBlock(vm.blocks, main.id, 0, ['A', 'B', 'C'])).toBe(vm.blocks);
+  });
+
+  it('removeInstructionBlockById removes finisher section', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('tabata'));
+    const finisher = vm.blocks.find((b) => b.section === 'finisher')!;
+
+    const next = removeInstructionBlockById(vm.blocks, finisher.id);
+
+    expect(next.some((b) => b.section === 'finisher')).toBe(false);
+    expect(next.filter((b) => b.section === 'main')).toHaveLength(1);
+    expect(next).not.toBe(vm.blocks);
   });
 });
