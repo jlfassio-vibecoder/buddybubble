@@ -75,6 +75,14 @@ import {
   parseOutlineDraftPatchRevision,
   type OutlineDraftPatchV1,
 } from './outline-draft-patch';
+import {
+  parseWorkoutCuesPatchFromGemini,
+  workoutCuesPatchForRpc,
+  type WorkoutCuesPatchV1,
+} from './workout-cues-patch';
+
+export type { WorkoutCuesPatchV1 };
+export { workoutCuesPatchForRpc };
 
 /**
  * Normalized Coach response shape. Lifted verbatim from
@@ -141,6 +149,11 @@ export type CoachGeminiJsonResponse = {
    */
   outline_draft_patch: OutlineDraftPatchV1 | null;
   outline_draft_patch_drops: BlockShapeDrop[];
+  /**
+   * Optional: workout-scoped cue patch for EXERCISE_CUE_REQUEST flow (M3).
+   * Persisted on agent reply metadata for client apply via applyCuePatchesToMetadata.
+   */
+  workout_cues_patch: WorkoutCuesPatchV1 | null;
 };
 
 export type CoachCardActionKind = 'trigger_generation' | 'regenerate_from_outline';
@@ -828,6 +841,10 @@ export function parseCoachJson(
   const personal_cues_resolved = cuesResult.entries.length > 0 ? cuesResult.entries : null;
   const personal_cues_dropped_unanchored = cuesResult.droppedUnanchored;
 
+  const workout_cues_patch = parseWorkoutCuesPatchFromGemini(
+    (parsed as Record<string, unknown>).workout_cues_patch,
+  );
+
   if (createCard) {
     const titleTrimmed = typeof rawTitle === 'string' ? rawTitle.trim() : '';
     if (!titleTrimmed) {
@@ -851,6 +868,7 @@ export function parseCoachJson(
       card_action: null,
       outline_draft_patch,
       outline_draft_patch_drops,
+      workout_cues_patch: null,
       ...intakeTail,
       ...updateTail,
     };
@@ -874,6 +892,7 @@ export function parseCoachJson(
     card_action,
     outline_draft_patch,
     outline_draft_patch_drops,
+    workout_cues_patch,
     ...intakeTail,
     ...updateTail,
   };

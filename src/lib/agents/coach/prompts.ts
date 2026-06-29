@@ -48,6 +48,12 @@ import {
   INTERVAL_CIRCUIT_CARDINALITY_PROMPT_BLOCK,
   INTERVAL_TERMINOLOGY_PROMPT_BLOCK,
 } from './config';
+import {
+  CUE_FIELD_LABELS,
+  EXERCISE_CUE_REQUEST_HEADER,
+  formatPrescriptionLine,
+  type ExerciseCueRequestV1,
+} from './exercise-cue-request';
 
 /** Header line prepended to the resolved CURRENT WORKOUT CONTEXT JSON when present. */
 export const WORKOUT_CONTEXT_HEADER = '--- CURRENT WORKOUT CONTEXT ---';
@@ -673,6 +679,38 @@ export type ExerciseDictionaryIndexEntry = { dictionary_id: string; slug: string
  */
 export const PERSONAL_CUES_PATCH_GUIDE =
   'Use personal_cues_patch for saved personal cues per EXERCISE_INDEX_MAP ([dict:...] only), optionally alongside execution_patch.';
+
+export const EXERCISE_CUE_REQUEST_MODE_DIRECTIVE =
+  'EXERCISE CUE REQUEST MODE: When --- EXERCISE_CUE_REQUEST --- is present, the user asked to fill missing workout-scoped cues for one exercise. ' +
+  'First turn (trigger carries exercise_cue_request metadata): do NOT emit workout_cues_patch yet. Ask a short confirmation listing the human-readable labels for empty_fields only. ' +
+  'If injuries_on_file is true AND injury_prevention_tips is in empty_fields, mention safety modifications tied to the injury snippet. ' +
+  'If injuries_on_file is false, never mention injury notes even if the user asks generically. ' +
+  'Follow-up turn after user affirms (yes / generate / go ahead): emit workout_cues_patch with generated prose for the single exercise (resolution_key must match). ' +
+  'For this flow ONLY: forbid personal_cues_patch and proposed_workout_metadata. ' +
+  'TRUTHFULNESS: if reply_content claims cues were saved, workout_cues_patch must be non-null.';
+
+export function buildExerciseCueRequestCoachBlock(
+  req: ExerciseCueRequestV1,
+  injuries: { onFile: boolean; snippet: string | null },
+): string {
+  const labels = req.empty_fields.map((f) => CUE_FIELD_LABELS[f]);
+  const rx = formatPrescriptionLine(req.prescription);
+  const lines = [
+    EXERCISE_CUE_REQUEST_HEADER,
+    `exercise_name: ${req.exercise_name}`,
+    `resolution_key: ${req.resolution_key}`,
+    ...(rx ? [`prescription: ${rx}`] : []),
+    `empty_fields: ${labels.join(', ')}`,
+    `injuries_on_file: ${injuries.onFile}`,
+    ...(injuries.onFile && injuries.snippet ? [`injury_snippet: ${injuries.snippet}`] : []),
+    ...(req.workout_exercise_index != null
+      ? [`workout_exercise_index: ${req.workout_exercise_index}`]
+      : []),
+    '',
+    EXERCISE_CUE_REQUEST_MODE_DIRECTIVE,
+  ];
+  return lines.join('\n');
+}
 
 function parseLiveSetCountsFromContext(parsed: unknown, exerciseCount: number): number[] | null {
   if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;

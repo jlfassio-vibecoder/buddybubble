@@ -48,6 +48,7 @@ export const AGENT_CREATE_CARD_CANONICAL_NULL_PATCHES = {
   p_task_modal_intake_patch: null,
   p_card_action: null,
   p_coach_workout_outline: null,
+  p_workout_cues_patch: null,
 } as const satisfies Pick<
   AgentCreateCardArgs,
   | 'p_execution_patch'
@@ -55,6 +56,7 @@ export const AGENT_CREATE_CARD_CANONICAL_NULL_PATCHES = {
   | 'p_task_modal_intake_patch'
   | 'p_card_action'
   | 'p_coach_workout_outline'
+  | 'p_workout_cues_patch'
 >;
 
 export type AgentCreateCardArgs = {
@@ -77,6 +79,8 @@ export type AgentCreateCardArgs = {
   p_task_modal_intake_patch?: unknown;
   /** Coach UI command (e.g. `{ v: 1, kind: 'trigger_generation' }`). */
   p_card_action?: unknown;
+  /** Workout-scoped cue patch from EXERCISE_CUE_REQUEST flow (reply metadata). */
+  p_workout_cues_patch?: unknown;
   /** Apex Architect agreed outline blocks → `tasks.metadata.coach_workout_outline`. */
   p_coach_workout_outline?: unknown;
 };
@@ -95,6 +99,7 @@ export type AgentInsertCoachDraftArgs = {
   p_personal_cues?: unknown;
   p_task_modal_intake_patch?: unknown;
   p_card_action?: unknown;
+  p_workout_cues_patch?: unknown;
 };
 
 export type AgentUpdateTaskAndReplyArgs = {
@@ -112,6 +117,8 @@ export type AgentUpdateTaskAndReplyArgs = {
   p_card_action?: unknown;
   /** Outline co-pilot: client sweep reads `outline_draft_applied` from reply metadata. */
   p_outline_draft_applied?: Record<string, unknown> | null;
+  /** Workout-scoped cue patch from EXERCISE_CUE_REQUEST flow (reply metadata). */
+  p_workout_cues_patch?: unknown;
 };
 
 export type BuddyCreateOnboardingReplyArgs = {

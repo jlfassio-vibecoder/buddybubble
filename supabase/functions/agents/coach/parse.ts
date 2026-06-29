@@ -1,33 +1,7 @@
 /**
- * Coach response parser — Deno mirror of `src/lib/agents/coach/parse.ts`.
+ * Coach response parser — MIRROR FILE.
  *
- * Lifts every parse helper from the legacy Coach implementation verbatim:
- *
- *   - `coalesceTaskDescription`               — index.ts:317-334
- *   - `parseProposedWorkoutMetadata`          — index.ts:338-367
- *   - `coalesceUpdatedTaskDescription`        — index.ts:369-385
- *   - `stripMarkdownCodeFences`               — index.ts:443-453
- *   - `parseIntakePhase`                      — index.ts:455-459
- *   - `parseSessionReadinessScore`            — index.ts:461-464
- *   - `parseMissingIntakeCategories`          — index.ts:466-476
- *   - `parseUserRequestedImmediateCard`       — index.ts:478-480
- *   - `parseSessionRequest`                   — index.ts:482-484
- *   - `parseCoachTaskNotes`                   — index.ts:486-492
- *   - `ensureCoachTaskNotesCta`               — index.ts:220-228
- *   - `sanitizeNumericString`                 — delegates to `execution-patch-numeric.ts`
- *   - `parseExecutionPatchFromGemini`         — index.ts:506-554
- *   - `parseCoachJson` (was `parseGeminiJsonText`) — index.ts:556-648
- *   - `executionPatchForRpc`                  — index.ts:650-653
- *
- * One delta vs the legacy implementation: `parseCoachJson` accepts a JSON-mode response
- * `text` string (the dispatcher does the candidate-text extraction upstream via
- * `_shared/llm/vertex-gemini.extractGeminiText`). Throws `Error('gemini_json_parse_failed')`
- * or `Error('gemini_invalid_json_shape')` to match the legacy contract; the dispatcher
- * catches and classifies these via `_shared/llm/vertex-gemini.classifyError`.
- *
- * Run `pnpm check:agent-mirror` to verify parity with the Vitest-canonical module.
- *
- * No DB or Deno globals. May log parse drops via console.warn.
+ * Canonical source: `src/lib/agents/coach/parse.ts`. Run `pnpm check:agent-mirror`.
  */
 
 import {
@@ -58,7 +32,7 @@ import {
 } from './config.ts';
 
 export type { BlockShapeDrop } from './block-blueprint-library.ts';
-import type { ExerciseDictionaryIndexEntry } from './prompts.ts';
+import type { ExerciseDictionaryIndexEntry } from './prompts';
 import {
   coerceExecutionPatchNumericField,
   sanitizeNumericStringForPatch,
@@ -74,6 +48,14 @@ import {
   parseOutlineDraftPatchRevision,
   type OutlineDraftPatchV1,
 } from './outline-draft-patch.ts';
+import {
+  parseWorkoutCuesPatchFromGemini,
+  workoutCuesPatchForRpc,
+  type WorkoutCuesPatchV1,
+} from './workout-cues-patch.ts';
+
+export type { WorkoutCuesPatchV1 };
+export { workoutCuesPatchForRpc };
 
 /**
  * Normalized Coach response shape. Lifted verbatim from
@@ -140,6 +122,11 @@ export type CoachGeminiJsonResponse = {
    */
   outline_draft_patch: OutlineDraftPatchV1 | null;
   outline_draft_patch_drops: BlockShapeDrop[];
+  /**
+   * Optional: workout-scoped cue patch for EXERCISE_CUE_REQUEST flow (M3).
+   * Persisted on agent reply metadata for client apply via applyCuePatchesToMetadata.
+   */
+  workout_cues_patch: WorkoutCuesPatchV1 | null;
 };
 
 export type CoachCardActionKind = 'trigger_generation' | 'regenerate_from_outline';
@@ -827,6 +814,10 @@ export function parseCoachJson(
   const personal_cues_resolved = cuesResult.entries.length > 0 ? cuesResult.entries : null;
   const personal_cues_dropped_unanchored = cuesResult.droppedUnanchored;
 
+  const workout_cues_patch = parseWorkoutCuesPatchFromGemini(
+    (parsed as Record<string, unknown>).workout_cues_patch,
+  );
+
   if (createCard) {
     const titleTrimmed = typeof rawTitle === 'string' ? rawTitle.trim() : '';
     if (!titleTrimmed) {
@@ -850,6 +841,7 @@ export function parseCoachJson(
       card_action: null,
       outline_draft_patch,
       outline_draft_patch_drops,
+      workout_cues_patch: null,
       ...intakeTail,
       ...updateTail,
     };
@@ -873,6 +865,7 @@ export function parseCoachJson(
     card_action,
     outline_draft_patch,
     outline_draft_patch_drops,
+    workout_cues_patch,
     ...intakeTail,
     ...updateTail,
   };

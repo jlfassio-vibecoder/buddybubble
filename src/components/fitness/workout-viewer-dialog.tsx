@@ -34,6 +34,7 @@ import { useUserProfileStore } from '@/store/userProfileStore';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 import { useTaskCardCoverUrl } from '@/lib/task-card-cover';
 import { ChevronRight, Image as ImageIcon, Loader2, X } from 'lucide-react';
+import type { ExerciseCueRequestV1 } from '@/lib/agents/coach/exercise-cue-request';
 import { WORKOUT_FACTORY_CHAIN_MESSAGES } from '@/lib/workout-factory/api-client';
 import { resolveWorkoutViewerNarrative } from '@/lib/workout-factory/workout-viewer-narrative';
 import { WorkoutCoachBriefSection } from '@/components/fitness/workout-block-renderer/WorkoutCoachBriefSection';
@@ -190,6 +191,9 @@ export type WorkoutViewerDialogProps = {
   onApply: (payload: WorkoutViewerApplyPayload) => void;
   /** Merge workout-scoped cue patches into task metadata (M2). */
   onApplyCuePatches?: (patches: Record<string, WorkoutCuePatch>) => void;
+  /** M3: programmatic Coach cue generation from view-mode panel. */
+  onAskCoachForCues?: (payload: ExerciseCueRequestV1) => void;
+  injuriesOnFile?: boolean;
   /** Task card cover storage path (`metadata.card_cover_path`); signed URL resolved in-dialog. */
   cardCoverPath?: string | null;
   /** For exercise image request emails / context. */
@@ -242,6 +246,8 @@ export function WorkoutViewerContent({
   workoutUnitSystem,
   onApply,
   onApplyCuePatches,
+  onAskCoachForCues,
+  injuriesOnFile = false,
   onRequestClose,
   syncKey,
   cardCoverPath = null,
@@ -368,8 +374,17 @@ export function WorkoutViewerContent({
       onCueSave: handleCuePatchCommit,
       onCueDraftChange: handleCueDraftChange,
       onCueCancel: handleCuePatchCancel,
+      onAskCoachForCues,
+      injuriesOnFile,
     }),
-    [canWriteCue, handleCuePatchCommit, handleCueDraftChange, handleCuePatchCancel],
+    [
+      canWriteCue,
+      handleCuePatchCommit,
+      handleCueDraftChange,
+      handleCuePatchCancel,
+      onAskCoachForCues,
+      injuriesOnFile,
+    ],
   );
 
   const handleApply = useCallback(() => {

@@ -69,6 +69,8 @@ export function WorkoutBlockListRenderer({
   onCueSave,
   onCueDraftChange,
   onCueCancel,
+  onAskCoachForCues,
+  injuriesOnFile = false,
 }: WorkoutBlockListRendererProps) {
   if (blocks.length === 0) return null;
 
@@ -123,6 +125,8 @@ export function WorkoutBlockListRenderer({
             onCueSave={onCueSave}
             onCueDraftChange={onCueDraftChange}
             onCueCancel={onCueCancel}
+            onAskCoachForCues={onAskCoachForCues}
+            injuriesOnFile={injuriesOnFile}
           />
         );
 

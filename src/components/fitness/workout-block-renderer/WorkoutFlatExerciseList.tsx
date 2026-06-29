@@ -33,6 +33,8 @@ export function WorkoutFlatExerciseList({
   onCueSave,
   onCueDraftChange,
   onCueCancel,
+  onAskCoachForCues,
+  injuriesOnFile = false,
 }: WorkoutFlatExerciseListProps) {
   if (exercises.length === 0) {
     return <p className="text-sm text-muted-foreground">{emptyMessage}</p>;
@@ -63,6 +65,17 @@ export function WorkoutFlatExerciseList({
               onCueSave={onCueSave}
               onCueDraftChange={onCueDraftChange}
               onCueCancel={onCueCancel}
+              onAskCoachForCues={onAskCoachForCues}
+              injuriesOnFile={injuriesOnFile}
+              prescription={
+                ex.sets != null || ex.reps != null
+                  ? {
+                      ...(ex.sets != null ? { sets: ex.sets } : {}),
+                      ...(ex.reps != null ? { reps: ex.reps } : {}),
+                    }
+                  : undefined
+              }
+              workoutExerciseIndex={idx}
             />
           </li>
         );

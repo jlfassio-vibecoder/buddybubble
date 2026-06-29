@@ -44,7 +44,10 @@ import {
   TaskModalCommentsPanel,
   type TaskModalCommentsPanelHandle,
 } from '@/components/modals/task-modal/TaskModalCommentsPanel';
-import { StandardTaskChatRail } from '@/components/chat/StandardTaskChatRail';
+import {
+  StandardTaskChatRail,
+  type StandardTaskChatRailHandle,
+} from '@/components/chat/StandardTaskChatRail';
 import { isStandardTaskChatRailEnabled } from '@/lib/feature-flags/standardTaskChatRail';
 import { isWorkoutBuilderRouteEnabled } from '@/lib/feature-flags/workoutBuilderRoute';
 import { buildWorkoutBuilderUrl } from '@/lib/workout-builder/build-workout-builder-url';
@@ -105,7 +108,11 @@ import type {
   CardActionEffectPayload,
   ExecutionPatchEffectPayload,
   OutlineDraftAppliedEffectPayload,
+  WorkoutCuesPatchEffectPayload,
 } from '@/components/chat/agent-effects/types';
+import type { ExerciseCueRequestV1 } from '@/lib/agents/coach/exercise-cue-request';
+import { stripWorkoutCuesPatchToCuePatch } from '@/components/chat/agent-effects/parse-workout-cues-patch-fields';
+import { useFitnessProfileInjuries } from '@/components/modals/task-modal/hooks/useFitnessProfileInjuries';
 import type { TaskModalIntakePatch } from '@/lib/agents/coach/task-modal-intake-patch';
 import { BUDDY_ONBOARDING_SYSTEM_EVENT } from '@/lib/agents/buddy-sentinel';
 import { defaultSlugForItemType } from '@/lib/agents/defaultSlugForItemType';
@@ -319,6 +326,8 @@ export function TaskModal({
   const handledOutlineAppliedMessageIdsByTaskRef = useRef<Map<string, Set<string>>>(new Map());
   /** Survives StandardTaskChatRail remounts when workout split layout toggles (Phase 12.2). */
   const handledCardActionMessageIdsByTaskRef = useRef<Map<string, Set<string>>>(new Map());
+  const handledWorkoutCuesPatchMessageIdsByTaskRef = useRef<Map<string, Set<string>>>(new Map());
+  const chatRailRef = useRef<StandardTaskChatRailHandle | null>(null);
   const handledExecutionPatchFingerprintByTaskRef = useRef<Map<string, Map<string, string>>>(
     new Map(),
   );
@@ -331,6 +340,7 @@ export function TaskModal({
     handledIntakePatchMessageIdsByTaskRef.current.clear();
     handledOutlineAppliedMessageIdsByTaskRef.current.clear();
     handledCardActionMessageIdsByTaskRef.current.clear();
+    handledWorkoutCuesPatchMessageIdsByTaskRef.current.clear();
     handledExecutionPatchFingerprintByTaskRef.current.clear();
     setWorkoutSplitEngaged(false);
     setEmbeddedTaskIdsFromThread([]);
@@ -466,6 +476,7 @@ export function TaskModal({
     workspaceId,
     isWorkoutItemType,
   );
+  const injuriesOnFile = useFitnessProfileInjuries(open, workspaceId, isWorkoutItemType);
 
   const hasTodayBoardColumn = useMemo(
     () => boardColumnDefs?.some((c) => c.id === 'today') ?? false,
@@ -894,6 +905,30 @@ export function TaskModal({
     ],
   );
 
+  const handleWorkoutCuesPatch = useCallback(
+    (args: WorkoutCuesPatchEffectPayload) => {
+      if (itemType !== 'workout' || !canWrite) return;
+      const dedupeKey = createSessionIdRef.current
+        ? `create:${createSessionIdRef.current}`
+        : `existing:${args.taskId}`;
+      let handled = handledWorkoutCuesPatchMessageIdsByTaskRef.current.get(dedupeKey);
+      if (!handled) {
+        handled = new Set();
+        handledWorkoutCuesPatchMessageIdsByTaskRef.current.set(dedupeKey, handled);
+      }
+      if (handled.has(args.messageId)) return;
+      handled.add(args.messageId);
+
+      handleWorkoutViewerCuePatches({
+        [args.patch.resolution_key]: stripWorkoutCuesPatchToCuePatch(args.patch),
+      });
+      setWorkoutSplitEngaged(true);
+      setWorkoutViewerOpen(true);
+      setMobileUnifiedPane('workout');
+    },
+    [itemType, canWrite, handleWorkoutViewerCuePatches, setWorkoutViewerOpen],
+  );
+
   const { flushNow } = useTaskCoreTextAutosave({
     enabled: canWrite && Boolean(taskId),
     canWrite,
@@ -1266,6 +1301,29 @@ export function TaskModal({
       });
     },
     [taskId, flushNow],
+  );
+
+  const handleAskCoachForCues = useCallback(
+    (payload: ExerciseCueRequestV1) => {
+      if (itemType !== 'workout' || !canWrite) return;
+      setWorkoutSplitEngaged(true);
+      setWorkoutViewerOpen(true);
+      void (async () => {
+        await selectTab('comments');
+        setMobileUnifiedPane('card');
+        const mention = payload.workout_exercise_index != null ? `#${payload.exercise_name} ` : '';
+        const text = `@coach ${mention}Can you help me fill in cues for ${payload.exercise_name}?`;
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => resolve());
+          });
+        });
+        await chatRailRef.current?.sendCoachMessage(text, {
+          exercise_cue_request: payload as unknown as Json,
+        });
+      })();
+    },
+    [itemType, canWrite, selectTab, setWorkoutViewerOpen],
   );
 
   const handleCoachDraftFinalizeSuccess = useCallback(async () => {
@@ -1836,6 +1894,17 @@ export function TaskModal({
       ? () => commentsPanelRef.current?.exitThread()
       : undefined;
 
+  const activeChatRailMount: 'unified' | 'split' | 'standard-comments' | null =
+    standardRailEnabled && taskId
+      ? useCommentsUnifiedLayout
+        ? 'unified'
+        : commentsSplitLayout
+          ? 'split'
+          : tab === 'comments'
+            ? 'standard-comments'
+            : null
+      : null;
+
   /* Task modal must sit above MobileTabBar (z-90) and drawer sheets (z-110–120) or actions are obscured on phones. */
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 max-md:p-0 max-md:items-stretch">
@@ -2064,6 +2133,7 @@ export function TaskModal({
                       standardRailEnabled ? (
                         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
                           <StandardTaskChatRail
+                            ref={activeChatRailMount === 'unified' ? chatRailRef : undefined}
                             key={taskId ?? 'create'}
                             workspaceId={workspaceId}
                             taskId={taskId!}
@@ -2083,6 +2153,7 @@ export function TaskModal({
                             onTaskModalIntakePatch={handleTaskModalIntakePatch}
                             onOutlineDraftApplied={handleOutlineDraftApplied}
                             onCardAction={handleCardAction}
+                            onWorkoutCuesPatch={handleWorkoutCuesPatch}
                             onEffectTelemetry={handleAgentEffectTelemetry}
                             onEmbeddedTaskIdsChange={setEmbeddedTaskIdsFromThread}
                             chatRowExtras={{
@@ -2212,6 +2283,7 @@ export function TaskModal({
                             {!loading || !taskId ? (
                               <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
                                 <StandardTaskChatRail
+                                  ref={activeChatRailMount === 'split' ? chatRailRef : undefined}
                                   key={taskId ?? 'create'}
                                   workspaceId={workspaceId}
                                   taskId={taskId!}
@@ -2233,6 +2305,7 @@ export function TaskModal({
                                   onTaskModalIntakePatch={handleTaskModalIntakePatch}
                                   onOutlineDraftApplied={handleOutlineDraftApplied}
                                   onCardAction={handleCardAction}
+                                  onWorkoutCuesPatch={handleWorkoutCuesPatch}
                                   onEffectTelemetry={handleAgentEffectTelemetry}
                                   onEmbeddedTaskIdsChange={setEmbeddedTaskIdsFromThread}
                                   chatRowExtras={{
@@ -2327,6 +2400,11 @@ export function TaskModal({
                                   {standardRailEnabled ? (
                                     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
                                       <StandardTaskChatRail
+                                        ref={
+                                          activeChatRailMount === 'standard-comments'
+                                            ? chatRailRef
+                                            : undefined
+                                        }
                                         key={taskId ?? 'create'}
                                         workspaceId={workspaceId}
                                         taskId={taskId}
@@ -2350,6 +2428,7 @@ export function TaskModal({
                                         onTaskModalIntakePatch={handleTaskModalIntakePatch}
                                         onOutlineDraftApplied={handleOutlineDraftApplied}
                                         onCardAction={handleCardAction}
+                                        onWorkoutCuesPatch={handleWorkoutCuesPatch}
                                         onEffectTelemetry={handleAgentEffectTelemetry}
                                         onEmbeddedTaskIdsChange={setEmbeddedTaskIdsFromThread}
                                         chatRowExtras={{
@@ -2449,6 +2528,8 @@ export function TaskModal({
                 readVariant={itemType === 'workout_log' ? 'log' : 'workout'}
                 onApply={handleWorkoutViewerApply}
                 onApplyCuePatches={handleWorkoutViewerCuePatches}
+                onAskCoachForCues={handleAskCoachForCues}
+                injuriesOnFile={injuriesOnFile}
                 onRequestClose={() => setWorkoutViewerOpen(false)}
                 syncKey={workoutPaneSyncKey}
                 cardCoverPath={cardCoverPath.trim() || null}

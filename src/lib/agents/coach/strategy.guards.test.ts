@@ -42,6 +42,7 @@ function makeParsed(overrides: Partial<CoachGeminiJsonResponse> = {}): CoachGemi
     card_action: null,
     outline_draft_patch: null,
     outline_draft_patch_drops: [],
+    workout_cues_patch: null,
     ...overrides,
   };
 }

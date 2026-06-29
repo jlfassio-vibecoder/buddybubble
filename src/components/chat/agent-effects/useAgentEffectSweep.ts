@@ -9,12 +9,14 @@ import { executionPatchFingerprint } from '@/lib/workout-player-execution-patch-
 import { parseTaskModalIntakePatchFromMetadata } from '@/lib/agents/coach/task-modal-intake-patch';
 import { parseCardActionFromMetadata } from '@/components/chat/agent-effects/parse-card-action';
 import { parseOutlineDraftAppliedFromMetadata } from '@/components/chat/agent-effects/parse-outline-draft-applied';
+import { parseWorkoutCuesPatchFromMetadata } from '@/components/chat/agent-effects/parse-workout-cues-patch';
 import type {
   AgentEffectTelemetryEvent,
   CardActionEffectPayload,
   ExecutionPatchEffectPayload,
   OutlineDraftAppliedEffectPayload,
   TaskModalIntakePatchEffectPayload,
+  WorkoutCuesPatchEffectPayload,
 } from '@/components/chat/agent-effects/types';
 
 export type UseAgentEffectSweepArgs = {
@@ -26,6 +28,7 @@ export type UseAgentEffectSweepArgs = {
   onTaskModalIntakePatch?: (ctx: TaskModalIntakePatchEffectPayload) => void;
   onCardAction?: (ctx: CardActionEffectPayload) => void;
   onOutlineDraftApplied?: (ctx: OutlineDraftAppliedEffectPayload) => void;
+  onWorkoutCuesPatch?: (ctx: WorkoutCuesPatchEffectPayload) => void;
   onEffectTelemetry?: (event: AgentEffectTelemetryEvent) => void;
 };
 
@@ -49,6 +52,7 @@ export function useAgentEffectSweep({
   onTaskModalIntakePatch,
   onCardAction,
   onOutlineDraftApplied,
+  onWorkoutCuesPatch,
   onEffectTelemetry,
 }: UseAgentEffectSweepArgs): void {
   const onExecutionPatchRef = useRef(onExecutionPatch);
@@ -59,15 +63,19 @@ export function useAgentEffectSweep({
   onCardActionRef.current = onCardAction;
   const onOutlineDraftAppliedRef = useRef(onOutlineDraftApplied);
   onOutlineDraftAppliedRef.current = onOutlineDraftApplied;
+  const onWorkoutCuesPatchRef = useRef(onWorkoutCuesPatch);
+  onWorkoutCuesPatchRef.current = onWorkoutCuesPatch;
   const onEffectTelemetryRef = useRef(onEffectTelemetry);
   onEffectTelemetryRef.current = onEffectTelemetry;
 
   const handledExecutionPatchFingerprintRef = useRef<Map<string, string>>(new Map());
   const handledCardActionMessageIdsRef = useRef<Set<string>>(new Set());
+  const handledWorkoutCuesPatchMessageIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     handledExecutionPatchFingerprintRef.current.clear();
     handledCardActionMessageIdsRef.current.clear();
+    handledWorkoutCuesPatchMessageIdsRef.current.clear();
   }, [taskId]);
 
   useEffect(() => {
@@ -76,7 +84,8 @@ export function useAgentEffectSweep({
     const onIntake = onTaskModalIntakePatchRef.current;
     const onCard = onCardActionRef.current;
     const onOutline = onOutlineDraftAppliedRef.current;
-    if (!onEx && !onIntake && !onCard && !onOutline) return;
+    const onWorkoutCues = onWorkoutCuesPatchRef.current;
+    if (!onEx && !onIntake && !onCard && !onOutline && !onWorkoutCues) return;
     if (!taskId.trim()) return;
     if (isLoading || messages.length === 0) return;
 
@@ -207,6 +216,31 @@ export function useAgentEffectSweep({
             onCard({ ...baseCtx, action });
             handledCardActionMessageIdsRef.current.add(id);
             emit?.({ kind: 'effect.applied', effect: 'card_action', messageId: id });
+          }
+        }
+      }
+
+      if (onWorkoutCues) {
+        emit?.({ kind: 'effect.scanned', effect: 'workout_cues_patch', messageId: id });
+        if (!handledWorkoutCuesPatchMessageIdsRef.current.has(id)) {
+          const meta = row.metadata;
+          const rawPatch =
+            meta != null && typeof meta === 'object' && !Array.isArray(meta)
+              ? (meta as { workout_cues_patch?: unknown }).workout_cues_patch
+              : undefined;
+          const patch = parseWorkoutCuesPatchFromMetadata(rawPatch);
+          if (!patch) {
+            handledWorkoutCuesPatchMessageIdsRef.current.add(id);
+            emit?.({
+              kind: 'effect.parse_dropped',
+              effect: 'workout_cues_patch',
+              messageId: id,
+              reason: rawPatch === undefined ? 'missing' : 'invalid',
+            });
+          } else {
+            onWorkoutCues({ ...baseCtx, patch });
+            handledWorkoutCuesPatchMessageIdsRef.current.add(id);
+            emit?.({ kind: 'effect.applied', effect: 'workout_cues_patch', messageId: id });
           }
         }
       }

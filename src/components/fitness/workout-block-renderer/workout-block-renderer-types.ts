@@ -2,6 +2,7 @@ import type { HTMLAttributes, ReactNode } from 'react';
 import type { Exercise } from '@/lib/workout-factory/types/ai-program';
 import type { ResolvedCueBundle } from '@/lib/workout-factory/resolve-exercise-cue-bundle';
 import type { WorkoutCuePatch } from '@/lib/workout-factory/apply-cue-patches-to-metadata';
+import type { ExerciseCueRequestV1 } from '@/lib/agents/coach/exercise-cue-request';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 
 export type WorkoutCueEditProps = {
@@ -9,6 +10,9 @@ export type WorkoutCueEditProps = {
   onCueSave?: (key: string, patch: WorkoutCuePatch) => void;
   onCueDraftChange?: (key: string, patch: WorkoutCuePatch) => void;
   onCueCancel?: (key: string) => void;
+  /** M3: open Coach chat to generate missing cues. */
+  onAskCoachForCues?: (payload: ExerciseCueRequestV1) => void;
+  injuriesOnFile?: boolean;
 };
 
 export type WorkoutBlockExerciseRenderContext = {

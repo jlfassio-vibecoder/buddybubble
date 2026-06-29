@@ -474,6 +474,24 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
         required: ['exerciseIndex'],
       },
     },
+    workout_cues_patch: {
+      type: 'OBJECT',
+      nullable: true,
+      description:
+        'Optional. EXERCISE_CUE_REQUEST flow only: workout-scoped cue prose for one exercise keyed by resolution_key. Emit only after the user confirms generation on a follow-up turn — never on the first proactive offer turn. MUST be null when exercise_cue_request is absent. Do not use personal_cues_patch or proposed_workout_metadata for this flow.',
+      properties: {
+        v: { type: 'INTEGER', description: 'Must be 1.' },
+        resolution_key: {
+          type: 'STRING',
+          description: 'Must match exercise_cue_request.resolution_key from the trigger metadata.',
+        },
+        instructions: { type: 'STRING', nullable: true },
+        form_cues: { type: 'STRING', nullable: true },
+        tips: { type: 'STRING', nullable: true },
+        injury_prevention_tips: { type: 'STRING', nullable: true },
+      },
+      required: ['v', 'resolution_key'],
+    },
     task_modal_intake_patch: {
       type: 'OBJECT',
       nullable: true,

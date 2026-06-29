@@ -3,10 +3,12 @@
 import {
   useCallback,
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  forwardRef,
   type ComponentProps,
 } from 'react';
 import { PanelLeftClose } from 'lucide-react';
@@ -56,6 +58,7 @@ import type {
   ExecutionPatchEffectPayload,
   TaskModalIntakePatchEffectPayload,
   OutlineDraftAppliedEffectPayload,
+  WorkoutCuesPatchEffectPayload,
 } from '@/components/chat/agent-effects/types';
 import { useBuddyOnboardingSentinel } from '@/components/modals/task-modal/hooks/useBuddyOnboardingSentinel';
 import { useDeepLinkMessageScroll } from '@/components/modals/task-modal/hooks/useDeepLinkMessageScroll';
@@ -157,6 +160,11 @@ export type StandardTaskChatRailProps = {
   onOutlineDraftApplied?: (ctx: OutlineDraftAppliedEffectPayload) => void;
 
   /**
+   * Coach `metadata.workout_cues_patch` — workout-scoped cue generation (M3).
+   */
+  onWorkoutCuesPatch?: (ctx: WorkoutCuesPatchEffectPayload) => void;
+
+  /**
    * Pure telemetry for agent-effect parsing / application. Host may forward to `logAgentRoutingEvent`.
    * The rail does not import the logger for these events (host wires logging).
    */
@@ -186,6 +194,10 @@ export type StandardTaskChatRailProps = {
   className?: string;
 };
 
+export type StandardTaskChatRailHandle = {
+  sendCoachMessage: (text: string, extraMetadata?: Record<string, Json>) => Promise<boolean>;
+};
+
 type RailThreadApi = {
   myProfile: UserProfileRow | null;
   messages: MessageRowWithEmbeddedTask[];
@@ -213,6 +225,10 @@ type RailThreadApi = {
   setPendingFiles: (v: File[]) => void;
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
   silentRefreshMessages: () => Promise<void>;
+  sendCoachMessage: (
+    text: string,
+    extraMetadata?: Record<string, Json>,
+  ) => Promise<Awaited<ReturnType<ReturnType<typeof useMessageThread>['sendMessage']>> | false>;
 };
 
 function useRailThreadApi(props: StandardTaskChatRailProps): RailThreadApi {
@@ -330,6 +346,7 @@ function useRailThreadApi(props: StandardTaskChatRailProps): RailThreadApi {
     onTaskModalIntakePatch: props.onTaskModalIntakePatch,
     onCardAction: props.onCardAction,
     onOutlineDraftApplied: props.onOutlineDraftApplied,
+    onWorkoutCuesPatch: props.onWorkoutCuesPatch,
     onEffectTelemetry: props.onEffectTelemetry,
   });
 
@@ -392,6 +409,57 @@ function useRailThreadApi(props: StandardTaskChatRailProps): RailThreadApi {
 
   const bubbleIdForTelemetry: string | null = bubbleId?.trim() || null;
 
+  const sendCoachMessage = useCallback(
+    async (text: string, extraMetadata?: Record<string, Json>) => {
+      const trimmed = text.trim();
+      if (!trimmed || sending) return false;
+      const slug = props.defaultAgentSlug?.trim() || COACH_SLUG;
+      const hostMeta =
+        props.buildOutgoingMessageMetadata?.({ content: trimmed, files: [] }) ?? undefined;
+      const hostObj =
+        hostMeta != null && typeof hostMeta === 'object' && !Array.isArray(hostMeta)
+          ? (hostMeta as Record<string, Json>)
+          : {};
+      const extraObj = extraMetadata ?? {};
+      const mergedMeta: Record<string, Json> = {
+        ...hostObj,
+        ...extraObj,
+        surface: RAIL_SURFACE_METADATA_VALUE,
+        default_agent_slug: slug,
+      };
+      if (mergedFeatures.enableExerciseHashMentions) {
+        const rawReq = extraObj.exercise_cue_request;
+        if (rawReq && typeof rawReq === 'object' && !Array.isArray(rawReq)) {
+          const name = (rawReq as { exercise_name?: unknown }).exercise_name;
+          const idx = (rawReq as { workout_exercise_index?: unknown }).workout_exercise_index;
+          if (typeof name === 'string' && name.trim()) {
+            const token = `#${name.trim()} `;
+            mergedMeta.exercise_mentions = [
+              {
+                token,
+                name: name.trim(),
+                source: 'workout',
+                ...(typeof idx === 'number' && Number.isInteger(idx) && idx >= 0
+                  ? { workout_exercise_index: idx }
+                  : {}),
+              },
+            ] as unknown as Json;
+          }
+        }
+      }
+      const metadata: Json = mergedMeta as Json;
+      const sent = await sendMessage(trimmed, undefined, [], { metadata });
+      return sent || false;
+    },
+    [
+      mergedFeatures.enableExerciseHashMentions,
+      props.buildOutgoingMessageMetadata,
+      props.defaultAgentSlug,
+      sendMessage,
+      sending,
+    ],
+  );
+
   return {
     myProfile,
     messages,
@@ -415,6 +483,7 @@ function useRailThreadApi(props: StandardTaskChatRailProps): RailThreadApi {
     setPendingFiles,
     scrollContainerRef,
     silentRefreshMessages,
+    sendCoachMessage,
   };
 }
 
@@ -715,10 +784,12 @@ function StandardTaskChatRailWithAgentWait({
   props,
   api,
   resolvedSlug,
+  imperativeRef,
 }: {
   props: StandardTaskChatRailProps;
   api: RailThreadApi;
   resolvedSlug: string;
+  imperativeRef: React.Ref<StandardTaskChatRailHandle>;
 }) {
   const waitMain = useAgentResponseWait({
     messages: api.messages,
@@ -747,6 +818,52 @@ function StandardTaskChatRailWithAgentWait({
     },
   });
 
+  const sendCoachMessage = useCallback(
+    async (text: string, extraMetadata?: Record<string, Json>) => {
+      const trimmed = text.trim();
+      if (!trimmed || api.sending) return false;
+      const routingResult = resolveTargetAgent({
+        messageDraft: trimmed,
+        availableAgents: api.availableAgents,
+        contextDefaultAgentSlug: resolvedSlug,
+      });
+      if (routingResult) {
+        logAgentRoutingEvent({
+          event: 'agent.routing.resolved',
+          agentSlug: routingResult.agent.slug,
+          via: routingResult.via,
+          bubbleId: api.bubbleIdForTelemetry,
+          surface: SURFACE,
+        });
+        waitMain.registerIntent(routingResult.agent);
+      } else {
+        logAgentRoutingEvent({
+          event: 'agent.routing.unresolved',
+          surface: SURFACE,
+          bubbleId: api.bubbleIdForTelemetry,
+          hadMention: /(^|[^\w])@\w+/.test(trimmed),
+        });
+      }
+      const sent = await api.sendCoachMessage(trimmed, extraMetadata);
+      if (!sent) return false;
+      if (routingResult) {
+        waitMain.registerSuccessfulSend(sent, routingResult.agent);
+      }
+      return true;
+    },
+    [
+      api,
+      api.availableAgents,
+      api.bubbleIdForTelemetry,
+      api.sendCoachMessage,
+      api.sending,
+      resolvedSlug,
+      waitMain,
+    ],
+  );
+
+  useImperativeHandle(imperativeRef, () => ({ sendCoachMessage }), [sendCoachMessage]);
+
   useEffect(() => {
     if (!waitMain.pending) return;
     const refresh = api.silentRefreshMessages;
@@ -774,10 +891,22 @@ function StandardTaskChatRailWithAgentWait({
 function StandardTaskChatRailHumanOnly({
   props,
   api,
+  imperativeRef,
 }: {
   props: StandardTaskChatRailProps;
   api: RailThreadApi;
+  imperativeRef: React.Ref<StandardTaskChatRailHandle>;
 }) {
+  const sendCoachMessage = useCallback(
+    async (text: string, extraMetadata?: Record<string, Json>) => {
+      const sent = await api.sendCoachMessage(text, extraMetadata);
+      return Boolean(sent);
+    },
+    [api.sendCoachMessage],
+  );
+
+  useImperativeHandle(imperativeRef, () => ({ sendCoachMessage }), [sendCoachMessage]);
+
   return (
     <StandardTaskChatRailChrome
       props={props}
@@ -792,13 +921,23 @@ function StandardTaskChatRailHumanOnly({
  * Task-scoped chat rail for polymorphic TaskModal (and future surfaces).
  * Does not mount `useAgentResponseWait` when `defaultAgentSlug` is empty — tests rely on this split.
  */
-export function StandardTaskChatRail(props: StandardTaskChatRailProps) {
+export const StandardTaskChatRail = forwardRef<
+  StandardTaskChatRailHandle,
+  StandardTaskChatRailProps
+>(function StandardTaskChatRail(props, ref) {
   const resolvedSlug = props.defaultAgentSlug?.trim() ?? '';
   const api = useRailThreadApi(props);
 
   // Copilot suggestion ignored: human-only mode keeps @ mentions (members + optional @agent); tying `useAgentResponseWait` to ad-hoc agent mentions needs product spec — not blocking default-agent-off UX.
   if (!resolvedSlug) {
-    return <StandardTaskChatRailHumanOnly props={props} api={api} />;
+    return <StandardTaskChatRailHumanOnly props={props} api={api} imperativeRef={ref} />;
   }
-  return <StandardTaskChatRailWithAgentWait props={props} api={api} resolvedSlug={resolvedSlug} />;
-}
+  return (
+    <StandardTaskChatRailWithAgentWait
+      props={props}
+      api={api}
+      resolvedSlug={resolvedSlug}
+      imperativeRef={ref}
+    />
+  );
+});

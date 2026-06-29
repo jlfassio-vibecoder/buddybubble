@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Info } from 'lucide-react';
 import type {
   CueProvenance,
@@ -8,6 +8,10 @@ import type {
   ResolvedCueField,
 } from '@/lib/workout-factory/resolve-exercise-cue-bundle';
 import type { WorkoutCuePatch } from '@/lib/workout-factory/apply-cue-patches-to-metadata';
+import {
+  computeEmptyCueFields,
+  type ExerciseCueRequestV1,
+} from '@/lib/agents/coach/exercise-cue-request';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -22,6 +26,10 @@ export type WorkoutExerciseCuePanelProps = {
   onCueSave?: (key: string, patch: WorkoutCuePatch) => void;
   onCueDraftChange?: (key: string, patch: WorkoutCuePatch) => void;
   onCueCancel?: (key: string) => void;
+  onAskCoachForCues?: (payload: ExerciseCueRequestV1) => void;
+  injuriesOnFile?: boolean;
+  prescription?: ExerciseCueRequestV1['prescription'];
+  workoutExerciseIndex?: number;
 };
 
 const PROVENANCE_LABEL: Record<CueProvenance, string> = {
@@ -74,6 +82,10 @@ export function WorkoutExerciseCuePanel({
   onCueSave,
   onCueDraftChange,
   onCueCancel,
+  onAskCoachForCues,
+  injuriesOnFile = false,
+  prescription,
+  workoutExerciseIndex,
 }: WorkoutExerciseCuePanelProps) {
   const [isAuthoring, setIsAuthoring] = useState(false);
   const [draft, setDraft] = useState<WorkoutCuePatch>(() => bundleToDraft(bundle));
@@ -127,6 +139,30 @@ export function WorkoutExerciseCuePanel({
     setIsAuthoring(false);
     setSavedFlash(true);
   }, [resolutionKey, onCueSave, draft]);
+
+  const emptyFields = useMemo(
+    () => computeEmptyCueFields(bundle, { includeInjuryField: injuriesOnFile }),
+    [bundle, injuriesOnFile],
+  );
+
+  const handleAskCoach = useCallback(() => {
+    if (!resolutionKey || !onAskCoachForCues || emptyFields.length === 0) return;
+    onAskCoachForCues({
+      v: 1,
+      resolution_key: resolutionKey,
+      exercise_name: exerciseName,
+      empty_fields: emptyFields,
+      ...(prescription ? { prescription } : {}),
+      ...(workoutExerciseIndex != null ? { workout_exercise_index: workoutExerciseIndex } : {}),
+    });
+  }, [
+    resolutionKey,
+    onAskCoachForCues,
+    emptyFields,
+    exerciseName,
+    prescription,
+    workoutExerciseIndex,
+  ]);
 
   if (!isExpanded) return null;
 
@@ -201,6 +237,11 @@ export function WorkoutExerciseCuePanel({
               <Button type="button" variant="outline" size="sm" onClick={handleStartAuthoring}>
                 {bundle.isEmpty ? 'Add cues' : 'Edit cues'}
               </Button>
+              {onAskCoachForCues && emptyFields.length > 0 ? (
+                <Button type="button" variant="secondary" size="sm" onClick={handleAskCoach}>
+                  Ask Coach
+                </Button>
+              ) : null}
               {savedFlash ? (
                 <span className="text-[10px] font-medium text-primary">Saved to this workout</span>
               ) : null}

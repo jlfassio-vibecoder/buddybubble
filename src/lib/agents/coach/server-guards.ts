@@ -109,6 +109,7 @@ export function assertCoachReplySelfAttestation(parsed: CoachGeminiJsonResponse)
   const hasOutline =
     parsed.coach_workout_outline != null && parsed.coach_workout_outline.length > 0;
   const hasOutlineDraftPatch = parsed.outline_draft_patch != null;
+  const hasWorkoutCuesPatch = parsed.workout_cues_patch != null;
   const hasPayload =
     hasExecution ||
     hasPersonal ||
@@ -116,7 +117,8 @@ export function assertCoachReplySelfAttestation(parsed: CoachGeminiJsonResponse)
     hasIntake ||
     hasCardAction ||
     hasOutline ||
-    hasOutlineDraftPatch;
+    hasOutlineDraftPatch ||
+    hasWorkoutCuesPatch;
   if (!hasPayload) {
     throw { kind: 'self_attestation_mismatch' as const };
   }

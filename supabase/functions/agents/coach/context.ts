@@ -677,6 +677,29 @@ export async function fetchCoachUserContext(
   return currentUserBlock + '\n\n' + lastWorkoutBlock + tail;
 }
 
+/** Loads `fitness_profiles.biometrics` for exercise-cue injury gating (M3). */
+export async function fetchFitnessProfileBiometrics(
+  // deno-lint-ignore no-explicit-any
+  supabase: SupabaseClient<any, 'public', any>,
+  userId: string,
+  bubbleId: string,
+): Promise<unknown | null> {
+  const { data: bubble } = await supabase
+    .from('bubbles')
+    .select('workspace_id')
+    .eq('id', bubbleId)
+    .maybeSingle();
+  const workspaceId = (bubble as { workspace_id?: string } | null)?.workspace_id;
+  if (!workspaceId) return null;
+  const { data: profile } = await supabase
+    .from('fitness_profiles')
+    .select('biometrics')
+    .eq('user_id', userId)
+    .eq('workspace_id', workspaceId)
+    .maybeSingle();
+  return (profile as { biometrics?: unknown } | null)?.biometrics ?? null;
+}
+
 export type SessionTelemetryResolveSource = 'message' | 'workout_log' | 'none';
 
 function sourceTaskIdForTelemetryLookup(

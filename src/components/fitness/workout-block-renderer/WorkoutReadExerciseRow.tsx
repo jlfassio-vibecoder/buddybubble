@@ -36,6 +36,8 @@ export type WorkoutReadExerciseRowProps = {
   resolvedCues?: ResolvedCueBundle | null;
   cuePanelEnabled?: boolean;
   resolutionKey?: string;
+  prescription?: import('@/lib/agents/coach/exercise-cue-request').ExerciseCueRequestV1['prescription'];
+  workoutExerciseIndex?: number;
 } & WorkoutCueEditProps;
 
 function CuesToggleBadge({ state }: { state: 'empty' | 'partial' | 'full' }) {
@@ -71,6 +73,10 @@ export function WorkoutReadExerciseRow({
   onCueSave,
   onCueDraftChange,
   onCueCancel,
+  onAskCoachForCues,
+  injuriesOnFile = false,
+  prescription,
+  workoutExerciseIndex,
 }: WorkoutReadExerciseRowProps) {
   const compact = density === 'compact';
   const showRequest = !thumbnailUrl && taskId != null;
@@ -140,6 +146,10 @@ export function WorkoutReadExerciseRow({
             onCueSave={onCueSave}
             onCueDraftChange={onCueDraftChange}
             onCueCancel={onCueCancel}
+            onAskCoachForCues={onAskCoachForCues}
+            injuriesOnFile={injuriesOnFile}
+            prescription={prescription}
+            workoutExerciseIndex={workoutExerciseIndex}
           />
         ) : null}
         {notes?.trim() ? (
@@ -183,6 +193,9 @@ export function WorkoutReadExerciseRowFromFactory({
   onCueSave,
   onCueDraftChange,
   onCueCancel,
+  onAskCoachForCues,
+  injuriesOnFile = false,
+  workoutExerciseIndex,
 }: {
   ex: Exercise;
   taskId?: string | null;
@@ -193,6 +206,7 @@ export function WorkoutReadExerciseRowFromFactory({
   resolvedCues?: ResolvedCueBundle | null;
   cuePanelEnabled?: boolean;
   resolutionKey?: string;
+  workoutExerciseIndex?: number;
 } & WorkoutCueEditProps) {
   const metaLine = formatExercisePrescriptionLineFromFactory(ex);
   const notes = ex.coachNotes?.trim() ?? '';
@@ -216,6 +230,17 @@ export function WorkoutReadExerciseRowFromFactory({
       onCueSave={onCueSave}
       onCueDraftChange={onCueDraftChange}
       onCueCancel={onCueCancel}
+      onAskCoachForCues={onAskCoachForCues}
+      injuriesOnFile={injuriesOnFile}
+      workoutExerciseIndex={workoutExerciseIndex}
+      prescription={
+        ex.sets != null || ex.reps != null
+          ? {
+              ...(ex.sets != null ? { sets: ex.sets } : {}),
+              ...(ex.reps != null ? { reps: ex.reps } : {}),
+            }
+          : undefined
+      }
     />
   );
 }

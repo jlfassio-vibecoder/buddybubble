@@ -367,13 +367,13 @@ Generate requires auth + rate limiting.
 
 ## Phased delivery
 
-| Phase                           | Scope                                                                                                  | Notes                                           |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------- |
-| **M1 — Read**                   | Resolver + accordion display in view mode; reuse Player field layout; batch dictionary + personal load | No persistence                                  |
-| **M2 — Write (workout-scoped)** | Micro-edit + `applyCuePatchesToMetadata` on Save; dual-write `coachNotes` + flat cache                 | **Blocked on split-brain handling** (see above) |
-| **M3 — AI generate**            | One-shot generate endpoint + preview/accept                                                            | Optional dictionary insert on accept            |
-| **M4 — User-scoped**            | Save to `user_exercise_notes` + pending dictionary create for custom names                             | Reuse `apply_personal_cues_for_user`            |
-| **M5 — Schema unify**           | Extend factory `Exercise` cue fields; deprecate split-brain                                            | Thread through sync + map helpers               |
+| Phase                                | Scope                                                                                                                        | Notes                                           |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| **M1 — Read**                        | Resolver + accordion display in view mode; reuse Player field layout; batch dictionary + personal load                       | No persistence                                  |
+| **M2 — Write (workout-scoped)**      | Micro-edit + `applyCuePatchesToMetadata` on Save; dual-write `coachNotes` + flat cache                                       | **Blocked on split-brain handling** (see above) |
+| **M3 — AI generate (Coach-agentic)** | Ask Coach button → `exercise_cue_request` metadata → Coach `workout_cues_patch` → client `applyCuePatchesToMetadata` on Save | Shipped; no standalone generate endpoint        |
+| **M4 — User-scoped**                 | Save to `user_exercise_notes` + pending dictionary create for custom names                                                   | Reuse `apply_personal_cues_for_user`            |
+| **M5 — Schema unify**                | Extend factory `Exercise` cue fields; deprecate split-brain                                                                  | Thread through sync + map helpers               |
 
 ---
 

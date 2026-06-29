@@ -102,6 +102,7 @@ import {
   extractWorkoutTaskTitleFromMetadata,
   readWorkoutContextFromMessageMetadata,
   stringifyWorkoutContextForPrompt,
+  fetchFitnessProfileBiometrics,
 } from './context.ts';
 import {
   cardActionForRpc,
@@ -111,6 +112,7 @@ import {
   personalCuesPatchForRpc,
   stripMarkdownCodeFences,
   taskModalIntakePatchForRpc,
+  workoutCuesPatchForRpc,
 } from './parse.ts';
 import {
   formatTaggedExerciseRefsPromptBlock,
@@ -135,6 +137,7 @@ import {
   buildApexArchitectMainChatBlock,
   buildBaseCoachPrompt,
   buildCurrentTaskContextBlock,
+  buildExerciseCueRequestCoachBlock,
   buildTaskModalIntakeUiCoachBlock,
   buildTaskModalLiveStateBlock,
   buildWorkoutOpenGreetingPrompt,
@@ -171,6 +174,10 @@ import {
   formatSessionTelemetryForPrompt,
   parseSessionTelemetryFromMetadata,
 } from './session-telemetry-format.ts';
+import {
+  parseExerciseCueRequestFromMessageMetadata,
+  readInjuriesOnFileFromBiometrics,
+} from './exercise-cue-request.ts';
 
 /** Coach-owned scratch on `ctx.extras`. */
 type CoachExtras = {
@@ -757,6 +764,25 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
     const liveState = readTaskModalLiveStateFromMessageMetadata(ctx.message.metadata);
     if (liveState) parts.push(buildTaskModalLiveStateBlock(liveState));
     if (userContextBlock) parts.push(userContextBlock);
+
+    const exerciseCueRequest = parseExerciseCueRequestFromMessageMetadata(ctx.message.metadata);
+    if (exerciseCueRequest) {
+      const biometrics = await fetchFitnessProfileBiometrics(
+        ctx.supabase as unknown as Parameters<typeof fetchFitnessProfileBiometrics>[0],
+        ctx.message.user_id,
+        ctx.message.bubble_id!,
+      );
+      const injuries = readInjuriesOnFileFromBiometrics(biometrics);
+      parts.push(buildExerciseCueRequestCoachBlock(exerciseCueRequest, injuries));
+      log('info', 'coach exercise cue request injected', {
+        request_id: ctx.requestId,
+        slug: COACH_SLUG,
+        resolution_key: exerciseCueRequest.resolution_key,
+        empty_field_count: exerciseCueRequest.empty_fields.length,
+        injuries_on_file: injuries.onFile,
+      });
+    }
+
     return parts.join('\n\n');
   },
 
@@ -1208,6 +1234,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
           });
           const supabase: SharedSupabaseClient = ctx.supabase;
           const cardActionParam = cardActionForRpc(parsed.card_action);
+          const workoutCuesParamOutline = workoutCuesPatchForRpc(parsed.workout_cues_patch);
           const upd = await agentUpdateTaskAndReply(supabase, {
             p_trigger_message_id: ctx.message.id,
             p_thread_id: ctx.threadId,
@@ -1220,6 +1247,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
             p_new_metadata: pNewMeta,
             p_card_action: cardActionParam,
             p_outline_draft_applied: outlineDraftAppliedForRpc(appliedPayload),
+            p_workout_cues_patch: workoutCuesParamOutline,
           });
           if (!upd.ok) {
             log('error', 'coach outline draft patch rpc failed', {
@@ -1248,9 +1276,13 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
     const personalCuesParam = personalCuesPatchForRpc(parsed.personal_cues_resolved);
     const intakePatchParam = taskModalIntakePatchForRpc(parsed.task_modal_intake_patch);
     const cardActionParam = cardActionForRpc(parsed.card_action);
+    const workoutCuesParam = workoutCuesPatchForRpc(parsed.workout_cues_patch);
     const hasCardAction = cardActionParam != null;
     const hasMessageMetaPatch =
-      patchParam != null || personalCuesParam != null || intakePatchParam != null;
+      patchParam != null ||
+      personalCuesParam != null ||
+      intakePatchParam != null ||
+      workoutCuesParam != null;
 
     if (parsed.card_action) {
       log('info', 'coach card_action emitted', {
@@ -1258,6 +1290,14 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
         slug: COACH_SLUG,
         message_id: ctx.message.id,
         action: parsed.card_action,
+      });
+    }
+    if (parsed.workout_cues_patch) {
+      log('info', 'coach workout_cues_patch emitted', {
+        request_id: ctx.requestId,
+        slug: COACH_SLUG,
+        message_id: ctx.message.id,
+        resolution_key: parsed.workout_cues_patch.resolution_key,
       });
     }
 
@@ -1366,6 +1406,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
         p_new_description: trimmedNewDesc.length > 0 ? trimmedNewDesc : null,
         p_new_metadata: pNewMeta,
         p_card_action: cardActionParamFinal,
+        p_workout_cues_patch: workoutCuesParam,
       });
       if (!upd.ok) {
         log('error', 'coach persist direct update rpc failed', {
@@ -1402,6 +1443,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
         p_personal_cues: personalCuesParam,
         p_task_modal_intake_patch: intakePatchParam,
         p_card_action: cardActionParam,
+        p_workout_cues_patch: workoutCuesParam,
       });
       if (!draft.ok) {
         log('error', 'coach persist draft rpc failed', {
@@ -1431,6 +1473,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       p_personal_cues?: unknown;
       p_task_modal_intake_patch?: unknown;
       p_card_action?: unknown;
+      p_workout_cues_patch?: unknown;
       p_coach_workout_outline?: unknown;
     } = {
       p_trigger_message_id: ctx.message.id,
@@ -1466,6 +1509,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
     rpcArgs.p_personal_cues = personalCuesParam;
     rpcArgs.p_task_modal_intake_patch = intakePatchParam;
     rpcArgs.p_card_action = cardActionParam;
+    rpcArgs.p_workout_cues_patch = workoutCuesParam;
 
     if (
       hasCardAction &&

@@ -37,6 +37,8 @@ export function WorkoutBlockExerciseGroup({
   onCueSave,
   onCueDraftChange,
   onCueCancel,
+  onAskCoachForCues,
+  injuriesOnFile = false,
 }: WorkoutBlockExerciseGroupProps) {
   const exercises = block.exercises;
   if (exercises.length === 0) return null;
@@ -73,6 +75,9 @@ export function WorkoutBlockExerciseGroup({
         onCueSave={onCueSave}
         onCueDraftChange={onCueDraftChange}
         onCueCancel={onCueCancel}
+        onAskCoachForCues={onAskCoachForCues}
+        injuriesOnFile={injuriesOnFile}
+        workoutExerciseIndex={ctx.globalFlatIndex}
       />
     );
   });
