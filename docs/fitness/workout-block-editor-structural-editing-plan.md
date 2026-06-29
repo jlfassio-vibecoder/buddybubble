@@ -154,7 +154,7 @@ Below each main block’s exercise list (inside the grouped/flat container):
   blockFormat: 'straight_sets',   // safe default; user can change in M4 formatParams work
   formatParams: {},
   subtitle: formatBlockSubtitle('straight_sets', {}),
-  exercises: [createDefaultBlockExercise({ blockFormat: 'straight_sets' }, 0)],
+  exercises: [createDefaultBlockExercise({ exercises: [] }, 0)],
   instructions: [],
 }
 ```

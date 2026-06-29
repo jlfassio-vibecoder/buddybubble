@@ -131,7 +131,7 @@ export function createDefaultMainBlock(order: number): WorkoutSessionBlockView {
     id: crypto.randomUUID(),
     section: 'main',
     order,
-    name: 'MAIN',
+    name: 'Main work',
     blockFormat,
     formatParams,
     subtitle: formatBlockSubtitle(blockFormat, formatParams),

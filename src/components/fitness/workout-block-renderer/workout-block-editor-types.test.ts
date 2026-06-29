@@ -107,7 +107,7 @@ describe('workout-block-editor-types structural helpers', () => {
     expect(block.exercises).toHaveLength(1);
     expect(block.exercises[0]!.order).toBe(1);
     expect(block.id).toBeTruthy();
-    expect(block.name).toBe('MAIN');
+    expect(block.name).toBe('Main work');
   });
 
   it('appendMainBlock appends immutably and renumbers main orders 1..n', () => {
