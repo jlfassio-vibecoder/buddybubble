@@ -1,14 +1,11 @@
 'use client';
 
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
+import { SECTION_LABELS } from '@/components/fitness/workout-block-renderer/workout-block-editor-types';
 import { cn } from '@/lib/utils';
 import { RequestImageLink } from '@/components/fitness/workout-block-renderer/RequestImageLink';
 
-const SECTION_LABEL: Record<'warmup' | 'finisher' | 'cooldown', string> = {
-  warmup: 'Warm-up',
-  finisher: 'Finisher',
-  cooldown: 'Cool down',
-};
+const SECTION_LABEL = SECTION_LABELS;
 
 export type WorkoutInstructionSectionProps = {
   section: 'warmup' | 'finisher' | 'cooldown';

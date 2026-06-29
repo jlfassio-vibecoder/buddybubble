@@ -75,6 +75,15 @@ flowchart TB
 | **M4 formatParams (stretch)** | Bounded editing for Tabata / AMRAP / EMOM block timers (rounds, work/rest, time cap) — not full 12-format builder        |
 | **UX guardrails**             | Warning when switching to Edit on rich cards until M2 ships; optional “structure will be preserved” copy after M2        |
 
+### Structural editing (Gap G2 — shipped)
+
+Follow-up PRs on [workout-block-editor-structural-editing-plan.md](../workout-block-editor-structural-editing-plan.md) shipped **P0–P3** in `WorkoutBlockListEditor`:
+
+- Exercise add/remove, within-block DnD reorder, comma **Split** affordance
+- Main block add/remove (≥1 main block enforced)
+- Instruction block add/remove (warm-up, finisher, cool-down; one per section)
+- All structural edits commit through existing **`applyBlockEditsToMetadata`**
+
 ### Out of scope (Step 6+)
 
 | Deferred                                                             | Step           | Notes                                                   |
@@ -241,13 +250,13 @@ export function applyBlockEditsToMetadata(
 
 ### Write rules
 
-| Input                                                                         | Factory mutation                                                                                     |
-| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Main block exercise row edit                                                  | Update matching `exerciseBlocks[].exercises[]`; preserve `blockFormat`, `formatParams`, block `name` |
-| Reorder exercises within block                                                | Re-order factory exercise rows; re-number `order`                                                    |
-| Reorder main blocks                                                           | Re-order `exerciseBlocks[]`; re-number block `order`                                                 |
-| Instruction section edit                                                      | Map to `warmupBlocks` / `finisherBlocks` / `cooldownBlocks` via section kind                         |
-| Add/remove exercise (M3 minimum: edit existing only; add/remove stretch → M4) | Document scope in PR                                                                                 |
+| Input                                                                                 | Factory mutation                                                                                                                 |
+| ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Main block exercise row edit                                                          | Update matching `exerciseBlocks[].exercises[]`; preserve `blockFormat`, `formatParams`, block `name`                             |
+| Reorder exercises within block                                                        | Re-order factory exercise rows; re-number `order`                                                                                |
+| Reorder main blocks                                                                   | Re-order `exerciseBlocks[]`; re-number block `order`                                                                             |
+| Instruction section edit                                                              | Map to `warmupBlocks` / `finisherBlocks` / `cooldownBlocks` via section kind                                                     |
+| Add/remove exercise; add/remove main and instruction blocks; DnD reorder; comma split | **Shipped** (Gap G2) — see [workout-block-editor-structural-editing-plan.md](../workout-block-editor-structural-editing-plan.md) |
 
 ### Integration
 
@@ -291,7 +300,7 @@ pnpm exec vitest run \
 ### Out of M4
 
 - Changing `block_format` (Tabata → AMRAP) in UI — Coach / `:` composer remains the path for format changes.
-- Adding new blocks from UI — Coach append (Lane 1) remains primary; optional “Add block” deferred.
+- Catalog picker for new main blocks — straight_sets default + instruction sections ship in viewer editor; format catalog deferred.
 
 ### Estimate
 

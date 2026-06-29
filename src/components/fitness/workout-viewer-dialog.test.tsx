@@ -1,7 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { useState } from 'react';
 import type { Json } from '@/types/database';
+import type { WorkoutExercise } from '@/lib/item-metadata';
 import { richMetadataWithBlockFormat } from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
+import {
+  applyBlockEditsToMetadata,
+  deriveFlatExercisesFromMetadata,
+} from '@/lib/workout-factory/sync-workout-metadata';
+import type { WorkoutViewerApplyPayload } from './workout-viewer-dialog';
 import { WorkoutViewerContent } from './workout-viewer-dialog';
 
 vi.mock('next/navigation', () => ({
@@ -10,13 +17,19 @@ vi.mock('next/navigation', () => ({
 
 function renderViewer(
   meta: Record<string, unknown>,
-  opts?: { readVariant?: 'workout' | 'log'; onApply?: ReturnType<typeof vi.fn> },
+  opts?: {
+    readVariant?: 'workout' | 'log';
+    onApply?: ReturnType<typeof vi.fn>;
+    onRequestClose?: ReturnType<typeof vi.fn>;
+  },
 ) {
   const onApply = opts?.onApply ?? vi.fn();
+  const onRequestClose = opts?.onRequestClose ?? vi.fn();
   const exercises = (meta.exercises as { name: string; sets: number; reps: string }[]) ?? [];
 
   return {
     onApply,
+    onRequestClose,
     ...render(
       <WorkoutViewerContent
         workoutSet={null}
@@ -27,12 +40,59 @@ function renderViewer(
         canWrite
         workoutUnitSystem="metric"
         onApply={onApply}
-        onRequestClose={() => {}}
+        onRequestClose={onRequestClose}
         syncKey={1}
         readVariant={opts?.readVariant ?? 'workout'}
       />,
     ),
   };
+}
+
+function ViewerWithParentApplyState({
+  initialMeta,
+  onApplySpy = vi.fn(),
+  onRequestClose = vi.fn(),
+}: {
+  initialMeta: Record<string, unknown>;
+  onApplySpy?: ReturnType<typeof vi.fn>;
+  onRequestClose?: ReturnType<typeof vi.fn>;
+}) {
+  const [metadata, setMetadata] = useState(initialMeta as Json);
+  const [title, setTitle] = useState('Test workout');
+  const [description, setDescription] = useState('');
+  const [exercises, setExercises] = useState<WorkoutExercise[]>(
+    (initialMeta.exercises as WorkoutExercise[]) ?? [],
+  );
+
+  const handleApply = (payload: WorkoutViewerApplyPayload) => {
+    onApplySpy(payload);
+    setTitle(payload.title);
+    setDescription(payload.description);
+
+    if (payload.blocks != null && payload.blocks.length > 0) {
+      const nextMeta = applyBlockEditsToMetadata(metadata, payload.blocks) as Json;
+      setMetadata(nextMeta);
+      setExercises(deriveFlatExercisesFromMetadata(nextMeta));
+      return;
+    }
+
+    setExercises(payload.exercises);
+  };
+
+  return (
+    <WorkoutViewerContent
+      workoutSet={null}
+      exercises={exercises}
+      metadata={metadata}
+      title={title}
+      description={description}
+      canWrite
+      workoutUnitSystem="metric"
+      onApply={handleApply}
+      onRequestClose={onRequestClose}
+      syncKey={1}
+    />
+  );
 }
 
 const baseViewProps = {
@@ -161,6 +221,75 @@ describe('WorkoutViewerContent edit mode', () => {
     expect(payload.blocks!.length).toBeGreaterThan(0);
     const main = payload.blocks!.find((b: { section: string }) => b.section === 'main')!;
     expect(main.exercises[0].exerciseName).toBe('Burpee Tabata');
+  });
+
+  it('Apply returns to view mode without closing the pane', () => {
+    const meta = richMetadataWithBlockFormat('tabata');
+    const onApply = vi.fn();
+    const onRequestClose = vi.fn();
+    render(
+      <ViewerWithParentApplyState
+        initialMeta={meta}
+        onApplySpy={onApply}
+        onRequestClose={onRequestClose}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+
+    const mainSection = screen.getByTestId(/^editor-main-block-/);
+    const nameInput = mainSection.querySelector(
+      'input[placeholder="Exercise name"]',
+    ) as HTMLInputElement;
+    fireEvent.change(nameInput, { target: { value: 'Burpee Tabata' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Apply changes' }));
+
+    expect(onApply).toHaveBeenCalledTimes(1);
+    expect(onRequestClose).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('workout-block-list-editor')).toBeNull();
+    expect(screen.getByTestId('workout-viewer-block-list')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy();
+    expect(screen.getByText('Burpee Tabata')).toBeTruthy();
+  });
+
+  it('View tab discards edits and returns to view mode without closing', () => {
+    const meta = richMetadataWithBlockFormat('tabata');
+    const onRequestClose = vi.fn();
+    renderViewer(meta, { onRequestClose });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Changed title' } });
+    fireEvent.click(screen.getByRole('button', { name: 'View' }));
+
+    expect(onRequestClose).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('Title')).toBeNull();
+    expect(screen.getByRole('heading', { level: 2, name: 'Test workout' })).toBeTruthy();
+  });
+
+  it('Cancel discards edits and returns to view mode without closing', () => {
+    const meta = richMetadataWithBlockFormat('tabata');
+    const onRequestClose = vi.fn();
+    renderViewer(meta, { onRequestClose });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Changed title' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(onRequestClose).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('Title')).toBeNull();
+    expect(screen.getByRole('heading', { level: 2, name: 'Test workout' })).toBeTruthy();
+  });
+
+  it('header X closes the pane', () => {
+    const meta = richMetadataWithBlockFormat('tabata');
+    const onRequestClose = vi.fn();
+    renderViewer(meta, { onRequestClose });
+
+    fireEvent.click(screen.getByLabelText('Close workout viewer'));
+
+    expect(onRequestClose).toHaveBeenCalledTimes(1);
   });
 });
 
