@@ -136,6 +136,7 @@ describe('WorkoutBlockListEditor', () => {
     const mainNext = next.find((b) => b.id === main.id)!;
     expect(mainNext.exercises.length).toBe(2);
     expect(mainNext.exercises.map((e) => e.exerciseName)).toEqual(['Deadlift', 'Air Squat']);
+    expect(mainNext.exercises.map((e) => e.order)).toEqual([1, 2]);
   });
 
   it('removes an exercise via trash control and reduces block exercise count', () => {
@@ -192,5 +193,86 @@ describe('WorkoutBlockListEditor', () => {
     expect(main2.blockFormat).toBe('tabata');
     expect(main2.exercises[0].exerciseName).toBe('Factory Renamed');
     expect(main2.formatParams).toEqual(main.formatParams);
+  });
+
+  it('adds an exercise via Add exercise button on Tabata block', () => {
+    const meta = richMetadataWithBlockFormat('tabata');
+    const vm = buildWorkoutSessionViewModel(meta);
+    const main = vm.blocks.find((b) => b.section === 'main')!;
+    const onChange = vi.fn();
+
+    render(
+      <WorkoutBlockListEditor
+        blocks={vm.blocks}
+        canWrite
+        workoutUnitSystem="metric"
+        onChange={onChange}
+        idPrefix="tabata-add"
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId(`add-exercise-${main.id}`));
+
+    expect(onChange).toHaveBeenCalled();
+    const next = onChange.mock.calls.at(-1)![0];
+    const mainNext = next.find((b: { id: string }) => b.id === main.id)!;
+    expect(mainNext.exercises.length).toBe(main.exercises.length + 1);
+    expect(mainNext.exercises.map((e: { order: number }) => e.order)).toEqual([1, 2]);
+    expect(mainNext.exercises[1].exerciseName).toBe('');
+  });
+
+  it('hides Add exercise on superset at 2-exercise capacity', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('superset'));
+    const main = vm.blocks.find((b) => b.section === 'main')!;
+
+    render(
+      <WorkoutBlockListEditor
+        blocks={vm.blocks}
+        canWrite
+        workoutUnitSystem="metric"
+        onChange={() => {}}
+      />,
+    );
+
+    expect(screen.queryByTestId(`add-exercise-${main.id}`)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add exercise' })).toBeNull();
+  });
+
+  it('hides remove trash on superset when at minimum cardinality', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('superset'));
+
+    render(
+      <WorkoutBlockListEditor
+        blocks={vm.blocks}
+        canWrite
+        workoutUnitSystem="metric"
+        onChange={() => {}}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: /Remove exercise:/i })).toBeNull();
+  });
+
+  it('round-trips add exercise through applyBlockEditsToMetadata', () => {
+    const meta = richMetadataWithBlockFormat('tabata');
+    const vm1 = buildWorkoutSessionViewModel(meta);
+    const main = vm1.blocks.find((b) => b.section === 'main')!;
+    const onChangeSpy = vi.fn();
+
+    render(<ControlledEditor initialMeta={meta} onChangeSpy={onChangeSpy} />);
+
+    fireEvent.click(screen.getByTestId(`add-exercise-${main.id}`));
+
+    const mainSection = screen.getByTestId(`editor-main-block-${main.id}`);
+    const nameInputs = within(mainSection).getAllByLabelText('Exercise name');
+    fireEvent.change(nameInputs[1]!, { target: { value: 'Air Squat' } });
+
+    const editedBlocks = onChangeSpy.mock.calls.at(-1)![0];
+    const next = applyBlockEditsToMetadata(meta, editedBlocks);
+    const vm2 = buildWorkoutSessionViewModel(next);
+    const main2 = vm2.blocks.find((b) => b.section === 'main')!;
+
+    expect(main2.exercises.length).toBe(2);
+    expect(main2.exercises[1].exerciseName).toBe('Air Squat');
   });
 });

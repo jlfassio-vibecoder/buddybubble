@@ -258,6 +258,13 @@ export function WorkoutViewerContent({
   const useRichBlockEdit =
     readVariant !== 'log' && sessionVm.source === 'rich' && sessionVm.blocks.length > 0;
 
+  const resetLocalDraftFromProps = useCallback(() => {
+    setLocalTitle(title);
+    setLocalDescription(description);
+    setLocalExercises(exercises.map((e) => ({ ...e })));
+    setLocalBlocks(cloneBlocksForEditor(sessionVm.blocks));
+  }, [title, description, exercises, sessionVm.blocks]);
+
   useEffect(() => {
     setLocalTitle(title);
     setLocalDescription(description);
@@ -273,16 +280,13 @@ export function WorkoutViewerContent({
       exercises: localExercises,
       ...(useRichBlockEdit ? { blocks: localBlocks } : {}),
     });
-    onRequestClose();
-  }, [
-    localTitle,
-    localDescription,
-    localExercises,
-    localBlocks,
-    useRichBlockEdit,
-    onApply,
-    onRequestClose,
-  ]);
+    setMode('view');
+  }, [localTitle, localDescription, localExercises, localBlocks, useRichBlockEdit, onApply]);
+
+  const handleCancelEdit = useCallback(() => {
+    resetLocalDraftFromProps();
+    setMode('view');
+  }, [resetLocalDraftFromProps]);
 
   const showRichRead =
     mode === 'view' && sessionVm.source === 'rich' && sessionVm.blocks.length > 0;
@@ -545,7 +549,7 @@ export function WorkoutViewerContent({
   const footer =
     mode === 'edit' && canWrite ? (
       <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
-        <Button type="button" variant="outline" size="sm" onClick={onRequestClose}>
+        <Button type="button" variant="outline" size="sm" onClick={handleCancelEdit}>
           Cancel
         </Button>
         <Button type="button" size="sm" onClick={handleApply}>

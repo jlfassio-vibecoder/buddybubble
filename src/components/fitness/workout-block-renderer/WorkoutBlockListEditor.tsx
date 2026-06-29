@@ -1,20 +1,26 @@
 'use client';
 
-import { canRemoveExerciseFromBlock } from '@/lib/agents/coach/outline-editor-client';
+import {
+  canAddExerciseToBlock,
+  canRemoveExerciseFromBlock,
+} from '@/lib/agents/coach/outline-editor-client';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
+import { Button } from '@/components/ui/button';
 import { WorkoutBlockHeader } from '@/components/fitness/workout-block-renderer/WorkoutBlockHeader';
 import { WorkoutBlockExerciseEditRow } from '@/components/fitness/workout-block-renderer/WorkoutBlockExerciseEditRow';
 import { WorkoutInstructionBlockEdit } from '@/components/fitness/workout-block-renderer/WorkoutInstructionBlockEdit';
 import {
+  addExerciseToBlock,
   blockStationLabel,
   blockUsesGroupedLayout,
+  createDefaultBlockExercise,
   removeExerciseFromBlock,
   updateBlock,
   updateExerciseInBlock,
   type WorkoutBlockListEditorProps,
 } from '@/components/fitness/workout-block-renderer/workout-block-editor-types';
 
-function blockViewForRemoveGuard(block: WorkoutSessionBlockView): Record<string, unknown> {
+function blockViewForExerciseGuard(block: WorkoutSessionBlockView): Record<string, unknown> {
   return {
     block_format: block.blockFormat,
     format_params: block.formatParams,
@@ -81,7 +87,30 @@ export function WorkoutBlockListEditor({
         const exercises = block.exercises ?? [];
         const grouped = blockUsesGroupedLayout(block.blockFormat, exercises.length);
 
-        const allowRemove = canWrite && canRemoveExerciseFromBlock(blockViewForRemoveGuard(block));
+        const allowRemove =
+          canWrite && canRemoveExerciseFromBlock(blockViewForExerciseGuard(block));
+        const allowAdd = canWrite && canAddExerciseToBlock(blockViewForExerciseGuard(block));
+
+        const addExerciseButton = allowAdd ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
+            data-testid={`add-exercise-${block.id}`}
+            onClick={() =>
+              onChange(
+                addExerciseToBlock(
+                  blocks,
+                  block.id,
+                  createDefaultBlockExercise(block, exercises.length),
+                ),
+              )
+            }
+          >
+            Add exercise
+          </Button>
+        ) : null;
 
         const rows = exercises.map((ex, ei) => (
           <WorkoutBlockExerciseEditRow
@@ -108,9 +137,15 @@ export function WorkoutBlockListEditor({
           >
             <WorkoutBlockHeader name={block.name} subtitle={block.subtitle} />
             {grouped ? (
-              <div className="space-y-2 rounded-xl p-2 ring-1 ring-border/20">{rows}</div>
+              <div className="space-y-2 rounded-xl p-2 ring-1 ring-border/20">
+                {rows}
+                {addExerciseButton}
+              </div>
             ) : (
-              <div className="space-y-2">{rows}</div>
+              <div className="space-y-2">
+                {rows}
+                {addExerciseButton}
+              </div>
             )}
           </section>
         );

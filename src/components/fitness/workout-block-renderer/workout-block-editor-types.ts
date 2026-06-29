@@ -16,6 +16,37 @@ export type WorkoutBlockListEditorProps = {
   idPrefix?: string;
 };
 
+function renumberBlockExercises(exercises: Exercise[]): Exercise[] {
+  return exercises.map((ex, i) => ({ ...ex, order: i + 1 }));
+}
+
+export function createDefaultBlockExercise(
+  block: Pick<WorkoutSessionBlockView, 'exercises'>,
+  index: number,
+): Exercise {
+  const exercises = block.exercises ?? [];
+  const prev = index > 0 ? exercises[index - 1] : undefined;
+  const reps = prev?.reps;
+  return {
+    id: crypto.randomUUID(),
+    order: index + 1,
+    exerciseName: '',
+    sets: prev?.sets ?? 1,
+    reps: typeof reps === 'number' ? String(reps) : (reps ?? ''),
+  };
+}
+
+export function addExerciseToBlock(
+  blocks: WorkoutSessionBlockView[],
+  blockId: string,
+  exercise: Exercise,
+): WorkoutSessionBlockView[] {
+  return blocks.map((b) => {
+    if (b.id !== blockId) return b;
+    return { ...b, exercises: renumberBlockExercises([...b.exercises, exercise]) };
+  });
+}
+
 export function updateBlock(
   blocks: WorkoutSessionBlockView[],
   blockId: string,
@@ -44,6 +75,9 @@ export function removeExerciseFromBlock(
 ): WorkoutSessionBlockView[] {
   return blocks.map((b) => {
     if (b.id !== blockId) return b;
-    return { ...b, exercises: b.exercises.filter((_, i) => i !== exerciseIndex) };
+    return {
+      ...b,
+      exercises: renumberBlockExercises(b.exercises.filter((_, i) => i !== exerciseIndex)),
+    };
   });
 }
