@@ -258,7 +258,7 @@ export function WorkoutViewerContent({
   const useRichBlockEdit =
     readVariant !== 'log' && sessionVm.source === 'rich' && sessionVm.blocks.length > 0;
 
-  const resetLocalDraftFromProps = useCallback(() => {
+  const discardDrafts = useCallback(() => {
     setLocalTitle(title);
     setLocalDescription(description);
     setLocalExercises(exercises.map((e) => ({ ...e })));
@@ -266,12 +266,9 @@ export function WorkoutViewerContent({
   }, [title, description, exercises, sessionVm.blocks]);
 
   useEffect(() => {
-    setLocalTitle(title);
-    setLocalDescription(description);
-    setLocalExercises(exercises.map((e) => ({ ...e })));
-    setLocalBlocks(cloneBlocksForEditor(sessionVm.blocks));
+    discardDrafts();
     setMode('view');
-  }, [syncKey, title, description, exercises, sessionVm.blocks]);
+  }, [syncKey, discardDrafts]);
 
   const handleApply = useCallback(() => {
     onApply({
@@ -280,13 +277,19 @@ export function WorkoutViewerContent({
       exercises: localExercises,
       ...(useRichBlockEdit ? { blocks: localBlocks } : {}),
     });
-    setMode('view');
   }, [localTitle, localDescription, localExercises, localBlocks, useRichBlockEdit, onApply]);
 
-  const handleCancelEdit = useCallback(() => {
-    resetLocalDraftFromProps();
+  const exitEditToView = useCallback(() => {
+    discardDrafts();
     setMode('view');
-  }, [resetLocalDraftFromProps]);
+  }, [discardDrafts]);
+
+  const handleViewTabClick = useCallback(() => {
+    if (mode === 'edit') {
+      discardDrafts();
+    }
+    setMode('view');
+  }, [mode, discardDrafts]);
 
   const showRichRead =
     mode === 'view' && sessionVm.source === 'rich' && sessionVm.blocks.length > 0;
@@ -391,7 +394,7 @@ export function WorkoutViewerContent({
           <div className="flex items-center gap-1 rounded-lg border border-border p-0.5">
             <button
               type="button"
-              onClick={() => setMode('view')}
+              onClick={handleViewTabClick}
               className={cn(
                 'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
                 mode === 'view'
@@ -549,7 +552,7 @@ export function WorkoutViewerContent({
   const footer =
     mode === 'edit' && canWrite ? (
       <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
-        <Button type="button" variant="outline" size="sm" onClick={handleCancelEdit}>
+        <Button type="button" variant="outline" size="sm" onClick={exitEditToView}>
           Cancel
         </Button>
         <Button type="button" size="sm" onClick={handleApply}>
