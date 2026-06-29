@@ -7,6 +7,7 @@ import {
   exerciseThumbnailSrcFromTask,
   formatExercisePrescriptionLineFromTask,
 } from '@/lib/workout-factory/format-exercise-prescription-line';
+import type { WorkoutCueEditProps } from '@/components/fitness/workout-block-renderer/workout-block-renderer-types';
 import { cn } from '@/lib/utils';
 import { WorkoutReadExerciseRow } from '@/components/fitness/workout-block-renderer/WorkoutReadExerciseRow';
 
@@ -18,7 +19,7 @@ export type WorkoutFlatExerciseListProps = {
   className?: string;
   cuesByKey?: Record<string, ResolvedCueBundle>;
   cuesLoading?: boolean;
-};
+} & WorkoutCueEditProps;
 
 export function WorkoutFlatExerciseList({
   exercises,
@@ -28,6 +29,10 @@ export function WorkoutFlatExerciseList({
   className,
   cuesByKey,
   cuesLoading = false,
+  canWriteCue = false,
+  onCueSave,
+  onCueDraftChange,
+  onCueCancel,
 }: WorkoutFlatExerciseListProps) {
   if (exercises.length === 0) {
     return <p className="text-sm text-muted-foreground">{emptyMessage}</p>;
@@ -50,7 +55,14 @@ export function WorkoutFlatExerciseList({
               taskId={taskId}
               density={density}
               resolvedCues={cuesByKey?.[key] ?? null}
-              cuePanelEnabled={!cuesLoading && Object.keys(cuesByKey ?? {}).length > 0}
+              cuePanelEnabled={
+                canWriteCue || (!cuesLoading && Object.keys(cuesByKey ?? {}).length > 0)
+              }
+              resolutionKey={key}
+              canWriteCue={canWriteCue}
+              onCueSave={onCueSave}
+              onCueDraftChange={onCueDraftChange}
+              onCueCancel={onCueCancel}
             />
           </li>
         );

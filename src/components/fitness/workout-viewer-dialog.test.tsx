@@ -10,9 +10,18 @@ import {
 } from '@/lib/workout-factory/sync-workout-metadata';
 import type { WorkoutViewerApplyPayload } from './workout-viewer-dialog';
 import { WorkoutViewerContent } from './workout-viewer-dialog';
+import { applyCuePatchesToMetadata } from '@/lib/workout-factory/apply-cue-patches-to-metadata';
+import { parseWorkoutExercisesFromMetadata } from '@/lib/parse-workout-exercises-from-metadata';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
+}));
+
+vi.mock('@/hooks/useExerciseCueResolution', () => ({
+  useExerciseCueResolution: () => ({
+    cuesByKey: {},
+    loading: false,
+  }),
 }));
 
 function renderViewer(
@@ -353,5 +362,78 @@ describe('WorkoutViewerContent active session launch', () => {
     );
     expect(screen.queryByRole('button', { name: /Launch Active Session/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /Save & Start/i })).toBeNull();
+  });
+});
+
+describe('WorkoutViewerContent cue writes (M2)', () => {
+  afterEach(() => cleanup());
+
+  it('calls onApplyCuePatches when saving cues from the panel', () => {
+    const onApplyCuePatches = vi.fn();
+    render(
+      <WorkoutViewerContent
+        workoutSet={null}
+        exercises={[{ name: 'Squat', sets: 3, reps: 10 }]}
+        metadata={{} as Json}
+        title="Test workout"
+        description=""
+        canWrite
+        workoutUnitSystem="metric"
+        onApply={() => {}}
+        onApplyCuePatches={onApplyCuePatches}
+        onRequestClose={() => {}}
+        syncKey={1}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show exercise cues' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add cues' }));
+    fireEvent.change(screen.getByLabelText('Form cues'), {
+      target: { value: 'Knees track toes' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save to this workout' }));
+
+    expect(onApplyCuePatches).toHaveBeenCalledTimes(1);
+    const patches = onApplyCuePatches.mock.calls[0]![0];
+    expect(patches['squat::0']?.form_cues).toBe('Knees track toes');
+  });
+
+  it('resets local cue drafts when syncKey changes', () => {
+    const onApplyCuePatches = vi.fn();
+    function Harness({ syncKey }: { syncKey: number }) {
+      return (
+        <WorkoutViewerContent
+          workoutSet={null}
+          exercises={[{ name: 'Squat', sets: 3, reps: 10 }]}
+          metadata={{} as Json}
+          title="Test workout"
+          description=""
+          canWrite
+          workoutUnitSystem="metric"
+          onApply={() => {}}
+          onApplyCuePatches={onApplyCuePatches}
+          onRequestClose={() => {}}
+          syncKey={syncKey}
+        />
+      );
+    }
+
+    const { rerender } = render(<Harness syncKey={1} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Show exercise cues' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add cues' }));
+    fireEvent.change(screen.getByLabelText('Tips'), { target: { value: 'Draft tip' } });
+
+    expect(screen.getByText(/Unsaved cue changes/)).toBeTruthy();
+
+    rerender(<Harness syncKey={2} />);
+    expect(screen.queryByText(/Unsaved cue changes/)).toBeNull();
+  });
+
+  it('merges cue patches into metadata via applyCuePatchesToMetadata', () => {
+    const meta = { exercises: [{ name: 'Squat', sets: 3, reps: 10 }] };
+    const next = applyCuePatchesToMetadata(meta, {
+      'squat::0': { instructions: 'Brace' },
+    });
+    expect(parseWorkoutExercisesFromMetadata(next)[0]?.instructions).toBe('Brace');
   });
 });

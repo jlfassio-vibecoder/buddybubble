@@ -5,7 +5,10 @@ import {
   deriveFlatExercisesFromMetadata,
   flatExercisesMatchDerived,
   hasRichWorkoutSetInMetadata,
+  preserveFlatCueFieldsOnDerive,
 } from './sync-workout-metadata';
+import { applyCuePatchesToMetadata } from './apply-cue-patches-to-metadata';
+import { exerciseResolutionKey } from './resolve-exercise-cue-bundle';
 import { buildWorkoutSessionViewModel } from './workout-session-view-model';
 import {
   richAlternatingEmomMetadata,
@@ -14,6 +17,8 @@ import {
 import { WORKOUT_LOG_SCHEMA_VERSION } from './build-workout-log-finish-metadata';
 import type { SetLogEntry, WorkoutExercise } from '@/lib/item-metadata';
 import type { TaskMetadataFormFields } from '@/lib/item-metadata';
+import type { Json } from '@/types/database';
+import type { Exercise } from '@/lib/workout-factory/types/ai-program';
 import { buildTaskMetadataPayload, finalizeWorkoutMetadataForSave } from '@/lib/item-metadata';
 
 function richBaseFixture() {
@@ -316,6 +321,39 @@ describe('applyBlockEditsToMetadata', () => {
     expect((next as Record<string, unknown>).exercises).toEqual(flat.exercises);
   });
 
+  it('preserves enriched flat cue fields after structural block apply', () => {
+    const meta = richMetadataWithBlockFormat('straight_sets');
+    const af = meta.ai_workout_factory as {
+      workout_set: { workouts: { exerciseBlocks: { exercises: Exercise[] }[] }[] };
+    };
+    const key = exerciseResolutionKey(af.workout_set.workouts[0]!.exerciseBlocks[0]!.exercises[0]!);
+
+    const withCues = applyCuePatchesToMetadata(meta as Json, {
+      [key]: {
+        instructions: 'Brace core',
+        form_cues: 'Knees out',
+        tips: 'Control tempo',
+      },
+    });
+
+    const vm1 = buildWorkoutSessionViewModel(withCues);
+    const main = vm1.blocks.find((b) => b.section === 'main')!;
+    const edited = vm1.blocks.map((b) =>
+      b.id === main.id
+        ? {
+            ...b,
+            exercises: b.exercises.map((ex) => ({ ...ex, sets: (ex.sets ?? 1) + 1 })),
+          }
+        : b,
+    );
+
+    const next = applyBlockEditsToMetadata(withCues, edited) as Record<string, unknown>;
+    const flat = next.exercises as WorkoutExercise[];
+    expect(flat[0]?.instructions).toBe('Brace core');
+    expect(flat[0]?.form_cues).toBe('Knees out');
+    expect(flat[0]?.tips).toBe('Control tempo');
+  });
+
   it('preserves warmup main finisher cooldown sections from fixture', () => {
     const meta = richMetadataWithBlockFormat('tabata');
     const vm1 = buildWorkoutSessionViewModel(meta);
@@ -486,5 +524,24 @@ describe('finalizeWorkoutMetadataForSave', () => {
     ).workout_set.workouts[0].exerciseBlocks[0];
     expect(mainBlock.blockFormat).toBe('emom');
     expect((finalized.exercises as WorkoutExercise[])[0].sets).toBe(15);
+  });
+});
+
+describe('preserveFlatCueFieldsOnDerive', () => {
+  it('copies cue columns from prev when derived rows lack them', () => {
+    const prev: WorkoutExercise[] = [
+      {
+        name: 'Squat',
+        instructions: 'Brace',
+        form_cues: 'Knees out',
+        coach_notes: 'Tight',
+      },
+    ];
+    const derived: WorkoutExercise[] = [{ name: 'Squat', sets: 4, reps: '8' }];
+    const merged = preserveFlatCueFieldsOnDerive(prev, derived);
+    expect(merged[0]?.instructions).toBe('Brace');
+    expect(merged[0]?.form_cues).toBe('Knees out');
+    expect(merged[0]?.coach_notes).toBe('Tight');
+    expect(merged[0]?.sets).toBe(4);
   });
 });

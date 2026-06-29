@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import type {
   WorkoutBlockExerciseRenderContext,
   WorkoutBlockListRendererProps,
+  WorkoutCueEditProps,
 } from '@/components/fitness/workout-block-renderer/workout-block-renderer-types';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 import type { ResolvedCueBundle } from '@/lib/workout-factory/resolve-exercise-cue-bundle';
@@ -22,7 +23,7 @@ export type WorkoutBlockExerciseGroupProps = {
   globalFlatIndexStart?: number;
   cuesByKey?: Record<string, ResolvedCueBundle>;
   cuesLoading?: boolean;
-};
+} & WorkoutCueEditProps;
 
 export function WorkoutBlockExerciseGroup({
   block,
@@ -32,6 +33,10 @@ export function WorkoutBlockExerciseGroup({
   globalFlatIndexStart = 0,
   cuesByKey,
   cuesLoading = false,
+  canWriteCue = false,
+  onCueSave,
+  onCueDraftChange,
+  onCueCancel,
 }: WorkoutBlockExerciseGroupProps) {
   const exercises = block.exercises;
   if (exercises.length === 0) return null;
@@ -62,7 +67,12 @@ export function WorkoutBlockExerciseGroup({
         stationLabel={stationLabel}
         density={density}
         resolvedCues={cuesByKey?.[exerciseResolutionKey(ex)] ?? null}
-        cuePanelEnabled={!cuesLoading && Object.keys(cuesByKey ?? {}).length > 0}
+        cuePanelEnabled={canWriteCue || (!cuesLoading && Object.keys(cuesByKey ?? {}).length > 0)}
+        resolutionKey={exerciseResolutionKey(ex)}
+        canWriteCue={canWriteCue}
+        onCueSave={onCueSave}
+        onCueDraftChange={onCueDraftChange}
+        onCueCancel={onCueCancel}
       />
     );
   });

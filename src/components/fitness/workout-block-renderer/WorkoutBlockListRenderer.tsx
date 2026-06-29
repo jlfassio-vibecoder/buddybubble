@@ -65,6 +65,10 @@ export function WorkoutBlockListRenderer({
   renderMainBlockAfterHeader,
   cuesByKey,
   cuesLoading = false,
+  canWriteCue = false,
+  onCueSave,
+  onCueDraftChange,
+  onCueCancel,
 }: WorkoutBlockListRendererProps) {
   if (blocks.length === 0) return null;
 
@@ -115,6 +119,10 @@ export function WorkoutBlockListRenderer({
             globalFlatIndexStart={mainFlatIndexStarts[blockIndex] ?? 0}
             cuesByKey={cuesByKey}
             cuesLoading={cuesLoading}
+            canWriteCue={canWriteCue}
+            onCueSave={onCueSave}
+            onCueDraftChange={onCueDraftChange}
+            onCueCancel={onCueCancel}
           />
         );
 

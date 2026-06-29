@@ -1,5 +1,5 @@
-import { describe, expect, it, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { describe, expect, it, afterEach, vi } from 'vitest';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { WorkoutExerciseCuePanel } from '@/components/fitness/workout-block-renderer/WorkoutExerciseCuePanel';
 import type { ResolvedCueBundle } from '@/lib/workout-factory/resolve-exercise-cue-bundle';
 
@@ -49,17 +49,90 @@ describe('WorkoutExerciseCuePanel', () => {
       form_cues: { value: 'Knees out', provenance: 'library' },
       tips: null,
       injury_prevention_tips: null,
-      coach_notes: { value: 'Go heavy', provenance: 'workout' },
+      coach_notes: null,
       isEmpty: false,
     };
 
     render(<WorkoutExerciseCuePanel exerciseName="Squat" bundle={bundle} isExpanded />);
 
-    expect(screen.getByTestId('workout-exercise-cue-panel')).toBeTruthy();
     expect(screen.getByText('Brace core')).toBeTruthy();
-    expect(screen.getByText('Knees out')).toBeTruthy();
     expect(screen.getByText('Your notes')).toBeTruthy();
+    expect(screen.getByText('Knees out')).toBeTruthy();
     expect(screen.getByText('Library')).toBeTruthy();
-    expect(screen.getByText('This workout')).toBeTruthy();
+  });
+
+  it('enters authoring mode and saves cue patch', () => {
+    const onCueSave = vi.fn();
+    const bundle: ResolvedCueBundle = {
+      exerciseName: 'Squat',
+      instructions: null,
+      form_cues: null,
+      tips: null,
+      injury_prevention_tips: null,
+      coach_notes: null,
+      isEmpty: true,
+    };
+
+    render(
+      <WorkoutExerciseCuePanel
+        exerciseName="Squat"
+        bundle={bundle}
+        isExpanded
+        canWrite
+        resolutionKey="squat::0"
+        onCueSave={onCueSave}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add cues' }));
+    expect(screen.getByTestId('workout-exercise-cue-edit')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Instructions'), {
+      target: { value: 'New instructions' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save to this workout' }));
+
+    expect(onCueSave).toHaveBeenCalledWith('squat::0', {
+      instructions: 'New instructions',
+      form_cues: '',
+      tips: '',
+      injury_prevention_tips: '',
+    });
+  });
+
+  it('cancel discards authoring and calls onCueCancel', () => {
+    const onCueCancel = vi.fn();
+    const onCueDraftChange = vi.fn();
+    const bundle: ResolvedCueBundle = {
+      exerciseName: 'Squat',
+      instructions: { value: 'Existing', provenance: 'flat' },
+      form_cues: null,
+      tips: null,
+      injury_prevention_tips: null,
+      coach_notes: null,
+      isEmpty: false,
+    };
+
+    render(
+      <WorkoutExerciseCuePanel
+        exerciseName="Squat"
+        bundle={bundle}
+        isExpanded
+        canWrite
+        resolutionKey="squat"
+        onCueCancel={onCueCancel}
+        onCueDraftChange={onCueDraftChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit cues' }));
+    fireEvent.change(screen.getByLabelText('Instructions'), {
+      target: { value: 'Draft change' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(onCueCancel).toHaveBeenCalledWith('squat');
+    expect(screen.queryByTestId('workout-exercise-cue-edit')).toBeNull();
+    expect(screen.getByText('Existing')).toBeTruthy();
   });
 });

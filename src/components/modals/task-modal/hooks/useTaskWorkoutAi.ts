@@ -18,6 +18,11 @@ import {
 } from '@/lib/item-metadata';
 import type { WorkoutViewerApplyPayload } from '@/components/fitness/workout-viewer-dialog';
 import {
+  applyCuePatchesToMetadata,
+  type WorkoutCuePatch,
+} from '@/lib/workout-factory/apply-cue-patches-to-metadata';
+import { parseWorkoutExercisesFromMetadata } from '@/lib/parse-workout-exercises-from-metadata';
+import {
   applyBlockEditsToMetadata,
   applyFlatWorkoutEditsToMetadata,
   deriveFlatExercisesFromMetadata,
@@ -272,7 +277,7 @@ export function useTaskWorkoutAi({
       if (payload.blocks != null && payload.blocks.length > 0) {
         const nextMeta = applyBlockEditsToMetadata(metadata, payload.blocks) as Json;
         setMetadata(nextMeta);
-        setWorkoutExercises(deriveFlatExercisesFromMetadata(nextMeta));
+        setWorkoutExercises(parseWorkoutExercisesFromMetadata(nextMeta));
         return;
       }
 
@@ -288,6 +293,15 @@ export function useTaskWorkoutAi({
     [metadata, setTitle, setDescription, setWorkoutExercises, setMetadata],
   );
 
+  const handleWorkoutViewerCuePatches = useCallback(
+    (patches: Record<string, WorkoutCuePatch>) => {
+      const nextMeta = applyCuePatchesToMetadata(metadata, patches) as Json;
+      setMetadata(nextMeta);
+      setWorkoutExercises(parseWorkoutExercisesFromMetadata(nextMeta));
+    },
+    [metadata, setMetadata, setWorkoutExercises],
+  );
+
   return {
     templatePickerOpen,
     setTemplatePickerOpen,
@@ -300,6 +314,7 @@ export function useTaskWorkoutAi({
     viewerWorkoutSet,
     hasWorkoutViewerContent,
     handleWorkoutViewerApply,
+    handleWorkoutViewerCuePatches,
     resetWorkoutAiUi,
   };
 }

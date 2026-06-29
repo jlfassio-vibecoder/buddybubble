@@ -5,7 +5,8 @@ export type {
   WorkoutBlockExerciseRenderContext,
   WorkoutBlockListChrome,
   WorkoutBlockListRendererProps,
-} from './WorkoutBlockListRenderer';
+  WorkoutCueEditProps,
+} from './workout-block-renderer-types';
 
 export { WorkoutFlatExerciseList } from './WorkoutFlatExerciseList';
 export type { WorkoutFlatExerciseListProps } from './WorkoutFlatExerciseList';

@@ -511,6 +511,7 @@ export function TaskModal({
     viewerWorkoutSet,
     hasWorkoutViewerContent,
     handleWorkoutViewerApply,
+    handleWorkoutViewerCuePatches,
     resetWorkoutAiUi,
   } = useTaskWorkoutAi({
     open,
@@ -984,12 +985,15 @@ export function TaskModal({
 
   const { hardDeleteTask } = useTaskHardDelete();
 
-  const handleSaveCoreFields = useCallback(async () => {
-    const ok = await saveCoreFields();
-    if (ok && isOptimisticDraftProp) {
-      onOptimisticDraftConsumed?.();
-    }
-  }, [saveCoreFields, isOptimisticDraftProp, onOptimisticDraftConsumed]);
+  const handleSaveCoreFields = useCallback(
+    async (metadataOverride?: Json) => {
+      const ok = await saveCoreFields(metadataOverride);
+      if (ok && isOptimisticDraftProp) {
+        onOptimisticDraftConsumed?.();
+      }
+    },
+    [saveCoreFields, isOptimisticDraftProp, onOptimisticDraftConsumed],
+  );
 
   const workoutOutlineEditor = useWorkoutOutlineEditor({
     canWrite,
@@ -2444,6 +2448,7 @@ export function TaskModal({
                 workoutUnitSystem={workoutUnitSystem}
                 readVariant={itemType === 'workout_log' ? 'log' : 'workout'}
                 onApply={handleWorkoutViewerApply}
+                onApplyCuePatches={handleWorkoutViewerCuePatches}
                 onRequestClose={() => setWorkoutViewerOpen(false)}
                 syncKey={workoutPaneSyncKey}
                 cardCoverPath={cardCoverPath.trim() || null}
@@ -2463,8 +2468,8 @@ export function TaskModal({
                 cardCoverSaveBusy={saving}
                 {...(canWrite
                   ? {
-                      onSaveTask: () => {
-                        void (taskId ? handleSaveCoreFields() : createTask());
+                      onSaveTask: (metadataOverride) => {
+                        void (taskId ? handleSaveCoreFields(metadataOverride) : createTask());
                       },
                       saving,
                       saveDisabled: taskId ? !coreDirty : !title.trim(),

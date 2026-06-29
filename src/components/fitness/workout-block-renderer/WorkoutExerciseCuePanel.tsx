@@ -1,17 +1,27 @@
 'use client';
 
+import { useCallback, useEffect, useState } from 'react';
 import { Info } from 'lucide-react';
 import type {
   CueProvenance,
   ResolvedCueBundle,
   ResolvedCueField,
 } from '@/lib/workout-factory/resolve-exercise-cue-bundle';
+import type { WorkoutCuePatch } from '@/lib/workout-factory/apply-cue-patches-to-metadata';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 
 export type WorkoutExerciseCuePanelProps = {
   exerciseName: string;
   bundle: ResolvedCueBundle;
   isExpanded: boolean;
+  canWrite?: boolean;
+  resolutionKey?: string;
+  onCueSave?: (key: string, patch: WorkoutCuePatch) => void;
+  onCueDraftChange?: (key: string, patch: WorkoutCuePatch) => void;
+  onCueCancel?: (key: string) => void;
 };
 
 const PROVENANCE_LABEL: Record<CueProvenance, string> = {
@@ -20,6 +30,26 @@ const PROVENANCE_LABEL: Record<CueProvenance, string> = {
   flat: 'This card',
   library: 'Library',
 };
+
+const EDITABLE_FIELDS = [
+  { key: 'instructions' as const, label: 'Instructions' },
+  { key: 'form_cues' as const, label: 'Form cues' },
+  { key: 'tips' as const, label: 'Tips' },
+  { key: 'injury_prevention_tips' as const, label: 'Injury notes' },
+];
+
+function fieldValue(field: ResolvedCueField | null | undefined): string {
+  return field?.value ?? '';
+}
+
+function bundleToDraft(bundle: ResolvedCueBundle): WorkoutCuePatch {
+  return {
+    instructions: fieldValue(bundle.instructions),
+    form_cues: fieldValue(bundle.form_cues),
+    tips: fieldValue(bundle.tips),
+    injury_prevention_tips: fieldValue(bundle.injury_prevention_tips),
+  };
+}
 
 function CueSection({ label, field }: { label: string; field: ResolvedCueField }) {
   return (
@@ -39,10 +69,71 @@ export function WorkoutExerciseCuePanel({
   exerciseName,
   bundle,
   isExpanded,
+  canWrite = false,
+  resolutionKey = '',
+  onCueSave,
+  onCueDraftChange,
+  onCueCancel,
 }: WorkoutExerciseCuePanelProps) {
+  const [isAuthoring, setIsAuthoring] = useState(false);
+  const [draft, setDraft] = useState<WorkoutCuePatch>(() => bundleToDraft(bundle));
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  useEffect(() => {
+    if (!isExpanded) {
+      setIsAuthoring(false);
+    }
+  }, [isExpanded]);
+
+  useEffect(() => {
+    if (!isAuthoring) {
+      setDraft(bundleToDraft(bundle));
+    }
+  }, [bundle, isAuthoring]);
+
+  useEffect(() => {
+    if (!savedFlash) return;
+    const id = window.setTimeout(() => setSavedFlash(false), 2000);
+    return () => window.clearTimeout(id);
+  }, [savedFlash]);
+
+  const updateDraft = useCallback(
+    (field: keyof WorkoutCuePatch, value: string) => {
+      setDraft((prev) => {
+        const next = { ...prev, [field]: value };
+        if (resolutionKey && onCueDraftChange) {
+          onCueDraftChange(resolutionKey, next);
+        }
+        return next;
+      });
+    },
+    [resolutionKey, onCueDraftChange],
+  );
+
+  const handleStartAuthoring = useCallback(() => {
+    setDraft(bundleToDraft(bundle));
+    setIsAuthoring(true);
+  }, [bundle]);
+
+  const handleCancel = useCallback(() => {
+    setIsAuthoring(false);
+    setDraft(bundleToDraft(bundle));
+    if (resolutionKey) onCueCancel?.(resolutionKey);
+  }, [bundle, resolutionKey, onCueCancel]);
+
+  const handleSave = useCallback(() => {
+    if (!resolutionKey || !onCueSave) return;
+    onCueSave(resolutionKey, draft);
+    setIsAuthoring(false);
+    setSavedFlash(true);
+  }, [resolutionKey, onCueSave, draft]);
+
   if (!isExpanded) return null;
 
-  if (bundle.isEmpty) {
+  const showAuthoring = canWrite && isAuthoring;
+  const showRead = !showAuthoring;
+
+  if (bundle.isEmpty && !canWrite) {
     return (
       <p className="mt-2 text-xs text-muted-foreground" data-testid="workout-exercise-cue-empty">
         No form cues yet for {exerciseName}.
@@ -58,16 +149,62 @@ export function WorkoutExerciseCuePanel({
       <div className="flex gap-2">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
         <div className="min-w-0 flex-1 space-y-2 text-xs leading-relaxed text-muted-foreground">
-          {bundle.instructions ? (
-            <CueSection label="Instructions" field={bundle.instructions} />
+          {showRead && bundle.isEmpty ? (
+            <p data-testid="workout-exercise-cue-empty">No form cues yet for {exerciseName}.</p>
           ) : null}
-          {bundle.form_cues ? <CueSection label="Form cues" field={bundle.form_cues} /> : null}
-          {bundle.tips ? <CueSection label="Tips" field={bundle.tips} /> : null}
-          {bundle.injury_prevention_tips ? (
-            <CueSection label="Injury notes" field={bundle.injury_prevention_tips} />
+
+          {showRead ? (
+            <>
+              {bundle.instructions ? (
+                <CueSection label="Instructions" field={bundle.instructions} />
+              ) : null}
+              {bundle.form_cues ? <CueSection label="Form cues" field={bundle.form_cues} /> : null}
+              {bundle.tips ? <CueSection label="Tips" field={bundle.tips} /> : null}
+              {bundle.injury_prevention_tips ? (
+                <CueSection label="Injury notes" field={bundle.injury_prevention_tips} />
+              ) : null}
+              {bundle.coach_notes ? (
+                <CueSection label="Coach notes" field={bundle.coach_notes} />
+              ) : null}
+            </>
           ) : null}
-          {bundle.coach_notes ? (
-            <CueSection label="Coach notes" field={bundle.coach_notes} />
+
+          {showAuthoring ? (
+            <div className="space-y-3" data-testid="workout-exercise-cue-edit">
+              {EDITABLE_FIELDS.map(({ key, label }) => (
+                <div key={key} className="space-y-1">
+                  <Label htmlFor={`cue-${resolutionKey}-${key}`} className="text-xs">
+                    {label}
+                  </Label>
+                  <Textarea
+                    id={`cue-${resolutionKey}-${key}`}
+                    value={draft[key] ?? ''}
+                    onChange={(e) => updateDraft(key, e.target.value)}
+                    rows={3}
+                    className="min-h-[4.5rem] resize-y text-xs"
+                  />
+                </div>
+              ))}
+              <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+                <Button type="button" variant="outline" size="sm" onClick={handleCancel}>
+                  Cancel
+                </Button>
+                <Button type="button" size="sm" onClick={handleSave}>
+                  Save to this workout
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {canWrite && !isAuthoring ? (
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <Button type="button" variant="outline" size="sm" onClick={handleStartAuthoring}>
+                {bundle.isEmpty ? 'Add cues' : 'Edit cues'}
+              </Button>
+              {savedFlash ? (
+                <span className="text-[10px] font-medium text-primary">Saved to this workout</span>
+              ) : null}
+            </div>
           ) : null}
         </div>
       </div>

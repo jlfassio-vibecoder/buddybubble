@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { RequestImageLink } from '@/components/fitness/workout-block-renderer/RequestImageLink';
 import { WorkoutExerciseThumbnail } from '@/components/fitness/workout-block-renderer/WorkoutExerciseThumbnail';
+import type { WorkoutCueEditProps } from '@/components/fitness/workout-block-renderer/workout-block-renderer-types';
 
 export type WorkoutReadExerciseRowProps = {
   name: string;
@@ -34,7 +35,8 @@ export type WorkoutReadExerciseRowProps = {
   unitSystem?: UnitSystem;
   resolvedCues?: ResolvedCueBundle | null;
   cuePanelEnabled?: boolean;
-};
+  resolutionKey?: string;
+} & WorkoutCueEditProps;
 
 function CuesToggleBadge({ state }: { state: 'empty' | 'partial' | 'full' }) {
   return (
@@ -64,6 +66,11 @@ export function WorkoutReadExerciseRow({
   unitSystem = 'metric',
   resolvedCues = null,
   cuePanelEnabled = false,
+  resolutionKey = '',
+  canWriteCue = false,
+  onCueSave,
+  onCueDraftChange,
+  onCueCancel,
 }: WorkoutReadExerciseRowProps) {
   const compact = density === 'compact';
   const showRequest = !thumbnailUrl && taskId != null;
@@ -124,7 +131,16 @@ export function WorkoutReadExerciseRow({
           </div>
         ) : null}
         {cuePanelEnabled ? (
-          <WorkoutExerciseCuePanel exerciseName={name} bundle={bundle} isExpanded={isExpanded} />
+          <WorkoutExerciseCuePanel
+            exerciseName={name}
+            bundle={bundle}
+            isExpanded={isExpanded}
+            canWrite={canWriteCue}
+            resolutionKey={resolutionKey}
+            onCueSave={onCueSave}
+            onCueDraftChange={onCueDraftChange}
+            onCueCancel={onCueCancel}
+          />
         ) : null}
         {notes?.trim() ? (
           <p
@@ -162,6 +178,11 @@ export function WorkoutReadExerciseRowFromFactory({
   unitSystem = 'metric',
   resolvedCues = null,
   cuePanelEnabled = false,
+  resolutionKey = '',
+  canWriteCue = false,
+  onCueSave,
+  onCueDraftChange,
+  onCueCancel,
 }: {
   ex: Exercise;
   taskId?: string | null;
@@ -171,7 +192,8 @@ export function WorkoutReadExerciseRowFromFactory({
   unitSystem?: UnitSystem;
   resolvedCues?: ResolvedCueBundle | null;
   cuePanelEnabled?: boolean;
-}) {
+  resolutionKey?: string;
+} & WorkoutCueEditProps) {
   const metaLine = formatExercisePrescriptionLineFromFactory(ex);
   const notes = ex.coachNotes?.trim() ?? '';
 
@@ -189,6 +211,11 @@ export function WorkoutReadExerciseRowFromFactory({
       unitSystem={unitSystem}
       resolvedCues={resolvedCues}
       cuePanelEnabled={cuePanelEnabled}
+      resolutionKey={resolutionKey}
+      canWriteCue={canWriteCue}
+      onCueSave={onCueSave}
+      onCueDraftChange={onCueDraftChange}
+      onCueCancel={onCueCancel}
     />
   );
 }

@@ -1,7 +1,15 @@
 import type { HTMLAttributes, ReactNode } from 'react';
 import type { Exercise } from '@/lib/workout-factory/types/ai-program';
 import type { ResolvedCueBundle } from '@/lib/workout-factory/resolve-exercise-cue-bundle';
+import type { WorkoutCuePatch } from '@/lib/workout-factory/apply-cue-patches-to-metadata';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
+
+export type WorkoutCueEditProps = {
+  canWriteCue?: boolean;
+  onCueSave?: (key: string, patch: WorkoutCuePatch) => void;
+  onCueDraftChange?: (key: string, patch: WorkoutCuePatch) => void;
+  onCueCancel?: (key: string) => void;
+};
 
 export type WorkoutBlockExerciseRenderContext = {
   block: WorkoutSessionBlockView;
@@ -37,4 +45,4 @@ export type WorkoutBlockListRendererProps = {
   cuesByKey?: Record<string, ResolvedCueBundle>;
   /** When true, cue toggles stay hidden until resolution completes. */
   cuesLoading?: boolean;
-};
+} & WorkoutCueEditProps;
