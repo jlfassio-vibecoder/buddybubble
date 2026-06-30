@@ -24,6 +24,7 @@ function richFixtureMainExercise(meta: Record<string, unknown>): Exercise {
 describe('mergeCuePatchIntoBundle', () => {
   const base: ResolvedCueBundle = {
     exerciseName: 'Squat',
+    dictionaryId: null,
     instructions: { value: 'Old', provenance: 'library' },
     form_cues: null,
     tips: null,

@@ -30,7 +30,11 @@ export function useExerciseCueResolution(args: {
   userId: string | null;
   blocks: WorkoutSessionBlockView[];
   flatExercises: WorkoutExercise[];
-}): { cuesByKey: Record<string, ResolvedCueBundle>; loading: boolean } {
+}): {
+  cuesByKey: Record<string, ResolvedCueBundle>;
+  loading: boolean;
+  refresh: () => Promise<void>;
+} {
   const [cuesByKey, setCuesByKey] = useState<Record<string, ResolvedCueBundle>>({});
   const [loading, setLoading] = useState(false);
 
@@ -171,7 +175,7 @@ export function useExerciseCueResolution(args: {
     void load();
   }, [args.enabled, collectedKey, args.userId, load, collected.length]);
 
-  return { cuesByKey, loading };
+  return { cuesByKey, loading, refresh: load };
 }
 
 export { exerciseResolutionKey, emptyResolvedCueBundle };

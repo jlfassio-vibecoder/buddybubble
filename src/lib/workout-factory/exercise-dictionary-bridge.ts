@@ -219,3 +219,37 @@ export async function insertExerciseDictionaryPendingFromEnrichment(
   const { error } = await client.from('exercise_dictionary').insert(row);
   if (error) throw error;
 }
+
+/**
+ * Minimal pending `exercise_dictionary` stub for user-scoped cue saves (M4).
+ * No Kanban enrich payload — name + slug + created_by only.
+ */
+export async function insertPendingExerciseDictionaryStub(
+  client: SupabaseClient,
+  exerciseName: string,
+  createdByUserId: string,
+): Promise<string> {
+  const name = exerciseName.trim();
+  if (!name) {
+    throw new Error('exercise_name_required');
+  }
+  const slug = await resolveUniqueExerciseDictionarySlug(client, name);
+  const { data, error } = await client
+    .from('exercise_dictionary')
+    .insert({
+      slug,
+      name,
+      status: 'pending',
+      instructions: [],
+      biomechanics: {},
+      media: {},
+      created_by: createdByUserId,
+    })
+    .select('id')
+    .single();
+  if (error) throw error;
+  if (!data?.id) {
+    throw new Error('exercise_dictionary_insert_no_id');
+  }
+  return data.id;
+}

@@ -27,6 +27,12 @@ export type WorkoutExerciseCuePanelProps = {
   onCueDraftChange?: (key: string, patch: WorkoutCuePatch) => void;
   onCueCancel?: (key: string) => void;
   onAskCoachForCues?: (payload: ExerciseCueRequestV1) => void;
+  onSaveToMyNotes?: (args: {
+    resolutionKey: string;
+    exerciseName: string;
+    dictionaryId: string | null;
+    patch: WorkoutCuePatch;
+  }) => Promise<void>;
   injuriesOnFile?: boolean;
   prescription?: ExerciseCueRequestV1['prescription'];
   workoutExerciseIndex?: number;
@@ -83,6 +89,7 @@ export function WorkoutExerciseCuePanel({
   onCueDraftChange,
   onCueCancel,
   onAskCoachForCues,
+  onSaveToMyNotes,
   injuriesOnFile = false,
   prescription,
   workoutExerciseIndex,
@@ -90,6 +97,7 @@ export function WorkoutExerciseCuePanel({
   const [isAuthoring, setIsAuthoring] = useState(false);
   const [draft, setDraft] = useState<WorkoutCuePatch>(() => bundleToDraft(bundle));
   const [savedFlash, setSavedFlash] = useState(false);
+  const [personalSaveState, setPersonalSaveState] = useState<'idle' | 'saving'>('idle');
 
   useEffect(() => {
     if (!isExpanded) {
@@ -111,15 +119,13 @@ export function WorkoutExerciseCuePanel({
 
   const updateDraft = useCallback(
     (field: keyof WorkoutCuePatch, value: string) => {
-      setDraft((prev) => {
-        const next = { ...prev, [field]: value };
-        if (resolutionKey && onCueDraftChange) {
-          onCueDraftChange(resolutionKey, next);
-        }
-        return next;
-      });
+      const nextDraft = { ...draft, [field]: value };
+      setDraft(nextDraft);
+      if (resolutionKey && onCueDraftChange) {
+        onCueDraftChange(resolutionKey, nextDraft);
+      }
     },
-    [resolutionKey, onCueDraftChange],
+    [draft, resolutionKey, onCueDraftChange],
   );
 
   const handleStartAuthoring = useCallback(() => {
@@ -139,6 +145,35 @@ export function WorkoutExerciseCuePanel({
     setIsAuthoring(false);
     setSavedFlash(true);
   }, [resolutionKey, onCueSave, draft]);
+
+  const hasDraftContent = EDITABLE_FIELDS.some(({ key }) => (draft[key] ?? '').trim().length > 0);
+  const personalSaving = personalSaveState === 'saving';
+
+  const handleSaveToMyNotes = useCallback(async () => {
+    if (!resolutionKey || !onSaveToMyNotes || !hasDraftContent || personalSaving) return;
+    setPersonalSaveState('saving');
+    try {
+      await onSaveToMyNotes({
+        resolutionKey,
+        exerciseName,
+        dictionaryId: bundle.dictionaryId,
+        patch: draft,
+      });
+      setIsAuthoring(false);
+    } catch {
+      /* parent shows toast */
+    } finally {
+      setPersonalSaveState('idle');
+    }
+  }, [
+    resolutionKey,
+    onSaveToMyNotes,
+    hasDraftContent,
+    personalSaving,
+    exerciseName,
+    bundle.dictionaryId,
+    draft,
+  ]);
 
   const emptyFields = useMemo(
     () => computeEmptyCueFields(bundle, { includeInjuryField: injuriesOnFile }),
@@ -222,10 +257,28 @@ export function WorkoutExerciseCuePanel({
                 </div>
               ))}
               <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
-                <Button type="button" variant="outline" size="sm" onClick={handleCancel}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCancel}
+                  disabled={personalSaving}
+                >
                   Cancel
                 </Button>
-                <Button type="button" size="sm" onClick={handleSave}>
+                {onSaveToMyNotes ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void handleSaveToMyNotes()}
+                    disabled={personalSaving || !hasDraftContent}
+                    aria-busy={personalSaving}
+                  >
+                    {personalSaving ? 'Saving…' : 'Save to my notes'}
+                  </Button>
+                ) : null}
+                <Button type="button" size="sm" onClick={handleSave} disabled={personalSaving}>
                   Save to this workout
                 </Button>
               </div>

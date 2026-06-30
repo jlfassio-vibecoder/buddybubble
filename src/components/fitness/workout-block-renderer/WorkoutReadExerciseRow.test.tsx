@@ -9,6 +9,7 @@ describe('WorkoutReadExerciseRow cues accordion', () => {
   it('expands cue panel on toggle click', () => {
     const bundle: ResolvedCueBundle = {
       exerciseName: 'Squat',
+      dictionaryId: null,
       instructions: { value: 'Brace core', provenance: 'flat' },
       form_cues: null,
       tips: null,
@@ -42,6 +43,7 @@ describe('WorkoutReadExerciseRow cues accordion', () => {
         cuePanelEnabled
         resolvedCues={{
           exerciseName: 'Custom Move',
+          dictionaryId: null,
           instructions: null,
           form_cues: null,
           tips: null,

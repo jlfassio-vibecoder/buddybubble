@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import type { WorkoutSetTemplate } from '@/lib/workout-factory/types/workout-contract';
 import type { WorkoutExercise } from '@/lib/item-metadata';
@@ -30,6 +31,8 @@ import {
   mergeCuePatchIntoBundle,
   type WorkoutCuePatch,
 } from '@/lib/workout-factory/apply-cue-patches-to-metadata';
+import { savePersonalExerciseCues } from '@/lib/workout-factory/save-personal-exercise-cues';
+import type { SaveToMyNotesArgs } from '@/components/fitness/workout-block-renderer/workout-block-renderer-types';
 import { useUserProfileStore } from '@/store/userProfileStore';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 import { useTaskCardCoverUrl } from '@/lib/task-card-cover';
@@ -281,7 +284,11 @@ export function WorkoutViewerContent({
 
   const profileId = useUserProfileStore((s) => s.profile?.id ?? null);
   const cuesEnabled = mode === 'view' && readVariant !== 'log';
-  const { cuesByKey, loading: cuesLoading } = useExerciseCueResolution({
+  const {
+    cuesByKey,
+    loading: cuesLoading,
+    refresh: refreshCues,
+  } = useExerciseCueResolution({
     enabled: cuesEnabled,
     userId: profileId,
     blocks: sessionVm.blocks,
@@ -351,6 +358,28 @@ export function WorkoutViewerContent({
     });
   }, []);
 
+  const handleSaveToMyNotes = useCallback(
+    async (args: SaveToMyNotesArgs) => {
+      if (!profileId) {
+        toast.error('Sign in to save personal notes.');
+        throw new Error('not_authenticated');
+      }
+      const result = await savePersonalExerciseCues({
+        exerciseName: args.exerciseName,
+        dictionaryId: args.dictionaryId,
+        patch: args.patch,
+        mode: 'replace',
+      });
+      if (!result.ok) {
+        toast.error(result.error);
+        throw new Error(result.error);
+      }
+      toast.success('Saved to your notes');
+      await refreshCues();
+    },
+    [profileId, refreshCues],
+  );
+
   const handleRequestClose = useCallback(() => {
     if (hasUnsavedCuePatches && !window.confirm('Discard unsaved cue changes?')) {
       return;
@@ -375,6 +404,7 @@ export function WorkoutViewerContent({
       onCueDraftChange: handleCueDraftChange,
       onCueCancel: handleCuePatchCancel,
       onAskCoachForCues,
+      onSaveToMyNotes: profileId ? handleSaveToMyNotes : undefined,
       injuriesOnFile,
     }),
     [
@@ -383,6 +413,8 @@ export function WorkoutViewerContent({
       handleCueDraftChange,
       handleCuePatchCancel,
       onAskCoachForCues,
+      handleSaveToMyNotes,
+      profileId,
       injuriesOnFile,
     ],
   );

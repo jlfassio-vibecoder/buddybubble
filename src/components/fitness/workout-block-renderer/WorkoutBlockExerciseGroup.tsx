@@ -38,6 +38,7 @@ export function WorkoutBlockExerciseGroup({
   onCueDraftChange,
   onCueCancel,
   onAskCoachForCues,
+  onSaveToMyNotes,
   injuriesOnFile = false,
 }: WorkoutBlockExerciseGroupProps) {
   const exercises = block.exercises;
@@ -76,6 +77,7 @@ export function WorkoutBlockExerciseGroup({
         onCueDraftChange={onCueDraftChange}
         onCueCancel={onCueCancel}
         onAskCoachForCues={onAskCoachForCues}
+        onSaveToMyNotes={onSaveToMyNotes}
         injuriesOnFile={injuriesOnFile}
         workoutExerciseIndex={ctx.globalFlatIndex}
       />

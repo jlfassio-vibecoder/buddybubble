@@ -5,6 +5,13 @@ import type { WorkoutCuePatch } from '@/lib/workout-factory/apply-cue-patches-to
 import type { ExerciseCueRequestV1 } from '@/lib/agents/coach/exercise-cue-request';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 
+export type SaveToMyNotesArgs = {
+  resolutionKey: string;
+  exerciseName: string;
+  dictionaryId: string | null;
+  patch: WorkoutCuePatch;
+};
+
 export type WorkoutCueEditProps = {
   canWriteCue?: boolean;
   onCueSave?: (key: string, patch: WorkoutCuePatch) => void;
@@ -12,6 +19,8 @@ export type WorkoutCueEditProps = {
   onCueCancel?: (key: string) => void;
   /** M3: open Coach chat to generate missing cues. */
   onAskCoachForCues?: (payload: ExerciseCueRequestV1) => void;
+  /** M4: persist micro-edits to user_exercise_notes. */
+  onSaveToMyNotes?: (args: SaveToMyNotesArgs) => Promise<void>;
   injuriesOnFile?: boolean;
 };
 

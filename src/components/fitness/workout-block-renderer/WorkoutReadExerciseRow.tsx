@@ -74,6 +74,7 @@ export function WorkoutReadExerciseRow({
   onCueDraftChange,
   onCueCancel,
   onAskCoachForCues,
+  onSaveToMyNotes,
   injuriesOnFile = false,
   prescription,
   workoutExerciseIndex,
@@ -147,6 +148,7 @@ export function WorkoutReadExerciseRow({
             onCueDraftChange={onCueDraftChange}
             onCueCancel={onCueCancel}
             onAskCoachForCues={onAskCoachForCues}
+            onSaveToMyNotes={onSaveToMyNotes}
             injuriesOnFile={injuriesOnFile}
             prescription={prescription}
             workoutExerciseIndex={workoutExerciseIndex}
@@ -194,6 +196,7 @@ export function WorkoutReadExerciseRowFromFactory({
   onCueDraftChange,
   onCueCancel,
   onAskCoachForCues,
+  onSaveToMyNotes,
   injuriesOnFile = false,
   workoutExerciseIndex,
 }: {
@@ -231,6 +234,7 @@ export function WorkoutReadExerciseRowFromFactory({
       onCueDraftChange={onCueDraftChange}
       onCueCancel={onCueCancel}
       onAskCoachForCues={onAskCoachForCues}
+      onSaveToMyNotes={onSaveToMyNotes}
       injuriesOnFile={injuriesOnFile}
       workoutExerciseIndex={workoutExerciseIndex}
       prescription={

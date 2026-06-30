@@ -354,7 +354,7 @@ revoke all on function public.agent_create_card_and_reply(
   uuid, uuid, uuid, uuid, text, boolean, text, text, text, text, text, jsonb, jsonb, jsonb, jsonb, jsonb, jsonb
 ) from anon;
 grant execute on function public.agent_create_card_and_reply(
-  uuid, uuid, uuid, uuid, text, boolean, text, text, text, text, text, jsonb, jsonb, jsonb, jsonb, jsonb
+  uuid, uuid, uuid, uuid, text, boolean, text, text, text, text, text, jsonb, jsonb, jsonb, jsonb, jsonb, jsonb
 ) to service_role;
 
 
@@ -581,6 +581,23 @@ begin
 end;
 $$;
 
+comment on function public.agent_insert_coach_workout_draft_reply(
+  uuid, uuid, uuid, uuid, uuid, text, text, text, jsonb, jsonb, jsonb, jsonb, jsonb, jsonb
+) is
+  'Agent inserts coach_draft reply; optional execution_patch, personal_cues_patch, task_modal_intake_patch, card_action, and workout_cues_patch in metadata; service_role only.';
+
+revoke all on function public.agent_insert_coach_workout_draft_reply(
+  uuid, uuid, uuid, uuid, uuid, text, text, text, jsonb, jsonb, jsonb, jsonb, jsonb, jsonb
+) from public;
+revoke all on function public.agent_insert_coach_workout_draft_reply(
+  uuid, uuid, uuid, uuid, uuid, text, text, text, jsonb, jsonb, jsonb, jsonb, jsonb, jsonb
+) from authenticated;
+revoke all on function public.agent_insert_coach_workout_draft_reply(
+  uuid, uuid, uuid, uuid, uuid, text, text, text, jsonb, jsonb, jsonb, jsonb, jsonb, jsonb
+) from anon;
+grant execute on function public.agent_insert_coach_workout_draft_reply(
+  uuid, uuid, uuid, uuid, uuid, text, text, text, jsonb, jsonb, jsonb, jsonb, jsonb, jsonb
+) to service_role;
 
 
 -- Phase M3: persist Coach workout_cues_patch on agent_update_task_and_reply reply metadata.

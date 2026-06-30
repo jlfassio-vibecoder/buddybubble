@@ -34,6 +34,7 @@ export function WorkoutFlatExerciseList({
   onCueDraftChange,
   onCueCancel,
   onAskCoachForCues,
+  onSaveToMyNotes,
   injuriesOnFile = false,
 }: WorkoutFlatExerciseListProps) {
   if (exercises.length === 0) {
@@ -66,6 +67,7 @@ export function WorkoutFlatExerciseList({
               onCueDraftChange={onCueDraftChange}
               onCueCancel={onCueCancel}
               onAskCoachForCues={onAskCoachForCues}
+              onSaveToMyNotes={onSaveToMyNotes}
               injuriesOnFile={injuriesOnFile}
               prescription={
                 ex.sets != null || ex.reps != null

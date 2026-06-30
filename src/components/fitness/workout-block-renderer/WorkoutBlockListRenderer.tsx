@@ -70,6 +70,7 @@ export function WorkoutBlockListRenderer({
   onCueDraftChange,
   onCueCancel,
   onAskCoachForCues,
+  onSaveToMyNotes,
   injuriesOnFile = false,
 }: WorkoutBlockListRendererProps) {
   if (blocks.length === 0) return null;
@@ -126,6 +127,7 @@ export function WorkoutBlockListRenderer({
             onCueDraftChange={onCueDraftChange}
             onCueCancel={onCueCancel}
             onAskCoachForCues={onAskCoachForCues}
+            onSaveToMyNotes={onSaveToMyNotes}
             injuriesOnFile={injuriesOnFile}
           />
         );

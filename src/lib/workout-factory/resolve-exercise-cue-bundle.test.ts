@@ -29,6 +29,29 @@ describe('resolve-exercise-cue-bundle', () => {
     });
 
     expect(bundle.coach_notes).toEqual({ value: 'From block', provenance: 'workout' });
+    expect(bundle.dictionaryId).toBeNull();
+  });
+
+  it('sets dictionaryId from dictRow', () => {
+    const bundle = resolveExerciseCueBundle({
+      exerciseName: 'Squat',
+      dictRow: {
+        id: 'd1',
+        slug: 'squat',
+        name: 'Squat',
+        status: 'published',
+        biomechanics: {},
+        instructions: [],
+        media: {},
+        complexity_level: null,
+        kinetic_chain_type: null,
+        created_at: '',
+        updated_at: '',
+        created_by: null,
+      } as ExerciseDictionaryRow,
+    });
+
+    expect(bundle.dictionaryId).toBe('d1');
   });
 
   it('personal form_cues wins over flat and library', () => {

@@ -15,6 +15,8 @@ export type ResolvedCueField = {
 
 export type ResolvedCueBundle = {
   exerciseName: string;
+  /** Matched `exercise_dictionary.id`, or null when name has no catalog row yet. */
+  dictionaryId: string | null;
   instructions: ResolvedCueField | null;
   form_cues: ResolvedCueField | null;
   tips: ResolvedCueField | null;
@@ -216,6 +218,7 @@ export function resolveExerciseCueBundle(input: ResolveExerciseCueBundleInput): 
 
   const bundle: ResolvedCueBundle = {
     exerciseName: input.exerciseName,
+    dictionaryId: input.dictRow?.id ?? null,
     instructions,
     form_cues,
     tips,
@@ -232,6 +235,7 @@ export function resolveExerciseCueBundle(input: ResolveExerciseCueBundleInput): 
 export function emptyResolvedCueBundle(exerciseName: string): ResolvedCueBundle {
   return {
     exerciseName,
+    dictionaryId: null,
     instructions: null,
     form_cues: null,
     tips: null,

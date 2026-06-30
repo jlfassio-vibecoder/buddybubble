@@ -21,6 +21,7 @@ vi.mock('@/hooks/useExerciseCueResolution', () => ({
   useExerciseCueResolution: () => ({
     cuesByKey: {},
     loading: false,
+    refresh: vi.fn().mockResolvedValue(undefined),
   }),
 }));
 
