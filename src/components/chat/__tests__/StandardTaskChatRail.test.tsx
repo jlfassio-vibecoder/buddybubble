@@ -465,6 +465,7 @@ describe('StandardTaskChatRail', () => {
     expect(root).not.toBeNull();
     const cls = root!.className;
     expect(cls).toMatch(/\bflex\b/);
+    expect(cls).toMatch(/\bh-full\b/);
     expect(cls).toMatch(/\bflex-1\b/);
     expect(cls).toMatch(/\bmin-h-0\b/);
     expect(cls).toMatch(/\bmin-w-0\b/);

@@ -680,7 +680,7 @@ function StandardTaskChatRailChrome({
   }, [transcriptMessages, waitMain?.pending, scrollContainerRef]);
 
   return (
-    <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col bg-background', className)}>
+    <div className={cn('flex h-full min-h-0 min-w-0 flex-1 flex-col bg-background', className)}>
       {onCollapse ? (
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background px-4">
           <div className="flex min-w-0 items-center gap-2">
