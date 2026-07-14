@@ -168,7 +168,7 @@ export function WorkspaceMainSplit({
           'flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-border bg-background',
           chatCollapsed && 'pointer-events-none w-0 min-w-0 flex-[0_0_0] border-transparent',
           messagesOnlyMain && 'min-w-0 flex-1',
-          hideMainStageBelowMd && 'max-md:w-full max-md:min-w-0 max-md:flex-1',
+          hideMainStageBelowMd && 'max-md:flex max-md:w-full max-md:min-w-0 max-md:flex-1',
         )}
         style={
           chatCollapsed ? undefined : messagesOnlyMain ? undefined : { flex: `0 0 ${chatWidth}px` }

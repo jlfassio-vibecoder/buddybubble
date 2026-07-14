@@ -1159,7 +1159,7 @@ export function ChatArea({
   return (
     <div
       ref={composerPopoverRef}
-      className="relative flex h-full min-h-0 min-w-0 w-full flex-col bg-background"
+      className="relative flex min-h-0 min-w-0 w-full flex-1 flex-col bg-background"
     >
       {/* Header */}
       <header className="flex shrink-0 flex-col border-b border-border bg-background">
@@ -1472,7 +1472,7 @@ export function ChatArea({
 
       {/* Messages */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth">
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto scroll-smooth p-6 space-y-6">
           <AnimatePresence initial={false}>
             {displayMessages.map((msg) => (
               <motion.div
@@ -1650,6 +1650,7 @@ export function ChatArea({
       {(!isNarrow || !activeThreadParent) && (
         <RichMessageComposer
           density="rail"
+          className="shrink-0"
           formTestId="chat-composer-rail"
           popoverContainerRef={composerPopoverRef}
           value={input}
@@ -1757,17 +1758,19 @@ export function ChatArea({
             sendingAttachments
           }
           footerHint={
-            <>
-              <b>Return</b> to send (after attaching, pick files then send) • <b>Shift + Return</b>{' '}
-              for new line • <b>@</b> to mention • <b>/</b> to link a card • <b>#</b> to tag an
-              exercise
-              {coachBlockBlueprintMentionsEnabled ? (
-                <>
-                  {' '}
-                  • <b>:</b> for block format (AMRAP, EMOM…)
-                </>
-              ) : null}
-            </>
+            isNarrow ? undefined : (
+              <>
+                <b>Return</b> to send (after attaching, pick files then send) •{' '}
+                <b>Shift + Return</b> for new line • <b>@</b> to mention • <b>/</b> to link a card •{' '}
+                <b>#</b> to tag an exercise
+                {coachBlockBlueprintMentionsEnabled ? (
+                  <>
+                    {' '}
+                    • <b>:</b> for block format (AMRAP, EMOM…)
+                  </>
+                ) : null}
+              </>
+            )
           }
         />
       )}
