@@ -172,3 +172,30 @@ export function mergeOutlineMetadataOntoFormSavePayload(
 
   return formBase;
 }
+
+/**
+ * Keys written by `applyCuePatchesToMetadata` that must survive footer Save.
+ * Outline-only merge deliberately ignores these so structure confirms cannot
+ * clobber unsaved TaskModal exercise form edits; cue Save must re-apply them.
+ */
+export const WORKOUT_CUE_METADATA_OVERRIDE_KEYS = ['exercises', 'ai_workout_factory'] as const;
+
+/**
+ * Like {@link mergeOutlineMetadataOntoFormSavePayload}, then overlay cue-bearing
+ * exercise / factory tree fields from a workout-viewer Save override.
+ */
+export function mergeWorkoutCueMetadataOntoFormSavePayload(
+  activeFormMetadata: unknown,
+  cueSaveMetadata: unknown,
+): Record<string, unknown> {
+  const formBase = mergeOutlineMetadataOntoFormSavePayload(activeFormMetadata, cueSaveMetadata);
+  const cueObj = isPlainObject(cueSaveMetadata) ? cueSaveMetadata : {};
+
+  for (const key of WORKOUT_CUE_METADATA_OVERRIDE_KEYS) {
+    if (key in cueObj) {
+      formBase[key] = cueObj[key];
+    }
+  }
+
+  return formBase;
+}

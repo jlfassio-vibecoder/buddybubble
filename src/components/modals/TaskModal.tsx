@@ -94,7 +94,10 @@ import { useTaskOriginalSnapshot } from '@/components/modals/task-modal/hooks/us
 import { useTaskCoreTextAutosave } from '@/components/modals/task-modal/hooks/useTaskCoreTextAutosave';
 import { useTaskDirtyState } from '@/components/modals/task-modal/hooks/useTaskDirtyState';
 import { useTaskEmbeddedCollections } from '@/components/modals/task-modal/hooks/useTaskEmbeddedCollections';
-import { useTaskSaveAndCreate } from '@/components/modals/task-modal/hooks/useTaskSaveAndCreate';
+import {
+  useTaskSaveAndCreate,
+  type SaveCoreFieldsOptions,
+} from '@/components/modals/task-modal/hooks/useTaskSaveAndCreate';
 import { useTaskCommentsViewedMarker } from '@/components/modals/task-modal/hooks/useTaskCommentsViewedMarker';
 import { useTaskCommentMediaModal } from '@/components/modals/task-modal/hooks/useTaskCommentMediaModal';
 import { useDraftCleanupOnClose } from '@/components/modals/task-modal/hooks/useDraftCleanupOnClose';
@@ -1021,8 +1024,8 @@ export function TaskModal({
   const { hardDeleteTask } = useTaskHardDelete();
 
   const handleSaveCoreFields = useCallback(
-    async (metadataOverride?: Json) => {
-      const ok = await saveCoreFields(metadataOverride);
+    async (metadataOverride?: Json, options?: SaveCoreFieldsOptions) => {
+      const ok = await saveCoreFields(metadataOverride, options);
       if (ok && isOptimisticDraftProp) {
         onOptimisticDraftConsumed?.();
       }
@@ -2551,7 +2554,14 @@ export function TaskModal({
                 {...(canWrite
                   ? {
                       onSaveTask: (metadataOverride) => {
-                        void (taskId ? handleSaveCoreFields(metadataOverride) : createTask());
+                        void (taskId
+                          ? handleSaveCoreFields(
+                              metadataOverride,
+                              metadataOverride != null
+                                ? { metadataMerge: 'workout-cues' }
+                                : undefined,
+                            )
+                          : createTask());
                       },
                       saving,
                       saveDisabled: taskId ? !coreDirty : !title.trim(),

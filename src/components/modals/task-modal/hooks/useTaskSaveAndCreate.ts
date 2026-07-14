@@ -29,13 +29,24 @@ import {
   toPgScheduledTime,
   type TaskModalOriginalSnapshot,
 } from '@/components/modals/task-modal/task-modal-save-utils';
-import { mergeOutlineMetadataOntoFormSavePayload } from '@/lib/agents/coach/coach-outline-metadata';
+import {
+  mergeOutlineMetadataOntoFormSavePayload,
+  mergeWorkoutCueMetadataOntoFormSavePayload,
+} from '@/lib/agents/coach/coach-outline-metadata';
 import { mergeJsonWithLiveSessionToggle } from '@/lib/card-live-session-metadata';
 import {
   insertTasksRowWithRetries,
   resolveInsertPosition,
   type TasksInsertRow,
 } from '@/components/modals/task-modal/task-insert-row';
+
+/** How `metadataOverride` is merged into the live form save payload. */
+export type TaskMetadataOverrideMerge = 'outline-keys' | 'workout-cues';
+
+export type SaveCoreFieldsOptions = {
+  /** Defaults to `outline-keys` (outline editor confirm / structure save). */
+  metadataMerge?: TaskMetadataOverrideMerge;
+};
 export type UseTaskSaveAndCreateArgs = {
   canWrite: boolean;
   taskId: string | null;
@@ -137,7 +148,7 @@ export function useTaskSaveAndCreate({
   }, [archiving, canWrite, itemType, onOpenChange, onTaskArchived, setError, taskId]);
 
   const saveCoreFields = useCallback(
-    async (metadataOverride?: Json): Promise<boolean> => {
+    async (metadataOverride?: Json, options?: SaveCoreFieldsOptions): Promise<boolean> => {
       if (!canWrite || !taskId) return false;
       setSaving(true);
       setError(null);
@@ -176,9 +187,12 @@ export function useTaskSaveAndCreate({
         itemType,
       });
 
+      const mergeMode = options?.metadataMerge ?? 'outline-keys';
       const metadataPayload =
         metadataOverride != null
-          ? (mergeOutlineMetadataOntoFormSavePayload(metadataForSave, metadataOverride) as Json)
+          ? ((mergeMode === 'workout-cues'
+              ? mergeWorkoutCueMetadataOntoFormSavePayload(metadataForSave, metadataOverride)
+              : mergeOutlineMetadataOntoFormSavePayload(metadataForSave, metadataOverride)) as Json)
           : metadataForSave;
 
       const mergedMetadata = mergeJsonWithLiveSessionToggle(metadataPayload, {

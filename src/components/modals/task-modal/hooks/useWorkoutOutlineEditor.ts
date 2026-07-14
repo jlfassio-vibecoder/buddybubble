@@ -3,6 +3,7 @@
 import type { Dispatch, SetStateAction } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Json } from '@/types/database';
+import type { SaveCoreFieldsOptions } from '@/components/modals/task-modal/hooks/useTaskSaveAndCreate';
 import type { BlockBlueprintCatalogEntry } from '@/lib/agents/coach/block-blueprint-catalog';
 import {
   mergeCoachOutlineMetadataPatch,
@@ -40,7 +41,7 @@ export type UseWorkoutOutlineEditorArgs = {
   metadata: Json;
   setMetadata: Dispatch<SetStateAction<Json>>;
   patchOriginalMetadataJson: (metadataJson: string) => void;
-  saveCoreFields?: (metadataOverride?: Json) => Promise<boolean>;
+  saveCoreFields?: (metadataOverride?: Json, options?: SaveCoreFieldsOptions) => Promise<boolean>;
   /** When false, skip sync effects and block mutating actions (non-workout TaskModal cards). */
   enabled?: boolean;
 };
