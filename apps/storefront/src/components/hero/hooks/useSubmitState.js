@@ -73,11 +73,15 @@ export function useSubmitState() {
         try {
           turnstileToken = await getTurnstileToken();
         } catch {
+          // Retry timer / remount / superseding submit may abort while Turnstile is in flight.
+          if (controller.signal.aborted) return;
           clearTimers();
           setSubmitState({ status: 'error', error: 'Verification failed — please try again.' });
           return;
         }
       }
+
+      if (controller.signal.aborted) return;
 
       const body = { ...payload, ...(turnstileToken ? { turnstileToken } : {}) };
       try {

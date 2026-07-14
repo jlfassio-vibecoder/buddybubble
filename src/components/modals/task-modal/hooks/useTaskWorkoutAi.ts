@@ -293,13 +293,22 @@ export function useTaskWorkoutAi({
     [metadata, setTitle, setDescription, setWorkoutExercises, setMetadata],
   );
 
+  // Keep a sync mirror so rapid cue patches do not both read the same stale `metadata`.
+  // Update the ref in the handler and via effect (not during render) so a parent re-render
+  // with a stale prop cannot clobber an in-flight patch chain.
+  const cuePatchMetadataRef = useRef(metadata);
+  useEffect(() => {
+    cuePatchMetadataRef.current = metadata;
+  }, [metadata]);
+
   const handleWorkoutViewerCuePatches = useCallback(
     (patches: Record<string, WorkoutCuePatch>) => {
-      const nextMeta = applyCuePatchesToMetadata(metadata, patches) as Json;
+      const nextMeta = applyCuePatchesToMetadata(cuePatchMetadataRef.current, patches) as Json;
+      cuePatchMetadataRef.current = nextMeta;
       setMetadata(nextMeta);
       setWorkoutExercises(parseWorkoutExercisesFromMetadata(nextMeta));
     },
-    [metadata, setMetadata, setWorkoutExercises],
+    [setMetadata, setWorkoutExercises],
   );
 
   return {
