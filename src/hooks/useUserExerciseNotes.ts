@@ -1,17 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { UserExerciseNotesRow } from '@/lib/workout-factory/types/user-exercise-notes';
 import { createClient } from '@utils/supabase/client';
 
-export type UserExerciseNotesRow = {
-  id: string;
-  user_id: string;
-  exercise_dictionary_id: string;
-  instructions: string | null;
-  form_cues: string | null;
-  tips: string | null;
-  injury_prevention_tips: string | null;
-};
+export type { UserExerciseNotesRow } from '@/lib/workout-factory/types/user-exercise-notes';
 
 function normName(s: string): string {
   return s.trim().toLowerCase();

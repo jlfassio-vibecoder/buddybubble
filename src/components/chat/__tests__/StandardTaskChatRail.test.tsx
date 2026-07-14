@@ -649,4 +649,131 @@ describe('StandardTaskChatRail', () => {
     });
     expect(chatMessageRowMockCalls[0]?.chatCardWorkoutActions).toBeUndefined();
   });
+
+  it('sendCoachMessage via ref registers agent wait intent and successful send', async () => {
+    const registerIntent = vi.fn();
+    const registerSuccessfulSend = vi.fn();
+    vi.mocked(useAgentResponseWait).mockReturnValue({
+      pending: null,
+      registerIntent,
+      registerSuccessfulSend,
+      clear: vi.fn(),
+    } as UseAgentResponseWaitResult);
+
+    const coachAgent = {
+      id: 'coach-def',
+      slug: 'coach',
+      mention_handle: '@coach',
+      display_name: 'Coach',
+      avatar_url: '',
+      auth_user_id: 'auth-coach',
+      response_timeout_ms: 30_000,
+    };
+    const sendMessage = vi
+      .fn()
+      .mockResolvedValue({ messageId: 'msg-send-1', createdAt: new Date().toISOString() });
+    vi.mocked(useMessageThread).mockReturnValue({
+      messages: [],
+      userById: {},
+      teamMembers: [],
+      agentsByAuthUserId: new Map([['auth-coach', coachAgent]]),
+      agentAuthUserIds: ['auth-coach'],
+      replyCounts: new Map(),
+      isLoading: false,
+      error: null,
+      sending: false,
+      sendMessage,
+      clearError: vi.fn(),
+      setError: vi.fn(),
+      silentRefreshMessages: vi.fn().mockResolvedValue(undefined),
+    } as unknown as ReturnType<typeof useMessageThread>);
+
+    const ref = {
+      current: null as
+        | import('@/components/chat/StandardTaskChatRail').StandardTaskChatRailHandle
+        | null,
+    };
+    render(
+      <StandardTaskChatRail
+        ref={(h) => {
+          ref.current = h;
+        }}
+        workspaceId="ws-1"
+        taskId="task-1"
+        canPostMessages
+        defaultAgentSlug="coach"
+      />,
+    );
+
+    await waitFor(() => expect(ref.current).not.toBeNull());
+    const ok = await ref.current!.sendCoachMessage('@coach fill cues for #Goblet Squat', {
+      exercise_cue_request: {
+        v: 1,
+        exercise_name: 'Goblet Squat',
+        empty_fields: ['setup'],
+      },
+    });
+    expect(ok).toBe(true);
+    expect(registerIntent).toHaveBeenCalledTimes(1);
+    expect(registerSuccessfulSend).toHaveBeenCalledTimes(1);
+    expect(sendMessage).toHaveBeenCalled();
+  });
+
+  it('invokes onWorkoutCuesPatch when coach reply carries workout_cues_patch metadata', async () => {
+    const onWorkoutCuesPatch = vi.fn();
+    const coachAgent = {
+      id: 'coach-def',
+      slug: 'coach',
+      mention_handle: '@coach',
+      display_name: 'Coach',
+      avatar_url: '',
+      auth_user_id: 'auth-coach',
+      response_timeout_ms: 30_000,
+    };
+    mockThread({
+      messages: [
+        {
+          id: 'coach-cues-1',
+          user_id: 'auth-coach',
+          content: 'Saved cues for Goblet Squat.',
+          created_at: new Date().toISOString(),
+          parent_id: null,
+          bubble_id: 'b1',
+          attached_task_id: null,
+          attachments: null,
+          metadata: {
+            workout_cues_patch: {
+              v: 1,
+              resolution_key: 'flat:goblet-squat',
+              form_cues: 'Feet shoulder-width.',
+            },
+          },
+          tasks: null,
+        } as unknown as MessageRowWithEmbeddedTask,
+      ],
+      agentsByAuthUserId: new Map([['auth-coach', coachAgent]]),
+    });
+
+    render(
+      <StandardTaskChatRail
+        workspaceId="ws-1"
+        taskId="task-1"
+        canPostMessages
+        defaultAgentSlug="coach"
+        onWorkoutCuesPatch={onWorkoutCuesPatch}
+      />,
+    );
+
+    await waitFor(() => expect(onWorkoutCuesPatch).toHaveBeenCalledTimes(1));
+    expect(onWorkoutCuesPatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: 'task-1',
+        messageId: 'coach-cues-1',
+        patch: expect.objectContaining({
+          resolution_key: 'flat:goblet-squat',
+          form_cues: 'Feet shoulder-width.',
+        }),
+      }),
+    );
+  });
 });

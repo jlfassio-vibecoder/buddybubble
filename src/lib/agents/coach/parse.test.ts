@@ -975,18 +975,20 @@ describe('parsePersonalCuesPatchFromGemini', () => {
     expect(parsePersonalCuesPatchFromGemini(raw, byIndex).entries[0]?.mode).toBe('replace');
   });
 
-  it('drops unanchored indices and increments counter', () => {
+  it('drops unanchored indices and retains rows for workout reroute', () => {
     const raw = [{ exerciseIndex: 1, form_cues: 'should not persist' }];
     const out = parsePersonalCuesPatchFromGemini(raw, byIndex);
     expect(out.entries).toEqual([]);
     expect(out.droppedUnanchored).toBe(1);
+    expect(out.unanchoredDrops).toEqual([{ exerciseIndex: 1, form_cues: 'should not persist' }]);
   });
 
-  it('drops all entries when dictionary map is missing', () => {
+  it('drops all entries when dictionary map is missing but retains unanchored rows', () => {
     const raw = [{ exerciseIndex: 0, form_cues: 'x' }];
     const out = parsePersonalCuesPatchFromGemini(raw, undefined);
     expect(out.entries).toEqual([]);
     expect(out.droppedUnanchored).toBe(1);
+    expect(out.unanchoredDrops).toEqual([{ exerciseIndex: 0, form_cues: 'x' }]);
   });
 
   it('caps long text fields', () => {

@@ -16,8 +16,12 @@ export function supabaseClientErrorMessage(err: unknown): string {
 export function isSupabaseBenignRequestAbort(err: unknown): boolean {
   const msg = supabaseClientErrorMessage(err);
   if (msg === 'AbortError: The user aborted a request.') return true;
+  if (msg.includes("Lock broken by another request with the 'steal' option")) return true;
+  if (msg.includes('was released because another request stole it')) return true;
+  if (typeof err === 'object' && err !== null && 'isAcquireTimeout' in err) {
+    if ((err as { isAcquireTimeout?: unknown }).isAcquireTimeout === true) return true;
+  }
   if (msg.startsWith('AbortError:')) {
-    if (msg.includes("Lock broken by another request with the 'steal' option")) return true;
     if (msg.toLowerCase().includes('signal is aborted')) return true;
     if (msg.toLowerCase().includes('aborted')) return true;
   }

@@ -72,15 +72,16 @@ export function useSubmitState() {
       if (isTurnstileConfigured()) {
         try {
           turnstileToken = await getTurnstileToken();
-        } catch (e) {
-          const errMsg =
-            e instanceof Error ? e.message : typeof e === 'string' ? e : 'Unknown error';
-          console.error('[storefront-hero] turnstile', errMsg);
+        } catch {
+          // Retry timer / remount / superseding submit may abort while Turnstile is in flight.
+          if (controller.signal.aborted) return;
           clearTimers();
           setSubmitState({ status: 'error', error: 'Verification failed — please try again.' });
           return;
         }
       }
+
+      if (controller.signal.aborted) return;
 
       const body = { ...payload, ...(turnstileToken ? { turnstileToken } : {}) };
       try {
@@ -102,12 +103,6 @@ export function useSubmitState() {
           return;
         }
         if (status === 400) {
-          const errMsg = typeof data?.error === 'string' ? data.error : '';
-          console.error(
-            '[storefront-hero] intake 400 (payload issue)',
-            status,
-            errMsg || 'bad request',
-          );
           setSubmitState({ status: 'error', error: 'Something went wrong — please try again.' });
           resetTurnstile();
           return;
@@ -124,8 +119,6 @@ export function useSubmitState() {
         setSubmitState({ status: 'error', error: fallback });
       } catch (e) {
         if (e?.name === 'AbortError') return;
-        const errMsg = e instanceof Error ? e.message : typeof e === 'string' ? e : 'Unknown error';
-        console.error('[storefront-hero] submit error', errMsg);
         clearTimers();
         setSubmitState({ status: 'error', error: 'Something went wrong — please try again.' });
       }

@@ -73,6 +73,8 @@ export type WorkoutExercise = {
   tips?: string;
   /** Optional catalog / CDN URL for exercise thumbnail (no user uploads). */
   thumbnail_url?: string;
+  /** Stable row id when present (editor / rich round-trip); optional on legacy flat rows. */
+  id?: string;
   /** Per-set performance data recorded by the workout player (workout_log only). */
   set_logs?: SetLogEntry[];
 };

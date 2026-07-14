@@ -5,6 +5,7 @@ import type { Json } from '@/types/database';
 import type { WorkoutExercise } from '@/lib/item-metadata';
 import { deriveFlatExercisesFromMetadata } from '@/lib/workout-factory/sync-workout-metadata';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
+import { flatExerciseResolutionKey } from '@/lib/workout-factory/resolve-exercise-cue-bundle';
 import { useTaskWorkoutAi } from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
 
 const mockPostGenerateWorkoutChain = vi.hoisted(() => vi.fn());
@@ -567,6 +568,41 @@ describe('useTaskWorkoutAi handleAiGenerateWorkout', () => {
       expect.objectContaining({
         action: expect.objectContaining({ label: 'Regenerate' }),
       }),
+    );
+  });
+});
+
+describe('useTaskWorkoutAi handleWorkoutViewerCuePatches', () => {
+  it('keeps both patches when two saves run before React re-renders', () => {
+    const flatMeta = {
+      exercises: [
+        { name: 'Squat', form_cues: 'Old squat' },
+        { name: 'Bench', form_cues: 'Old bench' },
+      ],
+    } as Json;
+
+    const squatKey = flatExerciseResolutionKey({ name: 'Squat' }, 0);
+    const benchKey = flatExerciseResolutionKey({ name: 'Bench' }, 1);
+
+    const { result } = renderHook(() => useTaskWorkoutAiHarness(flatMeta));
+
+    act(() => {
+      result.current.handleWorkoutViewerCuePatches({
+        [squatKey]: { form_cues: 'Knees out' },
+      });
+      result.current.handleWorkoutViewerCuePatches({
+        [benchKey]: { form_cues: 'Scapular set' },
+      });
+    });
+
+    const exercises = (result.current.metadata as { exercises: WorkoutExercise[] }).exercises;
+    expect(exercises.find((e) => e.name === 'Squat')?.form_cues).toBe('Knees out');
+    expect(exercises.find((e) => e.name === 'Bench')?.form_cues).toBe('Scapular set');
+    expect(result.current.workoutExercises.find((e) => e.name === 'Squat')?.form_cues).toBe(
+      'Knees out',
+    );
+    expect(result.current.workoutExercises.find((e) => e.name === 'Bench')?.form_cues).toBe(
+      'Scapular set',
     );
   });
 });

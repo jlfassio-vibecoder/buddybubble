@@ -8,8 +8,11 @@ import { cn } from '@/lib/utils';
 import type {
   WorkoutBlockExerciseRenderContext,
   WorkoutBlockListRendererProps,
+  WorkoutCueEditProps,
 } from '@/components/fitness/workout-block-renderer/workout-block-renderer-types';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
+import type { ResolvedCueBundle } from '@/lib/workout-factory/resolve-exercise-cue-bundle';
+import { exerciseResolutionKey } from '@/lib/workout-factory/resolve-exercise-cue-bundle';
 import { WorkoutReadExerciseRowFromFactory } from '@/components/fitness/workout-block-renderer/WorkoutReadExerciseRow';
 
 export type WorkoutBlockExerciseGroupProps = {
@@ -18,7 +21,9 @@ export type WorkoutBlockExerciseGroupProps = {
   density?: 'full' | 'compact';
   renderExercise?: WorkoutBlockListRendererProps['renderExercise'];
   globalFlatIndexStart?: number;
-};
+  cuesByKey?: Record<string, ResolvedCueBundle>;
+  cuesLoading?: boolean;
+} & WorkoutCueEditProps;
 
 export function WorkoutBlockExerciseGroup({
   block,
@@ -26,6 +31,15 @@ export function WorkoutBlockExerciseGroup({
   density = 'full',
   renderExercise,
   globalFlatIndexStart = 0,
+  cuesByKey,
+  cuesLoading = false,
+  canWriteCue = false,
+  onCueSave,
+  onCueDraftChange,
+  onCueCancel,
+  onAskCoachForCues,
+  onSaveToMyNotes,
+  injuriesOnFile = false,
 }: WorkoutBlockExerciseGroupProps) {
   const exercises = block.exercises;
   if (exercises.length === 0) return null;
@@ -55,6 +69,17 @@ export function WorkoutBlockExerciseGroup({
         taskId={taskId}
         stationLabel={stationLabel}
         density={density}
+        resolvedCues={cuesByKey?.[exerciseResolutionKey(ex)] ?? null}
+        cuePanelEnabled={canWriteCue || (!cuesLoading && Object.keys(cuesByKey ?? {}).length > 0)}
+        resolutionKey={exerciseResolutionKey(ex)}
+        canWriteCue={canWriteCue}
+        onCueSave={onCueSave}
+        onCueDraftChange={onCueDraftChange}
+        onCueCancel={onCueCancel}
+        onAskCoachForCues={onAskCoachForCues}
+        onSaveToMyNotes={onSaveToMyNotes}
+        injuriesOnFile={injuriesOnFile}
+        workoutExerciseIndex={ctx.globalFlatIndex}
       />
     );
   });

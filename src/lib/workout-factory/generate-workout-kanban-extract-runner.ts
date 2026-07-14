@@ -100,7 +100,7 @@ export async function runExtractAndEnrichChain(
 
   const { projectId, region, accessToken } = creds;
   const { persona } = prepared;
-  const kanbanVertexModel = 'google/gemini-3.1-flash-lite-preview';
+  const kanbanVertexModel = 'google/gemini-3.1-flash-lite';
 
   if (shouldLog) console.warn('[generate-workout-chain] Kanban path: Extract (Step A)...');
   const extractPrompt = buildExtractWorkoutFromBriefPrompt(persona);

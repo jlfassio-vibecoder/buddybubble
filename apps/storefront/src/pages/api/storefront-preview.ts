@@ -68,14 +68,7 @@ export const POST: APIRoute = async ({ request }) => {
       },
       body: JSON.stringify(payload),
     });
-  } catch (e) {
-    const err = e instanceof Error ? e : new Error(String(e));
-    console.error('[storefront-proxy] upstream fetch failed', {
-      target,
-      name: err.name,
-      message: err.message,
-      stack: err.stack,
-    });
+  } catch {
     const hint =
       process.env.NODE_ENV === 'development' || import.meta.env.DEV
         ? 'Start the Next.js app (repo root, usually http://localhost:3000). Override with STOREFRONT_CRM_ORIGIN or APP_URL if using a different port.'
@@ -83,7 +76,6 @@ export const POST: APIRoute = async ({ request }) => {
     return new Response(
       JSON.stringify({
         error: 'Could not reach app server',
-        target,
         ...(hint ? { hint } : {}),
       }),
       {

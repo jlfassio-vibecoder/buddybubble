@@ -78,6 +78,7 @@ export function assertCoachReplySelfAttestation(parsed: CoachGeminiJsonResponse)
   const hasOutline =
     parsed.coach_workout_outline != null && parsed.coach_workout_outline.length > 0;
   const hasOutlineDraftPatch = parsed.outline_draft_patch != null;
+  const hasWorkoutCuesPatch = parsed.workout_cues_patch != null;
   const hasPayload =
     hasExecution ||
     hasPersonal ||
@@ -85,10 +86,37 @@ export function assertCoachReplySelfAttestation(parsed: CoachGeminiJsonResponse)
     hasIntake ||
     hasCardAction ||
     hasOutline ||
-    hasOutlineDraftPatch;
+    hasOutlineDraftPatch ||
+    hasWorkoutCuesPatch;
   if (!hasPayload) {
     throw { kind: 'self_attestation_mismatch' as const };
   }
+}
+
+/**
+ * When the model emits `workout_cues_patch`, strip structural card/workout writes so the
+ * DB only applies cue prose. Cue patch is a single object (not an array).
+ */
+export function stripStructuralWritesForWorkoutCuePatch(
+  parsed: CoachGeminiJsonResponse,
+): CoachGeminiJsonResponse {
+  if (parsed.workout_cues_patch == null) return parsed;
+  return {
+    ...parsed,
+    create_card: false,
+    task_title: null,
+    task_description: null,
+    coach_task_notes: null,
+    update_existing_task: false,
+    updated_task_title: null,
+    updated_task_description: null,
+    proposed_workout_metadata: null,
+    coach_workout_outline: null,
+    outline_draft_patch: null,
+    personal_cues_resolved: null,
+    card_action: null,
+    task_modal_intake_patch: null,
+  };
 }
 
 /**
@@ -110,6 +138,8 @@ export type CoachGuardsFragment = {
   isActiveWorkoutSession: boolean;
   /** True when outline co-pilot mode was active for this request (structure phase). */
   outlineCoPilotActive: boolean;
+  /** True when EXERCISE_CUE_REQUEST flow is active for this dispatch. */
+  exerciseCueRequestActive: boolean;
 };
 
 /**
@@ -133,6 +163,7 @@ export function applyCoachServerGuards(
   let cardAction = parsed.card_action;
   let outlineDraftPatch = parsed.outline_draft_patch;
   let outlineDraftPatchDrops = parsed.outline_draft_patch_drops;
+  let personalCuesResolved = parsed.personal_cues_resolved;
 
   // Guard 0: Outline co-pilot — structure-only phase; no factory merge or Call A outline.
   if (fragment.outlineCoPilotActive) {
@@ -246,6 +277,23 @@ export function applyCoachServerGuards(
     updatedTaskDescription = null;
   }
 
+  // Guard 7: Exercise-cue flow — cue-only edits must not regenerate full workout metadata.
+  if (fragment.exerciseCueRequestActive || parsed.workout_cues_patch != null) {
+    proposedWorkoutMetadata = null;
+    personalCuesResolved = null;
+    updateExistingTask = false;
+    updatedTaskTitle = null;
+    updatedTaskDescription = null;
+    outlineDraftPatch = null;
+    coachWorkoutOutline = null;
+    createCard = false;
+    taskTitle = null;
+    taskDescription = null;
+    seedTaskCommentText = null;
+    cardAction = null;
+    taskModalIntakePatch = null;
+  }
+
   const out: CoachGeminiJsonResponse = {
     ...parsed,
     create_card: createCard,
@@ -261,6 +309,7 @@ export function applyCoachServerGuards(
     card_action: cardAction,
     outline_draft_patch: outlineDraftPatch,
     outline_draft_patch_drops: outlineDraftPatchDrops,
+    personal_cues_resolved: personalCuesResolved,
   };
   if (
     fragment.outlineCoPilotActive &&

@@ -75,6 +75,15 @@ import {
   parseOutlineDraftPatchRevision,
   type OutlineDraftPatchV1,
 } from './outline-draft-patch';
+import {
+  parseWorkoutCuesPatchFromGemini,
+  workoutCuesPatchForRpc,
+  type PersonalCueUnanchoredRow,
+  type WorkoutCuesPatchV1,
+} from './workout-cues-patch';
+
+export type { WorkoutCuesPatchV1 };
+export { workoutCuesPatchForRpc };
 
 /**
  * Normalized Coach response shape. Lifted verbatim from
@@ -126,6 +135,8 @@ export type CoachGeminiJsonResponse = {
   personal_cues_resolved: PersonalCueResolvedForRpc[] | null;
   /** Count of patch entries dropped because the exercise index had no catalog match. */
   personal_cues_dropped_unanchored: number;
+  /** Unanchored personal cue rows retained for workout-scoped reroute (M3). */
+  personal_cues_unanchored_drops: PersonalCueUnanchoredRow[];
   /**
    * Optional: Task Modal workout intake wizard (1–10 sliders, steps, duration, etc.).
    * Persisted on the agent reply `messages.metadata` for the client — does not write `tasks` rows.
@@ -141,6 +152,11 @@ export type CoachGeminiJsonResponse = {
    */
   outline_draft_patch: OutlineDraftPatchV1 | null;
   outline_draft_patch_drops: BlockShapeDrop[];
+  /**
+   * Optional: workout-scoped cue patch for EXERCISE_CUE_REQUEST flow (M3).
+   * Persisted on agent reply metadata for client apply via applyCuePatchesToMetadata.
+   */
+  workout_cues_patch: WorkoutCuesPatchV1 | null;
 };
 
 export type CoachCardActionKind = 'trigger_generation' | 'regenerate_from_outline';
@@ -611,23 +627,73 @@ function capPersonalCueField(s: string): string {
 export function parsePersonalCuesPatchFromGemini(
   raw: unknown,
   dictionaryByIndex: Readonly<Record<number, ExerciseDictionaryIndexEntry | null>> | undefined,
-): { entries: PersonalCueResolvedForRpc[]; droppedUnanchored: number } {
+): {
+  entries: PersonalCueResolvedForRpc[];
+  droppedUnanchored: number;
+  unanchoredDrops: PersonalCueUnanchoredRow[];
+} {
   const entries: PersonalCueResolvedForRpc[] = [];
+  const unanchoredDrops: PersonalCueUnanchoredRow[] = [];
   let droppedUnanchored = 0;
   if (raw == null || !Array.isArray(raw) || raw.length === 0) {
-    return { entries, droppedUnanchored };
+    return { entries, droppedUnanchored, unanchoredDrops };
   }
+
+  const pick = (o: Record<string, unknown>, key: string): string | undefined => {
+    const v = o[key];
+    if (typeof v !== 'string') return undefined;
+    const t = v.trim();
+    if (!t) return undefined;
+    return capPersonalCueField(t);
+  };
+
+  const pushUnanchored = (exerciseIndex: number, o: Record<string, unknown>): boolean => {
+    const instructions = pick(o, 'instructions');
+    const form_cues = pick(o, 'form_cues');
+    const tips = pick(o, 'tips');
+    const injury_prevention_tips = pick(o, 'injury_prevention_tips');
+    if (!instructions && !form_cues && !tips && !injury_prevention_tips) return false;
+    unanchoredDrops.push({
+      exerciseIndex,
+      ...(instructions ? { instructions } : {}),
+      ...(form_cues ? { form_cues } : {}),
+      ...(tips ? { tips } : {}),
+      ...(injury_prevention_tips ? { injury_prevention_tips } : {}),
+    });
+    return true;
+  };
+
   if (!dictionaryByIndex) {
-    return { entries, droppedUnanchored: raw.length };
+    for (const el of raw) {
+      if (el == null || typeof el !== 'object' || Array.isArray(el)) continue;
+      const o = el as Record<string, unknown>;
+      const ex = o.exerciseIndex;
+      if (typeof ex !== 'number' || !Number.isInteger(ex) || ex < 0) continue;
+      if (pushUnanchored(ex, o)) droppedUnanchored += 1;
+    }
+    return { entries, droppedUnanchored, unanchoredDrops };
   }
+
   for (const el of raw) {
     if (el == null || typeof el !== 'object' || Array.isArray(el)) continue;
     const o = el as Record<string, unknown>;
     const ex = o.exerciseIndex;
     if (typeof ex !== 'number' || !Number.isInteger(ex) || ex < 0) continue;
     const row = dictionaryByIndex[ex];
+    const instructions = pick(o, 'instructions');
+    const form_cues = pick(o, 'form_cues');
+    const tips = pick(o, 'tips');
+    const injury_prevention_tips = pick(o, 'injury_prevention_tips');
+    if (!instructions && !form_cues && !tips && !injury_prevention_tips) continue;
     if (row == null) {
       droppedUnanchored += 1;
+      unanchoredDrops.push({
+        exerciseIndex: ex,
+        ...(instructions ? { instructions } : {}),
+        ...(form_cues ? { form_cues } : {}),
+        ...(tips ? { tips } : {}),
+        ...(injury_prevention_tips ? { injury_prevention_tips } : {}),
+      });
       continue;
     }
     const modeRaw = o.mode;
@@ -635,18 +701,6 @@ export function parsePersonalCuesPatchFromGemini(
       typeof modeRaw === 'string' && modeRaw.trim().toLowerCase() === 'replace'
         ? 'replace'
         : 'append';
-    const pick = (key: string): string | undefined => {
-      const v = o[key];
-      if (typeof v !== 'string') return undefined;
-      const t = v.trim();
-      if (!t) return undefined;
-      return capPersonalCueField(t);
-    };
-    const instructions = pick('instructions');
-    const form_cues = pick('form_cues');
-    const tips = pick('tips');
-    const injury_prevention_tips = pick('injury_prevention_tips');
-    if (!instructions && !form_cues && !tips && !injury_prevention_tips) continue;
     entries.push({
       exercise_dictionary_id: row.dictionary_id,
       mode,
@@ -656,7 +710,7 @@ export function parsePersonalCuesPatchFromGemini(
       ...(injury_prevention_tips ? { injury_prevention_tips } : {}),
     });
   }
-  return { entries, droppedUnanchored };
+  return { entries, droppedUnanchored, unanchoredDrops };
 }
 
 export function parseExecutionPatchFromGemini(
@@ -827,6 +881,11 @@ export function parseCoachJson(
   );
   const personal_cues_resolved = cuesResult.entries.length > 0 ? cuesResult.entries : null;
   const personal_cues_dropped_unanchored = cuesResult.droppedUnanchored;
+  const personal_cues_unanchored_drops = cuesResult.unanchoredDrops;
+
+  const workout_cues_patch = parseWorkoutCuesPatchFromGemini(
+    (parsed as Record<string, unknown>).workout_cues_patch,
+  );
 
   if (createCard) {
     const titleTrimmed = typeof rawTitle === 'string' ? rawTitle.trim() : '';
@@ -848,9 +907,11 @@ export function parseCoachJson(
       task_modal_intake_dropped,
       personal_cues_resolved,
       personal_cues_dropped_unanchored,
+      personal_cues_unanchored_drops,
       card_action: null,
       outline_draft_patch,
       outline_draft_patch_drops,
+      workout_cues_patch: null,
       ...intakeTail,
       ...updateTail,
     };
@@ -871,9 +932,11 @@ export function parseCoachJson(
     task_modal_intake_dropped,
     personal_cues_resolved,
     personal_cues_dropped_unanchored,
+    personal_cues_unanchored_drops,
     card_action,
     outline_draft_patch,
     outline_draft_patch_drops,
+    workout_cues_patch,
     ...intakeTail,
     ...updateTail,
   };

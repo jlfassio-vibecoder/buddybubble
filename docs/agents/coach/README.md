@@ -105,6 +105,12 @@ The architecture plan’s “one tool / create card” model is **narrower** tha
 - Reply metadata can include the patch for observability (`personal_cues_patch` / related keys depending on RPC). The **WorkoutPlayer** loads notes via [`useUserExerciseNotes`](../../../src/hooks/useUserExerciseNotes.ts) (dictionary lookup + Realtime on `user_exercise_notes`).
 - **`assertCoachReplySelfAttestation`** rejects replies whose **`reply_content`** claims a write without a matching structured field (`execution_patch`, **`personal_cues_resolved`**, card/draft fields) → fallback-eligible **`self_attestation_mismatch`**.
 
+### 5b) **workout_cues_patch** (workout-scoped cues — M3)
+
+- Distinct from **`personal_cues_patch`** (user-scoped → `user_exercise_notes`). **`workout_cues_patch`** is keyed by **`resolution_key`** (flat/block exercise identity) and is written to **reply metadata only** via **`p_workout_cues_patch`** on agent RPCs.
+- Triggered when the user clicks **Ask Coach** in the workout viewer: the client sends hidden **`messages.metadata.exercise_cue_request`** (`ExerciseCueRequestV1`) with a short visible `@coach` line. Coach prompts with **`EXERCISE_CUE_REQUEST`** rules (proactive confirm first turn; generate on affirm).
+- **`useAgentEffectSweep`** delivers **`onWorkoutCuesPatch`** → Task Modal **`handleWorkoutViewerCuePatches`** → [`applyCuePatchesToMetadata`](../../../src/lib/workout-factory/apply-cue-patches-to-metadata.ts). User still **Save**s the task footer to persist DB rows.
+
 ---
 
 ## Gemini: structured JSON (not in the old plan)

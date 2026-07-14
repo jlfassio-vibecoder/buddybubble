@@ -17,6 +17,68 @@ import { workoutInSetToTaskExercises } from '@/lib/workout-factory/map-ai-workou
 import type { Exercise, ExerciseBlock, WarmupBlock } from '@/lib/workout-factory/types/ai-program';
 import type { WorkoutInSet } from '@/lib/workout-factory/types/ai-workout';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
+import { normalizeExerciseDictionaryKey } from '@/lib/workout-factory/exercise-dictionary-bridge';
+
+const FLAT_CUE_FIELDS = [
+  'instructions',
+  'form_cues',
+  'form_cue',
+  'tips',
+  'injury_prevention_tips',
+  'coach_notes',
+] as const satisfies readonly (keyof WorkoutExercise)[];
+
+function hasFlatCueValue(row: WorkoutExercise, field: (typeof FLAT_CUE_FIELDS)[number]): boolean {
+  const v = row[field];
+  if (v == null) return false;
+  if (typeof v === 'string') return v.trim().length > 0;
+  if (Array.isArray(v)) return v.some((x) => typeof x === 'string' && x.trim().length > 0);
+  return false;
+}
+
+/** Preserve enriched cue columns from a previous flat cache when factory re-derive drops them. */
+export function preserveFlatCueFieldsOnDerive(
+  prevFlat: WorkoutExercise[],
+  nextFlat: WorkoutExercise[],
+): WorkoutExercise[] {
+  const prevById = new Map<string, WorkoutExercise>();
+  const prevByNameIndex = new Map<string, WorkoutExercise>();
+  const nameCounts = new Map<string, number>();
+
+  for (const row of prevFlat) {
+    if (row.id?.trim()) prevById.set(row.id.trim(), row);
+    const norm = normalizeExerciseDictionaryKey(row.name ?? '');
+    const idx = nameCounts.get(norm) ?? 0;
+    nameCounts.set(norm, idx + 1);
+    prevByNameIndex.set(`${norm}\u0000${idx}`, row);
+  }
+
+  const nextNameCounts = new Map<string, number>();
+
+  return nextFlat.map((row) => {
+    const copy = { ...row };
+    let prev: WorkoutExercise | undefined;
+
+    if (row.id?.trim()) {
+      prev = prevById.get(row.id.trim());
+    }
+    if (!prev) {
+      const norm = normalizeExerciseDictionaryKey(row.name ?? '');
+      const idx = nextNameCounts.get(norm) ?? 0;
+      nextNameCounts.set(norm, idx + 1);
+      prev = prevByNameIndex.get(`${norm}\u0000${idx}`);
+    }
+    if (!prev) return copy;
+
+    for (const field of FLAT_CUE_FIELDS) {
+      if (hasFlatCueValue(copy, field)) continue;
+      if (!hasFlatCueValue(prev, field)) continue;
+      (copy as Record<string, unknown>)[field] = prev[field];
+    }
+
+    return copy;
+  });
+}
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -274,7 +336,9 @@ export function applyBlockEditsToMetadata(meta: unknown, blocks: WorkoutSessionB
   const workouts = ws.workouts as Record<string, unknown>[];
   workouts[0] = normalized as unknown as Record<string, unknown>;
 
-  next.exercises = workoutInSetToTaskExercises(normalized);
+  const prevFlat = parseWorkoutExercisesFromMetadata(next);
+  const derived = workoutInSetToTaskExercises(normalized);
+  next.exercises = preserveFlatCueFieldsOnDerive(prevFlat, derived);
 
   return next as Json;
 }

@@ -63,6 +63,15 @@ export function WorkoutBlockListRenderer({
   'data-testid': dataTestId,
   getMainBlockSectionProps,
   renderMainBlockAfterHeader,
+  cuesByKey,
+  cuesLoading = false,
+  canWriteCue = false,
+  onCueSave,
+  onCueDraftChange,
+  onCueCancel,
+  onAskCoachForCues,
+  onSaveToMyNotes,
+  injuriesOnFile = false,
 }: WorkoutBlockListRendererProps) {
   if (blocks.length === 0) return null;
 
@@ -111,6 +120,15 @@ export function WorkoutBlockListRenderer({
             density={density === 'compact' ? 'compact' : 'full'}
             renderExercise={renderExercise}
             globalFlatIndexStart={mainFlatIndexStarts[blockIndex] ?? 0}
+            cuesByKey={cuesByKey}
+            cuesLoading={cuesLoading}
+            canWriteCue={canWriteCue}
+            onCueSave={onCueSave}
+            onCueDraftChange={onCueDraftChange}
+            onCueCancel={onCueCancel}
+            onAskCoachForCues={onAskCoachForCues}
+            onSaveToMyNotes={onSaveToMyNotes}
+            injuriesOnFile={injuriesOnFile}
           />
         );
 

@@ -20,6 +20,9 @@ coverage/
 # Supabase CLI local state
 supabase/.temp/
 
+# Agent/local checklist runner output (pnpm run check:report)
+tmp/
+
 # Local symlink to agent skills (see skills-lock.json); not portable
 skills/
 next-env.d.ts

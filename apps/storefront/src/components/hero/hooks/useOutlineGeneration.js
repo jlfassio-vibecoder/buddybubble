@@ -53,9 +53,6 @@ export function useOutlineGeneration({ enabled, draft, updateDraft }) {
         turnstileToken = await getTurnstileToken();
       } catch (e) {
         if (controller.signal.aborted) return;
-        const turnstileMsg =
-          e instanceof Error ? e.message : typeof e === 'string' ? e : 'Unknown error';
-        console.error('[storefront-hero] outline turnstile', turnstileMsg);
         setStatus('error');
         setError('Verification failed — please try again.');
         return;
@@ -91,33 +88,21 @@ export function useOutlineGeneration({ enabled, draft, updateDraft }) {
 
       if (httpStatus === 403) {
         resetTurnstile();
-        const errMsg = typeof data?.error === 'string' ? data.error : '';
-        console.error('[storefront-hero] outline 403', httpStatus, errMsg || 'forbidden');
         setStatus('error');
         setError('Verification failed — please try again.');
         return;
       }
 
       if (!ok) {
-        const errMsg = typeof data?.error === 'string' ? data.error : '';
-        console.error(
-          '[storefront-hero] outline http error',
-          httpStatus,
-          errMsg || 'request failed',
-        );
         setStatus('error');
         setError("We couldn't generate your preview — please try again.");
         return;
       }
 
-      const errMsg = typeof data?.error === 'string' ? data.error : '';
-      console.error('[storefront-hero] outline malformed response', errMsg || 'invalid shape');
       setStatus('error');
       setError("We couldn't generate your preview — please try again.");
     } catch (e) {
       if (e?.name === 'AbortError') return;
-      const errMsg = e instanceof Error ? e.message : typeof e === 'string' ? e : 'Unknown error';
-      console.error('[storefront-hero] outline fetch error', errMsg);
       setStatus('error');
       setError("We couldn't generate your preview — please try again.");
     }

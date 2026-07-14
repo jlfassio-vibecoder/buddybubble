@@ -23,9 +23,9 @@ function makeSupabase(overrides: {
           select: () => ({
             eq: () => ({
               eq: () => ({
-                maybeSingle: vi
-                  .fn()
-                  .mockResolvedValue({ data: overrides.membership ?? { role: 'member' } }),
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: 'membership' in overrides ? overrides.membership : { role: 'member' },
+                }),
               }),
             }),
           }),
@@ -36,14 +36,17 @@ function makeSupabase(overrides: {
           select: () => ({
             eq: () => ({
               maybeSingle: vi.fn().mockResolvedValue({
-                data: overrides.task ?? {
-                  id: 'task-1',
-                  bubble_id: 'bubble-1',
-                  metadata: {},
-                  title: 'Test',
-                  description: '',
-                  item_type: 'workout',
-                },
+                data:
+                  'task' in overrides
+                    ? overrides.task
+                    : {
+                        id: 'task-1',
+                        bubble_id: 'bubble-1',
+                        metadata: {},
+                        title: 'Test',
+                        description: '',
+                        item_type: 'workout',
+                      },
                 error: overrides.taskError ?? null,
               }),
             }),
@@ -55,7 +58,7 @@ function makeSupabase(overrides: {
           select: () => ({
             eq: () => ({
               maybeSingle: vi.fn().mockResolvedValue({
-                data: overrides.bubble ?? { workspace_id: 'ws-1' },
+                data: 'bubble' in overrides ? overrides.bubble : { workspace_id: 'ws-1' },
                 error: overrides.bubbleError ?? null,
               }),
             }),
@@ -68,19 +71,31 @@ function makeSupabase(overrides: {
 }
 
 describe('loadBuilderTask', () => {
-  it('returns payload for workout in workspace', async () => {
+  it('returns ok payload for workout in workspace', async () => {
     const result = await loadBuilderTask(makeSupabase({}), 'ws-1', 'task-1');
-    expect(result?.id).toBe('task-1');
-    expect(result?.bubble_id).toBe('bubble-1');
-    expect(result?.memberRole).toBe('member');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.task.id).toBe('task-1');
+    expect(result.task.bubble_id).toBe('bubble-1');
+    expect(result.task.memberRole).toBe('member');
   });
 
-  it('returns null when user missing', async () => {
+  it('returns unauthenticated when user missing', async () => {
     const result = await loadBuilderTask(makeSupabase({ user: null }), 'ws-1', 'task-1');
-    expect(result).toBeNull();
+    expect(result).toEqual({ ok: false, reason: 'unauthenticated' });
   });
 
-  it('returns null when item_type is not workout', async () => {
+  it('returns not_member when membership missing', async () => {
+    const result = await loadBuilderTask(makeSupabase({ membership: null }), 'ws-1', 'task-1');
+    expect(result).toEqual({ ok: false, reason: 'not_member' });
+  });
+
+  it('returns task_not_found when task missing', async () => {
+    const result = await loadBuilderTask(makeSupabase({ task: null }), 'ws-1', 'task-1');
+    expect(result).toEqual({ ok: false, reason: 'task_not_found' });
+  });
+
+  it('returns not_workout when item_type is not workout', async () => {
     const result = await loadBuilderTask(
       makeSupabase({
         task: {
@@ -95,15 +110,15 @@ describe('loadBuilderTask', () => {
       'ws-1',
       'task-1',
     );
-    expect(result).toBeNull();
+    expect(result).toEqual({ ok: false, reason: 'not_workout' });
   });
 
-  it('returns null when bubble workspace mismatches', async () => {
+  it('returns workspace_mismatch when bubble workspace mismatches', async () => {
     const result = await loadBuilderTask(
       makeSupabase({ bubble: { workspace_id: 'other-ws' } }),
       'ws-1',
       'task-1',
     );
-    expect(result).toBeNull();
+    expect(result).toEqual({ ok: false, reason: 'workspace_mismatch' });
   });
 });

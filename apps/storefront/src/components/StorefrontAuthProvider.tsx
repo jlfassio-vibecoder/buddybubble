@@ -63,7 +63,6 @@ export default function StorefrontAuthProvider({ children, supabaseUrl, supabase
       if (cancelled) return;
 
       if (error) {
-        console.warn('[storefront] anonymous sign-in failed', error.message);
         setReady(true);
         return;
       }

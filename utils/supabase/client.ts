@@ -1,5 +1,6 @@
 import { createBrowserClient } from '@supabase/ssr';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { browserAuthLock } from './browser-auth-lock';
 import { supabaseAuthCookieOptionsBrowser } from './auth-cookie-options';
 import { getSupabasePublishableKey, getSupabaseUrl } from './env';
 
@@ -24,6 +25,16 @@ function setBrowserSingleton(client: SupabaseClient): void {
   (globalThis as GlobalWithSupabase)[BROWSER_SINGLETON_KEY] = client;
 }
 
+function browserClientOptions() {
+  return {
+    cookieOptions: supabaseAuthCookieOptionsBrowser(),
+    auth: {
+      // Map Web Lock "steal" AbortErrors → typed acquire-timeout (auto-refresh safe).
+      lock: browserAuthLock,
+    },
+  };
+}
+
 export function createClient(): SupabaseClient {
   const url = getSupabaseUrl();
   const key = getSupabasePublishableKey();
@@ -32,7 +43,7 @@ export function createClient(): SupabaseClient {
       'Missing NEXT_PUBLIC_SUPABASE_URL or a Supabase key (NEXT_PUBLIC_SUPABASE_ANON_KEY, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY)',
     );
   }
-  const options = { cookieOptions: supabaseAuthCookieOptionsBrowser() };
+  const options = browserClientOptions();
   if (typeof window === 'undefined') {
     // SSR / build: never share a singleton across requests.
     return createBrowserClient(url, key, options);

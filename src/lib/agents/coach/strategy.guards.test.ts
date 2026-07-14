@@ -12,6 +12,7 @@ import type { CoachGeminiJsonResponse } from './parse';
 import {
   applyCoachServerGuards,
   looksLikeWorkoutPrescriptionDump,
+  stripStructuralWritesForWorkoutCuePatch,
   type CoachGuardsFragment,
 } from './server-guards';
 
@@ -37,11 +38,13 @@ function makeParsed(overrides: Partial<CoachGeminiJsonResponse> = {}): CoachGemi
     execution_patch: null,
     personal_cues_resolved: null,
     personal_cues_dropped_unanchored: 0,
+    personal_cues_unanchored_drops: [],
     task_modal_intake_patch: null,
     task_modal_intake_dropped: [],
     card_action: null,
     outline_draft_patch: null,
     outline_draft_patch_drops: [],
+    workout_cues_patch: null,
     ...overrides,
   };
 }
@@ -52,6 +55,7 @@ const NO_TASK_FRAGMENT: CoachGuardsFragment = {
   currentWorkoutContextJson: null,
   isActiveWorkoutSession: false,
   outlineCoPilotActive: false,
+  exerciseCueRequestActive: false,
 };
 
 describe('applyCoachServerGuards — Open Canvas guard', () => {
@@ -224,6 +228,7 @@ describe('applyCoachServerGuards — Active-workout clamp', () => {
       currentWorkoutContextJson: '{"exercises":[]}',
       isActiveWorkoutSession: false,
       outlineCoPilotActive: false,
+      exerciseCueRequestActive: false,
     });
     expect(out.create_card).toBe(false);
     expect(out.task_title).toBeNull();
@@ -258,6 +263,7 @@ describe('applyCoachServerGuards — Active-workout clamp', () => {
       currentWorkoutContextJson: '{"exercises":[]}',
       isActiveWorkoutSession: false,
       outlineCoPilotActive: false,
+      exerciseCueRequestActive: false,
     });
     expect(out.proposed_workout_metadata).toEqual(proposed);
     expect(out.update_existing_task).toBe(true);
@@ -284,6 +290,7 @@ describe('applyCoachServerGuards — Active-workout clamp', () => {
       currentWorkoutContextJson: '{"exercises":[]}',
       isActiveWorkoutSession: true,
       outlineCoPilotActive: false,
+      exerciseCueRequestActive: false,
     });
     expect(out.create_card).toBe(false);
     expect(out.update_existing_task).toBe(false);
@@ -316,6 +323,7 @@ describe('applyCoachServerGuards — Active-workout clamp', () => {
       currentWorkoutContextJson: '{}',
       isActiveWorkoutSession: false,
       outlineCoPilotActive: false,
+      exerciseCueRequestActive: false,
     });
     expect(parsed).toEqual(snapshot);
   });
@@ -386,6 +394,7 @@ describe('applyCoachServerGuards — Narrative vs Structure killswitch', () => {
       currentWorkoutContextJson: '{}',
       isActiveWorkoutSession: true,
       outlineCoPilotActive: false,
+      exerciseCueRequestActive: false,
     });
     expect(out.updated_task_description).toBeNull();
     expect(out.proposed_workout_metadata).toBeNull();
@@ -397,6 +406,7 @@ const PLANNED_WORKOUT_FRAGMENT: CoachGuardsFragment = {
   currentWorkoutContextJson: '{"exercises":[{"name":"Goblet Squat"}]}',
   isActiveWorkoutSession: false,
   outlineCoPilotActive: false,
+  exerciseCueRequestActive: false,
 };
 
 const FINISHER_PROSE_DUMP =
@@ -508,6 +518,7 @@ describe('applyCoachServerGuards — coach_workout_outline (Apex Phase 2)', () =
       currentWorkoutContextJson: '{"exercises":[]}',
       isActiveWorkoutSession: true,
       outlineCoPilotActive: false,
+      exerciseCueRequestActive: false,
     });
     expect(out.coach_workout_outline).toBeNull();
     expect(out.proposed_workout_metadata).toBeNull();
@@ -547,6 +558,75 @@ describe('applyCoachServerGuards — Action exclusivity (Guard 5)', () => {
     expect(out.updated_task_description).toBeNull();
     expect(out.proposed_workout_metadata).toBeNull();
     expect(out.coach_workout_outline).toBeNull();
+  });
+});
+
+describe('applyCoachServerGuards — exercise cue flow clamp', () => {
+  it('strips proposed_workout_metadata when exerciseCueRequestActive', () => {
+    const out = applyCoachServerGuards(
+      makeParsed({
+        proposed_workout_metadata: { blocks: [{ name: 'Main', exercises: [{ name: 'Squat' }] }] },
+        update_existing_task: true,
+        updated_task_title: 'Leg day',
+        personal_cues_resolved: [
+          { exercise_dictionary_id: 'uuid', mode: 'append', form_cues: 'knees out' },
+        ],
+      }),
+      {
+        ...NO_TASK_FRAGMENT,
+        exerciseCueRequestActive: true,
+      },
+    );
+    expect(out.proposed_workout_metadata).toBeNull();
+    expect(out.update_existing_task).toBe(false);
+    expect(out.updated_task_title).toBeNull();
+    expect(out.personal_cues_resolved).toBeNull();
+  });
+
+  it('strips proposed_workout_metadata when workout_cues_patch is emitted', () => {
+    const out = applyCoachServerGuards(
+      makeParsed({
+        proposed_workout_metadata: { exercises: [{ name: 'Squat' }] },
+        task_title: 'Hallucinated title',
+        task_description: 'Hallucinated desc',
+        workout_cues_patch: {
+          v: 1,
+          resolution_key: 'squat::0',
+          form_cues: 'Brace core.',
+        },
+      }),
+      NO_TASK_FRAGMENT,
+    );
+    expect(out.proposed_workout_metadata).toBeNull();
+    expect(out.task_title).toBeNull();
+    expect(out.task_description).toBeNull();
+    expect(out.workout_cues_patch?.form_cues).toBe('Brace core.');
+  });
+});
+
+describe('stripStructuralWritesForWorkoutCuePatch', () => {
+  it('nulls structural fields when workout_cues_patch is present', () => {
+    const out = stripStructuralWritesForWorkoutCuePatch(
+      makeParsed({
+        create_card: true,
+        task_title: 'Bad',
+        proposed_workout_metadata: { blocks: [] },
+        workout_cues_patch: {
+          v: 1,
+          resolution_key: 'squat::0',
+          tips: 'Stay tight.',
+        },
+      }),
+    );
+    expect(out.proposed_workout_metadata).toBeNull();
+    expect(out.task_title).toBeNull();
+    expect(out.create_card).toBe(false);
+    expect(out.workout_cues_patch?.tips).toBe('Stay tight.');
+  });
+
+  it('returns input unchanged when workout_cues_patch is absent', () => {
+    const parsed = makeParsed({ task_title: 'Keep' });
+    expect(stripStructuralWritesForWorkoutCuePatch(parsed)).toBe(parsed);
   });
 });
 

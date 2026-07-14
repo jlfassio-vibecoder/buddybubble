@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import type { WorkoutSetTemplate } from '@/lib/workout-factory/types/workout-contract';
 import type { WorkoutExercise } from '@/lib/item-metadata';
@@ -19,9 +20,24 @@ import {
   WorkoutLogReadSummary,
 } from '@/components/fitness/workout-block-renderer';
 import { useWorkoutSessionViewModel } from '@/hooks/use-workout-session-view-model';
+import { useExerciseCueResolution } from '@/hooks/useExerciseCueResolution';
+import {
+  collectBlockExercises,
+  collectFlatOnlyExercises,
+  emptyResolvedCueBundle,
+} from '@/lib/workout-factory/resolve-exercise-cue-bundle';
+import {
+  applyCuePatchesToMetadata,
+  mergeCuePatchIntoBundle,
+  type WorkoutCuePatch,
+} from '@/lib/workout-factory/apply-cue-patches-to-metadata';
+import { savePersonalExerciseCues } from '@/lib/workout-factory/save-personal-exercise-cues';
+import type { SaveToMyNotesArgs } from '@/components/fitness/workout-block-renderer/workout-block-renderer-types';
+import { useUserProfileStore } from '@/store/userProfileStore';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 import { useTaskCardCoverUrl } from '@/lib/task-card-cover';
 import { ChevronRight, Image as ImageIcon, Loader2, X } from 'lucide-react';
+import type { ExerciseCueRequestV1 } from '@/lib/agents/coach/exercise-cue-request';
 import { WORKOUT_FACTORY_CHAIN_MESSAGES } from '@/lib/workout-factory/api-client';
 import { resolveWorkoutViewerNarrative } from '@/lib/workout-factory/workout-viewer-narrative';
 import { WorkoutCoachBriefSection } from '@/components/fitness/workout-block-renderer/WorkoutCoachBriefSection';
@@ -38,6 +54,8 @@ export type WorkoutViewerApplyPayload = {
   /** Present when rich block editor was used for Apply. */
   blocks?: WorkoutSessionBlockView[];
 };
+
+export type { WorkoutCuePatch } from '@/lib/workout-factory/apply-cue-patches-to-metadata';
 
 type ViewMode = 'view' | 'edit';
 
@@ -174,6 +192,11 @@ export type WorkoutViewerDialogProps = {
   canWrite: boolean;
   workoutUnitSystem: UnitSystem;
   onApply: (payload: WorkoutViewerApplyPayload) => void;
+  /** Merge workout-scoped cue patches into task metadata (M2). */
+  onApplyCuePatches?: (patches: Record<string, WorkoutCuePatch>) => void;
+  /** M3: programmatic Coach cue generation from view-mode panel. */
+  onAskCoachForCues?: (payload: ExerciseCueRequestV1) => void;
+  injuriesOnFile?: boolean;
   /** Task card cover storage path (`metadata.card_cover_path`); signed URL resolved in-dialog. */
   cardCoverPath?: string | null;
   /** For exercise image request emails / context. */
@@ -191,7 +214,7 @@ export type WorkoutViewerDialogProps = {
   /** Parity with TaskModal Details: disable AI controls while saving. */
   cardCoverSaveBusy?: boolean;
   /** When set, show a DB save control in the view-mode footer (e.g. `TaskModal` + `saveCoreFields`). */
-  onSaveTask?: () => void | Promise<void>;
+  onSaveTask?: (metadataOverride?: Json) => void | Promise<void>;
   /** Busy state while persisting the task. */
   saving?: boolean;
   /** When true, save is disabled (e.g. `!coreDirty` in the parent). */
@@ -225,6 +248,9 @@ export function WorkoutViewerContent({
   canWrite,
   workoutUnitSystem,
   onApply,
+  onApplyCuePatches,
+  onAskCoachForCues,
+  injuriesOnFile = false,
   onRequestClose,
   syncKey,
   cardCoverPath = null,
@@ -252,8 +278,45 @@ export function WorkoutViewerContent({
   const [localDescription, setLocalDescription] = useState(description);
   const [localExercises, setLocalExercises] = useState<WorkoutExercise[]>([]);
   const [localBlocks, setLocalBlocks] = useState<WorkoutSessionBlockView[]>([]);
+  const [localCuePatches, setLocalCuePatches] = useState<Record<string, WorkoutCuePatch>>({});
 
   const sessionVm = useWorkoutSessionViewModel(metadata ?? {});
+
+  const profileId = useUserProfileStore((s) => s.profile?.id ?? null);
+  const cuesEnabled = mode === 'view' && readVariant !== 'log';
+  const {
+    cuesByKey,
+    loading: cuesLoading,
+    refresh: refreshCues,
+  } = useExerciseCueResolution({
+    enabled: cuesEnabled,
+    userId: profileId,
+    blocks: sessionVm.blocks,
+    flatExercises: sessionVm.flatExercises,
+  });
+
+  const exerciseNamesByKey = useMemo(() => {
+    const fromBlocks = collectBlockExercises(sessionVm.blocks);
+    const collected =
+      fromBlocks.length > 0 ? fromBlocks : collectFlatOnlyExercises(sessionVm.flatExercises);
+    const map: Record<string, string> = {};
+    for (const item of collected) {
+      map[item.key] = item.exerciseName;
+    }
+    return map;
+  }, [sessionVm.blocks, sessionVm.flatExercises]);
+
+  const displayCuesByKey = useMemo(() => {
+    const out = { ...cuesByKey };
+    for (const [key, patch] of Object.entries(localCuePatches)) {
+      const name = exerciseNamesByKey[key] ?? 'Exercise';
+      out[key] = mergeCuePatchIntoBundle(out[key] ?? emptyResolvedCueBundle(name), patch);
+    }
+    return out;
+  }, [cuesByKey, localCuePatches, exerciseNamesByKey]);
+
+  const hasUnsavedCuePatches = Object.keys(localCuePatches).length > 0;
+  const canWriteCue = canWrite && cuesEnabled;
 
   const useRichBlockEdit =
     readVariant !== 'log' && sessionVm.source === 'rich' && sessionVm.blocks.length > 0;
@@ -268,7 +331,93 @@ export function WorkoutViewerContent({
   useEffect(() => {
     discardDrafts();
     setMode('view');
+    setLocalCuePatches({});
   }, [syncKey, discardDrafts]);
+
+  const handleCueDraftChange = useCallback((key: string, patch: WorkoutCuePatch) => {
+    setLocalCuePatches((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
+  }, []);
+
+  const handleCuePatchCommit = useCallback(
+    (key: string, patch: WorkoutCuePatch) => {
+      onApplyCuePatches?.({ [key]: patch });
+      setLocalCuePatches((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    },
+    [onApplyCuePatches],
+  );
+
+  const handleCuePatchCancel = useCallback((key: string) => {
+    setLocalCuePatches((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }, []);
+
+  const handleSaveToMyNotes = useCallback(
+    async (args: SaveToMyNotesArgs) => {
+      if (!profileId) {
+        toast.error('Sign in to save personal notes.');
+        throw new Error('not_authenticated');
+      }
+      const result = await savePersonalExerciseCues({
+        exerciseName: args.exerciseName,
+        dictionaryId: args.dictionaryId,
+        patch: args.patch,
+        mode: 'replace',
+      });
+      if (!result.ok) {
+        toast.error(result.error);
+        throw new Error(result.error);
+      }
+      toast.success('Saved to your notes');
+      await refreshCues();
+    },
+    [profileId, refreshCues],
+  );
+
+  const handleRequestClose = useCallback(() => {
+    if (hasUnsavedCuePatches && !window.confirm('Discard unsaved cue changes?')) {
+      return;
+    }
+    onRequestClose();
+  }, [hasUnsavedCuePatches, onRequestClose]);
+
+  const handleFooterSave = useCallback(() => {
+    let metadataOverride: Json | undefined;
+    if (hasUnsavedCuePatches && Object.keys(localCuePatches).length > 0) {
+      metadataOverride = applyCuePatchesToMetadata(metadata ?? {}, localCuePatches) as Json;
+      onApplyCuePatches?.(localCuePatches);
+      setLocalCuePatches({});
+    }
+    void onSaveTask?.(metadataOverride);
+  }, [hasUnsavedCuePatches, localCuePatches, metadata, onApplyCuePatches, onSaveTask]);
+
+  const cueEditProps = useMemo(
+    () => ({
+      canWriteCue,
+      onCueSave: handleCuePatchCommit,
+      onCueDraftChange: handleCueDraftChange,
+      onCueCancel: handleCuePatchCancel,
+      onAskCoachForCues,
+      onSaveToMyNotes: profileId ? handleSaveToMyNotes : undefined,
+      injuriesOnFile,
+    }),
+    [
+      canWriteCue,
+      handleCuePatchCommit,
+      handleCueDraftChange,
+      handleCuePatchCancel,
+      onAskCoachForCues,
+      handleSaveToMyNotes,
+      profileId,
+      injuriesOnFile,
+    ],
+  );
 
   const handleApply = useCallback(() => {
     onApply({
@@ -421,7 +570,7 @@ export function WorkoutViewerContent({
           </div>
           <button
             type="button"
-            onClick={onRequestClose}
+            onClick={handleRequestClose}
             className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             aria-label="Close workout viewer"
           >
@@ -437,6 +586,11 @@ export function WorkoutViewerContent({
       {showUnsavedPersistenceNotice ? (
         <div className="rounded-lg border border-border/70 bg-muted/35 px-3 py-2 text-xs text-muted-foreground">
           Create or save this card to persist your generated workout and enable task-linked tools.
+        </div>
+      ) : null}
+      {hasUnsavedCuePatches ? (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-muted-foreground">
+          Unsaved cue changes — save to this workout or use Save to persist.
         </div>
       ) : null}
     </div>
@@ -471,6 +625,9 @@ export function WorkoutViewerContent({
                   blocks={sessionVm.blocks}
                   taskId={taskId}
                   density="full"
+                  cuesByKey={displayCuesByKey}
+                  cuesLoading={cuesLoading}
+                  {...cueEditProps}
                   chrome={{
                     difficulty: sessionVm.workoutSet?.difficulty,
                     structureRationale: narrative.structureRationale ?? undefined,
@@ -498,6 +655,9 @@ export function WorkoutViewerContent({
                     exercises={localExercises}
                     taskId={taskId}
                     density="full"
+                    cuesByKey={displayCuesByKey}
+                    cuesLoading={cuesLoading}
+                    {...cueEditProps}
                   />
                 </div>
               )}
@@ -561,15 +721,15 @@ export function WorkoutViewerContent({
       </div>
     ) : (
       <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
-        <Button type="button" variant="outline" size="sm" onClick={onRequestClose}>
+        <Button type="button" variant="outline" size="sm" onClick={handleRequestClose}>
           Close
         </Button>
         {onSaveTask ? (
           <Button
             type="button"
             size="sm"
-            disabled={saveDisabled || saving}
-            onClick={() => void onSaveTask()}
+            disabled={(saveDisabled && !hasUnsavedCuePatches) || saving}
+            onClick={handleFooterSave}
           >
             {saving ? 'Saving...' : 'Save'}
           </Button>
@@ -607,6 +767,7 @@ export function WorkoutViewerDialog({
   canWrite,
   workoutUnitSystem,
   onApply,
+  onApplyCuePatches,
   cardCoverPath = null,
   taskId = null,
   onSaveTask,
@@ -643,6 +804,7 @@ export function WorkoutViewerDialog({
             canWrite={canWrite}
             workoutUnitSystem={workoutUnitSystem}
             onApply={onApply}
+            onApplyCuePatches={onApplyCuePatches}
             onRequestClose={() => onOpenChange(false)}
             syncKey={syncKey}
             cardCoverPath={cardCoverPath}

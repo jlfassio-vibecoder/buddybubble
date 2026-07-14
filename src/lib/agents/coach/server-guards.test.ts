@@ -25,11 +25,13 @@ function baseParsed(overrides: Partial<CoachGeminiJsonResponse> = {}): CoachGemi
     execution_patch: null,
     personal_cues_resolved: null,
     personal_cues_dropped_unanchored: 0,
+    personal_cues_unanchored_drops: [],
     task_modal_intake_patch: null,
     task_modal_intake_dropped: [],
     card_action: null,
     outline_draft_patch: null,
     outline_draft_patch_drops: [],
+    workout_cues_patch: null,
     ...overrides,
   };
 }
@@ -53,6 +55,7 @@ describe('applyCoachServerGuards outline co-pilot', () => {
         currentWorkoutContextJson: null,
         isActiveWorkoutSession: false,
         outlineCoPilotActive: true,
+        exerciseCueRequestActive: false,
       },
     );
     expect(out.proposed_workout_metadata).toBeNull();
@@ -76,6 +79,7 @@ describe('applyCoachServerGuards outline co-pilot', () => {
         currentWorkoutContextJson: null,
         isActiveWorkoutSession: false,
         outlineCoPilotActive: true,
+        exerciseCueRequestActive: false,
       },
     );
     expect(out.outline_draft_patch).toBeNull();
@@ -98,6 +102,7 @@ describe('applyCoachServerGuards outline co-pilot', () => {
           currentWorkoutContextJson: null,
           isActiveWorkoutSession: false,
           outlineCoPilotActive: true,
+          exerciseCueRequestActive: false,
         },
       ),
     ).toThrow();
@@ -116,6 +121,7 @@ describe('applyCoachServerGuards outline co-pilot', () => {
           currentWorkoutContextJson: null,
           isActiveWorkoutSession: false,
           outlineCoPilotActive: true,
+          exerciseCueRequestActive: false,
         },
       ),
     ).toThrow();
@@ -187,6 +193,21 @@ describe('assertCoachReplySelfAttestation', () => {
             mode: 'merge_by_name',
             blocks: [{ name: 'Main' }],
             clear_confirmation: true,
+          },
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('allows phrase when workout_cues_patch is present', () => {
+    expect(() =>
+      assertCoachReplySelfAttestation(
+        baseParsed({
+          reply_content: "I've saved the cues on your workout.",
+          workout_cues_patch: {
+            v: 1,
+            resolution_key: 'flat:goblet-squat',
+            form_cues: 'Feet shoulder-width.',
           },
         }),
       ),

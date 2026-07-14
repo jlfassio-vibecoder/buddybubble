@@ -1,0 +1,28 @@
+---
+description: Never block the chat awaiting the multi-minute pre-commit / pnpm check gate
+alwaysApply: true
+---
+
+# Pre-commit checklist — agent shell rules
+
+`pnpm run check` (and Deno integration tests inside it) legitimately take **several minutes**. Awaiting that run in the agent shell hangs the conversation.
+
+## Required workflow
+
+When the user asks to run `docs/pre-commit-checklist.md`, `pnpm run check`, or `verify:storefront`:
+
+1. Prefer **`pnpm run check:report`** (add `-- --with-storefront` if `apps/storefront/` changed).
+2. Start it with **`block_until_ms: 0`** (background immediately).
+3. Do **one** short non-blocking peek of `tmp/pre-commit-checklist-status.json` if useful, then **end the turn**.
+4. Do **not** `AwaitShell` / poll for the full gate. Rely on the completion notification or tell the user to read the status file.
+5. Never chain `format && lint && eslint && deno && build && storefront` as one foreground shell call the agent then awaits.
+
+## Status files
+
+- `tmp/pre-commit-checklist-status.json` — `state`: `running` | `passed` | `failed`; includes `current`, `failedStep`, `ok`
+- `tmp/pre-commit-checklist.log` — step transcripts
+
+## Notes
+
+- `check` uses **`lint:eslint:errors`** (`eslint --quiet`) so warnings do not flood terminals; warnings still exist via `pnpm run lint:eslint`.
+- Leave the user’s own `pnpm dev` alone unless they ask to stop it.

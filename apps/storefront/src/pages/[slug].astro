@@ -290,7 +290,7 @@ const heroImage = branding.hero_url?.trim() ?? '';
         <h2 class="text-sm font-semibold uppercase tracking-wide text-zinc-500">Public cards</h2>
       </div>
       <PublicFeed
-        client:only="react"
+        client:load
         workspaceId={ws.id}
         initialFeed={publicFeed}
         bubbleIds={bubbleIds}

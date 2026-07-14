@@ -5,7 +5,8 @@ export type {
   WorkoutBlockExerciseRenderContext,
   WorkoutBlockListChrome,
   WorkoutBlockListRendererProps,
-} from './WorkoutBlockListRenderer';
+  WorkoutCueEditProps,
+} from './workout-block-renderer-types';
 
 export { WorkoutFlatExerciseList } from './WorkoutFlatExerciseList';
 export type { WorkoutFlatExerciseListProps } from './WorkoutFlatExerciseList';
@@ -15,6 +16,9 @@ export {
   WorkoutReadExerciseRowFromFactory,
 } from './WorkoutReadExerciseRow';
 export type { WorkoutReadExerciseRowProps } from './WorkoutReadExerciseRow';
+
+export { WorkoutExerciseCuePanel, cueBadgeState } from './WorkoutExerciseCuePanel';
+export type { WorkoutExerciseCuePanelProps } from './WorkoutExerciseCuePanel';
 
 export { WorkoutBlockHeader } from './WorkoutBlockHeader';
 

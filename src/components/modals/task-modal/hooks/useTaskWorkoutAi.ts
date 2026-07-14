@@ -18,6 +18,11 @@ import {
 } from '@/lib/item-metadata';
 import type { WorkoutViewerApplyPayload } from '@/components/fitness/workout-viewer-dialog';
 import {
+  applyCuePatchesToMetadata,
+  type WorkoutCuePatch,
+} from '@/lib/workout-factory/apply-cue-patches-to-metadata';
+import { parseWorkoutExercisesFromMetadata } from '@/lib/parse-workout-exercises-from-metadata';
+import {
   applyBlockEditsToMetadata,
   applyFlatWorkoutEditsToMetadata,
   deriveFlatExercisesFromMetadata,
@@ -272,7 +277,7 @@ export function useTaskWorkoutAi({
       if (payload.blocks != null && payload.blocks.length > 0) {
         const nextMeta = applyBlockEditsToMetadata(metadata, payload.blocks) as Json;
         setMetadata(nextMeta);
-        setWorkoutExercises(deriveFlatExercisesFromMetadata(nextMeta));
+        setWorkoutExercises(parseWorkoutExercisesFromMetadata(nextMeta));
         return;
       }
 
@@ -288,6 +293,24 @@ export function useTaskWorkoutAi({
     [metadata, setTitle, setDescription, setWorkoutExercises, setMetadata],
   );
 
+  // Keep a sync mirror so rapid cue patches do not both read the same stale `metadata`.
+  // Update the ref in the handler and via effect (not during render) so a parent re-render
+  // with a stale prop cannot clobber an in-flight patch chain.
+  const cuePatchMetadataRef = useRef(metadata);
+  useEffect(() => {
+    cuePatchMetadataRef.current = metadata;
+  }, [metadata]);
+
+  const handleWorkoutViewerCuePatches = useCallback(
+    (patches: Record<string, WorkoutCuePatch>) => {
+      const nextMeta = applyCuePatchesToMetadata(cuePatchMetadataRef.current, patches) as Json;
+      cuePatchMetadataRef.current = nextMeta;
+      setMetadata(nextMeta);
+      setWorkoutExercises(parseWorkoutExercisesFromMetadata(nextMeta));
+    },
+    [setMetadata, setWorkoutExercises],
+  );
+
   return {
     templatePickerOpen,
     setTemplatePickerOpen,
@@ -300,6 +323,7 @@ export function useTaskWorkoutAi({
     viewerWorkoutSet,
     hasWorkoutViewerContent,
     handleWorkoutViewerApply,
+    handleWorkoutViewerCuePatches,
     resetWorkoutAiUi,
   };
 }
