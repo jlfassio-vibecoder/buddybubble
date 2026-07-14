@@ -81,7 +81,7 @@ describe('buildOutlineFillEventMetadata', () => {
       totalTokens: 1500,
       finishReason: 'length',
       truncated: true,
-      model: 'google/gemini-3.1-flash-lite-preview',
+      model: 'google/gemini-3.1-flash-lite',
       failureKind: 'parse',
       validationReason: 'parse',
       validationError: 'bad json',
@@ -108,7 +108,7 @@ describe('buildOutlineFillEventMetadata', () => {
       totalTokens: 150,
       finishReason: 'length',
       truncated: true,
-      model: 'google/gemini-3.1-flash-lite-preview',
+      model: 'google/gemini-3.1-flash-lite',
       fillFallback: true,
       fillFallbackReason: 'parse failed',
     };

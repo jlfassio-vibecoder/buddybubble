@@ -25,9 +25,26 @@ From the repo root:
 pnpm run check
 ```
 
-This runs, in order: **Prettier check** → **TypeScript (`tsc`)** → **Next.js production build** → **Astro diagnostics** for `apps/storefront` (`astro check` via `pnpm run check:storefront`).
+This runs, in order: **Prettier check** → **TypeScript (`tsc`)** → agent coupling/prompt/mirror scripts → **ESLint errors only** (`eslint --quiet`) → Deno agent-dispatch integration tests → **Next.js production build** → **Astro diagnostics** for `apps/storefront` (`astro check` via `pnpm run check:storefront`).
 
 If `check` passes, you are in good shape for formatting, TS on the CRM, the Next production build, and Astro/static analysis on the storefront. Fix failures in order (formatting first, then types, then Next build, then storefront).
+
+### Agent-friendly / progress file (recommended in Cursor)
+
+`pnpm run check` often takes **several minutes** (Deno integration tests alone include many multi-second retry scenarios). Prefer the status-file runner so the session is not blocked awaiting the full gate:
+
+```bash
+pnpm run check:report
+# if apps/storefront/ changed:
+pnpm run check:report -- --with-storefront
+```
+
+Progress lands in:
+
+- `tmp/pre-commit-checklist-status.json` — `state` (`running` | `passed` | `failed`), current/failed step
+- `tmp/pre-commit-checklist.log` — full step output
+
+In Cursor agent shells: start `check:report` in the **background** and read the status JSON later — do not await the entire run in-chat.
 
 **Note:** `pnpm run check` does **not** run **`astro build`**. The full Astro compile is intentionally **local** when you touch the storefront (see below). On **Vercel**, the storefront project uses an **ignored build step** so **`astro build` is skipped** when no files under `apps/storefront/` changed—CRM-only pushes do not rebuild the marketing site.
 
@@ -63,6 +80,8 @@ cd apps/storefront && pnpm run astro:check
 | 2    | `pnpm run lint`             | **TypeScript** errors and type mismatches in the Next.js app (`tsc --noEmit`).                           |
 | 3    | `pnpm run build`            | Next.js compile errors, App Router issues, and other problems only visible in a full CRM build.          |
 | 4    | `pnpm run check:storefront` | **Astro** diagnostics for `apps/storefront`: `astro check` (`.astro` files, frontmatter, TS in scripts). |
+
+Or use **`pnpm run check:report`** (optional `-- --with-storefront`) for the same gate with a status file — see above.
 
 ### Storefront (Astro)
 

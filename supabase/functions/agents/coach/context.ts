@@ -730,7 +730,7 @@ export async function loadInProgressWorkoutLogTelemetry(
     .eq('item_type', 'workout_log')
     .eq('status', 'in_progress')
     .eq('metadata->>source_task_id', sourceTaskId)
-    .order('updated_at', { ascending: false })
+    .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
   if (error) {

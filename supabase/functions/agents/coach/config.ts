@@ -81,7 +81,16 @@ export const COACH_HISTORY_LIMIT = 15 as const;
 export const COACH_TASK_NOTES_MAX_CHARS = 8000 as const;
 
 /** Max length per text field in `personal_cues_patch` before RPC merge (matches parse cap). */
-export const PERSONAL_CUES_FIELD_MAX_CHARS = 2000 as const;
+export const PERSONAL_CUES_FIELD_MAX_CHARS = 1000 as const;
+
+/** Max length per text field in `workout_cues_patch` (M3 Ask Coach; ~2–3 sentences). */
+export const WORKOUT_CUE_FIELD_MAX_CHARS = 1000 as const;
+
+/** Max output tokens for EXERCISE_CUE_REQUEST / Ask Coach turns (prevents runaway MAX_TOKENS). */
+export const COACH_CUE_MAX_OUTPUT_TOKENS = 2048 as const;
+
+/** Max length for `reply_content` on cue-only schema turns (cues belong in workout_cues_patch). */
+export const COACH_CUE_REPLY_CONTENT_MAX_CHARS = 1200 as const;
 
 /** Fallback reply when the model claims a write without emitting structured fields (server guard). */
 export const COACH_SELF_ATTESTATION_SAFE_REPLY =

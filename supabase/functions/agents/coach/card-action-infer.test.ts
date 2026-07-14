@@ -20,6 +20,7 @@ function baseParsed(overrides: Partial<CoachGeminiJsonResponse> = {}): CoachGemi
     task_modal_intake_dropped: false,
     personal_cues_resolved: null,
     personal_cues_dropped_unanchored: 0,
+    personal_cues_unanchored_drops: [],
     card_action: null,
     update_existing_task: false,
     updated_task_title: null,

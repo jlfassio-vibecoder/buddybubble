@@ -134,6 +134,66 @@ export function parseExerciseCueRequestFromMessageMetadata(
   );
 }
 
+export type DispatchHistoryRowLike = {
+  metadata?: unknown;
+  user_id?: string;
+};
+
+/** Reads `metadata.workout_cues_patch.resolution_key` when present on a persisted reply. */
+export function parseWorkoutCuesPatchFromMessageMetadata(
+  metadata: unknown,
+): { resolution_key: string } | null {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  const raw = (metadata as Record<string, unknown>).workout_cues_patch;
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const resolution_key = (raw as Record<string, unknown>).resolution_key;
+  if (typeof resolution_key !== 'string' || !resolution_key.trim()) return null;
+  return { resolution_key: resolution_key.trim() };
+}
+
+function coachEmittedWorkoutCuesPatchForKey(
+  history: ReadonlyArray<DispatchHistoryRowLike>,
+  agentAuthUserId: string,
+  resolutionKey: string,
+): boolean {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const row = history[i];
+    if (row.user_id !== agentAuthUserId) continue;
+    const patch = parseWorkoutCuesPatchFromMessageMetadata(row.metadata);
+    if (patch?.resolution_key === resolutionKey) return true;
+  }
+  return false;
+}
+
+/**
+ * Active exercise-cue flow for this dispatch: trigger metadata, else latest user
+ * `exercise_cue_request` in thread history (affirmation turns). Returns null once
+ * the coach already persisted `workout_cues_patch` for that resolution key.
+ */
+export function resolveExerciseCueRequestForDispatch(
+  triggerMetadata: unknown,
+  history: ReadonlyArray<DispatchHistoryRowLike>,
+  agentAuthUserId: string,
+): ExerciseCueRequestV1 | null {
+  let req = parseExerciseCueRequestFromMessageMetadata(triggerMetadata);
+  if (!req) {
+    for (let i = history.length - 1; i >= 0; i--) {
+      const row = history[i];
+      if (row.user_id === agentAuthUserId) continue;
+      const fromHistory = parseExerciseCueRequestFromMessageMetadata(row.metadata);
+      if (fromHistory) {
+        req = fromHistory;
+        break;
+      }
+    }
+  }
+  if (!req) return null;
+  if (coachEmittedWorkoutCuesPatchForKey(history, agentAuthUserId, req.resolution_key)) {
+    return null;
+  }
+  return req;
+}
+
 export const EXERCISE_CUE_REQUEST_HEADER = '--- EXERCISE_CUE_REQUEST ---';
 
 export function formatPrescriptionLine(

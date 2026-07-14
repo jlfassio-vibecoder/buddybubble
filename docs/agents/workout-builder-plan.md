@@ -72,7 +72,7 @@ Only one surface should edit outline draft at a time: navigating to builder shou
 
 ### 1.1 Routing and feature flag
 
-- [ ] Add `src/lib/feature-flags/workoutBuilderRoute.ts` — `isWorkoutBuilderRouteEnabled()` (env or existing flags pattern; default off in prod until ready).
+- [x] Add `src/lib/feature-flags/workoutBuilderRoute.ts` — `isWorkoutBuilderRouteEnabled()` (**default ON**; set `NEXT_PUBLIC_WORKOUT_BUILDER_ROUTE=0` / `false` / `off` to kill-switch). Empty Vercel env must not 404 the shipped route.
 - [ ] Add `src/lib/workout-builder/build-workout-builder-url.ts`:
   - [ ] `buildWorkoutBuilderUrl(workspaceId, taskId, opts?: { return?: string; from?: string })`
   - [ ] `isWorkoutBuilderPathname(pathname: string | null): boolean` — regex aligned with session helper.
@@ -82,9 +82,9 @@ Only one surface should edit outline draft at a time: navigating to builder shou
   - [ ] Load `tasks` row; require `normalizeItemType(item_type) === 'workout'`.
   - [ ] Verify bubble `workspace_id` matches route param.
   - [ ] Return payload type (e.g. `WorkoutBuilderTaskPayload`: `id`, `title`, `bubble_id`, `metadata`, `item_type`).
-- [ ] Add `src/app/(dashboard)/app/[workspace_id]/builder/[task_id]/page.tsx`:
-  - [ ] Server component: redirect if unauthenticated; `notFound()` if flag off or load fails.
-  - [ ] Render `<WorkoutBuilderShell workspaceId={...} task={...} />`.
+- [x] Add `src/app/(dashboard)/app/[workspace_id]/builder/[task_id]/page.tsx`:
+  - [x] Server component: redirect if unauthenticated; typed unavailable UI if flag off or load fails (no silent `notFound()`).
+  - [x] Render `<WorkoutBuilderShell workspaceId={...} task={...} />`.
 
 ### 1.2 Dashboard chrome bypass
 
@@ -258,19 +258,19 @@ Only one surface should edit outline draft at a time: navigating to builder shou
 
 ## File touch matrix (all sprints)
 
-| Area             | Files                                                                                                              |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------ |
-| **Route**        | `app/.../builder/[task_id]/page.tsx`, `layout.tsx`, `load-builder-task.ts`                                         |
-| **URLs / flags** | `build-workout-builder-url.ts`, `workoutBuilderRoute.ts`                                                           |
-| **Shell**        | `features/workout-builder/WorkoutBuilderShell.tsx`, `useWorkoutBuilderTaskHost.ts`, `useWorkoutBuilderChatRail.ts` |
-| **Gate**         | `workspace-shell-gate.tsx`                                                                                         |
-| **Modal entry**  | `TaskModal.tsx`                                                                                                    |
-| **Outline**      | `useWorkoutOutlineEditor.ts`, `WorkoutOutlinePanel.tsx`                                                            |
-| **Context**      | `build-outline-draft-context.ts`                                                                                   |
-| **Agent**        | `schema.ts`, `parse.ts`, `prompts.ts`, `server-guards.ts`, `strategy.ts`, `context.ts` (+ Deno mirrors)            |
-| **Effects**      | `agent-effects/types.ts`, `useAgentEffectSweep.ts`, `parse-outline-draft-applied.ts`                               |
-| **Chat**         | `StandardTaskChatRail.tsx` (unchanged API; new host wiring)                                                        |
-| **CI**           | `pnpm check:agent-mirror`, `pnpm check:agent-prompts`                                                              |
+| Area             | Files                                                                                                                                                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Route**        | `app/.../builder/[task_id]/page.tsx`, `layout.tsx`, `load-builder-task.ts`                                                                                                                                               |
+| **URLs / flags** | `build-workout-builder-url.ts`, `workoutBuilderRoute.ts` (default **ON**; kill with `NEXT_PUBLIC_WORKOUT_BUILDER_ROUTE=0`). On Vercel, empty/unset is fine after default-on; set `0` only to disable, then **redeploy**. |
+| **Shell**        | `features/workout-builder/WorkoutBuilderShell.tsx`, `useWorkoutBuilderTaskHost.ts`, `useWorkoutBuilderChatRail.ts`                                                                                                       |
+| **Gate**         | `workspace-shell-gate.tsx`                                                                                                                                                                                               |
+| **Modal entry**  | `TaskModal.tsx`                                                                                                                                                                                                          |
+| **Outline**      | `useWorkoutOutlineEditor.ts`, `WorkoutOutlinePanel.tsx`                                                                                                                                                                  |
+| **Context**      | `build-outline-draft-context.ts`                                                                                                                                                                                         |
+| **Agent**        | `schema.ts`, `parse.ts`, `prompts.ts`, `server-guards.ts`, `strategy.ts`, `context.ts` (+ Deno mirrors)                                                                                                                  |
+| **Effects**      | `agent-effects/types.ts`, `useAgentEffectSweep.ts`, `parse-outline-draft-applied.ts`                                                                                                                                     |
+| **Chat**         | `StandardTaskChatRail.tsx` (unchanged API; new host wiring)                                                                                                                                                              |
+| **CI**           | `pnpm check:agent-mirror`, `pnpm check:agent-prompts`                                                                                                                                                                    |
 
 ---
 

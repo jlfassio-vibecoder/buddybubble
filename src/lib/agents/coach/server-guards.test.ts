@@ -25,6 +25,7 @@ function baseParsed(overrides: Partial<CoachGeminiJsonResponse> = {}): CoachGemi
     execution_patch: null,
     personal_cues_resolved: null,
     personal_cues_dropped_unanchored: 0,
+    personal_cues_unanchored_drops: [],
     task_modal_intake_patch: null,
     task_modal_intake_dropped: [],
     card_action: null,
@@ -54,6 +55,7 @@ describe('applyCoachServerGuards outline co-pilot', () => {
         currentWorkoutContextJson: null,
         isActiveWorkoutSession: false,
         outlineCoPilotActive: true,
+        exerciseCueRequestActive: false,
       },
     );
     expect(out.proposed_workout_metadata).toBeNull();
@@ -77,6 +79,7 @@ describe('applyCoachServerGuards outline co-pilot', () => {
         currentWorkoutContextJson: null,
         isActiveWorkoutSession: false,
         outlineCoPilotActive: true,
+        exerciseCueRequestActive: false,
       },
     );
     expect(out.outline_draft_patch).toBeNull();
@@ -99,6 +102,7 @@ describe('applyCoachServerGuards outline co-pilot', () => {
           currentWorkoutContextJson: null,
           isActiveWorkoutSession: false,
           outlineCoPilotActive: true,
+          exerciseCueRequestActive: false,
         },
       ),
     ).toThrow();
@@ -117,6 +121,7 @@ describe('applyCoachServerGuards outline co-pilot', () => {
           currentWorkoutContextJson: null,
           isActiveWorkoutSession: false,
           outlineCoPilotActive: true,
+          exerciseCueRequestActive: false,
         },
       ),
     ).toThrow();

@@ -65,9 +65,8 @@ export const POST: APIRoute = async ({ request }) => {
       },
       body: JSON.stringify(payload),
     });
-  } catch (e) {
-    console.error('[storefront-proxy] upstream fetch failed', target, e);
-    return new Response(JSON.stringify({ error: 'Could not reach app server', target }), {
+  } catch {
+    return new Response(JSON.stringify({ error: 'Could not reach app server' }), {
       status: 502,
       headers: { 'Content-Type': 'application/json' },
     });

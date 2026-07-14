@@ -16,7 +16,16 @@
  */
 
 import type { VertexResponseSchema } from '../_shared/llm/types';
-import { INTAKE_CATEGORIES, INTAKE_PHASES } from './config';
+import {
+  INTAKE_CATEGORIES,
+  INTAKE_PHASES,
+  PERSONAL_CUES_FIELD_MAX_CHARS,
+  WORKOUT_CUE_FIELD_MAX_CHARS,
+  COACH_CUE_REPLY_CONTENT_MAX_CHARS,
+} from './config';
+
+const CUE_TEXT_FIELD_DESCRIPTION =
+  'Strictly limit to 2–3 short sentences. Do not ramble or repeat yourself.';
 
 /** Shared block object shape for `proposed_workout_metadata.blocks` and `coach_workout_outline`. */
 export const COACH_PROPOSED_WORKOUT_BLOCK_ITEM_SCHEMA = {
@@ -452,8 +461,9 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
     personal_cues_patch: {
       type: 'ARRAY',
       nullable: true,
+      maxItems: 1,
       description:
-        'Optional. When CURRENT WORKOUT CONTEXT is present, save personal instructions/form cues/tips/injury notes per exercise. Indices come from EXERCISE_INDEX_MAP and must be marked [dict:...]; default mode append. Omit or null when not persisting cues.',
+        'USE THIS TOOL ONLY to save global personal notes for dictionary-anchored exercises ([dict:...] in EXERCISE_INDEX_MAP). Never use for Ask Coach / EXERCISE_CUE_REQUEST — use workout_cues_patch for current-workout cues. Max 1 exercise per response. Omit or null when not persisting cues.',
       items: {
         type: 'OBJECT',
         properties: {
@@ -462,10 +472,30 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
             description:
               '0-based index in workoutContext.exercises (same as execution_patch). Must match EXERCISE_INDEX_MAP and have a dictionary id when saving.',
           },
-          instructions: { type: 'STRING', nullable: true },
-          form_cues: { type: 'STRING', nullable: true },
-          tips: { type: 'STRING', nullable: true },
-          injury_prevention_tips: { type: 'STRING', nullable: true },
+          instructions: {
+            type: 'STRING',
+            nullable: true,
+            maxLength: PERSONAL_CUES_FIELD_MAX_CHARS,
+            description: CUE_TEXT_FIELD_DESCRIPTION,
+          },
+          form_cues: {
+            type: 'STRING',
+            nullable: true,
+            maxLength: PERSONAL_CUES_FIELD_MAX_CHARS,
+            description: CUE_TEXT_FIELD_DESCRIPTION,
+          },
+          tips: {
+            type: 'STRING',
+            nullable: true,
+            maxLength: PERSONAL_CUES_FIELD_MAX_CHARS,
+            description: CUE_TEXT_FIELD_DESCRIPTION,
+          },
+          injury_prevention_tips: {
+            type: 'STRING',
+            nullable: true,
+            maxLength: PERSONAL_CUES_FIELD_MAX_CHARS,
+            description: CUE_TEXT_FIELD_DESCRIPTION,
+          },
           mode: {
             type: 'STRING',
             nullable: true,
@@ -479,17 +509,37 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
       type: 'OBJECT',
       nullable: true,
       description:
-        'Optional. EXERCISE_CUE_REQUEST flow only: workout-scoped cue prose for one exercise keyed by resolution_key. Emit only after the user confirms generation on a follow-up turn — never on the first proactive offer turn. MUST be null when exercise_cue_request is absent. Do not use personal_cues_patch or proposed_workout_metadata for this flow.',
+        'USE THIS TOOL ONLY to add form cues, instructions, or tips for one specific exercise in the CURRENT workout card (resolution_key). Max 2–3 sentences per field. Forbidden for global catalog saves — use personal_cues_patch only for [dict:...] exercises. Emit only after user confirms on EXERCISE_CUE_REQUEST follow-up turn.',
       properties: {
         v: { type: 'INTEGER', description: 'Must be 1.' },
         resolution_key: {
           type: 'STRING',
           description: 'Must match exercise_cue_request.resolution_key from the trigger metadata.',
         },
-        instructions: { type: 'STRING', nullable: true },
-        form_cues: { type: 'STRING', nullable: true },
-        tips: { type: 'STRING', nullable: true },
-        injury_prevention_tips: { type: 'STRING', nullable: true },
+        instructions: {
+          type: 'STRING',
+          nullable: true,
+          maxLength: WORKOUT_CUE_FIELD_MAX_CHARS,
+          description: CUE_TEXT_FIELD_DESCRIPTION,
+        },
+        form_cues: {
+          type: 'STRING',
+          nullable: true,
+          maxLength: WORKOUT_CUE_FIELD_MAX_CHARS,
+          description: CUE_TEXT_FIELD_DESCRIPTION,
+        },
+        tips: {
+          type: 'STRING',
+          nullable: true,
+          maxLength: WORKOUT_CUE_FIELD_MAX_CHARS,
+          description: CUE_TEXT_FIELD_DESCRIPTION,
+        },
+        injury_prevention_tips: {
+          type: 'STRING',
+          nullable: true,
+          maxLength: WORKOUT_CUE_FIELD_MAX_CHARS,
+          description: CUE_TEXT_FIELD_DESCRIPTION,
+        },
       },
       required: ['v', 'resolution_key'],
     },
@@ -575,7 +625,7 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
     },
   },
   // Keys must be present so Gemini does not drop task_description on create_card flows.
-  // execution_patch is NOT required: model may omit it; parse treats missing as null.
+  // execution_patch and proposed_workout_metadata are NOT required: model may omit them; parse treats missing as null.
   // card_action MUST be emitted every turn as null or "trigger_generation" — when it was
   // optional Gemini often omitted the key entirely, reply metadata stayed `{}`, and the
   // Task Modal client never received the Generate Workout hand-off.
@@ -587,9 +637,40 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
     'update_existing_task',
     'updated_task_title',
     'updated_task_description',
-    'proposed_workout_metadata',
     'card_action',
   ],
+};
+
+/**
+ * Exercise-cue flow (Task Modal Ask Coach): omits structural and personal-cue fields so the
+ * model must emit workout_cues_patch only (single object, not an array).
+ */
+export const COACH_EXERCISE_CUE_RESPONSE_SCHEMA: VertexResponseSchema = {
+  type: 'OBJECT',
+  properties: {
+    ...(Object.fromEntries(
+      Object.entries(COACH_RESPONSE_SCHEMA.properties as Record<string, unknown>).filter(
+        ([key]) =>
+          key !== 'proposed_workout_metadata' &&
+          key !== 'outline_draft_patch' &&
+          key !== 'coach_workout_outline' &&
+          key !== 'personal_cues_patch' &&
+          key !== 'execution_patch',
+      ),
+    ) as VertexResponseSchema['properties']),
+    reply_content: {
+      type: 'STRING',
+      maxLength: COACH_CUE_REPLY_CONTENT_MAX_CHARS,
+      description:
+        'Short chat bubble only (~3 sentences max). Do NOT duplicate cue prose here — put instructions, form cues, and tips in workout_cues_patch fields only.',
+    },
+  },
+  required: (COACH_RESPONSE_SCHEMA.required ?? []).filter(
+    (key) =>
+      key !== 'proposed_workout_metadata' &&
+      key !== 'outline_draft_patch' &&
+      key !== 'coach_workout_outline',
+  ),
 };
 
 /**

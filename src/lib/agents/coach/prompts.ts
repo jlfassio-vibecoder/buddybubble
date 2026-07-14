@@ -483,11 +483,19 @@ Return ONLY valid JSON. No markdown. Example:
  * omits conflicting "rich task_description" / verbose coach_task_notes directives —
  * the APEX ARCHITECT CRITICAL TOKEN CONSTRAINT owns those fields on outline turns.
  */
+export const CRITICAL_CUE_INSTRUCTIONS =
+  '<CRITICAL_CUE_INSTRUCTIONS>\n' +
+  '- When asked for exercise instructions or form cues, you MUST use workout_cues_patch.\n' +
+  '- You are strictly forbidden from writing more than 3 sentences per cue field. Be punchy and concise.\n' +
+  '- Do not repeat yourself. Do not get stuck in a loop.\n' +
+  '</CRITICAL_CUE_INSTRUCTIONS>';
+
 export function buildBaseCoachPrompt(
   currentDate: string,
-  options?: { apexArchitectMainChat?: boolean },
+  options?: { apexArchitectMainChat?: boolean; exerciseCueRequestMode?: boolean },
 ): string {
   const apexMain = options?.apexArchitectMainChat === true;
+  const cueMode = options?.exerciseCueRequestMode === true;
   const createCardTaskDesc = apexMain
     ? 'When create_card is true, provide non-empty task_title and a concise task_description (max 3 sentences per APEX ARCHITECT block). Never leave task_description null or empty when create_card is true. '
     : 'When create_card is true, you must provide non-empty task_title and a rich task_description for the Kanban card body (workout details, structure, equipment, safety). Never leave task_description null or empty when create_card is true. ';
@@ -515,13 +523,17 @@ export function buildBaseCoachPrompt(
     'LIVE SESSION vs CARD DRAFT: If CURRENT WORKOUT CONTEXT is present and the user wants to adjust the live log (weights, reps, RPE, set done), set execution_patch, keep update_existing_task false, and keep proposed_workout_metadata null. Use update_existing_task and proposed_workout_metadata only when the user explicitly wants a permanent rewrite of the task or card (e.g. restructure the whole program or replace the written workout in the task). ' +
     "EXECUTION PATCH (live player): When CURRENT WORKOUT CONTEXT is present and the user mentions specific equipment (e.g. 'I have 60lb kettlebells') or asks for specific changes to the current workout session (workoutContext JSON under CURRENT WORKOUT CONTEXT), you MUST compute the appropriate weights, reps, RPE, and/or set completion and include them in the execution_patch field. " +
     'Do not only describe numbers in reply_content; you must also provide the JSON execution_patch so the app can update the live grid. You may list multiple sets and multiple exercises in one patch. String fields (weight, reps, rpe) must be pure numeric strings only, with no ranges, units, or extra text (e.g. "60", "8", "7.5"). Set execution_patch to null when you are not changing the live log. ' +
-    'PERSONAL CUES: When the user wants instructions, form cues, tips, or injury notes saved for catalog exercises, emit personal_cues_patch (one entry per exerciseIndex from EXERCISE_INDEX_MAP; only [dict:...] rows persist); you may combine it with execution_patch in one response. ' +
+    (cueMode
+      ? ''
+      : 'PERSONAL CUES: When the user wants instructions, form cues, tips, or injury notes saved for catalog exercises, emit personal_cues_patch (one entry per exerciseIndex from EXERCISE_INDEX_MAP; only [dict:...] rows persist); you may combine it with execution_patch in one response. ') +
     'TASK MODAL INTAKE PATCH: When TASK MODAL INTAKE UI appears in the system prompt (workout / workout_log task under discussion), use task_modal_intake_patch to update the on-card intake wizard. In **generation mode** (no factory yet): phase_intent, duration_minutes, progression_trend, optional anchor_lift / temporary_limitations, wizard_step 1–2 — not readiness/sleep. In **preflight mode** (workout already generated): readiness and sleep sliders 1–10, soreness, wizard_step 1–2 — not macro-planning fields. Do not only describe those values in reply_content when you intend the UI to change—emit task_modal_intake_patch. Set task_modal_intake_patch to null when not updating the wizard. ' +
     'If --- TASK MODAL LIVE STATE (v1) --- appears in the system prompt and you describe changing a wizard field in reply_content, you MUST emit the same change in task_modal_intake_patch in that same JSON. ' +
-    'TRUTHFULNESS: If reply_content claims you wrote or applied something, include non-null execution_patch, personal_cues_patch, task_modal_intake_patch, or create_card/update_existing_task in the same JSON. ' +
+    (cueMode
+      ? 'TRUTHFULNESS: If reply_content claims you wrote or applied cue prose, include non-null workout_cues_patch in the same JSON. '
+      : 'TRUTHFULNESS: If reply_content claims you wrote or applied something, include non-null execution_patch, personal_cues_patch, task_modal_intake_patch, or create_card/update_existing_task in the same JSON. ') +
     (apexMain
       ? 'Return ONLY a raw JSON object (no markdown, no code fences) with keys: reply_content, create_card, task_title, task_description, update_existing_task, updated_task_title, updated_task_description, execution_patch, personal_cues_patch, task_modal_intake_patch, card_action, intake_phase, session_readiness_score, missing_intake_categories, user_requested_immediate_card, session_request, coach_task_notes. Main bubble Call A has NO proposed_workout_metadata key — outline is Phase B server-side. '
-      : 'Return ONLY a raw JSON object (no markdown, no code fences) with keys: reply_content, create_card, task_title, task_description, update_existing_task, updated_task_title, updated_task_description, proposed_workout_metadata, execution_patch, personal_cues_patch, task_modal_intake_patch, outline_draft_patch, card_action, intake_phase, session_readiness_score, missing_intake_categories, user_requested_immediate_card, session_request, coach_task_notes. ') +
+      : 'Return ONLY a raw JSON object (no markdown, no code fences) with keys: reply_content, create_card, task_title, task_description, update_existing_task, updated_task_title, updated_task_description, proposed_workout_metadata, execution_patch, personal_cues_patch, workout_cues_patch, task_modal_intake_patch, outline_draft_patch, card_action, intake_phase, session_readiness_score, missing_intake_categories, user_requested_immediate_card, session_request, coach_task_notes. ') +
     'You MUST respond in valid JSON matching the provided schema. Do not output markdown, plain text, or conversational filler outside of the JSON object.'
   );
 }
@@ -681,11 +693,13 @@ export const PERSONAL_CUES_PATCH_GUIDE =
   'Use personal_cues_patch for saved personal cues per EXERCISE_INDEX_MAP ([dict:...] only), optionally alongside execution_patch.';
 
 export const EXERCISE_CUE_REQUEST_MODE_DIRECTIVE =
-  'EXERCISE CUE REQUEST MODE: When --- EXERCISE_CUE_REQUEST --- is present, the user asked to fill missing workout-scoped cues for one exercise. ' +
+  'EXERCISE CUE REQUEST MODE: When --- EXERCISE_CUE_REQUEST --- is present (including affirmation follow-up turns where the request lives only in thread history), the user asked to fill missing workout-scoped cues for one exercise. ' +
   'First turn (trigger carries exercise_cue_request metadata): do NOT emit workout_cues_patch yet. Ask a short confirmation listing the human-readable labels for empty_fields only. ' +
   'If injuries_on_file is true AND injury_prevention_tips is in empty_fields, mention safety modifications tied to the injury snippet. ' +
   'If injuries_on_file is false, never mention injury notes even if the user asks generically. ' +
   'Follow-up turn after user affirms (yes / generate / go ahead): emit workout_cues_patch with generated prose for the single exercise (resolution_key must match). ' +
+  "When the user asks for form cues, instructions, or tips for an exercise in their workout, you MUST use workout_cues_patch (a single object keyed by resolution_key — NOT an array). Do NOT use personal_cues_patch (that saves to the user's personal notes catalog). Do NOT generate cues for exercises the user did not explicitly ask for. " +
+  'When generating or updating instructions, form cues, or tips for an exercise, you MUST use workout_cues_patch. Do NOT output proposed_workout_metadata unless you are also making structural changes to the workout blocks. Be surgical and concise — only fill empty_fields for that one exercise. ' +
   'For this flow ONLY: forbid personal_cues_patch and proposed_workout_metadata. ' +
   'TRUTHFULNESS: if reply_content claims cues were saved, workout_cues_patch must be non-null.';
 
@@ -696,6 +710,8 @@ export function buildExerciseCueRequestCoachBlock(
   const labels = req.empty_fields.map((f) => CUE_FIELD_LABELS[f]);
   const rx = formatPrescriptionLine(req.prescription);
   const lines = [
+    CRITICAL_CUE_INSTRUCTIONS,
+    '',
     EXERCISE_CUE_REQUEST_HEADER,
     `exercise_name: ${req.exercise_name}`,
     `resolution_key: ${req.resolution_key}`,
