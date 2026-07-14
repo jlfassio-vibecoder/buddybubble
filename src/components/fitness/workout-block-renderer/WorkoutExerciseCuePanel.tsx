@@ -306,18 +306,18 @@ export function WorkoutExerciseCuePanel({
   );
 }
 
-/** Badge state for row chrome: empty, partial, or full cues available. */
+/** Badge state for row chrome: empty, partial, or full cues available.
+ * Tips are optional enrichment and never required for `full`. */
 export function cueBadgeState(
   bundle: ResolvedCueBundle | null | undefined,
 ): 'empty' | 'partial' | 'full' {
   if (!bundle || bundle.isEmpty) return 'empty';
-  const count = [
+  const coreCount = [
     bundle.instructions,
     bundle.form_cues,
-    bundle.tips,
     bundle.injury_prevention_tips,
     bundle.coach_notes,
   ].filter(Boolean).length;
-  if (count >= 3) return 'full';
+  if (coreCount >= 2) return 'full';
   return 'partial';
 }

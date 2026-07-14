@@ -12,6 +12,8 @@ import {
   workoutSessionBlocksContentKey,
 } from '@/lib/workout-factory/clone-workout-session-blocks';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
+import type { ExerciseCueRequestV1 } from '@/lib/agents/coach/exercise-cue-request';
+import type { ResolvedCueBundle } from '@/lib/workout-factory/resolve-exercise-cue-bundle';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import type { UnitSystem } from '@/types/database';
@@ -41,6 +43,10 @@ type WorkoutBuilderGeneratedReviewProps = {
   onReturn: () => void;
   saving: boolean;
   coreDirty: boolean;
+  cuesByKey?: Record<string, ResolvedCueBundle>;
+  cuesLoading?: boolean;
+  onAskCoachForCues?: (payload: ExerciseCueRequestV1) => void;
+  injuriesOnFile?: boolean;
 };
 
 export function WorkoutBuilderGeneratedReview({
@@ -58,6 +64,10 @@ export function WorkoutBuilderGeneratedReview({
   onReturn,
   saving,
   coreDirty,
+  cuesByKey,
+  cuesLoading = false,
+  onAskCoachForCues,
+  injuriesOnFile = false,
 }: WorkoutBuilderGeneratedReviewProps) {
   const [mode, setMode] = useState<ReviewMode>('preview');
   const [draftBlocks, setDraftBlocks] = useState<WorkoutSessionBlockView[]>(() =>
@@ -160,6 +170,11 @@ export function WorkoutBuilderGeneratedReview({
               density="full"
               chrome={chrome}
               data-testid="workout-builder-block-list"
+              cuesByKey={cuesByKey}
+              cuesLoading={cuesLoading}
+              canWriteCue={canWrite}
+              onAskCoachForCues={onAskCoachForCues}
+              injuriesOnFile={injuriesOnFile}
             />
           </div>
         ) : mode === 'edit' && useRichBlockEdit ? (

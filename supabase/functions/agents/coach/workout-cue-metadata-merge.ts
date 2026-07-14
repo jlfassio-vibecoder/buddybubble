@@ -202,7 +202,28 @@ function applyPatchToFlatRow(row: FlatRow, patch: WorkoutCuePatchFields): void {
   }
 }
 
-function applyCoachNotesToFactoryTree(
+const FACTORY_CUE_FIELD_MAP = [
+  { patch: 'instructions', factory: 'instructions' },
+  { patch: 'form_cues', factory: 'formCues' },
+  { patch: 'tips', factory: 'tips' },
+  { patch: 'injury_prevention_tips', factory: 'injuryPreventionTips' },
+  { patch: 'coach_notes', factory: 'coachNotes' },
+] as const;
+
+function applyCuePatchToFactoryExerciseRaw(
+  exRaw: Record<string, unknown>,
+  patch: WorkoutCuePatchFields,
+): void {
+  for (const { patch: patchKey, factory: factoryKey } of FACTORY_CUE_FIELD_MAP) {
+    if (!(patchKey in patch)) continue;
+    const val = trimPatchValue(patch[patchKey]);
+    if (val) exRaw[factoryKey] = val;
+    else delete exRaw[factoryKey];
+  }
+}
+
+/** Write full cue patch onto matching factory exercises (M5 dual-write). */
+function applyCuePatchesToFactoryTree(
   meta: Record<string, unknown>,
   patches: Record<string, WorkoutCuePatchFields>,
 ): void {
@@ -232,16 +253,15 @@ function applyCoachNotesToFactoryTree(
       );
       const patch = patches[directKey] ?? patches[indexedKey];
       flatIndex += 1;
-      if (!patch || !('coach_notes' in patch)) continue;
-      const val = trimPatchValue(patch.coach_notes);
-      if (val) exRaw.coachNotes = val;
-      else delete exRaw.coachNotes;
+      if (!patch || Object.keys(patch).length === 0) continue;
+      applyCuePatchToFactoryExerciseRaw(exRaw, patch);
     }
   }
 }
 
 export function workoutCuePatchV1ToFields(patch: WorkoutCuesPatchV1): WorkoutCuePatchFields {
   const out: WorkoutCuePatchFields = {};
+  // Wire CueFieldKey only — `coach_notes` is client/editor dual-write, not Ask Coach V1.
   for (const key of ['instructions', 'form_cues', 'tips', 'injury_prevention_tips'] as const) {
     const val = patch[key];
     if (typeof val === 'string' && val.trim()) out[key] = val.trim();
@@ -276,6 +296,56 @@ function findCollectedForResolutionKey(
   );
 }
 
+/** Gap-fill factory cues from flat before merge (M5c; inlined to avoid import cycles). */
+function backfillFactoryCuesFromFlatInline(meta: Record<string, unknown>): void {
+  const session = getPrimarySession(meta);
+  if (!session) return;
+  const blocks = session.exerciseBlocks;
+  if (!Array.isArray(blocks)) return;
+  const flat = parseFlatExercises(meta);
+  if (flat.length === 0) return;
+
+  let flatIndex = 0;
+  for (const blockRaw of blocks) {
+    if (!isPlainObject(blockRaw)) continue;
+    const exercises = blockRaw.exercises;
+    if (!Array.isArray(exercises)) continue;
+    for (const exRaw of exercises) {
+      if (!isPlainObject(exRaw)) continue;
+      const flatRow = flat[flatIndex];
+      flatIndex += 1;
+      if (!flatRow) continue;
+      const map = [
+        ['instructions', 'instructions'],
+        ['form_cues', 'formCues'],
+        ['tips', 'tips'],
+        ['injury_prevention_tips', 'injuryPreventionTips'],
+        ['coach_notes', 'coachNotes'],
+      ] as const;
+      for (const [flatKey, factoryKey] of map) {
+        const flatVal =
+          flatKey === 'form_cues'
+            ? typeof flatRow.form_cues === 'string'
+              ? flatRow.form_cues.trim()
+              : Array.isArray(flatRow.form_cues)
+                ? (flatRow.form_cues as string[])
+                    .map((x) => String(x).trim())
+                    .filter(Boolean)
+                    .join('\n')
+                : typeof flatRow.form_cue === 'string'
+                  ? flatRow.form_cue.trim()
+                  : ''
+            : typeof flatRow[flatKey] === 'string'
+              ? (flatRow[flatKey] as string).trim()
+              : '';
+        const factoryVal =
+          typeof exRaw[factoryKey] === 'string' ? (exRaw[factoryKey] as string).trim() : '';
+        if (flatVal && !factoryVal) exRaw[factoryKey] = flatVal;
+      }
+    }
+  }
+}
+
 /** Merge one workout cue patch into metadata; returns full metadata object. */
 export function applyWorkoutCuePatchToTaskMetadata(
   metadata: unknown,
@@ -288,9 +358,14 @@ export function applyWorkoutCuePatchToTaskMetadata(
 
   const parsed = isPlainObject(metadata) ? deepClone(metadata) : {};
   if (parsed.variant === 'workout_log') return parsed;
+  backfillFactoryCuesFromFlatInline(parsed);
 
   const collected = collectExercisesForMetadata(parsed);
   if (collected.length === 0) return parsed;
+
+  applyCuePatchesToFactoryTree(parsed, {
+    [patch.resolution_key]: fields,
+  });
 
   const flat = parseFlatExercises(parsed).map((row) => ({ ...row }));
   const flatByName = indexFlatExercisesByName(flat);
@@ -305,10 +380,6 @@ export function applyWorkoutCuePatchToTaskMetadata(
 
   if (flat.length > 0) parsed.exercises = flat;
   else delete parsed.exercises;
-
-  applyCoachNotesToFactoryTree(parsed, {
-    [patch.resolution_key]: fields,
-  });
 
   return parsed;
 }

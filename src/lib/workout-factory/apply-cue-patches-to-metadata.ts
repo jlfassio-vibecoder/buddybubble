@@ -15,6 +15,8 @@ import {
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import { hasRichWorkoutSetInMetadata } from '@/lib/workout-factory/sync-workout-metadata';
 import type { Exercise } from '@/lib/workout-factory/types/ai-program';
+import { applyCuePatchToFactoryExercise } from '@/lib/workout-factory/factory-exercise-cues';
+import { backfillFactoryCuesFromFlat } from '@/lib/workout-factory/backfill-factory-cues-from-flat';
 
 export type WorkoutCuePatch = Partial<{
   instructions: string;
@@ -99,7 +101,8 @@ function getPrimarySession(meta: Record<string, unknown>): Record<string, unknow
   return isPlainObject(s0) ? s0 : null;
 }
 
-function applyCoachNotesToFactoryTree(
+/** Write full cue patch onto matching factory exercises (M5 dual-write). */
+function applyCuePatchesToFactoryTree(
   meta: Record<string, unknown>,
   patches: Record<string, WorkoutCuePatch>,
 ): void {
@@ -127,11 +130,8 @@ function applyCoachNotesToFactoryTree(
       );
       const patch = patches[directKey] ?? patches[indexedKey];
       flatIndex += 1;
-      if (!patch || !('coach_notes' in patch)) continue;
-
-      const val = trimPatchValue(patch.coach_notes);
-      if (val) ex.coachNotes = val;
-      else delete ex.coachNotes;
+      if (!patch || Object.keys(patch).length === 0) continue;
+      applyCuePatchToFactoryExercise(ex, patch);
     }
   }
 }
@@ -203,7 +203,7 @@ export function mergeCuePatchIntoBundle(
 
 /**
  * Merge workout-scoped cue patches into task metadata.
- * Dual-writes enriched fields to flat `metadata.exercises` and `coachNotes` on factory exercises.
+ * Dual-writes factory Exercise camelCase cues (SoT) and flat `metadata.exercises`.
  */
 export function applyCuePatchesToMetadata(
   metadata: Json,
@@ -211,12 +211,18 @@ export function applyCuePatchesToMetadata(
 ): Json {
   if (!patches || Object.keys(patches).length === 0) return metadata;
 
-  const parsed = parseTaskMetadata(metadata) as Record<string, unknown>;
+  const parsed = parseTaskMetadata(backfillFactoryCuesFromFlat(metadata)) as Record<
+    string,
+    unknown
+  >;
   if (parsed.variant === 'workout_log') return metadata;
 
   const next = deepClone(parsed) as Record<string, unknown>;
   const collected = collectExercisesForPatches(next);
   if (collected.length === 0) return next as Json;
+
+  // Factory first (rich SoT), then flat for consumers / flat-only cards.
+  applyCuePatchesToFactoryTree(next, patches);
 
   const flat = parseWorkoutExercisesFromMetadata(next).map((row) => ({ ...row }));
   const flatByName = indexFlatExercisesByName(flat);
@@ -238,8 +244,6 @@ export function applyCuePatchesToMetadata(
   } else {
     delete next.exercises;
   }
-
-  applyCoachNotesToFactoryTree(next, patches);
 
   return next as Json;
 }

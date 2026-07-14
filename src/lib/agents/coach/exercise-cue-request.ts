@@ -5,12 +5,19 @@
 
 export type CueFieldKey = 'instructions' | 'form_cues' | 'tips' | 'injury_prevention_tips';
 
+/** Minimal field shape for `computeEmptyCueFields` (client passes `ResolvedCueBundle` fields). */
+export type CueFieldLike = {
+  value?: string;
+  /** Workout-scoped when `workout` or legacy `flat`; personal/library do not fill Ask Coach. */
+  provenance?: string;
+} | null;
+
 /** Minimal bundle shape for `computeEmptyCueFields` (client passes `ResolvedCueBundle`). */
 export type CueBundleLike = {
-  instructions?: { value?: string } | null;
-  form_cues?: { value?: string } | null;
-  tips?: { value?: string } | null;
-  injury_prevention_tips?: { value?: string } | null;
+  instructions?: CueFieldLike;
+  form_cues?: CueFieldLike;
+  tips?: CueFieldLike;
+  injury_prevention_tips?: CueFieldLike;
 };
 
 export type ExerciseCueRequestV1 = {
@@ -40,16 +47,26 @@ function trimFieldValue(field: { value?: string } | null | undefined): string {
   return typeof field?.value === 'string' ? field.value.trim() : '';
 }
 
-/** Core cue fields still blank after resolver + local display merge. */
+/** True when the field has card-scoped content (workout or legacy flat provenance). */
+function isWorkoutScopedFilled(field: CueFieldLike | undefined): boolean {
+  if (!trimFieldValue(field)) return false;
+  const p = field?.provenance;
+  return p === 'workout' || p === 'flat';
+}
+
+/**
+ * Cue fields still blank for workout-scoped Ask Coach fill.
+ * Personal/library-only values count as empty so Coach can still write card cues.
+ */
 export function computeEmptyCueFields(
   bundle: CueBundleLike,
   options: { includeInjuryField: boolean },
 ): CueFieldKey[] {
   const out: CueFieldKey[] = [];
-  if (!trimFieldValue(bundle.instructions)) out.push('instructions');
-  if (!trimFieldValue(bundle.form_cues)) out.push('form_cues');
-  if (!trimFieldValue(bundle.tips)) out.push('tips');
-  if (options.includeInjuryField && !trimFieldValue(bundle.injury_prevention_tips)) {
+  if (!isWorkoutScopedFilled(bundle.instructions)) out.push('instructions');
+  if (!isWorkoutScopedFilled(bundle.form_cues)) out.push('form_cues');
+  if (!isWorkoutScopedFilled(bundle.tips)) out.push('tips');
+  if (options.includeInjuryField && !isWorkoutScopedFilled(bundle.injury_prevention_tips)) {
     out.push('injury_prevention_tips');
   }
   return out;
@@ -167,24 +184,28 @@ function coachEmittedWorkoutCuesPatchForKey(
 
 /**
  * Active exercise-cue flow for this dispatch: trigger metadata, else latest user
- * `exercise_cue_request` in thread history (affirmation turns). Returns null once
- * the coach already persisted `workout_cues_patch` for that resolution key.
+ * `exercise_cue_request` in thread history (legacy affirmation / continuation).
+ *
+ * A fresh Ask Coach click (trigger carries `exercise_cue_request`) always wins so
+ * re-asks still run after an earlier `workout_cues_patch` in history — history
+ * suppression only applies to the fallthrough path.
  */
 export function resolveExerciseCueRequestForDispatch(
   triggerMetadata: unknown,
   history: ReadonlyArray<DispatchHistoryRowLike>,
   agentAuthUserId: string,
 ): ExerciseCueRequestV1 | null {
-  let req = parseExerciseCueRequestFromMessageMetadata(triggerMetadata);
-  if (!req) {
-    for (let i = history.length - 1; i >= 0; i--) {
-      const row = history[i];
-      if (row.user_id === agentAuthUserId) continue;
-      const fromHistory = parseExerciseCueRequestFromMessageMetadata(row.metadata);
-      if (fromHistory) {
-        req = fromHistory;
-        break;
-      }
+  const fromTrigger = parseExerciseCueRequestFromMessageMetadata(triggerMetadata);
+  if (fromTrigger) return fromTrigger;
+
+  let req: ExerciseCueRequestV1 | null = null;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const row = history[i];
+    if (row.user_id === agentAuthUserId) continue;
+    const fromHistory = parseExerciseCueRequestFromMessageMetadata(row.metadata);
+    if (fromHistory) {
+      req = fromHistory;
+      break;
     }
   }
   if (!req) return null;

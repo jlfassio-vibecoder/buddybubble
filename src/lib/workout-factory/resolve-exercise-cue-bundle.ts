@@ -80,6 +80,20 @@ export function flatExerciseResolutionKey(ex: WorkoutExercise, flatIndex: number
   return `${base}::${flatIndex}`;
 }
 
+/**
+ * Key used in `cuesByKey` for factory/block exercises — must match {@link collectBlockExercises}.
+ * Prefer stable `id`; otherwise `name::flatIndex` (not bare name).
+ */
+export function blockExerciseCueResolutionKey(
+  ex: { id?: string; exerciseName?: string; name?: string },
+  flatIndex: number,
+): string {
+  const id = ex.id?.trim();
+  if (id) return id;
+  const exerciseName = (ex.exerciseName ?? ex.name)?.trim() || 'Exercise';
+  return flatExerciseResolutionKey({ name: exerciseName, id: ex.id }, flatIndex);
+}
+
 export function collectBlockExercises(blocks: WorkoutSessionBlockView[]): CollectedBlockExercise[] {
   const out: CollectedBlockExercise[] = [];
   let flatIndex = 0;
@@ -91,9 +105,8 @@ export function collectBlockExercises(blocks: WorkoutSessionBlockView[]): Collec
   for (const block of mainBlocks) {
     for (const ex of block.exercises) {
       const exerciseName = ex.exerciseName?.trim() || 'Exercise';
-      const id = ex.id?.trim();
       out.push({
-        key: id ? id : flatExerciseResolutionKey({ name: exerciseName, id: ex.id }, flatIndex),
+        key: blockExerciseCueResolutionKey(ex, flatIndex),
         exerciseName,
         blockExercise: ex,
         flatIndex,
@@ -187,33 +200,39 @@ export function resolveExerciseCueBundle(input: ResolveExerciseCueBundleInput): 
   const flatInjury = flat ? stringifyRich(flat.injury_prevention_tips) : null;
   const flatCoach = trimNonEmpty(flat?.coach_notes);
 
+  // Factory (workout) > flat gap-fill (workout) > personal > library.
+  // Card-scoped wins use provenance 'workout' (not 'flat') so chips show "This workout".
   const instructions = pickField([
+    { value: trimNonEmpty(block?.instructions), provenance: 'workout' },
+    { value: flatInstructions, provenance: 'workout' },
     { value: personal?.instructions ?? null, provenance: 'personal' },
-    { value: flatInstructions, provenance: 'flat' },
     { value: catalog?.instructions ?? null, provenance: 'library' },
   ]);
 
   const form_cues = pickField([
+    { value: trimNonEmpty(block?.formCues), provenance: 'workout' },
+    { value: flatForm, provenance: 'workout' },
     { value: personal?.form_cues ?? null, provenance: 'personal' },
-    { value: flatForm, provenance: 'flat' },
     { value: catalog?.form_cues ?? null, provenance: 'library' },
   ]);
 
   const tips = pickField([
+    { value: trimNonEmpty(block?.tips), provenance: 'workout' },
+    { value: flatTips, provenance: 'workout' },
     { value: personal?.tips ?? null, provenance: 'personal' },
-    { value: flatTips, provenance: 'flat' },
     { value: catalog?.tips ?? null, provenance: 'library' },
   ]);
 
   const injury_prevention_tips = pickField([
+    { value: trimNonEmpty(block?.injuryPreventionTips), provenance: 'workout' },
+    { value: flatInjury, provenance: 'workout' },
     { value: personal?.injury_prevention_tips ?? null, provenance: 'personal' },
-    { value: flatInjury, provenance: 'flat' },
     { value: catalog?.injury_prevention_tips ?? null, provenance: 'library' },
   ]);
 
   const coach_notes = pickField([
-    { value: block?.coachNotes ?? null, provenance: 'workout' },
-    { value: flatCoach, provenance: 'flat' },
+    { value: trimNonEmpty(block?.coachNotes), provenance: 'workout' },
+    { value: flatCoach, provenance: 'workout' },
     { value: catalog?.coach_notes ?? null, provenance: 'library' },
   ]);
 

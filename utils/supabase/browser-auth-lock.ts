@@ -9,11 +9,24 @@ import { NavigatorLockAcquireTimeoutError, navigatorLock } from '@supabase/supab
  * so `_autoRefreshTokenTick` rethrows a raw AbortError and Next.js 16 overlays
  * "Lock broken by another request with the 'steal' option".
  */
+function hasNavigatorLocksApi(): boolean {
+  return (
+    typeof navigator !== 'undefined' &&
+    typeof navigator.locks !== 'undefined' &&
+    typeof navigator.locks?.request === 'function'
+  );
+}
+
 export async function browserAuthLock<R>(
   name: string,
   acquireTimeout: number,
   fn: () => Promise<R>,
 ): Promise<R> {
+  // SSR / Node: `navigator.locks` is undefined — running navigatorLock throws
+  // TypeError: Cannot read properties of undefined (reading 'request').
+  if (!hasNavigatorLocksApi()) {
+    return await fn();
+  }
   try {
     return await navigatorLock(name, acquireTimeout, fn);
   } catch (err) {

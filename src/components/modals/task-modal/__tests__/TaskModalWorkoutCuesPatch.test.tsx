@@ -202,5 +202,90 @@ describe('TaskModal Ask Coach wiring (source)', () => {
     expect((src.match(/onWorkoutCuesPatch=\{handleWorkoutCuesPatch\}/g) || []).length).toBe(3);
     expect(src.includes('handleAskCoachForCues')).toBe(true);
     expect(src.includes('onAskCoachForCues={handleAskCoachForCues}')).toBe(true);
+    expect(src.includes('Coach chat is not ready')).toBe(true);
+    expect(src.includes('Could not send Ask Coach')).toBe(true);
+  });
+
+  it('WorkoutBuilderShell wires Ask Coach + workout_cues_patch apply', () => {
+    const builderPath = join(process.cwd(), 'src/features/workout-builder/WorkoutBuilderShell.tsx');
+    const src = readFileSync(builderPath, 'utf8');
+    expect(src.includes('onAskCoachForCues={handleAskCoachForCues}')).toBe(true);
+    expect(src.includes('onWorkoutCuesPatch={handleWorkoutCuesPatch}')).toBe(true);
+    expect(src.includes('exercise_cue_request')).toBe(true);
+    expect(src.includes('ref={chatRailRef}')).toBe(true);
+  });
+
+  it('TaskModal.tsx wires reconcile + pending Coach cues on silent applyRow', () => {
+    const taskModalPath = join(process.cwd(), 'src/components/modals/TaskModal.tsx');
+    const src = readFileSync(taskModalPath, 'utf8');
+
+    expect(src.includes('reconcileWorkoutCueMetadata')).toBe(true);
+    expect(src.includes('pendingWorkoutCuesByMessageRef')).toBe(true);
+    expect(src.includes('snapshotPendingWorkoutCuePatches')).toBe(true);
+    expect(src.includes('clearPendingWorkoutCuesSatisfiedByIncoming')).toBe(true);
+    expect(src.includes('patchOriginalMetadataJson')).toBe(true);
+    expect(src.includes('cueStaleRefetchScheduledRef')).toBe(true);
+  });
+});
+
+describe('Coach cue race — optimistic then stale silent reconcile', () => {
+  it('retains optimistic cues when incoming Realtime metadata lacks them', async () => {
+    const { applyCuePatchesToMetadata } =
+      await import('@/lib/workout-factory/apply-cue-patches-to-metadata');
+    const { reconcileWorkoutCueMetadata } =
+      await import('@/lib/workout-factory/reconcile-workout-cue-metadata');
+    const { parseWorkoutExercisesFromMetadata } =
+      await import('@/lib/parse-workout-exercises-from-metadata');
+
+    const base = {
+      exercises: [{ name: 'Goblet Squat', sets: 3 }],
+    };
+    const optimistic = applyCuePatchesToMetadata(base, {
+      'goblet squat::0': {
+        instructions: 'Feet shoulder-width, kettlebell close.',
+        form_cues: 'Sit hips back, keep chest tall.',
+      },
+    });
+    // Stale Realtime snapshot: task UPDATE arrived without cue fields.
+    const incoming = { exercises: [{ name: 'Goblet Squat', sets: 3 }] };
+
+    const { metadata, pendingStillMissing } = reconcileWorkoutCueMetadata({
+      local: optimistic,
+      incoming,
+      pending: {
+        'goblet squat::0': {
+          instructions: 'Feet shoulder-width, kettlebell close.',
+          form_cues: 'Sit hips back, keep chest tall.',
+        },
+      },
+    });
+
+    const flat = parseWorkoutExercisesFromMetadata(metadata);
+    expect(flat[0]?.form_cues).toBe('Sit hips back, keep chest tall.');
+    expect(flat[0]?.instructions).toBe('Feet shoulder-width, kettlebell close.');
+    expect(pendingStillMissing).toBe(true);
+  });
+
+  it('accepts server cues when incoming already has them', async () => {
+    const { reconcileWorkoutCueMetadata } =
+      await import('@/lib/workout-factory/reconcile-workout-cue-metadata');
+    const { parseWorkoutExercisesFromMetadata } =
+      await import('@/lib/parse-workout-exercises-from-metadata');
+
+    const local = {
+      exercises: [{ name: 'Squat', form_cues: 'Local' }],
+    };
+    const incoming = {
+      exercises: [{ name: 'Squat', form_cues: 'From server' }],
+    };
+
+    const { metadata, pendingStillMissing } = reconcileWorkoutCueMetadata({
+      local,
+      incoming,
+      pending: { 'squat::0': { form_cues: 'Local' } },
+    });
+
+    expect(parseWorkoutExercisesFromMetadata(metadata)[0]?.form_cues).toBe('From server');
+    expect(pendingStillMissing).toBe(false);
   });
 });

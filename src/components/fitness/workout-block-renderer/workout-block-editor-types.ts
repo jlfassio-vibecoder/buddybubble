@@ -236,6 +236,10 @@ export function splitExerciseInBlock(
     reps: source.reps,
     ...(source.rpe != null ? { rpe: source.rpe } : {}),
     ...(source.restSeconds != null ? { restSeconds: source.restSeconds } : {}),
+    ...(source.instructions ? { instructions: source.instructions } : {}),
+    ...(source.formCues ? { formCues: source.formCues } : {}),
+    ...(source.tips ? { tips: source.tips } : {}),
+    ...(source.injuryPreventionTips ? { injuryPreventionTips: source.injuryPreventionTips } : {}),
     ...(source.coachNotes ? { coachNotes: source.coachNotes } : {}),
   }));
 

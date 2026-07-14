@@ -768,6 +768,8 @@ export function WorkoutViewerDialog({
   workoutUnitSystem,
   onApply,
   onApplyCuePatches,
+  onAskCoachForCues,
+  injuriesOnFile,
   cardCoverPath = null,
   taskId = null,
   onSaveTask,
@@ -805,6 +807,8 @@ export function WorkoutViewerDialog({
             workoutUnitSystem={workoutUnitSystem}
             onApply={onApply}
             onApplyCuePatches={onApplyCuePatches}
+            onAskCoachForCues={onAskCoachForCues}
+            injuriesOnFile={injuriesOnFile}
             onRequestClose={() => onOpenChange(false)}
             syncKey={syncKey}
             cardCoverPath={cardCoverPath}

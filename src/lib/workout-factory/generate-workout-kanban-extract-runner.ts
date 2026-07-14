@@ -256,7 +256,7 @@ Generate one coherent workout only.`;
     }
   }
 
-  const workoutInSet = buildWorkoutInSetFromKanbanExtract(extracted, persona);
+  const workoutInSet = buildWorkoutInSetFromKanbanExtract(extracted, persona, enriched);
   const taskExercises: WorkoutExercise[] = mergeKanbanExtractEnrichToTaskExercises(
     extracted,
     enriched,

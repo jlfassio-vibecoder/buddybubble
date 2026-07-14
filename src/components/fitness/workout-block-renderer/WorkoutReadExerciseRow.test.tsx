@@ -10,7 +10,7 @@ describe('WorkoutReadExerciseRow cues accordion', () => {
     const bundle: ResolvedCueBundle = {
       exerciseName: 'Squat',
       dictionaryId: null,
-      instructions: { value: 'Brace core', provenance: 'flat' },
+      instructions: { value: 'Brace core', provenance: 'workout' },
       form_cues: null,
       tips: null,
       injury_prevention_tips: null,
@@ -33,6 +33,33 @@ describe('WorkoutReadExerciseRow cues accordion', () => {
 
     expect(screen.getByTestId('workout-exercise-cue-panel')).toBeTruthy();
     expect(screen.getByText('Brace core')).toBeTruthy();
+  });
+
+  it('shows Cues badge without + or ~ when two core fields filled and tips empty', () => {
+    const bundle: ResolvedCueBundle = {
+      exerciseName: 'Squat',
+      dictionaryId: null,
+      instructions: { value: 'Brace core', provenance: 'workout' },
+      form_cues: { value: 'Knees out', provenance: 'workout' },
+      tips: null,
+      injury_prevention_tips: null,
+      coach_notes: null,
+      isEmpty: false,
+    };
+
+    render(
+      <WorkoutReadExerciseRow
+        name="Squat"
+        metaLine="3 sets · 10 reps"
+        cuePanelEnabled
+        resolvedCues={bundle}
+      />,
+    );
+
+    const badge = screen.getByRole('button', { name: 'Show exercise cues' });
+    expect(badge.textContent).toBe('Cues');
+    expect(badge.textContent).not.toContain('+');
+    expect(badge.textContent).not.toContain('~');
   });
 
   it('shows empty state when expanded with no cues', () => {

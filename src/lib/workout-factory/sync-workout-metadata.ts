@@ -1,7 +1,12 @@
 /**
  * Rich vs flat workout metadata reconciliation for task saves and manual edits.
- * Source of truth: `ai_workout_factory.workout_set.workouts[]` when present.
- * `metadata.exercises` is a derived legacy cache for Player / loggers.
+ *
+ * For parametric (rich) workouts, source of truth is
+ * `ai_workout_factory.workout_set.workouts[]` — including per-exercise cue prose
+ * (`instructions`, `formCues`, `tips`, `injuryPreventionTips`, `coachNotes`).
+ * `metadata.exercises` is a **projection** (via `workoutInSetToTaskExercises`) for
+ * Player / loggers / flat-only consumers. Flat-only cards (no factory tree) keep
+ * `metadata.exercises` as their cue store.
  */
 
 import type { Json } from '@/types/database';
@@ -17,68 +22,6 @@ import { workoutInSetToTaskExercises } from '@/lib/workout-factory/map-ai-workou
 import type { Exercise, ExerciseBlock, WarmupBlock } from '@/lib/workout-factory/types/ai-program';
 import type { WorkoutInSet } from '@/lib/workout-factory/types/ai-workout';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
-import { normalizeExerciseDictionaryKey } from '@/lib/workout-factory/exercise-dictionary-bridge';
-
-const FLAT_CUE_FIELDS = [
-  'instructions',
-  'form_cues',
-  'form_cue',
-  'tips',
-  'injury_prevention_tips',
-  'coach_notes',
-] as const satisfies readonly (keyof WorkoutExercise)[];
-
-function hasFlatCueValue(row: WorkoutExercise, field: (typeof FLAT_CUE_FIELDS)[number]): boolean {
-  const v = row[field];
-  if (v == null) return false;
-  if (typeof v === 'string') return v.trim().length > 0;
-  if (Array.isArray(v)) return v.some((x) => typeof x === 'string' && x.trim().length > 0);
-  return false;
-}
-
-/** Preserve enriched cue columns from a previous flat cache when factory re-derive drops them. */
-export function preserveFlatCueFieldsOnDerive(
-  prevFlat: WorkoutExercise[],
-  nextFlat: WorkoutExercise[],
-): WorkoutExercise[] {
-  const prevById = new Map<string, WorkoutExercise>();
-  const prevByNameIndex = new Map<string, WorkoutExercise>();
-  const nameCounts = new Map<string, number>();
-
-  for (const row of prevFlat) {
-    if (row.id?.trim()) prevById.set(row.id.trim(), row);
-    const norm = normalizeExerciseDictionaryKey(row.name ?? '');
-    const idx = nameCounts.get(norm) ?? 0;
-    nameCounts.set(norm, idx + 1);
-    prevByNameIndex.set(`${norm}\u0000${idx}`, row);
-  }
-
-  const nextNameCounts = new Map<string, number>();
-
-  return nextFlat.map((row) => {
-    const copy = { ...row };
-    let prev: WorkoutExercise | undefined;
-
-    if (row.id?.trim()) {
-      prev = prevById.get(row.id.trim());
-    }
-    if (!prev) {
-      const norm = normalizeExerciseDictionaryKey(row.name ?? '');
-      const idx = nextNameCounts.get(norm) ?? 0;
-      nextNameCounts.set(norm, idx + 1);
-      prev = prevByNameIndex.get(`${norm}\u0000${idx}`);
-    }
-    if (!prev) return copy;
-
-    for (const field of FLAT_CUE_FIELDS) {
-      if (hasFlatCueValue(copy, field)) continue;
-      if (!hasFlatCueValue(prev, field)) continue;
-      (copy as Record<string, unknown>)[field] = prev[field];
-    }
-
-    return copy;
-  });
-}
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -134,6 +77,28 @@ export function workoutExerciseToFactoryExercise(we: WorkoutExercise, order: num
     ex.workSeconds = we.work_seconds;
   }
   if (typeof we.rounds === 'number' && we.rounds > 0) ex.rounds = we.rounds;
+  if (typeof we.id === 'string' && we.id.trim()) ex.id = we.id.trim();
+  const instructions = typeof we.instructions === 'string' ? we.instructions.trim() : '';
+  const notesFallback = typeof we.notes === 'string' ? we.notes.trim() : '';
+  if (instructions) ex.instructions = instructions;
+  else if (notesFallback) ex.instructions = notesFallback;
+  if (typeof we.form_cues === 'string' && we.form_cues.trim()) {
+    ex.formCues = we.form_cues.trim();
+  } else if (Array.isArray(we.form_cues)) {
+    const joined = we.form_cues.map((x) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean);
+    if (joined.length) ex.formCues = joined.join('\n');
+  } else if (typeof we.form_cue === 'string' && we.form_cue.trim()) {
+    ex.formCues = we.form_cue.trim();
+  }
+  if (typeof we.tips === 'string' && we.tips.trim()) ex.tips = we.tips.trim();
+  if (typeof we.injury_prevention_tips === 'string' && we.injury_prevention_tips.trim()) {
+    ex.injuryPreventionTips = we.injury_prevention_tips.trim();
+  } else if (Array.isArray(we.injury_prevention_tips)) {
+    const joined = we.injury_prevention_tips
+      .map((x) => (typeof x === 'string' ? x.trim() : ''))
+      .filter(Boolean);
+    if (joined.length) ex.injuryPreventionTips = joined.join('\n');
+  }
   if (typeof we.coach_notes === 'string' && we.coach_notes.trim()) {
     ex.coachNotes = we.coach_notes.trim();
   }
@@ -242,6 +207,10 @@ function viewExerciseToFactoryExercise(ex: Exercise, order: number): Exercise {
     next.workSeconds = ex.workSeconds;
   }
   if (typeof ex.rounds === 'number' && ex.rounds > 0) next.rounds = ex.rounds;
+  if (ex.instructions?.trim()) next.instructions = ex.instructions.trim();
+  if (ex.formCues?.trim()) next.formCues = ex.formCues.trim();
+  if (ex.tips?.trim()) next.tips = ex.tips.trim();
+  if (ex.injuryPreventionTips?.trim()) next.injuryPreventionTips = ex.injuryPreventionTips.trim();
   if (ex.coachNotes?.trim()) next.coachNotes = ex.coachNotes.trim();
   return next;
 }
@@ -336,9 +305,7 @@ export function applyBlockEditsToMetadata(meta: unknown, blocks: WorkoutSessionB
   const workouts = ws.workouts as Record<string, unknown>[];
   workouts[0] = normalized as unknown as Record<string, unknown>;
 
-  const prevFlat = parseWorkoutExercisesFromMetadata(next);
-  const derived = workoutInSetToTaskExercises(normalized);
-  next.exercises = preserveFlatCueFieldsOnDerive(prevFlat, derived);
+  next.exercises = workoutInSetToTaskExercises(normalized);
 
   return next as Json;
 }

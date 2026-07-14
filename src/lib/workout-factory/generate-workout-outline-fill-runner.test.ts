@@ -4,9 +4,17 @@ import type { WorkoutPersona } from '@/lib/workout-factory/types/ai-workout';
 import { OUTLINE_FILL_MAX_OUTPUT_TOKENS } from '@/lib/workout-factory/outline-fill-config';
 
 const mockCallVertexAIWithMetadata = vi.hoisted(() => vi.fn());
+const mockCallVertexAI = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/workout-factory/vertex-ai-client', () => ({
   callVertexAIWithMetadata: mockCallVertexAIWithMetadata,
+  callVertexAI: mockCallVertexAI,
+}));
+
+vi.mock('@/lib/supabase-service-role', () => ({
+  createServiceRoleClient: () => {
+    throw new Error('service_role_unavailable_in_test');
+  },
 }));
 
 import {
@@ -106,6 +114,8 @@ const creds = { projectId: 'p', region: 'r', accessToken: 't' };
 describe('runGenerateWorkoutOutlineFill', () => {
   beforeEach(() => {
     mockCallVertexAIWithMetadata.mockReset();
+    mockCallVertexAI.mockReset();
+    mockCallVertexAI.mockRejectedValue(new Error('enrich not configured in unit test'));
   });
 
   it('succeeds on first attempt without retry', async () => {
@@ -122,6 +132,49 @@ describe('runGenerateWorkoutOutlineFill', () => {
       expect(out.telemetry.pipeline).toBe('parametric_outline_fill');
       expect(out.telemetry.outlineBlockCount).toBe(1);
       expect(out.telemetry.exerciseCount).toBe(2);
+      expect(out.data.chain_metadata.pipeline).toBe('parametric_outline_fill');
+      if (out.data.chain_metadata.pipeline === 'parametric_outline_fill') {
+        expect(out.data.chain_metadata.enrich_workout_biomechanics).toBeNull();
+      }
+    }
+  });
+
+  it('stamps Stage 2 enrich cues onto factory exercises when enrich succeeds', async () => {
+    mockCallVertexAIWithMetadata.mockResolvedValueOnce(vertexResult(validFillOnlyJson()));
+    mockCallVertexAI.mockResolvedValueOnce(
+      JSON.stringify({
+        exercises: [
+          {
+            order: 1,
+            exercise_name: 'Kettlebell Swing',
+            detailed_instructions: 'Hinge hard',
+            biomechanical_cues: 'Snap hips',
+            injury_prevention_tips: 'Soft knees',
+          },
+          {
+            order: 2,
+            exercise_name: 'Goblet Squat',
+            detailed_instructions: 'Elbows inside knees',
+            biomechanical_cues: 'Brace',
+          },
+        ],
+      }),
+    );
+
+    const out = await runGenerateWorkoutOutlineFill(buildPreparedRequest(), creds, false);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(mockCallVertexAI).toHaveBeenCalledTimes(1);
+    const main = out.data.workoutSet.workouts[0]?.exerciseBlocks?.[0]?.exercises ?? [];
+    expect(main[0]?.instructions).toBe('Hinge hard');
+    expect(main[0]?.formCues).toBe('Snap hips');
+    expect(main[0]?.injuryPreventionTips).toBe('Soft knees');
+    expect(main[1]?.instructions).toBe('Elbows inside knees');
+    expect(main[1]?.formCues).toBe('Brace');
+    expect(out.data.taskExercises?.[0]?.instructions).toBe('Hinge hard');
+    expect(out.data.taskExercises?.[0]?.form_cues).toBe('Snap hips');
+    if (out.data.chain_metadata.pipeline === 'parametric_outline_fill') {
+      expect(out.data.chain_metadata.enrich_workout_biomechanics?.exercises).toHaveLength(2);
     }
   });
 

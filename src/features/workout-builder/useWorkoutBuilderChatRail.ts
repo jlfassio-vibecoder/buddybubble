@@ -5,6 +5,7 @@ import type { Json } from '@/types/database';
 import { buildTaskModalOutlineDraftPayload } from '@/lib/agents/coach/build-outline-draft-context';
 import { readCoachOutlineMetadata } from '@/lib/agents/coach/coach-outline-metadata';
 import { normalizeOutlineDraft } from '@/lib/agents/coach/outline-editor-client';
+import { buildTaskModalOutgoingWorkoutContext } from '@/lib/agents/coach/task-modal-outgoing-workout-context';
 import type { WorkoutOutlineEditorState } from '@/components/modals/task-modal/hooks/useWorkoutOutlineEditor';
 import { BUDDY_ONBOARDING_SYSTEM_EVENT } from '@/lib/agents/buddy-sentinel';
 import type { AgentEffectTelemetryEvent } from '@/components/chat/agent-effects/types';
@@ -40,17 +41,27 @@ export function useWorkoutBuilderChatRail({
 
   const buildOutgoingMessageMetadata = useCallback(
     (_args: { content: string; files: File[] }) => {
-      if (!shouldAttachOutlineDraft) return null;
-      const { blocks, drops } = normalizeOutlineDraft(outlineEditor.draftBlocks);
-      const { status } = readCoachOutlineMetadata(metadata);
-      const draft = buildTaskModalOutlineDraftPayload({
-        revision: outlineRevision,
-        status,
-        confirmed: false,
-        blocks,
-        drops: drops.length > 0 ? drops : outlineEditor.validationDrops,
-      });
-      return { task_modal_outline_draft: draft as unknown as Json };
+      const payload: Record<string, Json> = {};
+
+      const workoutContext = buildTaskModalOutgoingWorkoutContext(metadata, title);
+      if (workoutContext) {
+        payload.workoutContext = workoutContext as Json;
+      }
+
+      if (shouldAttachOutlineDraft) {
+        const { blocks, drops } = normalizeOutlineDraft(outlineEditor.draftBlocks);
+        const { status } = readCoachOutlineMetadata(metadata);
+        const draft = buildTaskModalOutlineDraftPayload({
+          revision: outlineRevision,
+          status,
+          confirmed: false,
+          blocks,
+          drops: drops.length > 0 ? drops : outlineEditor.validationDrops,
+        });
+        payload.task_modal_outline_draft = draft as unknown as Json;
+      }
+
+      return Object.keys(payload).length > 0 ? payload : null;
     },
     [
       shouldAttachOutlineDraft,
@@ -58,6 +69,7 @@ export function useWorkoutBuilderChatRail({
       outlineEditor.validationDrops,
       metadata,
       outlineRevision,
+      title,
     ],
   );
 

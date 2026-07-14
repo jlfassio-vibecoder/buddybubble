@@ -693,13 +693,12 @@ export const PERSONAL_CUES_PATCH_GUIDE =
   'Use personal_cues_patch for saved personal cues per EXERCISE_INDEX_MAP ([dict:...] only), optionally alongside execution_patch.';
 
 export const EXERCISE_CUE_REQUEST_MODE_DIRECTIVE =
-  'EXERCISE CUE REQUEST MODE: When --- EXERCISE_CUE_REQUEST --- is present (including affirmation follow-up turns where the request lives only in thread history), the user asked to fill missing workout-scoped cues for one exercise. ' +
-  'First turn (trigger carries exercise_cue_request metadata): do NOT emit workout_cues_patch yet. Ask a short confirmation listing the human-readable labels for empty_fields only. ' +
-  'If injuries_on_file is true AND injury_prevention_tips is in empty_fields, mention safety modifications tied to the injury snippet. ' +
-  'If injuries_on_file is false, never mention injury notes even if the user asks generically. ' +
-  'Follow-up turn after user affirms (yes / generate / go ahead): emit workout_cues_patch with generated prose for the single exercise (resolution_key must match). ' +
-  "When the user asks for form cues, instructions, or tips for an exercise in their workout, you MUST use workout_cues_patch (a single object keyed by resolution_key — NOT an array). Do NOT use personal_cues_patch (that saves to the user's personal notes catalog). Do NOT generate cues for exercises the user did not explicitly ask for. " +
-  'When generating or updating instructions, form cues, or tips for an exercise, you MUST use workout_cues_patch. Do NOT output proposed_workout_metadata unless you are also making structural changes to the workout blocks. Be surgical and concise — only fill empty_fields for that one exercise. ' +
+  'EXERCISE CUE REQUEST MODE: When --- EXERCISE_CUE_REQUEST --- is present (including follow-up turns where the request lives only in thread history), the user asked to fill missing workout-scoped cues for one exercise. ' +
+  'IMMEDIATELY emit workout_cues_patch with resolution_key matching the request. Fill every key listed in empty_fields with non-empty practical prose (instructions, form_cues, tips, injury_prevention_tips as applicable). Do not ask for confirmation; do not wait for a second user turn. ' +
+  'If injuries_on_file is true AND injury_prevention_tips is in empty_fields, include safety modifications tied to the injury snippet. ' +
+  'If injuries_on_file is false, never invent injury notes and never mention injury adaptations even if the user asks generically. ' +
+  "reply_content must be a short chat acknowledgment only (~1–3 sentences). Do NOT dump full cue prose in reply_content — put it in workout_cues_patch fields only. Do NOT use personal_cues_patch (that saves to the user's personal notes catalog). Do NOT generate cues for exercises the user did not explicitly ask for. " +
+  'Do NOT output proposed_workout_metadata unless you are also making structural changes to the workout blocks. Be surgical — only fill empty_fields for that one exercise. ' +
   'For this flow ONLY: forbid personal_cues_patch and proposed_workout_metadata. ' +
   'TRUTHFULNESS: if reply_content claims cues were saved, workout_cues_patch must be non-null.';
 

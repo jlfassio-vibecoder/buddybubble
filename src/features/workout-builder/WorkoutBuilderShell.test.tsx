@@ -65,6 +65,8 @@ vi.mock('@/features/workout-builder/useWorkoutBuilderTaskHost', () => ({
     saving: false,
     metadataForSave: {},
     originalRef: { current: null },
+    patchOriginalMetadataJson: vi.fn(),
+    pendingWorkoutCuesByMessageRef: { current: new Map() },
     itemType: 'workout' as const,
     status: 'todo',
     priority: 'medium' as const,
@@ -101,7 +103,25 @@ vi.mock('@/components/modals/task-modal/hooks/useTaskWorkoutAi', () => ({
     aiWorkoutGenerating: false,
     handleAiGenerateWorkout: vi.fn(),
     handleWorkoutViewerApply: vi.fn(),
+    handleWorkoutViewerCuePatches: vi.fn(),
   }),
+}));
+
+vi.mock('@/hooks/useExerciseCueResolution', () => ({
+  useExerciseCueResolution: () => ({
+    cuesByKey: {},
+    loading: false,
+    refresh: vi.fn(),
+  }),
+}));
+
+vi.mock('@/components/modals/task-modal/hooks/useFitnessProfileInjuries', () => ({
+  useFitnessProfileInjuries: () => false,
+}));
+
+vi.mock('@/store/userProfileStore', () => ({
+  useUserProfileStore: (selector: (s: { profile: { id: string } | null }) => unknown) =>
+    selector({ profile: { id: 'user-1' } }),
 }));
 
 describe('WorkoutBuilderShell', () => {

@@ -61,6 +61,7 @@ import {
   ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE,
   COACH_HISTORY_LIMIT,
   COACH_CUE_MAX_OUTPUT_TOKENS,
+  COACH_CUE_THINKING_BUDGET,
   COACH_MAX_OUTPUT_TOKENS,
   COACH_MODEL_DEFAULT,
   COACH_OUTLINE_ONLY_MAX_OUTPUT_TOKENS,
@@ -704,6 +705,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
     const thinkingBudget = resolveCoachThinkingBudget({
       isRailSurface,
       hasWorkoutContext: currentWorkoutContextJson != null,
+      exerciseCueRequestMode: exerciseCueRequest != null,
     });
     log('info', 'coach main rail diet', {
       request_id: ctx.requestId,
@@ -818,7 +820,12 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
         )
       : null;
     if (cueReq) {
-      return { maxOutputTokens: COACH_CUE_MAX_OUTPUT_TOKENS };
+      // Must set thinkingConfig — handler defaults to COACH_THINKING_BUDGET (2048), which
+      // shares the maxOutputTokens budget and previously truncated cue JSON mid-patch.
+      return {
+        maxOutputTokens: COACH_CUE_MAX_OUTPUT_TOKENS,
+        thinkingConfig: { thinkingBudget: COACH_CUE_THINKING_BUDGET },
+      };
     }
     const budget = resolveCoachThinkingBudget({
       isRailSurface,
@@ -1357,13 +1364,25 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
         extras.taskMetadataForContext,
         payload.workout_cues_patch,
       );
-      log('info', 'coach workout_cues_patch metadata merge', {
-        request_id: ctx.requestId,
-        slug: COACH_SLUG,
-        message_id: ctx.message.id,
-        resolution_key: payload.workout_cues_patch.resolution_key,
-        has_metadata_delta: metaDelta != null,
-      });
+      if (metaDelta == null) {
+        log('warn', 'coach workout_cues_patch metadata merge skipped', {
+          request_id: ctx.requestId,
+          slug: COACH_SLUG,
+          message_id: ctx.message.id,
+          resolution_key: payload.workout_cues_patch.resolution_key,
+          target_task_id: knownTargetTaskId,
+          reason: 'no_task_metadata_delta',
+          note: 'reply_only_task_unchanged',
+        });
+      } else {
+        log('info', 'coach workout_cues_patch metadata merge', {
+          request_id: ctx.requestId,
+          slug: COACH_SLUG,
+          message_id: ctx.message.id,
+          resolution_key: payload.workout_cues_patch.resolution_key,
+          has_metadata_delta: true,
+        });
+      }
       const cueUpd = await agentUpdateTaskAndReply(supabase, {
         p_trigger_message_id: ctx.message.id,
         p_thread_id: ctx.threadId,

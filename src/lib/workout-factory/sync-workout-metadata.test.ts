@@ -5,7 +5,6 @@ import {
   deriveFlatExercisesFromMetadata,
   flatExercisesMatchDerived,
   hasRichWorkoutSetInMetadata,
-  preserveFlatCueFieldsOnDerive,
 } from './sync-workout-metadata';
 import { applyCuePatchesToMetadata } from './apply-cue-patches-to-metadata';
 import { exerciseResolutionKey } from './resolve-exercise-cue-bundle';
@@ -321,7 +320,7 @@ describe('applyBlockEditsToMetadata', () => {
     expect((next as Record<string, unknown>).exercises).toEqual(flat.exercises);
   });
 
-  it('preserves enriched flat cue fields after structural block apply', () => {
+  it('round-trips factory + projected flat cues after structural block apply (no preserve helper)', () => {
     const meta = richMetadataWithBlockFormat('straight_sets');
     const af = meta.ai_workout_factory as {
       workout_set: { workouts: { exerciseBlocks: { exercises: Exercise[] }[] }[] };
@@ -333,6 +332,8 @@ describe('applyBlockEditsToMetadata', () => {
         instructions: 'Brace core',
         form_cues: 'Knees out',
         tips: 'Control tempo',
+        injury_prevention_tips: 'Avoid valgus',
+        coach_notes: 'Stay tight',
       },
     });
 
@@ -348,10 +349,23 @@ describe('applyBlockEditsToMetadata', () => {
     );
 
     const next = applyBlockEditsToMetadata(withCues, edited) as Record<string, unknown>;
+    const factoryEx = (
+      next.ai_workout_factory as {
+        workout_set: { workouts: { exerciseBlocks: { exercises: Exercise[] }[] }[] };
+      }
+    ).workout_set.workouts[0]!.exerciseBlocks[0]!.exercises[0]!;
+    expect(factoryEx.instructions).toBe('Brace core');
+    expect(factoryEx.formCues).toBe('Knees out');
+    expect(factoryEx.tips).toBe('Control tempo');
+    expect(factoryEx.injuryPreventionTips).toBe('Avoid valgus');
+    expect(factoryEx.coachNotes).toBe('Stay tight');
+
     const flat = next.exercises as WorkoutExercise[];
     expect(flat[0]?.instructions).toBe('Brace core');
     expect(flat[0]?.form_cues).toBe('Knees out');
     expect(flat[0]?.tips).toBe('Control tempo');
+    expect(flat[0]?.injury_prevention_tips).toBe('Avoid valgus');
+    expect(flat[0]?.coach_notes).toBe('Stay tight');
   });
 
   it('preserves warmup main finisher cooldown sections from fixture', () => {
@@ -524,24 +538,5 @@ describe('finalizeWorkoutMetadataForSave', () => {
     ).workout_set.workouts[0].exerciseBlocks[0];
     expect(mainBlock.blockFormat).toBe('emom');
     expect((finalized.exercises as WorkoutExercise[])[0].sets).toBe(15);
-  });
-});
-
-describe('preserveFlatCueFieldsOnDerive', () => {
-  it('copies cue columns from prev when derived rows lack them', () => {
-    const prev: WorkoutExercise[] = [
-      {
-        name: 'Squat',
-        instructions: 'Brace',
-        form_cues: 'Knees out',
-        coach_notes: 'Tight',
-      },
-    ];
-    const derived: WorkoutExercise[] = [{ name: 'Squat', sets: 4, reps: '8' }];
-    const merged = preserveFlatCueFieldsOnDerive(prev, derived);
-    expect(merged[0]?.instructions).toBe('Brace');
-    expect(merged[0]?.form_cues).toBe('Knees out');
-    expect(merged[0]?.coach_notes).toBe('Tight');
-    expect(merged[0]?.sets).toBe(4);
   });
 });

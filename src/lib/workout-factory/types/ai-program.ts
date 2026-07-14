@@ -281,6 +281,11 @@ export interface Exercise {
   reps: string;
   rpe?: number;
   restSeconds?: number;
+  /** Per-exercise coaching prose (M5 SoT); projected to flat `metadata.exercises`. */
+  instructions?: string;
+  formCues?: string;
+  tips?: string;
+  injuryPreventionTips?: string;
   coachNotes?: string;
   /** Client-only: stable ID for React keys and DnD. Assigned during normalization. */
   id?: string;

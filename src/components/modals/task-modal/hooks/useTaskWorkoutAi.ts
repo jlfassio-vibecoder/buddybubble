@@ -22,6 +22,7 @@ import {
   type WorkoutCuePatch,
 } from '@/lib/workout-factory/apply-cue-patches-to-metadata';
 import { parseWorkoutExercisesFromMetadata } from '@/lib/parse-workout-exercises-from-metadata';
+import { backfillFactoryCuesFromFlat } from '@/lib/workout-factory/backfill-factory-cues-from-flat';
 import {
   applyBlockEditsToMetadata,
   applyFlatWorkoutEditsToMetadata,
@@ -275,7 +276,8 @@ export function useTaskWorkoutAi({
       setDescription(payload.description);
 
       if (payload.blocks != null && payload.blocks.length > 0) {
-        const nextMeta = applyBlockEditsToMetadata(metadata, payload.blocks) as Json;
+        const seeded = backfillFactoryCuesFromFlat(metadata);
+        const nextMeta = applyBlockEditsToMetadata(seeded, payload.blocks) as Json;
         setMetadata(nextMeta);
         setWorkoutExercises(parseWorkoutExercisesFromMetadata(nextMeta));
         return;
@@ -302,11 +304,12 @@ export function useTaskWorkoutAi({
   }, [metadata]);
 
   const handleWorkoutViewerCuePatches = useCallback(
-    (patches: Record<string, WorkoutCuePatch>) => {
+    (patches: Record<string, WorkoutCuePatch>): Json => {
       const nextMeta = applyCuePatchesToMetadata(cuePatchMetadataRef.current, patches) as Json;
       cuePatchMetadataRef.current = nextMeta;
       setMetadata(nextMeta);
       setWorkoutExercises(parseWorkoutExercisesFromMetadata(nextMeta));
+      return nextMeta;
     },
     [setMetadata, setWorkoutExercises],
   );

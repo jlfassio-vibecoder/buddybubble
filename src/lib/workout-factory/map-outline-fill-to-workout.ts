@@ -46,8 +46,20 @@ function mapOutlineExerciseToFactory(ex: Record<string, unknown>, order: number)
     row.restSeconds = ex.rest_seconds;
   if (typeof ex.work_seconds === 'number' && ex.work_seconds > 0) row.workSeconds = ex.work_seconds;
   if (typeof ex.rounds === 'number' && ex.rounds > 0) row.rounds = Math.round(ex.rounds);
+  if (typeof ex.instructions === 'string' && ex.instructions.trim())
+    row.instructions = ex.instructions.trim();
+  if (typeof ex.form_cues === 'string' && ex.form_cues.trim()) row.formCues = ex.form_cues.trim();
+  else if (typeof ex.formCues === 'string' && ex.formCues.trim()) row.formCues = ex.formCues.trim();
+  if (typeof ex.tips === 'string' && ex.tips.trim()) row.tips = ex.tips.trim();
+  if (typeof ex.injury_prevention_tips === 'string' && ex.injury_prevention_tips.trim()) {
+    row.injuryPreventionTips = ex.injury_prevention_tips.trim();
+  } else if (typeof ex.injuryPreventionTips === 'string' && ex.injuryPreventionTips.trim()) {
+    row.injuryPreventionTips = ex.injuryPreventionTips.trim();
+  }
   if (typeof ex.coach_notes === 'string' && ex.coach_notes.trim())
     row.coachNotes = ex.coach_notes.trim();
+  else if (typeof ex.coachNotes === 'string' && ex.coachNotes.trim())
+    row.coachNotes = ex.coachNotes.trim();
   return row;
 }
 

@@ -12,6 +12,11 @@ export interface Exercise {
   reps: string;
   rpe?: number;
   restSeconds?: number;
+  /** Per-exercise coaching prose (M5 SoT); projected to flat `metadata.exercises`. */
+  instructions?: string;
+  formCues?: string;
+  tips?: string;
+  injuryPreventionTips?: string;
   coachNotes?: string;
   id?: string;
   workSeconds?: number;
