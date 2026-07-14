@@ -91,8 +91,9 @@ export function collectBlockExercises(blocks: WorkoutSessionBlockView[]): Collec
   for (const block of mainBlocks) {
     for (const ex of block.exercises) {
       const exerciseName = ex.exerciseName?.trim() || 'Exercise';
+      const id = ex.id?.trim();
       out.push({
-        key: exerciseResolutionKey(ex),
+        key: id ? id : flatExerciseResolutionKey({ name: exerciseName, id: ex.id }, flatIndex),
         exerciseName,
         blockExercise: ex,
         flatIndex,

@@ -127,6 +127,29 @@ describe('resolve-exercise-cue-bundle', () => {
     expect(collected[0]!.key).toBeTruthy();
   });
 
+  it('collectBlockExercises disambiguates duplicate names without ids by flatIndex', () => {
+    const collected = collectBlockExercises([
+      {
+        id: 'b1',
+        section: 'main',
+        order: 0,
+        name: 'Main',
+        blockFormat: 'straight_sets',
+        formatParams: {},
+        subtitle: null,
+        instructions: [],
+        exercises: [
+          { order: 1, exerciseName: 'Curl', sets: 3, reps: '10' },
+          { order: 2, exerciseName: 'Curl', sets: 3, reps: '10' },
+        ],
+      },
+    ]);
+
+    expect(collected).toHaveLength(2);
+    expect(collected[0]!.key).toBe('curl::0');
+    expect(collected[1]!.key).toBe('curl::1');
+  });
+
   it('flatExerciseResolutionKey disambiguates duplicate flat names by index', () => {
     const ex = { name: 'Push-ups' };
     expect(flatExerciseResolutionKey(ex, 0)).toBe('push-ups::0');

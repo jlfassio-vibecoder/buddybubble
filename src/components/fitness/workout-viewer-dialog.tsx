@@ -728,7 +728,7 @@ export function WorkoutViewerContent({
           <Button
             type="button"
             size="sm"
-            disabled={saveDisabled || saving}
+            disabled={(saveDisabled && !hasUnsavedCuePatches) || saving}
             onClick={handleFooterSave}
           >
             {saving ? 'Saving...' : 'Save'}

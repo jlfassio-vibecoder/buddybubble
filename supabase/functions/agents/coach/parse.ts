@@ -32,7 +32,7 @@ import {
 } from './config.ts';
 
 export type { BlockShapeDrop } from './block-blueprint-library.ts';
-import type { ExerciseDictionaryIndexEntry } from './prompts';
+import type { ExerciseDictionaryIndexEntry } from './prompts.ts';
 import {
   coerceExecutionPatchNumericField,
   sanitizeNumericStringForPatch,

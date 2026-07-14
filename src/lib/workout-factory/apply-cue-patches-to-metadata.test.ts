@@ -109,6 +109,18 @@ describe('applyCuePatchesToMetadata', () => {
     expect(flat.form_cues).toBeUndefined();
   });
 
+  it('applies Coach resolution_key with ::flatIndex when collected key differs', () => {
+    const meta = richMetadataWithBlockFormat('straight_sets');
+    const next = applyCuePatchesToMetadata(meta as Json, {
+      'goblet squat::0': {
+        instructions: 'Aliased apply',
+      },
+    });
+
+    const flat = parseWorkoutExercisesFromMetadata(next);
+    expect(flat[0]?.instructions).toBe('Aliased apply');
+  });
+
   it('patches flat-only metadata by flat index key', () => {
     const meta = {
       exercises: [

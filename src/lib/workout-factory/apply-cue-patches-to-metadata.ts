@@ -6,6 +6,7 @@ import {
   collectBlockExercises,
   collectFlatOnlyExercises,
   exerciseResolutionKey,
+  flatExerciseResolutionKey,
   indexFlatExercisesByName,
   matchFlatExerciseForCollected,
   type CollectedBlockExercise,
@@ -110,6 +111,7 @@ function applyCoachNotesToFactoryTree(
   const blocks = session.exerciseBlocks;
   if (!Array.isArray(blocks)) return;
 
+  let flatIndex = 0;
   for (const blockRaw of blocks) {
     if (!isPlainObject(blockRaw)) continue;
     const exercises = blockRaw.exercises;
@@ -118,8 +120,13 @@ function applyCoachNotesToFactoryTree(
     for (const exRaw of exercises) {
       if (!isPlainObject(exRaw)) continue;
       const ex = exRaw as unknown as Exercise;
-      const key = exerciseResolutionKey(ex);
-      const patch = patches[key];
+      const directKey = exerciseResolutionKey(ex);
+      const indexedKey = flatExerciseResolutionKey(
+        { name: (ex.exerciseName ?? '').trim() || 'Exercise', id: ex.id },
+        flatIndex,
+      );
+      const patch = patches[directKey] ?? patches[indexedKey];
+      flatIndex += 1;
       if (!patch || !('coach_notes' in patch)) continue;
 
       const val = trimPatchValue(patch.coach_notes);
@@ -137,6 +144,35 @@ function collectExercisesForPatches(meta: unknown): CollectedBlockExercise[] {
   const fromBlocks = collectBlockExercises(vm.blocks);
   if (fromBlocks.length > 0) return fromBlocks;
   return collectFlatOnlyExercises(vm.flatExercises);
+}
+
+/** Match Coach `resolution_key` including `name::flatIndex` aliases (parity with Edge merge). */
+function findCollectedForResolutionKey(
+  collected: CollectedBlockExercise[],
+  resolutionKey: string,
+): CollectedBlockExercise | undefined {
+  const direct = collected.find((c) => c.key === resolutionKey);
+  if (direct) return direct;
+
+  const idxMatch = resolutionKey.match(/^(.+)::(\d+)$/);
+  if (idxMatch) {
+    const idx = Number.parseInt(idxMatch[2]!, 10);
+    if (Number.isInteger(idx) && idx >= 0) {
+      const byIndex = collected.find((c) => c.flatIndex === idx);
+      if (byIndex) return byIndex;
+    }
+    const normalized = idxMatch[1]!;
+    return (
+      collected.find((c) => c.key === normalized) ??
+      collected.find((c) => c.key.startsWith(`${normalized}::`))
+    );
+  }
+
+  // Bare name / legacy keys: match indexed aliases (`name::0`) produced by collectBlockExercises.
+  return (
+    collected.find((c) => c.key.startsWith(`${resolutionKey}::`)) ??
+    collected.find((c) => c.exerciseName.trim().toLowerCase() === resolutionKey)
+  );
 }
 
 /** Overlay unsaved cue drafts onto a resolved bundle for live preview. */
@@ -186,7 +222,7 @@ export function applyCuePatchesToMetadata(
   const flatByName = indexFlatExercisesByName(flat);
 
   for (const [key, patch] of Object.entries(patches)) {
-    const item = collected.find((c) => c.key === key);
+    const item = findCollectedForResolutionKey(collected, key);
     if (!item) continue;
 
     const row = findOrEnsureFlatRow(flat, item, flatByName);

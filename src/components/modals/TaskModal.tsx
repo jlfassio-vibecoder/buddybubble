@@ -1313,11 +1313,12 @@ export function TaskModal({
         setMobileUnifiedPane('card');
         const mention = payload.workout_exercise_index != null ? `#${payload.exercise_name} ` : '';
         const text = `@coach ${mention}Can you help me fill in cues for ${payload.exercise_name}?`;
-        await new Promise<void>((resolve) => {
-          requestAnimationFrame(() => {
+        const deadline = Date.now() + 2500;
+        while (!chatRailRef.current && Date.now() < deadline) {
+          await new Promise<void>((resolve) => {
             requestAnimationFrame(() => resolve());
           });
-        });
+        }
         await chatRailRef.current?.sendCoachMessage(text, {
           exercise_cue_request: payload as unknown as Json,
         });

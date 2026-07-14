@@ -14,7 +14,12 @@ export function useFitnessProfileInjuries(
   useEffect(() => {
     if (!open || !enabled || !workspaceId) return;
     let cancelled = false;
-    const supabase = createClient();
+    let supabase;
+    try {
+      supabase = createClient();
+    } catch {
+      return;
+    }
     void supabase.auth.getUser().then(({ data }) => {
       if (cancelled || !data.user) return;
       void supabase

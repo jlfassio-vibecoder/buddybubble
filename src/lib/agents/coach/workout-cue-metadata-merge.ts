@@ -118,7 +118,13 @@ function collectExercisesForMetadata(meta: Record<string, unknown>): CollectedEx
         (typeof exRaw.name === 'string' && exRaw.name.trim()) ||
         'Exercise';
       out.push({
-        key: exerciseResolutionKey(exRaw),
+        key: flatExerciseResolutionKey(
+          {
+            id: typeof exRaw.id === 'string' ? exRaw.id : undefined,
+            name: exerciseName,
+          },
+          flatIndex,
+        ),
         exerciseName,
         flatIndex,
         blockExercise: exRaw,
@@ -203,14 +209,27 @@ function applyCoachNotesToFactoryTree(
   const blocks = session.exerciseBlocks;
   if (!Array.isArray(blocks)) return;
 
+  let flatIndex = 0;
   for (const blockRaw of blocks) {
     if (!isPlainObject(blockRaw)) continue;
     const exercises = blockRaw.exercises;
     if (!Array.isArray(exercises)) continue;
     for (const exRaw of exercises) {
       if (!isPlainObject(exRaw)) continue;
-      const key = exerciseResolutionKey(exRaw);
-      const patch = patches[key];
+      const directKey = exerciseResolutionKey(exRaw);
+      const exerciseName =
+        (typeof exRaw.exerciseName === 'string' && exRaw.exerciseName.trim()) ||
+        (typeof exRaw.name === 'string' && exRaw.name.trim()) ||
+        'Exercise';
+      const indexedKey = flatExerciseResolutionKey(
+        {
+          id: typeof exRaw.id === 'string' ? exRaw.id : undefined,
+          name: exerciseName,
+        },
+        flatIndex,
+      );
+      const patch = patches[directKey] ?? patches[indexedKey];
+      flatIndex += 1;
       if (!patch || !('coach_notes' in patch)) continue;
       const val = trimPatchValue(patch.coach_notes);
       if (val) exRaw.coachNotes = val;
@@ -243,10 +262,16 @@ function findCollectedForResolutionKey(
       if (byIndex) return byIndex;
     }
     const normalized = idxMatch[1]!;
-    return collected.find((c) => c.key === normalized);
+    return (
+      collected.find((c) => c.key === normalized) ??
+      collected.find((c) => c.key.startsWith(`${normalized}::`))
+    );
   }
 
-  return undefined;
+  return (
+    collected.find((c) => c.key.startsWith(`${resolutionKey}::`)) ??
+    collected.find((c) => c.exerciseName.trim().toLowerCase() === resolutionKey)
+  );
 }
 
 /** Merge one workout cue patch into metadata; returns full metadata object. */
