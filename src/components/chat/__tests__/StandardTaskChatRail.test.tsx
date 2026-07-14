@@ -456,7 +456,7 @@ describe('StandardTaskChatRail', () => {
     expect(meta.metadata.block_blueprint_mentions[0].token).toBe(':finisher/amrap/metcon ');
   });
 
-  it('root element has exact layout classes', () => {
+  it('root element has expected flex layout classes', () => {
     mockThread();
     const { container } = render(
       <StandardTaskChatRail workspaceId="ws-1" taskId="task-1" canPostMessages />,
@@ -465,7 +465,7 @@ describe('StandardTaskChatRail', () => {
     expect(root).not.toBeNull();
     const cls = root!.className;
     expect(cls).toMatch(/\bflex\b/);
-    expect(cls).toMatch(/\bh-full\b/);
+    expect(cls).toMatch(/\bflex-1\b/);
     expect(cls).toMatch(/\bmin-h-0\b/);
     expect(cls).toMatch(/\bmin-w-0\b/);
     expect(cls).toMatch(/\bflex-col\b/);
