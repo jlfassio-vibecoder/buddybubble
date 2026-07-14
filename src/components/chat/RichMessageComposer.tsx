@@ -842,7 +842,7 @@ export function RichMessageComposer({
   ) : null;
 
   const composerBlock = (
-    <div className={cn(isRail ? 'p-6 pt-0' : '', className)}>
+    <div className={cn(isRail ? 'p-6 pt-0 max-md:px-4 max-md:pb-3' : '', className)}>
       <input
         ref={attachmentInputRef}
         type="file"

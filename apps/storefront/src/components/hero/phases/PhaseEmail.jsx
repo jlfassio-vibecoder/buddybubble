@@ -40,8 +40,8 @@ export default function PhaseEmail({
   // `getTurnstileToken` which awaits this same load promise.
   useEffect(() => {
     if (!isTurnstileConfigured()) return;
-    ensureTurnstileLoaded().catch((e) => {
-      console.error('[storefront-hero] turnstile load', e);
+    ensureTurnstileLoaded().catch(() => {
+      // Submit path surfaces verification failure if the script never loads.
     });
   }, []);
 

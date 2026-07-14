@@ -2154,7 +2154,7 @@ function DashboardShellInner({
 
                     return (
                       <div
-                        className="flex h-[100dvh] min-h-0 flex-col bg-background md:flex-row md:overflow-hidden"
+                        className="flex h-[100dvh] max-h-[100dvh] min-h-0 flex-col overflow-hidden bg-background md:flex-row"
                         style={
                           {
                             '--mobile-tab-bar-h': 'calc(4rem + env(safe-area-inset-bottom, 0px))',

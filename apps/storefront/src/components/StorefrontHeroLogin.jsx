@@ -28,7 +28,6 @@ function buildHandoffUrl(baseHref, params) {
     }
     return u.toString();
   } catch {
-    console.error('[StorefrontHeroLogin] Invalid appLoginHref for handoff');
     const sp = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) {
       if (v) sp.set(k, v);
