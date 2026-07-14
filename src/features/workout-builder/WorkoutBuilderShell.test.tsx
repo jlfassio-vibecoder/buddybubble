@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { describe, expect, it, vi, afterEach } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { WorkoutBuilderShell } from '@/features/workout-builder/WorkoutBuilderShell';
 
 const mocks = vi.hoisted(() => ({
@@ -105,6 +105,55 @@ vi.mock('@/components/modals/task-modal/hooks/useTaskWorkoutAi', () => ({
 }));
 
 describe('WorkoutBuilderShell', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('uses clipped flex columns for independent structure/chat scrolling', () => {
+    mocks.coreDirty = true;
+    mocks.mockOutlineEditor.isOutlineConfirmed = false;
+    mocks.mockOutlineEditor.canRunIntake = false;
+    mocks.mockOutlineEditor.outlineUiState = 'empty';
+
+    const { container } = render(
+      <WorkoutBuilderShell
+        workspaceId="ws-1"
+        task={{
+          id: 'task-1',
+          title: 'Leg day',
+          description: '',
+          bubble_id: 'bubble-1',
+          metadata: {},
+          item_type: 'workout',
+          memberRole: 'member',
+        }}
+      />,
+    );
+
+    const root = container.firstElementChild;
+    expect(root).not.toBeNull();
+    expect(root!.className).toMatch(/\boverflow-hidden\b/);
+    expect(root!.className).toMatch(/\bflex-1\b/);
+    expect(root!.className).toMatch(/\bmin-h-0\b/);
+
+    const grid = root!.querySelector('.grid');
+    expect(grid).not.toBeNull();
+    expect(grid!.className).toMatch(/\boverflow-hidden\b/);
+    expect(grid!.className).toMatch(/\bmin-h-0\b/);
+
+    const structureOuter = grid!.children[0] as HTMLElement;
+    expect(structureOuter.className).toMatch(/\boverflow-hidden\b/);
+    expect(structureOuter.className).not.toMatch(/\boverflow-y-auto\b/);
+    const structureScroll = structureOuter.querySelector('.overflow-y-auto');
+    expect(structureScroll).not.toBeNull();
+    expect(structureScroll!.className).toMatch(/\bmin-h-0\b/);
+    expect(structureScroll!.className).toMatch(/\bflex-1\b/);
+
+    const chatOuter = grid!.children[1] as HTMLElement;
+    expect(chatOuter.className).toMatch(/\boverflow-hidden\b/);
+    expect(chatOuter.className).toMatch(/\bmin-h-0\b/);
+  });
+
   it('renders outline panel and chat rail', () => {
     mocks.coreDirty = true;
     mocks.mockOutlineEditor.isOutlineConfirmed = false;
@@ -125,7 +174,7 @@ describe('WorkoutBuilderShell', () => {
         }}
       />,
     );
-    expect(screen.getByText('Leg day')).toBeTruthy();
+    expect(screen.getAllByRole('heading', { name: 'Leg day' }).length).toBeGreaterThan(0);
     expect(screen.getByTestId('workout-outline-panel')).toBeTruthy();
     expect(screen.getByTestId('standard-task-chat-rail')).toBeTruthy();
     expect(screen.queryByText('Workout intake')).toBeNull();

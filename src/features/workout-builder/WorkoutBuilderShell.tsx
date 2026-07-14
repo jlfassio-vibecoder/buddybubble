@@ -281,7 +281,7 @@ export function WorkoutBuilderShell({ workspaceId, task }: Props) {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 md:px-6">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <Button
@@ -305,7 +305,7 @@ export function WorkoutBuilderShell({ workspaceId, task }: Props) {
 
       {standardRailEnabled ? (
         <div
-          className="flex gap-1 border-b border-border bg-muted/40 px-2 py-2 md:hidden"
+          className="flex shrink-0 gap-1 border-b border-border bg-muted/40 px-2 py-2 md:hidden"
           role="tablist"
           aria-label="Builder or chat"
         >
@@ -338,37 +338,40 @@ export function WorkoutBuilderShell({ workspaceId, task }: Props) {
         </div>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 md:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] md:gap-4 md:p-4">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-hidden md:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] md:gap-4 md:p-4">
         <div
           className={cn(
-            'flex min-h-0 flex-col overflow-y-auto overscroll-contain p-4 md:rounded-lg md:border md:border-border md:p-6',
+            'flex min-h-0 flex-1 flex-col overflow-hidden p-4 md:rounded-lg md:border md:border-border md:p-6',
             standardRailEnabled && mobilePane === 'chat' && 'max-md:hidden',
+            standardRailEnabled && mobilePane === 'builder' && 'max-md:flex max-md:min-h-0',
           )}
         >
-          {error ? (
-            <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {error}
-            </div>
-          ) : null}
-          {loading ? (
-            <p className="text-sm text-muted-foreground">Loading workout…</p>
-          ) : (
-            <div className="space-y-4">
-              <WorkoutOutlinePanel editor={outlineEditor} canWrite={canWrite} />
-              {renderPostOutlineWorkflow()}
-            </div>
-          )}
+          <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
+            {error ? (
+              <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {error}
+              </div>
+            ) : null}
+            {loading ? (
+              <p className="text-sm text-muted-foreground">Loading workout…</p>
+            ) : (
+              <div className="space-y-4">
+                <WorkoutOutlinePanel editor={outlineEditor} canWrite={canWrite} />
+                {renderPostOutlineWorkflow()}
+              </div>
+            )}
+          </div>
         </div>
 
         {standardRailEnabled ? (
           <div
             className={cn(
-              'flex min-h-0 min-w-0 flex-col md:min-h-0 md:rounded-lg md:border md:border-border',
-              mobilePane === 'builder' ? 'max-md:hidden' : 'flex max-md:flex-1 max-md:min-h-0',
+              'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:rounded-lg md:border md:border-border',
+              mobilePane === 'builder' ? 'max-md:hidden' : 'flex max-md:min-h-0 max-md:flex-1',
               'md:flex',
             )}
           >
-            <div className="relative flex min-h-0 min-w-0 flex-1 flex-col px-4 pb-4 pt-2 md:px-4 md:pt-4">
+            <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-4 pb-4 pt-2 md:px-4 md:pt-4">
               <StandardTaskChatRail
                 key={taskId}
                 workspaceId={workspaceId}
