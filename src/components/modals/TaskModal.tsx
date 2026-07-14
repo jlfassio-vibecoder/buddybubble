@@ -2043,6 +2043,13 @@ export function TaskModal({
                         coverPath={cardCoverPath.trim() || null}
                         onClose={() => handleOpenChange(false)}
                         onBack={unifiedThreadBack}
+                        compactCinematic={
+                          heroCinematicCollapsed ||
+                          commentsReadingContext ||
+                          tab === 'comments' ||
+                          tab === 'subtasks' ||
+                          tab === 'activity'
+                        }
                         descriptionExpanded={commentsReadingContext}
                         descriptionCollapseMode={commentsReadingContext ? 'preview_toggle' : 'none'}
                         readingContextActions={

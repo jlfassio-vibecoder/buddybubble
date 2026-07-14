@@ -147,7 +147,7 @@ export function ChatFeedTaskCard({
   };
 
   const openDefault = () =>
-    onOpenTask?.(task.id, { tab: 'comments', viewMode: 'full', ...anchorOpts() });
+    onOpenTask?.(task.id, { tab: 'comments', viewMode: 'comments-only', ...anchorOpts() });
 
   return (
     <div
