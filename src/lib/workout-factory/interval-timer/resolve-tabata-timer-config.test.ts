@@ -113,4 +113,21 @@ describe('resolveTabataTimerConfig', () => {
     expect(cfg?.totalRounds).toBe(4);
     expect(cfg?.circuitRounds).toBe(4);
   });
+
+  it('preserves rest_seconds 0 (Path A) instead of defaulting to 10s', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('circuit'));
+    const block = vm.blocks.find((b) => b.blockFormat === 'circuit')!;
+    const cfg = resolveTabataTimerConfig({
+      ...block,
+      blockFormat: 'tabata',
+      formatParams: {
+        rounds: 3,
+        work_seconds: 40,
+        rest_seconds: 0,
+        round_rest_seconds: 60,
+      },
+    });
+    expect(cfg?.restMs).toBe(0);
+    expect(cfg?.roundRestMs).toBe(60_000);
+  });
 });

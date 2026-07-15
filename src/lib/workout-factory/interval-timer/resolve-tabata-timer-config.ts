@@ -32,6 +32,12 @@ function secondsToMs(v: unknown, defaultSec: number): number {
   return (n ?? defaultSec) * 1000;
 }
 
+/** Rest allows 0 (Path A); omitted/invalid falls back to defaultSec. */
+function restSecondsToMs(v: unknown, defaultSec: number): number {
+  const n = nonNegativeInt(v);
+  return (n ?? defaultSec) * 1000;
+}
+
 /** Returns null when block is not tabata or rounds missing/invalid. */
 export function resolveTabataTimerConfig(block: WorkoutSessionBlockView): TabataTimerConfig | null {
   const format = block.blockFormat?.trim().toLowerCase();
@@ -49,7 +55,7 @@ export function resolveTabataTimerConfig(block: WorkoutSessionBlockView): Tabata
   return {
     prepareMs: 0,
     workMs: secondsToMs(params.work_seconds, 20),
-    restMs: secondsToMs(params.rest_seconds, 10),
+    restMs: restSecondsToMs(params.rest_seconds, 10),
     roundRestMs: roundRestSec * 1000,
     totalRounds,
     circuitRounds,
