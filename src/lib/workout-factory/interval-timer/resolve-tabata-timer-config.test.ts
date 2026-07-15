@@ -13,6 +13,7 @@ describe('resolveTabataTimerConfig', () => {
       prepareMs: 0,
       workMs: 20_000,
       restMs: 10_000,
+      roundRestMs: 0,
       totalRounds: 8,
       circuitRounds: 8,
       exerciseCount: 1,
@@ -36,10 +37,39 @@ describe('resolveTabataTimerConfig', () => {
       prepareMs: 0,
       workMs: 30_000,
       restMs: 30_000,
+      roundRestMs: 0,
       totalRounds: 9,
       circuitRounds: 3,
       exerciseCount: 3,
     });
+  });
+
+  it('maps round_rest_seconds to roundRestMs and keeps 0', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('circuit'));
+    const block = vm.blocks.find((b) => b.blockFormat === 'circuit')!;
+    const withRr = resolveTabataTimerConfig({
+      ...block,
+      blockFormat: 'tabata',
+      formatParams: {
+        rounds: 3,
+        work_seconds: 40,
+        rest_seconds: 15,
+        round_rest_seconds: 60,
+      },
+    });
+    expect(withRr?.roundRestMs).toBe(60_000);
+
+    const zeroRr = resolveTabataTimerConfig({
+      ...block,
+      blockFormat: 'tabata',
+      formatParams: {
+        rounds: 3,
+        work_seconds: 40,
+        rest_seconds: 15,
+        round_rest_seconds: 0,
+      },
+    });
+    expect(zeroRr?.roundRestMs).toBe(0);
   });
 
   it('does not multiply when exercise array is empty', () => {
@@ -82,5 +112,22 @@ describe('resolveTabataTimerConfig', () => {
     expect(cfg?.restMs).toBe(10_000);
     expect(cfg?.totalRounds).toBe(4);
     expect(cfg?.circuitRounds).toBe(4);
+  });
+
+  it('preserves rest_seconds 0 (Path A) instead of defaulting to 10s', () => {
+    const vm = buildWorkoutSessionViewModel(richMetadataWithBlockFormat('circuit'));
+    const block = vm.blocks.find((b) => b.blockFormat === 'circuit')!;
+    const cfg = resolveTabataTimerConfig({
+      ...block,
+      blockFormat: 'tabata',
+      formatParams: {
+        rounds: 3,
+        work_seconds: 40,
+        rest_seconds: 0,
+        round_rest_seconds: 60,
+      },
+    });
+    expect(cfg?.restMs).toBe(0);
+    expect(cfg?.roundRestMs).toBe(60_000);
   });
 });

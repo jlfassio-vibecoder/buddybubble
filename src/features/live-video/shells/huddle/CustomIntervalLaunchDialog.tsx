@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
   CUSTOM_INTERVAL_REST_SECONDS_BOUNDS,
+  CUSTOM_INTERVAL_ROUND_REST_SECONDS_BOUNDS,
   CUSTOM_INTERVAL_WORK_SECONDS_BOUNDS,
   DEFAULT_CUSTOM_INTERVAL_CONFIG,
   parseCustomIntervalActiveRestNames,
@@ -27,6 +28,8 @@ import {
 import { INTERVAL_PRESET_ROUND_BOUNDS } from '@/lib/workout-factory/interval-timer/interval-preset-catalog';
 import { resolveTabataWorkSegmentTotal } from '@/lib/workout-factory/interval-timer/tabata-circuit-rotation';
 import { formatTabataBlockDurationPreview } from '@/lib/workout-factory/interval-timer/tabata-block-duration';
+
+const DEFAULT_ROUND_REST_SECONDS = 60;
 
 export type CustomIntervalLaunchDialogProps = {
   open: boolean;
@@ -57,6 +60,8 @@ export function CustomIntervalLaunchDialog({
   const [stationsText, setStationsText] = useState('');
   const [isActiveRest, setIsActiveRest] = useState(false);
   const [activeRestText, setActiveRestText] = useState('');
+  const [isRoundRest, setIsRoundRest] = useState(false);
+  const [roundRestSeconds, setRoundRestSeconds] = useState(DEFAULT_ROUND_REST_SECONDS);
 
   useEffect(() => {
     if (open) {
@@ -64,6 +69,8 @@ export function CustomIntervalLaunchDialog({
       setStationsText('');
       setIsActiveRest(false);
       setActiveRestText('');
+      setIsRoundRest(false);
+      setRoundRestSeconds(DEFAULT_ROUND_REST_SECONDS);
     }
   }, [open]);
 
@@ -73,6 +80,14 @@ export function CustomIntervalLaunchDialog({
     [activeRestText],
   );
   const restAllowsActive = Number.isFinite(draft.rest_seconds) && draft.rest_seconds > 0;
+  const stationCount = stationNames.length;
+  const canRoundRest = stationCount > 1;
+
+  useEffect(() => {
+    if (!canRoundRest && isRoundRest) {
+      setIsRoundRest(false);
+    }
+  }, [canRoundRest, isRoundRest]);
 
   const configForValidation: CustomIntervalConfig = {
     ...draft,
@@ -83,13 +98,13 @@ export function CustomIntervalLaunchDialog({
           active_rest_exercises: activeRestNames,
         }
       : {}),
+    ...(isRoundRest && canRoundRest ? { round_rest_seconds: roundRestSeconds } : {}),
   };
 
   const validation = validateCustomIntervalConfig(configForValidation);
   const previewSec = previewCustomIntervalDuration(configForValidation);
   const canSubmit = validation.ok && !submitting;
   const roundBounds = INTERVAL_PRESET_ROUND_BOUNDS.custom;
-  const stationCount = stationNames.length;
   const workSegments =
     validation.ok && Number.isFinite(draft.rounds)
       ? resolveTabataWorkSegmentTotal(Math.round(draft.rounds), stationCount)
@@ -210,6 +225,42 @@ export function CustomIntervalLaunchDialog({
                 One per line or comma-separated. Leave blank for a single Movement.
               </p>
             </div>
+
+            {canRoundRest ? (
+              <div className="space-y-2 sm:col-span-2">
+                <label className="flex items-center gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={isRoundRest}
+                    disabled={submitting}
+                    data-testid="custom-interval-round-rest-toggle"
+                    onChange={(e) => setIsRoundRest(e.target.checked)}
+                  />
+                  Rest between rounds
+                </label>
+                <p className="text-[10px] text-muted-foreground">
+                  Longer rest after each full pass through all stations.
+                </p>
+                {isRoundRest ? (
+                  <div className="space-y-1">
+                    <Label htmlFor="custom-interval-round-rest" className="text-xs">
+                      Round Rest (sec)
+                    </Label>
+                    <Input
+                      id="custom-interval-round-rest"
+                      type="number"
+                      min={CUSTOM_INTERVAL_ROUND_REST_SECONDS_BOUNDS.min}
+                      max={CUSTOM_INTERVAL_ROUND_REST_SECONDS_BOUNDS.max}
+                      disabled={submitting}
+                      value={numInputValue(roundRestSeconds)}
+                      className="h-8 text-xs"
+                      data-testid="custom-interval-round-rest-input"
+                      onChange={(e) => setRoundRestSeconds(parseOptionalInt(e.target.value))}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             {restAllowsActive ? (
               <div className="space-y-2 sm:col-span-2">

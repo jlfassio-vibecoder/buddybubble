@@ -5,6 +5,8 @@ export type TabataTimerConfig = {
   prepareMs: number;
   workMs: number;
   restMs: number;
+  /** Longer rest after a full circuit pass; 0 = disabled. */
+  roundRestMs: number;
   /** Total work segments for the timer FSM. */
   totalRounds: number;
   /** format_params.rounds — circuit passes through the exercise list. */
@@ -19,8 +21,20 @@ function positiveInt(v: unknown): number | null {
   return n > 0 ? n : null;
 }
 
+function nonNegativeInt(v: unknown): number | null {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return null;
+  const n = Math.round(v);
+  return n >= 0 ? n : null;
+}
+
 function secondsToMs(v: unknown, defaultSec: number): number {
   const n = positiveInt(v);
+  return (n ?? defaultSec) * 1000;
+}
+
+/** Rest allows 0 (Path A); omitted/invalid falls back to defaultSec. */
+function restSecondsToMs(v: unknown, defaultSec: number): number {
+  const n = nonNegativeInt(v);
   return (n ?? defaultSec) * 1000;
 }
 
@@ -36,10 +50,13 @@ export function resolveTabataTimerConfig(block: WorkoutSessionBlockView): Tabata
   const exerciseCount = block.exercises.length;
   const totalRounds = resolveTabataWorkSegmentTotal(circuitRounds, exerciseCount);
 
+  const roundRestSec = nonNegativeInt(params.round_rest_seconds) ?? 0;
+
   return {
     prepareMs: 0,
     workMs: secondsToMs(params.work_seconds, 20),
-    restMs: secondsToMs(params.rest_seconds, 10),
+    restMs: restSecondsToMs(params.rest_seconds, 10),
+    roundRestMs: roundRestSec * 1000,
     totalRounds,
     circuitRounds,
     exerciseCount,

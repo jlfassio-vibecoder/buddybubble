@@ -76,6 +76,57 @@ describe('computeTabataBlockDurationFromParams', () => {
       ),
     ).toBe(10 + 12 * 30 + 11 * 30);
   });
+
+  it('applies round rest for 4×3 circuit (745s with setup 10)', () => {
+    expect(
+      computeTabataBlockDurationFromParams(
+        {
+          work_seconds: 40,
+          rest_seconds: 15,
+          rounds: 3,
+          round_rest_seconds: 60,
+        },
+        { exerciseCount: 4 },
+      ),
+    ).toBe(745);
+  });
+
+  it('collapses to station-rest formula when round_rest omitted', () => {
+    expect(
+      computeTabataBlockDurationFromParams(
+        { work_seconds: 40, rest_seconds: 15, rounds: 3 },
+        { exerciseCount: 4 },
+      ),
+    ).toBe(10 + 12 * 40 + 11 * 15);
+  });
+
+  it('ignores round_rest_seconds for single-station blocks', () => {
+    expect(
+      computeTabataBlockDurationFromParams(
+        {
+          work_seconds: 30,
+          rest_seconds: 30,
+          rounds: 8,
+          round_rest_seconds: 60,
+        },
+        { exerciseCount: 1 },
+      ),
+    ).toBe(10 + 8 * 30 + 7 * 30);
+  });
+
+  it('uses round rest only at end of pass when station rest is 0', () => {
+    expect(
+      computeTabataBlockDurationFromParams(
+        {
+          work_seconds: 30,
+          rest_seconds: 0,
+          rounds: 3,
+          round_rest_seconds: 60,
+        },
+        { exerciseCount: 4 },
+      ),
+    ).toBe(10 + 12 * 30 + 2 * 60);
+  });
 });
 
 describe('formatTabataBlockDurationPreview', () => {

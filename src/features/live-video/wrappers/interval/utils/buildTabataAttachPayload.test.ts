@@ -354,6 +354,8 @@ describe('buildCustomIntervalQuickLaunchPayload', () => {
       stations.map((name) => ({ name, sets: 3, reps: 10 })),
     );
     expect(payload!.mechanicsState.total_rounds).toBe(12);
+    expect(payload!.mechanicsState.exercise_count).toBe(4);
+    expect(payload!.mechanicsState.round_rest_seconds).toBe(0);
     expect(resolveIntervalPresetLabel(payload!.blockSnapshot.format_params)).toBe(
       CUSTOM_INTERVAL_SUBTITLE_LABEL,
     );
@@ -361,5 +363,30 @@ describe('buildCustomIntervalQuickLaunchPayload', () => {
     const parsed = parseIntervalBlockSnapshot(payload!.blockSnapshot);
     expect(parsed).not.toBeNull();
     expect(parsed!.exercises).toHaveLength(4);
+  });
+
+  it('seeds round_rest_seconds on format_params and mechanics for multi-station', () => {
+    const stations = ['Burpees', 'Mountain Climbers', 'Jump Squats', 'Push-ups'];
+    const payload = buildCustomIntervalQuickLaunchPayload({
+      work_seconds: 40,
+      rest_seconds: 15,
+      rounds: 3,
+      station_names: stations,
+      round_rest_seconds: 60,
+    });
+    expect(payload).not.toBeNull();
+    expect(payload!.blockSnapshot.format_params).toMatchObject({
+      work_seconds: 40,
+      rest_seconds: 15,
+      rounds: 3,
+      round_rest_seconds: 60,
+    });
+    expect(payload!.mechanicsState).toMatchObject({
+      total_rounds: 12,
+      work_seconds: 40,
+      rest_seconds: 15,
+      round_rest_seconds: 60,
+      exercise_count: 4,
+    });
   });
 });

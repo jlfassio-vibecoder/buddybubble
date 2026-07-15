@@ -13,6 +13,8 @@ export type CustomIntervalConfig = {
   rest_mode?: TabataRestMode;
   /** Low-intensity moves during rest; omit unless rest_mode === 'active'. */
   active_rest_exercises?: string[];
+  /** Longer rest after a full circuit pass; requires at least 2 stations. */
+  round_rest_seconds?: number;
 };
 
 export type NormalizedCustomIntervalConfig = CustomIntervalConfig & {
@@ -25,6 +27,7 @@ export type CustomIntervalConfigValidationResult =
 
 export const CUSTOM_INTERVAL_WORK_SECONDS_BOUNDS = { min: 1, max: 600 } as const;
 export const CUSTOM_INTERVAL_REST_SECONDS_BOUNDS = { min: 0, max: 300 } as const;
+export const CUSTOM_INTERVAL_ROUND_REST_SECONDS_BOUNDS = { min: 0, max: 300 } as const;
 
 export const CUSTOM_INTERVAL_STATION_BOUNDS = {
   maxCount: 12,
@@ -166,6 +169,24 @@ export function validateCustomIntervalConfig(input: unknown): CustomIntervalConf
     }
   }
 
+  const exerciseCount = stationResult.names?.length ?? 0;
+  let roundRest: number | null = null;
+  if (o.round_rest_seconds != null) {
+    roundRest = roundFinite(o.round_rest_seconds);
+    if (
+      roundRest == null ||
+      roundRest < CUSTOM_INTERVAL_ROUND_REST_SECONDS_BOUNDS.min ||
+      roundRest > CUSTOM_INTERVAL_ROUND_REST_SECONDS_BOUNDS.max
+    ) {
+      errors.push(
+        `round_rest_seconds must be an integer from ${CUSTOM_INTERVAL_ROUND_REST_SECONDS_BOUNDS.min} to ${CUSTOM_INTERVAL_ROUND_REST_SECONDS_BOUNDS.max}`,
+      );
+      roundRest = null;
+    } else if (roundRest > 0 && exerciseCount <= 1) {
+      errors.push('round_rest_seconds requires at least 2 station_names');
+    }
+  }
+
   if (errors.length > 0 || work == null || rest == null || rounds == null) {
     return { ok: false, errors };
   }
@@ -173,6 +194,8 @@ export function validateCustomIntervalConfig(input: unknown): CustomIntervalConf
   // Passive / omit: strip rest_mode and active_rest_exercises from normalized output.
   const emitActive =
     wantsActive && rest > 0 && activeRestNames != null && activeRestNames.length > 0;
+  const roundRestSeconds =
+    roundRest != null && roundRest > 0 && exerciseCount > 1 ? roundRest : undefined;
 
   return {
     ok: true,
@@ -187,6 +210,7 @@ export function validateCustomIntervalConfig(input: unknown): CustomIntervalConf
       ...(emitActive
         ? { rest_mode: 'active' as const, active_rest_exercises: activeRestNames }
         : {}),
+      ...(roundRestSeconds != null ? { round_rest_seconds: roundRestSeconds } : {}),
     },
   };
 }

@@ -5,6 +5,18 @@ import type {
   IntervalTimerPhase,
   IntervalTimerSnapshot,
 } from '@/lib/workout-factory/interval-timer/types';
+import { resolveTabataRestDurationSeconds } from '@/lib/workout-factory/interval-timer/tabata-circuit-rotation';
+
+function resolveRestDurationMs(config: IntervalTimerConfig, roundIndex: number): number {
+  return (
+    resolveTabataRestDurationSeconds({
+      finishedWorkIndex: roundIndex + 1,
+      exerciseCount: config.exerciseCount,
+      restSeconds: config.restMs / 1000,
+      roundRestSeconds: config.roundRestMs / 1000,
+    }) * 1000
+  );
+}
 
 export function createInitialIntervalTimerState(
   config: IntervalTimerConfig,
@@ -34,7 +46,7 @@ export function getPhaseDurationMs(state: IntervalTimerEngineState): number {
     case 'work':
       return config.workMs;
     case 'rest':
-      return config.restMs;
+      return resolveRestDurationMs(config, state.roundIndex);
     default:
       return 0;
   }
@@ -77,7 +89,7 @@ function endOfCurrentPhaseMs(state: IntervalTimerEngineState): number {
 /** Upper bound on phase transitions left from the current runnable state. */
 function maxIntervalCatchUpSteps(state: IntervalTimerEngineState): number {
   const { config, phase, roundIndex } = state;
-  const perRound = config.restMs > 0 ? 2 : 1;
+  const perRound = config.restMs > 0 || config.roundRestMs > 0 ? 2 : 1;
   let steps = 0;
   if (phase === 'prepare') steps += 1;
   const roundsRemaining = config.totalRounds - roundIndex;
@@ -119,7 +131,7 @@ function advanceFromWork(state: IntervalTimerEngineState, now: number): Interval
   const isLastRound = roundIndex >= config.totalRounds - 1;
   const phaseEndMs = endOfCurrentPhaseMs(state) || now;
 
-  if (config.restMs > 0) {
+  if (resolveRestDurationMs(config, roundIndex) > 0) {
     return enterPhase(state, 'rest', phaseEndMs, roundIndex);
   }
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createInitialIntervalTimerState,
   deriveIntervalTimerSnapshot,
+  getPhaseDurationMs,
   getPhaseRemainingMs,
   intervalTimerReducer,
 } from '@/lib/workout-factory/interval-timer/interval-timer-engine';
@@ -11,6 +12,7 @@ const tabataConfig: TabataTimerConfig = {
   prepareMs: 0,
   workMs: 20_000,
   restMs: 10_000,
+  roundRestMs: 0,
   totalRounds: 8,
   circuitRounds: 8,
   exerciseCount: 1,
@@ -149,5 +151,62 @@ describe('deriveIntervalTimerSnapshot', () => {
     });
     const snap = deriveIntervalTimerSnapshot(s, 0);
     expect(snap.displayRound).toBe(1);
+  });
+});
+
+describe('round rest parity', () => {
+  const circuitCfg: TabataTimerConfig = {
+    prepareMs: 0,
+    workMs: 40_000,
+    restMs: 15_000,
+    roundRestMs: 60_000,
+    totalRounds: 12,
+    circuitRounds: 3,
+    exerciseCount: 4,
+  };
+
+  it('mid-pass work end uses station rest duration', () => {
+    let s = intervalTimerReducer(createInitialIntervalTimerState(circuitCfg), {
+      type: 'start',
+      now: 0,
+    });
+    s = intervalTimerReducer(s, { type: 'tick', now: 40_000 });
+    expect(s.phase).toBe('rest');
+    expect(s.roundIndex).toBe(0);
+    expect(getPhaseDurationMs(s)).toBe(15_000);
+  });
+
+  it('end-of-pass work end uses round rest duration', () => {
+    let s = intervalTimerReducer(createInitialIntervalTimerState(circuitCfg), {
+      type: 'start',
+      now: 0,
+    });
+    // Advance to work at roundIndex 3 (4th station, 0-based).
+    s = { ...s, phase: 'work', roundIndex: 3, phaseAnchorMs: 0, pausedTotalMs: 0 };
+    s = intervalTimerReducer(s, { type: 'tick', now: 40_000 });
+    expect(s.phase).toBe('rest');
+    expect(s.roundIndex).toBe(3);
+    expect(getPhaseDurationMs(s)).toBe(60_000);
+  });
+
+  it('zero station rest skips mid-pass but enters round rest at end-of-pass', () => {
+    const cfg: TabataTimerConfig = {
+      ...circuitCfg,
+      restMs: 0,
+      workMs: 30_000,
+    };
+    let s = intervalTimerReducer(createInitialIntervalTimerState(cfg), {
+      type: 'start',
+      now: 0,
+    });
+    s = { ...s, phase: 'work', roundIndex: 1, phaseAnchorMs: 0, pausedTotalMs: 0 };
+    s = intervalTimerReducer(s, { type: 'tick', now: 30_000 });
+    expect(s.phase).toBe('work');
+    expect(s.roundIndex).toBe(2);
+
+    s = { ...s, phase: 'work', roundIndex: 3, phaseAnchorMs: 0, pausedTotalMs: 0 };
+    s = intervalTimerReducer(s, { type: 'tick', now: 30_000 });
+    expect(s.phase).toBe('rest');
+    expect(getPhaseDurationMs(s)).toBe(60_000);
   });
 });

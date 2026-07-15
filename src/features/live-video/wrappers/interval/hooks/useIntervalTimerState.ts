@@ -10,6 +10,7 @@ import {
 import {
   deriveTabataSegmentRemainingSec,
   parseTabataMechanicsState,
+  tabataSegmentDurationSec,
   tabataSegmentLabel,
 } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
 import type {
@@ -185,11 +186,7 @@ export function useIntervalTimerState(intervalSessionId: string): IntervalTimerS
 
   const totalSec = useMemo(() => {
     if (intervalType === 'tabata' && mechanicsState && 'work_seconds' in mechanicsState) {
-      if (mechanicsState.segment === 'setup') return mechanicsState.setup_seconds;
-      if (mechanicsState.segment === 'rest') return mechanicsState.rest_seconds;
-      if (mechanicsState.segment === 'work') return mechanicsState.work_seconds;
-      if (mechanicsState.segment === 'idle') return mechanicsState.setup_seconds;
-      return mechanicsState.work_seconds;
+      return tabataSegmentDurationSec(mechanicsState);
     }
     if (intervalType === 'emom' && mechanicsState && 'interval_seconds' in mechanicsState) {
       if (mechanicsState.segment === 'setup') return mechanicsState.setup_seconds;

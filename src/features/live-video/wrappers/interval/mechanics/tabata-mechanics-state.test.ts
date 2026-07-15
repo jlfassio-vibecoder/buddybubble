@@ -12,6 +12,7 @@ import {
   isTabataMechanicsState,
   parseTabataMechanicsState,
   tabataBlockDurationSeconds,
+  tabataSegmentDurationSec,
   tabataSegmentLabel,
   unfreezeTabataMechanicsStateForResume,
 } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
@@ -187,6 +188,102 @@ describe('computeNextTabataMechanicsState', () => {
     };
     const next = computeNextTabataMechanicsState(rest, Date.parse('2026-06-01T18:30:10.000Z'));
     expect(next.segment).toBe('done');
+  });
+
+  it('multi-station mid-pass uses station rest duration', () => {
+    const work = {
+      ...buildInitialTabataMechanicsState({
+        totalRounds: 12,
+        workSeconds: 40,
+        restSeconds: 15,
+        roundRestSeconds: 60,
+        exerciseCount: 4,
+      }),
+      segment: 'work' as const,
+      round_index: 1,
+      segment_started_at: '2026-06-01T18:30:00.000Z',
+    };
+    const next = computeNextTabataMechanicsState(work, Date.parse('2026-06-01T18:30:40.000Z'));
+    expect(next.segment).toBe('rest');
+    expect(tabataSegmentDurationSec(next)).toBe(15);
+  });
+
+  it('multi-station end-of-pass uses round rest duration', () => {
+    const work = {
+      ...buildInitialTabataMechanicsState({
+        totalRounds: 12,
+        workSeconds: 40,
+        restSeconds: 15,
+        roundRestSeconds: 60,
+        exerciseCount: 4,
+      }),
+      segment: 'work' as const,
+      round_index: 4,
+      segment_started_at: '2026-06-01T18:30:00.000Z',
+    };
+    const next = computeNextTabataMechanicsState(work, Date.parse('2026-06-01T18:30:40.000Z'));
+    expect(next.segment).toBe('rest');
+    expect(tabataSegmentDurationSec(next)).toBe(60);
+  });
+
+  it('zero station rest skips mid-pass but enters rest at end-of-pass', () => {
+    const mid = {
+      ...buildInitialTabataMechanicsState({
+        totalRounds: 12,
+        workSeconds: 30,
+        restSeconds: 0,
+        roundRestSeconds: 60,
+        exerciseCount: 4,
+      }),
+      segment: 'work' as const,
+      round_index: 2,
+      segment_started_at: '2026-06-01T18:30:00.000Z',
+    };
+    const midNext = computeNextTabataMechanicsState(mid, Date.parse('2026-06-01T18:30:30.000Z'));
+    expect(midNext.segment).toBe('work');
+    expect(midNext.round_index).toBe(3);
+
+    const end = {
+      ...mid,
+      round_index: 4,
+    };
+    const endNext = computeNextTabataMechanicsState(end, Date.parse('2026-06-01T18:30:30.000Z'));
+    expect(endNext.segment).toBe('rest');
+    expect(tabataSegmentDurationSec(endNext)).toBe(60);
+  });
+
+  it('single-station ignores round_rest_seconds', () => {
+    const work = {
+      ...buildInitialTabataMechanicsState({
+        totalRounds: 8,
+        workSeconds: 30,
+        restSeconds: 30,
+        roundRestSeconds: 60,
+        exerciseCount: 1,
+      }),
+      segment: 'work' as const,
+      round_index: 1,
+      segment_started_at: '2026-06-01T18:30:00.000Z',
+    };
+    const next = computeNextTabataMechanicsState(work, Date.parse('2026-06-01T18:30:30.000Z'));
+    expect(next.segment).toBe('rest');
+    expect(tabataSegmentDurationSec(next)).toBe(30);
+  });
+
+  it('parse legacy mechanics without round fields defaults to station rest only', () => {
+    const parsed = parseTabataMechanicsState({
+      segment: 'rest',
+      round_index: 4,
+      total_rounds: 12,
+      work_seconds: 40,
+      rest_seconds: 15,
+      setup_seconds: 10,
+      segment_started_at: '2026-06-01T18:30:00.000Z',
+    });
+    expect(parsed).not.toBeNull();
+    expect(parsed!.round_rest_seconds).toBe(0);
+    expect(parsed!.exercise_count).toBe(0);
+    expect(tabataSegmentDurationSec(parsed!)).toBe(15);
   });
 });
 

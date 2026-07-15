@@ -44,6 +44,8 @@ export function buildTabataAttachPayload(snap: SessionDeckSnapshot | null): Taba
     totalRounds: timerConfig.totalRounds,
     workSeconds: Math.round(timerConfig.workMs / 1000),
     restSeconds: Math.round(timerConfig.restMs / 1000),
+    roundRestSeconds: formatParams.round_rest_seconds ?? 0,
+    exerciseCount: timerConfig.exerciseCount,
   });
 
   return {
@@ -71,6 +73,8 @@ export function buildStrictTabataQuickLaunchPayload(): TabataAttachPayload {
     totalRounds: formatParams.rounds,
     workSeconds: formatParams.work_seconds,
     restSeconds: formatParams.rest_seconds,
+    roundRestSeconds: 0,
+    exerciseCount: 1,
   });
 
   return {
@@ -104,6 +108,7 @@ export function buildCustomIntervalQuickLaunchPayload(
     station_names,
     rest_mode,
     active_rest_exercises,
+    round_rest_seconds,
   } = validated.value;
   const formatParams = {
     work_seconds,
@@ -113,6 +118,7 @@ export function buildCustomIntervalQuickLaunchPayload(
     ...(rest_mode === 'active' && active_rest_exercises != null && active_rest_exercises.length > 0
       ? { rest_mode: 'active' as const, active_rest_exercises }
       : {}),
+    ...(round_rest_seconds != null && round_rest_seconds > 0 ? { round_rest_seconds } : {}),
   };
   // Work stations only — never inject active_rest_exercises into the circuit list.
   const names = station_names != null && station_names.length > 0 ? station_names : ['Movement'];
@@ -123,6 +129,8 @@ export function buildCustomIntervalQuickLaunchPayload(
     totalRounds,
     workSeconds: work_seconds,
     restSeconds: rest_seconds,
+    roundRestSeconds: round_rest_seconds ?? 0,
+    exerciseCount,
   });
 
   return {

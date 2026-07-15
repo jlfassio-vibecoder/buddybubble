@@ -247,4 +247,122 @@ describe('CustomIntervalLaunchDialog', () => {
     fireEvent.click(screen.getByTestId('custom-interval-cancel'));
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
+
+  it('hides Rest between rounds toggle without multi-station text', () => {
+    render(
+      <CustomIntervalLaunchDialog open onOpenChange={() => {}} onConfirm={async () => true} />,
+    );
+    expect(screen.queryByTestId('custom-interval-round-rest-toggle')).toBeNull();
+  });
+
+  it('shows Rest between rounds toggle with ≥2 stations and hides seconds until toggled', () => {
+    render(
+      <CustomIntervalLaunchDialog open onOpenChange={() => {}} onConfirm={async () => true} />,
+    );
+
+    fireEvent.change(screen.getByTestId('custom-interval-stations-input'), {
+      target: { value: 'Burpees, Mountain Climbers' },
+    });
+    expect(screen.getByTestId('custom-interval-round-rest-toggle')).toBeTruthy();
+    expect(screen.queryByTestId('custom-interval-round-rest-input')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('custom-interval-round-rest-toggle'));
+    expect(screen.getByTestId('custom-interval-round-rest-input')).toBeTruthy();
+    expect((screen.getByTestId('custom-interval-round-rest-input') as HTMLInputElement).value).toBe(
+      '60',
+    );
+  });
+
+  it('passes round_rest_seconds on Launch when toggle is on', async () => {
+    const onConfirm = vi.fn(async (_config: CustomIntervalConfig) => true);
+    render(<CustomIntervalLaunchDialog open onOpenChange={() => {}} onConfirm={onConfirm} />);
+
+    fireEvent.change(screen.getByTestId('custom-interval-work-input'), {
+      target: { value: '40' },
+    });
+    fireEvent.change(screen.getByTestId('custom-interval-rest-input'), {
+      target: { value: '15' },
+    });
+    fireEvent.change(screen.getByTestId('custom-interval-rounds-input'), {
+      target: { value: '3' },
+    });
+    fireEvent.change(screen.getByTestId('custom-interval-stations-input'), {
+      target: { value: 'Burpees, Climbers, Squats, Push-ups' },
+    });
+    fireEvent.click(screen.getByTestId('custom-interval-round-rest-toggle'));
+    fireEvent.click(screen.getByTestId('custom-interval-launch'));
+
+    await waitFor(() => {
+      expect(onConfirm).toHaveBeenCalledWith(
+        expect.objectContaining({
+          work_seconds: 40,
+          rest_seconds: 15,
+          rounds: 3,
+          station_names: ['Burpees', 'Climbers', 'Squats', 'Push-ups'],
+          round_rest_seconds: 60,
+          interval_preset: 'custom',
+        }),
+      );
+    });
+  });
+
+  it('omits round_rest_seconds when toggle is turned off', async () => {
+    const onConfirm = vi.fn(async (_config: CustomIntervalConfig) => true);
+    render(<CustomIntervalLaunchDialog open onOpenChange={() => {}} onConfirm={onConfirm} />);
+
+    fireEvent.change(screen.getByTestId('custom-interval-stations-input'), {
+      target: { value: 'Burpees, Mountain Climbers' },
+    });
+    fireEvent.click(screen.getByTestId('custom-interval-round-rest-toggle'));
+    fireEvent.click(screen.getByTestId('custom-interval-round-rest-toggle'));
+    fireEvent.click(screen.getByTestId('custom-interval-launch'));
+
+    await waitFor(() => {
+      expect(onConfirm).toHaveBeenCalled();
+    });
+    expect(onConfirm.mock.calls[0]?.[0]).not.toHaveProperty('round_rest_seconds');
+  });
+
+  it('clears round rest when stations drop to one and omits from Launch', async () => {
+    const onConfirm = vi.fn(async (_config: CustomIntervalConfig) => true);
+    render(<CustomIntervalLaunchDialog open onOpenChange={() => {}} onConfirm={onConfirm} />);
+
+    fireEvent.change(screen.getByTestId('custom-interval-stations-input'), {
+      target: { value: 'Burpees, Mountain Climbers' },
+    });
+    fireEvent.click(screen.getByTestId('custom-interval-round-rest-toggle'));
+    expect(screen.getByTestId('custom-interval-round-rest-input')).toBeTruthy();
+
+    fireEvent.change(screen.getByTestId('custom-interval-stations-input'), {
+      target: { value: 'Burpees' },
+    });
+    expect(screen.queryByTestId('custom-interval-round-rest-toggle')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('custom-interval-launch'));
+    await waitFor(() => {
+      expect(onConfirm).toHaveBeenCalledWith(
+        expect.objectContaining({
+          station_names: ['Burpees'],
+        }),
+      );
+    });
+    expect(onConfirm.mock.calls[0]?.[0]).not.toHaveProperty('round_rest_seconds');
+  });
+
+  it('disables Launch when round rest seconds are out of bounds', () => {
+    const onConfirm = vi.fn(async () => true);
+    render(<CustomIntervalLaunchDialog open onOpenChange={() => {}} onConfirm={onConfirm} />);
+
+    fireEvent.change(screen.getByTestId('custom-interval-stations-input'), {
+      target: { value: 'Burpees, Mountain Climbers' },
+    });
+    fireEvent.click(screen.getByTestId('custom-interval-round-rest-toggle'));
+    fireEvent.change(screen.getByTestId('custom-interval-round-rest-input'), {
+      target: { value: '301' },
+    });
+
+    expect((screen.getByTestId('custom-interval-launch') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('custom-interval-launch'));
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
 });

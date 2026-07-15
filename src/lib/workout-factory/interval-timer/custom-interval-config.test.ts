@@ -281,6 +281,80 @@ describe('parseCustomIntervalStationNames', () => {
     expect(parseCustomIntervalActiveRestNames).toBe(parseCustomIntervalStationNames);
     expect(parseCustomIntervalActiveRestNames('Jogging, March')).toEqual(['Jogging', 'March']);
   });
+
+  it('accepts round_rest_seconds with 2+ stations', () => {
+    const result = validateCustomIntervalConfig({
+      work_seconds: 40,
+      rest_seconds: 15,
+      rounds: 3,
+      station_names: ['A', 'B', 'C', 'D'],
+      round_rest_seconds: 60,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.round_rest_seconds).toBe(60);
+    }
+  });
+
+  it('omits round_rest_seconds when 0', () => {
+    const result = validateCustomIntervalConfig({
+      work_seconds: 40,
+      rest_seconds: 15,
+      rounds: 3,
+      station_names: ['A', 'B'],
+      round_rest_seconds: 0,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.round_rest_seconds).toBeUndefined();
+    }
+  });
+
+  it('rejects round_rest_seconds above max', () => {
+    expect(
+      validateCustomIntervalConfig({
+        work_seconds: 40,
+        rest_seconds: 15,
+        rounds: 3,
+        station_names: ['A', 'B'],
+        round_rest_seconds: 301,
+      }).ok,
+    ).toBe(false);
+  });
+
+  it('rejects round_rest_seconds when fewer than 2 stations', () => {
+    expect(
+      validateCustomIntervalConfig({
+        work_seconds: 40,
+        rest_seconds: 15,
+        rounds: 3,
+        round_rest_seconds: 60,
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateCustomIntervalConfig({
+        work_seconds: 40,
+        rest_seconds: 15,
+        rounds: 3,
+        station_names: ['Only'],
+        round_rest_seconds: 60,
+      }).ok,
+    ).toBe(false);
+  });
+
+  it('rounds fractional round_rest_seconds', () => {
+    const result = validateCustomIntervalConfig({
+      work_seconds: 40,
+      rest_seconds: 15,
+      rounds: 3,
+      station_names: ['A', 'B'],
+      round_rest_seconds: 59.6,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.round_rest_seconds).toBe(60);
+    }
+  });
 });
 
 describe('previewCustomIntervalDuration', () => {

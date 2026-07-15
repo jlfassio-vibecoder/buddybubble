@@ -1,6 +1,7 @@
 import {
   deriveTabataCircuitRound,
   deriveTabataActiveExerciseIndex,
+  resolveTabataRestDurationSeconds,
 } from '@/lib/workout-factory/interval-timer/tabata-circuit-rotation';
 
 export type TabataSegment = 'idle' | 'setup' | 'work' | 'rest' | 'done';
@@ -16,6 +17,10 @@ export type TabataMechanicsState = {
   rest_seconds: number;
   setup_seconds: number;
   segment_started_at: string | null;
+  /** Longer rest after a full circuit pass; 0 = disabled. */
+  round_rest_seconds: number;
+  /** Station count at attach; 0/1 = ignore round rest. */
+  exercise_count: number;
   /** When true, countdown is frozen using `elapsed_in_segment`. */
   is_paused?: boolean;
   /** Seconds elapsed in the current segment at pause time. */
@@ -27,6 +32,8 @@ export type TabataTimerConfig = {
   workSeconds: number;
   restSeconds: number;
   setupSeconds?: number;
+  roundRestSeconds?: number;
+  exerciseCount?: number;
 };
 
 function positiveInt(v: unknown): number | null {
@@ -62,6 +69,14 @@ export function parseTabataMechanicsState(raw: unknown): TabataMechanicsState | 
   if (totalRounds == null || workSeconds == null || restSeconds == null || roundIndex == null) {
     return null;
   }
+  const roundRestSeconds =
+    typeof o.round_rest_seconds === 'number' && Number.isFinite(o.round_rest_seconds)
+      ? Math.max(0, Math.round(o.round_rest_seconds))
+      : 0;
+  const exerciseCount =
+    typeof o.exercise_count === 'number' && Number.isFinite(o.exercise_count)
+      ? Math.max(0, Math.round(o.exercise_count))
+      : 0;
   const segmentStartedAt =
     o.segment_started_at == null
       ? null
@@ -81,6 +96,8 @@ export function parseTabataMechanicsState(raw: unknown): TabataMechanicsState | 
     rest_seconds: restSeconds,
     setup_seconds: setupSeconds,
     segment_started_at: segmentStartedAt,
+    round_rest_seconds: roundRestSeconds,
+    exercise_count: exerciseCount,
     ...(isPaused ? { is_paused: true } : {}),
     ...(elapsedInSegment != null ? { elapsed_in_segment: elapsedInSegment } : {}),
   };
@@ -121,12 +138,30 @@ export function buildInitialTabataMechanicsState(config: TabataTimerConfig): Tab
     rest_seconds: config.restSeconds,
     setup_seconds: config.setupSeconds ?? TABATA_DEFAULT_SETUP_SECONDS,
     segment_started_at: null,
+    round_rest_seconds: config.roundRestSeconds ?? 0,
+    exercise_count: config.exerciseCount ?? 0,
   };
 }
 
 export function tabataBlockDurationSeconds(state: TabataMechanicsState): number {
-  const { total_rounds, work_seconds, rest_seconds, setup_seconds } = state;
-  return setup_seconds + total_rounds * work_seconds + Math.max(0, total_rounds - 1) * rest_seconds;
+  const {
+    total_rounds: workSegments,
+    work_seconds: work,
+    rest_seconds: rest,
+    setup_seconds: setup,
+    round_rest_seconds: roundRest = 0,
+    exercise_count: exerciseCount = 0,
+  } = state;
+
+  if (exerciseCount > 1) {
+    const circuitRounds = Math.floor(workSegments / exerciseCount);
+    const stationRestCount = circuitRounds * (exerciseCount - 1);
+    const roundRestCount = Math.max(0, circuitRounds - 1);
+    const endOfPassRest = roundRest > 0 ? roundRest : rest;
+    return setup + workSegments * work + stationRestCount * rest + roundRestCount * endOfPassRest;
+  }
+
+  return setup + workSegments * work + Math.max(0, workSegments - 1) * rest;
 }
 
 /**
@@ -182,10 +217,18 @@ export function deriveTabataLoggerActiveSet(
   return null;
 }
 
-function segmentDurationSec(state: TabataMechanicsState): number {
+/** Duration of the current segment (rest uses resolved station vs round rest). */
+export function tabataSegmentDurationSec(state: TabataMechanicsState): number {
   if (state.segment === 'setup') return state.setup_seconds;
   if (state.segment === 'work') return state.work_seconds;
-  if (state.segment === 'rest') return state.rest_seconds;
+  if (state.segment === 'rest') {
+    return resolveTabataRestDurationSeconds({
+      finishedWorkIndex: state.round_index,
+      exerciseCount: state.exercise_count ?? 0,
+      restSeconds: state.rest_seconds,
+      roundRestSeconds: state.round_rest_seconds ?? 0,
+    });
+  }
   if (state.segment === 'idle') return state.setup_seconds;
   return 0;
 }
@@ -198,7 +241,7 @@ export function deriveTabataSegmentRemainingSec(
   if (state.segment === 'idle') return state.setup_seconds;
   if (state.segment === 'setup' && !state.segment_started_at) return state.setup_seconds;
 
-  const durationSec = segmentDurationSec(state);
+  const durationSec = tabataSegmentDurationSec(state);
 
   if (isTabataTimerFrozen(state)) {
     const elapsed =
@@ -300,7 +343,7 @@ export function computeNextTabataMechanicsState(
 ): TabataMechanicsState {
   const anchorMs =
     state.segment_started_at != null
-      ? new Date(state.segment_started_at).getTime() + segmentDurationSec(state) * 1000
+      ? new Date(state.segment_started_at).getTime() + tabataSegmentDurationSec(state) * 1000
       : nowMs;
 
   if (state.segment === 'setup') {
@@ -325,7 +368,13 @@ export function computeNextTabataMechanicsState(
     if (isLastRound) {
       return { ...stripPauseFields(state), segment: 'done', segment_started_at: null };
     }
-    if (state.rest_seconds > 0) {
+    const restDur = resolveTabataRestDurationSeconds({
+      finishedWorkIndex: state.round_index,
+      exerciseCount: state.exercise_count ?? 0,
+      restSeconds: state.rest_seconds,
+      roundRestSeconds: state.round_rest_seconds ?? 0,
+    });
+    if (restDur > 0) {
       return withSegmentAnchor(state, 'rest', state.round_index, anchorMs);
     }
     return withSegmentAnchor(state, 'work', state.round_index + 1, anchorMs);
@@ -369,6 +418,8 @@ export function tabataMechanicsStateToJson(state: TabataMechanicsState): Record<
     rest_seconds: state.rest_seconds,
     setup_seconds: state.setup_seconds,
     segment_started_at: state.segment_started_at,
+    round_rest_seconds: state.round_rest_seconds ?? 0,
+    exercise_count: state.exercise_count ?? 0,
   };
   if (state.is_paused === true) {
     base.is_paused = true;
