@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 import TabataTimerOverlay from '@/features/live-video/wrappers/interval/mechanics/TabataTimerOverlay';
 import {
@@ -451,5 +451,34 @@ describe('TabataTimerOverlay', () => {
     expect(screen.getByTestId('tabata-overlay-subtitle').textContent).toBe(
       'Round 1 of 8 · Movement',
     );
+  });
+});
+
+describe('HUD Start panel', () => {
+  it('disables Start when showStart is omitted or false', () => {
+    const onStart = vi.fn();
+    const { rerender } = render(<TabataTimerOverlay engine={makeEngine()} onStart={onStart} />);
+    const button = screen.getByTestId('interval-overlay-start') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+    expect(onStart).not.toHaveBeenCalled();
+
+    rerender(<TabataTimerOverlay engine={makeEngine()} showStart={false} onStart={onStart} />);
+    expect((screen.getByTestId('interval-overlay-start') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('enables Start when showStart is true and calls onStart once', () => {
+    const onStart = vi.fn();
+    render(<TabataTimerOverlay engine={makeEngine()} showStart onStart={onStart} />);
+    const button = screen.getByTestId('interval-overlay-start') as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    expect(button.textContent).toBe('Start');
+    fireEvent.click(button);
+    expect(onStart).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps Start disabled when showStart is true but onStart is missing', () => {
+    render(<TabataTimerOverlay engine={makeEngine()} showStart />);
+    expect((screen.getByTestId('interval-overlay-start') as HTMLButtonElement).disabled).toBe(true);
   });
 });

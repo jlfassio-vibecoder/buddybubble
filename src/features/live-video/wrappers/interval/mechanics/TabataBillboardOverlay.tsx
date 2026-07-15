@@ -31,7 +31,7 @@ export default function TabataBillboardOverlay({ engine }: TabataBillboardOverla
         role="status"
         aria-live="polite"
         className={cn(
-          'absolute top-4 left-1/2 w-[min(92vw,40rem)] -translate-x-1/2',
+          'absolute top-4 right-4 w-max max-w-[min(92vw,40rem)]',
           'rounded-2xl border border-white/10 bg-black/50 px-6 py-4 shadow-lg backdrop-blur-md',
           'text-center text-white',
           'opacity-100 transition-opacity duration-500 ease-in-out motion-reduce:transition-none',
