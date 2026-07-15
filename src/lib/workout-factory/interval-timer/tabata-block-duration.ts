@@ -11,7 +11,7 @@ function positiveInt(v: unknown): number | null {
 
 /** Rest may be 0 (back-to-back work segments); negative is invalid. */
 function nonNegativeInt(v: unknown): number | null {
-  if (typeof v !== 'number' || !Number.isFinite(v)) return null;
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) return null;
   const n = Math.round(v);
   return n >= 0 ? n : null;
 }

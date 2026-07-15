@@ -6,7 +6,10 @@ import {
   buildStrictTabataQuickLaunchPayload,
   buildTabataAttachPayload,
 } from '@/features/live-video/wrappers/interval/utils/buildTabataAttachPayload';
-import { parseIntervalBlockSnapshot } from '@/features/live-video/wrappers/interval/utils/tabata-block-snapshot';
+import {
+  parseIntervalBlockSnapshot,
+  parseTabataFormatParams,
+} from '@/features/live-video/wrappers/interval/utils/tabata-block-snapshot';
 import { DEFAULT_CUSTOM_INTERVAL_CONFIG } from '@/lib/workout-factory/interval-timer/custom-interval-config';
 import {
   CUSTOM_INTERVAL_SUBTITLE_LABEL,
@@ -204,6 +207,18 @@ describe('buildCustomIntervalQuickLaunchPayload', () => {
     expect(parsed).not.toBeNull();
     expect(parsed!.format_params?.rest_seconds).toBe(0);
     expect(parsed!.title).toBe('Custom Interval');
+  });
+
+  it('omits slightly-negative rest_seconds that would round to 0', () => {
+    const parsed = parseTabataFormatParams({
+      work_seconds: 45,
+      rest_seconds: -0.4,
+      rounds: 6,
+    });
+    expect(parsed).not.toBeNull();
+    expect(parsed!.rest_seconds).toBeUndefined();
+    expect(parsed!.work_seconds).toBe(45);
+    expect(parsed!.rounds).toBe(6);
   });
 
   it('accepts default seed config 30/30 x 8', () => {

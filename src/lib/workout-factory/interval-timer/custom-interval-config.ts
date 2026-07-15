@@ -34,7 +34,7 @@ export const DEFAULT_CUSTOM_INTERVAL_CONFIG: CustomIntervalConfig = {
 };
 
 function roundFinite(v: unknown): number | null {
-  if (typeof v !== 'number' || !Number.isFinite(v)) return null;
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) return null;
   return Math.round(v);
 }
 

@@ -84,6 +84,10 @@ describe('validateCustomIntervalConfig', () => {
     expect(validateCustomIntervalConfig({ work_seconds: 20, rest_seconds: -1, rounds: 8 }).ok).toBe(
       false,
     );
+    // Fractional negatives must not round to 0 and pass the min bound.
+    expect(
+      validateCustomIntervalConfig({ work_seconds: 20, rest_seconds: -0.4, rounds: 8 }).ok,
+    ).toBe(false);
     expect(
       validateCustomIntervalConfig({
         work_seconds: 20,
