@@ -49,3 +49,44 @@ export function resolveTabataActiveRestExerciseName(
   const name = activeRestExercises[idx]?.trim();
   return name || null;
 }
+
+/** Minimal exercise shape for work-station name resolution (compatible with WorkoutExercise). */
+export type TabataExerciseNameSource = { name?: string | null };
+
+/**
+ * Work-station display name for a 1-based work-segment index.
+ * Multi-exercise blank names fall back to `'Movement'`; single-exercise blank → null (HUD parity).
+ */
+export function resolveTabataWorkExerciseName(
+  roundIndex: number,
+  exercises: readonly TabataExerciseNameSource[],
+): string | null {
+  if (roundIndex < 1) return null;
+  const exerciseCount = exercises.length;
+  if (exerciseCount > 1) {
+    const activeIndex = deriveTabataActiveExerciseIndex(roundIndex, exerciseCount);
+    const exerciseName = activeIndex != null ? exercises[activeIndex]?.name?.trim() : '';
+    return exerciseName || 'Movement';
+  }
+  if (exerciseCount === 1) {
+    const name = exercises[0]?.name?.trim();
+    return name || null;
+  }
+  return null;
+}
+
+/**
+ * Next work-station name after a finished work segment (passive rest look-ahead).
+ * `roundIndex` is the just-finished work segment; returns null when there is no next work.
+ */
+export function resolveTabataNextWorkExerciseName(
+  roundIndex: number,
+  totalRounds: number,
+  exercises: readonly TabataExerciseNameSource[],
+): string | null {
+  // roundIndex is the just-finished work segment; invalid before first work.
+  if (roundIndex < 1) return null;
+  const next = roundIndex + 1;
+  if (next > totalRounds) return null;
+  return resolveTabataWorkExerciseName(next, exercises);
+}

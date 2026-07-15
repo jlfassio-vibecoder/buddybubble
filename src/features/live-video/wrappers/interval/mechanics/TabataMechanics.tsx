@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useHostNavActions } from '@/features/live-video/contexts/HostNavActionsContext';
 import { useVideoOverlaySlots } from '@/features/live-video/contexts/VideoOverlaySlotsContext';
 import { useLiveSessionRuntime } from '@/features/live-video/theater/live-session-runtime-context';
+import TabataBillboardOverlay from '@/features/live-video/wrappers/interval/mechanics/TabataBillboardOverlay';
 import TabataHostActions from '@/features/live-video/wrappers/interval/mechanics/TabataHostActions';
 import TabataTimerOverlay from '@/features/live-video/wrappers/interval/mechanics/TabataTimerOverlay';
 import {
@@ -90,7 +91,7 @@ export function TabataMechanics({
   });
 
   const { setHostNavActions } = useHostNavActions();
-  const { setTopLeftOverlay } = useVideoOverlaySlots();
+  const { setTopLeftOverlay, setTopCenterOverlay } = useVideoOverlaySlots();
 
   useEffect(() => {
     const e = engineRef.current;
@@ -113,7 +114,11 @@ export function TabataMechanics({
         onResume={overlayPause.resume}
       />,
     );
-    return () => setTopLeftOverlay(null);
+    setTopCenterOverlay(<TabataBillboardOverlay engine={engine} />);
+    return () => {
+      setTopLeftOverlay(null);
+      setTopCenterOverlay(null);
+    };
   }, [
     engine.remainingSec,
     engine.totalSec,
@@ -129,6 +134,7 @@ export function TabataMechanics({
     overlayPause.canPause,
     overlayPause.canResume,
     setTopLeftOverlay,
+    setTopCenterOverlay,
   ]);
 
   useEffect(() => {

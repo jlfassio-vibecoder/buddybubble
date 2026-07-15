@@ -1,7 +1,7 @@
 import type { WorkoutExercise } from '@/lib/item-metadata';
 import {
-  deriveTabataActiveExerciseIndex,
   resolveTabataActiveRestExerciseName,
+  resolveTabataWorkExerciseName,
 } from '@/lib/workout-factory/interval-timer/tabata-circuit-rotation';
 import { resolveIntervalPresetLabel } from '@/lib/workout-factory/interval-timer/interval-preset-catalog';
 import type { TabataFormatParams } from '@/lib/workout-factory/types/tabata-format-params';
@@ -43,17 +43,7 @@ function resolveTabataActiveExerciseLabel(
   roundIndex: number,
   exercises: WorkoutExercise[],
 ): string | null {
-  const exerciseCount = exercises.length;
-  if (exerciseCount > 1) {
-    const activeIndex = deriveTabataActiveExerciseIndex(roundIndex, exerciseCount);
-    const exerciseName = activeIndex != null ? exercises[activeIndex]?.name?.trim() : '';
-    return exerciseName || 'Movement';
-  }
-  if (exerciseCount === 1) {
-    const name = exercises[0]?.name?.trim();
-    return name || null;
-  }
-  return null;
+  return resolveTabataWorkExerciseName(roundIndex, exercises);
 }
 
 function isActiveRestFormat(formatParams?: TabataFormatParams): boolean {

@@ -7,6 +7,8 @@ export type RemoteRailBottomOverlaySlot = { render: (agoraUidStr: string) => Rea
 
 type Value = {
   topLeftOverlay: ReactNode;
+  /** Top-center stage cue (e.g. Tabata exercise billboard). */
+  topCenterOverlay: ReactNode;
   topRightOverlay: ReactNode;
   /** Main stage (host self-view or participant’s large host tile): bottom-aligned strip. */
   stageBottomOverlay: ReactNode;
@@ -15,6 +17,7 @@ type Value = {
   /** Each remote rail tile: bottom-right for that tile’s user only. */
   renderRemoteRailBottomOverlay: ((agoraUidStr: string) => ReactNode) | undefined;
   setTopLeftOverlay: (node: ReactNode) => void;
+  setTopCenterOverlay: (node: ReactNode) => void;
   setTopRightOverlay: (node: ReactNode) => void;
   setStageBottomOverlay: (node: ReactNode) => void;
   setLocalRailPipOverlay: (node: ReactNode) => void;
@@ -25,6 +28,7 @@ const VideoOverlaySlotsContext = createContext<Value | null>(null);
 
 export function VideoOverlaySlotsProvider({ children }: { children: ReactNode }) {
   const [topLeftOverlay, setTopLeftOverlay] = useState<ReactNode>(null);
+  const [topCenterOverlay, setTopCenterOverlay] = useState<ReactNode>(null);
   const [topRightOverlay, setTopRightOverlay] = useState<ReactNode>(null);
   const [stageBottomOverlay, setStageBottomOverlay] = useState<ReactNode>(null);
   const [localRailPipOverlay, setLocalRailPipOverlay] = useState<ReactNode>(null);
@@ -33,11 +37,13 @@ export function VideoOverlaySlotsProvider({ children }: { children: ReactNode })
   const value = useMemo(
     () => ({
       topLeftOverlay,
+      topCenterOverlay,
       topRightOverlay,
       stageBottomOverlay,
       localRailPipOverlay,
       renderRemoteRailBottomOverlay: remoteRailBottomOverlaySlot?.render,
       setTopLeftOverlay,
+      setTopCenterOverlay,
       setTopRightOverlay,
       setStageBottomOverlay,
       setLocalRailPipOverlay,
@@ -45,6 +51,7 @@ export function VideoOverlaySlotsProvider({ children }: { children: ReactNode })
     }),
     [
       topLeftOverlay,
+      topCenterOverlay,
       topRightOverlay,
       stageBottomOverlay,
       localRailPipOverlay,

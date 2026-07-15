@@ -161,6 +161,7 @@ function LiveSessionViewInner({
   const { sessionDrawerNode } = useSessionDrawer();
   const {
     topLeftOverlay,
+    topCenterOverlay,
     topRightOverlay,
     stageBottomOverlay,
     localRailPipOverlay,
@@ -468,10 +469,11 @@ function LiveSessionViewInner({
           }
         />
         {topLeftOverlay}
+        {topCenterOverlay}
         {topRightOverlay}
       </>
     ),
-    [state, topLeftOverlay, topRightOverlay, effectiveWrapperKind],
+    [state, topLeftOverlay, topCenterOverlay, topRightOverlay, effectiveWrapperKind],
   );
 
   const rosterFloatingTrigger = useMemo(
