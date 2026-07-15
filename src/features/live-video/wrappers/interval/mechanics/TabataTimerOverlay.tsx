@@ -5,6 +5,7 @@ import { IntervalOverlayHostControls } from '@/features/live-video/wrappers/inte
 import { isTabataMechanicsState } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
 import {
   resolveTabataOverlayHeader,
+  resolveTabataOverlayPhaseLabel,
   resolveTabataOverlaySubtitle,
   tabataOverlayShowProgress,
   tabataSegmentPhaseAccentClass,
@@ -49,7 +50,14 @@ export default function TabataTimerOverlay({
   const subtitle = resolveTabataOverlaySubtitle({ formatParams, mechanics: ms, exercises });
 
   const isFinished = engine.timerPhase === 'finished';
-  const phaseText = isFinished ? 'Finished' : engine.segmentLabel.toUpperCase() || 'Ready';
+  const phaseLabel = resolveTabataOverlayPhaseLabel({
+    mechanics: ms,
+    formatParams,
+    segmentLabel: engine.segmentLabel,
+    isFinished,
+  });
+  // Finished stays title-case (legacy); runnable phases are uppercase chips.
+  const phaseText = isFinished ? phaseLabel : phaseLabel.toUpperCase() || 'Ready';
   const phaseAccentClass =
     isFinished || ms == null
       ? 'text-white/40'

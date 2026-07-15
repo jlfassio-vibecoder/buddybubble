@@ -5,6 +5,7 @@ import {
   CUSTOM_INTERVAL_STATION_BOUNDS,
   CUSTOM_INTERVAL_WORK_SECONDS_BOUNDS,
   DEFAULT_CUSTOM_INTERVAL_CONFIG,
+  parseCustomIntervalActiveRestNames,
   parseCustomIntervalStationNames,
   previewCustomIntervalDuration,
   validateCustomIntervalConfig,
@@ -164,6 +165,95 @@ describe('validateCustomIntervalConfig', () => {
       expect(result.value.station_names).toBeUndefined();
     }
   });
+
+  it('accepts rest_mode active with names and rest_seconds > 0', () => {
+    const result = validateCustomIntervalConfig({
+      work_seconds: 45,
+      rest_seconds: 15,
+      rounds: 6,
+      rest_mode: 'active',
+      active_rest_exercises: ['Jogging'],
+    });
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        work_seconds: 45,
+        rest_seconds: 15,
+        rounds: 6,
+        interval_preset: 'custom',
+        rest_mode: 'active',
+        active_rest_exercises: ['Jogging'],
+      },
+    });
+  });
+
+  it('rejects rest_mode active when rest_seconds is 0', () => {
+    expect(
+      validateCustomIntervalConfig({
+        work_seconds: 30,
+        rest_seconds: 0,
+        rounds: 6,
+        rest_mode: 'active',
+        active_rest_exercises: ['Jogging'],
+      }).ok,
+    ).toBe(false);
+  });
+
+  it('rejects rest_mode active without active_rest_exercises', () => {
+    expect(
+      validateCustomIntervalConfig({
+        work_seconds: 45,
+        rest_seconds: 15,
+        rounds: 6,
+        rest_mode: 'active',
+      }).ok,
+    ).toBe(false);
+  });
+
+  it('rejects active_rest_exercises when rest_mode is not active', () => {
+    expect(
+      validateCustomIntervalConfig({
+        work_seconds: 45,
+        rest_seconds: 15,
+        rounds: 6,
+        active_rest_exercises: ['Jogging'],
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateCustomIntervalConfig({
+        work_seconds: 45,
+        rest_seconds: 15,
+        rounds: 6,
+        rest_mode: 'passive',
+        active_rest_exercises: ['Jogging'],
+      }).ok,
+    ).toBe(false);
+  });
+
+  it('strips rest_mode passive from normalized output', () => {
+    const result = validateCustomIntervalConfig({
+      work_seconds: 45,
+      rest_seconds: 15,
+      rounds: 6,
+      rest_mode: 'passive',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.rest_mode).toBeUndefined();
+      expect(result.value.active_rest_exercises).toBeUndefined();
+    }
+  });
+
+  it('rejects invalid rest_mode', () => {
+    expect(
+      validateCustomIntervalConfig({
+        work_seconds: 45,
+        rest_seconds: 15,
+        rounds: 6,
+        rest_mode: 'recovery',
+      }).ok,
+    ).toBe(false);
+  });
 });
 
 describe('parseCustomIntervalStationNames', () => {
@@ -185,6 +275,11 @@ describe('parseCustomIntervalStationNames', () => {
   it('returns empty for blank input', () => {
     expect(parseCustomIntervalStationNames('')).toEqual([]);
     expect(parseCustomIntervalStationNames('  , \n ')).toEqual([]);
+  });
+
+  it('parseCustomIntervalActiveRestNames aliases station parser', () => {
+    expect(parseCustomIntervalActiveRestNames).toBe(parseCustomIntervalStationNames);
+    expect(parseCustomIntervalActiveRestNames('Jogging, March')).toEqual(['Jogging', 'March']);
   });
 });
 
@@ -216,5 +311,17 @@ describe('previewCustomIntervalDuration', () => {
         station_names: ['A', 'B', 'C', 'D'],
       }),
     ).toBe(10 + 12 * 30 + 11 * 30);
+  });
+
+  it('still previews duration when active rest is configured', () => {
+    expect(
+      previewCustomIntervalDuration({
+        work_seconds: 45,
+        rest_seconds: 15,
+        rounds: 6,
+        rest_mode: 'active',
+        active_rest_exercises: ['Jogging'],
+      }),
+    ).toBe(10 + 6 * 45 + 5 * 15);
   });
 });

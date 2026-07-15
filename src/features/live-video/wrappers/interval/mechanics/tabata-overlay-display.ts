@@ -1,11 +1,15 @@
 import type { WorkoutExercise } from '@/lib/item-metadata';
-import { deriveTabataActiveExerciseIndex } from '@/lib/workout-factory/interval-timer/tabata-circuit-rotation';
+import {
+  deriveTabataActiveExerciseIndex,
+  resolveTabataActiveRestExerciseName,
+} from '@/lib/workout-factory/interval-timer/tabata-circuit-rotation';
 import { resolveIntervalPresetLabel } from '@/lib/workout-factory/interval-timer/interval-preset-catalog';
 import type { TabataFormatParams } from '@/lib/workout-factory/types/tabata-format-params';
 import type {
   TabataMechanicsState,
   TabataSegment,
 } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
+import { isTabataTimerFrozen } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
 import type { IntervalSessionEngine } from '@/features/live-video/wrappers/interval/types/interval-engine';
 
 function positiveInt(v: unknown): number | null {
@@ -52,12 +56,30 @@ function resolveTabataActiveExerciseLabel(
   return null;
 }
 
+function isActiveRestFormat(formatParams?: TabataFormatParams): boolean {
+  return (
+    formatParams?.rest_mode === 'active' &&
+    Array.isArray(formatParams.active_rest_exercises) &&
+    formatParams.active_rest_exercises.length > 0
+  );
+}
+
 function resolveTabataDynamicOverlaySubtitle(
   mechanics: TabataMechanicsState,
   exercises: WorkoutExercise[],
 ): string {
   const base = `Round ${mechanics.round_index} of ${mechanics.total_rounds}`;
   const label = resolveTabataActiveExerciseLabel(mechanics.round_index, exercises);
+  return label ? `${base} · ${label}` : base;
+}
+
+function resolveTabataActiveRestOverlaySubtitle(
+  mechanics: TabataMechanicsState,
+  formatParams: TabataFormatParams,
+): string {
+  const base = `Round ${mechanics.round_index} of ${mechanics.total_rounds}`;
+  const names = formatParams.active_rest_exercises ?? [];
+  const label = resolveTabataActiveRestExerciseName(mechanics.round_index, names);
   return label ? `${base} · ${label}` : base;
 }
 
@@ -82,11 +104,33 @@ export function resolveTabataOverlaySubtitle(args: {
     return null;
   }
 
+  if (mechanics.segment === 'rest' && isActiveRestFormat(formatParams)) {
+    return resolveTabataActiveRestOverlaySubtitle(mechanics, formatParams!);
+  }
+
   if (mechanics.segment === 'work' || mechanics.segment === 'rest') {
     return resolveTabataDynamicOverlaySubtitle(mechanics, exercises);
   }
 
   return null;
+}
+
+/** Overlay phase chip — overrides engine segmentLabel only for active-rest rest segments. */
+export function resolveTabataOverlayPhaseLabel(args: {
+  mechanics: TabataMechanicsState | null;
+  formatParams?: TabataFormatParams;
+  segmentLabel: string;
+  isFinished?: boolean;
+}): string {
+  const { mechanics, formatParams, segmentLabel, isFinished = false } = args;
+  if (isFinished) return 'Finished';
+  if (mechanics != null && isTabataTimerFrozen(mechanics)) {
+    return segmentLabel;
+  }
+  if (mechanics?.segment === 'rest' && isActiveRestFormat(formatParams)) {
+    return 'Active Rest';
+  }
+  return segmentLabel;
 }
 
 export function tabataSegmentPhaseAccentClass(

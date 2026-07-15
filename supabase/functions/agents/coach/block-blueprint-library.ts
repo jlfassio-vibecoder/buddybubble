@@ -69,7 +69,14 @@ export const FORMAT_PARAM_KEYS_BY_FORMAT: Readonly<Record<BlockFormat, readonly 
     'stations',
     'track_active_pacing',
   ],
-  tabata: ['work_seconds', 'rest_seconds', 'rounds', 'interval_preset'],
+  tabata: [
+    'work_seconds',
+    'rest_seconds',
+    'rounds',
+    'interval_preset',
+    'rest_mode',
+    'active_rest_exercises',
+  ],
   ladder: ['start_reps', 'peak_reps', 'step_reps', 'direction', 'rounds'],
   chipper: ['rounds', 'time_cap_minutes'],
   pyramid: [
@@ -137,9 +144,15 @@ const TABATA_PRESET_WR: Readonly<Record<string, { work: number; rest: number }>>
 
 function reconcileTabataIntervalPreset(out: Record<string, unknown>): Record<string, unknown> {
   const work = positiveInt(out.work_seconds);
-  const rest = positiveInt(out.rest_seconds);
+  // Rest may be 0 (Push/Pull / back-to-back work); still matches presets when rest > 0.
+  const rest =
+    typeof out.rest_seconds === 'number' &&
+    Number.isFinite(out.rest_seconds) &&
+    out.rest_seconds >= 0
+      ? Math.round(out.rest_seconds)
+      : null;
   let derived: string = 'custom';
-  if (work != null && rest != null) {
+  if (work != null && rest != null && rest > 0) {
     for (const id of TABATA_INTERVAL_PRESET_IDS) {
       if (id === 'custom') continue;
       const wr = TABATA_PRESET_WR[id];
@@ -208,6 +221,56 @@ function positiveInt(value: unknown): number | null {
     if (Number.isFinite(n) && n > 0) return Math.round(n);
   }
   return null;
+}
+
+/** Non-negative int (allows 0). Rejects fractional negatives that would round to 0. */
+function nonNegativeInt(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    return Math.round(value);
+  }
+  if (typeof value === 'string' && /^\d+(\.\d+)?$/.test(value.trim())) {
+    const n = Number(value.trim());
+    if (Number.isFinite(n) && n >= 0) return Math.round(n);
+  }
+  return null;
+}
+
+const TABATA_ACTIVE_REST_NAME_BOUNDS = { maxCount: 12, maxNameLength: 64 } as const;
+
+function normalizeActiveRestExercises(raw: unknown): string[] | null {
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  if (raw.length > TABATA_ACTIVE_REST_NAME_BOUNDS.maxCount) return null;
+  const names: string[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'string') return null;
+    const trimmed = entry.trim();
+    if (trimmed.length === 0) return null;
+    if (trimmed.length > TABATA_ACTIVE_REST_NAME_BOUNDS.maxNameLength) return null;
+    names.push(trimmed);
+  }
+  return names.length > 0 ? names : null;
+}
+
+/** Keep active rest only when mode is active, rest_seconds > 0, and names are non-empty. */
+function failClosedTabataActiveRest(out: Record<string, unknown>): void {
+  const restMode = out.rest_mode;
+  const names = out.active_rest_exercises;
+  const restSec =
+    typeof out.rest_seconds === 'number' && Number.isFinite(out.rest_seconds)
+      ? out.rest_seconds
+      : null;
+  const keep =
+    restMode === 'active' &&
+    restSec != null &&
+    restSec > 0 &&
+    Array.isArray(names) &&
+    names.length > 0;
+  if (keep) {
+    out.rest_mode = 'active';
+    return;
+  }
+  delete out.rest_mode;
+  delete out.active_rest_exercises;
 }
 
 function positiveNumber(value: unknown): number | null {
@@ -384,6 +447,21 @@ export function normalizeFormatParams(format: BlockFormat, raw: unknown): Record
       }
       continue;
     }
+    if (key === 'rest_mode') {
+      if (v === 'active' || v === 'passive') out.rest_mode = v;
+      continue;
+    }
+    if (key === 'active_rest_exercises') {
+      const names = normalizeActiveRestExercises(v);
+      if (names != null) out.active_rest_exercises = names;
+      continue;
+    }
+    if (key === 'rest_seconds' && format === 'tabata') {
+      // Allow 0 for Push/Pull / back-to-back work segments.
+      const n = nonNegativeInt(v);
+      if (n != null) out.rest_seconds = n;
+      continue;
+    }
     if (INTEGER_PARAM_KEYS.has(key)) {
       const n = positiveInt(v);
       if (n != null) out[key] = n;
@@ -404,6 +482,7 @@ export function normalizeFormatParams(format: BlockFormat, raw: unknown): Record
     for (const k of Object.keys(out)) {
       if (!allowed.has(k)) delete out[k];
     }
+    failClosedTabataActiveRest(out);
     return reconcileTabataIntervalPreset(out);
   }
   // Defensive: only emit keys in allow-list even if raw had extras
@@ -533,7 +612,7 @@ export function buildBlockBlueprintLibraryPrompt(): string {
     '\n' +
     'emom — Every minute on the minute. Required format_params: interval_seconds AND (total_minutes OR total_rounds). Optional: rest_in_interval_seconds, is_alternating (boolean), alternating_stations (array of index arrays, 0-based within exercises[]). For simple A/B/C rotation set is_alternating true and omit alternating_stations — the server auto-builds [[0],[1],[2],…]. For A / B+C combo minutes use the :main/emom/alternating-combo or :finisher/emom/alternating-combo catalog token (server pairs the last two exercises on one minute); do not emit is_combo in model JSON. For other combined minutes supply alternating_stations explicitly such as [[0],[1,2]]. Do NOT use circuit for minute-bound alternating work. You MAY emit per-exercise work_seconds / rest_seconds; when omitted, the server derives them from interval_seconds and rest_in_interval_seconds.\n' +
     '\n' +
-    'tabata — Work/rest intervals (user-facing: "Intervals"; internal block_format tabata). Required format_params: rounds, interval_preset. Optional: work_seconds, rest_seconds. Preset ids: tabata (ONLY 20/10 — strict Izumi Tabata), classic_hiit (30/30), hypertrophy_density (40/20), heavy_aerobic (60/60), power_sprints (10/50), fighters (300/60), custom. ALWAYS emit interval_preset. User/coach vocabulary: say "Tabata" ONLY for 20/10/8; use preset names (e.g. Classic HIIT) or "Intervals" for other W/R. Never "Tabata-style" for non-20/10. Block names use preset label (Finisher — Classic HIIT), not Tabata unless 20/10. format_params.rounds = circuit rounds when exercises.length > 1 (one full pass through all stations); emit N distinct exercises[] placeholders when the user requests N movements — never merge into one compound name. Set work_seconds, rest_seconds, and rounds on format_params only. Do not repeat timing in updated_task_description, coach_notes, or block names. Per-exercise work_seconds/rest_seconds are optional numeric overrides only — never prose.\n' +
+    'tabata — Work/rest intervals (user-facing: "Intervals"; internal block_format tabata). Required format_params: rounds, interval_preset. Optional: work_seconds, rest_seconds, rest_mode, active_rest_exercises. Preset ids: tabata (ONLY 20/10 — strict Izumi Tabata), classic_hiit (30/30), hypertrophy_density (40/20), heavy_aerobic (60/60), power_sprints (10/50), fighters (300/60), custom. ALWAYS emit interval_preset. User/coach vocabulary: say "Tabata" ONLY for 20/10/8; use preset names (e.g. Classic HIIT) or "Intervals" for other W/R. Never "Tabata-style" for non-20/10. Block names use preset label (Finisher — Classic HIIT), not Tabata unless 20/10. format_params.rounds = circuit rounds when exercises.length > 1 (one full pass through all stations); emit N distinct exercises[] placeholders when the user requests N movements — never merge into one compound name. Set work_seconds, rest_seconds, and rounds on format_params only. Do not repeat timing in updated_task_description, coach_notes, or block names. Per-exercise work_seconds/rest_seconds are optional numeric overrides only — never prose. ACTIVE REST vs ZERO-REST: Hi/Low (asymmetrical) — uneven W/R (e.g. 45/15), highs in exercises[], rest_mode "active", lows in active_rest_exercises (never put lows into exercises[] with rest_seconds 0 — loses asymmetry). Push/Pull (symmetrical, no idle) — rest_seconds 0, both moves in exercises[], omit rest_mode and active_rest_exercises. rest_mode "active" requires rest_seconds > 0 and a non-empty active_rest_exercises list; omit rest_mode for passive Rest.\n' +
     '\n' +
     'ladder — Ascending or descending rep rungs on one or more movements. Required format_params: start_reps, peak_reps. Optional: step_reps (default 1), direction (ascending or descending), rounds. Hydrate exercises[] with per-set or per-round rep targets from start_reps toward peak_reps by step_reps; do not put the scheme only in reply_content.\n' +
     '\n' +

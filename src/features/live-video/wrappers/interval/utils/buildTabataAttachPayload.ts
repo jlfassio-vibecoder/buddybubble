@@ -96,8 +96,25 @@ export function buildCustomIntervalQuickLaunchPayload(
   const validated = validateCustomIntervalConfig(config);
   if (!validated.ok) return null;
 
-  const { work_seconds, rest_seconds, rounds, interval_preset, station_names } = validated.value;
-  const formatParams = { work_seconds, rest_seconds, rounds, interval_preset };
+  const {
+    work_seconds,
+    rest_seconds,
+    rounds,
+    interval_preset,
+    station_names,
+    rest_mode,
+    active_rest_exercises,
+  } = validated.value;
+  const formatParams = {
+    work_seconds,
+    rest_seconds,
+    rounds,
+    interval_preset,
+    ...(rest_mode === 'active' && active_rest_exercises != null && active_rest_exercises.length > 0
+      ? { rest_mode: 'active' as const, active_rest_exercises }
+      : {}),
+  };
+  // Work stations only — never inject active_rest_exercises into the circuit list.
   const names = station_names != null && station_names.length > 0 ? station_names : ['Movement'];
   const exerciseCount = names.length;
   const totalRounds = resolveTabataWorkSegmentTotal(rounds, exerciseCount);

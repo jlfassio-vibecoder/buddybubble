@@ -180,6 +180,9 @@ describe('buildCustomIntervalQuickLaunchPayload', () => {
       },
       exercises: [{ name: 'Movement', sets: 6, reps: 10 }],
     });
+    // Baseline: no active-rest keys when unused.
+    expect(payload!.blockSnapshot.format_params.rest_mode).toBeUndefined();
+    expect(payload!.blockSnapshot.format_params.active_rest_exercises).toBeUndefined();
     expect(payload!.blockSnapshot.origin_task_id).toBeUndefined();
     expect(payload!.mechanicsState).toMatchObject({
       segment: 'setup',
@@ -191,6 +194,87 @@ describe('buildCustomIntervalQuickLaunchPayload', () => {
     expect(resolveIntervalPresetLabel(payload!.blockSnapshot.format_params)).toBe(
       CUSTOM_INTERVAL_SUBTITLE_LABEL,
     );
+  });
+
+  it('emits active rest on format_params without changing exercises or mechanics', () => {
+    const payload = buildCustomIntervalQuickLaunchPayload({
+      work_seconds: 45,
+      rest_seconds: 15,
+      rounds: 6,
+      station_names: ['Burpees'],
+      rest_mode: 'active',
+      active_rest_exercises: ['Jogging'],
+    });
+    expect(payload).not.toBeNull();
+    expect(payload!.blockSnapshot.format_params).toEqual({
+      work_seconds: 45,
+      rest_seconds: 15,
+      rounds: 6,
+      interval_preset: 'custom',
+      rest_mode: 'active',
+      active_rest_exercises: ['Jogging'],
+    });
+    // Work stations only — active rest must not inflate the circuit list.
+    expect(payload!.blockSnapshot.exercises).toEqual([{ name: 'Burpees', sets: 6, reps: 10 }]);
+    expect(payload!.mechanicsState).toMatchObject({
+      total_rounds: 6,
+      work_seconds: 45,
+      rest_seconds: 15,
+    });
+
+    const parsed = parseTabataFormatParams(payload!.blockSnapshot.format_params);
+    expect(parsed).toEqual({
+      work_seconds: 45,
+      rest_seconds: 15,
+      rounds: 6,
+      interval_preset: 'custom',
+      rest_mode: 'active',
+      active_rest_exercises: ['Jogging'],
+    });
+  });
+
+  it('parseTabataFormatParams strips invalid active rest combos', () => {
+    expect(
+      parseTabataFormatParams({
+        work_seconds: 45,
+        rest_seconds: 0,
+        rounds: 6,
+        rest_mode: 'active',
+        active_rest_exercises: ['Jogging'],
+      }),
+    ).toEqual({
+      work_seconds: 45,
+      rest_seconds: 0,
+      rounds: 6,
+    });
+
+    expect(
+      parseTabataFormatParams({
+        work_seconds: 45,
+        rest_seconds: 15,
+        rounds: 6,
+        rest_mode: 'active',
+        active_rest_exercises: [],
+      }),
+    ).toEqual({
+      work_seconds: 45,
+      rest_seconds: 15,
+      rounds: 6,
+    });
+
+    expect(
+      parseTabataFormatParams({
+        work_seconds: 45,
+        rest_seconds: 15,
+        rounds: 6,
+        rest_mode: 'passive',
+        active_rest_exercises: ['Jogging'],
+      }),
+    ).toEqual({
+      work_seconds: 45,
+      rest_seconds: 15,
+      rounds: 6,
+    });
   });
 
   it('preserves rest_seconds 0 through mechanics and snapshot parse', () => {

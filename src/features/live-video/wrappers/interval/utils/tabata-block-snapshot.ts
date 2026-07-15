@@ -1,5 +1,6 @@
 import { metadataFieldsFromParsed, type WorkoutExercise } from '@/lib/item-metadata';
 import type { SessionDeckSnapshot } from '@/features/live-video/shells/huddle/session-deck-snapshot';
+import { CUSTOM_INTERVAL_STATION_BOUNDS } from '@/lib/workout-factory/interval-timer/custom-interval-config';
 import {
   isIntervalPresetOrCustomId,
   type IntervalPresetId,
@@ -39,6 +40,20 @@ function nonNegativeInt(v: unknown): number | null {
   return n >= 0 ? n : null;
 }
 
+// Copilot suggestion ignored: lenient name ingest is intentional; fail-closed keep-gate rejects invalid active-rest combos, not partial name lists.
+function parseActiveRestExerciseNames(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const names: string[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'string') continue;
+    const trimmed = entry.trim();
+    if (trimmed.length === 0) continue;
+    names.push(trimmed.slice(0, CUSTOM_INTERVAL_STATION_BOUNDS.maxNameLength));
+    if (names.length >= CUSTOM_INTERVAL_STATION_BOUNDS.maxCount) break;
+  }
+  return names;
+}
+
 export function parseTabataFormatParams(raw: unknown): TabataFormatParams | null {
   if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const o = raw as Record<string, unknown>;
@@ -54,6 +69,19 @@ export function parseTabataFormatParams(raw: unknown): TabataFormatParams | null
   const preset = o.interval_preset;
   if (isIntervalPresetOrCustomId(preset)) {
     params.interval_preset = preset as IntervalPresetId;
+  }
+
+  // Active rest: fail-closed — keep only when mode is active, rest > 0, and names non-empty.
+  const restMode = o.rest_mode === 'active' || o.rest_mode === 'passive' ? o.rest_mode : null;
+  const activeRestNames = parseActiveRestExerciseNames(o.active_rest_exercises);
+  if (
+    restMode === 'active' &&
+    params.rest_seconds != null &&
+    params.rest_seconds > 0 &&
+    activeRestNames.length > 0
+  ) {
+    params.rest_mode = 'active';
+    params.active_rest_exercises = activeRestNames;
   }
 
   if (Object.keys(params).length === 0) return null;
