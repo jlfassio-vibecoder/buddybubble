@@ -210,6 +210,7 @@ describe('TaskModal Ask Coach wiring (source)', () => {
     const builderPath = join(process.cwd(), 'src/features/workout-builder/WorkoutBuilderShell.tsx');
     const src = readFileSync(builderPath, 'utf8');
     expect(src.includes('onAskCoachForCues={handleAskCoachForCues}')).toBe(true);
+    expect(src.includes('onCueSave={handleCueSave}')).toBe(true);
     expect(src.includes('onWorkoutCuesPatch={handleWorkoutCuesPatch}')).toBe(true);
     expect(src.includes('exercise_cue_request')).toBe(true);
     expect(src.includes('ref={chatRailRef}')).toBe(true);

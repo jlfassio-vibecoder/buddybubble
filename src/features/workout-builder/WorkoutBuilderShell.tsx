@@ -40,6 +40,7 @@ import {
   type WorkoutIntakeWizardData,
 } from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
 import { resolveWorkoutViewerNarrative } from '@/lib/workout-factory/workout-viewer-narrative';
+import type { WorkoutCuePatch } from '@/lib/workout-factory/apply-cue-patches-to-metadata';
 import {
   buildTaskMetadataPayload,
   metadataFieldsFromParsed,
@@ -328,6 +329,16 @@ export function WorkoutBuilderShell({ workspaceId, task }: Props) {
     ],
   );
 
+  const handleCueSave = useCallback(
+    (key: string, patch: WorkoutCuePatch) => {
+      if (!canWrite) return;
+      const nextMeta = handleWorkoutViewerCuePatches({ [key]: patch });
+      const mf = metadataFieldsFromParsed(parseTaskMetadata(nextMeta));
+      patchOriginalMetadataJson(JSON.stringify(buildTaskMetadataPayload('workout', mf, nextMeta)));
+    },
+    [canWrite, handleWorkoutViewerCuePatches, patchOriginalMetadataJson],
+  );
+
   const renderPostOutlineWorkflow = () => {
     if (!showIntakePanel) return null;
 
@@ -356,6 +367,7 @@ export function WorkoutBuilderShell({ workspaceId, task }: Props) {
           cuesByKey={cuesByKey}
           cuesLoading={cuesLoading}
           onAskCoachForCues={handleAskCoachForCues}
+          onCueSave={handleCueSave}
           injuriesOnFile={injuriesOnFile}
         />
       );

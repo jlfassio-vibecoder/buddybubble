@@ -115,4 +115,50 @@ describe('applyWorkoutCuePatchToTaskMetadata', () => {
     expect(delta).not.toBeNull();
     expect(delta?.ai_workout_factory).toBeDefined();
   });
+
+  it('dual-writes flat when resolution_key is factory id and flat row has no id', () => {
+    const base = {
+      exercises: [{ name: 'Speed Skaters', sets: 1 }],
+      ai_workout_factory: {
+        generated_at: '2026-01-01T00:00:00Z',
+        model: 'test',
+        workout_set: {
+          title: 'Set',
+          description: 'Desc',
+          difficulty: 'intermediate',
+          workouts: [
+            {
+              title: 'Session',
+              description: 'Session',
+              exerciseBlocks: [
+                {
+                  order: 1,
+                  name: 'Main',
+                  blockFormat: 'straight_sets',
+                  exercises: [
+                    {
+                      id: 'ex-uuid-1',
+                      order: 1,
+                      exerciseName: 'Speed Skaters',
+                      sets: 1,
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    };
+
+    const merged = applyWorkoutCuePatchToTaskMetadata(base, {
+      v: 1,
+      resolution_key: 'ex-uuid-1',
+      form_cues: 'Low athletic stance.',
+    });
+
+    const flat = merged.exercises as Array<Record<string, unknown>>;
+    expect(flat[0]?.form_cues).toBe('Low athletic stance.');
+    expect(flat[0]?.id).toBe('ex-uuid-1');
+  });
 });

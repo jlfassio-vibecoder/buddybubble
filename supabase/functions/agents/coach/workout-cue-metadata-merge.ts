@@ -93,6 +93,44 @@ function getPrimarySession(meta: Record<string, unknown>): Record<string, unknow
 }
 
 function collectExercisesForMetadata(meta: Record<string, unknown>): CollectedExercise[] {
+  // Prefer factory/blocks when present (client applyCuePatches parity). Flat-first
+  // indexing misses id-keyed resolution_key from blockExerciseCueResolutionKey when
+  // flat rows lack id while factory exercises have one.
+  const session = getPrimarySession(meta);
+  if (session) {
+    const blocks = session.exerciseBlocks;
+    if (Array.isArray(blocks)) {
+      const out: CollectedExercise[] = [];
+      let flatIndex = 0;
+      for (const blockRaw of blocks) {
+        if (!isPlainObject(blockRaw)) continue;
+        const exercises = blockRaw.exercises;
+        if (!Array.isArray(exercises)) continue;
+        for (const exRaw of exercises) {
+          if (!isPlainObject(exRaw)) continue;
+          const exerciseName =
+            (typeof exRaw.exerciseName === 'string' && exRaw.exerciseName.trim()) ||
+            (typeof exRaw.name === 'string' && exRaw.name.trim()) ||
+            'Exercise';
+          out.push({
+            key: flatExerciseResolutionKey(
+              {
+                id: typeof exRaw.id === 'string' ? exRaw.id : undefined,
+                name: exerciseName,
+              },
+              flatIndex,
+            ),
+            exerciseName,
+            flatIndex,
+            blockExercise: exRaw,
+          });
+          flatIndex += 1;
+        }
+      }
+      if (out.length > 0) return out;
+    }
+  }
+
   const flat = parseFlatExercises(meta);
   if (flat.length > 0) {
     return flat.map((ex, flatIndex) => ({
@@ -101,40 +139,7 @@ function collectExercisesForMetadata(meta: Record<string, unknown>): CollectedEx
       flatIndex,
     }));
   }
-
-  const session = getPrimarySession(meta);
-  if (!session) return [];
-  const blocks = session.exerciseBlocks;
-  if (!Array.isArray(blocks)) return [];
-
-  const out: CollectedExercise[] = [];
-  let flatIndex = 0;
-  for (const blockRaw of blocks) {
-    if (!isPlainObject(blockRaw)) continue;
-    const exercises = blockRaw.exercises;
-    if (!Array.isArray(exercises)) continue;
-    for (const exRaw of exercises) {
-      if (!isPlainObject(exRaw)) continue;
-      const exerciseName =
-        (typeof exRaw.exerciseName === 'string' && exRaw.exerciseName.trim()) ||
-        (typeof exRaw.name === 'string' && exRaw.name.trim()) ||
-        'Exercise';
-      out.push({
-        key: flatExerciseResolutionKey(
-          {
-            id: typeof exRaw.id === 'string' ? exRaw.id : undefined,
-            name: exerciseName,
-          },
-          flatIndex,
-        ),
-        exerciseName,
-        flatIndex,
-        blockExercise: exRaw,
-      });
-      flatIndex += 1;
-    }
-  }
-  return out;
+  return [];
 }
 
 function indexFlatExercisesByName(flat: FlatRow[]): Map<string, FlatRow[]> {
