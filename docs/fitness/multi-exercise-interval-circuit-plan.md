@@ -1,11 +1,12 @@
 # Feature plan: Multi-exercise interval circuits (Classic HIIT rotation)
 
-**Status:** Phase F1 shipped (2026-06-25); Phase F2–F3 planned  
+**Status:** Phase F1 shipped (2026-06-25); **Phase F2 shipped** (rotation helpers + live/offline consumers); Phase F3 planned  
 **Follows:** [interval-ratio-presets-design.md](./interval-ratio-presets-design.md) Phase E (terminology, presets, `interval_preset` ingest)  
 **Charter:** Fix interval blocks where the user prescribes **N exercises × M circuit rounds** (e.g. 4 movements × 3 rounds = 12 work intervals). Today Coach often collapses to one compound exercise, and the Tabata engine treats `format_params.rounds` as **total work/rest cycles for a single stream**, not circuit rounds across stations.
 
 **Related:**
 
+- [Custom Interval Timer blueprint](./custom-interval-timer-blueprint.md) — Phase 3 Quick Launch multi-station circuits
 - [Tabata dual-engine boundary](./timers/live-video/tabata-dual-engine-boundary.md)
 - [Live interval preset overlay plan](./timers/live-video/live-interval-preset-overlay-plan.md) — HUD + snapshot (Phase L1–L3)
 - [Unified Interval Engine](./unified-interval-engine.md)
@@ -179,12 +180,11 @@ Reference implementations to study:
 
 **Exit:** User request “4 exercises, 3 rounds” → outline/card metadata has `exercises.length === 4`.
 
-### Phase F2 — Timer + logging semantics (2–3 days) — planned
+### Phase F2 — Timer + logging semantics (2–3 days) — **shipped**
 
-- `resolveTabataTimerConfig` / `computeTabataBlockDurationFromParams` multiply by exercise count when N>1.
-- Live `tabata-mechanics-state` + offline `interval-timer-engine` rotate active station per work segment.
-- `useTabataWorkSetSync` + `useTabataAthleteMechanics` highlight single active exercise.
-- Tests: mechanics state transitions, log row highlight, duration preview.
+- `resolveTabataTimerConfig` / `computeTabataBlockDurationFromParams` multiply by exercise count when N>1 (`tabata-circuit-rotation.ts`).
+- Live overlay + `useTabataWorkSetSync` / athlete mechanics highlight single active exercise.
+- Custom Interval Quick Launch (see [custom-interval-timer-blueprint.md](./custom-interval-timer-blueprint.md) Phase 3) now populates `exercises[]` and `total_rounds` via the same helpers.
 
 **Exit:** 4×3 Classic HIIT runs 12 work intervals; correct exercise highlighted each work phase.
 

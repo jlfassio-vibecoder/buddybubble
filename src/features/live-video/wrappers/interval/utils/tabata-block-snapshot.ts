@@ -32,13 +32,20 @@ function positiveInt(v: unknown): number | null {
   return n > 0 ? n : null;
 }
 
+/** Rest may be 0 (back-to-back work); negative is omitted as invalid. */
+function nonNegativeInt(v: unknown): number | null {
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) return null;
+  const n = Math.round(v);
+  return n >= 0 ? n : null;
+}
+
 export function parseTabataFormatParams(raw: unknown): TabataFormatParams | null {
   if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const o = raw as Record<string, unknown>;
   const params: TabataFormatParams = {};
 
   const work = positiveInt(o.work_seconds);
-  const rest = positiveInt(o.rest_seconds);
+  const rest = nonNegativeInt(o.rest_seconds);
   const rounds = positiveInt(o.rounds);
   if (work != null) params.work_seconds = work;
   if (rest != null) params.rest_seconds = rest;

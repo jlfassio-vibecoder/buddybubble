@@ -142,6 +142,18 @@ describe('computeNextTabataMechanicsState', () => {
     expect(next.round_index).toBe(1);
   });
 
+  it('work advances to next work when rest_seconds is 0', () => {
+    const work = {
+      ...buildInitialTabataMechanicsState({ totalRounds: 6, workSeconds: 45, restSeconds: 0 }),
+      segment: 'work' as const,
+      round_index: 1,
+      segment_started_at: '2026-06-01T18:30:00.000Z',
+    };
+    const next = computeNextTabataMechanicsState(work, Date.parse('2026-06-01T18:30:45.000Z'));
+    expect(next.segment).toBe('work');
+    expect(next.round_index).toBe(2);
+  });
+
   it('rest round 7 advances to work round 8', () => {
     const rest = {
       ...buildInitialTabataMechanicsState(CONFIG),

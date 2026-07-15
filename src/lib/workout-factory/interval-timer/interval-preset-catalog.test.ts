@@ -124,6 +124,17 @@ describe('resolveIntervalPresetLabel', () => {
     ).toBe('Intervals');
   });
 
+  it('uses Intervals when interval_preset is explicitly custom', () => {
+    expect(
+      resolveIntervalPresetLabel({
+        interval_preset: 'custom',
+        rounds: 8,
+        work_seconds: 30,
+        rest_seconds: 30,
+      }),
+    ).toBe('Intervals');
+  });
+
   it('uses Tabata label for legacy 20/10 without interval_preset', () => {
     expect(
       resolveIntervalPresetLabel({

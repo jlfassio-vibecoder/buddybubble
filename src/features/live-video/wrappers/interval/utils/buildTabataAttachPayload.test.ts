@@ -2,10 +2,19 @@ import { describe, expect, it } from 'vitest';
 
 import { createSessionDeckSnapshot } from '@/features/live-video/shells/huddle/session-deck-snapshot';
 import {
+  buildCustomIntervalQuickLaunchPayload,
   buildStrictTabataQuickLaunchPayload,
   buildTabataAttachPayload,
 } from '@/features/live-video/wrappers/interval/utils/buildTabataAttachPayload';
-import { parseIntervalBlockSnapshot } from '@/features/live-video/wrappers/interval/utils/tabata-block-snapshot';
+import {
+  parseIntervalBlockSnapshot,
+  parseTabataFormatParams,
+} from '@/features/live-video/wrappers/interval/utils/tabata-block-snapshot';
+import { DEFAULT_CUSTOM_INTERVAL_CONFIG } from '@/lib/workout-factory/interval-timer/custom-interval-config';
+import {
+  CUSTOM_INTERVAL_SUBTITLE_LABEL,
+  resolveIntervalPresetLabel,
+} from '@/lib/workout-factory/interval-timer/interval-preset-catalog';
 import { richMetadataWithBlockFormat } from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
 import type { TaskRow } from '@/types/database';
 
@@ -149,5 +158,124 @@ describe('buildStrictTabataQuickLaunchPayload', () => {
     expect(parsed!.title).toBe('Strict Tabata');
     expect(parsed!.origin_task_id).toBeUndefined();
     expect(parsed!.format_params).toMatchObject({ rounds: 8, work_seconds: 20, rest_seconds: 10 });
+  });
+});
+
+describe('buildCustomIntervalQuickLaunchPayload', () => {
+  it('returns custom 45/15 x 6 attach payload with Intervals label', () => {
+    const payload = buildCustomIntervalQuickLaunchPayload({
+      work_seconds: 45,
+      rest_seconds: 15,
+      rounds: 6,
+    });
+    expect(payload).not.toBeNull();
+    expect(payload!.blockSnapshot).toMatchObject({
+      title: 'Custom Interval',
+      block_format: 'tabata',
+      format_params: {
+        work_seconds: 45,
+        rest_seconds: 15,
+        rounds: 6,
+        interval_preset: 'custom',
+      },
+      exercises: [{ name: 'Movement', sets: 6, reps: 10 }],
+    });
+    expect(payload!.blockSnapshot.origin_task_id).toBeUndefined();
+    expect(payload!.mechanicsState).toMatchObject({
+      segment: 'setup',
+      total_rounds: 6,
+      work_seconds: 45,
+      rest_seconds: 15,
+      setup_seconds: 10,
+    });
+    expect(resolveIntervalPresetLabel(payload!.blockSnapshot.format_params)).toBe(
+      CUSTOM_INTERVAL_SUBTITLE_LABEL,
+    );
+  });
+
+  it('preserves rest_seconds 0 through mechanics and snapshot parse', () => {
+    const payload = buildCustomIntervalQuickLaunchPayload({
+      work_seconds: 45,
+      rest_seconds: 0,
+      rounds: 6,
+    });
+    expect(payload).not.toBeNull();
+    expect(payload!.blockSnapshot.format_params.rest_seconds).toBe(0);
+    expect(payload!.mechanicsState.rest_seconds).toBe(0);
+
+    const parsed = parseIntervalBlockSnapshot(payload!.blockSnapshot);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.format_params?.rest_seconds).toBe(0);
+    expect(parsed!.title).toBe('Custom Interval');
+  });
+
+  it('omits slightly-negative rest_seconds that would round to 0', () => {
+    const parsed = parseTabataFormatParams({
+      work_seconds: 45,
+      rest_seconds: -0.4,
+      rounds: 6,
+    });
+    expect(parsed).not.toBeNull();
+    expect(parsed!.rest_seconds).toBeUndefined();
+    expect(parsed!.work_seconds).toBe(45);
+    expect(parsed!.rounds).toBe(6);
+  });
+
+  it('accepts default seed config 30/30 x 8', () => {
+    const payload = buildCustomIntervalQuickLaunchPayload(DEFAULT_CUSTOM_INTERVAL_CONFIG);
+    expect(payload).not.toBeNull();
+    expect(payload!.blockSnapshot.format_params).toEqual({
+      work_seconds: 30,
+      rest_seconds: 30,
+      rounds: 8,
+      interval_preset: 'custom',
+    });
+    expect(resolveIntervalPresetLabel(payload!.blockSnapshot.format_params)).toBe(
+      CUSTOM_INTERVAL_SUBTITLE_LABEL,
+    );
+  });
+
+  it('returns null for invalid configs without throwing', () => {
+    expect(
+      buildCustomIntervalQuickLaunchPayload({ work_seconds: 20, rest_seconds: 10, rounds: 0 }),
+    ).toBeNull();
+    expect(
+      buildCustomIntervalQuickLaunchPayload({ work_seconds: 20, rest_seconds: 10, rounds: 21 }),
+    ).toBeNull();
+    expect(
+      buildCustomIntervalQuickLaunchPayload({ work_seconds: 0, rest_seconds: 10, rounds: 8 }),
+    ).toBeNull();
+    expect(
+      buildCustomIntervalQuickLaunchPayload({ work_seconds: 601, rest_seconds: 10, rounds: 8 }),
+    ).toBeNull();
+    expect(
+      buildCustomIntervalQuickLaunchPayload({ work_seconds: 20, rest_seconds: -1, rounds: 8 }),
+    ).toBeNull();
+    expect(
+      buildCustomIntervalQuickLaunchPayload({ work_seconds: 20, rest_seconds: 301, rounds: 8 }),
+    ).toBeNull();
+  });
+
+  it('maps multi-station names to exercises and work-segment total_rounds', () => {
+    const stations = ['Burpees', 'Mountain Climbers', 'Jump Squats', 'Push-ups'];
+    const payload = buildCustomIntervalQuickLaunchPayload({
+      work_seconds: 30,
+      rest_seconds: 30,
+      rounds: 3,
+      station_names: stations,
+    });
+    expect(payload).not.toBeNull();
+    expect(payload!.blockSnapshot.format_params.rounds).toBe(3);
+    expect(payload!.blockSnapshot.exercises).toEqual(
+      stations.map((name) => ({ name, sets: 3, reps: 10 })),
+    );
+    expect(payload!.mechanicsState.total_rounds).toBe(12);
+    expect(resolveIntervalPresetLabel(payload!.blockSnapshot.format_params)).toBe(
+      CUSTOM_INTERVAL_SUBTITLE_LABEL,
+    );
+
+    const parsed = parseIntervalBlockSnapshot(payload!.blockSnapshot);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.exercises).toHaveLength(4);
   });
 });

@@ -9,6 +9,13 @@ function positiveInt(v: unknown): number | null {
   return n > 0 ? n : null;
 }
 
+/** Rest may be 0 (back-to-back work segments); negative is invalid. */
+function nonNegativeInt(v: unknown): number | null {
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) return null;
+  const n = Math.round(v);
+  return n >= 0 ? n : null;
+}
+
 /** Compact label for outline fields: `30s` or `5:00` when at least 60 seconds. */
 export function formatIntervalSecondsLabel(seconds: number): string {
   const sec = Math.max(0, Math.round(seconds));
@@ -28,7 +35,7 @@ export function computeTabataBlockDurationFromParams(
 ): number | null {
   const circuitRounds = positiveInt(params.rounds);
   const work = positiveInt(params.work_seconds);
-  const rest = positiveInt(params.rest_seconds);
+  const rest = nonNegativeInt(params.rest_seconds);
   if (circuitRounds == null || work == null || rest == null) return null;
 
   const exerciseCount = options?.exerciseCount ?? 0;

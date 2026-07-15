@@ -48,13 +48,24 @@ describe('computeTabataBlockDurationFromParams', () => {
         rounds: 8,
       }),
     ).toBeNull();
+    // Fractional negatives must not round to 0 and be treated as valid rest.
+    expect(
+      computeTabataBlockDurationFromParams({
+        work_seconds: 20,
+        rest_seconds: -0.4,
+        rounds: 8,
+      }),
+    ).toBeNull();
+  });
+
+  it('allows rest_seconds 0 (back-to-back work)', () => {
     expect(
       computeTabataBlockDurationFromParams({
         work_seconds: 20,
         rest_seconds: 0,
         rounds: 8,
       }),
-    ).toBeNull();
+    ).toBe(10 + 8 * 20);
   });
 
   it('uses work_segments for multi-exercise circuit duration', () => {
