@@ -1,5 +1,6 @@
 import { INTERVAL_PRESET_ROUND_BOUNDS } from '@/lib/workout-factory/interval-timer/interval-preset-catalog';
 import { computeTabataBlockDurationFromParams } from '@/lib/workout-factory/interval-timer/tabata-block-duration';
+import type { TabataRestMode } from '@/lib/workout-factory/types/tabata-format-params';
 
 export type CustomIntervalConfig = {
   work_seconds: number;
@@ -8,6 +9,10 @@ export type CustomIntervalConfig = {
   rounds: number;
   /** Optional circuit stations; omit/empty → single Movement placeholder at build time */
   station_names?: string[];
+  /** Active rest requires rest_seconds > 0 and non-empty active_rest_exercises. */
+  rest_mode?: TabataRestMode;
+  /** Low-intensity moves during rest; omit unless rest_mode === 'active'. */
+  active_rest_exercises?: string[];
 };
 
 export type NormalizedCustomIntervalConfig = CustomIntervalConfig & {
@@ -52,29 +57,32 @@ export function parseCustomIntervalStationNames(raw: string): string[] {
   return parts.slice(0, CUSTOM_INTERVAL_STATION_BOUNDS.maxCount);
 }
 
-function normalizeStationNames(raw: unknown): { names?: string[]; error?: string } {
+/** Same rules as {@link parseCustomIntervalStationNames} — for Phase 3 active-rest textarea. */
+export const parseCustomIntervalActiveRestNames = parseCustomIntervalStationNames;
+
+function normalizeNameList(raw: unknown, fieldLabel: string): { names?: string[]; error?: string } {
   if (raw == null) return {};
   if (!Array.isArray(raw)) {
-    return { error: 'station_names must be an array of strings' };
+    return { error: `${fieldLabel} must be an array of strings` };
   }
   if (raw.length === 0) return {};
   if (raw.length > CUSTOM_INTERVAL_STATION_BOUNDS.maxCount) {
     return {
-      error: `station_names must have at most ${CUSTOM_INTERVAL_STATION_BOUNDS.maxCount} entries`,
+      error: `${fieldLabel} must have at most ${CUSTOM_INTERVAL_STATION_BOUNDS.maxCount} entries`,
     };
   }
   const names: string[] = [];
   for (const entry of raw) {
     if (typeof entry !== 'string') {
-      return { error: 'each station name must be a string' };
+      return { error: `each ${fieldLabel} entry must be a string` };
     }
     const trimmed = entry.trim();
     if (trimmed.length === 0) {
-      return { error: 'station names must be non-empty' };
+      return { error: `${fieldLabel} must be non-empty` };
     }
     if (trimmed.length > CUSTOM_INTERVAL_STATION_BOUNDS.maxNameLength) {
       return {
-        error: `station names must be at most ${CUSTOM_INTERVAL_STATION_BOUNDS.maxNameLength} characters`,
+        error: `${fieldLabel} must be at most ${CUSTOM_INTERVAL_STATION_BOUNDS.maxNameLength} characters`,
       };
     }
     names.push(trimmed);
@@ -121,14 +129,50 @@ export function validateCustomIntervalConfig(input: unknown): CustomIntervalConf
     errors.push(`rounds must be an integer from ${roundBounds.min} to ${roundBounds.max}`);
   }
 
-  const stationResult = normalizeStationNames(o.station_names);
+  const stationResult = normalizeNameList(o.station_names, 'station_names');
   if (stationResult.error) {
     errors.push(stationResult.error);
+  }
+
+  const restModeRaw = o.rest_mode;
+  let restMode: TabataRestMode | undefined;
+  if (restModeRaw != null) {
+    if (restModeRaw === 'passive' || restModeRaw === 'active') {
+      restMode = restModeRaw;
+    } else {
+      errors.push(`rest_mode must be 'passive' or 'active'`);
+    }
+  }
+
+  const activeRestResult = normalizeNameList(o.active_rest_exercises, 'active_rest_exercises');
+  if (activeRestResult.error) {
+    errors.push(activeRestResult.error);
+  }
+  const activeRestNames = activeRestResult.names;
+
+  const wantsActive = restMode === 'active';
+  const hasOrphanNames = !wantsActive && activeRestNames != null && activeRestNames.length > 0;
+
+  if (hasOrphanNames) {
+    errors.push('active_rest_exercises requires rest_mode to be active');
+  }
+
+  if (wantsActive) {
+    if (rest != null && rest === 0) {
+      errors.push('rest_mode active requires rest_seconds greater than 0');
+    }
+    if (activeRestNames == null || activeRestNames.length === 0) {
+      errors.push('rest_mode active requires at least one active_rest_exercises entry');
+    }
   }
 
   if (errors.length > 0 || work == null || rest == null || rounds == null) {
     return { ok: false, errors };
   }
+
+  // Passive / omit: strip rest_mode and active_rest_exercises from normalized output.
+  const emitActive =
+    wantsActive && rest > 0 && activeRestNames != null && activeRestNames.length > 0;
 
   return {
     ok: true,
@@ -139,6 +183,9 @@ export function validateCustomIntervalConfig(input: unknown): CustomIntervalConf
       interval_preset: 'custom',
       ...(stationResult.names != null && stationResult.names.length > 0
         ? { station_names: stationResult.names }
+        : {}),
+      ...(emitActive
+        ? { rest_mode: 'active' as const, active_rest_exercises: activeRestNames }
         : {}),
     },
   };

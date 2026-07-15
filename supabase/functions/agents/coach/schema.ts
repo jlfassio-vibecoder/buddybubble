@@ -1,5 +1,5 @@
 /**
- * Coach response schemas — Deno mirror of `src/lib/agents/coach/schema.ts`.
+ * Coach response schemas — pure module, canonical source.
  *
  * Two `VertexResponseSchema` literals:
  *   - `COACH_RESPONSE_SCHEMA` — the main JSON-mode schema lifted verbatim from
@@ -7,21 +7,22 @@
  *   - `COACH_WORKOUT_GREETING_SCHEMA` — the preflight workout-open greeting schema
  *     lifted from `supabase/functions/bubble-agent-dispatch/index.ts:910-920`.
  *
- * Run `pnpm check:agent-mirror` to verify parity with the Vitest-canonical module.
+ * A byte-for-byte mirror lives at `supabase/functions/agents/coach/schema.ts`. Run
+ * `pnpm check:agent-mirror` to verify parity.
  *
  * The schema body is intentionally written as a plain object literal (not as a typed
  * cast) so the Vertex API receives exactly the keys the legacy implementation sent. The
  * `VertexResponseSchema` cast at the bottom only constrains the export surface.
  */
 
-import type { VertexResponseSchema } from '../../_shared/llm/types.ts';
+import type { VertexResponseSchema } from '../_shared/llm/types';
 import {
   INTAKE_CATEGORIES,
   INTAKE_PHASES,
   PERSONAL_CUES_FIELD_MAX_CHARS,
   WORKOUT_CUE_FIELD_MAX_CHARS,
   COACH_CUE_REPLY_CONTENT_MAX_CHARS,
-} from './config.ts';
+} from './config';
 
 const CUE_TEXT_FIELD_DESCRIPTION =
   'Strictly limit to 2–3 short sentences. Do not ramble or repeat yourself.';
@@ -144,7 +145,26 @@ export const COACH_PROPOSED_WORKOUT_BLOCK_ITEM_SCHEMA = {
             'Round targets for circuit, tabata, superset, etc. User-facing round counts belong here only, not in block name.',
         },
         work_seconds: { type: 'INTEGER', nullable: true },
-        rest_seconds: { type: 'INTEGER', nullable: true },
+        rest_seconds: {
+          type: 'INTEGER',
+          nullable: true,
+          description:
+            'Rest duration in seconds. Use 0 for Push/Pull / back-to-back work with no idle rest. Must be > 0 when rest_mode is active.',
+        },
+        rest_mode: {
+          type: 'STRING',
+          nullable: true,
+          enum: ['active', 'passive'],
+          description:
+            'Tabata only. When "active", rest phase cues active_rest_exercises (Hi/Low). Omit or "passive" for idle Rest. Requires rest_seconds > 0 and non-empty active_rest_exercises.',
+        },
+        active_rest_exercises: {
+          type: 'ARRAY',
+          nullable: true,
+          description:
+            'Tabata only when rest_mode is "active". Low-intensity movement names shown during rest (e.g. ["Jogging"]). Do not put these names in exercises[].',
+          items: { type: 'STRING' },
+        },
         rest_in_interval_seconds: { type: 'INTEGER', nullable: true },
         rest_between_sets_seconds: { type: 'INTEGER', nullable: true },
         rest_between_rounds_seconds: { type: 'INTEGER', nullable: true },
@@ -247,7 +267,23 @@ export const COACH_OUTLINE_ONLY_BLOCK_ITEM_SCHEMA = {
         rest_seconds: {
           type: 'INTEGER',
           nullable: true,
-          description: OUTLINE_REALISTIC_INTEGER_DESCRIPTION,
+          description:
+            OUTLINE_REALISTIC_INTEGER_DESCRIPTION +
+            ' Tabata: 0 allowed for Push/Pull zero-rest circuits; must be > 0 when rest_mode is active.',
+        },
+        rest_mode: {
+          type: 'STRING',
+          nullable: true,
+          enum: ['active', 'passive'],
+          description:
+            'Tabata Hi/Low: "active" with active_rest_exercises. Omit for passive Rest or Push/Pull (rest_seconds 0).',
+        },
+        active_rest_exercises: {
+          type: 'ARRAY',
+          nullable: true,
+          description:
+            'Tabata only with rest_mode "active". Low-intensity names during rest. Never put these in exercises[].',
+          items: { type: 'STRING' },
         },
         rest_in_interval_seconds: {
           type: 'INTEGER',

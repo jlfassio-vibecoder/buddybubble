@@ -26,3 +26,26 @@ export function deriveTabataCircuitRound(roundIndex: number, exerciseCount: numb
   if (exerciseCount <= 1) return roundIndex;
   return Math.floor((roundIndex - 1) / exerciseCount) + 1;
 }
+
+/**
+ * 0-based index into active_rest_exercises during a rest segment.
+ * Unlike {@link deriveTabataActiveExerciseIndex}, count === 1 broadcasts index 0.
+ */
+export function deriveTabataActiveRestExerciseIndex(
+  roundIndex: number,
+  activeRestCount: number,
+): number | null {
+  if (roundIndex < 1 || activeRestCount < 1) return null;
+  return (roundIndex - 1) % activeRestCount;
+}
+
+/** Resolved active-rest movement name for HUD; null when index/name unavailable. */
+export function resolveTabataActiveRestExerciseName(
+  roundIndex: number,
+  activeRestExercises: readonly string[],
+): string | null {
+  const idx = deriveTabataActiveRestExerciseIndex(roundIndex, activeRestExercises.length);
+  if (idx == null) return null;
+  const name = activeRestExercises[idx]?.trim();
+  return name || null;
+}

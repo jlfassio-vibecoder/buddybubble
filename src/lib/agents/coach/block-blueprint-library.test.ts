@@ -106,6 +106,60 @@ describe('normalizeFormatParams', () => {
     ).toEqual({ rounds: 8, interval_preset: 'custom' });
   });
 
+  it('preserves rest_mode active and active_rest_exercises for Hi/Low', () => {
+    expect(
+      normalizeFormatParams('tabata', {
+        rounds: 6,
+        work_seconds: 45,
+        rest_seconds: 15,
+        interval_preset: 'custom',
+        rest_mode: 'active',
+        active_rest_exercises: ['Jogging', ' March '],
+      }),
+    ).toEqual({
+      rounds: 6,
+      work_seconds: 45,
+      rest_seconds: 15,
+      interval_preset: 'custom',
+      rest_mode: 'active',
+      active_rest_exercises: ['Jogging', 'March'],
+    });
+  });
+
+  it('preserves rest_seconds 0 for Push/Pull and strips active rest', () => {
+    expect(
+      normalizeFormatParams('tabata', {
+        rounds: 8,
+        work_seconds: 30,
+        rest_seconds: 0,
+        interval_preset: 'custom',
+        rest_mode: 'active',
+        active_rest_exercises: ['Jogging'],
+      }),
+    ).toEqual({
+      rounds: 8,
+      work_seconds: 30,
+      rest_seconds: 0,
+      interval_preset: 'custom',
+    });
+  });
+
+  it('strips orphan active_rest_exercises without rest_mode active', () => {
+    expect(
+      normalizeFormatParams('tabata', {
+        rounds: 6,
+        work_seconds: 45,
+        rest_seconds: 15,
+        active_rest_exercises: ['Jogging'],
+      }),
+    ).toEqual({
+      rounds: 6,
+      work_seconds: 45,
+      rest_seconds: 15,
+      interval_preset: 'custom',
+    });
+  });
+
   it('normalizes ladder direction and rep params', () => {
     const out = normalizeFormatParams('ladder', {
       start_reps: 1,
@@ -497,6 +551,9 @@ describe('buildBlockBlueprintLibraryPrompt', () => {
     expect(prose).toContain('interval_seconds');
     expect(prose).toContain('rounds');
     expect(prose).toContain('work_seconds');
+    expect(prose).toContain('rest_mode');
+    expect(prose).toContain('active_rest_exercises');
+    expect(prose).toContain('ACTIVE REST vs ZERO-REST');
     expect(prose).toContain('exactly 2');
     expect(prose.toLowerCase()).toContain('instruction-only');
     expect(prose).toContain('derives them from interval_seconds');

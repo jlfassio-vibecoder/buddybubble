@@ -45,6 +45,7 @@ import {
 } from './build-outline-draft-context';
 import { ACTIVE_SESSION_SURFACE_VALUE } from './session-telemetry-format';
 import {
+  INTERVAL_ACTIVE_REST_PROMPT_BLOCK,
   INTERVAL_CIRCUIT_CARDINALITY_PROMPT_BLOCK,
   INTERVAL_TERMINOLOGY_PROMPT_BLOCK,
 } from './config';
@@ -414,6 +415,8 @@ export function buildApexArchitectMainChatBlock(): string {
     ' ' +
     INTERVAL_CIRCUIT_CARDINALITY_PROMPT_BLOCK +
     ' ' +
+    INTERVAL_ACTIVE_REST_PROMPT_BLOCK +
+    ' ' +
     'Cross-reference --- CURRENT USER CONTEXT --- before asking questions; do not re-ask goals, injuries, or default equipment already on file. Do NOT collect daily readiness in chat — the Task Modal WorkoutIntakePanel handles energy and soreness before Generate Workout. Equipment comes from the member profile and Coach conversation, not the intake wizard. ' +
     'Vocabulary Strictness: Do NOT use the word "Combo" in task_title or task_description unless you specifically want multiple exercises inside the same minute. For standard one-movement-per-minute rotations, use "Alternating EMOM" and `:main/emom/alternating` (not alternating-combo). ' +
     'Do not emit parametric proposed_workout_metadata.blocks on cards without ai_workout_factory.workout_set (parametric_requires_rich_workout_set). ' +
@@ -431,6 +434,8 @@ export const COACH_OUTLINE_ONLY_SYSTEM_PROMPT =
   INTERVAL_TERMINOLOGY_PROMPT_BLOCK +
   ' ' +
   INTERVAL_CIRCUIT_CARDINALITY_PROMPT_BLOCK +
+  ' ' +
+  INTERVAL_ACTIVE_REST_PROMPT_BLOCK +
   ' ' +
   'CRITICAL — STRUCTURAL TOKEN PARITY: Scan the USER MESSAGE for catalog structural tokens matching :<section>/<structure>/<focus> (e.g. :main/tabata/power for 20/10 Tabata, :finisher/hiit/classic for 30/30 Classic HIIT). You MUST emit one separate, distinct block in "blocks" for EVERY such token, in the same order they appear. If the user requests 3 interval blocks, "blocks" MUST contain exactly 3 tabata-format blocks — never merge multiple tokens into one block. Do not omit a requested section because the card title/description summarizes the session as one unit. ' +
   'Use the BLOCK BLUEPRINT LIBRARY for block_format and format_params per block. ALWAYS include interval_preset on tabata blocks. Match each token\'s section in the block name using preset labels (e.g. "Main — Tabata" for 20/10, "Finisher — Classic HIIT" for 30/30). For tabata blocks, emit one exercises: [{ name }] placeholder per circuit station — exercises.length MUST match the user-stated exercise/movement/station count when present. Use short generic names when specific movements are unknown. No coaching prose, sets, reps, or instructions[].';
@@ -471,7 +476,7 @@ CRITICAL FORMATTING RULE: When emitting numerical values (especially seconds, re
 
 === OUTPUT FORMAT ===
 Return ONLY valid JSON. No markdown. Example:
-{"blocks":[{"name":"Main — Tabata","block_format":"tabata","format_params":{"rounds":8,"work_seconds":20,"rest_seconds":10,"interval_preset":"tabata"},"exercises":[{"name":"Kettlebell Swing"}]},{"name":"Finisher — Classic HIIT","block_format":"tabata","format_params":{"rounds":3,"work_seconds":30,"rest_seconds":30,"interval_preset":"classic_hiit"},"exercises":[{"name":"Burpees"},{"name":"Mountain Climbers"},{"name":"Jump Squats"},{"name":"High Knees"}]},{"name":"Finisher — Tabata VO2","block_format":"tabata","format_params":{"rounds":8,"work_seconds":20,"rest_seconds":10,"interval_preset":"tabata"},"exercises":[{"name":"Plank"}]}]}`;
+{"blocks":[{"name":"Main — Tabata","block_format":"tabata","format_params":{"rounds":8,"work_seconds":20,"rest_seconds":10,"interval_preset":"tabata"},"exercises":[{"name":"Kettlebell Swing"}]},{"name":"Finisher — Classic HIIT","block_format":"tabata","format_params":{"rounds":3,"work_seconds":30,"rest_seconds":30,"interval_preset":"classic_hiit"},"exercises":[{"name":"Burpees"},{"name":"Mountain Climbers"},{"name":"Jump Squats"},{"name":"High Knees"}]},{"name":"Finisher — Hi/Low","block_format":"tabata","format_params":{"rounds":6,"work_seconds":45,"rest_seconds":15,"interval_preset":"custom","rest_mode":"active","active_rest_exercises":["Jogging"]},"exercises":[{"name":"Burpees"}]},{"name":"Finisher — Tabata VO2","block_format":"tabata","format_params":{"rounds":8,"work_seconds":20,"rest_seconds":10,"interval_preset":"tabata"},"exercises":[{"name":"Plank"}]}]}`;
 }
 
 /**
@@ -900,6 +905,8 @@ export function buildOutlineCoPilotModeCoachBlock(): string {
     INTERVAL_TERMINOLOGY_PROMPT_BLOCK +
     ' ' +
     INTERVAL_CIRCUIT_CARDINALITY_PROMPT_BLOCK +
+    ' ' +
+    INTERVAL_ACTIVE_REST_PROMPT_BLOCK +
     ' ' +
     'This mode is distinct from LIVE CO-PILOT (rich workoutContext / factory blocks) and from TASK MODAL INTAKE (task_modal_intake_patch sliders). ' +
     'For structural edits (add/rename/reorder blocks, change block_format or format_params), emit outline_draft_patch with mode merge_by_name and only the changed or new blocks by name. ' +

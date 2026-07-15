@@ -381,4 +381,75 @@ describe('TabataTimerOverlay', () => {
     );
     expect(screen.queryByTestId('tabata-overlay-subtitle')).toBeNull();
   });
+
+  it('shows ACTIVE REST phase and active rest exercise during rest', () => {
+    const restState = {
+      ...buildInitialTabataMechanicsState({ totalRounds: 6, workSeconds: 45, restSeconds: 15 }),
+      segment: 'rest' as const,
+      round_index: 1,
+      segment_started_at: '2026-06-01T18:30:32.000Z',
+    };
+    render(
+      <TabataTimerOverlay
+        engine={makeEngine({
+          segmentLabel: 'Rest',
+          mechanicsState: restState,
+          blockSnapshot: {
+            title: 'Custom Interval',
+            workout_type: null,
+            duration_min: null,
+            exercises: [{ name: 'Burpees', sets: 6, reps: 10 }],
+            block_format: 'tabata',
+            format_params: {
+              rounds: 6,
+              work_seconds: 45,
+              rest_seconds: 15,
+              interval_preset: 'custom',
+              rest_mode: 'active',
+              active_rest_exercises: ['Jogging'],
+            },
+          },
+        })}
+      />,
+    );
+    expect(screen.getByTestId('tabata-overlay-phase-label').textContent).toBe('ACTIVE REST');
+    expect(screen.getByTestId('tabata-overlay-subtitle').textContent).toBe(
+      'Round 1 of 6 · Jogging',
+    );
+    expect(screen.getByTestId('tabata-overlay-phase-label').className).toContain('text-amber-300');
+  });
+
+  it('keeps REST phase for passive rest without active_rest keys', () => {
+    const restState = {
+      ...buildInitialTabataMechanicsState(TABATA_CONFIG),
+      segment: 'rest' as const,
+      round_index: 1,
+      segment_started_at: '2026-06-01T18:30:32.000Z',
+    };
+    render(
+      <TabataTimerOverlay
+        engine={makeEngine({
+          segmentLabel: 'Rest',
+          mechanicsState: restState,
+          blockSnapshot: {
+            title: 'Strict Tabata',
+            workout_type: null,
+            duration_min: null,
+            exercises: [{ name: 'Movement', sets: 8, reps: 10 }],
+            block_format: 'tabata',
+            format_params: {
+              rounds: 8,
+              work_seconds: 20,
+              rest_seconds: 10,
+              interval_preset: 'tabata',
+            },
+          },
+        })}
+      />,
+    );
+    expect(screen.getByTestId('tabata-overlay-phase-label').textContent).toBe('REST');
+    expect(screen.getByTestId('tabata-overlay-subtitle').textContent).toBe(
+      'Round 1 of 8 · Movement',
+    );
+  });
 });

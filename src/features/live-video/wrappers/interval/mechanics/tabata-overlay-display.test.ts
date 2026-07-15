@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   resolveTabataOverlayHeader,
+  resolveTabataOverlayPhaseLabel,
   resolveTabataOverlaySubtitle,
   tabataOverlayAudioIsActive,
   tabataOverlayCueSegmentKey,
@@ -183,6 +184,139 @@ describe('resolveTabataOverlaySubtitle', () => {
         formatParams: { rounds: 8, work_seconds: 20, rest_seconds: 10, interval_preset: 'tabata' },
       }),
     ).toBe('Round 4 of 8 · Burpees');
+  });
+
+  it('uses active rest name during rest when rest_mode is active', () => {
+    const mechanics = {
+      ...buildInitialTabataMechanicsState({ totalRounds: 6, workSeconds: 45, restSeconds: 15 }),
+      segment: 'rest' as const,
+      round_index: 2,
+      segment_started_at: '2026-06-01T18:30:32.000Z',
+    };
+    expect(
+      resolveTabataOverlaySubtitle({
+        mechanics,
+        exercises: [{ name: 'Burpees', sets: 6 }],
+        formatParams: {
+          rounds: 6,
+          work_seconds: 45,
+          rest_seconds: 15,
+          interval_preset: 'custom',
+          rest_mode: 'active',
+          active_rest_exercises: ['Jogging'],
+        },
+      }),
+    ).toBe('Round 2 of 6 · Jogging');
+  });
+
+  it('ignores rest_mode during work segment', () => {
+    const mechanics = {
+      ...buildInitialTabataMechanicsState({ totalRounds: 6, workSeconds: 45, restSeconds: 15 }),
+      segment: 'work' as const,
+      round_index: 1,
+      segment_started_at: '2026-06-01T18:30:12.000Z',
+    };
+    expect(
+      resolveTabataOverlaySubtitle({
+        mechanics,
+        exercises: [{ name: 'Burpees', sets: 6 }],
+        formatParams: {
+          rounds: 6,
+          work_seconds: 45,
+          rest_seconds: 15,
+          rest_mode: 'active',
+          active_rest_exercises: ['Jogging'],
+        },
+      }),
+    ).toBe('Round 1 of 6 · Burpees');
+  });
+
+  it('rotates active rest names across rest segments', () => {
+    const mechanics = {
+      ...buildInitialTabataMechanicsState({ totalRounds: 4, workSeconds: 30, restSeconds: 15 }),
+      segment: 'rest' as const,
+      round_index: 2,
+      segment_started_at: '2026-06-01T18:30:32.000Z',
+    };
+    expect(
+      resolveTabataOverlaySubtitle({
+        mechanics,
+        exercises: [{ name: 'Push', sets: 4 }],
+        formatParams: {
+          rounds: 4,
+          work_seconds: 30,
+          rest_seconds: 15,
+          rest_mode: 'active',
+          active_rest_exercises: ['Jog', 'March'],
+        },
+      }),
+    ).toBe('Round 2 of 4 · March');
+  });
+});
+
+describe('resolveTabataOverlayPhaseLabel', () => {
+  it('returns Active Rest for active rest_mode rest segment', () => {
+    const mechanics = {
+      ...buildInitialTabataMechanicsState({ totalRounds: 6, workSeconds: 45, restSeconds: 15 }),
+      segment: 'rest' as const,
+      round_index: 1,
+      segment_started_at: '2026-06-01T18:30:32.000Z',
+    };
+    expect(
+      resolveTabataOverlayPhaseLabel({
+        mechanics,
+        segmentLabel: 'Rest',
+        formatParams: {
+          rest_mode: 'active',
+          active_rest_exercises: ['Jogging'],
+        },
+      }),
+    ).toBe('Active Rest');
+  });
+
+  it('keeps engine Rest label for passive rest', () => {
+    const mechanics = {
+      ...buildInitialTabataMechanicsState(CONFIG),
+      segment: 'rest' as const,
+      round_index: 1,
+      segment_started_at: '2026-06-01T18:30:32.000Z',
+    };
+    expect(
+      resolveTabataOverlayPhaseLabel({
+        mechanics,
+        segmentLabel: 'Rest',
+        formatParams: { rounds: 8, work_seconds: 20, rest_seconds: 10 },
+      }),
+    ).toBe('Rest');
+  });
+
+  it('returns Finished and preserves Paused segmentLabel', () => {
+    expect(
+      resolveTabataOverlayPhaseLabel({
+        mechanics: null,
+        segmentLabel: 'Rest',
+        isFinished: true,
+      }),
+    ).toBe('Finished');
+
+    const paused = {
+      ...buildInitialTabataMechanicsState(CONFIG),
+      segment: 'rest' as const,
+      round_index: 1,
+      segment_started_at: '2026-06-01T18:30:32.000Z',
+      is_paused: true as const,
+      elapsed_in_segment: 3,
+    };
+    expect(
+      resolveTabataOverlayPhaseLabel({
+        mechanics: paused,
+        segmentLabel: 'Paused',
+        formatParams: {
+          rest_mode: 'active',
+          active_rest_exercises: ['Jogging'],
+        },
+      }),
+    ).toBe('Paused');
   });
 });
 

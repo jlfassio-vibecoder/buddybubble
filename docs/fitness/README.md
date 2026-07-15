@@ -63,6 +63,7 @@ flowchart LR
 ## Interval timers
 
 - **[custom-interval-timer-blueprint.md](custom-interval-timer-blueprint.md)** — Live Quick Launch **Custom Interval** (Work/Rest/Rounds + optional multi-station circuits; Phases 1–3 shipped).
+- **[active-interval-alternation-blueprint.md](active-interval-alternation-blueprint.md)** — Hi/Low active rest + Push/Pull zero-rest circuits (Phases 1–4 shipped: payload, HUD, Quick Launch UI, Coach authoring).
 - **[unified-interval-engine.md](unified-interval-engine.md)** — Tabata/EMOM live + offline engines, attach payload, mechanics state.
 - **[interval-ratio-presets-design.md](interval-ratio-presets-design.md)** — Industry work/rest presets (Classic HIIT, Power Sprints, Fighters, etc.) on `block_format: tabata`; outline editor + Coach rail tokens.
 <!-- Copilot suggestion ignored: PR description wording belongs in the GitHub PR body, not this fitness docs index. -->

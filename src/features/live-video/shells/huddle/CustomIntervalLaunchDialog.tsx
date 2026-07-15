@@ -18,6 +18,7 @@ import {
   CUSTOM_INTERVAL_REST_SECONDS_BOUNDS,
   CUSTOM_INTERVAL_WORK_SECONDS_BOUNDS,
   DEFAULT_CUSTOM_INTERVAL_CONFIG,
+  parseCustomIntervalActiveRestNames,
   parseCustomIntervalStationNames,
   previewCustomIntervalDuration,
   validateCustomIntervalConfig,
@@ -54,19 +55,34 @@ export function CustomIntervalLaunchDialog({
 }: CustomIntervalLaunchDialogProps) {
   const [draft, setDraft] = useState<CustomIntervalConfig>(DEFAULT_CUSTOM_INTERVAL_CONFIG);
   const [stationsText, setStationsText] = useState('');
+  const [isActiveRest, setIsActiveRest] = useState(false);
+  const [activeRestText, setActiveRestText] = useState('');
 
   useEffect(() => {
     if (open) {
       setDraft(DEFAULT_CUSTOM_INTERVAL_CONFIG);
       setStationsText('');
+      setIsActiveRest(false);
+      setActiveRestText('');
     }
   }, [open]);
 
   const stationNames = useMemo(() => parseCustomIntervalStationNames(stationsText), [stationsText]);
+  const activeRestNames = useMemo(
+    () => parseCustomIntervalActiveRestNames(activeRestText),
+    [activeRestText],
+  );
+  const restAllowsActive = Number.isFinite(draft.rest_seconds) && draft.rest_seconds > 0;
 
   const configForValidation: CustomIntervalConfig = {
     ...draft,
     ...(stationNames.length > 0 ? { station_names: stationNames } : {}),
+    ...(isActiveRest && restAllowsActive
+      ? {
+          rest_mode: 'active' as const,
+          active_rest_exercises: activeRestNames,
+        }
+      : {}),
   };
 
   const validation = validateCustomIntervalConfig(configForValidation);
@@ -82,6 +98,15 @@ export function CustomIntervalLaunchDialog({
   const handleOpenChange = (next: boolean) => {
     if (!next && submitting) return;
     onOpenChange(next);
+  };
+
+  const handleRestChange = (raw: string) => {
+    const rest_seconds = parseOptionalInt(raw);
+    setDraft((d) => ({ ...d, rest_seconds }));
+    if (!(Number.isFinite(rest_seconds) && rest_seconds > 0)) {
+      setIsActiveRest(false);
+      setActiveRestText('');
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -145,9 +170,7 @@ export function CustomIntervalLaunchDialog({
                 value={numInputValue(draft.rest_seconds)}
                 className="h-8 text-xs"
                 data-testid="custom-interval-rest-input"
-                onChange={(e) =>
-                  setDraft((d) => ({ ...d, rest_seconds: parseOptionalInt(e.target.value) }))
-                }
+                onChange={(e) => handleRestChange(e.target.value)}
               />
             </div>
 
@@ -187,6 +210,43 @@ export function CustomIntervalLaunchDialog({
                 One per line or comma-separated. Leave blank for a single Movement.
               </p>
             </div>
+
+            {restAllowsActive ? (
+              <div className="space-y-2 sm:col-span-2">
+                <label className="flex items-center gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={isActiveRest}
+                    disabled={submitting}
+                    data-testid="custom-interval-active-rest-toggle"
+                    onChange={(e) => setIsActiveRest(e.target.checked)}
+                  />
+                  Active Rest
+                </label>
+                <p className="text-[10px] text-muted-foreground">
+                  Show a low-intensity move during rest instead of idle Rest.
+                </p>
+                {isActiveRest ? (
+                  <div className="space-y-1">
+                    <Label htmlFor="custom-interval-active-rest" className="text-xs">
+                      Active Rest Stations
+                    </Label>
+                    <Textarea
+                      id="custom-interval-active-rest"
+                      disabled={submitting}
+                      value={activeRestText}
+                      placeholder="Jogging, March"
+                      className="min-h-20 text-xs"
+                      data-testid="custom-interval-active-rest-input"
+                      onChange={(e) => setActiveRestText(e.target.value)}
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                      One per line or comma-separated.
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           <div
