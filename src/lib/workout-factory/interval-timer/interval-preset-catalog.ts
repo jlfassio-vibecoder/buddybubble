@@ -184,6 +184,11 @@ export function deriveIntervalPresetFromParams(params: Record<string, unknown>):
 
 export function resolveIntervalPresetLabel(params: Record<string, unknown>): string {
   const presetId = params.interval_preset;
+  /** Explicit custom (e.g. Quick Launch) wins even when W/R match a named preset. */
+  if (presetId === 'custom') {
+    return CUSTOM_INTERVAL_SUBTITLE_LABEL;
+  }
+
   if (isIntervalPresetId(presetId) && paramsMatchPreset(params, presetId)) {
     return getIntervalPresetDefinition(presetId).subtitleLabel;
   }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ChevronDown, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import type { SessionState } from '@/features/live-video/state/sessionStateMachine';
@@ -12,6 +12,7 @@ import {
 } from '@/features/amrap/utils/buildAmrapBlockSnapshot';
 import { useLiveSessionRuntime } from '@/features/live-video/theater/live-session-runtime-context';
 import { SESSION_COMMAND_EVENT } from '@/features/live-video/state/session-sync.types';
+import { CustomIntervalLaunchDialog } from '@/features/live-video/shells/huddle/CustomIntervalLaunchDialog';
 import { useWorkoutDeckSelectionOptional } from '@/features/live-video/shells/huddle/workout-deck-selection-context';
 import { useWrapperAttach } from '@/features/live-video/contexts/WrapperAttachContext';
 import {
@@ -19,6 +20,7 @@ import {
   isEmomDeckSnapshot,
 } from '@/features/live-video/wrappers/interval/utils/buildEmomAttachPayload';
 import {
+  buildCustomIntervalQuickLaunchPayload,
   buildStrictTabataQuickLaunchPayload,
   buildTabataAttachPayload,
   isTabataDeckSnapshot,
@@ -26,6 +28,7 @@ import {
 } from '@/features/live-video/wrappers/interval/utils/buildTabataAttachPayload';
 import { emomMechanicsStateToJson } from '@/features/live-video/wrappers/interval/mechanics/emom-mechanics-state';
 import { tabataMechanicsStateToJson } from '@/features/live-video/wrappers/interval/mechanics/tabata-mechanics-state';
+import type { CustomIntervalConfig } from '@/lib/workout-factory/interval-timer/custom-interval-config';
 import { resolveIntervalPresetLabel } from '@/lib/workout-factory/interval-timer/interval-preset-catalog';
 import type { Json } from '@/types/database';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -89,6 +92,8 @@ export function SessionControlsActions({
   } = useLiveSessionRuntime();
   const { setOverride } = useWrapperAttach();
   const deckSel = useWorkoutDeckSelectionOptional();
+  const [customIntervalOpen, setCustomIntervalOpen] = useState(false);
+  const [customIntervalSubmitting, setCustomIntervalSubmitting] = useState(false);
   const amrapAttachReady = !disableActions && liveDbReady && liveSessionRowId.trim().length > 0;
   const activeDeckSnap = pickActiveSnapshot(deckSel?.deck ?? [], deckSel?.activeSnapshotId ?? null);
   const tabataAttachReady = amrapAttachReady && isTabataDeckSnapshot(activeDeckSnap);
@@ -136,8 +141,8 @@ export function SessionControlsActions({
   }, [disableActions, hostAsyncWorkoutEnabled, liveSessionRowId, onHostStartRecording]);
 
   const attachTabataSession = useCallback(
-    async (payload: TabataAttachPayload) => {
-      if (!payload || !amrapAttachReady) return;
+    async (payload: TabataAttachPayload): Promise<boolean> => {
+      if (!payload || !amrapAttachReady) return false;
       const { data, error } = await supabase.rpc('tabata_create_for_session', {
         p_live_session_id: liveSessionRowId.trim(),
         p_block_snapshot: payload.blockSnapshot as Json,
@@ -155,12 +160,14 @@ export function SessionControlsActions({
         } else {
           console.error('[SessionControlsActions] tabata_create_for_session failed');
         }
-        return;
+        return false;
       }
       if (typeof data === 'string') {
         setOverride({ kind: 'tabata', config: { interval_session_id: data } });
         actions.transitionToPhase('tabata');
+        return true;
       }
+      return false;
     },
     [actions, amrapAttachReady, liveSessionRowId, setOverride, supabase],
   );
@@ -319,8 +326,24 @@ export function SessionControlsActions({
   };
 
   const handleQuickLaunchCustomInterval = () => {
-    // TODO: Live host custom W/R modal (work_seconds, rest_seconds, rounds) then attachTabataSession.
-    toast.message('Custom interval launcher coming soon.');
+    setCustomIntervalOpen(true);
+  };
+
+  const handleConfirmCustomInterval = async (config: CustomIntervalConfig): Promise<boolean> => {
+    const payload = buildCustomIntervalQuickLaunchPayload(config);
+    if (!payload) return false;
+    setCustomIntervalSubmitting(true);
+    try {
+      const ok = await attachTabataSession(payload);
+      if (ok) {
+        setCustomIntervalOpen(false);
+      } else {
+        toast.error('Could not start custom interval.');
+      }
+      return ok;
+    } finally {
+      setCustomIntervalSubmitting(false);
+    }
   };
 
   const inHuddle = state.phase === 'lobby';
@@ -336,6 +359,12 @@ export function SessionControlsActions({
 
   return (
     <div className={cn('flex min-w-0 flex-wrap items-center justify-end gap-2', className)}>
+      <CustomIntervalLaunchDialog
+        open={customIntervalOpen}
+        onOpenChange={setCustomIntervalOpen}
+        onConfirm={handleConfirmCustomInterval}
+        submitting={customIntervalSubmitting}
+      />
       {hostClassRecordingPipelineBusy && !disableActions ? (
         <span
           className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground"
