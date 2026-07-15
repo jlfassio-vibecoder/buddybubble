@@ -309,4 +309,3 @@ Component maps `fadeAfterSec` + `elapsedSec` → opacity; model stays unit-testa
 2. **`Current:` prefix** on active-rest flashes: default **off** for max type size — confirm with product.
 3. **Single-line vs two-line** names at `text-5xl` on narrow phones in portrait huddle — Phase 2 visual lock.
 4. Should idle (host not yet started, setup not running) show a static first-exercise teaser? Default: **only during `setup` segment** (and running work/rest rules), not pre-start idle chip.
-   )

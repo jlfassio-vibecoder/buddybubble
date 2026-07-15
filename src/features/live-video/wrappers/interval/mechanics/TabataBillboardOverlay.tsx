@@ -19,6 +19,7 @@ export default function TabataBillboardOverlay({ engine }: TabataBillboardOverla
     elapsedSec,
   });
 
+  // Copilot suggestion ignored: Phase 2 locks instant unmount when !visible; soft opacity exit is Phase 4 polish.
   if (model == null || !model.visible) return null;
 
   return (
