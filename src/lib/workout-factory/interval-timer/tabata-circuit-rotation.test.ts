@@ -5,6 +5,8 @@ import {
   deriveTabataActiveRestExerciseIndex,
   deriveTabataCircuitRound,
   resolveTabataActiveRestExerciseName,
+  resolveTabataNextWorkExerciseName,
+  resolveTabataWorkExerciseName,
   resolveTabataWorkSegmentTotal,
 } from './tabata-circuit-rotation';
 
@@ -83,5 +85,52 @@ describe('resolveTabataActiveRestExerciseName', () => {
   it('returns null for empty list or pre-start', () => {
     expect(resolveTabataActiveRestExerciseName(1, [])).toBeNull();
     expect(resolveTabataActiveRestExerciseName(0, ['Jogging'])).toBeNull();
+  });
+});
+
+describe('resolveTabataWorkExerciseName', () => {
+  it('rotates multi-exercise stations and falls back to Movement for blank names', () => {
+    expect(resolveTabataWorkExerciseName(1, [{ name: 'Burpees' }, { name: 'Push-ups' }])).toBe(
+      'Burpees',
+    );
+    expect(resolveTabataWorkExerciseName(2, [{ name: 'Burpees' }, { name: 'Push-ups' }])).toBe(
+      'Push-ups',
+    );
+    expect(resolveTabataWorkExerciseName(1, [{ name: '' }, { name: 'B' }])).toBe('Movement');
+  });
+
+  it('returns single-exercise name or null when blank', () => {
+    expect(resolveTabataWorkExerciseName(1, [{ name: 'Squat' }])).toBe('Squat');
+    expect(resolveTabataWorkExerciseName(1, [{ name: '  ' }])).toBeNull();
+  });
+
+  it('returns null for pre-start or empty list', () => {
+    expect(resolveTabataWorkExerciseName(0, [{ name: 'A' }, { name: 'B' }])).toBeNull();
+    expect(resolveTabataWorkExerciseName(1, [])).toBeNull();
+  });
+});
+
+describe('resolveTabataNextWorkExerciseName', () => {
+  it('looks ahead to the next station after rest following work 1 of 4', () => {
+    expect(resolveTabataNextWorkExerciseName(1, 4, [{ name: 'A' }, { name: 'B' }])).toBe('B');
+  });
+
+  it('returns null on the last rest before done', () => {
+    expect(resolveTabataNextWorkExerciseName(4, 4, [{ name: 'A' }, { name: 'B' }])).toBeNull();
+  });
+
+  it('resolves single-exercise next name', () => {
+    expect(resolveTabataNextWorkExerciseName(1, 8, [{ name: 'Squat' }])).toBe('Squat');
+  });
+
+  it('returns null for roundIndex 0 or negative', () => {
+    expect(resolveTabataNextWorkExerciseName(0, 4, [{ name: 'A' }, { name: 'B' }])).toBeNull();
+    expect(resolveTabataNextWorkExerciseName(-1, 4, [{ name: 'A' }, { name: 'B' }])).toBeNull();
+  });
+
+  it('uses Movement for blank multi-station next name', () => {
+    expect(resolveTabataNextWorkExerciseName(1, 4, [{ name: 'A' }, { name: '  ' }])).toBe(
+      'Movement',
+    );
   });
 });
