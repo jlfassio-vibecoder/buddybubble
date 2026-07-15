@@ -104,6 +104,7 @@ export function TabataMechanics({
   }, [engine.startTimer, engine.resetTimer, engine.timerPhase, setHostNavActions]);
 
   useEffect(() => {
+    const showStart = engine.startTimer != null && engine.timerPhase === 'idle';
     setTopLeftOverlay(
       <TabataTimerOverlay
         engine={engine}
@@ -112,6 +113,8 @@ export function TabataMechanics({
         canResume={overlayPause.canResume}
         onPause={overlayPause.pause}
         onResume={overlayPause.resume}
+        showStart={showStart}
+        onStart={() => void engine.startTimer?.()}
       />,
     );
     setTopCenterOverlay(<TabataBillboardOverlay engine={engine} />);
@@ -123,6 +126,7 @@ export function TabataMechanics({
     engine.remainingSec,
     engine.totalSec,
     engine.timerPhase,
+    engine.startTimer,
     engine.segmentLabel,
     engine.currentRoundIndex,
     engine.blockSnapshot?.format_params,
