@@ -79,8 +79,8 @@ export default function TabataTimerOverlay({
 
   return (
     <div className="pointer-events-none absolute inset-0 z-[43]">
-      <div className="pointer-events-auto absolute top-4 left-4 flex w-full max-w-[min(100vw-2rem,20rem)] flex-col">
-        <div className="rounded-xl border border-white/10 bg-black/50 p-4 text-white shadow-lg backdrop-blur-md">
+      <div className="absolute top-4 left-4 flex w-full max-w-[min(100vw-2rem,20rem)] flex-col">
+        <div className="pointer-events-auto rounded-xl border border-white/10 bg-black/50 p-4 text-white shadow-lg backdrop-blur-md">
           <div className="flex items-start justify-between gap-2">
             <p
               className="text-[10px] font-medium uppercase tracking-wider text-white/50"
@@ -139,7 +139,9 @@ export default function TabataTimerOverlay({
         <div
           className={cn(
             'mt-1.5 overflow-hidden transition-all duration-300 ease-out motion-reduce:transition-none',
-            showStart ? 'max-h-24 opacity-100' : 'pointer-events-none max-h-0 opacity-0',
+            showStart
+              ? 'pointer-events-auto max-h-24 opacity-100'
+              : 'pointer-events-none max-h-0 opacity-0',
           )}
           aria-hidden={!showStart}
         >
