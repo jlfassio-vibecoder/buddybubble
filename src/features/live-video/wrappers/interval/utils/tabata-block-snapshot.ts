@@ -40,6 +40,7 @@ function nonNegativeInt(v: unknown): number | null {
   return n >= 0 ? n : null;
 }
 
+// Copilot suggestion ignored: lenient name ingest is intentional; fail-closed keep-gate rejects invalid active-rest combos, not partial name lists.
 function parseActiveRestExerciseNames(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
   const names: string[] = [];

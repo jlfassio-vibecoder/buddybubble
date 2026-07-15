@@ -1,33 +1,7 @@
 /**
- * Coach prompt builders — pure module, canonical source.
+ * Coach prompt builders — MIRROR FILE.
  *
- * Exports include:
- *   - `buildBaseCoachPrompt(currentDate)` — composite base prompt lifted verbatim from
- *     `supabase/functions/bubble-agent-dispatch/index.ts:1548-1573`. The only delta vs
- *     the legacy implementation is that the date is parameterized so unit tests can pin
- *     it; the legacy file derives `currentDate` inline at request time.
- *   - `buildWorkoutOpenGreetingPrompt({ workoutTitle, isoNow, userContextBlock? })` —
- *     the prompt-parts assembly from `bubble-agent-dispatch/index.ts:1486-1501`.
- *   - `buildWorkoutOpenGreetingUserText(workoutJson)` — the single user-turn payload
- *     from `bubble-agent-dispatch/index.ts:1502`.
- *   - `buildCurrentTaskContextBlock(title, description, opts?)` — the CURRENT TASK CONTEXT
- *     block from `bubble-agent-dispatch/index.ts:1621-1625`; `opts.rail` swaps the trailing
- *     instruction to the live co-pilot variant for `StandardTaskChatRail`.
- *   - `buildTaskModalIntakeUiCoachBlock()` — when the resolved task is workout /
- *     workout_log, appended after CURRENT TASK CONTEXT so the model maps chat to the
- *     Task Modal intake wizard and `task_modal_intake_patch`.
- *   - `readTaskModalLiveStateFromMessageMetadata`, `buildTaskModalLiveStateBlock` —
- *     Phase 3.7: client `messages.metadata.task_modal_live_state` → system prompt.
- *   - `readTaskModalOutlineDraftFromMessageMetadata`, `buildOutlineDraftContextBlock`,
- *     `resolveOutlineDraftPromptParts` — outline co-pilot: `task_modal_outline_draft` → system prompt.
- *   - `WORKOUT_CONTEXT_HEADER`, `USER_CONTEXT_TAIL`, `LAST_WORKOUT_CONTEXT_HEADER`,
- *     `CURRENT_USER_CONTEXT_HEADER` — header constants reused by the strategy and the
- *     Deno-only `context.ts` module.
- *
- * A byte-for-byte mirror lives at `supabase/functions/agents/coach/prompts.ts`. Run
- * `pnpm check:agent-mirror` to verify parity.
- *
- * Pure module: depends on `./config` and `./task-modal-intake-patch` (intake enum lists).
+ * Canonical source: `src/lib/agents/coach/prompts.ts`. Run `pnpm check:agent-mirror`.
  */
 
 /* eslint-disable max-len */
@@ -36,25 +10,25 @@ import {
   WORKOUT_INTAKE_DURATION_CHOICES,
   WORKOUT_GENERATION_PHASE_INTENT_OPTIONS,
   WORKOUT_INTAKE_SORENESS_OPTIONS,
-} from './task-modal-intake-patch';
-import { readCoachOutlineMetadata } from './coach-outline-metadata';
+} from './task-modal-intake-patch.ts';
+import { readCoachOutlineMetadata } from './coach-outline-metadata.ts';
 import {
   buildOutlineDraftContextBlock,
   buildOutlineDraftContextBlockFromStored,
   readTaskModalOutlineDraftFromMessageMetadata,
-} from './build-outline-draft-context';
-import { ACTIVE_SESSION_SURFACE_VALUE } from './session-telemetry-format';
+} from './build-outline-draft-context.ts';
+import { ACTIVE_SESSION_SURFACE_VALUE } from './session-telemetry-format.ts';
 import {
   INTERVAL_ACTIVE_REST_PROMPT_BLOCK,
   INTERVAL_CIRCUIT_CARDINALITY_PROMPT_BLOCK,
   INTERVAL_TERMINOLOGY_PROMPT_BLOCK,
-} from './config';
+} from './config.ts';
 import {
   CUE_FIELD_LABELS,
   EXERCISE_CUE_REQUEST_HEADER,
   formatPrescriptionLine,
   type ExerciseCueRequestV1,
-} from './exercise-cue-request';
+} from './exercise-cue-request.ts';
 
 /** Header line prepended to the resolved CURRENT WORKOUT CONTEXT JSON when present. */
 export const WORKOUT_CONTEXT_HEADER = '--- CURRENT WORKOUT CONTEXT ---';

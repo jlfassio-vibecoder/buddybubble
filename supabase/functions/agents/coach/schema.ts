@@ -1,5 +1,5 @@
 /**
- * Coach response schemas — pure module, canonical source.
+ * Coach response schemas — Deno mirror of `src/lib/agents/coach/schema.ts`.
  *
  * Two `VertexResponseSchema` literals:
  *   - `COACH_RESPONSE_SCHEMA` — the main JSON-mode schema lifted verbatim from
@@ -7,22 +7,21 @@
  *   - `COACH_WORKOUT_GREETING_SCHEMA` — the preflight workout-open greeting schema
  *     lifted from `supabase/functions/bubble-agent-dispatch/index.ts:910-920`.
  *
- * A byte-for-byte mirror lives at `supabase/functions/agents/coach/schema.ts`. Run
- * `pnpm check:agent-mirror` to verify parity.
+ * Run `pnpm check:agent-mirror` to verify parity with the Vitest-canonical module.
  *
  * The schema body is intentionally written as a plain object literal (not as a typed
  * cast) so the Vertex API receives exactly the keys the legacy implementation sent. The
  * `VertexResponseSchema` cast at the bottom only constrains the export surface.
  */
 
-import type { VertexResponseSchema } from '../_shared/llm/types';
+import type { VertexResponseSchema } from '../../_shared/llm/types.ts';
 import {
   INTAKE_CATEGORIES,
   INTAKE_PHASES,
   PERSONAL_CUES_FIELD_MAX_CHARS,
   WORKOUT_CUE_FIELD_MAX_CHARS,
   COACH_CUE_REPLY_CONTENT_MAX_CHARS,
-} from './config';
+} from './config.ts';
 
 const CUE_TEXT_FIELD_DESCRIPTION =
   'Strictly limit to 2–3 short sentences. Do not ramble or repeat yourself.';
