@@ -41,11 +41,6 @@ import {
 } from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
 import { resolveWorkoutViewerNarrative } from '@/lib/workout-factory/workout-viewer-narrative';
 import type { WorkoutCuePatch } from '@/lib/workout-factory/apply-cue-patches-to-metadata';
-import {
-  buildTaskMetadataPayload,
-  metadataFieldsFromParsed,
-  parseTaskMetadata,
-} from '@/lib/item-metadata';
 import type { Json } from '@/types/database';
 import { useUserProfileStore } from '@/store/userProfileStore';
 
@@ -91,8 +86,8 @@ export function WorkoutBuilderShell({ workspaceId, task }: Props) {
     saving,
     metadataForSave,
     originalRef,
-    patchOriginalMetadataJson,
     pendingWorkoutCuesByMessageRef,
+    cueStaleRefetchScheduledRef,
     itemType,
     status,
     priority,
@@ -313,30 +308,30 @@ export function WorkoutBuilderShell({ workspaceId, task }: Props) {
         patch: cuePatch,
         at: Date.now(),
       });
+      // Allow another silent loadTask if Realtime still lacks cues (parity with TaskModal).
+      cueStaleRefetchScheduledRef.current = false;
 
-      const nextMeta = handleWorkoutViewerCuePatches({
+      // Optimistic local apply only — do not patch the saved baseline until DB/Realtime confirms.
+      handleWorkoutViewerCuePatches({
         [args.patch.resolution_key]: cuePatch,
       });
-      const mf = metadataFieldsFromParsed(parseTaskMetadata(nextMeta));
-      patchOriginalMetadataJson(JSON.stringify(buildTaskMetadataPayload('workout', mf, nextMeta)));
     },
     [
       canWrite,
       taskId,
       handleWorkoutViewerCuePatches,
       pendingWorkoutCuesByMessageRef,
-      patchOriginalMetadataJson,
+      cueStaleRefetchScheduledRef,
     ],
   );
 
   const handleCueSave = useCallback(
     (key: string, patch: WorkoutCuePatch) => {
       if (!canWrite) return;
-      const nextMeta = handleWorkoutViewerCuePatches({ [key]: patch });
-      const mf = metadataFieldsFromParsed(parseTaskMetadata(nextMeta));
-      patchOriginalMetadataJson(JSON.stringify(buildTaskMetadataPayload('workout', mf, nextMeta)));
+      // Keep coreDirty so "Return to Board" runs saveCoreFields and persists to the DB.
+      handleWorkoutViewerCuePatches({ [key]: patch });
     },
-    [canWrite, handleWorkoutViewerCuePatches, patchOriginalMetadataJson],
+    [canWrite, handleWorkoutViewerCuePatches],
   );
 
   const renderPostOutlineWorkflow = () => {

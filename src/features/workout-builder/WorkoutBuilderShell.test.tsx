@@ -67,6 +67,7 @@ vi.mock('@/features/workout-builder/useWorkoutBuilderTaskHost', () => ({
     originalRef: { current: null },
     patchOriginalMetadataJson: vi.fn(),
     pendingWorkoutCuesByMessageRef: { current: new Map() },
+    cueStaleRefetchScheduledRef: { current: false },
     itemType: 'workout' as const,
     status: 'todo',
     priority: 'medium' as const,

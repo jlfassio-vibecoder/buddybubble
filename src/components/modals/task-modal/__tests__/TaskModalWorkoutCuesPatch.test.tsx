@@ -214,6 +214,10 @@ describe('TaskModal Ask Coach wiring (source)', () => {
     expect(src.includes('onWorkoutCuesPatch={handleWorkoutCuesPatch}')).toBe(true);
     expect(src.includes('exercise_cue_request')).toBe(true);
     expect(src.includes('ref={chatRailRef}')).toBe(true);
+    // Bug 1: reset stale-refetch gate when a new Coach patch lands.
+    expect(src.includes('cueStaleRefetchScheduledRef.current = false')).toBe(true);
+    // Bugs 2–3: optimistic cue apply must not clear coreDirty via patchOriginalMetadataJson.
+    expect(src.includes('patchOriginalMetadataJson')).toBe(false);
   });
 
   it('TaskModal.tsx wires reconcile + pending Coach cues on silent applyRow', () => {
@@ -224,8 +228,14 @@ describe('TaskModal Ask Coach wiring (source)', () => {
     expect(src.includes('pendingWorkoutCuesByMessageRef')).toBe(true);
     expect(src.includes('snapshotPendingWorkoutCuePatches')).toBe(true);
     expect(src.includes('clearPendingWorkoutCuesSatisfiedByIncoming')).toBe(true);
-    expect(src.includes('patchOriginalMetadataJson')).toBe(true);
     expect(src.includes('cueStaleRefetchScheduledRef')).toBe(true);
+
+    // Bug 3: Coach optimistic apply must not patchOriginalMetadataJson in handleWorkoutCuesPatch.
+    const handlerStart = src.indexOf('const handleWorkoutCuesPatch = useCallback');
+    expect(handlerStart).toBeGreaterThanOrEqual(0);
+    const handlerSlice = src.slice(handlerStart, handlerStart + 1200);
+    expect(handlerSlice.includes('cueStaleRefetchScheduledRef.current = false')).toBe(true);
+    expect(handlerSlice.includes('patchOriginalMetadataJson')).toBe(false);
   });
 });
 

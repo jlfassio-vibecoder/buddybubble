@@ -351,6 +351,7 @@ export function useWorkoutBuilderTaskHost({
     originalRef,
     patchOriginalMetadataJson,
     pendingWorkoutCuesByMessageRef,
+    cueStaleRefetchScheduledRef,
     itemType,
     status,
     priority,

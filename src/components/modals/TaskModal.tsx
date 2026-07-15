@@ -980,23 +980,16 @@ export function TaskModal({
       });
       cueStaleRefetchScheduledRef.current = false;
 
-      const nextMeta = handleWorkoutViewerCuePatches({
+      // Optimistic local apply only — do not patch the saved baseline until DB/Realtime confirms.
+      handleWorkoutViewerCuePatches({
         [args.patch.resolution_key]: cuePatch,
       });
-      const mf = metadataFieldsFromParsed(parseTaskMetadata(nextMeta));
-      patchOriginalMetadataJson(JSON.stringify(buildTaskMetadataPayload(itemType, mf, nextMeta)));
 
       setWorkoutSplitEngaged(true);
       setWorkoutViewerOpen(true);
       setMobileUnifiedPane('workout');
     },
-    [
-      itemType,
-      canWrite,
-      handleWorkoutViewerCuePatches,
-      setWorkoutViewerOpen,
-      patchOriginalMetadataJson,
-    ],
+    [itemType, canWrite, handleWorkoutViewerCuePatches, setWorkoutViewerOpen],
   );
 
   const { flushNow } = useTaskCoreTextAutosave({
