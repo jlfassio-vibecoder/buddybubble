@@ -1,5 +1,6 @@
 import type { WorkoutExercise } from '@/lib/item-metadata';
 import {
+  isTabataEndOfCircuitPass,
   resolveTabataActiveRestExerciseName,
   resolveTabataWorkExerciseName,
 } from '@/lib/workout-factory/interval-timer/tabata-circuit-rotation';
@@ -116,6 +117,13 @@ export function resolveTabataOverlayPhaseLabel(args: {
   if (isFinished) return 'Finished';
   if (mechanics != null && isTabataTimerFrozen(mechanics)) {
     return segmentLabel;
+  }
+  if (
+    mechanics?.segment === 'rest' &&
+    (mechanics.round_rest_seconds ?? 0) > 0 &&
+    isTabataEndOfCircuitPass(mechanics.round_index, mechanics.exercise_count ?? 0)
+  ) {
+    return 'Round Rest';
   }
   if (mechanics?.segment === 'rest' && isActiveRestFormat(formatParams)) {
     return 'Active Rest';

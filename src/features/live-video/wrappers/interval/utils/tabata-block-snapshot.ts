@@ -1,6 +1,9 @@
 import { metadataFieldsFromParsed, type WorkoutExercise } from '@/lib/item-metadata';
 import type { SessionDeckSnapshot } from '@/features/live-video/shells/huddle/session-deck-snapshot';
-import { CUSTOM_INTERVAL_STATION_BOUNDS } from '@/lib/workout-factory/interval-timer/custom-interval-config';
+import {
+  CUSTOM_INTERVAL_ROUND_REST_SECONDS_BOUNDS,
+  CUSTOM_INTERVAL_STATION_BOUNDS,
+} from '@/lib/workout-factory/interval-timer/custom-interval-config';
 import {
   isIntervalPresetOrCustomId,
   type IntervalPresetId,
@@ -65,6 +68,15 @@ export function parseTabataFormatParams(raw: unknown): TabataFormatParams | null
   if (work != null) params.work_seconds = work;
   if (rest != null) params.rest_seconds = rest;
   if (rounds != null) params.rounds = rounds;
+
+  const roundRest = nonNegativeInt(o.round_rest_seconds);
+  if (
+    roundRest != null &&
+    roundRest > 0 &&
+    roundRest <= CUSTOM_INTERVAL_ROUND_REST_SECONDS_BOUNDS.max
+  ) {
+    params.round_rest_seconds = roundRest;
+  }
 
   const preset = o.interval_preset;
   if (isIntervalPresetOrCustomId(preset)) {

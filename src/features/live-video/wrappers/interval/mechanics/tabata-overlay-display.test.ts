@@ -318,6 +318,80 @@ describe('resolveTabataOverlayPhaseLabel', () => {
       }),
     ).toBe('Paused');
   });
+
+  it('returns Round Rest for end-of-pass with round_rest_seconds', () => {
+    const mechanics = {
+      ...buildInitialTabataMechanicsState({
+        totalRounds: 12,
+        workSeconds: 40,
+        restSeconds: 15,
+        roundRestSeconds: 60,
+        exerciseCount: 4,
+      }),
+      segment: 'rest' as const,
+      round_index: 4,
+      segment_started_at: '2026-06-01T18:30:32.000Z',
+    };
+    expect(
+      resolveTabataOverlayPhaseLabel({
+        mechanics,
+        segmentLabel: 'Rest',
+        formatParams: { rounds: 3, work_seconds: 40, rest_seconds: 15, round_rest_seconds: 60 },
+      }),
+    ).toBe('Round Rest');
+  });
+
+  it('keeps Active Rest for mid-pass active rest', () => {
+    const mechanics = {
+      ...buildInitialTabataMechanicsState({
+        totalRounds: 12,
+        workSeconds: 40,
+        restSeconds: 15,
+        roundRestSeconds: 60,
+        exerciseCount: 4,
+      }),
+      segment: 'rest' as const,
+      round_index: 2,
+      segment_started_at: '2026-06-01T18:30:32.000Z',
+    };
+    expect(
+      resolveTabataOverlayPhaseLabel({
+        mechanics,
+        segmentLabel: 'Rest',
+        formatParams: {
+          rest_mode: 'active',
+          active_rest_exercises: ['Jogging'],
+          round_rest_seconds: 60,
+        },
+      }),
+    ).toBe('Active Rest');
+  });
+
+  it('Round Rest takes priority over Active Rest at end-of-pass', () => {
+    const mechanics = {
+      ...buildInitialTabataMechanicsState({
+        totalRounds: 12,
+        workSeconds: 40,
+        restSeconds: 15,
+        roundRestSeconds: 60,
+        exerciseCount: 4,
+      }),
+      segment: 'rest' as const,
+      round_index: 4,
+      segment_started_at: '2026-06-01T18:30:32.000Z',
+    };
+    expect(
+      resolveTabataOverlayPhaseLabel({
+        mechanics,
+        segmentLabel: 'Rest',
+        formatParams: {
+          rest_mode: 'active',
+          active_rest_exercises: ['Jogging'],
+          round_rest_seconds: 60,
+        },
+      }),
+    ).toBe('Round Rest');
+  });
 });
 
 describe('tabataSegmentPhaseAccentClass', () => {

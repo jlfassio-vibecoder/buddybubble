@@ -28,6 +28,32 @@ export function deriveTabataCircuitRound(roundIndex: number, exerciseCount: numb
 }
 
 /**
+ * 1-based finished work index: end of circuit pass when E > 1 and index % E === 0.
+ * Live `round_index` and offline `roundIndex + 1` both use this 1-based convention.
+ */
+export function isTabataEndOfCircuitPass(
+  finishedWorkIndex: number,
+  exerciseCount: number,
+): boolean {
+  if (finishedWorkIndex < 1 || exerciseCount <= 1) return false;
+  return finishedWorkIndex % exerciseCount === 0;
+}
+
+/** Station rest vs longer round rest after a finished work segment. */
+export function resolveTabataRestDurationSeconds(args: {
+  finishedWorkIndex: number;
+  exerciseCount: number;
+  restSeconds: number;
+  roundRestSeconds: number;
+}): number {
+  const { finishedWorkIndex, exerciseCount, restSeconds, roundRestSeconds } = args;
+  if (isTabataEndOfCircuitPass(finishedWorkIndex, exerciseCount) && roundRestSeconds > 0) {
+    return roundRestSeconds;
+  }
+  return restSeconds;
+}
+
+/**
  * 0-based index into active_rest_exercises during a rest segment.
  * Unlike {@link deriveTabataActiveExerciseIndex}, count === 1 broadcasts index 0.
  */

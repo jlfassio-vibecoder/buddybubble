@@ -15,4 +15,6 @@ export type TabataFormatParams = {
   rest_mode?: TabataRestMode;
   /** Names shown during active rest; omit unless rest_mode === 'active'. */
   active_rest_exercises?: string[];
+  /** Longer rest after a full circuit pass; omit/0 = disabled. Multi-station only at runtime. */
+  round_rest_seconds?: number;
 };

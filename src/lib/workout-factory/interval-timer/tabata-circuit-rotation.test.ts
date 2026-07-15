@@ -4,8 +4,10 @@ import {
   deriveTabataActiveExerciseIndex,
   deriveTabataActiveRestExerciseIndex,
   deriveTabataCircuitRound,
+  isTabataEndOfCircuitPass,
   resolveTabataActiveRestExerciseName,
   resolveTabataNextWorkExerciseName,
+  resolveTabataRestDurationSeconds,
   resolveTabataWorkExerciseName,
   resolveTabataWorkSegmentTotal,
 } from './tabata-circuit-rotation';
@@ -133,4 +135,42 @@ describe('resolveTabataNextWorkExerciseName', () => {
       'Movement',
     );
   });
+});
+
+describe('isTabataEndOfCircuitPass', () => {
+  it('detects end of pass for multi-station circuits', () => {
+    expect(isTabataEndOfCircuitPass(4, 4)).toBe(true);
+    expect(isTabataEndOfCircuitPass(8, 4)).toBe(true);
+    expect(isTabataEndOfCircuitPass(1, 4)).toBe(false);
+    expect(isTabataEndOfCircuitPass(3, 4)).toBe(false);
+  });
+
+  it('returns false for single-station or pre-start', () => {
+    expect(isTabataEndOfCircuitPass(1, 1)).toBe(false);
+    expect(isTabataEndOfCircuitPass(0, 4)).toBe(false);
+  });
+});
+
+describe('resolveTabataRestDurationSeconds', () => {
+  it.each([
+    { finishedWorkIndex: 1, exerciseCount: 4, restSeconds: 15, roundRestSeconds: 60, expect: 15 },
+    { finishedWorkIndex: 4, exerciseCount: 4, restSeconds: 15, roundRestSeconds: 60, expect: 60 },
+    { finishedWorkIndex: 4, exerciseCount: 4, restSeconds: 0, roundRestSeconds: 60, expect: 60 },
+    { finishedWorkIndex: 2, exerciseCount: 4, restSeconds: 0, roundRestSeconds: 60, expect: 0 },
+    { finishedWorkIndex: 4, exerciseCount: 4, restSeconds: 0, roundRestSeconds: 0, expect: 0 },
+    { finishedWorkIndex: 1, exerciseCount: 1, restSeconds: 30, roundRestSeconds: 60, expect: 30 },
+    { finishedWorkIndex: 8, exerciseCount: 4, restSeconds: 15, roundRestSeconds: 60, expect: 60 },
+  ])(
+    'R=$finishedWorkIndex E=$exerciseCount S=$restSeconds RR=$roundRestSeconds → $expect',
+    ({ finishedWorkIndex, exerciseCount, restSeconds, roundRestSeconds, expect: expected }) => {
+      expect(
+        resolveTabataRestDurationSeconds({
+          finishedWorkIndex,
+          exerciseCount,
+          restSeconds,
+          roundRestSeconds,
+        }),
+      ).toBe(expected);
+    },
+  );
 });

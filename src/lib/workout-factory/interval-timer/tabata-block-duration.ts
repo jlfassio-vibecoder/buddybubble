@@ -29,6 +29,7 @@ export function computeTabataBlockDurationFromParams(
     work_seconds?: unknown;
     rest_seconds?: unknown;
     rounds?: unknown;
+    round_rest_seconds?: unknown;
     setup_seconds?: number;
   },
   options?: { exerciseCount?: number },
@@ -40,8 +41,17 @@ export function computeTabataBlockDurationFromParams(
 
   const exerciseCount = options?.exerciseCount ?? 0;
   const workSegments = resolveTabataWorkSegmentTotal(circuitRounds, exerciseCount);
-
+  const roundRest = nonNegativeInt(params.round_rest_seconds) ?? 0;
   const setup = params.setup_seconds ?? DEFAULT_LIVE_SETUP_SECONDS;
+
+  if (exerciseCount > 1) {
+    const stationRestCount = circuitRounds * (exerciseCount - 1);
+    const roundRestCount = Math.max(0, circuitRounds - 1);
+    const endOfPassRest = roundRest > 0 ? roundRest : rest;
+    return setup + workSegments * work + stationRestCount * rest + roundRestCount * endOfPassRest;
+  }
+
+  // Single-station / empty: ignore round_rest_seconds.
   return setup + workSegments * work + Math.max(0, workSegments - 1) * rest;
 }
 

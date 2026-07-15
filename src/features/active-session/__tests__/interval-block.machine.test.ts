@@ -35,6 +35,7 @@ const tabataInput: IntervalBlockInput = {
     prepareMs: 0,
     workMs: 20_000,
     restMs: 10_000,
+    roundRestMs: 0,
     totalRounds: 2,
     circuitRounds: 2,
     exerciseCount: 1,
