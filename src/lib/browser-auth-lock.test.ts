@@ -11,29 +11,70 @@ vi.mock('@supabase/supabase-js', async (importOriginal) => {
 });
 
 describe('browserAuthLock', () => {
-  it('maps steal AbortError to NavigatorLockAcquireTimeoutError (timeout 0 path)', async () => {
-    vi.mocked(navigatorLock).mockRejectedValueOnce(
-      new DOMException("Lock broken by another request with the 'steal' option.", 'AbortError'),
-    );
+  const originalNavigator = globalThis.navigator;
 
-    const err = await browserAuthLock('lock:test', 0, async () => 'ok').then(
-      () => null,
-      (e: unknown) => e,
-    );
-    expect(err).toBeInstanceOf(NavigatorLockAcquireTimeoutError);
-    expect(err).toMatchObject({
-      isAcquireTimeout: true,
-      message: expect.stringContaining('another request stole it'),
+  function withLocksApi(run: () => Promise<void>) {
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: {
+        ...originalNavigator,
+        locks: { request: vi.fn() },
+      },
+    });
+    return run().finally(() => {
+      Object.defineProperty(globalThis, 'navigator', {
+        configurable: true,
+        value: originalNavigator,
+      });
+    });
+  }
+
+  it('maps steal AbortError to NavigatorLockAcquireTimeoutError (timeout 0 path)', async () => {
+    await withLocksApi(async () => {
+      vi.mocked(navigatorLock).mockRejectedValueOnce(
+        new DOMException("Lock broken by another request with the 'steal' option.", 'AbortError'),
+      );
+
+      const err = await browserAuthLock('lock:test', 0, async () => 'ok').then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(err).toBeInstanceOf(NavigatorLockAcquireTimeoutError);
+      expect(err).toMatchObject({
+        isAcquireTimeout: true,
+        message: expect.stringContaining('another request stole it'),
+      });
     });
   });
 
   it('passes through successful lock acquisition', async () => {
-    vi.mocked(navigatorLock).mockImplementationOnce(async (_n, _t, fn) => fn());
-    await expect(browserAuthLock('lock:test', 0, async () => 'ok')).resolves.toBe('ok');
+    await withLocksApi(async () => {
+      vi.mocked(navigatorLock).mockImplementationOnce(async (_n, _t, fn) => fn());
+      await expect(browserAuthLock('lock:test', 0, async () => 'ok')).resolves.toBe('ok');
+    });
   });
 
   it('rethrows non-steal errors', async () => {
-    vi.mocked(navigatorLock).mockRejectedValueOnce(new Error('boom'));
-    await expect(browserAuthLock('lock:test', 5000, async () => 'ok')).rejects.toThrow('boom');
+    await withLocksApi(async () => {
+      vi.mocked(navigatorLock).mockRejectedValueOnce(new Error('boom'));
+      await expect(browserAuthLock('lock:test', 5000, async () => 'ok')).rejects.toThrow('boom');
+    });
+  });
+
+  it('runs fn without navigatorLock when Web Locks API is unavailable', async () => {
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: {},
+    });
+    try {
+      vi.mocked(navigatorLock).mockClear();
+      await expect(browserAuthLock('lock:test', 0, async () => 'ssr-ok')).resolves.toBe('ssr-ok');
+      expect(navigatorLock).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(globalThis, 'navigator', {
+        configurable: true,
+        value: originalNavigator,
+      });
+    }
   });
 });

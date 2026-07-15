@@ -69,23 +69,33 @@ describe('applyCuePatchesToMetadata', () => {
     expect(flat[0]?.injury_prevention_tips).toBe('Avoid valgus');
   });
 
-  it('writes coach_notes to factory coachNotes when present in patch', () => {
+  it('writes all five cue fields to factory camelCase and flat snake_case', () => {
     const meta = richMetadataWithBlockFormat('straight_sets');
     const key = exerciseResolutionKey(richFixtureMainExercise(meta));
 
     const next = applyCuePatchesToMetadata(meta as Json, {
-      [key]: { coach_notes: 'Stay tight' },
+      [key]: {
+        instructions: 'Brace core',
+        form_cues: 'Knees track toes',
+        tips: 'Control descent',
+        injury_prevention_tips: 'Avoid valgus',
+        coach_notes: 'Stay tight',
+      },
     }) as Record<string, unknown>;
 
-    const factoryEx = (next.ai_workout_factory as Record<string, unknown>).workout_set as Record<
-      string,
-      unknown
-    >;
-    const workouts = factoryEx.workouts as Record<string, unknown>[];
-    const blocks = workouts[0]!.exerciseBlocks as Record<string, unknown>[];
-    const exercises = blocks[0]!.exercises as Record<string, unknown>[];
-    expect(exercises[0]!.coachNotes).toBe('Stay tight');
-    expect(parseWorkoutExercisesFromMetadata(next)[0]?.coach_notes).toBe('Stay tight');
+    const factoryEx = richFixtureMainExercise(next);
+    expect(factoryEx.instructions).toBe('Brace core');
+    expect(factoryEx.formCues).toBe('Knees track toes');
+    expect(factoryEx.tips).toBe('Control descent');
+    expect(factoryEx.injuryPreventionTips).toBe('Avoid valgus');
+    expect(factoryEx.coachNotes).toBe('Stay tight');
+
+    const flat = parseWorkoutExercisesFromMetadata(next)[0]!;
+    expect(flat.instructions).toBe('Brace core');
+    expect(flat.form_cues).toBe('Knees track toes');
+    expect(flat.tips).toBe('Control descent');
+    expect(flat.injury_prevention_tips).toBe('Avoid valgus');
+    expect(flat.coach_notes).toBe('Stay tight');
   });
 
   it('clears flat fields when patch value is empty string', () => {

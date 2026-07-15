@@ -124,6 +124,16 @@ function proposedExerciseToFactoryExercise(
     row.workSeconds = e.workSeconds;
   if (typeof e.rounds === 'number' && Number.isFinite(e.rounds) && e.rounds > 0)
     row.rounds = Math.round(e.rounds);
+  if (typeof e.instructions === 'string' && e.instructions.trim())
+    row.instructions = e.instructions.trim();
+  if (typeof e.form_cues === 'string' && e.form_cues.trim()) row.formCues = e.form_cues.trim();
+  else if (typeof e.formCues === 'string' && e.formCues.trim()) row.formCues = e.formCues.trim();
+  if (typeof e.tips === 'string' && e.tips.trim()) row.tips = e.tips.trim();
+  if (typeof e.injury_prevention_tips === 'string' && e.injury_prevention_tips.trim()) {
+    row.injuryPreventionTips = e.injury_prevention_tips.trim();
+  } else if (typeof e.injuryPreventionTips === 'string' && e.injuryPreventionTips.trim()) {
+    row.injuryPreventionTips = e.injuryPreventionTips.trim();
+  }
   if (typeof e.coach_notes === 'string' && e.coach_notes.trim())
     row.coachNotes = e.coach_notes.trim();
   if (typeof e.coachNotes === 'string' && e.coachNotes.trim()) row.coachNotes = e.coachNotes.trim();
@@ -155,6 +165,17 @@ function factoryExerciseToWorkoutExercise(fe: Record<string, unknown>): Record<s
     out.work_seconds = fe.workSeconds;
   if (typeof fe.rounds === 'number' && Number.isFinite(fe.rounds) && fe.rounds > 0)
     out.rounds = fe.rounds;
+  if (typeof fe.instructions === 'string' && fe.instructions.trim())
+    out.instructions = fe.instructions.trim();
+  if (typeof fe.formCues === 'string' && fe.formCues.trim()) out.form_cues = fe.formCues.trim();
+  else if (typeof fe.form_cues === 'string' && fe.form_cues.trim())
+    out.form_cues = fe.form_cues.trim();
+  if (typeof fe.tips === 'string' && fe.tips.trim()) out.tips = fe.tips.trim();
+  if (typeof fe.injuryPreventionTips === 'string' && fe.injuryPreventionTips.trim()) {
+    out.injury_prevention_tips = fe.injuryPreventionTips.trim();
+  } else if (typeof fe.injury_prevention_tips === 'string' && fe.injury_prevention_tips.trim()) {
+    out.injury_prevention_tips = fe.injury_prevention_tips.trim();
+  }
   const cn = fe.coachNotes ?? fe.coach_notes;
   if (typeof cn === 'string' && cn.trim()) out.coach_notes = cn.trim();
   if (typeof fe.equipment === 'string' && fe.equipment.trim()) out.equipment = fe.equipment.trim();

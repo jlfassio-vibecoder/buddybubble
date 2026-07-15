@@ -36,6 +36,34 @@ describe('exercise-cue-request', () => {
     ]);
   });
 
+  it('computeEmptyCueFields treats personal-only values as empty for Ask Coach', () => {
+    expect(
+      computeEmptyCueFields(
+        {
+          instructions: { value: 'Personal steps', provenance: 'personal' },
+          form_cues: { value: 'Knees out', provenance: 'personal' },
+          tips: null,
+          injury_prevention_tips: null,
+        },
+        { includeInjuryField: false },
+      ),
+    ).toEqual(['instructions', 'form_cues', 'tips']);
+  });
+
+  it('computeEmptyCueFields omits workout-scoped filled fields', () => {
+    expect(
+      computeEmptyCueFields(
+        {
+          instructions: { value: 'Card steps', provenance: 'workout' },
+          form_cues: { value: 'Flat cue', provenance: 'flat' },
+          tips: null,
+          injury_prevention_tips: { value: 'Library tip', provenance: 'library' },
+        },
+        { includeInjuryField: true },
+      ),
+    ).toEqual(['tips', 'injury_prevention_tips']);
+  });
+
   it('readInjuriesOnFileFromBiometrics', () => {
     expect(readInjuriesOnFileFromBiometrics({ injuries: ' knee pain ' })).toEqual({
       onFile: true,
@@ -108,5 +136,35 @@ describe('exercise-cue-request', () => {
       'agent-1',
     );
     expect(resolved).toBeNull();
+  });
+
+  it('resolveExerciseCueRequestForDispatch honors fresh trigger even after prior patch', () => {
+    const req = {
+      v: 1 as const,
+      resolution_key: 'speed skaters::0',
+      exercise_name: 'Speed Skaters',
+      empty_fields: ['form_cues' as const, 'tips' as const],
+    };
+    const resolved = resolveExerciseCueRequestForDispatch(
+      { exercise_cue_request: req },
+      [
+        {
+          user_id: 'user-1',
+          metadata: { exercise_cue_request: req },
+        },
+        {
+          user_id: 'agent-1',
+          metadata: {
+            workout_cues_patch: {
+              v: 1,
+              resolution_key: 'speed skaters::0',
+              form_cues: 'Low stance.',
+            },
+          },
+        },
+      ],
+      'agent-1',
+    );
+    expect(resolved).toEqual(req);
   });
 });

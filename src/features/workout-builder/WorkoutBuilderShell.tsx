@@ -3,32 +3,46 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, LayoutGrid } from 'lucide-react';
+import { toast } from 'sonner';
 import { WorkoutOutlinePanel } from '@/components/fitness/WorkoutOutlinePanel';
 import { WorkoutGenerationIntakePanel } from '@/components/fitness/workout-intake/WorkoutGenerationIntakePanel';
 import { pickWorkoutIntakePanelWizardProps } from '@/components/fitness/workout-intake/pick-workout-intake-panel-props';
-import { StandardTaskChatRail } from '@/components/chat/StandardTaskChatRail';
+import {
+  StandardTaskChatRail,
+  type StandardTaskChatRailHandle,
+} from '@/components/chat/StandardTaskChatRail';
 import { isStandardTaskChatRailEnabled } from '@/lib/feature-flags/standardTaskChatRail';
 import { COACH_SLUG } from '@/lib/agents/coach/config';
+import type { ExerciseCueRequestV1 } from '@/lib/agents/coach/exercise-cue-request';
 import { useWorkoutBuilderChatRail } from '@/features/workout-builder/useWorkoutBuilderChatRail';
 import { WorkoutGenerationSkeleton } from '@/features/workout-builder/WorkoutGenerationSkeleton';
 import { WorkoutBuilderGeneratedReview } from '@/features/workout-builder/WorkoutBuilderGeneratedReview';
 import { useWorkoutSessionViewModel } from '@/hooks/use-workout-session-view-model';
+import { useExerciseCueResolution } from '@/hooks/useExerciseCueResolution';
 import { buildWorkoutBuilderGeneratedHandoffUrl } from '@/lib/workout-builder/build-workout-builder-url';
 import { safeNextPath } from '@/lib/safe-next-path';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import type { OutlineDraftAppliedEffectPayload } from '@/components/chat/agent-effects/types';
+import type {
+  OutlineDraftAppliedEffectPayload,
+  WorkoutCuesPatchEffectPayload,
+} from '@/components/chat/agent-effects/types';
+import { stripWorkoutCuesPatchToCuePatch } from '@/components/chat/agent-effects/parse-workout-cues-patch-fields';
 import type { TaskModalIntakePatch } from '@/lib/agents/coach/task-modal-intake-patch';
 import type { WorkoutBuilderTaskPayload } from '@/features/workout-builder/types/workout-builder-task';
 import { useWorkoutBuilderTaskHost } from '@/features/workout-builder/useWorkoutBuilderTaskHost';
 import { useWorkoutIntakeWizardState } from '@/components/modals/task-modal/hooks/useWorkoutIntakeWizardState';
 import { useTaskDirtyState } from '@/components/modals/task-modal/hooks/useTaskDirtyState';
 import { useWorkoutUnitSystem } from '@/components/modals/task-modal/hooks/useWorkoutUnitSystem';
+import { useFitnessProfileInjuries } from '@/components/modals/task-modal/hooks/useFitnessProfileInjuries';
 import {
   useTaskWorkoutAi,
   type WorkoutIntakeWizardData,
 } from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
 import { resolveWorkoutViewerNarrative } from '@/lib/workout-factory/workout-viewer-narrative';
+import type { WorkoutCuePatch } from '@/lib/workout-factory/apply-cue-patches-to-metadata';
+import type { Json } from '@/types/database';
+import { useUserProfileStore } from '@/store/userProfileStore';
 
 type Props = {
   workspaceId: string;
@@ -42,6 +56,9 @@ export function WorkoutBuilderShell({ workspaceId, task }: Props) {
   const [mobilePane, setMobilePane] = useState<'builder' | 'chat'>('builder');
   const handledOutlineAppliedMessageIdsRef = useRef<Map<string, Set<string>>>(new Map());
   const handledIntakePatchMessageIdsRef = useRef<Set<string>>(new Set());
+  const handledWorkoutCuesPatchMessageIdsRef = useRef<Set<string>>(new Set());
+  const chatRailRef = useRef<StandardTaskChatRailHandle | null>(null);
+  const profileUserId = useUserProfileStore((s) => s.profile?.id ?? null);
 
   const host = useWorkoutBuilderTaskHost({ workspaceId, initialTask: task });
   const {
@@ -69,6 +86,8 @@ export function WorkoutBuilderShell({ workspaceId, task }: Props) {
     saving,
     metadataForSave,
     originalRef,
+    pendingWorkoutCuesByMessageRef,
+    cueStaleRefetchScheduledRef,
     itemType,
     status,
     priority,
@@ -98,27 +117,33 @@ export function WorkoutBuilderShell({ workspaceId, task }: Props) {
   });
 
   const workoutIntake = useWorkoutIntakeWizardState(`existing:${taskId}`);
-  const { aiWorkoutGenerating, handleAiGenerateWorkout, handleWorkoutViewerApply } =
-    useTaskWorkoutAi({
-      open: true,
-      taskId,
-      loading,
-      initialOpenWorkoutViewer: false,
-      canWrite,
-      workspaceId,
-      isWorkoutItemType: true,
-      title,
-      description,
-      workoutDurationMin,
-      metadata,
-      workoutExercises,
-      setTitle,
-      setDescription,
-      setWorkoutType,
-      setWorkoutDurationMin,
-      setWorkoutExercises,
-      setMetadata,
-    });
+  const {
+    aiWorkoutGenerating,
+    handleAiGenerateWorkout,
+    handleWorkoutViewerApply,
+    handleWorkoutViewerCuePatches,
+  } = useTaskWorkoutAi({
+    open: true,
+    taskId,
+    loading,
+    initialOpenWorkoutViewer: false,
+    canWrite,
+    workspaceId,
+    isWorkoutItemType: true,
+    title,
+    description,
+    workoutDurationMin,
+    metadata,
+    workoutExercises,
+    setTitle,
+    setDescription,
+    setWorkoutType,
+    setWorkoutDurationMin,
+    setWorkoutExercises,
+    setMetadata,
+  });
+
+  const injuriesOnFile = useFitnessProfileInjuries(true, workspaceId, true);
 
   const handleGenerateWorkoutFromIntake = useCallback(
     (wizardData: WorkoutIntakeWizardData) => {
@@ -149,6 +174,12 @@ export function WorkoutBuilderShell({ workspaceId, task }: Props) {
   const showIntakePanel = Boolean(canWrite && outlineEditor.isOutlineConfirmed);
   const hasFactory = outlineEditor.hasFactory;
   const sessionVm = useWorkoutSessionViewModel(metadata);
+  const { cuesByKey, loading: cuesLoading } = useExerciseCueResolution({
+    enabled: hasFactory && canWrite,
+    userId: profileUserId,
+    blocks: sessionVm.blocks,
+    flatExercises: sessionVm.flatExercises,
+  });
   const generatedReviewSyncKey = useMemo(() => {
     const generatedAt =
       typeof metadata === 'object' &&
@@ -236,6 +267,73 @@ export function WorkoutBuilderShell({ workspaceId, task }: Props) {
     navigateToHandoff();
   }, [saveCoreFields, navigateToHandoff]);
 
+  const handleAskCoachForCues = useCallback(
+    (payload: ExerciseCueRequestV1) => {
+      if (!canWrite) return;
+      void (async () => {
+        setMobilePane('chat');
+        const mention = payload.workout_exercise_index != null ? `#${payload.exercise_name} ` : '';
+        const text = `@coach ${mention}Can you help me fill in cues for ${payload.exercise_name}?`;
+        const deadline = Date.now() + 2500;
+        while (!chatRailRef.current && Date.now() < deadline) {
+          await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => resolve());
+          });
+        }
+        if (!chatRailRef.current) {
+          toast.error('Coach chat is not ready. Open the Coach tab and try Ask Coach again.');
+          return;
+        }
+        const sent = await chatRailRef.current.sendCoachMessage(text, {
+          exercise_cue_request: payload as unknown as Json,
+        });
+        if (!sent) {
+          toast.error('Could not send Ask Coach. Check your connection and try again.');
+        }
+      })();
+    },
+    [canWrite],
+  );
+
+  const handleWorkoutCuesPatch = useCallback(
+    (args: WorkoutCuesPatchEffectPayload) => {
+      if (!canWrite) return;
+      if (args.taskId !== taskId) return;
+      if (handledWorkoutCuesPatchMessageIdsRef.current.has(args.messageId)) return;
+      handledWorkoutCuesPatchMessageIdsRef.current.add(args.messageId);
+
+      const cuePatch = stripWorkoutCuesPatchToCuePatch(args.patch);
+      pendingWorkoutCuesByMessageRef.current.set(args.messageId, {
+        resolution_key: args.patch.resolution_key,
+        patch: cuePatch,
+        at: Date.now(),
+      });
+      // Allow another silent loadTask if Realtime still lacks cues (parity with TaskModal).
+      cueStaleRefetchScheduledRef.current = false;
+
+      // Optimistic local apply only — do not patch the saved baseline until DB/Realtime confirms.
+      handleWorkoutViewerCuePatches({
+        [args.patch.resolution_key]: cuePatch,
+      });
+    },
+    [
+      canWrite,
+      taskId,
+      handleWorkoutViewerCuePatches,
+      pendingWorkoutCuesByMessageRef,
+      cueStaleRefetchScheduledRef,
+    ],
+  );
+
+  const handleCueSave = useCallback(
+    (key: string, patch: WorkoutCuePatch) => {
+      if (!canWrite) return;
+      // Keep coreDirty so "Return to Board" runs saveCoreFields and persists to the DB.
+      handleWorkoutViewerCuePatches({ [key]: patch });
+    },
+    [canWrite, handleWorkoutViewerCuePatches],
+  );
+
   const renderPostOutlineWorkflow = () => {
     if (!showIntakePanel) return null;
 
@@ -261,6 +359,11 @@ export function WorkoutBuilderShell({ workspaceId, task }: Props) {
           onReturn={navigateToHandoff}
           saving={saving}
           coreDirty={coreDirty}
+          cuesByKey={cuesByKey}
+          cuesLoading={cuesLoading}
+          onAskCoachForCues={handleAskCoachForCues}
+          onCueSave={handleCueSave}
+          injuriesOnFile={injuriesOnFile}
         />
       );
     }
@@ -373,6 +476,7 @@ export function WorkoutBuilderShell({ workspaceId, task }: Props) {
           >
             <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-4 pb-4 pt-2 md:px-4 md:pt-4">
               <StandardTaskChatRail
+                ref={chatRailRef}
                 key={taskId}
                 workspaceId={workspaceId}
                 taskId={taskId}
@@ -387,6 +491,7 @@ export function WorkoutBuilderShell({ workspaceId, task }: Props) {
                 onEffectTelemetry={chatRail.onEffectTelemetry}
                 onOutlineDraftApplied={handleOutlineDraftApplied}
                 onTaskModalIntakePatch={handleTaskModalIntakePatch}
+                onWorkoutCuesPatch={handleWorkoutCuesPatch}
               />
             </div>
           </div>

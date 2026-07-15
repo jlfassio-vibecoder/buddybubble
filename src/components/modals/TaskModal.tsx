@@ -138,6 +138,12 @@ import {
   executionPatchFingerprint,
 } from '@/lib/workout-player-execution-patch-bridge';
 import { hasRichWorkoutSetInMetadata } from '@/lib/workout-factory/sync-workout-metadata';
+import {
+  clearPendingWorkoutCuesSatisfiedByIncoming,
+  reconcileWorkoutCueMetadata,
+  snapshotPendingWorkoutCuePatches,
+  type PendingWorkoutCueEntry,
+} from '@/lib/workout-factory/reconcile-workout-cue-metadata';
 import { MessageMediaModal } from '@/components/chat/MessageMediaModal';
 import { useUserProfileStore } from '@/store/userProfileStore';
 
@@ -330,6 +336,12 @@ export function TaskModal({
   /** Survives StandardTaskChatRail remounts when workout split layout toggles (Phase 12.2). */
   const handledCardActionMessageIdsByTaskRef = useRef<Map<string, Set<string>>>(new Map());
   const handledWorkoutCuesPatchMessageIdsByTaskRef = useRef<Map<string, Set<string>>>(new Map());
+  /** Pending Coach cue patches awaiting Realtime confirmation (messageId → entry). */
+  const pendingWorkoutCuesByMessageRef = useRef<Map<string, PendingWorkoutCueEntry>>(new Map());
+  const cueStaleRefetchScheduledRef = useRef(false);
+  const loadTaskRef = useRef<
+    ((id: string, opts?: { silent?: boolean }) => Promise<TaskRow | null>) | null
+  >(null);
   const chatRailRef = useRef<StandardTaskChatRailHandle | null>(null);
   const handledExecutionPatchFingerprintByTaskRef = useRef<Map<string, Map<string, string>>>(
     new Map(),
@@ -344,10 +356,17 @@ export function TaskModal({
     handledOutlineAppliedMessageIdsByTaskRef.current.clear();
     handledCardActionMessageIdsByTaskRef.current.clear();
     handledWorkoutCuesPatchMessageIdsByTaskRef.current.clear();
+    pendingWorkoutCuesByMessageRef.current.clear();
+    cueStaleRefetchScheduledRef.current = false;
     handledExecutionPatchFingerprintByTaskRef.current.clear();
     setWorkoutSplitEngaged(false);
     setEmbeddedTaskIdsFromThread([]);
   }, [open]);
+
+  useEffect(() => {
+    pendingWorkoutCuesByMessageRef.current.clear();
+    cueStaleRefetchScheduledRef.current = false;
+  }, [taskId]);
 
   const sessionKey = useMemo(() => {
     if (!open) return 'closed';
@@ -729,9 +748,39 @@ export function TaskModal({
         silent &&
         hasRichWorkoutSetInMetadata(metadataRef.current) &&
         !hasRichWorkoutSetInMetadata(nextMeta);
-      const metaToApply = preserveLocalRichWorkout
-        ? parseTaskMetadata(metadataRef.current)
-        : nextMeta;
+
+      let metaToApply = nextMeta;
+      if (preserveLocalRichWorkout) {
+        metaToApply = parseTaskMetadata(metadataRef.current);
+      } else if (silent) {
+        const pending = snapshotPendingWorkoutCuePatches(pendingWorkoutCuesByMessageRef.current);
+        const reconciled = reconcileWorkoutCueMetadata({
+          local: metadataRef.current as Json,
+          incoming: nextMeta as Json,
+          pending,
+        });
+        metaToApply = parseTaskMetadata(reconciled.metadata);
+        clearPendingWorkoutCuesSatisfiedByIncoming(
+          pendingWorkoutCuesByMessageRef.current,
+          nextMeta as Json,
+        );
+        if (
+          reconciled.pendingStillMissing &&
+          pendingWorkoutCuesByMessageRef.current.size > 0 &&
+          !cueStaleRefetchScheduledRef.current &&
+          taskId
+        ) {
+          cueStaleRefetchScheduledRef.current = true;
+          const id = taskId;
+          queueMicrotask(() => {
+            void loadTaskRef.current?.(id, { silent: true });
+          });
+        }
+        if (!reconciled.pendingStillMissing) {
+          cueStaleRefetchScheduledRef.current = false;
+        }
+      }
+
       setItemType(nextItemType);
       setMetadata(metaToApply);
       const mf = metadataFieldsFromParsed(metaToApply);
@@ -776,7 +825,7 @@ export function TaskModal({
         liveStreamEnabled: nextLiveEnabled,
       });
     },
-    [canManageClasses, defaultStatus, hydrateFromTaskRow, setOriginalFromAppliedRow],
+    [canManageClasses, defaultStatus, hydrateFromTaskRow, setOriginalFromAppliedRow, taskId],
   );
 
   const onResetForCreate = useCallback(() => {
@@ -848,6 +897,7 @@ export function TaskModal({
     setError,
     onTaskRowDeleted: handleTaskRowDeleted,
   });
+  loadTaskRef.current = loadTask;
 
   const handleCardAction = useCallback(
     (args: CardActionEffectPayload) => {
@@ -922,9 +972,19 @@ export function TaskModal({
       if (handled.has(args.messageId)) return;
       handled.add(args.messageId);
 
-      handleWorkoutViewerCuePatches({
-        [args.patch.resolution_key]: stripWorkoutCuesPatchToCuePatch(args.patch),
+      const cuePatch = stripWorkoutCuesPatchToCuePatch(args.patch);
+      pendingWorkoutCuesByMessageRef.current.set(args.messageId, {
+        resolution_key: args.patch.resolution_key,
+        patch: cuePatch,
+        at: Date.now(),
       });
+      cueStaleRefetchScheduledRef.current = false;
+
+      // Optimistic local apply only — do not patch the saved baseline until DB/Realtime confirms.
+      handleWorkoutViewerCuePatches({
+        [args.patch.resolution_key]: cuePatch,
+      });
+
       setWorkoutSplitEngaged(true);
       setWorkoutViewerOpen(true);
       setMobileUnifiedPane('workout');
@@ -1322,9 +1382,16 @@ export function TaskModal({
             requestAnimationFrame(() => resolve());
           });
         }
-        await chatRailRef.current?.sendCoachMessage(text, {
+        if (!chatRailRef.current) {
+          toast.error('Coach chat is not ready. Open Comments and try Ask Coach again.');
+          return;
+        }
+        const sent = await chatRailRef.current.sendCoachMessage(text, {
           exercise_cue_request: payload as unknown as Json,
         });
+        if (!sent) {
+          toast.error('Could not send Ask Coach. Check your connection and try again.');
+        }
       })();
     },
     [itemType, canWrite, selectTab, setWorkoutViewerOpen],

@@ -12,6 +12,12 @@ import {
 } from '@/lib/item-metadata';
 import { scheduledTimeToInputValue } from '@/lib/task-scheduled-time';
 import { hasRichWorkoutSetInMetadata } from '@/lib/workout-factory/sync-workout-metadata';
+import {
+  clearPendingWorkoutCuesSatisfiedByIncoming,
+  reconcileWorkoutCueMetadata,
+  snapshotPendingWorkoutCuePatches,
+  type PendingWorkoutCueEntry,
+} from '@/lib/workout-factory/reconcile-workout-cue-metadata';
 import { useBoardColumnDefs } from '@/hooks/use-board-columns';
 import { usePermissions } from '@/hooks/use-permissions';
 import {
@@ -104,6 +110,12 @@ export function useWorkoutBuilderTaskHost({
     metadataRef.current = metadata;
   }, [metadata]);
 
+  const pendingWorkoutCuesByMessageRef = useRef<Map<string, PendingWorkoutCueEntry>>(new Map());
+  const cueStaleRefetchScheduledRef = useRef(false);
+  const loadTaskRef = useRef<
+    ((id: string, opts?: { silent?: boolean }) => Promise<TaskRow | null>) | null
+  >(null);
+
   const { originalRef, setOriginalFromAppliedRow, patchOriginalMetadataJson } =
     useTaskOriginalSnapshot();
 
@@ -169,9 +181,39 @@ export function useWorkoutBuilderTaskHost({
         silent &&
         hasRichWorkoutSetInMetadata(metadataRef.current) &&
         !hasRichWorkoutSetInMetadata(nextMeta);
-      const metaToApply = preserveLocalRichWorkout
-        ? parseTaskMetadata(metadataRef.current)
-        : nextMeta;
+
+      let metaToApply = nextMeta;
+      if (preserveLocalRichWorkout) {
+        metaToApply = parseTaskMetadata(metadataRef.current);
+      } else if (silent) {
+        const pending = snapshotPendingWorkoutCuePatches(pendingWorkoutCuesByMessageRef.current);
+        const reconciled = reconcileWorkoutCueMetadata({
+          local: metadataRef.current as Json,
+          incoming: nextMeta as Json,
+          pending,
+        });
+        metaToApply = parseTaskMetadata(reconciled.metadata);
+        clearPendingWorkoutCuesSatisfiedByIncoming(
+          pendingWorkoutCuesByMessageRef.current,
+          nextMeta as Json,
+        );
+        if (
+          reconciled.pendingStillMissing &&
+          pendingWorkoutCuesByMessageRef.current.size > 0 &&
+          !cueStaleRefetchScheduledRef.current &&
+          taskId
+        ) {
+          cueStaleRefetchScheduledRef.current = true;
+          const id = taskId;
+          queueMicrotask(() => {
+            void loadTaskRef.current?.(id, { silent: true });
+          });
+        }
+        if (!reconciled.pendingStillMissing) {
+          cueStaleRefetchScheduledRef.current = false;
+        }
+      }
+
       setMetadata(metaToApply);
       const mf = metadataFieldsFromParsed(metaToApply);
       setWorkoutType(mf.workoutType);
@@ -205,7 +247,7 @@ export function useWorkoutBuilderTaskHost({
         });
       }
     },
-    [defaultStatus, setOriginalFromAppliedRow],
+    [defaultStatus, setOriginalFromAppliedRow, taskId],
   );
 
   const onResetForCreate = useCallback(() => {
@@ -226,6 +268,8 @@ export function useWorkoutBuilderTaskHost({
     onTaskRowDeleted: handleTaskRowDeleted,
     realtimeChannelPrefix: 'workout-builder',
   });
+
+  loadTaskRef.current = loadTask;
 
   const { saveCoreFields } = useTaskSaveAndCreate({
     canWrite,
@@ -305,6 +349,9 @@ export function useWorkoutBuilderTaskHost({
     saveCoreFields,
     metadataForSave,
     originalRef,
+    patchOriginalMetadataJson,
+    pendingWorkoutCuesByMessageRef,
+    cueStaleRefetchScheduledRef,
     itemType,
     status,
     priority,

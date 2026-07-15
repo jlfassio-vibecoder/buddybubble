@@ -80,10 +80,12 @@ function instructionLinesFromExtract(ex: {
 
 /**
  * Builds a single-session `WorkoutInSet` for `WorkoutSetTemplate.workouts[0]` (viewer / library shape).
+ * When `enrich` is provided, stamps M5 factory cue fields onto main exercises.
  */
 export function buildWorkoutInSetFromKanbanExtract(
   extract: KanbanExtractBriefOutput,
   persona: WorkoutPersona,
+  enrich?: KanbanEnrichBiomechanicsOutput | null,
 ): WorkoutInSet {
   const title = extract.workout_title?.trim() || persona.title?.trim() || 'Workout';
   const description = extract.workout_description?.trim() || persona.description?.trim() || '';
@@ -97,6 +99,8 @@ export function buildWorkoutInSetFromKanbanExtract(
   const cool = extract.exercises
     .filter((e) => e.section === 'cooldown')
     .sort((a, b) => a.order - b.order);
+
+  const enrichByOrder = new Map((enrich?.exercises ?? []).map((en) => [en.order, en] as const));
 
   const warmupBlocks =
     warm.length > 0
@@ -120,6 +124,19 @@ export function buildWorkoutInSetFromKanbanExtract(
     const sets = typeof ex.sets === 'number' && ex.sets > 0 ? ex.sets : 1;
     const repsRaw = ex.reps?.trim() ?? '';
     const reps = repsRaw || (ex.work_seconds ? String(ex.work_seconds) : '1');
+    const en = enrichByOrder.get(ex.order);
+    const instr = en ? stringifyRich(en.detailed_instructions) : undefined;
+    const formCues = en?.biomechanical_cues;
+    const formCuesStr =
+      formCues === undefined
+        ? undefined
+        : Array.isArray(formCues)
+          ? formCues
+              .map((x) => x.trim())
+              .filter(Boolean)
+              .join('\n') || undefined
+          : formCues.trim() || undefined;
+    const injury = en ? stringifyRich(en.injury_prevention_tips) : undefined;
     const exOut: Exercise = {
       order: i + 1,
       exerciseName: ex.exercise_name,
@@ -133,6 +150,9 @@ export function buildWorkoutInSetFromKanbanExtract(
         ? { workSeconds: ex.work_seconds }
         : {}),
       ...(typeof ex.rounds === 'number' && ex.rounds > 0 ? { rounds: ex.rounds } : {}),
+      ...(instr ? { instructions: instr } : {}),
+      ...(formCuesStr ? { formCues: formCuesStr } : {}),
+      ...(injury ? { injuryPreventionTips: injury } : {}),
       ...(ex.brief_note?.trim() ? { coachNotes: ex.brief_note.trim() } : {}),
     };
     return exOut;

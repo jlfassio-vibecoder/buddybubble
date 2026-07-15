@@ -72,6 +72,28 @@ function workoutExerciseToFactoryExercise(we: WorkoutExercise, order: number): E
     ex.workSeconds = we.work_seconds;
   }
   if (typeof we.rounds === 'number' && we.rounds > 0) ex.rounds = we.rounds;
+  if (typeof we.id === 'string' && we.id.trim()) ex.id = we.id.trim();
+  const instructions = typeof we.instructions === 'string' ? we.instructions.trim() : '';
+  const notesFallback = typeof we.notes === 'string' ? we.notes.trim() : '';
+  if (instructions) ex.instructions = instructions;
+  else if (notesFallback) ex.instructions = notesFallback;
+  if (typeof we.form_cues === 'string' && we.form_cues.trim()) {
+    ex.formCues = we.form_cues.trim();
+  } else if (Array.isArray(we.form_cues)) {
+    const joined = we.form_cues.map((x) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean);
+    if (joined.length) ex.formCues = joined.join('\n');
+  } else if (typeof we.form_cue === 'string' && we.form_cue.trim()) {
+    ex.formCues = we.form_cue.trim();
+  }
+  if (typeof we.tips === 'string' && we.tips.trim()) ex.tips = we.tips.trim();
+  if (typeof we.injury_prevention_tips === 'string' && we.injury_prevention_tips.trim()) {
+    ex.injuryPreventionTips = we.injury_prevention_tips.trim();
+  } else if (Array.isArray(we.injury_prevention_tips)) {
+    const joined = we.injury_prevention_tips
+      .map((x) => (typeof x === 'string' ? x.trim() : ''))
+      .filter(Boolean);
+    if (joined.length) ex.injuryPreventionTips = joined.join('\n');
+  }
   if (typeof we.coach_notes === 'string' && we.coach_notes.trim()) {
     ex.coachNotes = we.coach_notes.trim();
   }

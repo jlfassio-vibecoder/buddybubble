@@ -509,7 +509,7 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
       type: 'OBJECT',
       nullable: true,
       description:
-        'USE THIS TOOL ONLY to add form cues, instructions, or tips for one specific exercise in the CURRENT workout card (resolution_key). Max 2–3 sentences per field. Forbidden for global catalog saves — use personal_cues_patch only for [dict:...] exercises. Emit only after user confirms on EXERCISE_CUE_REQUEST follow-up turn.',
+        'USE THIS TOOL ONLY to add form cues, instructions, or tips for one specific exercise in the CURRENT workout card (resolution_key). Max 2–3 sentences per field. Forbidden for global catalog saves — use personal_cues_patch only for [dict:...] exercises. On EXERCISE_CUE_REQUEST turns, emit this patch immediately in the same JSON response (no confirm turn).',
       properties: {
         v: { type: 'INTEGER', description: 'Must be 1.' },
         resolution_key: {
@@ -662,7 +662,7 @@ export const COACH_EXERCISE_CUE_RESPONSE_SCHEMA: VertexResponseSchema = {
       type: 'STRING',
       maxLength: COACH_CUE_REPLY_CONTENT_MAX_CHARS,
       description:
-        'Short chat bubble only (~3 sentences max). Do NOT duplicate cue prose here — put instructions, form cues, and tips in workout_cues_patch fields only.',
+        'Short chat acknowledgment only (~1–3 sentences) that the workout-scoped cues were written for this exercise. Do NOT dump full cue prose here — put instructions, form_cues, tips, and injury_prevention_tips in workout_cues_patch on this same JSON response.',
     },
   },
   required: (COACH_RESPONSE_SCHEMA.required ?? []).filter(

@@ -8,6 +8,7 @@ import type { Exercise } from '@/lib/workout-factory/types/ai-program';
 import { getExercisesFromWorkout } from '@/lib/workout-factory/program-schedule-utils';
 import type { ProgramWorkout } from '@/lib/workout-factory/program-schedule-utils';
 import { normalizeRepsForStorage } from '@/lib/workout-factory/parse-reps-scalar';
+import { projectFactoryCuesOntoFlat } from '@/lib/workout-factory/factory-exercise-cues';
 
 function mapExercise(ex: Exercise): WorkoutExercise {
   const name = ex.exerciseName?.trim() || 'Exercise';
@@ -25,7 +26,8 @@ function mapExercise(ex: Exercise): WorkoutExercise {
   if (typeof ex.rounds === 'number' && ex.rounds > 0) {
     base.rounds = ex.rounds;
   }
-  if (ex.coachNotes?.trim()) base.coach_notes = ex.coachNotes.trim();
+  if (ex.id?.trim()) base.id = ex.id.trim();
+  projectFactoryCuesOntoFlat(ex, base);
   return base;
 }
 

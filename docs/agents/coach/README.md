@@ -107,9 +107,20 @@ The architecture plan’s “one tool / create card” model is **narrower** tha
 
 ### 5b) **workout_cues_patch** (workout-scoped cues — M3)
 
-- Distinct from **`personal_cues_patch`** (user-scoped → `user_exercise_notes`). **`workout_cues_patch`** is keyed by **`resolution_key`** (flat/block exercise identity) and is written to **reply metadata only** via **`p_workout_cues_patch`** on agent RPCs.
-- Triggered when the user clicks **Ask Coach** in the workout viewer: the client sends hidden **`messages.metadata.exercise_cue_request`** (`ExerciseCueRequestV1`) with a short visible `@coach` line. Coach prompts with **`EXERCISE_CUE_REQUEST`** rules (proactive confirm first turn; generate on affirm).
-- **`useAgentEffectSweep`** delivers **`onWorkoutCuesPatch`** → Task Modal **`handleWorkoutViewerCuePatches`** → [`applyCuePatchesToMetadata`](../../../src/lib/workout-factory/apply-cue-patches-to-metadata.ts). User still **Save**s the task footer to persist DB rows.
+- Distinct from **`personal_cues_patch`** (user-scoped → `user_exercise_notes`). **`workout_cues_patch`** is keyed by **`resolution_key`** (flat/block exercise identity).
+- **Durable writer (server):** when a known target task id is present, Coach strategy merges cues into **`tasks.metadata`** via **`buildTaskMetadataDeltaForWorkoutCuePatch`** → **`agent_update_task_and_reply`** (`p_new_metadata` + **`p_workout_cues_patch`** on the reply). If the metadata delta is null (resolution miss), the reply still carries **`p_workout_cues_patch`** for observability but the task row is unchanged (`coach workout_cues_patch metadata merge skipped`).
+- Triggered when the user clicks **Ask Coach** in the workout viewer (Task Modal) or Workout Builder generated review: the client sends hidden **`messages.metadata.exercise_cue_request`** (`ExerciseCueRequestV1`) with a short visible `@coach` line. Coach prompts with **`EXERCISE_CUE_REQUEST`** rules (**one-shot**: first reply must emit **`workout_cues_patch`** for every `empty_fields` key; no confirm turn). Freeform `@coach fill cues…` **without** that metadata stays in normal rail mode and often replies in chat only.
+- **Client (optimistic only):** **`useAgentEffectSweep`** → host **`onWorkoutCuesPatch`** → [`applyCuePatchesToMetadata`](../../../src/lib/workout-factory/apply-cue-patches-to-metadata.ts). Silent Realtime/`loadTask` reconciles via [`reconcileWorkoutCueMetadata`](../../../src/lib/workout-factory/reconcile-workout-cue-metadata.ts) (richer-merge + one guarded re-fetch) so stale snapshots cannot wipe open-modal cues. Footer **Save** is **not** required for Coach-generated cues; it remains for user micro-edits.
+
+#### Ask Coach debug checklist (Edge `agent-dispatch` logs)
+
+| Log                                                                       | Meaning                                                                                                                                                          |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `coach outline phase b skipped` / `skip_reason: rail_surface`             | **Expected** on Comments/rail/Builder Coach. Phase B is outline fill for non-rail create/update — **not** a cue failure.                                         |
+| `coach exercise cue request injected`                                     | Cue mode is **on** (`exercise_cue_request` on trigger or history). Missing this ⇒ Ask Coach metadata never reached dispatch (button/send path or freeform chat). |
+| `coach workout_cues_patch emitted`                                        | Same turn as injection: Coach emitted **`workout_cues_patch`**. Missing after injection ⇒ parse/guard failure or model skipped the patch.                        |
+| `dispatch failed` / `error_kind: truncated` + `finish_reason: MAX_TOKENS` | Cue JSON cut off mid-patch (no durable write). Cue turns use `COACH_CUE_MAX_OUTPUT_TOKENS` + `COACH_CUE_THINKING_BUDGET` so thinking does not starve output.     |
+| `coach workout_cues_patch metadata merge` / `… skipped`                   | Server merge into `tasks.metadata` succeeded or missed `resolution_key` / `workout_log`.                                                                         |
 
 ---
 

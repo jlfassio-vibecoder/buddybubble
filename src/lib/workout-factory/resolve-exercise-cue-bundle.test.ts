@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import { richMetadataWithBlockFormat } from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
 import {
+  blockExerciseCueResolutionKey,
   collectBlockExercises,
   exerciseResolutionKey,
   flatExerciseResolutionKey,
@@ -32,6 +33,70 @@ describe('resolve-exercise-cue-bundle', () => {
     expect(bundle.dictionaryId).toBeNull();
   });
 
+  it('factory instructions beat flat and personal', () => {
+    const bundle = resolveExerciseCueBundle({
+      exerciseName: 'Squat',
+      blockExercise: {
+        order: 1,
+        exerciseName: 'Squat',
+        sets: 3,
+        reps: '10',
+        instructions: 'From factory',
+        formCues: 'Factory form',
+        tips: 'Factory tip',
+        injuryPreventionTips: 'Factory injury',
+      },
+      flatRow: {
+        name: 'Squat',
+        instructions: 'From flat',
+        form_cues: 'Flat form',
+        tips: 'Flat tip',
+        injury_prevention_tips: 'Flat injury',
+      },
+      personalRow: {
+        id: 'n1',
+        user_id: 'u1',
+        exercise_dictionary_id: 'd1',
+        instructions: 'Personal',
+        form_cues: 'Personal form',
+        tips: 'Personal tip',
+        injury_prevention_tips: 'Personal injury',
+      },
+    });
+
+    expect(bundle.instructions).toEqual({ value: 'From factory', provenance: 'workout' });
+    expect(bundle.form_cues).toEqual({ value: 'Factory form', provenance: 'workout' });
+    expect(bundle.tips).toEqual({ value: 'Factory tip', provenance: 'workout' });
+    expect(bundle.injury_prevention_tips).toEqual({
+      value: 'Factory injury',
+      provenance: 'workout',
+    });
+  });
+
+  it('flat still gap-fills when factory cue fields are empty', () => {
+    const bundle = resolveExerciseCueBundle({
+      exerciseName: 'Squat',
+      blockExercise: {
+        order: 1,
+        exerciseName: 'Squat',
+        sets: 3,
+        reps: '10',
+      },
+      flatRow: { name: 'Squat', instructions: 'Flat steps' },
+      personalRow: {
+        id: 'n1',
+        user_id: 'u1',
+        exercise_dictionary_id: 'd1',
+        instructions: 'Personal',
+        form_cues: null,
+        tips: null,
+        injury_prevention_tips: null,
+      },
+    });
+
+    expect(bundle.instructions).toEqual({ value: 'Flat steps', provenance: 'workout' });
+  });
+
   it('sets dictionaryId from dictRow', () => {
     const bundle = resolveExerciseCueBundle({
       exerciseName: 'Squat',
@@ -54,7 +119,7 @@ describe('resolve-exercise-cue-bundle', () => {
     expect(bundle.dictionaryId).toBe('d1');
   });
 
-  it('personal form_cues wins over flat and library', () => {
+  it('flat form_cues win over personal and library with workout provenance', () => {
     const bundle = resolveExerciseCueBundle({
       exerciseName: 'Squat',
       personalRow: {
@@ -83,6 +148,23 @@ describe('resolve-exercise-cue-bundle', () => {
       } as ExerciseDictionaryRow,
     });
 
+    expect(bundle.form_cues).toEqual({ value: 'Flat cue', provenance: 'workout' });
+  });
+
+  it('personal-only form_cues return personal provenance', () => {
+    const bundle = resolveExerciseCueBundle({
+      exerciseName: 'Squat',
+      personalRow: {
+        id: 'n1',
+        user_id: 'u1',
+        exercise_dictionary_id: 'd1',
+        instructions: null,
+        form_cues: 'Knees out',
+        tips: null,
+        injury_prevention_tips: null,
+      },
+    });
+
     expect(bundle.form_cues).toEqual({ value: 'Knees out', provenance: 'personal' });
   });
 
@@ -106,7 +188,7 @@ describe('resolve-exercise-cue-bundle', () => {
       } as ExerciseDictionaryRow,
     });
 
-    expect(bundle.instructions).toEqual({ value: 'Flat steps', provenance: 'flat' });
+    expect(bundle.instructions).toEqual({ value: 'Flat steps', provenance: 'workout' });
   });
 
   it('returns empty bundle when all layers blank', () => {
@@ -148,6 +230,10 @@ describe('resolve-exercise-cue-bundle', () => {
     expect(collected).toHaveLength(2);
     expect(collected[0]!.key).toBe('curl::0');
     expect(collected[1]!.key).toBe('curl::1');
+    expect(blockExerciseCueResolutionKey({ exerciseName: 'Curl' }, 0)).toBe('curl::0');
+    expect(blockExerciseCueResolutionKey({ exerciseName: 'Curl' }, 1)).toBe('curl::1');
+    // Bare exerciseResolutionKey must not be used for cuesByKey lookup (ghost empty panel).
+    expect(exerciseResolutionKey({ exerciseName: 'Curl' })).toBe('curl');
   });
 
   it('flatExerciseResolutionKey disambiguates duplicate flat names by index', () => {

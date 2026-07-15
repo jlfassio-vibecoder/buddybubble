@@ -1,6 +1,9 @@
 import { describe, expect, it, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
-import { WorkoutExerciseCuePanel } from '@/components/fitness/workout-block-renderer/WorkoutExerciseCuePanel';
+import {
+  WorkoutExerciseCuePanel,
+  cueBadgeState,
+} from '@/components/fitness/workout-block-renderer/WorkoutExerciseCuePanel';
 import type { ResolvedCueBundle } from '@/lib/workout-factory/resolve-exercise-cue-bundle';
 
 describe('WorkoutExerciseCuePanel', () => {
@@ -10,7 +13,7 @@ describe('WorkoutExerciseCuePanel', () => {
     const bundle: ResolvedCueBundle = {
       exerciseName: 'Squat',
       dictionaryId: null,
-      instructions: { value: 'Step 1', provenance: 'flat' },
+      instructions: { value: 'Step 1', provenance: 'workout' },
       form_cues: null,
       tips: null,
       injury_prevention_tips: null,
@@ -62,6 +65,62 @@ describe('WorkoutExerciseCuePanel', () => {
     expect(screen.getByText('Your notes')).toBeTruthy();
     expect(screen.getByText('Knees out')).toBeTruthy();
     expect(screen.getByText('Library')).toBeTruthy();
+    expect(screen.queryByText('Tips')).toBeNull();
+  });
+
+  it('hides empty Tips in read mode but shows Tips textarea in authoring', () => {
+    const bundle: ResolvedCueBundle = {
+      exerciseName: 'Squat',
+      dictionaryId: null,
+      instructions: { value: 'Step 1', provenance: 'workout' },
+      form_cues: { value: 'Knees out', provenance: 'workout' },
+      tips: null,
+      injury_prevention_tips: null,
+      coach_notes: null,
+      isEmpty: false,
+    };
+
+    render(
+      <WorkoutExerciseCuePanel
+        exerciseName="Squat"
+        bundle={bundle}
+        isExpanded
+        canWrite
+        resolutionKey="squat"
+      />,
+    );
+
+    expect(screen.queryByText('Tips')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit cues' }));
+    expect(screen.getByLabelText('Tips')).toBeTruthy();
+  });
+
+  it('cueBadgeState treats instructions + form_cues as full without tips', () => {
+    const bundle: ResolvedCueBundle = {
+      exerciseName: 'Squat',
+      dictionaryId: null,
+      instructions: { value: 'Step 1', provenance: 'workout' },
+      form_cues: { value: 'Knees out', provenance: 'workout' },
+      tips: null,
+      injury_prevention_tips: null,
+      coach_notes: null,
+      isEmpty: false,
+    };
+    expect(cueBadgeState(bundle)).toBe('full');
+  });
+
+  it('cueBadgeState is partial with a single core field', () => {
+    const bundle: ResolvedCueBundle = {
+      exerciseName: 'Squat',
+      dictionaryId: null,
+      instructions: { value: 'Step 1', provenance: 'workout' },
+      form_cues: null,
+      tips: { value: 'Breathe', provenance: 'workout' },
+      injury_prevention_tips: null,
+      coach_notes: null,
+      isEmpty: false,
+    };
+    expect(cueBadgeState(bundle)).toBe('partial');
   });
 
   it('enters authoring mode and saves cue patch', () => {
@@ -110,7 +169,7 @@ describe('WorkoutExerciseCuePanel', () => {
     const bundle: ResolvedCueBundle = {
       exerciseName: 'Squat',
       dictionaryId: null,
-      instructions: { value: 'Existing', provenance: 'flat' },
+      instructions: { value: 'Existing', provenance: 'workout' },
       form_cues: null,
       tips: null,
       injury_prevention_tips: null,

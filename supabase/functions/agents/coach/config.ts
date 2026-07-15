@@ -44,11 +44,22 @@ export const COACH_THINKING_BUDGET = 2048 as const;
 /** Main bubble intake / card-creation turns with no workout JSON in context. */
 export const COACH_MAIN_CHAT_INTAKE_THINKING_BUDGET = 512 as const;
 
+/**
+ * Ask Coach / EXERCISE_CUE_REQUEST: low thinking — fill a small `workout_cues_patch`.
+ * Thinking tokens count against `maxOutputTokens` on Gemini 2.5.
+ */
+export const COACH_CUE_THINKING_BUDGET = 256 as const;
+
 /** Vertex thinkingBudget for the main Coach JSON call on this turn. */
 export function resolveCoachThinkingBudget(args: {
   isRailSurface: boolean;
   hasWorkoutContext: boolean;
+  /** When true, use {@link COACH_CUE_THINKING_BUDGET} so cue JSON is not truncated. */
+  exerciseCueRequestMode?: boolean;
 }): number {
+  if (args.exerciseCueRequestMode === true) {
+    return COACH_CUE_THINKING_BUDGET;
+  }
   if (!args.isRailSurface && !args.hasWorkoutContext) {
     return COACH_MAIN_CHAT_INTAKE_THINKING_BUDGET;
   }
@@ -86,8 +97,12 @@ export const PERSONAL_CUES_FIELD_MAX_CHARS = 1000 as const;
 /** Max length per text field in `workout_cues_patch` (M3 Ask Coach; ~2–3 sentences). */
 export const WORKOUT_CUE_FIELD_MAX_CHARS = 1000 as const;
 
-/** Max output tokens for EXERCISE_CUE_REQUEST / Ask Coach turns (prevents runaway MAX_TOKENS). */
-export const COACH_CUE_MAX_OUTPUT_TOKENS = 2048 as const;
+/**
+ * Max output tokens for EXERCISE_CUE_REQUEST / Ask Coach turns.
+ * Must leave headroom for required JSON scaffolding + up to four cue fields
+ * after thinking tokens are counted against the same budget (see types note).
+ */
+export const COACH_CUE_MAX_OUTPUT_TOKENS = 4096 as const;
 
 /** Max length for `reply_content` on cue-only schema turns (cues belong in workout_cues_patch). */
 export const COACH_CUE_REPLY_CONTENT_MAX_CHARS = 1200 as const;

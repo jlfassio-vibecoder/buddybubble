@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  COACH_CUE_MAX_OUTPUT_TOKENS,
+  COACH_CUE_THINKING_BUDGET,
   COACH_MAIN_CHAT_INTAKE_THINKING_BUDGET,
   COACH_THINKING_BUDGET,
   resolveCoachThinkingBudget,
@@ -24,5 +26,19 @@ describe('resolveCoachThinkingBudget', () => {
     expect(resolveCoachThinkingBudget({ isRailSurface: false, hasWorkoutContext: true })).toBe(
       COACH_THINKING_BUDGET,
     );
+  });
+
+  it('uses cue-mode thinking budget when exerciseCueRequestMode is set', () => {
+    expect(
+      resolveCoachThinkingBudget({
+        isRailSurface: true,
+        hasWorkoutContext: true,
+        exerciseCueRequestMode: true,
+      }),
+    ).toBe(COACH_CUE_THINKING_BUDGET);
+    expect(COACH_CUE_THINKING_BUDGET).toBe(256);
+    // Headroom: cue JSON + fields must fit after thinking shares maxOutputTokens.
+    expect(COACH_CUE_MAX_OUTPUT_TOKENS).toBeGreaterThanOrEqual(4096);
+    expect(COACH_CUE_MAX_OUTPUT_TOKENS).toBeGreaterThan(COACH_CUE_THINKING_BUDGET * 4);
   });
 });

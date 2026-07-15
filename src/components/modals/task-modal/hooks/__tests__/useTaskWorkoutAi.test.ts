@@ -586,14 +586,21 @@ describe('useTaskWorkoutAi handleWorkoutViewerCuePatches', () => {
 
     const { result } = renderHook(() => useTaskWorkoutAiHarness(flatMeta));
 
+    let returned: Json | undefined;
     act(() => {
       result.current.handleWorkoutViewerCuePatches({
         [squatKey]: { form_cues: 'Knees out' },
       });
-      result.current.handleWorkoutViewerCuePatches({
+      returned = result.current.handleWorkoutViewerCuePatches({
         [benchKey]: { form_cues: 'Scapular set' },
       });
     });
+
+    expect(returned).toBeDefined();
+    expect(
+      (returned as { exercises: WorkoutExercise[] }).exercises.find((e) => e.name === 'Bench')
+        ?.form_cues,
+    ).toBe('Scapular set');
 
     const exercises = (result.current.metadata as { exercises: WorkoutExercise[] }).exercises;
     expect(exercises.find((e) => e.name === 'Squat')?.form_cues).toBe('Knees out');

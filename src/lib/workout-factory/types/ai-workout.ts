@@ -310,8 +310,8 @@ export interface WorkoutChainMetadataOutlineFill {
   pipeline: 'parametric_outline_fill';
   fill_parametric_outline: OutlineFillOutput;
   outline_source_block_count: number;
-  /** Stage 2 enrich deferred (Phase 3.2b). */
-  enrich_workout_biomechanics: null;
+  /** Stage 2 enrich (coaching prose); null when soft-failed or skipped. */
+  enrich_workout_biomechanics: KanbanEnrichBiomechanicsOutput | null;
   generated_at: string;
   model_used: string;
   total_tokens?: number;

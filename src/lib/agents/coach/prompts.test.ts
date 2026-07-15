@@ -5,6 +5,7 @@ import {
   APEX_ARCHITECT_MAIN_CHAT_HEADER,
   EXERCISE_INDEX_MAP_HEADER,
   COACH_RAIL_SURFACE_VALUE,
+  EXERCISE_CUE_REQUEST_MODE_DIRECTIVE,
   buildApexArchitectMainChatBlock,
   buildCoachOutlineOnlyPrompt,
   COACH_OUTLINE_ONLY_SYSTEM_PROMPT,
@@ -28,6 +29,27 @@ import {
   shouldSuppressTaskModalIntakeForPreflightReadiness,
   taskMetadataLooksWorkoutShaped,
 } from './prompts';
+
+describe('EXERCISE_CUE_REQUEST_MODE_DIRECTIVE', () => {
+  it('requires immediate workout_cues_patch and forbids confirm-first language', () => {
+    expect(EXERCISE_CUE_REQUEST_MODE_DIRECTIVE).toContain('IMMEDIATELY emit workout_cues_patch');
+    expect(EXERCISE_CUE_REQUEST_MODE_DIRECTIVE).toContain('Do not ask for confirmation');
+    expect(EXERCISE_CUE_REQUEST_MODE_DIRECTIVE).not.toMatch(/do NOT emit/i);
+    expect(EXERCISE_CUE_REQUEST_MODE_DIRECTIVE).not.toMatch(/\baffirm\b/i);
+    expect(EXERCISE_CUE_REQUEST_MODE_DIRECTIVE).not.toContain('First turn');
+    expect(EXERCISE_CUE_REQUEST_MODE_DIRECTIVE).not.toContain('Follow-up turn');
+  });
+
+  it('cue-mode TRUTHFULNESS in base prompt still requires workout_cues_patch when claiming a write', () => {
+    const prompt = buildBaseCoachPrompt('2026-05-15', { exerciseCueRequestMode: true });
+    expect(prompt).toContain(
+      'If reply_content claims you wrote or applied cue prose, include non-null workout_cues_patch',
+    );
+    expect(prompt).not.toContain(
+      'If reply_content claims you wrote or applied something, include non-null execution_patch',
+    );
+  });
+});
 
 describe('buildCurrentTaskContextBlock', () => {
   afterEach(() => {

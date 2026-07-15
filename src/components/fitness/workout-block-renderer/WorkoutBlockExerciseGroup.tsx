@@ -12,7 +12,7 @@ import type {
 } from '@/components/fitness/workout-block-renderer/workout-block-renderer-types';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 import type { ResolvedCueBundle } from '@/lib/workout-factory/resolve-exercise-cue-bundle';
-import { exerciseResolutionKey } from '@/lib/workout-factory/resolve-exercise-cue-bundle';
+import { blockExerciseCueResolutionKey } from '@/lib/workout-factory/resolve-exercise-cue-bundle';
 import { WorkoutReadExerciseRowFromFactory } from '@/components/fitness/workout-block-renderer/WorkoutReadExerciseRow';
 
 export type WorkoutBlockExerciseGroupProps = {
@@ -48,12 +48,13 @@ export function WorkoutBlockExerciseGroup({
 
   const rows = exercises.map((ex, exerciseIndexInBlock) => {
     const stationLabel = blockStationLabel(block.blockFormat, exerciseIndexInBlock);
+    const globalFlatIndex = globalFlatIndexStart + exerciseIndexInBlock;
     const ctx: WorkoutBlockExerciseRenderContext = {
       block,
       exercise: ex,
       exerciseIndexInBlock,
       stationLabel,
-      globalFlatIndex: globalFlatIndexStart + exerciseIndexInBlock,
+      globalFlatIndex,
     };
 
     if (renderExercise) {
@@ -62,6 +63,8 @@ export function WorkoutBlockExerciseGroup({
       );
     }
 
+    const resolutionKey = blockExerciseCueResolutionKey(ex, globalFlatIndex);
+
     return (
       <WorkoutReadExerciseRowFromFactory
         key={ex.id ?? `${block.id}-ex-${exerciseIndexInBlock}`}
@@ -69,9 +72,9 @@ export function WorkoutBlockExerciseGroup({
         taskId={taskId}
         stationLabel={stationLabel}
         density={density}
-        resolvedCues={cuesByKey?.[exerciseResolutionKey(ex)] ?? null}
+        resolvedCues={cuesByKey?.[resolutionKey] ?? null}
         cuePanelEnabled={canWriteCue || (!cuesLoading && Object.keys(cuesByKey ?? {}).length > 0)}
-        resolutionKey={exerciseResolutionKey(ex)}
+        resolutionKey={resolutionKey}
         canWriteCue={canWriteCue}
         onCueSave={onCueSave}
         onCueDraftChange={onCueDraftChange}
@@ -79,7 +82,7 @@ export function WorkoutBlockExerciseGroup({
         onAskCoachForCues={onAskCoachForCues}
         onSaveToMyNotes={onSaveToMyNotes}
         injuriesOnFile={injuriesOnFile}
-        workoutExerciseIndex={ctx.globalFlatIndex}
+        workoutExerciseIndex={globalFlatIndex}
       />
     );
   });

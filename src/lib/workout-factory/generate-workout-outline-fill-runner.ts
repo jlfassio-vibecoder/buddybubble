@@ -1,5 +1,5 @@
 /**
- * Parametric outline fill pipeline: Vertex Stage 1 → deterministic hydrate → assemble.
+ * Parametric outline fill pipeline: Vertex Stage 1 → Stage 2 enrich → assemble.
  */
 
 import {
@@ -34,8 +34,10 @@ import {
   FILL_PARAMETRIC_OUTLINE_SYSTEM_PROMPT,
   validateFillParametricOutlineOutput,
 } from '@/lib/workout-factory/prompt-chain/fill-parametric-outline';
+import { runOutlineFillStage2Enrich } from '@/lib/workout-factory/outline-fill-stage2-enrich';
 import { normalizeWorkoutSet } from '@/lib/workout-factory/program-schedule-utils';
 import type { WorkoutSetTemplate } from '@/lib/workout-factory/types/ai-workout';
+import type { KanbanEnrichBiomechanicsOutput } from '@/lib/workout-factory/types/kanban-extract-types';
 import type { WorkoutChainGenerationResponse } from '@/lib/workout-factory/workout-chain-response';
 import type { VertexAICredentials } from '@/lib/workout-factory/vertex-ai-client';
 import { callVertexAIWithMetadata } from '@/lib/workout-factory/vertex-ai-client';
@@ -109,7 +111,10 @@ function assembleOutlineFillSuccess(
   prepared: PreparedWorkoutChainRequest,
   hydratedBlocks: Record<string, unknown>[],
   outlineSourceBlockCount: number,
-  fillFallback?: { reason: string },
+  options?: {
+    fillFallback?: { reason: string };
+    enrich?: KanbanEnrichBiomechanicsOutput | null;
+  },
 ): WorkoutChainGenerationResponse {
   const workoutInSet = buildWorkoutInSetFromOutlineFill(hydratedBlocks, prepared.persona);
   const taskExercises = outlineFillToTaskExercises(workoutInSet);
@@ -139,6 +144,8 @@ function assembleOutlineFillSuccess(
     workouts: [workoutInSet],
   });
   const fillOutput = outlineBlocksToFillOutput(hydratedBlocks);
+  const fillFallback = options?.fillFallback;
+  const enrich = options?.enrich ?? null;
   return {
     workoutSet,
     taskExercises,
@@ -146,7 +153,7 @@ function assembleOutlineFillSuccess(
       pipeline: 'parametric_outline_fill',
       fill_parametric_outline: fillOutput,
       outline_source_block_count: outlineSourceBlockCount,
-      enrich_workout_biomechanics: null,
+      enrich_workout_biomechanics: enrich,
       generated_at: new Date().toISOString(),
       model_used: 'vertex-ai',
       ...(structureRationale ? { structure_rationale: structureRationale } : {}),
@@ -422,10 +429,19 @@ export async function runGenerateWorkoutOutlineFill(
       console.warn('[generate-workout-chain] Outline fill: deterministic fallback assembled');
     }
 
+    const enrichFallback = await runOutlineFillStage2Enrich({
+      prepared,
+      creds,
+      hydratedBlocks: postFillFallback.blocks,
+      shouldLog,
+      createdByUserId: runOptions.createdByUserId,
+    });
+
     return {
       ok: true,
       data: assembleOutlineFillSuccess(prepared, postFillFallback.blocks, preflight.blocks.length, {
-        reason: lastError,
+        fillFallback: { reason: lastError },
+        enrich: enrichFallback,
       }),
       telemetry: buildTelemetry({
         outlineBlockCount: blockCount,
@@ -461,13 +477,19 @@ export async function runGenerateWorkoutOutlineFill(
     };
   }
 
-  if (shouldLog) {
-    console.warn('[generate-workout-chain] Outline fill: Stage 2 enrich skipped (Phase 3.2b)');
-  }
+  const enrich = await runOutlineFillStage2Enrich({
+    prepared,
+    creds,
+    hydratedBlocks: postFill.blocks,
+    shouldLog,
+    createdByUserId: runOptions.createdByUserId,
+  });
 
   return {
     ok: true,
-    data: assembleOutlineFillSuccess(prepared, postFill.blocks, preflight.blocks.length),
+    data: assembleOutlineFillSuccess(prepared, postFill.blocks, preflight.blocks.length, {
+      enrich,
+    }),
     telemetry: buildTelemetry({
       outlineBlockCount: blockCount,
       exerciseCount,
