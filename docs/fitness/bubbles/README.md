@@ -6,31 +6,35 @@ A **Bubble** is a row in the `bubbles` table scoped to a **Social Space** (`work
 
 When a workspace is created with `category_type = 'fitness'`, default channels and shared Kanban column slugs come from [`WORKSPACE_SEED_BY_CATEGORY.fitness`](../../src/lib/workspace-seed-templates.ts):
 
-- **Bubbles (in order):** Programs, Workouts, **Workout Logs**, Classes, Trainer, Analytics.
+- **Bubbles (in order):** Programs, Workouts, **Workout Logs**, Classes, Trainer, Analytics, **Video Library**.
 - **Board columns (all fitness Kanban surfaces that use workspace board columns):** Active Split (`planned`), Scheduled, Today, **In Progress** (`in_progress`), Completed, Vault.
 
 The **Analytics** bubble was also **backfilled** for older fitness workspaces that predated it; see [20260431100000_backfill_fitness_analytics_bubble.sql](../../supabase/migrations/20260431100000_backfill_fitness_analytics_bubble.sql).
 
+The **Video Library** hub bubble is seeded with `metadata.kind = 'video_library'` and backfilled for existing fitness workspaces; see [20260930120000_video_library_publications.sql](../../supabase/migrations/20260930120000_video_library_publications.sql) and [video-library-bubble-blueprint.md](../video-library-bubble-blueprint.md).
+
 ## Name contract (special boards)
 
-In [dashboard-shell.tsx](../../src/components/dashboard/dashboard-shell.tsx), three main-stage UIs are chosen by **exact string match** on the selected bubble’s **`name`** (not id):
+In [dashboard-shell.tsx](../../src/components/dashboard/dashboard-shell.tsx), most special boards are chosen by **exact string match** on the selected bubble’s **`name`**. **Video Library** prefers `metadata.kind === 'video_library'`, with name fallback:
 
-| Name        | Main board UI                                                    |
-| ----------- | ---------------------------------------------------------------- |
-| `Analytics` | `AnalyticsBoard` (under `PremiumGate` for the analytics feature) |
-| `Classes`   | `ClassesBoard`                                                   |
-| `Programs`  | `ProgramsBoard`                                                  |
+| Name / kind                                               | Main board UI                                                    |
+| --------------------------------------------------------- | ---------------------------------------------------------------- |
+| `Analytics`                                               | `AnalyticsBoard` (under `PremiumGate` for the analytics feature) |
+| `Classes`                                                 | `ClassesBoard`                                                   |
+| `Programs`                                                | `ProgramsBoard`                                                  |
+| `metadata.kind = video_library` (or name `Video Library`) | `VideoLibraryBoard`                                              |
 
-If an admin **renames** one of these bubbles, the shell **stops** rendering the special board until the name matches again (V1 has no slug-based routing; see comments near `isAnalyticsBubble` in the shell).
+If an admin **renames** Analytics / Classes / Programs, the shell **stops** rendering that special board until the name matches again. Video Library survives rename when `metadata.kind` remains `video_library`.
 
 **Workouts** and **Trainer** do **not** have name checks: they use the default [KanbanBoard](../../src/components/board/KanbanBoard.tsx) with the same chat and calendar rail behavior as other non-fitness workspaces, plus fitness category theming and tasks.
 
 ```mermaid
 flowchart TD
-  sel[selectedBubble_name]
+  sel[selectedBubble]
   sel -->|Analytics| ab[AnalyticsBoard]
   sel -->|Classes| cb[ClassesBoard]
   sel -->|Programs| pb[ProgramsBoard]
+  sel -->|video_library kind or name| vlb[VideoLibraryBoard]
   sel -->|Workouts or Trainer| kb[KanbanBoard]
 ```
 

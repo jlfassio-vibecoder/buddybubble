@@ -2309,6 +2309,74 @@ export type Database = {
         };
         Relationships: [];
       };
+      video_library_publications: {
+        Row: {
+          access_scope: string;
+          bubble_id: string;
+          class_instance_id: string;
+          id: string;
+          metadata: Json;
+          published_at: string;
+          published_by: string;
+          title: string | null;
+          unpublished_at: string | null;
+          workspace_id: string;
+        };
+        Insert: {
+          access_scope: string;
+          bubble_id: string;
+          class_instance_id: string;
+          id?: string;
+          metadata?: Json;
+          published_at?: string;
+          published_by: string;
+          title?: string | null;
+          unpublished_at?: string | null;
+          workspace_id: string;
+        };
+        Update: {
+          access_scope?: string;
+          bubble_id?: string;
+          class_instance_id?: string;
+          id?: string;
+          metadata?: Json;
+          published_at?: string;
+          published_by?: string;
+          title?: string | null;
+          unpublished_at?: string | null;
+          workspace_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'video_library_publications_bubble_id_fkey';
+            columns: ['bubble_id'];
+            isOneToOne: false;
+            referencedRelation: 'bubbles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'video_library_publications_class_instance_id_fkey';
+            columns: ['class_instance_id'];
+            isOneToOne: false;
+            referencedRelation: 'class_instances';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'video_library_publications_published_by_fkey';
+            columns: ['published_by'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'video_library_publications_workspace_id_fkey';
+            columns: ['workspace_id'];
+            isOneToOne: false;
+            referencedRelation: 'workspaces';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       warmup_config: {
         Row: {
           duration_per_exercise: number;

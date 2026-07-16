@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Play } from 'lucide-react';
+import { Library, Play } from 'lucide-react';
+import { PublishVideoModal } from '@/components/modals/PublishVideoModal';
 import { Button } from '@/components/ui/button';
 import { AsyncPlaybackWorkoutLogger } from '@/features/live-video/shells/ParticipantWorkoutLogger';
 import { SessionDeckBuilder } from '@/features/live-video/shells/huddle/SessionDeckBuilder';
@@ -31,9 +32,19 @@ export type AsyncPlaybackShellProps = {
   classInstanceId: string;
   onClose: () => void;
   className?: string;
+  workspaceId?: string;
+  defaultTitle?: string;
+  canPublish?: boolean;
 };
 
-function AsyncPlaybackShellInner({ classInstanceId, onClose, className }: AsyncPlaybackShellProps) {
+function AsyncPlaybackShellInner({
+  classInstanceId,
+  onClose,
+  className,
+  workspaceId,
+  defaultTitle,
+  canPublish = false,
+}: AsyncPlaybackShellProps) {
   const deckSessionId = useMemo(
     () => classDeckBuilderSessionId(classInstanceId),
     [classInstanceId],
@@ -43,11 +54,40 @@ function AsyncPlaybackShellInner({ classInstanceId, onClose, className }: AsyncP
   const [recordingRec, setRecordingRec] = useState<ClassRecordingPayload | null>(null);
   const [resolvedVideoUrl, setResolvedVideoUrl] = useState<string | null>(null);
   const [recordingLoadError, setRecordingLoadError] = useState<string | null>(null);
+  const [publishOpen, setPublishOpen] = useState(false);
+  const [resolvedTitle, setResolvedTitle] = useState(defaultTitle?.trim() || 'Untitled recording');
 
   const supabase = useMemo(() => createClient(), []);
   const deckCtx = useWorkoutDeckSelection();
   /** Last successful parse of `class_recording.status` — used to keep polling after transient read errors while processing. */
   const lastRecordingStatusRef = useRef<ClassRecordingStatus | null>(null);
+
+  useEffect(() => {
+    if (defaultTitle?.trim()) {
+      setResolvedTitle(defaultTitle.trim());
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const { data } = await supabase
+        .from('class_instances')
+        .select('offering_id, class_offerings(name)')
+        .eq('id', classInstanceId)
+        .maybeSingle();
+      if (cancelled) return;
+      const nested = data as {
+        class_offerings?: { name?: string } | { name?: string }[] | null;
+      } | null;
+      const offering = nested?.class_offerings;
+      const name = Array.isArray(offering) ? offering[0]?.name : offering?.name;
+      if (typeof name === 'string' && name.trim()) {
+        setResolvedTitle(name.trim());
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [classInstanceId, defaultTitle, supabase]);
 
   useEffect(() => {
     if (process.env.NODE_ENV === 'development') {
@@ -204,10 +244,34 @@ function AsyncPlaybackShellInner({ classInstanceId, onClose, className }: AsyncP
               : 'Review exercises for each queue card below, then play the class recording when it’s available.'
           }
         />
-        <Button type="button" size="sm" variant="outline" className="shrink-0" onClick={onClose}>
-          Close
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          {canPublish && workspaceId && recordingRec?.status === 'ready' ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="gap-1.5"
+              onClick={() => setPublishOpen(true)}
+            >
+              <Library className="size-3.5 shrink-0" aria-hidden />
+              Publish to Library
+            </Button>
+          ) : null}
+          <Button type="button" size="sm" variant="outline" onClick={onClose}>
+            Close
+          </Button>
+        </div>
       </div>
+
+      {canPublish && workspaceId ? (
+        <PublishVideoModal
+          open={publishOpen}
+          onOpenChange={setPublishOpen}
+          workspaceId={workspaceId}
+          classInstanceId={classInstanceId}
+          defaultTitle={resolvedTitle}
+        />
+      ) : null}
 
       {!isPlaying ? (
         <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
@@ -320,14 +384,47 @@ export function AsyncPlaybackShell({
   classInstanceId,
   onClose,
   className,
+  workspaceId,
+  defaultTitle,
+  canPublish = false,
 }: AsyncPlaybackShellProps) {
   const profileId = useUserProfileStore((s) => s.profile?.id ?? null);
+  const loadProfile = useUserProfileStore((s) => s.loadProfile);
+  const [authUserId, setAuthUserId] = useState<string | null>(null);
+  const [authResolved, setAuthResolved] = useState(false);
   const deckSessionId = useMemo(
     () => classDeckBuilderSessionId(classInstanceId),
     [classInstanceId],
   );
 
-  if (!profileId) {
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      await loadProfile();
+      const {
+        data: { user },
+      } = await createClient().auth.getUser();
+      if (cancelled) return;
+      setAuthUserId(user?.id ?? null);
+      setAuthResolved(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadProfile]);
+
+  const userId = profileId ?? authUserId;
+  const isCheckingAuth = !userId && !authResolved;
+
+  if (isCheckingAuth) {
+    return (
+      <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
+        Loading playback…
+      </div>
+    );
+  }
+
+  if (!userId) {
     return (
       <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
         Sign in to play this class workout.
@@ -340,11 +437,15 @@ export function AsyncPlaybackShell({
       key={deckSessionId}
       sessionIdOverride={deckSessionId}
       disableGlobalBoardBridge
+      viewerUserIdOverride={userId}
     >
       <AsyncPlaybackShellInner
         classInstanceId={classInstanceId}
         onClose={onClose}
         className={className}
+        workspaceId={workspaceId}
+        defaultTitle={defaultTitle}
+        canPublish={canPublish}
       />
     </WorkoutDeckSelectionProvider>
   );

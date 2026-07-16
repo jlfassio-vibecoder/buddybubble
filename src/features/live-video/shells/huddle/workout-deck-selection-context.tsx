@@ -119,6 +119,8 @@ export type WorkoutDeckSelectionProviderProps = {
    * (`workout-deck-board-bridge`). Use for nested class deck pickers so the main board does not enter selection mode.
    */
   disableGlobalBoardBridge?: boolean;
+  /** When profile store is still hydrating, fall back to Supabase auth user id for deck reads. */
+  viewerUserIdOverride?: string | null;
 };
 
 export function WorkoutDeckSelectionProvider({
@@ -126,6 +128,7 @@ export function WorkoutDeckSelectionProvider({
   sessionIdOverride,
   hostUserIdOverride,
   disableGlobalBoardBridge = false,
+  viewerUserIdOverride,
 }: WorkoutDeckSelectionProviderProps) {
   const supabase = useMemo(() => createClient(), []);
   const [deck, setDeck] = useState<SessionDeckSnapshot[]>([]);
@@ -133,7 +136,14 @@ export function WorkoutDeckSelectionProvider({
 
   const storeSessionId = useLiveVideoStore((s) => s.activeSession?.sessionId ?? null);
   const storeHostUserId = useLiveVideoStore((s) => s.activeSession?.hostUserId ?? null);
-  const localUserId = useUserProfileStore((s) => s.profile?.id ?? null);
+  const profileUserId = useUserProfileStore((s) => s.profile?.id ?? null);
+  const localUserId = useMemo(() => {
+    if (viewerUserIdOverride !== undefined && viewerUserIdOverride !== null) {
+      const trimmed = String(viewerUserIdOverride).trim();
+      if (trimmed.length > 0) return trimmed;
+    }
+    return profileUserId;
+  }, [profileUserId, viewerUserIdOverride]);
 
   const sidTrimmed = useMemo(() => {
     if (sessionIdOverride !== undefined && sessionIdOverride !== null) {

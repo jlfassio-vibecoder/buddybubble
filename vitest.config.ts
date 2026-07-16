@@ -36,6 +36,7 @@ export default defineConfig({
       'src/**/*.test.{ts,tsx}',
       'scripts/**/*.test.ts',
       'supabase/functions/_shared/**/*.test.ts',
+      'apps/storefront/src/**/*.test.ts',
     ],
     /** Deno-only tests (jsr: imports) run via `pnpm run test:deno-integration`. */
     exclude: [

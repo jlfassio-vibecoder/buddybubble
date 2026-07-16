@@ -1,11 +1,13 @@
 ---
 import '../styles/global.css';
 import PublicFeed from '../components/PublicFeed';
+import PublicVideoSection from '../components/PublicVideoSection';
 import StorefrontHero from '../components/hero/StorefrontHero.jsx';
 import { resolveCrmOriginForStorefront } from '../lib/crm-origin';
 import { getPublicEnv } from '../lib/public-env';
 import type { PublicFeedItem, PublicClassCardData, TaskCardShape } from '../lib/public-feed-types';
 import { sortPublicFeedItems } from '../lib/public-feed-types';
+import { mapPublicVideoPublications } from '../lib/public-video-types';
 import { normalizeClassInstanceRow } from '../lib/supabase-embed';
 import { createStorefrontClient } from '../lib/supabase';
 
@@ -52,9 +54,15 @@ if (wsErr || !workspace) {
 const ws = workspace as {
   id: string;
   name: string;
+  is_public?: boolean | null;
   public_branding: unknown;
   category_type?: string | null;
 };
+
+/** Defense-in-depth: never list public videos unless the workspace is still public. */
+if (ws.is_public !== true) {
+  return new Response(null, { status: 404, statusText: 'Not found' });
+}
 
 const previewEligible =
   ws.category_type === 'business' || ws.category_type === 'fitness';
@@ -189,6 +197,27 @@ const publicFeed: PublicFeedItem[] = sortPublicFeedItems([
     : []),
 ]);
 
+const { data: videoPubRows } = await supabase
+  .from('video_library_publications')
+  .select(
+    `
+    id,
+    title,
+    published_at,
+    class_instance_id,
+    class_instances (
+      metadata,
+      class_offerings ( name )
+    )
+  `,
+  )
+  .eq('workspace_id', ws.id)
+  .eq('access_scope', 'public_storefront')
+  .is('unpublished_at', null)
+  .order('published_at', { ascending: false });
+
+const publicVideos = mapPublicVideoPublications((videoPubRows ?? []) as unknown[]);
+
 const crmLoginBase = `${resolveCrmOriginForStorefront(getPublicEnv('PUBLIC_APP_ORIGIN'), Astro.url.hostname)}/login`;
 const joinHref = `${crmLoginBase}?next=${encodeURIComponent(`/app/${ws.id}`)}`;
 /** Same post-login `next` as Join community; Log in is secondary CTA styling only. */
@@ -284,6 +313,19 @@ const heroImage = branding.hero_url?.trim() ?? '';
         </p>
       </div>
     </section>
+
+    {
+      publicVideos.length > 0 ? (
+        <section class="border-b border-zinc-200 bg-zinc-50">
+          <div class="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+            <div class="mb-6 flex flex-wrap items-end justify-between gap-4">
+              <h2 class="text-sm font-semibold uppercase tracking-wide text-zinc-500">Videos</h2>
+            </div>
+            <PublicVideoSection client:load videos={publicVideos} />
+          </div>
+        </section>
+      ) : null
+    }
 
     <main class="mx-auto max-w-6xl px-4 py-10 sm:px-6">
       <div class="mb-8 flex flex-wrap items-end justify-between gap-4">

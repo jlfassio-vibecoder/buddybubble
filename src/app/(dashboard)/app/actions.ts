@@ -76,7 +76,11 @@ async function createWorkspaceCore(name: string, categoryType: string): Promise<
     'seed_workspace_template',
     {
       _workspace_id: workspaceId,
-      _bubbles: seed.bubbles.map((b) => ({ name: b.name, icon: 'Hash' })),
+      _bubbles: seed.bubbles.map((b) => ({
+        name: b.name,
+        icon: 'Hash',
+        ...(b.metadata ? { metadata: b.metadata } : {}),
+      })),
       _columns: seed.columns.map((c) => ({
         name: c.name,
         slug: c.slug,

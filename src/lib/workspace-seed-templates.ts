@@ -1,6 +1,6 @@
 import type { WorkspaceCategory } from '@/types/database';
 
-export type SeedBubble = { name: string };
+export type SeedBubble = { name: string; metadata?: Record<string, unknown> };
 export type SeedColumn = { name: string; slug: string; position: number };
 
 /**
@@ -61,6 +61,7 @@ export const WORKSPACE_SEED_BY_CATEGORY: Record<
       { name: 'Classes' },
       { name: 'Trainer' },
       { name: 'Analytics' },
+      { name: 'Video Library', metadata: { kind: 'video_library' } },
     ],
     columns: [
       { name: 'Active Split', slug: 'planned', position: 0 },
