@@ -964,7 +964,7 @@ function DashboardShellInner({
 
   const handleEnterSoloStudio = useCallback(async () => {
     const uid = profile?.id;
-    if (!uid || !canStartLiveVideo) return;
+    if (!uid || !canStartLiveVideo || !canManageWorkspaceClasses) return;
 
     const sessionId = randomUuid();
     const shortId = sessionId.replace(/-/g, '').slice(0, 8);
@@ -990,7 +990,14 @@ function DashboardShellInner({
       sourceInstanceId: provisioned.instanceId,
       accessMode: 'solo_studio',
     });
-  }, [workspaceId, profile?.id, canStartLiveVideo, bubbles, joinLiveVideoSession]);
+  }, [
+    workspaceId,
+    profile?.id,
+    canStartLiveVideo,
+    canManageWorkspaceClasses,
+    bubbles,
+    joinLiveVideoSession,
+  ]);
 
   const openTaskModal = useCallback((id: string, opts?: OpenTaskOptions) => {
     taskModalFocusMessagesOnCloseRef.current = opts?.focusMessagesOnClose === true;
@@ -2339,16 +2346,18 @@ function DashboardShellInner({
                                       >
                                         Start live video
                                       </Button>
-                                      <Button
-                                        type="button"
-                                        size="xs"
-                                        variant="secondary"
-                                        onClick={() => {
-                                          void handleEnterSoloStudio();
-                                        }}
-                                      >
-                                        Enter Solo Studio
-                                      </Button>
+                                      {canManageWorkspaceClasses ? (
+                                        <Button
+                                          type="button"
+                                          size="xs"
+                                          variant="secondary"
+                                          onClick={() => {
+                                            void handleEnterSoloStudio();
+                                          }}
+                                        >
+                                          Enter Solo Studio
+                                        </Button>
+                                      ) : null}
                                     </>
                                   ) : null}
                                   {showSystemHealthNav ? (
