@@ -1,9 +1,21 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Clock, Globe, ListOrdered, Lock, MapPin, Pencil, Play, Users, Video } from 'lucide-react';
+import {
+  Clock,
+  Globe,
+  Library,
+  ListOrdered,
+  Lock,
+  MapPin,
+  Pencil,
+  Play,
+  Users,
+  Video,
+} from 'lucide-react';
 
+import { PublishVideoModal } from '@/components/modals/PublishVideoModal';
 import { PremiumGate } from '@/components/subscription/premium-gate';
 import { Button } from '@/components/ui/button';
 import { useClassEnrollment } from '@/features/classes/hooks/useClassEnrollment';
@@ -79,6 +91,7 @@ export function ClassCard({
   onEnrollmentChanged,
 }: ClassCardProps) {
   const instance = classInstance;
+  const [publishOpen, setPublishOpen] = useState(false);
 
   useEffect(() => {
     console.log('[DEBUG] ClassCard extracted and mounted for instance:', classInstance.id);
@@ -309,6 +322,28 @@ export function ClassCard({
                       ? 'Open workout'
                       : 'Play Workout'}
           </Button>
+        </div>
+      ) : null}
+
+      {canManageClasses && recordingCta === 'ready' ? (
+        <div className="mt-3 flex flex-col gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8 w-full gap-2 text-xs shadow-sm"
+            onClick={() => setPublishOpen(true)}
+          >
+            <Library className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            Publish to Library
+          </Button>
+          <PublishVideoModal
+            open={publishOpen}
+            onOpenChange={setPublishOpen}
+            workspaceId={instance.workspace_id}
+            classInstanceId={instance.id}
+            defaultTitle={offering.name}
+          />
         </div>
       ) : null}
 

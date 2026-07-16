@@ -56,6 +56,8 @@ import { ProfileModal, type ProfilePermissionsContext } from '@/components/modal
 import { ProfileCompletionModal } from '@/components/modals/ProfileCompletionModal';
 import { AnalyticsBoard } from '@/components/fitness/AnalyticsBoard';
 import { ClassesBoard } from '@/components/fitness/ClassesBoard';
+import { VideoLibraryBoard } from '@/components/fitness/VideoLibraryBoard';
+import { isVideoLibraryBubble } from '@/lib/video-library/library';
 import { ProgramsBoard } from '@/components/fitness/ProgramsBoard';
 import { WorkoutPlayer } from '@/components/fitness/WorkoutPlayer';
 import { FitnessProfileSheet } from '@/components/fitness/FitnessProfileSheet';
@@ -473,6 +475,12 @@ function DashboardShellInner({
     workspaceCategoryForUi === 'fitness' &&
     selectedBubbleId !== ALL_BUBBLES_BUBBLE_ID &&
     bubbles.find((b) => b.id === selectedBubbleId)?.name === 'Programs';
+
+  /** True when the selected bubble is the Video Library hub (metadata.kind or name). */
+  const isVideoLibraryBubbleSelected =
+    workspaceCategoryForUi === 'fitness' &&
+    selectedBubbleId !== ALL_BUBBLES_BUBBLE_ID &&
+    isVideoLibraryBubble(bubbles.find((b) => b.id === selectedBubbleId));
 
   /**
    * Hard invariant (render): if the Kanban panel is hidden, the calendar cannot be strip-collapsed.
@@ -1928,6 +1936,8 @@ function DashboardShellInner({
         <AsyncPlaybackShell
           classInstanceId={classAsyncPlayerParam}
           onClose={clearClassAsyncPlayer}
+          workspaceId={workspaceId}
+          canPublish={canManageWorkspaceClasses}
         />
       ) : isAnalyticsBubble ? (
         <PremiumGate feature="analytics" className="flex-1 min-h-0">
@@ -1959,6 +1969,12 @@ function DashboardShellInner({
           canWrite={canWriteTasks}
           onOpenTask={openTaskModal}
           onOpenCreateTask={openCreateTaskModal}
+        />
+      ) : isVideoLibraryBubbleSelected ? (
+        <VideoLibraryBoard
+          workspaceId={workspaceId}
+          bubbleId={selectedBubbleId!}
+          canManage={canManageWorkspaceClasses}
         />
       ) : (
         <KanbanBoard
@@ -1993,6 +2009,7 @@ function DashboardShellInner({
       isAnalyticsBubble,
       isClassesBubble,
       isProgramsBubble,
+      isVideoLibraryBubbleSelected,
       workspaceId,
       workspaceCalendarTz,
       selectedBubbleId,
