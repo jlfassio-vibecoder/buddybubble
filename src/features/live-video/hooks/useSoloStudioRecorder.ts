@@ -258,16 +258,20 @@ export function useSoloStudioRecorder({
 
     try {
       // Prefer tab/system audio when the browser supports it; fall back to video-only.
+      // PreferCurrentTab / selfBrowserSurface are newer than our pinned lib.dom typings.
+      type SoloStudioDisplayMediaOptions = DisplayMediaStreamOptions & {
+        preferCurrentTab?: boolean;
+        selfBrowserSurface?: 'include' | 'exclude';
+      };
       try {
         display = await navigator.mediaDevices.getDisplayMedia({
           video: {
             displaySurface: 'browser',
           },
           audio: true,
-          // @ts-expect-error - Newer WebRTC properties for better tab capture UX
           preferCurrentTab: true,
           selfBrowserSurface: 'include',
-        });
+        } as SoloStudioDisplayMediaOptions);
       } catch (withAudioErr) {
         const name =
           withAudioErr instanceof DOMException
@@ -291,10 +295,9 @@ export function useSoloStudioRecorder({
             displaySurface: 'browser',
           },
           audio: false,
-          // @ts-expect-error - Newer WebRTC properties for better tab capture UX
           preferCurrentTab: true,
           selfBrowserSurface: 'include',
-        });
+        } as SoloStudioDisplayMediaOptions);
       }
     } catch (e) {
       if (abandonIfCancelled()) return;
