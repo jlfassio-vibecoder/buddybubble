@@ -36,6 +36,7 @@ export function classRecordingMemberCta(
   if (recording.status === 'recording') return 'recording';
   if (recording.status === 'uploading') return 'uploading';
   if (recording.status === 'processing') {
+    // Manual editor upload shows editor copy; Agora + browser show pipeline uploading CTA.
     return recording.provider === 'manual' ? 'editorProcessing' : 'uploading';
   }
   return 'queueOnly';

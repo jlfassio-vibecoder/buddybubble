@@ -40,6 +40,8 @@ export type BaseVideoHarnessProps = {
   excludeUidForTiles?: string | null;
   /** Tighter padding when embedded in the live theater dock (live session UI). */
   compactChrome?: boolean;
+  /** Solo studio / single-party: omit the participant thumbnail rail. */
+  hideParticipantRail?: boolean;
 };
 
 /** Stage tiles: match shell background so `fit: 'contain'` letterboxing blends with the dock. */
@@ -223,13 +225,15 @@ export function BaseVideoHarness(props: BaseVideoHarnessProps) {
             </div>
           </div>
 
-          <GamifiedParticipantRail
-            localUserId={props.localUserId}
-            hostUserId={props.hostUserId}
-            excludeUidForTiles={exclude}
-            localRailPipOverlay={props.localRailPipOverlay}
-            renderRemoteRailBottomOverlay={props.renderRemoteRailBottomOverlay}
-          />
+          {!props.hideParticipantRail ? (
+            <GamifiedParticipantRail
+              localUserId={props.localUserId}
+              hostUserId={props.hostUserId}
+              excludeUidForTiles={exclude}
+              localRailPipOverlay={props.localRailPipOverlay}
+              renderRemoteRailBottomOverlay={props.renderRemoteRailBottomOverlay}
+            />
+          ) : null}
         </div>
         {!hideConnectedLeaveRow ? (
           <div className="flex flex-wrap items-center justify-center gap-2">

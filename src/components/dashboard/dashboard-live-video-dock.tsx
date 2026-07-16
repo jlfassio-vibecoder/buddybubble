@@ -19,12 +19,14 @@ import { agoraUidFromUuid } from '@/lib/live-video/agora-uid';
 import type { Database } from '@/types/database';
 import type { LiveVideoActiveSession } from '@/store/liveVideoStore';
 import { copyClassDeckToLiveSession } from '@/features/live-video/shells/huddle/live-deck-merge';
+import { resolveLiveSessionCreateAccessMode } from '@/lib/live-video/provision-solo-studio-instance';
 import {
   isClassRecordingPipelineBusy,
   parseAsyncSessionFromInstanceMetadata,
   parseClassRecordingFromInstanceMetadata,
 } from '@/types/live-session-invite';
 import type { SessionAspectRatioId } from '@/features/live-video/state/sessionStateMachine';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 export type DashboardLiveVideoDockProps = {
@@ -115,12 +117,15 @@ function DashboardLiveVideoDockRouter({
 }: DockRouterProps) {
   const { isConnected, isConnecting, joinChannel, joinError } = useAgoraSession();
   const isHost = localUserId === session.hostUserId;
+  const isSoloStudio = session.accessMode === 'solo_studio';
   const resolvedDisplayName = displayNameProp?.trim() || localUserId;
   const registeredLiveSessionIdRef = useRef<string | null>(null);
   /** Avoid duplicate class-deck merge RPC attempts for the same live session in one mount. */
   const classDeckMergeAttemptedForSessionRef = useRef<string | null>(null);
   /** At most one host toast per live session when manual `agora-recording-start` fails. */
   const recordingStartFailureToastForSessionRef = useRef<string | null>(null);
+  /** Solo studio: auto `joinChannel` once after pre-connect create (skip PreJoin). */
+  const soloAutoJoinAttemptedForSessionRef = useRef<string | null>(null);
   const [liveDbReady, setLiveDbReady] = useState(false);
   /** Host-only: `class_recording` is in an Agora/manual pipeline state (not yet ready). */
   const [hostClassRecordingPipelineBusy, setHostClassRecordingPipelineBusy] = useState(false);
@@ -128,6 +133,7 @@ function DashboardLiveVideoDockRouter({
   const [isAsyncWorkoutEnabled, setIsAsyncWorkoutEnabled] = useState(false);
 
   const classInstanceIdForRecording = session.sourceInstanceId?.trim() ?? '';
+  const liveSessionAccessMode = resolveLiveSessionCreateAccessMode(session.accessMode);
 
   /**
    * Host: register `live_sessions` before Agora `joinChannel` requests `/api/live-video/token`.
@@ -149,6 +155,7 @@ function DashboardLiveVideoDockRouter({
         p_display_name: resolvedDisplayName,
         p_agora_uid: agoraUid,
         p_workspace_id: workspaceId,
+        p_access_mode: liveSessionAccessMode,
       });
       if (cancelled) return;
       if (error) {
@@ -159,13 +166,29 @@ function DashboardLiveVideoDockRouter({
           error.details,
           error.hint,
         );
+        return;
+      }
+
+      if (isSoloStudio && soloAutoJoinAttemptedForSessionRef.current !== liveSessionRowId) {
+        soloAutoJoinAttemptedForSessionRef.current = liveSessionRowId;
+        joinChannel();
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [isHost, localUserId, resolvedDisplayName, session.sessionId, session.workspaceId, supabase]);
+  }, [
+    isHost,
+    isSoloStudio,
+    joinChannel,
+    localUserId,
+    liveSessionAccessMode,
+    resolvedDisplayName,
+    session.sessionId,
+    session.workspaceId,
+    supabase,
+  ]);
 
   useEffect(() => {
     if (!isHost || !classInstanceIdForRecording) {
@@ -223,6 +246,8 @@ function DashboardLiveVideoDockRouter({
   const handleStartRecording = useCallback(
     async (opts?: { aspectRatio?: SessionAspectRatioId }) => {
       if (!isHost) return;
+      // Solo studio uses browser MediaRecorder (Phase 3) — never Agora cloud recording.
+      if (session.accessMode === 'solo_studio') return;
       const classInstanceForRecording = session.sourceInstanceId?.trim() ?? '';
       if (!classInstanceForRecording) return;
       const liveSessionRowId = session.sessionId.trim();
@@ -302,6 +327,7 @@ function DashboardLiveVideoDockRouter({
     [
       isHost,
       onClassRecordingPipelineUpdated,
+      session.accessMode,
       session.sourceInstanceId,
       session.sessionId,
       session.channelId,
@@ -343,6 +369,7 @@ function DashboardLiveVideoDockRouter({
           p_display_name: resolvedDisplayName,
           p_agora_uid: agoraUid,
           p_workspace_id: session.workspaceId,
+          p_access_mode: resolveLiveSessionCreateAccessMode(session.accessMode),
         });
         if (cancelled) return;
         if (error) {
@@ -397,13 +424,29 @@ function DashboardLiveVideoDockRouter({
     session.sessionId,
     session.sourceInstanceId,
     session.workspaceId,
+    session.accessMode,
     supabase,
   ]);
 
   let routeContent: ReactNode;
 
   if (!isConnected && !isConnecting) {
-    if (isHost) {
+    if (isSoloStudio && isHost) {
+      // Skip PreJoin — auto-join is kicked off after pre-connect live_session_create.
+      routeContent = (
+        <div
+          className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-4 py-8 text-sm text-muted-foreground"
+          data-solo-studio-joining
+        >
+          <span>{joinError ? joinError : 'Entering Solo Studio…'}</span>
+          {joinError ? (
+            <Button type="button" size="sm" variant="secondary" onClick={joinChannel}>
+              Retry join
+            </Button>
+          ) : null}
+        </div>
+      );
+    } else if (isHost) {
       routeContent = (
         <PreJoinBuilder
           workspaceId={session.workspaceId}
@@ -447,9 +490,11 @@ function DashboardLiveVideoDockRouter({
         displayName={resolvedDisplayName}
         hostClassRecordingPipelineBusy={hostClassRecordingPipelineBusy}
         hostAsyncWorkoutEnabled={
-          isHost && classInstanceIdForRecording ? isAsyncWorkoutEnabled : undefined
+          isHost && classInstanceIdForRecording && !isSoloStudio ? isAsyncWorkoutEnabled : undefined
         }
-        onHostStartRecording={isHost ? handleStartRecording : undefined}
+        onHostStartRecording={isHost && !isSoloStudio ? handleStartRecording : undefined}
+        isSoloStudio={isSoloStudio}
+        sourceInstanceId={session.sourceInstanceId}
         boardSelectionPanel={boardSelectionPanel}
         selectionFloatingMediaBar={selectionFloatingMediaBar}
         workoutsBubbleId={workoutsBubbleId}
@@ -463,6 +508,7 @@ function DashboardLiveVideoDockRouter({
       data-live-video-dock-router
       data-live-video-role={isHost ? 'host' : 'participant'}
       data-live-video-connected={isConnected ? 'true' : 'false'}
+      data-live-video-solo-studio={isSoloStudio ? 'true' : 'false'}
     >
       {routeContent}
     </div>

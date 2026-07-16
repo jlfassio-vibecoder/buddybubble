@@ -33,6 +33,12 @@ describe('classRecordingMemberCta', () => {
     );
   });
 
+  it('maps browser processing to uploading CTA (not editor)', () => {
+    expect(classRecordingMemberCta({ ...base, status: 'processing', provider: 'browser' })).toBe(
+      'uploading',
+    );
+  });
+
   it('maps Phase 3 (ready) to "ready"', () => {
     expect(classRecordingMemberCta({ ...base, status: 'ready' })).toBe('ready');
   });

@@ -72,6 +72,20 @@ describe('parseClassRecordingFromInstanceMetadata', () => {
     expect(parsed?.storagePath).toBe('ws/inst/file.mp4');
   });
 
+  it('parses Solo Studio browser provider ready with webm path', () => {
+    const parsed = parseClassRecordingFromInstanceMetadata({
+      class_recording: {
+        type: 'class_recording',
+        status: 'ready',
+        provider: 'browser',
+        storagePath: 'ws/inst/studio-capture.webm',
+      },
+    });
+    expect(parsed?.status).toBe('ready');
+    expect(parsed?.provider).toBe('browser');
+    expect(parsed?.storagePath).toBe('ws/inst/studio-capture.webm');
+  });
+
   it('treats legacy row with only playbackUrl as ready', () => {
     const parsed = parseClassRecordingFromInstanceMetadata({
       class_recording: {

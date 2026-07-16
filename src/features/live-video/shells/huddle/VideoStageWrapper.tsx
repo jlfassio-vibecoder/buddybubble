@@ -22,6 +22,8 @@ export type VideoStageWrapperProps = {
   renderRemoteRailBottomOverlay?: (agoraUidStr: string) => ReactNode;
   /** Shown in `FloatingMediaBar` after mic/camera (e.g. roster trigger). */
   floatingMediaExtras?: ReactNode;
+  /** Solo studio: omit multi-party participant rail. */
+  hideParticipantRail?: boolean;
 };
 
 const ASPECT_RATIO_OPTIONS: ReadonlyArray<{ id: '16:9' | '9:16' | '1:1'; label: string }> = [
@@ -46,6 +48,7 @@ export function VideoStageWrapper({
   localRailPipOverlay,
   renderRemoteRailBottomOverlay,
   floatingMediaExtras,
+  hideParticipantRail = false,
 }: VideoStageWrapperProps) {
   const runtime = useLiveSessionRuntime();
   const { huddle } = useLiveTheaterLayoutPlanContext();
@@ -66,6 +69,7 @@ export function VideoStageWrapper({
           localRailPipOverlay={localRailPipOverlay}
           renderRemoteRailBottomOverlay={renderRemoteRailBottomOverlay}
           floatingMediaExtras={floatingMediaExtras}
+          hideParticipantRail={hideParticipantRail}
           aspectRatio={aspectRatio}
           className="w-full flex-1 min-h-0"
         />
