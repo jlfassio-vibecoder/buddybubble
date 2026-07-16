@@ -9,6 +9,8 @@ import type { Database } from '@/types/database';
 function createMockSupabase(opts?: {
   initialMetadata?: Record<string, unknown>;
   uploadError?: { message: string } | null;
+  /** When true, update returns no row (RLS / missing id). */
+  updateAffectsZeroRows?: boolean;
 }) {
   const updates: unknown[] = [];
   const uploads: Array<{ path: string; body: Blob; options: unknown }> = [];
@@ -30,7 +32,14 @@ function createMockSupabase(opts?: {
         update: (payload: { metadata: unknown }) => {
           updates.push(payload.metadata);
           return {
-            eq: async () => ({ error: null }),
+            eq: () => ({
+              select: () => ({
+                maybeSingle: async () => ({
+                  data: opts?.updateAffectsZeroRows ? null : { id: 'inst' },
+                  error: null,
+                }),
+              }),
+            }),
           };
         },
       };
@@ -97,5 +106,17 @@ describe('uploadSoloStudioRecording', () => {
     expect(result.ok).toBe(false);
     const last = updates[updates.length - 1] as { class_recording: { status: string } };
     expect(last.class_recording.status).toBe('failed');
+  });
+
+  it('fails fast when metadata update affects zero rows', async () => {
+    const { supabase, uploads } = createMockSupabase({ updateAffectsZeroRows: true });
+    const result = await uploadSoloStudioRecording({
+      supabase,
+      workspaceId: 'ws',
+      classInstanceId: 'missing',
+      blob: new Blob(['x'], { type: 'video/webm' }),
+    });
+    expect(result.ok).toBe(false);
+    expect(uploads).toHaveLength(0);
   });
 });

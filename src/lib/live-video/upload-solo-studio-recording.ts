@@ -32,11 +32,16 @@ async function persistInstanceMetadata(
   classInstanceId: string,
   nextMeta: Json,
 ): Promise<void> {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('class_instances')
     .update({ metadata: nextMeta })
-    .eq('id', classInstanceId);
+    .eq('id', classInstanceId)
+    .select('id')
+    .maybeSingle();
   if (error) throw error;
+  if (!data?.id) {
+    throw new Error('Class instance not found or not writable.');
+  }
 }
 
 /**
@@ -184,6 +189,47 @@ export async function markSoloStudioRecordingStarted(
     ...(prev?.storagePath ? { storagePath: prev.storagePath } : {}),
     createdAt: prev?.createdAt ?? now,
     updatedAt: now,
+  });
+
+  try {
+    await persistInstanceMetadata(supabase, id, next);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: formatUserFacingError(e) };
+  }
+}
+
+/** Clear stuck `recording` metadata when capture aborts before a durable upload. */
+export async function markSoloStudioRecordingAborted(
+  supabase: SupabaseClient<Database>,
+  classInstanceId: string,
+  opts?: { nowIso?: string; errorMessage?: string },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const id = classInstanceId.trim();
+  if (!id) return { ok: false, error: 'Missing class instance.' };
+
+  const now = opts?.nowIso ?? new Date().toISOString();
+  const { data: row, error: selErr } = await supabase
+    .from('class_instances')
+    .select('metadata')
+    .eq('id', id)
+    .maybeSingle();
+  if (selErr) return { ok: false, error: formatUserFacingError(selErr) };
+
+  const meta = (row?.metadata ?? {}) as Json;
+  const prev = parseClassRecordingFromInstanceMetadata(meta);
+  if (!prev || prev.status !== 'recording' || prev.provider !== 'browser') {
+    return { ok: true };
+  }
+
+  const next = mergeClassRecordingIntoInstanceMetadata(meta, {
+    type: 'class_recording',
+    status: 'failed',
+    provider: 'browser',
+    ...(prev.storagePath ? { storagePath: prev.storagePath } : {}),
+    createdAt: prev.createdAt ?? now,
+    updatedAt: now,
+    errorMessage: opts?.errorMessage ?? 'Recording cancelled before upload.',
   });
 
   try {

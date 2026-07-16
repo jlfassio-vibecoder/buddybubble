@@ -9,6 +9,7 @@ import {
   pickMediaRecorderMimeType,
 } from '@/lib/live-video/solo-studio-recorder';
 import {
+  markSoloStudioRecordingAborted,
   markSoloStudioRecordingStarted,
   uploadSoloStudioRecording,
 } from '@/lib/live-video/upload-solo-studio-recording';
@@ -74,6 +75,11 @@ export function useSoloStudioRecorder({
   const emergencyUploadBlobRef = useRef<(blob: Blob) => void>(() => {});
   /** Bumped to invalidate an in-flight start after getDisplayMedia returns. */
   const startGenerationRef = useRef(0);
+  /** True after `markSoloStudioRecordingStarted` until upload or abort clears it. */
+  const recordingMetaWrittenRef = useRef(false);
+  const stopRecordingInternalRef = useRef<() => Promise<void>>(async () => {});
+  const classInstanceIdRef = useRef(classInstanceId);
+  classInstanceIdRef.current = classInstanceId;
 
   const cleanupCapture = useCallback(() => {
     const c = captureRef.current;
@@ -93,8 +99,20 @@ export function useSoloStudioRecorder({
       cleanupCapture();
       setStatus('idle');
       setErrorMessage(null);
+      if (recordingMetaWrittenRef.current) {
+        recordingMetaWrittenRef.current = false;
+        void markSoloStudioRecordingAborted(supabaseRef.current, classInstanceIdRef.current);
+      }
     }
   }, [cleanupCapture]);
+
+  const clearRecordingMetaIfNeeded = useCallback((reason: string) => {
+    if (!recordingMetaWrittenRef.current) return;
+    recordingMetaWrittenRef.current = false;
+    void markSoloStudioRecordingAborted(supabaseRef.current, classInstanceIdRef.current, {
+      errorMessage: reason,
+    });
+  }, []);
 
   const runUpload = useCallback(
     async (blob: Blob) => {
@@ -131,6 +149,7 @@ export function useSoloStudioRecorder({
     (blob: Blob) => {
       if (blob.size <= 0 || uploadInFlightRef.current) return;
       uploadInFlightRef.current = true;
+      recordingMetaWrittenRef.current = false;
       void uploadSoloStudioRecording({
         supabase: supabaseRef.current,
         workspaceId,
@@ -182,13 +201,18 @@ export function useSoloStudioRecorder({
     });
 
     if (blob.size > 0) {
+      recordingMetaWrittenRef.current = false;
       await runUpload(blob);
     } else {
+      clearRecordingMetaIfNeeded('Recording is empty.');
       setStatus('failed');
       setErrorMessage('Recording is empty.');
       toast.error('Recording is empty. Try again.');
     }
-  }, [cleanupCapture, runUpload]);
+  }, [cleanupCapture, clearRecordingMetaIfNeeded, runUpload]);
+
+  // Keep ref current for unmount without stale closures.
+  stopRecordingInternalRef.current = stopRecordingInternal;
 
   const startRecording = useCallback(async () => {
     if (!enabled) return;
@@ -352,17 +376,25 @@ export function useSoloStudioRecorder({
     }
 
     const marked = await markSoloStudioRecordingStarted(supabaseRef.current, classInstanceId);
-    if (abandonIfCancelled()) {
-      mixedCleanup();
-      cleanupCapture();
-      return;
-    }
     if (!marked.ok) {
+      if (abandonIfCancelled()) {
+        mixedCleanup();
+        cleanupCapture();
+        return;
+      }
       mixedCleanup();
       cleanupCapture();
       setStatus('failed');
       setErrorMessage(marked.error);
       toast.error(marked.error);
+      return;
+    }
+    recordingMetaWrittenRef.current = true;
+
+    if (abandonIfCancelled()) {
+      mixedCleanup();
+      cleanupCapture();
+      clearRecordingMetaIfNeeded('Recording cancelled before capture started.');
       return;
     }
 
@@ -376,21 +408,24 @@ export function useSoloStudioRecorder({
         }
         mixedCleanup();
         cleanupCapture();
+        clearRecordingMetaIfNeeded('Recording cancelled before capture started.');
         return;
       }
       setStatus('recording');
     } catch (e) {
       mixedCleanup();
       cleanupCapture();
+      clearRecordingMetaIfNeeded('Could not start MediaRecorder.');
       if (abandonIfCancelled()) return;
       const msg = e instanceof Error ? e.message : 'Could not start MediaRecorder.';
       setStatus('failed');
       setErrorMessage(msg);
       toast.error(msg);
     }
-  }, [enabled, classInstanceId, cleanupCapture, stopRecordingInternal]);
+  }, [enabled, classInstanceId, cleanupCapture, clearRecordingMetaIfNeeded, stopRecordingInternal]);
 
   const stopRecording = useCallback(async () => {
+    // Copilot suggestion ignored: share-picker cancel on Exit already handled via cancelInFlightStart when status is requesting.
     if (statusRef.current === 'requesting') {
       cancelInFlightStart();
       return;
@@ -450,14 +485,21 @@ export function useSoloStudioRecorder({
   useEffect(() => {
     return () => {
       startGenerationRef.current += 1;
-      // Do not upload here — SPA leave uses stopRecordingInternal via enabled=false or SessionControls;
-      // hard navigation uses pagehide. Sync assemble+upload on unmount raced and truncated blobs.
-      if (statusRef.current === 'recording' || statusRef.current === 'requesting') {
+      if (statusRef.current === 'requesting') {
+        if (recordingMetaWrittenRef.current) {
+          recordingMetaWrittenRef.current = false;
+          void markSoloStudioRecordingAborted(supabaseRef.current, classInstanceIdRef.current);
+        }
         captureRef.current.mixedCleanup?.();
         captureRef.current.mixedCleanup = null;
-      } else {
-        captureRef.current.mixedCleanup?.();
+        return;
       }
+      // Dock leave / leaveSession can unmount while `enabled` is still true — finalize upload.
+      if (statusRef.current === 'recording') {
+        void stopRecordingInternalRef.current();
+        return;
+      }
+      captureRef.current.mixedCleanup?.();
     };
   }, []);
 

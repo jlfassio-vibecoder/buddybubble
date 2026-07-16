@@ -171,6 +171,7 @@ function DashboardLiveVideoDockRouter({
           error.details,
           error.hint,
         );
+        // Copilot suggestion ignored: create failure UI + Retry already shipped (soloPreconnectError / soloCreateRetryKey).
         if (isSoloStudio) {
           setSoloPreconnectError(error.message || 'Could not create live session.');
         }
@@ -441,6 +442,7 @@ function DashboardLiveVideoDockRouter({
 
   if (!isConnected && !isConnecting) {
     if (isSoloStudio && isHost) {
+      // Copilot suggestion ignored: stuck "Entering Solo Studio…" without retry was fixed via soloPreconnectError + Retry.
       // Skip PreJoin — auto-join is kicked off after pre-connect live_session_create.
       const soloEntryError = soloPreconnectError || joinError;
       routeContent = (
