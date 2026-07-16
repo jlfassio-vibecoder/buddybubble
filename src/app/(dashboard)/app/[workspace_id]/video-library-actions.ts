@@ -22,14 +22,18 @@ async function requireWorkspaceAdmin(
   workspaceId: string,
   userId: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('workspace_members')
     .select('role')
     .eq('workspace_id', workspaceId)
     .eq('user_id', userId)
     .maybeSingle();
+  if (error) {
+    return { ok: false, error: 'Could not verify your role. Please try again.' };
+  }
   const role = (data as { role?: string } | null)?.role;
   if (role !== 'owner' && role !== 'admin') {
+    // Copilot suggestion ignored: "socialspace" matches the dominant server-action authz copy (see invites/actions.ts).
     return { ok: false, error: 'Only socialspace admins and owners can publish videos.' };
   }
   return { ok: true };
