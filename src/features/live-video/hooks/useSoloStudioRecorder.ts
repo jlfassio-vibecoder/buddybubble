@@ -259,7 +259,15 @@ export function useSoloStudioRecorder({
     try {
       // Prefer tab/system audio when the browser supports it; fall back to video-only.
       try {
-        display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+        display = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            displaySurface: 'browser',
+          },
+          audio: true,
+          // @ts-expect-error - Newer WebRTC properties for better tab capture UX
+          preferCurrentTab: true,
+          selfBrowserSurface: 'include',
+        });
       } catch (withAudioErr) {
         const name =
           withAudioErr instanceof DOMException
@@ -278,7 +286,15 @@ export function useSoloStudioRecorder({
             withAudioErr instanceof Error ? withAudioErr.message : withAudioErr,
           );
         }
-        display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+        display = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            displaySurface: 'browser',
+          },
+          audio: false,
+          // @ts-expect-error - Newer WebRTC properties for better tab capture UX
+          preferCurrentTab: true,
+          selfBrowserSurface: 'include',
+        });
       }
     } catch (e) {
       if (abandonIfCancelled()) return;
