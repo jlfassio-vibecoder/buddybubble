@@ -220,7 +220,7 @@ export function SessionControlsActions({
       void onHostEndLiveSessionForAll?.();
     };
 
-    if (soloRecorder?.status === 'recording') {
+    if (soloRecorder?.status === 'recording' || soloRecorder?.status === 'requesting') {
       void Promise.resolve(soloRecorder.onStop()).finally(runEnd);
       return;
     }
@@ -229,7 +229,7 @@ export function SessionControlsActions({
 
   const handleLeaveDockClick = () => {
     if (!onLeaveDock) return;
-    if (soloRecorder?.status === 'recording') {
+    if (soloRecorder?.status === 'recording' || soloRecorder?.status === 'requesting') {
       void Promise.resolve(soloRecorder.onStop()).finally(() => {
         onLeaveDock();
       });

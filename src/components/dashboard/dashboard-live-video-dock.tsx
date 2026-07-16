@@ -127,6 +127,10 @@ function DashboardLiveVideoDockRouter({
   /** Solo studio: auto `joinChannel` once after pre-connect create (skip PreJoin). */
   const soloAutoJoinAttemptedForSessionRef = useRef<string | null>(null);
   const [liveDbReady, setLiveDbReady] = useState(false);
+  /** Host solo: pre-connect `live_session_create` failure (stuck without join otherwise). */
+  const [soloPreconnectError, setSoloPreconnectError] = useState<string | null>(null);
+  /** Bumps to re-run pre-connect create after a failed Solo Studio attempt. */
+  const [soloCreateRetryKey, setSoloCreateRetryKey] = useState(0);
   /** Host-only: `class_recording` is in an Agora/manual pipeline state (not yet ready). */
   const [hostClassRecordingPipelineBusy, setHostClassRecordingPipelineBusy] = useState(false);
   /** Host + class card: async workout toggle is on (`metadata.async_session` active). */
@@ -150,6 +154,7 @@ function DashboardLiveVideoDockRouter({
     let cancelled = false;
 
     void (async () => {
+      if (isSoloStudio) setSoloPreconnectError(null);
       const { error } = await supabase.rpc('live_session_create', {
         p_session_id: liveSessionRowId,
         p_display_name: resolvedDisplayName,
@@ -166,6 +171,9 @@ function DashboardLiveVideoDockRouter({
           error.details,
           error.hint,
         );
+        if (isSoloStudio) {
+          setSoloPreconnectError(error.message || 'Could not create live session.');
+        }
         return;
       }
 
@@ -187,6 +195,7 @@ function DashboardLiveVideoDockRouter({
     resolvedDisplayName,
     session.sessionId,
     session.workspaceId,
+    soloCreateRetryKey,
     supabase,
   ]);
 
@@ -433,15 +442,28 @@ function DashboardLiveVideoDockRouter({
   if (!isConnected && !isConnecting) {
     if (isSoloStudio && isHost) {
       // Skip PreJoin — auto-join is kicked off after pre-connect live_session_create.
+      const soloEntryError = soloPreconnectError || joinError;
       routeContent = (
         <div
           className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-4 py-8 text-sm text-muted-foreground"
           data-solo-studio-joining
         >
-          <span>{joinError ? joinError : 'Entering Solo Studio…'}</span>
-          {joinError ? (
-            <Button type="button" size="sm" variant="secondary" onClick={joinChannel}>
-              Retry join
+          <span>{soloEntryError ? soloEntryError : 'Entering Solo Studio…'}</span>
+          {soloEntryError ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                if (soloPreconnectError) {
+                  soloAutoJoinAttemptedForSessionRef.current = null;
+                  setSoloCreateRetryKey((k) => k + 1);
+                  return;
+                }
+                joinChannel();
+              }}
+            >
+              Retry
             </Button>
           ) : null}
         </div>

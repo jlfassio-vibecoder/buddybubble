@@ -72,6 +72,8 @@ export function useSoloStudioRecorder({
   const supabaseRef = useRef(createClient());
   const uploadInFlightRef = useRef(false);
   const emergencyUploadBlobRef = useRef<(blob: Blob) => void>(() => {});
+  /** Bumped to invalidate an in-flight start after getDisplayMedia returns. */
+  const startGenerationRef = useRef(0);
 
   const cleanupCapture = useCallback(() => {
     const c = captureRef.current;
@@ -83,6 +85,16 @@ export function useSoloStudioRecorder({
     c.chunks = [];
     c.mimeType = '';
   }, []);
+
+  /** Invalidate in-flight start (share picker still open or just resolved after End/Exit). */
+  const cancelInFlightStart = useCallback(() => {
+    startGenerationRef.current += 1;
+    if (statusRef.current === 'requesting') {
+      cleanupCapture();
+      setStatus('idle');
+      setErrorMessage(null);
+    }
+  }, [cleanupCapture]);
 
   const runUpload = useCallback(
     async (blob: Blob) => {
@@ -204,9 +216,21 @@ export function useSoloStudioRecorder({
     setStatus('requesting');
     setErrorMessage(null);
     cleanupCapture();
+    const generation = ++startGenerationRef.current;
 
     let display: MediaStream | null = null;
     let mic: MediaStream | null = null;
+
+    const abandonIfCancelled = (): boolean => {
+      if (generation === startGenerationRef.current) return false;
+      if (display) {
+        for (const t of display.getTracks()) t.stop();
+      }
+      if (mic) {
+        for (const t of mic.getTracks()) t.stop();
+      }
+      return true;
+    };
 
     try {
       // Prefer tab/system audio when the browser supports it; fall back to video-only.
@@ -233,6 +257,7 @@ export function useSoloStudioRecorder({
         display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
       }
     } catch (e) {
+      if (abandonIfCancelled()) return;
       const name = e instanceof DOMException ? e.name : e instanceof Error ? e.name : '';
       const detail = e instanceof Error ? e.message : String(e);
       if (process.env.NODE_ENV === 'development') {
@@ -261,14 +286,20 @@ export function useSoloStudioRecorder({
       return;
     }
 
+    if (abandonIfCancelled()) return;
+
     try {
       mic = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
       mic = null;
-      toast.message('Microphone unavailable', {
-        description: 'Recording will continue with tab audio only (if shared).',
-      });
+      if (generation === startGenerationRef.current) {
+        toast.message('Microphone unavailable', {
+          description: 'Recording will continue with tab audio only (if shared).',
+        });
+      }
     }
+
+    if (abandonIfCancelled()) return;
 
     let mixedCleanup: (() => void) | null = null;
     let mixedStream: MediaStream;
@@ -279,10 +310,16 @@ export function useSoloStudioRecorder({
     } catch (e) {
       for (const t of display.getTracks()) t.stop();
       if (mic) for (const t of mic.getTracks()) t.stop();
+      if (abandonIfCancelled()) return;
       const msg = e instanceof Error ? e.message : 'Could not build recording stream.';
       setStatus('failed');
       setErrorMessage(msg);
       toast.error(msg);
+      return;
+    }
+
+    if (abandonIfCancelled()) {
+      mixedCleanup();
       return;
     }
 
@@ -315,6 +352,11 @@ export function useSoloStudioRecorder({
     }
 
     const marked = await markSoloStudioRecordingStarted(supabaseRef.current, classInstanceId);
+    if (abandonIfCancelled()) {
+      mixedCleanup();
+      cleanupCapture();
+      return;
+    }
     if (!marked.ok) {
       mixedCleanup();
       cleanupCapture();
@@ -326,10 +368,21 @@ export function useSoloStudioRecorder({
 
     try {
       recorder.start(1000);
+      if (abandonIfCancelled()) {
+        try {
+          recorder.stop();
+        } catch {
+          /* ignore */
+        }
+        mixedCleanup();
+        cleanupCapture();
+        return;
+      }
       setStatus('recording');
     } catch (e) {
       mixedCleanup();
       cleanupCapture();
+      if (abandonIfCancelled()) return;
       const msg = e instanceof Error ? e.message : 'Could not start MediaRecorder.';
       setStatus('failed');
       setErrorMessage(msg);
@@ -338,11 +391,15 @@ export function useSoloStudioRecorder({
   }, [enabled, classInstanceId, cleanupCapture, stopRecordingInternal]);
 
   const stopRecording = useCallback(async () => {
-    if (statusRef.current !== 'recording' && statusRef.current !== 'requesting') {
+    if (statusRef.current === 'requesting') {
+      cancelInFlightStart();
+      return;
+    }
+    if (statusRef.current !== 'recording') {
       return;
     }
     await stopRecordingInternal();
-  }, [stopRecordingInternal]);
+  }, [cancelInFlightStart, stopRecordingInternal]);
 
   // beforeunload warn while recording
   useEffect(() => {
@@ -369,6 +426,7 @@ export function useSoloStudioRecorder({
           /* ignore */
         }
       }
+      // Copilot suggestion ignored: pagehide cannot reliably await MediaRecorder onstop/ondataavailable before unload; requestData+current chunks is best-effort by design.
       const blob = assembleRecorderBlob(c.chunks, c.mimeType);
       c.mixedCleanup?.();
       emergencyUploadBlobRef.current(blob);
@@ -377,29 +435,26 @@ export function useSoloStudioRecorder({
     return () => window.removeEventListener('pagehide', onPageHide);
   }, []);
 
-  // Unmount / disable: stop + upload
+  // Disable: cancel in-flight start or stop+upload an active recording.
   useEffect(() => {
     if (enabled) return;
+    if (statusRef.current === 'requesting') {
+      cancelInFlightStart();
+      return;
+    }
     if (statusRef.current === 'recording') {
       void stopRecordingInternal();
     }
-  }, [enabled, stopRecordingInternal]);
+  }, [enabled, cancelInFlightStart, stopRecordingInternal]);
 
   useEffect(() => {
     return () => {
-      if (statusRef.current === 'recording') {
-        const c = captureRef.current;
-        const recorder = c.recorder;
-        if (recorder && recorder.state === 'recording') {
-          try {
-            recorder.stop();
-          } catch {
-            /* ignore */
-          }
-        }
-        const blob = assembleRecorderBlob(c.chunks, c.mimeType);
-        c.mixedCleanup?.();
-        emergencyUploadBlobRef.current(blob);
+      startGenerationRef.current += 1;
+      // Do not upload here — SPA leave uses stopRecordingInternal via enabled=false or SessionControls;
+      // hard navigation uses pagehide. Sync assemble+upload on unmount raced and truncated blobs.
+      if (statusRef.current === 'recording' || statusRef.current === 'requesting') {
+        captureRef.current.mixedCleanup?.();
+        captureRef.current.mixedCleanup = null;
       } else {
         captureRef.current.mixedCleanup?.();
       }
