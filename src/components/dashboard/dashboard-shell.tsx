@@ -65,6 +65,8 @@ import { buildActiveSessionUrl } from '@/lib/active-session/build-active-session
 import { isActiveSessionRouteEnabled } from '@/lib/feature-flags/activeSessionRoute';
 import { isSystemAnalyticsRouteEnabled } from '@/lib/feature-flags/systemAnalyticsRoute';
 import { markLiveSessionInviteMessageEnded } from '@/lib/mark-live-session-invite-ended';
+import { provisionSoloStudioInstance } from '@/lib/live-video/provision-solo-studio-instance';
+import { randomUuid } from '@/lib/random-uuid';
 import { WorkspaceSessionProvider } from '@/context/WorkspaceSessionContext';
 import {
   markClassInstanceLiveSessionEnded,
@@ -910,12 +912,14 @@ function DashboardShellInner({
     const inviteMessageId = activeSession?.inviteMessageId?.trim() ?? '';
     const sourceTaskId = activeSession?.sourceTaskId?.trim() ?? '';
     const sourceInstanceId = activeSession?.sourceInstanceId?.trim() ?? '';
+    const isSoloStudio = activeSession?.accessMode === 'solo_studio';
     const uid = profile?.id;
 
     if (!uid || activeSession?.hostUserId !== uid) return;
 
     const supabase = createClient();
-    if (sourceInstanceId) {
+    // Solo studio never starts Agora cloud recording (browser capture is Phase 3).
+    if (sourceInstanceId && !isSoloStudio) {
       try {
         const { error: fnError, data } = await supabase.functions.invoke('agora-recording-stop', {
           body: { classInstanceId: sourceInstanceId },
@@ -941,7 +945,7 @@ function DashboardShellInner({
       await markTaskLiveSessionEnded(supabase, sourceTaskId);
       return;
     }
-    if (sourceInstanceId) {
+    if (sourceInstanceId && !isSoloStudio) {
       await markClassInstanceLiveSessionEnded(supabase, sourceInstanceId);
     }
   }, [profile?.id]);
@@ -957,6 +961,43 @@ function DashboardShellInner({
       mode: 'workout',
     });
   }, [workspaceId, profile?.id, joinLiveVideoSession]);
+
+  const handleEnterSoloStudio = useCallback(async () => {
+    const uid = profile?.id;
+    if (!uid || !canStartLiveVideo || !canManageWorkspaceClasses) return;
+
+    const sessionId = randomUuid();
+    const shortId = sessionId.replace(/-/g, '').slice(0, 8);
+    const channelId = `bb-live-${workspaceId}-${shortId}`;
+
+    const provisioned = await provisionSoloStudioInstance({
+      workspaceId,
+      hostUserId: uid,
+      sessionId,
+      bubbles,
+    });
+    if (!provisioned.ok) {
+      toast.error(provisioned.error);
+      return;
+    }
+
+    joinLiveVideoSession({
+      workspaceId,
+      sessionId,
+      channelId,
+      hostUserId: uid,
+      mode: 'workout',
+      sourceInstanceId: provisioned.instanceId,
+      accessMode: 'solo_studio',
+    });
+  }, [
+    workspaceId,
+    profile?.id,
+    canStartLiveVideo,
+    canManageWorkspaceClasses,
+    bubbles,
+    joinLiveVideoSession,
+  ]);
 
   const openTaskModal = useCallback((id: string, opts?: OpenTaskOptions) => {
     taskModalFocusMessagesOnCloseRef.current = opts?.focusMessagesOnClose === true;
@@ -2296,14 +2337,28 @@ function DashboardShellInner({
                               {showDashboardSecondaryNav && !hideDashboardTopChrome ? (
                                 <div className="flex shrink-0 justify-end gap-2 border-b border-border bg-muted/30 px-2 py-1">
                                   {showLiveVideoStartButton ? (
-                                    <Button
-                                      type="button"
-                                      size="xs"
-                                      variant="secondary"
-                                      onClick={handleJoinDevLiveVideo}
-                                    >
-                                      Start live video
-                                    </Button>
+                                    <>
+                                      <Button
+                                        type="button"
+                                        size="xs"
+                                        variant="secondary"
+                                        onClick={handleJoinDevLiveVideo}
+                                      >
+                                        Start live video
+                                      </Button>
+                                      {canManageWorkspaceClasses ? (
+                                        <Button
+                                          type="button"
+                                          size="xs"
+                                          variant="secondary"
+                                          onClick={() => {
+                                            void handleEnterSoloStudio();
+                                          }}
+                                        >
+                                          Enter Solo Studio
+                                        </Button>
+                                      ) : null}
+                                    </>
                                   ) : null}
                                   {showSystemHealthNav ? (
                                     <Button size="xs" variant="secondary" asChild>

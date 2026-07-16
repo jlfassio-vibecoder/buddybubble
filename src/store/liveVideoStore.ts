@@ -10,6 +10,11 @@ export type LiveVideoActiveSession = {
   channelId: string;
   hostUserId: string;
   mode: LiveVideoShellMode;
+  /**
+   * Durable `live_sessions.access_mode`. Omit / `open` = shared huddle; `solo_studio` = host-only
+   * studio (no invite broadcast, skip PreJoin, hide multi-party chrome).
+   */
+  accessMode?: 'open' | 'solo_studio';
   /** Chat row id for `metadata.live_session` — host PATCHes `endedAt` on "End session for all". */
   inviteMessageId?: string | null;
   /** Kanban / card-backed session — host ends by PATCHing `tasks.metadata.live_session.endedAt`. */

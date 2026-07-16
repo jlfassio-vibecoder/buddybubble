@@ -31,6 +31,7 @@ import { tabataMechanicsStateToJson } from '@/features/live-video/wrappers/inter
 import type { CustomIntervalConfig } from '@/lib/workout-factory/interval-timer/custom-interval-config';
 import { resolveIntervalPresetLabel } from '@/lib/workout-factory/interval-timer/interval-preset-catalog';
 import type { Json } from '@/types/database';
+import type { SoloStudioRecorderStatus } from '@/features/live-video/hooks/useSoloStudioRecorder';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -40,6 +41,13 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
+
+export type SoloRecorderControls = {
+  status: SoloStudioRecorderStatus;
+  onStart: () => void;
+  onStop: () => void | Promise<void>;
+  disabled?: boolean;
+};
 
 export type SessionControlsActionsProps = {
   state: SessionState;
@@ -53,6 +61,10 @@ export type SessionControlsActionsProps = {
   liveDbReady?: boolean;
   hostClassRecordingPipelineBusy?: boolean;
   hostAsyncWorkoutEnabled?: boolean;
+  /** Solo Recording Studio: relabel end control; no multi-party audience. */
+  isSoloStudio?: boolean;
+  /** Solo studio browser capture controls (Record / Stop). */
+  soloRecorder?: SoloRecorderControls | null;
   hostNavActions?: ReactNode;
   hostDeckInjector?: ReactNode;
   className?: string;
@@ -79,6 +91,8 @@ export function SessionControlsActions({
   liveDbReady = true,
   hostClassRecordingPipelineBusy = false,
   hostAsyncWorkoutEnabled,
+  isSoloStudio = false,
+  soloRecorder = null,
   hostNavActions,
   hostDeckInjector,
   className,
@@ -173,36 +187,55 @@ export function SessionControlsActions({
   );
 
   const handleEndSessionForAll = () => {
-    if (amrapAttachReady) {
-      void supabase
-        .rpc('host_detach_amrap_session', { p_session_id: liveSessionRowId.trim() })
-        .then(({ error }) => {
-          if (error) {
-            if (process.env.NODE_ENV === 'development') {
-              console.error(
-                '[SessionControlsActions] host_detach_amrap_session',
-                error.message,
-                error.code,
-                error.details,
-                error.hint,
-              );
-            } else {
-              console.error('[SessionControlsActions] host_detach_amrap_session failed');
+    const runEnd = () => {
+      if (amrapAttachReady) {
+        void supabase
+          .rpc('host_detach_amrap_session', { p_session_id: liveSessionRowId.trim() })
+          .then(({ error }) => {
+            if (error) {
+              if (process.env.NODE_ENV === 'development') {
+                console.error(
+                  '[SessionControlsActions] host_detach_amrap_session',
+                  error.message,
+                  error.code,
+                  error.details,
+                  error.hint,
+                );
+              } else {
+                console.error('[SessionControlsActions] host_detach_amrap_session failed');
+              }
             }
-          }
+          });
+      }
+      if (!disableActions) setOverride(null);
+      const sid = liveSessionRowId.trim();
+      if (!disableActions && isHost && realtimeChannel && localUserId && sid) {
+        void realtimeChannel.send({
+          type: 'broadcast',
+          event: SESSION_COMMAND_EVENT,
+          payload: { type: 'SESSION_TERMINATED', senderId: localUserId, sessionId: sid },
         });
+      }
+      actions.endSession();
+      void onHostEndLiveSessionForAll?.();
+    };
+
+    if (soloRecorder?.status === 'recording' || soloRecorder?.status === 'requesting') {
+      void Promise.resolve(soloRecorder.onStop()).finally(runEnd);
+      return;
     }
-    if (!disableActions) setOverride(null);
-    const sid = liveSessionRowId.trim();
-    if (!disableActions && isHost && realtimeChannel && localUserId && sid) {
-      void realtimeChannel.send({
-        type: 'broadcast',
-        event: SESSION_COMMAND_EVENT,
-        payload: { type: 'SESSION_TERMINATED', senderId: localUserId, sessionId: sid },
+    runEnd();
+  };
+
+  const handleLeaveDockClick = () => {
+    if (!onLeaveDock) return;
+    if (soloRecorder?.status === 'recording' || soloRecorder?.status === 'requesting') {
+      void Promise.resolve(soloRecorder.onStop()).finally(() => {
+        onLeaveDock();
       });
+      return;
     }
-    actions.endSession();
-    void onHostEndLiveSessionForAll?.();
+    onLeaveDock();
   };
 
   const handleReturnToHuddle = () => {
@@ -495,6 +528,49 @@ export function SessionControlsActions({
 
       {showSeparator ? <ControlsSeparator /> : null}
 
+      {isSoloStudio && soloRecorder ? (
+        <>
+          {soloRecorder.status === 'recording' ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="destructive"
+              className="font-medium"
+              disabled={Boolean(soloRecorder.disabled) || disableActions}
+              onClick={() => {
+                void soloRecorder.onStop();
+              }}
+            >
+              <span
+                className="mr-1.5 inline-block size-2 animate-pulse rounded-full bg-white"
+                aria-hidden
+              />
+              Stop recording
+            </Button>
+          ) : soloRecorder.status === 'requesting' ? (
+            <Button type="button" size="sm" variant="secondary" className="font-medium" disabled>
+              Starting…
+            </Button>
+          ) : soloRecorder.status === 'uploading' ? (
+            <Button type="button" size="sm" variant="secondary" className="font-medium" disabled>
+              Uploading…
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="font-medium"
+              disabled={Boolean(soloRecorder.disabled) || disableActions}
+              onClick={soloRecorder.onStart}
+            >
+              Record
+            </Button>
+          )}
+          <ControlsSeparator />
+        </>
+      ) : null}
+
       {isIdle ? (
         <Button
           type="button"
@@ -517,7 +593,7 @@ export function SessionControlsActions({
           className="font-medium"
           onClick={handleEndSessionForAll}
         >
-          End Session for All
+          {isSoloStudio ? 'End studio' : 'End Session for All'}
         </Button>
       ) : null}
 
@@ -527,7 +603,7 @@ export function SessionControlsActions({
           size="sm"
           variant="ghost"
           className="font-medium"
-          onClick={onLeaveDock}
+          onClick={handleLeaveDockClick}
         >
           Exit workout
         </Button>

@@ -10,6 +10,7 @@ import { formatUserFacingError } from '@/lib/format-error';
 import { mergeClassRecordingIntoInstanceMetadata } from '@/lib/class-recording-metadata';
 import {
   CLASS_RECORDINGS_BUCKET,
+  CLASS_RECORDING_MAX_FILE_BYTES,
   buildClassRecordingObjectPath,
 } from '@/lib/class-recording-storage';
 import { cn } from '@/lib/utils';
@@ -20,7 +21,6 @@ import {
 import { toast } from 'sonner';
 
 // Copilot suggestion ignored: PR title and scope are edited on GitHub, not in application source.
-const CLASS_RECORDING_MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024;
 
 export type ClassEditorRecordingSectionProps = {
   workspaceId: string;

@@ -26,6 +26,10 @@ import { useAgoraSession } from '@/features/live-video/agora-session-context';
 import { useExcludeUidForTiles } from '@/features/live-video/hooks/useExcludeUidForTiles';
 import { useLiveSessionRoster } from '@/features/live-video/hooks/useLiveSessionRoster';
 import { useSessionTeardown } from '@/features/live-video/hooks/useSessionTeardown';
+import {
+  useSoloStudioRecorder,
+  type SoloStudioRecorderStatus,
+} from '@/features/live-video/hooks/useSoloStudioRecorder';
 import { useLiveSessionRuntime } from '@/features/live-video/theater/live-session-runtime-context';
 import { useLiveTheaterLayoutPlanContext } from '@/features/live-video/theater/live-theater-layout-context';
 import { LiveSessionTopBar } from '@/features/live-video/shells/huddle/LiveSessionTopBar';
@@ -128,6 +132,10 @@ export type LiveSessionViewProps = {
   selectionFloatingMediaBar?: ReactNode;
   /** Workouts bubble id for custom exercise injector (from `dashboard-shell`). */
   workoutsBubbleId?: string | null;
+  /** Host-only Solo Recording Studio — hide roster / multi-party chrome; relabel end control. */
+  isSoloStudio?: boolean;
+  /** Solo studio storage anchor (`class_instances.id`) for browser capture upload. */
+  sourceInstanceId?: string | null;
 };
 
 /**
@@ -155,6 +163,8 @@ function LiveSessionViewInner({
   boardSelectionPanel,
   selectionFloatingMediaBar,
   workoutsBubbleId,
+  isSoloStudio = false,
+  sourceInstanceId = null,
 }: LiveSessionViewProps) {
   const { override } = useWrapperAttach();
   const { hostNavActions } = useHostNavActions();
@@ -182,10 +192,35 @@ function LiveSessionViewInner({
 
   const { client, leaveChannel, isMicMuted, isCameraOff, toggleMic } = useAgoraSession();
 
+  const soloClassInstanceId = sourceInstanceId?.trim() ?? '';
+  const soloRecorderEnabled = Boolean(
+    isSoloStudio && isHost && soloClassInstanceId.length > 0 && workspaceId.trim().length > 0,
+  );
+  const soloRecorder = useSoloStudioRecorder({
+    workspaceId,
+    classInstanceId: soloClassInstanceId,
+    enabled: soloRecorderEnabled,
+  });
+
   const handleLeaveDock = useCallback(() => {
     leaveChannel();
     onAfterLeave?.();
   }, [leaveChannel, onAfterLeave]);
+
+  const soloRecorderControls = useMemo(
+    () =>
+      soloRecorderEnabled
+        ? {
+            status: soloRecorder.status as SoloStudioRecorderStatus,
+            onStart: () => {
+              void soloRecorder.startRecording();
+            },
+            onStop: () => soloRecorder.stopRecording(),
+            disabled: soloRecorder.status === 'requesting' || soloRecorder.status === 'uploading',
+          }
+        : null,
+    [soloRecorder, soloRecorderEnabled],
+  );
 
   const onRosterLocalMuteRequested = useCallback(() => {
     if (!isMicMuted) {
@@ -477,14 +512,15 @@ function LiveSessionViewInner({
   );
 
   const rosterFloatingTrigger = useMemo(
-    () => (
-      <RosterDrawerTrigger
-        count={rosterParticipants.length}
-        isOpen={rosterOpen}
-        onOpen={() => setRosterOpen((v) => !v)}
-      />
-    ),
-    [rosterParticipants.length, rosterOpen],
+    () =>
+      isSoloStudio ? null : (
+        <RosterDrawerTrigger
+          count={rosterParticipants.length}
+          isOpen={rosterOpen}
+          onOpen={() => setRosterOpen((v) => !v)}
+        />
+      ),
+    [isSoloStudio, rosterParticipants.length, rosterOpen],
   );
 
   const videoStage = useMemo(
@@ -500,6 +536,7 @@ function LiveSessionViewInner({
         localRailPipOverlay={localRailPipOverlay}
         renderRemoteRailBottomOverlay={renderRemoteRailBottomOverlay}
         floatingMediaExtras={rosterFloatingTrigger}
+        hideParticipantRail={isSoloStudio}
       />
     ),
     [
@@ -518,6 +555,7 @@ function LiveSessionViewInner({
       localRailPipOverlay,
       renderRemoteRailBottomOverlay,
       rosterFloatingTrigger,
+      isSoloStudio,
     ],
   );
 
@@ -617,6 +655,8 @@ function LiveSessionViewInner({
               liveDbReady={liveDbReady}
               hostClassRecordingPipelineBusy={isHost ? hostClassRecordingPipelineBusy : false}
               hostAsyncWorkoutEnabled={isHost ? hostAsyncWorkoutEnabled : undefined}
+              isSoloStudio={isSoloStudio}
+              soloRecorder={soloRecorderControls}
               hostNavActions={!showWrapperBoardSplit ? hostNavActions : null}
               hostDeckInjector={
                 !selectingFromBoard && isHost && canWriteTasks ? (
@@ -769,12 +809,14 @@ function LiveSessionViewInner({
         </Sheet>
       ) : null}
 
-      <RosterDrawer
-        localUserId={localUserId}
-        open={rosterOpen}
-        onOpenChange={setRosterOpen}
-        managedRoster={{ participants: rosterParticipants, sendRemoteMute }}
-      />
+      {!isSoloStudio ? (
+        <RosterDrawer
+          localUserId={localUserId}
+          open={rosterOpen}
+          onOpenChange={setRosterOpen}
+          managedRoster={{ participants: rosterParticipants, sendRemoteMute }}
+        />
+      ) : null}
     </>
   );
 }

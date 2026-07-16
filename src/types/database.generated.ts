@@ -1493,6 +1493,7 @@ export type Database = {
       };
       live_sessions: {
         Row: {
+          access_mode: string;
           created_at: string;
           host_user_id: string;
           id: string;
@@ -1501,6 +1502,7 @@ export type Database = {
           workspace_id: string | null;
         };
         Insert: {
+          access_mode?: string;
           created_at?: string;
           host_user_id: string;
           id?: string;
@@ -1509,6 +1511,7 @@ export type Database = {
           workspace_id?: string | null;
         };
         Update: {
+          access_mode?: string;
           created_at?: string;
           host_user_id?: string;
           id?: string;
@@ -3163,6 +3166,7 @@ export type Database = {
       };
       live_session_create: {
         Args: {
+          p_access_mode?: string;
           p_agora_uid: string;
           p_display_name: string;
           p_session_id: string;

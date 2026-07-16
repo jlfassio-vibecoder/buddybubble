@@ -1,6 +1,9 @@
 /** Supabase Storage bucket for class instance video recordings (see migration). */
 export const CLASS_RECORDINGS_BUCKET = 'class-recordings' as const;
 
+/** Shared max upload size for Track 2 manual + Solo Studio browser capture (2 GiB). */
+export const CLASS_RECORDING_MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024;
+
 /** Agora `fileNamePrefix` segments are hyphen-stripped lowercase hex (see `agora-recording-start`). */
 export function agoraRecordingFolderSegment(id: string): string {
   return id.replace(/-/g, '').toLowerCase();
