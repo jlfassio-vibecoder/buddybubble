@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { Layers } from 'lucide-react';
 import { createClient } from '@utils/supabase/client';
 import { formatUserFacingError } from '@/lib/format-error';
 import { cn } from '@/lib/utils';
@@ -11,6 +13,8 @@ import {
   type VideoLibraryCoachFilter,
   type VideoLibraryListItem,
 } from '@/lib/video-library/library';
+import { isVideoAggregationMetadata } from '@/lib/video-library/provision-aggregation-parent';
+import { Button } from '@/components/ui/button';
 import { VideoPublicationCard } from '@/components/fitness/VideoPublicationCard';
 
 export type VideoLibraryBoardProps = {
@@ -40,10 +44,16 @@ function mapPublicationRows(data: unknown[]): VideoLibraryListItem[] {
 
     const nested = row.class_instances;
     let offeringName: string | null = null;
+    let instanceMeta: unknown = null;
     if (Array.isArray(nested)) {
       offeringName = offeringNameFromEmbed(nested[0] ?? null);
+      instanceMeta =
+        nested[0] && typeof nested[0] === 'object'
+          ? (nested[0] as { metadata?: unknown }).metadata
+          : null;
     } else if (nested && typeof nested === 'object') {
       offeringName = offeringNameFromEmbed(nested);
+      instanceMeta = (nested as { metadata?: unknown }).metadata;
     }
 
     out.push({
@@ -54,6 +64,7 @@ function mapPublicationRows(data: unknown[]): VideoLibraryListItem[] {
       published_by: publishedBy,
       class_instance_id: classInstanceId,
       offeringName,
+      isAggregation: isVideoAggregationMetadata(instanceMeta),
     });
   }
   return out;
@@ -65,11 +76,20 @@ export function VideoLibraryBoard({
   canManage = false,
   calendarSlot,
 }: VideoLibraryBoardProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [items, setItems] = useState<VideoLibraryListItem[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<VideoLibraryCoachFilter>('all');
+
+  const openAggregatorBuilder = useCallback(() => {
+    const q = new URLSearchParams(searchParams.toString());
+    q.set('video_aggregator', 'new');
+    router.replace(`${pathname}?${q.toString()}`, { scroll: false });
+  }, [pathname, router, searchParams]);
 
   useEffect(() => {
     createClient()
@@ -95,6 +115,7 @@ export function VideoLibraryBoard({
         class_instance_id,
         class_instances (
           offering_id,
+          metadata,
           class_offerings ( name )
         )
       `,
@@ -182,26 +203,38 @@ export function VideoLibraryBoard({
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
           <h2 className="text-base font-semibold text-foreground">Video Library</h2>
           {canManage ? (
-            <div
-              className="flex rounded-lg border border-border p-0.5"
-              role="group"
-              aria-label="Filter publications"
-            >
-              {FILTERS.map((f) => (
-                <button
-                  key={f.id}
-                  type="button"
-                  className={cn(
-                    'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-                    filter === f.id
-                      ? 'bg-muted text-foreground'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
-                  onClick={() => setFilter(f.id)}
-                >
-                  {f.label}
-                </button>
-              ))}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="gap-1.5"
+                onClick={openAggregatorBuilder}
+              >
+                <Layers className="size-3.5 shrink-0" aria-hidden />
+                Create aggregated workout
+              </Button>
+              <div
+                className="flex rounded-lg border border-border p-0.5"
+                role="group"
+                aria-label="Filter publications"
+              >
+                {FILTERS.map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    className={cn(
+                      'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                      filter === f.id
+                        ? 'bg-muted text-foreground'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                    onClick={() => setFilter(f.id)}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : null}
         </div>

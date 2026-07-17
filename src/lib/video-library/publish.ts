@@ -1,4 +1,8 @@
-import type { ClassRecordingPayload } from '@/types/live-session-invite';
+import { isVideoAggregationMetadata } from '@/lib/video-library/provision-aggregation-parent';
+import {
+  parseClassRecordingFromInstanceMetadata,
+  type ClassRecordingPayload,
+} from '@/types/live-session-invite';
 
 export type VideoLibraryAccessScope = 'workspace' | 'bubble_members' | 'public_storefront';
 
@@ -10,4 +14,18 @@ export function isRecordingReadyToPublish(
   const path = recording.storagePath?.trim();
   const url = recording.playbackUrl?.trim();
   return Boolean(path || url);
+}
+
+/**
+ * True when a class instance can be published: ready single-VOD recording, or a video aggregation
+ * parent (media lives on child links).
+ */
+export function canPublishClassInstanceToLibrary(
+  metadata: unknown,
+  recording: ClassRecordingPayload | null | undefined = parseClassRecordingFromInstanceMetadata(
+    metadata,
+  ),
+): boolean {
+  if (isVideoAggregationMetadata(metadata)) return true;
+  return isRecordingReadyToPublish(recording);
 }

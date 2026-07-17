@@ -56,6 +56,7 @@ import { ProfileModal, type ProfilePermissionsContext } from '@/components/modal
 import { ProfileCompletionModal } from '@/components/modals/ProfileCompletionModal';
 import { AnalyticsBoard } from '@/components/fitness/AnalyticsBoard';
 import { ClassesBoard } from '@/components/fitness/ClassesBoard';
+import { VideoAggregatorBuilder } from '@/components/fitness/VideoAggregatorBuilder';
 import { VideoLibraryBoard } from '@/components/fitness/VideoLibraryBoard';
 import { isVideoLibraryBubble } from '@/lib/video-library/library';
 import { ProgramsBoard } from '@/components/fitness/ProgramsBoard';
@@ -135,7 +136,7 @@ import {
   StandaloneClassDeckBuilder,
   isValidClassInstanceIdForDeckBuilder,
 } from '@/features/live-video/shells/huddle/StandaloneClassDeckBuilder';
-import { AsyncPlaybackShell } from '@/features/live-video/shells/AsyncPlaybackShell';
+import { ClassAsyncPlaybackRouter } from '@/features/live-video/shells/ClassAsyncPlaybackRouter';
 import { parseLiveSessionInviteFromMessageMetadata } from '@/types/live-session-invite';
 import { TrialPaywallGuard } from '@/components/subscription/trial-paywall-guard';
 import { LiveSessionRuntimeProvider } from '@/features/live-video/theater/live-session-runtime-context';
@@ -646,6 +647,15 @@ function DashboardShellInner({
   /** Admin class deck builder takes precedence when both query params are present. */
   const showClassAsyncPlayer = showClassAsyncPlayerBase && !showClassDeckBuilder;
 
+  const videoAggregatorParam = searchParams.get('video_aggregator')?.trim() ?? '';
+  const showVideoAggregator =
+    !embedMode &&
+    !activeLiveVideoSession &&
+    canManageWorkspaceClasses &&
+    videoAggregatorParam === 'new' &&
+    !showClassDeckBuilder &&
+    !showClassAsyncPlayer;
+
   useEffect(() => {
     if (activeLiveVideoSession && activeLiveVideoSession.workspaceId !== workspaceId) {
       workoutDeckSelection.exitSelectionMode();
@@ -755,6 +765,13 @@ function DashboardShellInner({
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }, [pathname, router, searchParams, workoutDeckSelection]);
 
+  const clearVideoAggregator = useCallback(() => {
+    const q = new URLSearchParams(searchParams.toString());
+    q.delete('video_aggregator');
+    const qs = q.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [pathname, router, searchParams]);
+
   useEffect(() => {
     if (!classDeckBuilderParam) return;
     const allowed =
@@ -795,6 +812,33 @@ function DashboardShellInner({
     searchParams,
     showClassAsyncPlayer,
     showClassDeckBuilder,
+  ]);
+
+  useEffect(() => {
+    if (!videoAggregatorParam) return;
+    const allowed =
+      !embedMode &&
+      canManageWorkspaceClasses &&
+      !activeLiveVideoSession &&
+      videoAggregatorParam === 'new' &&
+      !showClassDeckBuilder &&
+      !showClassAsyncPlayer;
+    if (allowed) return;
+    const q = new URLSearchParams(searchParams.toString());
+    if (!q.has('video_aggregator')) return;
+    q.delete('video_aggregator');
+    const qs = q.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [
+    activeLiveVideoSession,
+    canManageWorkspaceClasses,
+    embedMode,
+    pathname,
+    router,
+    searchParams,
+    showClassAsyncPlayer,
+    showClassDeckBuilder,
+    videoAggregatorParam,
   ]);
 
   /** Deep link: ?join_live_class= — fetch instance metadata, dispatch live join, strip param via history (avoids stale router/searchParams after await). */
@@ -875,6 +919,13 @@ function DashboardShellInner({
     if (searchParams.get('tab') === 'board') return;
     mobileShell.setTab('board');
   }, [embedMode, layoutMobile, mobileShell, searchParams, showClassAsyncPlayer]);
+
+  /** Aggregator builder uses the same main-stage slot. */
+  useEffect(() => {
+    if (!showVideoAggregator || !layoutMobile || embedMode) return;
+    if (searchParams.get('tab') === 'board') return;
+    mobileShell.setTab('board');
+  }, [embedMode, layoutMobile, mobileShell, searchParams, showVideoAggregator]);
 
   const applyDesktopFocusMode = useCallback(
     (mode: DesktopFocusMode) => {
@@ -1933,10 +1984,16 @@ function DashboardShellInner({
           guestTaskUserId={profile?.id ?? null}
         />
       ) : showClassAsyncPlayer ? (
-        <AsyncPlaybackShell
+        <ClassAsyncPlaybackRouter
           classInstanceId={classAsyncPlayerParam}
           onClose={clearClassAsyncPlayer}
           workspaceId={workspaceId}
+          canPublish={canManageWorkspaceClasses}
+        />
+      ) : showVideoAggregator ? (
+        <VideoAggregatorBuilder
+          workspaceId={workspaceId}
+          onClose={clearVideoAggregator}
           canPublish={canManageWorkspaceClasses}
         />
       ) : isAnalyticsBubble ? (
@@ -2005,6 +2062,8 @@ function DashboardShellInner({
       showClassAsyncPlayer,
       classAsyncPlayerParam,
       clearClassAsyncPlayer,
+      showVideoAggregator,
+      clearVideoAggregator,
       bumpTaskViews,
       isAnalyticsBubble,
       isClassesBubble,

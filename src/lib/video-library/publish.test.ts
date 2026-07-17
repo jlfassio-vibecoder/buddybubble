@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { isRecordingReadyToPublish } from './publish';
+import { canPublishClassInstanceToLibrary, isRecordingReadyToPublish } from './publish';
+import { buildAggregationInstanceMetadata } from './provision-aggregation-parent';
 import type { ClassRecordingPayload } from '@/types/live-session-invite';
 
 const readyBase: ClassRecordingPayload = {
@@ -39,5 +40,30 @@ describe('isRecordingReadyToPublish', () => {
         playbackUrl: 'https://example.com/v.webm',
       }),
     ).toBe(true);
+  });
+});
+
+describe('canPublishClassInstanceToLibrary', () => {
+  it('returns true for video aggregation metadata without a parent recording', () => {
+    expect(canPublishClassInstanceToLibrary(buildAggregationInstanceMetadata())).toBe(true);
+  });
+
+  it('returns false for unfinished recording without aggregation', () => {
+    expect(
+      canPublishClassInstanceToLibrary(
+        {
+          class_recording: {
+            type: 'class_recording',
+            status: 'uploading',
+            storagePath: 'ws/ci/x.webm',
+          },
+        },
+        { ...readyBase, status: 'uploading' },
+      ),
+    ).toBe(false);
+  });
+
+  it('returns true for ready recording', () => {
+    expect(canPublishClassInstanceToLibrary({ class_recording: readyBase }, readyBase)).toBe(true);
   });
 });

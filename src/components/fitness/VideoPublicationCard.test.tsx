@@ -24,6 +24,7 @@ const item: VideoLibraryListItem = {
   published_by: 'user-a',
   class_instance_id: 'ci-1',
   offeringName: null,
+  isAggregation: false,
 };
 
 afterEach(() => {
@@ -63,6 +64,21 @@ describe('VideoPublicationCard', () => {
         scroll: false,
       });
     });
+  });
+
+  it('hides Edit workout for aggregated publications', async () => {
+    render(
+      <VideoPublicationCard
+        item={{ ...item, isAggregation: true }}
+        canManage
+        workspaceId="ws-1"
+        onUnpublished={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Publication actions'));
+    expect(await screen.findByRole('menuitem', { name: /unpublish/i })).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: /edit workout/i })).toBeNull();
   });
 
   it('renders title and Workspace badge', () => {

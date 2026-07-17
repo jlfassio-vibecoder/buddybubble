@@ -1,9 +1,10 @@
 'use server';
 
 import {
-  isRecordingReadyToPublish,
+  canPublishClassInstanceToLibrary,
   type VideoLibraryAccessScope,
 } from '@/lib/video-library/publish';
+import { isVideoAggregationMetadata } from '@/lib/video-library/provision-aggregation-parent';
 import { parseClassRecordingFromInstanceMetadata } from '@/types/live-session-invite';
 import { createClient } from '@utils/supabase/server';
 
@@ -186,8 +187,16 @@ export async function publishToVideoLibraryAction(input: {
   }
 
   const recording = parseClassRecordingFromInstanceMetadata(row.metadata);
-  if (!isRecordingReadyToPublish(recording)) {
+  if (!canPublishClassInstanceToLibrary(row.metadata, recording)) {
     return { error: 'Recording must be ready before publishing.' };
+  }
+
+  // Aggregated workouts have no parent recording, so anonymous storefront playback cannot
+  // resolve a source. Block public publishing until storefront aggregate playback exists.
+  if (accessScope === 'public_storefront' && isVideoAggregationMetadata(row.metadata)) {
+    return {
+      error: 'Aggregated workouts cannot be published to a public storefront yet.',
+    };
   }
 
   let bubbleId: string;
