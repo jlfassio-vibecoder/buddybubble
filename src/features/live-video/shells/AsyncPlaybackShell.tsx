@@ -1,17 +1,19 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Library, Play } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { Library, ListOrdered, Play } from 'lucide-react';
 import { PublishVideoModal } from '@/components/modals/PublishVideoModal';
 import { Button } from '@/components/ui/button';
+import { CoachContextRail } from '@/features/live-video/components/CoachContextRail';
 import { AsyncPlaybackWorkoutLogger } from '@/features/live-video/shells/ParticipantWorkoutLogger';
-import { SessionDeckBuilder } from '@/features/live-video/shells/huddle/SessionDeckBuilder';
 import { SessionHeader } from '@/features/live-video/shells/huddle/SessionHeader';
 import {
   WorkoutDeckSelectionProvider,
   useWorkoutDeckSelection,
 } from '@/features/live-video/shells/huddle/workout-deck-selection-context';
 import { initialSessionState } from '@/features/live-video/state/sessionStateMachine';
+import { WorkoutQueueRegion } from '@/features/live-video/ui/WorkoutQueueRegion';
 import { classDeckBuilderSessionId } from '@/lib/fitness/class-deck-builder-session-id';
 import {
   CLASS_RECORDINGS_BUCKET,
@@ -57,10 +59,19 @@ function AsyncPlaybackShellInner({
   const [publishOpen, setPublishOpen] = useState(false);
   const [resolvedTitle, setResolvedTitle] = useState(defaultTitle?.trim() || 'Untitled recording');
 
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
   const deckCtx = useWorkoutDeckSelection();
   /** Last successful parse of `class_recording.status` — used to keep polling after transient read errors while processing. */
   const lastRecordingStatusRef = useRef<ClassRecordingStatus | null>(null);
+
+  const openDeckBuilder = useCallback(() => {
+    const q = new URLSearchParams(searchParams.toString());
+    q.set('class_deck_builder', classInstanceId);
+    router.replace(`${pathname}?${q.toString()}`, { scroll: false });
+  }, [classInstanceId, pathname, router, searchParams]);
 
   useEffect(() => {
     if (defaultTitle?.trim()) {
@@ -224,12 +235,111 @@ function AsyncPlaybackShellInner({
       recordingReadyToPlay ||
       Boolean(recordingRec?.status === 'ready' && recordingLoadError));
 
-  const queueProps = {
-    asyncMemberReadOnlyQueue: true as const,
-    asyncQueueSessionId: deckSessionId,
-    selectedAsyncDeckItemId: localActiveDeckItemId,
-    onAsyncSelectDeckItem: (itemId: string | null) => setLocalActiveDeckItemId(itemId),
-  };
+  const deckIsEmpty = deckCtx.deck.length === 0;
+  const activeSnapshot = useMemo(() => {
+    if (!localActiveDeckItemId) return null;
+    return (
+      deckCtx.deck.find((s) => (s.deckItemId ?? s.snapshotId) === localActiveDeckItemId) ?? null
+    );
+  }, [deckCtx.deck, localActiveDeckItemId]);
+
+  const centerPane = !isPlaying ? (
+    <div className="flex min-h-0 min-w-0 flex-[1.4] flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-border bg-muted/10 px-4 py-8">
+      {recordingLoadError ? (
+        <p className="max-w-md text-center text-sm text-destructive" role="alert">
+          {recordingLoadError}
+        </p>
+      ) : null}
+      {recordingPipelineBusy && !recordingLoadError ? (
+        <p className="max-w-md text-center text-sm text-muted-foreground" role="status">
+          {recordingRec?.status === 'recording'
+            ? 'Live recording is in progress. You can review the workout queue; playback will be available after the recording finishes and uploads.'
+            : 'Recording is processing — check back shortly. You can still review the workout queue.'}
+        </p>
+      ) : null}
+      {recordingFailed && !recordingLoadError ? (
+        <p className="max-w-md text-center text-sm text-destructive" role="alert">
+          {recordingRec?.errorMessage?.trim()
+            ? recordingRec.errorMessage.trim()
+            : 'Recording failed or is unavailable.'}
+        </p>
+      ) : null}
+      {!recordingPipelineBusy &&
+      !recordingFailed &&
+      !recordingReadyToPlay &&
+      !recordingLoadError ? (
+        <p className="max-w-md text-center text-sm text-muted-foreground">
+          {recordingRec?.status === 'ready'
+            ? 'Preparing playback link…'
+            : 'Class recording isn’t available yet. You can still review exercises and the queue below.'}
+        </p>
+      ) : null}
+      <Button
+        type="button"
+        size="lg"
+        className="gap-2 shadow-md"
+        disabled={!canStartTheater}
+        onClick={() => setIsPlaying(true)}
+      >
+        <Play className="size-4 shrink-0" aria-hidden />
+        Play
+      </Button>
+    </div>
+  ) : (
+    <div className="flex min-h-0 min-w-0 flex-[1.4] flex-col justify-center">
+      {recordingLoadError ? (
+        <p className="mx-auto max-w-md text-center text-sm text-destructive" role="alert">
+          {recordingLoadError}
+        </p>
+      ) : null}
+      {!recordingLoadError && resolvedVideoUrl ? (
+        <video
+          key={resolvedVideoUrl}
+          src={resolvedVideoUrl}
+          controls
+          className="aspect-video w-full rounded-lg border border-border bg-black object-contain"
+        />
+      ) : null}
+      {!recordingLoadError && !resolvedVideoUrl ? (
+        <div
+          className="flex aspect-video w-full items-center justify-center rounded-lg border border-dashed border-border bg-muted/20 px-4 text-center text-sm text-muted-foreground"
+          role="status"
+        >
+          Recording unavailable — playback URL is missing for this class.
+        </div>
+      ) : null}
+    </div>
+  );
+
+  const bottomQueue = deckIsEmpty ? (
+    <div
+      className="flex shrink-0 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-muted/10 px-4 py-6 text-center"
+      role="status"
+    >
+      <p className="max-w-md text-sm text-muted-foreground">
+        {canPublish
+          ? 'This video has no workout attached yet.'
+          : 'No workout attached to this video.'}
+      </p>
+      {canPublish ? (
+        <Button type="button" size="sm" className="gap-1.5" onClick={openDeckBuilder}>
+          <ListOrdered className="size-3.5 shrink-0" aria-hidden />
+          Attach workout
+        </Button>
+      ) : null}
+    </div>
+  ) : (
+    <WorkoutQueueRegion
+      className="min-h-0 min-w-0 shrink-0"
+      state={initialSessionState}
+      uiMode="builder"
+      selectingFromBoard={false}
+      asyncMemberReadOnlyQueue
+      asyncQueueSessionId={deckSessionId}
+      selectedAsyncDeckItemId={localActiveDeckItemId}
+      onAsyncSelectDeckItem={(itemId) => setLocalActiveDeckItemId(itemId)}
+    />
+  );
 
   return (
     <div className={cn('flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3 md:p-4', className)}>
@@ -245,6 +355,18 @@ function AsyncPlaybackShellInner({
           }
         />
         <div className="flex shrink-0 items-center gap-2">
+          {canPublish ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              onClick={openDeckBuilder}
+            >
+              <ListOrdered className="size-3.5 shrink-0" aria-hidden />
+              Edit workout
+            </Button>
+          ) : null}
           {canPublish && workspaceId && recordingRec?.status === 'ready' ? (
             <Button
               type="button"
@@ -273,9 +395,9 @@ function AsyncPlaybackShellInner({
         />
       ) : null}
 
-      {!isPlaying ? (
-        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
-          <div className="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row">
+          {!deckIsEmpty ? (
             <div className="flex min-h-[220px] min-w-0 flex-1 flex-col lg:max-w-md">
               <AsyncPlaybackWorkoutLogger
                 className="min-h-0 flex-1 rounded-lg border border-border bg-muted/10 p-2"
@@ -283,95 +405,18 @@ function AsyncPlaybackShellInner({
                 activeDeckItemId={localActiveDeckItemId}
               />
             </div>
-            <div className="flex min-h-0 min-w-0 flex-[1.4] flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-border bg-muted/10 px-4 py-8">
-              {recordingLoadError ? (
-                <p className="max-w-md text-center text-sm text-destructive" role="alert">
-                  {recordingLoadError}
-                </p>
-              ) : null}
-              {recordingPipelineBusy && !recordingLoadError ? (
-                <p className="max-w-md text-center text-sm text-muted-foreground" role="status">
-                  {recordingRec?.status === 'recording'
-                    ? 'Live recording is in progress. You can review the workout queue; playback will be available after the recording finishes and uploads.'
-                    : 'Recording is processing — check back shortly. You can still review the workout queue.'}
-                </p>
-              ) : null}
-              {recordingFailed && !recordingLoadError ? (
-                <p className="max-w-md text-center text-sm text-destructive" role="alert">
-                  {recordingRec?.errorMessage?.trim()
-                    ? recordingRec.errorMessage.trim()
-                    : 'Recording failed or is unavailable.'}
-                </p>
-              ) : null}
-              {!recordingPipelineBusy &&
-              !recordingFailed &&
-              !recordingReadyToPlay &&
-              !recordingLoadError ? (
-                <p className="max-w-md text-center text-sm text-muted-foreground">
-                  {recordingRec?.status === 'ready'
-                    ? 'Preparing playback link…'
-                    : 'Class recording isn’t available yet. You can still review exercises and the queue below.'}
-                </p>
-              ) : null}
-              <Button
-                type="button"
-                size="lg"
-                className="gap-2 shadow-md"
-                disabled={!canStartTheater}
-                onClick={() => setIsPlaying(true)}
-              >
-                <Play className="size-4 shrink-0" aria-hidden />
-                Play
-              </Button>
-            </div>
-          </div>
-          <SessionDeckBuilder
-            className="min-h-0 min-w-0 shrink-0"
-            state={initialSessionState}
-            {...queueProps}
-          />
+          ) : null}
+          {centerPane}
+          {!deckIsEmpty ? (
+            <CoachContextRail
+              className="min-h-[220px] lg:w-[min(100%,20rem)] lg:shrink-0"
+              workspaceId={workspaceId}
+              activeSnapshot={activeSnapshot}
+            />
+          ) : null}
         </div>
-      ) : (
-        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
-          <div className="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row">
-            <div className="flex min-h-[220px] min-w-0 flex-1 flex-col lg:max-w-md">
-              <AsyncPlaybackWorkoutLogger
-                className="min-h-0 flex-1 rounded-lg border border-border bg-muted/10 p-2"
-                sessionId={deckSessionId}
-                activeDeckItemId={localActiveDeckItemId}
-              />
-            </div>
-            <div className="flex min-h-0 min-w-0 flex-[1.4] flex-col justify-center">
-              {recordingLoadError ? (
-                <p className="mx-auto max-w-md text-center text-sm text-destructive" role="alert">
-                  {recordingLoadError}
-                </p>
-              ) : null}
-              {!recordingLoadError && resolvedVideoUrl ? (
-                <video
-                  key={resolvedVideoUrl}
-                  src={resolvedVideoUrl}
-                  controls
-                  className="aspect-video w-full rounded-lg border border-border bg-black object-contain"
-                />
-              ) : null}
-              {!recordingLoadError && !resolvedVideoUrl ? (
-                <div
-                  className="flex aspect-video w-full items-center justify-center rounded-lg border border-dashed border-border bg-muted/20 px-4 text-center text-sm text-muted-foreground"
-                  role="status"
-                >
-                  Recording unavailable — playback URL is missing for this class.
-                </div>
-              ) : null}
-            </div>
-          </div>
-          <SessionDeckBuilder
-            className="min-h-0 min-w-0 shrink-0"
-            state={initialSessionState}
-            {...queueProps}
-          />
-        </div>
-      )}
+        {bottomQueue}
+      </div>
     </div>
   );
 }

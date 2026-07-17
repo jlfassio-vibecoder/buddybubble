@@ -6,6 +6,7 @@ import {
   CLASS_RECORDINGS_BUCKET,
   buildClassRecordingObjectPath,
 } from '@/lib/class-recording-storage';
+import { copyLiveDeckToClassSession } from '@/features/live-video/shells/huddle/live-deck-merge';
 import type { Database, Json } from '@/types/database';
 import {
   parseClassRecordingFromInstanceMetadata,
@@ -18,13 +19,15 @@ export type UploadSoloStudioRecordingArgs = {
   supabase: SupabaseClient<Database>;
   workspaceId: string;
   classInstanceId: string;
+  /** Live session UUID whose deck rows are reverse-copied into the class draft. */
+  liveSessionId: string;
   blob: Blob;
   /** Override now for tests. */
   nowIso?: string;
 };
 
 export type UploadSoloStudioRecordingResult =
-  | { ok: true; storagePath: string }
+  | { ok: true; storagePath: string; deckCopyWarning?: string }
   | { ok: false; error: string };
 
 async function persistInstanceMetadata(
@@ -53,6 +56,7 @@ export async function uploadSoloStudioRecording(
 ): Promise<UploadSoloStudioRecordingResult> {
   const workspaceId = args.workspaceId.trim();
   const classInstanceId = args.classInstanceId.trim();
+  const liveSessionId = args.liveSessionId.trim();
   if (!workspaceId || !classInstanceId) {
     return { ok: false, error: 'Missing workspace or class instance for upload.' };
   }
@@ -142,7 +146,18 @@ export async function uploadSoloStudioRecording(
       updatedAt: new Date().toISOString(),
     });
     await persistInstanceMetadata(supabase, classInstanceId, meta);
-    return { ok: true, storagePath };
+
+    let deckCopyWarning: string | undefined;
+    if (liveSessionId) {
+      const merge = await copyLiveDeckToClassSession(supabase, liveSessionId, classInstanceId);
+      if (!merge.ok) {
+        const reason = merge.reason?.trim() || 'Could not copy workout queue to this recording.';
+        console.warn('[solo_studio] copy_live_deck_to_class_session failed', reason);
+        deckCopyWarning = reason;
+      }
+    }
+
+    return deckCopyWarning ? { ok: true, storagePath, deckCopyWarning } : { ok: true, storagePath };
   } catch (e) {
     const msg = formatUserFacingError(e);
     try {

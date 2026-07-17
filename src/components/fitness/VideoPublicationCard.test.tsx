@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { VideoLibraryListItem } from '@/lib/video-library/library';
 
+const replaceMock = vi.fn();
+
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ replace: vi.fn() }),
+  useRouter: () => ({ replace: replaceMock }),
   usePathname: () => '/app/ws',
   useSearchParams: () => new URLSearchParams(),
 }));
@@ -26,6 +28,7 @@ const item: VideoLibraryListItem = {
 
 afterEach(() => {
   cleanup();
+  replaceMock.mockClear();
 });
 
 describe('VideoPublicationCard', () => {
@@ -44,6 +47,22 @@ describe('VideoPublicationCard', () => {
       />,
     );
     expect(screen.queryByLabelText('Publication actions')).toBeNull();
+  });
+
+  it('offers Edit workout in the manage menu and routes to class_deck_builder', async () => {
+    render(
+      <VideoPublicationCard item={item} canManage workspaceId="ws-1" onUnpublished={vi.fn()} />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Publication actions'));
+    const editItem = await screen.findByRole('menuitem', { name: /edit workout/i });
+    fireEvent.click(editItem);
+
+    await waitFor(() => {
+      expect(replaceMock).toHaveBeenCalledWith('/app/ws?class_deck_builder=ci-1', {
+        scroll: false,
+      });
+    });
   });
 
   it('renders title and Workspace badge', () => {

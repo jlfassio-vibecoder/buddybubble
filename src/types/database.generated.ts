@@ -3149,6 +3149,10 @@ export type Database = {
         Args: { p_class_instance_id: string; p_live_session_id: string };
         Returns: number;
       };
+      copy_live_deck_to_class_session: {
+        Args: { p_live_session_id: string; p_class_instance_id: string };
+        Returns: number;
+      };
       ensure_profile_for_uid: { Args: { _uid: string }; Returns: undefined };
       exercise_dictionary_lookup_by_names: {
         Args: { p_names: string[] };

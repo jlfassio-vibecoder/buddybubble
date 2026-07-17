@@ -12,9 +12,22 @@ export type WorkoutQueueRegionProps = {
   /** Reserved for future toggle gating during board pick. */
   selectingFromBoard: boolean;
   className?: string;
+  /** Class async playback: read-only queue tiles (forwarded to SessionDeckBuilder). */
+  asyncMemberReadOnlyQueue?: boolean;
+  asyncQueueSessionId?: string | null;
+  selectedAsyncDeckItemId?: string | null;
+  onAsyncSelectDeckItem?: (deckItemId: string | null) => void;
 };
 
-export function WorkoutQueueRegion({ state, uiMode, className }: WorkoutQueueRegionProps) {
+export function WorkoutQueueRegion({
+  state,
+  uiMode,
+  className,
+  asyncMemberReadOnlyQueue,
+  asyncQueueSessionId,
+  selectedAsyncDeckItemId,
+  onAsyncSelectDeckItem,
+}: WorkoutQueueRegionProps) {
   const [isOpen, setIsOpen] = useState(uiMode !== 'live');
   const panelId = useId();
 
@@ -35,7 +48,15 @@ export function WorkoutQueueRegion({ state, uiMode, className }: WorkoutQueueReg
         )}
       >
         <div id={panelId} className="min-h-0 overflow-hidden">
-          <SessionDeckBuilder state={state} isCollapsed={!isOpen} className="min-h-0 min-w-0" />
+          <SessionDeckBuilder
+            state={state}
+            isCollapsed={!isOpen}
+            className="min-h-0 min-w-0"
+            asyncMemberReadOnlyQueue={asyncMemberReadOnlyQueue}
+            asyncQueueSessionId={asyncQueueSessionId}
+            selectedAsyncDeckItemId={selectedAsyncDeckItemId}
+            onAsyncSelectDeckItem={onAsyncSelectDeckItem}
+          />
         </div>
       </div>
       <button

@@ -25,6 +25,8 @@ export type SoloStudioRecorderStatus =
 export type UseSoloStudioRecorderArgs = {
   workspaceId: string;
   classInstanceId: string;
+  /** Live session UUID for reverse-copying the workout queue into the class draft on finalize. */
+  liveSessionId: string;
   enabled: boolean;
 };
 
@@ -62,6 +64,7 @@ function createEmptyCaptureRefs(): CaptureRefs {
 export function useSoloStudioRecorder({
   workspaceId,
   classInstanceId,
+  liveSessionId,
   enabled,
 }: UseSoloStudioRecorderArgs): UseSoloStudioRecorderResult {
   const [status, setStatus] = useState<SoloStudioRecorderStatus>('idle');
@@ -126,12 +129,18 @@ export function useSoloStudioRecorder({
           supabase: supabaseRef.current,
           workspaceId,
           classInstanceId,
+          liveSessionId,
           blob,
         });
 
         if (result.ok) {
           setStatus('ready');
           toast.success('Studio recording uploaded');
+          if (result.deckCopyWarning) {
+            toast.warning(
+              'Recording saved, but the workout queue could not be attached. Edit the workout from Classes.',
+            );
+          }
         } else {
           setStatus('failed');
           setErrorMessage(result.error);
@@ -141,7 +150,7 @@ export function useSoloStudioRecorder({
         uploadInFlightRef.current = false;
       }
     },
-    [workspaceId, classInstanceId],
+    [workspaceId, classInstanceId, liveSessionId],
   );
 
   /** Emergency path (pagehide / unmount): same in-flight lock as manual stop → runUpload. */
@@ -154,12 +163,13 @@ export function useSoloStudioRecorder({
         supabase: supabaseRef.current,
         workspaceId,
         classInstanceId,
+        liveSessionId,
         blob,
       }).finally(() => {
         uploadInFlightRef.current = false;
       });
     },
-    [workspaceId, classInstanceId],
+    [workspaceId, classInstanceId, liveSessionId],
   );
   emergencyUploadBlobRef.current = emergencyUploadBlob;
 

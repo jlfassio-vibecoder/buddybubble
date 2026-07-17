@@ -199,6 +199,7 @@ function LiveSessionViewInner({
   const soloRecorder = useSoloStudioRecorder({
     workspaceId,
     classInstanceId: soloClassInstanceId,
+    liveSessionId,
     enabled: soloRecorderEnabled,
   });
 
