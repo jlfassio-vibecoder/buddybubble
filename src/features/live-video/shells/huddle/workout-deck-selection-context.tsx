@@ -83,6 +83,8 @@ function rehydrateSnapshotFromDeckRow(row: LiveSessionDeckRow): SessionDeckSnaps
 
 export type WorkoutDeckSelectionContextValue = {
   deck: SessionDeckSnapshot[];
+  /** True while the initial deck read for the current `session_id` is still in flight (avoids false "empty" states). */
+  isDeckHydrating: boolean;
   isSelectingFromBoard: boolean;
   activeSnapshotId: string | null;
   setActiveSnapshotId: (id: string | null) => void;
@@ -133,6 +135,8 @@ export function WorkoutDeckSelectionProvider({
   const supabase = useMemo(() => createClient(), []);
   const [deck, setDeck] = useState<SessionDeckSnapshot[]>([]);
   const [activeSnapshotId, setActiveSnapshotIdState] = useState<string | null>(null);
+  /** Last `session_id` whose deck read has resolved (success or error); drives `isDeckHydrating`. */
+  const [hydratedDeckSessionId, setHydratedDeckSessionId] = useState<string | null>(null);
 
   const storeSessionId = useLiveVideoStore((s) => s.activeSession?.sessionId ?? null);
   const storeHostUserId = useLiveVideoStore((s) => s.activeSession?.hostUserId ?? null);
@@ -166,6 +170,8 @@ export function WorkoutDeckSelectionProvider({
   );
   /** Signed-in reads; RLS decides row visibility. Avoid gating hydration on `canPersist` so deck reloads after dependency churn / remounts. */
   const allowDeckHydration = Boolean(sidTrimmed && localUserId);
+  /** Deck read for the current session is pending until it resolves once; keep UI out of a false "empty" state meanwhile. */
+  const isDeckHydrating = allowDeckHydration && hydratedDeckSessionId !== sidTrimmed;
 
   const bridgeSelecting = useSyncExternalStore(
     subscribeWorkoutDeckBoardSelecting,
@@ -262,6 +268,7 @@ export function WorkoutDeckSelectionProvider({
       if (cancelled) return;
       if (error) {
         hydratedSessionIdRef.current = null;
+        setHydratedDeckSessionId(sidTrimmed);
         logDeckWriteError('rehydrate', error);
         return;
       }
@@ -275,6 +282,7 @@ export function WorkoutDeckSelectionProvider({
         const existingRowKeys = new Set(prev.map((snap) => snap.deckRowKey));
         return [...prev, ...rehydratedDeck.filter((snap) => !existingRowKeys.has(snap.deckRowKey))];
       });
+      setHydratedDeckSessionId(sidTrimmed);
     })();
 
     return () => {
@@ -603,6 +611,7 @@ export function WorkoutDeckSelectionProvider({
   const value = useMemo(
     (): WorkoutDeckSelectionContextValue => ({
       deck,
+      isDeckHydrating,
       isSelectingFromBoard,
       activeSnapshotId,
       setActiveSnapshotId,
@@ -618,6 +627,7 @@ export function WorkoutDeckSelectionProvider({
     }),
     [
       deck,
+      isDeckHydrating,
       isSelectingFromBoard,
       activeSnapshotId,
       setActiveSnapshotId,

@@ -235,7 +235,7 @@ function AsyncPlaybackShellInner({
       recordingReadyToPlay ||
       Boolean(recordingRec?.status === 'ready' && recordingLoadError));
 
-  const deckIsEmpty = deckCtx.deck.length === 0;
+  const deckIsEmpty = !deckCtx.isDeckHydrating && deckCtx.deck.length === 0;
   const activeSnapshot = useMemo(() => {
     if (!localActiveDeckItemId) return null;
     return (
@@ -409,9 +409,9 @@ function AsyncPlaybackShellInner({
           {centerPane}
           {!deckIsEmpty ? (
             <CoachContextRail
-              className="min-h-[220px] lg:w-[min(100%,20rem)] lg:shrink-0"
               workspaceId={workspaceId}
               activeSnapshot={activeSnapshot}
+              canPostMessages={canPublish}
             />
           ) : null}
         </div>

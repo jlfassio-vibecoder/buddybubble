@@ -23,6 +23,11 @@ export function calendarCollapsedStorageKey(workspaceId: string) {
   return `buddybubble.calendarCollapsed.${workspaceId}`;
 }
 
+/** Async VOD theater: Coach context rail collapsed to a right strip. */
+export function asyncCoachRailCollapsedStorageKey(workspaceId: string) {
+  return `buddybubble.asyncCoachRailCollapsed.${workspaceId}`;
+}
+
 /** Percent split between live-video dock (top) and WorkspaceMainSplit — JSON `{ dash-live-dock: n, dash-workspace: n }`. */
 export function dockWorkspaceSplitStorageKey(workspaceId: string) {
   return `buddybubble.dockWorkspaceSplit.${workspaceId}`;

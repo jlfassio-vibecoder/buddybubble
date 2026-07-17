@@ -71,6 +71,7 @@ export async function copyLiveDeckToClassSession(
   const sid = liveSessionId.trim();
   const cid = classInstanceId.trim();
   if (!cid || !sid) {
+    // Copilot suggestion ignored: mirrors sibling copyClassDeckToLiveSession's ok:true+reason convention; callers read `reason` only when !ok.
     return { ok: true, copiedCount: 0, reason: 'missing_ids' };
   }
 
