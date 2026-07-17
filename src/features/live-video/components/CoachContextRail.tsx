@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { StandardTaskChatRail } from '@/components/chat/StandardTaskChatRail';
 import {
@@ -118,7 +118,12 @@ export function CoachContextRail({
   className,
   canPostMessages = false,
 }: CoachContextRailProps) {
-  const [isCollapsed, setIsCollapsed] = useState(() => readCoachRailCollapsed(workspaceId));
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  /** Read persisted preference after mount (SSR-safe) and whenever the workspace changes. */
+  useEffect(() => {
+    setIsCollapsed(readCoachRailCollapsed(workspaceId));
+  }, [workspaceId]);
 
   const setCollapsed = useCallback(
     (next: boolean) => {
