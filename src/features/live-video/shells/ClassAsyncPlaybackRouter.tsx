@@ -27,7 +27,7 @@ export function ClassAsyncPlaybackRouter({
   canPublish = false,
 }: ClassAsyncPlaybackRouterProps) {
   const supabase = useMemo(() => createClient(), []);
-  const [kind, setKind] = useState<'loading' | 'single' | 'aggregate'>('loading');
+  const [kind, setKind] = useState<'loading' | 'single' | 'aggregate' | 'error'>('loading');
 
   useEffect(() => {
     let cancelled = false;
@@ -39,8 +39,10 @@ export function ClassAsyncPlaybackRouter({
         .eq('id', classInstanceId)
         .maybeSingle();
       if (cancelled) return;
+      // Neither shell is safe to guess: an aggregate has no recording and a single is not a
+      // playlist, so surface an error rather than silently mounting the wrong theater.
       if (error || !data) {
-        setKind('single');
+        setKind('error');
         return;
       }
       setKind(isVideoAggregationMetadata(data.metadata) ? 'aggregate' : 'single');
@@ -54,6 +56,23 @@ export function ClassAsyncPlaybackRouter({
     return (
       <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
         Loading playback…
+      </div>
+    );
+  }
+
+  if (kind === 'error') {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+        <p className="text-sm text-destructive" role="alert">
+          Could not load this workout. Please try again.
+        </p>
+        <button
+          type="button"
+          className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
+          onClick={onClose}
+        >
+          Close
+        </button>
       </div>
     );
   }

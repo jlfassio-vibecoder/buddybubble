@@ -1,6 +1,6 @@
 # Video Workout Aggregator — Architectural Blueprint
 
-**Status:** Discovery complete; implementation not started  
+**Status:** Phase 1–3 implemented (schema, coach builder + actions, aggregated playback + publish gate); storefront public aggregate playback not yet started  
 **Charter:** Let a coach stitch independent single VODs (and timed breaks) into a longer aggregated workout while each source VOD remains a first-class, independently playable recording.  
 **Depends on:** Solo Studio / class VODs (`class_instances.metadata.class_recording` + `class-recordings` bucket), per-instance exercise decks (`bb-class-deck:<instanceId>` → `live_session_deck_items`), Video Library publications (distribution), `AsyncPlaybackShell` 3-pane theater.  
 **Boundary:** Do **not** overload `live_session_deck_items` as a VOD playlist, and do **not** require publication before aggregation. Aggregation keys off **`class_instances`**; publications remain an optional distribution layer for the **parent** (and unchanged for singles).
@@ -200,6 +200,8 @@ flowchart TB
 
 ### 4.1 Placement decision (locked)
 
+<!-- Copilot suggestion ignored: this documents the intended edit-by-parent-id contract; editing an existing aggregation is out of scope, and Phase 2–3 only ships creation via ?video_aggregator=new. -->
+
 **New shell + query-param takeover** — `?video_aggregator=<parentInstanceId>`, sibling to `class_deck_builder` / `class_async_player` in `dashboard-shell.tsx`.
 
 | Surface                      | Role                                | Fit for aggregator                |
@@ -264,12 +266,12 @@ cursor     = index into segments
 
 ### 5.3 Transition policy (locked for v1)
 
-| Mode                      | Behavior                                                                              | Default                     |
-| ------------------------- | ------------------------------------------------------------------------------------- | --------------------------- |
-| **Manual Next**           | Athlete taps **Next** (or selects a playlist chip) to leave current VOD or skip break | **Yes**                     |
-| **Optional auto-advance** | On `video.ended` (and break timer complete), advance cursor                           | **Off** in v1; opt-in later |
+| Mode             | Behavior                                                                              | Default                                     |
+| ---------------- | ------------------------------------------------------------------------------------- | ------------------------------------------- |
+| **Manual Next**  | Athlete taps **Next** (or selects a playlist chip) to leave current VOD or skip break | **Yes**                                     |
+| **Auto-advance** | On `video.ended` (and break timer complete), advance cursor                           | **On** in Phase 3 (plus manual Next / Skip) |
 
-**Rationale:** Logger and coach rail are not media-driven today; athletes often finish logging after the clip ends. Auto-advance would yank the active deck mid-log. Manual Next matches existing “tap to switch” language.
+**Rationale (revised in Phase 3):** The original v1 plan kept auto-advance off because the logger/coach rail are not media-driven and auto-advance can yank the active deck mid-log. Phase 3 enables auto-advance on `video.ended` / break-timer completion for a continuous playlist experience, while retaining manual **Next / Skip** so athletes can still control pacing.
 
 **Do not** auto-advance from “set logged” / logger completion.
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, Library, SkipForward } from 'lucide-react';
 import {
   getAggregatorLinksAction,
@@ -183,6 +183,7 @@ export function AggregatedPlaybackShell({
   const [publishOpen, setPublishOpen] = useState(false);
 
   const supabase = useMemo(() => createClient(), []);
+  const advancingRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -203,7 +204,11 @@ export function AggregatedPlaybackShell({
   const userId = profileId ?? authUserId;
 
   useEffect(() => {
-    if (!workspaceId?.trim() || !userId) return;
+    if (!workspaceId?.trim()) return;
+    if (!userId) {
+      if (authResolved) setLoading(false);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     setLoadError(null);
@@ -228,12 +233,14 @@ export function AggregatedPlaybackShell({
     return () => {
       cancelled = true;
     };
-  }, [classInstanceId, defaultTitle, userId, workspaceId]);
+  }, [authResolved, classInstanceId, defaultTitle, userId, workspaceId]);
 
   const activeSegment = !complete && links.length > 0 ? (links[currentLinkIndex] ?? null) : null;
   const nextSegment = links[currentLinkIndex + 1] ?? null;
 
   const nextSegmentFn = useCallback(() => {
+    if (advancingRef.current) return;
+    advancingRef.current = true;
     setLocalActiveDeckItemId(null);
     setVideoUrl(null);
     setVideoError(null);
@@ -247,6 +254,11 @@ export function AggregatedPlaybackShell({
       return next;
     });
   }, [links.length]);
+
+  // Release the advance lock once the cursor/complete state has settled.
+  useEffect(() => {
+    advancingRef.current = false;
+  }, [currentLinkIndex, complete]);
 
   // Resolve VOD signed URL for active child
   useEffect(() => {

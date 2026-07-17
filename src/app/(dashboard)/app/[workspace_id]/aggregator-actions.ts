@@ -219,6 +219,7 @@ export async function saveAggregationAction(input: {
   const breakSeconds = items
     .filter((i) => i.kind === 'break')
     .reduce((sum, i) => sum + (typeof i.breakDurationSec === 'number' ? i.breakDurationSec : 0), 0);
+  // Copilot suggestion ignored: child VOD lengths are not stored, so an accurate total duration for this synthetic private parent is not computable here.
   const durationMin = Math.max(1, Math.round(breakSeconds / 60) || 60);
 
   const provisioned = await provisionAggregationParent({

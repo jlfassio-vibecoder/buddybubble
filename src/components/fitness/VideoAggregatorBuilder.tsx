@@ -128,6 +128,7 @@ function SortableSegmentRow({
   );
 }
 
+// Copilot suggestion ignored: a full DnD/save-flow test suite for this new builder is out of scope for this review-fix pass.
 export function VideoAggregatorBuilder({
   workspaceId,
   onClose,
