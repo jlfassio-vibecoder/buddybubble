@@ -60,6 +60,12 @@ export function VideoPublicationCard({
     router.replace(`${pathname}?${q.toString()}`, { scroll: false });
   };
 
+  const openDeckBuilder = () => {
+    const q = new URLSearchParams(searchParams.toString());
+    q.set('class_deck_builder', item.class_instance_id);
+    router.replace(`${pathname}?${q.toString()}`, { scroll: false });
+  };
+
   const handleUnpublish = async () => {
     if (
       !window.confirm(`Unpublish “${title}”? Members will no longer see it in the Video Library.`)
@@ -108,6 +114,9 @@ export function VideoPublicationCard({
               <MoreHorizontal className="size-4" aria-hidden />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem disabled={unpublishing} onClick={openDeckBuilder}>
+                Edit workout
+              </DropdownMenuItem>
               <DropdownMenuItem
                 variant="destructive"
                 disabled={unpublishing}

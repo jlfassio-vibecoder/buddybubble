@@ -52,3 +52,42 @@ export async function copyClassDeckToLiveSession(
 
   return { ok: true, copiedCount };
 }
+
+export type CopyLiveDeckToClassSessionResult = {
+  ok: boolean;
+  copiedCount: number;
+  reason?: string;
+};
+
+/**
+ * Copies live `live_session_deck_items` into `bb-class-deck:<classInstanceId>` via RPC
+ * (clears then replaces draft rows; owner/admin gated on the server).
+ */
+export async function copyLiveDeckToClassSession(
+  supabase: SupabaseClient<Database>,
+  liveSessionId: string,
+  classInstanceId: string,
+): Promise<CopyLiveDeckToClassSessionResult> {
+  const sid = liveSessionId.trim();
+  const cid = classInstanceId.trim();
+  if (!cid || !sid) {
+    return { ok: true, copiedCount: 0, reason: 'missing_ids' };
+  }
+
+  const { data, error } = await supabase.rpc('copy_live_deck_to_class_session', {
+    p_live_session_id: sid,
+    p_class_instance_id: cid,
+  });
+
+  if (error) {
+    return { ok: false, copiedCount: 0, reason: error.message };
+  }
+
+  const raw = typeof data === 'number' ? data : Number(data ?? 0);
+  const copiedCount = Math.max(0, Number.isFinite(raw) ? raw : 0);
+  if (copiedCount > 0 && process.env.NODE_ENV === 'development') {
+    console.log('[Live Merge] Successfully copied', copiedCount, 'deck items to class draft:', cid);
+  }
+
+  return { ok: true, copiedCount };
+}

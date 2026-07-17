@@ -7,6 +7,7 @@ import {
   resolveInsertPosition,
 } from '@/components/modals/task-modal/task-insert-row';
 import { classScheduledAtToTaskSchedule } from '@/lib/fitness/class-instance-task-sync';
+import { classDeckBuilderSessionId } from '@/lib/fitness/class-deck-builder-session-id';
 import { formatUserFacingError } from '@/lib/format-error';
 import type { AsyncSessionPayload } from '@/types/live-session-invite';
 import type { Database, Json } from '@/types/database';
@@ -16,7 +17,10 @@ export const SOLO_STUDIO_OFFERING_NAME = 'Solo Studio Recording';
 export type ProvisionSoloStudioInstanceArgs = {
   workspaceId: string;
   hostUserId: string;
-  /** Live workout session UUID — also used as `async_session.sessionId`. */
+  /**
+   * Live workout session UUID for Agora / `joinSession` only.
+   * Not written into `async_session.sessionId` (that uses `bb-class-deck:<instanceId>`).
+   */
   sessionId: string;
   /** Workspace bubbles; must include a `Classes` channel for the private class task. */
   bubbles: ReadonlyArray<{ id: string; name: string }>;
@@ -32,15 +36,16 @@ export type ProvisionSoloStudioInstanceResult =
 /**
  * Pure metadata for a solo studio class instance: `async_session` only — never `live_session`
  * (avoids ClassCard Join Live / deep-link broadcast).
+ * `async_session.sessionId` is always the class draft namespace for AsyncPlaybackShell.
  */
 export function buildSoloStudioInstanceMetadata(opts: {
-  sessionId: string;
+  classInstanceId: string;
   hostUserId: string;
   createdAt: string;
 }): Json {
   const asyncSession: AsyncSessionPayload = {
     type: 'async_session',
-    sessionId: opts.sessionId.trim(),
+    sessionId: classDeckBuilderSessionId(opts.classInstanceId),
     createdAt: opts.createdAt,
     hostUserId: opts.hostUserId.trim(),
   };
@@ -84,11 +89,6 @@ export async function provisionSoloStudioInstance(
 
   const supabase = args.supabase ?? createClient();
   const nowIso = args.nowIso ?? new Date().toISOString();
-  const metadata = buildSoloStudioInstanceMetadata({
-    sessionId,
-    hostUserId,
-    createdAt: nowIso,
-  });
 
   const { data: offeringRow, error: oErr } = await supabase
     .from('class_offerings')
@@ -162,7 +162,7 @@ export async function provisionSoloStudioInstance(
       instructor_id: hostUserId,
       instructor_notes: null,
       visibility: 'private',
-      metadata,
+      metadata: {},
     })
     .select('id')
     .maybeSingle();
@@ -178,9 +178,37 @@ export async function provisionSoloStudioInstance(
     };
   }
 
+  const instanceId = instRow.id as string;
+  const metadata = buildSoloStudioInstanceMetadata({
+    classInstanceId: instanceId,
+    hostUserId,
+    createdAt: nowIso,
+  });
+
+  const { data: updated, error: metaErr } = await supabase
+    .from('class_instances')
+    .update({ metadata })
+    .eq('id', instanceId)
+    .select('id')
+    .maybeSingle();
+
+  if (metaErr || !updated?.id) {
+    await supabase.from('class_instances').delete().eq('id', instanceId);
+    await supabase.from('tasks').delete().eq('id', taskId);
+    await supabase.from('class_offerings').delete().eq('id', offeringId);
+    return {
+      ok: false,
+      error: rlsFriendlyMessage(
+        formatUserFacingError(
+          metaErr ?? new Error('Could not set Solo Studio async session metadata'),
+        ),
+      ),
+    };
+  }
+
   return {
     ok: true,
-    instanceId: instRow.id as string,
+    instanceId,
     offeringId,
     taskId,
   };
