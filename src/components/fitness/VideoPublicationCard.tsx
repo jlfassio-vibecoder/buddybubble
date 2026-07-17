@@ -114,9 +114,11 @@ export function VideoPublicationCard({
               <MoreHorizontal className="size-4" aria-hidden />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem disabled={unpublishing} onClick={openDeckBuilder}>
-                Edit workout
-              </DropdownMenuItem>
+              {!item.isAggregation ? (
+                <DropdownMenuItem disabled={unpublishing} onClick={openDeckBuilder}>
+                  Edit workout
+                </DropdownMenuItem>
+              ) : null}
               <DropdownMenuItem
                 variant="destructive"
                 disabled={unpublishing}

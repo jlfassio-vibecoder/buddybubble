@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: vi.fn() }),
+  usePathname: () => '/app/ws-1',
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 vi.mock('@utils/supabase/client', () => ({
   createClient: () => ({
     auth: {
@@ -50,6 +56,7 @@ describe('VideoLibraryBoard empty states', () => {
       ).toBeTruthy();
     });
     expect(screen.getByLabelText('Filter publications')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Create aggregated workout/i })).toBeTruthy();
   });
 
   it('shows member empty copy when not canManage', async () => {
@@ -58,5 +65,6 @@ describe('VideoLibraryBoard empty states', () => {
       expect(screen.getByText(/No videos have been published here yet/i)).toBeTruthy();
     });
     expect(screen.queryByLabelText('Filter publications')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Create aggregated workout/i })).toBeNull();
   });
 });

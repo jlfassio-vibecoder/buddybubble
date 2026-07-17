@@ -663,6 +663,67 @@ export type Database = {
           },
         ];
       };
+      class_instance_links: {
+        Row: {
+          break_duration_sec: number | null;
+          child_instance_id: string | null;
+          created_at: string;
+          id: string;
+          link_kind: string;
+          metadata: Json;
+          parent_instance_id: string;
+          sort_order: number;
+          title_override: string | null;
+          workspace_id: string;
+        };
+        Insert: {
+          break_duration_sec?: number | null;
+          child_instance_id?: string | null;
+          created_at?: string;
+          id?: string;
+          link_kind: string;
+          metadata?: Json;
+          parent_instance_id: string;
+          sort_order?: number;
+          title_override?: string | null;
+          workspace_id: string;
+        };
+        Update: {
+          break_duration_sec?: number | null;
+          child_instance_id?: string | null;
+          created_at?: string;
+          id?: string;
+          link_kind?: string;
+          metadata?: Json;
+          parent_instance_id?: string;
+          sort_order?: number;
+          title_override?: string | null;
+          workspace_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'class_instance_links_child_instance_id_fkey';
+            columns: ['child_instance_id'];
+            isOneToOne: false;
+            referencedRelation: 'class_instances';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'class_instance_links_parent_instance_id_fkey';
+            columns: ['parent_instance_id'];
+            isOneToOne: false;
+            referencedRelation: 'class_instances';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'class_instance_links_workspace_id_fkey';
+            columns: ['workspace_id'];
+            isOneToOne: false;
+            referencedRelation: 'workspaces';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       class_instances: {
         Row: {
           capacity: number | null;

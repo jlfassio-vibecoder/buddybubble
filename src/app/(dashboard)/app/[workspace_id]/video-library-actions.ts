@@ -1,7 +1,7 @@
 'use server';
 
 import {
-  isRecordingReadyToPublish,
+  canPublishClassInstanceToLibrary,
   type VideoLibraryAccessScope,
 } from '@/lib/video-library/publish';
 import { parseClassRecordingFromInstanceMetadata } from '@/types/live-session-invite';
@@ -186,7 +186,7 @@ export async function publishToVideoLibraryAction(input: {
   }
 
   const recording = parseClassRecordingFromInstanceMetadata(row.metadata);
-  if (!isRecordingReadyToPublish(recording)) {
+  if (!canPublishClassInstanceToLibrary(row.metadata, recording)) {
     return { error: 'Recording must be ready before publishing.' };
   }
 

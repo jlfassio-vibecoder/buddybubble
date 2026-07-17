@@ -16,6 +16,7 @@ const baseItem: VideoLibraryListItem = {
   published_by: 'user-a',
   class_instance_id: 'ci-1',
   offeringName: 'Offering Name',
+  isAggregation: false,
 };
 
 describe('isVideoLibraryBubble', () => {

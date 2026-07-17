@@ -9,6 +9,8 @@ export type VideoLibraryListItem = {
   class_instance_id: string;
   /** Fallback display when title is null */
   offeringName: string | null;
+  /** Parent aggregation instance (no per-parent exercise deck). */
+  isAggregation?: boolean;
 };
 
 export type VideoLibraryCoachFilter = 'all' | 'mine' | 'public';
