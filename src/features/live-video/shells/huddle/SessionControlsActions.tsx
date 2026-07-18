@@ -65,6 +65,9 @@ export type SessionControlsActionsProps = {
   isSoloStudio?: boolean;
   /** Solo studio browser capture controls (Record / Stop). */
   soloRecorder?: SoloRecorderControls | null;
+  /** Solo Studio teleprompter mode (default Off). */
+  teleprompterEnabled?: boolean;
+  onTeleprompterEnabledChange?: (next: boolean) => void;
   hostNavActions?: ReactNode;
   hostDeckInjector?: ReactNode;
   className?: string;
@@ -93,6 +96,8 @@ export function SessionControlsActions({
   hostAsyncWorkoutEnabled,
   isSoloStudio = false,
   soloRecorder = null,
+  teleprompterEnabled = false,
+  onTeleprompterEnabledChange,
   hostNavActions,
   hostDeckInjector,
   className,
@@ -567,6 +572,22 @@ export function SessionControlsActions({
               Record
             </Button>
           )}
+          {onTeleprompterEnabledChange ? (
+            <Button
+              type="button"
+              size="sm"
+              variant={teleprompterEnabled ? 'secondary' : 'outline'}
+              className={cn(
+                'font-medium',
+                teleprompterEnabled && 'border-primary bg-primary/10 text-foreground',
+              )}
+              disabled={disableActions}
+              aria-pressed={teleprompterEnabled}
+              onClick={() => onTeleprompterEnabledChange(!teleprompterEnabled)}
+            >
+              {teleprompterEnabled ? 'Teleprompter: On' : 'Teleprompter: Off'}
+            </Button>
+          ) : null}
           <ControlsSeparator />
         </>
       ) : null}

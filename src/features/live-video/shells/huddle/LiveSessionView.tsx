@@ -30,6 +30,8 @@ import {
   useSoloStudioRecorder,
   type SoloStudioRecorderStatus,
 } from '@/features/live-video/hooks/useSoloStudioRecorder';
+import { useAutoAdvanceQueue } from '@/features/live-video/hooks/useAutoAdvanceQueue';
+import { flattenDeckToTeleprompterItems } from '@/lib/fitness/flatten-deck-to-teleprompter-items';
 import { useLiveSessionRuntime } from '@/features/live-video/theater/live-session-runtime-context';
 import { useLiveTheaterLayoutPlanContext } from '@/features/live-video/theater/live-theater-layout-context';
 import { LiveSessionTopBar } from '@/features/live-video/shells/huddle/LiveSessionTopBar';
@@ -203,6 +205,8 @@ function LiveSessionViewInner({
     enabled: soloRecorderEnabled,
   });
 
+  const [teleprompterEnabled, setTeleprompterEnabled] = useState(false);
+
   const handleLeaveDock = useCallback(() => {
     leaveChannel();
     onAfterLeave?.();
@@ -256,6 +260,33 @@ function LiveSessionViewInner({
   const selectingFromBoard = Boolean(deckSel?.isSelectingFromBoard);
   const activeSnapshotId = deckSel?.activeSnapshotId ?? null;
   const compact = useIsNarrowBelowMd();
+
+  const teleprompterItems = useMemo(
+    () => flattenDeckToTeleprompterItems(deckSel?.deck ?? []),
+    [deckSel?.deck],
+  );
+  const getTeleprompterItemElement = useCallback(
+    (itemId: string) => {
+      const parent = teleprompterItems.find((i) => i.id === itemId)?.deckItemId;
+      if (!parent) return null;
+      return document.querySelector<HTMLElement>(
+        `[data-teleprompter-deck-id="${CSS.escape(parent)}"]`,
+      );
+    },
+    [teleprompterItems],
+  );
+  const teleprompterActive =
+    isSoloStudio && teleprompterEnabled && soloRecorder.status === 'recording';
+  const { activeItemId: teleprompterActiveItemId } = useAutoAdvanceQueue({
+    enabled: teleprompterActive,
+    items: teleprompterItems,
+    elapsedMs: teleprompterActive ? soloRecorder.elapsedMs : null,
+    getItemElement: getTeleprompterItemElement,
+    recenterEvery: 3,
+  });
+  const estimatedActiveDeckItemId = teleprompterActive
+    ? (teleprompterItems.find((i) => i.id === teleprompterActiveItemId)?.deckItemId ?? null)
+    : null;
 
   const hostSideEditorOpen = isHost && activeSnapshotId != null;
   const participantLoggerOpen = !isHost && state.activeDeckItemId != null;
@@ -658,6 +689,8 @@ function LiveSessionViewInner({
               hostAsyncWorkoutEnabled={isHost ? hostAsyncWorkoutEnabled : undefined}
               isSoloStudio={isSoloStudio}
               soloRecorder={soloRecorderControls}
+              teleprompterEnabled={teleprompterEnabled}
+              onTeleprompterEnabledChange={isSoloStudio ? setTeleprompterEnabled : undefined}
               hostNavActions={!showWrapperBoardSplit ? hostNavActions : null}
               hostDeckInjector={
                 !selectingFromBoard && isHost && canWriteTasks ? (
@@ -678,6 +711,7 @@ function LiveSessionViewInner({
             state={state}
             uiMode={uiMode}
             selectingFromBoard={selectingFromBoard}
+            estimatedActiveDeckItemId={estimatedActiveDeckItemId}
           />
         ) : null}
 

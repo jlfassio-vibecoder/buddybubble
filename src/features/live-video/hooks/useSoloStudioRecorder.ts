@@ -34,6 +34,8 @@ export type UseSoloStudioRecorderResult = {
   status: SoloStudioRecorderStatus;
   errorMessage: string | null;
   isBusy: boolean;
+  /** Elapsed ms since recording started; null when not recording. */
+  elapsedMs: number | null;
   startRecording: () => Promise<void>;
   stopRecording: () => Promise<void>;
 };
@@ -69,6 +71,7 @@ export function useSoloStudioRecorder({
 }: UseSoloStudioRecorderArgs): UseSoloStudioRecorderResult {
   const [status, setStatus] = useState<SoloStudioRecorderStatus>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [elapsedMs, setElapsedMs] = useState<number | null>(null);
   const statusRef = useRef(status);
   statusRef.current = status;
 
@@ -76,6 +79,9 @@ export function useSoloStudioRecorder({
   const supabaseRef = useRef(createClient());
   const uploadInFlightRef = useRef(false);
   const emergencyUploadBlobRef = useRef<(blob: Blob) => void>(() => {});
+  /** Wall-clock start for teleprompter pacing while `status === 'recording'`. */
+  const recordingStartedAtRef = useRef<number | null>(null);
+  const elapsedIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   /** Bumped to invalidate an in-flight start after getDisplayMedia returns. */
   const startGenerationRef = useRef(0);
   /** True after `markSoloStudioRecordingStarted` until upload or abort clears it. */
@@ -465,6 +471,36 @@ export function useSoloStudioRecorder({
     await stopRecordingInternal();
   }, [cancelInFlightStart, stopRecordingInternal]);
 
+  // Teleprompter clock: tick elapsedMs while recording; clear otherwise.
+  useEffect(() => {
+    if (elapsedIntervalRef.current != null) {
+      clearInterval(elapsedIntervalRef.current);
+      elapsedIntervalRef.current = null;
+    }
+
+    if (status !== 'recording') {
+      recordingStartedAtRef.current = null;
+      setElapsedMs(null);
+      return;
+    }
+
+    const startedAt = Date.now();
+    recordingStartedAtRef.current = startedAt;
+    setElapsedMs(0);
+    elapsedIntervalRef.current = setInterval(() => {
+      const start = recordingStartedAtRef.current;
+      if (start == null) return;
+      setElapsedMs(Date.now() - start);
+    }, 1000);
+
+    return () => {
+      if (elapsedIntervalRef.current != null) {
+        clearInterval(elapsedIntervalRef.current);
+        elapsedIntervalRef.current = null;
+      }
+    };
+  }, [status]);
+
   // beforeunload warn while recording
   useEffect(() => {
     if (status !== 'recording') return;
@@ -538,6 +574,7 @@ export function useSoloStudioRecorder({
     status,
     errorMessage,
     isBusy,
+    elapsedMs,
     startRecording,
     stopRecording,
   };

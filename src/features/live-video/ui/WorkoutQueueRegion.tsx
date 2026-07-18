@@ -17,6 +17,8 @@ export type WorkoutQueueRegionProps = {
   asyncQueueSessionId?: string | null;
   selectedAsyncDeckItemId?: string | null;
   onAsyncSelectDeckItem?: (deckItemId: string | null) => void;
+  /** Solo Studio teleprompter estimated parent card (visual only). */
+  estimatedActiveDeckItemId?: string | null;
 };
 
 export function WorkoutQueueRegion({
@@ -27,6 +29,7 @@ export function WorkoutQueueRegion({
   asyncQueueSessionId,
   selectedAsyncDeckItemId,
   onAsyncSelectDeckItem,
+  estimatedActiveDeckItemId = null,
 }: WorkoutQueueRegionProps) {
   const [isOpen, setIsOpen] = useState(uiMode !== 'live');
   const panelId = useId();
@@ -56,6 +59,7 @@ export function WorkoutQueueRegion({
             asyncQueueSessionId={asyncQueueSessionId}
             selectedAsyncDeckItemId={selectedAsyncDeckItemId}
             onAsyncSelectDeckItem={onAsyncSelectDeckItem}
+            estimatedActiveDeckItemId={estimatedActiveDeckItemId}
           />
         </div>
       </div>
