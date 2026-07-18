@@ -205,11 +205,14 @@ Deno.serve(async (req) => {
 
     // Direct falsy checks (not missingEnvKeys) so TypeScript narrows to string below.
     if (!appId || !customerId || !customerSecret || !appCertificate) {
+      const agoraActiveSecondary =
+        Deno.env.get('AGORA_ACTIVE_ENV')?.trim().toUpperCase() === 'SECONDARY';
+      const agoraKey = (base: string) => (agoraActiveSecondary ? `${base}_SECONDARY` : base);
       const missingAgora = missingEnvKeys([
-        ['AGORA_APP_ID', appId],
-        ['AGORA_CUSTOMER_ID', customerId],
-        ['AGORA_CUSTOMER_SECRET', customerSecret],
-        ['AGORA_APP_CERTIFICATE', appCertificate],
+        [agoraKey('AGORA_APP_ID'), appId],
+        [agoraKey('AGORA_CUSTOMER_ID'), customerId],
+        [agoraKey('AGORA_CUSTOMER_SECRET'), customerSecret],
+        [agoraKey('AGORA_APP_CERTIFICATE'), appCertificate],
       ]);
       console.error(
         `[agora-recording-start] agora_not_configured missing=${missingAgora.join(',')}`,

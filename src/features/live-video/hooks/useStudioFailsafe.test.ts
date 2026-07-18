@@ -131,6 +131,47 @@ describe('useStudioFailsafe', () => {
     expect(result.current.warningReason).toBe('idle');
   });
 
+  it('does not restart overtime when recordingStatus changes', () => {
+    const { result, rerender } = renderHook(
+      (props: UseStudioFailsafeArgs) => useStudioFailsafe(props),
+      { initialProps: baseProps({ recordingStatus: 'recording' }) },
+    );
+    const overtimeMs = overtimeTimeoutMs(15);
+
+    act(() => {
+      vi.advanceTimersByTime(overtimeMs - 5_000);
+    });
+    rerender(baseProps({ recordingStatus: 'uploading' as SoloStudioRecorderStatus }));
+    act(() => {
+      vi.advanceTimersByTime(4_999);
+    });
+    expect(result.current.showWarning).toBe(false);
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(result.current.showWarning).toBe(true);
+    expect(result.current.warningReason).toBe('overtime');
+  });
+
+  it('swallows onForceExit rejections without throwing', async () => {
+    const onForceExit = vi.fn().mockRejectedValue(new Error('leave failed'));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { result } = renderHook(() => useStudioFailsafe(baseProps({ onForceExit })));
+
+    act(() => {
+      vi.advanceTimersByTime(IDLE_TIMEOUT_MS);
+    });
+    expect(result.current.showWarning).toBe(true);
+
+    await act(async () => {
+      vi.advanceTimersByTime(WARNING_COUNTDOWN_MS + 500);
+      await Promise.resolve();
+    });
+    expect(onForceExit).toHaveBeenCalledTimes(1);
+    expect(errorSpy).toHaveBeenCalledWith('[useStudioFailsafe] onForceExit', 'leave failed');
+  });
+
   it('clears timers on unmount without force exit', () => {
     const onForceExit = vi.fn();
     const { unmount } = renderHook(() => useStudioFailsafe(baseProps({ onForceExit })));

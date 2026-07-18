@@ -113,10 +113,9 @@ export function useStudioFailsafe({
     };
   }, [enabled, estimatedDurationMin, clearAllTimers]);
 
-  // Idle + overtime timers (paused while warning is showing).
+  // Overtime timer: wall clock from enable/ack only — do not restart on recordingStatus changes.
   useEffect(() => {
     if (!enabled || !isSoloStudioDurationPreset(estimatedDurationMin) || showWarning) {
-      clearTimer(idleTimerRef);
       clearTimer(overtimeTimerRef);
       return;
     }
@@ -125,6 +124,18 @@ export function useStudioFailsafe({
     overtimeTimerRef.current = setTimeout(() => {
       armWarning('overtime');
     }, overtimeTimeoutMs(estimatedDurationMin));
+
+    return () => {
+      clearTimer(overtimeTimerRef);
+    };
+  }, [enabled, estimatedDurationMin, showWarning, timerEpoch, armWarning]);
+
+  // Idle timer: arms only while status is idle; clears when Record (or any non-idle) starts.
+  useEffect(() => {
+    if (!enabled || !isSoloStudioDurationPreset(estimatedDurationMin) || showWarning) {
+      clearTimer(idleTimerRef);
+      return;
+    }
 
     clearTimer(idleTimerRef);
     if (recordingStatus === 'idle') {
@@ -135,7 +146,6 @@ export function useStudioFailsafe({
 
     return () => {
       clearTimer(idleTimerRef);
-      clearTimer(overtimeTimerRef);
     };
   }, [enabled, estimatedDurationMin, recordingStatus, showWarning, timerEpoch, armWarning]);
 
@@ -157,7 +167,13 @@ export function useStudioFailsafe({
         clearIntervalRef(warningIntervalRef);
         if (!forceExitFiredRef.current) {
           forceExitFiredRef.current = true;
-          void onForceExitRef.current();
+          void Promise.resolve(onForceExitRef.current()).catch((e) => {
+            const msg =
+              e instanceof Error && e.message.trim()
+                ? e.message.trim().slice(0, 200)
+                : 'force_exit_failed';
+            console.error('[useStudioFailsafe] onForceExit', msg);
+          });
         }
       }
     }, 250);

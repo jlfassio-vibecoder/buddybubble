@@ -66,6 +66,7 @@ import { BaseIntervalWrapper } from '@/features/live-video/wrappers/interval/Bas
 import { useWorkoutDeckSelectionOptional } from '@/features/live-video/shells/huddle/workout-deck-selection-context';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
+// Copilot suggestion ignored: toast is imported once; the suppressed duplicate-import report was a false positive.
 import { toast } from 'sonner';
 import { huddleEditorVideoSplitStorageKey } from '@/lib/layout-collapse-keys';
 import { useIsNarrowBelowMd } from '@/hooks/use-is-narrow-below-md';

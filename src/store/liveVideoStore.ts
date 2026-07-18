@@ -53,7 +53,7 @@ export const useLiveVideoStore = create<LiveVideoStore>((set) => ({
   setEstimatedDurationMin: (min) => {
     if (!isSoloStudioDurationPreset(min)) return;
     set((state) => {
-      if (!state.activeSession) return state;
+      if (!state.activeSession) return {};
       return {
         activeSession: { ...state.activeSession, estimatedDurationMin: min },
       };
