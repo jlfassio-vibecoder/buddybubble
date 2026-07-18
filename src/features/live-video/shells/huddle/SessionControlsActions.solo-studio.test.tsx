@@ -1,5 +1,5 @@
 import { describe, expect, it, afterEach, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { SessionControlsActions } from './SessionControlsActions';
 import type { SessionState } from '@/features/live-video/state/sessionStateMachine';
 import type { SessionActions } from '@/features/live-video/hooks/useSessionState';
@@ -109,5 +109,60 @@ describe('SessionControlsActions solo studio', () => {
       />,
     );
     expect(screen.getByRole('button', { name: 'End Session for All' })).toBeTruthy();
+  });
+
+  it('shows Teleprompter toggle only in Solo Studio when change handler is provided', () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <SessionControlsActions
+        state={idleState}
+        actions={actions}
+        isSoloStudio
+        soloRecorder={{
+          status: 'idle',
+          onStart: vi.fn(),
+          onStop: vi.fn(),
+        }}
+        teleprompterEnabled={false}
+        onTeleprompterEnabledChange={onChange}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Teleprompter: Off' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Teleprompter: Off' }));
+    expect(onChange).toHaveBeenCalledWith(true);
+
+    rerender(
+      <SessionControlsActions
+        state={idleState}
+        actions={actions}
+        soloRecorder={{
+          status: 'idle',
+          onStart: vi.fn(),
+          onStop: vi.fn(),
+        }}
+        teleprompterEnabled={false}
+        onTeleprompterEnabledChange={onChange}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: /Teleprompter:/i })).toBeNull();
+  });
+
+  it('labels Teleprompter: On when enabled', () => {
+    render(
+      <SessionControlsActions
+        state={idleState}
+        actions={actions}
+        isSoloStudio
+        soloRecorder={{
+          status: 'idle',
+          onStart: vi.fn(),
+          onStop: vi.fn(),
+        }}
+        teleprompterEnabled
+        onTeleprompterEnabledChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Teleprompter: On' })).toBeTruthy();
   });
 });

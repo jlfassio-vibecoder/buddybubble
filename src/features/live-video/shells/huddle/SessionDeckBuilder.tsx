@@ -49,7 +49,25 @@ export type SessionDeckBuilderProps = {
   asyncQueueSessionId?: string | null;
   selectedAsyncDeckItemId?: string | null;
   onAsyncSelectDeckItem?: (deckItemId: string | null) => void;
+  /**
+   * Solo Studio teleprompter: estimated parent card key (`deckItemId ?? snapshotId`).
+   * Visual only — does not mutate host selection.
+   */
+  estimatedActiveDeckItemId?: string | null;
 };
+
+function teleprompterParentId(snapshot: SessionDeckSnapshot): string {
+  return snapshot.deckItemId ?? snapshot.snapshotId;
+}
+
+function teleprompterRingClass(
+  isActive: boolean | undefined,
+  isTeleprompterFocus: boolean,
+): string {
+  if (isActive) return 'ring-2 ring-primary ring-offset-2 ring-offset-background';
+  if (isTeleprompterFocus) return 'ring-2 ring-primary/60 ring-offset-2 ring-offset-background';
+  return '';
+}
 
 function ReadonlyDeckTile({
   snapshot,
@@ -58,6 +76,7 @@ function ReadonlyDeckTile({
   isCompleted,
   tallCardChrome,
   isActive,
+  isTeleprompterFocus,
   onSelect,
 }: {
   snapshot: SessionDeckSnapshot;
@@ -66,16 +85,18 @@ function ReadonlyDeckTile({
   isCompleted: boolean;
   tallCardChrome?: boolean;
   isActive?: boolean;
+  isTeleprompterFocus?: boolean;
   /** When set, tile is a button (async member picks active card for logging). */
   onSelect?: () => void;
 }) {
   const summaryMode = tallCardChrome ? 'compact' : 'strip';
   const card = (
     <div
+      data-teleprompter-deck-id={teleprompterParentId(snapshot)}
       className={cn(
         'relative w-64 shrink-0 rounded-xl transition-[box-shadow]',
         onSelect ? 'cursor-pointer select-none' : 'cursor-default select-none',
-        isActive && 'ring-2 ring-primary ring-offset-2 ring-offset-background',
+        teleprompterRingClass(isActive, Boolean(isTeleprompterFocus)),
       )}
     >
       <div className="rounded-xl">
@@ -125,6 +146,7 @@ function SortableDeckTile({
   isCompleted,
   tallCardChrome,
   isActive,
+  isTeleprompterFocus,
   onSelect,
   onRemove,
 }: {
@@ -134,6 +156,7 @@ function SortableDeckTile({
   isCompleted: boolean;
   tallCardChrome?: boolean;
   isActive: boolean;
+  isTeleprompterFocus?: boolean;
   onSelect: () => void;
   onRemove: () => void;
 }) {
@@ -150,9 +173,10 @@ function SortableDeckTile({
     <div
       ref={setNodeRef}
       style={style}
+      data-teleprompter-deck-id={teleprompterParentId(snapshot)}
       className={cn(
         'relative w-64 shrink-0 rounded-xl transition-[box-shadow]',
-        isActive && 'ring-2 ring-primary ring-offset-2 ring-offset-background',
+        teleprompterRingClass(isActive, Boolean(isTeleprompterFocus)),
       )}
     >
       <button
@@ -233,6 +257,7 @@ export function SessionDeckBuilder({
   asyncQueueSessionId = null,
   selectedAsyncDeckItemId = null,
   onAsyncSelectDeckItem,
+  estimatedActiveDeckItemId = null,
 }: SessionDeckBuilderProps) {
   const { focusBoard } = useLayoutCommands();
   const runtime = useLiveSessionRuntimeOptional();
@@ -404,28 +429,31 @@ export function SessionDeckBuilder({
             data-testid="session-deck-strip-container"
             className={stripContainerClass(false, isCollapsed)}
           >
-            {deckToRender.map((snapshot) => (
-              <ReadonlyDeckTile
-                key={snapshot.deckRowKey}
-                snapshot={snapshot}
-                workspaceCategory={workspaceCategory}
-                calendarTimezone={calendarTimezone}
-                isCompleted={taskColumnIsCompletionStatus(snapshot.task.status, columnDefs)}
-                tallCardChrome={false}
-                isActive={
-                  isAsyncMemberQueue
-                    ? selectedAsyncDeckItemId != null &&
-                      selectedAsyncDeckItemId === snapshot.snapshotId
-                    : state.activeDeckItemId != null &&
-                      state.activeDeckItemId === snapshot.snapshotId
-                }
-                onSelect={
-                  isAsyncMemberQueue
-                    ? () => onAsyncSelectDeckItem?.(snapshot.deckItemId ?? snapshot.snapshotId)
-                    : undefined
-                }
-              />
-            ))}
+            {deckToRender.map((snapshot) => {
+              const parentId = teleprompterParentId(snapshot);
+              const isActive = isAsyncMemberQueue
+                ? selectedAsyncDeckItemId != null && selectedAsyncDeckItemId === snapshot.snapshotId
+                : state.activeDeckItemId != null && state.activeDeckItemId === snapshot.snapshotId;
+              return (
+                <ReadonlyDeckTile
+                  key={snapshot.deckRowKey}
+                  snapshot={snapshot}
+                  workspaceCategory={workspaceCategory}
+                  calendarTimezone={calendarTimezone}
+                  isCompleted={taskColumnIsCompletionStatus(snapshot.task.status, columnDefs)}
+                  tallCardChrome={false}
+                  isActive={isActive}
+                  isTeleprompterFocus={
+                    estimatedActiveDeckItemId != null && estimatedActiveDeckItemId === parentId
+                  }
+                  onSelect={
+                    isAsyncMemberQueue
+                      ? () => onAsyncSelectDeckItem?.(snapshot.deckItemId ?? snapshot.snapshotId)
+                      : undefined
+                  }
+                />
+              );
+            })}
           </div>
         </div>
       </div>
@@ -458,19 +486,26 @@ export function SessionDeckBuilder({
               data-testid="session-deck-strip-container"
               className={stripContainerClass(selectingFromBoard, isCollapsed)}
             >
-              {deckToRender.map((snapshot) => (
-                <SortableDeckTile
-                  key={snapshot.deckRowKey}
-                  snapshot={snapshot}
-                  workspaceCategory={workspaceCategory}
-                  calendarTimezone={calendarTimezone}
-                  isCompleted={taskColumnIsCompletionStatus(snapshot.task.status, columnDefs)}
-                  tallCardChrome={selectingFromBoard}
-                  isActive={activeSnapshotId === snapshot.snapshotId}
-                  onSelect={() => onHostSelectSnapshot(snapshot)}
-                  onRemove={() => removeSnapshot(snapshot.snapshotId)}
-                />
-              ))}
+              {deckToRender.map((snapshot) => {
+                const parentId = teleprompterParentId(snapshot);
+                const isActive = activeSnapshotId === snapshot.snapshotId;
+                return (
+                  <SortableDeckTile
+                    key={snapshot.deckRowKey}
+                    snapshot={snapshot}
+                    workspaceCategory={workspaceCategory}
+                    calendarTimezone={calendarTimezone}
+                    isCompleted={taskColumnIsCompletionStatus(snapshot.task.status, columnDefs)}
+                    tallCardChrome={selectingFromBoard}
+                    isActive={isActive}
+                    isTeleprompterFocus={
+                      estimatedActiveDeckItemId != null && estimatedActiveDeckItemId === parentId
+                    }
+                    onSelect={() => onHostSelectSnapshot(snapshot)}
+                    onRemove={() => removeSnapshot(snapshot.snapshotId)}
+                  />
+                );
+              })}
 
               <button
                 type="button"
