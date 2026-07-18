@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 // Copilot suggestion ignored: `agora-access-token` is deprecated, but migration to `agora-token` will be done
 // in a follow-up PR after validating API parity and token correctness end-to-end.
 import { RtcRole, RtcTokenBuilder } from 'agora-access-token';
+import { resolveAgoraCredentials } from '@/lib/agora/credentials';
 import { agoraUidFromUuid } from '@/lib/live-video/agora-uid';
 import { isUuidString } from '@/lib/is-uuid';
 import { createServiceRoleClient } from '@/lib/supabase-service-role';
@@ -19,9 +20,8 @@ function parseRole(role: unknown): number | null {
 }
 
 export async function POST(req: Request) {
-  const appId = process.env.AGORA_APP_ID?.trim();
-  const certificate = process.env.AGORA_APP_CERTIFICATE?.trim();
-  if (!appId || !certificate) {
+  const { appId, appCertificate } = resolveAgoraCredentials();
+  if (!appId || !appCertificate) {
     return NextResponse.json(
       { error: 'Live video is not configured on this server.' },
       { status: 503 },
@@ -196,7 +196,7 @@ export async function POST(req: Request) {
   try {
     token = RtcTokenBuilder.buildTokenWithUid(
       appId,
-      certificate,
+      appCertificate,
       channelId,
       uid,
       rtcRole,

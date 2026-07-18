@@ -4,11 +4,14 @@
  * Auth: User JWT (verify_jwt=true). Host must match `class_instances.metadata.live_session`.
  *
  * Secrets: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY,
- * AGORA_APP_ID, AGORA_CUSTOMER_ID, AGORA_CUSTOMER_SECRET,
+ * AGORA_APP_ID, AGORA_CUSTOMER_ID, AGORA_CUSTOMER_SECRET
+ * (active/passive failover: `AGORA_ACTIVE_ENV=SECONDARY` selects the
+ * `*_SECONDARY` variants — see `_shared/agora-credentials.ts`),
  * optional AGORA_RESTAPI_BASE (default https://api.sd-rtn.com).
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { resolveAgoraCredentials } from '../_shared/agora-credentials.ts';
 import {
   markSessionRecordingFailed,
   patchInstanceClassRecordingPipelineStatus,
@@ -78,9 +81,7 @@ Deno.serve(async (req) => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  const appId = Deno.env.get('AGORA_APP_ID')?.trim();
-  const customerId = Deno.env.get('AGORA_CUSTOMER_ID')?.trim();
-  const customerSecret = Deno.env.get('AGORA_CUSTOMER_SECRET')?.trim();
+  const { appId, customerId, customerSecret } = resolveAgoraCredentials();
   const restBase = (Deno.env.get('AGORA_RESTAPI_BASE')?.trim() || 'https://api.sd-rtn.com').replace(
     /\/$/,
     '',

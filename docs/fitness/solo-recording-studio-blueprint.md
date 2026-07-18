@@ -1,6 +1,6 @@
 # Solo Recording Studio — Architectural Blueprint
 
-**Status:** Phase 1–3 shipped (room lock + studio entry + browser recorder); Phase 4 playback polish pending
+**Status:** Phase 1–3 shipped (room lock + studio entry + browser recorder); billing failsafes shipped (duration lobby + idle/overtime); Phase 4 playback polish pending
 
 **Charter:** Let a host record themselves running a custom interval workout inside the existing live huddle + timer HUD stack, with the room locked so no other participants can join. Capture is **client-side** (browser `MediaRecorder`), not Agora Cloud Recording.  
 **Depends on:** Live session invite / `live_sessions` lifecycle, Tabata/Custom Interval HUD + Quick Launch, `class-recordings` storage + async playback patterns.  
@@ -198,11 +198,12 @@ Reuse class recording storage contracts to avoid a second bucket/RLS universe:
 ## 7. UX sketch
 
 1. **Enter Studio** (host) → create `solo_studio` live session + private class instance binding.
-2. Huddle loads with camera; interval Quick Launch / deck attach as today.
-3. **Record** control (SessionControls) → display-picker → recording indicator.
-4. Run workout (HUD Start / Nav Start / pause unchanged).
-5. **Stop & upload** → processing → ready.
-6. End session (no participant kill-switch audience).
+2. **Duration lobby** → pick 15 / 30 / 45 min → then `joinChannel` (no Agora burn during lobby).
+3. Huddle loads with camera; interval Quick Launch / deck attach as today; idle/overtime failsafes arm.
+4. **Record** control (SessionControls) → display-picker → recording indicator.
+5. Run workout (HUD Start / Nav Start / pause unchanged).
+6. **Stop & upload** → processing → ready.
+7. End session (no participant kill-switch audience).
 
 ---
 
@@ -224,13 +225,24 @@ Reuse class recording storage contracts to avoid a second bucket/RLS universe:
 
 1. [x] Host-only **Enter Solo Studio** dashboard nav (same gate as Start live video); mints session **without** chat/card `live_session` broadcast.
 2. [x] Bind private `class_instances` (`async_session` only, no `live_session`) via `provisionSoloStudioInstance`.
-3. [x] Dock passes `p_access_mode: 'solo_studio'`; skips PreJoin; auto `joinChannel`; blocks Agora cloud record; huddle hides roster / participant rail; **End studio** label.
+3. [x] Dock passes `p_access_mode: 'solo_studio'`; skips PreJoin; blocks Agora cloud record; huddle hides roster / participant rail; **End studio** label.
+4. [x] **Duration lobby** before `joinChannel`: required estimated session length presets **15 / 30 / 45** min (max 45); stored on `LiveVideoActiveSession.estimatedDurationMin`.
 
 ### Phase 3 — Browser recorder — **shipped**
 
 1. [x] `getDisplayMedia` + `MediaRecorder` + mic mix (`useSoloStudioRecorder` / `solo-studio-recorder`); Record/Stop in SessionControlsActions when solo.
 2. [x] Upload to `class-recordings` …/`studio-capture.webm` + metadata `provider: 'browser'` (`uploadSoloStudioRecording`).
 3. [ ] Manual QA: overlays visible in VOD; non-host join fails.
+
+### Phase 3b — Billing failsafes — **shipped**
+
+Client-only RTC minute protection (`useStudioFailsafe` + `StudioTimeoutWarningModal`):
+
+| Rule     | Behavior                                                                                                                     |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Idle     | If `recordingStatus === 'idle'` for **5 minutes**, show warning                                                              |
+| Overtime | Wall clock **`(estimatedDurationMin + 5)`** minutes from failsafe mount → warning                                            |
+| Warning  | **30s** countdown; **Yes, I'm here** restarts timers; at 0 → `await stopRecording` (upload) then `leaveChannel` + clear dock |
 
 ### Phase 4 — Playback polish
 
@@ -245,14 +257,15 @@ Reuse class recording storage contracts to avoid a second bucket/RLS universe:
 
 ## 9. Decision summary
 
-| Topic            | Decision                                                                                               |
-| ---------------- | ------------------------------------------------------------------------------------------------------ |
-| Room lock        | `live_sessions.access_mode = 'solo_studio'`; enforce on join RPC + `can_join_live_session`             |
-| Soft invite hide | Required UX; **not** sufficient alone                                                                  |
-| Capture          | **Option A** — `getDisplayMedia` + `MediaRecorder` (WYSIWYG HUDs)                                      |
-| Not used         | Agora Cloud Recording for Solo Studio v1                                                               |
-| Storage          | Reuse `class-recordings` + class recording metadata (`provider: 'browser'`) via private class instance |
-| Timers / HUD     | Unchanged live stack (Custom Interval, Start panel, billboard)                                         |
+| Topic             | Decision                                                                                               |
+| ----------------- | ------------------------------------------------------------------------------------------------------ |
+| Room lock         | `live_sessions.access_mode = 'solo_studio'`; enforce on join RPC + `can_join_live_session`             |
+| Soft invite hide  | Required UX; **not** sufficient alone                                                                  |
+| Capture           | **Option A** — `getDisplayMedia` + `MediaRecorder` (WYSIWYG HUDs)                                      |
+| Not used          | Agora Cloud Recording for Solo Studio v1                                                               |
+| Storage           | Reuse `class-recordings` + class recording metadata (`provider: 'browser'`) via private class instance |
+| Timers / HUD      | Unchanged live stack (Custom Interval, Start panel, billboard)                                         |
+| Billing failsafes | Duration lobby (≤45m) + idle 5m + overtime +5m + 30s warn → stop/upload then leave (client-only)       |
 
 ---
 

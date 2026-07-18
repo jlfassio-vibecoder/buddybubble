@@ -8,11 +8,14 @@
  * Configure in Agora Console (Cloud Recording → Notifications):
  *   https://<your-production-domain>/api/webhooks/agora-recording
  *
- * Env: `AGORA_WEBHOOK_SECRET` (HMAC-SHA1 hex of raw body). Uses `createServiceRoleClient()`:
+ * Env: webhook secret (HMAC-SHA1 hex of raw body) via `resolveAgoraWebhookSecret()`
+ * (`AGORA_ACTIVE_ENV=SECONDARY` → `AGORA_WEBHOOK_SECRET_SECONDARY` only; otherwise
+ * `AGORA_WEBHOOK_SECRET` / `AGORA_WEBHOOK_SECRET_PRIMARY`). Uses `createServiceRoleClient()`:
  * `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { NextResponse } from 'next/server';
+import { resolveAgoraWebhookSecret } from '@/lib/agora/credentials';
 import { createServiceRoleClient } from '@/lib/supabase-service-role';
 import {
   AGORA_CLOUD_RECORDING_PRODUCT_ID,
@@ -70,7 +73,7 @@ export async function OPTIONS() {
 }
 
 export async function POST(req: Request) {
-  const webhookSecret = process.env.AGORA_WEBHOOK_SECRET?.trim();
+  const webhookSecret = resolveAgoraWebhookSecret();
   if (!webhookSecret) {
     console.error('[Agora Webhook] server_misconfigured');
     return json({ ok: false, error: 'server_misconfigured' }, 500);

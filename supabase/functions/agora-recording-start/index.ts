@@ -5,7 +5,9 @@
  * Cloud recording only runs when `metadata.async_session` is present and not ended (`async_workout_not_enabled` otherwise).
  *
  * Secrets: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY,
- * AGORA_APP_ID, AGORA_CUSTOMER_ID, AGORA_CUSTOMER_SECRET, AGORA_APP_CERTIFICATE,
+ * AGORA_APP_ID, AGORA_CUSTOMER_ID, AGORA_CUSTOMER_SECRET, AGORA_APP_CERTIFICATE
+ * (active/passive failover: `AGORA_ACTIVE_ENV=SECONDARY` selects the
+ * `*_SECONDARY` variants — see `_shared/agora-credentials.ts`),
  * optional AGORA_RESTAPI_BASE (default https://api.sd-rtn.com),
  * S3_BUCKET, S3_ENDPOINT (trimmed; optional `http(s)://` prefix removed for Agora — no other mutation),
  * S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY,
@@ -22,6 +24,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 // can EarlyDrop on Supabase Edge boot if Node compat shims are not resolved before the package
 // evaluates. `esm.sh` pre-bundles those polyfills, so importing from there avoids the module-load crash.
 import { RtcRole, RtcTokenBuilder } from 'https://esm.sh/agora-access-token@2.0.4';
+import { resolveAgoraCredentials } from '../_shared/agora-credentials.ts';
 import { agoraRecordingBotUid, agoraUidFromUuid } from '../_shared/agora-uid.ts';
 import { aspectRatioToCanvas, parseAspectRatio } from '../_shared/aspect-ratio.ts';
 import { patchInstanceClassRecordingPipelineStatus } from '../_shared/class-recording-reconcile.ts';
@@ -153,10 +156,7 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    const appId = Deno.env.get('AGORA_APP_ID')?.trim();
-    const customerId = Deno.env.get('AGORA_CUSTOMER_ID')?.trim();
-    const customerSecret = Deno.env.get('AGORA_CUSTOMER_SECRET')?.trim();
-    const appCertificate = Deno.env.get('AGORA_APP_CERTIFICATE')?.trim();
+    const { appId, customerId, customerSecret, appCertificate } = resolveAgoraCredentials();
     const restBase = (
       Deno.env.get('AGORA_RESTAPI_BASE')?.trim() || 'https://api.sd-rtn.com'
     ).replace(/\/$/, '');
@@ -190,25 +190,30 @@ Deno.serve(async (req) => {
 
     // Opaque error responses: log specifics server-side, surface only `server_misconfigured` to
     // callers — matches other edge functions and avoids leaking deployment fingerprints.
-    const missingServer = missingEnvKeys([
-      ['SUPABASE_URL', supabaseUrl],
-      ['SUPABASE_ANON_KEY', anonKey],
-      ['SUPABASE_SERVICE_ROLE_KEY', serviceKey],
-    ]);
-    if (missingServer.length) {
+    // Direct falsy checks (not missingEnvKeys) so TypeScript narrows to string below.
+    if (!supabaseUrl || !anonKey || !serviceKey) {
+      const missingServer = missingEnvKeys([
+        ['SUPABASE_URL', supabaseUrl],
+        ['SUPABASE_ANON_KEY', anonKey],
+        ['SUPABASE_SERVICE_ROLE_KEY', serviceKey],
+      ]);
       console.error(
         `[agora-recording-start] server_misconfigured missing=${missingServer.join(',')}`,
       );
       return json({ ok: false, error: 'server_misconfigured' }, 500);
     }
 
-    const missingAgora = missingEnvKeys([
-      ['AGORA_APP_ID', appId],
-      ['AGORA_CUSTOMER_ID', customerId],
-      ['AGORA_CUSTOMER_SECRET', customerSecret],
-      ['AGORA_APP_CERTIFICATE', appCertificate],
-    ]);
-    if (missingAgora.length) {
+    // Direct falsy checks (not missingEnvKeys) so TypeScript narrows to string below.
+    if (!appId || !customerId || !customerSecret || !appCertificate) {
+      const agoraActiveSecondary =
+        Deno.env.get('AGORA_ACTIVE_ENV')?.trim().toUpperCase() === 'SECONDARY';
+      const agoraKey = (base: string) => (agoraActiveSecondary ? `${base}_SECONDARY` : base);
+      const missingAgora = missingEnvKeys([
+        [agoraKey('AGORA_APP_ID'), appId],
+        [agoraKey('AGORA_CUSTOMER_ID'), customerId],
+        [agoraKey('AGORA_CUSTOMER_SECRET'), customerSecret],
+        [agoraKey('AGORA_APP_CERTIFICATE'), appCertificate],
+      ]);
       console.error(
         `[agora-recording-start] agora_not_configured missing=${missingAgora.join(',')}`,
       );
