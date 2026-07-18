@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Layout } from 'react-resizable-panels';
 import { useGroupRef } from 'react-resizable-panels';
@@ -31,6 +31,11 @@ import {
   type SoloStudioRecorderStatus,
 } from '@/features/live-video/hooks/useSoloStudioRecorder';
 import { useAutoAdvanceQueue } from '@/features/live-video/hooks/useAutoAdvanceQueue';
+import {
+  FORCE_EXIT_UPLOAD_WAIT_MS,
+  isSoloStudioDurationPreset,
+} from '@/features/live-video/hooks/studio-failsafe-constants';
+import { useStudioFailsafe } from '@/features/live-video/hooks/useStudioFailsafe';
 import { flattenDeckToTeleprompterItems } from '@/lib/fitness/flatten-deck-to-teleprompter-items';
 import { useLiveSessionRuntime } from '@/features/live-video/theater/live-session-runtime-context';
 import { useLiveTheaterLayoutPlanContext } from '@/features/live-video/theater/live-theater-layout-context';
@@ -38,6 +43,7 @@ import { LiveSessionTopBar } from '@/features/live-video/shells/huddle/LiveSessi
 import { SessionHeader } from '@/features/live-video/shells/huddle/SessionHeader';
 import { SessionClockMini } from '@/features/live-video/shells/huddle/SessionClockMini';
 import { SessionControlsActions } from '@/features/live-video/shells/huddle/SessionControlsActions';
+import { StudioTimeoutWarningModal } from '@/features/live-video/shells/huddle/StudioTimeoutWarningModal';
 import { WorkoutQueueRegion } from '@/features/live-video/ui/WorkoutQueueRegion';
 import { Tier3ExercisesReopenPill } from '@/features/live-video/ui/Tier3ExercisesReopenPill';
 import { useTier3DrawerOpen } from '@/features/live-video/hooks/useTier3DrawerOpen';
@@ -138,6 +144,11 @@ export type LiveSessionViewProps = {
   isSoloStudio?: boolean;
   /** Solo studio storage anchor (`class_instances.id`) for browser capture upload. */
   sourceInstanceId?: string | null;
+  /**
+   * Solo Studio estimated session length (minutes). Required for billing failsafes
+   * (idle + overtime). Set in the duration lobby before `joinChannel`.
+   */
+  estimatedDurationMin?: number;
 };
 
 /**
@@ -167,6 +178,7 @@ function LiveSessionViewInner({
   workoutsBubbleId,
   isSoloStudio = false,
   sourceInstanceId = null,
+  estimatedDurationMin,
 }: LiveSessionViewProps) {
   const { override } = useWrapperAttach();
   const { hostNavActions } = useHostNavActions();
@@ -204,6 +216,10 @@ function LiveSessionViewInner({
     liveSessionId,
     enabled: soloRecorderEnabled,
   });
+  const soloStatusRef = useRef(soloRecorder.status);
+  soloStatusRef.current = soloRecorder.status;
+  const stopRecordingRef = useRef(soloRecorder.stopRecording);
+  stopRecordingRef.current = soloRecorder.stopRecording;
 
   const [teleprompterEnabled, setTeleprompterEnabled] = useState(false);
 
@@ -211,6 +227,51 @@ function LiveSessionViewInner({
     leaveChannel();
     onAfterLeave?.();
   }, [leaveChannel, onAfterLeave]);
+
+  const onStudioFailsafeForceExit = useCallback(async () => {
+    const status = soloStatusRef.current;
+    let stopFailedMessage: string | null = null;
+    if (status === 'recording' || status === 'requesting') {
+      try {
+        await stopRecordingRef.current();
+      } catch (e) {
+        // Scrubbed: never log the raw Error object (may include engine/network detail).
+        stopFailedMessage =
+          e instanceof Error && e.message.trim()
+            ? e.message.trim().slice(0, 200)
+            : 'Recording stop failed';
+        console.error('[LiveSessionView] solo failsafe stopRecording', stopFailedMessage);
+      }
+    }
+    const deadline = Date.now() + FORCE_EXIT_UPLOAD_WAIT_MS;
+    while (soloStatusRef.current === 'uploading' && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    // Billing: always tear down Agora. Surface upload/stop failure like host Exit/End would notice.
+    if (stopFailedMessage) {
+      toast.error('Session closed, but the recording may not have saved.', {
+        description: stopFailedMessage,
+      });
+    } else if (soloStatusRef.current === 'failed') {
+      toast.error('Session closed, but the recording upload failed.');
+    }
+    leaveChannel();
+    onAfterLeave?.();
+  }, [leaveChannel, onAfterLeave]);
+
+  const failsafeDurationMin = estimatedDurationMin ?? 0;
+  const failsafeEnabled = isSoloStudio && isHost && isSoloStudioDurationPreset(failsafeDurationMin);
+  const {
+    showWarning: showStudioTimeoutWarning,
+    warningReason: studioTimeoutWarningReason,
+    warningSecondsLeft: studioTimeoutSecondsLeft,
+    acknowledgeWarning: acknowledgeStudioTimeout,
+  } = useStudioFailsafe({
+    enabled: failsafeEnabled,
+    estimatedDurationMin: failsafeDurationMin,
+    recordingStatus: soloRecorder.status,
+    onForceExit: onStudioFailsafeForceExit,
+  });
 
   const soloRecorderControls = useMemo(
     () =>
@@ -850,6 +911,15 @@ function LiveSessionViewInner({
           open={rosterOpen}
           onOpenChange={setRosterOpen}
           managedRoster={{ participants: rosterParticipants, sendRemoteMute }}
+        />
+      ) : null}
+
+      {isSoloStudio ? (
+        <StudioTimeoutWarningModal
+          open={showStudioTimeoutWarning}
+          warningReason={studioTimeoutWarningReason}
+          secondsLeft={studioTimeoutSecondsLeft}
+          onStay={acknowledgeStudioTimeout}
         />
       ) : null}
     </>

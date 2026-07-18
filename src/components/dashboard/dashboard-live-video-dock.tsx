@@ -14,10 +14,13 @@ import { toast } from 'sonner';
 import { createClient } from '@utils/supabase/client';
 import { AgoraSessionProvider, LiveSessionView, useAgoraSession } from '@/features/live-video';
 import { PreJoinBuilder } from '@/features/live-video/shells/huddle/PreJoinBuilder';
+import { SoloStudioDurationLobby } from '@/features/live-video/shells/huddle/SoloStudioDurationLobby';
 import { ParticipantPreJoinSummary } from '@/features/live-video/shells/ParticipantPreJoinSummary';
+import { isSoloStudioDurationPreset } from '@/lib/live-video/solo-studio-duration';
 import { agoraUidFromUuid } from '@/lib/live-video/agora-uid';
 import type { Database } from '@/types/database';
 import type { LiveVideoActiveSession } from '@/store/liveVideoStore';
+import { useLiveVideoStore } from '@/store/liveVideoStore';
 import { copyClassDeckToLiveSession } from '@/features/live-video/shells/huddle/live-deck-merge';
 import { resolveLiveSessionCreateAccessMode } from '@/lib/live-video/provision-solo-studio-instance';
 import {
@@ -26,7 +29,6 @@ import {
   parseClassRecordingFromInstanceMetadata,
 } from '@/types/live-session-invite';
 import type { SessionAspectRatioId } from '@/features/live-video/state/sessionStateMachine';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 export type DashboardLiveVideoDockProps = {
@@ -116,6 +118,18 @@ function DashboardLiveVideoDockRouter({
   workoutsBubbleId,
 }: DockRouterProps) {
   const { isConnected, isConnecting, joinChannel, joinError } = useAgoraSession();
+  const setEstimatedDurationMin = useLiveVideoStore((s) => s.setEstimatedDurationMin);
+  /** Prefer store (sync after lobby confirm) over session prop which can lag one render. */
+  const storeEstimatedDurationMin = useLiveVideoStore((s) => s.activeSession?.estimatedDurationMin);
+  /**
+   * Local copy set in the same click as `joinChannel` so failsafe/leave-guard never race a
+   * store→parent prop re-render after Agora connects.
+   */
+  const [lobbyEstimatedDurationMin, setLobbyEstimatedDurationMin] = useState<number | undefined>();
+  const estimatedDurationMin = storeEstimatedDurationMin ?? lobbyEstimatedDurationMin;
+  /** Survives brief store/prop desync after lobby confirm so leave-guard cannot race join. */
+  const lobbyDurationRef = useRef<number | undefined>(undefined);
+  lobbyDurationRef.current = lobbyEstimatedDurationMin;
   const isHost = localUserId === session.hostUserId;
   const isSoloStudio = session.accessMode === 'solo_studio';
   const resolvedDisplayName = displayNameProp?.trim() || localUserId;
@@ -124,8 +138,6 @@ function DashboardLiveVideoDockRouter({
   const classDeckMergeAttemptedForSessionRef = useRef<string | null>(null);
   /** At most one host toast per live session when manual `agora-recording-start` fails. */
   const recordingStartFailureToastForSessionRef = useRef<string | null>(null);
-  /** Solo studio: auto `joinChannel` once after pre-connect create (skip PreJoin). */
-  const soloAutoJoinAttemptedForSessionRef = useRef<string | null>(null);
   const [liveDbReady, setLiveDbReady] = useState(false);
   /** Host solo: pre-connect `live_session_create` failure (stuck without join otherwise). */
   const [soloPreconnectError, setSoloPreconnectError] = useState<string | null>(null);
@@ -177,11 +189,7 @@ function DashboardLiveVideoDockRouter({
         }
         return;
       }
-
-      if (isSoloStudio && soloAutoJoinAttemptedForSessionRef.current !== liveSessionRowId) {
-        soloAutoJoinAttemptedForSessionRef.current = liveSessionRowId;
-        joinChannel();
-      }
+      // Solo Studio: host confirms duration in the lobby, then calls joinChannel — do not auto-join.
     })();
 
     return () => {
@@ -190,7 +198,6 @@ function DashboardLiveVideoDockRouter({
   }, [
     isHost,
     isSoloStudio,
-    joinChannel,
     localUserId,
     liveSessionAccessMode,
     resolvedDisplayName,
@@ -199,6 +206,32 @@ function DashboardLiveVideoDockRouter({
     soloCreateRetryKey,
     supabase,
   ]);
+
+  /**
+   * Solo Studio must not stay on Agora without a duration failsafe.
+   * Defer + re-read store/local lobby refs so a stale parent `session` prop or mid-join
+   * store lag cannot force-kick immediately after Enter studio.
+   */
+  useEffect(() => {
+    if (!isSoloStudio || !isConnected || isConnecting) return;
+    if (isSoloStudioDurationPreset(estimatedDurationMin ?? NaN)) return;
+
+    const timer = window.setTimeout(() => {
+      const fromStore = useLiveVideoStore.getState().activeSession?.estimatedDurationMin;
+      const fromLobby = lobbyDurationRef.current;
+      if (
+        isSoloStudioDurationPreset(fromStore ?? NaN) ||
+        isSoloStudioDurationPreset(fromLobby ?? NaN)
+      ) {
+        return;
+      }
+      onLeaveSession();
+    }, 300);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [isSoloStudio, isConnected, isConnecting, estimatedDurationMin, onLeaveSession]);
 
   useEffect(() => {
     if (!isHost || !classInstanceIdForRecording) {
@@ -442,33 +475,28 @@ function DashboardLiveVideoDockRouter({
 
   if (!isConnected && !isConnecting) {
     if (isSoloStudio && isHost) {
-      // Copilot suggestion ignored: stuck "Entering Solo Studio…" without retry was fixed via soloPreconnectError + Retry.
-      // Skip PreJoin — auto-join is kicked off after pre-connect live_session_create.
       const soloEntryError = soloPreconnectError || joinError;
       routeContent = (
-        <div
-          className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-4 py-8 text-sm text-muted-foreground"
-          data-solo-studio-joining
-        >
-          <span>{soloEntryError ? soloEntryError : 'Entering Solo Studio…'}</span>
-          {soloEntryError ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              onClick={() => {
-                if (soloPreconnectError) {
-                  soloAutoJoinAttemptedForSessionRef.current = null;
+        <SoloStudioDurationLobby
+          errorMessage={soloEntryError}
+          onCancel={onLeaveSession}
+          onRetryCreate={
+            soloPreconnectError
+              ? () => {
                   setSoloCreateRetryKey((k) => k + 1);
-                  return;
                 }
-                joinChannel();
-              }}
-            >
-              Retry
-            </Button>
-          ) : null}
-        </div>
+              : joinError
+                ? () => {
+                    joinChannel();
+                  }
+                : undefined
+          }
+          onConfirm={(min) => {
+            setLobbyEstimatedDurationMin(min);
+            setEstimatedDurationMin(min);
+            joinChannel();
+          }}
+        />
       );
     } else if (isHost) {
       routeContent = (
@@ -519,6 +547,7 @@ function DashboardLiveVideoDockRouter({
         onHostStartRecording={isHost && !isSoloStudio ? handleStartRecording : undefined}
         isSoloStudio={isSoloStudio}
         sourceInstanceId={session.sourceInstanceId}
+        estimatedDurationMin={estimatedDurationMin}
         boardSelectionPanel={boardSelectionPanel}
         selectionFloatingMediaBar={selectionFloatingMediaBar}
         workoutsBubbleId={workoutsBubbleId}
