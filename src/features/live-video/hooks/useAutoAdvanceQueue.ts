@@ -67,13 +67,19 @@ export function useAutoAdvanceQueue({
   getItemElementRef.current = getItemElement;
 
   useEffect(() => {
+    if (!enabled || elapsedMs == null || !activeItemId) {
+      prevActiveIndexRef.current = activeIndex;
+      return;
+    }
+
     const prev = prevActiveIndexRef.current;
-    prevActiveIndexRef.current = activeIndex;
+    if (!didCrossRecenterBoundary(prev, activeIndex, recenterEvery)) {
+      prevActiveIndexRef.current = activeIndex;
+      return;
+    }
 
-    if (!enabled || elapsedMs == null || !activeItemId) return;
-
-    if (!didCrossRecenterBoundary(prev, activeIndex, recenterEvery)) return;
-
+    // Boundary crossed: only advance prev after a successful scroll so a missing
+    // DOM node or debounce miss can retry on the next elapsed tick.
     const now = Date.now();
     if (now - lastScrollAtRef.current < SCROLL_DEBOUNCE_MS) return;
 
@@ -81,6 +87,7 @@ export function useAutoAdvanceQueue({
     if (!el) return;
 
     lastScrollAtRef.current = now;
+    prevActiveIndexRef.current = activeIndex;
     el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
   }, [activeIndex, activeItemId, elapsedMs, enabled, recenterEvery]);
 

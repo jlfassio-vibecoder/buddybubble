@@ -151,6 +151,31 @@ describe('useAutoAdvanceQueue', () => {
     expect(scrollIntoView).toHaveBeenCalledTimes(2);
   });
 
+  it('retries recenter after getItemElement was null on the boundary', () => {
+    const { rerender } = renderHook(
+      (props: UseAutoAdvanceQueueArgs) => useAutoAdvanceQueue(props),
+      {
+        initialProps: baseProps({
+          elapsedMs: 0,
+          getItemElement: () => null,
+        }),
+      },
+    );
+
+    vi.spyOn(Date, 'now').mockReturnValue(4_000_000);
+    rerender(
+      baseProps({
+        elapsedMs: 180_000,
+        getItemElement: () => null,
+      }),
+    );
+    expect(scrollIntoView).not.toHaveBeenCalled();
+
+    vi.spyOn(Date, 'now').mockReturnValue(4_000_000 + 500);
+    rerender(baseProps({ elapsedMs: 181_000 }));
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+
   it('exposes estimatedTotalSec without a host selection API', () => {
     const six = makeItems(6);
     for (const item of six) {

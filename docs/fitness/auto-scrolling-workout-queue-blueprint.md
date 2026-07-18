@@ -1,6 +1,6 @@
 # Auto-Scrolling Workout Queue (Teleprompter) — Blueprint
 
-**Status:** Design only — no React implementation yet  
+**Status:** Phase 1–2 implemented (heuristic + hook; Solo Studio hybrid parent-tile scroll/highlight); Live Video / WorkoutPlayer adapters not yet started  
 **Charter:** While a coach records in Solo Studio (and later Live Video / Active Workout), the workout queue should act as a teleprompter: approximate progress from elapsed recording time, then smoothly recenter the list every few exercises so the host rarely touches the UI.  
 **Depends on:** Solo Studio recorder (`useSoloStudioRecorder`), huddle queue strip (`WorkoutQueueRegion` → `SessionDeckBuilder`), task prescription JSON (`tasks.metadata` ± `session_task_metadata`), flat exercise derivation (`deriveFlatExercisesFromMetadata` / `WorkoutExercise`).  
 **Boundary:** Estimates are **heuristic pacing aids**, not timers of record. Do **not** write estimated progress into `live_session_deck_items` or session state. Do **not** auto-advance interval engines (Tabata/EMOM/AMRAP) from this feature — those already own their own clocks.
@@ -9,13 +9,13 @@
 
 ## Related surfaces
 
-| Surface                                    | Role today                                                                         | Teleprompter role                                                                       |
-| ------------------------------------------ | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `WorkoutQueueRegion`                       | Collapsible strip; mounts `SessionDeckBuilder`                                     | Keep as chrome; wrap or inject scroll host                                              |
-| `SessionDeckBuilder`                       | Horizontal `overflow-x-auto` deck tiles; host/async selection                      | Primary Solo Studio scroll target (deck cards **or** flattened exercise chips — see §3) |
-| `useSoloStudioRecorder`                    | `status: idle \| requesting \| recording \| …` — **no elapsed clock exported yet** | Provide `recordingStartedAt` / `elapsedMs` when `status === 'recording'`                |
-| `ParticipantWorkoutLogger` / interval HUDs | Set-row highlight via interval FSM                                                 | Optional secondary highlight; **not** the v1 scroll driver                              |
-| `WorkoutPlayer`                            | Vertical exercise list + `activeSetIndex`                                          | Later reuse of the same hook + scroll helper                                            |
+| Surface                                    | Role today                                                             | Teleprompter role                                                                       |
+| ------------------------------------------ | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `WorkoutQueueRegion`                       | Collapsible strip; mounts `SessionDeckBuilder`                         | Keep as chrome; wrap or inject scroll host                                              |
+| `SessionDeckBuilder`                       | Horizontal `overflow-x-auto` deck tiles; host/async selection          | Primary Solo Studio scroll target (deck cards **or** flattened exercise chips — see §3) |
+| `useSoloStudioRecorder`                    | Exports `elapsedMs` while `status === 'recording'` (cleared otherwise) | Solo Studio teleprompter clock source                                                   |
+| `ParticipantWorkoutLogger` / interval HUDs | Set-row highlight via interval FSM                                     | Optional secondary highlight; **not** the v1 scroll driver                              |
+| `WorkoutPlayer`                            | Vertical exercise list + `activeSetIndex`                              | Later reuse of the same hook + scroll helper                                            |
 
 ---
 

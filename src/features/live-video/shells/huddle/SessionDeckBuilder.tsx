@@ -432,7 +432,7 @@ export function SessionDeckBuilder({
             {deckToRender.map((snapshot) => {
               const parentId = teleprompterParentId(snapshot);
               const isActive = isAsyncMemberQueue
-                ? selectedAsyncDeckItemId != null && selectedAsyncDeckItemId === snapshot.snapshotId
+                ? selectedAsyncDeckItemId != null && selectedAsyncDeckItemId === parentId
                 : state.activeDeckItemId != null && state.activeDeckItemId === snapshot.snapshotId;
               return (
                 <ReadonlyDeckTile
