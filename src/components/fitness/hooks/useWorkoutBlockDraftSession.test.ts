@@ -267,4 +267,45 @@ describe('useWorkoutBlockDraftSession', () => {
     });
     expect(leave.result.current.mode).toBe('view');
   });
+
+  it('applyEdits clears dirty and syncs modeRef so Coach patches can apply again', () => {
+    const source = sourceFromFormat('emom');
+    const main = source.blocks.find((b) => b.section === 'main');
+    expect(main).toBeTruthy();
+    const { result } = renderHook(() =>
+      useWorkoutBlockDraftSession({ syncKey: 1, source, exitEditOnApply: true }),
+    );
+    const onCommit = vi.fn();
+
+    act(() => {
+      result.current.enterEdit();
+      result.current.setDraftTitle('Saved title');
+    });
+    expect(result.current.isDirty).toBe(true);
+
+    act(() => {
+      result.current.applyEdits(onCommit);
+    });
+    expect(result.current.mode).toBe('view');
+    expect(result.current.isDirty).toBe(false);
+    expect(onCommit).toHaveBeenCalledTimes(1);
+
+    // modeRef must be view: applyExternalBlocks / applyStructuralPatch gate on it.
+    let appliedWhileView = true;
+    act(() => {
+      appliedWhileView = result.current.applyExternalBlocks(sourceFromFormat('tabata').blocks);
+    });
+    expect(appliedWhileView).toBe(false);
+
+    act(() => {
+      result.current.enterEdit();
+    });
+    expect(result.current.isDirty).toBe(false);
+
+    let appliedPatch = false;
+    act(() => {
+      appliedPatch = result.current.applyStructuralPatch([{ block_id: main!.id, rpe: 8 }]);
+    });
+    expect(appliedPatch).toBe(true);
+  });
 });

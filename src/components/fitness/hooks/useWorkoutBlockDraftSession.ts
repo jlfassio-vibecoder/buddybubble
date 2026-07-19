@@ -279,19 +279,31 @@ export function useWorkoutBlockDraftSession({
 
   const applyEdits = useCallback(
     (onCommit: (payload: WorkoutBlockDraftApplyPayload) => void) => {
+      const title = draftTitle.trim();
+      const description = draftDescription.trim();
       const payload: WorkoutBlockDraftApplyPayload = {
-        title: draftTitle.trim(),
-        description: draftDescription.trim(),
+        title,
+        description,
         exercises: draftExercises,
         ...(draftBlocks.length > 0 ? { blocks: draftBlocks } : {}),
       };
       onCommit(payload);
+      // Saved drafts are the new pristine baseline so Coach patches are not blocked.
+      adoptDraftAsBaseline(title, description, draftExercises, draftBlocks);
       if (exitEditOnApply) {
+        modeRef.current = 'view';
         setMode('view');
       }
       pendingCoachUpdateToastKeyRef.current = null;
     },
-    [draftTitle, draftDescription, draftExercises, draftBlocks, exitEditOnApply],
+    [
+      draftTitle,
+      draftDescription,
+      draftExercises,
+      draftBlocks,
+      exitEditOnApply,
+      adoptDraftAsBaseline,
+    ],
   );
 
   const applyExternalBlocks = useCallback(
