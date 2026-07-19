@@ -36,6 +36,7 @@ import {
   applyCoachWorkoutOutlineToTaskMetadata,
   mergeCoachProposedIntoTaskMetadata,
 } from '../../_shared/workout-metadata/merge-coach-proposed-into-task-metadata.ts';
+import { applyStructuralPatchToTaskMetadata } from '../../_shared/workout-metadata/apply-structural-patch-to-task-metadata.ts';
 import { syncCoachOutlineFromRichMetadata } from '../../_shared/workout-metadata/factory-session-to-coach-outline.ts';
 import {
   shouldExcludeWorkoutSentinelFromHistory,
@@ -63,6 +64,8 @@ import {
   COACH_CUE_MAX_OUTPUT_TOKENS,
   COACH_CUE_THINKING_BUDGET,
   COACH_MAX_OUTPUT_TOKENS,
+  COACH_RICH_WORKOUT_MAX_OUTPUT_TOKENS,
+  COACH_RICH_WORKOUT_THINKING_BUDGET,
   COACH_MODEL_DEFAULT,
   COACH_OUTLINE_ONLY_MAX_OUTPUT_TOKENS,
   COACH_OUTLINE_ONLY_MODEL,
@@ -161,6 +164,7 @@ import {
   COACH_EXERCISE_CUE_RESPONSE_SCHEMA,
   COACH_MAIN_CHAT_RESPONSE_SCHEMA,
   COACH_OUTLINE_ONLY_SCHEMA,
+  COACH_RAIL_RICH_WORKOUT_RESPONSE_SCHEMA,
   COACH_RESPONSE_SCHEMA,
   COACH_WORKOUT_GREETING_SCHEMA,
 } from './schema.ts';
@@ -812,6 +816,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
   resolveGenerationConfig(ctx) {
     const extras = readCoachExtras(ctx);
     const isRailSurface = isCoachRailSurfaceFromMessageMetadata(ctx.message.metadata);
+    const hasWorkoutContext = extras.currentWorkoutContextJson != null;
     const cueReq = isRailSurface
       ? resolveExerciseCueRequestForDispatch(
           ctx.message.metadata,
@@ -827,9 +832,17 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
         thinkingConfig: { thinkingBudget: COACH_CUE_THINKING_BUDGET },
       };
     }
+    // Rich canvas rail: surgical structural_patch only — keep generation short so Edge
+    // cannot burn 60s on hallucinated full-draft JSON.
+    if (isRailSurface && hasWorkoutContext) {
+      return {
+        maxOutputTokens: COACH_RICH_WORKOUT_MAX_OUTPUT_TOKENS,
+        thinkingConfig: { thinkingBudget: COACH_RICH_WORKOUT_THINKING_BUDGET },
+      };
+    }
     const budget = resolveCoachThinkingBudget({
       isRailSurface,
-      hasWorkoutContext: extras.currentWorkoutContextJson != null,
+      hasWorkoutContext,
     });
     if (budget === COACH_THINKING_BUDGET) return null;
     return { thinkingConfig: { thinkingBudget: budget } };
@@ -844,6 +857,12 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       ctx.agent.auth_user_id,
     );
     if (cueReq) return COACH_EXERCISE_CUE_RESPONSE_SCHEMA;
+    // Hard prune: when CURRENT WORKOUT CONTEXT is injected, Vertex must not see
+    // proposed_workout_metadata — prompt-only mutual exclusivity was insufficient.
+    const extras = readCoachExtras(ctx);
+    if (extras.currentWorkoutContextJson != null) {
+      return COACH_RAIL_RICH_WORKOUT_RESPONSE_SCHEMA;
+    }
     return COACH_RESPONSE_SCHEMA;
   },
 
@@ -1413,6 +1432,8 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
     const hasProposedMeta =
       payload.proposed_workout_metadata != null &&
       Object.keys(payload.proposed_workout_metadata).length > 0;
+    const hasStructuralPatch =
+      payload.structural_patch != null && payload.structural_patch.length > 0;
     const hasCoachOutline =
       payload.coach_workout_outline != null && payload.coach_workout_outline.length > 0;
 
@@ -1449,7 +1470,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       isRailSurface &&
       knownTargetTaskId !== null &&
       payload.update_existing_task &&
-      (hasUpdateBody || hasProposedMeta || hasCoachOutline) &&
+      (hasUpdateBody || hasProposedMeta || hasCoachOutline || hasStructuralPatch) &&
       !hasMessageMetaPatch;
 
     const shouldInsertDraft =
@@ -1463,6 +1484,45 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       let mergeExerciseBlocksTouched = false;
       let mergeTouchedEmptyWithBlocks = false;
       let replyText = parsed.reply_content;
+
+      if (hasStructuralPatch) {
+        const mergeBase = resolveCoachTaskMetadataForMerge(
+          extras.taskMetadataForContext ?? {},
+          extras.currentWorkoutContextJson,
+        );
+        const { metadata, touched } = applyStructuralPatchToTaskMetadata(
+          mergeBase,
+          payload.structural_patch,
+        );
+        if (touched) {
+          pNewMeta = metadata;
+          mergeExerciseBlocksTouched = true;
+          pNewMeta = syncCoachOutlineFromRichMetadata(pNewMeta);
+          log('info', 'coach structural_patch applied to task metadata', {
+            request_id: ctx.requestId,
+            slug: COACH_SLUG,
+            message_id: ctx.message.id,
+            patch_count: payload.structural_patch!.length,
+          });
+        } else {
+          console.error('[coach] structural_patch produced no metadata touch', {
+            request_id: ctx.requestId,
+            message_id: ctx.message.id,
+            patch_count: payload.structural_patch!.length,
+            patch_preview: payload.structural_patch!.slice(0, 3).map((op) => ({
+              block_id: op.block_id,
+              exercise_id: op.exercise_id ?? null,
+              keys: Object.keys(op),
+            })),
+          });
+          log('warn', 'coach structural_patch no metadata touch', {
+            request_id: ctx.requestId,
+            slug: COACH_SLUG,
+            message_id: ctx.message.id,
+            patch_count: payload.structural_patch!.length,
+          });
+        }
+      }
 
       if (hasProposedMeta) {
         const raw = payload.proposed_workout_metadata as Record<string, unknown>;
@@ -1551,13 +1611,47 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
         p_new_metadata: pNewMeta,
         p_card_action: cardActionParamFinal,
         p_workout_cues_patch: workoutCuesParam,
+        // Pre-merge proposed payload for client canvas sweep (not the merged task snapshot).
+        // Omitted when null by the RPC wrapper so older DB signatures still resolve.
+        ...(hasProposedMeta && payload.proposed_workout_metadata != null
+          ? {
+              p_proposed_workout_metadata: payload.proposed_workout_metadata as Record<
+                string,
+                unknown
+              >,
+            }
+          : {}),
+        ...(hasStructuralPatch && payload.structural_patch != null
+          ? { p_structural_patch: payload.structural_patch }
+          : {}),
       });
       if (!upd.ok) {
+        console.error('[coach] agent_update_task_and_reply failed', {
+          request_id: ctx.requestId,
+          message_id: ctx.message.id,
+          error: upd.error,
+          code: upd.code,
+          details: upd.details ?? null,
+          hint: upd.hint ?? null,
+          raw: upd.raw,
+          had_proposed_workout_metadata: hasProposedMeta,
+          had_structural_patch: hasStructuralPatch,
+          structural_patch_len: hasStructuralPatch ? payload.structural_patch!.length : 0,
+          had_new_metadata: pNewMeta != null,
+        });
         log('error', 'coach persist direct update rpc failed', {
           request_id: ctx.requestId,
           slug: COACH_SLUG,
           message_id: ctx.message.id,
           error: upd.error,
+          code: upd.code,
+          details: upd.details ?? null,
+          hint: upd.hint ?? null,
+          raw: upd.raw,
+          had_proposed_workout_metadata: hasProposedMeta,
+          had_structural_patch: hasStructuralPatch,
+          structural_patch_len: hasStructuralPatch ? payload.structural_patch!.length : 0,
+          had_new_metadata: pNewMeta != null,
         });
         throw new Error(`rpc_failed:${upd.error}`);
       }
@@ -1567,7 +1661,8 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
         message_id: ctx.message.id,
         has_title: trimmedNewTitle.length > 0,
         has_desc: trimmedNewDesc.length > 0,
-        has_metadata: hasProposedMeta,
+        has_metadata: hasProposedMeta || hasStructuralPatch,
+        had_structural_patch: hasStructuralPatch,
       });
       return { ok: true, data: upd.data };
     }

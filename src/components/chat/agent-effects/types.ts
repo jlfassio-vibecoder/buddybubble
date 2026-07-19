@@ -3,6 +3,7 @@ import type { ExecutionPatch } from '@/types/execution-patch';
 import type { TaskModalIntakePatch } from '@/lib/agents/coach/task-modal-intake-patch';
 import type { OutlineDraftAppliedV1 } from '@/lib/agents/coach/outline-draft-patch';
 import type { WorkoutCuesPatchV1 } from '@/lib/agents/coach/workout-cues-patch';
+import type { CoachStructuralPatchOp } from '@/lib/agents/_shared/workout-metadata/structural-patch-types';
 
 export type AgentEffectContext = {
   taskId: string;
@@ -16,36 +17,30 @@ export type CardActionKind = 'trigger_generation' | 'regenerate_from_outline';
 
 export type CardAction = { v: 1; kind: CardActionKind };
 
+export type AgentEffectName =
+  | 'execution_patch'
+  | 'task_modal_intake_patch'
+  | 'card_action'
+  | 'outline_draft_applied'
+  | 'workout_cues_patch'
+  | 'proposed_workout_metadata'
+  | 'structural_patch';
+
 export type AgentEffectTelemetryEvent =
   | {
       kind: 'effect.scanned';
-      effect:
-        | 'execution_patch'
-        | 'task_modal_intake_patch'
-        | 'card_action'
-        | 'outline_draft_applied'
-        | 'workout_cues_patch';
+      effect: AgentEffectName;
       messageId: string;
     }
   | {
       kind: 'effect.parse_dropped';
-      effect:
-        | 'execution_patch'
-        | 'task_modal_intake_patch'
-        | 'card_action'
-        | 'outline_draft_applied'
-        | 'workout_cues_patch';
+      effect: AgentEffectName;
       messageId: string;
       reason: 'missing' | 'invalid';
     }
   | {
       kind: 'effect.applied';
-      effect:
-        | 'execution_patch'
-        | 'task_modal_intake_patch'
-        | 'card_action'
-        | 'outline_draft_applied'
-        | 'workout_cues_patch';
+      effect: AgentEffectName;
       messageId: string;
     };
 
@@ -63,4 +58,12 @@ export type OutlineDraftAppliedEffectPayload = AgentEffectContext & {
 
 export type WorkoutCuesPatchEffectPayload = AgentEffectContext & {
   patch: WorkoutCuesPatchV1;
+};
+
+export type ProposedWorkoutMetadataEffectPayload = AgentEffectContext & {
+  proposed: Record<string, unknown>;
+};
+
+export type StructuralPatchEffectPayload = AgentEffectContext & {
+  patches: CoachStructuralPatchOp[];
 };

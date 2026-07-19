@@ -54,8 +54,13 @@ import {
   type PersonalCueUnanchoredRow,
   type WorkoutCuesPatchV1,
 } from './workout-cues-patch.ts';
+import type {
+  CoachStructuralBlockFormat,
+  CoachStructuralFormatParams,
+  CoachStructuralPatchOp,
+} from '../../_shared/workout-metadata/structural-patch-types.ts';
 
-export type { WorkoutCuesPatchV1 };
+export type { WorkoutCuesPatchV1, CoachStructuralPatchOp };
 export { workoutCuesPatchForRpc };
 
 /**
@@ -90,6 +95,11 @@ export type CoachGeminiJsonResponse = {
    */
   coach_workout_outline: Record<string, unknown>[] | null;
   coach_workout_outline_drops: BlockShapeDrop[];
+  /**
+   * Optional: field-level canvas / rich-workout edits keyed by block_id / exercise_id.
+   * Persisted on the agent reply for client draft apply; also merged into task metadata on rail.
+   */
+  structural_patch: CoachStructuralPatchOp[] | null;
   /**
    * Optional: live `WorkoutPlayer` grid updates (0-based indices vs CURRENT WORKOUT CONTEXT / workoutContext).
    * Persisted on the agent `messages` row for the client. Null/omit when not updating the live session.
@@ -686,6 +696,136 @@ export function parsePersonalCuesPatchFromGemini(
   return { entries, droppedUnanchored, unanchoredDrops };
 }
 
+const STRUCTURAL_PATCH_PARSE_LOG_PREFIX = '[coach-structural-patch-parse]';
+
+const STRUCTURAL_INTEGER_FORMAT_PARAM_KEYS = [
+  'time_cap_minutes',
+  'interval_seconds',
+  'total_minutes',
+  'total_rounds',
+  'rounds',
+  'work_seconds',
+  'rest_seconds',
+] as const satisfies ReadonlyArray<keyof CoachStructuralFormatParams>;
+
+function parseStructuralFormatParams(raw: unknown): CoachStructuralFormatParams | null {
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const input = raw as Record<string, unknown>;
+  const out: CoachStructuralFormatParams = {};
+  for (const key of STRUCTURAL_INTEGER_FORMAT_PARAM_KEYS) {
+    const value = input[key];
+    if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+    const normalized = Math.round(value);
+    if (normalized >= 0) out[key] = normalized;
+  }
+  const targetRpe = input.target_rpe;
+  if (
+    typeof targetRpe === 'number' &&
+    Number.isFinite(targetRpe) &&
+    targetRpe >= 1 &&
+    targetRpe <= 10
+  ) {
+    out.target_rpe = targetRpe;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+/** Normalize Gemini `structural_patch` array. */
+export function parseStructuralPatchFromGemini(raw: unknown): CoachStructuralPatchOp[] | null {
+  try {
+    if (raw == null) return null;
+    if (!Array.isArray(raw)) {
+      console.error(`${STRUCTURAL_PATCH_PARSE_LOG_PREFIX} expected array`, {
+        typeof_raw: typeof raw,
+        is_null: raw == null,
+      });
+      return null;
+    }
+    if (raw.length === 0) return null;
+    const out: CoachStructuralPatchOp[] = [];
+    let dropped = 0;
+    for (const el of raw) {
+      if (el == null || typeof el !== 'object' || Array.isArray(el)) {
+        dropped += 1;
+        continue;
+      }
+      const o = el as Record<string, unknown>;
+      const blockId = typeof o.block_id === 'string' ? o.block_id.trim() : '';
+      if (!blockId) {
+        dropped += 1;
+        continue;
+      }
+      const op: CoachStructuralPatchOp = { block_id: blockId };
+      if (o.op === 'add_exercise' || o.op === 'update') {
+        op.op = o.op;
+      }
+      if (typeof o.exercise_id === 'string' && o.exercise_id.trim()) {
+        op.exercise_id = o.exercise_id.trim();
+      }
+      if (op.op === 'add_exercise') {
+        const name = typeof o.name === 'string' ? o.name.trim() : '';
+        if (!name) {
+          dropped += 1;
+          continue;
+        }
+      }
+      if (typeof o.name === 'string') op.name = o.name.trim().slice(0, 80);
+      if (typeof o.sets === 'number' && Number.isFinite(o.sets)) {
+        const sets = Math.round(o.sets);
+        if (sets > 0) op.sets = sets;
+      }
+      if (typeof o.reps === 'string') op.reps = o.reps.trim().slice(0, 32);
+      else if (typeof o.reps === 'number' && Number.isFinite(o.reps)) op.reps = String(o.reps);
+      if (typeof o.coach_notes === 'string') {
+        op.coach_notes = o.coach_notes.trim().slice(0, 240);
+      }
+      if (typeof o.rest_seconds === 'number' && Number.isFinite(o.rest_seconds)) {
+        const rest = Math.round(o.rest_seconds);
+        if (rest >= 0) op.rest_seconds = rest;
+      }
+      if (typeof o.work_seconds === 'number' && Number.isFinite(o.work_seconds)) {
+        const work = Math.round(o.work_seconds);
+        if (work >= 0) op.work_seconds = work;
+      }
+      {
+        // Coerce string "7.5" like execution_patch; keep half-steps; clamp 1–10.
+        const rpeToken = coerceExecutionPatchNumericField(o.rpe);
+        if (rpeToken != null) {
+          const n = Number(rpeToken);
+          if (Number.isFinite(n) && n >= 1 && n <= 10) op.rpe = n;
+        }
+      }
+      if (typeof o.block_format === 'string' && isBlockFormat(o.block_format.trim())) {
+        op.block_format = o.block_format.trim() as CoachStructuralBlockFormat;
+      }
+      const formatParams = parseStructuralFormatParams(o.format_params);
+      if (formatParams != null) op.format_params = formatParams;
+      out.push(op);
+    }
+    if (out.length === 0) {
+      console.error(`${STRUCTURAL_PATCH_PARSE_LOG_PREFIX} no valid ops after normalize`, {
+        raw_length: raw.length,
+        dropped,
+      });
+      return null;
+    }
+    if (dropped > 0) {
+      console.error(`${STRUCTURAL_PATCH_PARSE_LOG_PREFIX} dropped invalid ops`, {
+        kept: out.length,
+        dropped,
+        raw_length: raw.length,
+      });
+    }
+    return out;
+  } catch (err) {
+    console.error(`${STRUCTURAL_PATCH_PARSE_LOG_PREFIX} exception`, {
+      message: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+    });
+    return null;
+  }
+}
+
 export function parseExecutionPatchFromGemini(
   raw: unknown,
 ): CoachGeminiJsonResponse['execution_patch'] {
@@ -823,6 +963,10 @@ export function parseCoachJson(
   const coach_workout_outline = outlineCollect.outline;
   const coach_workout_outline_drops = outlineCollect.drops;
 
+  const structural_patch = parseStructuralPatchFromGemini(
+    (parsed as Record<string, unknown>).structural_patch,
+  );
+
   let execution_patch: CoachGeminiJsonResponse['execution_patch'] = null;
   try {
     execution_patch = parseExecutionPatchFromGemini(
@@ -875,6 +1019,7 @@ export function parseCoachJson(
       proposed_workout_metadata_drops: [],
       coach_workout_outline,
       coach_workout_outline_drops,
+      structural_patch: null,
       execution_patch,
       task_modal_intake_patch,
       task_modal_intake_dropped,
@@ -900,6 +1045,7 @@ export function parseCoachJson(
     proposed_workout_metadata_drops,
     coach_workout_outline,
     coach_workout_outline_drops,
+    structural_patch,
     execution_patch,
     task_modal_intake_patch,
     task_modal_intake_dropped,

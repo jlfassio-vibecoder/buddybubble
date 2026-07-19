@@ -58,6 +58,8 @@ import type {
   ExecutionPatchEffectPayload,
   TaskModalIntakePatchEffectPayload,
   OutlineDraftAppliedEffectPayload,
+  ProposedWorkoutMetadataEffectPayload,
+  StructuralPatchEffectPayload,
   WorkoutCuesPatchEffectPayload,
 } from '@/components/chat/agent-effects/types';
 import { useBuddyOnboardingSentinel } from '@/components/modals/task-modal/hooks/useBuddyOnboardingSentinel';
@@ -163,6 +165,16 @@ export type StandardTaskChatRailProps = {
    * Coach `metadata.workout_cues_patch` — workout-scoped cue generation (M3).
    */
   onWorkoutCuesPatch?: (ctx: WorkoutCuesPatchEffectPayload) => void;
+
+  /**
+   * Creation/pre-rich Coach proposal — canvas bootstrap only, never an existing rich-canvas edit.
+   */
+  onProposedWorkoutMetadata?: (ctx: ProposedWorkoutMetadataEffectPayload) => void;
+
+  /**
+   * Coach `metadata.structural_patch` — surgical field-level canvas draft apply.
+   */
+  onStructuralPatch?: (ctx: StructuralPatchEffectPayload) => void;
 
   /**
    * Pure telemetry for agent-effect parsing / application. Host may forward to `logAgentRoutingEvent`.
@@ -347,6 +359,8 @@ function useRailThreadApi(props: StandardTaskChatRailProps): RailThreadApi {
     onCardAction: props.onCardAction,
     onOutlineDraftApplied: props.onOutlineDraftApplied,
     onWorkoutCuesPatch: props.onWorkoutCuesPatch,
+    onProposedWorkoutMetadata: props.onProposedWorkoutMetadata,
+    onStructuralPatch: props.onStructuralPatch,
     onEffectTelemetry: props.onEffectTelemetry,
   });
 

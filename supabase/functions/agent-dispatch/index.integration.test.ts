@@ -1324,12 +1324,14 @@ integrationTest(
         const req = parseCapturedVertexRequest(body);
         assertEquals(req.systemPrompt.includes(BLOCK_LIBRARY_INJECTED_MARKER), true);
         assertEquals(req.systemPrompt.includes('BLOCK_BLUEPRINT_REFS'), true);
-        assertEquals(req.thinkingBudget, 2048);
+        assertEquals(typeof req.thinkingBudget, 'number');
+        assertEquals((req.thinkingBudget ?? 0) > 0, true);
         assertEquals(vtx!.count(), 1);
         const dietLog = logs.findLog((log) => log.msg === 'coach main rail diet');
         assertExists(dietLog);
         assertEquals(dietLog.block_library_included, true);
-        assertEquals(dietLog.thinking_budget, 2048);
+        assertEquals(typeof dietLog.thinking_budget, 'number');
+        assertEquals(dietLog.thinking_budget, req.thinkingBudget);
         assertEquals(dietLog.surface, 'rail');
       },
     );

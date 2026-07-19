@@ -120,7 +120,7 @@ export type TaskModalDetailsBodyProps = {
   onRemoveAttachment: (att: TaskAttachment) => void | Promise<void>;
   coreDirty: boolean;
   onCreateTask: () => void;
-  onSaveCoreFields: () => void | Promise<void>;
+  onSaveCoreFields: () => void | Promise<void | boolean>;
   archiving: boolean;
   loading: boolean;
   onArchiveTask: () => void;

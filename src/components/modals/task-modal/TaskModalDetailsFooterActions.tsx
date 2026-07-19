@@ -13,7 +13,7 @@ export type TaskModalDetailsFooterActionsProps = {
   typeNoun: string;
   coreDirty: boolean;
   onCreateTask: () => void | Promise<void>;
-  onSaveCoreFields: () => void | Promise<void>;
+  onSaveCoreFields: () => void | Promise<void | boolean>;
   taskId: string | null;
   archiving: boolean;
   loading: boolean;

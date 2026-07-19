@@ -12,9 +12,9 @@
  *     `supabase/migrations/20260623120000_coach_workout_draft_messages_metadata.sql:43-53`
  *     (signature mirrored at `bubble-agent-dispatch/index.ts:80-92`).
  *   - `agent_update_task_and_reply` —
- *     `supabase/migrations/20260825120000_agent_update_task_and_reply_metadata.sql`
- *     (rail-surface direct `tasks` title/description + optional shallow `metadata` merge + reply;
- *     bypasses coach_draft).
+ *     `supabase/migrations/20261018130000_agent_update_task_and_reply_collapse_overloads.sql`
+ *     (single signature including `p_proposed_workout_metadata`; rail-surface direct `tasks`
+ *     title/description + optional shallow `metadata` merge + reply; bypasses coach_draft).
  *   - `buddy_create_onboarding_reply` —
  *     `supabase/migrations/20260701140000_buddy_rpc.sql:16-23`
  *     (call site at `buddy-agent-dispatch/index.ts:545-553`).
@@ -119,6 +119,10 @@ export type AgentUpdateTaskAndReplyArgs = {
   p_outline_draft_applied?: Record<string, unknown> | null;
   /** Workout-scoped cue patch from EXERCISE_CUE_REQUEST flow (reply metadata). */
   p_workout_cues_patch?: unknown;
+  /** Pre-merge Coach proposed_workout_metadata for client canvas sweep (reply metadata). */
+  p_proposed_workout_metadata?: Record<string, unknown> | null;
+  /** Surgical field-level canvas ops for client draft apply (reply metadata). */
+  p_structural_patch?: unknown[] | null;
 };
 
 export type BuddyCreateOnboardingReplyArgs = {
@@ -150,16 +154,33 @@ export type OrganizerCreateReplyAndTaskArgs = {
   p_task_assignee_user_id: string | null;
 };
 
+/** PostgREST error fields we surface for Edge log diagnosis. */
+export type PostgrestRpcError = {
+  message: string;
+  code?: string;
+  details?: string;
+  hint?: string;
+};
+
 /**
  * Map PostgREST `{ data, error }` plus the RPC's own `{ ok, ... }` envelope into a
  * single `RpcResult`. The dispatcher's classifier consumes this uniform shape.
  */
 export function parseRpcEnvelope<T extends Record<string, unknown> = Record<string, unknown>>(
   raw: unknown,
-  pgError: { message: string; code?: string } | null,
+  pgError: PostgrestRpcError | null,
 ): RpcResult<T> {
   if (pgError) {
-    return { ok: false, error: pgError.message, code: pgError.code, raw };
+    return {
+      ok: false,
+      error: pgError.message,
+      code: pgError.code,
+      ...(typeof pgError.details === 'string' && pgError.details
+        ? { details: pgError.details }
+        : {}),
+      ...(typeof pgError.hint === 'string' && pgError.hint ? { hint: pgError.hint } : {}),
+      raw,
+    };
   }
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
     const env = raw as RpcEnvelope<T> & Record<string, unknown>;
@@ -175,13 +196,38 @@ export function parseRpcEnvelope<T extends Record<string, unknown> = Record<stri
   return { ok: false, error: 'rpc returned non-object payload', raw };
 }
 
+function postgrestErrorFields(error: unknown): PostgrestRpcError | null {
+  if (error == null || typeof error !== 'object') return null;
+  const e = error as Record<string, unknown>;
+  const message = typeof e.message === 'string' ? e.message : '';
+  if (!message) return null;
+  return {
+    message,
+    ...(typeof e.code === 'string' ? { code: e.code } : {}),
+    ...(typeof e.details === 'string' ? { details: e.details } : {}),
+    ...(typeof e.hint === 'string' ? { hint: e.hint } : {}),
+  };
+}
+
 async function callRpc<TArgs extends Record<string, unknown>>(
   supabase: SupabaseClient,
   name: string,
   args: TArgs,
 ): Promise<RpcResult> {
   const { data, error } = await supabase.rpc(name, args as Record<string, unknown>);
-  return parseRpcEnvelope(data, error);
+  const pgError = postgrestErrorFields(error);
+  const result = parseRpcEnvelope(data, pgError);
+  if (!result.ok && pgError) {
+    console.error('[rpc] PostgREST rpc failed', {
+      rpc: name,
+      message: pgError.message,
+      code: pgError.code ?? null,
+      details: pgError.details ?? null,
+      hint: pgError.hint ?? null,
+      arg_keys: Object.keys(args),
+    });
+  }
+  return result;
 }
 
 export function agentCreateCardAndReply(
@@ -198,11 +244,150 @@ export function agentInsertCoachWorkoutDraftReply(
   return callRpc(supabase, 'agent_insert_coach_workout_draft_reply', args);
 }
 
-export function agentUpdateTaskAndReply(
+function isAgentUpdateTaskSchemaMiss(error: string | undefined): boolean {
+  if (!error) return false;
+  const e = error.toLowerCase();
+  return (
+    e.includes('could not find the function') ||
+    e.includes('pgrst202') ||
+    e.includes('schema cache') ||
+    e.includes('does not exist') ||
+    e.includes('no matches') ||
+    e.includes('ambiguous') ||
+    e.includes('could not choose')
+  );
+}
+
+/**
+ * True when PostgREST rejected the call because `p_proposed_workout_metadata`
+ * is missing from the live RPC signature (migration not applied / schema cache /
+ * overload ambiguity).
+ */
+export function isProposedWorkoutMetadataRpcUnavailable(error: string | undefined): boolean {
+  if (!error) return false;
+  const e = error.toLowerCase();
+  const mentionsParam =
+    e.includes('p_proposed_workout_metadata') || e.includes('proposed_workout_metadata');
+  return (
+    mentionsParam ||
+    (isAgentUpdateTaskSchemaMiss(error) && e.includes('agent_update_task_and_reply'))
+  );
+}
+
+/**
+ * True when PostgREST rejected the call because `p_structural_patch` is missing
+ * from the live RPC signature (migration not applied / schema cache).
+ */
+export function isStructuralPatchRpcUnavailable(error: string | undefined): boolean {
+  if (!error) return false;
+  const e = error.toLowerCase();
+  const mentionsParam = e.includes('p_structural_patch') || e.includes('structural_patch');
+  return (
+    mentionsParam ||
+    (isAgentUpdateTaskSchemaMiss(error) && e.includes('agent_update_task_and_reply'))
+  );
+}
+
+/**
+ * Call `agent_update_task_and_reply`.
+ * - Omits optional JSONB params when null/empty so older signatures still resolve.
+ * - Passes `p_structural_patch` as a plain JS array (Supabase serializes to JSONB).
+ *   Do **not** `JSON.stringify` — that double-encodes and fails `jsonb_typeof = 'array'`.
+ * - Retries without unknown optional params when PostgREST reports a schema miss.
+ */
+export async function agentUpdateTaskAndReply(
   supabase: SupabaseClient,
   args: AgentUpdateTaskAndReplyArgs,
 ): Promise<RpcResult> {
-  return callRpc(supabase, 'agent_update_task_and_reply', args);
+  const {
+    p_proposed_workout_metadata: proposed,
+    p_structural_patch: structuralPatch,
+    ...rest
+  } = args;
+
+  const hasStructural = structuralPatch != null && structuralPatch.length > 0;
+  const hasProposed = proposed != null;
+
+  const buildArgs = (opts: {
+    includeProposed: boolean;
+    includeStructural: boolean;
+  }): Record<string, unknown> => {
+    const out: Record<string, unknown> = { ...rest };
+    if (opts.includeProposed && hasProposed) {
+      out.p_proposed_workout_metadata = proposed;
+    }
+    // Plain array → JSONB array. Never JSON.stringify.
+    if (opts.includeStructural && hasStructural) {
+      out.p_structural_patch = structuralPatch;
+    }
+    return out;
+  };
+
+  const logFailure = (label: string, result: RpcResult, argKeys: string[]) => {
+    if (result.ok) return;
+    console.error(label, {
+      error: result.error,
+      code: result.code,
+      details: result.details ?? null,
+      hint: result.hint ?? null,
+      arg_keys: argKeys,
+      had_proposed_workout_metadata: hasProposed,
+      had_structural_patch: hasStructural,
+      structural_patch_len: hasStructural ? structuralPatch!.length : 0,
+      raw: result.raw,
+    });
+  };
+
+  let includeProposed = true;
+  let includeStructural = true;
+  let current = buildArgs({ includeProposed, includeStructural });
+  let result = await callRpc(supabase, 'agent_update_task_and_reply', current);
+  if (result.ok) return result;
+  logFailure('[rpc] agent_update_task_and_reply failed', result, Object.keys(current));
+
+  if (includeStructural && hasStructural && isStructuralPatchRpcUnavailable(result.error)) {
+    console.error(
+      '[rpc] agent_update_task_and_reply rejected p_structural_patch; retrying without it',
+      {
+        error: result.error,
+        code: result.code,
+        details: result.details ?? null,
+        hint: result.hint ?? null,
+      },
+    );
+    includeStructural = false;
+    current = buildArgs({ includeProposed, includeStructural });
+    result = await callRpc(supabase, 'agent_update_task_and_reply', current);
+    if (result.ok) return result;
+    logFailure(
+      '[rpc] agent_update_task_and_reply still failed after dropping p_structural_patch',
+      result,
+      Object.keys(current),
+    );
+  }
+
+  if (includeProposed && hasProposed && isProposedWorkoutMetadataRpcUnavailable(result.error)) {
+    console.error(
+      '[rpc] agent_update_task_and_reply rejected p_proposed_workout_metadata; retrying without it',
+      {
+        error: result.error,
+        code: result.code,
+        details: result.details ?? null,
+        hint: result.hint ?? null,
+      },
+    );
+    includeProposed = false;
+    current = buildArgs({ includeProposed, includeStructural });
+    result = await callRpc(supabase, 'agent_update_task_and_reply', current);
+    if (result.ok) return result;
+    logFailure(
+      '[rpc] agent_update_task_and_reply still failed after dropping optional params',
+      result,
+      Object.keys(current),
+    );
+  }
+
+  return result;
 }
 
 export function buddyCreateOnboardingReply(

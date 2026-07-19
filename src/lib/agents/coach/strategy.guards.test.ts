@@ -35,6 +35,7 @@ function makeParsed(overrides: Partial<CoachGeminiJsonResponse> = {}): CoachGemi
     proposed_workout_metadata_drops: [],
     coach_workout_outline: null,
     coach_workout_outline_drops: [],
+    structural_patch: null,
     execution_patch: null,
     personal_cues_resolved: null,
     personal_cues_dropped_unanchored: 0,

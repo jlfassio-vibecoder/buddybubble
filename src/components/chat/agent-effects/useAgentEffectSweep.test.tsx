@@ -194,4 +194,69 @@ describe('useAgentEffectSweep', () => {
       }),
     );
   });
+
+  it('invokes onProposedWorkoutMetadata when coach reply has proposed_workout_metadata', () => {
+    const onProposedWorkoutMetadata = vi.fn();
+    const agents = new Map([[COACH_AUTH, makeCoachAgent()]]);
+
+    renderHook(() =>
+      useAgentEffectSweep({
+        taskId: TASK_ID,
+        isLoading: false,
+        messages: [
+          makeCoachMessage('msg-proposed', {
+            proposed_workout_metadata: {
+              blocks: [
+                {
+                  name: 'MAIN',
+                  block_format: 'tabata',
+                  exercises: [{ name: 'Burpee', sets: 1, reps: '10' }],
+                },
+              ],
+            },
+          }),
+        ],
+        agentsByAuthUserId: agents,
+        onProposedWorkoutMetadata,
+      }),
+    );
+
+    expect(onProposedWorkoutMetadata).toHaveBeenCalledTimes(1);
+    expect(onProposedWorkoutMetadata).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: TASK_ID,
+        messageId: 'msg-proposed',
+        proposed: expect.objectContaining({
+          blocks: expect.any(Array),
+        }),
+      }),
+    );
+  });
+
+  it('invokes onProposedWorkoutMetadata from coach_draft.proposed_metadata', () => {
+    const onProposedWorkoutMetadata = vi.fn();
+    const agents = new Map([[COACH_AUTH, makeCoachAgent()]]);
+
+    renderHook(() =>
+      useAgentEffectSweep({
+        taskId: TASK_ID,
+        isLoading: false,
+        messages: [
+          makeCoachMessage('msg-draft', {
+            coach_draft: {
+              status: 'pending',
+              proposed_metadata: {
+                blocks: [{ name: 'Warm-up', instructions: ['Jog'] }],
+              },
+            },
+          }),
+        ],
+        agentsByAuthUserId: agents,
+        onProposedWorkoutMetadata,
+      }),
+    );
+
+    expect(onProposedWorkoutMetadata).toHaveBeenCalledTimes(1);
+    expect(onProposedWorkoutMetadata.mock.calls[0]![0].proposed.blocks).toHaveLength(1);
+  });
 });

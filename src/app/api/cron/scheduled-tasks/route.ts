@@ -19,9 +19,16 @@ function chunk<T>(arr: T[], size: number): T[][] {
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
   const auth = request.headers.get('authorization');
+  // 503 here is env misconfiguration only — not a DB lock from migrations.
+  // This route uses the service-role client for short SELECT/UPDATE batches; it does not
+  // call agent RPCs and does not share a connection pool with Edge Functions.
   if (process.env.NODE_ENV === 'production') {
     if (!secret) {
-      return NextResponse.json({ ok: false, error: 'CRON_SECRET not configured' }, { status: 503 });
+      console.error('[cron/scheduled-tasks] CRON_SECRET missing in production');
+      return NextResponse.json(
+        { ok: false, error: 'CRON_SECRET not configured', reason: 'missing_cron_secret' },
+        { status: 503 },
+      );
     }
     if (auth !== `Bearer ${secret}`) {
       return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });

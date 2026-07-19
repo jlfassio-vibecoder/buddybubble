@@ -76,6 +76,16 @@ describe('buildCurrentTaskContextBlock', () => {
     expect(block).toContain('actively co-editing this task with the user');
     expect(block).toContain('replaces exerciseBlocks by matching block name');
     expect(block).toContain('exact same name values as CURRENT WORKOUT CONTEXT');
+    expect(block).toContain(
+      'CRITICAL RULE: structural_patch and proposed_workout_metadata are MUTUALLY EXCLUSIVE',
+    );
+    expect(block).toContain('NEVER emit both');
+    expect(block).toContain(
+      'NEVER use proposed_workout_metadata to change reps, sets, or add coach notes',
+    );
+    expect(block).toContain('RPE: Prefer exercise_id + top-level rpe');
+    expect(block).toContain('Use structural_patch to target the specific block_id');
+    expect(block).toContain('DO NOT rewrite the entire workout');
     expect(block).not.toContain('full revised workout');
     expect(block).not.toContain('still require clear affirmative consent before drafting');
     expect(block).not.toContain('The user must finalize changes on the card');
@@ -206,18 +216,16 @@ describe('buildBaseCoachPrompt', () => {
     expect(prompt).not.toContain('Leave missing_intake_categories empty unless');
   });
 
-  it('appends the live co-pilot rail EXCEPTION exactly once', () => {
+  it('separates pre-rich creation from rich workout mutation', () => {
     expect(prompt).toContain(
-      'EXCEPTION (live co-pilot rail): when the prompt also contains the LIVE CO-PILOT MODE block',
+      'proposed_workout_metadata is a CREATION-ONLY path for a new/pre-rich workout',
     );
     expect(prompt).toContain(
-      'FULL revised card text ONLY for title/description-only edits with no proposed_workout_metadata.blocks',
+      'For persistent edits to an existing rich workout, set update_existing_task true',
     );
     expect(prompt).toContain(
-      'When LIVE CO-PILOT MODE applies or you emit proposed_workout_metadata.blocks, set updated_task_description to null',
+      'structural_patch (rich mutation) must be non-empty when update_existing_task is true',
     );
-    const matches = prompt.match(/EXCEPTION \(live co-pilot rail\):/g) ?? [];
-    expect(matches.length).toBe(1);
   });
 
   it('does not embed the BLOCK BLUEPRINT LIBRARY (injected separately in strategy)', () => {

@@ -48,7 +48,16 @@ export type RpcEnvelope<T = Record<string, unknown>> = {
  */
 export type RpcResult<T extends Record<string, unknown> = Record<string, unknown>> =
   | { ok: true; data: T; raw: unknown }
-  | { ok: false; error: string; code?: string; raw?: unknown };
+  | {
+      ok: false;
+      error: string;
+      code?: string;
+      /** PostgREST / Postgres `details` when present. */
+      details?: string;
+      /** PostgREST / Postgres `hint` when present. */
+      hint?: string;
+      raw?: unknown;
+    };
 
 /** Definition row pulled from `agent_definitions` plus joined identity fields. */
 export interface AgentDef {

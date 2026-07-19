@@ -6,7 +6,10 @@ import type { WorkoutExercise } from '@/lib/item-metadata';
 import { deriveFlatExercisesFromMetadata } from '@/lib/workout-factory/sync-workout-metadata';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import { flatExerciseResolutionKey } from '@/lib/workout-factory/resolve-exercise-cue-bundle';
-import { useTaskWorkoutAi } from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
+import {
+  useTaskWorkoutAi,
+  computeMetadataForWorkoutViewerApply,
+} from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
 
 const mockPostGenerateWorkoutChain = vi.hoisted(() => vi.fn());
 const mockToastError = vi.hoisted(() => vi.fn());
@@ -267,6 +270,42 @@ describe('useTaskWorkoutAi handleWorkoutViewerApply', () => {
     const block = getMainBlock(result.current.metadata);
     expect(block.blockFormat).toBe('tabata');
     expect(block.name).toBe('MAIN');
+  });
+});
+
+describe('useTaskWorkoutAi computeWorkoutViewerApplyMetadata', () => {
+  it('uses cuePatchMetadataRef so persist-before-commit includes cues ahead of React state', () => {
+    const flatMeta = {
+      exercises: [{ name: 'Squat', form_cues: 'Old squat' }],
+    } as Json;
+    const squatKey = flatExerciseResolutionKey({ name: 'Squat' }, 0);
+    const { result } = renderHook(() => useTaskWorkoutAiHarness(flatMeta));
+
+    act(() => {
+      result.current.handleWorkoutViewerCuePatches({
+        [squatKey]: { form_cues: 'Cue from Coach' },
+      });
+    });
+
+    // Title-only apply: exercises match derived (cues ignored in compare), so base metadata is kept.
+    const payload = {
+      title: 'Applied title',
+      description: '',
+      exercises: result.current.workoutExercises,
+    };
+
+    // Simulate Task Modal still holding the pre-cue React `metadata` snapshot.
+    const fromStaleState = computeMetadataForWorkoutViewerApply(flatMeta, payload);
+    const fromRef = result.current.computeWorkoutViewerApplyMetadata(payload);
+
+    expect(
+      (fromStaleState as { exercises: WorkoutExercise[] }).exercises.find((e) => e.name === 'Squat')
+        ?.form_cues,
+    ).toBe('Old squat');
+    expect(
+      (fromRef as { exercises: WorkoutExercise[] }).exercises.find((e) => e.name === 'Squat')
+        ?.form_cues,
+    ).toBe('Cue from Coach');
   });
 });
 

@@ -130,137 +130,6 @@ export type Database = {
           },
         ];
       };
-      live_interval_participants: {
-        Row: {
-          display_name: string;
-          id: string;
-          interval_session_id: string;
-          is_host: boolean;
-          joined_at: string;
-          user_id: string | null;
-          workout_log_task_id: string | null;
-        };
-        Insert: {
-          display_name: string;
-          id?: string;
-          interval_session_id: string;
-          is_host?: boolean;
-          joined_at?: string;
-          user_id?: string | null;
-          workout_log_task_id?: string | null;
-        };
-        Update: {
-          display_name?: string;
-          id?: string;
-          interval_session_id?: string;
-          is_host?: boolean;
-          joined_at?: string;
-          user_id?: string | null;
-          workout_log_task_id?: string | null;
-        };
-        Relationships: [
-          {
-            foreignKeyName: 'amrap_participants_amrap_session_id_fkey';
-            columns: ['interval_session_id'];
-            isOneToOne: false;
-            referencedRelation: 'live_interval_sessions';
-            referencedColumns: ['id'];
-          },
-          {
-            foreignKeyName: 'amrap_participants_workout_log_task_id_fkey';
-            columns: ['workout_log_task_id'];
-            isOneToOne: false;
-            referencedRelation: 'tasks';
-            referencedColumns: ['id'];
-          },
-        ];
-      };
-      interval_round_events: {
-        Row: {
-          id: string;
-          interval_session_id: string;
-          logged_at: string;
-          participant_id: string;
-        };
-        Insert: {
-          id?: string;
-          interval_session_id: string;
-          logged_at?: string;
-          participant_id: string;
-        };
-        Update: {
-          id?: string;
-          interval_session_id?: string;
-          logged_at?: string;
-          participant_id?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: 'amrap_session_rounds_amrap_session_id_fkey';
-            columns: ['interval_session_id'];
-            isOneToOne: false;
-            referencedRelation: 'live_interval_sessions';
-            referencedColumns: ['id'];
-          },
-          {
-            foreignKeyName: 'amrap_session_rounds_participant_id_fkey';
-            columns: ['participant_id'];
-            isOneToOne: false;
-            referencedRelation: 'live_interval_participants';
-            referencedColumns: ['id'];
-          },
-        ];
-      };
-      live_interval_sessions: {
-        Row: {
-          block_snapshot: Json | null;
-          created_at: string;
-          duration_seconds: number;
-          id: string;
-          interval_type: Database['public']['Enums']['interval_type'];
-          leaderboard_snapshot: Json | null;
-          live_session_id: string;
-          mechanics_state: Json;
-          results_finalized_at: string | null;
-          timer_phase: string;
-          work_started_at: string | null;
-        };
-        Insert: {
-          block_snapshot?: Json | null;
-          created_at?: string;
-          duration_seconds: number;
-          id?: string;
-          interval_type?: Database['public']['Enums']['interval_type'];
-          leaderboard_snapshot?: Json | null;
-          live_session_id: string;
-          mechanics_state?: Json;
-          results_finalized_at?: string | null;
-          timer_phase?: string;
-          work_started_at?: string | null;
-        };
-        Update: {
-          block_snapshot?: Json | null;
-          created_at?: string;
-          duration_seconds?: number;
-          id?: string;
-          interval_type?: Database['public']['Enums']['interval_type'];
-          leaderboard_snapshot?: Json | null;
-          live_session_id?: string;
-          mechanics_state?: Json;
-          results_finalized_at?: string | null;
-          timer_phase?: string;
-          work_started_at?: string | null;
-        };
-        Relationships: [
-          {
-            foreignKeyName: 'amrap_sessions_live_session_id_fkey';
-            columns: ['live_session_id'];
-            isOneToOne: true;
-            referencedRelation: 'live_sessions';
-            referencedColumns: ['id'];
-          },
-        ];
-      };
       analytics_events: {
         Row: {
           created_at: string;
@@ -783,6 +652,13 @@ export type Database = {
             columns: ['offering_id'];
             isOneToOne: false;
             referencedRelation: 'class_offerings';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'class_instances_task_id_fkey';
+            columns: ['task_id'];
+            isOneToOne: false;
+            referencedRelation: 'tasks';
             referencedColumns: ['id'];
           },
           {
@@ -1311,6 +1187,42 @@ export type Database = {
           },
         ];
       };
+      interval_round_events: {
+        Row: {
+          id: string;
+          interval_session_id: string;
+          logged_at: string;
+          participant_id: string;
+        };
+        Insert: {
+          id?: string;
+          interval_session_id: string;
+          logged_at?: string;
+          participant_id: string;
+        };
+        Update: {
+          id?: string;
+          interval_session_id?: string;
+          logged_at?: string;
+          participant_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'amrap_session_rounds_amrap_session_id_fkey';
+            columns: ['interval_session_id'];
+            isOneToOne: false;
+            referencedRelation: 'live_interval_sessions';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'amrap_session_rounds_participant_id_fkey';
+            columns: ['participant_id'];
+            isOneToOne: false;
+            referencedRelation: 'live_interval_participants';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       invitation_join_requests: {
         Row: {
           created_at: string;
@@ -1472,6 +1384,101 @@ export type Database = {
             columns: ['workspace_id'];
             isOneToOne: false;
             referencedRelation: 'workspaces';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      live_interval_participants: {
+        Row: {
+          display_name: string;
+          id: string;
+          interval_session_id: string;
+          is_host: boolean;
+          joined_at: string;
+          user_id: string | null;
+          workout_log_task_id: string | null;
+        };
+        Insert: {
+          display_name: string;
+          id?: string;
+          interval_session_id: string;
+          is_host?: boolean;
+          joined_at?: string;
+          user_id?: string | null;
+          workout_log_task_id?: string | null;
+        };
+        Update: {
+          display_name?: string;
+          id?: string;
+          interval_session_id?: string;
+          is_host?: boolean;
+          joined_at?: string;
+          user_id?: string | null;
+          workout_log_task_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'amrap_participants_amrap_session_id_fkey';
+            columns: ['interval_session_id'];
+            isOneToOne: false;
+            referencedRelation: 'live_interval_sessions';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'amrap_participants_workout_log_task_id_fkey';
+            columns: ['workout_log_task_id'];
+            isOneToOne: false;
+            referencedRelation: 'tasks';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      live_interval_sessions: {
+        Row: {
+          block_snapshot: Json | null;
+          created_at: string;
+          duration_seconds: number;
+          id: string;
+          interval_type: Database['public']['Enums']['interval_type'];
+          leaderboard_snapshot: Json | null;
+          live_session_id: string;
+          mechanics_state: Json;
+          results_finalized_at: string | null;
+          timer_phase: string;
+          work_started_at: string | null;
+        };
+        Insert: {
+          block_snapshot?: Json | null;
+          created_at?: string;
+          duration_seconds: number;
+          id?: string;
+          interval_type?: Database['public']['Enums']['interval_type'];
+          leaderboard_snapshot?: Json | null;
+          live_session_id: string;
+          mechanics_state?: Json;
+          results_finalized_at?: string | null;
+          timer_phase?: string;
+          work_started_at?: string | null;
+        };
+        Update: {
+          block_snapshot?: Json | null;
+          created_at?: string;
+          duration_seconds?: number;
+          id?: string;
+          interval_type?: Database['public']['Enums']['interval_type'];
+          leaderboard_snapshot?: Json | null;
+          live_session_id?: string;
+          mechanics_state?: Json;
+          results_finalized_at?: string | null;
+          timer_phase?: string;
+          work_started_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'amrap_sessions_live_session_id_fkey';
+            columns: ['live_session_id'];
+            isOneToOne: true;
+            referencedRelation: 'live_sessions';
             referencedColumns: ['id'];
           },
         ];
@@ -1759,6 +1766,38 @@ export type Database = {
             columns: ['trainer_id'];
             isOneToOne: false;
             referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      storefront_buddy_usage: {
+        Row: {
+          auth_user_id: string;
+          char_total: number;
+          last_used_at: string;
+          turn_count: number;
+          workspace_id: string;
+        };
+        Insert: {
+          auth_user_id: string;
+          char_total?: number;
+          last_used_at?: string;
+          turn_count?: number;
+          workspace_id: string;
+        };
+        Update: {
+          auth_user_id?: string;
+          char_total?: number;
+          last_used_at?: string;
+          turn_count?: number;
+          workspace_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'storefront_buddy_usage_workspace_id_fkey';
+            columns: ['workspace_id'];
+            isOneToOne: false;
+            referencedRelation: 'workspaces';
             referencedColumns: ['id'];
           },
         ];
@@ -3059,45 +3098,29 @@ export type Database = {
           p_task_type?: string;
           p_thread_id: string;
           p_trigger_message_id: string;
+          p_workout_cues_patch?: Json;
         };
         Returns: Json;
       };
-      agent_insert_coach_workout_draft_reply:
-        | {
-            Args: {
-              p_agent_auth_user_id: string;
-              p_execution_patch?: Json;
-              p_invoker_user_id: string;
-              p_personal_cues?: Json;
-              p_proposed_description?: string;
-              p_proposed_metadata?: Json;
-              p_proposed_title?: string;
-              p_reply_text: string;
-              p_target_task_id: string;
-              p_task_modal_intake_patch?: Json;
-              p_thread_id: string;
-              p_trigger_message_id: string;
-            };
-            Returns: Json;
-          }
-        | {
-            Args: {
-              p_agent_auth_user_id: string;
-              p_card_action?: Json;
-              p_execution_patch?: Json;
-              p_invoker_user_id: string;
-              p_personal_cues?: Json;
-              p_proposed_description?: string;
-              p_proposed_metadata?: Json;
-              p_proposed_title?: string;
-              p_reply_text: string;
-              p_target_task_id: string;
-              p_task_modal_intake_patch?: Json;
-              p_thread_id: string;
-              p_trigger_message_id: string;
-            };
-            Returns: Json;
-          };
+      agent_insert_coach_workout_draft_reply: {
+        Args: {
+          p_agent_auth_user_id: string;
+          p_card_action?: Json;
+          p_execution_patch?: Json;
+          p_invoker_user_id: string;
+          p_personal_cues?: Json;
+          p_proposed_description?: string;
+          p_proposed_metadata?: Json;
+          p_proposed_title?: string;
+          p_reply_text: string;
+          p_target_task_id: string;
+          p_task_modal_intake_patch?: Json;
+          p_thread_id: string;
+          p_trigger_message_id: string;
+          p_workout_cues_patch?: Json;
+        };
+        Returns: Json;
+      };
       agent_update_task_and_reply: {
         Args: {
           p_agent_auth_user_id: string;
@@ -3107,10 +3130,13 @@ export type Database = {
           p_new_metadata?: Json;
           p_new_title?: string;
           p_outline_draft_applied?: Json;
+          p_proposed_workout_metadata?: Json;
           p_reply_text: string;
+          p_structural_patch?: Json;
           p_target_task_id: string;
           p_thread_id: string;
           p_trigger_message_id: string;
+          p_workout_cues_patch?: Json;
         };
         Returns: Json;
       };
@@ -3123,14 +3149,6 @@ export type Database = {
         };
         Returns: string;
       };
-      interval_finalize_session: {
-        Args: { p_interval_session_id: string; p_snapshot: Json };
-        Returns: undefined;
-      };
-      interval_log_round: {
-        Args: { p_interval_session_id: string; p_participant_id: string };
-        Returns: undefined;
-      };
       amrap_join_session: {
         Args: { p_amrap_session_id: string; p_display_name: string };
         Returns: string;
@@ -3139,35 +3157,8 @@ export type Database = {
         Args: { p_amrap_session_id: string };
         Returns: undefined;
       };
-      interval_reset_timer: {
-        Args: { p_interval_session_id: string };
-        Returns: undefined;
-      };
       amrap_start_timer: {
         Args: { p_amrap_session_id: string };
-        Returns: undefined;
-      };
-      tabata_create_for_session: {
-        Args: {
-          p_block_snapshot?: Json;
-          p_live_session_id: string;
-          p_mechanics_state?: Json;
-        };
-        Returns: string;
-      };
-      emom_create_for_session: {
-        Args: {
-          p_block_snapshot?: Json;
-          p_live_session_id: string;
-          p_mechanics_state?: Json;
-        };
-        Returns: string;
-      };
-      interval_advance_segment: {
-        Args: {
-          p_interval_session_id: string;
-          p_mechanics_state: Json;
-        };
         Returns: undefined;
       };
       apply_personal_cues_for_user: {
@@ -3192,6 +3183,8 @@ export type Database = {
           p_card_title: string;
           p_parent_id: string;
           p_reply_content: string;
+          p_surface?: string;
+          p_target_task_id?: string;
         };
         Returns: Json;
       };
@@ -3211,8 +3204,16 @@ export type Database = {
         Returns: number;
       };
       copy_live_deck_to_class_session: {
-        Args: { p_live_session_id: string; p_class_instance_id: string };
+        Args: { p_class_instance_id: string; p_live_session_id: string };
         Returns: number;
+      };
+      emom_create_for_session: {
+        Args: {
+          p_block_snapshot?: Json;
+          p_live_session_id: string;
+          p_mechanics_state?: Json;
+        };
+        Returns: string;
       };
       ensure_profile_for_uid: { Args: { _uid: string }; Returns: undefined };
       exercise_dictionary_lookup_by_names: {
@@ -3255,6 +3256,7 @@ export type Database = {
       host_attach_amrap_session: {
         Args: { p_interval_wrapper_config?: Json; p_session_id: string };
         Returns: {
+          access_mode: string;
           created_at: string;
           host_user_id: string;
           id: string;
@@ -3272,6 +3274,7 @@ export type Database = {
       host_detach_amrap_session: {
         Args: { p_session_id: string };
         Returns: {
+          access_mode: string;
           created_at: string;
           host_user_id: string;
           id: string;
@@ -3286,8 +3289,36 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      increment_storefront_buddy_usage: {
+        Args: {
+          p_auth_user_id?: string;
+          p_char_count: number;
+          p_workspace_id: string;
+        };
+        Returns: Json;
+      };
+      interval_advance_segment: {
+        Args: { p_interval_session_id: string; p_mechanics_state: Json };
+        Returns: undefined;
+      };
+      interval_finalize_session: {
+        Args: { p_interval_session_id: string; p_snapshot: Json };
+        Returns: undefined;
+      };
+      interval_log_round: {
+        Args: { p_interval_session_id: string; p_participant_id: string };
+        Returns: undefined;
+      };
+      interval_reset_timer: {
+        Args: { p_interval_session_id: string };
+        Returns: undefined;
+      };
       is_live_session_participant: {
         Args: { p_session_id: string };
+        Returns: boolean;
+      };
+      is_public_storefront_task: {
+        Args: { _task_id: string };
         Returns: boolean;
       };
       is_workspace_admin: { Args: { _workspace_id: string }; Returns: boolean };
@@ -3344,6 +3375,15 @@ export type Database = {
         Args: { p_join_request_id: string };
         Returns: Json;
       };
+      safe_cleanup_user_content: {
+        Args: {
+          p_delete_messages?: boolean;
+          p_delete_tasks?: boolean;
+          p_dry_run?: boolean;
+          p_user_id: string;
+        };
+        Returns: Json;
+      };
       seed_workspace_template: {
         Args: {
           _bubbles: Json;
@@ -3380,6 +3420,14 @@ export type Database = {
       storage_task_attachment_path_writable: {
         Args: { _bucket_id: string; _name: string };
         Returns: boolean;
+      };
+      tabata_create_for_session: {
+        Args: {
+          p_block_snapshot?: Json;
+          p_live_session_id: string;
+          p_mechanics_state?: Json;
+        };
+        Returns: string;
       };
       task_bubble_id: { Args: { _task_id: string }; Returns: string };
       task_comment_unread_counts: {
@@ -3536,6 +3584,8 @@ export const Constants = {
     Enums: {},
   },
   public: {
-    Enums: {},
+    Enums: {
+      interval_type: ['amrap', 'tabata', 'emom'],
+    },
   },
 } as const;

@@ -21,7 +21,12 @@ import type {
   TaskVisibility,
   WorkspaceCategory,
 } from '@/types/database';
-import { WorkoutViewerContent } from '@/components/fitness/workout-viewer-dialog';
+import {
+  WorkoutViewerContent,
+  type WorkoutViewerApplyPayload,
+  type WorkoutViewerCanvasDraftHandle,
+} from '@/components/fitness/workout-viewer-dialog';
+import { mapCoachProposedToCanvasBlocks } from '@/lib/agents/coach/coach-block-mapper';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import { useActiveSessionLaunchFromTaskModal } from '@/hooks/use-active-session-launch-from-task-modal';
 import { cn } from '@/lib/utils';
@@ -111,6 +116,8 @@ import type {
   CardActionEffectPayload,
   ExecutionPatchEffectPayload,
   OutlineDraftAppliedEffectPayload,
+  ProposedWorkoutMetadataEffectPayload,
+  StructuralPatchEffectPayload,
   WorkoutCuesPatchEffectPayload,
 } from '@/components/chat/agent-effects/types';
 import type { ExerciseCueRequestV1 } from '@/lib/agents/coach/exercise-cue-request';
@@ -336,6 +343,10 @@ export function TaskModal({
   /** Survives StandardTaskChatRail remounts when workout split layout toggles (Phase 12.2). */
   const handledCardActionMessageIdsByTaskRef = useRef<Map<string, Set<string>>>(new Map());
   const handledWorkoutCuesPatchMessageIdsByTaskRef = useRef<Map<string, Set<string>>>(new Map());
+  const handledStructuralPatchMessageIdsByTaskRef = useRef<Map<string, Set<string>>>(new Map());
+  const handledProposedWorkoutMetadataMessageIdsByTaskRef = useRef<Map<string, Set<string>>>(
+    new Map(),
+  );
   /** Pending Coach cue patches awaiting Realtime confirmation (messageId → entry). */
   const pendingWorkoutCuesByMessageRef = useRef<Map<string, PendingWorkoutCueEntry>>(new Map());
   const cueStaleRefetchScheduledRef = useRef(false);
@@ -343,6 +354,22 @@ export function TaskModal({
     ((id: string, opts?: { silent?: boolean }) => Promise<TaskRow | null>) | null
   >(null);
   const chatRailRef = useRef<StandardTaskChatRailHandle | null>(null);
+  const canvasDraftRef = useRef<WorkoutViewerCanvasDraftHandle | null>(null);
+  /**
+   * Coach open of the workout pane: skip the false→true syncKey bump so hard-reset cannot
+   * undo a structural/proposed apply that child effects already ran this turn.
+   */
+  const skipNextWorkoutPaneSyncBumpRef = useRef(false);
+  /** When the canvas is not mounted yet, apply after the pane mounts (and sync bump is skipped). */
+  const pendingCanvasCoachOpRef = useRef<
+    | { kind: 'structural'; messageId: string; patches: StructuralPatchEffectPayload['patches'] }
+    | {
+        kind: 'proposed';
+        messageId: string;
+        proposed: ProposedWorkoutMetadataEffectPayload['proposed'];
+      }
+    | null
+  >(null);
   const handledExecutionPatchFingerprintByTaskRef = useRef<Map<string, Map<string, string>>>(
     new Map(),
   );
@@ -356,7 +383,11 @@ export function TaskModal({
     handledOutlineAppliedMessageIdsByTaskRef.current.clear();
     handledCardActionMessageIdsByTaskRef.current.clear();
     handledWorkoutCuesPatchMessageIdsByTaskRef.current.clear();
+    handledStructuralPatchMessageIdsByTaskRef.current.clear();
+    handledProposedWorkoutMetadataMessageIdsByTaskRef.current.clear();
     pendingWorkoutCuesByMessageRef.current.clear();
+    pendingCanvasCoachOpRef.current = null;
+    skipNextWorkoutPaneSyncBumpRef.current = false;
     cueStaleRefetchScheduledRef.current = false;
     handledExecutionPatchFingerprintByTaskRef.current.clear();
     setWorkoutSplitEngaged(false);
@@ -365,6 +396,7 @@ export function TaskModal({
 
   useEffect(() => {
     pendingWorkoutCuesByMessageRef.current.clear();
+    pendingCanvasCoachOpRef.current = null;
     cueStaleRefetchScheduledRef.current = false;
   }, [taskId]);
 
@@ -544,6 +576,7 @@ export function TaskModal({
     viewerWorkoutSet,
     hasWorkoutViewerContent,
     handleWorkoutViewerApply,
+    computeWorkoutViewerApplyMetadata,
     handleWorkoutViewerCuePatches,
     resetWorkoutAiUi,
   } = useTaskWorkoutAi({
@@ -992,6 +1025,158 @@ export function TaskModal({
     [itemType, canWrite, handleWorkoutViewerCuePatches, setWorkoutViewerOpen],
   );
 
+  const openWorkoutCanvasPane = useCallback(() => {
+    setWorkoutSplitEngaged(true);
+    setWorkoutViewerOpen(true);
+    setMobileUnifiedPane('workout');
+  }, [setWorkoutViewerOpen]);
+
+  /** Coach effect path: open pane without the hard-reset syncKey bump that races child applies. */
+  const openWorkoutCanvasPaneForCoach = useCallback(() => {
+    skipNextWorkoutPaneSyncBumpRef.current = true;
+    openWorkoutCanvasPane();
+  }, [openWorkoutCanvasPane]);
+
+  const coachEffectDedupeKey = useCallback((taskIdForEffect: string) => {
+    return createSessionIdRef.current
+      ? `create:${createSessionIdRef.current}`
+      : `existing:${taskIdForEffect}`;
+  }, []);
+
+  const claimCoachEffectMessageId = useCallback(
+    (map: Map<string, Set<string>>, taskIdForEffect: string, messageId: string): boolean => {
+      const dedupeKey = coachEffectDedupeKey(taskIdForEffect);
+      let handled = map.get(dedupeKey);
+      if (!handled) {
+        handled = new Set();
+        map.set(dedupeKey, handled);
+      }
+      if (handled.has(messageId)) return false;
+      handled.add(messageId);
+      return true;
+    },
+    [coachEffectDedupeKey],
+  );
+
+  const applyCoachStructuralToHandle = useCallback(
+    (handle: WorkoutViewerCanvasDraftHandle, patches: StructuralPatchEffectPayload['patches']) => {
+      if (handle.mode === 'edit' && handle.isDirty) {
+        toast.message('Coach has an update', {
+          id: 'coach-dirty-draft-update',
+          description: 'Apply or discard your canvas edits to load Coach’s changes.',
+        });
+        return;
+      }
+      if (handle.mode !== 'edit') {
+        handle.enterEdit();
+      }
+      const applied = handle.applyStructuralPatch(patches);
+      if (applied) {
+        toast.success('Coach updated your canvas');
+      }
+    },
+    [],
+  );
+
+  const applyCoachProposedToHandle = useCallback(
+    (
+      handle: WorkoutViewerCanvasDraftHandle,
+      proposed: ProposedWorkoutMetadataEffectPayload['proposed'],
+    ) => {
+      const blocks = mapCoachProposedToCanvasBlocks({
+        proposed,
+        baseMetadata: metadata,
+      });
+      if (blocks.length === 0) return;
+
+      if (handle.mode === 'edit' && handle.isDirty) {
+        toast.message('Coach has an update', {
+          id: 'coach-dirty-draft-update',
+          description: 'Apply or discard your canvas edits to load Coach’s changes.',
+        });
+        return;
+      }
+      if (handle.mode !== 'edit') {
+        handle.enterEdit();
+      }
+      const applied = handle.applyExternalBlocks(blocks);
+      if (applied) {
+        toast.success('Coach updated your canvas');
+      }
+    },
+    [metadata],
+  );
+
+  const handleProposedWorkoutMetadata = useCallback(
+    (args: ProposedWorkoutMetadataEffectPayload) => {
+      if (itemType !== 'workout' || !canWrite) return;
+      if (
+        !claimCoachEffectMessageId(
+          handledProposedWorkoutMetadataMessageIdsByTaskRef.current,
+          args.taskId,
+          args.messageId,
+        )
+      ) {
+        return;
+      }
+
+      openWorkoutCanvasPaneForCoach();
+      const handle = canvasDraftRef.current;
+      if (!handle) {
+        pendingCanvasCoachOpRef.current = {
+          kind: 'proposed',
+          messageId: args.messageId,
+          proposed: args.proposed,
+        };
+        return;
+      }
+      pendingCanvasCoachOpRef.current = null;
+      applyCoachProposedToHandle(handle, args.proposed);
+    },
+    [
+      itemType,
+      canWrite,
+      claimCoachEffectMessageId,
+      openWorkoutCanvasPaneForCoach,
+      applyCoachProposedToHandle,
+    ],
+  );
+
+  const handleStructuralPatch = useCallback(
+    (args: StructuralPatchEffectPayload) => {
+      if (itemType !== 'workout' || !canWrite) return;
+      if (
+        !claimCoachEffectMessageId(
+          handledStructuralPatchMessageIdsByTaskRef.current,
+          args.taskId,
+          args.messageId,
+        )
+      ) {
+        return;
+      }
+
+      openWorkoutCanvasPaneForCoach();
+      const handle = canvasDraftRef.current;
+      if (!handle) {
+        pendingCanvasCoachOpRef.current = {
+          kind: 'structural',
+          messageId: args.messageId,
+          patches: args.patches,
+        };
+        return;
+      }
+      pendingCanvasCoachOpRef.current = null;
+      applyCoachStructuralToHandle(handle, args.patches);
+    },
+    [
+      itemType,
+      canWrite,
+      claimCoachEffectMessageId,
+      openWorkoutCanvasPaneForCoach,
+      applyCoachStructuralToHandle,
+    ],
+  );
+
   const { flushNow } = useTaskCoreTextAutosave({
     enabled: canWrite && Boolean(taskId),
     canWrite,
@@ -1089,8 +1274,48 @@ export function TaskModal({
       if (ok && isOptimisticDraftProp) {
         onOptimisticDraftConsumed?.();
       }
+      return ok;
     },
     [saveCoreFields, isOptimisticDraftProp, onOptimisticDraftConsumed],
+  );
+
+  /** Apply canvas edits: persist first, then commit local state — keep edit/dirty if save fails. */
+  const handleWorkoutViewerApplyAndSave = useCallback(
+    async (payload: WorkoutViewerApplyPayload): Promise<boolean> => {
+      if (!canWrite) {
+        handleWorkoutViewerApply(payload);
+        toast.success('Workout changes applied');
+        return true;
+      }
+      if (!taskId) {
+        handleWorkoutViewerApply(payload);
+        toast.success('Workout changes applied — save the card to persist');
+        return true;
+      }
+
+      // Use cuePatchMetadataRef (via hook) — not React metadata — so cue patches ahead of
+      // re-render are included in the DB write.
+      const nextMeta = computeWorkoutViewerApplyMetadata(payload);
+      const ok = await handleSaveCoreFields(nextMeta, {
+        metadataMerge: 'workout-cues',
+        titleOverride: payload.title,
+        descriptionOverride: payload.description,
+      });
+      if (ok) {
+        handleWorkoutViewerApply(payload);
+        toast.success('Workout changes saved');
+        return true;
+      }
+      toast.error('Could not save workout changes');
+      return false;
+    },
+    [
+      handleWorkoutViewerApply,
+      computeWorkoutViewerApplyMetadata,
+      canWrite,
+      taskId,
+      handleSaveCoreFields,
+    ],
   );
 
   const workoutOutlineEditor = useWorkoutOutlineEditor({
@@ -1342,13 +1567,44 @@ export function TaskModal({
     setHeroCinematicCollapsed(false);
   }, [open, taskId, cardCoverPath]);
 
+  // Edge-trigger only: bump syncKey on false→true (first open). Ask Coach while the
+  // pane is already open must not re-bump — otherwise WorkoutViewerContent hard-resets to view.
+  // Coach structural/proposed opens set skipNextWorkoutPaneSyncBumpRef so a same-turn apply
+  // is not wiped by the hard reset (child effects run before this parent effect).
   useEffect(() => {
     if (showWorkoutSplitPane && !prevWorkoutSplitRef.current) {
-      setWorkoutPaneSyncKey((k) => k + 1);
+      if (skipNextWorkoutPaneSyncBumpRef.current) {
+        skipNextWorkoutPaneSyncBumpRef.current = false;
+      } else {
+        setWorkoutPaneSyncKey((k) => k + 1);
+      }
       setMobileUnifiedPane('workout');
+    } else if (showWorkoutSplitPane && skipNextWorkoutPaneSyncBumpRef.current) {
+      // Pane was already open — clear the Coach skip flag.
+      skipNextWorkoutPaneSyncBumpRef.current = false;
     }
     prevWorkoutSplitRef.current = showWorkoutSplitPane;
   }, [showWorkoutSplitPane]);
+
+  // Flush Coach canvas ops queued while the viewer was unmounted (first open).
+  useEffect(() => {
+    if (!showWorkoutSplitPane) return;
+    const pending = pendingCanvasCoachOpRef.current;
+    if (!pending) return;
+    const handle = canvasDraftRef.current;
+    if (!handle) return;
+    pendingCanvasCoachOpRef.current = null;
+    if (pending.kind === 'structural') {
+      applyCoachStructuralToHandle(handle, pending.patches);
+    } else {
+      applyCoachProposedToHandle(handle, pending.proposed);
+    }
+  }, [
+    showWorkoutSplitPane,
+    workoutPaneSyncKey,
+    applyCoachStructuralToHandle,
+    applyCoachProposedToHandle,
+  ]);
 
   const selectTab = useCallback(
     async (id: TabId) => {
@@ -2232,6 +2488,8 @@ export function TaskModal({
                             onOutlineDraftApplied={handleOutlineDraftApplied}
                             onCardAction={handleCardAction}
                             onWorkoutCuesPatch={handleWorkoutCuesPatch}
+                            onProposedWorkoutMetadata={handleProposedWorkoutMetadata}
+                            onStructuralPatch={handleStructuralPatch}
                             onEffectTelemetry={handleAgentEffectTelemetry}
                             onEmbeddedTaskIdsChange={setEmbeddedTaskIdsFromThread}
                             chatRowExtras={{
@@ -2384,6 +2642,8 @@ export function TaskModal({
                                   onOutlineDraftApplied={handleOutlineDraftApplied}
                                   onCardAction={handleCardAction}
                                   onWorkoutCuesPatch={handleWorkoutCuesPatch}
+                                  onProposedWorkoutMetadata={handleProposedWorkoutMetadata}
+                                  onStructuralPatch={handleStructuralPatch}
                                   onEffectTelemetry={handleAgentEffectTelemetry}
                                   onEmbeddedTaskIdsChange={setEmbeddedTaskIdsFromThread}
                                   chatRowExtras={{
@@ -2507,6 +2767,8 @@ export function TaskModal({
                                         onOutlineDraftApplied={handleOutlineDraftApplied}
                                         onCardAction={handleCardAction}
                                         onWorkoutCuesPatch={handleWorkoutCuesPatch}
+                                        onProposedWorkoutMetadata={handleProposedWorkoutMetadata}
+                                        onStructuralPatch={handleStructuralPatch}
                                         onEffectTelemetry={handleAgentEffectTelemetry}
                                         onEmbeddedTaskIdsChange={setEmbeddedTaskIdsFromThread}
                                         chatRowExtras={{
@@ -2596,6 +2858,7 @@ export function TaskModal({
               )}
             >
               <WorkoutViewerContent
+                ref={canvasDraftRef}
                 workoutSet={viewerWorkoutSet}
                 exercises={workoutExercises}
                 metadata={metadata}
@@ -2604,7 +2867,7 @@ export function TaskModal({
                 canWrite={canWrite}
                 workoutUnitSystem={workoutUnitSystem}
                 readVariant={itemType === 'workout_log' ? 'log' : 'workout'}
-                onApply={handleWorkoutViewerApply}
+                onApply={handleWorkoutViewerApplyAndSave}
                 onApplyCuePatches={handleWorkoutViewerCuePatches}
                 onAskCoachForCues={handleAskCoachForCues}
                 injuriesOnFile={injuriesOnFile}

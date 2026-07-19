@@ -10,11 +10,15 @@ import { parseTaskModalIntakePatchFromMetadata } from '@/lib/agents/coach/task-m
 import { parseCardActionFromMetadata } from '@/components/chat/agent-effects/parse-card-action';
 import { parseOutlineDraftAppliedFromMetadata } from '@/components/chat/agent-effects/parse-outline-draft-applied';
 import { parseWorkoutCuesPatchFromMetadata } from '@/components/chat/agent-effects/parse-workout-cues-patch';
+import { parseProposedWorkoutMetadataFromMessageMetadata } from '@/components/chat/agent-effects/parse-proposed-workout-metadata';
+import { parseStructuralPatchFromMessageMetadata } from '@/components/chat/agent-effects/parse-structural-patch';
 import type {
   AgentEffectTelemetryEvent,
   CardActionEffectPayload,
   ExecutionPatchEffectPayload,
   OutlineDraftAppliedEffectPayload,
+  ProposedWorkoutMetadataEffectPayload,
+  StructuralPatchEffectPayload,
   TaskModalIntakePatchEffectPayload,
   WorkoutCuesPatchEffectPayload,
 } from '@/components/chat/agent-effects/types';
@@ -29,6 +33,8 @@ export type UseAgentEffectSweepArgs = {
   onCardAction?: (ctx: CardActionEffectPayload) => void;
   onOutlineDraftApplied?: (ctx: OutlineDraftAppliedEffectPayload) => void;
   onWorkoutCuesPatch?: (ctx: WorkoutCuesPatchEffectPayload) => void;
+  onProposedWorkoutMetadata?: (ctx: ProposedWorkoutMetadataEffectPayload) => void;
+  onStructuralPatch?: (ctx: StructuralPatchEffectPayload) => void;
   onEffectTelemetry?: (event: AgentEffectTelemetryEvent) => void;
 };
 
@@ -53,6 +59,8 @@ export function useAgentEffectSweep({
   onCardAction,
   onOutlineDraftApplied,
   onWorkoutCuesPatch,
+  onProposedWorkoutMetadata,
+  onStructuralPatch,
   onEffectTelemetry,
 }: UseAgentEffectSweepArgs): void {
   const onExecutionPatchRef = useRef(onExecutionPatch);
@@ -65,17 +73,25 @@ export function useAgentEffectSweep({
   onOutlineDraftAppliedRef.current = onOutlineDraftApplied;
   const onWorkoutCuesPatchRef = useRef(onWorkoutCuesPatch);
   onWorkoutCuesPatchRef.current = onWorkoutCuesPatch;
+  const onProposedWorkoutMetadataRef = useRef(onProposedWorkoutMetadata);
+  onProposedWorkoutMetadataRef.current = onProposedWorkoutMetadata;
+  const onStructuralPatchRef = useRef(onStructuralPatch);
+  onStructuralPatchRef.current = onStructuralPatch;
   const onEffectTelemetryRef = useRef(onEffectTelemetry);
   onEffectTelemetryRef.current = onEffectTelemetry;
 
   const handledExecutionPatchFingerprintRef = useRef<Map<string, string>>(new Map());
   const handledCardActionMessageIdsRef = useRef<Set<string>>(new Set());
   const handledWorkoutCuesPatchMessageIdsRef = useRef<Set<string>>(new Set());
+  const handledProposedWorkoutMetadataMessageIdsRef = useRef<Set<string>>(new Set());
+  const handledStructuralPatchMessageIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     handledExecutionPatchFingerprintRef.current.clear();
     handledCardActionMessageIdsRef.current.clear();
     handledWorkoutCuesPatchMessageIdsRef.current.clear();
+    handledProposedWorkoutMetadataMessageIdsRef.current.clear();
+    handledStructuralPatchMessageIdsRef.current.clear();
   }, [taskId]);
 
   useEffect(() => {
@@ -85,7 +101,19 @@ export function useAgentEffectSweep({
     const onCard = onCardActionRef.current;
     const onOutline = onOutlineDraftAppliedRef.current;
     const onWorkoutCues = onWorkoutCuesPatchRef.current;
-    if (!onEx && !onIntake && !onCard && !onOutline && !onWorkoutCues) return;
+    const onProposed = onProposedWorkoutMetadataRef.current;
+    const onStructural = onStructuralPatchRef.current;
+    if (
+      !onEx &&
+      !onIntake &&
+      !onCard &&
+      !onOutline &&
+      !onWorkoutCues &&
+      !onProposed &&
+      !onStructural
+    ) {
+      return;
+    }
     if (!taskId.trim()) return;
     if (isLoading || messages.length === 0) return;
 
@@ -241,6 +269,54 @@ export function useAgentEffectSweep({
             onWorkoutCues({ ...baseCtx, patch });
             handledWorkoutCuesPatchMessageIdsRef.current.add(id);
             emit?.({ kind: 'effect.applied', effect: 'workout_cues_patch', messageId: id });
+          }
+        }
+      }
+
+      if (onProposed) {
+        emit?.({ kind: 'effect.scanned', effect: 'proposed_workout_metadata', messageId: id });
+        if (!handledProposedWorkoutMetadataMessageIdsRef.current.has(id)) {
+          const proposed = parseProposedWorkoutMetadataFromMessageMetadata(row.metadata);
+          if (!proposed) {
+            handledProposedWorkoutMetadataMessageIdsRef.current.add(id);
+            emit?.({
+              kind: 'effect.parse_dropped',
+              effect: 'proposed_workout_metadata',
+              messageId: id,
+              reason: 'missing',
+            });
+          } else {
+            onProposed({ ...baseCtx, proposed });
+            handledProposedWorkoutMetadataMessageIdsRef.current.add(id);
+            emit?.({
+              kind: 'effect.applied',
+              effect: 'proposed_workout_metadata',
+              messageId: id,
+            });
+          }
+        }
+      }
+
+      if (onStructural) {
+        emit?.({ kind: 'effect.scanned', effect: 'structural_patch', messageId: id });
+        if (!handledStructuralPatchMessageIdsRef.current.has(id)) {
+          const patches = parseStructuralPatchFromMessageMetadata(row.metadata);
+          if (!patches) {
+            handledStructuralPatchMessageIdsRef.current.add(id);
+            emit?.({
+              kind: 'effect.parse_dropped',
+              effect: 'structural_patch',
+              messageId: id,
+              reason: 'missing',
+            });
+          } else {
+            onStructural({ ...baseCtx, patches });
+            handledStructuralPatchMessageIdsRef.current.add(id);
+            emit?.({
+              kind: 'effect.applied',
+              effect: 'structural_patch',
+              messageId: id,
+            });
           }
         }
       }

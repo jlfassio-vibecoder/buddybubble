@@ -104,6 +104,7 @@ vi.mock('@/components/modals/task-modal/hooks/useTaskWorkoutAi', () => ({
     aiWorkoutGenerating: false,
     handleAiGenerateWorkout: vi.fn(),
     handleWorkoutViewerApply: vi.fn(),
+    computeWorkoutViewerApplyMetadata: vi.fn(),
     handleWorkoutViewerCuePatches: vi.fn(),
   }),
 }));

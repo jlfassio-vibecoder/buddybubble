@@ -32,11 +32,18 @@ export const COACH_TEMPERATURE = 0.2 as const;
 /**
  * Upper cap for Coach's main JSON-mode reply (visible JSON + Gemini 2.5 Flash
  * thinking share this budget per Vertex docs). Covers a fully-detailed ~90 min
- * workout rewrite (instructions + form cues for ~12–15 exercises) plus adaptive
+ * new-workout proposal (instructions + form cues for ~12–15 exercises) plus adaptive
  * thinking; the model only emits what it needs per turn — this is the cap, not a
- * target.
+ * target. Keep ≥16384 so creation-path `proposed_workout_metadata` JSON is less
+ * likely to hit finish_reason MAX_TOKENS / truncated parse fallbacks.
  */
-export const COACH_MAX_OUTPUT_TOKENS = 12288 as const;
+export const COACH_MAX_OUTPUT_TOKENS = 16384 as const;
+
+/**
+ * Rail + rich CURRENT WORKOUT CONTEXT: surgical `structural_patch` only.
+ * Keep this low so runaway generation cannot burn the 60s Edge wall clock.
+ */
+export const COACH_RICH_WORKOUT_MAX_OUTPUT_TOKENS = 4096 as const;
 
 /** Caps Gemini 2.5 thinking tokens so JSON replies finish within `LLM_TIMEOUT_MS`. */
 export const COACH_THINKING_BUDGET = 2048 as const;
@@ -50,6 +57,9 @@ export const COACH_MAIN_CHAT_INTAKE_THINKING_BUDGET = 512 as const;
  */
 export const COACH_CUE_THINKING_BUDGET = 256 as const;
 
+/** Rail rich-canvas surgical edits: keep thinking small so JSON finishes quickly. */
+export const COACH_RICH_WORKOUT_THINKING_BUDGET = 512 as const;
+
 /** Vertex thinkingBudget for the main Coach JSON call on this turn. */
 export function resolveCoachThinkingBudget(args: {
   isRailSurface: boolean;
@@ -62,6 +72,9 @@ export function resolveCoachThinkingBudget(args: {
   }
   if (!args.isRailSurface && !args.hasWorkoutContext) {
     return COACH_MAIN_CHAT_INTAKE_THINKING_BUDGET;
+  }
+  if (args.isRailSurface && args.hasWorkoutContext) {
+    return COACH_RICH_WORKOUT_THINKING_BUDGET;
   }
   return COACH_THINKING_BUDGET;
 }

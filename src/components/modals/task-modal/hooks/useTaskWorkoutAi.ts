@@ -76,6 +76,22 @@ export type UseTaskWorkoutAiArgs = {
   setMetadata: Dispatch<SetStateAction<Json>>;
 };
 
+/** Pure metadata result of a viewer Apply (no React state writes). */
+export function computeMetadataForWorkoutViewerApply(
+  currentMeta: Json,
+  payload: WorkoutViewerApplyPayload,
+): Json {
+  if (payload.blocks != null && payload.blocks.length > 0) {
+    const seeded = backfillFactoryCuesFromFlat(currentMeta);
+    return applyBlockEditsToMetadata(seeded, payload.blocks) as Json;
+  }
+  const derived = deriveFlatExercisesFromMetadata(currentMeta);
+  if (flatExercisesMatchDerived(payload.exercises, derived)) {
+    return currentMeta;
+  }
+  return applyFlatWorkoutEditsToMetadata(currentMeta, payload.exercises) as Json;
+}
+
 export function useTaskWorkoutAi({
   open,
   taskId,
@@ -270,38 +286,45 @@ export function useTaskWorkoutAi({
     setWorkoutViewerOpen(true);
   }, [open, taskId, loading, initialOpenWorkoutViewer, hasWorkoutViewerContent]);
 
-  const handleWorkoutViewerApply = useCallback(
-    (payload: WorkoutViewerApplyPayload) => {
-      setTitle(payload.title);
-      setDescription(payload.description);
-
-      if (payload.blocks != null && payload.blocks.length > 0) {
-        const seeded = backfillFactoryCuesFromFlat(metadata);
-        const nextMeta = applyBlockEditsToMetadata(seeded, payload.blocks) as Json;
-        setMetadata(nextMeta);
-        setWorkoutExercises(parseWorkoutExercisesFromMetadata(nextMeta));
-        return;
-      }
-
-      setWorkoutExercises(payload.exercises);
-      setMetadata((prev) => {
-        const derived = deriveFlatExercisesFromMetadata(prev);
-        if (flatExercisesMatchDerived(payload.exercises, derived)) {
-          return prev;
-        }
-        return applyFlatWorkoutEditsToMetadata(prev, payload.exercises) as Json;
-      });
-    },
-    [metadata, setTitle, setDescription, setWorkoutExercises, setMetadata],
-  );
-
-  // Keep a sync mirror so rapid cue patches do not both read the same stale `metadata`.
+  // Keep a sync mirror so rapid cue patches / Apply do not both read the same stale `metadata`.
   // Update the ref in the handler and via effect (not during render) so a parent re-render
   // with a stale prop cannot clobber an in-flight patch chain.
   const cuePatchMetadataRef = useRef(metadata);
   useEffect(() => {
     cuePatchMetadataRef.current = metadata;
   }, [metadata]);
+
+  const handleWorkoutViewerApply = useCallback(
+    (payload: WorkoutViewerApplyPayload): Json => {
+      setTitle(payload.title);
+      setDescription(payload.description);
+
+      if (payload.blocks != null && payload.blocks.length > 0) {
+        const nextMeta = computeMetadataForWorkoutViewerApply(cuePatchMetadataRef.current, payload);
+        cuePatchMetadataRef.current = nextMeta;
+        setMetadata(nextMeta);
+        setWorkoutExercises(parseWorkoutExercisesFromMetadata(nextMeta));
+        return nextMeta;
+      }
+
+      setWorkoutExercises(payload.exercises);
+      const nextMeta = computeMetadataForWorkoutViewerApply(cuePatchMetadataRef.current, payload);
+      if (nextMeta === cuePatchMetadataRef.current) {
+        return nextMeta;
+      }
+      cuePatchMetadataRef.current = nextMeta;
+      setMetadata(nextMeta);
+      return nextMeta;
+    },
+    [setTitle, setDescription, setWorkoutExercises, setMetadata],
+  );
+
+  /** Same base as {@link handleWorkoutViewerApply} — use for persist-before-commit so DB matches the ref. */
+  const computeWorkoutViewerApplyMetadata = useCallback(
+    (payload: WorkoutViewerApplyPayload): Json =>
+      computeMetadataForWorkoutViewerApply(cuePatchMetadataRef.current, payload),
+    [],
+  );
 
   const handleWorkoutViewerCuePatches = useCallback(
     (patches: Record<string, WorkoutCuePatch>): Json => {
@@ -326,6 +349,7 @@ export function useTaskWorkoutAi({
     viewerWorkoutSet,
     hasWorkoutViewerContent,
     handleWorkoutViewerApply,
+    computeWorkoutViewerApplyMetadata,
     handleWorkoutViewerCuePatches,
     resetWorkoutAiUi,
   };

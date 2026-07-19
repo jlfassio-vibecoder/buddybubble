@@ -35,7 +35,7 @@ export const COACH_PROPOSED_WORKOUT_BLOCK_ITEM_SCHEMA = {
       type: 'STRING',
       maxLength: 40,
       description:
-        'CRITICAL: Must be a very short, concise title (e.g. "Main Circuit" or "Warm-up"). NEVER generate long, descriptive, or conversational text in this field. Never encode duration, round count, or exercise count in name — use format_params and exercises[]. Short section label only — NOT workout prose, timing, or prescriptions. Put structure in block_format and format_params; Vertex Factory fills detail.',
+        'CRITICAL: Must be a very short, concise title (e.g. "Main Circuit" or "Warm-up", ≤40 chars). NEVER generate long, descriptive, or conversational text. NEVER concatenate exercise names into the block name. When revising an existing workout, preserve the exact existing block name from CURRENT WORKOUT CONTEXT — only change the fields the user requested (sets, reps, format_params, exercises[]). Never encode duration, round count, or exercise count in name — use format_params and exercises[]. Short section label only — NOT workout prose, timing, or prescriptions. Put structure in block_format and format_params; Vertex Factory fills detail.',
     },
     exercises: {
       type: 'ARRAY',
@@ -389,7 +389,7 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
     update_existing_task: {
       type: 'BOOLEAN',
       description:
-        'TRUE for card/task rewrites and draft flows when the user has confirmed (or user_requested_immediate_card)—not for mid-workout log tweaks. Mid-workout weight, rep, or RPE changes use execution_patch with this field FALSE. Provide updated_task_title and/or updated_task_description and/or proposed_workout_metadata (at least one non-empty) when true. When proposed_workout_metadata.blocks is non-empty, updated_task_description MUST be null. Set FALSE when creating a NEW card (create_card), when only asking for pre-draft confirmation, or when only updating the live player via execution_patch. Never invent task IDs — the server resolves the task.',
+        'TRUE for persistent task/card mutations after confirmation—not for live WorkoutPlayer log tweaks. Existing rich workouts MUST pair this with structural_patch (or title/description); pre-rich creation/draft flows may pair it with proposed_workout_metadata. Mid-workout weight, rep, or RPE log changes use execution_patch with this field FALSE. Set FALSE when creating a NEW card, asking for confirmation, or only updating the live player. Never invent task IDs — the server resolves the task.',
     },
     updated_task_title: {
       type: 'STRING',
@@ -403,13 +403,15 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
       nullable: true,
       maxLength: 500,
       description:
-        'When update_existing_task is true: short card summary only (max 3 sentences). MUST be null when proposed_workout_metadata.blocks is non-empty — Tabata/EMOM timing belongs in block_format and format_params only, never repeated in prose. On LIVE CO-PILOT rail structural block edits, always null; emit blocks only. Use null to leave description unchanged only if updated_task_title is non-empty.',
+        'When update_existing_task is true: short card summary only (max 3 sentences). MUST be null when proposed_workout_metadata.blocks is non-empty — timing belongs in structured fields, never repeated in prose. On LIVE CO-PILOT rich-canvas edits, always null; emit structural_patch only. Use null to leave description unchanged.',
     },
+    // CREATION PATH ONLY. This property is physically pruned from the rich-canvas schema;
+    // prompt-level "do not use" wording is not an enforcement boundary for Gemini.
     proposed_workout_metadata: {
       type: 'OBJECT',
       nullable: true,
       description:
-        'When update_existing_task is true: structured workout fields to merge into tasks.metadata on user finalize (exercises array with name, sets, reps; optional blocks array for named sections such as Warm-up, Main, Finisher, or Cool down; workout_type; duration_min). When the user requests a named section (for example add a finisher or swap the warm-up), prefer the blocks array over top-level exercises alone so each section keeps its identity. MUST be null on pre_draft_confirmation turns and until the user confirms drafting or user_requested_immediate_card. MUST be null when you are only updating the live grid via execution_patch OR saving personal form cues via personal_cues_patch (never use this object for mid-workout cue persistence). Use null if only updating title/description text.',
+        'Use ONLY for brand new workout generation. MUTUALLY EXCLUSIVE with structural_patch. Do NOT use for editing existing workouts. When update_existing_task is true on a brand-new draft (no rich workout yet): structured workout fields to merge into tasks.metadata (exercises array with name, sets, reps; optional blocks array for named sections; workout_type; duration_min). MUST be null when structural_patch is non-empty. MUST be null for changing reps, sets, or coach notes on an existing workout — use structural_patch. MUST be null on pre_draft_confirmation turns and until the user confirms drafting or user_requested_immediate_card. MUST be null when you are only updating the live grid via execution_patch OR saving personal form cues via personal_cues_patch. Use null if only updating title/description text.',
       properties: {
         exercises: {
           type: 'ARRAY',
@@ -440,7 +442,7 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
           type: 'ARRAY',
           nullable: true,
           description:
-            'Polymorphic workout sections. Each block has a free-text name (e.g. Warm-up, Main, Strength, Cardio, Finisher, Cool down, Mobility). Exercise-shaped blocks include exercises; warm-up / cool-down / mobility may instead supply an instructions string list when there are no sets and reps. Same block name as an existing exerciseBlocks entry replaces that block in place (exercises + format_params); a new name appends. Emit only new or changed blocks with stable names from CURRENT WORKOUT CONTEXT; do not re-send unchanged sections. Set replace_all_exercise_blocks true only when renaming or reordering the full parametric structure. Routes each block by name and shape into exerciseBlocks (strength, cardio, core, finisher with sets and reps) or warmupBlocks, finisherBlocks, or cooldownBlocks (instruction-shaped). Prefer emitting blocks over flat exercises whenever the user asked for a named section (for example add a finisher). Each exercise-shaped block MUST set block_format (one of straight_sets, superset, circuit, amrap, emom, tabata, ladder, chipper, pyramid, contrast, clusters, drop_sets) and the matching format_params per the BLUEPRINT LIBRARY in the system prompt. Instruction-only blocks (instructions[] without exercises[]) may omit block_format. Use null or omit when not changing the workout structure.',
+            'Creation-only polymorphic workout sections for a new/pre-rich draft. Each block has a short free-text name. Exercise-shaped blocks include exercises; instruction-shaped warm-up/cool-down/mobility blocks may use instructions instead. Each exercise-shaped block MUST set block_format and matching format_params per BLUEPRINT LIBRARY. Existing rich workouts never use this array for edits; use structural_patch by stamped ids.',
           items: COACH_PROPOSED_WORKOUT_BLOCK_ITEM_SCHEMA,
         },
         workout_type: { type: 'STRING', nullable: true },
@@ -451,6 +453,75 @@ export const COACH_RESPONSE_SCHEMA: VertexResponseSchema = {
           description:
             'When true and blocks is non-empty, replace the entire parametric exerciseBlocks array with the incoming blocks (warmup/finisher/cooldown instruction sections preserved). Default false — same block name replaces in place; new names append.',
         },
+      },
+    },
+    // MUTATION PATH ONLY. Kept in the rich-canvas schema after creation fields are pruned.
+    structural_patch: {
+      type: 'ARRAY',
+      nullable: true,
+      // Keep maxItems low — Gemini rejects schemas with "too many states" when nested
+      // arrays have large bounds (especially beside the rest of COACH_RESPONSE_SCHEMA).
+      maxItems: 8,
+      description:
+        'Rail canvas edits only: change sets/reps/RPE/coach notes or add one exercise. Mutually exclusive with proposed_workout_metadata. Copy block_id / exercise_id from structural_address_map. Cap 8 ops. Null for brand-new workouts.',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          op: {
+            type: 'STRING',
+            nullable: true,
+            enum: ['update', 'add_exercise'],
+            description: 'update (default) or add_exercise (append; requires name).',
+          },
+          block_id: {
+            type: 'STRING',
+            description: 'Exact block_id from structural_address_map.',
+          },
+          exercise_id: {
+            type: 'STRING',
+            nullable: true,
+            description: 'Exact exercise_id for update; omit for add_exercise / block-level.',
+          },
+          name: {
+            type: 'STRING',
+            nullable: true,
+            maxLength: 80,
+            description: 'New exercise or block name (short label).',
+          },
+          sets: { type: 'INTEGER', nullable: true },
+          reps: { type: 'STRING', nullable: true, maxLength: 32 },
+          coach_notes: { type: 'STRING', nullable: true, maxLength: 240 },
+          rest_seconds: { type: 'INTEGER', nullable: true },
+          work_seconds: { type: 'INTEGER', nullable: true },
+          rpe: {
+            type: 'NUMBER',
+            nullable: true,
+            description:
+              'Per-exercise or block-wide target RPE (1–10). Prefer exercise_id + rpe for one row; for block-wide intensity use block_id + rpe (or format_params.target_rpe) — server fans out to every exercise row.',
+          },
+          block_format: {
+            type: 'STRING',
+            nullable: true,
+            description: 'Block-level format id from BLUEPRINT LIBRARY.',
+          },
+          // Scalars only — open OBJECT / nested arrays explode Gemini schema state space.
+          format_params: {
+            type: 'OBJECT',
+            nullable: true,
+            description: 'Block-level scalars only; shallow-merged into format_params.',
+            properties: {
+              time_cap_minutes: { type: 'INTEGER', nullable: true },
+              interval_seconds: { type: 'INTEGER', nullable: true },
+              total_minutes: { type: 'INTEGER', nullable: true },
+              total_rounds: { type: 'INTEGER', nullable: true },
+              rounds: { type: 'INTEGER', nullable: true },
+              work_seconds: { type: 'INTEGER', nullable: true },
+              rest_seconds: { type: 'INTEGER', nullable: true },
+              target_rpe: { type: 'NUMBER', nullable: true },
+            },
+          },
+        },
+        required: ['block_id'],
       },
     },
     execution_patch: {
@@ -687,6 +758,7 @@ export const COACH_EXERCISE_CUE_RESPONSE_SCHEMA: VertexResponseSchema = {
       Object.entries(COACH_RESPONSE_SCHEMA.properties as Record<string, unknown>).filter(
         ([key]) =>
           key !== 'proposed_workout_metadata' &&
+          key !== 'structural_patch' &&
           key !== 'outline_draft_patch' &&
           key !== 'coach_workout_outline' &&
           key !== 'personal_cues_patch' &&
@@ -711,17 +783,42 @@ export const COACH_EXERCISE_CUE_RESPONSE_SCHEMA: VertexResponseSchema = {
 /**
  * Main bubble Call A schema — card shell only. Omits `proposed_workout_metadata` so the
  * model cannot dump parametric blocks into Call A (Phase B writes `coach_workout_outline`).
- * Rail / task-modal co-pilot uses full `COACH_RESPONSE_SCHEMA`.
+ * Also omits `structural_patch` (rail/canvas surgical edits only) — including it tipped
+ * Gemini into INVALID_ARGUMENT "too many states for serving" on basic create turns.
+ * Rail / task-modal co-pilot uses full `COACH_RESPONSE_SCHEMA` or the rich-workout variant.
  */
 export const COACH_MAIN_CHAT_RESPONSE_SCHEMA: VertexResponseSchema = {
   type: 'OBJECT',
   properties: Object.fromEntries(
     Object.entries(COACH_RESPONSE_SCHEMA.properties as Record<string, unknown>).filter(
-      ([key]) => key !== 'proposed_workout_metadata',
+      ([key]) => key !== 'proposed_workout_metadata' && key !== 'structural_patch',
     ),
   ) as VertexResponseSchema['properties'],
   required: (COACH_RESPONSE_SCHEMA.required ?? []).filter(
-    (key) => key !== 'proposed_workout_metadata',
+    (key) => key !== 'proposed_workout_metadata' && key !== 'structural_patch',
+  ),
+};
+
+/**
+ * Task Modal rail when CURRENT WORKOUT CONTEXT / rich canvas is present.
+ * Omits `proposed_workout_metadata` so Gemini cannot full-draft rewrite the workout
+ * (which caused MAX_TOKENS / 60s timeouts). Surgical edits go through `structural_patch` only.
+ */
+export const COACH_RAIL_RICH_WORKOUT_RESPONSE_SCHEMA: VertexResponseSchema = {
+  type: 'OBJECT',
+  properties: Object.fromEntries(
+    Object.entries(COACH_RESPONSE_SCHEMA.properties as Record<string, unknown>).filter(
+      ([key]) =>
+        key !== 'proposed_workout_metadata' &&
+        key !== 'outline_draft_patch' &&
+        key !== 'coach_workout_outline',
+    ),
+  ) as VertexResponseSchema['properties'],
+  required: (COACH_RESPONSE_SCHEMA.required ?? []).filter(
+    (key) =>
+      key !== 'proposed_workout_metadata' &&
+      key !== 'outline_draft_patch' &&
+      key !== 'coach_workout_outline',
   ),
 };
 
