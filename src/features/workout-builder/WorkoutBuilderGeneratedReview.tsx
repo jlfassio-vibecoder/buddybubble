@@ -72,6 +72,7 @@ export function WorkoutBuilderGeneratedReview({
     draftBlocks,
     setDraftBlocks,
     enterEdit,
+    exitToViewKeepDrafts,
     cancelEdit,
     applyEdits: commitDraftEdits,
   } = useWorkoutBlockDraftSession({
@@ -128,7 +129,7 @@ export function WorkoutBuilderGeneratedReview({
                 type="button"
                 role="tab"
                 aria-selected={isPreview}
-                onClick={cancelEdit}
+                onClick={exitToViewKeepDrafts}
                 className={cn(
                   'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
                   isPreview ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-muted',

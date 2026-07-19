@@ -54,6 +54,17 @@ describe('mapCoachBlocksToCanvas', () => {
     expect(views[0]?.exercises).toEqual([]);
     expect(views[0]?.instructions).toEqual(['Jumping jacks', 'Arm circles']);
   });
+
+  it('maps half-step RPE without rounding to an integer', () => {
+    const views = mapCoachBlocksToCanvas([
+      {
+        name: 'Main',
+        block_format: 'straight_sets',
+        exercises: [{ name: 'Squat', sets: 3, reps: '5', rpe: 7.5 }],
+      },
+    ]);
+    expect(views[0]?.exercises[0]?.rpe).toBe(7.5);
+  });
 });
 
 describe('mapCoachProposedToCanvasBlocks', () => {

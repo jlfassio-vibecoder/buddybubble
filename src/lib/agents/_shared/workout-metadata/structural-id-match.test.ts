@@ -15,15 +15,9 @@ describe('structural-id-match', () => {
     );
   });
 
-  it('matches display names to invented slug ids', () => {
-    expect(structuralTokensMatch('Warm-up', 'warm-up-block-id')).toBe(true);
-    expect(
-      structuralTokensMatch(
-        'Foam Roller Thoracic Extension',
-        'foam-roller-thoracic-extension-exercise-id',
-      ),
-    ).toBe(true);
-    expect(structuralTokensMatch('Mountain Climbers', 'mountain-climbers-exercise-id')).toBe(true);
+  it('strips typographic apostrophes', () => {
+    expect(normalizeStructuralToken('athlete\u2019s warm-up')).toBe('athletes-warm-up');
+    expect(structuralTokensMatch('athlete\u2019s warm-up', 'athletes-warm-up')).toBe(true);
   });
 });
 

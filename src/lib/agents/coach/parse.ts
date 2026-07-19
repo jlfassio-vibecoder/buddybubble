@@ -797,17 +797,22 @@ export function parseStructuralPatchFromGemini(raw: unknown): CoachStructuralPat
         }
       }
       if (typeof o.name === 'string') op.name = o.name.trim().slice(0, 80);
-      if (typeof o.sets === 'number' && Number.isFinite(o.sets)) op.sets = Math.round(o.sets);
+      if (typeof o.sets === 'number' && Number.isFinite(o.sets)) {
+        const sets = Math.round(o.sets);
+        if (sets > 0) op.sets = sets;
+      }
       if (typeof o.reps === 'string') op.reps = o.reps.trim().slice(0, 32);
       else if (typeof o.reps === 'number' && Number.isFinite(o.reps)) op.reps = String(o.reps);
       if (typeof o.coach_notes === 'string') {
         op.coach_notes = o.coach_notes.trim().slice(0, 240);
       }
       if (typeof o.rest_seconds === 'number' && Number.isFinite(o.rest_seconds)) {
-        op.rest_seconds = Math.round(o.rest_seconds);
+        const rest = Math.round(o.rest_seconds);
+        if (rest >= 0) op.rest_seconds = rest;
       }
       if (typeof o.work_seconds === 'number' && Number.isFinite(o.work_seconds)) {
-        op.work_seconds = Math.round(o.work_seconds);
+        const work = Math.round(o.work_seconds);
+        if (work >= 0) op.work_seconds = work;
       }
       {
         // Coerce string "7.5" like execution_patch; keep half-steps; clamp 1–10.

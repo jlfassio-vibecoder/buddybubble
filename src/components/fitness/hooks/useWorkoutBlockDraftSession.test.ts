@@ -202,6 +202,29 @@ describe('useWorkoutBlockDraftSession', () => {
     );
   });
 
+  it('Preview keeps dirty drafts so Edit can resume them', () => {
+    const source = sourceFromFormat('emom');
+    const { result } = renderHook(() => useWorkoutBlockDraftSession({ syncKey: 1, source }));
+
+    act(() => {
+      result.current.enterEdit();
+      result.current.setDraftTitle('In progress');
+    });
+    expect(result.current.isDirty).toBe(true);
+
+    act(() => {
+      result.current.exitToViewKeepDrafts();
+    });
+    expect(result.current.mode).toBe('view');
+    expect(result.current.draftTitle).toBe('In progress');
+
+    act(() => {
+      result.current.enterEdit();
+    });
+    expect(result.current.mode).toBe('edit');
+    expect(result.current.draftTitle).toBe('In progress');
+  });
+
   it('isDirty tracks draft edits and clears on cancel', () => {
     const source = sourceFromFormat('emom');
     const { result } = renderHook(() => useWorkoutBlockDraftSession({ syncKey: 1, source }));

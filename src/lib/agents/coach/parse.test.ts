@@ -891,6 +891,24 @@ describe('parseStructuralPatchFromGemini', () => {
     expect(out?.[0]?.format_params).toEqual({ target_rpe: 8.5 });
   });
 
+  it('drops non-positive sets and negative timing fields', () => {
+    const out = parseStructuralPatchFromGemini([
+      {
+        block_id: 'main-1-0',
+        sets: 0,
+        rest_seconds: -5,
+        work_seconds: -1,
+        format_params: { rounds: 3 },
+      },
+    ]);
+    expect(out).toEqual([
+      {
+        block_id: 'main-1-0',
+        format_params: { rounds: 3 },
+      },
+    ]);
+  });
+
   it('keeps only schema-approved scalar format params and bounds text fields', () => {
     const out = parseStructuralPatchFromGemini([
       {

@@ -26,6 +26,13 @@ function positiveInt(v: unknown): number | null {
   return n > 0 ? n : null;
 }
 
+/** RPE 1–10; keeps half-steps (e.g. 7.5). */
+function clampRpe(v: unknown): number | null {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return null;
+  if (v < 1 || v > 10) return null;
+  return v;
+}
+
 function mapWireExercise(raw: unknown, order: number): Exercise | null {
   if (!isPlainObject(raw)) return null;
   const name =
@@ -46,7 +53,7 @@ function mapWireExercise(raw: unknown, order: number): Exercise | null {
 
   const ex: Exercise = { order, exerciseName: name, sets, reps };
 
-  const rpe = positiveInt(raw.rpe);
+  const rpe = clampRpe(raw.rpe);
   if (rpe != null) ex.rpe = rpe;
   const restSeconds = positiveInt(raw.rest_seconds ?? raw.restSeconds);
   if (restSeconds != null) ex.restSeconds = restSeconds;

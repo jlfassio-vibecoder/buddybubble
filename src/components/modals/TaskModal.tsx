@@ -1009,6 +1009,8 @@ export function TaskModal({
   const handleProposedWorkoutMetadata = useCallback(
     (args: ProposedWorkoutMetadataEffectPayload) => {
       if (itemType !== 'workout' || !canWrite) return;
+      // Open first so a closed pane still mounts the canvas for soft write-through.
+      openWorkoutCanvasPane();
       const handle = canvasDraftRef.current;
       if (!handle) return;
 
@@ -1017,8 +1019,6 @@ export function TaskModal({
         baseMetadata: metadata,
       });
       if (blocks.length === 0) return;
-
-      openWorkoutCanvasPane();
 
       // Match structural_patch: enter edit from view, but never clobber dirty local edits.
       if (handle.mode === 'edit' && handle.isDirty) {
@@ -1043,10 +1043,10 @@ export function TaskModal({
   const handleStructuralPatch = useCallback(
     (args: StructuralPatchEffectPayload) => {
       if (itemType !== 'workout' || !canWrite) return;
+      // Open first so a closed pane still mounts the canvas for soft write-through.
+      openWorkoutCanvasPane();
       const handle = canvasDraftRef.current;
       if (!handle) return;
-
-      openWorkoutCanvasPane();
 
       if (handle.mode === 'edit' && handle.isDirty) {
         toast.message('Coach has an update', {

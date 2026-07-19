@@ -193,7 +193,7 @@ export function useWorkoutBlockDraftSession({
   const isDirtyRef = useRef(isDirty);
   isDirtyRef.current = isDirty;
 
-  // Soft sync: full refresh while viewing.
+  // Soft sync: full refresh while viewing (pristine only — Preview may keep dirty drafts).
   // In edit + pristine: write-through Coach prescription fields from source.
   // In edit + dirty: keep local keystrokes; notify once per pending source snapshot.
   useEffect(() => {
@@ -231,6 +231,15 @@ export function useWorkoutBlockDraftSession({
       }
       return;
     }
+    // view: do not clobber drafts kept across Preview peek
+    const dirtyInView = computeIsDirty(
+      draftTitleRef.current,
+      draftDescriptionRef.current,
+      draftExercisesRef.current,
+      draftBlocksRef.current,
+      baselineRef.current,
+    );
+    if (dirtyInView) return;
     pendingCoachUpdateToastKeyRef.current = null;
     applySourceToDrafts();
   }, [
@@ -244,12 +253,22 @@ export function useWorkoutBlockDraftSession({
   ]);
 
   const enterEdit = useCallback(() => {
-    applySourceToDrafts();
+    // Reseed only when pristine so Preview→Edit can resume unsaved drafts.
+    // Coach enter-from-view stays pristine after soft sync / cancel / hard reset.
+    if (!isDirtyRef.current) {
+      applySourceToDrafts();
+    }
     // Sync refs so enterEdit → applyStructuralPatch works in the same tick.
     modeRef.current = 'edit';
     setMode('edit');
     pendingCoachUpdateToastKeyRef.current = null;
   }, [applySourceToDrafts]);
+
+  /** Switch to view without discarding drafts (builder Preview peek). */
+  const exitToViewKeepDrafts = useCallback(() => {
+    modeRef.current = 'view';
+    setMode('view');
+  }, []);
 
   const cancelEdit = useCallback(() => {
     applySourceToDrafts();
@@ -326,6 +345,7 @@ export function useWorkoutBlockDraftSession({
     setDraftBlocks,
     isDirty,
     enterEdit,
+    exitToViewKeepDrafts,
     cancelEdit,
     applyEdits,
     hardReset,

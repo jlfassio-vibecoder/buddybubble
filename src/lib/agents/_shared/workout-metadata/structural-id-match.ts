@@ -7,7 +7,7 @@
 /** Normalize an id or display name for structural matching. */
 export function normalizeStructuralToken(raw: string): string {
   let s = raw.trim().toLowerCase();
-  s = s.replace(/['']/g, '');
+  s = s.replace(/['\u2018\u2019]/g, '');
   s = s.replace(/[^a-z0-9]+/g, '-');
   s = s.replace(/^-+|-+$/g, '');
   // Strip common model suffixes: -block-id, -exercise-id, -id
