@@ -23,7 +23,7 @@
     "check:report": "node scripts/run-pre-commit-checklist.mjs",
     "test": "tsx scripts/check-agent-coupling.ts && tsx scripts/check-agent-prompt-schema-drift.ts && tsx scripts/check-agent-mirror-parity.ts && node --max-old-space-size=4096 ./node_modules/vitest/vitest.mjs run --logHeapUsage",
     "test:coverage": "tsx scripts/check-agent-coupling.ts && tsx scripts/check-agent-prompt-schema-drift.ts && tsx scripts/check-agent-mirror-parity.ts && node --max-old-space-size=4096 ./node_modules/vitest/vitest.mjs run --coverage --logHeapUsage",
-    "test:deno-integration": "deno test --config supabase/deno.json --lock supabase/deno.lock --allow-env --allow-read --node-modules-dir=none --no-check supabase/functions/agent-dispatch/*.integration.test.ts supabase/functions/_shared/dispatch/llm-budget.test.ts supabase/functions/_shared/telemetry/*.test.ts supabase/functions/agents/coach/card-action-infer.test.ts",
+    "test:deno-integration": "deno test --parallel --config supabase/deno.json --lock supabase/deno.lock --allow-env --allow-read --node-modules-dir=none --no-check supabase/functions/agent-dispatch/*.integration.test.ts supabase/functions/_shared/dispatch/llm-budget.test.ts supabase/functions/_shared/telemetry/*.test.ts supabase/functions/agents/coach/card-action-infer.test.ts",
     "test:e2e": "playwright test",
     "check:agent-coupling": "tsx scripts/check-agent-coupling.ts",
     "check:agent-prompts": "tsx scripts/check-agent-prompt-schema-drift.ts",

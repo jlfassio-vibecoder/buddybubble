@@ -29,6 +29,10 @@ jobs:
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+          # Persist DENO_DIR (JSR/HTTP deps) across runs; keyed on the Deno lock + config
+          # so cache invalidates only when integration-test dependencies change.
+          cache: true
+          cache-hash: ${{ hashFiles('supabase/deno.lock', 'supabase/deno.json') }}
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
