@@ -28,7 +28,7 @@ Mode and drafts live in [`useWorkoutBlockDraftSession`](../../src/components/fit
 
 **Rich cards (`ai_workout_factory`):** View uses `WorkoutBlockListRenderer` (or `WorkoutLogReadSummary` when `readVariant="log"`). Edit uses `WorkoutBlockListEditor` when `readVariant !== 'log'` and `sessionVm.source === 'rich'`; otherwise [WorkoutExercisesEditor](workout-exercises-editor.md). See [parametric-step5-m2-plan.md](views/parametric-step5-m2-plan.md).
 
-`onApply` is invoked from the apply path with the normalized payload so parents merge into `tasks.metadata` and related fields. The draft session exits edit after Apply (`exitEditOnApply: true`).
+`onApply` is invoked from the apply path with the normalized payload so parents merge into `tasks.metadata` and related fields. The draft session exits edit **only after** `onApply` succeeds (`false` keeps edit + dirty so a failed Task Modal save cannot strand unsaved canvas work).
 
 ## Coach → canvas (two-path)
 

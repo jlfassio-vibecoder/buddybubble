@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useState } from 'react';
 import type { Json } from '@/types/database';
 import type { WorkoutExercise } from '@/lib/item-metadata';
@@ -210,7 +210,7 @@ describe('WorkoutViewerContent edit mode', () => {
     expect(screen.queryByTestId('workout-block-list-editor')).toBeNull();
   });
 
-  it('includes blocks in Apply payload for rich edit', () => {
+  it('includes blocks in Apply payload for rich edit', async () => {
     const meta = richMetadataWithBlockFormat('tabata');
     const onApply = vi.fn();
     renderViewer(meta, { onApply });
@@ -225,7 +225,9 @@ describe('WorkoutViewerContent edit mode', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Apply changes' }));
 
-    expect(onApply).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(onApply).toHaveBeenCalledTimes(1);
+    });
     const payload = onApply.mock.calls[0]![0];
     expect(payload.blocks).toBeDefined();
     expect(payload.blocks!.length).toBeGreaterThan(0);
@@ -233,7 +235,7 @@ describe('WorkoutViewerContent edit mode', () => {
     expect(main.exercises[0].exerciseName).toBe('Burpee Tabata');
   });
 
-  it('Apply commits edits and returns to view without closing the pane', () => {
+  it('Apply commits edits and returns to view without closing the pane', async () => {
     const meta = richMetadataWithBlockFormat('tabata');
     const onApply = vi.fn();
     const onRequestClose = vi.fn();
@@ -255,12 +257,38 @@ describe('WorkoutViewerContent edit mode', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Apply changes' }));
 
-    expect(onApply).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(onApply).toHaveBeenCalledTimes(1);
+    });
     expect(onRequestClose).not.toHaveBeenCalled();
     // Apply exits edit mode; pane stays open for further viewing.
-    expect(screen.queryByTestId('workout-block-list-editor')).toBeNull();
+    await waitFor(() => {
+      expect(screen.queryByTestId('workout-block-list-editor')).toBeNull();
+    });
     expect(screen.getByRole('button', { name: 'Edit' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Close workout viewer' })).toBeTruthy();
+  });
+
+  it('keeps edit mode when onApply returns false', async () => {
+    const meta = richMetadataWithBlockFormat('tabata');
+    const onApply = vi.fn().mockResolvedValue(false);
+    renderViewer(meta, { onApply });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    expect(screen.getByTestId('workout-block-list-editor')).toBeTruthy();
+
+    const mainSection = screen.getByTestId(/^editor-main-block-/);
+    const nameInput = mainSection.querySelector(
+      'input[placeholder="Exercise name"]',
+    ) as HTMLInputElement;
+    fireEvent.change(nameInput, { target: { value: 'Still editing' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Apply changes' }));
+
+    await waitFor(() => {
+      expect(onApply).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.getByTestId('workout-block-list-editor')).toBeTruthy();
   });
 
   it('stays in edit when metadata changes but syncKey is unchanged', () => {

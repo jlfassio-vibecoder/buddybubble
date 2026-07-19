@@ -76,6 +76,22 @@ export type UseTaskWorkoutAiArgs = {
   setMetadata: Dispatch<SetStateAction<Json>>;
 };
 
+/** Pure metadata result of a viewer Apply (no React state writes). */
+export function computeMetadataForWorkoutViewerApply(
+  currentMeta: Json,
+  payload: WorkoutViewerApplyPayload,
+): Json {
+  if (payload.blocks != null && payload.blocks.length > 0) {
+    const seeded = backfillFactoryCuesFromFlat(currentMeta);
+    return applyBlockEditsToMetadata(seeded, payload.blocks) as Json;
+  }
+  const derived = deriveFlatExercisesFromMetadata(currentMeta);
+  if (flatExercisesMatchDerived(payload.exercises, derived)) {
+    return currentMeta;
+  }
+  return applyFlatWorkoutEditsToMetadata(currentMeta, payload.exercises) as Json;
+}
+
 export function useTaskWorkoutAi({
   open,
   taskId,
@@ -284,8 +300,7 @@ export function useTaskWorkoutAi({
       setDescription(payload.description);
 
       if (payload.blocks != null && payload.blocks.length > 0) {
-        const seeded = backfillFactoryCuesFromFlat(cuePatchMetadataRef.current);
-        const nextMeta = applyBlockEditsToMetadata(seeded, payload.blocks) as Json;
+        const nextMeta = computeMetadataForWorkoutViewerApply(cuePatchMetadataRef.current, payload);
         cuePatchMetadataRef.current = nextMeta;
         setMetadata(nextMeta);
         setWorkoutExercises(parseWorkoutExercisesFromMetadata(nextMeta));
@@ -293,12 +308,10 @@ export function useTaskWorkoutAi({
       }
 
       setWorkoutExercises(payload.exercises);
-      const base = cuePatchMetadataRef.current;
-      const derived = deriveFlatExercisesFromMetadata(base);
-      if (flatExercisesMatchDerived(payload.exercises, derived)) {
-        return base;
+      const nextMeta = computeMetadataForWorkoutViewerApply(cuePatchMetadataRef.current, payload);
+      if (nextMeta === cuePatchMetadataRef.current) {
+        return nextMeta;
       }
-      const nextMeta = applyFlatWorkoutEditsToMetadata(base, payload.exercises) as Json;
       cuePatchMetadataRef.current = nextMeta;
       setMetadata(nextMeta);
       return nextMeta;

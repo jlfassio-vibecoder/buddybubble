@@ -308,4 +308,24 @@ describe('useWorkoutBlockDraftSession', () => {
     });
     expect(appliedPatch).toBe(true);
   });
+
+  it('applyEdits keeps edit and dirty when onCommit returns false', async () => {
+    const source = sourceFromFormat('emom');
+    const { result } = renderHook(() =>
+      useWorkoutBlockDraftSession({ syncKey: 1, source, exitEditOnApply: true }),
+    );
+
+    act(() => {
+      result.current.enterEdit();
+      result.current.setDraftTitle('Unsaved');
+    });
+    expect(result.current.isDirty).toBe(true);
+
+    await act(async () => {
+      await result.current.applyEdits(() => false);
+    });
+    expect(result.current.mode).toBe('edit');
+    expect(result.current.isDirty).toBe(true);
+    expect(result.current.draftTitle).toBe('Unsaved');
+  });
 });

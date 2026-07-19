@@ -277,8 +277,17 @@ export function useWorkoutBlockDraftSession({
     pendingCoachUpdateToastKeyRef.current = null;
   }, [applySourceToDrafts]);
 
+  /**
+   * Commits the current draft via `onCommit`. Baseline + optional exit-to-view run only when
+   * commit succeeds (`false` keeps edit/dirty so a failed persist cannot strand unsaved work).
+   * `void` / `undefined` count as success (builder sync Apply).
+   */
   const applyEdits = useCallback(
-    (onCommit: (payload: WorkoutBlockDraftApplyPayload) => void) => {
+    (
+      onCommit: (
+        payload: WorkoutBlockDraftApplyPayload,
+      ) => boolean | void | Promise<boolean | void>,
+    ): boolean | Promise<boolean> => {
       const title = draftTitle.trim();
       const description = draftDescription.trim();
       const payload: WorkoutBlockDraftApplyPayload = {
@@ -287,14 +296,25 @@ export function useWorkoutBlockDraftSession({
         exercises: draftExercises,
         ...(draftBlocks.length > 0 ? { blocks: draftBlocks } : {}),
       };
-      onCommit(payload);
-      // Saved drafts are the new pristine baseline so Coach patches are not blocked.
-      adoptDraftAsBaseline(title, description, draftExercises, draftBlocks);
-      if (exitEditOnApply) {
-        modeRef.current = 'view';
-        setMode('view');
+
+      const finish = (ok: boolean): boolean => {
+        if (!ok) return false;
+        adoptDraftAsBaseline(title, description, draftExercises, draftBlocks);
+        if (exitEditOnApply) {
+          modeRef.current = 'view';
+          setMode('view');
+        }
+        pendingCoachUpdateToastKeyRef.current = null;
+        return true;
+      };
+
+      const result = onCommit(payload);
+      if (result != null && typeof (result as PromiseLike<boolean | void>).then === 'function') {
+        return Promise.resolve(result as PromiseLike<boolean | void>).then((r) =>
+          finish(r !== false),
+        );
       }
-      pendingCoachUpdateToastKeyRef.current = null;
+      return finish(result !== false);
     },
     [
       draftTitle,

@@ -191,7 +191,7 @@ export type WorkoutViewerDialogProps = {
   description: string;
   canWrite: boolean;
   workoutUnitSystem: UnitSystem;
-  onApply: (payload: WorkoutViewerApplyPayload) => void | Promise<void>;
+  onApply: (payload: WorkoutViewerApplyPayload) => void | boolean | Promise<void | boolean>;
   /** Merge workout-scoped cue patches into task metadata (M2). */
   onApplyCuePatches?: (patches: Record<string, WorkoutCuePatch>) => void;
   /** M3: programmatic Coach cue generation from view-mode panel. */
@@ -462,12 +462,13 @@ export const WorkoutViewerContent = forwardRef<
   );
 
   const handleApply = useCallback(() => {
-    applyEdits((p) => {
-      void onApply(
+    void applyEdits(async (p) => {
+      const result = await onApply(
         useRichBlockEdit
           ? p
           : { title: p.title, description: p.description, exercises: p.exercises },
       );
+      return result !== false;
     });
   }, [applyEdits, useRichBlockEdit, onApply]);
 
