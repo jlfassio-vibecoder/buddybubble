@@ -176,14 +176,6 @@ export function applyCoachServerGuards(
     if (!updateExistingTask) updateExistingTask = true;
   }
 
-  // Hard server clamp: rich CURRENT WORKOUT CONTEXT means canvas edits are patch-only.
-  // Drop any proposed_workout_metadata that slipped through (schema prune is primary).
-  if (fragment.currentWorkoutContextJson && !fragment.isActiveWorkoutSession) {
-    if (proposedWorkoutMetadata != null) {
-      proposedWorkoutMetadata = null;
-    }
-  }
-
   // Guard 0: Outline co-pilot — structure-only phase; no factory merge or Call A outline.
   if (fragment.outlineCoPilotActive) {
     proposedWorkoutMetadata = null;
