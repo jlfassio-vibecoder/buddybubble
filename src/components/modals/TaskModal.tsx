@@ -91,7 +91,6 @@ import { useTaskCardCoverAi } from '@/components/modals/task-modal/hooks/useTask
 import { useTaskProgramPersonalization } from '@/components/modals/task-modal/hooks/useTaskProgramPersonalization';
 import {
   useTaskWorkoutAi,
-  computeMetadataForWorkoutViewerApply,
   type WorkoutIntakeWizardData,
 } from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
 import { useWorkoutOutlineEditor } from '@/components/modals/task-modal/hooks/useWorkoutOutlineEditor';
@@ -577,6 +576,7 @@ export function TaskModal({
     viewerWorkoutSet,
     hasWorkoutViewerContent,
     handleWorkoutViewerApply,
+    computeWorkoutViewerApplyMetadata,
     handleWorkoutViewerCuePatches,
     resetWorkoutAiUi,
   } = useTaskWorkoutAi({
@@ -1293,7 +1293,9 @@ export function TaskModal({
         return true;
       }
 
-      const nextMeta = computeMetadataForWorkoutViewerApply(metadata, payload);
+      // Use cuePatchMetadataRef (via hook) — not React metadata — so cue patches ahead of
+      // re-render are included in the DB write.
+      const nextMeta = computeWorkoutViewerApplyMetadata(payload);
       const ok = await handleSaveCoreFields(nextMeta, {
         metadataMerge: 'workout-cues',
         titleOverride: payload.title,
@@ -1307,7 +1309,13 @@ export function TaskModal({
       toast.error('Could not save workout changes');
       return false;
     },
-    [handleWorkoutViewerApply, canWrite, taskId, handleSaveCoreFields, metadata],
+    [
+      handleWorkoutViewerApply,
+      computeWorkoutViewerApplyMetadata,
+      canWrite,
+      taskId,
+      handleSaveCoreFields,
+    ],
   );
 
   const workoutOutlineEditor = useWorkoutOutlineEditor({

@@ -319,6 +319,13 @@ export function useTaskWorkoutAi({
     [setTitle, setDescription, setWorkoutExercises, setMetadata],
   );
 
+  /** Same base as {@link handleWorkoutViewerApply} — use for persist-before-commit so DB matches the ref. */
+  const computeWorkoutViewerApplyMetadata = useCallback(
+    (payload: WorkoutViewerApplyPayload): Json =>
+      computeMetadataForWorkoutViewerApply(cuePatchMetadataRef.current, payload),
+    [],
+  );
+
   const handleWorkoutViewerCuePatches = useCallback(
     (patches: Record<string, WorkoutCuePatch>): Json => {
       const nextMeta = applyCuePatchesToMetadata(cuePatchMetadataRef.current, patches) as Json;
@@ -342,6 +349,7 @@ export function useTaskWorkoutAi({
     viewerWorkoutSet,
     hasWorkoutViewerContent,
     handleWorkoutViewerApply,
+    computeWorkoutViewerApplyMetadata,
     handleWorkoutViewerCuePatches,
     resetWorkoutAiUi,
   };
