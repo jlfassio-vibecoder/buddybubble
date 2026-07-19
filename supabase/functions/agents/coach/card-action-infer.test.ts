@@ -15,6 +15,7 @@ function baseParsed(overrides: Partial<CoachGeminiJsonResponse> = {}): CoachGemi
     coach_task_notes: null,
     proposed_workout_metadata: null,
     proposed_workout_metadata_drops: [],
+    structural_patch: null,
     execution_patch: null,
     task_modal_intake_patch: null,
     task_modal_intake_dropped: false,

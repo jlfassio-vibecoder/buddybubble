@@ -30,6 +30,7 @@ import {
   parseProposedWorkoutMetadataWithDrops,
   parseOutlineDraftPatchFromGemini,
   parseSessionReadinessScore,
+  parseStructuralPatchFromGemini,
   stripMarkdownCodeFences,
 } from './parse';
 
@@ -871,6 +872,47 @@ describe('parseExecutionPatchFromGemini', () => {
     expect(parseExecutionPatchFromGemini(null)).toBeNull();
     expect(parseExecutionPatchFromGemini([])).toBeNull();
     expect(parseExecutionPatchFromGemini('not an array')).toBeNull();
+  });
+});
+
+describe('parseStructuralPatchFromGemini', () => {
+  it('coerces string RPE to a number and keeps half-steps', () => {
+    const out = parseStructuralPatchFromGemini([
+      { block_id: 'main-1-0', exercise_id: 'main-1-0:e0', rpe: '7.5' },
+    ]);
+    expect(out).toEqual([{ block_id: 'main-1-0', exercise_id: 'main-1-0:e0', rpe: 7.5 }]);
+  });
+
+  it('keeps numeric half-step RPE without rounding to an integer', () => {
+    const out = parseStructuralPatchFromGemini([
+      { block_id: 'main-1-0', rpe: 8.5, format_params: { target_rpe: 8.5 } },
+    ]);
+    expect(out?.[0]?.rpe).toBe(8.5);
+    expect(out?.[0]?.format_params).toEqual({ target_rpe: 8.5 });
+  });
+
+  it('keeps only schema-approved scalar format params and bounds text fields', () => {
+    const out = parseStructuralPatchFromGemini([
+      {
+        block_id: 'main-1-0',
+        block_format: 'circuit',
+        coach_notes: `  ${'a'.repeat(260)}  `,
+        format_params: {
+          rounds: 3.4,
+          target_rpe: 7.5,
+          nested: { unsafe: true },
+          arbitrary: 'drop me',
+        },
+      },
+    ]);
+    expect(out).toEqual([
+      {
+        block_id: 'main-1-0',
+        block_format: 'circuit',
+        coach_notes: 'a'.repeat(240),
+        format_params: { rounds: 3, target_rpe: 7.5 },
+      },
+    ]);
   });
 });
 

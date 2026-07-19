@@ -233,7 +233,7 @@ describe('WorkoutViewerContent edit mode', () => {
     expect(main.exercises[0].exerciseName).toBe('Burpee Tabata');
   });
 
-  it('Apply returns to view mode without closing the pane', () => {
+  it('Apply commits edits and returns to view without closing the pane', () => {
     const meta = richMetadataWithBlockFormat('tabata');
     const onApply = vi.fn();
     const onRequestClose = vi.fn();
@@ -257,10 +257,43 @@ describe('WorkoutViewerContent edit mode', () => {
 
     expect(onApply).toHaveBeenCalledTimes(1);
     expect(onRequestClose).not.toHaveBeenCalled();
+    // Apply exits edit mode; pane stays open for further viewing.
     expect(screen.queryByTestId('workout-block-list-editor')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Close workout viewer' })).toBeTruthy();
+  });
+
+  it('stays in edit when metadata changes but syncKey is unchanged', () => {
+    const metadataA = richMetadataWithBlockFormat('emom') as Json;
+    const metadataB = richMetadataWithBlockFormat('tabata') as Json;
+
+    const { rerender } = render(
+      <WorkoutViewerContent {...baseViewProps} canWrite metadata={metadataA} syncKey={1} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    expect(screen.getByTestId('workout-block-list-editor')).toBeTruthy();
+
+    rerender(<WorkoutViewerContent {...baseViewProps} canWrite metadata={metadataB} syncKey={1} />);
+
+    expect(screen.getByTestId('workout-block-list-editor')).toBeTruthy();
+    expect(screen.queryByTestId('workout-viewer-block-list')).toBeNull();
+  });
+
+  it('resets to view when syncKey changes while editing', () => {
+    const metadata = richMetadataWithBlockFormat('emom') as Json;
+
+    const { rerender } = render(
+      <WorkoutViewerContent {...baseViewProps} canWrite metadata={metadata} syncKey={1} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    expect(screen.getByTestId('workout-block-list-editor')).toBeTruthy();
+
+    rerender(<WorkoutViewerContent {...baseViewProps} canWrite metadata={metadata} syncKey={2} />);
+
     expect(screen.getByTestId('workout-viewer-block-list')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy();
-    expect(screen.getByText('Burpee Tabata')).toBeTruthy();
+    expect(screen.queryByTestId('workout-block-list-editor')).toBeNull();
   });
 
   it('View tab discards edits and returns to view mode without closing', () => {

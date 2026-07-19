@@ -478,6 +478,17 @@ export async function handleDispatchRequest(req: Request): Promise<Response> {
             : String(err);
     const status = typeof pojo.status === 'number' ? pojo.status : undefined;
 
+    // Persist/RPC failures become `error_kind=http` and the user-visible Coach safe-reply.
+    // Always surface the underlying message before fallback so Edge logs are actionable.
+    if (err instanceof Error && err.message.startsWith('rpc_failed:')) {
+      console.error('[agent-dispatch] strategy persist RPC failed (will fallback if eligible)', {
+        request_id: requestId,
+        slug: strategy?.slug,
+        error_kind: kind,
+        error: errorMessage,
+      });
+    }
+
     if (kind === 'auth') {
       log('error', 'vertex auth failed', {
         ...baseFields(requestId, record, strategy?.slug),

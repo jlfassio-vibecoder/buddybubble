@@ -1,6 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { toast } from 'sonner';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import type { WorkoutSetTemplate } from '@/lib/workout-factory/types/workout-contract';
@@ -21,6 +29,7 @@ import {
 } from '@/components/fitness/workout-block-renderer';
 import { useWorkoutSessionViewModel } from '@/hooks/use-workout-session-view-model';
 import { useExerciseCueResolution } from '@/hooks/useExerciseCueResolution';
+import { useWorkoutBlockDraftSession } from '@/components/fitness/hooks/useWorkoutBlockDraftSession';
 import {
   collectBlockExercises,
   collectFlatOnlyExercises,
@@ -35,6 +44,7 @@ import { savePersonalExerciseCues } from '@/lib/workout-factory/save-personal-ex
 import type { SaveToMyNotesArgs } from '@/components/fitness/workout-block-renderer/workout-block-renderer-types';
 import { useUserProfileStore } from '@/store/userProfileStore';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
+import type { CoachStructuralPatchOp } from '@/lib/agents/_shared/workout-metadata/structural-patch-types';
 import { useTaskCardCoverUrl } from '@/lib/task-card-cover';
 import { ChevronRight, Image as ImageIcon, Loader2, X } from 'lucide-react';
 import type { ExerciseCueRequestV1 } from '@/lib/agents/coach/exercise-cue-request';
@@ -56,16 +66,6 @@ export type WorkoutViewerApplyPayload = {
 };
 
 export type { WorkoutCuePatch } from '@/lib/workout-factory/apply-cue-patches-to-metadata';
-
-type ViewMode = 'view' | 'edit';
-
-function cloneBlocksForEditor(blocks: WorkoutSessionBlockView[]): WorkoutSessionBlockView[] {
-  return blocks.map((b) => ({
-    ...b,
-    exercises: b.exercises.map((ex) => ({ ...ex })),
-    instructions: [...b.instructions],
-  }));
-}
 
 function WorkoutViewHero({
   cardCoverPath,
@@ -191,7 +191,7 @@ export type WorkoutViewerDialogProps = {
   description: string;
   canWrite: boolean;
   workoutUnitSystem: UnitSystem;
-  onApply: (payload: WorkoutViewerApplyPayload) => void;
+  onApply: (payload: WorkoutViewerApplyPayload) => void | Promise<void>;
   /** Merge workout-scoped cue patches into task metadata (M2). */
   onApplyCuePatches?: (patches: Record<string, WorkoutCuePatch>) => void;
   /** M3: programmatic Coach cue generation from view-mode panel. */
@@ -239,48 +239,103 @@ export type WorkoutViewerContentProps = Omit<WorkoutViewerDialogProps, 'open' | 
   className?: string;
 };
 
-export function WorkoutViewerContent({
-  workoutSet,
-  exercises,
-  metadata = null,
-  title,
-  description,
-  canWrite,
-  workoutUnitSystem,
-  onApply,
-  onApplyCuePatches,
-  onAskCoachForCues,
-  injuriesOnFile = false,
-  onRequestClose,
-  syncKey,
-  cardCoverPath = null,
-  taskId = null,
-  layout = 'dialog',
-  dialogTitleAsChild = false,
-  className,
-  isAiGenerating = false,
-  cardCoverAiHint = '',
-  onCardCoverAiHintChange,
-  cardCoverPresetId = '',
-  onCardCoverPresetIdChange,
-  aiCardCoverGenerating = false,
-  onGenerateCardCoverWithAi,
-  showInlineCardCoverAi = false,
-  cardCoverSaveBusy = false,
-  onSaveTask,
-  saving = false,
-  saveDisabled = false,
-  readVariant = 'workout',
-  activeSessionLaunch = null,
-}: WorkoutViewerContentProps) {
-  const [mode, setMode] = useState<ViewMode>('view');
-  const [localTitle, setLocalTitle] = useState(title);
-  const [localDescription, setLocalDescription] = useState(description);
-  const [localExercises, setLocalExercises] = useState<WorkoutExercise[]>([]);
-  const [localBlocks, setLocalBlocks] = useState<WorkoutSessionBlockView[]>([]);
+/** Imperative canvas draft API for Coach → editor mutations (TaskModal effect sweep). */
+export type WorkoutViewerCanvasDraftHandle = {
+  mode: 'view' | 'edit';
+  /** True when local drafts diverge from source (unsaved keystrokes / edits). */
+  isDirty: boolean;
+  enterEdit: () => void;
+  applyExternalBlocks: (blocks: WorkoutSessionBlockView[]) => boolean;
+  applyStructuralPatch: (patches: CoachStructuralPatchOp[]) => boolean;
+};
+
+export const WorkoutViewerContent = forwardRef<
+  WorkoutViewerCanvasDraftHandle,
+  WorkoutViewerContentProps
+>(function WorkoutViewerContent(
+  {
+    workoutSet,
+    exercises,
+    metadata = null,
+    title,
+    description,
+    canWrite,
+    workoutUnitSystem,
+    onApply,
+    onApplyCuePatches,
+    onAskCoachForCues,
+    injuriesOnFile = false,
+    onRequestClose,
+    syncKey,
+    cardCoverPath = null,
+    taskId = null,
+    layout = 'dialog',
+    dialogTitleAsChild = false,
+    className,
+    isAiGenerating = false,
+    cardCoverAiHint = '',
+    onCardCoverAiHintChange,
+    cardCoverPresetId = '',
+    onCardCoverPresetIdChange,
+    aiCardCoverGenerating = false,
+    onGenerateCardCoverWithAi,
+    showInlineCardCoverAi = false,
+    cardCoverSaveBusy = false,
+    onSaveTask,
+    saving = false,
+    saveDisabled = false,
+    readVariant = 'workout',
+    activeSessionLaunch = null,
+  },
+  ref,
+) {
   const [localCuePatches, setLocalCuePatches] = useState<Record<string, WorkoutCuePatch>>({});
 
   const sessionVm = useWorkoutSessionViewModel(metadata ?? {});
+
+  const {
+    mode,
+    draftTitle: localTitle,
+    setDraftTitle: setLocalTitle,
+    draftDescription: localDescription,
+    setDraftDescription: setLocalDescription,
+    draftExercises: localExercises,
+    setDraftExercises: setLocalExercises,
+    draftBlocks: localBlocks,
+    setDraftBlocks: setLocalBlocks,
+    isDirty,
+    enterEdit,
+    cancelEdit,
+    applyEdits,
+    applyExternalBlocks,
+    applyStructuralPatch,
+  } = useWorkoutBlockDraftSession({
+    syncKey,
+    source: {
+      title,
+      description,
+      exercises,
+      blocks: sessionVm.blocks,
+    },
+    exitEditOnApply: true,
+  });
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      mode,
+      isDirty,
+      enterEdit,
+      applyExternalBlocks,
+      applyStructuralPatch,
+    }),
+    [mode, isDirty, enterEdit, applyExternalBlocks, applyStructuralPatch],
+  );
+
+  // Cue drafts are viewer-local; clear on hard sync only (hook owns draft/mode reset).
+  useEffect(() => {
+    setLocalCuePatches({});
+  }, [syncKey]);
 
   const profileId = useUserProfileStore((s) => s.profile?.id ?? null);
   const cuesEnabled = mode === 'view' && readVariant !== 'log';
@@ -320,19 +375,6 @@ export function WorkoutViewerContent({
 
   const useRichBlockEdit =
     readVariant !== 'log' && sessionVm.source === 'rich' && sessionVm.blocks.length > 0;
-
-  const discardDrafts = useCallback(() => {
-    setLocalTitle(title);
-    setLocalDescription(description);
-    setLocalExercises(exercises.map((e) => ({ ...e })));
-    setLocalBlocks(cloneBlocksForEditor(sessionVm.blocks));
-  }, [title, description, exercises, sessionVm.blocks]);
-
-  useEffect(() => {
-    discardDrafts();
-    setMode('view');
-    setLocalCuePatches({});
-  }, [syncKey, discardDrafts]);
 
   const handleCueDraftChange = useCallback((key: string, patch: WorkoutCuePatch) => {
     setLocalCuePatches((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
@@ -420,25 +462,17 @@ export function WorkoutViewerContent({
   );
 
   const handleApply = useCallback(() => {
-    onApply({
-      title: localTitle.trim(),
-      description: localDescription.trim(),
-      exercises: localExercises,
-      ...(useRichBlockEdit ? { blocks: localBlocks } : {}),
+    applyEdits((p) => {
+      void onApply(
+        useRichBlockEdit
+          ? p
+          : { title: p.title, description: p.description, exercises: p.exercises },
+      );
     });
-  }, [localTitle, localDescription, localExercises, localBlocks, useRichBlockEdit, onApply]);
+  }, [applyEdits, useRichBlockEdit, onApply]);
 
-  const exitEditToView = useCallback(() => {
-    discardDrafts();
-    setMode('view');
-  }, [discardDrafts]);
-
-  const handleViewTabClick = useCallback(() => {
-    if (mode === 'edit') {
-      discardDrafts();
-    }
-    setMode('view');
-  }, [mode, discardDrafts]);
+  const exitEditToView = cancelEdit;
+  const handleViewTabClick = cancelEdit;
 
   const showRichRead =
     mode === 'view' && sessionVm.source === 'rich' && sessionVm.blocks.length > 0;
@@ -556,7 +590,7 @@ export function WorkoutViewerContent({
             <button
               type="button"
               disabled={!canWrite}
-              onClick={() => setMode('edit')}
+              onClick={enterEdit}
               className={cn(
                 'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
                 mode === 'edit'
@@ -754,7 +788,7 @@ export function WorkoutViewerContent({
       {footer}
     </div>
   );
-}
+});
 
 export function WorkoutViewerDialog({
   open,

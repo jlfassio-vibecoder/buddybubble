@@ -3,6 +3,7 @@ import { parseTaskMetadata } from '@/lib/item-metadata';
 import { buildWorkoutCoachRailContext } from '@/lib/workout-factory/build-workout-coach-rail-context';
 import { slimAiWorkoutFactoryForCoachContext } from '@/lib/workout-factory/slim-coach-workout-factory';
 import { hasRichWorkoutSetInMetadata } from '@/lib/workout-factory/sync-workout-metadata';
+import { stampStructuralIdsOnWorkoutSet } from '@/lib/agents/coach/structural-address-map';
 
 export type BuildTaskModalOutgoingWorkoutContextOptions = {
   /** @deprecated Ignored; slim context is always attached when a rich workout set exists. */
@@ -14,6 +15,7 @@ export type BuildTaskModalOutgoingWorkoutContextOptions = {
  * Attaches a **slimmed** context on outgoing @coach messages (structure summary, flat
  * exercises, workout_set-only factory stub, title/type/duration) — not the full
  * ai_workout_factory blob with chain_metadata. Enables live co-pilot without OOM-scale payloads.
+ * Stamps block_id / exercise_id and includes `structural_address_map` for surgical patches.
  */
 export function buildTaskModalOutgoingWorkoutContext(
   metadata: Json,
@@ -27,14 +29,21 @@ export function buildTaskModalOutgoingWorkoutContext(
   const slimFactory = slimAiWorkoutFactoryForCoachContext(af);
   if (slimFactory == null) return null;
 
+  const stamped = stampStructuralIdsOnWorkoutSet(slimFactory.workout_set);
+  const factoryForContext = stamped != null ? { workout_set: stamped.workoutSet } : slimFactory;
+
   const railCtx = buildWorkoutCoachRailContext(metadata, title, undefined, {
     includeFactoryBlob: false,
   });
 
   const out: Record<string, unknown> = {
-    ai_workout_factory: slimFactory,
+    ai_workout_factory: factoryForContext,
     workout_task_title: title.trim() || 'this workout',
   };
+
+  if (stamped != null) {
+    out.structural_address_map = stamped.structuralAddressMap;
+  }
 
   if (typeof railCtx.exercises !== 'undefined') {
     out.exercises = railCtx.exercises;

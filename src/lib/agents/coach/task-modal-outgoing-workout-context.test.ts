@@ -13,27 +13,26 @@ describe('buildTaskModalOutgoingWorkoutContext', () => {
 
   it('returns slim context when saved (coreDirty false)', () => {
     const metadata = richMetadataWithBlockFormat('tabata') as Json;
-    const parsed = metadata as Record<string, unknown>;
-    const af = parsed.ai_workout_factory as Record<string, unknown>;
     const ctx = buildTaskModalOutgoingWorkoutContext(metadata, 'Tabata day', { coreDirty: false });
     expect(ctx).not.toBeNull();
-    expect(ctx!.ai_workout_factory).toEqual({ workout_set: af.workout_set });
+    expect(ctx!.ai_workout_factory).toHaveProperty('workout_set');
+    expect(Array.isArray(ctx!.structural_address_map)).toBe(true);
+    expect((ctx!.structural_address_map as unknown[]).length).toBeGreaterThan(0);
     expect(typeof ctx!.workout_structure_summary).toBe('string');
     expect(Array.isArray(ctx!.exercises)).toBe(true);
   });
 
   it('returns slim factory context when unsaved (coreDirty true)', () => {
     const metadata = richMetadataWithBlockFormat('tabata') as Json;
-    const parsed = metadata as Record<string, unknown>;
-    const af = parsed.ai_workout_factory as Record<string, unknown>;
     const ctx = buildTaskModalOutgoingWorkoutContext(metadata, 'Tabata day', {
       coreDirty: true,
     });
     expect(ctx).not.toBeNull();
-    expect(ctx!.ai_workout_factory).toEqual({ workout_set: af.workout_set });
+    expect(ctx!.ai_workout_factory).toHaveProperty('workout_set');
     expect(ctx!.workout_task_title).toBe('Tabata day');
     expect(ctx!.ai_workout_factory).not.toHaveProperty('chain_metadata');
     expect(hasRichWorkoutSetInMetadata({ ai_workout_factory: ctx!.ai_workout_factory })).toBe(true);
+    expect(Array.isArray(ctx!.structural_address_map)).toBe(true);
     expect(typeof ctx!.workout_structure_summary).toBe('string');
     expect(Array.isArray(ctx!.exercises)).toBe(true);
   });

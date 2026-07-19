@@ -46,6 +46,10 @@ export type TaskMetadataOverrideMerge = 'outline-keys' | 'workout-cues';
 export type SaveCoreFieldsOptions = {
   /** Defaults to `outline-keys` (outline editor confirm / structure save). */
   metadataMerge?: TaskMetadataOverrideMerge;
+  /** When set, use instead of live `title` state (e.g. Apply changes before re-render). */
+  titleOverride?: string;
+  /** When set, use instead of live `description` state. */
+  descriptionOverride?: string;
 };
 export type UseTaskSaveAndCreateArgs = {
   canWrite: boolean;
@@ -170,6 +174,10 @@ export function useTaskSaveAndCreate({
       };
 
       const orig = originalRef.current;
+      const titleForSave =
+        options?.titleOverride != null ? options.titleOverride.trim() : title.trim();
+      const descriptionForSave =
+        options?.descriptionOverride != null ? options.descriptionOverride : description;
       const scheduledOnValue = parseScheduledDateFromInput(scheduledOn);
       const newTimeHm = parseTimeHmFromScheduledInputs(scheduledOnValue, scheduledTime);
       const scheduledTimePg = toPgScheduledTime(newTimeHm);
@@ -210,8 +218,8 @@ export function useTaskSaveAndCreate({
         orig,
         activityLog,
         uid,
-        titleTrimmed: title.trim(),
-        description,
+        titleTrimmed: titleForSave,
+        description: descriptionForSave,
         effectiveStatus,
         priority,
         visibility,
@@ -230,8 +238,8 @@ export function useTaskSaveAndCreate({
       };
 
       const updateWithPriority = {
-        title: title.trim(),
-        description: description.trim() || null,
+        title: titleForSave,
+        description: descriptionForSave.trim() || null,
         status: effectiveStatus,
         priority,
         visibility,
@@ -250,8 +258,8 @@ export function useTaskSaveAndCreate({
           (e) => !(e.type === 'field_change' && e.field === 'scheduled_time'),
         );
         const updateNoTime = {
-          title: title.trim(),
-          description: description.trim() || null,
+          title: titleForSave,
+          description: descriptionForSave.trim() || null,
           status: effectiveStatus,
           priority,
           visibility,
@@ -270,8 +278,8 @@ export function useTaskSaveAndCreate({
           setActivityLog(asActivityLog(activityWithoutTime));
           setStatus(effectiveStatus);
           setOriginalFromAppliedRow({
-            title: title.trim(),
-            description: description.trim(),
+            title: titleForSave,
+            description: descriptionForSave.trim(),
             status: effectiveStatus,
             priority,
             scheduledOn: schedChanged ? scheduledOnValue : (orig?.scheduledOn ?? null),
@@ -304,8 +312,8 @@ export function useTaskSaveAndCreate({
           hasTodayBoardColumn,
         });
         const updateNoSched = {
-          title: title.trim(),
-          description: description.trim() || null,
+          title: titleForSave,
+          description: descriptionForSave.trim() || null,
           status: statusWithoutSavedSchedule,
           priority,
           visibility,
@@ -324,8 +332,8 @@ export function useTaskSaveAndCreate({
           setActivityLog(asActivityLog(activityWithoutSched));
           setStatus(statusWithoutSavedSchedule);
           setOriginalFromAppliedRow({
-            title: title.trim(),
-            description: description.trim(),
+            title: titleForSave,
+            description: descriptionForSave.trim(),
             status: statusWithoutSavedSchedule,
             priority,
             scheduledOn: orig?.scheduledOn ?? null,
@@ -349,8 +357,8 @@ export function useTaskSaveAndCreate({
         );
         const revertedPriority = orig?.priority ?? 'medium';
         const updateWithoutPriority = {
-          title: title.trim(),
-          description: description.trim() || null,
+          title: titleForSave,
+          description: descriptionForSave.trim() || null,
           status: effectiveStatus,
           visibility,
           ...typeMetaPatch,
@@ -364,8 +372,8 @@ export function useTaskSaveAndCreate({
           setActivityLog(asActivityLog(activityWithoutPriority));
           setStatus(effectiveStatus);
           setOriginalFromAppliedRow({
-            title: title.trim(),
-            description: description.trim(),
+            title: titleForSave,
+            description: descriptionForSave.trim(),
             status: effectiveStatus,
             priority: revertedPriority,
             scheduledOn: scheduledOnValue,
@@ -388,8 +396,8 @@ export function useTaskSaveAndCreate({
           (e) => !(e.type === 'field_change' && e.field === 'visibility'),
         );
         const updateWithoutVisibility = {
-          title: title.trim(),
-          description: description.trim() || null,
+          title: titleForSave,
+          description: descriptionForSave.trim() || null,
           status: effectiveStatus,
           priority,
           ...typeMetaPatch,
@@ -404,8 +412,8 @@ export function useTaskSaveAndCreate({
           setActivityLog(asActivityLog(activityWithoutVisibility));
           setStatus(effectiveStatus);
           setOriginalFromAppliedRow({
-            title: title.trim(),
-            description: description.trim(),
+            title: titleForSave,
+            description: descriptionForSave.trim(),
             status: effectiveStatus,
             priority,
             scheduledOn: scheduledOnValue,
@@ -446,8 +454,8 @@ export function useTaskSaveAndCreate({
       setActivityLog(asActivityLog(nextActivity));
       setStatus(effectiveStatus);
       setOriginalFromAppliedRow({
-        title: title.trim(),
-        description: description.trim(),
+        title: titleForSave,
+        description: descriptionForSave.trim(),
         status: effectiveStatus,
         priority,
         scheduledOn: scheduledOnValue,

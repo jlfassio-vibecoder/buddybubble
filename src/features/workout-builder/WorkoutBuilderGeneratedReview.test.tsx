@@ -72,7 +72,7 @@ describe('WorkoutBuilderGeneratedReview', () => {
     expect(onApplyEdits.mock.calls[0][0].blocks?.length).toBeGreaterThan(0);
   });
 
-  it('resets to preview when blocks content changes but syncKey is unchanged', () => {
+  it('stays in edit when blocks content changes but syncKey is unchanged', () => {
     const metadataA = richMetadataWithBlockFormat('emom') as Json;
     const metadataB = richMetadataWithBlockFormat('tabata') as Json;
     const blocksA = buildWorkoutSessionViewModel(metadataA).blocks;
@@ -87,6 +87,25 @@ describe('WorkoutBuilderGeneratedReview', () => {
 
     rerender(
       <WorkoutBuilderGeneratedReview {...baseProps} syncKey="stable" blocks={blocksB} coreDirty />,
+    );
+
+    expect(screen.getByTestId('workout-builder-block-editor')).toBeTruthy();
+    expect(screen.queryByTestId('workout-builder-block-list')).toBeNull();
+  });
+
+  it('resets to preview when syncKey changes', () => {
+    const metadata = richMetadataWithBlockFormat('emom') as Json;
+    const blocks = buildWorkoutSessionViewModel(metadata).blocks;
+
+    const { rerender } = render(
+      <WorkoutBuilderGeneratedReview {...baseProps} syncKey="1" blocks={blocks} coreDirty />,
+    );
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Edit' }));
+    expect(screen.getByTestId('workout-builder-block-editor')).toBeTruthy();
+
+    rerender(
+      <WorkoutBuilderGeneratedReview {...baseProps} syncKey="2" blocks={blocks} coreDirty />,
     );
 
     expect(screen.getByTestId('workout-builder-block-list')).toBeTruthy();

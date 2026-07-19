@@ -271,7 +271,7 @@ export function useTaskWorkoutAi({
   }, [open, taskId, loading, initialOpenWorkoutViewer, hasWorkoutViewerContent]);
 
   const handleWorkoutViewerApply = useCallback(
-    (payload: WorkoutViewerApplyPayload) => {
+    (payload: WorkoutViewerApplyPayload): Json => {
       setTitle(payload.title);
       setDescription(payload.description);
 
@@ -280,17 +280,17 @@ export function useTaskWorkoutAi({
         const nextMeta = applyBlockEditsToMetadata(seeded, payload.blocks) as Json;
         setMetadata(nextMeta);
         setWorkoutExercises(parseWorkoutExercisesFromMetadata(nextMeta));
-        return;
+        return nextMeta;
       }
 
       setWorkoutExercises(payload.exercises);
-      setMetadata((prev) => {
-        const derived = deriveFlatExercisesFromMetadata(prev);
-        if (flatExercisesMatchDerived(payload.exercises, derived)) {
-          return prev;
-        }
-        return applyFlatWorkoutEditsToMetadata(prev, payload.exercises) as Json;
-      });
+      const derived = deriveFlatExercisesFromMetadata(metadata);
+      if (flatExercisesMatchDerived(payload.exercises, derived)) {
+        return metadata;
+      }
+      const nextMeta = applyFlatWorkoutEditsToMetadata(metadata, payload.exercises) as Json;
+      setMetadata(nextMeta);
+      return nextMeta;
     },
     [metadata, setTitle, setDescription, setWorkoutExercises, setMetadata],
   );

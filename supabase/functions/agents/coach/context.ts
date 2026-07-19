@@ -158,7 +158,7 @@ export function readWorkoutContextFromMessageMetadata(meta: unknown): unknown {
  * and shell flags no longer trigger workout-context injection. This is what
  * lets the Coach see a flat (pre-generation) card and emit GENERATION
  * HAND-OFF `card_action: 'trigger_generation'` instead of the LIVE CO-PILOT
- * `proposed_workout_metadata` revision path.
+ * `structural_patch` mutation path reserved for an existing rich workout.
  *
  * Emits one structured log per call: `coach workout context source`.
  */

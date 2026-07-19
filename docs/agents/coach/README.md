@@ -64,7 +64,70 @@ If nothing matches → `skipped: 'no_agent_mention'` (no Gemini call).
 
 ## Coach flow modes (implementation, not a single “tool”)
 
-The architecture plan’s “one tool / create card” model is **narrower** than production. Coach behavior is actually **four** intertwined modes.
+The architecture plan’s “one tool / create card” model is **narrower** than production. Coach behavior is split across multiple explicit modes.
+
+### Two-path workout editor architecture
+
+Workout authoring and workout mutation are intentionally separate constrained-output paths:
+
+| Path                          | Preconditions                                                         | Model field                 | Contract                                                                                                                     |
+| ----------------------------- | --------------------------------------------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| **Create / pre-rich draft**   | No rich `ai_workout_factory.workout_set` exists on the card           | `proposed_workout_metadata` | Produces a new workout/draft structure. It is not an edit protocol and must not be exposed for an active rich canvas.        |
+| **Mutate active rich canvas** | Task Modal rail has `CURRENT WORKOUT CONTEXT` with a rich workout set | `structural_patch`          | Emits at most eight small operations addressed by `block_id` / `exercise_id`; server and client apply only the named fields. |
+
+The client builds the rich context in
+[`task-modal-outgoing-workout-context.ts`](../../../src/lib/agents/coach/task-modal-outgoing-workout-context.ts).
+[`stampStructuralIdsOnWorkoutSet`](../../../src/lib/agents/coach/structural-address-map.ts)
+ensures each addressable block/exercise has a stable id and adds a compact
+`structural_address_map`. The Edge strategy selects
+`COACH_RAIL_RICH_WORKOUT_RESPONSE_SCHEMA` only when the request is a rail turn
+with `currentWorkoutContextJson`; that schema physically omits
+`proposed_workout_metadata`, `outline_draft_patch`, and `coach_workout_outline`.
+
+```mermaid
+flowchart LR
+  currentContext["Current Workout Context with stamped IDs"]
+  schemaSelect["Dynamic Schema Selection"]
+  prunedSchema["Pruned rich-canvas schema"]
+  gemini["Gemini structural_patch"]
+  metadataApply["applyStructuralPatchToTaskMetadata"]
+  updateRpc["agent_update_task_and_reply p_structural_patch"]
+  replyMetadata["Reply metadata structural_patch"]
+  effectSweep["useAgentEffectSweep"]
+  canvasApply["applyCoachPatchToCanvas"]
+  draftUpdate["Client draft update"]
+
+  currentContext --> schemaSelect
+  schemaSelect --> prunedSchema
+  prunedSchema --> gemini
+  gemini --> metadataApply
+  metadataApply --> updateRpc
+  updateRpc --> replyMetadata
+  replyMetadata --> effectSweep
+  effectSweep --> canvasApply
+  canvasApply --> draftUpdate
+```
+
+The database update and reply insertion are one server operation:
+`applyStructuralPatchToTaskMetadata` builds `p_new_metadata`, while
+`p_structural_patch` is attached to the same Coach reply for the client effect
+sweep. The open editor applies the same operations to its local draft immediately;
+**Apply changes** persists the human-reviewed draft.
+
+#### Why schema pruning is mandatory (“Do Not Think About an Elephant”)
+
+Prompting a model to “never use `proposed_workout_metadata`” while leaving that
+property in the response schema still advertises a valid full-workout output path.
+The prohibition itself keeps the full-draft concept salient, and constrained
+decoding still allocates it as a legal branch. In production, Gemini repeatedly
+selected that branch for one-field edits, regenerated the full workout, duplicated
+blocks, exhausted `MAX_TOKENS`, and hit the 60-second Edge timeout.
+
+Therefore mutual-exclusion wording is defense in depth, **not enforcement**.
+During active rich-canvas edits, `proposed_workout_metadata` must be physically
+absent from the schema sent to Gemini. The model cannot hallucinate a full-draft
+rewrite into a field that constrained decoding does not permit. The server guard
+also drops proposed metadata if workout context is present.
 
 ### 1) New workout card (Kanban `workout` task)
 
@@ -75,11 +138,12 @@ The architecture plan’s “one tool / create card” model is **narrower** tha
   - If `session_request` is true and there are **fewer than two** user messages, card creation is also blocked (`session_request_turn_gate`).
 - Waivers: `user_requested_immediate_card: true` skips that gate.
 
-### 2) Revise an **existing** workout card — draft in chat, user finalizes
+### 2) Edit a workout card
 
-- When the thread is tied to a **known task** (`knownTargetTaskId` from `target_task_id` / task context) and the model returns `update_existing_task: true` with title, description, and/or `proposed_workout_metadata`, the Edge Function calls **`agent_insert_coach_workout_draft_reply`**.
-- That inserts a Coach **reply** with `messages.metadata.coach_draft` (`pending` / `accepted` / `superseded` — see [`src/types/coach-draft.ts`](../../../src/types/coach-draft.ts)) and does **not** mutate `tasks` until the user accepts.
-- The user calls **`apply_workout_draft(p_message_id)`** (authenticated RPC) from the UI ([`src/components/chat/CoachDraftCard.tsx`](../../../src/components/chat/CoachDraftCard.tsx)) to merge the draft into the task and mark the draft applied.
+- **Pre-rich task/draft:** `proposed_workout_metadata` may create the initial structured proposal. Legacy draft-card flows use `agent_insert_coach_workout_draft_reply` and `apply_workout_draft`.
+- **Rich Task Modal canvas:** `proposed_workout_metadata` is unavailable. Coach emits `structural_patch`; the Edge strategy applies it to task metadata and calls `agent_update_task_and_reply` with `p_new_metadata` plus `p_structural_patch`.
+- The reply carries `messages.metadata.structural_patch`. `useAgentEffectSweep` forwards it to the Task Modal canvas, where `applyCoachPatchToCanvas` updates the open draft by stable id (with normalized-name fallback for malformed model ids).
+- `structural_patch` is for persistent prescription fields (sets, reps, RPE, coach notes, timing, format parameters, and adding exercises). The active WorkoutPlayer set grid remains a separate `execution_patch` path.
 
 ### 3) Workout player **silent sentinel** (opening greeting)
 
@@ -126,7 +190,14 @@ The architecture plan’s “one tool / create card” model is **narrower** tha
 
 ## Gemini: structured JSON (not in the old plan)
 
-Coach uses the **Generative Language API** with `responseMimeType: application/json` and a **large `responseSchema`** (object with required fields such as `reply_content`, `create_card`, `intake_phase`, `session_readiness_score`, `missing_intake_categories`, `user_requested_immediate_card`, `session_request`, pre-draft confirmation rules, `proposed_workout_metadata`, `execution_patch`, `personal_cues_patch`, etc.).
+Coach uses the **Generative Language API** with `responseMimeType: application/json`.
+The strategy selects a response schema per surface and context rather than sending one
+universal schema:
+
+- Main chat: card shell / intake schema; heavy workout generation proceeds through the factory handoff.
+- Task Modal rail without rich context: full response schema for creation/draft flows.
+- Task Modal rail with rich context: `COACH_RAIL_RICH_WORKOUT_RESPONSE_SCHEMA`, which exposes `structural_patch` and omits `proposed_workout_metadata`.
+- Exercise-cue request: cue-only schema.
 
 Notable **schema / prompt concepts** (see `geminiGenerateJson` and `baseCoachPrompt` in `bubble-agent-dispatch`):
 
@@ -144,6 +215,7 @@ The architecture plan does **not** list these fields; the **file header** and `C
 | ---------------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `agent_create_card_and_reply`            | `agent-dispatch` (service role) | Atomic: insert Coach reply; optionally create `workout` task; optional task-comment seed; optional `p_execution_patch` and **`p_personal_cues`** on reply metadata; applies personal cues via **`apply_personal_cues_for_user`**. See `20260813120000_user_exercise_notes_and_personal_cues_rpc.sql` and earlier migrations. |
 | `agent_insert_coach_workout_draft_reply` | `agent-dispatch` (service role) | Insert reply with `metadata.coach_draft` (and optional `execution_patch` / **`p_personal_cues`** on the same row); no direct `tasks` update.                                                                                                                                                                                 |
+| `agent_update_task_and_reply`            | `agent-dispatch` (service role) | Atomic rich-canvas mutation: updates task title/description/metadata and inserts the Coach reply. `p_structural_patch` is copied to reply metadata so the client applies the identical surgical operations to its open draft.                                                                                                |
 | `apply_workout_draft`                    | Authenticated user (client)     | Merge `coach_draft` into the task; update draft state. Same migration file.                                                                                                                                                                                                                                                  |
 | `exercise_dictionary_lookup_by_names`    | Authenticated + service role    | Resolves exercise **names** → dictionary ids (used by WorkoutPlayer hook and Coach dispatch). **`authenticated` execute** granted in `20260813120200_grant_exercise_dictionary_lookup_authenticated.sql`.                                                                                                                    |
 | `apply_personal_cues_for_user`           | Service (internal)              | **`security definer`**: merge **`p_personal_cues`** jsonb into **`user_exercise_notes`** for a user; invoked from agent RPCs above.                                                                                                                                                                                          |
@@ -173,15 +245,19 @@ The architecture plan does **not** list these fields; the **file header** and `C
 
 ## File map (Coach-related)
 
-| Area                            | Path                                                                                                                     |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Edge dispatch                   | `supabase/functions/agent-dispatch/index.ts` + Coach strategy at `supabase/functions/agents/coach/strategy.ts`           |
-| Workout rail UI                 | `src/components/chat/WorkoutCoachRail.tsx`                                                                               |
-| TaskModal standard rail         | `src/components/chat/StandardTaskChatRail.tsx` — composer tokens: [`rail-composer-tokens.md`](./rail-composer-tokens.md) |
-| Draft card + finalize           | `src/components/chat/CoachDraftCard.tsx`, `src/types/coach-draft.ts`                                                     |
-| Live player patch types / apply | `src/types/execution-patch.ts`, `src/components/fitness/WorkoutPlayer.tsx`                                               |
-| Personal cues hook + storage    | `src/hooks/useUserExerciseNotes.ts`, `public.user_exercise_notes`                                                        |
-| Default Coach in main/task chat | `src/components/chat/ChatArea.tsx`, `src/components/modals/task-modal/TaskModalCommentsPanel.tsx`                        |
+| Area                            | Path                                                                                                                                   |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Edge dispatch                   | `supabase/functions/agent-dispatch/index.ts` + Coach strategy at `supabase/functions/agents/coach/strategy.ts`                         |
+| Workout rail UI                 | `src/components/chat/WorkoutCoachRail.tsx`                                                                                             |
+| TaskModal standard rail         | `src/components/chat/StandardTaskChatRail.tsx` — composer tokens: [`rail-composer-tokens.md`](./rail-composer-tokens.md)               |
+| Draft card + finalize           | `src/components/chat/CoachDraftCard.tsx`, `src/types/coach-draft.ts`                                                                   |
+| Live player patch types / apply | `src/types/execution-patch.ts`, `src/components/fitness/WorkoutPlayer.tsx`                                                             |
+| Rich-canvas schema / parse      | `src/lib/agents/coach/schema.ts`, `src/lib/agents/coach/parse.ts` (+ Edge mirrors)                                                     |
+| Structural id context           | `src/lib/agents/coach/structural-address-map.ts`, `task-modal-outgoing-workout-context.ts`                                             |
+| Structural apply                | `src/lib/agents/_shared/workout-metadata/apply-structural-patch-to-task-metadata.ts`, `src/lib/agents/coach/coach-structural-patch.ts` |
+| Client effect bridge            | `src/components/chat/agent-effects/useAgentEffectSweep.ts`, `src/components/modals/TaskModal.tsx`                                      |
+| Personal cues hook + storage    | `src/hooks/useUserExerciseNotes.ts`, `public.user_exercise_notes`                                                                      |
+| Default Coach in main/task chat | `src/components/chat/ChatArea.tsx`, `src/components/modals/task-modal/TaskModalCommentsPanel.tsx`                                      |
 
 ---
 

@@ -1,16 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback } from 'react';
 import type { WorkoutViewerApplyPayload } from '@/components/fitness/workout-viewer-dialog';
 import {
   WorkoutBlockListEditor,
   WorkoutBlockListRenderer,
 } from '@/components/fitness/workout-block-renderer';
 import { WorkoutCoachBriefSection } from '@/components/fitness/workout-block-renderer/WorkoutCoachBriefSection';
-import {
-  cloneWorkoutSessionBlocksForEditor,
-  workoutSessionBlocksContentKey,
-} from '@/lib/workout-factory/clone-workout-session-blocks';
+import { useWorkoutBlockDraftSession } from '@/components/fitness/hooks/useWorkoutBlockDraftSession';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 import type { ExerciseCueRequestV1 } from '@/lib/agents/coach/exercise-cue-request';
 import type { ResolvedCueBundle } from '@/lib/workout-factory/resolve-exercise-cue-bundle';
@@ -18,8 +15,6 @@ import type { WorkoutCuePatch } from '@/lib/workout-factory/apply-cue-patches-to
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import type { UnitSystem } from '@/types/database';
-
-type ReviewMode = 'preview' | 'edit';
 
 export type WorkoutBuilderGeneratedReviewChrome = {
   difficulty?: string;
@@ -72,39 +67,34 @@ export function WorkoutBuilderGeneratedReview({
   onCueSave,
   injuriesOnFile = false,
 }: WorkoutBuilderGeneratedReviewProps) {
-  const [mode, setMode] = useState<ReviewMode>('preview');
-  const [draftBlocks, setDraftBlocks] = useState<WorkoutSessionBlockView[]>(() =>
-    cloneWorkoutSessionBlocksForEditor(blocks),
-  );
-
-  const blocksContentKey = useMemo(() => workoutSessionBlocksContentKey(blocks), [blocks]);
-  const blocksRef = useRef(blocks);
-  blocksRef.current = blocks;
-
-  useEffect(() => {
-    setMode('preview');
-    setDraftBlocks(cloneWorkoutSessionBlocksForEditor(blocksRef.current));
-  }, [syncKey, blocksContentKey]);
-
-  const enterEdit = useCallback(() => {
-    setDraftBlocks(cloneWorkoutSessionBlocksForEditor(blocks));
-    setMode('edit');
-  }, [blocks]);
-
-  const cancelEdit = useCallback(() => {
-    setDraftBlocks(cloneWorkoutSessionBlocksForEditor(blocks));
-    setMode('preview');
-  }, [blocks]);
+  const {
+    mode,
+    draftBlocks,
+    setDraftBlocks,
+    enterEdit,
+    cancelEdit,
+    applyEdits: commitDraftEdits,
+  } = useWorkoutBlockDraftSession({
+    syncKey,
+    source: {
+      title,
+      description,
+      exercises: [],
+      blocks,
+    },
+    exitEditOnApply: true,
+  });
 
   const applyEdits = useCallback(() => {
-    onApplyEdits({
-      title: title.trim(),
-      description: description.trim(),
-      exercises: [],
-      blocks: draftBlocks,
+    commitDraftEdits((p) => {
+      onApplyEdits({
+        title: p.title,
+        description: p.description,
+        exercises: [],
+        blocks: p.blocks ?? draftBlocks,
+      });
     });
-    setMode('preview');
-  }, [onApplyEdits, title, description, draftBlocks]);
+  }, [commitDraftEdits, onApplyEdits, draftBlocks]);
 
   const useRichBlockEdit = blocks.length > 0;
   const primaryActionLabel = saving
@@ -121,6 +111,8 @@ export function WorkoutBuilderGeneratedReview({
     onReturn();
   }, [coreDirty, onSaveAndReturn, onReturn]);
 
+  const isPreview = mode === 'view';
+
   return (
     <div className="space-y-4" data-testid="workout-builder-generated-workout">
       <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
@@ -135,13 +127,11 @@ export function WorkoutBuilderGeneratedReview({
               <button
                 type="button"
                 role="tab"
-                aria-selected={mode === 'preview'}
-                onClick={() => setMode('preview')}
+                aria-selected={isPreview}
+                onClick={cancelEdit}
                 className={cn(
                   'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-                  mode === 'preview'
-                    ? 'bg-primary/15 text-primary'
-                    : 'text-muted-foreground hover:bg-muted',
+                  isPreview ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-muted',
                 )}
               >
                 Preview
@@ -164,7 +154,7 @@ export function WorkoutBuilderGeneratedReview({
           ) : null}
         </div>
 
-        {mode === 'preview' && blocks.length > 0 ? (
+        {isPreview && blocks.length > 0 ? (
           <div className="space-y-4">
             {coachBrief?.trim() ? <WorkoutCoachBriefSection brief={coachBrief} /> : null}
             <WorkoutBlockListRenderer
@@ -209,7 +199,7 @@ export function WorkoutBuilderGeneratedReview({
         ) : null}
       </div>
 
-      {mode === 'preview' ? (
+      {isPreview ? (
         <Button
           type="button"
           className="w-full sm:w-auto"

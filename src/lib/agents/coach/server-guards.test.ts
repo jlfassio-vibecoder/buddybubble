@@ -22,6 +22,7 @@ function baseParsed(overrides: Partial<CoachGeminiJsonResponse> = {}): CoachGemi
     proposed_workout_metadata_drops: [],
     coach_workout_outline: null,
     coach_workout_outline_drops: [],
+    structural_patch: null,
     execution_patch: null,
     personal_cues_resolved: null,
     personal_cues_dropped_unanchored: 0,
@@ -35,6 +36,30 @@ function baseParsed(overrides: Partial<CoachGeminiJsonResponse> = {}): CoachGemi
     ...overrides,
   };
 }
+
+describe('applyCoachServerGuards rich workout context', () => {
+  it('strips proposed_workout_metadata when CURRENT WORKOUT CONTEXT is present', () => {
+    const out = applyCoachServerGuards(
+      baseParsed({
+        update_existing_task: true,
+        proposed_workout_metadata: {
+          blocks: [{ name: 'Main', exercises: [{ name: 'Squat', sets: 3, reps: '8' }] }],
+        },
+        structural_patch: [{ block_id: 'main-1-0', exercise_id: 'main-1-0:e0', reps: '10' }],
+      }),
+      {
+        knownTargetTaskId: 'task-1',
+        priorUserMessageCount: 2,
+        currentWorkoutContextJson: '{"exercises":[]}',
+        isActiveWorkoutSession: false,
+        outlineCoPilotActive: false,
+        exerciseCueRequestActive: false,
+      },
+    );
+    expect(out.proposed_workout_metadata).toBeNull();
+    expect(out.structural_patch).toHaveLength(1);
+  });
+});
 
 describe('applyCoachServerGuards outline co-pilot', () => {
   it('strips proposed_workout_metadata when outlineCoPilotActive', () => {

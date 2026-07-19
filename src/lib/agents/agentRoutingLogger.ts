@@ -57,27 +57,26 @@ export type AgentResponseReceivedEvent = {
   surface: AgentRoutingSurface;
 };
 
+export type AgentRoutingEffectName =
+  | 'execution_patch'
+  | 'task_modal_intake_patch'
+  | 'card_action'
+  | 'outline_draft_applied'
+  | 'workout_cues_patch'
+  | 'proposed_workout_metadata'
+  | 'structural_patch';
+
 export type AgentEffectScannedRoutingEvent = {
   event: 'agent.effect.scanned';
   surface: AgentRoutingSurface;
-  effect:
-    | 'execution_patch'
-    | 'task_modal_intake_patch'
-    | 'card_action'
-    | 'outline_draft_applied'
-    | 'workout_cues_patch';
+  effect: AgentRoutingEffectName;
   messageId: string;
 };
 
 export type AgentEffectParseDroppedRoutingEvent = {
   event: 'agent.effect.parse_dropped';
   surface: AgentRoutingSurface;
-  effect:
-    | 'execution_patch'
-    | 'task_modal_intake_patch'
-    | 'card_action'
-    | 'outline_draft_applied'
-    | 'workout_cues_patch';
+  effect: AgentRoutingEffectName;
   messageId: string;
   reason: 'missing' | 'invalid';
 };
@@ -85,12 +84,7 @@ export type AgentEffectParseDroppedRoutingEvent = {
 export type AgentEffectAppliedRoutingEvent = {
   event: 'agent.effect.applied';
   surface: AgentRoutingSurface;
-  effect:
-    | 'execution_patch'
-    | 'task_modal_intake_patch'
-    | 'card_action'
-    | 'outline_draft_applied'
-    | 'workout_cues_patch';
+  effect: AgentRoutingEffectName;
   messageId: string;
 };
 

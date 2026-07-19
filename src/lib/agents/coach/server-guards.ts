@@ -98,12 +98,14 @@ export function assertCoachReplySelfAttestation(parsed: CoachGeminiJsonResponse)
     parsed.personal_cues_resolved != null && parsed.personal_cues_resolved.length > 0;
   const meta = parsed.proposed_workout_metadata;
   const hasProposed = meta != null && typeof meta === 'object' && Object.keys(meta).length > 0;
+  const hasStructuralPatch = parsed.structural_patch != null && parsed.structural_patch.length > 0;
   const hasCard =
     parsed.create_card ||
     (parsed.update_existing_task &&
       (Boolean(parsed.updated_task_title?.trim()) ||
         Boolean(parsed.updated_task_description?.trim()) ||
-        hasProposed));
+        hasProposed ||
+        hasStructuralPatch));
   const hasIntake = hasTaskModalIntakePatch(parsed.task_modal_intake_patch);
   const hasCardAction = parsed.card_action === 'trigger_generation';
   const hasOutline =
@@ -118,7 +120,8 @@ export function assertCoachReplySelfAttestation(parsed: CoachGeminiJsonResponse)
     hasCardAction ||
     hasOutline ||
     hasOutlineDraftPatch ||
-    hasWorkoutCuesPatch;
+    hasWorkoutCuesPatch ||
+    hasStructuralPatch;
   if (!hasPayload) {
     throw { kind: 'self_attestation_mismatch' as const };
   }
@@ -142,6 +145,7 @@ export function stripStructuralWritesForWorkoutCuePatch(
     updated_task_title: null,
     updated_task_description: null,
     proposed_workout_metadata: null,
+    structural_patch: null,
     coach_workout_outline: null,
     outline_draft_patch: null,
     personal_cues_resolved: null,
@@ -189,6 +193,7 @@ export function applyCoachServerGuards(
   let updatedTaskTitle = parsed.updated_task_title;
   let updatedTaskDescription = parsed.updated_task_description;
   let proposedWorkoutMetadata = parsed.proposed_workout_metadata;
+  let structuralPatch = parsed.structural_patch;
   let coachWorkoutOutline = parsed.coach_workout_outline;
   let taskModalIntakePatch = parsed.task_modal_intake_patch;
   let cardAction = parsed.card_action;
@@ -196,9 +201,24 @@ export function applyCoachServerGuards(
   let outlineDraftPatchDrops = parsed.outline_draft_patch_drops;
   let personalCuesResolved = parsed.personal_cues_resolved;
 
+  // Prefer surgical structural_patch; proposed_workout_metadata is creation-only.
+  if (structuralPatch != null && structuralPatch.length > 0) {
+    proposedWorkoutMetadata = null;
+    if (!updateExistingTask) updateExistingTask = true;
+  }
+
+  // Hard server clamp: rich CURRENT WORKOUT CONTEXT means canvas edits are patch-only.
+  // Drop any proposed_workout_metadata that slipped through (schema prune is primary).
+  if (fragment.currentWorkoutContextJson && !fragment.isActiveWorkoutSession) {
+    if (proposedWorkoutMetadata != null) {
+      proposedWorkoutMetadata = null;
+    }
+  }
+
   // Guard 0: Outline co-pilot — structure-only phase; no factory merge or Call A outline.
   if (fragment.outlineCoPilotActive) {
     proposedWorkoutMetadata = null;
+    structuralPatch = null;
     coachWorkoutOutline = null;
     if (outlineDraftPatch != null) {
       const sanitized = sanitizeOutlinePatchBlocks(
@@ -272,6 +292,7 @@ export function applyCoachServerGuards(
       updatedTaskTitle = null;
       updatedTaskDescription = null;
       proposedWorkoutMetadata = null;
+      structuralPatch = null;
       coachWorkoutOutline = null;
       taskModalIntakePatch = null;
       cardAction = null;
@@ -291,6 +312,7 @@ export function applyCoachServerGuards(
   // Guard 5: Action exclusivity — card_action is a UI command, not a workout draft.
   if (cardAction === 'trigger_generation') {
     proposedWorkoutMetadata = null;
+    structuralPatch = null;
     coachWorkoutOutline = null;
     updatedTaskDescription = null;
   }
@@ -311,6 +333,7 @@ export function applyCoachServerGuards(
   // Guard 7: Exercise-cue flow — cue-only edits must not regenerate full workout metadata.
   if (fragment.exerciseCueRequestActive || parsed.workout_cues_patch != null) {
     proposedWorkoutMetadata = null;
+    structuralPatch = null;
     personalCuesResolved = null;
     updateExistingTask = false;
     updatedTaskTitle = null;
@@ -335,6 +358,7 @@ export function applyCoachServerGuards(
     updated_task_title: updatedTaskTitle,
     updated_task_description: updatedTaskDescription,
     proposed_workout_metadata: proposedWorkoutMetadata,
+    structural_patch: structuralPatch,
     coach_workout_outline: coachWorkoutOutline,
     task_modal_intake_patch: taskModalIntakePatch,
     card_action: cardAction,

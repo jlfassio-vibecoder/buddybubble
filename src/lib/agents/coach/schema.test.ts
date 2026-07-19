@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   COACH_EXERCISE_CUE_RESPONSE_SCHEMA,
+  COACH_MAIN_CHAT_RESPONSE_SCHEMA,
+  COACH_RAIL_RICH_WORKOUT_RESPONSE_SCHEMA,
   COACH_RESPONSE_SCHEMA,
 } from '@/lib/agents/coach/schema';
 import {
@@ -39,6 +41,44 @@ describe('COACH_EXERCISE_CUE_RESPONSE_SCHEMA', () => {
   it('caps reply_content on cue-only schema', () => {
     const reply = cueProps.reply_content as { maxLength?: number };
     expect(reply.maxLength).toBe(COACH_CUE_REPLY_CONTENT_MAX_CHARS);
+  });
+});
+
+describe('COACH_MAIN_CHAT_RESPONSE_SCHEMA', () => {
+  const props = COACH_MAIN_CHAT_RESPONSE_SCHEMA.properties as Record<string, unknown>;
+
+  it('omits proposed_workout_metadata and structural_patch (card shell + Phase B only)', () => {
+    expect(props).not.toHaveProperty('proposed_workout_metadata');
+    expect(props).not.toHaveProperty('structural_patch');
+  });
+});
+
+describe('COACH_RAIL_RICH_WORKOUT_RESPONSE_SCHEMA', () => {
+  const props = COACH_RAIL_RICH_WORKOUT_RESPONSE_SCHEMA.properties as Record<string, unknown>;
+
+  it('omits proposed_workout_metadata so Gemini cannot full-draft rewrite', () => {
+    expect(props).not.toHaveProperty('proposed_workout_metadata');
+    expect(props).not.toHaveProperty('outline_draft_patch');
+    expect(props).not.toHaveProperty('coach_workout_outline');
+  });
+
+  it('keeps structural_patch for surgical canvas edits', () => {
+    expect(props).toHaveProperty('structural_patch');
+    const patch = props.structural_patch as {
+      maxItems?: number;
+      items?: {
+        properties?: {
+          rpe?: { type?: string };
+          format_params?: { properties?: Record<string, unknown> };
+        };
+      };
+    };
+    expect(patch.maxItems).toBe(8);
+    expect(patch.items?.properties?.rpe?.type).toBe('NUMBER');
+    expect(patch.items?.properties?.format_params?.properties).toHaveProperty('rounds');
+    expect(patch.items?.properties?.format_params?.properties).not.toHaveProperty(
+      'alternating_stations',
+    );
   });
 });
 

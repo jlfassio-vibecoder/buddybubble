@@ -52,8 +52,8 @@ export type BuildDispatchContextInput = {
    */
   historyLimit?: number;
   /**
-   * When true, Coach rail merges `proposed_workout_metadata` via
-   * `mergeCoachProposedIntoTaskMetadata` before `agent_update_task_and_reply`.
+   * Legacy/pre-rich creation merge flag for `proposed_workout_metadata`.
+   * Existing rich-canvas mutation uses `structural_patch` independently.
    * From `readDispatcherEnv().COACH_MERGE_WORKOUT_METADATA`.
    */
   coachMergeWorkoutMetadata?: boolean;
