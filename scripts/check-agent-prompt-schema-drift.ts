@@ -116,8 +116,10 @@ const REGISTRY: ReadonlyArray<Contract> = [
       'ai_workout_factory',
       'workout_set',
       'parametric_requires_rich_workout_set',
-      // Main bubble Call A schema omits this key; prose + blueprint library still reference it.
+      // Main bubble Call A omits creation and rich-canvas mutation fields; shared prompt
+      // prose still names them, while their dedicated schemas expose them on other surfaces.
       'proposed_workout_metadata',
+      'structural_patch',
       'coach_workout_outline',
       'is_combo',
       // BLOCK BLUEPRINT LIBRARY prose (not Call A schema keys).
