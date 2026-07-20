@@ -41,10 +41,10 @@ import {
 } from '@/components/modals/task-modal/task-insert-row';
 
 /** How `metadataOverride` is merged into the live form save payload. */
-export type TaskMetadataOverrideMerge = 'outline-keys' | 'workout-cues';
+export type TaskMetadataOverrideMerge = 'outline-keys' | 'workout-cues' | 'full';
 
 export type SaveCoreFieldsOptions = {
-  /** Defaults to `outline-keys` (outline editor confirm / structure save). */
+  /** Defaults to `outline-keys` (outline editor confirm / structure save). Use `full` to persist the override as-is (e.g. preflight readiness). */
   metadataMerge?: TaskMetadataOverrideMerge;
   /** When set, use instead of live `title` state (e.g. Apply changes before re-render). */
   titleOverride?: string;
@@ -198,9 +198,14 @@ export function useTaskSaveAndCreate({
       const mergeMode = options?.metadataMerge ?? 'outline-keys';
       const metadataPayload =
         metadataOverride != null
-          ? ((mergeMode === 'workout-cues'
-              ? mergeWorkoutCueMetadataOntoFormSavePayload(metadataForSave, metadataOverride)
-              : mergeOutlineMetadataOntoFormSavePayload(metadataForSave, metadataOverride)) as Json)
+          ? ((mergeMode === 'full'
+              ? metadataOverride
+              : mergeMode === 'workout-cues'
+                ? mergeWorkoutCueMetadataOntoFormSavePayload(metadataForSave, metadataOverride)
+                : mergeOutlineMetadataOntoFormSavePayload(
+                    metadataForSave,
+                    metadataOverride,
+                  )) as Json)
           : metadataForSave;
 
       const mergedMetadata = mergeJsonWithLiveSessionToggle(metadataPayload, {

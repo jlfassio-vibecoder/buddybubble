@@ -4,6 +4,7 @@ import {
   WorkoutCoachRail,
   type WorkoutCoachRailMessageThread,
 } from '@/components/chat/WorkoutCoachRail';
+import type { SessionReadinessContext } from '@/lib/workout-factory/session-readiness-context';
 import type { SessionTelemetrySnapshot } from '@/lib/workout-factory/session-telemetry';
 import type { BubbleRow, Json } from '@/types/database';
 
@@ -17,6 +18,9 @@ type Props = {
   messageThread: WorkoutCoachRailMessageThread;
   sessionTelemetryBase?: SessionTelemetrySnapshot | null;
   elapsedSec?: number;
+  sessionId: string;
+  classInstanceId: string | null;
+  sessionReadinessContext: SessionReadinessContext | null;
 };
 
 export function SessionCoachPane({
@@ -29,6 +33,9 @@ export function SessionCoachPane({
   messageThread,
   sessionTelemetryBase,
   elapsedSec,
+  sessionId,
+  classInstanceId,
+  sessionReadinessContext,
 }: Props) {
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border">
@@ -42,6 +49,9 @@ export function SessionCoachPane({
         messageThread={messageThread}
         sessionTelemetryBase={sessionTelemetryBase}
         elapsedSec={elapsedSec}
+        sessionId={sessionId}
+        classInstanceId={classInstanceId}
+        sessionReadinessContext={sessionReadinessContext}
         className="min-h-0 flex-1 overflow-hidden"
       />
     </div>

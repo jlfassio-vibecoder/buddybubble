@@ -59,6 +59,7 @@ import {
 } from '../../_shared/llm/vertex-gemini.ts';
 
 import {
+  ACTIVE_SESSION_PREFLIGHT_READINESS_DIRECTIVE,
   ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE,
   COACH_HISTORY_LIMIT,
   COACH_CUE_MAX_OUTPUT_TOKENS,
@@ -157,6 +158,7 @@ import {
   shouldSuppressTaskModalIntakeForPreflightReadiness,
   buildSessionReadinessContextBlock,
   readSessionReadinessContextFromMessageMetadata,
+  resolveSessionReadinessForActiveSessionPrompt,
   taskMetadataLooksWorkoutShaped,
   WORKOUT_CONTEXT_HEADER,
   type ExerciseDictionaryIndexEntry,
@@ -787,12 +789,26 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
     const it = (taskItemType ?? '').toLowerCase();
     const suppressIntakeForOutline =
       shouldSuppressTaskModalIntakeForOutlineCoPilot(outlinePromptArgs);
-    const suppressIntakeForPreflightReadiness = shouldSuppressTaskModalIntakeForPreflightReadiness(
-      ctx.message.metadata,
-    );
-    if (suppressIntakeForPreflightReadiness) {
-      const readinessCtx = readSessionReadinessContextFromMessageMetadata(ctx.message.metadata);
-      if (readinessCtx) parts.push(buildSessionReadinessContextBlock(readinessCtx));
+    const readinessForActiveSession = isActiveSessionSurface
+      ? resolveSessionReadinessForActiveSessionPrompt({
+          triggerMetadata: ctx.message.metadata,
+          taskMetadata: taskMetadataForContext,
+          historyChronologicalOldestFirst: ctx.history,
+        })
+      : null;
+    const suppressIntakeForPreflightReadiness =
+      isActiveSessionSurface ||
+      shouldSuppressTaskModalIntakeForPreflightReadiness(ctx.message.metadata);
+    if (isActiveSessionSurface) {
+      parts.push(ACTIVE_SESSION_PREFLIGHT_READINESS_DIRECTIVE);
+      log('info', 'coach active session readiness resolve', {
+        request_id: ctx.requestId,
+        slug: COACH_SLUG,
+        has_readiness_block: readinessForActiveSession != null,
+      });
+    }
+    if (readinessForActiveSession) {
+      parts.push(buildSessionReadinessContextBlock(readinessForActiveSession));
     }
     const showTaskModalIntakeUi =
       !suppressIntakeForOutline &&

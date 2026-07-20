@@ -363,6 +363,9 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
               messageThread={coachBridge.messageThread}
               sessionTelemetryBase={coachBridge.performanceTelemetrySnapshot}
               elapsedSec={snapshot.context.elapsedSec}
+              sessionId={coachBridge.sessionId}
+              classInstanceId={coachBridge.classInstanceId}
+              sessionReadinessContext={coachBridge.sessionReadinessContext}
             />
           </div>
         </div>

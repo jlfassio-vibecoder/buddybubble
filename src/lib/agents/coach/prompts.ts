@@ -323,14 +323,38 @@ export function readSessionReadinessContextFromMessageMetadata(
 export function buildSessionReadinessContextBlock(ctx: SessionReadinessContextV1): string {
   const lines: string[] = [
     SESSION_READINESS_CONTEXT_HEADER,
-    "The member completed the Task Modal pre-session check-in before starting Active Session. Treat these as ground truth for today's readiness — do NOT re-ask readiness, sleep quality, or soreness sliders.",
-    `readiness (1–10): ${ctx.readiness}`,
+    'The member completed pre-session check-in (energy, sleep, soreness) before opening Active Session on an already-generated workout. This is realtime coaching context for THIS live session — not Generate Workout intake.',
+    'Treat these values as ground truth. You MUST recall them accurately when asked. Do NOT claim they are unavailable, inaccessible in live chat, or only processed by the Task Modal for workout generation.',
+    "Use readiness, sleep_quality, and soreness to adjust TODAY's load: prefer lower volume/intensity when readiness or sleep is low or relevant areas are sore; allow normal or progressive targets when readiness/sleep are high and soreness is None.",
+    'When recommending specific reps, weight, or RPE for the live session, emit execution_patch (not reply_content alone) so the Active Session grid updates.',
+    `readiness / energy (1–10): ${ctx.readiness}`,
     `sleep_quality (1–10): ${ctx.sleep_quality}`,
     `soreness: ${JSON.stringify(ctx.soreness)}`,
     `captured_at: ${ctx.captured_at}`,
     `source: ${ctx.source}`,
   ];
   return lines.join('\n');
+}
+
+/**
+ * Resolve pre-session readiness for Active Session coach prompts.
+ * Order: trigger message → task metadata → history (newest first).
+ */
+export function resolveSessionReadinessForActiveSessionPrompt(args: {
+  triggerMetadata: unknown;
+  taskMetadata: unknown;
+  historyChronologicalOldestFirst: ReadonlyArray<{ metadata?: unknown }>;
+}): SessionReadinessContextV1 | null {
+  const fromTrigger = readSessionReadinessContextFromMessageMetadata(args.triggerMetadata);
+  if (fromTrigger) return fromTrigger;
+  const fromTask = readSessionReadinessContextFromMessageMetadata(args.taskMetadata);
+  if (fromTask) return fromTask;
+  const hist = args.historyChronologicalOldestFirst;
+  for (let i = hist.length - 1; i >= 0; i -= 1) {
+    const fromHist = readSessionReadinessContextFromMessageMetadata(hist[i]?.metadata);
+    if (fromHist) return fromHist;
+  }
+  return null;
 }
 
 /**
@@ -417,7 +441,7 @@ export function buildApexArchitectMainChatBlock(): string {
     ' ' +
     INTERVAL_ACTIVE_REST_PROMPT_BLOCK +
     ' ' +
-    'Cross-reference --- CURRENT USER CONTEXT --- before asking questions; do not re-ask goals, injuries, or default equipment already on file. Do NOT collect daily readiness in chat — the Task Modal WorkoutIntakePanel handles energy and soreness before Generate Workout. Equipment comes from the member profile and Coach conversation, not the intake wizard. ' +
+    'Cross-reference --- CURRENT USER CONTEXT --- before asking questions; do not re-ask goals, injuries, or default equipment already on file. Do not run an energy/sleep/soreness questionnaire in chat for Generate Workout — generation intake is macro planning only (duration, phase, limitations). Pre-session energy/sleep/soreness is captured at Active Session launch for already-generated workouts and appears as --- PRE-SESSION READINESS --- when available. Equipment comes from the member profile and Coach conversation, not the generation intake wizard. ' +
     'Vocabulary Strictness: Do NOT use the word "Combo" in task_title or task_description unless you specifically want multiple exercises inside the same minute. For standard one-movement-per-minute rotations, use "Alternating EMOM" and `:main/emom/alternating` (not alternating-combo). ' +
     'Do not emit parametric proposed_workout_metadata.blocks on cards without ai_workout_factory.workout_set (parametric_requires_rich_workout_set). ' +
     'FACTORY HANDOFF: You are outlining structure ONLY in the card shell. NEVER ask the user which exercises they want to include. You dictate the physiology; the backend Factory handles specific exercise selection after the member completes intake and clicks Generate Workout. ' +
@@ -514,7 +538,7 @@ export function buildBaseCoachPrompt(
     'CRITICAL: Task titles must be short, clean, and concise (under 100 characters). NEVER repeat the same phrase, sentence, or placeholder in task_title or reply_content. Output the exact title once and stop. ' +
     'Never use emojis in task titles, it causes database crashes. Keep all titles under 100 characters plain text. ' +
     "ROLE: You are 'The Apex Architect,' an elite AI Fitness Coach with a DPT, Ph.D. in Exercise Physiology, and CSCS. You are authoritative, clinical, and direct. NEVER use sycophantic filler or greeting phrases (e.g., 'Great choice!', 'Let's do this'). When a user asks for weight, rep, or RPE recommendations, you MUST calculate and prescribe specific values from their context and feedback. DO NOT ask the user to supply the numbers for you to copy. " +
-    'Use LAST WORKOUT CONTEXT when present for progression and recovery context — do not run a daily readiness questionnaire in chat (the Task Modal intake wizard covers today-specific energy and soreness). ' +
+    'Use LAST WORKOUT CONTEXT when present for progression and recovery context — do not run an energy/sleep/soreness questionnaire in chat for Generate Workout (generation intake is macro planning). For Active Session, use --- PRE-SESSION READINESS --- when present. ' +
     'Check CURRENT USER CONTEXT for goals, schedule, injuries, and default equipment: do not re-ask for data that is clearly already on file. ' +
     'PRE-DRAFT CONFIRMATION (clinical intake state machine): CLINICAL INTAKE PHASE: When the user requests a workout, do NOT immediately draft the card (create_card: false). First, cross-reference their request against the injected CURRENT USER CONTEXT (injuries, goals). Set intake_phase clarifying_session or pre_draft_confirmation while consulting. ' +
     'ASK ELITE QUESTIONS: Ask 1-2 highly specific, biomechanical or programming questions to dial in the session. (e.g., "I see your goal is hypertrophy and you requested an EMOM. To optimize metabolic stress without compromising your L5-S1 herniation, are you comfortable with unsupported unilateral loading today?"). Do not ask generic readiness questions covered by profile or the Task Modal intake wizard. ' +

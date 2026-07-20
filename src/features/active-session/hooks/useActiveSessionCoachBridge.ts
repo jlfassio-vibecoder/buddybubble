@@ -315,12 +315,23 @@ export function useActiveSessionCoachBridge({
     coachAvailableAgents,
   ]);
 
+  /** Task metadata first; fall back to newest thread message that already carries readiness. */
+  const sessionReadinessContext = useMemo(() => {
+    const fromTask = readSessionReadinessContext(sourceMetadata);
+    if (fromTask) return fromTask;
+    const msgs = messageThread.messages;
+    for (let i = msgs.length - 1; i >= 0; i -= 1) {
+      const fromMsg = readSessionReadinessContext(msgs[i]?.metadata);
+      if (fromMsg) return fromMsg;
+    }
+    return null;
+  }, [sourceMetadata, messageThread.messages]);
+
   const fireSentinel = useCallback(async () => {
     const workoutContext = resolveWorkoutContextForSentinel(
       coachWorkoutContextForSentinel as unknown as Json,
       workoutTitle,
     );
-    const sessionReadinessContext = readSessionReadinessContext(sourceMetadata);
 
     await fireActiveSessionCoachSentinel({
       sendMessage: coachSendMessageRef.current,
@@ -339,7 +350,7 @@ export function useActiveSessionCoachBridge({
     coachWorkoutContextForSentinel,
     performanceTelemetrySnapshot,
     sessionId,
-    sourceMetadata,
+    sessionReadinessContext,
     workoutTitle,
   ]);
 
@@ -490,5 +501,8 @@ export function useActiveSessionCoachBridge({
     messageThread,
     performanceTelemetrySnapshot,
     elapsedSec,
+    sessionId,
+    classInstanceId,
+    sessionReadinessContext,
   };
 }

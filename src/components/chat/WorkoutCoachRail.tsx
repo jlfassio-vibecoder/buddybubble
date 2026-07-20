@@ -39,6 +39,11 @@ import {
   type SessionTelemetrySnapshot,
 } from '@/lib/workout-factory/session-telemetry';
 import {
+  readSessionReadinessContext,
+  type SessionReadinessContext,
+} from '@/lib/workout-factory/session-readiness-context';
+import { appendActiveSessionFollowUpCoachMetadata } from '@/features/active-session/lib/active-session-coach-telemetry';
+import {
   CHAT_AREA_DEFAULT_AGENT_SLUG,
   MESSAGE_METADATA_DEFAULT_AGENT_SLUG_KEY,
 } from '@/components/chat/workout-coach-rail.constants';
@@ -147,6 +152,12 @@ export type WorkoutCoachRailProps = {
   sessionTelemetryBase?: SessionTelemetrySnapshot | null;
   /** Active Session only — live elapsed seconds for coach message metadata overlay. */
   elapsedSec?: number;
+  /** Active Session only — session id for workout_context.surface on follow-ups. */
+  sessionId?: string;
+  /** Active Session only — class instance id for workout_context. */
+  classInstanceId?: string | null;
+  /** Active Session only — pre-session readiness from task metadata (may be null). */
+  sessionReadinessContext?: SessionReadinessContext | null;
 };
 
 export function WorkoutCoachRail({
@@ -161,6 +172,9 @@ export function WorkoutCoachRail({
   className,
   sessionTelemetryBase,
   elapsedSec = 0,
+  sessionId,
+  classInstanceId = null,
+  sessionReadinessContext = null,
 }: WorkoutCoachRailProps) {
   const myProfile = useUserProfileStore((s) => s.profile);
   const { subjectUserId: workspaceSubjectUserId } = useWorkspaceSessionSubject();
@@ -340,6 +354,23 @@ export function WorkoutCoachRail({
           : {}),
       } satisfies Json;
 
+      let outboundCoachMetadata: Record<string, unknown> = coachMetadata as Record<string, unknown>;
+      // Active Session follow-ups: re-attach surface + readiness so Edge injects PRE-SESSION block.
+      if (typeof sessionId === 'string' && sessionId.trim()) {
+        let readinessForSend = sessionReadinessContext ?? null;
+        if (!readinessForSend) {
+          for (let i = messages.length - 1; i >= 0; i -= 1) {
+            readinessForSend = readSessionReadinessContext(messages[i]?.metadata);
+            if (readinessForSend) break;
+          }
+        }
+        outboundCoachMetadata = appendActiveSessionFollowUpCoachMetadata(outboundCoachMetadata, {
+          sessionId: sessionId.trim(),
+          classInstanceId: classInstanceId ?? null,
+          sessionReadinessContext: readinessForSend,
+        });
+      }
+
       const sent = await sendMessage(
         finalMessageText,
         undefined,
@@ -349,10 +380,10 @@ export function WorkoutCoachRail({
               metadata:
                 sessionTelemetryBase != null
                   ? appendSessionTelemetryToCoachMessageMetadata(
-                      coachMetadata as Record<string, unknown>,
+                      outboundCoachMetadata,
                       attachElapsedToSessionTelemetry(sessionTelemetryBase, elapsedSec),
                     )
-                  : coachMetadata,
+                  : (outboundCoachMetadata as Json),
             }
           : undefined,
       );
@@ -377,6 +408,10 @@ export function WorkoutCoachRail({
       workoutTitle,
       sessionTelemetryBase,
       elapsedSec,
+      sessionId,
+      classInstanceId,
+      sessionReadinessContext,
+      messages,
     ],
   );
 

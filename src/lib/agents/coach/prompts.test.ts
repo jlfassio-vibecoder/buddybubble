@@ -23,6 +23,7 @@ import {
   readSessionReadinessContextFromMessageMetadata,
   readTaskModalLiveStateFromMessageMetadata,
   resolveOutlineDraftPromptParts,
+  resolveSessionReadinessForActiveSessionPrompt,
   SESSION_READINESS_CONTEXT_HEADER,
   WORKOUT_STRUCTURE_CONTEXT_HEADER,
   shouldSuppressTaskModalIntakeForOutlineCoPilot,
@@ -634,10 +635,64 @@ describe('buildSessionReadinessContextBlock', () => {
       source: 'task_modal_preflight',
     });
     expect(block).toContain(SESSION_READINESS_CONTEXT_HEADER);
-    expect(block).toContain('readiness (1–10): 7');
+    expect(block).toContain('readiness / energy (1–10): 7');
     expect(block).toContain('sleep_quality (1–10): 8');
     expect(block).toContain('soreness: ["Legs"]');
-    expect(block).toContain('do NOT re-ask readiness');
+    expect(block).toContain('already-generated workout');
+    expect(block).toContain('Do NOT claim they are unavailable');
+    expect(block).toContain('emit execution_patch');
+    expect(block).toContain("adjust TODAY's load");
+  });
+});
+
+describe('resolveSessionReadinessForActiveSessionPrompt', () => {
+  const readiness = {
+    v: 1 as const,
+    captured_at: '2026-05-28T10:00:00.000Z',
+    readiness: 7,
+    sleep_quality: 8,
+    soreness: ['Legs'],
+    source: 'task_modal_preflight' as const,
+  };
+
+  it('prefers trigger metadata over task metadata', () => {
+    const resolved = resolveSessionReadinessForActiveSessionPrompt({
+      triggerMetadata: { session_readiness_context: { ...readiness, readiness: 9 } },
+      taskMetadata: { session_readiness_context: readiness },
+      historyChronologicalOldestFirst: [],
+    });
+    expect(resolved?.readiness).toBe(9);
+  });
+
+  it('falls back to task metadata when trigger has none', () => {
+    const resolved = resolveSessionReadinessForActiveSessionPrompt({
+      triggerMetadata: { workout_context: { surface: 'active_session' } },
+      taskMetadata: { session_readiness_context: readiness },
+      historyChronologicalOldestFirst: [],
+    });
+    expect(resolved).toEqual(readiness);
+  });
+
+  it('falls back to history newest-first when trigger and task lack readiness', () => {
+    const resolved = resolveSessionReadinessForActiveSessionPrompt({
+      triggerMetadata: {},
+      taskMetadata: {},
+      historyChronologicalOldestFirst: [
+        { metadata: { session_readiness_context: { ...readiness, readiness: 3 } } },
+        { metadata: { session_readiness_context: { ...readiness, readiness: 6 } } },
+      ],
+    });
+    expect(resolved?.readiness).toBe(6);
+  });
+
+  it('returns null when nowhere has readiness', () => {
+    expect(
+      resolveSessionReadinessForActiveSessionPrompt({
+        triggerMetadata: {},
+        taskMetadata: {},
+        historyChronologicalOldestFirst: [{ metadata: {} }],
+      }),
+    ).toBeNull();
   });
 });
 
@@ -732,5 +787,23 @@ describe('shouldSuppressTaskModalIntakeForPreflightReadiness', () => {
         workout_context: { source: 'workout_player' },
       }),
     ).toBe(false);
+  });
+});
+
+describe('mid-workout readiness directives', () => {
+  it('instructs use of PRE-SESSION READINESS and null path', async () => {
+    const {
+      MID_WORKOUT_SUPPORT_MODE_DIRECTIVE,
+      ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE,
+      ACTIVE_SESSION_PREFLIGHT_READINESS_DIRECTIVE,
+    } = await import('./config');
+    expect(MID_WORKOUT_SUPPORT_MODE_DIRECTIVE).toContain('PRE-SESSION READINESS');
+    expect(MID_WORKOUT_SUPPORT_MODE_DIRECTIVE).toContain('how-are-you-feeling');
+    expect(ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE).toContain('PRE-SESSION READINESS');
+    expect(ACTIVE_SESSION_PREFLIGHT_READINESS_DIRECTIVE).toContain('already-generated workout');
+    expect(ACTIVE_SESSION_PREFLIGHT_READINESS_DIRECTIVE).toContain('NOT Generate Workout intake');
+    expect(ACTIVE_SESSION_PREFLIGHT_READINESS_DIRECTIVE).toContain(
+      'NEVER claim the data is unavailable',
+    );
   });
 });

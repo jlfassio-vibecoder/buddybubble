@@ -157,6 +157,26 @@ Return ONLY valid JSON. No markdown, no explanations. Start with { and end with 
 }`;
 }
 
+/**
+ * Normalize common model aliases so graft sees exercises[] (reduces retry loops / memory).
+ */
+export function normalizeFillModelBlocksForGraft(
+  modelBlocks: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  return modelBlocks.map((blk) => {
+    if (Array.isArray(blk.exercises) && blk.exercises.length > 0) return blk;
+    for (const key of ['movements', 'exercise_list', 'exerciseList'] as const) {
+      const alt = blk[key];
+      if (Array.isArray(alt) && alt.length > 0) {
+        const next: Record<string, unknown> = { ...blk, exercises: alt };
+        delete next[key];
+        return next;
+      }
+    }
+    return blk;
+  });
+}
+
 export function validateFillParametricOutlineOutput(
   data: unknown,
   preflightBlocks: Record<string, unknown>[],
@@ -179,7 +199,10 @@ export function validateFillParametricOutlineOutput(
     modelBlocks.push(b as Record<string, unknown>);
   }
 
-  const graft = graftFillBlocksOntoPreflight(preflightBlocks, modelBlocks);
+  const graft = graftFillBlocksOntoPreflight(
+    preflightBlocks,
+    normalizeFillModelBlocksForGraft(modelBlocks),
+  );
   if (!graft.ok) {
     return { valid: false, error: graft.error };
   }

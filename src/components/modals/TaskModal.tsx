@@ -143,6 +143,7 @@ import {
   buildGenerationIntakeContext,
 } from '@/lib/workout-factory/generation-intake-context';
 import { pickWorkoutIntakePanelWizardProps } from '@/components/fitness/workout-intake/pick-workout-intake-panel-props';
+import { WorkoutPreflightReadinessDialog } from '@/components/fitness/workout-intake/WorkoutPreflightReadinessDialog';
 import { normalizeOutlineDraft } from '@/lib/agents/coach/outline-editor-client';
 import {
   applyWorkoutPlayerExecutionPatchIfOpen,
@@ -422,6 +423,7 @@ export function TaskModal({
   }, [open, taskId]);
 
   const [preflightCompletedThisOpen, setPreflightCompletedThisOpen] = useState(false);
+  const [preflightDialogOpen, setPreflightDialogOpen] = useState(false);
   const [visibility, setVisibility] = useState<TaskVisibility>('private');
   /** Workspace member user id, or null = unassigned */
   const [assignedTo, setAssignedTo] = useState<string | null>(null);
@@ -1464,11 +1466,13 @@ export function TaskModal({
   useEffect(() => {
     if (!open) {
       setPreflightCompletedThisOpen(false);
+      setPreflightDialogOpen(false);
     }
   }, [open]);
 
   useEffect(() => {
     setPreflightCompletedThisOpen(false);
+    setPreflightDialogOpen(false);
   }, [sessionKey]);
 
   const activeSessionLaunch = useActiveSessionLaunchFromTaskModal({
@@ -1492,15 +1496,19 @@ export function TaskModal({
     );
     setMetadata(mergedMetadata);
 
+    // `full` merge: outline-keys would drop session_readiness_context from the override.
     if (coreDirty || !taskId) {
-      const ok = taskId ? await saveCoreFields(mergedMetadata) : !!(await createTask());
+      const ok = taskId
+        ? await saveCoreFields(mergedMetadata, { metadataMerge: 'full' })
+        : !!(await createTask());
       if (!ok) return;
     } else {
-      const ok = await saveCoreFields(mergedMetadata);
+      const ok = await saveCoreFields(mergedMetadata, { metadataMerge: 'full' });
       if (!ok) return;
     }
 
     setPreflightCompletedThisOpen(true);
+    setPreflightDialogOpen(false);
     activeSessionLaunch.handleLaunchClick();
   }, [
     workoutIntake.buildPreflightPayload,
@@ -1514,29 +1522,26 @@ export function TaskModal({
     activeSessionLaunch.handleLaunchClick,
   ]);
 
+  const handleActiveSessionLaunchClick = useCallback(() => {
+    if (hasWorkoutFactory && !preflightCompletedThisOpen) {
+      setPreflightDialogOpen(true);
+      return;
+    }
+    activeSessionLaunch.handleLaunchClick();
+  }, [hasWorkoutFactory, preflightCompletedThisOpen, activeSessionLaunch.handleLaunchClick]);
+
   const activeSessionLaunchControlProps = useMemo(() => {
     if (activeSessionLaunch.launchUi.mode === 'hidden') return null;
 
-    let launchUi = activeSessionLaunch.launchUi;
-    if (hasWorkoutFactory && !preflightCompletedThisOpen && launchUi.mode !== 'disabled') {
-      launchUi = {
-        mode: 'disabled',
-        label: launchUi.label,
-        tooltip: 'Complete the pre-session check-in to start.',
-      };
-    }
-
     return {
-      launchUi,
-      onLaunchClick: activeSessionLaunch.handleLaunchClick,
+      launchUi: activeSessionLaunch.launchUi,
+      onLaunchClick: handleActiveSessionLaunchClick,
       busy: activeSessionLaunch.isLaunching,
     };
   }, [
     activeSessionLaunch.launchUi,
-    activeSessionLaunch.handleLaunchClick,
     activeSessionLaunch.isLaunching,
-    hasWorkoutFactory,
-    preflightCompletedThisOpen,
+    handleActiveSessionLaunchClick,
   ]);
 
   useEffect(() => {
@@ -2967,6 +2972,15 @@ export function TaskModal({
           ) : null}
         </div>
       </div>
+      {hasWorkoutFactory && workoutIntakePanelProps ? (
+        <WorkoutPreflightReadinessDialog
+          open={preflightDialogOpen}
+          onOpenChange={setPreflightDialogOpen}
+          {...workoutIntakePanelProps}
+          onSubmitPreflight={handlePreflightSubmitAndLaunch}
+          isSubmitting={activeSessionLaunch.isLaunching}
+        />
+      ) : null}
     </div>
   );
 }

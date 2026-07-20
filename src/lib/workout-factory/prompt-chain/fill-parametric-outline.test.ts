@@ -3,6 +3,7 @@ import { preflightOutlineBlocks } from '@/lib/workout-factory/outline-block-pref
 import {
   buildFillParametricOutlinePrompt,
   FILL_PARAMETRIC_OUTLINE_SYSTEM_PROMPT,
+  normalizeFillModelBlocksForGraft,
   validateFillParametricOutlineOutput,
 } from '@/lib/workout-factory/prompt-chain/fill-parametric-outline';
 import type { WorkoutPersona } from '@/lib/workout-factory/types/ai-workout';
@@ -132,6 +133,21 @@ describe('validateFillParametricOutlineOutput', () => {
       blocks: [{ exercises: [{ name: 'Kettlebell Swing' }, { name: 'Goblet Squat' }] }],
     };
     const v = validateFillParametricOutlineOutput(filled, preflight);
+    expect(v.valid).toBe(true);
+  });
+
+  it('normalizes movements[] alias to exercises[] before graft', () => {
+    const preflight = preflightOutlineBlocks(emomOutline).blocks;
+    const normalized = normalizeFillModelBlocksForGraft([
+      {
+        movements: [
+          { name: 'Kettlebell Swing', reps: '12' },
+          { name: 'Goblet Squat', reps: '10' },
+        ],
+      },
+    ]);
+    expect(normalized[0]?.exercises).toHaveLength(2);
+    const v = validateFillParametricOutlineOutput({ blocks: normalized }, preflight);
     expect(v.valid).toBe(true);
   });
 
