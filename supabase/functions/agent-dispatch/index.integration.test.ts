@@ -357,12 +357,27 @@ integrationTest(
       assertExists(bodyText);
       const req = parseCapturedVertexRequest(bodyText);
       assertEquals(req.systemPrompt.includes(SESSION_READINESS_CONTEXT_HEADER), true);
-      assertEquals(req.systemPrompt.includes('Do NOT ask them to rate readiness'), true);
-      assertEquals(req.systemPrompt.includes('Do NOT use generic gym clichés'), true);
       assertEquals(req.systemPrompt.includes(WORKOUT_STRUCTURE_CONTEXT_HEADER), true);
-      assertEquals(req.systemPrompt.includes('readiness (1–10): 7'), true);
-      assertEquals(req.userText.includes('Pre-session readiness check-in (JSON)'), true);
-      assertEquals(req.userText.includes('"readiness":7'), true);
+      // Behavioral guardrails (wording may evolve slightly — match semantic intent).
+      assertEquals(/Do NOT ask them to re-?rate readiness/i.test(req.systemPrompt), true);
+      assertEquals(/MUST NOT use a generic opening/i.test(req.systemPrompt), true);
+      assertEquals(
+        /readiness(?:\s*\/\s*energy)?\s*\(1.?10\)\s*:\s*7/i.test(req.systemPrompt),
+        true,
+      );
+
+      // User payload: parse readiness JSON rather than depending on minified vs pretty formatting.
+      const readinessMarker = 'Pre-session readiness check-in';
+      assertEquals(req.userText.includes(readinessMarker), true);
+      const readinessJsonStart = req.userText.indexOf('{', req.userText.indexOf(readinessMarker));
+      assertEquals(readinessJsonStart >= 0, true);
+      const readinessPayload = JSON.parse(req.userText.slice(readinessJsonStart)) as {
+        readiness?: number;
+        sleep_quality?: number;
+        soreness?: unknown;
+      };
+      assertEquals(readinessPayload.readiness, 7);
+      assertEquals(readinessPayload.sleep_quality, 8);
 
       const calls = rpc.getRpcCalls('agent_create_card_and_reply');
       assertEquals(calls.length, 1);
