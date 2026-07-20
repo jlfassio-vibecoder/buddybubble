@@ -33,7 +33,10 @@ import { useMessageThread } from '@/hooks/useMessageThread';
 import { usePermissions } from '@/hooks/use-permissions';
 import type { GhostSetSnapshot } from '@/lib/workout-factory/ghost-set-snapshot';
 import { buildWorkoutCoachRailContext } from '@/lib/workout-factory/build-workout-coach-rail-context';
-import { readSessionReadinessContext } from '@/lib/workout-factory/session-readiness-context';
+import {
+  readSessionReadinessContext,
+  readSessionReadinessContextFromSessionThread,
+} from '@/lib/workout-factory/session-readiness-context';
 import type { SessionReadinessContext } from '@/lib/workout-factory/session-readiness-context';
 import type { IntervalRowSnapshot } from '@/lib/workout-factory/interval-timer/types';
 import { parseMemberRole } from '@/lib/permissions';
@@ -309,14 +312,15 @@ export function useActiveSessionCoachBridge({
     if (taskReadinessFetch.status === 'resolved' && taskReadinessFetch.value) {
       return taskReadinessFetch.value;
     }
-    const msgs = messageThread.messages;
-    for (let i = msgs.length - 1; i >= 0; i -= 1) {
-      const fromMsg = readSessionReadinessContext(msgs[i]?.metadata);
-      if (fromMsg) return fromMsg;
-    }
+    // Same-session thread only — never reuse an older Active Session's check-in.
+    const fromThread = readSessionReadinessContextFromSessionThread(
+      messageThread.messages,
+      sessionId,
+    );
+    if (fromThread) return fromThread;
     if (taskReadinessFetch.status === 'resolved') return null;
     return null;
-  }, [sourceMetadata, taskReadinessFetch, messageThread.messages]);
+  }, [sourceMetadata, taskReadinessFetch, messageThread.messages, sessionId]);
 
   /** True once we know readiness is either present or explicitly absent (fetch finished / source had it). */
   const sessionReadinessResolved =

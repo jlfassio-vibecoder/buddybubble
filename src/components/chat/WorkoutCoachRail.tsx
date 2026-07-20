@@ -41,6 +41,7 @@ import {
 } from '@/lib/workout-factory/session-telemetry';
 import {
   readSessionReadinessContext,
+  readSessionReadinessContextFromSessionThread,
   type SessionReadinessContext,
 } from '@/lib/workout-factory/session-readiness-context';
 import { appendActiveSessionFollowUpCoachMetadata } from '@/features/active-session/lib/active-session-coach-telemetry';
@@ -359,11 +360,13 @@ export function WorkoutCoachRail({
       // Active Session follow-ups: re-attach surface + readiness so Edge injects PRE-SESSION block.
       if (typeof sessionId === 'string' && sessionId.trim()) {
         let readinessForSend = sessionReadinessContext ?? null;
-        if (!readinessForSend) {
-          for (let i = messages.length - 1; i >= 0; i -= 1) {
-            readinessForSend = readSessionReadinessContext(messages[i]?.metadata);
-            if (readinessForSend) break;
-          }
+        // Prop omitted: same-session thread only (never older sessions). When the bridge
+        // explicitly resolved null, do not re-walk history or invent a check-in.
+        if (!readinessForSend && sessionReadinessContext === undefined) {
+          readinessForSend = readSessionReadinessContextFromSessionThread(
+            messages,
+            sessionId.trim(),
+          );
         }
         // Last resort DB read only when the prop was omitted (undefined), not when bridge
         // explicitly resolved readiness to null (avoids a fetch on every follow-up send).

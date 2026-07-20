@@ -311,8 +311,26 @@ export function buildSessionReadinessContextBlock(ctx: SessionReadinessContextV1
 }
 
 /**
+ * Read Active Session id from message metadata (top-level `sessionId` or
+ * `workout_context.sessionId`).
+ */
+export function readActiveSessionIdFromMessageMetadata(meta: unknown): string | null {
+  if (meta == null || typeof meta !== 'object' || Array.isArray(meta)) return null;
+  const root = meta as Record<string, unknown>;
+  if (typeof root.sessionId === 'string' && root.sessionId.trim()) return root.sessionId.trim();
+  const wctx = root.workout_context;
+  if (wctx != null && typeof wctx === 'object' && !Array.isArray(wctx)) {
+    const sid = (wctx as Record<string, unknown>).sessionId;
+    if (typeof sid === 'string' && sid.trim()) return sid.trim();
+  }
+  return null;
+}
+
+/**
  * Resolve pre-session readiness for Active Session coach prompts.
- * Order: trigger message → task metadata → history (newest first).
+ * Order: trigger message → task metadata → same-session history (newest first).
+ * History fallback is scoped to the active session id so an older session's
+ * check-in cannot attach to a new Active Session that had no preflight write.
  */
 export function resolveSessionReadinessForActiveSessionPrompt(args: {
   triggerMetadata: unknown;
@@ -323,9 +341,13 @@ export function resolveSessionReadinessForActiveSessionPrompt(args: {
   if (fromTrigger) return fromTrigger;
   const fromTask = readSessionReadinessContextFromMessageMetadata(args.taskMetadata);
   if (fromTask) return fromTask;
+  const activeSessionId = readActiveSessionIdFromMessageMetadata(args.triggerMetadata);
+  if (!activeSessionId) return null;
   const hist = args.historyChronologicalOldestFirst;
   for (let i = hist.length - 1; i >= 0; i -= 1) {
-    const fromHist = readSessionReadinessContextFromMessageMetadata(hist[i]?.metadata);
+    const meta = hist[i]?.metadata;
+    if (readActiveSessionIdFromMessageMetadata(meta) !== activeSessionId) continue;
+    const fromHist = readSessionReadinessContextFromMessageMetadata(meta);
     if (fromHist) return fromHist;
   }
   return null;

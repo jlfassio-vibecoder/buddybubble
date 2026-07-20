@@ -4,7 +4,9 @@ import {
   buildSessionReadinessContext,
   mergeSessionReadinessIntoMetadata,
   mergeSessionReadinessOntoFormSavePayload,
+  readActiveSessionIdFromMetadata,
   readSessionReadinessContext,
+  readSessionReadinessContextFromSessionThread,
 } from './session-readiness-context';
 
 describe('session-readiness-context', () => {
@@ -120,5 +122,44 @@ describe('session-readiness-context', () => {
     const form = { ai_workout_factory: { v: 1 }, exercises: [] };
     const merged = mergeSessionReadinessOntoFormSavePayload(form, { foo: 1 });
     expect(merged).toEqual(form);
+  });
+
+  it('readActiveSessionIdFromMetadata reads top-level and workout_context sessionId', () => {
+    expect(readActiveSessionIdFromMetadata({ sessionId: 'sess-a' })).toBe('sess-a');
+    expect(
+      readActiveSessionIdFromMetadata({
+        workout_context: { sessionId: 'sess-b', surface: 'active_session' },
+      }),
+    ).toBe('sess-b');
+    expect(readActiveSessionIdFromMetadata({})).toBeNull();
+  });
+
+  it('readSessionReadinessContextFromSessionThread ignores other sessions', () => {
+    const ctxOld = buildSessionReadinessContext({
+      readiness: 3,
+      sleepQuality: 4,
+      soreness: ['Legs'],
+    });
+    const ctxNew = buildSessionReadinessContext({
+      readiness: 8,
+      sleepQuality: 9,
+      soreness: ['None'],
+    });
+    const messages = [
+      {
+        metadata: mergeSessionReadinessIntoMetadata({ sessionId: 'sess-old' }, ctxOld),
+      },
+      {
+        metadata: { sessionId: 'sess-new' },
+      },
+      {
+        metadata: mergeSessionReadinessIntoMetadata(
+          { workout_context: { sessionId: 'sess-new' } },
+          ctxNew,
+        ),
+      },
+    ];
+    expect(readSessionReadinessContextFromSessionThread(messages, 'sess-new')).toEqual(ctxNew);
+    expect(readSessionReadinessContextFromSessionThread(messages, 'sess-missing')).toBeNull();
   });
 });

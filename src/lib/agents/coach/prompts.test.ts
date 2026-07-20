@@ -685,24 +685,67 @@ describe('resolveSessionReadinessForActiveSessionPrompt', () => {
     expect(resolved).toEqual(readiness);
   });
 
-  it('falls back to history newest-first when trigger and task lack readiness', () => {
+  it('falls back to same-session history newest-first when trigger and task lack readiness', () => {
+    const sessionId = 'sess-current';
     const resolved = resolveSessionReadinessForActiveSessionPrompt({
-      triggerMetadata: {},
+      triggerMetadata: { sessionId },
       taskMetadata: {},
       historyChronologicalOldestFirst: [
-        { metadata: { session_readiness_context: { ...readiness, readiness: 3 } } },
-        { metadata: { session_readiness_context: { ...readiness, readiness: 6 } } },
+        {
+          metadata: {
+            sessionId,
+            session_readiness_context: { ...readiness, readiness: 3 },
+          },
+        },
+        {
+          metadata: {
+            sessionId,
+            session_readiness_context: { ...readiness, readiness: 6 },
+          },
+        },
       ],
     });
     expect(resolved?.readiness).toBe(6);
   });
 
-  it('returns null when nowhere has readiness', () => {
+  it('does not reuse readiness from a different Active Session in history', () => {
+    const resolved = resolveSessionReadinessForActiveSessionPrompt({
+      triggerMetadata: { sessionId: 'sess-new' },
+      taskMetadata: {},
+      historyChronologicalOldestFirst: [
+        {
+          metadata: {
+            sessionId: 'sess-old',
+            session_readiness_context: { ...readiness, readiness: 3 },
+          },
+        },
+        {
+          metadata: {
+            workout_context: { sessionId: 'sess-old', surface: 'active_session' },
+            session_readiness_context: { ...readiness, readiness: 6 },
+          },
+        },
+      ],
+    });
+    expect(resolved).toBeNull();
+  });
+
+  it('returns null when history has readiness but trigger has no session id', () => {
     expect(
       resolveSessionReadinessForActiveSessionPrompt({
         triggerMetadata: {},
         taskMetadata: {},
-        historyChronologicalOldestFirst: [{ metadata: {} }],
+        historyChronologicalOldestFirst: [{ metadata: { session_readiness_context: readiness } }],
+      }),
+    ).toBeNull();
+  });
+
+  it('returns null when nowhere has readiness', () => {
+    expect(
+      resolveSessionReadinessForActiveSessionPrompt({
+        triggerMetadata: { sessionId: 'sess-1' },
+        taskMetadata: {},
+        historyChronologicalOldestFirst: [{ metadata: { sessionId: 'sess-1' } }],
       }),
     ).toBeNull();
   });
