@@ -10,6 +10,7 @@ import {
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 import {
   applyCoachPatchToCanvas,
+  coachNotesOnlyStructuralOps,
   mergeCoachPrescriptionIntoDraft,
 } from '@/lib/agents/coach/coach-structural-patch';
 import type { CoachStructuralPatchOp } from '@/lib/agents/_shared/workout-metadata/structural-patch-types';
@@ -195,7 +196,7 @@ export function useWorkoutBlockDraftSession({
 
   // Soft sync: full refresh while viewing (pristine only — Preview may keep dirty drafts).
   // In edit + pristine: write-through Coach prescription fields from source.
-  // In edit + dirty: keep local keystrokes; notify once per pending source snapshot.
+  // In edit + dirty: write-through coachNotes only (keep local sets/reps/title keystrokes).
   useEffect(() => {
     if (mode === 'edit') {
       const dirty = computeIsDirty(
@@ -206,13 +207,28 @@ export function useWorkoutBlockDraftSession({
         baselineRef.current,
       );
       if (dirty) {
-        const toastKey = `${source.title}\0${source.description}\0${exercisesContentKey}\0${blocksContentKey}`;
-        if (pendingCoachUpdateToastKeyRef.current !== toastKey) {
-          pendingCoachUpdateToastKeyRef.current = toastKey;
-          toast.message('Coach has an update', {
-            id: 'coach-dirty-draft-update',
-            description: 'Apply or discard your canvas edits to load Coach’s changes.',
-          });
+        const prev = draftBlocksRef.current;
+        const notesMerged = mergeCoachPrescriptionIntoDraft(prev, sourceRef.current.blocks, {
+          notesOnly: true,
+        });
+        if (notesMerged !== prev) {
+          draftBlocksRef.current = notesMerged;
+          setDraftBlocks(notesMerged);
+        }
+        // Toast only when non-notes prescription/structure still differs after notes write-through.
+        const stillPending =
+          mergeCoachPrescriptionIntoDraft(notesMerged, sourceRef.current.blocks) !== notesMerged;
+        if (stillPending) {
+          const toastKey = `${source.title}\0${source.description}\0${exercisesContentKey}\0${blocksContentKey}`;
+          if (pendingCoachUpdateToastKeyRef.current !== toastKey) {
+            pendingCoachUpdateToastKeyRef.current = toastKey;
+            toast.message('Coach has an update', {
+              id: 'coach-dirty-draft-update',
+              description: 'Apply or discard your canvas edits to load Coach’s changes.',
+            });
+          }
+        } else {
+          pendingCoachUpdateToastKeyRef.current = null;
         }
         return;
       }
@@ -347,19 +363,24 @@ export function useWorkoutBlockDraftSession({
   const applyStructuralPatch = useCallback(
     (patches: CoachStructuralPatchOp[]): boolean => {
       if (modeRef.current !== 'edit') return false;
-      if (isDirtyRef.current) return false;
       if (!Array.isArray(patches) || patches.length === 0) return false;
+      const dirty = isDirtyRef.current;
+      // Dirty drafts: notes-only write-through so local sets/reps/rpe edits stay intact.
+      const ops = dirty ? coachNotesOnlyStructuralOps(patches) : patches;
+      if (ops.length === 0) return false;
       const prev = draftBlocksRef.current;
-      const next = applyCoachPatchToCanvas(prev, patches);
+      const next = applyCoachPatchToCanvas(prev, ops);
       if (next === prev) return false;
       draftBlocksRef.current = next;
       setDraftBlocks(next);
-      adoptDraftAsBaseline(
-        draftTitleRef.current,
-        draftDescriptionRef.current,
-        draftExercisesRef.current,
-        next,
-      );
+      if (!dirty) {
+        adoptDraftAsBaseline(
+          draftTitleRef.current,
+          draftDescriptionRef.current,
+          draftExercisesRef.current,
+          next,
+        );
+      }
       return true;
     },
     [adoptDraftAsBaseline],

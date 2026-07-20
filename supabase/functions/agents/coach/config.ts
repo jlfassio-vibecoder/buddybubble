@@ -122,7 +122,11 @@ export const COACH_CUE_REPLY_CONTENT_MAX_CHARS = 1200 as const;
 
 /** Fallback reply when the model claims a write without emitting structured fields (server guard). */
 export const COACH_SELF_ATTESTATION_SAFE_REPLY =
-  "I noticed I described an update I didn't actually save. Tell me which exercise to add cues for, and I'll save them to your personal notes.";
+  "I noticed I described an update I didn't actually save. Tell me which exercise to update, and I'll save the coach notes to your workout.";
+
+/** Coach-notes-specific attestation fallback (clearer than the generic cues-oriented copy). */
+export const COACH_NOTES_SELF_ATTESTATION_SAFE_REPLY =
+  "I couldn't save that to the Coach notes field. Name the exercise (or quote the note text), and I'll write it to the workout card.";
 
 /** Outline co-pilot: model narrated a structure update without `outline_draft_patch`. */
 export const COACH_OUTLINE_SELF_ATTESTATION_SAFE_REPLY =

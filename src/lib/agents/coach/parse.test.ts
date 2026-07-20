@@ -20,6 +20,7 @@ import {
   coalesceUpdatedTaskDescription,
   ensureCoachTaskNotesCta,
   parseCoachJson,
+  safeParseCoachJson,
   parseExecutionPatchFromGemini,
   parseIntakePhase,
   parseMissingIntakeCategories,
@@ -1061,6 +1062,37 @@ describe('parsePersonalCuesPatchFromGemini', () => {
   it('skips entries with no text fields after trim', () => {
     const out = parsePersonalCuesPatchFromGemini([{ exerciseIndex: 0, form_cues: '   ' }], byIndex);
     expect(out.entries).toEqual([]);
+  });
+});
+
+describe('safeParseCoachJson', () => {
+  it('returns success:false for invalid JSON without throwing', () => {
+    expect(safeParseCoachJson('not json at all')).toEqual({
+      success: false,
+      error: 'gemini_json_parse_failed',
+    });
+  });
+
+  it('returns success:false for empty reply_content', () => {
+    const result = safeParseCoachJson(
+      JSON.stringify({
+        reply_content: '   ',
+        create_card: false,
+        task_title: null,
+        task_description: null,
+        ...REQUIRED_TAIL,
+      }),
+    );
+    expect(result).toEqual({ success: false, error: 'gemini_invalid_json_shape' });
+  });
+
+  it('returns success:true with data on a valid reply-only payload', () => {
+    const result = safeParseCoachJson(JSON.stringify(makeReplyOnlyPayload()));
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.reply_content).toBeTruthy();
+      expect(result.data.create_card).toBe(false);
+    }
   });
 });
 

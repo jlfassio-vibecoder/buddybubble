@@ -83,6 +83,8 @@ describe('buildCurrentTaskContextBlock', () => {
     expect(block).toContain(
       'NEVER use proposed_workout_metadata to change reps, sets, or add coach notes',
     );
+    expect(block).toContain('COACH NOTES vs CUES');
+    expect(block).toContain('never workout_cues_patch');
     expect(block).toContain('RPE: Prefer exercise_id + top-level rpe');
     expect(block).toContain('Use structural_patch to target the specific block_id');
     expect(block).toContain('DO NOT rewrite the entire workout');

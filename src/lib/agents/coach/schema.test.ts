@@ -51,6 +51,16 @@ describe('COACH_MAIN_CHAT_RESPONSE_SCHEMA', () => {
     expect(props).not.toHaveProperty('proposed_workout_metadata');
     expect(props).not.toHaveProperty('structural_patch');
   });
+
+  it('keeps execution, cues, intake, outline draft, and card_action bricks', () => {
+    expect(props).toHaveProperty('execution_patch');
+    expect(props).toHaveProperty('personal_cues_patch');
+    expect(props).toHaveProperty('workout_cues_patch');
+    expect(props).toHaveProperty('task_modal_intake_patch');
+    expect(props).toHaveProperty('outline_draft_patch');
+    expect(props).toHaveProperty('card_action');
+    expect(props).toHaveProperty('reply_content');
+  });
 });
 
 describe('COACH_RAIL_RICH_WORKOUT_RESPONSE_SCHEMA', () => {
@@ -79,6 +89,11 @@ describe('COACH_RAIL_RICH_WORKOUT_RESPONSE_SCHEMA', () => {
     expect(patch.items?.properties?.format_params?.properties).not.toHaveProperty(
       'alternating_stations',
     );
+  });
+
+  it('shares structural_patch brick identity with full schema', () => {
+    const full = COACH_RESPONSE_SCHEMA.properties as Record<string, unknown>;
+    expect(props.structural_patch).toBe(full.structural_patch);
   });
 });
 

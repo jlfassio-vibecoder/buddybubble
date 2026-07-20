@@ -237,6 +237,8 @@ export type WorkoutViewerContentProps = Omit<WorkoutViewerDialogProps, 'open' | 
   /** When true, wrap the visible title in Radix `DialogTitle asChild` for standalone dialog a11y. */
   dialogTitleAsChild?: boolean;
   className?: string;
+  /** Notify parent when local draft dirtiness changes (Coach pending flush). */
+  onDraftDirtyChange?: (isDirty: boolean) => void;
 };
 
 /** Imperative canvas draft API for Coach → editor mutations (TaskModal effect sweep). */
@@ -286,6 +288,7 @@ export const WorkoutViewerContent = forwardRef<
     saveDisabled = false,
     readVariant = 'workout',
     activeSessionLaunch = null,
+    onDraftDirtyChange,
   },
   ref,
 ) {
@@ -331,6 +334,10 @@ export const WorkoutViewerContent = forwardRef<
     }),
     [mode, isDirty, enterEdit, applyExternalBlocks, applyStructuralPatch],
   );
+
+  useEffect(() => {
+    onDraftDirtyChange?.(isDirty);
+  }, [isDirty, onDraftDirtyChange]);
 
   // Cue drafts are viewer-local; clear on hard sync only (hook owns draft/mode reset).
   useEffect(() => {

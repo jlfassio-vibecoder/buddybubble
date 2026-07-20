@@ -80,7 +80,7 @@ describe('useWorkoutBlockDraftSession', () => {
     expect(patched?.exercises.every((ex) => ex.rpe === 7.5)).toBe(true);
   });
 
-  it('skips soft write-through and keeps local keystrokes when the draft is dirty', () => {
+  it('skips soft RPE write-through when dirty but merges coachNotes', () => {
     const sourceA = sourceFromFormat('emom');
     const main = sourceA.blocks.find((b) => b.section === 'main');
     expect(main).toBeTruthy();
@@ -91,7 +91,11 @@ describe('useWorkoutBlockDraftSession', () => {
           ? b
           : {
               ...b,
-              exercises: b.exercises.map((ex) => ({ ...ex, rpe: 7.5 })),
+              exercises: b.exercises.map((ex, i) =>
+                i === 0
+                  ? { ...ex, rpe: 7.5, coachNotes: 'Feel it in the serratus.' }
+                  : { ...ex, rpe: 7.5 },
+              ),
             },
       ),
     };
@@ -112,13 +116,16 @@ describe('useWorkoutBlockDraftSession', () => {
 
     expect(result.current.mode).toBe('edit');
     expect(result.current.draftTitle).toBe('Typing…');
-    expect(
-      result.current.draftBlocks.find((b) => b.id === main!.id)?.exercises[0]?.rpe,
-    ).toBeUndefined();
+    expect(result.current.isDirty).toBe(true);
+    const patched = result.current.draftBlocks.find((b) => b.id === main!.id);
+    expect(patched?.exercises[0]?.rpe).toBeUndefined();
+    expect(patched?.exercises[0]?.coachNotes).toBe('Feel it in the serratus.');
   });
 
-  it('refuses structural patches and external blocks while dirty', () => {
+  it('refuses external replace and non-notes structural patches while dirty', () => {
     const source = sourceFromFormat('emom');
+    const main = source.blocks.find((b) => b.section === 'main');
+    expect(main?.exercises[0]).toBeTruthy();
     const external = sourceFromFormat('tabata').blocks;
     const { result } = renderHook(() => useWorkoutBlockDraftSession({ syncKey: 1, source }));
 
@@ -128,16 +135,27 @@ describe('useWorkoutBlockDraftSession', () => {
     });
 
     let appliedExternal = true;
-    let appliedPatch = true;
+    let appliedRpe = true;
+    let appliedNotes = false;
     act(() => {
       appliedExternal = result.current.applyExternalBlocks(external);
-      appliedPatch = result.current.applyStructuralPatch([
-        { block_id: source.blocks[0]!.id, rpe: 8 },
+      appliedRpe = result.current.applyStructuralPatch([{ block_id: main!.id, rpe: 8 }]);
+      appliedNotes = result.current.applyStructuralPatch([
+        {
+          block_id: main!.id,
+          exercise_id: `${main!.id}:e0`,
+          coach_notes: 'Keep ribs quiet.',
+        },
       ]);
     });
     expect(appliedExternal).toBe(false);
-    expect(appliedPatch).toBe(false);
+    expect(appliedRpe).toBe(false);
+    expect(appliedNotes).toBe(true);
     expect(result.current.draftTitle).toBe('Local edit');
+    expect(result.current.isDirty).toBe(true);
+    expect(
+      result.current.draftBlocks.find((b) => b.id === main!.id)?.exercises[0]?.coachNotes,
+    ).toBe('Keep ribs quiet.');
   });
 
   it('refreshes drafts from source while in view', () => {

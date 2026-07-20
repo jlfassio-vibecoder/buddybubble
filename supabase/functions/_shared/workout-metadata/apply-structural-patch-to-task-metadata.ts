@@ -156,6 +156,27 @@ function findBlockIndex(blocks: unknown[], section: SectionKind, patchBlockId: s
   return -1;
 }
 
+/** When Gemini invents a placeholder block_id, still locate the row by exercise_id. */
+function findBlockIndexByExerciseId(
+  blocks: unknown[],
+  section: SectionKind,
+  patchExerciseId: string,
+): number {
+  const want = patchExerciseId.trim();
+  if (!want) return -1;
+  for (let i = 0; i < blocks.length; i++) {
+    const raw = blocks[i];
+    if (!isPlainObject(raw) || !Array.isArray(raw.exercises)) continue;
+    const blockId = resolveBlockId(raw, section, i);
+    for (let j = 0; j < raw.exercises.length; j++) {
+      const exRaw = raw.exercises[j];
+      if (!isPlainObject(exRaw)) continue;
+      if (exerciseMatchesStructuralId(exRaw, blockId, j, want)) return i;
+    }
+  }
+  return -1;
+}
+
 function applyOpsToBlock(
   raw: Record<string, unknown>,
   section: SectionKind,
@@ -220,8 +241,14 @@ function patchBlockArray(
 
   for (const op of ops) {
     const blockId = typeof op.block_id === 'string' ? op.block_id.trim() : '';
-    if (!blockId) continue;
-    const idx = findBlockIndex(blocks, section, blockId);
+    const exerciseId =
+      typeof op.exercise_id === 'string' && op.exercise_id.trim() ? op.exercise_id.trim() : '';
+    let idx = blockId ? findBlockIndex(blocks, section, blockId) : -1;
+    // Model often emits placeholder block ids (e.g. "main_emom_block_id") with a real
+    // exercise UUID — fall back to exercise_id scan so coach_notes still lands.
+    if (idx < 0 && exerciseId) {
+      idx = findBlockIndexByExerciseId(blocks, section, exerciseId);
+    }
     if (idx < 0) {
       remaining.push(op);
       continue;

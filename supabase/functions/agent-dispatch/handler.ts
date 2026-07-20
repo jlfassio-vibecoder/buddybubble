@@ -71,6 +71,7 @@ import type {
 } from '../_shared/llm/types.ts';
 
 import {
+  COACH_NOTES_SELF_ATTESTATION_SAFE_REPLY,
   COACH_OUTLINE_SELF_ATTESTATION_SAFE_REPLY,
   COACH_OUTLINE_TRUNCATED_SAFE_REPLY,
   COACH_SELF_ATTESTATION_SAFE_REPLY,
@@ -532,14 +533,16 @@ export async function handleDispatchRequest(req: Request): Promise<Response> {
       const coachExtras =
         strategy.slug === COACH_SLUG && ctx.extras && typeof ctx.extras === 'object'
           ? ((ctx.extras as Record<string, unknown>)[COACH_SLUG] as
-              | { outlineCoPilotActive?: boolean }
+              | { outlineCoPilotActive?: boolean; coachNotesRequestActive?: boolean }
               | undefined)
           : null;
       const fallbackText =
         kind === 'self_attestation_mismatch' && strategy.slug === COACH_SLUG
           ? coachExtras?.outlineCoPilotActive === true
             ? COACH_OUTLINE_SELF_ATTESTATION_SAFE_REPLY
-            : COACH_SELF_ATTESTATION_SAFE_REPLY
+            : coachExtras?.coachNotesRequestActive === true
+              ? COACH_NOTES_SELF_ATTESTATION_SAFE_REPLY
+              : COACH_SELF_ATTESTATION_SAFE_REPLY
           : kind === 'truncated' &&
               strategy.slug === COACH_SLUG &&
               coachExtras?.outlineCoPilotActive === true
