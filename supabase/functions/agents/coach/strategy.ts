@@ -77,6 +77,7 @@ import {
   COACH_THINKING_BUDGET,
   COACH_WORKOUT_GREETING_MAX_OUTPUT_TOKENS,
   COACH_WORKOUT_GREETING_TEMPERATURE,
+  COACH_WORKOUT_GREETING_THINKING_BUDGET,
   MID_WORKOUT_SUPPORT_MODE_DIRECTIVE,
   SESSION_TELEMETRY_GROUND_TRUTH_DIRECTIVE,
   resolveCoachThinkingBudget,
@@ -157,13 +158,13 @@ import {
   shouldSuppressTaskModalIntakeForOutlineCoPilot,
   shouldSuppressTaskModalIntakeForPreflightReadiness,
   buildSessionReadinessContextBlock,
-  readSessionReadinessContextFromMessageMetadata,
   resolveSessionReadinessForActiveSessionPrompt,
   taskMetadataLooksWorkoutShaped,
   WORKOUT_CONTEXT_HEADER,
   type ExerciseDictionaryIndexEntry,
 } from './prompts.ts';
 import {
+  COACH_ACTIVE_SESSION_RESPONSE_SCHEMA,
   COACH_EXERCISE_CUE_RESPONSE_SCHEMA,
   COACH_MAIN_CHAT_RESPONSE_SCHEMA,
   COACH_OUTLINE_ONLY_SCHEMA,
@@ -224,6 +225,41 @@ type CoachExtras = {
 };
 
 const FALLBACK_WORKOUT_GREETING = "Good to see you back in the gym! Let's get to work.";
+
+/**
+ * When greeting JSON.parse fails (e.g. unescaped newlines in reply_content), salvage usable text.
+ * Prefer extracting the reply_content string; otherwise use fence-stripped raw if non-empty.
+ * Returns null only when there is nothing to show — caller may then use FALLBACK_WORKOUT_GREETING.
+ */
+function salvageWorkoutGreetingReplyText(raw: string | null | undefined): string | null {
+  if (raw == null) return null;
+  const cleaned = stripMarkdownCodeFences(String(raw));
+  if (!cleaned.trim()) return null;
+
+  const keyMatch = cleaned.match(/"reply_content"\s*:\s*"/i);
+  if (keyMatch && keyMatch.index != null) {
+    const valueStart = keyMatch.index + keyMatch[0].length;
+    const tail = cleaned.slice(valueStart);
+    // Prefer closing quote before final }: ..." } — else treat as unterminated and take the rest.
+    const endMatch = tail.match(/"\s*\}\s*$/);
+    const rawValue =
+      endMatch && endMatch.index != null
+        ? tail.slice(0, endMatch.index)
+        : tail.replace(/\}\s*$/, '').replace(/"\s*$/, '');
+    const unescaped = rawValue
+      .replace(/\\n/g, '\n')
+      .replace(/\\r/g, '\r')
+      .replace(/\\t/g, '\t')
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, '\\')
+      .trim();
+    if (unescaped.length > 0) return unescaped;
+  }
+
+  // Plain prose or unrecovered blob — still better than the generic fallback.
+  const trimmed = cleaned.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
 
 /** True when the **trigger** row indicates a live workout session (not task-row metadata alone). */
 function isTriggerActiveWorkoutSession(
@@ -408,8 +444,41 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       }
 
       const isoNow = new Date().toISOString();
-      const readiness = readSessionReadinessContextFromMessageMetadata(meta);
+      let taskMetadataForGreeting: unknown = null;
+      try {
+        const knownTargetTaskId = await resolveKnownTargetTaskId(
+          ctx.supabase as unknown as Parameters<typeof resolveKnownTargetTaskId>[0],
+          ctx.message,
+          ctx.history,
+          ctx.requestId,
+        );
+        if (knownTargetTaskId && ctx.message.bubble_id) {
+          const ctxRow = await loadCurrentTaskContext(
+            ctx.supabase as unknown as Parameters<typeof loadCurrentTaskContext>[0],
+            knownTargetTaskId,
+            ctx.message.bubble_id,
+            ctx.requestId,
+          );
+          taskMetadataForGreeting = ctxRow?.metadata ?? null;
+        }
+      } catch (err) {
+        log('warn', 'coach workout greeting task readiness load failed', {
+          request_id: ctx.requestId,
+          slug: COACH_SLUG,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      const readiness = resolveSessionReadinessForActiveSessionPrompt({
+        triggerMetadata: meta,
+        taskMetadata: taskMetadataForGreeting,
+        historyChronologicalOldestFirst: ctx.history,
+      });
       const sessionReadinessBlock = readiness ? buildSessionReadinessContextBlock(readiness) : null;
+      log('info', 'coach workout greeting readiness resolve', {
+        request_id: ctx.requestId,
+        slug: COACH_SLUG,
+        has_readiness_block: readiness != null,
+      });
 
       let sessionTelemetryBlock: string | null = null;
       let workoutStructureBlock: string | null = null;
@@ -470,6 +539,9 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
           generationConfig: {
             temperature: COACH_WORKOUT_GREETING_TEMPERATURE,
             maxOutputTokens: COACH_WORKOUT_GREETING_MAX_OUTPUT_TOKENS,
+            // Thinking shares maxOutputTokens on Gemini 2.5; without this, dynamic thinking
+            // can leave only ~10 visible tokens and truncate mid-JSON ("Justin, I see your").
+            thinkingConfig: { thinkingBudget: COACH_WORKOUT_GREETING_THINKING_BUDGET },
             responseMimeType: 'application/json',
             responseSchema: COACH_WORKOUT_GREETING_SCHEMA,
           },
@@ -493,12 +565,16 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
             });
           }
         } catch (parseErr) {
+          const salvaged = salvageWorkoutGreetingReplyText(cleaned);
           log('warn', 'coach workout greeting parse fallback', {
             request_id: ctx.requestId,
             slug: COACH_SLUG,
             error: parseErr instanceof Error ? parseErr.message : String(parseErr),
+            salvaged: salvaged != null,
+            response_length: cleaned.length,
           });
-          replyText = FALLBACK_WORKOUT_GREETING;
+          // Keep LLM text whenever possible; only use the hardcoded greeting when empty.
+          replyText = salvaged ?? FALLBACK_WORKOUT_GREETING;
         }
       } catch (err) {
         log('warn', 'coach workout greeting generate failed', {
@@ -700,12 +776,13 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
 
     const today = new Date().toISOString().split('T')[0];
     const parts: string[] = [];
-    if (!isRailSurface) {
+    if (!isRailSurface && !isActiveSessionSurface) {
       parts.push(buildApexArchitectMainChatBlock());
     }
     parts.push(
       buildBaseCoachPrompt(today, {
-        apexArchitectMainChat: !isRailSurface,
+        apexArchitectMainChat: !isRailSurface && !isActiveSessionSurface,
+        activeSessionLive: isActiveSessionSurface,
         exerciseCueRequestMode: exerciseCueRequest != null,
       }),
     );
@@ -878,6 +955,9 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
   },
 
   resolveResponseSchema(ctx) {
+    if (resolveActiveSessionSurfaceForCoachPrompt(ctx.message.metadata, ctx.history)) {
+      return COACH_ACTIVE_SESSION_RESPONSE_SCHEMA;
+    }
     const isRailSurface = isCoachRailSurfaceFromMessageMetadata(ctx.message.metadata);
     if (!isRailSurface) return COACH_MAIN_CHAT_RESPONSE_SCHEMA;
     const cueReq = resolveExerciseCueRequestForDispatch(

@@ -810,6 +810,21 @@ export const COACH_MAIN_CHAT_RESPONSE_SCHEMA: VertexResponseSchema = composeResp
 );
 
 /**
+ * Live Active Session surface — execution-focused. Omits `task_modal_intake_patch` and
+ * outline/creation bricks so the model cannot treat check-in as Task Modal wizard ownership.
+ */
+export const COACH_ACTIVE_SESSION_RESPONSE_SCHEMA: VertexResponseSchema = composeResponseSchema(
+  {
+    ...COACH_CARD_SHELL_PROPERTIES,
+    execution_patch: COACH_EXECUTION_PATCH_SCHEMA,
+    personal_cues_patch: COACH_PERSONAL_CUES_PATCH_SCHEMA,
+    workout_cues_patch: COACH_WORKOUT_CUES_PATCH_SCHEMA,
+    card_action: COACH_CARD_ACTION_SCHEMA,
+  },
+  COACH_RESPONSE_REQUIRED,
+);
+
+/**
  * Task Modal rail when CURRENT WORKOUT CONTEXT / rich canvas is present.
  * Omits `proposed_workout_metadata` so Gemini cannot full-draft rewrite the workout
  * (which caused MAX_TOKENS / 60s timeouts). Surgical edits go through `structural_patch` only.
@@ -837,7 +852,7 @@ export const COACH_WORKOUT_GREETING_SCHEMA: VertexResponseSchema = composeRespon
     reply_content: {
       type: 'STRING',
       description:
-        'Single visible chat message: personalized time-of-day greeting, name the workout, optional readiness acknowledgment, 1–2 concrete or structure-based target suggestions, and a closing question about filling targets or adjusting loads; 2–5 sentences, plain text; no generic gym clichés.',
+        "Single visible Active Session chat greeting as one continuous plain-text paragraph (no raw line breaks). When pre-session readiness is present: state energy/sleep/soreness, contextualize safety for today's workout, and offer rep/load adjustments. When absent: brief encouraging opener plus one check-in question. Do not use generic gym clichés as the whole message.",
     },
   },
   ['reply_content'],

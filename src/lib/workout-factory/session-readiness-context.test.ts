@@ -3,6 +3,7 @@ import {
   SESSION_READINESS_CONTEXT_VERSION,
   buildSessionReadinessContext,
   mergeSessionReadinessIntoMetadata,
+  mergeSessionReadinessOntoFormSavePayload,
   readSessionReadinessContext,
 } from './session-readiness-context';
 
@@ -93,5 +94,31 @@ describe('session-readiness-context', () => {
     >;
     expect(merged.foo).toBe('bar');
     expect(merged.session_readiness_context).toEqual(ctx);
+  });
+
+  it('mergeSessionReadinessOntoFormSavePayload overlays readiness without dropping outline', () => {
+    const ctx = buildSessionReadinessContext({
+      readiness: 7,
+      sleepQuality: 8,
+      soreness: ['Legs'],
+    });
+    const form = {
+      ai_workout_factory: { workout_set: { blocks: [{ name: 'Main' }] } },
+      exercises: [{ name: 'Squat' }],
+      duration_minutes: 45,
+    };
+    const override = mergeSessionReadinessIntoMetadata({ stale: true }, ctx);
+    const merged = mergeSessionReadinessOntoFormSavePayload(form, override);
+    expect(merged.ai_workout_factory).toEqual(form.ai_workout_factory);
+    expect(merged.exercises).toEqual(form.exercises);
+    expect(merged.duration_minutes).toBe(45);
+    expect(merged.session_readiness_context).toEqual(ctx);
+    expect(merged).not.toHaveProperty('stale');
+  });
+
+  it('mergeSessionReadinessOntoFormSavePayload leaves form unchanged when override lacks readiness', () => {
+    const form = { ai_workout_factory: { v: 1 }, exercises: [] };
+    const merged = mergeSessionReadinessOntoFormSavePayload(form, { foo: 1 });
+    expect(merged).toEqual(form);
   });
 });

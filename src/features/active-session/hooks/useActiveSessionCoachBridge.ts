@@ -34,6 +34,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 import type { GhostSetSnapshot } from '@/lib/workout-factory/ghost-set-snapshot';
 import { buildWorkoutCoachRailContext } from '@/lib/workout-factory/build-workout-coach-rail-context';
 import { readSessionReadinessContext } from '@/lib/workout-factory/session-readiness-context';
+import type { SessionReadinessContext } from '@/lib/workout-factory/session-readiness-context';
 import type { IntervalRowSnapshot } from '@/lib/workout-factory/interval-timer/types';
 import { parseMemberRole } from '@/lib/permissions';
 import { useUserProfileStore } from '@/store/userProfileStore';
@@ -261,6 +262,66 @@ export function useActiveSessionCoachBridge({
   const coachAuthUserId =
     coachAvailableAgents.find((a) => a.slug === CHAT_AREA_DEFAULT_AGENT_SLUG)?.auth_user_id ?? null;
 
+  /** Task metadata first; then refreshed DB row; fall back to newest thread message. */
+  const [taskReadinessFetch, setTaskReadinessFetch] = useState<{
+    status: 'pending' | 'resolved';
+    value: SessionReadinessContext | null;
+  }>({ status: 'pending', value: null });
+
+  useEffect(() => {
+    if (!enabled || !sourceTaskId.trim()) {
+      setTaskReadinessFetch({ status: 'pending', value: null });
+      return;
+    }
+
+    const fromSource = readSessionReadinessContext(sourceMetadata);
+    // SSR/prop already has readiness — resolve immediately; still refresh from DB below.
+    if (fromSource) {
+      setTaskReadinessFetch({ status: 'resolved', value: fromSource });
+    } else {
+      setTaskReadinessFetch({ status: 'pending', value: null });
+    }
+
+    let cancelled = false;
+    const supabase = createClient();
+    void supabase
+      .from('tasks')
+      .select('metadata')
+      .eq('id', sourceTaskId.trim())
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        // Fetch complete: value may be null (user skipped / not on task) — that is an explicit resolve.
+        const fromDb = !error && data ? readSessionReadinessContext(data.metadata) : null;
+        setTaskReadinessFetch({
+          status: 'resolved',
+          value: fromDb ?? fromSource,
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, sourceTaskId, sourceMetadata]);
+
+  const sessionReadinessContext = useMemo(() => {
+    const fromTask = readSessionReadinessContext(sourceMetadata);
+    if (fromTask) return fromTask;
+    if (taskReadinessFetch.status === 'resolved' && taskReadinessFetch.value) {
+      return taskReadinessFetch.value;
+    }
+    const msgs = messageThread.messages;
+    for (let i = msgs.length - 1; i >= 0; i -= 1) {
+      const fromMsg = readSessionReadinessContext(msgs[i]?.metadata);
+      if (fromMsg) return fromMsg;
+    }
+    if (taskReadinessFetch.status === 'resolved') return null;
+    return null;
+  }, [sourceMetadata, taskReadinessFetch, messageThread.messages]);
+
+  /** True once we know readiness is either present or explicitly absent (fetch finished / source had it). */
+  const sessionReadinessResolved =
+    readSessionReadinessContext(sourceMetadata) != null || taskReadinessFetch.status === 'resolved';
+
   /** Re-run try-sentinel when thread/coach gates transition from blocked → ready. */
   const sentinelAttemptGateKey = [
     sentinelDedupeKey,
@@ -272,6 +333,7 @@ export function useActiveSessionCoachBridge({
     messageThread.isLoading ? 'L' : 'R',
     sentinelFired ? 'F' : '0',
     coachAuthUserId ?? '',
+    sessionReadinessResolved ? 'RR' : 'RP',
   ].join(':');
 
   const coachSendMessageRef = useRef(messageThread.sendMessage);
@@ -289,6 +351,7 @@ export function useActiveSessionCoachBridge({
     isLoading: messageThread.isLoading,
     sentinelFired,
     hasCoachAgent: false,
+    sessionReadinessResolved: false,
   });
 
   useLayoutEffect(() => {
@@ -302,6 +365,7 @@ export function useActiveSessionCoachBridge({
       isLoading: messageThread.isLoading,
       sentinelFired,
       hasCoachAgent: coachAvailableAgents.some((a) => a.slug === CHAT_AREA_DEFAULT_AGENT_SLUG),
+      sessionReadinessResolved,
     };
   }, [
     canPostMessages,
@@ -313,19 +377,8 @@ export function useActiveSessionCoachBridge({
     messageThread.isLoading,
     sentinelFired,
     coachAvailableAgents,
+    sessionReadinessResolved,
   ]);
-
-  /** Task metadata first; fall back to newest thread message that already carries readiness. */
-  const sessionReadinessContext = useMemo(() => {
-    const fromTask = readSessionReadinessContext(sourceMetadata);
-    if (fromTask) return fromTask;
-    const msgs = messageThread.messages;
-    for (let i = msgs.length - 1; i >= 0; i -= 1) {
-      const fromMsg = readSessionReadinessContext(msgs[i]?.metadata);
-      if (fromMsg) return fromMsg;
-    }
-    return null;
-  }, [sourceMetadata, messageThread.messages]);
 
   const fireSentinel = useCallback(async () => {
     const workoutContext = resolveWorkoutContextForSentinel(
@@ -367,6 +420,8 @@ export function useActiveSessionCoachBridge({
         if (gate.isLoading) return false;
         if (gate.sentinelFired) return false;
         if (!gate.hasCoachAgent) return false;
+        // G5: wait until readiness is present or explicitly confirmed null.
+        if (!gate.sessionReadinessResolved) return false;
         return true;
       },
     };
@@ -461,6 +516,8 @@ export function useActiveSessionCoachBridge({
       if (gate.isLoading) return;
       if (gate.sentinelFired) return;
       if (!gate.hasCoachAgent) return;
+      // G5: do not try (and do not mark dedupe) until readiness resolve finishes.
+      if (!gate.sessionReadinessResolved) return;
 
       const threadMessages = messageThreadRef.current.messages;
       const coachUserId =

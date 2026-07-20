@@ -1,5 +1,6 @@
 'use client';
 
+import { createClient } from '@utils/supabase/client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PanelLeftClose } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -364,6 +365,16 @@ export function WorkoutCoachRail({
             if (readinessForSend) break;
           }
         }
+        // Last resort: read latest task.metadata (SSR/prop may be stale after preflight).
+        if (!readinessForSend && taskId.trim()) {
+          const supabase = createClient();
+          const { data: taskRow } = await supabase
+            .from('tasks')
+            .select('metadata')
+            .eq('id', taskId.trim())
+            .maybeSingle();
+          readinessForSend = readSessionReadinessContext(taskRow?.metadata);
+        }
         outboundCoachMetadata = appendActiveSessionFollowUpCoachMetadata(outboundCoachMetadata, {
           sessionId: sessionId.trim(),
           classInstanceId: classInstanceId ?? null,
@@ -371,21 +382,21 @@ export function WorkoutCoachRail({
         });
       }
 
+      const outboundMetadataForSend: Json | undefined =
+        activeAgent === 'coach'
+          ? sessionTelemetryBase != null
+            ? appendSessionTelemetryToCoachMessageMetadata(
+                outboundCoachMetadata,
+                attachElapsedToSessionTelemetry(sessionTelemetryBase, elapsedSec),
+              )
+            : (outboundCoachMetadata as Json)
+          : undefined;
+
       const sent = await sendMessage(
         finalMessageText,
         undefined,
         files,
-        activeAgent === 'coach'
-          ? {
-              metadata:
-                sessionTelemetryBase != null
-                  ? appendSessionTelemetryToCoachMessageMetadata(
-                      outboundCoachMetadata,
-                      attachElapsedToSessionTelemetry(sessionTelemetryBase, elapsedSec),
-                    )
-                  : (outboundCoachMetadata as Json),
-            }
-          : undefined,
+        outboundMetadataForSend !== undefined ? { metadata: outboundMetadataForSend } : undefined,
       );
       if (!sent) return false;
       exerciseMentionsPendingRef.current = [];
@@ -412,6 +423,7 @@ export function WorkoutCoachRail({
       classInstanceId,
       sessionReadinessContext,
       messages,
+      taskId,
     ],
   );
 

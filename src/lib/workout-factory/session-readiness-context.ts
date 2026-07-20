@@ -92,6 +92,24 @@ export function mergeSessionReadinessIntoMetadata(
   } satisfies Json;
 }
 
+/**
+ * Overlay only `session_readiness_context` onto the live form/DB save payload.
+ * Unlike `metadataMerge: 'full'`, this never replaces outline / factory / exercises.
+ * If the override has no valid readiness, returns the form base unchanged.
+ */
+export function mergeSessionReadinessOntoFormSavePayload(
+  activeFormMetadata: unknown,
+  readinessOverrideMetadata: unknown,
+): Record<string, unknown> {
+  const formBase = isRecord(activeFormMetadata) ? { ...activeFormMetadata } : {};
+  const ctx = readSessionReadinessContext(readinessOverrideMetadata);
+  if (!ctx) return formBase;
+  return {
+    ...formBase,
+    session_readiness_context: ctx,
+  };
+}
+
 /** Preflight subset of coach intake patch fields (for rail trim when factory exists). */
 export function preflightTaskModalLiveStateFields(patch: {
   wizard_step?: TaskModalIntakePatch['wizard_step'];

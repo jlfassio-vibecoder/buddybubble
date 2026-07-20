@@ -33,6 +33,7 @@ import {
 } from '@/lib/agents/coach/structural-effect-claim';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import { useActiveSessionLaunchFromTaskModal } from '@/hooks/use-active-session-launch-from-task-modal';
+import { buildActiveSessionUrl } from '@/lib/active-session/build-active-session-url';
 import { cn } from '@/lib/utils';
 import {
   isWorkoutLogInProgress,
@@ -1489,37 +1490,38 @@ export function TaskModal({
   });
 
   const handlePreflightSubmitAndLaunch = useCallback(async () => {
-    const payload = workoutIntake.buildPreflightPayload();
-    const mergedMetadata = mergeSessionReadinessIntoMetadata(
-      metadataRef.current,
-      buildSessionReadinessContext(payload),
-    );
-    setMetadata(mergedMetadata);
-
-    // `full` merge: outline-keys would drop session_readiness_context from the override.
-    if (coreDirty || !taskId) {
-      const ok = taskId
-        ? await saveCoreFields(mergedMetadata, { metadataMerge: 'full' })
-        : !!(await createTask());
-      if (!ok) return;
-    } else {
-      const ok = await saveCoreFields(mergedMetadata, { metadataMerge: 'full' });
-      if (!ok) return;
+    // Active Session launch requires an existing factory-backed task; never create-then-launch
+    // without a readiness overlay (createTask would drop merged readiness).
+    if (!taskId) {
+      toast.error('Save the workout card before starting Active Session.');
+      return;
     }
 
+    const payload = workoutIntake.buildPreflightPayload();
+    const readinessCtx = buildSessionReadinessContext(payload);
+    const mergedMetadata = mergeSessionReadinessIntoMetadata(metadataRef.current, readinessCtx);
+    setMetadata(mergedMetadata);
+
+    // Overlay only session_readiness_context onto the live form save payload — never `full`
+    // (which can wipe stale/incomplete outline from metadataRef).
+    const ok = await saveCoreFields(mergedMetadata, { metadataMerge: 'session-readiness' });
+    if (!ok) return;
+
+    // Keep ref in sync immediately so any subsequent form save cannot drop readiness.
+    metadataRef.current = mergedMetadata;
     setPreflightCompletedThisOpen(true);
     setPreflightDialogOpen(false);
-    activeSessionLaunch.handleLaunchClick();
+    // Note: Bypassing handleLaunchClick to prevent stale closure overwriting the session-readiness merge.
+    router.push(buildActiveSessionUrl(workspaceId, taskId, { from: 'modal' }));
   }, [
     workoutIntake.buildPreflightPayload,
     workoutIntake.readiness,
     workoutIntake.sleepQuality,
     workoutIntake.sorenessArray,
-    coreDirty,
     taskId,
     saveCoreFields,
-    createTask,
-    activeSessionLaunch.handleLaunchClick,
+    router,
+    workspaceId,
   ]);
 
   const handleActiveSessionLaunchClick = useCallback(() => {

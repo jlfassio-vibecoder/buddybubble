@@ -246,6 +246,18 @@ describe('buildBaseCoachPrompt', () => {
     expect(prompt).toContain('rich task_description');
   });
 
+  it('activeSessionLive omits Task Modal intake and Generate Workout ownership', () => {
+    const live = buildBaseCoachPrompt('2026-05-15', { activeSessionLive: true });
+    expect(live).not.toContain('TASK MODAL INTAKE PATCH');
+    expect(live).not.toContain('TASK MODAL LIVE STATE');
+    expect(live).not.toContain("click 'Generate Workout' on the card");
+    expect(live).toContain('Do NOT run Generate Workout intake');
+    expect(live).toContain('PRE-SESSION READINESS');
+    expect(live).toContain('execution_patch');
+    expect(live).toContain('Do not emit task_modal_intake_patch');
+    expect(live).toContain('Do NOT claim check-in data is unavailable');
+  });
+
   it('still names card_action and parametric hand-off in the base contract', () => {
     expect(prompt).toContain('block_format');
     expect(prompt).toContain('parametric_requires_rich_workout_set');
@@ -697,7 +709,7 @@ describe('resolveSessionReadinessForActiveSessionPrompt', () => {
 });
 
 describe('buildWorkoutOpenGreetingPrompt readiness', () => {
-  it('includes pre-session instructions when readiness block present', () => {
+  it('requires proactive safety/goal greeting when readiness block present', () => {
     const block = buildSessionReadinessContextBlock({
       v: 1,
       captured_at: '2026-05-28T10:00:00.000Z',
@@ -711,11 +723,28 @@ describe('buildWorkoutOpenGreetingPrompt readiness', () => {
       isoNow: '2026-06-25T14:00:00.000Z',
       sessionReadinessBlock: block,
     });
-    expect(prompt).toContain('pre-session check-in');
-    expect(prompt).toContain('Do NOT ask them to rate readiness');
+    expect(prompt).toContain('PRE-SESSION READINESS PRESENT');
+    expect(prompt).toContain('MUST NOT use a generic opening');
+    expect(prompt).toContain('Proactively state their energy');
+    expect(prompt).toContain('Explicitly offer to recommend specific rep or load adjustments');
+    expect(prompt).toContain('Do NOT ask them to re-rate readiness');
     expect(prompt).toContain(SESSION_READINESS_CONTEXT_HEADER);
-    expect(prompt).toContain('Do NOT use generic gym clichés');
-    expect(prompt).toContain('Close with ONE inviting question');
+    expect(prompt).toContain('CRITICAL JSON REQUIREMENT');
+    expect(prompt).toContain('{"reply_content":"Your greeting here."}');
+    expect(prompt).not.toContain('NO PRE-SESSION READINESS');
+  });
+
+  it('falls back to brief greeting + check-in when readiness absent', () => {
+    const prompt = buildWorkoutOpenGreetingPrompt({
+      workoutTitle: 'Leg Day',
+      isoNow: '2026-06-25T14:00:00.000Z',
+    });
+    expect(prompt).toContain('NO PRE-SESSION READINESS');
+    expect(prompt).toContain('quick check-in question');
+    expect(prompt).toContain('Do NOT invent energy, sleep, or soreness values');
+    expect(prompt).toContain('CRITICAL JSON REQUIREMENT');
+    expect(prompt).toContain('reply_content');
+    expect(prompt).not.toContain('PRE-SESSION READINESS PRESENT');
   });
 
   it('includes structure and telemetry blocks when provided', () => {

@@ -81,7 +81,14 @@ export function resolveCoachThinkingBudget(args: {
 
 /** Generation params for the workout-open silent-greeting preflight sub-call. */
 export const COACH_WORKOUT_GREETING_TEMPERATURE = 0.35 as const;
-export const COACH_WORKOUT_GREETING_MAX_OUTPUT_TOKENS = 512 as const;
+/**
+ * Visible JSON + Gemini 2.5 thinking share this budget. Keep headroom for a 3–6 sentence
+ * personalized greeting; pair with {@link COACH_WORKOUT_GREETING_THINKING_BUDGET} so thinking
+ * cannot starve `reply_content` mid-string (MAX_TOKENS → Unterminated string in JSON).
+ */
+export const COACH_WORKOUT_GREETING_MAX_OUTPUT_TOKENS = 2048 as const;
+/** Disable thinking on the short greeting JSON call so all tokens go to reply_content. */
+export const COACH_WORKOUT_GREETING_THINKING_BUDGET = 0 as const;
 
 /** Phase B: outline-only Vertex call (blocks array only). */
 export const COACH_OUTLINE_ONLY_MODEL = 'gemini-2.5-pro' as const;

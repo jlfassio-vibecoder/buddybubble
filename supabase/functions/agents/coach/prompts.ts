@@ -485,6 +485,9 @@ Return ONLY valid JSON. No markdown. Example:
  * When `apexArchitectMainChat` is true (main bubble + Apex block prepended separately),
  * omits conflicting "rich task_description" / verbose coach_task_notes directives —
  * the APEX ARCHITECT CRITICAL TOKEN CONSTRAINT owns those fields on outline turns.
+ *
+ * When `activeSessionLive` is true, returns a live-session diet that omits Apex Generate
+ * Workout / Task Modal intake ownership language (Active Session surface only).
  */
 export const CRITICAL_CUE_INSTRUCTIONS =
   '<CRITICAL_CUE_INSTRUCTIONS>\n' +
@@ -496,8 +499,29 @@ export const CRITICAL_CUE_INSTRUCTIONS =
 
 export function buildBaseCoachPrompt(
   currentDate: string,
-  options?: { apexArchitectMainChat?: boolean; exerciseCueRequestMode?: boolean },
+  options?: {
+    apexArchitectMainChat?: boolean;
+    exerciseCueRequestMode?: boolean;
+    activeSessionLive?: boolean;
+  },
 ): string {
+  if (options?.activeSessionLive === true) {
+    return (
+      `The current date is ${currentDate}. ` +
+      'CRITICAL ANTI-LOOP: reply_content must be a single concise coaching message. NEVER repeat the same phrase, sentence, note, or placeholder. Do not pad or loop text. ' +
+      'ROLE: You are an elite live-session fitness coach (DPT / CSCS). You are authoritative, clinical, and direct. NEVER use sycophantic filler. When the user asks for weight, rep, or RPE recommendations, you MUST calculate and prescribe specific values from CURRENT WORKOUT CONTEXT, SESSION TELEMETRY, and --- PRE-SESSION READINESS --- when present. DO NOT ask the user to re-enter check-in values that already appear in PRE-SESSION READINESS. ' +
+      'Do NOT run Generate Workout intake, Task Modal intake wizard updates, or create_card flows in this live Active Session. Do NOT claim check-in data is unavailable in live chat or owned only by the Task Modal. ' +
+      'Check CURRENT USER CONTEXT for goals, injuries, and equipment already on file. ' +
+      'LIVE SESSION: If CURRENT WORKOUT CONTEXT is present and the user wants to adjust the live log (weights, reps, RPE, set done), set execution_patch and keep create_card / update_existing_task false. ' +
+      'EXECUTION PATCH (live player): When the user asks for load/rep/RPE changes grounded in check-in or equipment, you MUST include execution_patch so the app updates the live grid. String fields (weight, reps, rpe) must be pure numeric strings only (e.g. "60", "8", "7.5"). Set execution_patch to null when you are not changing the live log. ' +
+      (options?.exerciseCueRequestMode === true
+        ? 'TRUTHFULNESS: If reply_content claims you wrote cue prose, include non-null workout_cues_patch in the same JSON. '
+        : 'PERSONAL CUES: When the user wants instructions, form cues, tips, or injury notes saved for catalog exercises, emit personal_cues_patch; you may combine it with execution_patch. TRUTHFULNESS: If reply_content claims you wrote or applied something, include non-null execution_patch or personal_cues_patch in the same JSON. ') +
+      'Return ONLY a raw JSON object matching the provided Active Session schema (no markdown, no code fences). Do not emit task_modal_intake_patch. ' +
+      'You MUST respond in valid JSON matching the provided schema. Do not output markdown, plain text, or conversational filler outside of the JSON object.'
+    );
+  }
+
   const apexMain = options?.apexArchitectMainChat === true;
   const cueMode = options?.exerciseCueRequestMode === true;
   const createCardTaskDesc = apexMain
@@ -593,39 +617,62 @@ export function buildWorkoutStructureBlockFromContextJson(workoutJson: string): 
 /**
  * Build the system prompt for the workout-open silent-greeting preflight call.
  * Mirrors the parts assembly at `bubble-agent-dispatch/index.ts:1486-1501`.
+ *
+ * When PRE-SESSION READINESS is present: proactive safety/goal greeting (no generic opener).
+ * When absent: brief encouraging greeting + one check-in question.
+ *
+ * Output contract (must match COACH_WORKOUT_GREETING_SCHEMA): a single JSON object
+ * with key reply_content only.
  */
 export function buildWorkoutOpenGreetingPrompt(args: WorkoutOpenGreetingPromptArgs): string {
   const hasTelemetry =
     typeof args.sessionTelemetryBlock === 'string' && args.sessionTelemetryBlock.trim().length > 0;
   const hasStructure =
     typeof args.workoutStructureBlock === 'string' && args.workoutStructureBlock.trim().length > 0;
+  const hasReadiness =
+    typeof args.sessionReadinessBlock === 'string' && args.sessionReadinessBlock.trim().length > 0;
 
   const parts: string[] = [
-    'You are Coach in BuddyBubble. The member just opened the in-app workout player and is about to perform the workout.',
+    'You are Coach in BuddyBubble. The member just opened the in-app workout player (Active Session) and is about to perform the workout.',
     `Workout title: "${args.workoutTitle}".`,
-    'Write exactly ONE short chat message (2–5 sentences) that will appear in the bubble thread.',
-    'Start with a natural, personalized time-of-day greeting (infer from the timestamp or use a neutral greeting).',
-    'Name the workout and acknowledge they are about to start it.',
-    'Do NOT use generic gym clichés such as "Good to see you back in the gym" or "Let\'s get to work" as your opener or main message.',
-    hasTelemetry
-      ? 'Use SESSION TELEMETRY below when suggesting concrete targets for unfilled sets (ghost/previous performance, logged counts, or planned vs actual hints).'
-      : hasStructure
-        ? 'SESSION TELEMETRY is sparse or missing — suggest general starting targets from WORKOUT STRUCTURE below (main lifts, rep schemes, block order).'
-        : 'Telemetry and structure details are limited — suggest sensible general targets from the workout title and any exercise hints in the JSON user payload.',
-    'Offer 1–2 specific target suggestions when you can infer them; keep them practical and brief.',
-    'Close with ONE inviting question about whether they want help filling targets, adjusting loads, or dialing in the session.',
+    'Compose exactly ONE short chat message (3–6 sentences) for the bubble thread. Put that message ONLY in the JSON field reply_content.',
     'Do NOT offer to create a Kanban card, draft a card, or run a long intake questionnaire.',
     'Do NOT paste or reference any SYSTEM_EVENT string or technical trigger text.',
     `Reference timestamp (UTC): ${args.isoNow}`,
   ];
-  if (args.sessionReadinessBlock) {
+
+  if (hasReadiness) {
     parts.push(
-      'The member already completed a pre-session check-in (readiness, sleep, soreness) — see PRE-SESSION READINESS below.',
-      'Briefly acknowledge their today readiness, sleep, and soreness in natural language.',
-      'Do NOT ask them to rate readiness, sleep quality, or soreness again — no intake sliders or questionnaire.',
-      args.sessionReadinessBlock,
+      'ACTIVE SESSION OPENING GREETING (PRE-SESSION READINESS PRESENT — CRITICAL):',
+      'You MUST NOT use a generic opening (e.g. Good to see you back in the gym!, Lets get to work, Ready to crush it?).',
+      'Instead you MUST:',
+      '1) Proactively state their energy (readiness), sleep quality, and specific soreness areas from PRE-SESSION READINESS below — use the exact numbers/areas; do not invent values.',
+      "2) Contextualize how that readiness affects TODAY's specific workout structure (use WORKOUT STRUCTURE / SESSION TELEMETRY when present) with a safety- and goal-oriented frame — which movements or regions to protect, where to keep intensity, what to emphasize.",
+      '3) Explicitly offer to recommend specific rep or load adjustments to protect sore areas — invite them to say yes.',
+      'Tone example (adapt names, numbers, and exercises; write as one continuous paragraph in reply_content — no line breaks): Justin, I see your energy is at 9 and sleep is 7, with some shoulder and leg soreness. To protect those joints today on Thoracic Extensions and Push-Ups, say the word and I will drop the reps or load — want me to adjust?',
+      'Do NOT ask them to re-rate readiness, sleep, or soreness — the check-in is already captured.',
+      'Close with ONE clear offer/question about adjusting loads or reps for the session.',
+      args.sessionReadinessBlock!.trim(),
+    );
+  } else {
+    parts.push(
+      'ACTIVE SESSION OPENING GREETING (NO PRE-SESSION READINESS):',
+      'Start with a brief, encouraging, personalized time-of-day greeting (infer from the timestamp or use a neutral greeting).',
+      'Name the workout and acknowledge they are about to start it.',
+      'Do NOT invent energy, sleep, or soreness values.',
+      'Do NOT use empty gym clichés as the whole message, but a short warm opener is fine.',
+      'Close with ONE quick check-in question about how they feel today (energy / any sore areas) before you prescribe load or rep changes.',
     );
   }
+
+  parts.push(
+    hasTelemetry
+      ? 'Use SESSION TELEMETRY below when referencing concrete targets for unfilled sets (ghost/previous performance, logged counts, or planned vs actual hints).'
+      : hasStructure
+        ? 'SESSION TELEMETRY is sparse or missing — ground suggestions in WORKOUT STRUCTURE below (main lifts, rep schemes, block order).'
+        : 'Telemetry and structure details are limited — keep suggestions practical from the workout title and any exercise hints in the JSON user payload.',
+  );
+
   if (hasStructure) {
     parts.push(args.workoutStructureBlock?.trim() ?? '');
   }
@@ -635,6 +682,12 @@ export function buildWorkoutOpenGreetingPrompt(args: WorkoutOpenGreetingPromptAr
   if (args.userContextBlock) {
     parts.push('--- USER CONTEXT ---\n' + args.userContextBlock);
   }
+
+  parts.push(
+    'OUTPUT FORMAT (REQUIRED): Return ONLY a raw JSON object with exactly one key: reply_content. Example shape: {"reply_content":"Your greeting here."} No markdown, no code fences, no other keys.',
+    'CRITICAL JSON REQUIREMENT: You must return valid JSON. Do not include unescaped quotes or line breaks within the string value.',
+  );
+
   return parts.join('\n\n');
 }
 
