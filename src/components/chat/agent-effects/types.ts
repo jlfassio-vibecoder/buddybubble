@@ -4,6 +4,7 @@ import type { TaskModalIntakePatch } from '@/lib/agents/coach/task-modal-intake-
 import type { OutlineDraftAppliedV1 } from '@/lib/agents/coach/outline-draft-patch';
 import type { WorkoutCuesPatchV1 } from '@/lib/agents/coach/workout-cues-patch';
 import type { CoachStructuralPatchOp } from '@/lib/agents/_shared/workout-metadata/structural-patch-types';
+import type { ProposedWorkoutMetadataView } from '@/lib/agents/coach/proposed-workout-metadata-view';
 
 export type AgentEffectContext = {
   taskId: string;
@@ -61,7 +62,7 @@ export type WorkoutCuesPatchEffectPayload = AgentEffectContext & {
 };
 
 export type ProposedWorkoutMetadataEffectPayload = AgentEffectContext & {
-  proposed: Record<string, unknown>;
+  proposed: ProposedWorkoutMetadataView;
 };
 
 export type StructuralPatchEffectPayload = AgentEffectContext & {

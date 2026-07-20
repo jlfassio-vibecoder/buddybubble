@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { applyCoachPatchToCanvas, mergeCoachPrescriptionIntoDraft } from './coach-structural-patch';
+import {
+  applyCoachPatchToCanvas,
+  coachNotesOnlyStructuralOps,
+  mergeCoachPrescriptionIntoDraft,
+} from './coach-structural-patch';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 import type { Exercise } from '@/lib/workout-factory/types/ai-program';
 
@@ -87,6 +91,28 @@ describe('applyCoachPatchToCanvas', () => {
       { block_id: 'missing-block', exercise_id: 'x', reps: '99' },
     ]);
     expect(next).toBe(current);
+  });
+
+  it('applies coach_notes when block_id is a placeholder but exercise_id matches', () => {
+    const pushId = 'f527f52f-38f7-4306-aff3-9dde4a957371';
+    const current = [
+      makeBlock('main-1-0', 'MAIN — EMOM', [
+        makeExercise(pushId, 'Band Resisted Push-Ups', '10'),
+        makeExercise('main-1-0:e1', 'Band Face Pulls', '12'),
+      ]),
+    ];
+    const next = applyCoachPatchToCanvas(current, [
+      {
+        block_id: 'main_emom_block_id',
+        exercise_id: pushId,
+        coach_notes: 'Avoid the band rolling up to the back of the neck.',
+      },
+    ]);
+    expect(next).not.toBe(current);
+    expect(next[0]!.exercises[0]!.coachNotes).toBe(
+      'Avoid the band rolling up to the back of the neck.',
+    );
+    expect(next[0]!.exercises[1]).toBe(current[0]!.exercises[1]);
   });
 
   it('add_exercise appends a new exercise without rewriting sibling blocks', () => {
@@ -190,5 +216,51 @@ describe('mergeCoachPrescriptionIntoDraft', () => {
     }
     expect(next[1]!.exercises[0]!.rpe).toBeUndefined();
     expect(next[0]!.name).toBe(draft[0]!.name);
+  });
+
+  it('notesOnly copies coachNotes without overwriting local rpe', () => {
+    const draft = largeWorkout().map((b, bi) =>
+      bi !== 0
+        ? b
+        : {
+            ...b,
+            exercises: b.exercises.map((ex, i) =>
+              i === 0 ? { ...ex, rpe: 9, coachNotes: '' } : ex,
+            ),
+          },
+    );
+    const source = draft.map((b, bi) =>
+      bi !== 0
+        ? b
+        : {
+            ...b,
+            exercises: b.exercises.map((ex, i) =>
+              i === 0 ? { ...ex, rpe: 5, coachNotes: 'Feel serratus along the ribcage.' } : ex,
+            ),
+          },
+    );
+
+    const next = mergeCoachPrescriptionIntoDraft(draft, source, { notesOnly: true });
+    expect(next[0]!.exercises[0]!.rpe).toBe(9);
+    expect(next[0]!.exercises[0]!.coachNotes).toBe('Feel serratus along the ribcage.');
+  });
+
+  it('coachNotesOnlyStructuralOps strips sibling prescription fields', () => {
+    const narrowed = coachNotesOnlyStructuralOps([
+      {
+        block_id: 'main-1-0',
+        exercise_id: 'main-1-0:e0',
+        coach_notes: 'Brace hard.',
+        rpe: 8,
+        sets: 5,
+      },
+    ]);
+    expect(narrowed).toEqual([
+      {
+        block_id: 'main-1-0',
+        exercise_id: 'main-1-0:e0',
+        coach_notes: 'Brace hard.',
+      },
+    ]);
   });
 });

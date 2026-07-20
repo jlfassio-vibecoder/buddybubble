@@ -113,8 +113,9 @@ import {
   cardActionForRpc,
   CoachGeminiJsonResponse,
   executionPatchForRpc,
-  parseCoachJson,
+  safeParseCoachJson,
   personalCuesPatchForRpc,
+  type ProposedWorkoutMetadataView,
   stripMarkdownCodeFences,
   taskModalIntakePatchForRpc,
   workoutCuesPatchForRpc,
@@ -188,7 +189,15 @@ import {
 import {
   readInjuriesOnFileFromBiometrics,
   resolveExerciseCueRequestForDispatch,
+  messageRequestsCoachNotes,
+  structuralPatchIsEmptyCoachNotesClaim,
 } from './exercise-cue-request.ts';
+import {
+  coerceCoachNotesIntent,
+  finalizeCoachNotesStructuralPatch,
+  findLatestPriorAgentReplyForCoachNotes,
+  buildCoachNotesNameSearchText,
+} from './coerce-coach-notes-intent.ts';
 import { coalesceWorkoutCuesPatchFromPersonalFallback } from './workout-cues-patch.ts';
 import { buildTaskMetadataDeltaForWorkoutCuePatch } from './workout-cue-metadata-merge.ts';
 
@@ -209,6 +218,7 @@ type CoachExtras = {
   outlineCoPilotActive?: boolean;
   triggerOutlineRevision?: number | null;
   exerciseCueRequestActive?: boolean;
+  coachNotesRequestActive?: boolean;
 };
 
 const FALLBACK_WORKOUT_GREETING = "Good to see you back in the gym! Let's get to work.";
@@ -255,6 +265,7 @@ function readCoachExtras(ctx: DispatchContext): CoachExtras {
         ? Math.max(0, Math.floor(raw.triggerOutlineRevision))
         : null,
     exerciseCueRequestActive: raw.exerciseCueRequestActive === true,
+    coachNotesRequestActive: raw.coachNotesRequestActive === true,
   };
 }
 
@@ -670,6 +681,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       ctx.message.metadata,
       ctx.history,
       ctx.agent.auth_user_id,
+      typeof ctx.message.content === 'string' ? ctx.message.content : null,
     );
 
     writeCoachExtras(ctx, {
@@ -822,6 +834,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
           ctx.message.metadata,
           ctx.history,
           ctx.agent.auth_user_id,
+          typeof ctx.message.content === 'string' ? ctx.message.content : null,
         )
       : null;
     if (cueReq) {
@@ -855,6 +868,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       ctx.message.metadata,
       ctx.history,
       ctx.agent.auth_user_id,
+      typeof ctx.message.content === 'string' ? ctx.message.content : null,
     );
     if (cueReq) return COACH_EXERCISE_CUE_RESPONSE_SCHEMA;
     // Hard prune: when CURRENT WORKOUT CONTEXT is injected, Vertex must not see
@@ -891,7 +905,11 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       throw new Error('gemini_empty_response');
     }
     const dict = readCoachExtras(ctx).exerciseDictionaryByIndex ?? undefined;
-    const out = parseCoachJson(text, dict ?? undefined);
+    const parsed = safeParseCoachJson(text, dict ?? undefined);
+    if (!parsed.success) {
+      throw new Error(parsed.error);
+    }
+    const out = parsed.data;
     if (out.task_modal_intake_dropped.length > 0) {
       const tuples = out.task_modal_intake_dropped.slice(0, 20).map((d) => ({
         field: d.field,
@@ -1104,6 +1122,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       ctx.message.metadata,
       ctx.history,
       ctx.agent.auth_user_id,
+      typeof ctx.message.content === 'string' ? ctx.message.content : null,
     );
     const coalescedWorkoutCuesPatch = coalesceWorkoutCuesPatchFromPersonalFallback({
       workoutCuesPatch: parsed.workout_cues_patch,
@@ -1139,6 +1158,16 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       });
     }
 
+    const blockBlueprintMentions = parseBlockBlueprintMentionsFromMetadata(ctx.message.metadata);
+    const messageText = typeof ctx.message.content === 'string' ? ctx.message.content : '';
+    const coachNotesRequestActive = messageRequestsCoachNotes(messageText);
+    writeCoachExtras(ctx, { ...extras, coachNotesRequestActive });
+    const priorAgentReplyForNotes = coachNotesRequestActive
+      ? findLatestPriorAgentReplyForCoachNotes(ctx.history, ctx.agent.auth_user_id, ctx.message.id)
+      : null;
+    const coachNotesNameSearch = coachNotesRequestActive
+      ? buildCoachNotesNameSearchText(messageText, ctx.history, ctx.agent.auth_user_id)
+      : messageText;
     const fragment: CoachGuardsFragment = {
       knownTargetTaskId: extras.knownTargetTaskId,
       currentWorkoutContextJson: extras.currentWorkoutContextJson,
@@ -1146,10 +1175,8 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       isActiveWorkoutSession,
       outlineCoPilotActive: extras.outlineCoPilotActive === true,
       exerciseCueRequestActive: extras.exerciseCueRequestActive === true,
+      coachNotesRequestActive,
     };
-
-    const blockBlueprintMentions = parseBlockBlueprintMentionsFromMetadata(ctx.message.metadata);
-    const messageText = typeof ctx.message.content === 'string' ? ctx.message.content : '';
     const patchDropReasons = parsed.outline_draft_patch_drops.map((d) => String(d.reason));
     let toGuard = parsedForGuards;
     if (
@@ -1189,6 +1216,29 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       }
     }
 
+    toGuard = coerceCoachNotesIntent({
+      parsed: toGuard,
+      triggerContent: messageText,
+      currentWorkoutContextJson: extras.currentWorkoutContextJson,
+      priorAgentReply: priorAgentReplyForNotes,
+      nameSearchText: coachNotesNameSearch,
+      mergeBase: extras.taskMetadataForContext,
+    });
+    if (
+      fragment.coachNotesRequestActive &&
+      toGuard.structural_patch != null &&
+      toGuard.structural_patch.some(
+        (op) => typeof op.coach_notes === 'string' && op.coach_notes.trim().length > 0,
+      )
+    ) {
+      log('info', 'coach notes intent coerced to structural_patch', {
+        request_id: ctx.requestId,
+        slug: COACH_SLUG,
+        message_id: ctx.message.id,
+        patch_count: toGuard.structural_patch.length,
+      });
+    }
+
     let out = applyCoachServerGuards(toGuard, fragment);
 
     const cuePatchTurn =
@@ -1209,7 +1259,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
           update_existing_task: true,
           proposed_workout_metadata: {
             ...(out.proposed_workout_metadata ?? {}),
-            blocks: mergedBlocks,
+            blocks: mergedBlocks as ProposedWorkoutMetadataView['blocks'],
           },
         };
       }
@@ -1490,10 +1540,45 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
           extras.taskMetadataForContext ?? {},
           extras.currentWorkoutContextJson,
         );
-        const { metadata, touched } = applyStructuralPatchToTaskMetadata(
-          mergeBase,
-          payload.structural_patch,
-        );
+        const triggerText = typeof ctx.message.content === 'string' ? ctx.message.content : '';
+        let structuralOps = payload.structural_patch!;
+        const coachNotesIntent =
+          messageRequestsCoachNotes(triggerText) ||
+          structuralPatchIsEmptyCoachNotesClaim(parsed.reply_content, structuralOps);
+        // Coach-notes: resolve against the real DB merge base (id/name), not address-map only.
+        if (coachNotesIntent) {
+          const finalized = finalizeCoachNotesStructuralPatch({
+            mergeBase,
+            triggerContent: triggerText,
+            structuralPatch: structuralOps,
+            workoutCuesPatch: parsed.workout_cues_patch,
+            priorAgentReply: findLatestPriorAgentReplyForCoachNotes(
+              ctx.history,
+              ctx.agent.auth_user_id,
+              ctx.message.id,
+            ),
+            nameSearchText: buildCoachNotesNameSearchText(
+              triggerText,
+              ctx.history,
+              ctx.agent.auth_user_id,
+            ),
+          });
+          if (!finalized) {
+            console.error('[coach] coach notes finalize failed against merge base', {
+              request_id: ctx.requestId,
+              message_id: ctx.message.id,
+              patch_preview: structuralOps.slice(0, 3).map((op) => ({
+                block_id: op.block_id,
+                exercise_id: op.exercise_id ?? null,
+                keys: Object.keys(op),
+              })),
+            });
+            throw { kind: 'self_attestation_mismatch' as const };
+          }
+          structuralOps = finalized;
+          payload.structural_patch = finalized;
+        }
+        const { metadata, touched } = applyStructuralPatchToTaskMetadata(mergeBase, structuralOps);
         if (touched) {
           pNewMeta = metadata;
           mergeExerciseBlocksTouched = true;
@@ -1502,14 +1587,14 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
             request_id: ctx.requestId,
             slug: COACH_SLUG,
             message_id: ctx.message.id,
-            patch_count: payload.structural_patch!.length,
+            patch_count: structuralOps.length,
           });
         } else {
           console.error('[coach] structural_patch produced no metadata touch', {
             request_id: ctx.requestId,
             message_id: ctx.message.id,
-            patch_count: payload.structural_patch!.length,
-            patch_preview: payload.structural_patch!.slice(0, 3).map((op) => ({
+            patch_count: structuralOps.length,
+            patch_preview: structuralOps.slice(0, 3).map((op) => ({
               block_id: op.block_id,
               exercise_id: op.exercise_id ?? null,
               keys: Object.keys(op),
@@ -1519,8 +1604,12 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
             request_id: ctx.requestId,
             slug: COACH_SLUG,
             message_id: ctx.message.id,
-            patch_count: payload.structural_patch!.length,
+            patch_count: structuralOps.length,
           });
+          // Never claim coach notes were written when the patch did not touch metadata.
+          if (coachNotesIntent) {
+            throw { kind: 'self_attestation_mismatch' as const };
+          }
         }
       }
 

@@ -1,11 +1,13 @@
 import type { Json } from '@/types/database';
+import type { ProposedWorkoutMetadataView } from '@/lib/agents/coach/proposed-workout-metadata-view';
+import { coerceProposedWorkoutMetadataView } from '@/lib/agents/coach/proposed-workout-metadata-view';
 
 /** Stored under `messages.metadata.coach_draft` for coach workout proposals. */
 export type CoachDraftPayload = {
   status: 'pending' | 'accepted' | 'superseded';
   proposed_title: string | null;
   proposed_description: string | null;
-  proposed_metadata: Record<string, unknown>;
+  proposed_metadata: ProposedWorkoutMetadataView;
   target_task_id: string;
   accepted_at?: string;
   accepted_by?: string;
@@ -21,9 +23,7 @@ export function parseCoachDraftFromMessageMetadata(metadata: unknown): CoachDraf
   if (status !== 'pending' && status !== 'accepted' && status !== 'superseded') return null;
   const target = typeof d.target_task_id === 'string' ? d.target_task_id.trim() : '';
   if (!target) return null;
-  const pm = d.proposed_metadata;
-  const proposed_metadata =
-    pm && typeof pm === 'object' && !Array.isArray(pm) ? (pm as Record<string, unknown>) : {};
+  const proposed_metadata = coerceProposedWorkoutMetadataView(d.proposed_metadata) ?? {};
   return {
     status,
     proposed_title: typeof d.proposed_title === 'string' ? d.proposed_title : null,

@@ -59,8 +59,12 @@ import type {
   CoachStructuralFormatParams,
   CoachStructuralPatchOp,
 } from '../../_shared/workout-metadata/structural-patch-types.ts';
+import {
+  asProposedWorkoutMetadataView,
+  type ProposedWorkoutMetadataView,
+} from './proposed-workout-metadata-view.ts';
 
-export type { WorkoutCuesPatchV1, CoachStructuralPatchOp };
+export type { WorkoutCuesPatchV1, CoachStructuralPatchOp, ProposedWorkoutMetadataView };
 export { workoutCuesPatchForRpc };
 
 /**
@@ -86,7 +90,7 @@ export type CoachGeminiJsonResponse = {
   /** When create_card, optional body for task comment seed (null otherwise). */
   coach_task_notes: string | null;
   /** When update_existing_task: structured fields merged into tasks.metadata on finalize (exercises, workout_type, duration_min). */
-  proposed_workout_metadata: Record<string, unknown> | null;
+  proposed_workout_metadata: ProposedWorkoutMetadataView | null;
   /** Blocks dropped during parseProposedWorkoutMetadata (unknown format or invalid shape). */
   proposed_workout_metadata_drops: BlockShapeDrop[];
   /**
@@ -141,6 +145,15 @@ export type CoachGeminiJsonResponse = {
    */
   workout_cues_patch: WorkoutCuesPatchV1 | null;
 };
+
+/** Result shape for {@link safeParseCoachJson} (Zod `.safeParse` analogue). */
+export type ParseCoachJsonResult =
+  | { success: true; data: CoachGeminiJsonResponse }
+  | {
+      success: false;
+      error: 'gemini_json_parse_failed' | 'gemini_invalid_json_shape';
+      detail?: string;
+    };
 
 export type CoachCardActionKind = 'trigger_generation' | 'regenerate_from_outline';
 
@@ -469,7 +482,7 @@ export function parseOutlineDraftPatchFromGemini(raw: unknown): {
 
 /** Normalizes Gemini `proposed_workout_metadata` with block-level drop telemetry. */
 export function parseProposedWorkoutMetadataWithDrops(parsed: Record<string, unknown>): {
-  meta: Record<string, unknown>;
+  meta: ProposedWorkoutMetadataView;
   drops: BlockShapeDrop[];
 } {
   const drops: BlockShapeDrop[] = [];
@@ -496,13 +509,13 @@ export function parseProposedWorkoutMetadataWithDrops(parsed: Record<string, unk
   if (o.replace_all_exercise_blocks === true) {
     out.replace_all_exercise_blocks = true;
   }
-  return { meta: out, drops };
+  return { meta: asProposedWorkoutMetadataView(out), drops };
 }
 
 /** Normalizes Gemini `proposed_workout_metadata` for `tasks.metadata` merge on finalize. */
 export function parseProposedWorkoutMetadata(
   parsed: Record<string, unknown>,
-): Record<string, unknown> {
+): ProposedWorkoutMetadataView {
   return parseProposedWorkoutMetadataWithDrops(parsed).meta;
 }
 
@@ -899,27 +912,25 @@ export function parseCardActionTriggerGenerationFromGemini(
 }
 
 /**
- * Parse a Coach JSON-mode response text into the normalized shape every guard /
- * persister consumes. Throws `Error('gemini_json_parse_failed')` when the body is not
- * JSON and `Error('gemini_invalid_json_shape')` when required keys are missing or
- * empty. Preserves the legacy contract — see
- * `_shared/llm/vertex-gemini.classifyError` for the dispatcher's mapping.
+ * Result-shaped top-level parser (safe boundary). Soft-fails nested patches inside
+ * {@link CoachGeminiJsonResponse}; only top-level JSON / required-shape failures return
+ * `success: false`.
  */
-export function parseCoachJson(
+export function safeParseCoachJson(
   text: string,
   exerciseDictionaryByIndex?: Readonly<Record<number, ExerciseDictionaryIndexEntry | null>>,
-): CoachGeminiJsonResponse {
+): ParseCoachJsonResult {
   const cleanText = stripMarkdownCodeFences(text);
   let parsed: Record<string, unknown>;
   try {
     parsed = JSON.parse(cleanText) as Record<string, unknown>;
   } catch {
-    throw new Error('gemini_json_parse_failed');
+    return { success: false, error: 'gemini_json_parse_failed' };
   }
   const replyContent = typeof parsed.reply_content === 'string' ? parsed.reply_content : null;
   const createCard = typeof parsed.create_card === 'boolean' ? parsed.create_card : null;
   if (!replyContent?.trim() || createCard === null) {
-    throw new Error('gemini_invalid_json_shape');
+    return { success: false, error: 'gemini_invalid_json_shape' };
   }
 
   const rawTitle = parsed.task_title;
@@ -1007,58 +1018,82 @@ export function parseCoachJson(
   if (createCard) {
     const titleTrimmed = typeof rawTitle === 'string' ? rawTitle.trim() : '';
     if (!titleTrimmed) {
-      throw new Error('gemini_invalid_json_shape');
+      return { success: false, error: 'gemini_invalid_json_shape', detail: 'empty_task_title' };
     }
     return {
+      success: true,
+      data: {
+        reply_content: replyContent,
+        create_card: true,
+        task_title: titleTrimmed,
+        task_description: rawDesc,
+        coach_task_notes: ensureCoachTaskNotesCta(parseCoachTaskNotes(parsed.coach_task_notes)),
+        proposed_workout_metadata: null,
+        proposed_workout_metadata_drops: [],
+        coach_workout_outline,
+        coach_workout_outline_drops,
+        structural_patch: null,
+        execution_patch,
+        task_modal_intake_patch,
+        task_modal_intake_dropped,
+        personal_cues_resolved,
+        personal_cues_dropped_unanchored,
+        personal_cues_unanchored_drops,
+        card_action: null,
+        outline_draft_patch,
+        outline_draft_patch_drops,
+        workout_cues_patch: null,
+        ...intakeTail,
+        ...updateTail,
+      },
+    };
+  }
+
+  return {
+    success: true,
+    data: {
       reply_content: replyContent,
-      create_card: true,
-      task_title: titleTrimmed,
-      task_description: rawDesc,
-      coach_task_notes: ensureCoachTaskNotesCta(parseCoachTaskNotes(parsed.coach_task_notes)),
-      proposed_workout_metadata: null,
-      proposed_workout_metadata_drops: [],
+      create_card: false,
+      task_title: null,
+      task_description: null,
+      coach_task_notes: null,
+      proposed_workout_metadata: proposedMetaOrNull,
+      proposed_workout_metadata_drops,
       coach_workout_outline,
       coach_workout_outline_drops,
-      structural_patch: null,
+      structural_patch,
       execution_patch,
       task_modal_intake_patch,
       task_modal_intake_dropped,
       personal_cues_resolved,
       personal_cues_dropped_unanchored,
       personal_cues_unanchored_drops,
-      card_action: null,
+      card_action,
       outline_draft_patch,
       outline_draft_patch_drops,
-      workout_cues_patch: null,
+      workout_cues_patch,
       ...intakeTail,
       ...updateTail,
-    };
-  }
-
-  return {
-    reply_content: replyContent,
-    create_card: false,
-    task_title: null,
-    task_description: null,
-    coach_task_notes: null,
-    proposed_workout_metadata: proposedMetaOrNull,
-    proposed_workout_metadata_drops,
-    coach_workout_outline,
-    coach_workout_outline_drops,
-    structural_patch,
-    execution_patch,
-    task_modal_intake_patch,
-    task_modal_intake_dropped,
-    personal_cues_resolved,
-    personal_cues_dropped_unanchored,
-    personal_cues_unanchored_drops,
-    card_action,
-    outline_draft_patch,
-    outline_draft_patch_drops,
-    workout_cues_patch,
-    ...intakeTail,
-    ...updateTail,
+    },
   };
+}
+
+/**
+ * Top-level parser. Takes the extracted Gemini candidate text and returns the shape the
+ * persister consumes. Throws `Error('gemini_json_parse_failed')` when the body is not
+ * JSON and `Error('gemini_invalid_json_shape')` when required keys are missing or
+ * empty. Preserves the legacy contract — see
+ * `_shared/llm/vertex-gemini.classifyError` for the dispatcher's mapping.
+ */
+export function parseCoachJson(
+  text: string,
+  exerciseDictionaryByIndex?: Readonly<Record<number, ExerciseDictionaryIndexEntry | null>>,
+): CoachGeminiJsonResponse {
+  const result = safeParseCoachJson(text, exerciseDictionaryByIndex);
+  if (!result.success) {
+    throw new Error(result.error);
+  }
+  return result.data;
 }
 
 /** Versioned payload for `p_card_action` on agent RPCs (or null when empty). */

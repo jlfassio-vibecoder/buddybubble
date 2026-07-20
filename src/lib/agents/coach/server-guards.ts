@@ -42,7 +42,7 @@ import { sanitizeOutlinePatchBlocks } from './outline-block-name-sanitize';
 
 /** Tight English phrase set: model claimed a write without structured output → fallback. */
 const SELF_ATTESTATION_PHRASE_RE =
-  /\b(i['']?ve\s+(updated|added|now\s+updated)|i\s+added|applied\s+to\s+your\s+card|written\s+to\s+your\s+card|pushed\s+(those\s+)?changes\s+to\s+(the\s+)?card|saved\s+(it|them)\s+to\s+your\s+(card|workout)|finalize(d)?\s+(the\s+)?(card|workout)\s+update)\b/i;
+  /\b(i['']?ve\s+(updated|added|now\s+updated)|i\s+have\s+added|i\s+added|i['']?m\s+adding|i['']?ll\s+add|adding\s+(that|it|them|the|those)\b|added\s+(that|it|them|the)\s+to\s+(the\s+)?coach\s+notes|applied\s+to\s+your\s+card|written\s+to\s+your\s+card|pushed\s+(those\s+)?changes\s+to\s+(the\s+)?card|saved\s+(it|them)\s+to\s+your\s+(card|workout)|finalize(d)?\s+(the\s+)?(card|workout)\s+update)\b/i;
 
 /** Outline co-pilot: prose claims a structure write without `outline_draft_patch`. */
 const OUTLINE_STRUCTURE_CLAIM_RE =
@@ -175,6 +175,8 @@ export type CoachGuardsFragment = {
   outlineCoPilotActive: boolean;
   /** True when EXERCISE_CUE_REQUEST flow is active for this dispatch. */
   exerciseCueRequestActive: boolean;
+  /** True when the user asked to write exercise coach notes (not cue fields). */
+  coachNotesRequestActive: boolean;
 };
 
 /**
@@ -323,7 +325,10 @@ export function applyCoachServerGuards(
   }
 
   // Guard 7: Exercise-cue flow — cue-only edits must not regenerate full workout metadata.
-  if (fragment.exerciseCueRequestActive || parsed.workout_cues_patch != null) {
+  // Coach-notes intent keeps structural_patch; cues must not strip notes writes.
+  if (fragment.coachNotesRequestActive) {
+    // no-op: structural notes path wins
+  } else if (fragment.exerciseCueRequestActive || parsed.workout_cues_patch != null) {
     proposedWorkoutMetadata = null;
     structuralPatch = null;
     personalCuesResolved = null;

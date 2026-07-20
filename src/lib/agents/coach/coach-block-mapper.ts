@@ -15,6 +15,7 @@ import {
   classifyBlockRole,
   mergeCoachProposedIntoTaskMetadata,
 } from '@/lib/agents/_shared/workout-metadata/merge-coach-proposed-into-task-metadata';
+import type { ProposedWorkoutMetadataView } from '@/lib/agents/coach/proposed-workout-metadata-view';
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return v != null && typeof v === 'object' && !Array.isArray(v);
@@ -164,12 +165,12 @@ export function mapCoachBlocksToCanvas(coachBlocks: unknown[]): WorkoutSessionBl
  * project the full rich session to canvas blocks (delta-safe).
  */
 export function mapCoachProposedToCanvasBlocks(args: {
-  proposed: Record<string, unknown>;
+  proposed: ProposedWorkoutMetadataView;
   baseMetadata: unknown;
 }): WorkoutSessionBlockView[] {
   const { metadata } = mergeCoachProposedIntoTaskMetadata({
     base: args.baseMetadata,
-    proposed: args.proposed,
+    proposed: args.proposed as Record<string, unknown>,
   });
   return buildWorkoutSessionViewModel(metadata as Json).blocks;
 }

@@ -61,6 +61,20 @@ function findCanvasExerciseIndex(block: WorkoutSessionBlockView, patchExerciseId
   });
 }
 
+/** When Gemini invents a placeholder block_id, still locate the row by exercise_id. */
+function findCanvasBlockIndexByExerciseId(
+  blocks: readonly WorkoutSessionBlockView[],
+  patchExerciseId: string,
+): number {
+  const want = patchExerciseId.trim();
+  if (!want) return -1;
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i]!;
+    if (findCanvasExerciseIndex(block, want) >= 0) return i;
+  }
+  return -1;
+}
+
 function mergeExerciseFields(ex: Exercise, op: CoachStructuralPatchOp): Exercise {
   const next: Exercise = { ...ex };
   if (typeof op.name === 'string' && op.name.trim()) {
@@ -179,9 +193,15 @@ export function applyCoachPatchToCanvas(
 
   for (const op of patches) {
     const patchBlockId = typeof op.block_id === 'string' ? op.block_id.trim() : '';
-    if (!patchBlockId) continue;
+    const exerciseId =
+      typeof op.exercise_id === 'string' && op.exercise_id.trim() ? op.exercise_id.trim() : null;
 
-    const blockIndex = findCanvasBlockIndex(out, patchBlockId);
+    let blockIndex = patchBlockId ? findCanvasBlockIndex(out, patchBlockId) : -1;
+    // Model often emits placeholder block ids (e.g. "main_emom_block_id") with a real
+    // exercise UUID — fall back to exercise_id scan so coach_notes still lands.
+    if (blockIndex < 0 && exerciseId) {
+      blockIndex = findCanvasBlockIndexByExerciseId(out, exerciseId);
+    }
     if (blockIndex < 0) continue;
 
     const block = out[blockIndex]!;
@@ -194,22 +214,17 @@ export function applyCoachPatchToCanvas(
       const added = buildAddedExercise(block.id, block.exercises.length, op);
       if (!added) continue;
       nextBlock = { ...block, exercises: [...block.exercises, added] };
+    } else if (exerciseId) {
+      const exIndex = findCanvasExerciseIndex(block, exerciseId);
+      if (exIndex < 0) continue;
+      const merged = mergeExerciseFields(block.exercises[exIndex]!, op);
+      if (merged === block.exercises[exIndex]) continue;
+      const nextExercises = block.exercises.slice();
+      nextExercises[exIndex] = merged;
+      nextBlock = { ...block, exercises: nextExercises };
     } else {
-      const exerciseId =
-        typeof op.exercise_id === 'string' && op.exercise_id.trim() ? op.exercise_id.trim() : null;
-
-      if (exerciseId) {
-        const exIndex = findCanvasExerciseIndex(block, exerciseId);
-        if (exIndex < 0) continue;
-        const merged = mergeExerciseFields(block.exercises[exIndex]!, op);
-        if (merged === block.exercises[exIndex]) continue;
-        const nextExercises = block.exercises.slice();
-        nextExercises[exIndex] = merged;
-        nextBlock = { ...block, exercises: nextExercises };
-      } else {
-        nextBlock = mergeBlockLevel(block, op);
-        if (nextBlock === block) continue;
-      }
+      nextBlock = mergeBlockLevel(block, op);
+      if (nextBlock === block) continue;
     }
 
     if (!arrayCloned) {
@@ -222,6 +237,14 @@ export function applyCoachPatchToCanvas(
   return out;
 }
 
+export type MergeCoachPrescriptionOptions = {
+  /**
+   * When true, only copy `coachNotes` (safe while the draft is dirty — does not
+   * overwrite local sets/reps/rpe keystrokes). Full prescription is for pristine edit.
+   */
+  notesOnly?: boolean;
+};
+
 /**
  * Write-through Coach prescription fields from saved/source blocks into an open edit draft.
  * Mirrors Active Session applying execution_patch onto live draft logs without leaving edit mode.
@@ -231,9 +254,11 @@ export function applyCoachPatchToCanvas(
 export function mergeCoachPrescriptionIntoDraft(
   draftBlocks: WorkoutSessionBlockView[],
   sourceBlocks: readonly WorkoutSessionBlockView[],
+  options?: MergeCoachPrescriptionOptions,
 ): WorkoutSessionBlockView[] {
   if (!Array.isArray(draftBlocks) || draftBlocks.length === 0) return draftBlocks;
   if (!Array.isArray(sourceBlocks) || sourceBlocks.length === 0) return draftBlocks;
+  const notesOnly = options?.notesOnly === true;
 
   const sourceById = new Map<string, WorkoutSessionBlockView>();
   for (const b of sourceBlocks) {
@@ -255,6 +280,7 @@ export function mergeCoachPrescriptionIntoDraft(
     let blockChanged = false;
 
     if (
+      !notesOnly &&
       src.formatParams &&
       JSON.stringify(src.formatParams) !== JSON.stringify(draft.formatParams)
     ) {
@@ -284,26 +310,28 @@ export function mergeCoachPrescriptionIntoDraft(
         if (!fromSrc) return ex;
         let next = ex;
         let changed = false;
-        const copyNum = (key: 'sets' | 'rpe' | 'restSeconds' | 'workSeconds') => {
-          const v = fromSrc![key];
-          if (typeof v === 'number' && Number.isFinite(v) && v !== ex[key]) {
+        if (!notesOnly) {
+          const copyNum = (key: 'sets' | 'rpe' | 'restSeconds' | 'workSeconds') => {
+            const v = fromSrc![key];
+            if (typeof v === 'number' && Number.isFinite(v) && v !== ex[key]) {
+              if (!changed) {
+                next = { ...ex };
+                changed = true;
+              }
+              next[key] = v;
+            }
+          };
+          copyNum('sets');
+          copyNum('rpe');
+          copyNum('restSeconds');
+          copyNum('workSeconds');
+          if (typeof fromSrc.reps === 'string' && fromSrc.reps !== ex.reps) {
             if (!changed) {
               next = { ...ex };
               changed = true;
             }
-            next[key] = v;
+            next.reps = fromSrc.reps;
           }
-        };
-        copyNum('sets');
-        copyNum('rpe');
-        copyNum('restSeconds');
-        copyNum('workSeconds');
-        if (typeof fromSrc.reps === 'string' && fromSrc.reps !== ex.reps) {
-          if (!changed) {
-            next = { ...ex };
-            changed = true;
-          }
-          next.reps = fromSrc.reps;
         }
         if (
           typeof fromSrc.coachNotes === 'string' &&
@@ -334,5 +362,33 @@ export function mergeCoachPrescriptionIntoDraft(
     out[bi] = nextBlock;
   }
 
+  return out;
+}
+
+/** True when the op carries a non-empty coach_notes write (safe to apply on a dirty draft). */
+export function structuralPatchOpWritesCoachNotes(op: CoachStructuralPatchOp): boolean {
+  return typeof op.coach_notes === 'string' && op.coach_notes.trim().length > 0;
+}
+
+/**
+ * Narrow ops to identity + coach_notes only. Used when applying onto a dirty draft so
+ * mixed model patches (notes + rpe/sets) cannot overwrite local keystrokes.
+ */
+export function coachNotesOnlyStructuralOps(
+  patches: readonly CoachStructuralPatchOp[],
+): CoachStructuralPatchOp[] {
+  const out: CoachStructuralPatchOp[] = [];
+  for (const op of patches) {
+    if (!structuralPatchOpWritesCoachNotes(op)) continue;
+    const next: CoachStructuralPatchOp = {
+      block_id: op.block_id,
+      coach_notes: op.coach_notes,
+    };
+    if (typeof op.op === 'string' && op.op.trim()) next.op = op.op;
+    if (typeof op.exercise_id === 'string' && op.exercise_id.trim()) {
+      next.exercise_id = op.exercise_id;
+    }
+    out.push(next);
+  }
   return out;
 }

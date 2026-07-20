@@ -57,6 +57,7 @@ const NO_TASK_FRAGMENT: CoachGuardsFragment = {
   isActiveWorkoutSession: false,
   outlineCoPilotActive: false,
   exerciseCueRequestActive: false,
+  coachNotesRequestActive: false,
 };
 
 describe('applyCoachServerGuards — Open Canvas guard', () => {
@@ -230,6 +231,7 @@ describe('applyCoachServerGuards — Active-workout clamp', () => {
       isActiveWorkoutSession: false,
       outlineCoPilotActive: false,
       exerciseCueRequestActive: false,
+      coachNotesRequestActive: false,
     });
     expect(out.create_card).toBe(false);
     expect(out.task_title).toBeNull();
@@ -253,7 +255,7 @@ describe('applyCoachServerGuards — Active-workout clamp', () => {
   it('preserves proposed_workout_metadata with blocks when workout context exists but session is not active', () => {
     const proposed = {
       workout_type: 'AMRAP',
-      blocks: [{ name: 'Finisher', exercises: [{ name: 'Thruster', sets: 3, reps: 10 }] }],
+      blocks: [{ name: 'Finisher', exercises: [{ name: 'Thruster', sets: 3, reps: '10' }] }],
     };
     const parsed = makeParsed({
       update_existing_task: true,
@@ -265,6 +267,7 @@ describe('applyCoachServerGuards — Active-workout clamp', () => {
       isActiveWorkoutSession: false,
       outlineCoPilotActive: false,
       exerciseCueRequestActive: false,
+      coachNotesRequestActive: false,
     });
     expect(out.proposed_workout_metadata).toEqual(proposed);
     expect(out.update_existing_task).toBe(true);
@@ -292,6 +295,7 @@ describe('applyCoachServerGuards — Active-workout clamp', () => {
       isActiveWorkoutSession: true,
       outlineCoPilotActive: false,
       exerciseCueRequestActive: false,
+      coachNotesRequestActive: false,
     });
     expect(out.create_card).toBe(false);
     expect(out.update_existing_task).toBe(false);
@@ -325,6 +329,7 @@ describe('applyCoachServerGuards — Active-workout clamp', () => {
       isActiveWorkoutSession: false,
       outlineCoPilotActive: false,
       exerciseCueRequestActive: false,
+      coachNotesRequestActive: false,
     });
     expect(parsed).toEqual(snapshot);
   });
@@ -396,6 +401,7 @@ describe('applyCoachServerGuards — Narrative vs Structure killswitch', () => {
       isActiveWorkoutSession: true,
       outlineCoPilotActive: false,
       exerciseCueRequestActive: false,
+      coachNotesRequestActive: false,
     });
     expect(out.updated_task_description).toBeNull();
     expect(out.proposed_workout_metadata).toBeNull();
@@ -408,6 +414,7 @@ const PLANNED_WORKOUT_FRAGMENT: CoachGuardsFragment = {
   isActiveWorkoutSession: false,
   outlineCoPilotActive: false,
   exerciseCueRequestActive: false,
+  coachNotesRequestActive: false,
 };
 
 const FINISHER_PROSE_DUMP =
@@ -465,7 +472,7 @@ describe('applyCoachServerGuards — Prescription dump without structure (Guard 
       update_existing_task: true,
       updated_task_description: prose,
       proposed_workout_metadata: {
-        exercises: [{ name: 'Kettlebell Thrusters', sets: 3, reps: 10 }],
+        exercises: [{ name: 'Kettlebell Thrusters', sets: 3, reps: '10' }],
       },
     });
     const out = applyCoachServerGuards(parsed, PLANNED_WORKOUT_FRAGMENT);
@@ -477,7 +484,7 @@ describe('applyCoachServerGuards — Prescription dump without structure (Guard 
       update_existing_task: true,
       updated_task_description: FINISHER_PROSE_DUMP,
       proposed_workout_metadata: {
-        blocks: [{ name: 'Finisher', exercises: [{ name: 'Thruster', sets: 3, reps: 10 }] }],
+        blocks: [{ name: 'Finisher', exercises: [{ name: 'Thruster', sets: 3, reps: '10' }] }],
       },
     });
     const out = applyCoachServerGuards(parsed, PLANNED_WORKOUT_FRAGMENT);
@@ -520,6 +527,7 @@ describe('applyCoachServerGuards — coach_workout_outline (Apex Phase 2)', () =
       isActiveWorkoutSession: true,
       outlineCoPilotActive: false,
       exerciseCueRequestActive: false,
+      coachNotesRequestActive: false,
     });
     expect(out.coach_workout_outline).toBeNull();
     expect(out.proposed_workout_metadata).toBeNull();
@@ -576,6 +584,7 @@ describe('applyCoachServerGuards — exercise cue flow clamp', () => {
       {
         ...NO_TASK_FRAGMENT,
         exerciseCueRequestActive: true,
+        coachNotesRequestActive: false,
       },
     );
     expect(out.proposed_workout_metadata).toBeNull();

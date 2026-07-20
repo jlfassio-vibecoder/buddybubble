@@ -183,17 +183,56 @@ function coachEmittedWorkoutCuesPatchForKey(
 }
 
 /**
+ * True when the user is asking to write exercise **coach notes** (structural_patch.coach_notes),
+ * not workout-scoped cue fields. Used to escape stale Ask Coach cue-lock on follow-ups.
+ *
+ * Accepts common typo "coach not" (missing final e) seen in production asks.
+ */
+export function messageRequestsCoachNotes(content: string | null | undefined): boolean {
+  if (typeof content !== 'string' || !content.trim()) return false;
+  // "coach notes" / "coach note" / "coach_notes" / typo "coach not" —
+  // exclude coach_task_notes / task notes.
+  return (
+    /\bcoach[_\s-]*not(?:e|es)?\b/i.test(content) &&
+    !/\bcoach[_\s-]*task[_\s-]*not(?:e|es)?\b/i.test(content)
+  );
+}
+
+/**
+ * True when the model claimed a coach-notes write (reply) but emitted an identity-only
+ * structural_patch with no `coach_notes` field — the production no-op shape.
+ */
+export function structuralPatchIsEmptyCoachNotesClaim(
+  replyContent: string | null | undefined,
+  structuralPatch: ReadonlyArray<{ [key: string]: unknown }> | null | undefined,
+): boolean {
+  if (typeof replyContent !== 'string' || !replyContent.trim()) return false;
+  if (!/\bcoach[_\s-]*not(?:e|es)?\b/i.test(replyContent)) return false;
+  if (!structuralPatch?.length) return false;
+  return structuralPatch.every((op) => {
+    const fieldKeys = Object.keys(op).filter(
+      (k) => k !== 'op' && k !== 'block_id' && k !== 'exercise_id',
+    );
+    return fieldKeys.length === 0;
+  });
+}
+
+/**
  * Active exercise-cue flow for this dispatch: trigger metadata, else latest user
  * `exercise_cue_request` in thread history (legacy affirmation / continuation).
  *
  * A fresh Ask Coach click (trigger carries `exercise_cue_request`) always wins so
  * re-asks still run after an earlier `workout_cues_patch` in history — history
  * suppression only applies to the fallthrough path.
+ *
+ * When resolving from history only, an explicit "coach notes" follow-up exits cue mode
+ * so the rich-rail schema (structural_patch.coach_notes) is available.
  */
 export function resolveExerciseCueRequestForDispatch(
   triggerMetadata: unknown,
   history: ReadonlyArray<DispatchHistoryRowLike>,
   agentAuthUserId: string,
+  triggerContent?: string | null,
 ): ExerciseCueRequestV1 | null {
   const fromTrigger = parseExerciseCueRequestFromMessageMetadata(triggerMetadata);
   if (fromTrigger) return fromTrigger;
@@ -212,6 +251,8 @@ export function resolveExerciseCueRequestForDispatch(
   if (coachEmittedWorkoutCuesPatchForKey(history, agentAuthUserId, req.resolution_key)) {
     return null;
   }
+  // Stale Ask Coach lock must not trap follow-ups that ask for coach notes.
+  if (messageRequestsCoachNotes(triggerContent)) return null;
   return req;
 }
 

@@ -54,6 +54,7 @@ describe('applyCoachServerGuards rich workout context', () => {
         isActiveWorkoutSession: false,
         outlineCoPilotActive: false,
         exerciseCueRequestActive: false,
+        coachNotesRequestActive: false,
       },
     );
     expect(out.proposed_workout_metadata).toBeNull();
@@ -81,6 +82,7 @@ describe('applyCoachServerGuards outline co-pilot', () => {
         isActiveWorkoutSession: false,
         outlineCoPilotActive: true,
         exerciseCueRequestActive: false,
+        coachNotesRequestActive: false,
       },
     );
     expect(out.proposed_workout_metadata).toBeNull();
@@ -105,6 +107,7 @@ describe('applyCoachServerGuards outline co-pilot', () => {
         isActiveWorkoutSession: false,
         outlineCoPilotActive: true,
         exerciseCueRequestActive: false,
+        coachNotesRequestActive: false,
       },
     );
     expect(out.outline_draft_patch).toBeNull();
@@ -128,6 +131,7 @@ describe('applyCoachServerGuards outline co-pilot', () => {
           isActiveWorkoutSession: false,
           outlineCoPilotActive: true,
           exerciseCueRequestActive: false,
+          coachNotesRequestActive: false,
         },
       ),
     ).toThrow();
@@ -147,6 +151,7 @@ describe('applyCoachServerGuards outline co-pilot', () => {
           isActiveWorkoutSession: false,
           outlineCoPilotActive: true,
           exerciseCueRequestActive: false,
+          coachNotesRequestActive: false,
         },
       ),
     ).toThrow();
@@ -166,6 +171,40 @@ describe('assertCoachReplySelfAttestation', () => {
         baseParsed({ reply_content: "I've updated your card with wider stance cues." }),
       ),
     ).toThrow();
+  });
+
+  it('throws on I have added / adding claims without structured write', () => {
+    expect(() =>
+      assertCoachReplySelfAttestation(
+        baseParsed({
+          reply_content:
+            'I have added the specific cues for Band Resisted Push-Ups to the coach notes for that exercise.',
+        }),
+      ),
+    ).toThrow();
+    expect(() =>
+      assertCoachReplySelfAttestation(
+        baseParsed({ reply_content: "I'm adding that to the coach notes now." }),
+      ),
+    ).toThrow();
+  });
+
+  it('allows I have added when structural_patch is present', () => {
+    expect(() =>
+      assertCoachReplySelfAttestation(
+        baseParsed({
+          reply_content: 'I have added cues to the coach notes for that exercise.',
+          update_existing_task: true,
+          structural_patch: [
+            {
+              block_id: 'b1',
+              exercise_id: 'e1',
+              coach_notes: 'Brace and press evenly.',
+            },
+          ],
+        }),
+      ),
+    ).not.toThrow();
   });
 
   it('allows phrase when execution_patch is present', () => {
@@ -239,17 +278,35 @@ describe('assertCoachReplySelfAttestation', () => {
     ).not.toThrow();
   });
 
-  it('allows phrase when create_card is true', () => {
-    expect(() =>
-      assertCoachReplySelfAttestation(
-        baseParsed({
-          reply_content: "I've added a new workout card.",
-          create_card: true,
-          task_title: 'Leg day',
-          task_description: 'x',
-          coach_task_notes: 'notes',
-        }),
-      ),
-    ).not.toThrow();
+  it('preserves structural_patch when coachNotesRequestActive even if cues present', () => {
+    const out = applyCoachServerGuards(
+      baseParsed({
+        reply_content: 'I have added that to the coach notes.',
+        update_existing_task: true,
+        structural_patch: [
+          {
+            block_id: 'main-1-0',
+            exercise_id: 'main-1-0:e0',
+            coach_notes: 'Brace and press.',
+          },
+        ],
+        workout_cues_patch: {
+          v: 1,
+          resolution_key: 'push::0',
+          form_cues: 'Should not strip notes.',
+        },
+      }),
+      {
+        knownTargetTaskId: 'task-1',
+        currentWorkoutContextJson: '{}',
+        priorUserMessageCount: 2,
+        isActiveWorkoutSession: false,
+        outlineCoPilotActive: false,
+        exerciseCueRequestActive: false,
+        coachNotesRequestActive: true,
+      },
+    );
+    expect(out.structural_patch?.[0]?.coach_notes).toBe('Brace and press.');
+    expect(out.update_existing_task).toBe(true);
   });
 });

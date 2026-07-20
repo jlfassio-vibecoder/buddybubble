@@ -27,6 +27,10 @@ import {
   type WorkoutViewerCanvasDraftHandle,
 } from '@/components/fitness/workout-viewer-dialog';
 import { mapCoachProposedToCanvasBlocks } from '@/lib/agents/coach/coach-block-mapper';
+import {
+  resolveStructuralEffectApplyGate,
+  shouldClaimStructuralEffectAfterApply,
+} from '@/lib/agents/coach/structural-effect-claim';
 import { buildWorkoutSessionViewModel } from '@/lib/workout-factory/workout-session-view-model';
 import { useActiveSessionLaunchFromTaskModal } from '@/hooks/use-active-session-launch-from-task-modal';
 import { cn } from '@/lib/utils';
@@ -362,7 +366,12 @@ export function TaskModal({
   const skipNextWorkoutPaneSyncBumpRef = useRef(false);
   /** When the canvas is not mounted yet, apply after the pane mounts (and sync bump is skipped). */
   const pendingCanvasCoachOpRef = useRef<
-    | { kind: 'structural'; messageId: string; patches: StructuralPatchEffectPayload['patches'] }
+    | {
+        kind: 'structural';
+        taskId: string;
+        messageId: string;
+        patches: StructuralPatchEffectPayload['patches'];
+      }
     | {
         kind: 'proposed';
         messageId: string;
@@ -370,6 +379,8 @@ export function TaskModal({
       }
     | null
   >(null);
+  /** Tracks embedded canvas dirtiness so pending Coach patches can flush after Apply/Discard. */
+  const [canvasDraftIsDirty, setCanvasDraftIsDirty] = useState(false);
   const handledExecutionPatchFingerprintByTaskRef = useRef<Map<string, Map<string, string>>>(
     new Map(),
   );
@@ -1043,6 +1054,14 @@ export function TaskModal({
       : `existing:${taskIdForEffect}`;
   }, []);
 
+  const isCoachEffectMessageClaimed = useCallback(
+    (map: Map<string, Set<string>>, taskIdForEffect: string, messageId: string): boolean => {
+      const dedupeKey = coachEffectDedupeKey(taskIdForEffect);
+      return map.get(dedupeKey)?.has(messageId) ?? false;
+    },
+    [coachEffectDedupeKey],
+  );
+
   const claimCoachEffectMessageId = useCallback(
     (map: Map<string, Set<string>>, taskIdForEffect: string, messageId: string): boolean => {
       const dedupeKey = coachEffectDedupeKey(taskIdForEffect);
@@ -1059,21 +1078,26 @@ export function TaskModal({
   );
 
   const applyCoachStructuralToHandle = useCallback(
-    (handle: WorkoutViewerCanvasDraftHandle, patches: StructuralPatchEffectPayload['patches']) => {
-      if (handle.mode === 'edit' && handle.isDirty) {
-        toast.message('Coach has an update', {
-          id: 'coach-dirty-draft-update',
-          description: 'Apply or discard your canvas edits to load Coach’s changes.',
-        });
-        return;
-      }
+    (
+      handle: WorkoutViewerCanvasDraftHandle,
+      patches: StructuralPatchEffectPayload['patches'],
+    ): boolean => {
       if (handle.mode !== 'edit') {
         handle.enterEdit();
       }
       const applied = handle.applyStructuralPatch(patches);
       if (applied) {
         toast.success('Coach updated your canvas');
+        return true;
       }
+      // Non–coach-notes ops still need a pristine draft; coach_notes apply while dirty.
+      if (handle.mode === 'edit' && handle.isDirty) {
+        toast.message('Coach has an update', {
+          id: 'coach-dirty-draft-update',
+          description: 'Apply or discard your canvas edits to load Coach’s changes.',
+        });
+      }
+      return false;
     },
     [],
   );
@@ -1145,32 +1169,41 @@ export function TaskModal({
   const handleStructuralPatch = useCallback(
     (args: StructuralPatchEffectPayload) => {
       if (itemType !== 'workout' || !canWrite) return;
-      if (
-        !claimCoachEffectMessageId(
+      const handle = canvasDraftRef.current;
+      const gate = resolveStructuralEffectApplyGate({
+        alreadyClaimed: isCoachEffectMessageClaimed(
           handledStructuralPatchMessageIdsByTaskRef.current,
           args.taskId,
           args.messageId,
-        )
-      ) {
-        return;
-      }
+        ),
+        hasCanvasHandle: Boolean(handle),
+      });
+      if (gate === 'already_claimed') return;
 
       openWorkoutCanvasPaneForCoach();
-      const handle = canvasDraftRef.current;
-      if (!handle) {
+      if (gate === 'defer') {
         pendingCanvasCoachOpRef.current = {
           kind: 'structural',
+          taskId: args.taskId,
           messageId: args.messageId,
           patches: args.patches,
         };
         return;
       }
       pendingCanvasCoachOpRef.current = null;
-      applyCoachStructuralToHandle(handle, args.patches);
+      const applied = applyCoachStructuralToHandle(handle!, args.patches);
+      if (shouldClaimStructuralEffectAfterApply(applied)) {
+        claimCoachEffectMessageId(
+          handledStructuralPatchMessageIdsByTaskRef.current,
+          args.taskId,
+          args.messageId,
+        );
+      }
     },
     [
       itemType,
       canWrite,
+      isCoachEffectMessageClaimed,
       claimCoachEffectMessageId,
       openWorkoutCanvasPaneForCoach,
       applyCoachStructuralToHandle,
@@ -1586,24 +1619,36 @@ export function TaskModal({
     prevWorkoutSplitRef.current = showWorkoutSplitPane;
   }, [showWorkoutSplitPane]);
 
-  // Flush Coach canvas ops queued while the viewer was unmounted (first open).
+  // Flush Coach canvas ops queued while the viewer was unmounted.
   useEffect(() => {
     if (!showWorkoutSplitPane) return;
     const pending = pendingCanvasCoachOpRef.current;
     if (!pending) return;
     const handle = canvasDraftRef.current;
     if (!handle) return;
-    pendingCanvasCoachOpRef.current = null;
     if (pending.kind === 'structural') {
-      applyCoachStructuralToHandle(handle, pending.patches);
-    } else {
-      applyCoachProposedToHandle(handle, pending.proposed);
+      // coach_notes write-through works while dirty; other ops may still fail until pristine.
+      const applied = applyCoachStructuralToHandle(handle, pending.patches);
+      if (!shouldClaimStructuralEffectAfterApply(applied)) return;
+      pendingCanvasCoachOpRef.current = null;
+      claimCoachEffectMessageId(
+        handledStructuralPatchMessageIdsByTaskRef.current,
+        pending.taskId,
+        pending.messageId,
+      );
+      return;
     }
+    // Full proposed replace still requires a pristine draft.
+    if (canvasDraftIsDirty || (handle.mode === 'edit' && handle.isDirty)) return;
+    pendingCanvasCoachOpRef.current = null;
+    applyCoachProposedToHandle(handle, pending.proposed);
   }, [
     showWorkoutSplitPane,
     workoutPaneSyncKey,
+    canvasDraftIsDirty,
     applyCoachStructuralToHandle,
     applyCoachProposedToHandle,
+    claimCoachEffectMessageId,
   ]);
 
   const selectTab = useCallback(
@@ -2870,6 +2915,7 @@ export function TaskModal({
                 onApply={handleWorkoutViewerApplyAndSave}
                 onApplyCuePatches={handleWorkoutViewerCuePatches}
                 onAskCoachForCues={handleAskCoachForCues}
+                onDraftDirtyChange={setCanvasDraftIsDirty}
                 injuriesOnFile={injuriesOnFile}
                 onRequestClose={() => setWorkoutViewerOpen(false)}
                 syncKey={workoutPaneSyncKey}
