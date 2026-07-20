@@ -72,6 +72,23 @@ export function buildActiveSessionSentinelMetadata(params: {
     class_instance_id: classInstanceId,
     workoutContext,
     is_silent_sentinel: true,
+    ...buildActiveSessionSurfaceMetadataFields({
+      sessionId,
+      classInstanceId,
+      sessionReadinessContext,
+    }),
+    ...sessionTelemetryMetadataFields(sessionTelemetry),
+  } satisfies Json;
+}
+
+/** Shared `workout_context.surface` + optional readiness for Active Session coach messages. */
+export function buildActiveSessionSurfaceMetadataFields(params: {
+  sessionId: string;
+  classInstanceId: string | null;
+  sessionReadinessContext?: SessionReadinessContext | null;
+}): Record<string, Json> {
+  const { sessionId, classInstanceId, sessionReadinessContext } = params;
+  return {
     workout_context: {
       source: 'workout_player',
       surface: 'active_session',
@@ -82,8 +99,27 @@ export function buildActiveSessionSentinelMetadata(params: {
     ...(sessionReadinessContext
       ? { session_readiness_context: sessionReadinessContext as unknown as Json }
       : {}),
-    ...sessionTelemetryMetadataFields(sessionTelemetry),
-  } satisfies Json;
+  };
+}
+
+/**
+ * Merge Active Session surface + readiness onto an outbound coach follow-up metadata object
+ * (keeps existing workoutContext / telemetry keys).
+ */
+export function appendActiveSessionFollowUpCoachMetadata(
+  base: Record<string, unknown>,
+  params: {
+    sessionId: string;
+    classInstanceId: string | null;
+    sessionReadinessContext?: SessionReadinessContext | null;
+  },
+): Record<string, unknown> {
+  return {
+    ...base,
+    sessionId: params.sessionId,
+    class_instance_id: params.classInstanceId,
+    ...buildActiveSessionSurfaceMetadataFields(params),
+  };
 }
 
 /** @deprecated Session-scoped dedupe replaces fingerprint matching; kept for tests. */

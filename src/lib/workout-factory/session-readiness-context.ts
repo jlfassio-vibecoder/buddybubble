@@ -81,6 +81,41 @@ export function readSessionReadinessContext(metadata: unknown): SessionReadiness
   };
 }
 
+/**
+ * Read Active Session id from message metadata (top-level `sessionId` or
+ * `workout_context.sessionId`). Used to scope readiness history fallbacks.
+ */
+export function readActiveSessionIdFromMetadata(metadata: unknown): string | null {
+  if (!isRecord(metadata)) return null;
+  if (typeof metadata.sessionId === 'string' && metadata.sessionId.trim()) {
+    return metadata.sessionId.trim();
+  }
+  const wctx = metadata.workout_context;
+  if (isRecord(wctx) && typeof wctx.sessionId === 'string' && wctx.sessionId.trim()) {
+    return wctx.sessionId.trim();
+  }
+  return null;
+}
+
+/**
+ * Newest-first readiness from thread messages belonging to `sessionId` only.
+ * Returns null when the session has no check-in (does not reuse older sessions).
+ */
+export function readSessionReadinessContextFromSessionThread(
+  messages: ReadonlyArray<{ metadata?: unknown }>,
+  sessionId: string,
+): SessionReadinessContext | null {
+  const sid = sessionId.trim();
+  if (!sid) return null;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const meta = messages[i]?.metadata;
+    if (readActiveSessionIdFromMetadata(meta) !== sid) continue;
+    const fromMsg = readSessionReadinessContext(meta);
+    if (fromMsg) return fromMsg;
+  }
+  return null;
+}
+
 export function mergeSessionReadinessIntoMetadata(
   metadata: Json,
   ctx: SessionReadinessContext,
@@ -90,6 +125,24 @@ export function mergeSessionReadinessIntoMetadata(
     ...base,
     session_readiness_context: ctx,
   } satisfies Json;
+}
+
+/**
+ * Overlay only `session_readiness_context` onto the live form/DB save payload.
+ * Unlike `metadataMerge: 'full'`, this never replaces outline / factory / exercises.
+ * If the override has no valid readiness, returns the form base unchanged.
+ */
+export function mergeSessionReadinessOntoFormSavePayload(
+  activeFormMetadata: unknown,
+  readinessOverrideMetadata: unknown,
+): Record<string, unknown> {
+  const formBase = isRecord(activeFormMetadata) ? { ...activeFormMetadata } : {};
+  const ctx = readSessionReadinessContext(readinessOverrideMetadata);
+  if (!ctx) return formBase;
+  return {
+    ...formBase,
+    session_readiness_context: ctx,
+  };
 }
 
 /** Preflight subset of coach intake patch fields (for rail trim when factory exists). */

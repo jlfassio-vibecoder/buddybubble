@@ -73,10 +73,11 @@ function buildRetryUserPrompt(
   const truncationHint = truncated
     ? '\nKeep output compact; do not add commentary outside JSON.'
     : '';
+  const err = lastError.length > 240 ? `${lastError.slice(0, 240)}…` : lastError;
   return `${baseUserPrompt}
 
 === PREVIOUS ATTEMPT REJECTED ===
-Your last response failed validation: ${lastError}
+Your last response failed validation: ${err}
 Return corrected JSON only. Match the outline block count and exercise count per block. Include exercises[] with movement names; add sets, reps, or work_seconds when required by the block format.${truncationHint}`;
 }
 
@@ -310,9 +311,13 @@ export async function runGenerateWorkoutOutlineFill(
     );
     if (lastTruncatedAttempt) truncatedAnyAttempt = true;
 
+    const fillContent = fillResponse.content;
+    const fillUsage = fillResponse.usage;
+    const fillFinishReason = fillResponse.finishReason;
+
     let parsedData: unknown;
     try {
-      parsedData = parseJSONWithRepair(fillResponse.content).data;
+      parsedData = parseJSONWithRepair(fillContent).data;
     } catch (parseErr) {
       lastError = parseErr instanceof Error ? parseErr.message : 'unparseable JSON';
       lastFailureKind = 'parse';
@@ -323,11 +328,11 @@ export async function runGenerateWorkoutOutlineFill(
         validation_reason: validationReason,
         attempt,
         maxAttempts: MAX_FILL_ATTEMPTS,
-        validation_error: lastError,
+        validation_error: lastError.slice(0, 240),
         outline_block_count: blockCount,
         exercise_count: exerciseCount,
-        completion_tokens: fillResponse.usage.completionTokens,
-        finish_reason: fillResponse.finishReason,
+        completion_tokens: fillUsage.completionTokens,
+        finish_reason: fillFinishReason,
         truncated: lastTruncatedAttempt,
         likely_truncation: lastTruncatedAttempt,
         request_id: runOptions.requestId,
@@ -348,11 +353,11 @@ export async function runGenerateWorkoutOutlineFill(
       validation_reason: validationReason,
       attempt,
       maxAttempts: MAX_FILL_ATTEMPTS,
-      validation_error: lastError,
+      validation_error: lastError.slice(0, 240),
       outline_block_count: blockCount,
       exercise_count: exerciseCount,
-      completion_tokens: fillResponse.usage.completionTokens,
-      finish_reason: fillResponse.finishReason,
+      completion_tokens: fillUsage.completionTokens,
+      finish_reason: fillFinishReason,
       truncated: lastTruncatedAttempt,
       request_id: runOptions.requestId,
     });

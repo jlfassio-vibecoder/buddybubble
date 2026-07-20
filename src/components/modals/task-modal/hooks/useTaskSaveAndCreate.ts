@@ -33,6 +33,7 @@ import {
   mergeOutlineMetadataOntoFormSavePayload,
   mergeWorkoutCueMetadataOntoFormSavePayload,
 } from '@/lib/agents/coach/coach-outline-metadata';
+import { mergeSessionReadinessOntoFormSavePayload } from '@/lib/workout-factory/session-readiness-context';
 import { mergeJsonWithLiveSessionToggle } from '@/lib/card-live-session-metadata';
 import {
   insertTasksRowWithRetries,
@@ -41,10 +42,18 @@ import {
 } from '@/components/modals/task-modal/task-insert-row';
 
 /** How `metadataOverride` is merged into the live form save payload. */
-export type TaskMetadataOverrideMerge = 'outline-keys' | 'workout-cues';
+export type TaskMetadataOverrideMerge =
+  | 'outline-keys'
+  | 'workout-cues'
+  | 'session-readiness'
+  | 'full';
 
 export type SaveCoreFieldsOptions = {
-  /** Defaults to `outline-keys` (outline editor confirm / structure save). */
+  /**
+   * Defaults to `outline-keys` (outline editor confirm / structure save).
+   * Use `session-readiness` to overlay only `session_readiness_context` onto the live form payload
+   * (preflight — preserves outline/factory). Prefer that over `full`, which replaces metadata entirely.
+   */
   metadataMerge?: TaskMetadataOverrideMerge;
   /** When set, use instead of live `title` state (e.g. Apply changes before re-render). */
   titleOverride?: string;
@@ -198,9 +207,16 @@ export function useTaskSaveAndCreate({
       const mergeMode = options?.metadataMerge ?? 'outline-keys';
       const metadataPayload =
         metadataOverride != null
-          ? ((mergeMode === 'workout-cues'
-              ? mergeWorkoutCueMetadataOntoFormSavePayload(metadataForSave, metadataOverride)
-              : mergeOutlineMetadataOntoFormSavePayload(metadataForSave, metadataOverride)) as Json)
+          ? ((mergeMode === 'full'
+              ? metadataOverride
+              : mergeMode === 'session-readiness'
+                ? mergeSessionReadinessOntoFormSavePayload(metadataForSave, metadataOverride)
+                : mergeMode === 'workout-cues'
+                  ? mergeWorkoutCueMetadataOntoFormSavePayload(metadataForSave, metadataOverride)
+                  : mergeOutlineMetadataOntoFormSavePayload(
+                      metadataForSave,
+                      metadataOverride,
+                    )) as Json)
           : metadataForSave;
 
       const mergedMetadata = mergeJsonWithLiveSessionToggle(metadataPayload, {

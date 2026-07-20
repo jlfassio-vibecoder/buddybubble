@@ -1,5 +1,6 @@
 'use client';
 
+import { createClient } from '@utils/supabase/client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PanelLeftClose } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -38,6 +39,12 @@ import {
   attachElapsedToSessionTelemetry,
   type SessionTelemetrySnapshot,
 } from '@/lib/workout-factory/session-telemetry';
+import {
+  readSessionReadinessContext,
+  readSessionReadinessContextFromSessionThread,
+  type SessionReadinessContext,
+} from '@/lib/workout-factory/session-readiness-context';
+import { appendActiveSessionFollowUpCoachMetadata } from '@/features/active-session/lib/active-session-coach-telemetry';
 import {
   CHAT_AREA_DEFAULT_AGENT_SLUG,
   MESSAGE_METADATA_DEFAULT_AGENT_SLUG_KEY,
@@ -147,6 +154,12 @@ export type WorkoutCoachRailProps = {
   sessionTelemetryBase?: SessionTelemetrySnapshot | null;
   /** Active Session only — live elapsed seconds for coach message metadata overlay. */
   elapsedSec?: number;
+  /** Active Session only — session id for workout_context.surface on follow-ups. */
+  sessionId?: string;
+  /** Active Session only — class instance id for workout_context. */
+  classInstanceId?: string | null;
+  /** Active Session only — pre-session readiness from task metadata (`null` = resolved absent). */
+  sessionReadinessContext?: SessionReadinessContext | null;
 };
 
 export function WorkoutCoachRail({
@@ -161,6 +174,9 @@ export function WorkoutCoachRail({
   className,
   sessionTelemetryBase,
   elapsedSec = 0,
+  sessionId,
+  classInstanceId = null,
+  sessionReadinessContext,
 }: WorkoutCoachRailProps) {
   const myProfile = useUserProfileStore((s) => s.profile);
   const { subjectUserId: workspaceSubjectUserId } = useWorkspaceSessionSubject();
@@ -340,21 +356,51 @@ export function WorkoutCoachRail({
           : {}),
       } satisfies Json;
 
+      let outboundCoachMetadata: Record<string, unknown> = coachMetadata as Record<string, unknown>;
+      // Active Session follow-ups: re-attach surface + readiness so Edge injects PRE-SESSION block.
+      if (typeof sessionId === 'string' && sessionId.trim()) {
+        let readinessForSend = sessionReadinessContext ?? null;
+        // Prop omitted: same-session thread only (never older sessions). When the bridge
+        // explicitly resolved null, do not re-walk history or invent a check-in.
+        if (!readinessForSend && sessionReadinessContext === undefined) {
+          readinessForSend = readSessionReadinessContextFromSessionThread(
+            messages,
+            sessionId.trim(),
+          );
+        }
+        // Last resort DB read only when the prop was omitted (undefined), not when bridge
+        // explicitly resolved readiness to null (avoids a fetch on every follow-up send).
+        if (!readinessForSend && sessionReadinessContext === undefined && taskId.trim()) {
+          const supabase = createClient();
+          const { data: taskRow } = await supabase
+            .from('tasks')
+            .select('metadata')
+            .eq('id', taskId.trim())
+            .maybeSingle();
+          readinessForSend = readSessionReadinessContext(taskRow?.metadata);
+        }
+        outboundCoachMetadata = appendActiveSessionFollowUpCoachMetadata(outboundCoachMetadata, {
+          sessionId: sessionId.trim(),
+          classInstanceId: classInstanceId ?? null,
+          sessionReadinessContext: readinessForSend,
+        });
+      }
+
+      const outboundMetadataForSend: Json | undefined =
+        activeAgent === 'coach'
+          ? sessionTelemetryBase != null
+            ? appendSessionTelemetryToCoachMessageMetadata(
+                outboundCoachMetadata,
+                attachElapsedToSessionTelemetry(sessionTelemetryBase, elapsedSec),
+              )
+            : (outboundCoachMetadata as Json)
+          : undefined;
+
       const sent = await sendMessage(
         finalMessageText,
         undefined,
         files,
-        activeAgent === 'coach'
-          ? {
-              metadata:
-                sessionTelemetryBase != null
-                  ? appendSessionTelemetryToCoachMessageMetadata(
-                      coachMetadata as Record<string, unknown>,
-                      attachElapsedToSessionTelemetry(sessionTelemetryBase, elapsedSec),
-                    )
-                  : coachMetadata,
-            }
-          : undefined,
+        outboundMetadataForSend !== undefined ? { metadata: outboundMetadataForSend } : undefined,
       );
       if (!sent) return false;
       exerciseMentionsPendingRef.current = [];
@@ -377,6 +423,11 @@ export function WorkoutCoachRail({
       workoutTitle,
       sessionTelemetryBase,
       elapsedSec,
+      sessionId,
+      classInstanceId,
+      sessionReadinessContext,
+      messages,
+      taskId,
     ],
   );
 

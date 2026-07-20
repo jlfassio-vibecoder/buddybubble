@@ -81,7 +81,14 @@ export function resolveCoachThinkingBudget(args: {
 
 /** Generation params for the workout-open silent-greeting preflight sub-call. */
 export const COACH_WORKOUT_GREETING_TEMPERATURE = 0.35 as const;
-export const COACH_WORKOUT_GREETING_MAX_OUTPUT_TOKENS = 512 as const;
+/**
+ * Visible JSON + Gemini 2.5 thinking share this budget. Keep headroom for a 3–6 sentence
+ * personalized greeting; pair with {@link COACH_WORKOUT_GREETING_THINKING_BUDGET} so thinking
+ * cannot starve `reply_content` mid-string (MAX_TOKENS → Unterminated string in JSON).
+ */
+export const COACH_WORKOUT_GREETING_MAX_OUTPUT_TOKENS = 2048 as const;
+/** Disable thinking on the short greeting JSON call so all tokens go to reply_content. */
+export const COACH_WORKOUT_GREETING_THINKING_BUDGET = 0 as const;
 
 /** Phase B: outline-only Vertex call (blocks array only). */
 export const COACH_OUTLINE_ONLY_MODEL = 'gemini-2.5-pro' as const;
@@ -163,7 +170,18 @@ export const COACH_OUTLINE_TRUNCATED_SAFE_REPLY =
  */
 export const MID_WORKOUT_SUPPORT_MODE_DIRECTIVE =
   "If 'CURRENT WORKOUT CONTEXT' is provided below, you are in Mid-Workout Support Mode. Your primary job is to guide the user through THIS specific workout, modify weights or reps for THIS workout, or answer form and execution questions about THIS workout. DO NOT generate a brand new workout or prescribe a replacement program unless the user explicitly asks to completely replace the current session. " +
-  "If 'CURRENT TASK CONTEXT' also appears below, ignore PRE-DRAFT CONFIRMATION from that block for live load adjustments: mid-workout weight, rep, or RPE changes are execution_patch only (keep update_existing_task false) unless the user clearly asks to permanently change the task or card. ";
+  "If 'CURRENT TASK CONTEXT' also appears below, ignore PRE-DRAFT CONFIRMATION from that block for live load adjustments: mid-workout weight, rep, or RPE changes are execution_patch only (keep update_existing_task false) unless the user clearly asks to permanently change the task or card. " +
+  "If PRE-SESSION READINESS is present below, use it as ground truth for today's readiness when adjusting reps, weight, or RPE. " +
+  'If PRE-SESSION READINESS is absent, do not invent check-in values; ask a short how-are-you-feeling question before prescribing load or rep changes. ';
+
+/**
+ * Injected when Active Session surface is detected. Pre-session check-in is realtime
+ * context for an already-generated workout — not Generate Workout intake.
+ */
+export const ACTIVE_SESSION_PREFLIGHT_READINESS_DIRECTIVE =
+  'ACTIVE SESSION PRE-SESSION CHECK-IN (CRITICAL): Energy (readiness), sleep quality, and soreness are captured at Active Session launch for an already-generated workout. This is realtime coaching context for THIS live session — it is NOT Generate Workout intake and is NOT owned exclusively by the Task Modal generation wizard. ' +
+  'When --- PRE-SESSION READINESS --- appears below, that block is ground truth: you MUST recall sleep, energy, and soreness accurately when asked; use those values to adjust load/reps/RPE via execution_patch; NEVER claim the data is unavailable, inaccessible in live chat, or only processed for workout generation. ' +
+  'When --- PRE-SESSION READINESS --- is absent, do not invent check-in values; ask a brief how-are-you-feeling question before prescribing — do not invent a policy that live chat cannot access check-in.';
 
 /**
  * Active-workout-execution directive appended when CURRENT WORKOUT CONTEXT is present.
@@ -175,6 +193,8 @@ export const ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE =
   'If the user asks a general coaching question, answer in reply_content without card fields. ' +
   'When SESSION TELEMETRY is present, prefer logged actuals over prescription when answering "how did I do" or load guidance; still use execution_patch (not proposed_workout_metadata) for live grid updates. ' +
   'When INTERVAL_BLOCK_TIMERS appear in SESSION TELEMETRY, treat running_block_clock_elapsed as the authoritative block clock for pacing and completion—not global_session_time_elapsed. ' +
+  'When PRE-SESSION READINESS is present, ground load/rep/RPE suggestions in that check-in and emit execution_patch for concrete session changes. ' +
+  'When PRE-SESSION READINESS is absent, do not invent check-in values and do not claim check-in is unavailable due to Task Modal or generation workflow — ask briefly how they feel before prescribing. ' +
   'CRITICAL FORMATTING RULE: When emitting numerical values as strings in execution_patch (such as weight, reps, rpe, or distance), you MUST use clean whole numbers or a maximum of 2 decimal places (e.g. output "53" or "53.5", NEVER "53.000000..."). Never generate infinite trailing zeros.';
 
 export const SESSION_TELEMETRY_GROUND_TRUTH_DIRECTIVE =

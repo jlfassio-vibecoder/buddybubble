@@ -23,6 +23,7 @@ import {
   readSessionReadinessContextFromMessageMetadata,
   readTaskModalLiveStateFromMessageMetadata,
   resolveOutlineDraftPromptParts,
+  resolveSessionReadinessForActiveSessionPrompt,
   SESSION_READINESS_CONTEXT_HEADER,
   WORKOUT_STRUCTURE_CONTEXT_HEADER,
   shouldSuppressTaskModalIntakeForOutlineCoPilot,
@@ -243,6 +244,18 @@ describe('buildBaseCoachPrompt', () => {
 
   it('without apexArchitectMainChat, keeps rich task_description directive', () => {
     expect(prompt).toContain('rich task_description');
+  });
+
+  it('activeSessionLive omits Task Modal intake and Generate Workout ownership', () => {
+    const live = buildBaseCoachPrompt('2026-05-15', { activeSessionLive: true });
+    expect(live).not.toContain('TASK MODAL INTAKE PATCH');
+    expect(live).not.toContain('TASK MODAL LIVE STATE');
+    expect(live).not.toContain("click 'Generate Workout' on the card");
+    expect(live).toContain('Do NOT run Generate Workout intake');
+    expect(live).toContain('PRE-SESSION READINESS');
+    expect(live).toContain('execution_patch');
+    expect(live).toContain('Do not emit task_modal_intake_patch');
+    expect(live).toContain('Do NOT claim check-in data is unavailable');
   });
 
   it('still names card_action and parametric hand-off in the base contract', () => {
@@ -634,15 +647,112 @@ describe('buildSessionReadinessContextBlock', () => {
       source: 'task_modal_preflight',
     });
     expect(block).toContain(SESSION_READINESS_CONTEXT_HEADER);
-    expect(block).toContain('readiness (1–10): 7');
+    expect(block).toContain('readiness / energy (1–10): 7');
     expect(block).toContain('sleep_quality (1–10): 8');
     expect(block).toContain('soreness: ["Legs"]');
-    expect(block).toContain('do NOT re-ask readiness');
+    expect(block).toContain('already-generated workout');
+    expect(block).toContain('Do NOT claim they are unavailable');
+    expect(block).toContain('emit execution_patch');
+    expect(block).toContain("adjust TODAY's load");
+  });
+});
+
+describe('resolveSessionReadinessForActiveSessionPrompt', () => {
+  const readiness = {
+    v: 1 as const,
+    captured_at: '2026-05-28T10:00:00.000Z',
+    readiness: 7,
+    sleep_quality: 8,
+    soreness: ['Legs'],
+    source: 'task_modal_preflight' as const,
+  };
+
+  it('prefers trigger metadata over task metadata', () => {
+    const resolved = resolveSessionReadinessForActiveSessionPrompt({
+      triggerMetadata: { session_readiness_context: { ...readiness, readiness: 9 } },
+      taskMetadata: { session_readiness_context: readiness },
+      historyChronologicalOldestFirst: [],
+    });
+    expect(resolved?.readiness).toBe(9);
+  });
+
+  it('falls back to task metadata when trigger has none', () => {
+    const resolved = resolveSessionReadinessForActiveSessionPrompt({
+      triggerMetadata: { workout_context: { surface: 'active_session' } },
+      taskMetadata: { session_readiness_context: readiness },
+      historyChronologicalOldestFirst: [],
+    });
+    expect(resolved).toEqual(readiness);
+  });
+
+  it('falls back to same-session history newest-first when trigger and task lack readiness', () => {
+    const sessionId = 'sess-current';
+    const resolved = resolveSessionReadinessForActiveSessionPrompt({
+      triggerMetadata: { sessionId },
+      taskMetadata: {},
+      historyChronologicalOldestFirst: [
+        {
+          metadata: {
+            sessionId,
+            session_readiness_context: { ...readiness, readiness: 3 },
+          },
+        },
+        {
+          metadata: {
+            sessionId,
+            session_readiness_context: { ...readiness, readiness: 6 },
+          },
+        },
+      ],
+    });
+    expect(resolved?.readiness).toBe(6);
+  });
+
+  it('does not reuse readiness from a different Active Session in history', () => {
+    const resolved = resolveSessionReadinessForActiveSessionPrompt({
+      triggerMetadata: { sessionId: 'sess-new' },
+      taskMetadata: {},
+      historyChronologicalOldestFirst: [
+        {
+          metadata: {
+            sessionId: 'sess-old',
+            session_readiness_context: { ...readiness, readiness: 3 },
+          },
+        },
+        {
+          metadata: {
+            workout_context: { sessionId: 'sess-old', surface: 'active_session' },
+            session_readiness_context: { ...readiness, readiness: 6 },
+          },
+        },
+      ],
+    });
+    expect(resolved).toBeNull();
+  });
+
+  it('returns null when history has readiness but trigger has no session id', () => {
+    expect(
+      resolveSessionReadinessForActiveSessionPrompt({
+        triggerMetadata: {},
+        taskMetadata: {},
+        historyChronologicalOldestFirst: [{ metadata: { session_readiness_context: readiness } }],
+      }),
+    ).toBeNull();
+  });
+
+  it('returns null when nowhere has readiness', () => {
+    expect(
+      resolveSessionReadinessForActiveSessionPrompt({
+        triggerMetadata: { sessionId: 'sess-1' },
+        taskMetadata: {},
+        historyChronologicalOldestFirst: [{ metadata: { sessionId: 'sess-1' } }],
+      }),
+    ).toBeNull();
   });
 });
 
 describe('buildWorkoutOpenGreetingPrompt readiness', () => {
-  it('includes pre-session instructions when readiness block present', () => {
+  it('requires proactive safety/goal greeting when readiness block present', () => {
     const block = buildSessionReadinessContextBlock({
       v: 1,
       captured_at: '2026-05-28T10:00:00.000Z',
@@ -656,11 +766,28 @@ describe('buildWorkoutOpenGreetingPrompt readiness', () => {
       isoNow: '2026-06-25T14:00:00.000Z',
       sessionReadinessBlock: block,
     });
-    expect(prompt).toContain('pre-session check-in');
-    expect(prompt).toContain('Do NOT ask them to rate readiness');
+    expect(prompt).toContain('PRE-SESSION READINESS PRESENT');
+    expect(prompt).toContain('MUST NOT use a generic opening');
+    expect(prompt).toContain('Proactively state their energy');
+    expect(prompt).toContain('Explicitly offer to recommend specific rep or load adjustments');
+    expect(prompt).toContain('Do NOT ask them to re-rate readiness');
     expect(prompt).toContain(SESSION_READINESS_CONTEXT_HEADER);
-    expect(prompt).toContain('Do NOT use generic gym clichés');
-    expect(prompt).toContain('Close with ONE inviting question');
+    expect(prompt).toContain('CRITICAL JSON REQUIREMENT');
+    expect(prompt).toContain('{"reply_content":"Your greeting here."}');
+    expect(prompt).not.toContain('NO PRE-SESSION READINESS');
+  });
+
+  it('falls back to brief greeting + check-in when readiness absent', () => {
+    const prompt = buildWorkoutOpenGreetingPrompt({
+      workoutTitle: 'Leg Day',
+      isoNow: '2026-06-25T14:00:00.000Z',
+    });
+    expect(prompt).toContain('NO PRE-SESSION READINESS');
+    expect(prompt).toContain('quick check-in question');
+    expect(prompt).toContain('Do NOT invent energy, sleep, or soreness values');
+    expect(prompt).toContain('CRITICAL JSON REQUIREMENT');
+    expect(prompt).toContain('reply_content');
+    expect(prompt).not.toContain('PRE-SESSION READINESS PRESENT');
   });
 
   it('includes structure and telemetry blocks when provided', () => {
@@ -732,5 +859,23 @@ describe('shouldSuppressTaskModalIntakeForPreflightReadiness', () => {
         workout_context: { source: 'workout_player' },
       }),
     ).toBe(false);
+  });
+});
+
+describe('mid-workout readiness directives', () => {
+  it('instructs use of PRE-SESSION READINESS and null path', async () => {
+    const {
+      MID_WORKOUT_SUPPORT_MODE_DIRECTIVE,
+      ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE,
+      ACTIVE_SESSION_PREFLIGHT_READINESS_DIRECTIVE,
+    } = await import('./config');
+    expect(MID_WORKOUT_SUPPORT_MODE_DIRECTIVE).toContain('PRE-SESSION READINESS');
+    expect(MID_WORKOUT_SUPPORT_MODE_DIRECTIVE).toContain('how-are-you-feeling');
+    expect(ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE).toContain('PRE-SESSION READINESS');
+    expect(ACTIVE_SESSION_PREFLIGHT_READINESS_DIRECTIVE).toContain('already-generated workout');
+    expect(ACTIVE_SESSION_PREFLIGHT_READINESS_DIRECTIVE).toContain('NOT Generate Workout intake');
+    expect(ACTIVE_SESSION_PREFLIGHT_READINESS_DIRECTIVE).toContain(
+      'NEVER claim the data is unavailable',
+    );
   });
 });

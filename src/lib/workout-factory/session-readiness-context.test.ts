@@ -3,7 +3,10 @@ import {
   SESSION_READINESS_CONTEXT_VERSION,
   buildSessionReadinessContext,
   mergeSessionReadinessIntoMetadata,
+  mergeSessionReadinessOntoFormSavePayload,
+  readActiveSessionIdFromMetadata,
   readSessionReadinessContext,
+  readSessionReadinessContextFromSessionThread,
 } from './session-readiness-context';
 
 describe('session-readiness-context', () => {
@@ -93,5 +96,70 @@ describe('session-readiness-context', () => {
     >;
     expect(merged.foo).toBe('bar');
     expect(merged.session_readiness_context).toEqual(ctx);
+  });
+
+  it('mergeSessionReadinessOntoFormSavePayload overlays readiness without dropping outline', () => {
+    const ctx = buildSessionReadinessContext({
+      readiness: 7,
+      sleepQuality: 8,
+      soreness: ['Legs'],
+    });
+    const form = {
+      ai_workout_factory: { workout_set: { blocks: [{ name: 'Main' }] } },
+      exercises: [{ name: 'Squat' }],
+      duration_minutes: 45,
+    };
+    const override = mergeSessionReadinessIntoMetadata({ stale: true }, ctx);
+    const merged = mergeSessionReadinessOntoFormSavePayload(form, override);
+    expect(merged.ai_workout_factory).toEqual(form.ai_workout_factory);
+    expect(merged.exercises).toEqual(form.exercises);
+    expect(merged.duration_minutes).toBe(45);
+    expect(merged.session_readiness_context).toEqual(ctx);
+    expect(merged).not.toHaveProperty('stale');
+  });
+
+  it('mergeSessionReadinessOntoFormSavePayload leaves form unchanged when override lacks readiness', () => {
+    const form = { ai_workout_factory: { v: 1 }, exercises: [] };
+    const merged = mergeSessionReadinessOntoFormSavePayload(form, { foo: 1 });
+    expect(merged).toEqual(form);
+  });
+
+  it('readActiveSessionIdFromMetadata reads top-level and workout_context sessionId', () => {
+    expect(readActiveSessionIdFromMetadata({ sessionId: 'sess-a' })).toBe('sess-a');
+    expect(
+      readActiveSessionIdFromMetadata({
+        workout_context: { sessionId: 'sess-b', surface: 'active_session' },
+      }),
+    ).toBe('sess-b');
+    expect(readActiveSessionIdFromMetadata({})).toBeNull();
+  });
+
+  it('readSessionReadinessContextFromSessionThread ignores other sessions', () => {
+    const ctxOld = buildSessionReadinessContext({
+      readiness: 3,
+      sleepQuality: 4,
+      soreness: ['Legs'],
+    });
+    const ctxNew = buildSessionReadinessContext({
+      readiness: 8,
+      sleepQuality: 9,
+      soreness: ['None'],
+    });
+    const messages = [
+      {
+        metadata: mergeSessionReadinessIntoMetadata({ sessionId: 'sess-old' }, ctxOld),
+      },
+      {
+        metadata: { sessionId: 'sess-new' },
+      },
+      {
+        metadata: mergeSessionReadinessIntoMetadata(
+          { workout_context: { sessionId: 'sess-new' } },
+          ctxNew,
+        ),
+      },
+    ];
+    expect(readSessionReadinessContextFromSessionThread(messages, 'sess-new')).toEqual(ctxNew);
+    expect(readSessionReadinessContextFromSessionThread(messages, 'sess-missing')).toBeNull();
   });
 });
