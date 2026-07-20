@@ -157,7 +157,7 @@ export type WorkoutCoachRailProps = {
   sessionId?: string;
   /** Active Session only — class instance id for workout_context. */
   classInstanceId?: string | null;
-  /** Active Session only — pre-session readiness from task metadata (may be null). */
+  /** Active Session only — pre-session readiness from task metadata (`null` = resolved absent). */
   sessionReadinessContext?: SessionReadinessContext | null;
 };
 
@@ -175,7 +175,7 @@ export function WorkoutCoachRail({
   elapsedSec = 0,
   sessionId,
   classInstanceId = null,
-  sessionReadinessContext = null,
+  sessionReadinessContext,
 }: WorkoutCoachRailProps) {
   const myProfile = useUserProfileStore((s) => s.profile);
   const { subjectUserId: workspaceSubjectUserId } = useWorkspaceSessionSubject();
@@ -365,8 +365,9 @@ export function WorkoutCoachRail({
             if (readinessForSend) break;
           }
         }
-        // Last resort: read latest task.metadata (SSR/prop may be stale after preflight).
-        if (!readinessForSend && taskId.trim()) {
+        // Last resort DB read only when the prop was omitted (undefined), not when bridge
+        // explicitly resolved readiness to null (avoids a fetch on every follow-up send).
+        if (!readinessForSend && sessionReadinessContext === undefined && taskId.trim()) {
           const supabase = createClient();
           const { data: taskRow } = await supabase
             .from('tasks')

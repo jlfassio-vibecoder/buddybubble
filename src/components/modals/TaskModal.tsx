@@ -2980,7 +2980,7 @@ export function TaskModal({
           onOpenChange={setPreflightDialogOpen}
           {...workoutIntakePanelProps}
           onSubmitPreflight={handlePreflightSubmitAndLaunch}
-          isSubmitting={activeSessionLaunch.isLaunching}
+          isSubmitting={saving}
         />
       ) : null}
     </div>
