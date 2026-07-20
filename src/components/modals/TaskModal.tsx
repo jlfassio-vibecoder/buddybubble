@@ -364,7 +364,7 @@ export function TaskModal({
    * undo a structural/proposed apply that child effects already ran this turn.
    */
   const skipNextWorkoutPaneSyncBumpRef = useRef(false);
-  /** When the canvas is not mounted yet, apply after the pane mounts (and sync bump is skipped). */
+  /** Pending Coach canvas apply: missing handle, or structural refuse while dirty. */
   const pendingCanvasCoachOpRef = useRef<
     | {
         kind: 'structural';
@@ -1190,14 +1190,26 @@ export function TaskModal({
         };
         return;
       }
-      pendingCanvasCoachOpRef.current = null;
       const applied = applyCoachStructuralToHandle(handle!, args.patches);
       if (shouldClaimStructuralEffectAfterApply(applied)) {
+        pendingCanvasCoachOpRef.current = null;
         claimCoachEffectMessageId(
           handledStructuralPatchMessageIdsByTaskRef.current,
           args.taskId,
           args.messageId,
         );
+        return;
+      }
+      // Keep unclaimed + queued only when dirty refuse can succeed after discard/apply.
+      if (handle!.mode === 'edit' && handle!.isDirty) {
+        pendingCanvasCoachOpRef.current = {
+          kind: 'structural',
+          taskId: args.taskId,
+          messageId: args.messageId,
+          patches: args.patches,
+        };
+      } else {
+        pendingCanvasCoachOpRef.current = null;
       }
     },
     [
@@ -1619,7 +1631,7 @@ export function TaskModal({
     prevWorkoutSplitRef.current = showWorkoutSplitPane;
   }, [showWorkoutSplitPane]);
 
-  // Flush Coach canvas ops queued while the viewer was unmounted.
+  // Flush Coach canvas ops queued while the viewer was unmounted or apply was refused (dirty draft).
   useEffect(() => {
     if (!showWorkoutSplitPane) return;
     const pending = pendingCanvasCoachOpRef.current;

@@ -2,8 +2,9 @@
  * Gate for Coach `structural_patch` client effects: never claim a messageId until
  * the canvas apply succeeds. Missing handle → defer (pending retry).
  *
- * Dirty drafts are no longer deferred here: `applyStructuralPatch` write-throughs
- * coach_notes while dirty, and soft-sync merges notes from source.
+ * Dirty drafts are not deferred by this gate: `applyStructuralPatch` write-throughs
+ * coach_notes while dirty. Non–notes ops that refuse apply stay unclaimed and must
+ * be re-queued by the caller for flush-after-discard.
  */
 
 export type StructuralEffectApplyGate = 'already_claimed' | 'defer' | 'apply_now';

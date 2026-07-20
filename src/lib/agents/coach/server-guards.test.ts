@@ -187,6 +187,19 @@ describe('assertCoachReplySelfAttestation', () => {
         baseParsed({ reply_content: "I'm adding that to the coach notes now." }),
       ),
     ).toThrow();
+    expect(() =>
+      assertCoachReplySelfAttestation(
+        baseParsed({ reply_content: 'Adding that to the coach notes for Push-Ups.' }),
+      ),
+    ).toThrow();
+  });
+
+  it('does not treat generic “adding that …” coaching prose as a write claim', () => {
+    expect(() =>
+      assertCoachReplySelfAttestation(
+        baseParsed({ reply_content: 'Adding that pause will help you stay braced at the bottom.' }),
+      ),
+    ).not.toThrow();
   });
 
   it('allows I have added when structural_patch is present', () => {

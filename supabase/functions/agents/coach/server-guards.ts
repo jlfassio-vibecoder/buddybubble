@@ -11,7 +11,7 @@ import { sanitizeOutlinePatchBlocks } from './outline-block-name-sanitize.ts';
 
 /** Tight English phrase set: model claimed a write without structured output → fallback. */
 const SELF_ATTESTATION_PHRASE_RE =
-  /\b(i['']?ve\s+(updated|added|now\s+updated)|i\s+have\s+added|i\s+added|i['']?m\s+adding|i['']?ll\s+add|adding\s+(that|it|them|the|those)\b|added\s+(that|it|them|the)\s+to\s+(the\s+)?coach\s+notes|applied\s+to\s+your\s+card|written\s+to\s+your\s+card|pushed\s+(those\s+)?changes\s+to\s+(the\s+)?card|saved\s+(it|them)\s+to\s+your\s+(card|workout)|finalize(d)?\s+(the\s+)?(card|workout)\s+update)\b/i;
+  /\b(i['']?ve\s+(updated|added|now\s+updated)|i\s+have\s+added|i\s+added|i['']?m\s+adding|i['']?ll\s+add|adding\s+(that|it|them|the|those)\s+to\s+(the\s+)?coach\s+notes|added\s+(that|it|them|the)\s+to\s+(the\s+)?coach\s+notes|applied\s+to\s+your\s+card|written\s+to\s+your\s+card|pushed\s+(those\s+)?changes\s+to\s+(the\s+)?card|saved\s+(it|them)\s+to\s+your\s+(card|workout)|finalize(d)?\s+(the\s+)?(card|workout)\s+update)\b/i;
 
 /** Outline co-pilot: prose claims a structure write without `outline_draft_patch`. */
 const OUTLINE_STRUCTURE_CLAIM_RE =

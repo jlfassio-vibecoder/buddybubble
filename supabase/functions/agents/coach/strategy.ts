@@ -1547,6 +1547,8 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
           structuralPatchIsEmptyCoachNotesClaim(parsed.reply_content, structuralOps);
         // Coach-notes: resolve against the real DB merge base (id/name), not address-map only.
         if (coachNotesIntent) {
+          // Model empty-claim intent still needs the coach-notes safe-reply flag.
+          writeCoachExtras(ctx, { ...readCoachExtras(ctx), coachNotesRequestActive: true });
           const finalized = finalizeCoachNotesStructuralPatch({
             mergeBase,
             triggerContent: triggerText,
