@@ -34,11 +34,24 @@ import {
 describe('EXERCISE_CUE_REQUEST_MODE_DIRECTIVE', () => {
   it('requires immediate workout_cues_patch and forbids confirm-first language', () => {
     expect(EXERCISE_CUE_REQUEST_MODE_DIRECTIVE).toContain('IMMEDIATELY emit workout_cues_patch');
-    expect(EXERCISE_CUE_REQUEST_MODE_DIRECTIVE).toContain('Do not ask for confirmation');
+    expect(EXERCISE_CUE_REQUEST_MODE_DIRECTIVE).toContain(
+      'Do not ask for confirmation before filling standard cues',
+    );
     expect(EXERCISE_CUE_REQUEST_MODE_DIRECTIVE).not.toMatch(/do NOT emit/i);
     expect(EXERCISE_CUE_REQUEST_MODE_DIRECTIVE).not.toMatch(/\baffirm\b/i);
     expect(EXERCISE_CUE_REQUEST_MODE_DIRECTIVE).not.toContain('First turn');
     expect(EXERCISE_CUE_REQUEST_MODE_DIRECTIVE).not.toContain('Follow-up turn');
+  });
+
+  it('limits injury_prevention_tips to load-management without invented substitutions', () => {
+    expect(EXERCISE_CUE_REQUEST_MODE_DIRECTIVE).toContain('general load-management advice only');
+    expect(EXERCISE_CUE_REQUEST_MODE_DIRECTIVE).toContain(
+      'DO NOT invent exercise substitutions based purely on a short profile snippet',
+    );
+    expect(EXERCISE_CUE_REQUEST_MODE_DIRECTIVE).toContain('ONE brief clarifying question');
+    expect(EXERCISE_CUE_REQUEST_MODE_DIRECTIVE).not.toContain(
+      'include safety modifications tied to the injury snippet',
+    );
   });
 
   it('cue-mode TRUTHFULNESS in base prompt still requires workout_cues_patch when claiming a write', () => {
@@ -153,6 +166,13 @@ describe('buildApexArchitectMainChatBlock', () => {
     expect(block).toContain('Triad of Performance');
     expect(block).toContain('Clinical Precision');
     expect(block).toContain('motor unit recruitment');
+    expect(block).toContain('UNCERTAINTY CAP');
+    expect(block).toContain('MUST NOT invent mechanistic narratives');
+    expect(block).toContain('ACUTE or NEW joint pain');
+    expect(block).toContain('clarifying diagnostic question');
+    expect(block).toContain('prioritize safety over completion');
+    expect(block).toContain('JOINT PAIN ASSESSMENT PROTOCOL');
+    expect(block).not.toContain('instantly pivot to corrective');
   });
 
   it('includes CRITICAL TOKEN CONSTRAINT for card-shell-only create_card turns', () => {
@@ -210,6 +230,16 @@ describe('buildCoachOutlineOnlyPrompt', () => {
 describe('buildBaseCoachPrompt', () => {
   const prompt = buildBaseCoachPrompt('2026-05-15');
 
+  it('includes JOINT PAIN & MODIFICATION PROTOCOL in the normal diet', () => {
+    expect(prompt).toContain('### JOINT PAIN & MODIFICATION PROTOCOL');
+    expect(prompt).toContain('DIAGNOSTIC INQUIRY');
+    expect(prompt).toContain('REGRESSION HIERARCHY');
+    expect(prompt).toContain('KNOW-IT-ALL');
+    expect(prompt).toContain(
+      'YOU MUST NOT immediately guess or prescribe a biomechanical modification',
+    );
+  });
+
   it('requires clinical intake before card creation', () => {
     expect(prompt).toContain('PRE-DRAFT CONFIRMATION (clinical intake state machine)');
     expect(prompt).toContain('CLINICAL INTAKE PHASE');
@@ -256,6 +286,12 @@ describe('buildBaseCoachPrompt', () => {
     expect(live).toContain('execution_patch');
     expect(live).toContain('Do not emit task_modal_intake_patch');
     expect(live).toContain('Do NOT claim check-in data is unavailable');
+    expect(live).toContain('### JOINT PAIN & MODIFICATION PROTOCOL');
+    expect(live).toContain('DIAGNOSTIC INQUIRY');
+    expect(live).toContain('REGRESSION HIERARCHY');
+    expect(live).toContain('KNOW-IT-ALL');
+    expect(live).toContain('PAIN OVERRIDE');
+    expect(live).toContain('mandate immediately shifts to triage');
   });
 
   it('still names card_action and parametric hand-off in the base contract', () => {
@@ -752,7 +788,7 @@ describe('resolveSessionReadinessForActiveSessionPrompt', () => {
 });
 
 describe('buildWorkoutOpenGreetingPrompt readiness', () => {
-  it('requires proactive safety/goal greeting when readiness block present', () => {
+  it('requires truthful check-in + soreness triage greeting when readiness block present', () => {
     const block = buildSessionReadinessContextBlock({
       v: 1,
       captured_at: '2026-05-28T10:00:00.000Z',
@@ -768,8 +804,14 @@ describe('buildWorkoutOpenGreetingPrompt readiness', () => {
     });
     expect(prompt).toContain('PRE-SESSION READINESS PRESENT');
     expect(prompt).toContain('MUST NOT use a generic opening');
-    expect(prompt).toContain('Proactively state their energy');
-    expect(prompt).toContain('Explicitly offer to recommend specific rep or load adjustments');
+    expect(prompt).toContain(
+      'State their energy (readiness), sleep quality, and specific soreness areas',
+    );
+    expect(prompt).toContain('open-ended triage question');
+    expect(prompt).toContain('basic overhead reaches, or just under load');
+    expect(prompt).toContain('Do NOT close by volunteering specific rep/load drops');
+    expect(prompt).not.toContain('To protect those joints today');
+    expect(prompt).not.toContain('Explicitly offer to recommend specific rep or load adjustments');
     expect(prompt).toContain('Do NOT ask them to re-rate readiness');
     expect(prompt).toContain(SESSION_READINESS_CONTEXT_HEADER);
     expect(prompt).toContain('CRITICAL JSON REQUIREMENT');
@@ -868,10 +910,15 @@ describe('mid-workout readiness directives', () => {
       MID_WORKOUT_SUPPORT_MODE_DIRECTIVE,
       ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE,
       ACTIVE_SESSION_PREFLIGHT_READINESS_DIRECTIVE,
+      PAIN_OVERRIDE_LIVE_SESSION_DIRECTIVE,
     } = await import('./config');
     expect(MID_WORKOUT_SUPPORT_MODE_DIRECTIVE).toContain('PRE-SESSION READINESS');
     expect(MID_WORKOUT_SUPPORT_MODE_DIRECTIVE).toContain('how-are-you-feeling');
+    expect(MID_WORKOUT_SUPPORT_MODE_DIRECTIVE).toContain('PAIN OVERRIDE');
     expect(ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE).toContain('PRE-SESSION READINESS');
+    expect(ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE).toContain('PAIN OVERRIDE');
+    expect(PAIN_OVERRIDE_LIVE_SESSION_DIRECTIVE).toContain('JOINT PAIN MODIFICATION PROTOCOL');
+    expect(PAIN_OVERRIDE_LIVE_SESSION_DIRECTIVE).toContain('Do not invent wild substitutions');
     expect(ACTIVE_SESSION_PREFLIGHT_READINESS_DIRECTIVE).toContain('already-generated workout');
     expect(ACTIVE_SESSION_PREFLIGHT_READINESS_DIRECTIVE).toContain('NOT Generate Workout intake');
     expect(ACTIVE_SESSION_PREFLIGHT_READINESS_DIRECTIVE).toContain(

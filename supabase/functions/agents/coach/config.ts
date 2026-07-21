@@ -168,11 +168,19 @@ export const COACH_OUTLINE_TRUNCATED_SAFE_REPLY =
  * Mid-workout support directive appended when CURRENT WORKOUT CONTEXT is provided.
  * Verbatim from `bubble-agent-dispatch/index.ts:211-213`.
  */
+/**
+ * Pain triage override for live / mid-workout prescribe mandates.
+ * Assess → Triage → Regress wins over "MUST prescribe" when acute pain is reported.
+ */
+export const PAIN_OVERRIDE_LIVE_SESSION_DIRECTIVE =
+  'PAIN OVERRIDE: While you generally MUST prescribe weights and reps, if ACUTE PAIN is reported mid-workout, your mandate immediately shifts to triage. You MUST pause prescription, apply the JOINT PAIN MODIFICATION PROTOCOL, and default to pausing the set, reducing ROM, or skipping the exercise entirely. Do not invent wild substitutions to keep them moving. ';
+
 export const MID_WORKOUT_SUPPORT_MODE_DIRECTIVE =
   "If 'CURRENT WORKOUT CONTEXT' is provided below, you are in Mid-Workout Support Mode. Your primary job is to guide the user through THIS specific workout, modify weights or reps for THIS workout, or answer form and execution questions about THIS workout. DO NOT generate a brand new workout or prescribe a replacement program unless the user explicitly asks to completely replace the current session. " +
   "If 'CURRENT TASK CONTEXT' also appears below, ignore PRE-DRAFT CONFIRMATION from that block for live load adjustments: mid-workout weight, rep, or RPE changes are execution_patch only (keep update_existing_task false) unless the user clearly asks to permanently change the task or card. " +
   "If PRE-SESSION READINESS is present below, use it as ground truth for today's readiness when adjusting reps, weight, or RPE. " +
-  'If PRE-SESSION READINESS is absent, do not invent check-in values; ask a short how-are-you-feeling question before prescribing load or rep changes. ';
+  'If PRE-SESSION READINESS is absent, do not invent check-in values; ask a short how-are-you-feeling question before prescribing load or rep changes. ' +
+  PAIN_OVERRIDE_LIVE_SESSION_DIRECTIVE;
 
 /**
  * Injected when Active Session surface is detected. Pre-session check-in is realtime
@@ -195,6 +203,7 @@ export const ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE =
   'When INTERVAL_BLOCK_TIMERS appear in SESSION TELEMETRY, treat running_block_clock_elapsed as the authoritative block clock for pacing and completion—not global_session_time_elapsed. ' +
   'When PRE-SESSION READINESS is present, ground load/rep/RPE suggestions in that check-in and emit execution_patch for concrete session changes. ' +
   'When PRE-SESSION READINESS is absent, do not invent check-in values and do not claim check-in is unavailable due to Task Modal or generation workflow — ask briefly how they feel before prescribing. ' +
+  PAIN_OVERRIDE_LIVE_SESSION_DIRECTIVE +
   'CRITICAL FORMATTING RULE: When emitting numerical values as strings in execution_patch (such as weight, reps, rpe, or distance), you MUST use clean whole numbers or a maximum of 2 decimal places (e.g. output "53" or "53.5", NEVER "53.000000..."). Never generate infinite trailing zeros.';
 
 export const SESSION_TELEMETRY_GROUND_TRUTH_DIRECTIVE =
