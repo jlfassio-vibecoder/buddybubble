@@ -171,7 +171,8 @@ describe('buildApexArchitectMainChatBlock', () => {
     expect(block).toContain('ACUTE or NEW joint pain');
     expect(block).toContain('clarifying diagnostic question');
     expect(block).toContain('prioritize safety over completion');
-    expect(block).toContain('JOINT PAIN ASSESSMENT PROTOCOL');
+    expect(block).toContain('JOINT PAIN & MODIFICATION PROTOCOL');
+    expect(block).not.toContain('JOINT PAIN ASSESSMENT PROTOCOL');
     expect(block).not.toContain('instantly pivot to corrective');
   });
 
@@ -916,8 +917,8 @@ describe('mid-workout readiness directives', () => {
     expect(MID_WORKOUT_SUPPORT_MODE_DIRECTIVE).toContain('how-are-you-feeling');
     expect(MID_WORKOUT_SUPPORT_MODE_DIRECTIVE).toContain('PAIN OVERRIDE');
     expect(ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE).toContain('PRE-SESSION READINESS');
-    expect(ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE).toContain('PAIN OVERRIDE');
-    expect(PAIN_OVERRIDE_LIVE_SESSION_DIRECTIVE).toContain('JOINT PAIN MODIFICATION PROTOCOL');
+    expect(ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE).not.toContain('PAIN OVERRIDE');
+    expect(PAIN_OVERRIDE_LIVE_SESSION_DIRECTIVE).toContain('JOINT PAIN & MODIFICATION PROTOCOL');
     expect(PAIN_OVERRIDE_LIVE_SESSION_DIRECTIVE).toContain('Do not invent wild substitutions');
     expect(ACTIVE_SESSION_PREFLIGHT_READINESS_DIRECTIVE).toContain('already-generated workout');
     expect(ACTIVE_SESSION_PREFLIGHT_READINESS_DIRECTIVE).toContain('NOT Generate Workout intake');
