@@ -92,4 +92,30 @@ describe('sortTasksByScheduledOn', () => {
     const sorted = sortTasksByScheduledOn([a, b, c], 'asc').map((t) => t.id);
     expect(sorted).toEqual(['b', 'a', 'c']);
   });
+
+  it('desc puts newest scheduled_on first', () => {
+    const older = taskStub({ id: 'older', scheduled_on: '2026-04-01' });
+    const newer = taskStub({ id: 'newer', scheduled_on: '2026-04-10' });
+    expect(sortTasksByScheduledOn([older, newer], 'desc').map((t) => t.id)).toEqual([
+      'newer',
+      'older',
+    ]);
+  });
+
+  it('desc puts newest created_at first when both lack scheduled_on', () => {
+    const older = taskStub({
+      id: 'older',
+      scheduled_on: null,
+      created_at: '2026-01-01T00:00:00Z',
+    });
+    const newer = taskStub({
+      id: 'newer',
+      scheduled_on: null,
+      created_at: '2026-06-01T00:00:00Z',
+    });
+    expect(sortTasksByScheduledOn([older, newer], 'desc').map((t) => t.id)).toEqual([
+      'newer',
+      'older',
+    ]);
+  });
 });

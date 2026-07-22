@@ -18,6 +18,7 @@ import {
   Lock,
   MessageCircle,
   Pencil,
+  Pin,
   Play,
   Video,
 } from 'lucide-react';
@@ -54,6 +55,8 @@ export type KanbanTaskCardProps = {
   onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
   /** Opens the Workout Player directly for workout / workout_log cards. */
   onStartWorkout?: (task: TaskRow) => void;
+  /** Toggle shared board pin (pinned tier). */
+  onTogglePin?: (taskId: string) => void;
   /** Controls how much information is shown on the card (board-level setting). */
   density?: KanbanCardDensity;
   /** Workspace template — drives date chip label (Due vs Scheduled). */
@@ -296,6 +299,8 @@ function KanbanCardQuickActions({
   commentLatestUnreadMessageId,
   onOpenTask,
   onStartWorkout,
+  onTogglePin,
+  canWrite,
   paywallLocked,
 }: {
   variant: 'cover' | 'default';
@@ -305,6 +310,8 @@ function KanbanCardQuickActions({
   commentLatestUnreadMessageId: string | null;
   onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
   onStartWorkout?: (task: TaskRow) => void;
+  onTogglePin?: (taskId: string) => void;
+  canWrite?: boolean;
   paywallLocked?: boolean;
 }) {
   const cover = variant === 'cover';
@@ -316,6 +323,7 @@ function KanbanCardQuickActions({
   const play = cover
     ? 'text-white/85 hover:bg-white/15 hover:text-white'
     : 'text-muted-foreground hover:bg-muted hover:text-primary';
+  const pinned = Boolean((task as TaskRow & { is_pinned?: boolean }).is_pinned);
   const showQuickView = Boolean(onOpenTask && taskRowHasWorkoutViewerContent(task));
   const guardOpen = (fn: () => void) => {
     if (paywallLocked) {
@@ -331,6 +339,22 @@ function KanbanCardQuickActions({
       role="toolbar"
       aria-label="Card quick actions"
     >
+      {canWrite && onTogglePin ? (
+        <button
+          type="button"
+          className={cn(base, pinned ? (cover ? 'text-white' : 'text-primary') : neutral)}
+          aria-label={pinned ? 'Unpin card' : 'Pin card to top'}
+          aria-pressed={pinned}
+          title={pinned ? 'Unpin' : 'Pin to top'}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onTogglePin(task.id);
+          }}
+        >
+          <Pin className={cn('size-4', pinned && 'fill-current')} aria-hidden />
+        </button>
+      ) : null}
       {showQuickView ? (
         <button
           type="button"
@@ -426,6 +450,7 @@ export function KanbanTaskCard({
   onMoveToBubble,
   onOpenTask,
   onStartWorkout,
+  onTogglePin,
   density = 'full',
   workspaceCategory = null,
   calendarTimezone = null,
@@ -711,6 +736,8 @@ export function KanbanTaskCard({
                       commentLatestUnreadMessageId={commentLatestUnreadMessageId}
                       onOpenTask={onOpenTask}
                       onStartWorkout={onStartWorkout}
+                      onTogglePin={onTogglePin}
+                      canWrite={canWrite}
                       paywallLocked={paywallLocked}
                     />
                   </div>
@@ -886,6 +913,8 @@ export function KanbanTaskCard({
                           commentLatestUnreadMessageId={commentLatestUnreadMessageId}
                           onOpenTask={onOpenTask}
                           onStartWorkout={onStartWorkout}
+                          onTogglePin={onTogglePin}
+                          canWrite={canWrite}
                           paywallLocked={paywallLocked}
                         />
                       </div>

@@ -227,20 +227,35 @@ export function ClassCard({
             Edit
           </Button>
           {!liveDockActive ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              className="h-8 w-full gap-2 text-xs shadow-sm"
-              onClick={() => {
-                const q = new URLSearchParams(searchParams.toString());
-                q.set('class_deck_builder', instance.id);
-                router.replace(`${pathname}?${q.toString()}`, { scroll: false });
-              }}
-            >
-              <ListOrdered className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              Workout Builder
-            </Button>
+            <div className="relative w-full">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="h-8 w-full gap-2 text-xs shadow-sm"
+                aria-label={
+                  instance.deck_workout_count > 0
+                    ? `Workout Builder, ${instance.deck_workout_count} workout${instance.deck_workout_count === 1 ? '' : 's'}`
+                    : 'Workout Builder'
+                }
+                onClick={() => {
+                  const q = new URLSearchParams(searchParams.toString());
+                  q.set('class_deck_builder', instance.id);
+                  router.replace(`${pathname}?${q.toString()}`, { scroll: false });
+                }}
+              >
+                <ListOrdered className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                Workout Builder
+              </Button>
+              {instance.deck_workout_count > 0 ? (
+                <span
+                  data-testid="class-deck-workout-count"
+                  className="pointer-events-none absolute -right-1 -top-1 z-10 min-w-5 rounded-full bg-primary px-1.5 py-0.5 text-center text-[11px] font-semibold text-white tabular-nums shadow-sm"
+                >
+                  {instance.deck_workout_count}
+                </span>
+              ) : null}
+            </div>
           ) : null}
         </div>
       ) : null}

@@ -2027,9 +2027,11 @@ export type Database = {
           created_by: string | null;
           description: string | null;
           id: string;
+          is_pinned: boolean;
           item_type: string;
           last_task_comment_at: string | null;
           metadata: Json;
+          pin_order: number | null;
           position: number;
           priority: string;
           program_id: string | null;
@@ -2049,9 +2051,11 @@ export type Database = {
           created_by?: string | null;
           description?: string | null;
           id?: string;
+          is_pinned?: boolean;
           item_type?: string;
           last_task_comment_at?: string | null;
           metadata?: Json;
+          pin_order?: number | null;
           position?: number;
           priority?: string;
           program_id?: string | null;
@@ -2071,9 +2075,11 @@ export type Database = {
           created_by?: string | null;
           description?: string | null;
           id?: string;
+          is_pinned?: boolean;
           item_type?: string;
           last_task_comment_at?: string | null;
           metadata?: Json;
+          pin_order?: number | null;
           position?: number;
           priority?: string;
           program_id?: string | null;

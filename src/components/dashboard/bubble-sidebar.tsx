@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Hash, Lock, PanelLeftClose, Settings, Settings2, Sparkles, Users } from 'lucide-react';
 import type { BubbleRow } from '@/types/database';
 import { ALL_BUBBLES_BUBBLE_ID, ALL_BUBBLES_LABEL } from '@/lib/all-bubbles';
+import { stripTrialBubbleNamePrefix } from '@/lib/trial-member-bubble-name';
 import { createBubbleAction } from '@/app/(dashboard)/app/[workspace_id]/bubble-actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -353,7 +354,9 @@ export function BubbleSidebar({
                         ) : (
                           <Hash className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
                         )}
-                        <span className="min-w-0 flex-1 truncate">{b.name}</span>
+                        <span className="min-w-0 flex-1 truncate">
+                          {b.bubble_type === 'dm' ? stripTrialBubbleNamePrefix(b.name) : b.name}
+                        </span>
                         {bubblePeers.length > 0 ? (
                           <span
                             className="flex shrink-0 items-center gap-0.5"

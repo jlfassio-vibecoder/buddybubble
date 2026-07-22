@@ -19,6 +19,7 @@ import {
   TouchSensor,
   closestCorners,
   defaultDropAnimation,
+  useDraggable,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
@@ -52,11 +53,19 @@ import {
   DATE_SORT_STORAGE_KEY,
   parseDateFilter,
   parseDateSortMode,
-  sortTasksByScheduledOn,
   taskMatchesDateFilter,
   type DateFilter,
   type DateSortMode,
 } from '@/lib/task-date-filter';
+import { taskMatchesTextFilter } from '@/lib/task-text-filter';
+import {
+  concatPinnedUnpinned,
+  nextPinOrder,
+  orderColumnTasksWithPins,
+  reindexPinOrders,
+  sortPinnedByPinOrder,
+  taskIsPinned,
+} from '@/lib/task-pin';
 import { parseCalendarDayDropId } from '@/lib/calendar-dnd';
 import { taskColumnIsCompletionStatus } from '@/lib/kanban-column-semantic';
 import { scheduledOnRelativeToWorkspaceToday } from '@/lib/workspace-calendar';
@@ -541,7 +550,9 @@ export function KanbanBoard({
   const [cardDensity, setCardDensity] = useState<KanbanCardDensity>('full');
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
-  const [dateSortMode, setDateSortMode] = useState<DateSortMode>('none');
+  const [dateSortMode, setDateSortMode] = useState<DateSortMode>('desc');
+  /** Session-only keyword filter (title / description / workout_type); not persisted. */
+  const [textFilter, setTextFilter] = useState('');
   const [collapsedColumnIds, setCollapsedColumnIds] = useState<Set<string>>(() =>
     loadKanbanCollapsedColumnIds(
       typeof window !== 'undefined'
@@ -772,6 +783,10 @@ export function KanbanBoard({
     localStorage.setItem(DATE_SORT_STORAGE_KEY, m);
   }, []);
 
+  const handleTextFilterChange = useCallback((q: string) => {
+    setTextFilter(q);
+  }, []);
+
   const handleBoardSegmentChange = useCallback((segment: KanbanBoardSegment) => {
     setBoardSegment(segment);
   }, []);
@@ -825,10 +840,11 @@ export function KanbanBoard({
           return taskMatchesDateFilter(t, dateFilter, tz);
         });
       }
-      if (dateSortMode !== 'none') {
-        list = sortTasksByScheduledOn(list, dateSortMode);
+      if (textFilter.trim()) {
+        list = list.filter((t) => taskMatchesTextFilter(t, textFilter));
       }
-      next[s] = list;
+      const { pinned, unpinned } = orderColumnTasksWithPins(list, dateSortMode);
+      next[s] = concatPinnedUnpinned(pinned, unpinned);
     }
     return next;
   }, [
@@ -838,6 +854,7 @@ export function KanbanBoard({
     segmentPastOverdue,
     priorityFilter,
     dateFilter,
+    textFilter,
     dateSortMode,
     tz,
   ]);
@@ -889,9 +906,10 @@ export function KanbanBoard({
 
   const { bubbleUpPropsFor } = useTaskBubbleUps(allBoardTaskIds);
 
-  // Disable manual reorder when column order is computed (date sort), so drag state matches visible order.
-  const dragSortDisabled =
-    priorityFilter !== 'all' || dateFilter !== 'all' || dateSortMode !== 'none';
+  // Filters hide cards → block pin-tier vertical reorder (visible list incomplete).
+  // dateSortMode no longer disables drag; unpinned stay non-sortable, pinned remain reorderable.
+  const pinReorderDisabled =
+    priorityFilter !== 'all' || dateFilter !== 'all' || textFilter.trim().length > 0;
 
   const toggleColumnCollapse = useCallback(
     (columnId: string) => {
@@ -933,7 +951,17 @@ export function KanbanBoard({
       const supabase = createClient();
       const results = await Promise.all(
         flat.map((t, i) =>
-          supabase.from('tasks').update({ position: i, status: t.status }).eq('id', t.id),
+          supabase
+            .from('tasks')
+            .update({
+              position: i,
+              status: t.status,
+              is_pinned: taskIsPinned(t),
+              pin_order: taskIsPinned(t)
+                ? ((t as TaskRow & { pin_order?: number | null }).pin_order ?? null)
+                : null,
+            })
+            .eq('id', t.id),
         ),
       );
       const failed = results.find((r) => r.error);
@@ -945,6 +973,85 @@ export function KanbanBoard({
       void loadTasks();
     },
     [bubbleId, canWrite, columnSlugs, loadTasks],
+  );
+
+  const persistPinnedOrders = useCallback(
+    async (pinnedOrdered: TaskRow[]) => {
+      if (!canWrite || pinnedOrdered.length === 0) return;
+      const supabase = createClient();
+      const results = await Promise.all(
+        pinnedOrdered.map((t, i) =>
+          supabase
+            .from('tasks')
+            .update({ is_pinned: true, pin_order: i + 1 })
+            .eq('id', t.id),
+        ),
+      );
+      const failed = results.find((r) => r.error);
+      if (failed?.error) {
+        console.error(
+          '[KanbanBoard] pin_order update failed',
+          supabaseClientErrorMessage(failed.error),
+        );
+        void loadTasks();
+        return;
+      }
+      void loadTasks();
+    },
+    [canWrite, loadTasks],
+  );
+
+  const toggleTaskPinned = useCallback(
+    (taskId: string) => {
+      if (!canWrite) return;
+      setColumns((prev) => {
+        let status: string | null = null;
+        let task: TaskRow | undefined;
+        for (const s of columnSlugs) {
+          const found = (prev[s] ?? []).find((t) => t.id === taskId);
+          if (found) {
+            status = s;
+            task = found;
+            break;
+          }
+        }
+        if (!status || !task) return prev;
+        const list = prev[status] ?? [];
+        let nextTask: TaskRow;
+        if (taskIsPinned(task)) {
+          nextTask = { ...task, is_pinned: false, pin_order: null };
+        } else {
+          const pinned = list.filter((t) => t.id !== taskId && taskIsPinned(t));
+          nextTask = {
+            ...task,
+            is_pinned: true,
+            pin_order: nextPinOrder(pinned),
+          };
+        }
+        const next = {
+          ...prev,
+          [status]: list.map((t) => (t.id === taskId ? nextTask : t)),
+        };
+        const supabase = createClient();
+        void supabase
+          .from('tasks')
+          .update({
+            is_pinned: taskIsPinned(nextTask),
+            pin_order: taskIsPinned(nextTask)
+              ? ((nextTask as TaskRow & { pin_order?: number | null }).pin_order ?? null)
+              : null,
+          })
+          .eq('id', taskId)
+          .then(({ error }) => {
+            if (error) {
+              console.error('[KanbanBoard] toggle pin failed', supabaseClientErrorMessage(error));
+              void loadTasks();
+            }
+          });
+        return next;
+      });
+    },
+    [canWrite, columnSlugs, loadTasks],
   );
 
   const sortColumnBy = useCallback(
@@ -1053,8 +1160,10 @@ export function KanbanBoard({
 
       let activeContainer = findContainerForId(activeId, current, columnSlugs);
       let overContainer = findContainerForId(overId, current, columnSlugs);
+      let didCrossContainer = false;
       if (activeContainer && overContainer && activeContainer !== overContainer) {
         current = moveBetweenContainers(current, activeId, overId, active, over, columnSlugs);
+        didCrossContainer = true;
       }
 
       activeContainer = findContainerForId(activeId, current, columnSlugs);
@@ -1067,28 +1176,114 @@ export function KanbanBoard({
 
       let next = current;
 
-      if (activeContainer === overContainer) {
-        const items = [...(current[activeContainer] ?? [])];
-        const activeIndex = items.findIndex((t) => t.id === activeId);
-        let overIndex = items.findIndex((t) => t.id === overId);
-        if (columnSlugs.includes(overId)) {
-          overIndex = Math.max(0, items.length - 1);
+      if (didCrossContainer) {
+        const list = [...(next[activeContainer] ?? [])];
+        const moved = list.find((t) => t.id === activeId);
+        if (moved && taskIsPinned(moved)) {
+          const othersPinned = list.filter((t) => t.id !== activeId && taskIsPinned(t));
+          const order = nextPinOrder(othersPinned);
+          next = {
+            ...next,
+            [activeContainer]: list.map((t) =>
+              t.id === activeId
+                ? { ...t, is_pinned: true, pin_order: order, status: activeContainer! }
+                : t,
+            ),
+          };
         }
-        if (activeIndex >= 0 && overIndex >= 0 && activeIndex !== overIndex) {
-          const reordered = arrayMove(items, activeIndex, overIndex).map((t) => ({
-            ...t,
-            status: activeContainer!,
-          }));
-          next = { ...current, [activeContainer]: reordered };
+        setColumns(next);
+        void persistColumns(next);
+      } else if (activeContainer === overContainer) {
+        const items = [...(current[activeContainer] ?? [])];
+        const activeTask = items.find((t) => t.id === activeId);
+        if (!activeTask || pinReorderDisabled) {
+          columnsSnapshotRef.current = null;
+          draggingRef.current = false;
+          return;
+        }
+
+        const overTask = items.find((t) => t.id === overId);
+        const activePinned = taskIsPinned(activeTask);
+        /** Column shell drop or missing over card: stay in-tier (no cross-tier). */
+        if (overTask && taskIsPinned(overTask) !== activePinned) {
+          columnsSnapshotRef.current = null;
+          draggingRef.current = false;
+          return;
+        }
+
+        const pinned = sortPinnedByPinOrder(items.filter(taskIsPinned));
+        const unpinned = [...items.filter((t) => !taskIsPinned(t))].sort(
+          (a, b) => (a.position ?? 0) - (b.position ?? 0),
+        );
+
+        if (activePinned) {
+          const activePinIndex = pinned.findIndex((t) => t.id === activeId);
+          let overPinIndex = pinned.findIndex((t) => t.id === overId);
+          if (overPinIndex < 0) {
+            /** Not over a pinned card — do not spill into unpinned tier. */
+            columnsSnapshotRef.current = null;
+            draggingRef.current = false;
+            return;
+          }
+          if (activePinIndex < 0 || activePinIndex === overPinIndex) {
+            columnsSnapshotRef.current = null;
+            draggingRef.current = false;
+            return;
+          }
+          const reorderedPinned = reindexPinOrders(arrayMove(pinned, activePinIndex, overPinIndex));
+          next = {
+            ...current,
+            [activeContainer]: [...reorderedPinned, ...unpinned].map((t) => ({
+              ...t,
+              status: activeContainer!,
+            })),
+          };
+          setColumns(next);
+          void persistPinnedOrders(reorderedPinned);
+        } else {
+          /** Manual order only: vertical reorder within unpinned tier. */
+          if (dateSortMode !== 'none') {
+            columnsSnapshotRef.current = null;
+            draggingRef.current = false;
+            return;
+          }
+          const activeUnIndex = unpinned.findIndex((t) => t.id === activeId);
+          let overUnIndex = unpinned.findIndex((t) => t.id === overId);
+          if (overUnIndex < 0) {
+            columnsSnapshotRef.current = null;
+            draggingRef.current = false;
+            return;
+          }
+          if (activeUnIndex < 0 || activeUnIndex === overUnIndex) {
+            columnsSnapshotRef.current = null;
+            draggingRef.current = false;
+            return;
+          }
+          const reorderedUnpinned = arrayMove(unpinned, activeUnIndex, overUnIndex);
+          next = {
+            ...current,
+            [activeContainer]: [...pinned, ...reorderedUnpinned].map((t) => ({
+              ...t,
+              status: activeContainer!,
+            })),
+          };
+          setColumns(next);
+          void persistColumns(next);
         }
       }
 
-      setColumns(next);
-      void persistColumns(next);
       columnsSnapshotRef.current = null;
       draggingRef.current = false;
     },
-    [canWrite, columnSlugs, loadTasks, persistColumns],
+    [
+      canWrite,
+      columnSlugs,
+      dateSortMode,
+      loadTasks,
+      persistColumns,
+      persistPinnedOrders,
+      pinReorderDisabled,
+    ],
   );
 
   const handleDragCancel = useCallback(() => {
@@ -1290,6 +1485,8 @@ export function KanbanBoard({
     onDateFilterChange: handleDateFilterChange,
     dateSortMode,
     onDateSortModeChange: handleDateSortModeChange,
+    textFilter,
+    onTextFilterChange: handleTextFilterChange,
     onOpenFullEditor: onOpenCreateTask ? () => onOpenCreateTask() : undefined,
     onOpenArchive:
       bubbleId && bubbleId !== ALL_BUBBLES_BUBBLE_ID ? () => setIsArchiveOpen(true) : undefined,
@@ -1429,7 +1626,8 @@ export function KanbanBoard({
                     boardChildTasksByShellId={visibleBoardChildTasksByShellId}
                     collapsed={collapsedColumnIds.has(col.id)}
                     canWrite={canWrite}
-                    dragDisabled={dragSortDisabled}
+                    pinReorderDisabled={pinReorderDisabled}
+                    dateSortMode={dateSortMode}
                     bubbles={bubbles}
                     boardReady={boardReady}
                     boardColumnDefs={columnDefs}
@@ -1441,6 +1639,7 @@ export function KanbanBoard({
                     onMoveToBubble={moveTaskToBubble}
                     onOpenTask={handleOpenTaskForBoard}
                     onStartWorkout={onStartWorkout}
+                    onTogglePin={canWrite ? toggleTaskPinned : undefined}
                     bubbleUpPropsFor={bubbleUpPropsFor}
                     onAddNew={addNew}
                     onSortByPriority={canWrite ? () => sortColumnBy(col.id, 'priority') : undefined}
@@ -1644,8 +1843,9 @@ type ColumnProps = {
   boardChildTasksByShellId: Map<string, TaskRow[]>;
   collapsed: boolean;
   canWrite: boolean;
-  /** When true, cards are not draggable (e.g. priority filter is not "all"). */
-  dragDisabled: boolean;
+  /** When true, pin-tier vertical reorder is off (filters active); lateral drag still works. */
+  pinReorderDisabled: boolean;
+  dateSortMode: DateSortMode;
   boardReady: boolean;
   bubbles: BubbleRow[];
   boardColumnDefs: { id: string; label: string }[] | null;
@@ -1657,12 +1857,80 @@ type ColumnProps = {
   onMoveToBubble: (taskId: string, targetBubbleId: string) => void;
   onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
   onStartWorkout?: (task: TaskRow) => void;
+  onTogglePin?: (taskId: string) => void;
   bubbleUpPropsFor: (taskId: string) => TaskBubbleUpControlProps | undefined;
   onAddNew?: () => void;
   onSortByPriority?: () => void;
   onSortByTitle?: () => void;
   onToggleCollapse: () => void;
 };
+
+type BoardCardDragMode = 'sortable' | 'draggable' | 'none';
+
+function renderColumnCard(
+  task: TaskRow,
+  opts: {
+    canWrite: boolean;
+    dragMode: BoardCardDragMode;
+    boardChildTasksByShellId: Map<string, TaskRow[]>;
+    bubbles: BubbleRow[];
+    boardColumnDefs: { id: string; label: string }[] | null;
+    cardDensity: KanbanCardDensity;
+    workspaceCategory: WorkspaceCategory | null;
+    calendarTimezone: string;
+    commentUnreadByTaskId: Record<string, number>;
+    commentLatestUnreadMessageIdByTaskId: Record<string, string | null>;
+    onMoveToBubble: (taskId: string, targetBubbleId: string) => void;
+    onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
+    onStartWorkout?: (task: TaskRow) => void;
+    onTogglePin?: (taskId: string) => void;
+    bubbleUpPropsFor: (taskId: string) => TaskBubbleUpControlProps | undefined;
+  },
+) {
+  if (isProgramShellTask(task)) {
+    return (
+      <BoardProgramShellCard
+        key={task.id}
+        shellTask={task}
+        childTasks={opts.boardChildTasksByShellId.get(task.id) ?? []}
+        canWrite={opts.canWrite}
+        dragMode={opts.dragMode}
+        bubbles={opts.bubbles}
+        boardColumnDefs={opts.boardColumnDefs}
+        cardDensity={opts.cardDensity}
+        workspaceCategory={opts.workspaceCategory}
+        calendarTimezone={opts.calendarTimezone}
+        commentUnreadByTaskId={opts.commentUnreadByTaskId}
+        commentLatestUnreadMessageIdByTaskId={opts.commentLatestUnreadMessageIdByTaskId}
+        onMoveToBubble={opts.onMoveToBubble}
+        onOpenTask={opts.onOpenTask}
+        onStartWorkout={opts.onStartWorkout}
+        onTogglePin={opts.onTogglePin}
+        bubbleUpPropsFor={opts.bubbleUpPropsFor}
+      />
+    );
+  }
+  return (
+    <BoardTaskCard
+      key={task.id}
+      task={task}
+      canWrite={opts.canWrite}
+      dragMode={opts.dragMode}
+      bubbles={opts.bubbles}
+      boardColumnDefs={opts.boardColumnDefs}
+      cardDensity={opts.cardDensity}
+      workspaceCategory={opts.workspaceCategory}
+      calendarTimezone={opts.calendarTimezone}
+      commentUnreadCount={opts.commentUnreadByTaskId[task.id] ?? 0}
+      commentLatestUnreadMessageId={opts.commentLatestUnreadMessageIdByTaskId[task.id] ?? null}
+      onMoveToBubble={opts.onMoveToBubble}
+      onOpenTask={opts.onOpenTask}
+      onStartWorkout={opts.onStartWorkout}
+      onTogglePin={opts.onTogglePin}
+      bubbleUp={opts.bubbleUpPropsFor(task.id)}
+    />
+  );
+}
 
 function KanbanColumn({
   column,
@@ -1672,7 +1940,8 @@ function KanbanColumn({
   boardChildTasksByShellId,
   collapsed,
   canWrite,
-  dragDisabled,
+  pinReorderDisabled,
+  dateSortMode,
   boardReady,
   bubbles,
   boardColumnDefs,
@@ -1684,6 +1953,7 @@ function KanbanColumn({
   onMoveToBubble,
   onOpenTask,
   onStartWorkout,
+  onTogglePin,
   bubbleUpPropsFor,
   onAddNew,
   onSortByPriority,
@@ -1695,8 +1965,45 @@ function KanbanColumn({
     () => topLevelTasksForShellGrouping(tasks, boardShellIds),
     [tasks, boardShellIds],
   );
-  const ids = useMemo(() => renderTasks.map((t) => t.id), [renderTasks]);
+  const pinnedTasks = useMemo(() => renderTasks.filter(taskIsPinned), [renderTasks]);
+  const unpinnedTasks = useMemo(() => renderTasks.filter((t) => !taskIsPinned(t)), [renderTasks]);
+  const pinnedIds = useMemo(() => pinnedTasks.map((t) => t.id), [pinnedTasks]);
+  const unpinnedIds = useMemo(() => unpinnedTasks.map((t) => t.id), [unpinnedTasks]);
   const addDisabled = !boardReady || !onAddNew;
+
+  const cardOpts = {
+    canWrite,
+    boardChildTasksByShellId,
+    bubbles,
+    boardColumnDefs,
+    cardDensity,
+    workspaceCategory,
+    calendarTimezone,
+    commentUnreadByTaskId,
+    commentLatestUnreadMessageIdByTaskId,
+    onMoveToBubble,
+    onOpenTask,
+    onStartWorkout,
+    onTogglePin,
+    bubbleUpPropsFor,
+  };
+
+  const pinnedDragMode: BoardCardDragMode = !canWrite
+    ? 'none'
+    : pinReorderDisabled
+      ? 'draggable'
+      : 'sortable';
+  const unpinnedDragMode: BoardCardDragMode = !canWrite
+    ? 'none'
+    : pinReorderDisabled
+      ? 'draggable'
+      : dateSortMode === 'none'
+        ? 'sortable'
+        : 'draggable';
+
+  const unpinnedCards = unpinnedTasks.map((task) =>
+    renderColumnCard(task, { ...cardOpts, dragMode: unpinnedDragMode }),
+  );
 
   return (
     <div
@@ -1733,77 +2040,50 @@ function KanbanColumn({
             onToggleCollapse={onToggleCollapse}
           />
           <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-0.5">
-            <SortableContext items={ids} strategy={verticalListSortingStrategy}>
-              <div className="pr-1.5">
-                {renderTasks.length === 0 ? (
-                  onAddNew ? (
+            <div className="pr-1.5">
+              {renderTasks.length === 0 ? (
+                onAddNew ? (
+                  <KanbanColumnAdd
+                    variant="empty"
+                    disabled={addDisabled}
+                    onAdd={onAddNew}
+                    className="mb-1"
+                  />
+                ) : (
+                  <p className="py-6 text-center text-xs text-muted-foreground">No cards here</p>
+                )
+              ) : (
+                <>
+                  <SortableContext items={pinnedIds} strategy={verticalListSortingStrategy}>
+                    {pinnedTasks.map((task) =>
+                      renderColumnCard(task, { ...cardOpts, dragMode: pinnedDragMode }),
+                    )}
+                  </SortableContext>
+                  {pinnedTasks.length > 0 && unpinnedTasks.length > 0 ? (
+                    <div
+                      className="my-2 border-t border-border/60"
+                      role="separator"
+                      aria-label="Pinned cards above"
+                    />
+                  ) : null}
+                  {unpinnedDragMode === 'sortable' ? (
+                    <SortableContext items={unpinnedIds} strategy={verticalListSortingStrategy}>
+                      {unpinnedCards}
+                    </SortableContext>
+                  ) : (
+                    unpinnedCards
+                  )}
+                  {onAddNew ? (
                     <KanbanColumnAdd
-                      variant="empty"
+                      variant="inline"
                       disabled={addDisabled}
                       onAdd={onAddNew}
                       className="mb-1"
                     />
-                  ) : (
-                    <p className="py-6 text-center text-xs text-muted-foreground">No cards here</p>
-                  )
-                ) : (
-                  <>
-                    {renderTasks.map((task) =>
-                      isProgramShellTask(task) ? (
-                        <SortableProgramShellCard
-                          key={task.id}
-                          shellTask={task}
-                          childTasks={boardChildTasksByShellId.get(task.id) ?? []}
-                          canWrite={canWrite}
-                          dragDisabled={dragDisabled}
-                          bubbles={bubbles}
-                          boardColumnDefs={boardColumnDefs}
-                          cardDensity={cardDensity}
-                          workspaceCategory={workspaceCategory}
-                          calendarTimezone={calendarTimezone}
-                          commentUnreadByTaskId={commentUnreadByTaskId}
-                          commentLatestUnreadMessageIdByTaskId={
-                            commentLatestUnreadMessageIdByTaskId
-                          }
-                          onMoveToBubble={onMoveToBubble}
-                          onOpenTask={onOpenTask}
-                          onStartWorkout={onStartWorkout}
-                          bubbleUpPropsFor={bubbleUpPropsFor}
-                        />
-                      ) : (
-                        <SortableTaskCard
-                          key={task.id}
-                          task={task}
-                          canWrite={canWrite}
-                          dragDisabled={dragDisabled}
-                          bubbles={bubbles}
-                          boardColumnDefs={boardColumnDefs}
-                          cardDensity={cardDensity}
-                          workspaceCategory={workspaceCategory}
-                          calendarTimezone={calendarTimezone}
-                          commentUnreadCount={commentUnreadByTaskId[task.id] ?? 0}
-                          commentLatestUnreadMessageId={
-                            commentLatestUnreadMessageIdByTaskId[task.id] ?? null
-                          }
-                          onMoveToBubble={onMoveToBubble}
-                          onOpenTask={onOpenTask}
-                          onStartWorkout={onStartWorkout}
-                          bubbleUp={bubbleUpPropsFor(task.id)}
-                        />
-                      ),
-                    )}
-                    {onAddNew ? (
-                      <KanbanColumnAdd
-                        variant="inline"
-                        disabled={addDisabled}
-                        onAdd={onAddNew}
-                        className="mb-1"
-                      />
-                    ) : null}
-                  </>
-                )}
-              </div>
-            </SortableContext>
+                  ) : null}
+                </>
+              )}
+            </div>
           </div>
         </>
       )}
@@ -1814,7 +2094,7 @@ function KanbanColumn({
 type CardProps = {
   task: TaskRow;
   canWrite: boolean;
-  dragDisabled: boolean;
+  dragMode: BoardCardDragMode;
   bubbles: BubbleRow[];
   boardColumnDefs: { id: string; label: string }[] | null;
   cardDensity: KanbanCardDensity;
@@ -1825,14 +2105,15 @@ type CardProps = {
   onMoveToBubble: (taskId: string, targetBubbleId: string) => void;
   onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
   onStartWorkout?: (task: TaskRow) => void;
+  onTogglePin?: (taskId: string) => void;
   bubbleUp?: Omit<TaskBubbleUpControlProps, 'density'>;
 };
 
-type ProgramShellSortableProps = {
+type ProgramShellBoardProps = {
   shellTask: TaskRow;
   childTasks: TaskRow[];
   canWrite: boolean;
-  dragDisabled: boolean;
+  dragMode: BoardCardDragMode;
   bubbles: BubbleRow[];
   boardColumnDefs: { id: string; label: string }[] | null;
   cardDensity: KanbanCardDensity;
@@ -1843,14 +2124,21 @@ type ProgramShellSortableProps = {
   onMoveToBubble: (taskId: string, targetBubbleId: string) => void;
   onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
   onStartWorkout?: (task: TaskRow) => void;
+  onTogglePin?: (taskId: string) => void;
   bubbleUpPropsFor: (taskId: string) => Omit<TaskBubbleUpControlProps, 'density'> | undefined;
 };
 
-function SortableProgramShellCard({
+function BoardProgramShellCard(props: ProgramShellBoardProps) {
+  const { dragMode, ...rest } = props;
+  if (dragMode === 'sortable') return <SortableShellWrap {...rest} />;
+  if (dragMode === 'draggable') return <DraggableShellWrap {...rest} />;
+  return <StaticShellWrap {...rest} />;
+}
+
+function SortableShellWrap({
   shellTask,
   childTasks,
   canWrite,
-  dragDisabled,
   bubbles,
   boardColumnDefs,
   cardDensity,
@@ -1861,9 +2149,9 @@ function SortableProgramShellCard({
   onMoveToBubble,
   onOpenTask,
   onStartWorkout,
+  onTogglePin,
   bubbleUpPropsFor,
-}: ProgramShellSortableProps) {
-  const sortableDisabled = !canWrite || dragDisabled;
+}: Omit<ProgramShellBoardProps, 'dragMode'>) {
   const {
     attributes,
     listeners,
@@ -1874,41 +2162,29 @@ function SortableProgramShellCard({
     isDragging,
   } = useSortable({
     id: shellTask.id,
-    disabled: sortableDisabled,
-    transition: {
-      duration: 220,
-      easing: 'cubic-bezier(0.25, 1, 0.5, 1)',
-    },
+    transition: { duration: 220, easing: 'cubic-bezier(0.25, 1, 0.5, 1)' },
   });
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.4 : 1,
   };
-
-  const draggable = canWrite && !dragDisabled;
-  const showDecorativeGrip = !draggable && canWrite && dragDisabled;
-
   return (
     <div ref={setNodeRef} style={style} className="mb-2">
       <KanbanProgramShellCard
         shellTask={shellTask}
         childTasks={childTasks}
         dragHandle={
-          draggable ? (
-            <button
-              type="button"
-              ref={setActivatorNodeRef}
-              className="cursor-grab touch-none active:cursor-grabbing"
-              aria-label="Drag to reorder card"
-              {...listeners}
-              {...attributes}
-            >
-              <GripVertical className="size-4" />
-            </button>
-          ) : showDecorativeGrip ? (
-            <KanbanTaskCardDragDecoration />
-          ) : null
+          <button
+            type="button"
+            ref={setActivatorNodeRef}
+            className="cursor-grab touch-none active:cursor-grabbing"
+            aria-label="Drag to reorder pinned card"
+            {...listeners}
+            {...attributes}
+          >
+            <GripVertical className="size-4" />
+          </button>
         }
         canWrite={canWrite}
         bubbles={bubbles}
@@ -1921,16 +2197,59 @@ function SortableProgramShellCard({
         onMoveToBubble={onMoveToBubble}
         onOpenTask={onOpenTask}
         onStartWorkout={onStartWorkout}
+        onTogglePin={onTogglePin}
         bubbleUpPropsFor={bubbleUpPropsFor}
       />
     </div>
   );
 }
 
-function SortableTaskCard({
+function DraggableShellWrap(props: Omit<ProgramShellBoardProps, 'dragMode'>) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: props.shellTask.id,
+  });
+  const style = {
+    transform: CSS.Translate.toString(transform),
+    opacity: isDragging ? 0.4 : 1,
+  };
+  return (
+    <div ref={setNodeRef} style={style} className="mb-2">
+      <KanbanProgramShellCard
+        {...props}
+        dragHandle={
+          <button
+            type="button"
+            className="cursor-grab touch-none active:cursor-grabbing"
+            aria-label="Drag to move card"
+            {...listeners}
+            {...attributes}
+          >
+            <GripVertical className="size-4" />
+          </button>
+        }
+      />
+    </div>
+  );
+}
+
+function StaticShellWrap(props: Omit<ProgramShellBoardProps, 'dragMode'>) {
+  return (
+    <div className="mb-2">
+      <KanbanProgramShellCard {...props} dragHandle={null} />
+    </div>
+  );
+}
+
+function BoardTaskCard(props: CardProps) {
+  const { dragMode, ...rest } = props;
+  if (dragMode === 'sortable') return <SortableTaskWrap {...rest} />;
+  if (dragMode === 'draggable') return <DraggableTaskWrap {...rest} />;
+  return <StaticTaskWrap {...rest} />;
+}
+
+function SortableTaskWrap({
   task,
   canWrite,
-  dragDisabled,
   bubbles,
   boardColumnDefs,
   cardDensity,
@@ -1941,9 +2260,9 @@ function SortableTaskCard({
   onMoveToBubble,
   onOpenTask,
   onStartWorkout,
+  onTogglePin,
   bubbleUp,
-}: CardProps) {
-  const sortableDisabled = !canWrite || dragDisabled;
+}: Omit<CardProps, 'dragMode'>) {
   const {
     attributes,
     listeners,
@@ -1954,21 +2273,13 @@ function SortableTaskCard({
     isDragging,
   } = useSortable({
     id: task.id,
-    disabled: sortableDisabled,
-    transition: {
-      duration: 220,
-      easing: 'cubic-bezier(0.25, 1, 0.5, 1)',
-    },
+    transition: { duration: 220, easing: 'cubic-bezier(0.25, 1, 0.5, 1)' },
   });
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.4 : 1,
   };
-
-  const draggable = canWrite && !dragDisabled;
-  const showDecorativeGrip = !draggable && canWrite && dragDisabled;
-
   return (
     <div ref={setNodeRef} style={style} className="mb-2">
       <KanbanTaskCard
@@ -1983,26 +2294,89 @@ function SortableTaskCard({
         onMoveToBubble={onMoveToBubble}
         onOpenTask={onOpenTask}
         onStartWorkout={onStartWorkout}
+        onTogglePin={onTogglePin}
         bubbleUp={bubbleUp}
         isCompleted={taskColumnIsCompletionStatus(task.status, boardColumnDefs)}
-        // Cover hide/show: main Kanban board only (calendar / ProgramsBoard omit this prop).
         showKanbanCoverToggle
         dragHandle={
-          draggable ? (
-            <button
-              type="button"
-              ref={setActivatorNodeRef}
-              className="cursor-grab touch-none active:cursor-grabbing"
-              aria-label="Drag to reorder card"
-              {...listeners}
-              {...attributes}
-            >
-              <GripVertical className="size-4" />
-            </button>
-          ) : showDecorativeGrip ? (
-            <KanbanTaskCardDragDecoration />
-          ) : null
+          <button
+            type="button"
+            ref={setActivatorNodeRef}
+            className="cursor-grab touch-none active:cursor-grabbing"
+            aria-label="Drag to reorder pinned card"
+            {...listeners}
+            {...attributes}
+          >
+            <GripVertical className="size-4" />
+          </button>
         }
+      />
+    </div>
+  );
+}
+
+function DraggableTaskWrap(props: Omit<CardProps, 'dragMode'>) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: props.task.id,
+  });
+  const style = {
+    transform: CSS.Translate.toString(transform),
+    opacity: isDragging ? 0.4 : 1,
+  };
+  return (
+    <div ref={setNodeRef} style={style} className="mb-2">
+      <KanbanTaskCard
+        task={props.task}
+        canWrite={props.canWrite}
+        bubbles={props.bubbles}
+        density={props.cardDensity}
+        workspaceCategory={props.workspaceCategory}
+        calendarTimezone={props.calendarTimezone}
+        commentUnreadCount={props.commentUnreadCount}
+        commentLatestUnreadMessageId={props.commentLatestUnreadMessageId}
+        onMoveToBubble={props.onMoveToBubble}
+        onOpenTask={props.onOpenTask}
+        onStartWorkout={props.onStartWorkout}
+        onTogglePin={props.onTogglePin}
+        bubbleUp={props.bubbleUp}
+        isCompleted={taskColumnIsCompletionStatus(props.task.status, props.boardColumnDefs)}
+        showKanbanCoverToggle
+        dragHandle={
+          <button
+            type="button"
+            className="cursor-grab touch-none active:cursor-grabbing"
+            aria-label="Drag to move card"
+            {...listeners}
+            {...attributes}
+          >
+            <GripVertical className="size-4" />
+          </button>
+        }
+      />
+    </div>
+  );
+}
+
+function StaticTaskWrap(props: Omit<CardProps, 'dragMode'>) {
+  return (
+    <div className="mb-2">
+      <KanbanTaskCard
+        task={props.task}
+        canWrite={props.canWrite}
+        bubbles={props.bubbles}
+        density={props.cardDensity}
+        workspaceCategory={props.workspaceCategory}
+        calendarTimezone={props.calendarTimezone}
+        commentUnreadCount={props.commentUnreadCount}
+        commentLatestUnreadMessageId={props.commentLatestUnreadMessageId}
+        onMoveToBubble={props.onMoveToBubble}
+        onOpenTask={props.onOpenTask}
+        onStartWorkout={props.onStartWorkout}
+        onTogglePin={props.onTogglePin}
+        bubbleUp={props.bubbleUp}
+        isCompleted={taskColumnIsCompletionStatus(props.task.status, props.boardColumnDefs)}
+        showKanbanCoverToggle
+        dragHandle={null}
       />
     </div>
   );
