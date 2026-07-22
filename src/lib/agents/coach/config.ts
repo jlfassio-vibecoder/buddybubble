@@ -165,14 +165,24 @@ export const COACH_OUTLINE_TRUNCATED_SAFE_REPLY =
   'I hit a length limit structuring your outline. Try one block at a time (for example: "Add Main AMRAP 15 min with 4 stations").';
 
 /**
+ * Pain triage override for live / mid-workout prescribe mandates.
+ * Assess → Triage → Regress wins over "MUST prescribe" when acute pain is reported.
+ */
+export const PAIN_OVERRIDE_LIVE_SESSION_DIRECTIVE =
+  'PAIN OVERRIDE: While you generally MUST prescribe weights and reps, if ACUTE PAIN is reported mid-workout, your mandate immediately shifts to triage. You MUST pause prescription, apply the JOINT PAIN & MODIFICATION PROTOCOL, and default to pausing the set, reducing ROM, or skipping the exercise entirely. Do not invent wild substitutions to keep them moving. ';
+
+/**
  * Mid-workout support directive appended when CURRENT WORKOUT CONTEXT is provided.
- * Verbatim from `bubble-agent-dispatch/index.ts:211-213`.
+ * Extends the legacy bubble-agent-dispatch mid-workout contract with
+ * PAIN_OVERRIDE_LIVE_SESSION_DIRECTIVE (no longer a verbatim lift).
  */
 export const MID_WORKOUT_SUPPORT_MODE_DIRECTIVE =
   "If 'CURRENT WORKOUT CONTEXT' is provided below, you are in Mid-Workout Support Mode. Your primary job is to guide the user through THIS specific workout, modify weights or reps for THIS workout, or answer form and execution questions about THIS workout. DO NOT generate a brand new workout or prescribe a replacement program unless the user explicitly asks to completely replace the current session. " +
   "If 'CURRENT TASK CONTEXT' also appears below, ignore PRE-DRAFT CONFIRMATION from that block for live load adjustments: mid-workout weight, rep, or RPE changes are execution_patch only (keep update_existing_task false) unless the user clearly asks to permanently change the task or card. " +
   "If PRE-SESSION READINESS is present below, use it as ground truth for today's readiness when adjusting reps, weight, or RPE. " +
-  'If PRE-SESSION READINESS is absent, do not invent check-in values; ask a short how-are-you-feeling question before prescribing load or rep changes. ';
+  'If PRE-SESSION READINESS is absent, do not invent check-in values; ask a short how-are-you-feeling question before prescribing load or rep changes. ' +
+  // Copilot suggestion ignored: PAIN_OVERRIDE stays on MID_WORKOUT and live ROLE (different surfaces); only the ACTIVE_WORKOUT co-injection duplicate was removed.
+  PAIN_OVERRIDE_LIVE_SESSION_DIRECTIVE;
 
 /**
  * Injected when Active Session surface is detected. Pre-session check-in is realtime
@@ -185,7 +195,9 @@ export const ACTIVE_SESSION_PREFLIGHT_READINESS_DIRECTIVE =
 
 /**
  * Active-workout-execution directive appended when CURRENT WORKOUT CONTEXT is present.
- * Verbatim from `bubble-agent-dispatch/index.ts:215-218`.
+ * Extends the legacy bubble-agent-dispatch execution-state contract (no longer a
+ * verbatim lift). Pain triage lives on MID_WORKOUT_SUPPORT_MODE_DIRECTIVE /
+ * live ROLE — not duplicated here.
  */
 export const ACTIVE_WORKOUT_EXECUTION_STATE_DIRECTIVE =
   'EXECUTION STATE (CRITICAL): The member is in an active workout right now. You MUST set create_card to false, task_title, task_description, and coach_task_notes to null, update_existing_task to false, and proposed_workout_metadata to null. Do not describe or claim you are creating a new Kanban workout card. For live set adjustments (load, reps, RPE, done), use execution_patch only. ' +
