@@ -10,6 +10,7 @@
  */
 
 import { createClient } from '@utils/supabase/client';
+import { classDeckBuilderSessionId } from '@/lib/fitness/class-deck-builder-session-id';
 import type {
   ClassEnrollmentStatus,
   ClassInstanceStatus,
@@ -45,6 +46,11 @@ export type ClassInstance = {
   offering: ClassOffering;
   /** Total active (enrolled + waitlisted) enrollment count. */
   enrollment_count: number;
+  /**
+   * Number of workout cards on the class draft deck
+   * (`live_session_deck_items` where session_id is `bb-class-deck:<instanceId>`).
+   */
+  deck_workout_count: number;
   /** Current user's enrollment status; null = not enrolled. */
   my_enrollment_status: ClassEnrollmentStatus | null;
   /** Database enrollment row id for the current user; null = not enrolled. */
@@ -128,9 +134,23 @@ export class ManualClassProvider implements FitnessClassProvider {
       }
     }
 
+    // 3. Batch-count draft deck workouts per class (`bb-class-deck:<instanceId>`).
+    const deckSessionIds = instanceIds.map((id) => classDeckBuilderSessionId(id));
+    const deckCountBySessionId = new Map<string, number>();
+    const { data: deckRows, error: deckErr } = await supabase
+      .from('live_session_deck_items')
+      .select('session_id')
+      .in('session_id', deckSessionIds);
+    if (deckErr) throw new Error(deckErr.message);
+    for (const row of deckRows ?? []) {
+      const sid = row.session_id as string;
+      deckCountBySessionId.set(sid, (deckCountBySessionId.get(sid) ?? 0) + 1);
+    }
+
     return rawInstances.map((r) => {
       const offering = r.offering as ClassOffering;
       const mine = myEnrollmentByInstance.get(r.id as string) ?? null;
+      const deckSessionId = classDeckBuilderSessionId(r.id as string);
       return {
         id: r.id as string,
         offering_id: r.offering_id as string,
@@ -144,6 +164,7 @@ export class ManualClassProvider implements FitnessClassProvider {
         metadata: (r.metadata as Json) ?? {},
         offering,
         enrollment_count: countByInstance.get(r.id as string) ?? 0,
+        deck_workout_count: deckCountBySessionId.get(deckSessionId) ?? 0,
         my_enrollment_status: mine?.status ?? null,
         my_enrollment_id: mine?.id ?? null,
       };

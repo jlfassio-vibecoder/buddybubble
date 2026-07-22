@@ -46,11 +46,18 @@ export function taskMatchesDateFilter(
 
 export type DateSortMode = 'none' | 'asc' | 'desc';
 
-export const DATE_SORT_STORAGE_KEY = 'buddybubble.kanbanDateSort';
+/** v2: product default is newest-first (`desc`); ignores legacy `…kanbanDateSort` prefs. */
+export const DATE_SORT_STORAGE_KEY = 'buddybubble.kanbanDateSort.v2';
 
 export function parseDateSortMode(v: string | null): DateSortMode {
-  if (v === 'asc' || v === 'desc') return v;
-  return 'none';
+  if (v === 'asc' || v === 'desc' || v === 'none') return v;
+  /** Unset: newest-first by scheduled date (then created_at). */
+  return 'desc';
+}
+
+function createdAtSortKey(task: TaskRow): string {
+  const c = task.created_at;
+  return typeof c === 'string' && c.trim() ? c : '';
 }
 
 export function sortTasksByScheduledOn(tasks: TaskRow[], mode: DateSortMode): TaskRow[] {
@@ -59,12 +66,17 @@ export function sortTasksByScheduledOn(tasks: TaskRow[], mode: DateSortMode): Ta
   return [...tasks].sort((a, b) => {
     const as = scheduledSlice(a);
     const bs = scheduledSlice(b);
-    if (!as && !bs) return 0;
+    if (!as && !bs) {
+      /** Active Split / undated cards: order by created_at so desc = newest on top. */
+      return createdAtSortKey(a).localeCompare(createdAtSortKey(b)) * mul;
+    }
     if (!as) return 1;
     if (!bs) return -1;
     const byDate = as.localeCompare(bs) * mul;
     if (byDate !== 0) return byDate;
     /** Same calendar day: earlier local time first in asc; null time (all-day) sorts last. */
-    return compareScheduledTime(a.scheduled_time, b.scheduled_time) * mul;
+    const byTime = compareScheduledTime(a.scheduled_time, b.scheduled_time) * mul;
+    if (byTime !== 0) return byTime;
+    return createdAtSortKey(a).localeCompare(createdAtSortKey(b)) * mul;
   });
 }

@@ -1,7 +1,18 @@
 'use client';
 
-import { Archive, ChevronDown, ChevronUp, Circle, Maximize2, Shrink, Square } from 'lucide-react';
+import {
+  Archive,
+  ChevronDown,
+  ChevronUp,
+  Circle,
+  Maximize2,
+  Search,
+  Shrink,
+  Square,
+  X,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import type { KanbanCardDensity } from '@/components/board/kanban-density';
 import type { PriorityFilter } from '@/lib/task-priority';
@@ -37,8 +48,8 @@ const DATE_FILTER_OPTIONS: { value: DateFilter; label: string }[] = [
 
 const DATE_SORT_OPTIONS: { value: DateSortMode; label: string }[] = [
   { value: 'none', label: 'Manual order' },
-  { value: 'asc', label: 'Date ↑' },
   { value: 'desc', label: 'Date ↓' },
+  { value: 'asc', label: 'Date ↑' },
 ];
 
 export type KanbanBoardHeaderProps = {
@@ -55,6 +66,8 @@ export type KanbanBoardHeaderProps = {
   onDateFilterChange: (filter: DateFilter) => void;
   dateSortMode: DateSortMode;
   onDateSortModeChange: (mode: DateSortMode) => void;
+  textFilter: string;
+  onTextFilterChange: (query: string) => void;
   /** When set, the filter rows can collapse to a single bar; persist state in the parent. */
   filtersCollapsed?: boolean;
   onToggleFiltersCollapsed?: () => void;
@@ -75,11 +88,14 @@ export function KanbanBoardHeader({
   onDateFilterChange,
   dateSortMode,
   onDateSortModeChange,
+  textFilter,
+  onTextFilterChange,
   filtersCollapsed = false,
   onToggleFiltersCollapsed,
 }: KanbanBoardHeaderProps) {
   const boardTitle = kanbanBoardTitleForCategory(categoryType);
   const collapseEnabled = Boolean(onToggleFiltersCollapsed);
+  const textFilterTrimmed = textFilter.trim();
 
   const pillGroupClass =
     'inline-flex max-w-full flex-wrap rounded-lg border border-border bg-muted/50 p-0.5';
@@ -87,8 +103,43 @@ export function KanbanBoardHeader({
   const titleClass =
     'shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground';
 
+  const textFilterControl = (
+    <div className="relative min-w-0 flex-1 sm:max-w-xs">
+      <Search
+        className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground"
+        aria-hidden
+      />
+      <Input
+        id="kanban-text-filter"
+        type="search"
+        value={textFilter}
+        onChange={(e) => onTextFilterChange(e.target.value)}
+        placeholder="Search title or focus…"
+        className="h-8 pr-8 pl-7"
+        aria-label="Filter by name or focus"
+      />
+      {textFilterTrimmed.length > 0 && (
+        <button
+          type="button"
+          className="absolute top-1/2 right-1.5 inline-flex size-5 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+          onClick={() => onTextFilterChange('')}
+          aria-label="Clear name or focus filter"
+        >
+          <X className="size-3.5" aria-hidden />
+        </button>
+      )}
+    </div>
+  );
+
   const filtersBody = (
     <>
+      <div className="flex min-w-0 flex-col gap-1 sm:min-w-[12rem] sm:max-w-xs sm:flex-1 lg:flex-none">
+        <label htmlFor="kanban-text-filter" className={titleClass}>
+          Filter by name or focus
+        </label>
+        {textFilterControl}
+      </div>
+
       <div className={pillGroupClass} role="group" aria-label="Filter by scheduled or due date">
         {DATE_FILTER_OPTIONS.map(({ value, label }) => {
           const active = dateFilter === value;
@@ -223,8 +274,9 @@ export function KanbanBoardHeader({
 
   if (collapseEnabled && filtersCollapsed) {
     return (
-      <div className="flex min-w-0 shrink-0 items-center justify-between gap-2 border-b border-border bg-background px-2 py-1.5">
+      <div className="flex min-w-0 shrink-0 items-center gap-2 border-b border-border bg-background px-2 py-1.5">
         <p className={titleClass}>{boardTitle}</p>
+        {textFilterControl}
         <Button
           type="button"
           variant="ghost"

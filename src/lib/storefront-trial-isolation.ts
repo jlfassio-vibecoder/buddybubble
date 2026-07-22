@@ -5,23 +5,25 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { ensureCoachBubbleBindings } from '@/lib/fitness/ensure-coach-bubble-binding';
+import {
+  STOREFRONT_LEAD_METADATA_TRIAL_BUBBLE_KEY,
+  TRIAL_BUBBLE_NAME_PREFIX,
+  parseTrialBubbleIdFromLeadMetadata,
+} from '@/lib/trial-member-bubble-name';
 import type { Json } from '@/types/database';
 
-export const STOREFRONT_LEAD_METADATA_TRIAL_BUBBLE_KEY = 'trial_bubble_id';
+export {
+  STOREFRONT_LEAD_METADATA_TRIAL_BUBBLE_KEY,
+  parseTrialBubbleIdFromLeadMetadata,
+} from '@/lib/trial-member-bubble-name';
 
 /** Service-role client (manual `Database` shape omits generated `Relationships`; use untyped client here). */
 type ServiceDb = SupabaseClient;
 
-export function parseTrialBubbleIdFromLeadMetadata(metadata: unknown): string | null {
-  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
-  const raw = (metadata as Record<string, unknown>)[STOREFRONT_LEAD_METADATA_TRIAL_BUBBLE_KEY];
-  return typeof raw === 'string' && raw.length > 0 ? raw : null;
-}
-
 function trialBubbleNameFromEmail(email: string): string {
   const local = email.split('@')[0]?.trim() || 'lead';
   const short = local.length > 24 ? `${local.slice(0, 24)}…` : local;
-  return `Trial · ${short}`;
+  return `${TRIAL_BUBBLE_NAME_PREFIX}${short}`;
 }
 
 export async function resolveStorefrontCoachUserId(

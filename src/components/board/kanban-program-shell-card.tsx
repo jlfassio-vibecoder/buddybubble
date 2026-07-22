@@ -1,9 +1,10 @@
 'use client';
 
 import { useMemo, useState, type ReactNode } from 'react';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, Pin } from 'lucide-react';
 import type { BubbleRow, TaskRow, WorkspaceCategory } from '@/types/database';
 import { taskColumnIsCompletionStatus } from '@/lib/kanban-column-semantic';
+import { taskIsPinned } from '@/lib/task-pin';
 import { KanbanTaskCard } from '@/components/board/kanban-task-card';
 import type { KanbanCardDensity } from '@/components/board/kanban-density';
 import type { OpenTaskOptions } from '@/components/modals/TaskModal';
@@ -48,6 +49,7 @@ export type KanbanProgramShellCardProps = {
   onMoveToBubble: (taskId: string, targetBubbleId: string) => void;
   onOpenTask?: (taskId: string, opts?: OpenTaskOptions) => void;
   onStartWorkout?: (task: TaskRow) => void;
+  onTogglePin?: (taskId: string) => void;
   bubbleUpPropsFor: (taskId: string) => Omit<TaskBubbleUpControlProps, 'density'> | undefined;
   /** When true (e.g. drag overlay), shell stays compact and expand/collapse is hidden. */
   isDragging?: boolean;
@@ -68,6 +70,7 @@ export function KanbanProgramShellCard({
   onMoveToBubble,
   onOpenTask,
   onStartWorkout,
+  onTogglePin,
   bubbleUpPropsFor,
   isDragging = false,
 }: KanbanProgramShellCardProps) {
@@ -121,28 +124,49 @@ export function KanbanProgramShellCard({
                     {completed} / {total} workouts completed
                   </p>
                 </div>
-                {!isDragging ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="size-8 shrink-0"
-                    aria-expanded={isExpanded}
-                    aria-label={
-                      isExpanded ? 'Collapse program workouts' : 'Expand program workouts'
-                    }
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsExpanded((v) => !v);
-                    }}
-                  >
-                    {isExpanded ? (
-                      <ChevronUp className="size-4" aria-hidden />
-                    ) : (
-                      <ChevronDown className="size-4" aria-hidden />
-                    )}
-                  </Button>
-                ) : null}
+                <div className="flex shrink-0 items-center gap-0.5">
+                  {canWrite && onTogglePin && !isDragging ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className={cn('size-8 shrink-0', taskIsPinned(shellTask) && 'text-primary')}
+                      aria-label={taskIsPinned(shellTask) ? 'Unpin program' : 'Pin program to top'}
+                      aria-pressed={taskIsPinned(shellTask)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onTogglePin(shellTask.id);
+                      }}
+                    >
+                      <Pin
+                        className={cn('size-4', taskIsPinned(shellTask) && 'fill-current')}
+                        aria-hidden
+                      />
+                    </Button>
+                  ) : null}
+                  {!isDragging ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 shrink-0"
+                      aria-expanded={isExpanded}
+                      aria-label={
+                        isExpanded ? 'Collapse program workouts' : 'Expand program workouts'
+                      }
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsExpanded((v) => !v);
+                      }}
+                    >
+                      {isExpanded ? (
+                        <ChevronUp className="size-4" aria-hidden />
+                      ) : (
+                        <ChevronDown className="size-4" aria-hidden />
+                      )}
+                    </Button>
+                  ) : null}
+                </div>
               </div>
               <div className="h-1.5 overflow-hidden rounded-full bg-muted">
                 <div
