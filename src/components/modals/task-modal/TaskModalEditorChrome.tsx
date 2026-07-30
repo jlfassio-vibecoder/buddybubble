@@ -13,7 +13,10 @@ import { cn } from '@/lib/utils';
 
 export type TaskModalEditorChromeProps = {
   showChrome: boolean;
-  /** When false with showChrome, Visibility / Live are hidden (comments focus); workout player may still show. */
+  /**
+   * When false with showChrome, Visibility / Live are hidden (comments reading-context);
+   * workout player may still show.
+   */
   showTypeAndVisibility?: boolean;
   itemType: ItemType;
   canWrite: boolean;
@@ -65,8 +68,8 @@ function ChromeField({
 }
 
 /**
- * Details-only field chrome (Visibility / Live video / Workout player).
- * Cover top row + title/description live in `TaskModalCoverHeader`.
+ * Persistent chrome: Visibility / Live (all tabs) + Workout player.
+ * Cover header chips are read-only echoes of these controls.
  */
 export function TaskModalEditorChrome({
   showChrome,

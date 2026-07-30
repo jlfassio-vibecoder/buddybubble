@@ -39,6 +39,9 @@ vi.mock('@/components/modals/task-modal/TaskModalWorkoutFields', () => ({
 vi.mock('@/components/modals/task-modal/TaskModalProgramFields', () => ({
   TaskModalProgramFields: () => <div data-testid="mock-program-fields" />,
 }));
+vi.mock('@/components/modals/task-modal/TaskModalPropertiesSection', () => ({
+  TaskModalPropertiesSection: () => <div data-testid="mock-properties" />,
+}));
 vi.mock('@/components/modals/task-modal/TaskModalSchedulingSection', () => ({
   TaskModalSchedulingSection: () => <div data-testid="mock-scheduling" />,
 }));
@@ -211,13 +214,16 @@ describe('TaskModalDetailsBody', () => {
           </textarea>
         </div>
         <div
-          data-testid="mock-card-cover"
+          data-testid="mock-properties"
         />
         <div
           data-testid="mock-metadata-sections"
         />
         <div
           data-testid="mock-scheduling"
+        />
+        <div
+          data-testid="mock-card-cover"
         />
         <div
           aria-orientation="horizontal"

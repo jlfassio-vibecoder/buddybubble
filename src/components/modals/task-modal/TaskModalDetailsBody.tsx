@@ -15,6 +15,7 @@ import { WorkoutPreflightReadinessPanel } from '@/components/fitness/workout-int
 import { WorkoutOutlinePanel } from '@/components/fitness/WorkoutOutlinePanel';
 import { readCoachOutlineMetadata } from '@/lib/agents/coach/coach-outline-metadata';
 import type { WorkoutOutlineEditorState } from '@/components/modals/task-modal/hooks/useWorkoutOutlineEditor';
+import { TaskModalPropertiesSection } from '@/components/modals/task-modal/TaskModalPropertiesSection';
 import { TaskModalCardCoverSection } from '@/components/modals/task-modal/TaskModalCardCoverSection';
 import { TaskModalItemMetadataSections } from '@/components/modals/task-modal/TaskModalItemMetadataSections';
 import { TaskModalProgramFields } from '@/components/modals/task-modal/TaskModalProgramFields';
@@ -252,6 +253,19 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
         </div>
       ) : null}
 
+      <TaskModalPropertiesSection
+        status={status}
+        onStatusChange={onStatusChange}
+        statusSelectOptions={statusSelectOptions}
+        priority={priority}
+        onPriorityChange={onPriorityChange}
+        workspaceId={workspaceId}
+        assignedTo={assignedTo}
+        onAssignedToChange={onAssignedToChange}
+        workspaceMembersForAssign={workspaceMembersForAssign}
+        canWrite={canWrite}
+      />
+
       {showStructureBuilderCta && onOpenStructureBuilder ? (
         <div className="rounded-lg border border-border bg-muted/30 px-4 py-4">
           <p className="text-sm text-muted-foreground">
@@ -307,21 +321,6 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
           ) : null}
         </div>
       ) : null}
-
-      <TaskModalCardCoverSection
-        taskId={taskId}
-        cardCoverPath={cardCoverPath}
-        onPickCardCover={onPickCardCover}
-        onRemoveCardCover={onRemoveCardCover}
-        cardCoverPresetId={cardCoverPresetId}
-        onCardCoverPresetIdChange={onCardCoverPresetIdChange}
-        cardCoverAiHint={cardCoverAiHint}
-        onCardCoverAiHintChange={onCardCoverAiHintChange}
-        canWrite={canWrite}
-        saving={saving}
-        aiCardCoverGenerating={aiCardCoverGenerating}
-        onGenerateCardCoverWithAi={onGenerateCardCoverWithAi}
-      />
 
       <TaskModalItemMetadataSections
         itemType={itemType}
@@ -383,20 +382,26 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
       <TaskModalSchedulingSection
         itemType={itemType}
         dateLabels={dateLabels}
-        status={status}
-        onStatusChange={onStatusChange}
-        statusSelectOptions={statusSelectOptions}
-        priority={priority}
-        onPriorityChange={onPriorityChange}
-        workspaceId={workspaceId}
-        assignedTo={assignedTo}
-        onAssignedToChange={onAssignedToChange}
-        workspaceMembersForAssign={workspaceMembersForAssign}
         scheduledOn={scheduledOn}
         onScheduledOnChange={onScheduledOnChange}
         scheduledTime={scheduledTime}
         onScheduledTimeChange={onScheduledTimeChange}
         canWrite={canWrite}
+      />
+
+      <TaskModalCardCoverSection
+        taskId={taskId}
+        cardCoverPath={cardCoverPath}
+        onPickCardCover={onPickCardCover}
+        onRemoveCardCover={onRemoveCardCover}
+        cardCoverPresetId={cardCoverPresetId}
+        onCardCoverPresetIdChange={onCardCoverPresetIdChange}
+        cardCoverAiHint={cardCoverAiHint}
+        onCardCoverAiHintChange={onCardCoverAiHintChange}
+        canWrite={canWrite}
+        saving={saving}
+        aiCardCoverGenerating={aiCardCoverGenerating}
+        onGenerateCardCoverWithAi={onGenerateCardCoverWithAi}
       />
 
       <Separator className="my-2" />
