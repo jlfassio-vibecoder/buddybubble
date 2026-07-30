@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
 
 export type TaskModalEditorChromeProps = {
   showChrome: boolean;
-  /** When false, Visibility / Live / Workout player field blocks are hidden (comments focus). */
+  /** When false with showChrome, Visibility / Live are hidden (comments focus); workout player may still show. */
   showTypeAndVisibility?: boolean;
   itemType: ItemType;
   canWrite: boolean;
@@ -85,7 +85,7 @@ export function TaskModalEditorChrome({
   activeSessionLaunch = null,
   onInteraction,
 }: TaskModalEditorChromeProps) {
-  if (!showChrome || !showTypeAndVisibility) return null;
+  if (!showChrome) return null;
 
   const showVisibilitySection = itemType !== 'class';
   const showLiveStreamToggle =
@@ -101,62 +101,68 @@ export function TaskModalEditorChrome({
 
   return (
     <>
-      {showVisibilitySection ? (
-        <ChromeField
-          title="Visibility"
-          description="Public cards appear on your Astro storefront."
-          onClickCapture={notifyInteraction}
-        >
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              disabled={!canWrite}
-              onClick={() => onVisibilityChange('private')}
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
-                visibility === 'private'
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border bg-background text-muted-foreground hover:bg-muted',
-              )}
+      {showTypeAndVisibility ? (
+        <>
+          {showVisibilitySection ? (
+            <ChromeField
+              title="Visibility"
+              description="Public cards appear on your Astro storefront."
+              onClickCapture={notifyInteraction}
             >
-              <Lock className="size-4 shrink-0" aria-hidden />
-              Private
-            </button>
-            <button
-              type="button"
-              disabled={!canWrite}
-              onClick={() => onVisibilityChange('public')}
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
-                visibility === 'public'
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border bg-background text-muted-foreground hover:bg-muted',
-              )}
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={!canWrite}
+                  onClick={() => onVisibilityChange('private')}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
+                    visibility === 'private'
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border bg-background text-muted-foreground hover:bg-muted',
+                  )}
+                >
+                  <Lock className="size-4 shrink-0" aria-hidden />
+                  Private
+                </button>
+                <button
+                  type="button"
+                  disabled={!canWrite}
+                  onClick={() => onVisibilityChange('public')}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
+                    visibility === 'public'
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border bg-background text-muted-foreground hover:bg-muted',
+                  )}
+                >
+                  <Globe className="size-4 shrink-0" aria-hidden />
+                  Public
+                </button>
+              </div>
+            </ChromeField>
+          ) : null}
+          {showLiveStreamToggle ? (
+            <ChromeField
+              title="Live video"
+              description="Adds a Join live session control on this card. End the session from the live dock when finished."
+              onClickCapture={notifyInteraction}
             >
-              <Globe className="size-4 shrink-0" aria-hidden />
-              Public
-            </button>
-          </div>
-        </ChromeField>
-      ) : null}
-      {showLiveStreamToggle ? (
-        <ChromeField
-          title="Live video"
-          description="Adds a Join live session control on this card. End the session from the live dock when finished."
-          onClickCapture={notifyInteraction}
-        >
-          <label className="flex cursor-pointer items-start gap-3" htmlFor="task-live-stream">
-            <input
-              id="task-live-stream"
-              type="checkbox"
-              checked={liveStreamEnabled}
-              disabled={!canWrite}
-              onChange={(e) => onLiveStreamEnabledChange?.(e.target.checked)}
-              className="mt-0.5 size-4 shrink-0 rounded border-input"
-            />
-            <span className="text-sm font-semibold text-foreground">Enable live video stream</span>
-          </label>
-        </ChromeField>
+              <label className="flex cursor-pointer items-start gap-3" htmlFor="task-live-stream">
+                <input
+                  id="task-live-stream"
+                  type="checkbox"
+                  checked={liveStreamEnabled}
+                  disabled={!canWrite}
+                  onChange={(e) => onLiveStreamEnabledChange?.(e.target.checked)}
+                  className="mt-0.5 size-4 shrink-0 rounded border-input"
+                />
+                <span className="text-sm font-semibold text-foreground">
+                  Enable live video stream
+                </span>
+              </label>
+            </ChromeField>
+          ) : null}
+        </>
       ) : null}
       {showWorkoutPlayer ? (
         <ChromeField

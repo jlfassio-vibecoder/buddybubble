@@ -53,6 +53,7 @@ export function TaskModalItemMetadataSections({
               onChange={(e) => onEventLocationChange(e.target.value)}
               disabled={!canWrite}
               placeholder="e.g. Central Park"
+              aria-label="Location"
               className={taskModalInputClass}
             />
           </TaskModalField>
@@ -63,6 +64,7 @@ export function TaskModalItemMetadataSections({
               onChange={(e) => onEventUrlChange(e.target.value)}
               disabled={!canWrite}
               placeholder="https://…"
+              aria-label="Meeting link"
               className={taskModalInputClass}
             />
           </TaskModalField>
@@ -80,6 +82,7 @@ export function TaskModalItemMetadataSections({
               onChange={(e) => onExperienceSeasonChange(e.target.value)}
               disabled={!canWrite}
               placeholder="e.g. Summer 2026"
+              aria-label="Season / label"
               className={taskModalInputClass}
             />
           </TaskModalField>
@@ -134,6 +137,7 @@ export function TaskModalItemMetadataSections({
               disabled={!canWrite}
               rows={3}
               placeholder="What made this moment special?"
+              aria-label="Caption / reflection"
             />
           </TaskModalField>
         </TaskModalSection>

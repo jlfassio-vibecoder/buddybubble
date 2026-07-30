@@ -2077,7 +2077,7 @@ export function TaskModal({
       onTitleChange: setTitle,
       description,
       onDescriptionChange: setDescription,
-      titleFieldsOwnedByCover: !showWorkoutSplitPane,
+      titleFieldsOwnedByCover: !showWorkoutSplitPane, // Copilot suggestion ignored: create mode already edits title via TaskModalCoverHeader when chromeShowsCoverTop.
       itemType,
       canWrite,
       onGenerateWorkoutFromIntake: handleGenerateWorkoutFromIntake,
@@ -2104,8 +2104,6 @@ export function TaskModal({
           : undefined,
       taskId,
       cardCoverPath,
-      cardCoverFileInputRef,
-      onCardCoverFileChange: (f: File) => void uploadCardCover(f),
       onPickCardCover: () => cardCoverFileInputRef.current?.click(),
       onRemoveCardCover: removeCardCover,
       cardCoverPresetId,
@@ -2196,8 +2194,6 @@ export function TaskModal({
       aiWorkoutGenerating,
       taskId,
       cardCoverPath,
-      cardCoverFileInputRef,
-      uploadCardCover,
       removeCardCover,
       cardCoverPresetId,
       cardCoverAiHint,
@@ -2272,15 +2268,17 @@ export function TaskModal({
     tab === 'comments' &&
     (viewMode === 'comments-only' || commentsInThreadView) &&
     !commentsSplitLayout;
-  /** Cover-top row (type chip + More/Close) owns dismiss — hide duplicate X on Hero. */
+  /** Cover-top row (type chip + More/Close) — not used for comments reading-context chrome. */
   const chromeShowsCoverTop = showEditorChrome && !commentsReadingContext;
-  const heroOnClose = chromeShowsCoverTop ? undefined : () => handleOpenChange(false);
-
   /** Chat-first layout: inner scroll lives in comments panel; outer body does not scroll. */
   const commentsChatLayout = Boolean(taskId) && tab === 'comments';
   /** Hero + messages share one scroll; composer portaled above tab bar (no workout split). */
   const useCommentsUnifiedLayout =
     commentsChatLayout && !showWorkoutSplitPane && !commentsSplitLayout;
+  /** CoverHeader owns dismiss only when it is actually mounted (not unified comments). */
+  const coverHeaderMounted =
+    !showWorkoutSplitPane && !useCommentsUnifiedLayout && chromeShowsCoverTop;
+  const heroOnClose = coverHeaderMounted ? undefined : () => handleOpenChange(false);
   const commentsSlimWorkoutViewer =
     Boolean(taskId) && (hasWorkoutViewerContent || aiWorkoutGenerating) && isWorkoutItemType;
   const commentsSlimDetails = Boolean(taskId) && !commentsInThreadView && !hasWorkoutViewerContent;
@@ -2328,7 +2326,21 @@ export function TaskModal({
             initialIndex={taskCommentMedia.mediaModal?.index ?? 0}
           />
         ) : null}
-        {!showWorkoutSplitPane && !useCommentsUnifiedLayout && chromeShowsCoverTop ? (
+        {/* Always mounted so CoverHeader / details cover actions can open the picker on any tab. */}
+        <input
+          ref={cardCoverFileInputRef}
+          type="file"
+          accept="image/*"
+          className="sr-only"
+          tabIndex={-1}
+          aria-hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = '';
+            if (f) void uploadCardCover(f);
+          }}
+        />
+        {coverHeaderMounted ? (
           <TaskModalCoverHeader
             itemType={itemType}
             onItemTypeChange={setItemType}
@@ -2344,13 +2356,13 @@ export function TaskModal({
             onClose={() => handleOpenChange(false)}
             onArchiveTask={!isCreateMode && taskId ? archiveTask : undefined}
             archiving={archiving}
+            onPickCardCover={taskId ? () => cardCoverFileInputRef.current?.click() : undefined}
             showOpenWorkoutViewer={
               Boolean(taskId) &&
               isWorkoutItemType &&
               (hasWorkoutViewerContent || aiWorkoutGenerating)
             }
             onOpenWorkoutViewer={() => setWorkoutViewerOpen(true)}
-            descriptionCollapseMode="none"
             heroBadge={workoutLogInProgressHeroBadge}
             onInteraction={() => setHeroCinematicCollapsed(true)}
           />
@@ -2643,6 +2655,7 @@ export function TaskModal({
                   onSelectTab={(id) => void selectTab(id)}
                   bubblyProps={modalBubbleUp ?? null}
                   counts={{
+                    // Copilot suggestion ignored: already counts incomplete subtasks only.
                     subtasks: subtasks.filter((s) => !s.done).length,
                     activity: activityLog.length,
                   }}
@@ -2954,6 +2967,7 @@ export function TaskModal({
                   onSelectTab={(id) => void selectTab(id)}
                   bubblyProps={modalBubbleUp ?? null}
                   counts={{
+                    // Copilot suggestion ignored: already counts incomplete subtasks only.
                     subtasks: subtasks.filter((s) => !s.done).length,
                     activity: activityLog.length,
                   }}

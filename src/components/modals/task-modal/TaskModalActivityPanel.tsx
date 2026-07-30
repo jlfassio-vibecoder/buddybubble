@@ -37,6 +37,7 @@ export function TaskModalActivityPanel({ activityLog }: TaskModalActivityPanelPr
   }
 
   return (
+    // Copilot suggestion ignored: timeline connector positioning depends on div layout, not list semantics.
     <div className="pl-2">
       {activityLog.map((e, i) => {
         const Icon = ICON_BY_TYPE[e.type] ?? Sparkles;

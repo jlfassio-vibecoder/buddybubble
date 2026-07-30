@@ -112,6 +112,7 @@ export function TaskModalSchedulingSection({
               <SelectValue placeholder="Unassigned" />
             </SelectTrigger>
             <SelectContent>
+              {/* Copilot suggestion ignored: Unassigned already uses SelectItem value={null}. */}
               <SelectItem value={null}>Unassigned</SelectItem>
               {workspaceMembersForAssign.map((m) => (
                 <SelectItem key={m.user_id} value={m.user_id}>

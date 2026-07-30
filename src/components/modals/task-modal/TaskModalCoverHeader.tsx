@@ -1,7 +1,15 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
-import { Archive, Dumbbell, Globe, Lock, MoreHorizontal, X } from 'lucide-react';
+import type { ReactNode } from 'react';
+import {
+  Archive,
+  Dumbbell,
+  Globe,
+  Image as ImageIcon,
+  Lock,
+  MoreHorizontal,
+  X,
+} from 'lucide-react';
 import { ITEM_TYPES_ORDER } from '@/lib/item-type-styles';
 import { TaskModalTypeChip } from '@/components/modals/task-modal/TaskModalTypeChip';
 import {
@@ -27,14 +35,13 @@ export type TaskModalCoverHeaderProps = {
   onDescriptionChange: (value: string) => void;
   coverPath?: string | null;
   onClose: () => void;
+  /** Opens the cover-image file picker (header icon; hidden until the card is saved). */
+  onPickCardCover?: () => void;
   onArchiveTask?: () => void | Promise<void>;
   archiving?: boolean;
-  /** Prefer More-menu entry over a third icon button (CoverHeader actions = More + Close only). */
+  /** Prefer More-menu entry over a dedicated viewer button. */
   onOpenWorkoutViewer?: () => void;
   showOpenWorkoutViewer?: boolean;
-  /** Comments / thread focus: clamp + Show more instead of editable fields. */
-  descriptionCollapseMode?: 'none' | 'preview_toggle';
-  readingContextActions?: ReactNode;
   heroBadge?: ReactNode;
   onInteraction?: () => void;
   className?: string;
@@ -45,7 +52,7 @@ const coverIconBtnClass =
   'flex size-[34px] shrink-0 items-center justify-center rounded-[9px] border border-transparent bg-foreground/[0.05] text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground disabled:pointer-events-none disabled:opacity-50 outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
 /**
- * Design `CoverHeader` (`.tm-cover`): top row (type chip · visibility · live · More/Close)
+ * Design `CoverHeader` (`.tm-cover`): top row (type chip · visibility · live · actions)
  * then borderless title + description. Optional cover image is an absolute backdrop, not a
  * separate 16:9 cinematic hero.
  */
@@ -62,12 +69,11 @@ export function TaskModalCoverHeader({
   onDescriptionChange,
   coverPath = null,
   onClose,
+  onPickCardCover,
   onArchiveTask,
   archiving = false,
   onOpenWorkoutViewer,
   showOpenWorkoutViewer = false,
-  descriptionCollapseMode = 'none',
-  readingContextActions = null,
   heroBadge = null,
   onInteraction,
   className,
@@ -78,13 +84,9 @@ export function TaskModalCoverHeader({
   const hasImage = Boolean(coverUrl);
 
   const showVisibility = itemType !== 'class';
-  const isPreviewToggle = descriptionCollapseMode === 'preview_toggle';
-  const editable = canWrite && !isPreviewToggle;
-  const [descPreviewExpanded, setDescPreviewExpanded] = useState(false);
+  const editable = canWrite;
   const descText = description.trim();
   const titleText = title.trim() || 'Untitled';
-
-  const showDescToggle = Boolean(readingContextActions) || (isPreviewToggle && Boolean(descText));
 
   return (
     <header
@@ -144,6 +146,17 @@ export function TaskModalCoverHeader({
           ) : null}
 
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            {onPickCardCover ? (
+              <button
+                type="button"
+                aria-label="Add cover image"
+                disabled={!canWrite}
+                onClick={onPickCardCover}
+                className={coverIconBtnClass}
+              >
+                <ImageIcon className="size-4" aria-hidden />
+              </button>
+            ) : null}
             {(onArchiveTask || showOpenWorkoutViewer) && (
               <DropdownMenu>
                 <DropdownMenuTrigger aria-label="More card actions" className={coverIconBtnClass}>
@@ -231,42 +244,12 @@ export function TaskModalCoverHeader({
           <div className="mt-1.5">
             <p
               className={cn(
-                'text-[14.5px] leading-normal text-muted-foreground',
-                isPreviewToggle
-                  ? descPreviewExpanded
-                    ? 'whitespace-pre-wrap'
-                    : 'line-clamp-3'
-                  : 'line-clamp-4',
+                'text-[14.5px] leading-normal text-muted-foreground line-clamp-4',
                 hasImage && 'text-white/90 [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]',
               )}
             >
               {descText}
             </p>
-          </div>
-        ) : null}
-
-        {showDescToggle ? (
-          <div className="mt-2 flex min-w-0 flex-wrap items-center justify-between gap-2">
-            {isPreviewToggle && descText ? (
-              <button
-                type="button"
-                className={cn(
-                  'text-xs font-medium underline-offset-2 hover:underline',
-                  hasImage ? 'text-white/95' : 'text-primary',
-                )}
-                aria-expanded={descPreviewExpanded}
-                onClick={() => setDescPreviewExpanded((v) => !v)}
-              >
-                {descPreviewExpanded ? 'Show less' : 'Show more'}
-              </button>
-            ) : (
-              <span className="min-w-0 flex-1" aria-hidden />
-            )}
-            {readingContextActions ? (
-              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                {readingContextActions}
-              </div>
-            ) : null}
           </div>
         ) : null}
       </div>

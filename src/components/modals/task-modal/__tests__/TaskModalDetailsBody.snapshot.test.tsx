@@ -1,7 +1,5 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import type { RefObject } from 'react';
-import { createRef } from 'react';
 import type { Json } from '@/types/database';
 import { richMetadataWithBlockFormat } from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
 import {
@@ -52,7 +50,6 @@ vi.mock('@/components/modals/task-modal/TaskModalDetailsFooterActions', () => ({
 }));
 
 const noop = () => {};
-const cardCoverFileInputRef: RefObject<HTMLInputElement | null> = createRef();
 
 const mockWorkoutIntakePanelProps = {
   step: 1 as const,
@@ -107,8 +104,6 @@ const baseProps: TaskModalDetailsBodyProps = {
   workoutOutlineEditor: null,
   taskId: 'task-snap-1',
   cardCoverPath: '',
-  cardCoverFileInputRef,
-  onCardCoverFileChange: noop,
   onPickCardCover: noop,
   onRemoveCardCover: () => void Promise.resolve(),
   cardCoverPresetId: '',

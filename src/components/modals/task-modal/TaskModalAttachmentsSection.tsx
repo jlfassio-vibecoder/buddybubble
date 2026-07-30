@@ -46,7 +46,7 @@ export function TaskModalAttachmentsSection({
       >
         {!isCreateMode && taskId && canWrite ? (
           <div className="flex flex-wrap items-center gap-2.5">
-            <Button type="button" variant="secondary" size="sm" asChild>
+            <Button variant="secondary" size="sm" asChild>
               <label className="cursor-pointer">
                 <Paperclip className="size-3.5" aria-hidden />
                 Choose file

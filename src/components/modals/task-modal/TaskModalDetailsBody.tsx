@@ -3,7 +3,6 @@
 import { memo } from 'react';
 import type { Json, UnitSystem } from '@/types/database';
 import type { TaskDateFieldLabels } from '@/lib/task-date-labels';
-import type { RefObject } from 'react';
 import type { ItemType } from '@/lib/item-types';
 import type { TaskAttachment } from '@/types/task-modal';
 import type { TaskPriority } from '@/lib/task-priority';
@@ -55,8 +54,6 @@ export type TaskModalDetailsBodyProps = {
   intakeDisabledReason?: string;
   taskId: string | null;
   cardCoverPath: string;
-  cardCoverFileInputRef: RefObject<HTMLInputElement | null>;
-  onCardCoverFileChange: (file: File) => void;
   onPickCardCover: () => void;
   onRemoveCardCover: () => void;
   cardCoverPresetId: string;
@@ -152,8 +149,6 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     intakeDisabledReason,
     taskId,
     cardCoverPath,
-    cardCoverFileInputRef,
-    onCardCoverFileChange,
     onPickCardCover,
     onRemoveCardCover,
     cardCoverPresetId,
@@ -316,8 +311,6 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
       <TaskModalCardCoverSection
         taskId={taskId}
         cardCoverPath={cardCoverPath}
-        cardCoverFileInputRef={cardCoverFileInputRef}
-        onCardCoverFileChange={onCardCoverFileChange}
         onPickCardCover={onPickCardCover}
         onRemoveCardCover={onRemoveCardCover}
         cardCoverPresetId={cardCoverPresetId}

@@ -1,6 +1,5 @@
 'use client';
 
-import type { RefObject } from 'react';
 import { Image as ImageIcon } from 'lucide-react';
 import { TaskCardCoverModalPreview } from '@/components/modals/task-modal/task-modal-media';
 import { Button } from '@/components/ui/button';
@@ -13,8 +12,6 @@ import {
 export type TaskModalCardCoverSectionProps = {
   taskId: string | null;
   cardCoverPath: string;
-  cardCoverFileInputRef: RefObject<HTMLInputElement | null>;
-  onCardCoverFileChange: (file: File) => void;
   onPickCardCover: () => void;
   onRemoveCardCover: () => void;
   cardCoverPresetId: string;
@@ -30,8 +27,6 @@ export type TaskModalCardCoverSectionProps = {
 export function TaskModalCardCoverSection({
   taskId,
   cardCoverPath,
-  cardCoverFileInputRef,
-  onCardCoverFileChange,
   onPickCardCover,
   onRemoveCardCover,
   cardCoverPresetId,
@@ -46,72 +41,56 @@ export function TaskModalCardCoverSection({
   const trimmed = cardCoverPath.trim();
 
   return (
-    <>
-      {/* Kept mounted regardless of disclosure state — the header's cover-image icon button
-          triggers this same ref, and a collapsed disclosure would otherwise unmount it. */}
-      <input
-        ref={cardCoverFileInputRef}
-        type="file"
-        accept="image/*"
-        className="sr-only"
-        aria-hidden
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          e.target.value = '';
-          if (f) void onCardCoverFileChange(f);
-        }}
-      />
-      <TaskModalDisclosure
-        icon={<ImageIcon className="size-4" aria-hidden />}
-        title="Cover & appearance"
-        meta="Board & chat cover"
-      >
-        <TaskModalField help="Optional image shown behind the title and details on the board and in chat.">
-          {taskId ? (
-            <>
-              <TaskCardCoverModalPreview path={trimmed || null} />
-              <div className="mt-2.5 flex flex-wrap gap-2">
+    <TaskModalDisclosure
+      icon={<ImageIcon className="size-4" aria-hidden />}
+      title="Cover & appearance"
+      meta="Board & chat cover"
+    >
+      <TaskModalField help="Optional image shown behind the title and details on the board and in chat.">
+        {taskId ? (
+          <>
+            <TaskCardCoverModalPreview path={trimmed || null} />
+            <div className="mt-2.5 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={!canWrite || saving}
+                onClick={onPickCardCover}
+              >
+                {trimmed ? 'Replace image' : 'Upload image'}
+              </Button>
+              {trimmed ? (
                 <Button
                   type="button"
-                  variant="secondary"
+                  variant="outline"
                   size="sm"
                   disabled={!canWrite || saving}
-                  onClick={onPickCardCover}
+                  onClick={() => void onRemoveCardCover()}
                 >
-                  {trimmed ? 'Replace image' : 'Upload image'}
+                  Remove
                 </Button>
-                {trimmed ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={!canWrite || saving}
-                    onClick={() => void onRemoveCardCover()}
-                  >
-                    Remove
-                  </Button>
-                ) : null}
-              </div>
-              <div className="mt-3.5">
-                <TaskModalCardCoverAiBlock
-                  presetId={cardCoverPresetId}
-                  onPresetChange={onCardCoverPresetIdChange}
-                  hint={cardCoverAiHint}
-                  onHintChange={onCardCoverAiHintChange}
-                  isGenerating={aiCardCoverGenerating}
-                  isDisabled={!canWrite || saving || aiCardCoverGenerating}
-                  onGenerate={onGenerateCardCoverWithAi}
-                  canWrite={canWrite}
-                />
-              </div>
-            </>
-          ) : (
-            <p className="text-xs italic text-muted-foreground">
-              Save the card first, then you can add a cover image.
-            </p>
-          )}
-        </TaskModalField>
-      </TaskModalDisclosure>
-    </>
+              ) : null}
+            </div>
+            <div className="mt-3.5">
+              <TaskModalCardCoverAiBlock
+                presetId={cardCoverPresetId}
+                onPresetChange={onCardCoverPresetIdChange}
+                hint={cardCoverAiHint}
+                onHintChange={onCardCoverAiHintChange}
+                isGenerating={aiCardCoverGenerating}
+                isDisabled={!canWrite || saving || aiCardCoverGenerating}
+                onGenerate={onGenerateCardCoverWithAi}
+                canWrite={canWrite}
+              />
+            </div>
+          </>
+        ) : (
+          <p className="text-xs italic text-muted-foreground">
+            Save the card first, then you can add a cover image.
+          </p>
+        )}
+      </TaskModalField>
+    </TaskModalDisclosure>
   );
 }
