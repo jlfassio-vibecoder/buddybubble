@@ -33,11 +33,10 @@ export type TaskModalDetailsBodyProps = {
   description: string;
   onDescriptionChange: (value: string) => void;
   /**
-   * The always-visible cover header (`TaskModalHero`) owns title/description editing so it
-   * stays available on every tab. This body only renders its own copies as a fallback for the
-   * one layout where no Hero renders above it — the workout viewer split pane.
+   * The always-visible cover header (`TaskModalCoverHeader`) owns title/description editing.
+   * This body only renders its own copies as a fallback for the workout viewer split pane.
    */
-  titleFieldsOwnedByHero?: boolean;
+  titleFieldsOwnedByCover?: boolean;
   itemType: ItemType;
   canWrite: boolean;
   onGenerateWorkoutFromIntake: (data: WorkoutIntakeWizardData) => void;
@@ -137,7 +136,7 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     onTitleChange,
     description,
     onDescriptionChange,
-    titleFieldsOwnedByHero = false,
+    titleFieldsOwnedByCover = false,
     itemType,
     canWrite,
     onGenerateWorkoutFromIntake,
@@ -232,7 +231,7 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
 
   return (
     <div className="min-w-0 space-y-4" data-testid="task-modal-details-body">
-      {!titleFieldsOwnedByHero ? (
+      {!titleFieldsOwnedByCover ? (
         <div>
           <label htmlFor="task-title" className="sr-only">
             Title

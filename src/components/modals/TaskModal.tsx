@@ -62,6 +62,7 @@ import { isStandardTaskChatRailEnabled } from '@/lib/feature-flags/standardTaskC
 import { isWorkoutBuilderRouteEnabled } from '@/lib/feature-flags/workoutBuilderRoute';
 import { buildWorkoutBuilderUrl } from '@/lib/workout-builder/build-workout-builder-url';
 import { TaskModalEditorChrome } from '@/components/modals/task-modal/TaskModalEditorChrome';
+import { TaskModalCoverHeader } from '@/components/modals/task-modal/TaskModalCoverHeader';
 import { ClassEditor } from '@/components/modals/class-modal/ClassEditor';
 import { TaskModalSubtasksPanel } from '@/components/modals/task-modal/TaskModalSubtasksPanel';
 import { TaskModalTabBar } from '@/components/modals/task-modal/TaskModalTabBar';
@@ -2076,7 +2077,7 @@ export function TaskModal({
       onTitleChange: setTitle,
       description,
       onDescriptionChange: setDescription,
-      titleFieldsOwnedByHero: Boolean(taskId) && !showWorkoutSplitPane,
+      titleFieldsOwnedByCover: !showWorkoutSplitPane,
       itemType,
       canWrite,
       onGenerateWorkoutFromIntake: handleGenerateWorkoutFromIntake,
@@ -2271,6 +2272,9 @@ export function TaskModal({
     tab === 'comments' &&
     (viewMode === 'comments-only' || commentsInThreadView) &&
     !commentsSplitLayout;
+  /** Cover-top row (type chip + More/Close) owns dismiss — hide duplicate X on Hero. */
+  const chromeShowsCoverTop = showEditorChrome && !commentsReadingContext;
+  const heroOnClose = chromeShowsCoverTop ? undefined : () => handleOpenChange(false);
 
   /** Chat-first layout: inner scroll lives in comments panel; outer body does not scroll. */
   const commentsChatLayout = Boolean(taskId) && tab === 'comments';
@@ -2324,13 +2328,39 @@ export function TaskModal({
             initialIndex={taskCommentMedia.mediaModal?.index ?? 0}
           />
         ) : null}
-        {taskId && !showWorkoutSplitPane && !useCommentsUnifiedLayout ? (
+        {!showWorkoutSplitPane && !useCommentsUnifiedLayout && chromeShowsCoverTop ? (
+          <TaskModalCoverHeader
+            itemType={itemType}
+            onItemTypeChange={setItemType}
+            canManageClasses={canManageClasses}
+            canWrite={canWrite}
+            visibility={visibility}
+            liveStreamEnabled={liveStreamEnabled}
+            title={title}
+            description={description ?? ''}
+            onTitleChange={setTitle}
+            onDescriptionChange={setDescription}
+            coverPath={cardCoverPath.trim() || null}
+            onClose={() => handleOpenChange(false)}
+            onArchiveTask={!isCreateMode && taskId ? archiveTask : undefined}
+            archiving={archiving}
+            showOpenWorkoutViewer={
+              Boolean(taskId) &&
+              isWorkoutItemType &&
+              (hasWorkoutViewerContent || aiWorkoutGenerating)
+            }
+            onOpenWorkoutViewer={() => setWorkoutViewerOpen(true)}
+            descriptionCollapseMode="none"
+            heroBadge={workoutLogInProgressHeroBadge}
+            onInteraction={() => setHeroCinematicCollapsed(true)}
+          />
+        ) : taskId && !showWorkoutSplitPane && !useCommentsUnifiedLayout ? (
           isWorkoutItemType ? (
             <TaskModalWorkoutHero
               title={title}
               description={description ?? ''}
               coverPath={cardCoverPath.trim() || null}
-              onClose={() => handleOpenChange(false)}
+              onClose={heroOnClose}
               compactCinematic={commentsSplitLayout}
               descriptionExpanded={commentsReadingContext}
               descriptionCollapseMode={commentsReadingContext ? 'preview_toggle' : 'none'}
@@ -2352,7 +2382,7 @@ export function TaskModal({
               title={title}
               description={description ?? ''}
               coverPath={cardCoverPath.trim() || null}
-              onClose={() => handleOpenChange(false)}
+              onClose={heroOnClose}
               compactCinematic={
                 tab !== 'details' ||
                 heroCinematicCollapsed ||
@@ -2436,7 +2466,7 @@ export function TaskModal({
                         title={title}
                         description={description ?? ''}
                         coverPath={cardCoverPath.trim() || null}
-                        onClose={() => handleOpenChange(false)}
+                        onClose={heroOnClose}
                         onBack={unifiedThreadBack}
                         compactCinematic={
                           heroCinematicCollapsed ||
@@ -2465,7 +2495,7 @@ export function TaskModal({
                         title={title}
                         description={description ?? ''}
                         coverPath={cardCoverPath.trim() || null}
-                        onClose={() => handleOpenChange(false)}
+                        onClose={heroOnClose}
                         onBack={unifiedThreadBack}
                         compactCinematic={
                           heroCinematicCollapsed ||
@@ -2514,10 +2544,8 @@ export function TaskModal({
                   <div className="shrink-0">
                     <TaskModalEditorChrome
                       showChrome={showEditorChrome}
-                      showTypeAndVisibility={showEditorChrome && !commentsReadingContext}
+                      showTypeAndVisibility={chromeShowsCoverTop}
                       itemType={itemType}
-                      onItemTypeChange={setItemType}
-                      canManageClasses={canManageClasses}
                       canWrite={canWrite}
                       visibility={visibility}
                       onVisibilityChange={setVisibility}
@@ -2530,11 +2558,6 @@ export function TaskModal({
                       taskId={taskId}
                       activeSessionLaunch={activeSessionLaunchControlProps}
                       onInteraction={() => setHeroCinematicCollapsed(true)}
-                      onPickCardCover={
-                        taskId ? () => cardCoverFileInputRef.current?.click() : undefined
-                      }
-                      onArchiveTask={!isCreateMode && taskId ? archiveTask : undefined}
-                      archiving={archiving}
                     />
                   </div>
                   <div className="flex min-h-0 flex-1 flex-col px-6 pt-4 pb-2">
@@ -2627,56 +2650,58 @@ export function TaskModal({
               </>
             ) : (
               <>
-                <div className="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-border px-6 py-4">
-                  <div className="min-w-0 flex-1">
-                    <h2 className="text-lg font-bold text-foreground">{modalTitle}</h2>
-                    {modalSubtitle ? (
-                      <p className="text-xs text-muted-foreground">{modalSubtitle}</p>
-                    ) : null}
+                {!(chromeShowsCoverTop && !showWorkoutSplitPane) ? (
+                  <div className="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-border px-6 py-4">
+                    <div className="min-w-0 flex-1">
+                      <h2 className="text-lg font-bold text-foreground">{modalTitle}</h2>
+                      {modalSubtitle ? (
+                        <p className="text-xs text-muted-foreground">{modalSubtitle}</p>
+                      ) : null}
+                    </div>
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                      {taskId &&
+                      (hasWorkoutViewerContent || aiWorkoutGenerating) &&
+                      !showWorkoutSplitPane &&
+                      isWorkoutItemType ? (
+                        <Button
+                          type="button"
+                          variant="default"
+                          size="sm"
+                          className="gap-2 shadow-sm"
+                          onClick={() => setWorkoutViewerOpen(true)}
+                        >
+                          <ListTree className="size-4 shrink-0" aria-hidden />
+                          Workout viewer
+                        </Button>
+                      ) : null}
+                      {taskId &&
+                      tab === 'comments' &&
+                      !commentsInThreadView &&
+                      !showWorkoutSplitPane &&
+                      !hasWorkoutViewerContent ? (
+                        <Button
+                          type="button"
+                          variant="default"
+                          size="sm"
+                          className="shadow-sm"
+                          onClick={() => void selectTab('details')}
+                        >
+                          Details
+                        </Button>
+                      ) : null}
+                      {!taskId || showWorkoutSplitPane ? (
+                        <button
+                          type="button"
+                          className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                          aria-label="Close"
+                          onClick={() => handleOpenChange(false)}
+                        >
+                          <X className="h-5 w-5" aria-hidden />
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
-                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                    {taskId &&
-                    (hasWorkoutViewerContent || aiWorkoutGenerating) &&
-                    !showWorkoutSplitPane &&
-                    isWorkoutItemType ? (
-                      <Button
-                        type="button"
-                        variant="default"
-                        size="sm"
-                        className="gap-2 shadow-sm"
-                        onClick={() => setWorkoutViewerOpen(true)}
-                      >
-                        <ListTree className="size-4 shrink-0" aria-hidden />
-                        Workout viewer
-                      </Button>
-                    ) : null}
-                    {taskId &&
-                    tab === 'comments' &&
-                    !commentsInThreadView &&
-                    !showWorkoutSplitPane &&
-                    !hasWorkoutViewerContent ? (
-                      <Button
-                        type="button"
-                        variant="default"
-                        size="sm"
-                        className="shadow-sm"
-                        onClick={() => void selectTab('details')}
-                      >
-                        Details
-                      </Button>
-                    ) : null}
-                    {!taskId || showWorkoutSplitPane ? (
-                      <button
-                        type="button"
-                        className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                        aria-label="Close"
-                        onClick={() => handleOpenChange(false)}
-                      >
-                        <X className="h-5 w-5" aria-hidden />
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
+                ) : null}
 
                 <div
                   className={cn(
@@ -2762,10 +2787,8 @@ export function TaskModal({
                       <div className="shrink-0">
                         <TaskModalEditorChrome
                           showChrome={showEditorChrome}
-                          showTypeAndVisibility={showEditorChrome && !commentsReadingContext}
+                          showTypeAndVisibility={chromeShowsCoverTop}
                           itemType={itemType}
-                          onItemTypeChange={setItemType}
-                          canManageClasses={canManageClasses}
                           canWrite={canWrite}
                           visibility={visibility}
                           onVisibilityChange={setVisibility}
@@ -2778,11 +2801,6 @@ export function TaskModal({
                           taskId={taskId}
                           activeSessionLaunch={activeSessionLaunchControlProps}
                           onInteraction={() => setHeroCinematicCollapsed(true)}
-                          onPickCardCover={
-                            taskId ? () => cardCoverFileInputRef.current?.click() : undefined
-                          }
-                          onArchiveTask={!isCreateMode && taskId ? archiveTask : undefined}
-                          archiving={archiving}
                         />
                       </div>
 
