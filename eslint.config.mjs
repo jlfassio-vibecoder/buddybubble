@@ -7,7 +7,16 @@ const require = createRequire(import.meta.url);
 const eslintConfig = [
   ...require('eslint-config-next/core-web-vitals'),
   {
-    ignores: ['supabase/**', 'apps/storefront/**', 'coverage/**', 'dist/**', 'mocks/**', 'e2e/**'],
+    ignores: [
+      'supabase/**',
+      'apps/storefront/**',
+      'coverage/**',
+      'dist/**',
+      'mocks/**',
+      'e2e/**',
+      // Standalone Babel/React prototype for design handoff — not app source.
+      'docs/design-handoff-taskmodal-universal-canvas/**',
+    ],
   },
   // Phase 1 (Next 16 migration): preserve the legacy warn severity
   // for rules that already produced warnings on main. See docs/epics/next16-migration.md

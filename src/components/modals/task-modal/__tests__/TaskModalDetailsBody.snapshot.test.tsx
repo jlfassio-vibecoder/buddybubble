@@ -1,7 +1,5 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import type { RefObject } from 'react';
-import { createRef } from 'react';
 import type { Json } from '@/types/database';
 import { richMetadataWithBlockFormat } from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
 import {
@@ -41,6 +39,9 @@ vi.mock('@/components/modals/task-modal/TaskModalWorkoutFields', () => ({
 vi.mock('@/components/modals/task-modal/TaskModalProgramFields', () => ({
   TaskModalProgramFields: () => <div data-testid="mock-program-fields" />,
 }));
+vi.mock('@/components/modals/task-modal/TaskModalPropertiesSection', () => ({
+  TaskModalPropertiesSection: () => <div data-testid="mock-properties" />,
+}));
 vi.mock('@/components/modals/task-modal/TaskModalSchedulingSection', () => ({
   TaskModalSchedulingSection: () => <div data-testid="mock-scheduling" />,
 }));
@@ -52,7 +53,6 @@ vi.mock('@/components/modals/task-modal/TaskModalDetailsFooterActions', () => ({
 }));
 
 const noop = () => {};
-const cardCoverFileInputRef: RefObject<HTMLInputElement | null> = createRef();
 
 const mockWorkoutIntakePanelProps = {
   step: 1 as const,
@@ -107,8 +107,6 @@ const baseProps: TaskModalDetailsBodyProps = {
   workoutOutlineEditor: null,
   taskId: 'task-snap-1',
   cardCoverPath: '',
-  cardCoverFileInputRef,
-  onCardCoverFileChange: noop,
   onPickCardCover: noop,
   onRemoveCardCover: () => void Promise.resolve(),
   cardCoverPresetId: '',
@@ -192,50 +190,40 @@ describe('TaskModalDetailsBody', () => {
         class="min-w-0 space-y-4"
         data-testid="task-modal-details-body"
       >
-        <div
-          class="space-y-2"
-        >
+        <div>
           <label
-            class="flex items-center gap-2 text-sm leading-none font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50"
-            data-slot="label"
+            class="sr-only"
             for="task-title"
           >
             Title
           </label>
           <input
-            class="w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 h-9"
-            data-slot="input"
+            class="-mx-1.5 w-[calc(100%+0.75rem)] rounded-lg border-none bg-transparent px-1.5 py-0.5 text-2xl font-bold leading-tight tracking-tight text-foreground outline-none transition-colors hover:bg-foreground/[0.04] focus:bg-foreground/[0.06] focus:ring-1 focus:ring-inset focus:ring-ring disabled:opacity-60"
             id="task-title"
+            placeholder="Untitled"
             value="Snapshot task"
           />
-        </div>
-        <div
-          class="space-y-2"
-        >
-          <label
-            class="flex items-center gap-2 text-sm leading-none font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50"
-            data-slot="label"
-            for="task-desc"
-          >
-            Description
-          </label>
           <textarea
-            class="flex field-sizing-content min-h-16 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40"
-            data-slot="textarea"
+            aria-label="Description"
+            class="-mx-1.5 mt-1.5 w-[calc(100%+0.75rem)] resize-none rounded-lg border-none bg-transparent px-1.5 py-1 text-[14.5px] leading-relaxed text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.04] focus:bg-foreground/[0.06] focus:text-foreground focus:ring-1 focus:ring-inset focus:ring-ring disabled:opacity-60"
             id="task-desc"
-            rows="5"
+            placeholder="Add a description…"
+            rows="2"
           >
             Desc
           </textarea>
         </div>
         <div
-          data-testid="mock-card-cover"
+          data-testid="mock-properties"
         />
         <div
           data-testid="mock-metadata-sections"
         />
         <div
           data-testid="mock-scheduling"
+        />
+        <div
+          data-testid="mock-card-cover"
         />
         <div
           aria-orientation="horizontal"

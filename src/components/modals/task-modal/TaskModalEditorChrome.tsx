@@ -1,8 +1,7 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { Globe, Lock } from 'lucide-react';
-import { ItemTypeSelector } from '@/components/board/item-type-selector';
-import { ITEM_TYPES_ORDER } from '@/lib/item-type-styles';
 import {
   WorkoutPlayerTriggers,
   type ActiveSessionLaunchControlProps,
@@ -10,16 +9,16 @@ import {
 import type { ItemType, TaskVisibility } from '@/types/database';
 import { metadataFieldsFromParsed } from '@/lib/item-metadata';
 import type { Json } from '@/types/database';
-import { PrivacyToggle } from '@/components/ui/privacy-toggle';
+import { cn } from '@/lib/utils';
 
 export type TaskModalEditorChromeProps = {
   showChrome: boolean;
-  /** When false with showChrome, Type + Visibility are hidden (comments / thread focus); workout player may still show. */
+  /**
+   * When false with showChrome, Visibility / Live are hidden (comments reading-context);
+   * workout player may still show.
+   */
   showTypeAndVisibility?: boolean;
   itemType: ItemType;
-  onItemTypeChange: (next: ItemType) => void;
-  /** When true, the Class type chip is shown in the selector (trainers / workspace admins). */
-  canManageClasses: boolean;
   canWrite: boolean;
   visibility: TaskVisibility;
   onVisibilityChange: (next: TaskVisibility) => void;
@@ -36,16 +35,46 @@ export type TaskModalEditorChromeProps = {
     ActiveSessionLaunchControlProps,
     'launchUi' | 'onLaunchClick' | 'busy'
   > | null;
-  /** Fires on click in the type or visibility / workout player sections (capture phase). */
+  /** Fires on click in visibility / workout player sections (capture phase). */
   onInteraction?: () => void;
 };
 
+/** Consistent chrome block: external title + description + bordered control surface. */
+function ChromeField({
+  title,
+  description,
+  children,
+  onClickCapture,
+  className,
+}: {
+  title: string;
+  description?: string;
+  children: ReactNode;
+  onClickCapture?: () => void;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn('border-b border-border px-6 py-3', className)}
+      onClickCapture={onClickCapture}
+    >
+      <p className="text-xs font-medium text-muted-foreground">{title}</p>
+      {description ? (
+        <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{description}</p>
+      ) : null}
+      <div className="mt-2 rounded-lg border border-border bg-muted/30 p-3">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * Persistent chrome: Visibility / Live (all tabs) + Workout player.
+ * Cover header chips are read-only echoes of these controls.
+ */
 export function TaskModalEditorChrome({
   showChrome,
   showTypeAndVisibility = true,
   itemType,
-  onItemTypeChange,
-  canManageClasses,
   canWrite,
   visibility,
   onVisibilityChange,
@@ -61,7 +90,6 @@ export function TaskModalEditorChrome({
 }: TaskModalEditorChromeProps) {
   if (!showChrome) return null;
 
-  const typeSelectorOrder = ITEM_TYPES_ORDER.filter((t) => t !== 'class' || canManageClasses);
   const showVisibilitySection = itemType !== 'class';
   const showLiveStreamToggle =
     itemType !== 'class' && typeof onLiveStreamEnabledChange === 'function';
@@ -78,29 +106,23 @@ export function TaskModalEditorChrome({
     <>
       {showTypeAndVisibility ? (
         <>
-          <div className="border-b border-border px-6 py-3" onClickCapture={notifyInteraction}>
-            <p className="mb-2 text-xs font-medium text-muted-foreground">Type</p>
-            <ItemTypeSelector
-              value={itemType}
-              onChange={onItemTypeChange}
-              disabled={!canWrite}
-              typesOrder={typeSelectorOrder}
-            />
-          </div>
-
           {showVisibilitySection ? (
-            <div className="border-b border-border px-6 py-3" onClickCapture={notifyInteraction}>
-              <p className="mb-2 text-xs font-medium text-muted-foreground">Visibility</p>
+            <ChromeField
+              title="Visibility"
+              description="Public cards appear on your Astro storefront."
+              onClickCapture={notifyInteraction}
+            >
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   disabled={!canWrite}
                   onClick={() => onVisibilityChange('private')}
-                  className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
                     visibility === 'private'
                       ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
-                  }`}
+                      : 'border-border bg-background text-muted-foreground hover:bg-muted',
+                  )}
                 >
                   <Lock className="size-4 shrink-0" aria-hidden />
                   Private
@@ -109,49 +131,57 @@ export function TaskModalEditorChrome({
                   type="button"
                   disabled={!canWrite}
                   onClick={() => onVisibilityChange('public')}
-                  className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
                     visibility === 'public'
                       ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
-                  }`}
+                      : 'border-border bg-background text-muted-foreground hover:bg-muted',
+                  )}
                 >
                   <Globe className="size-4 shrink-0" aria-hidden />
                   Public
                 </button>
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                Public cards appear on your Astro storefront.
-              </p>
-            </div>
+            </ChromeField>
           ) : null}
           {showLiveStreamToggle ? (
-            <div className="border-b border-border px-6 py-3" onClickCapture={notifyInteraction}>
-              <PrivacyToggle
-                id="task-live-stream"
-                title="Enable live video stream"
-                description="Adds a Join live session control on this card. End the session from the live dock when finished."
-                checked={liveStreamEnabled}
-                disabled={!canWrite}
-                onCheckedChange={onLiveStreamEnabledChange}
-              />
-            </div>
-          ) : null}
-          {showWorkoutPlayer ? (
-            <div className="border-b border-border px-6 py-3" onClickCapture={notifyInteraction}>
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium text-muted-foreground">Workout player</p>
-                <WorkoutPlayerTriggers
-                  workoutTitle={workoutTitle}
-                  metadata={workoutMetadata}
-                  bubbleId={bubbleId ?? ''}
-                  workspaceId={workspaceId}
-                  sourceTaskId={taskId}
-                  activeSessionLaunch={activeSessionLaunch}
+            <ChromeField
+              title="Live video"
+              description="Adds a Join live session control on this card. End the session from the live dock when finished."
+              onClickCapture={notifyInteraction}
+            >
+              <label className="flex cursor-pointer items-start gap-3" htmlFor="task-live-stream">
+                <input
+                  id="task-live-stream"
+                  type="checkbox"
+                  checked={liveStreamEnabled}
+                  disabled={!canWrite}
+                  onChange={(e) => onLiveStreamEnabledChange?.(e.target.checked)}
+                  className="mt-0.5 size-4 shrink-0 rounded border-input"
                 />
-              </div>
-            </div>
+                <span className="text-sm font-semibold text-foreground">
+                  Enable live video stream
+                </span>
+              </label>
+            </ChromeField>
           ) : null}
         </>
+      ) : null}
+      {showWorkoutPlayer ? (
+        <ChromeField
+          title="Workout player"
+          description="Launch an Active Session or open the desktop/mobile player for this workout."
+          onClickCapture={notifyInteraction}
+        >
+          <WorkoutPlayerTriggers
+            workoutTitle={workoutTitle}
+            metadata={workoutMetadata}
+            bubbleId={bubbleId ?? ''}
+            workspaceId={workspaceId}
+            sourceTaskId={taskId}
+            activeSessionLaunch={activeSessionLaunch}
+          />
+        </ChromeField>
       ) : null}
     </>
   );

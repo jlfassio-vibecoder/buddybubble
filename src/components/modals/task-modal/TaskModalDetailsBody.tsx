@@ -3,7 +3,6 @@
 import { memo } from 'react';
 import type { Json, UnitSystem } from '@/types/database';
 import type { TaskDateFieldLabels } from '@/lib/task-date-labels';
-import type { RefObject } from 'react';
 import type { ItemType } from '@/lib/item-types';
 import type { TaskAttachment } from '@/types/task-modal';
 import type { TaskPriority } from '@/lib/task-priority';
@@ -16,6 +15,7 @@ import { WorkoutPreflightReadinessPanel } from '@/components/fitness/workout-int
 import { WorkoutOutlinePanel } from '@/components/fitness/WorkoutOutlinePanel';
 import { readCoachOutlineMetadata } from '@/lib/agents/coach/coach-outline-metadata';
 import type { WorkoutOutlineEditorState } from '@/components/modals/task-modal/hooks/useWorkoutOutlineEditor';
+import { TaskModalPropertiesSection } from '@/components/modals/task-modal/TaskModalPropertiesSection';
 import { TaskModalCardCoverSection } from '@/components/modals/task-modal/TaskModalCardCoverSection';
 import { TaskModalItemMetadataSections } from '@/components/modals/task-modal/TaskModalItemMetadataSections';
 import { TaskModalProgramFields } from '@/components/modals/task-modal/TaskModalProgramFields';
@@ -23,9 +23,6 @@ import { TaskModalWorkoutFields } from '@/components/modals/task-modal/TaskModal
 import { TaskModalSchedulingSection } from '@/components/modals/task-modal/TaskModalSchedulingSection';
 import { TaskModalAttachmentsSection } from '@/components/modals/task-modal/TaskModalAttachmentsSection';
 import { TaskModalDetailsFooterActions } from '@/components/modals/task-modal/TaskModalDetailsFooterActions';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
 import { LayoutPanelLeft } from 'lucide-react';
@@ -35,6 +32,11 @@ export type TaskModalDetailsBodyProps = {
   onTitleChange: (value: string) => void;
   description: string;
   onDescriptionChange: (value: string) => void;
+  /**
+   * The always-visible cover header (`TaskModalCoverHeader`) owns title/description editing.
+   * This body only renders its own copies as a fallback for the workout viewer split pane.
+   */
+  titleFieldsOwnedByCover?: boolean;
   itemType: ItemType;
   canWrite: boolean;
   onGenerateWorkoutFromIntake: (data: WorkoutIntakeWizardData) => void;
@@ -53,8 +55,6 @@ export type TaskModalDetailsBodyProps = {
   intakeDisabledReason?: string;
   taskId: string | null;
   cardCoverPath: string;
-  cardCoverFileInputRef: RefObject<HTMLInputElement | null>;
-  onCardCoverFileChange: (file: File) => void;
   onPickCardCover: () => void;
   onRemoveCardCover: () => void;
   cardCoverPresetId: string;
@@ -134,6 +134,7 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     onTitleChange,
     description,
     onDescriptionChange,
+    titleFieldsOwnedByCover = false,
     itemType,
     canWrite,
     onGenerateWorkoutFromIntake,
@@ -149,8 +150,6 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     intakeDisabledReason,
     taskId,
     cardCoverPath,
-    cardCoverFileInputRef,
-    onCardCoverFileChange,
     onPickCardCover,
     onRemoveCardCover,
     cardCoverPresetId,
@@ -228,26 +227,44 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
 
   return (
     <div className="min-w-0 space-y-4" data-testid="task-modal-details-body">
-      <div className="space-y-2">
-        <Label htmlFor="task-title">Title</Label>
-        <Input
-          id="task-title"
-          value={title}
-          onChange={(e) => onTitleChange(e.target.value)}
-          disabled={!canWrite}
-          className="h-9"
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="task-desc">Description</Label>
-        <Textarea
-          id="task-desc"
-          value={description}
-          onChange={(e) => onDescriptionChange(e.target.value)}
-          disabled={!canWrite}
-          rows={5}
-        />
-      </div>
+      {!titleFieldsOwnedByCover ? (
+        <div>
+          <label htmlFor="task-title" className="sr-only">
+            Title
+          </label>
+          <input
+            id="task-title"
+            value={title}
+            onChange={(e) => onTitleChange(e.target.value)}
+            disabled={!canWrite}
+            placeholder="Untitled"
+            className="-mx-1.5 w-[calc(100%+0.75rem)] rounded-lg border-none bg-transparent px-1.5 py-0.5 text-2xl font-bold leading-tight tracking-tight text-foreground outline-none transition-colors hover:bg-foreground/[0.04] focus:bg-foreground/[0.06] focus:ring-1 focus:ring-inset focus:ring-ring disabled:opacity-60"
+          />
+          <textarea
+            id="task-desc"
+            aria-label="Description"
+            value={description}
+            onChange={(e) => onDescriptionChange(e.target.value)}
+            disabled={!canWrite}
+            rows={2}
+            placeholder="Add a description…"
+            className="-mx-1.5 mt-1.5 w-[calc(100%+0.75rem)] resize-none rounded-lg border-none bg-transparent px-1.5 py-1 text-[14.5px] leading-relaxed text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.04] focus:bg-foreground/[0.06] focus:text-foreground focus:ring-1 focus:ring-inset focus:ring-ring disabled:opacity-60"
+          />
+        </div>
+      ) : null}
+
+      <TaskModalPropertiesSection
+        status={status}
+        onStatusChange={onStatusChange}
+        statusSelectOptions={statusSelectOptions}
+        priority={priority}
+        onPriorityChange={onPriorityChange}
+        workspaceId={workspaceId}
+        assignedTo={assignedTo}
+        onAssignedToChange={onAssignedToChange}
+        workspaceMembersForAssign={workspaceMembersForAssign}
+        canWrite={canWrite}
+      />
 
       {showStructureBuilderCta && onOpenStructureBuilder ? (
         <div className="rounded-lg border border-border bg-muted/30 px-4 py-4">
@@ -304,23 +321,6 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
           ) : null}
         </div>
       ) : null}
-
-      <TaskModalCardCoverSection
-        taskId={taskId}
-        cardCoverPath={cardCoverPath}
-        cardCoverFileInputRef={cardCoverFileInputRef}
-        onCardCoverFileChange={onCardCoverFileChange}
-        onPickCardCover={onPickCardCover}
-        onRemoveCardCover={onRemoveCardCover}
-        cardCoverPresetId={cardCoverPresetId}
-        onCardCoverPresetIdChange={onCardCoverPresetIdChange}
-        cardCoverAiHint={cardCoverAiHint}
-        onCardCoverAiHintChange={onCardCoverAiHintChange}
-        canWrite={canWrite}
-        saving={saving}
-        aiCardCoverGenerating={aiCardCoverGenerating}
-        onGenerateCardCoverWithAi={onGenerateCardCoverWithAi}
-      />
 
       <TaskModalItemMetadataSections
         itemType={itemType}
@@ -382,20 +382,26 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
       <TaskModalSchedulingSection
         itemType={itemType}
         dateLabels={dateLabels}
-        status={status}
-        onStatusChange={onStatusChange}
-        statusSelectOptions={statusSelectOptions}
-        priority={priority}
-        onPriorityChange={onPriorityChange}
-        workspaceId={workspaceId}
-        assignedTo={assignedTo}
-        onAssignedToChange={onAssignedToChange}
-        workspaceMembersForAssign={workspaceMembersForAssign}
         scheduledOn={scheduledOn}
         onScheduledOnChange={onScheduledOnChange}
         scheduledTime={scheduledTime}
         onScheduledTimeChange={onScheduledTimeChange}
         canWrite={canWrite}
+      />
+
+      <TaskModalCardCoverSection
+        taskId={taskId}
+        cardCoverPath={cardCoverPath}
+        onPickCardCover={onPickCardCover}
+        onRemoveCardCover={onRemoveCardCover}
+        cardCoverPresetId={cardCoverPresetId}
+        onCardCoverPresetIdChange={onCardCoverPresetIdChange}
+        cardCoverAiHint={cardCoverAiHint}
+        onCardCoverAiHintChange={onCardCoverAiHintChange}
+        canWrite={canWrite}
+        saving={saving}
+        aiCardCoverGenerating={aiCardCoverGenerating}
+        onGenerateCardCoverWithAi={onGenerateCardCoverWithAi}
       />
 
       <Separator className="my-2" />
