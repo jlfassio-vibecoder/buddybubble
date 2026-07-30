@@ -135,6 +135,7 @@ export class ManualClassProvider implements FitnessClassProvider {
     }
 
     // 3. Batch-count draft deck workouts per class (`bb-class-deck:<instanceId>`).
+    // Copilot suggestion ignored: class deck builder only adds workouts; counting deck rows avoids a tasks join for a speculative non-workout case.
     const deckSessionIds = instanceIds.map((id) => classDeckBuilderSessionId(id));
     const deckCountBySessionId = new Map<string, number>();
     const { data: deckRows, error: deckErr } = await supabase
