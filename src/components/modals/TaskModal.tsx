@@ -2076,6 +2076,7 @@ export function TaskModal({
       onTitleChange: setTitle,
       description,
       onDescriptionChange: setDescription,
+      titleFieldsOwnedByHero: !showWorkoutSplitPane,
       itemType,
       canWrite,
       onGenerateWorkoutFromIntake: handleGenerateWorkoutFromIntake,
@@ -2185,6 +2186,7 @@ export function TaskModal({
     [
       title,
       description,
+      showWorkoutSplitPane,
       itemType,
       canWrite,
       handleGenerateWorkoutFromIntake,
@@ -2341,6 +2343,9 @@ export function TaskModal({
                 ) : null
               }
               heroBadge={workoutLogInProgressHeroBadge}
+              onTitleChange={setTitle}
+              onDescriptionChange={setDescription}
+              canWrite={canWrite}
             />
           ) : (
             <TaskModalHero
@@ -2358,6 +2363,9 @@ export function TaskModal({
               descriptionCollapseMode={commentsReadingContext ? 'preview_toggle' : 'none'}
               readingContextActions={null}
               heroBadge={workoutLogInProgressHeroBadge}
+              onTitleChange={setTitle}
+              onDescriptionChange={setDescription}
+              canWrite={canWrite}
             />
           )
         ) : null}
@@ -2448,6 +2456,9 @@ export function TaskModal({
                           ) : null
                         }
                         heroBadge={workoutLogInProgressHeroBadge}
+                        onTitleChange={setTitle}
+                        onDescriptionChange={setDescription}
+                        canWrite={canWrite}
                       />
                     ) : (
                       <TaskModalHero
@@ -2467,6 +2478,9 @@ export function TaskModal({
                         descriptionCollapseMode={commentsReadingContext ? 'preview_toggle' : 'none'}
                         readingContextActions={null}
                         heroBadge={workoutLogInProgressHeroBadge}
+                        onTitleChange={setTitle}
+                        onDescriptionChange={setDescription}
+                        canWrite={canWrite}
                       />
                     )
                   ) : null}

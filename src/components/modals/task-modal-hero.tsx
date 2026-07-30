@@ -19,6 +19,14 @@ export type TaskModalHeroProps = {
   /** Supabase Storage path in `task-attachments`, or empty when no cover. */
   coverPath: string | null;
   className?: string;
+  /**
+   * When provided together with `canWrite` (and outside `preview_toggle` reading context), the
+   * title/description render as borderless editable fields instead of read-only text — the
+   * cover header owns editing so it stays available on every tab, not just Details.
+   */
+  onTitleChange?: (value: string) => void;
+  onDescriptionChange?: (value: string) => void;
+  canWrite?: boolean;
   /** Pinned top-right on the hero so the modal stays closable while the body scrolls. */
   onClose?: () => void;
   /** Unified comments thread: exit thread (top-left control, mirrors close on the right). */
@@ -71,6 +79,9 @@ export function TaskModalHero({
   readingContextActions = null,
   cinematicPlaceholder = false,
   heroBadge = null,
+  onTitleChange,
+  onDescriptionChange,
+  canWrite = false,
 }: TaskModalHeroProps) {
   const path = coverPath?.trim() || null;
   const { url, loading } = useTaskCardCoverUrl(path);
@@ -86,6 +97,9 @@ export function TaskModalHero({
 
   const isPreviewToggle = descriptionCollapseMode === 'preview_toggle';
   const [descPreviewExpanded, setDescPreviewExpanded] = useState(false);
+
+  /** Cover header owns editing outside the reading-context preview (comments thread focus). */
+  const editable = canWrite && Boolean(onTitleChange) && !isPreviewToggle;
 
   const legacyExpanded = !isPreviewToggle && descriptionExpanded;
   const showDescToggleRow =
@@ -230,15 +244,34 @@ export function TaskModalHero({
                   {heroBadge}
                 </div>
               ) : null}
-              <p
-                className={cn(
-                  'pointer-events-auto font-semibold leading-snug [text-shadow:0_1px_2px_rgba(0,0,0,0.45)]',
-                  titleClampClass,
-                )}
-              >
-                {titleText}
-              </p>
-              {descText ? (
+              {editable ? (
+                <input
+                  value={title}
+                  onChange={(e) => onTitleChange?.(e.target.value)}
+                  placeholder="Untitled"
+                  aria-label="Title"
+                  className="pointer-events-auto w-full rounded-md border-none bg-transparent px-1 -mx-1 font-semibold leading-snug text-white outline-none [text-shadow:0_1px_2px_rgba(0,0,0,0.45)] placeholder:text-white/60 hover:bg-white/10 focus:bg-white/15"
+                />
+              ) : (
+                <p
+                  className={cn(
+                    'pointer-events-auto font-semibold leading-snug [text-shadow:0_1px_2px_rgba(0,0,0,0.45)]',
+                    titleClampClass,
+                  )}
+                >
+                  {titleText}
+                </p>
+              )}
+              {editable ? (
+                <textarea
+                  value={description}
+                  onChange={(e) => onDescriptionChange?.(e.target.value)}
+                  placeholder="Add a description…"
+                  aria-label="Description"
+                  rows={2}
+                  className="pointer-events-auto mt-1 w-full resize-none rounded-md border-none bg-transparent px-1 -mx-1 text-sm leading-relaxed text-white/90 outline-none [text-shadow:0_1px_2px_rgba(0,0,0,0.35)] placeholder:text-white/50 hover:bg-white/10 focus:bg-white/15"
+                />
+              ) : descText ? (
                 <div
                   className={cn(
                     'pointer-events-auto mt-1 min-h-0',
@@ -311,16 +344,35 @@ export function TaskModalHero({
               {heroBadge ? (
                 <div className="mb-1.5 flex flex-wrap items-center gap-1.5">{heroBadge}</div>
               ) : null}
-              <p className={cn('font-semibold leading-snug text-foreground', titleClampClass)}>
-                {titleText}
-              </p>
+              {editable ? (
+                <input
+                  value={title}
+                  onChange={(e) => onTitleChange?.(e.target.value)}
+                  placeholder="Untitled"
+                  aria-label="Title"
+                  className="w-full rounded-md border-none bg-transparent px-1 -mx-1 font-semibold leading-snug text-foreground outline-none hover:bg-foreground/5 focus:bg-foreground/10"
+                />
+              ) : (
+                <p className={cn('font-semibold leading-snug text-foreground', titleClampClass)}>
+                  {titleText}
+                </p>
+              )}
               {coverLoading ? (
                 <div
                   className="mt-2 h-1.5 max-w-[7rem] animate-pulse rounded-full bg-muted"
                   aria-hidden
                 />
               ) : null}
-              {descText ? (
+              {editable ? (
+                <textarea
+                  value={description}
+                  onChange={(e) => onDescriptionChange?.(e.target.value)}
+                  placeholder="Add a description…"
+                  aria-label="Description"
+                  rows={2}
+                  className="mt-1 w-full resize-none rounded-md border-none bg-transparent px-1 -mx-1 text-sm leading-relaxed text-muted-foreground outline-none hover:bg-foreground/5 focus:bg-foreground/10 focus:text-foreground"
+                />
+              ) : descText ? (
                 isPreviewToggle ? (
                   descPreviewExpanded ? (
                     <div

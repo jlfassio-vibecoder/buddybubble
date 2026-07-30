@@ -32,6 +32,12 @@ export type TaskModalDetailsBodyProps = {
   onTitleChange: (value: string) => void;
   description: string;
   onDescriptionChange: (value: string) => void;
+  /**
+   * The always-visible cover header (`TaskModalHero`) owns title/description editing so it
+   * stays available on every tab. This body only renders its own copies as a fallback for the
+   * one layout where no Hero renders above it — the workout viewer split pane.
+   */
+  titleFieldsOwnedByHero?: boolean;
   itemType: ItemType;
   canWrite: boolean;
   onGenerateWorkoutFromIntake: (data: WorkoutIntakeWizardData) => void;
@@ -131,6 +137,7 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     onTitleChange,
     description,
     onDescriptionChange,
+    titleFieldsOwnedByHero = false,
     itemType,
     canWrite,
     onGenerateWorkoutFromIntake,
@@ -225,29 +232,31 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
 
   return (
     <div className="min-w-0 space-y-4" data-testid="task-modal-details-body">
-      <div>
-        <label htmlFor="task-title" className="sr-only">
-          Title
-        </label>
-        <input
-          id="task-title"
-          value={title}
-          onChange={(e) => onTitleChange(e.target.value)}
-          disabled={!canWrite}
-          placeholder="Untitled"
-          className="-mx-1.5 w-[calc(100%+0.75rem)] rounded-lg border-none bg-transparent px-1.5 py-0.5 text-2xl font-bold leading-tight tracking-tight text-foreground outline-none transition-colors hover:bg-foreground/[0.04] focus:bg-foreground/[0.06] focus:ring-1 focus:ring-inset focus:ring-ring disabled:opacity-60"
-        />
-        <textarea
-          id="task-desc"
-          aria-label="Description"
-          value={description}
-          onChange={(e) => onDescriptionChange(e.target.value)}
-          disabled={!canWrite}
-          rows={2}
-          placeholder="Add a description…"
-          className="-mx-1.5 mt-1.5 w-[calc(100%+0.75rem)] resize-none rounded-lg border-none bg-transparent px-1.5 py-1 text-[14.5px] leading-relaxed text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.04] focus:bg-foreground/[0.06] focus:text-foreground focus:ring-1 focus:ring-inset focus:ring-ring disabled:opacity-60"
-        />
-      </div>
+      {!titleFieldsOwnedByHero ? (
+        <div>
+          <label htmlFor="task-title" className="sr-only">
+            Title
+          </label>
+          <input
+            id="task-title"
+            value={title}
+            onChange={(e) => onTitleChange(e.target.value)}
+            disabled={!canWrite}
+            placeholder="Untitled"
+            className="-mx-1.5 w-[calc(100%+0.75rem)] rounded-lg border-none bg-transparent px-1.5 py-0.5 text-2xl font-bold leading-tight tracking-tight text-foreground outline-none transition-colors hover:bg-foreground/[0.04] focus:bg-foreground/[0.06] focus:ring-1 focus:ring-inset focus:ring-ring disabled:opacity-60"
+          />
+          <textarea
+            id="task-desc"
+            aria-label="Description"
+            value={description}
+            onChange={(e) => onDescriptionChange(e.target.value)}
+            disabled={!canWrite}
+            rows={2}
+            placeholder="Add a description…"
+            className="-mx-1.5 mt-1.5 w-[calc(100%+0.75rem)] resize-none rounded-lg border-none bg-transparent px-1.5 py-1 text-[14.5px] leading-relaxed text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.04] focus:bg-foreground/[0.06] focus:text-foreground focus:ring-1 focus:ring-inset focus:ring-ring disabled:opacity-60"
+          />
+        </div>
+      ) : null}
 
       {showStructureBuilderCta && onOpenStructureBuilder ? (
         <div className="rounded-lg border border-border bg-muted/30 px-4 py-4">
