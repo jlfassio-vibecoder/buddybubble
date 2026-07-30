@@ -104,15 +104,15 @@ export function TaskModalSchedulingSection({
           help="Owner or member responsible for this card (including programs)."
         >
           <Select
-            value={assignedTo ?? ''}
-            onValueChange={(v) => onAssignedToChange(v ? String(v) : null)}
+            value={assignedTo}
+            onValueChange={(v) => onAssignedToChange(v == null || v === '' ? null : String(v))}
             disabled={!canWrite}
           >
             <SelectTrigger>
-              <SelectValue />
+              <SelectValue placeholder="Unassigned" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Unassigned</SelectItem>
+              <SelectItem value={null}>Unassigned</SelectItem>
               {workspaceMembersForAssign.map((m) => (
                 <SelectItem key={m.user_id} value={m.user_id}>
                   {m.label}

@@ -1,6 +1,7 @@
 'use client';
 
 import { CalendarDays, Camera, MapPin } from 'lucide-react';
+import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
   TaskModalField,
@@ -84,22 +85,38 @@ export function TaskModalItemMetadataSections({
           </TaskModalField>
           <TaskModalField help="Experiences appear as themed pills on their start date in the Month view.">
             <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
-              <input
-                type="date"
-                aria-label="Start date"
-                value={scheduledOn}
-                onChange={(e) => onExperienceStartDateChange(e.target.value)}
-                disabled={!canWrite}
-                className={taskModalInputClass}
-              />
-              <input
-                type="date"
-                aria-label="End date"
-                value={experienceEndDate}
-                onChange={(e) => onExperienceEndDateChange(e.target.value)}
-                disabled={!canWrite}
-                className={taskModalInputClass}
-              />
+              <div>
+                <Label
+                  htmlFor="task-experience-start"
+                  className="mb-1.5 block text-xs font-semibold text-foreground"
+                >
+                  Start date
+                </Label>
+                <input
+                  id="task-experience-start"
+                  type="date"
+                  value={scheduledOn}
+                  onChange={(e) => onExperienceStartDateChange(e.target.value)}
+                  disabled={!canWrite}
+                  className={taskModalInputClass}
+                />
+              </div>
+              <div>
+                <Label
+                  htmlFor="task-experience-end"
+                  className="mb-1.5 block text-xs font-semibold text-foreground"
+                >
+                  End date
+                </Label>
+                <input
+                  id="task-experience-end"
+                  type="date"
+                  value={experienceEndDate}
+                  onChange={(e) => onExperienceEndDateChange(e.target.value)}
+                  disabled={!canWrite}
+                  className={taskModalInputClass}
+                />
+              </div>
             </div>
           </TaskModalField>
         </TaskModalSection>

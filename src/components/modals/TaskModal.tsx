@@ -2605,7 +2605,10 @@ export function TaskModal({
                   tab={tab}
                   onSelectTab={(id) => void selectTab(id)}
                   bubblyProps={modalBubbleUp ?? null}
-                  counts={{ subtasks: subtasks.length, activity: activityLog.length }}
+                  counts={{
+                    subtasks: subtasks.filter((s) => !s.done).length,
+                    activity: activityLog.length,
+                  }}
                 />
               </>
             ) : (
@@ -2918,7 +2921,10 @@ export function TaskModal({
                   tab={tab}
                   onSelectTab={(id) => void selectTab(id)}
                   bubblyProps={modalBubbleUp ?? null}
-                  counts={{ subtasks: subtasks.length, activity: activityLog.length }}
+                  counts={{
+                    subtasks: subtasks.filter((s) => !s.done).length,
+                    activity: activityLog.length,
+                  }}
                 />
               </>
             )}
