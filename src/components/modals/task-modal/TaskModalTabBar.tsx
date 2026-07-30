@@ -103,7 +103,7 @@ export function TaskModalTabBar({ tab, onSelectTab, bubblyProps, counts }: TaskM
           />
         ))}
         {bubblyProps ? (
-          <div className="flex min-h-11 w-full min-w-0 items-stretch justify-center md:hidden">
+          <div className="flex min-h-11 w-full min-w-0 items-stretch justify-center md:min-h-0 md:w-auto md:shrink-0 md:items-center md:px-1">
             <BubblyButton {...bubblyProps} density="default" tabStrip tabBarIconsRow />
           </div>
         ) : null}
