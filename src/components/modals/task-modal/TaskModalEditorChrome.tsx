@@ -1,8 +1,8 @@
 'use client';
 
 import { Globe, Lock } from 'lucide-react';
-import { ItemTypeSelector } from '@/components/board/item-type-selector';
 import { ITEM_TYPES_ORDER } from '@/lib/item-type-styles';
+import { TaskModalTypeChip } from '@/components/modals/task-modal/TaskModalTypeChip';
 import {
   WorkoutPlayerTriggers,
   type ActiveSessionLaunchControlProps,
@@ -78,14 +78,36 @@ export function TaskModalEditorChrome({
     <>
       {showTypeAndVisibility ? (
         <>
-          <div className="border-b border-border px-6 py-3" onClickCapture={notifyInteraction}>
-            <p className="mb-2 text-xs font-medium text-muted-foreground">Type</p>
-            <ItemTypeSelector
-              value={itemType}
-              onChange={onItemTypeChange}
+          <div
+            className="flex flex-wrap items-center gap-2 border-b border-border px-6 py-3"
+            onClickCapture={notifyInteraction}
+          >
+            <TaskModalTypeChip
+              itemType={itemType}
+              onItemTypeChange={onItemTypeChange}
               disabled={!canWrite}
               typesOrder={typeSelectorOrder}
             />
+            {showVisibilitySection ? (
+              <span className="inline-flex items-center gap-1.5 text-[11.5px] font-medium text-muted-foreground">
+                <span aria-hidden className="size-[3px] rounded-full bg-current opacity-60" />
+                {visibility === 'public' ? (
+                  <Globe className="size-3.5 shrink-0" aria-hidden />
+                ) : (
+                  <Lock className="size-3.5 shrink-0" aria-hidden />
+                )}
+                {visibility === 'public' ? 'Public' : 'Private'}
+              </span>
+            ) : null}
+            {showLiveStreamToggle && liveStreamEnabled ? (
+              <span className="inline-flex h-6 items-center gap-1.5 rounded-full bg-primary/18 px-2.5 text-[10.5px] font-bold uppercase tracking-wide text-primary">
+                <span className="relative flex size-[7px]">
+                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-75" />
+                  <span className="relative inline-flex size-full rounded-full bg-primary" />
+                </span>
+                Live huddle
+              </span>
+            ) : null}
           </div>
 
           {showVisibilitySection ? (
