@@ -2076,7 +2076,7 @@ export function TaskModal({
       onTitleChange: setTitle,
       description,
       onDescriptionChange: setDescription,
-      titleFieldsOwnedByHero: !showWorkoutSplitPane,
+      titleFieldsOwnedByHero: Boolean(taskId) && !showWorkoutSplitPane,
       itemType,
       canWrite,
       onGenerateWorkoutFromIntake: handleGenerateWorkoutFromIntake,

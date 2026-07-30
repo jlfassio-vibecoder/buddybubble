@@ -61,10 +61,11 @@ const closeButtonBase =
 const expandedPreviewMaxClass = 'max-h-[min(30dvh,16rem)]';
 
 /**
- * Read-only preview hero for persisted tasks: when a cover image is available, a full 16:9
+ * Cover hero for persisted tasks: when a cover image is available, a full 16:9
  * frame with `object-contain` and title + description overlay. Without an image (or while
  * loading / if signing fails), defaults to a compact header unless `cinematicPlaceholder`
- * forces the same frame with a gradient background. Editable fields live in Details below.
+ * forces the same frame with a gradient background. When `onTitleChange` + `canWrite` are
+ * provided (outside reading-context preview), title/description are editable in the hero.
  */
 export function TaskModalHero({
   title,
@@ -217,11 +218,11 @@ export function TaskModalHero({
               <img
                 src={coverUrl ?? undefined}
                 alt=""
-                className="absolute inset-0 h-full w-full object-contain object-center"
+                className="pointer-events-none absolute inset-0 h-full w-full object-contain object-center"
               />
             ) : (
               <div
-                className="absolute inset-0 bg-gradient-to-br from-muted via-muted/90 to-primary/10"
+                className="pointer-events-none absolute inset-0 bg-gradient-to-br from-muted via-muted/90 to-primary/10"
                 aria-hidden
               />
             )}
@@ -232,30 +233,30 @@ export function TaskModalHero({
 
             <div
               className={cn(
-                'pointer-events-none relative z-10 flex min-h-0 flex-col justify-start p-4 text-white',
+                'relative z-10 flex min-h-0 flex-col justify-start p-4 text-white',
                 imageBackedCinematic
                   ? 'h-full overflow-hidden'
                   : 'max-md:h-full max-md:overflow-hidden md:h-auto md:overflow-visible',
                 onBack && 'pl-12',
+                onClose && 'pr-12',
               )}
             >
               {heroBadge ? (
-                <div className="pointer-events-auto mb-1.5 flex flex-wrap items-center gap-1.5">
-                  {heroBadge}
-                </div>
+                <div className="mb-1.5 flex flex-wrap items-center gap-1.5">{heroBadge}</div>
               ) : null}
               {editable ? (
                 <input
+                  id="task-title"
                   value={title}
                   onChange={(e) => onTitleChange?.(e.target.value)}
                   placeholder="Untitled"
                   aria-label="Title"
-                  className="pointer-events-auto w-full rounded-md border-none bg-transparent px-1 -mx-1 font-semibold leading-snug text-white outline-none [text-shadow:0_1px_2px_rgba(0,0,0,0.45)] placeholder:text-white/60 hover:bg-white/10 focus:bg-white/15"
+                  className="w-full rounded-md border-none bg-transparent px-1 -mx-1 text-xl font-bold leading-snug tracking-tight text-white outline-none ring-offset-transparent [text-shadow:0_1px_2px_rgba(0,0,0,0.45)] placeholder:text-white/60 hover:bg-white/10 focus:bg-white/15 focus:ring-1 focus:ring-inset focus:ring-white/40"
                 />
               ) : (
                 <p
                   className={cn(
-                    'pointer-events-auto font-semibold leading-snug [text-shadow:0_1px_2px_rgba(0,0,0,0.45)]',
+                    'font-semibold leading-snug [text-shadow:0_1px_2px_rgba(0,0,0,0.45)]',
                     titleClampClass,
                   )}
                 >
@@ -264,17 +265,18 @@ export function TaskModalHero({
               )}
               {editable ? (
                 <textarea
+                  id="task-desc"
                   value={description}
                   onChange={(e) => onDescriptionChange?.(e.target.value)}
                   placeholder="Add a description…"
                   aria-label="Description"
                   rows={2}
-                  className="pointer-events-auto mt-1 w-full resize-none rounded-md border-none bg-transparent px-1 -mx-1 text-sm leading-relaxed text-white/90 outline-none [text-shadow:0_1px_2px_rgba(0,0,0,0.35)] placeholder:text-white/50 hover:bg-white/10 focus:bg-white/15"
+                  className="mt-1 w-full resize-none rounded-md border-none bg-transparent px-1 -mx-1 text-sm leading-relaxed text-white/90 outline-none [text-shadow:0_1px_2px_rgba(0,0,0,0.35)] placeholder:text-white/50 hover:bg-white/10 focus:bg-white/15 focus:ring-1 focus:ring-inset focus:ring-white/40"
                 />
               ) : descText ? (
                 <div
                   className={cn(
-                    'pointer-events-auto mt-1 min-h-0',
+                    'mt-1 min-h-0',
                     isPreviewToggle
                       ? descPreviewExpanded
                         ? cn(
@@ -346,11 +348,12 @@ export function TaskModalHero({
               ) : null}
               {editable ? (
                 <input
+                  id="task-title"
                   value={title}
                   onChange={(e) => onTitleChange?.(e.target.value)}
                   placeholder="Untitled"
                   aria-label="Title"
-                  className="w-full rounded-md border-none bg-transparent px-1 -mx-1 font-semibold leading-snug text-foreground outline-none hover:bg-foreground/5 focus:bg-foreground/10"
+                  className="w-full rounded-md border-none bg-transparent px-1 -mx-1 text-xl font-bold leading-snug tracking-tight text-foreground outline-none hover:bg-foreground/5 focus:bg-foreground/10 focus:ring-1 focus:ring-inset focus:ring-ring"
                 />
               ) : (
                 <p className={cn('font-semibold leading-snug text-foreground', titleClampClass)}>
@@ -365,12 +368,13 @@ export function TaskModalHero({
               ) : null}
               {editable ? (
                 <textarea
+                  id="task-desc"
                   value={description}
                   onChange={(e) => onDescriptionChange?.(e.target.value)}
                   placeholder="Add a description…"
                   aria-label="Description"
                   rows={2}
-                  className="mt-1 w-full resize-none rounded-md border-none bg-transparent px-1 -mx-1 text-sm leading-relaxed text-muted-foreground outline-none hover:bg-foreground/5 focus:bg-foreground/10 focus:text-foreground"
+                  className="mt-1 w-full resize-none rounded-md border-none bg-transparent px-1 -mx-1 text-sm leading-relaxed text-muted-foreground outline-none hover:bg-foreground/5 focus:bg-foreground/10 focus:text-foreground focus:ring-1 focus:ring-inset focus:ring-ring"
                 />
               ) : descText ? (
                 isPreviewToggle ? (
