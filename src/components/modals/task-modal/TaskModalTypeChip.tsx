@@ -4,6 +4,7 @@ import { ChevronDown } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -46,36 +47,38 @@ export function TaskModalTypeChip({
         <ChevronDown className="size-3 shrink-0 opacity-65" aria-hidden />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-[252px] rounded-2xl p-1.5">
-        <DropdownMenuLabel className="px-2 pb-2 pt-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-          Change type
-        </DropdownMenuLabel>
-        <DropdownMenuRadioGroup
-          value={itemType}
-          onValueChange={(v) => onItemTypeChange(v as ItemType)}
-        >
-          {order.map((t) => {
-            const visual = getItemTypeVisual(t);
-            const Icon = visual.Icon;
-            return (
-              <DropdownMenuRadioItem
-                key={t}
-                value={t}
-                className="gap-2.5 rounded-lg py-1.5 pr-8 pl-2 text-[13.5px] font-semibold"
-              >
-                <span
-                  className={cn(
-                    'flex size-[30px] shrink-0 items-center justify-center rounded-lg',
-                    visual.surface,
-                    visual.iconText,
-                  )}
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="px-2 pb-2 pt-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+            Change type
+          </DropdownMenuLabel>
+          <DropdownMenuRadioGroup
+            value={itemType}
+            onValueChange={(v) => onItemTypeChange(v as ItemType)}
+          >
+            {order.map((t) => {
+              const visual = getItemTypeVisual(t);
+              const Icon = visual.Icon;
+              return (
+                <DropdownMenuRadioItem
+                  key={t}
+                  value={t}
+                  className="gap-2.5 rounded-lg py-1.5 pr-8 pl-2 text-[13.5px] font-semibold"
                 >
-                  <Icon className="size-4" aria-hidden />
-                </span>
-                <span className="flex-1">{visual.label}</span>
-              </DropdownMenuRadioItem>
-            );
-          })}
-        </DropdownMenuRadioGroup>
+                  <span
+                    className={cn(
+                      'flex size-[30px] shrink-0 items-center justify-center rounded-lg',
+                      visual.surface,
+                      visual.iconText,
+                    )}
+                  >
+                    <Icon className="size-4" aria-hidden />
+                  </span>
+                  <span className="flex-1">{visual.label}</span>
+                </DropdownMenuRadioItem>
+              );
+            })}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -51,14 +51,14 @@ function SelectContent({
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Positioner
-        className="isolate z-50 outline-none"
+        className="isolate z-[200] outline-none"
         sideOffset={sideOffset}
         align={align}
       >
         <SelectPrimitive.Popup
           data-slot="select-content"
           className={cn(
-            'z-50 max-h-(--available-height) w-(--anchor-width) min-w-32 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95',
+            'z-[200] max-h-(--available-height) w-(--anchor-width) min-w-32 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95',
             className,
           )}
           {...props}
