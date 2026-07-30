@@ -2179,7 +2179,7 @@ function SortableShellWrap({
             type="button"
             ref={setActivatorNodeRef}
             className="cursor-grab touch-none active:cursor-grabbing"
-            aria-label="Drag to reorder pinned card"
+            aria-label="Drag to reorder card"
             {...listeners}
             {...attributes}
           >
@@ -2303,7 +2303,7 @@ function SortableTaskWrap({
             type="button"
             ref={setActivatorNodeRef}
             className="cursor-grab touch-none active:cursor-grabbing"
-            aria-label="Drag to reorder pinned card"
+            aria-label="Drag to reorder card"
             {...listeners}
             {...attributes}
           >
