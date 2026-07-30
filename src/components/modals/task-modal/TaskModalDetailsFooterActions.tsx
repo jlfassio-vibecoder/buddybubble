@@ -76,9 +76,9 @@ export function TaskModalDetailsFooterActions({
       {!isCreateMode && taskId && canWrite ? (
         <>
           <Separator className="my-4" />
-          <div className="rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-3">
-            <p className="mb-2 text-xs font-medium text-destructive">Archive {typeNoun}</p>
-            <p className="mb-3 text-xs text-muted-foreground">
+          <div className="rounded-xl border border-destructive/35 bg-destructive/[0.07] px-4 py-[15px]">
+            <p className="mb-1.5 text-[13px] font-bold text-destructive">Archive {typeNoun}</p>
+            <p className="mb-2.5 text-xs leading-relaxed text-muted-foreground">
               Hides this {typeNoun} from the board and calendar. Recovery from archive is not
               available in this version yet.
             </p>
@@ -86,7 +86,7 @@ export function TaskModalDetailsFooterActions({
               type="button"
               variant="outline"
               size="sm"
-              className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              className="border-destructive/50 text-destructive hover:bg-destructive/[0.14] hover:text-destructive"
               disabled={archiving || saving || loading}
               onClick={() => void onArchiveTask()}
             >
@@ -99,9 +99,9 @@ export function TaskModalDetailsFooterActions({
       {!isCreateMode && taskId && canWrite && onHardDeleteTask ? (
         <>
           <Separator className="my-4" />
-          <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-3">
-            <p className="mb-2 text-xs font-medium text-destructive">Delete {typeNoun}</p>
-            <p className="mb-3 text-xs text-muted-foreground">
+          <div className="rounded-xl border border-destructive/35 bg-destructive/[0.07] px-4 py-[15px]">
+            <p className="mb-1.5 text-[13px] font-bold text-destructive">Delete {typeNoun}</p>
+            <p className="mb-2.5 text-xs leading-relaxed text-muted-foreground">
               Permanently removes this {typeNoun} and its chat history. This cannot be undone.
             </p>
             <div className="flex flex-wrap gap-2">

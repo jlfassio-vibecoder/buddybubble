@@ -2308,10 +2308,10 @@ export function TaskModal({
       {/* QA: compact-path description bleed uses -mx-*; on mobile the shell is full-width so cinematic heroes need not rely on negative margins at the modal edge. */}
       <div
         className={cn(
-          'relative z-10 flex min-h-0 w-full flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl transition-[max-width] duration-200 ease-out',
+          'relative z-10 flex min-h-0 w-full flex-col overflow-hidden rounded-[var(--radius-3xl)] border border-border bg-card text-card-foreground shadow-2xl transition-[max-width] duration-200 ease-out',
           'max-md:flex-1 max-md:min-h-0 max-md:max-h-none max-md:max-w-none max-md:rounded-none max-md:border-x-0 max-md:border-t-0',
           'md:max-h-[min(90dvh,100dvh)]',
-          showWorkoutSplitPane || commentsSplitLayout ? 'max-w-6xl' : 'max-w-2xl',
+          showWorkoutSplitPane || commentsSplitLayout ? 'max-w-6xl' : 'max-w-[760px]',
         )}
       >
         {standardRailEnabled && open ? (
@@ -2600,6 +2600,7 @@ export function TaskModal({
                   tab={tab}
                   onSelectTab={(id) => void selectTab(id)}
                   bubblyProps={modalBubbleUp ?? null}
+                  counts={{ subtasks: subtasks.length, activity: activityLog.length }}
                 />
               </>
             ) : (
@@ -2907,6 +2908,7 @@ export function TaskModal({
                   tab={tab}
                   onSelectTab={(id) => void selectTab(id)}
                   bubblyProps={modalBubbleUp ?? null}
+                  counts={{ subtasks: subtasks.length, activity: activityLog.length }}
                 />
               </>
             )}

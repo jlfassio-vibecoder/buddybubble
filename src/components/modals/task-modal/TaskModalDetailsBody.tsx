@@ -23,9 +23,6 @@ import { TaskModalWorkoutFields } from '@/components/modals/task-modal/TaskModal
 import { TaskModalSchedulingSection } from '@/components/modals/task-modal/TaskModalSchedulingSection';
 import { TaskModalAttachmentsSection } from '@/components/modals/task-modal/TaskModalAttachmentsSection';
 import { TaskModalDetailsFooterActions } from '@/components/modals/task-modal/TaskModalDetailsFooterActions';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
 import { LayoutPanelLeft } from 'lucide-react';
@@ -228,24 +225,27 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
 
   return (
     <div className="min-w-0 space-y-4" data-testid="task-modal-details-body">
-      <div className="space-y-2">
-        <Label htmlFor="task-title">Title</Label>
-        <Input
+      <div>
+        <label htmlFor="task-title" className="sr-only">
+          Title
+        </label>
+        <input
           id="task-title"
           value={title}
           onChange={(e) => onTitleChange(e.target.value)}
           disabled={!canWrite}
-          className="h-9"
+          placeholder="Untitled"
+          className="-mx-1.5 w-[calc(100%+0.75rem)] rounded-lg border-none bg-transparent px-1.5 py-0.5 text-2xl font-bold leading-tight tracking-tight text-foreground outline-none transition-colors hover:bg-foreground/[0.04] focus:bg-foreground/[0.06] focus:ring-1 focus:ring-inset focus:ring-ring disabled:opacity-60"
         />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="task-desc">Description</Label>
-        <Textarea
+        <textarea
           id="task-desc"
+          aria-label="Description"
           value={description}
           onChange={(e) => onDescriptionChange(e.target.value)}
           disabled={!canWrite}
-          rows={5}
+          rows={2}
+          placeholder="Add a description…"
+          className="-mx-1.5 mt-1.5 w-[calc(100%+0.75rem)] resize-none rounded-lg border-none bg-transparent px-1.5 py-1 text-[14.5px] leading-relaxed text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.04] focus:bg-foreground/[0.06] focus:text-foreground focus:ring-1 focus:ring-inset focus:ring-ring disabled:opacity-60"
         />
       </div>
 

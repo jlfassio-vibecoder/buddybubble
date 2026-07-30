@@ -1,6 +1,19 @@
 'use client';
 
+import { CalendarDays } from 'lucide-react';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  TaskModalField,
+  TaskModalSection,
+  taskModalInputClass,
+} from '@/components/modals/task-modal/TaskModalSection';
 import { TASK_PRIORITY_OPTIONS, type TaskPriority } from '@/lib/task-priority';
 import type { TaskDateFieldLabels } from '@/lib/task-date-labels';
 import type { ItemType } from '@/types/database';
@@ -45,77 +58,95 @@ export function TaskModalSchedulingSection({
   canWrite,
 }: TaskModalSchedulingSectionProps) {
   return (
-    <>
-      <div className="space-y-2">
-        <Label htmlFor="task-status">Status</Label>
-        <select
-          id="task-status"
-          value={status}
-          onChange={(e) => onStatusChange(e.target.value)}
-          disabled={!canWrite}
-          className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
-        >
-          {statusSelectOptions.map((s) => (
-            <option key={s.value} value={s.value}>
-              {s.label}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="task-priority">Priority</Label>
-        <select
-          id="task-priority"
-          value={priority}
-          onChange={(e) => onPriorityChange(e.target.value as TaskPriority)}
-          disabled={!canWrite}
-          className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
-        >
-          {TASK_PRIORITY_OPTIONS.map((p) => (
-            <option key={p.value} value={p.value}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-      </div>
-      {workspaceId ? (
-        <div className="space-y-2">
-          <Label htmlFor="task-assigned-to">Assigned to</Label>
-          <select
-            id="task-assigned-to"
-            value={assignedTo ?? ''}
-            onChange={(e) => onAssignedToChange(e.target.value ? e.target.value : null)}
+    <TaskModalSection icon={<CalendarDays className="size-4" aria-hidden />} title="Schedule">
+      <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+        <TaskModalField label="Status">
+          <Select
+            value={status}
+            onValueChange={(v) => onStatusChange(String(v))}
             disabled={!canWrite}
-            className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
           >
-            <option value="">Unassigned</option>
-            {workspaceMembersForAssign.map((m) => (
-              <option key={m.user_id} value={m.user_id}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-          <p className="text-xs text-muted-foreground">
-            Owner or member responsible for this card (including programs).
-          </p>
-        </div>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {statusSelectOptions.map((s) => (
+                <SelectItem key={s.value} value={s.value}>
+                  {s.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </TaskModalField>
+        <TaskModalField label="Priority">
+          <Select
+            value={priority}
+            onValueChange={(v) => onPriorityChange(v as TaskPriority)}
+            disabled={!canWrite}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TASK_PRIORITY_OPTIONS.map((p) => (
+                <SelectItem key={p.value} value={p.value}>
+                  {p.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </TaskModalField>
+      </div>
+
+      {workspaceId ? (
+        <TaskModalField
+          label="Assigned to"
+          help="Owner or member responsible for this card (including programs)."
+        >
+          <Select
+            value={assignedTo ?? ''}
+            onValueChange={(v) => onAssignedToChange(v ? String(v) : null)}
+            disabled={!canWrite}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">Unassigned</SelectItem>
+              {workspaceMembersForAssign.map((m) => (
+                <SelectItem key={m.user_id} value={m.user_id}>
+                  {m.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </TaskModalField>
       ) : null}
+
       {itemType !== 'experience' && (
-        <div className="space-y-2">
-          <div className="flex flex-row flex-wrap gap-3 items-end">
-            <div className="min-w-0 flex-1 space-y-2">
-              <Label htmlFor="task-scheduled-on">{dateLabels.primary}</Label>
+        <TaskModalField help={dateLabels.helper || undefined}>
+          <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+            <div>
+              <Label
+                htmlFor="task-scheduled-on"
+                className="mb-1.5 block text-xs font-semibold text-foreground"
+              >
+                {dateLabels.primary}
+              </Label>
               <input
                 id="task-scheduled-on"
                 type="date"
                 value={scheduledOn}
                 onChange={(e) => onScheduledOnChange(e.target.value)}
                 disabled={!canWrite}
-                className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                className={taskModalInputClass}
               />
             </div>
-            <div className="min-w-0 flex-1 space-y-2">
-              <Label htmlFor="task-scheduled-time">
+            <div>
+              <Label
+                htmlFor="task-scheduled-time"
+                className="mb-1.5 block text-xs font-semibold text-foreground"
+              >
                 Time {!scheduledOn ? '(set a date first)' : '(optional)'}
               </Label>
               <input
@@ -124,15 +155,12 @@ export function TaskModalSchedulingSection({
                 value={scheduledTime}
                 onChange={(e) => onScheduledTimeChange(e.target.value)}
                 disabled={!canWrite || !scheduledOn}
-                className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                className={taskModalInputClass}
               />
             </div>
           </div>
-          {dateLabels.helper ? (
-            <p className="text-xs text-muted-foreground">{dateLabels.helper}</p>
-          ) : null}
-        </div>
+        </TaskModalField>
       )}
-    </>
+    </TaskModalSection>
   );
 }

@@ -1,8 +1,12 @@
 'use client';
 
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { CalendarDays, Camera, MapPin } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  TaskModalField,
+  TaskModalSection,
+  taskModalInputClass,
+} from '@/components/modals/task-modal/TaskModalSection';
 import type { ItemType } from '@/types/database';
 
 export type TaskModalItemMetadataSectionsProps = {
@@ -41,93 +45,81 @@ export function TaskModalItemMetadataSections({
   return (
     <>
       {itemType === 'event' && (
-        <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
-          <p className="text-xs font-medium text-muted-foreground">Event details</p>
-          <div className="space-y-2">
-            <Label htmlFor="task-event-location">Location</Label>
-            <Input
-              id="task-event-location"
+        <TaskModalSection icon={<MapPin className="size-4" aria-hidden />} title="Event details">
+          <TaskModalField label="Location">
+            <input
               value={eventLocation}
               onChange={(e) => onEventLocationChange(e.target.value)}
               disabled={!canWrite}
               placeholder="e.g. Central Park"
-              className="h-9"
+              className={taskModalInputClass}
             />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="task-event-url">Meeting link</Label>
-            <Input
-              id="task-event-url"
+          </TaskModalField>
+          <TaskModalField label="Meeting link">
+            <input
               type="url"
               value={eventUrl}
               onChange={(e) => onEventUrlChange(e.target.value)}
               disabled={!canWrite}
               placeholder="https://…"
-              className="h-9"
+              className={taskModalInputClass}
             />
-          </div>
-        </div>
+          </TaskModalField>
+        </TaskModalSection>
       )}
 
       {itemType === 'experience' && (
-        <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
-          <p className="text-xs font-medium text-muted-foreground">Experience span</p>
-          <div className="space-y-2">
-            <Label htmlFor="task-experience-horizon">Season / label (optional)</Label>
-            <Input
-              id="task-experience-horizon"
+        <TaskModalSection
+          icon={<CalendarDays className="size-4" aria-hidden />}
+          title="Experience span"
+        >
+          <TaskModalField label="Season / label" optional>
+            <input
               value={experienceSeason}
               onChange={(e) => onExperienceSeasonChange(e.target.value)}
               disabled={!canWrite}
               placeholder="e.g. Summer 2026"
-              className="h-9"
+              className={taskModalInputClass}
             />
-          </div>
-          <div className="flex flex-row flex-wrap gap-3">
-            <div className="min-w-0 flex-1 space-y-2">
-              <Label htmlFor="task-experience-start">Start date</Label>
+          </TaskModalField>
+          <TaskModalField help="Experiences appear as themed pills on their start date in the Month view.">
+            <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
               <input
-                id="task-experience-start"
                 type="date"
+                aria-label="Start date"
                 value={scheduledOn}
                 onChange={(e) => onExperienceStartDateChange(e.target.value)}
                 disabled={!canWrite}
-                className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                className={taskModalInputClass}
               />
-            </div>
-            <div className="min-w-0 flex-1 space-y-2">
-              <Label htmlFor="task-experience-end">End date</Label>
               <input
-                id="task-experience-end"
                 type="date"
+                aria-label="End date"
                 value={experienceEndDate}
                 onChange={(e) => onExperienceEndDateChange(e.target.value)}
                 disabled={!canWrite}
-                className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                className={taskModalInputClass}
               />
             </div>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Experiences appear as themed pills on their start date in the Month view.
-          </p>
-        </div>
+          </TaskModalField>
+        </TaskModalSection>
       )}
 
       {itemType === 'memory' && (
-        <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3">
-          <Label htmlFor="task-memory-caption">Caption / reflection</Label>
-          <Textarea
-            id="task-memory-caption"
-            value={memoryCaption}
-            onChange={(e) => onMemoryCaptionChange(e.target.value)}
-            disabled={!canWrite}
-            rows={3}
-            placeholder="What made this moment special?"
-          />
-          <p className="text-xs text-muted-foreground">
-            Photos and files go in Attachments below after you save.
-          </p>
-        </div>
+        <TaskModalSection icon={<Camera className="size-4" aria-hidden />} title="Moment">
+          <TaskModalField
+            label="Caption / reflection"
+            help="Photos and files go in Attachments below after you save."
+          >
+            <Textarea
+              value={memoryCaption}
+              onChange={(e) => onMemoryCaptionChange(e.target.value)}
+              disabled={!canWrite}
+              rows={3}
+              placeholder="What made this moment special?"
+            />
+          </TaskModalField>
+        </TaskModalSection>
       )}
     </>
   );
