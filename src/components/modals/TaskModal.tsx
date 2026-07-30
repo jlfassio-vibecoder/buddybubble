@@ -2516,6 +2516,11 @@ export function TaskModal({
                       taskId={taskId}
                       activeSessionLaunch={activeSessionLaunchControlProps}
                       onInteraction={() => setHeroCinematicCollapsed(true)}
+                      onPickCardCover={
+                        taskId ? () => cardCoverFileInputRef.current?.click() : undefined
+                      }
+                      onArchiveTask={!isCreateMode && taskId ? archiveTask : undefined}
+                      archiving={archiving}
                     />
                   </div>
                   <div className="flex min-h-0 flex-1 flex-col px-6 pt-4 pb-2">
@@ -2756,6 +2761,11 @@ export function TaskModal({
                           taskId={taskId}
                           activeSessionLaunch={activeSessionLaunchControlProps}
                           onInteraction={() => setHeroCinematicCollapsed(true)}
+                          onPickCardCover={
+                            taskId ? () => cardCoverFileInputRef.current?.click() : undefined
+                          }
+                          onArchiveTask={!isCreateMode && taskId ? archiveTask : undefined}
+                          archiving={archiving}
                         />
                       </div>
 

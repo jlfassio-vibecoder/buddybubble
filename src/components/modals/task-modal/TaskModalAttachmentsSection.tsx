@@ -3,7 +3,10 @@
 import { Paperclip, X } from 'lucide-react';
 import { TaskAttachmentImagePreview } from '@/components/modals/task-modal/task-modal-media';
 import { Button } from '@/components/ui/button';
-import { TaskModalField, TaskModalSection } from '@/components/modals/task-modal/TaskModalSection';
+import {
+  TaskModalDisclosure,
+  TaskModalField,
+} from '@/components/modals/task-modal/TaskModalSection';
 import { isLikelyTaskAttachmentImageFileName } from '@/lib/task-attachment-url';
 import type { TaskAttachment } from '@/types/task-modal';
 
@@ -29,10 +32,10 @@ export function TaskModalAttachmentsSection({
   onRemoveAttachment,
 }: TaskModalAttachmentsSectionProps) {
   return (
-    <TaskModalSection
+    <TaskModalDisclosure
       icon={<Paperclip className="size-4" aria-hidden />}
-      title="Attachments"
-      hint={attachments.length ? `${attachments.length} files` : undefined}
+      title="Attachments & files"
+      meta={attachments.length ? `${attachments.length} files` : '0 files'}
     >
       <TaskModalField
         help={
@@ -95,6 +98,6 @@ export function TaskModalAttachmentsSection({
           ))}
         </ul>
       ) : null}
-    </TaskModalSection>
+    </TaskModalDisclosure>
   );
 }

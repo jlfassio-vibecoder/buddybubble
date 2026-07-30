@@ -1,8 +1,14 @@
 'use client';
 
-import { Globe, Lock } from 'lucide-react';
+import { Archive, Globe, Image as ImageIcon, Lock, MoreHorizontal } from 'lucide-react';
 import { ITEM_TYPES_ORDER } from '@/lib/item-type-styles';
 import { TaskModalTypeChip } from '@/components/modals/task-modal/TaskModalTypeChip';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   WorkoutPlayerTriggers,
   type ActiveSessionLaunchControlProps,
@@ -38,6 +44,11 @@ export type TaskModalEditorChromeProps = {
   > | null;
   /** Fires on click in the type or visibility / workout player sections (capture phase). */
   onInteraction?: () => void;
+  /** Opens the cover-image file picker (`.tm-iconbtn`); hidden until the card is saved. */
+  onPickCardCover?: () => void;
+  /** Archive action surfaced as a "more" icon button, mirroring the footer's Danger zone. */
+  onArchiveTask?: () => void | Promise<void>;
+  archiving?: boolean;
 };
 
 export function TaskModalEditorChrome({
@@ -58,6 +69,9 @@ export function TaskModalEditorChrome({
   taskId,
   activeSessionLaunch = null,
   onInteraction,
+  onPickCardCover,
+  onArchiveTask,
+  archiving = false,
 }: TaskModalEditorChromeProps) {
   if (!showChrome) return null;
 
@@ -107,6 +121,39 @@ export function TaskModalEditorChrome({
                 </span>
                 Live huddle
               </span>
+            ) : null}
+
+            {onPickCardCover || onArchiveTask ? (
+              <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                {onPickCardCover ? (
+                  <button
+                    type="button"
+                    aria-label="Add cover image"
+                    disabled={!canWrite}
+                    onClick={onPickCardCover}
+                    className="flex size-[34px] items-center justify-center rounded-lg bg-foreground/5 text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                  >
+                    <ImageIcon className="size-4" aria-hidden />
+                  </button>
+                ) : null}
+                {onArchiveTask ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      aria-label="More card actions"
+                      disabled={!canWrite || archiving}
+                      className="flex size-[34px] items-center justify-center rounded-lg bg-foreground/5 text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                    >
+                      <MoreHorizontal className="size-4" aria-hidden />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => void onArchiveTask()} disabled={archiving}>
+                        <Archive className="size-4" aria-hidden />
+                        {archiving ? 'Archiving…' : 'Archive card'}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : null}
+              </div>
             ) : null}
           </div>
 

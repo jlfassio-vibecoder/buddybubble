@@ -27,6 +27,7 @@ describe('TaskModalDetailsFooterActions delete', () => {
         onHardDeleteTask={onHardDeleteTask}
       />,
     );
+    fireEvent.click(screen.getByRole('button', { name: /Danger zone/i }));
     fireEvent.click(screen.getByRole('button', { name: /Delete task/i }));
     expect(onHardDeleteTask).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: /Delete permanently/i }));
@@ -54,6 +55,7 @@ describe('TaskModalDetailsFooterActions delete', () => {
         onHardDeleteTask={onHardDeleteTask}
       />,
     );
+    fireEvent.click(screen.getByRole('button', { name: /Danger zone/i }));
     fireEvent.click(screen.getByRole('button', { name: /Delete program/i }));
     fireEvent.click(screen.getByRole('button', { name: /Delete permanently/i }));
     await waitFor(() => {
