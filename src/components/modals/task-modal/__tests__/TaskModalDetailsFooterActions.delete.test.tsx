@@ -15,11 +15,7 @@ describe('TaskModalDetailsFooterActions delete', () => {
         canWrite
         isCreateMode={false}
         saving={false}
-        title="T"
         typeNoun="task"
-        coreDirty={false}
-        onCreateTask={vi.fn()}
-        onSaveCoreFields={vi.fn()}
         taskId="id-1"
         archiving={false}
         loading={false}
@@ -43,11 +39,7 @@ describe('TaskModalDetailsFooterActions delete', () => {
         canWrite
         isCreateMode={false}
         saving={false}
-        title="P"
         typeNoun="program"
-        coreDirty={false}
-        onCreateTask={vi.fn()}
-        onSaveCoreFields={vi.fn()}
         taskId="id-2"
         archiving={false}
         loading={false}

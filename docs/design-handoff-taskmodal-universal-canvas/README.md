@@ -12,25 +12,31 @@ Tracked against PR [#175](https://github.com/jlfassio-vibecoder/buddybubble/pull
 
 - **Modal shell** — `max-w-[760px]`, `--radius-3xl`, tokenized card surface; showcase chrome not ported.
 - **Cover header** — `TaskModalCoverHeader`: type chip + change-type popover (9 types), visibility eyebrow, Live Huddle chip, cover-image / More / Close icon actions, borderless title + description, optional cover image as absolute backdrop (not a separate 16:9 cinematic hero).
-- **Editor chrome** — Visibility / Live / Workout player field blocks below the cover (persistent across tabs; Visibility/Live hidden in comments reading-context; workout player may still show). Cover header chips are read-only echoes.
+- **Editor chrome (persistent)** — Visibility SegWide + Live toggle + Workout player in `TaskModalEditorChrome`, mounted across Details / Comments / Subtasks / Activity. Visibility/Live hide in comments reading-context; workout player may still show. Cover header chips are **read-only echoes** of chrome state (do not trap edit controls in Details-only Properties).
 - **Tabs** — Desktop labeled strip with incomplete-count badges; mobile icon + label bar; Bubbly control on both breakpoints.
 - **Shared wrappers** — `TaskModalSection` / `TaskModalField` / `TaskModalDisclosure`, shared input sizing token, Badge / Select / Checkbox / Progress primitives.
 - **Details section order** — Properties → type body → Schedule (date/time) → Cover → Attachments → Danger.
-- **Properties** — `TaskModalPropertiesSection`: Status / Priority / Assigned to (3-col). Visibility / Live edited in EditorChrome.
-- **Schedule** — date + time only (`TaskModalSchedulingSection`); experience dates stay in type metadata.
+- **Properties** — `TaskModalPropertiesSection`: Status / Priority / Assigned to (3-col board metadata only).
+- **Schedule** — date + time only (`TaskModalSchedulingSection`); experience dates stay in type metadata; section omitted for `experience`.
 - **Subtasks / Activity** — Checkbox rows + progress; icon-dot timeline.
-- **Follow-ups landed** — Cover file input always mounted for header picker; unified-comments heroes keep Close; metadata `aria-label`s; `asChild` Choose-file without invalid `type="button"`.
+- **Review / regression follow-ups** — Cover file input always mounted for header picker; unified-comments heroes keep Close; metadata `aria-label`s; `asChild` Choose-file without invalid `type="button"`; Visibility/Live restored to chrome after a Details-only regression.
+- **Handoff docs in repo** — this folder is checked in as the design source of truth. Prototype JSX/HTML is **ESLint-ignored** (`eslint.config.mjs`) so Babel globals do not fail CI; HTML entry is Prettier-formatted.
+- **Workout Details read canvas** — `TaskModalWorkoutCanvas`: 3-col stats (Type / Duration / Target), format pills, `.tm-ex`-style exercise rows from `WorkoutSessionViewModel`; outline / intake / preflight / viewer CTA unchanged. Read-only this pass (edits stay in structure builder / viewer).
+- **Class RSVP read canvas** — `TaskModalClassRsvpCanvas` above embedded `ClassEditor` when an instance exists: reserved/spots copy, progress fill, avatar stack (+ overflow), Manage roster → existing `ManageClassRosterModal`. Roster enrollments include `avatar_url`. No price / admin Reserve CTA this pass.
+- **Details sticky footer** — `TaskModalDetailsStickyFooter`: save-state hint (`All changes saved` / `Unsaved changes` / busy) + Cancel / Save|Create. Title/desc autosave unchanged; Cancel restores from `originalRef` and closes without `flushNow`. Danger zone stays in scroll body. Class Details keeps ClassEditor save (no duplicate sticky Save).
+- **Idea + Memory Details canvases** — `TaskModalIdeaCanvas` (read-only vote count from `metadata.votes`, effort/impact/tags display, Promote → Event/Program/Class via `setItemType`); `TaskModalMemoryCanvas` (image-attachment gallery + Add photo → existing uploader). Caption stays in Moment metadata; vote toggle / Bubbly alias deferred.
+- **Comments reaction pills** — `message_reactions` table + `useMessageReactions`; `.tm-react`-style pills on `ChatMessageRow` (StandardTaskChatRail + TaskModalCommentsPanel) with closed emoji set and SmilePlus popover.
+- **Coach / PCC display** — durable `tasks.metadata.field_provenance` sidecar (`by: 'agent' | 'user'`, optional `agent_slug` / `at`). Coach Edge strategy stamps keys it changes; TaskModal save + title/desc autosave demote to `by: 'user'`. UI: `TaskModalPersonaStrip` when any agent entries remain; `TaskModalField.agent` chrome on type/metadata fields via `isAgentFilledForDisplay` (Properties stay human board meta). Helpers: `src/lib/task-field-provenance.ts` (+ Edge twin). No historical backfill.
 
-### Next update (recommended)
+### Next updates (recommended order)
 
-**Per-type Details fidelity** — start with Workout parametric blocks + summary stats (`.tm-stats` / `.tm-ex` / format pills) to match `taskmodal/workout.jsx`, then Class RSVP stack, Idea vote/promote, Memory gallery.
+_(none queued from this handoff — see Still open)_
 
-### Still open
+### Still open (lower priority / later passes)
 
-- Footer save-state hint + Cancel/Save row (product today leans on autosave / existing footer actions).
-- Coach persona strip + per-field agent provenance styling (needs data-model `filled_by` or equivalent).
-- Comments reaction pills to match `.tm-react`.
-- Remaining per-type canvases after Workout (Program week cards, Event highlights/tags, Experience, etc.).
+- Program week cards (`.tm-week` / `.tm-sess`), Event highlights/tags, Experience tag-driven body beyond current metadata fields.
+- Theme spot-check under a non-fitness theme (e.g. `theme-business` light) before calling shell/details done.
+- Any remaining Gaps vs `schemas.js` per-type field lists once Workout + Class land.
 
 ## About the Design Files
 
@@ -67,7 +73,7 @@ Shared sections, in order, each `.tm-section` (18px vertical padding, top hairli
 5. **Attachments** — file chips (`.tm-filechip`).
 6. **Danger zone** — collapsible (`.tm-disc`), red-tinted panel (`.tm-danger`, border `color-mix(destructive 35%, border)`), archive/delete actions.
 
-Agent-filled fields get a highlighted border (`color-mix(primary 55%, input)`) and a small "COACH" pill tag (`.tm-agent-tag`, 9.5px uppercase). A `.tm-persona-strip` banner (avatar + name + tag + subtitle) appears when the agent is actively editing.
+Agent-filled fields get a highlighted border (`color-mix(primary 55%, input)`) and a small "COACH" pill tag (`.tm-agent-tag`, 9.5px uppercase). A `.tm-persona-strip` banner (avatar + name + tag + subtitle) appears when any `metadata.field_provenance` entry is still `by: 'agent'` (after live demotions). Contract: sidecar map on flat task values — not cue `{ value, provenance }` wrappers.
 
 ### 3. Card Types (9, in `schemas.js`)
 

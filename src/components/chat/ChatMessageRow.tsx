@@ -9,12 +9,14 @@ import { formatMessageTimestamp } from '@/lib/message-timestamp';
 import { cn } from '@/lib/utils';
 import type { MessageAttachment } from '@/types/message-attachment';
 import type { ChatMessage } from '@/types/chat';
+import type { MessageReactionAgg, MessageReactionEmoji } from '@/lib/message-reactions';
 
 import type { TaskModalChatCardWorkoutActions } from '@/components/modals/task-modal/TaskModalCommentsPanel';
 import { CoachDraftCard } from './CoachDraftCard';
 import { ChatFeedTaskCard } from './ChatFeedTaskCard';
 import { LiveSessionMessageCard } from './LiveSessionMessageCard';
 import { MessageAttachmentThumbnails } from './MessageAttachmentThumbnails';
+import { ChatMessageReactionPills } from './ChatMessageReactionPills';
 
 export type ChatMessageRowProps = {
   message: ChatMessage;
@@ -40,6 +42,11 @@ export type ChatMessageRowProps = {
   chatCardWorkoutActions?: TaskModalChatCardWorkoutActions | null;
   /** Logged-in user id for live-session join card (host vs recipient). */
   liveSessionViewerUserId?: string | null;
+  /** Aggregated emoji reactions for this message (from `useMessageReactions`). */
+  reactions?: MessageReactionAgg[];
+  canReact?: boolean;
+  reactionsBusy?: boolean;
+  onToggleReaction?: (emoji: MessageReactionEmoji) => void;
 };
 
 export function ChatMessageRow({
@@ -57,6 +64,10 @@ export function ChatMessageRow({
   onCoachDraftFinalizeSuccess,
   chatCardWorkoutActions = null,
   liveSessionViewerUserId = null,
+  reactions,
+  canReact = false,
+  reactionsBusy = false,
+  onToggleReaction,
 }: ChatMessageRowProps) {
   const avatarSize = density === 'thread' ? 'h-8 w-8' : 'h-10 w-10';
   const senderClass = density === 'thread' ? 'text-sm' : 'text-base';
@@ -122,6 +133,15 @@ export function ChatMessageRow({
         </div>
 
         <div className={cn('text-foreground', bodyClass)}>{renderContent(message.content)}</div>
+
+        {reactions != null && onToggleReaction ? (
+          <ChatMessageReactionPills
+            reactions={reactions}
+            canReact={canReact}
+            busy={reactionsBusy}
+            onToggleReaction={onToggleReaction}
+          />
+        ) : null}
 
         {message.liveSessionInvite ? (
           <LiveSessionMessageCard

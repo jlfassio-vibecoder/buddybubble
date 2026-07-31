@@ -29,17 +29,10 @@ vi.mock('@/hooks/useExerciseDictionaryAutocomplete', () => ({
   })),
 }));
 
-vi.mock('@utils/supabase/client', () => ({
-  createClient: () => ({
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          maybeSingle: () => Promise.resolve({ data: null, error: null }),
-        }),
-      }),
-    }),
-  }),
-}));
+vi.mock('@utils/supabase/client', async () => {
+  const { createSupabaseClientMock } = await import('@/test-utils/create-supabase-client-mock');
+  return { createClient: () => createSupabaseClientMock() };
+});
 
 vi.mock('@/store/userProfileStore', () => ({
   useUserProfileStore: (selector: (s: { profile: { id: string } | null }) => unknown) =>

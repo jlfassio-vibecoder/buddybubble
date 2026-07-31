@@ -13,6 +13,11 @@ import {
 
 export type UseTaskDirtyStateArgs = {
   originalRef: MutableRefObject<TaskModalOriginalSnapshot | null>;
+  /**
+   * React-state snapshot from `useTaskOriginalSnapshot`. Prefer this over reading
+   * `originalRef.current` inside `useMemo` so patches (e.g. title autosave) recompute dirty.
+   */
+  originalSnapshot?: TaskModalOriginalSnapshot | null;
   isCreateMode: boolean;
   title: string;
   description: string;
@@ -29,6 +34,7 @@ export type UseTaskDirtyStateArgs = {
 
 export function useTaskDirtyState({
   originalRef,
+  originalSnapshot,
   isCreateMode,
   title,
   description,
@@ -43,7 +49,7 @@ export function useTaskDirtyState({
   liveStreamEnabled = false,
 }: UseTaskDirtyStateArgs): { coreDirty: boolean } {
   const coreDirty = useMemo(() => {
-    const o = originalRef.current;
+    const o = originalSnapshot !== undefined ? originalSnapshot : originalRef.current;
     const sched = parseScheduledDateFromInput(scheduledOn);
     const timeHm = parseTimeHmFromScheduledInputs(sched, scheduledTime);
     const metaJson = JSON.stringify(metadataForSave);
@@ -73,6 +79,8 @@ export function useTaskDirtyState({
       liveStreamEnabled !== origLive
     );
   }, [
+    originalSnapshot,
+    originalRef,
     title,
     description,
     status,

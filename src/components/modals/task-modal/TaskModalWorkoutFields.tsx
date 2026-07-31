@@ -7,13 +7,13 @@ import { WorkoutLogReadSummary } from '@/components/fitness/workout-block-render
 import { PremiumGate } from '@/components/subscription/premium-gate';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { WORKOUT_FACTORY_CHAIN_MESSAGES } from '@/lib/workout-factory/api-client';
 import { metadataFieldsFromParsed, type WorkoutExercise } from '@/lib/item-metadata';
 import type { WorkoutTemplate } from '@/hooks/use-workout-templates';
 import type { ItemType, Json, UnitSystem } from '@/types/database';
 import { cn } from '@/lib/utils';
 import type { WorkoutIntakeWizardData } from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
+import { TaskModalField } from '@/components/modals/task-modal/TaskModalSection';
 
 export type TaskModalWorkoutFieldsProps = {
   itemType: Extract<ItemType, 'workout' | 'workout_log'>;
@@ -36,6 +36,7 @@ export type TaskModalWorkoutFieldsProps = {
   autoEditFirstRow: boolean;
   /** Full `tasks.metadata` for workout_log read (preserves ai_workout_factory). */
   taskMetadata?: Json;
+  isAgentField?: (key: string) => boolean;
 };
 
 export function TaskModalWorkoutFields({
@@ -58,7 +59,9 @@ export function TaskModalWorkoutFields({
   workoutUnitSystem,
   autoEditFirstRow,
   taskMetadata = {},
+  isAgentField,
 }: TaskModalWorkoutFieldsProps) {
+  const agent = (key: string) => Boolean(isAgentField?.(key));
   const logReadMetadata = useMemo(() => {
     const base =
       typeof taskMetadata === 'object' && taskMetadata !== null && !Array.isArray(taskMetadata)
@@ -147,8 +150,7 @@ export function TaskModalWorkoutFields({
         </p>
       )}
       <div className="flex gap-3">
-        <div className="min-w-0 flex-1 space-y-2">
-          <Label htmlFor="task-workout-type">Type</Label>
+        <TaskModalField label="Type" agent={agent('workout_type')} className="mb-0 min-w-0 flex-1">
           <Input
             id="task-workout-type"
             value={workoutType}
@@ -157,9 +159,12 @@ export function TaskModalWorkoutFields({
             placeholder="e.g. Strength, Cardio, Yoga"
             className="h-9"
           />
-        </div>
-        <div className="w-28 space-y-2">
-          <Label htmlFor="task-workout-duration">Duration (min)</Label>
+        </TaskModalField>
+        <TaskModalField
+          label="Duration (min)"
+          agent={agent('duration_min')}
+          className="mb-0 w-28 shrink-0"
+        >
           <Input
             id="task-workout-duration"
             type="number"
@@ -169,7 +174,7 @@ export function TaskModalWorkoutFields({
             disabled={!canWrite}
             className="h-9"
           />
-        </div>
+        </TaskModalField>
       </div>
       {itemType === 'workout_log' ? (
         <WorkoutLogReadSummary

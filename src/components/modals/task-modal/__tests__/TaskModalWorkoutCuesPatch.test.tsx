@@ -42,17 +42,10 @@ vi.mock('@/context/WorkspaceSessionContext', () => ({
   useWorkspaceSessionSubject: () => ({ subjectUserId: 'user-1' }),
 }));
 
-vi.mock('@utils/supabase/client', () => ({
-  createClient: () => ({
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          maybeSingle: () => Promise.resolve({ data: null, error: null }),
-        }),
-      }),
-    }),
-  }),
-}));
+vi.mock('@utils/supabase/client', async () => {
+  const { createSupabaseClientMock } = await import('@/test-utils/create-supabase-client-mock');
+  return { createClient: () => createSupabaseClientMock() };
+});
 
 vi.mock('@/components/chat/ChatMessageRow', () => ({
   ChatMessageRow: () => <div data-testid="chat-message-row-mock" />,
