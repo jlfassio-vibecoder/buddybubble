@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import type { ProgramWeek } from '@/lib/item-metadata';
 import { TaskModalField } from '@/components/modals/task-modal/TaskModalSection';
+import { TaskModalProgramWeekCards } from '@/components/modals/task-modal/TaskModalProgramWeekCards';
 
 export type TaskModalProgramFieldsProps = {
   canWrite: boolean;
@@ -36,6 +37,8 @@ export function TaskModalProgramFields({
   isAgentField,
 }: TaskModalProgramFieldsProps) {
   const agent = (key: string) => Boolean(isAgentField?.(key));
+  const hasSchedule = programSchedule.some((w) => (w.days?.length ?? 0) > 0);
+
   return (
     <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
       <div className="flex items-center justify-between gap-2">
@@ -88,22 +91,14 @@ export function TaskModalProgramFields({
         </p>
       )}
 
-      {programSchedule.length > 0 && programSchedule[0].days.length > 0 && (
-        <div className="space-y-1">
-          <p className="text-xs font-medium text-muted-foreground">Weekly schedule</p>
-          {programSchedule[0].days.map((d) => (
-            <p key={d.day} className="text-xs text-foreground">
-              <span className="font-medium">
-                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d.day - 1]}
-              </span>
-              {' — '}
-              {d.name}
-              {d.workout_type ? ` (${d.workout_type})` : ''}
-              {d.duration_min ? ` · ${d.duration_min} min` : ''}
-            </p>
-          ))}
-        </div>
-      )}
+      {hasSchedule ? (
+        <TaskModalField label="Weekly schedule" agent={agent('schedule')} className="mb-0">
+          <TaskModalProgramWeekCards
+            programSchedule={programSchedule}
+            programDurationWeeks={programDurationWeeks}
+          />
+        </TaskModalField>
+      ) : null}
     </div>
   );
 }

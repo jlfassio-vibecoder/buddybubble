@@ -1490,11 +1490,16 @@ function DashboardShellInner({
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!cancelled) setAuthHasSessionEmail(Boolean(user?.email?.trim()));
+      try {
+        const supabase = createClient();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!cancelled) setAuthHasSessionEmail(Boolean(user?.email?.trim()));
+      } catch {
+        // Web Lock steal / other getUser races — leave null so the profile gate
+        // does not flash (isDashboardProfileComplete treats null as OK).
+      }
     })();
     return () => {
       cancelled = true;
