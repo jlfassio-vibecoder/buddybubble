@@ -64,6 +64,9 @@ import { buildWorkoutBuilderUrl } from '@/lib/workout-builder/build-workout-buil
 import { TaskModalEditorChrome } from '@/components/modals/task-modal/TaskModalEditorChrome';
 import { TaskModalCoverHeader } from '@/components/modals/task-modal/TaskModalCoverHeader';
 import { ClassEditor } from '@/components/modals/class-modal/ClassEditor';
+import { ManageClassRosterModal } from '@/components/modals/ManageClassRosterModal';
+import { TaskModalClassRsvpCanvas } from '@/components/modals/task-modal/TaskModalClassRsvpCanvas';
+import { TaskModalDetailsStickyFooter } from '@/components/modals/task-modal/TaskModalDetailsStickyFooter';
 import { TaskModalSubtasksPanel } from '@/components/modals/task-modal/TaskModalSubtasksPanel';
 import { TaskModalTabBar } from '@/components/modals/task-modal/TaskModalTabBar';
 import { formatUserFacingError } from '@/lib/format-error';
@@ -74,6 +77,8 @@ import {
   type ProgramWeek,
   type WorkoutExercise,
 } from '@/lib/item-metadata';
+import { stampUserFields } from '@/lib/task-field-provenance';
+import { detectUserDemotedProvenanceKeys } from '@/lib/task-field-provenance-demote';
 import { useWorkoutTemplates } from '@/hooks/use-workout-templates';
 import { getExercisesFromWorkout } from '@/lib/workout-factory/program-schedule-utils';
 import { scheduledTimeToInputValue } from '@/lib/task-scheduled-time';
@@ -524,6 +529,8 @@ export function TaskModal({
   const [heroCinematicCollapsed, setHeroCinematicCollapsed] = useState(false);
   /** Card-based live video (`metadata.live_session`); class items use `ClassEditor` instead. */
   const [liveStreamEnabled, setLiveStreamEnabled] = useState(false);
+  const [classRosterModalOpen, setClassRosterModalOpen] = useState(false);
+  const [classRosterCapacity, setClassRosterCapacity] = useState<number | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -571,6 +578,7 @@ export function TaskModal({
 
   const {
     originalRef,
+    originalSnapshot,
     setOriginalFromAppliedRow,
     clearOriginal,
     patchOriginalMetadataJson,
@@ -681,30 +689,8 @@ export function TaskModal({
     patchOriginalMetadataJson,
   });
 
-  const metadataForSave = useMemo(
-    () =>
-      buildTaskMetadataPayload(
-        itemType,
-        {
-          eventLocation,
-          eventUrl,
-          experienceSeason,
-          experienceEndDate,
-          memoryCaption,
-          workoutType,
-          workoutDurationMin,
-          workoutExercises,
-          programGoal,
-          programDurationWeeks,
-          programCurrentWeek,
-          programSchedule,
-          programSourceTitle,
-          cardCoverPath,
-        },
-        metadata,
-      ),
-    [
-      itemType,
+  const formFieldsForProvenance = useMemo(
+    () => ({
       eventLocation,
       eventUrl,
       experienceSeason,
@@ -719,9 +705,47 @@ export function TaskModal({
       programSchedule,
       programSourceTitle,
       cardCoverPath,
-      metadata,
+    }),
+    [
+      eventLocation,
+      eventUrl,
+      experienceSeason,
+      experienceEndDate,
+      memoryCaption,
+      workoutType,
+      workoutDurationMin,
+      workoutExercises,
+      programGoal,
+      programDurationWeeks,
+      programCurrentWeek,
+      programSchedule,
+      programSourceTitle,
+      cardCoverPath,
     ],
   );
+
+  const userDemotedProvenanceKeys = useMemo(() => {
+    return detectUserDemotedProvenanceKeys({
+      itemType,
+      fields: formFieldsForProvenance,
+      title,
+      description,
+      original: originalSnapshot,
+    });
+  }, [itemType, formFieldsForProvenance, title, description, originalSnapshot, metadata]);
+
+  const metadataForSave = useMemo(() => {
+    const built = buildTaskMetadataPayload(itemType, formFieldsForProvenance, metadata);
+    const demoteKeys = detectUserDemotedProvenanceKeys({
+      itemType,
+      fields: formFieldsForProvenance,
+      title,
+      description,
+      original: originalSnapshot,
+    });
+    if (demoteKeys.length === 0) return built;
+    return stampUserFields(built, demoteKeys) as typeof built;
+  }, [itemType, formFieldsForProvenance, metadata, title, description, originalSnapshot]);
 
   const {
     subtasks,
@@ -1234,6 +1258,8 @@ export function TaskModal({
     description,
     originalRef,
     patchOriginalCoreText,
+    currentMetadata: metadata,
+    onMetadataDemotedLocally: setMetadata,
   });
 
   const handleOpenChange = useCallback(
@@ -1245,6 +1271,51 @@ export function TaskModal({
     },
     [onOpenChange, flushNow],
   );
+
+  /** Cancel Details: discard unsaved non-autosaved state; close without title/desc flush. */
+  const handleCancelDetails = useCallback(() => {
+    const orig = originalRef.current;
+    if (taskId && orig) {
+      setTitle(orig.title);
+      setDescription(orig.description);
+      setStatus(orig.status);
+      setPriority(orig.priority);
+      setScheduledOn(orig.scheduledOn ?? '');
+      setScheduledTime(orig.scheduledTime ?? '');
+      let nextItemType = orig.itemType;
+      if (nextItemType === 'class' && !canManageClasses) {
+        nextItemType = 'task';
+      }
+      setItemType(nextItemType);
+      let parsedMeta: unknown = {};
+      try {
+        parsedMeta = JSON.parse(orig.metadataJson) as unknown;
+      } catch {
+        parsedMeta = {};
+      }
+      const meta = parseTaskMetadata(parsedMeta);
+      setMetadata(meta);
+      const mf = metadataFieldsFromParsed(meta);
+      setEventLocation(mf.eventLocation);
+      setEventUrl(mf.eventUrl);
+      setExperienceSeason(mf.experienceSeason);
+      setExperienceEndDate(mf.experienceEndDate);
+      setMemoryCaption(mf.memoryCaption);
+      setWorkoutType(mf.workoutType);
+      setWorkoutDurationMin(mf.workoutDurationMin);
+      setWorkoutExercises(mf.workoutExercises);
+      setProgramGoal(mf.programGoal);
+      setProgramDurationWeeks(mf.programDurationWeeks);
+      setProgramCurrentWeek(mf.programCurrentWeek);
+      setProgramSchedule(mf.programSchedule);
+      setProgramSourceTitle(mf.programSourceTitle);
+      setCardCoverPath(mf.cardCoverPath);
+      setVisibility(orig.visibility);
+      setAssignedTo(orig.assignedTo);
+      setLiveStreamEnabled(Boolean(orig.liveStreamEnabled));
+    }
+    onOpenChange(false);
+  }, [taskId, originalRef, canManageClasses, onOpenChange]);
 
   const { aiProgramPersonalizing, handlePersonalizeProgram } = useTaskProgramPersonalization({
     canWrite,
@@ -1817,26 +1888,29 @@ export function TaskModal({
       return;
     }
     const previousPath = cardCoverPath.trim();
-    const metaPayload = buildTaskMetadataPayload(
-      itemType,
-      {
-        eventLocation,
-        eventUrl,
-        experienceSeason,
-        experienceEndDate,
-        memoryCaption,
-        workoutType,
-        workoutDurationMin,
-        workoutExercises,
-        programGoal,
-        programDurationWeeks,
-        programCurrentWeek,
-        programSchedule,
-        programSourceTitle,
-        cardCoverPath: path,
-      },
-      metadata,
-    );
+    const metaPayload = stampUserFields(
+      buildTaskMetadataPayload(
+        itemType,
+        {
+          eventLocation,
+          eventUrl,
+          experienceSeason,
+          experienceEndDate,
+          memoryCaption,
+          workoutType,
+          workoutDurationMin,
+          workoutExercises,
+          programGoal,
+          programDurationWeeks,
+          programCurrentWeek,
+          programSchedule,
+          programSourceTitle,
+          cardCoverPath: path,
+        },
+        metadata,
+      ),
+      ['card_cover_path'],
+    ) as ReturnType<typeof buildTaskMetadataPayload>;
     const { error: uErr } = await supabase
       .from('tasks')
       .update({ metadata: metaPayload as TaskRow['metadata'] })
@@ -1861,26 +1935,29 @@ export function TaskModal({
     setError(null);
     const supabase = createClient();
     const pathToRemove = cardCoverPath.trim();
-    const metaPayload = buildTaskMetadataPayload(
-      itemType,
-      {
-        eventLocation,
-        eventUrl,
-        experienceSeason,
-        experienceEndDate,
-        memoryCaption,
-        workoutType,
-        workoutDurationMin,
-        workoutExercises,
-        programGoal,
-        programDurationWeeks,
-        programCurrentWeek,
-        programSchedule,
-        programSourceTitle,
-        cardCoverPath: '',
-      },
-      metadata,
-    );
+    const metaPayload = stampUserFields(
+      buildTaskMetadataPayload(
+        itemType,
+        {
+          eventLocation,
+          eventUrl,
+          experienceSeason,
+          experienceEndDate,
+          memoryCaption,
+          workoutType,
+          workoutDurationMin,
+          workoutExercises,
+          programGoal,
+          programDurationWeeks,
+          programCurrentWeek,
+          programSchedule,
+          programSourceTitle,
+          cardCoverPath: '',
+        },
+        metadata,
+      ),
+      ['card_cover_path'],
+    ) as ReturnType<typeof buildTaskMetadataPayload>;
     const { error: uErr } = await supabase
       .from('tasks')
       .update({ metadata: metaPayload as TaskRow['metadata'] })
@@ -2173,14 +2250,13 @@ export function TaskModal({
       onPickAttachmentFile: (f: File) => void uploadAttachment(f),
       onDownloadAttachment: downloadLink,
       onRemoveAttachment: removeAttachment,
-      coreDirty,
-      onCreateTask: createTask,
-      onSaveCoreFields: handleSaveCoreFields,
       archiving,
       loading,
       onArchiveTask: archiveTask,
       onHardDeleteTask: handleModalHardDelete,
       taskMetadata: metadata,
+      onPromoteItemType: setItemType,
+      demotedProvenanceKeys: userDemotedProvenanceKeys,
     }),
     [
       title,
@@ -2237,9 +2313,6 @@ export function TaskModal({
       uploadAttachment,
       downloadLink,
       removeAttachment,
-      coreDirty,
-      createTask,
-      handleSaveCoreFields,
       archiving,
       loading,
       archiveTask,
@@ -2252,6 +2325,7 @@ export function TaskModal({
       handleOpenWorkoutViewerFromDetails,
       hasWorkoutFactory,
       metadata,
+      userDemotedProvenanceKeys,
     ],
   );
 
@@ -2783,14 +2857,29 @@ export function TaskModal({
                           </div>
                         </div>
                         <div
-                          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain px-6 pt-4 pb-4"
+                          className="flex min-h-0 min-w-0 flex-1 flex-col"
                           data-testid="task-modal-comments-split-details-pane"
                         >
-                          {loading && taskId ? (
-                            <p className="text-sm text-muted-foreground">Loading {typeNoun}…</p>
-                          ) : null}
-                          {!loading || !taskId ? (
-                            <TaskModalDetailsBody {...detailsBodyProps} />
+                          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pt-4 pb-4">
+                            {loading && taskId ? (
+                              <p className="text-sm text-muted-foreground">Loading {typeNoun}…</p>
+                            ) : null}
+                            {!loading || !taskId ? (
+                              <TaskModalDetailsBody {...detailsBodyProps} />
+                            ) : null}
+                          </div>
+                          {canWrite && !showClassEditorInDetails ? (
+                            <TaskModalDetailsStickyFooter
+                              canWrite={canWrite}
+                              isCreateMode={isCreateMode}
+                              saving={saving}
+                              title={title}
+                              typeNoun={typeNoun}
+                              coreDirty={coreDirty}
+                              onCancel={handleCancelDetails}
+                              onCreateTask={createTask}
+                              onSaveCoreFields={handleSaveCoreFields}
+                            />
                           ) : null}
                         </div>
                       </div>
@@ -2836,21 +2925,46 @@ export function TaskModal({
                         {!loading || !taskId ? (
                           <>
                             {tab === 'details' && showClassEditorInDetails ? (
-                              <ClassEditor
-                                layout="embedded"
-                                workspaceId={workspaceId}
-                                bubbleId={bubbleId}
-                                canWrite={canManageClasses}
-                                mode={classEditorInstanceId ? 'edit' : 'create'}
-                                instanceId={classEditorInstanceId ?? undefined}
-                                onCreated={(ids) => {
-                                  onClassCreated?.(ids);
-                                }}
-                                onSaved={() => {
-                                  onClassSaved?.();
-                                }}
-                                onClose={() => handleOpenChange(false)}
-                              />
+                              <div className="min-w-0 space-y-4">
+                                {classEditorInstanceId ? (
+                                  <TaskModalClassRsvpCanvas
+                                    instanceId={classEditorInstanceId}
+                                    workspaceId={workspaceId}
+                                    onManageRoster={() => {
+                                      void (async () => {
+                                        const supabase = createClient();
+                                        const { data } = await supabase
+                                          .from('class_instances')
+                                          .select('capacity')
+                                          .eq('id', classEditorInstanceId)
+                                          .maybeSingle();
+                                        const cap = data?.capacity;
+                                        setClassRosterCapacity(
+                                          typeof cap === 'number' && Number.isFinite(cap)
+                                            ? cap
+                                            : null,
+                                        );
+                                        setClassRosterModalOpen(true);
+                                      })();
+                                    }}
+                                  />
+                                ) : null}
+                                <ClassEditor
+                                  layout="embedded"
+                                  workspaceId={workspaceId}
+                                  bubbleId={bubbleId}
+                                  canWrite={canManageClasses}
+                                  mode={classEditorInstanceId ? 'edit' : 'create'}
+                                  instanceId={classEditorInstanceId ?? undefined}
+                                  onCreated={(ids) => {
+                                    onClassCreated?.(ids);
+                                  }}
+                                  onSaved={() => {
+                                    onClassSaved?.();
+                                  }}
+                                  onClose={() => handleOpenChange(false)}
+                                />
+                              </div>
                             ) : tab === 'details' ? (
                               <TaskModalDetailsBody {...detailsBodyProps} />
                             ) : null}
@@ -2962,6 +3076,20 @@ export function TaskModal({
                   )}
                 </div>
 
+                {tab === 'details' && canWrite && !showClassEditorInDetails ? (
+                  <TaskModalDetailsStickyFooter
+                    canWrite={canWrite}
+                    isCreateMode={isCreateMode}
+                    saving={saving}
+                    title={title}
+                    typeNoun={typeNoun}
+                    coreDirty={coreDirty}
+                    onCancel={handleCancelDetails}
+                    onCreateTask={createTask}
+                    onSaveCoreFields={handleSaveCoreFields}
+                  />
+                ) : null}
+
                 <TaskModalTabBar
                   tab={tab}
                   onSelectTab={(id) => void selectTab(id)}
@@ -3045,6 +3173,16 @@ export function TaskModal({
           {...workoutIntakePanelProps}
           onSubmitPreflight={handlePreflightSubmitAndLaunch}
           isSubmitting={saving}
+        />
+      ) : null}
+      {classEditorInstanceId ? (
+        <ManageClassRosterModal
+          open={classRosterModalOpen}
+          onOpenChange={setClassRosterModalOpen}
+          classInstanceId={classEditorInstanceId}
+          workspaceId={workspaceId}
+          capacity={classRosterCapacity}
+          currentUserId={myProfile?.id ?? null}
         />
       ) : null}
     </div>

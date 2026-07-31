@@ -21,6 +21,7 @@ import { useMessageThread } from '@/hooks/useMessageThread';
 import { useAgentResponseWait } from '@/hooks/useAgentResponseWait';
 import { AgentTypingIndicator } from '@/components/chat/AgentTypingIndicator';
 import { useTaskBubbleUps } from '@/hooks/use-task-bubble-ups';
+import { useMessageReactions } from '@/hooks/use-message-reactions';
 import { useExerciseDictionaryAutocomplete } from '@/hooks/useExerciseDictionaryAutocomplete';
 import { rowToChatMessage } from '@/lib/chat-message-mapper';
 import { resolveTargetAgent } from '@/lib/agents/resolveTargetAgent';
@@ -432,6 +433,35 @@ export const TaskModalCommentsPanel = forwardRef<
 
   const rootMessages = useMemo(() => chatMessages.filter((m) => !m.parentId), [chatMessages]);
 
+  const reactionMessageIds = useMemo(() => {
+    const ids = chatMessages.map((m) => m.id);
+    if (activeThreadParent?.id && !ids.includes(activeThreadParent.id)) {
+      ids.push(activeThreadParent.id);
+    }
+    return ids;
+  }, [chatMessages, activeThreadParent?.id]);
+
+  const {
+    reactionsByMessageId,
+    toggleReaction,
+    busyKey: reactionsBusyKey,
+  } = useMessageReactions({
+    messageIds: reactionMessageIds,
+    userId: myProfile?.id ?? null,
+    enabled: reactionMessageIds.length > 0,
+  });
+
+  const reactionRowProps = useCallback(
+    (messageId: string) => ({
+      reactions: reactionsByMessageId[messageId] ?? [],
+      canReact: Boolean(myProfile?.id),
+      reactionsBusy: reactionsBusyKey?.startsWith(`${messageId}:`) ?? false,
+      onToggleReaction: (emoji: Parameters<typeof toggleReaction>[1]) =>
+        void toggleReaction(messageId, emoji),
+    }),
+    [reactionsByMessageId, myProfile?.id, reactionsBusyKey, toggleReaction],
+  );
+
   const threadMessages = useMemo(
     () => chatMessages.filter((m) => m.parentId === activeThreadParent?.id),
     [chatMessages, activeThreadParent?.id],
@@ -789,6 +819,7 @@ export const TaskModalCommentsPanel = forwardRef<
                     onCoachDraftFinalizeSuccess={onCoachDraftFinalizeSuccess}
                     chatCardWorkoutActions={chatCardWorkoutActions}
                     liveSessionViewerUserId={myProfile?.id ?? null}
+                    {...reactionRowProps(msg.id)}
                   />
                 ))
               : null}
@@ -837,6 +868,7 @@ export const TaskModalCommentsPanel = forwardRef<
                 onCoachDraftFinalizeSuccess={onCoachDraftFinalizeSuccess}
                 chatCardWorkoutActions={chatCardWorkoutActions}
                 liveSessionViewerUserId={myProfile?.id ?? null}
+                {...reactionRowProps(activeThreadParent.id)}
               />
             </div>
             <div className="ml-2 space-y-5 border-l-2 border-primary/25 pl-4">
@@ -854,6 +886,7 @@ export const TaskModalCommentsPanel = forwardRef<
                   onCoachDraftFinalizeSuccess={onCoachDraftFinalizeSuccess}
                   chatCardWorkoutActions={chatCardWorkoutActions}
                   liveSessionViewerUserId={myProfile?.id ?? null}
+                  {...reactionRowProps(reply.id)}
                 />
               ))}
               {waitThread.pending ? (

@@ -42,6 +42,15 @@ vi.mock('@/components/modals/task-modal/TaskModalProgramFields', () => ({
 vi.mock('@/components/modals/task-modal/TaskModalPropertiesSection', () => ({
   TaskModalPropertiesSection: () => <div data-testid="mock-properties" />,
 }));
+vi.mock('@/components/modals/task-modal/TaskModalWorkoutCanvas', () => ({
+  TaskModalWorkoutCanvas: () => <div data-testid="mock-workout-canvas" />,
+}));
+vi.mock('@/components/modals/task-modal/TaskModalIdeaCanvas', () => ({
+  TaskModalIdeaCanvas: () => <div data-testid="mock-idea-canvas" />,
+}));
+vi.mock('@/components/modals/task-modal/TaskModalMemoryCanvas', () => ({
+  TaskModalMemoryCanvas: () => <div data-testid="mock-memory-canvas" />,
+}));
 vi.mock('@/components/modals/task-modal/TaskModalSchedulingSection', () => ({
   TaskModalSchedulingSection: () => <div data-testid="mock-scheduling" />,
 }));
@@ -170,9 +179,6 @@ const baseProps: TaskModalDetailsBodyProps = {
   onPickAttachmentFile: noop,
   onDownloadAttachment: () => void Promise.resolve(),
   onRemoveAttachment: noop,
-  coreDirty: false,
-  onCreateTask: noop,
-  onSaveCoreFields: noop,
   archiving: false,
   loading: false,
   onArchiveTask: noop,
@@ -242,7 +248,7 @@ describe('TaskModalDetailsBody', () => {
     `);
   });
 
-  it('shows saved factory summary from taskMetadata when outline editor is null', () => {
+  it('renders workout canvas and viewer CTA when factory metadata exists', () => {
     const onOpenWorkoutViewer = vi.fn();
     const taskMetadata = richMetadataWithBlockFormat('emom') as Json;
 
@@ -254,32 +260,28 @@ describe('TaskModalDetailsBody', () => {
         workoutOutlineEditor={null}
         taskMetadata={taskMetadata}
         onOpenWorkoutViewer={onOpenWorkoutViewer}
-        coreDirty={false}
       />,
     );
 
+    expect(screen.getByTestId('mock-workout-canvas')).toBeTruthy();
     expect(screen.getByTestId('task-modal-generated-workout')).toBeTruthy();
-    expect(screen.getByText('Generated workout')).toBeTruthy();
-    expect(screen.getByText(/Saved — complete the pre-session check-in above/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Open workout viewer' }));
     expect(onOpenWorkoutViewer).toHaveBeenCalledTimes(1);
   });
 
-  it('shows unsaved warning when factory metadata is dirty', () => {
-    const taskMetadata = richMetadataWithBlockFormat('emom') as Json;
-
+  it('renders workout canvas without viewer CTA when factory is absent', () => {
     render(
       <TaskModalDetailsBody
         {...baseProps}
         itemType="workout"
         isWorkoutItemType
         workoutOutlineEditor={null}
-        taskMetadata={taskMetadata}
-        coreDirty
+        taskMetadata={{ workout_type: 'Strength' } as Json}
       />,
     );
 
-    expect(screen.getByText(/Unsaved changes — open the workout viewer/)).toBeTruthy();
+    expect(screen.getByTestId('mock-workout-canvas')).toBeTruthy();
+    expect(screen.queryByTestId('task-modal-generated-workout')).toBeNull();
   });
 
   it('renders generation intake when factory is absent', () => {
@@ -295,6 +297,7 @@ describe('TaskModalDetailsBody', () => {
 
     expect(screen.getByTestId('mock-workout-generation-intake-panel')).toBeTruthy();
     expect(screen.queryByTestId('mock-workout-preflight-readiness-panel')).toBeNull();
+    expect(screen.getByTestId('mock-workout-canvas')).toBeTruthy();
   });
 
   it('renders preflight panel when factory exists', () => {
@@ -313,5 +316,42 @@ describe('TaskModalDetailsBody', () => {
 
     expect(screen.getByTestId('mock-workout-preflight-readiness-panel')).toBeTruthy();
     expect(screen.queryByTestId('mock-workout-generation-intake-panel')).toBeNull();
+    expect(screen.getByTestId('mock-workout-canvas')).toBeTruthy();
+  });
+
+  it('renders persona strip when agent provenance is present', () => {
+    render(
+      <TaskModalDetailsBody
+        {...baseProps}
+        taskMetadata={
+          {
+            location: 'Gym',
+            field_provenance: {
+              location: { by: 'agent', agent_slug: 'coach', at: '2026-07-30T00:00:00.000Z' },
+            },
+          } as Json
+        }
+      />,
+    );
+    expect(screen.getByTestId('task-modal-persona-strip')).toBeTruthy();
+    expect(screen.getByText(/Coach hydrated this Canvas/i)).toBeTruthy();
+    expect(screen.getByText(/1 field/)).toBeTruthy();
+  });
+
+  it('hides persona strip when demoted keys clear all agent fields', () => {
+    render(
+      <TaskModalDetailsBody
+        {...baseProps}
+        demotedProvenanceKeys={['location']}
+        taskMetadata={
+          {
+            field_provenance: {
+              location: { by: 'agent', agent_slug: 'coach' },
+            },
+          } as Json
+        }
+      />,
+    );
+    expect(screen.queryByTestId('task-modal-persona-strip')).toBeNull();
   });
 });

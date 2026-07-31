@@ -3,8 +3,8 @@
 import { Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import type { ProgramWeek } from '@/lib/item-metadata';
+import { TaskModalField } from '@/components/modals/task-modal/TaskModalSection';
 
 export type TaskModalProgramFieldsProps = {
   canWrite: boolean;
@@ -18,6 +18,7 @@ export type TaskModalProgramFieldsProps = {
   onProgramDurationWeeksChange: (value: string) => void;
   programCurrentWeek: number;
   programSchedule: ProgramWeek[];
+  isAgentField?: (key: string) => boolean;
 };
 
 export function TaskModalProgramFields({
@@ -32,7 +33,9 @@ export function TaskModalProgramFields({
   onProgramDurationWeeksChange,
   programCurrentWeek,
   programSchedule,
+  isAgentField,
 }: TaskModalProgramFieldsProps) {
+  const agent = (key: string) => Boolean(isAgentField?.(key));
   return (
     <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
       <div className="flex items-center justify-between gap-2">
@@ -52,8 +55,7 @@ export function TaskModalProgramFields({
         ) : null}
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="task-program-goal">Goal</Label>
+      <TaskModalField label="Goal" agent={agent('goal')} className="mb-0">
         <Input
           id="task-program-goal"
           value={programGoal}
@@ -62,10 +64,13 @@ export function TaskModalProgramFields({
           placeholder="e.g. Build lean muscle, Run a 5K"
           className="h-9"
         />
-      </div>
+      </TaskModalField>
 
-      <div className="w-36 space-y-2">
-        <Label htmlFor="task-program-duration">Duration (weeks)</Label>
+      <TaskModalField
+        label="Duration (weeks)"
+        agent={agent('duration_weeks')}
+        className="mb-0 w-36"
+      >
         <Input
           id="task-program-duration"
           type="number"
@@ -75,7 +80,7 @@ export function TaskModalProgramFields({
           disabled={!canWrite}
           className="h-9"
         />
-      </div>
+      </TaskModalField>
 
       {programCurrentWeek > 0 && programDurationWeeks && (
         <p className="text-xs text-muted-foreground">

@@ -12,6 +12,7 @@ export type RosterEnrollment = {
   displayName: string;
   role: string | null;
   email: string | null;
+  avatarUrl: string | null;
 };
 
 export type RosterCandidate = {
@@ -37,6 +38,7 @@ type UserRow = {
   full_name?: string | null;
   email?: string | null;
   role?: string | null;
+  avatar_url?: string | null;
 };
 
 function readNestedUser(raw: unknown): UserRow | null {
@@ -88,7 +90,7 @@ export function useManageClassRoster({ classInstanceId, workspaceId }: UseManage
     const { data: enrollData, error: enrollErr } = await supabase
       .from('class_enrollments')
       .select(
-        'id, user_id, status, user:users!class_enrollments_user_id_fkey(id, full_name, email, role)',
+        'id, user_id, status, user:users!class_enrollments_user_id_fkey(id, full_name, email, role, avatar_url)',
       )
       .eq('instance_id', iid)
       .in('status', ['enrolled', 'waitlisted'])
@@ -118,6 +120,8 @@ export function useManageClassRoster({ classInstanceId, workspaceId }: UseManage
         displayName: displayNameFromUser(u?.full_name, u?.email),
         role: (u?.role as string | null | undefined) ?? null,
         email: (u?.email as string | null | undefined) ?? null,
+        avatarUrl:
+          typeof u?.avatar_url === 'string' && u.avatar_url.trim() ? u.avatar_url.trim() : null,
       });
     }
     setEnrollments(rows);

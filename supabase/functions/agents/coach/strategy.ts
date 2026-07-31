@@ -39,6 +39,12 @@ import {
 import { applyStructuralPatchToTaskMetadata } from '../../_shared/workout-metadata/apply-structural-patch-to-task-metadata.ts';
 import { syncCoachOutlineFromRichMetadata } from '../../_shared/workout-metadata/factory-session-to-coach-outline.ts';
 import {
+  agentProvenanceMetadataPatch,
+  provenanceKeysFromMergeTouched,
+  stampAgentFields,
+  FIELD_PROVENANCE_KEY,
+} from '../../_shared/task-field-provenance.ts';
+import {
   shouldExcludeWorkoutSentinelFromHistory,
   isWorkoutContextSentinel,
   WORKOUT_CONTEXT_LEGACY_SENTINEL,
@@ -1450,7 +1456,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
           );
           const baseMeta = extras.taskMetadataForContext ?? {};
           const withOutline = applyCoachWorkoutOutlineToTaskMetadata(baseMeta, merged);
-          const pNewMeta = mergeCoachOutlineMetadataPatch(withOutline, {
+          let pNewMeta = mergeCoachOutlineMetadataPatch(withOutline, {
             outline: merged.length > 0 ? merged : null,
             status: 'ready',
             clearConfirmation: outlinePatch.clear_confirmation !== false,
@@ -1458,6 +1464,9 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
               parsed.outline_draft_patch_drops.length > 0
                 ? parsed.outline_draft_patch_drops
                 : undefined,
+          });
+          pNewMeta = stampAgentFields(pNewMeta, ['coach_workout_outline', 'blocks'], {
+            agentSlug: COACH_SLUG,
           });
           const appliedPayload = buildOutlineDraftAppliedPayload({
             revision: outlinePatch.revision,
@@ -1525,7 +1534,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
 
     if (knownTargetTaskId && workoutCuesParam != null && payload.workout_cues_patch) {
       const supabase: SharedSupabaseClient = ctx.supabase;
-      const metaDelta = buildTaskMetadataDeltaForWorkoutCuePatch(
+      let metaDelta = buildTaskMetadataDeltaForWorkoutCuePatch(
         extras.taskMetadataForContext,
         payload.workout_cues_patch,
       );
@@ -1540,6 +1549,26 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
           note: 'reply_only_task_unchanged',
         });
       } else {
+        const cueKeys: string[] = [];
+        if ('exercises' in metaDelta) cueKeys.push('exercises');
+        if ('ai_workout_factory' in metaDelta) {
+          cueKeys.push('ai_workout_factory', 'blocks');
+        }
+        if (cueKeys.length > 0) {
+          const base =
+            extras.taskMetadataForContext != null &&
+            typeof extras.taskMetadataForContext === 'object' &&
+            !Array.isArray(extras.taskMetadataForContext)
+              ? (extras.taskMetadataForContext as Record<string, unknown>)
+              : {};
+          const stamped = stampAgentFields({ ...base, ...metaDelta }, cueKeys, {
+            agentSlug: COACH_SLUG,
+          });
+          metaDelta = {
+            ...metaDelta,
+            [FIELD_PROVENANCE_KEY]: stamped[FIELD_PROVENANCE_KEY],
+          };
+        }
         log('info', 'coach workout_cues_patch metadata merge', {
           request_id: ctx.requestId,
           slug: COACH_SLUG,
@@ -1630,6 +1659,8 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
       let mergeExerciseBlocksTouched = false;
       let mergeTouchedEmptyWithBlocks = false;
       let replyText = parsed.reply_content;
+      const coachProvenanceKeys: string[] = [];
+      const coachProvOpts = { agentSlug: COACH_SLUG };
 
       if (hasStructuralPatch) {
         const mergeBase = resolveCoachTaskMetadataForMerge(
@@ -1681,6 +1712,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
           pNewMeta = metadata;
           mergeExerciseBlocksTouched = true;
           pNewMeta = syncCoachOutlineFromRichMetadata(pNewMeta);
+          coachProvenanceKeys.push('blocks', 'ai_workout_factory', 'coach_workout_outline');
           log('info', 'coach structural_patch applied to task metadata', {
             request_id: ctx.requestId,
             slug: COACH_SLUG,
@@ -1726,6 +1758,10 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
           pNewMeta = metadata;
           mergeExerciseBlocksTouched = mergeLog.touched.includes('exerciseBlocks');
           mergeTouchedEmptyWithBlocks = proposedBlockCount > 0 && mergeLog.touched.length === 0;
+          coachProvenanceKeys.push(...provenanceKeysFromMergeTouched(mergeLog.touched));
+          if (mergeLog.touched.length > 0) {
+            coachProvenanceKeys.push('blocks', 'ai_workout_factory');
+          }
           log('info', 'coach merge workout metadata', {
             request_id: ctx.requestId,
             slug: COACH_SLUG,
@@ -1749,6 +1785,7 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
           outlineBase,
           payload.coach_workout_outline,
         );
+        coachProvenanceKeys.push('coach_workout_outline', 'blocks');
         log('info', 'coach outline metadata', {
           request_id: ctx.requestId,
           slug: COACH_SLUG,
@@ -1784,6 +1821,21 @@ export const CoachStrategy: AgentStrategy<CoachGeminiJsonResponse> = {
           slug: COACH_SLUG,
           message_id: ctx.message.id,
         });
+      }
+
+      if (trimmedNewTitle.length > 0) coachProvenanceKeys.push('title');
+      if (trimmedNewDesc.length > 0) coachProvenanceKeys.push('description');
+
+      if (coachProvenanceKeys.length > 0) {
+        if (pNewMeta != null) {
+          pNewMeta = stampAgentFields(pNewMeta, coachProvenanceKeys, coachProvOpts);
+        } else {
+          pNewMeta = agentProvenanceMetadataPatch(
+            extras.taskMetadataForContext ?? {},
+            coachProvenanceKeys,
+            coachProvOpts,
+          );
+        }
       }
 
       const upd = await agentUpdateTaskAndReply(supabase, {

@@ -25,6 +25,7 @@ export type TaskModalItemMetadataSectionsProps = {
   onExperienceEndDateChange: (value: string) => void;
   memoryCaption: string;
   onMemoryCaptionChange: (value: string) => void;
+  isAgentField?: (key: string) => boolean;
 };
 
 export function TaskModalItemMetadataSections({
@@ -42,12 +43,14 @@ export function TaskModalItemMetadataSections({
   onExperienceEndDateChange,
   memoryCaption,
   onMemoryCaptionChange,
+  isAgentField,
 }: TaskModalItemMetadataSectionsProps) {
+  const agent = (key: string) => Boolean(isAgentField?.(key));
   return (
     <>
       {itemType === 'event' && (
         <TaskModalSection icon={<MapPin className="size-4" aria-hidden />} title="Event details">
-          <TaskModalField label="Location">
+          <TaskModalField label="Location" agent={agent('location')}>
             <input
               value={eventLocation}
               onChange={(e) => onEventLocationChange(e.target.value)}
@@ -57,7 +60,7 @@ export function TaskModalItemMetadataSections({
               className={taskModalInputClass}
             />
           </TaskModalField>
-          <TaskModalField label="Meeting link">
+          <TaskModalField label="Meeting link" agent={agent('url')}>
             <input
               type="url"
               value={eventUrl}
@@ -76,7 +79,7 @@ export function TaskModalItemMetadataSections({
           icon={<CalendarDays className="size-4" aria-hidden />}
           title="Experience span"
         >
-          <TaskModalField label="Season / label" optional>
+          <TaskModalField label="Season / label" optional agent={agent('season')}>
             <input
               value={experienceSeason}
               onChange={(e) => onExperienceSeasonChange(e.target.value)}
@@ -86,7 +89,10 @@ export function TaskModalItemMetadataSections({
               className={taskModalInputClass}
             />
           </TaskModalField>
-          <TaskModalField help="Experiences appear as themed pills on their start date in the Month view.">
+          <TaskModalField
+            help="Experiences appear as themed pills on their start date in the Month view."
+            agent={agent('end_date')}
+          >
             <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
               <div>
                 <Label
@@ -130,6 +136,7 @@ export function TaskModalItemMetadataSections({
           <TaskModalField
             label="Caption / reflection"
             help="Photos and files go in Attachments below after you save."
+            agent={agent('caption')}
           >
             <Textarea
               value={memoryCaption}

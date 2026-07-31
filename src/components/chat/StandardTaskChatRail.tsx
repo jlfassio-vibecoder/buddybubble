@@ -65,6 +65,7 @@ import type {
 import { useBuddyOnboardingSentinel } from '@/components/modals/task-modal/hooks/useBuddyOnboardingSentinel';
 import { useDeepLinkMessageScroll } from '@/components/modals/task-modal/hooks/useDeepLinkMessageScroll';
 import { scheduleScrollChatThreadToBottom } from '@/lib/chat-thread-auto-scroll';
+import { useMessageReactions } from '@/hooks/use-message-reactions';
 
 const SURFACE = 'standard-task-chat-rail' as const;
 
@@ -534,6 +535,20 @@ function StandardTaskChatRailChrome({
     clearError,
   } = api;
 
+  const reactionMessageIds = useMemo(
+    () => transcriptMessages.map((m) => m.id),
+    [transcriptMessages],
+  );
+  const {
+    reactionsByMessageId,
+    toggleReaction,
+    busyKey: reactionsBusyKey,
+  } = useMessageReactions({
+    messageIds: reactionMessageIds,
+    userId: myProfile?.id ?? null,
+    enabled: transcriptMessages.length > 0,
+  });
+
   const contextDefaultAgentSlug = resolvedDefaultSlug;
   const composerShellRef = useRef<HTMLDivElement>(null);
   const exerciseMentionsPendingRef = useRef<ExerciseMentionClientPayload[]>([]);
@@ -731,6 +746,10 @@ function StandardTaskChatRailChrome({
                 density="rail"
                 renderContent={(t) => t}
                 liveSessionViewerUserId={myProfile?.id ?? null}
+                reactions={reactionsByMessageId[msg.id] ?? []}
+                canReact={Boolean(myProfile?.id)}
+                reactionsBusy={reactionsBusyKey?.startsWith(`${msg.id}:`) ?? false}
+                onToggleReaction={(emoji) => void toggleReaction(msg.id, emoji)}
                 {...railChatRowExtras}
               />
             </div>

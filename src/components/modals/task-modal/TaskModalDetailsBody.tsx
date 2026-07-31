@@ -16,6 +16,11 @@ import { WorkoutOutlinePanel } from '@/components/fitness/WorkoutOutlinePanel';
 import { readCoachOutlineMetadata } from '@/lib/agents/coach/coach-outline-metadata';
 import type { WorkoutOutlineEditorState } from '@/components/modals/task-modal/hooks/useWorkoutOutlineEditor';
 import { TaskModalPropertiesSection } from '@/components/modals/task-modal/TaskModalPropertiesSection';
+import { TaskModalPersonaStrip } from '@/components/modals/task-modal/TaskModalPersonaStrip';
+import { TaskModalWorkoutCanvas } from '@/components/modals/task-modal/TaskModalWorkoutCanvas';
+import { TaskModalIdeaCanvas } from '@/components/modals/task-modal/TaskModalIdeaCanvas';
+import type { PromoteTargetType } from '@/components/modals/task-modal/TaskModalIdeaCanvas';
+import { TaskModalMemoryCanvas } from '@/components/modals/task-modal/TaskModalMemoryCanvas';
 import { TaskModalCardCoverSection } from '@/components/modals/task-modal/TaskModalCardCoverSection';
 import { TaskModalItemMetadataSections } from '@/components/modals/task-modal/TaskModalItemMetadataSections';
 import { TaskModalProgramFields } from '@/components/modals/task-modal/TaskModalProgramFields';
@@ -26,6 +31,7 @@ import { TaskModalDetailsFooterActions } from '@/components/modals/task-modal/Ta
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
 import { LayoutPanelLeft } from 'lucide-react';
+import { isAgentFilledForDisplay, listAgentFilledKeys } from '@/lib/task-field-provenance';
 
 export type TaskModalDetailsBodyProps = {
   title: string;
@@ -118,14 +124,18 @@ export type TaskModalDetailsBodyProps = {
   onPickAttachmentFile: (file: File) => void;
   onDownloadAttachment: (att: TaskAttachment) => void | Promise<void>;
   onRemoveAttachment: (att: TaskAttachment) => void | Promise<void>;
-  coreDirty: boolean;
-  onCreateTask: () => void;
-  onSaveCoreFields: () => void | Promise<void | boolean>;
   archiving: boolean;
   loading: boolean;
   onArchiveTask: () => void;
   onHardDeleteTask?: () => void | Promise<void>;
   taskMetadata?: Json;
+  /** Idea canvas: graduate to event / program / class via existing type change. */
+  onPromoteItemType?: (next: PromoteTargetType) => void;
+  /**
+   * Provenance keys the user has overwritten vs last save (live demote for Coach tint).
+   * Persisted demotion happens on save / title-desc autosave.
+   */
+  demotedProvenanceKeys?: readonly string[];
 };
 
 function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
@@ -213,17 +223,22 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     onPickAttachmentFile,
     onDownloadAttachment,
     onRemoveAttachment,
-    coreDirty,
-    onCreateTask,
-    onSaveCoreFields,
     archiving,
     loading,
     onArchiveTask,
     onHardDeleteTask,
     taskMetadata,
+    onPromoteItemType,
+    demotedProvenanceKeys = [],
   } = props;
 
   const hasFactory = readCoachOutlineMetadata(taskMetadata).hasFactory;
+  const agentDisplayKeys = listAgentFilledKeys(taskMetadata).filter((k) =>
+    isAgentFilledForDisplay(taskMetadata, k, demotedProvenanceKeys),
+  );
+  const agentFieldCount = agentDisplayKeys.length;
+  const isAgentField = (key: string) =>
+    isAgentFilledForDisplay(taskMetadata, key, demotedProvenanceKeys);
 
   return (
     <div className="min-w-0 space-y-4" data-testid="task-modal-details-body">
@@ -266,6 +281,8 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
         canWrite={canWrite}
       />
 
+      <TaskModalPersonaStrip agentFieldCount={agentFieldCount} />
+
       {showStructureBuilderCta && onOpenStructureBuilder ? (
         <div className="rounded-lg border border-border bg-muted/30 px-4 py-4">
           <p className="text-sm text-muted-foreground">
@@ -306,19 +323,35 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
         />
       ) : null}
 
-      {hasFactory ? (
-        <div className="mt-8 space-y-3" data-testid="task-modal-generated-workout">
-          <p className="text-xs font-medium text-foreground">Generated workout</p>
-          <p className="text-sm text-muted-foreground">
-            {coreDirty
-              ? 'Unsaved changes — open the workout viewer to review and save before starting a session.'
-              : 'Saved — complete the pre-session check-in above or open the workout viewer to review blocks.'}
-          </p>
-          {onOpenWorkoutViewer ? (
-            <Button type="button" variant="outline" size="sm" onClick={onOpenWorkoutViewer}>
-              Open workout viewer
-            </Button>
-          ) : null}
+      {itemType === 'workout' ? <TaskModalWorkoutCanvas taskMetadata={taskMetadata} /> : null}
+
+      {itemType === 'idea' ? (
+        <TaskModalIdeaCanvas
+          taskMetadata={taskMetadata}
+          canWrite={canWrite}
+          onPromoteItemType={onPromoteItemType}
+          isAgentField={isAgentField}
+        />
+      ) : null}
+
+      {itemType === 'memory' ? (
+        <TaskModalMemoryCanvas
+          attachments={attachments}
+          canWrite={canWrite}
+          isCreateMode={isCreateMode}
+          taskId={taskId}
+          typeNoun={typeNoun}
+          onPickAttachmentFile={onPickAttachmentFile}
+          onDownloadAttachment={onDownloadAttachment}
+          onRemoveAttachment={onRemoveAttachment}
+        />
+      ) : null}
+
+      {hasFactory && itemType === 'workout' && onOpenWorkoutViewer ? (
+        <div className="flex justify-end" data-testid="task-modal-generated-workout">
+          <Button type="button" variant="outline" size="sm" onClick={onOpenWorkoutViewer}>
+            Open workout viewer
+          </Button>
         </div>
       ) : null}
 
@@ -337,6 +370,7 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
         onExperienceEndDateChange={onExperienceEndDateChange}
         memoryCaption={memoryCaption}
         onMemoryCaptionChange={onMemoryCaptionChange}
+        isAgentField={isAgentField}
       />
 
       {itemType === 'workout_log' && (
@@ -360,6 +394,7 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
           workoutUnitSystem={workoutUnitSystem}
           autoEditFirstRow={Boolean(initialAutoEdit && isWorkoutItemType && taskId && canWrite)}
           taskMetadata={taskMetadata}
+          isAgentField={isAgentField}
         />
       )}
 
@@ -376,6 +411,7 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
           onProgramDurationWeeksChange={onProgramDurationWeeksChange}
           programCurrentWeek={programCurrentWeek}
           programSchedule={programSchedule}
+          isAgentField={isAgentField}
         />
       )}
 
@@ -421,11 +457,7 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
         canWrite={canWrite}
         isCreateMode={isCreateMode}
         saving={saving}
-        title={title}
         typeNoun={typeNoun}
-        coreDirty={coreDirty}
-        onCreateTask={onCreateTask}
-        onSaveCoreFields={onSaveCoreFields}
         taskId={taskId}
         archiving={archiving}
         loading={loading}
