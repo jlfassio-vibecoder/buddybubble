@@ -61,7 +61,9 @@ export function stampAgentFields(
 
   const map = { ...readFieldProvenance(next) };
   const at = options?.at ?? new Date().toISOString();
-  const agentSlug = options?.agentSlug?.trim() || 'coach';
+  const normalizedAgentSlug = options?.agentSlug?.trim();
+  const agentSlug =
+    normalizedAgentSlug && normalizedAgentSlug.length > 0 ? normalizedAgentSlug : 'unknown_agent';
   for (const key of unique) {
     map[key] = { by: 'agent', agent_slug: agentSlug, at };
   }

@@ -65,7 +65,7 @@ export function ChatMessageReactionPills({
             </button>
           </PopoverTrigger>
           <PopoverContent className="w-auto p-1.5" align="start" side="top">
-            <div className="flex gap-0.5" role="listbox" aria-label="Choose reaction">
+            <div className="flex gap-0.5" role="group" aria-label="Choose reaction">
               {MESSAGE_REACTION_EMOJIS.map((emoji) => (
                 <button
                   key={emoji}

@@ -732,7 +732,7 @@ export function TaskModal({
       description,
       original: originalSnapshot,
     });
-  }, [itemType, formFieldsForProvenance, title, description, originalSnapshot, metadata]);
+  }, [itemType, formFieldsForProvenance, title, description, originalSnapshot]);
 
   const metadataForSave = useMemo(() => {
     const built = buildTaskMetadataPayload(itemType, formFieldsForProvenance, metadata);
@@ -1522,6 +1522,7 @@ export function TaskModal({
 
   const { coreDirty } = useTaskDirtyState({
     originalRef,
+    originalSnapshot,
     isCreateMode,
     title,
     description,
@@ -2255,7 +2256,11 @@ export function TaskModal({
       onArchiveTask: archiveTask,
       onHardDeleteTask: handleModalHardDelete,
       taskMetadata: metadata,
-      onPromoteItemType: setItemType,
+      onPromoteItemType: (next: 'event' | 'program' | 'class') => {
+        if (next === 'class' && !canManageClasses) return;
+        setItemType(next);
+      },
+      canPromoteToClass: canManageClasses,
       demotedProvenanceKeys: userDemotedProvenanceKeys,
     }),
     [
@@ -2264,6 +2269,7 @@ export function TaskModal({
       showWorkoutSplitPane,
       itemType,
       canWrite,
+      canManageClasses,
       handleGenerateWorkoutFromIntake,
       handlePreflightSubmitAndLaunch,
       activeSessionLaunch.isLaunching,

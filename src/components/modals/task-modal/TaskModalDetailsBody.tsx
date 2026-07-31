@@ -131,6 +131,8 @@ export type TaskModalDetailsBodyProps = {
   taskMetadata?: Json;
   /** Idea canvas: graduate to event / program / class via existing type change. */
   onPromoteItemType?: (next: PromoteTargetType) => void;
+  /** When false, Idea “Promote to Class” is disabled (matches class item-type gate). */
+  canPromoteToClass?: boolean;
   /**
    * Provenance keys the user has overwritten vs last save (live demote for Coach tint).
    * Persisted demotion happens on save / title-desc autosave.
@@ -229,6 +231,7 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     onHardDeleteTask,
     taskMetadata,
     onPromoteItemType,
+    canPromoteToClass = true,
     demotedProvenanceKeys = [],
   } = props;
 
@@ -329,6 +332,7 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
         <TaskModalIdeaCanvas
           taskMetadata={taskMetadata}
           canWrite={canWrite}
+          canPromoteToClass={canPromoteToClass}
           onPromoteItemType={onPromoteItemType}
           isAgentField={isAgentField}
         />

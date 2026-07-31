@@ -15,6 +15,8 @@ export type TaskModalIdeaCanvasProps = {
   taskMetadata?: Json | null;
   canWrite: boolean;
   onPromoteItemType?: (next: PromoteTargetType) => void;
+  /** When false, hide/disable Promote to Class (caller lacks class management). */
+  canPromoteToClass?: boolean;
   className?: string;
   isAgentField?: (key: string) => boolean;
 };
@@ -56,6 +58,7 @@ export function TaskModalIdeaCanvas({
   taskMetadata = null,
   canWrite,
   onPromoteItemType,
+  canPromoteToClass = true,
   className,
   isAgentField,
 }: TaskModalIdeaCanvasProps) {
@@ -153,6 +156,7 @@ export function TaskModalIdeaCanvas({
           {PROMOTE_TARGETS.map((id) => {
             const vis = ITEM_TYPE_VISUAL[id];
             const Icon = vis.Icon;
+            const classBlocked = id === 'class' && !canPromoteToClass;
             return (
               <Button
                 key={id}
@@ -160,7 +164,12 @@ export function TaskModalIdeaCanvas({
                 variant="outline"
                 size="sm"
                 className="justify-start gap-2"
-                disabled={!canWrite || !onPromoteItemType}
+                disabled={!canWrite || !onPromoteItemType || classBlocked}
+                title={
+                  classBlocked
+                    ? 'You need class management permission to promote to Class'
+                    : undefined
+                }
                 onClick={() => onPromoteItemType?.(id)}
               >
                 <Icon className={cn('size-3.5 shrink-0', vis.iconText)} aria-hidden />

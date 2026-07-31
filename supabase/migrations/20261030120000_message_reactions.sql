@@ -7,7 +7,12 @@ create table public.message_reactions (
   emoji      text not null,
   created_at timestamptz not null default now(),
   unique (message_id, user_id, emoji),
-  constraint message_reactions_emoji_nonempty check (char_length(trim(emoji)) > 0)
+  constraint message_reactions_emoji_nonempty check (char_length(btrim(emoji)) > 0),
+  -- Closed set aligned with src/lib/message-reactions.ts MESSAGE_REACTION_EMOJIS (v1).
+  constraint message_reactions_emoji_allowed check (
+    emoji = btrim(emoji)
+    and emoji in ('👍', '❤️', '😂', '🎉', '👀')
+  )
 );
 
 create index message_reactions_message_id_idx on public.message_reactions (message_id);
