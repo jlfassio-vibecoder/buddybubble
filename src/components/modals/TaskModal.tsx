@@ -1570,16 +1570,8 @@ export function TaskModal({
 
   /** Prefetch source workout so chrome Play and Continue share identical V1 player init. */
   useEffect(() => {
-    if (
-      !open ||
-      !isWorkoutLogInProgress({ item_type: itemType, status }) ||
-      !readWorkoutLogSourceTaskId(metadata)
-    ) {
-      setSourceWorkoutLaunch(null);
-      return;
-    }
     const sourceId = readWorkoutLogSourceTaskId(metadata);
-    if (!sourceId) {
+    if (!open || !isWorkoutLogInProgress({ item_type: itemType, status }) || !sourceId) {
       setSourceWorkoutLaunch(null);
       return;
     }

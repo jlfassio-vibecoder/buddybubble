@@ -45,9 +45,9 @@ export function TaskModalChipListEditor({
   return (
     <div className="space-y-2" data-testid={testId}>
       <div className="flex flex-wrap gap-1.5">
-        {values.map((v) => (
+        {values.map((v, idx) => (
           <span
-            key={v}
+            key={`${v}-${idx}`}
             className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-secondary px-2.5 text-xs font-semibold text-foreground"
           >
             {chipIcon ? <Package className="size-3 text-muted-foreground" aria-hidden /> : null}
@@ -57,7 +57,7 @@ export function TaskModalChipListEditor({
                 type="button"
                 className="rounded p-0.5 text-muted-foreground hover:text-foreground"
                 aria-label={`Remove ${v}`}
-                onClick={() => onChange(values.filter((x) => x !== v))}
+                onClick={() => onChange(values.filter((_, i) => i !== idx))}
               >
                 <X className="size-3" aria-hidden />
               </button>
