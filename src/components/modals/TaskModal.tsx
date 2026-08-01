@@ -331,6 +331,13 @@ export function TaskModal({
   const [error, setError] = useState<string | null>(null);
   const [continueSessionPlayerOpen, setContinueSessionPlayerOpen] = useState(false);
   const [continueSessionBusy, setContinueSessionBusy] = useState(false);
+  /** Source workout row for in-progress log → V1 player (matches dashboard-shell). */
+  const [sourceWorkoutLaunch, setSourceWorkoutLaunch] = useState<{
+    id: string;
+    title: string;
+    metadata: Json;
+    bubbleId: string;
+  } | null>(null);
   const isCreateMode = open && !taskId && !!bubbleId;
 
   const [title, setTitle] = useState('');
@@ -1557,8 +1564,51 @@ export function TaskModal({
     if (!open) {
       setContinueSessionPlayerOpen(false);
       setContinueSessionBusy(false);
+      setSourceWorkoutLaunch(null);
     }
   }, [open]);
+
+  /** Prefetch source workout so chrome Play and Continue share identical V1 player init. */
+  useEffect(() => {
+    if (
+      !open ||
+      !isWorkoutLogInProgress({ item_type: itemType, status }) ||
+      !readWorkoutLogSourceTaskId(metadata)
+    ) {
+      setSourceWorkoutLaunch(null);
+      return;
+    }
+    const sourceId = readWorkoutLogSourceTaskId(metadata);
+    if (!sourceId) {
+      setSourceWorkoutLaunch(null);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('id, title, metadata, bubble_id')
+        .eq('id', sourceId)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error || !data?.id || !data.bubble_id) {
+        setSourceWorkoutLaunch(null);
+        return;
+      }
+      setSourceWorkoutLaunch({
+        id: data.id,
+        title: typeof data.title === 'string' ? data.title : '',
+        metadata: (data.metadata ?? {}) as Json,
+        bubbleId: data.bubble_id,
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, itemType, status, metadata]);
 
   useEffect(() => {
     if (!open) {
@@ -1701,8 +1751,36 @@ export function TaskModal({
       onOpenChange(false);
       return;
     }
-    setContinueSessionPlayerOpen(true);
-  }, [metadata, workspaceId, router, onOpenChange]);
+
+    void (async () => {
+      setContinueSessionBusy(true);
+      try {
+        if (sourceWorkoutLaunch?.id === sourceId) {
+          setContinueSessionPlayerOpen(true);
+          return;
+        }
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from('tasks')
+          .select('id, title, metadata, bubble_id')
+          .eq('id', sourceId)
+          .maybeSingle();
+        if (error || !data?.id || !data.bubble_id) {
+          toast.error('Could not find the source workout for this log.');
+          return;
+        }
+        setSourceWorkoutLaunch({
+          id: data.id,
+          title: typeof data.title === 'string' ? data.title : '',
+          metadata: (data.metadata ?? {}) as Json,
+          bubbleId: data.bubble_id,
+        });
+        setContinueSessionPlayerOpen(true);
+      } finally {
+        setContinueSessionBusy(false);
+      }
+    })();
+  }, [metadata, workspaceId, router, onOpenChange, sourceWorkoutLaunch]);
 
   const activeSessionLaunchControlProps = useMemo(() => {
     if (activeSessionLaunch.launchUi.mode === 'hidden') return null;
@@ -2543,6 +2621,13 @@ export function TaskModal({
             : null
       : null;
 
+  /** In-progress log: chrome + Continue V1 player use source workout row (dashboard-shell parity). */
+  const workoutPlayerTitle = sourceWorkoutLaunch?.title ?? title;
+  const workoutPlayerMetadata = sourceWorkoutLaunch?.metadata ?? metadata;
+  const workoutPlayerBubbleId = sourceWorkoutLaunch?.bubbleId ?? bubbleId;
+  const workoutPlayerSourceTaskId =
+    sourceWorkoutLaunch?.id ?? readWorkoutLogSourceTaskId(metadata) ?? taskId;
+
   /* Task modal must sit above MobileTabBar (z-90) and drawer sheets (z-110–120) or actions are obscured on phones. */
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 max-md:p-0 max-md:items-stretch">
@@ -2806,11 +2891,12 @@ export function TaskModal({
                       onVisibilityChange={setVisibility}
                       liveStreamEnabled={liveStreamEnabled}
                       onLiveStreamEnabledChange={setLiveStreamEnabled}
-                      workoutTitle={title}
-                      workoutMetadata={metadata}
-                      bubbleId={bubbleId}
+                      workoutTitle={workoutPlayerTitle}
+                      workoutMetadata={workoutPlayerMetadata}
+                      bubbleId={workoutPlayerBubbleId}
                       workspaceId={workspaceId}
                       taskId={taskId}
+                      workoutPlayerSourceTaskId={workoutPlayerSourceTaskId}
                       activeSessionLaunch={activeSessionLaunchControlProps}
                       onInteraction={() => setHeroCinematicCollapsed(true)}
                     />
@@ -3065,11 +3151,12 @@ export function TaskModal({
                           onVisibilityChange={setVisibility}
                           liveStreamEnabled={liveStreamEnabled}
                           onLiveStreamEnabledChange={setLiveStreamEnabled}
-                          workoutTitle={title}
-                          workoutMetadata={metadata}
-                          bubbleId={bubbleId}
+                          workoutTitle={workoutPlayerTitle}
+                          workoutMetadata={workoutPlayerMetadata}
+                          bubbleId={workoutPlayerBubbleId}
                           workspaceId={workspaceId}
                           taskId={taskId}
+                          workoutPlayerSourceTaskId={workoutPlayerSourceTaskId}
                           activeSessionLaunch={activeSessionLaunchControlProps}
                           onInteraction={() => setHeroCinematicCollapsed(true)}
                         />
@@ -3354,15 +3441,15 @@ export function TaskModal({
           currentUserId={myProfile?.id ?? null}
         />
       ) : null}
-      {continueSessionPlayerOpen && bubbleId ? (
+      {continueSessionPlayerOpen && sourceWorkoutLaunch ? (
         <WorkoutPlayer
           open
           onClose={() => setContinueSessionPlayerOpen(false)}
           workspaceId={workspaceId}
-          workoutTitle={title}
-          metadata={metadata}
-          bubbleId={bubbleId}
-          sourceTaskId={readWorkoutLogSourceTaskId(metadata)}
+          workoutTitle={sourceWorkoutLaunch.title}
+          metadata={sourceWorkoutLaunch.metadata}
+          bubbleId={sourceWorkoutLaunch.bubbleId}
+          sourceTaskId={sourceWorkoutLaunch.id}
           sessionId={null}
           class_instance_id={null}
           isMemberView
