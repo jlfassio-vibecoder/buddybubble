@@ -88,4 +88,31 @@ describe('detectUserDemotedProvenanceKeys', () => {
     expect(keys).toEqual(expect.arrayContaining(['title', 'location']));
     expect(keys).not.toContain('description');
   });
+
+  it('demotes exercises and blocks when workout exercises form changes', () => {
+    const origExercises = [{ name: 'Squat', sets: 3, reps: '5' }];
+    const fields = {
+      ...metadataFieldsFromParsed({ exercises: origExercises }),
+      workoutExercises: [{ name: 'Deadlift', sets: 3, reps: '5' }],
+    };
+    const keys = detectUserDemotedProvenanceKeys({
+      itemType: 'workout',
+      fields,
+      title: 'Session',
+      description: '',
+      original: {
+        title: 'Session',
+        description: '',
+        status: 'todo',
+        priority: 'medium',
+        scheduledOn: null,
+        scheduledTime: null,
+        itemType: 'workout',
+        visibility: 'private',
+        assignedTo: null,
+        metadataJson: JSON.stringify({ exercises: origExercises }),
+      },
+    });
+    expect(keys).toEqual(expect.arrayContaining(['exercises', 'blocks']));
+  });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it, afterEach } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import type { Json } from '@/types/database';
 import { richMetadataWithBlockFormat } from '@/lib/workout-factory/__fixtures__/workout-session-view-model.fixtures';
+import { isAgentFilledForDisplay, stampAgentFields } from '@/lib/task-field-provenance';
 import { TaskModalWorkoutCanvas } from '@/components/modals/task-modal/TaskModalWorkoutCanvas';
 
 describe('TaskModalWorkoutCanvas', () => {
@@ -31,6 +32,7 @@ describe('TaskModalWorkoutCanvas', () => {
     expect(screen.getByText('Goblet Squat')).toBeTruthy();
     expect(screen.getByText('sets')).toBeTruthy();
     expect(screen.getByText('reps')).toBeTruthy();
+    expect(screen.queryByTestId('task-modal-workout-block-agent')).toBeNull();
   });
 
   it('shows empty Coach prompt when metadata has no blocks or flat exercises', () => {
@@ -54,5 +56,45 @@ describe('TaskModalWorkoutCanvas', () => {
     expect(screen.getByText('Deadlift')).toBeTruthy();
     expect(screen.getByText('90s')).toBeTruthy();
     expect(screen.getByText('rpe')).toBeTruthy();
+  });
+
+  it('shows Coach chrome on block cards when blocks provenance is agent-filled', () => {
+    const base = {
+      ...richMetadataWithBlockFormat('emom'),
+      duration_min: 45,
+    };
+    const taskMetadata = stampAgentFields(base, ['blocks'], { agentSlug: 'coach' }) as Json;
+    const isAgentField = (key: string) => isAgentFilledForDisplay(taskMetadata, key, []);
+
+    render(<TaskModalWorkoutCanvas taskMetadata={taskMetadata} isAgentField={isAgentField} />);
+
+    expect(screen.getAllByTestId('task-modal-workout-block-agent').length).toBeGreaterThan(0);
+  });
+
+  it('hides Coach chrome when blocks key is live-demoted', () => {
+    const base = {
+      ...richMetadataWithBlockFormat('emom'),
+      duration_min: 45,
+    };
+    const taskMetadata = stampAgentFields(base, ['blocks'], { agentSlug: 'coach' }) as Json;
+    const isAgentField = (key: string) => isAgentFilledForDisplay(taskMetadata, key, ['blocks']);
+
+    render(<TaskModalWorkoutCanvas taskMetadata={taskMetadata} isAgentField={isAgentField} />);
+
+    expect(screen.queryByTestId('task-modal-workout-block-agent')).toBeNull();
+    expect(screen.getAllByTestId('task-modal-workout-block').length).toBeGreaterThan(0);
+  });
+
+  it('shows Coach chrome on flat Exercises block when exercises is agent-filled', () => {
+    const base = {
+      workout_type: 'Custom',
+      exercises: [{ name: 'Deadlift', sets: 3, reps: '5' }],
+    };
+    const taskMetadata = stampAgentFields(base, ['exercises'], { agentSlug: 'coach' }) as Json;
+    const isAgentField = (key: string) => isAgentFilledForDisplay(taskMetadata, key, []);
+
+    render(<TaskModalWorkoutCanvas taskMetadata={taskMetadata} isAgentField={isAgentField} />);
+
+    expect(screen.getByTestId('task-modal-workout-block-agent')).toBeTruthy();
   });
 });

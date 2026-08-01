@@ -97,6 +97,8 @@ export function detectUserDemotedProvenanceKeys(args: {
       }
       if (JSON.stringify(fields.workoutExercises) !== JSON.stringify(origFields.workoutExercises)) {
         keys.push('exercises');
+        /** Flat form edits also clear structure chrome stamped on `blocks`. */
+        keys.push('blocks');
       }
       break;
     case 'program':

@@ -27,6 +27,7 @@ Tracked against PR [#176](https://github.com/jlfassio-vibecoder/buddybubble/pull
 - **Idea + Memory Details canvases** — `TaskModalIdeaCanvas` (interactive interest vote via `metadata.votes` + `voted_by`, effort/impact/tags display, Promote → Event/Program/Class via `setItemType`); `TaskModalMemoryCanvas` (image-attachment gallery + Add photo → existing uploader). Caption stays in Moment metadata; Bubbly alias deferred.
 - **Idea vote toggle** — `.tm-vote` upvote on/off for current user; managed keys `votes` / `voted_by`; immediate `saveCoreFields` on existing tasks; primary-tinted on state; Coach provenance demote on overwrite. No vote ledger table / ranked boards.
 - **Memory people + linked event + moment reactions** — `TaskModalMemoryCanvas`: From (`linked_event` free text), Tagged people chips + avatar stack (`people`), moment reaction pills on task metadata (`reactions` with `emoji`/`count`/`reacted_by`). Reuses `ChatMessageReactionPills`; sticky Save. Caption stays in Moment; Comments `message_reactions` unchanged. No CRM picker / Event auto-link.
+- **Workout block Coach chrome** — `TaskModalWorkoutCanvas` block cards show Coach border/tag when `field_provenance` marks `blocks` / `coach_workout_outline` (or flat `exercises`) agent-filled; live demote clears chrome. Form `exercises` edits also demote `blocks`. No nested provenance writers / editable block chrome.
 - **Comments reaction pills** — `message_reactions` table + `useMessageReactions`; `.tm-react`-style pills on `ChatMessageRow` (StandardTaskChatRail + TaskModalCommentsPanel) with closed emoji set and SmilePlus popover.
 - **Coach / PCC display** — durable `tasks.metadata.field_provenance` sidecar (`by: 'agent' | 'user'`, optional `agent_slug` / `at`). Coach Edge strategy stamps keys it changes; TaskModal save + title/desc autosave demote to `by: 'user'`. UI: `TaskModalPersonaStrip` when any agent entries remain; `TaskModalField.agent` chrome on type/metadata fields via `isAgentFilledForDisplay` (Properties stay human board meta). Helpers: `src/lib/task-field-provenance.ts` (+ Edge twin). No historical backfill.
 - **Program week cards** — `TaskModalProgramWeekCards` in `TaskModalProgramFields`: `.tm-week` / `.tm-sess` Tailwind from `ProgramWeek[]` (Mon–Sun rows, muted Rest for missing days). Single-template + `duration_weeks > 1` shows “Repeats · N weeks” meta (no cloned cards). Goal / Duration / Personalize unchanged; `TaskModalField.agent` on `schedule`. Helpers: `buildProgramWeekCardModel` / `buildProgramWeekCards` in `src/lib/fitness/program-schedule.ts`. No Add-week / enrollment / child deep links.
@@ -37,14 +38,6 @@ Tracked against PR [#176](https://github.com/jlfassio-vibecoder/buddybubble/pull
 ### Remaining work (phased — one plan each)
 
 Each phase below is sized for a **single implementation plan**. Do not combine phases. Design refs: `taskmodal/forms.jsx`, `taskmodal/schemas.js`, `taskmodal/modal.css` (classes noted per phase). Keep Properties / Schedule / Cover / Attachments / Danger as they are unless a phase says otherwise. Showcase chrome stays out of scope.
-
-#### Phase G — Nested block Coach chrome (Workout canvas)
-
-- **Goal:** Use existing `field_provenance` so Workout read canvas block rows show Coach border/tag when `blocks` (or finer paths) are agent-filled.
-- **In scope:** `TaskModalWorkoutCanvas` / block cards: `agent` treatment from `isAgentFilled` / `isAgentFilledForDisplay`; no new provenance writers beyond keys Coach already stamps.
-- **Out of scope:** Editable nested block editor chrome; cue-library personal vs library chips; cover title/description (Phase H).
-- **Accept:** After Coach structural/outline write, opening Details shows Coach chrome on affected block UI; user overwrite / demote clears it.
-- **Primary refs:** `TaskModalField` / `TaskModalAgentTag`; `.tm-block` agent treatment in handoff CSS if present.
 
 #### Phase H — Cover title & description Coach chrome
 

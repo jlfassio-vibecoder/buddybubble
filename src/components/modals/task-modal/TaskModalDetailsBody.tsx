@@ -396,7 +396,9 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
         />
       ) : null}
 
-      {itemType === 'workout' ? <TaskModalWorkoutCanvas taskMetadata={taskMetadata} /> : null}
+      {itemType === 'workout' ? (
+        <TaskModalWorkoutCanvas taskMetadata={taskMetadata} isAgentField={isAgentField} />
+      ) : null}
 
       {itemType === 'idea' ? (
         <TaskModalIdeaCanvas
