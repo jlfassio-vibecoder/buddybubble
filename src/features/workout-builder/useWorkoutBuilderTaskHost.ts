@@ -7,7 +7,6 @@ import type { TaskPriority } from '@/lib/task-priority';
 import { normalizeTaskPriority } from '@/lib/task-priority';
 import {
   buildTaskMetadataPayload,
-  emptyTaskMetadataFormFields,
   metadataFieldsFromParsed,
   parseTaskMetadata,
 } from '@/lib/item-metadata';
@@ -144,7 +143,7 @@ export function useWorkoutBuilderTaskHost({
       buildTaskMetadataPayload(
         'workout',
         {
-          ...emptyTaskMetadataFormFields(),
+          ...metadataFieldsFromParsed(metadata),
           workoutType,
           workoutDurationMin,
           workoutExercises,

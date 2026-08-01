@@ -565,6 +565,8 @@ export function TaskModal({
   const [ideaImpact, setIdeaImpact] = useState('');
   const [ideaTags, setIdeaTags] = useState<string[]>([]);
   const [ideaVoteBusy, setIdeaVoteBusy] = useState(false);
+  /** Optimistic vote snapshot awaiting server/realtime catch-up; blocks silent clobber. */
+  const pendingIdeaVoteRef = useRef<{ votes: number; votedBy: string[] } | null>(null);
   const [cardCoverAiHint, setCardCoverAiHint] = useState('');
   /** Empty string = server default scene by `item_type`. */
   const [cardCoverPresetId, setCardCoverPresetId] = useState('');
@@ -1000,8 +1002,21 @@ export function TaskModal({
       setProgramSchedule(mf.programSchedule);
       setProgramSourceTitle(mf.programSourceTitle);
       setCardCoverPath(mf.cardCoverPath);
-      setIdeaVotes(mf.ideaVotes);
-      setIdeaVotedBy(mf.ideaVotedBy);
+      {
+        const pending = pendingIdeaVoteRef.current;
+        const pendingMatches =
+          pending != null &&
+          pending.votes === mf.ideaVotes &&
+          pending.votedBy.length === mf.ideaVotedBy.length &&
+          [...pending.votedBy].sort().join('\0') === [...mf.ideaVotedBy].sort().join('\0');
+        // Keep optimistic votes when silent refresh would clobber an in-flight/newer toggle.
+        const preservePendingVotes = Boolean(pending && !pendingMatches && silent);
+        if (!preservePendingVotes) {
+          if (pendingMatches || (pending && !silent)) pendingIdeaVoteRef.current = null;
+          setIdeaVotes(mf.ideaVotes);
+          setIdeaVotedBy(mf.ideaVotedBy);
+        }
+      }
       setIdeaEffort(mf.ideaEffort);
       setIdeaImpact(mf.ideaImpact);
       setIdeaTags(mf.ideaTags);
@@ -1054,6 +1069,7 @@ export function TaskModal({
     setEventGoing('');
     setEventCapacity('');
     setEventGoingPeople([]);
+    setEventCost('');
     setExperienceSeason('');
     setExperienceEndDate('');
     setExperienceHighlights([]);
@@ -1067,6 +1083,7 @@ export function TaskModal({
     setMemoryCaption('');
     setMemoryPeople([]);
     setMemoryLinkedEvent('');
+    setMemoryLocation('');
     setMemoryReactions([]);
     setWorkoutType('');
     setWorkoutDurationMin(
@@ -1077,16 +1094,26 @@ export function TaskModal({
         : '',
     );
     setWorkoutExercises([]);
+    setWorkoutTargetRpe('');
+    setWorkoutLogSessionRpe('');
+    setWorkoutLogCompletion('');
+    setWorkoutLogMood('');
     setWorkoutUnitSystem('metric');
     resetWorkoutAiUi();
     setProgramGoal('');
     setProgramDurationWeeks('');
+    setProgramDaysPerWeek('');
+    setProgramLevel('');
     setProgramCurrentWeek(0);
     setProgramSchedule([]);
     setProgramSourceTitle('');
     setCardCoverPath('');
     setIdeaVotes(0);
     setIdeaVotedBy([]);
+    setIdeaEffort('');
+    setIdeaImpact('');
+    setIdeaTags([]);
+    pendingIdeaVoteRef.current = null;
     setIdeaVoteBusy(false);
     setCardCoverAiHint('');
     setCardCoverPresetId('');
@@ -1587,6 +1614,7 @@ export function TaskModal({
     if (!canWrite || !uid || ideaVoteBusy) return;
     const prevVotes = ideaVotes;
     const prevVotedBy = ideaVotedBy;
+    const prevMetadata = metadata;
     const baseMeta = {
       ...(parseTaskMetadata(metadata) as Record<string, unknown>),
       votes: ideaVotes,
@@ -1603,14 +1631,24 @@ export function TaskModal({
     setIdeaVotedBy(next.votedBy);
     setMetadata(demoted);
     if (!taskId) return;
+    // Copilot suggestion ignored: multi-user concurrent votes need an atomic merge RPC; metadata replace remains last-write-wins until a vote ledger ships.
+    pendingIdeaVoteRef.current = { votes: next.votes, votedBy: next.votedBy };
     setIdeaVoteBusy(true);
     try {
-      const ok = await handleSaveCoreFields(demoted, { metadataMerge: 'full' });
-      if (!ok) {
+      const supabase = createClient();
+      const { error: uErr } = await supabase
+        .from('tasks')
+        .update({ metadata: demoted as TaskRow['metadata'] })
+        .eq('id', taskId);
+      if (uErr) {
+        pendingIdeaVoteRef.current = null;
         setIdeaVotes(prevVotes);
         setIdeaVotedBy(prevVotedBy);
-        setMetadata(metadata);
+        setMetadata(prevMetadata);
+        setError(formatUserFacingError(uErr));
+        return;
       }
+      patchOriginalMetadataJson(JSON.stringify(demoted));
     } finally {
       setIdeaVoteBusy(false);
     }
@@ -1623,7 +1661,7 @@ export function TaskModal({
     ideaVotedBy,
     taskId,
     formFieldsForProvenance,
-    handleSaveCoreFields,
+    patchOriginalMetadataJson,
     setMetadata,
   ]);
 
