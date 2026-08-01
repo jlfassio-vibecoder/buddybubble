@@ -1,16 +1,14 @@
 'use client';
 
-import { useMemo } from 'react';
 import { ChevronDown, Sparkles } from 'lucide-react';
 import { WorkoutExercisesEditor } from '@/components/fitness/workout-exercises-editor';
-import { WorkoutLogReadSummary } from '@/components/fitness/workout-block-renderer';
 import { PremiumGate } from '@/components/subscription/premium-gate';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { WORKOUT_FACTORY_CHAIN_MESSAGES } from '@/lib/workout-factory/api-client';
 import { metadataFieldsFromParsed, type WorkoutExercise } from '@/lib/item-metadata';
 import type { WorkoutTemplate } from '@/hooks/use-workout-templates';
-import type { ItemType, Json, UnitSystem } from '@/types/database';
+import type { ItemType, UnitSystem } from '@/types/database';
 import { cn } from '@/lib/utils';
 import type { WorkoutIntakeWizardData } from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
 import { TaskModalField } from '@/components/modals/task-modal/TaskModalSection';
@@ -34,11 +32,13 @@ export type TaskModalWorkoutFieldsProps = {
   onWorkoutExercisesChange: (next: WorkoutExercise[]) => void;
   workoutUnitSystem: UnitSystem;
   autoEditFirstRow: boolean;
-  /** Full `tasks.metadata` for workout_log read (preserves ai_workout_factory). */
-  taskMetadata?: Json;
   isAgentField?: (key: string) => boolean;
 };
 
+/**
+ * Workout (plan) Details fields: Type/Duration, templates, AI, exercises editor.
+ * `workout_log` Details are owned by `TaskModalWorkoutLogCanvas` (no duplicate chrome here).
+ */
 export function TaskModalWorkoutFields({
   itemType,
   canWrite,
@@ -58,29 +58,16 @@ export function TaskModalWorkoutFields({
   onWorkoutExercisesChange,
   workoutUnitSystem,
   autoEditFirstRow,
-  taskMetadata = {},
   isAgentField,
 }: TaskModalWorkoutFieldsProps) {
+  if (itemType === 'workout_log') return null;
+
   const agent = (key: string) => Boolean(isAgentField?.(key));
-  const logReadMetadata = useMemo(() => {
-    const base =
-      typeof taskMetadata === 'object' && taskMetadata !== null && !Array.isArray(taskMetadata)
-        ? taskMetadata
-        : {};
-    const durationMins = parseInt(workoutDurationMin, 10);
-    return {
-      ...base,
-      exercises: workoutExercises,
-      ...(!Number.isNaN(durationMins) && durationMins > 0 ? { duration_min: durationMins } : {}),
-    };
-  }, [taskMetadata, workoutExercises, workoutDurationMin]);
 
   return (
     <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-medium text-muted-foreground">
-          {itemType === 'workout_log' ? 'Workout log' : 'Workout details'}
-        </p>
+        <p className="text-xs font-medium text-muted-foreground">Workout details</p>
         <div className="flex shrink-0 items-center gap-1.5">
           {canWrite && (
             <PremiumGate feature="ai" inline>
@@ -176,25 +163,15 @@ export function TaskModalWorkoutFields({
           />
         </TaskModalField>
       </div>
-      {itemType === 'workout_log' ? (
-        <WorkoutLogReadSummary
-          metadata={logReadMetadata}
-          taskId={taskId}
-          density="full"
-          unitSystem={workoutUnitSystem}
-          data-testid="task-modal-workout-log-read"
-        />
-      ) : (
-        <WorkoutExercisesEditor
-          key={taskId ?? 'new-task'}
-          exercises={workoutExercises}
-          onChange={onWorkoutExercisesChange}
-          canWrite={canWrite}
-          workoutUnitSystem={workoutUnitSystem}
-          idPrefix="task-ex"
-          autoEditFirstRow={autoEditFirstRow}
-        />
-      )}
+      <WorkoutExercisesEditor
+        key={taskId ?? 'new-task'}
+        exercises={workoutExercises}
+        onChange={onWorkoutExercisesChange}
+        canWrite={canWrite}
+        workoutUnitSystem={workoutUnitSystem}
+        idPrefix="task-ex"
+        autoEditFirstRow={autoEditFirstRow}
+      />
     </div>
   );
 }

@@ -37,9 +37,12 @@ import { buildActiveSessionUrl } from '@/lib/active-session/build-active-session
 import { cn } from '@/lib/utils';
 import {
   isWorkoutLogInProgress,
+  readWorkoutLogSourceTaskId,
   WORKOUT_LOG_IN_PROGRESS_STATUS,
   workoutLogInProgressStatusSelectOption,
 } from '@/lib/workout-log-task-state';
+import { isActiveSessionRouteEnabled } from '@/lib/feature-flags/activeSessionRoute';
+import { WorkoutPlayer } from '@/components/fitness/WorkoutPlayer';
 import { WorkoutLogInProgressBadge } from '@/components/tasks/WorkoutLogInProgressBadge';
 import { useBoardColumnDefs } from '@/hooks/use-board-columns';
 import { useTaskBubbleUps } from '@/hooks/use-task-bubble-ups';
@@ -326,6 +329,8 @@ export function TaskModal({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [continueSessionPlayerOpen, setContinueSessionPlayerOpen] = useState(false);
+  const [continueSessionBusy, setContinueSessionBusy] = useState(false);
   const isCreateMode = open && !taskId && !!bubbleId;
 
   const [title, setTitle] = useState('');
@@ -1550,6 +1555,13 @@ export function TaskModal({
 
   useEffect(() => {
     if (!open) {
+      setContinueSessionPlayerOpen(false);
+      setContinueSessionBusy(false);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
       setOutlineRevision(1);
       outlineDraftFingerprintRef.current = null;
       skipOutlineRevisionBumpRef.current = true;
@@ -1676,6 +1688,21 @@ export function TaskModal({
     }
     activeSessionLaunch.handleLaunchClick();
   }, [hasWorkoutFactory, preflightCompletedThisOpen, activeSessionLaunch.handleLaunchClick]);
+
+  const handleContinueInProgressWorkoutLog = useCallback(() => {
+    const sourceId = readWorkoutLogSourceTaskId(metadata);
+    if (!sourceId) {
+      toast.error('This log is missing a link to its workout session.');
+      return;
+    }
+    if (isActiveSessionRouteEnabled()) {
+      setContinueSessionBusy(true);
+      router.push(buildActiveSessionUrl(workspaceId, sourceId, { from: 'modal' }));
+      onOpenChange(false);
+      return;
+    }
+    setContinueSessionPlayerOpen(true);
+  }, [metadata, workspaceId, router, onOpenChange]);
 
   const activeSessionLaunchControlProps = useMemo(() => {
     if (activeSessionLaunch.launchUi.mode === 'hidden') return null;
@@ -2382,6 +2409,8 @@ export function TaskModal({
       },
       canPromoteToClass: canManageClasses,
       demotedProvenanceKeys: userDemotedProvenanceKeys,
+      onContinueInProgressWorkoutLog: handleContinueInProgressWorkoutLog,
+      continueInProgressWorkoutLogBusy: continueSessionBusy,
     }),
     [
       title,
@@ -2464,6 +2493,8 @@ export function TaskModal({
       hasWorkoutFactory,
       metadata,
       userDemotedProvenanceKeys,
+      handleContinueInProgressWorkoutLog,
+      continueSessionBusy,
     ],
   );
 
@@ -3321,6 +3352,24 @@ export function TaskModal({
           workspaceId={workspaceId}
           capacity={classRosterCapacity}
           currentUserId={myProfile?.id ?? null}
+        />
+      ) : null}
+      {continueSessionPlayerOpen && bubbleId ? (
+        <WorkoutPlayer
+          open
+          onClose={() => setContinueSessionPlayerOpen(false)}
+          workspaceId={workspaceId}
+          workoutTitle={title}
+          metadata={metadata}
+          bubbleId={bubbleId}
+          sourceTaskId={readWorkoutLogSourceTaskId(metadata)}
+          sessionId={null}
+          class_instance_id={null}
+          isMemberView
+          canPostMessages
+          onComplete={() => {
+            setContinueSessionPlayerOpen(false);
+          }}
         />
       ) : null}
     </div>

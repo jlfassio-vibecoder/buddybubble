@@ -30,18 +30,11 @@ Tracked against PR [#176](https://github.com/jlfassio-vibecoder/buddybubble/pull
 - **Program week cards** — `TaskModalProgramWeekCards` in `TaskModalProgramFields`: `.tm-week` / `.tm-sess` Tailwind from `ProgramWeek[]` (Mon–Sun rows, muted Rest for missing days). Single-template + `duration_weeks > 1` shows “Repeats · N weeks” meta (no cloned cards). Goal / Duration / Personalize unchanged; `TaskModalField.agent` on `schedule`. Helpers: `buildProgramWeekCardModel` / `buildProgramWeekCards` in `src/lib/fitness/program-schedule.ts`. No Add-week / enrollment / child deep links.
 - **Event bring tags + RSVP (metadata-only)** — `TaskModalEventCanvas`: Who’s going card (going / capacity / progress / `going_people` initials stack) + What to bring chips. Persisted via managed metadata keys `bring`, `going`, `capacity`, `going_people` in `item-metadata`. Location / Meeting link unchanged. **No event enrollment table / “I’m going” CTA** this pass (Class RSVP remains the only real enrollment backend). Provenance demote + `TaskModalField.agent` on the new keys.
 - **Experience highlights / includes / good_for** — `TaskModalExperienceCanvas`: icon-led lists + good_for chips + optional location / duration / price / group min–max. Managed keys `highlights`, `includes`, `good_for`, `price`, `group_min`, `group_max` (+ experience writes of `location` / `duration_min`). Shared `TaskModalChipListEditor` / `TaskModalStringListEditor`. Experience span (season / start / end) unchanged; Schedule still omitted. No booking / maps / enrollment.
+- **Workout log session canvas** — `TaskModalWorkoutLogCanvas`: performed on / start time echoes from `scheduledOn` / `scheduledTime`, 3-col stats (Duration / Session RPE / Completion), light-edit Type + Duration, embedded `WorkoutLogReadSummary`. Helpers in `workout-log-session-stats.ts`. Optional display-only PR chip when exercise `pr === true`. No player / PR detection / parallel `log[]` model; Schedule remains the date/time editor.
 
 ### Remaining work (phased — one plan each)
 
 Each phase below is sized for a **single implementation plan**. Do not combine phases. Design refs: `taskmodal/forms.jsx`, `taskmodal/schemas.js`, `taskmodal/modal.css` (classes noted per phase). Keep Properties / Schedule / Cover / Attachments / Danger as they are unless a phase says otherwise. Showcase chrome stays out of scope.
-
-#### Phase D — Workout log session canvas
-
-- **Goal:** Handoff-style Workout log Details body: session stat tiles + logged results with PR callouts.
-- **In scope:** Read canvas (and light edit if fields already exist) for performed date/time, `actual_duration_min` / `session_rpe` / `completion` / mood as `.tm-stats`, and log rows with optional `pr` badge. Prefer existing `WorkoutLogReadSummary` / metadata rather than inventing a parallel model. Keep structure builder / live player out of scope for this phase.
-- **Out of scope:** Rebuilding the live WorkoutPlayer; new PR detection algorithms; backfill of historical logs.
-- **Accept:** `workout_log` Details shows session stats + PR styling when metadata has those fields; graceful empty state otherwise.
-- **Primary refs:** `forms.jsx` `WorkoutLogBody`; workout_log record in `schemas.js`; `.tm-stats`, log/PR treatment in prototype CSS.
 
 #### Phase E — Idea vote toggle
 

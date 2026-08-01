@@ -77,6 +77,8 @@ export type WorkoutExercise = {
   id?: string;
   /** Per-set performance data recorded by the workout player (workout_log only). */
   set_logs?: SetLogEntry[];
+  /** Optional display-only PR flag on a logged exercise (no detection this pass). */
+  pr?: boolean;
 };
 
 /** Single day within a program week. */

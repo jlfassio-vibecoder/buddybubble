@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isWorkoutLogInProgress,
+  readWorkoutLogSourceTaskId,
   WORKOUT_LOG_IN_PROGRESS_LABEL,
   WORKOUT_LOG_IN_PROGRESS_STATUS,
   workoutLogInProgressStatusSelectOption,
@@ -28,5 +29,23 @@ describe('workout-log-task-state', () => {
       value: WORKOUT_LOG_IN_PROGRESS_STATUS,
       label: WORKOUT_LOG_IN_PROGRESS_LABEL,
     });
+  });
+});
+
+describe('readWorkoutLogSourceTaskId', () => {
+  it('returns null when missing or empty', () => {
+    expect(readWorkoutLogSourceTaskId({})).toBeNull();
+    expect(readWorkoutLogSourceTaskId({ source_task_id: '' })).toBeNull();
+    expect(readWorkoutLogSourceTaskId({ source_task_id: '   ' })).toBeNull();
+    expect(readWorkoutLogSourceTaskId({ source_task_id: 123 })).toBeNull();
+    expect(readWorkoutLogSourceTaskId(null)).toBeNull();
+  });
+
+  it('returns trimmed source workout task id', () => {
+    expect(
+      readWorkoutLogSourceTaskId({
+        source_task_id: ' 11111111-1111-1111-1111-111111111111 ',
+      }),
+    ).toBe('11111111-1111-1111-1111-111111111111');
   });
 });

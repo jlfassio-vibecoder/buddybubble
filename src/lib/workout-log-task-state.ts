@@ -1,4 +1,5 @@
 import { normalizeItemType } from '@/lib/item-types';
+import { parseTaskMetadata } from '@/lib/parse-task-metadata';
 import { cn } from '@/lib/utils';
 
 export const WORKOUT_LOG_IN_PROGRESS_STATUS = 'in_progress' as const;
@@ -14,6 +15,15 @@ export function isWorkoutLogInProgress(task: WorkoutLogTaskLike): boolean {
     normalizeItemType(task.item_type) === 'workout_log' &&
     task.status === WORKOUT_LOG_IN_PROGRESS_STATUS
   );
+}
+
+/** Source workout `tasks.id` stored on draft/completed log metadata. */
+export function readWorkoutLogSourceTaskId(meta: unknown): string | null {
+  const o = parseTaskMetadata(meta ?? {}) as Record<string, unknown>;
+  const raw = o.source_task_id;
+  if (typeof raw !== 'string') return null;
+  const id = raw.trim();
+  return id.length > 0 ? id : null;
 }
 
 export function workoutLogInProgressStatusSelectOption(): {

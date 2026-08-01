@@ -107,7 +107,7 @@ describe('ActiveSessionShell exit flows', () => {
   });
 
   describe('finish', () => {
-    it('finish completes on Workout Logs bubble and replaces to workspace home', async () => {
+    it('finish completes on Workout Logs bubble and replaces with open_task handoff', async () => {
       const capture = { context: null as ActiveSessionContext | null };
       let resolveFinish: (value: FinishWorkoutResult) => void = () => {};
       const finishPromise = new Promise<FinishWorkoutResult>((resolve) => {
@@ -141,7 +141,9 @@ describe('ActiveSessionShell exit flows', () => {
       await flushPromises();
 
       await waitFor(() => {
-        expect(router.replace).toHaveBeenCalledWith(`/app/${TEST_WORKSPACE_ID}`);
+        expect(router.replace).toHaveBeenCalledWith(
+          `/app/${TEST_WORKSPACE_ID}?open_task=existing-log-99`,
+        );
       });
 
       expect(capture.context?.targetBubbleId).toBe(task.target_bubble_id);
@@ -239,7 +241,9 @@ describe('ActiveSessionShell exit flows', () => {
       await flushPromises();
 
       await waitFor(() => {
-        expect(router.replace).toHaveBeenCalledWith(`/app/${TEST_WORKSPACE_ID}`);
+        expect(router.replace).toHaveBeenCalledWith(
+          `/app/${TEST_WORKSPACE_ID}?open_task=log-draft-001`,
+        );
       });
       expect(router.replace).toHaveBeenCalledTimes(1);
     });
