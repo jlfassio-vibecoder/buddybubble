@@ -125,6 +125,10 @@ const MANAGED_METADATA_KEYS = [
   'program_source_title',
   /** Supabase Storage path in `task-attachments` for Kanban/chat card header image. */
   'card_cover_path',
+  /** Idea: denormalized interest vote count (`metadata.votes`). */
+  'votes',
+  /** Idea: user ids who voted (`metadata.voted_by`). */
+  'voted_by',
 ] as const;
 
 export type TaskMetadataFormFields = {
@@ -176,6 +180,10 @@ export type TaskMetadataFormFields = {
   programSourceTitle: string;
   /** Storage path for optional card cover image (all item types). */
   cardCoverPath: string;
+  /** Idea: interest vote count (`metadata.votes`). */
+  ideaVotes: number;
+  /** Idea: user ids who voted (`metadata.voted_by`). */
+  ideaVotedBy: string[];
 };
 
 /** Normalize a string[] metadata field (trim, drop empties). */
@@ -256,12 +264,21 @@ export function metadataFieldsFromParsed(meta: unknown): TaskMetadataFormFields 
     programSchedule: asProgramSchedule(o.schedule),
     programSourceTitle: str(o.program_source_title),
     cardCoverPath: str(o.card_cover_path),
+    ideaVotedBy: asStringList(o.voted_by),
+    ideaVotes: (() => {
+      const votedBy = asStringList(o.voted_by);
+      const raw =
+        o.votes != null && Number.isFinite(Number(o.votes)) && Number(o.votes) >= 0
+          ? Math.floor(Number(o.votes))
+          : 0;
+      return votedBy.length > 0 ? Math.max(raw, votedBy.length) : raw;
+    })(),
   };
 }
 
 /**
  * Merge type-specific fields into metadata; strips managed keys first so switching `item_type`
- * does not leave stale keys. Preserves other keys (e.g. future `votes` on ideas).
+ * does not leave stale keys. Preserves unmanaged keys on the base object.
  */
 export function buildTaskMetadataPayload(
   itemType: ItemType,
@@ -274,6 +291,11 @@ export function buildTaskMetadataPayload(
   }
   const t = (s: string) => s.trim();
   switch (itemType) {
+    case 'idea': {
+      if (fields.ideaVotedBy.length > 0) o.voted_by = fields.ideaVotedBy;
+      if (fields.ideaVotes > 0) o.votes = fields.ideaVotes;
+      break;
+    }
     case 'event': {
       if (t(fields.eventLocation)) o.location = t(fields.eventLocation);
       if (t(fields.eventUrl)) o.url = t(fields.eventUrl);

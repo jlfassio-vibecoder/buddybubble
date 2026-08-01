@@ -155,6 +155,13 @@ export type TaskModalDetailsBodyProps = {
   onArchiveTask: () => void;
   onHardDeleteTask?: () => void | Promise<void>;
   taskMetadata?: Json;
+  /** Idea: denormalized vote count (`metadata.votes`). */
+  ideaVotes?: number;
+  /** Idea: voter user ids (`metadata.voted_by`). */
+  ideaVotedBy?: string[];
+  currentUserId?: string | null;
+  ideaVoteBusy?: boolean;
+  onToggleIdeaVote?: () => void;
   /** Idea canvas: graduate to event / program / class via existing type change. */
   onPromoteItemType?: (next: PromoteTargetType) => void;
   /** When false, Idea “Promote to Class” is disabled (matches class item-type gate). */
@@ -274,6 +281,11 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     onArchiveTask,
     onHardDeleteTask,
     taskMetadata,
+    ideaVotes = 0,
+    ideaVotedBy = [],
+    currentUserId = null,
+    ideaVoteBusy = false,
+    onToggleIdeaVote,
     onPromoteItemType,
     canPromoteToClass = true,
     demotedProvenanceKeys = [],
@@ -377,6 +389,11 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
       {itemType === 'idea' ? (
         <TaskModalIdeaCanvas
           taskMetadata={taskMetadata}
+          ideaVotes={ideaVotes}
+          ideaVotedBy={ideaVotedBy}
+          currentUserId={currentUserId}
+          voteBusy={ideaVoteBusy}
+          onToggleVote={onToggleIdeaVote}
           canWrite={canWrite}
           canPromoteToClass={canPromoteToClass}
           onPromoteItemType={onPromoteItemType}

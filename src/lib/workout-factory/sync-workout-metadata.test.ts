@@ -411,6 +411,8 @@ describe('finalizeWorkoutMetadataForSave', () => {
     programSchedule: [],
     programSourceTitle: '',
     cardCoverPath: '',
+    ideaVotes: 0,
+    ideaVotedBy: [],
   });
 
   it('refreshes exercises from factory when form matches derived', () => {

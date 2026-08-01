@@ -82,6 +82,7 @@ import {
 } from '@/lib/item-metadata';
 import { stampUserFields } from '@/lib/task-field-provenance';
 import { detectUserDemotedProvenanceKeys } from '@/lib/task-field-provenance-demote';
+import { toggleIdeaVote } from '@/lib/idea-vote';
 import { useWorkoutTemplates } from '@/hooks/use-workout-templates';
 import { getExercisesFromWorkout } from '@/lib/workout-factory/program-schedule-utils';
 import { scheduledTimeToInputValue } from '@/lib/task-scheduled-time';
@@ -545,6 +546,10 @@ export function TaskModal({
   const [programSourceTitle, setProgramSourceTitle] = useState('');
   /** Storage path for optional Kanban/chat card header image (`metadata.card_cover_path`). */
   const [cardCoverPath, setCardCoverPath] = useState('');
+  /** Idea: interest votes (`metadata.votes` / `metadata.voted_by`). */
+  const [ideaVotes, setIdeaVotes] = useState(0);
+  const [ideaVotedBy, setIdeaVotedBy] = useState<string[]>([]);
+  const [ideaVoteBusy, setIdeaVoteBusy] = useState(false);
   const [cardCoverAiHint, setCardCoverAiHint] = useState('');
   /** Empty string = server default scene by `item_type`. */
   const [cardCoverPresetId, setCardCoverPresetId] = useState('');
@@ -741,6 +746,8 @@ export function TaskModal({
       programSchedule,
       programSourceTitle,
       cardCoverPath,
+      ideaVotes,
+      ideaVotedBy,
     }),
     [
       eventLocation,
@@ -769,6 +776,8 @@ export function TaskModal({
       programSchedule,
       programSourceTitle,
       cardCoverPath,
+      ideaVotes,
+      ideaVotedBy,
     ],
   );
 
@@ -930,6 +939,8 @@ export function TaskModal({
       setProgramSchedule(mf.programSchedule);
       setProgramSourceTitle(mf.programSourceTitle);
       setCardCoverPath(mf.cardCoverPath);
+      setIdeaVotes(mf.ideaVotes);
+      setIdeaVotedBy(mf.ideaVotedBy);
       hydrateFromTaskRow(row);
       const vis = normalizeTaskVisibility((row as TaskRow).visibility);
       setVisibility(vis);
@@ -1007,6 +1018,9 @@ export function TaskModal({
     setProgramSchedule([]);
     setProgramSourceTitle('');
     setCardCoverPath('');
+    setIdeaVotes(0);
+    setIdeaVotedBy([]);
+    setIdeaVoteBusy(false);
     setCardCoverAiHint('');
     setCardCoverPresetId('');
     resetCardCoverAi();
@@ -1394,6 +1408,8 @@ export function TaskModal({
       setProgramSchedule(mf.programSchedule);
       setProgramSourceTitle(mf.programSourceTitle);
       setCardCoverPath(mf.cardCoverPath);
+      setIdeaVotes(mf.ideaVotes);
+      setIdeaVotedBy(mf.ideaVotedBy);
       setVisibility(orig.visibility);
       setAssignedTo(orig.assignedTo);
       setLiveStreamEnabled(Boolean(orig.liveStreamEnabled));
@@ -1482,6 +1498,51 @@ export function TaskModal({
     },
     [saveCoreFields, isOptimisticDraftProp, onOptimisticDraftConsumed],
   );
+
+  const handleToggleIdeaVote = useCallback(async () => {
+    const uid = myProfile?.id;
+    if (!canWrite || !uid || ideaVoteBusy) return;
+    const prevVotes = ideaVotes;
+    const prevVotedBy = ideaVotedBy;
+    const baseMeta = {
+      ...(parseTaskMetadata(metadata) as Record<string, unknown>),
+      votes: ideaVotes,
+      voted_by: ideaVotedBy,
+    };
+    const next = toggleIdeaVote(baseMeta, uid);
+    const built = buildTaskMetadataPayload(
+      'idea',
+      { ...formFieldsForProvenance, ideaVotes: next.votes, ideaVotedBy: next.votedBy },
+      metadata,
+    );
+    const demoted = stampUserFields(built, ['votes', 'voted_by']) as typeof built;
+    setIdeaVotes(next.votes);
+    setIdeaVotedBy(next.votedBy);
+    setMetadata(demoted);
+    if (!taskId) return;
+    setIdeaVoteBusy(true);
+    try {
+      const ok = await handleSaveCoreFields(demoted, { metadataMerge: 'full' });
+      if (!ok) {
+        setIdeaVotes(prevVotes);
+        setIdeaVotedBy(prevVotedBy);
+        setMetadata(metadata);
+      }
+    } finally {
+      setIdeaVoteBusy(false);
+    }
+  }, [
+    canWrite,
+    myProfile?.id,
+    ideaVoteBusy,
+    metadata,
+    ideaVotes,
+    ideaVotedBy,
+    taskId,
+    formFieldsForProvenance,
+    handleSaveCoreFields,
+    setMetadata,
+  ]);
 
   /** Apply canvas edits: persist first, then commit local state — keep edit/dirty if save fails. */
   const handleWorkoutViewerApplyAndSave = useCallback(
@@ -2088,6 +2149,8 @@ export function TaskModal({
           programSchedule,
           programSourceTitle,
           cardCoverPath: path,
+          ideaVotes,
+          ideaVotedBy,
         },
         metadata,
       ),
@@ -2147,6 +2210,8 @@ export function TaskModal({
           programSchedule,
           programSourceTitle,
           cardCoverPath: '',
+          ideaVotes,
+          ideaVotedBy,
         },
         metadata,
       ),
@@ -2473,6 +2538,11 @@ export function TaskModal({
       onArchiveTask: archiveTask,
       onHardDeleteTask: handleModalHardDelete,
       taskMetadata: metadata,
+      ideaVotes,
+      ideaVotedBy,
+      currentUserId: myProfile?.id ?? null,
+      ideaVoteBusy,
+      onToggleIdeaVote: () => void handleToggleIdeaVote(),
       onPromoteItemType: (next: 'event' | 'program' | 'class') => {
         if (next === 'class' && !canManageClasses) return;
         setItemType(next);
@@ -2562,6 +2632,11 @@ export function TaskModal({
       handleOpenWorkoutViewerFromDetails,
       hasWorkoutFactory,
       metadata,
+      ideaVotes,
+      ideaVotedBy,
+      myProfile?.id,
+      ideaVoteBusy,
+      handleToggleIdeaVote,
       userDemotedProvenanceKeys,
       handleContinueInProgressWorkoutLog,
       continueSessionBusy,

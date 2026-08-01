@@ -7,18 +7,23 @@ describe('TaskModalIdeaCanvas', () => {
     cleanup();
   });
 
-  it('renders vote count from metadata and promote targets', () => {
+  it('renders vote count from form props and promote targets', () => {
     const onPromote = vi.fn();
     render(
       <TaskModalIdeaCanvas
-        taskMetadata={{ votes: 4, effort: 'Low', impact: 'High', tags: ['community'] }}
+        taskMetadata={{ effort: 'Low', impact: 'High', tags: ['community'] }}
+        ideaVotes={4}
+        ideaVotedBy={[]}
+        currentUserId="u1"
         canWrite
+        onToggleVote={() => undefined}
         onPromoteItemType={onPromote}
       />,
     );
 
     expect(screen.getByTestId('task-modal-idea-canvas')).toBeTruthy();
     expect(screen.getByTestId('task-modal-idea-vote').textContent).toMatch(/4/);
+    expect(screen.getByText('Vote to show interest')).toBeTruthy();
     expect(screen.getByTestId('task-modal-idea-effort').textContent).toBe('Low');
     expect(screen.getByTestId('task-modal-idea-impact').textContent).toBe('High');
     expect(screen.getByText('community')).toBeTruthy();
@@ -27,12 +32,42 @@ describe('TaskModalIdeaCanvas', () => {
     expect(onPromote).toHaveBeenCalledWith('event');
   });
 
-  it('defaults votes to 0 and shows empty placeholders', () => {
-    render(<TaskModalIdeaCanvas taskMetadata={{}} canWrite={false} />);
+  it('shows on state and calls toggle when voted', () => {
+    const onToggle = vi.fn();
+    render(
+      <TaskModalIdeaCanvas
+        taskMetadata={{}}
+        ideaVotes={2}
+        ideaVotedBy={['u1']}
+        currentUserId="u1"
+        canWrite
+        onToggleVote={onToggle}
+      />,
+    );
 
-    expect(screen.getByTestId('task-modal-idea-vote').textContent).toMatch(/0/);
-    expect(screen.getByTestId('task-modal-idea-effort').textContent).toBe('—');
+    const voteBtn = screen.getByTestId('task-modal-idea-vote');
+    expect(voteBtn.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText("You're in")).toBeTruthy();
+    fireEvent.click(voteBtn);
+    expect(onToggle).toHaveBeenCalledTimes(1);
+  });
+
+  it('disables vote without write or user', () => {
+    const onToggle = vi.fn();
+    render(
+      <TaskModalIdeaCanvas
+        taskMetadata={{ votes: 0 }}
+        ideaVotes={0}
+        canWrite={false}
+        currentUserId={null}
+        onToggleVote={onToggle}
+      />,
+    );
+
+    const voteBtn = screen.getByTestId('task-modal-idea-vote');
+    expect((voteBtn as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(voteBtn);
+    expect(onToggle).not.toHaveBeenCalled();
     expect(screen.getByTestId('task-modal-idea-tags-empty')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Promote to Class/i })).toBeTruthy();
   });
 });

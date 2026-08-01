@@ -67,6 +67,8 @@ function emptyMetadataFormFields(workoutDurationMin: string) {
     programSchedule: [] as ProgramWeek[],
     programSourceTitle: '',
     cardCoverPath: '',
+    ideaVotes: 0,
+    ideaVotedBy: [] as string[],
   };
 }
 

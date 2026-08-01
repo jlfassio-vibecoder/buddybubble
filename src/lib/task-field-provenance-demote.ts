@@ -71,6 +71,12 @@ export function detectUserDemotedProvenanceKeys(args: {
       if (changed(fields.experienceGroupMin, origFields.experienceGroupMin)) keys.push('group_min');
       if (changed(fields.experienceGroupMax, origFields.experienceGroupMax)) keys.push('group_max');
       break;
+    case 'idea':
+      if (fields.ideaVotes !== origFields.ideaVotes) keys.push('votes');
+      if (JSON.stringify(fields.ideaVotedBy) !== JSON.stringify(origFields.ideaVotedBy)) {
+        keys.push('voted_by');
+      }
+      break;
     case 'memory':
       if (changed(fields.memoryCaption, origFields.memoryCaption)) keys.push('caption');
       break;

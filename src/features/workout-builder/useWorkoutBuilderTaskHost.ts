@@ -169,6 +169,8 @@ export function useWorkoutBuilderTaskHost({
           programSchedule: [],
           programSourceTitle: '',
           cardCoverPath,
+          ideaVotes: 0,
+          ideaVotedBy: [],
         },
         metadata,
       ),

@@ -41,6 +41,8 @@ export const TASK_MODAL_PROVENANCE_SCALAR_KEYS = [
   'schedule',
   'program_source_title',
   'card_cover_path',
+  'votes',
+  'voted_by',
   'blocks',
   'coach_workout_outline',
   'ai_workout_factory',

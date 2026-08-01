@@ -187,6 +187,8 @@ export function useTaskProgramPersonalization({
           programSchedule,
           programSourceTitle: baseTitle,
           cardCoverPath,
+          ideaVotes: 0,
+          ideaVotedBy: [],
         },
         {
           ...(parseTaskMetadata(metadata) as Record<string, unknown>),

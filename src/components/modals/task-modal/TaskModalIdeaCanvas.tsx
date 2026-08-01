@@ -4,6 +4,7 @@ import { ArrowUpRight, ChevronUp, Lightbulb } from 'lucide-react';
 import type { Json } from '@/types/database';
 import type { ItemType } from '@/lib/item-types';
 import { parseTaskMetadata } from '@/lib/item-metadata';
+import { ideaVoteState, readIdeaVotes } from '@/lib/idea-vote';
 import { ITEM_TYPE_VISUAL } from '@/lib/item-type-styles';
 import { TaskModalField, TaskModalSection } from '@/components/modals/task-modal/TaskModalSection';
 import { Button } from '@/components/ui/button';
@@ -13,7 +14,14 @@ export type PromoteTargetType = Extract<ItemType, 'event' | 'program' | 'class'>
 
 export type TaskModalIdeaCanvasProps = {
   taskMetadata?: Json | null;
+  /** Form-driven vote count (`metadata.votes`). */
+  ideaVotes?: number;
+  /** Form-driven voter ids (`metadata.voted_by`). */
+  ideaVotedBy?: string[];
+  currentUserId?: string | null;
   canWrite: boolean;
+  voteBusy?: boolean;
+  onToggleVote?: () => void;
   onPromoteItemType?: (next: PromoteTargetType) => void;
   /** When false, hide/disable Promote to Class (caller lacks class management). */
   canPromoteToClass?: boolean;
@@ -23,17 +31,7 @@ export type TaskModalIdeaCanvasProps = {
 
 const PROMOTE_TARGETS: PromoteTargetType[] = ['event', 'program', 'class'];
 
-/** Read `metadata.votes` without managed-field plumbing. */
-export function readIdeaVotes(metadata: Json | null | undefined): number {
-  const o = parseTaskMetadata(metadata ?? {}) as Record<string, unknown>;
-  const raw = o.votes;
-  if (typeof raw === 'number' && Number.isFinite(raw) && raw >= 0) return Math.floor(raw);
-  if (typeof raw === 'string' && raw.trim()) {
-    const n = Number(raw);
-    if (Number.isFinite(n) && n >= 0) return Math.floor(n);
-  }
-  return 0;
-}
+export { readIdeaVotes };
 
 function readOptionalString(meta: Record<string, unknown>, key: string): string | null {
   const v = meta[key];
@@ -51,23 +49,36 @@ function readTags(meta: Record<string, unknown>): string[] {
 }
 
 /**
- * Handoff-aligned Idea Details canvas: interest vote display + promote row.
- * Vote toggle persistence is out of scope this pass.
+ * Handoff-aligned Idea Details canvas: interactive interest vote + promote row.
  */
 export function TaskModalIdeaCanvas({
   taskMetadata = null,
+  ideaVotes,
+  ideaVotedBy,
+  currentUserId = null,
   canWrite,
+  voteBusy = false,
+  onToggleVote,
   onPromoteItemType,
   canPromoteToClass = true,
   className,
   isAgentField,
 }: TaskModalIdeaCanvasProps) {
   const meta = parseTaskMetadata(taskMetadata ?? {}) as Record<string, unknown>;
-  const votes = readIdeaVotes(taskMetadata);
+  const voteMeta =
+    ideaVotes != null || ideaVotedBy != null
+      ? {
+          ...meta,
+          ...(ideaVotes != null ? { votes: ideaVotes } : {}),
+          ...(ideaVotedBy != null ? { voted_by: ideaVotedBy } : {}),
+        }
+      : taskMetadata;
+  const { votes, voted } = ideaVoteState(voteMeta, currentUserId);
   const effort = readOptionalString(meta, 'effort');
   const impact = readOptionalString(meta, 'impact');
   const tags = readTags(meta);
   const agent = (key: string) => Boolean(isAgentField?.(key));
+  const canVote = Boolean(canWrite && currentUserId && onToggleVote && !voteBusy);
 
   return (
     <div className={className} data-testid="task-modal-idea-canvas">
@@ -76,28 +87,43 @@ export function TaskModalIdeaCanvas({
         title="Idea"
         sub="A lightweight proposal the community can rally behind before it becomes anything bigger."
       >
-        <TaskModalField label="Interest">
-          <div className="flex flex-wrap items-center gap-3.5">
+        <TaskModalField label="Interest" agent={agent('votes') || agent('voted_by')}>
+          <div
+            className="flex flex-wrap items-center gap-3.5 rounded-[var(--radius-xl)] border border-border bg-background px-3.5 py-3.5"
+            data-testid="task-modal-idea-vote-row"
+          >
             <button
               type="button"
-              disabled
-              aria-disabled
+              disabled={!canVote}
+              aria-pressed={voted}
+              aria-label={voted ? 'Remove your vote' : 'Vote for this idea'}
               className={cn(
-                'inline-flex h-11 items-center gap-1.5 rounded-[var(--radius-xl)] border border-border bg-background px-3.5 text-foreground',
-                'disabled:cursor-default disabled:opacity-100',
+                'inline-flex w-[58px] shrink-0 flex-col items-center gap-px rounded-[11px] border px-0 py-2',
+                'transition-all duration-[120ms] ease-out',
+                voted
+                  ? 'border-primary bg-primary/15 text-primary'
+                  : 'border-border bg-secondary text-foreground hover:border-foreground/25',
+                !canVote && 'cursor-default opacity-100',
               )}
               data-testid="task-modal-idea-vote"
-              title="Voting will be available in a later pass"
+              title={
+                !currentUserId
+                  ? 'Sign in to vote'
+                  : !canWrite
+                    ? 'You need edit access to vote'
+                    : voted
+                      ? 'Remove your vote'
+                      : 'Vote to show interest'
+              }
+              onClick={() => onToggleVote?.()}
             >
               <ChevronUp className="size-4 shrink-0" aria-hidden strokeWidth={2.4} />
-              <span className="text-[15px] font-bold tabular-nums tracking-tight">{votes}</span>
-              <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
-                votes
-              </span>
+              <span className="text-[17px] font-extrabold tabular-nums leading-none">{votes}</span>
+              <span className="text-[9px] font-extrabold uppercase tracking-[0.06em]">votes</span>
             </button>
             <div className="min-w-0 flex-1">
-              <div className="text-[13px] font-semibold tracking-tight text-foreground">
-                Vote to show interest
+              <div className="text-[13.5px] font-bold tracking-tight text-foreground">
+                {voted ? "You're in" : 'Vote to show interest'}
               </div>
               <div className="mt-0.5 text-xs leading-snug text-muted-foreground">
                 Members upvote ideas worth pursuing. High-interest ideas surface to organizers.
