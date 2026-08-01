@@ -122,6 +122,17 @@ const baseProps: TaskModalDetailsBodyProps = {
   workoutOutlineEditor: null,
   taskId: 'task-snap-1',
   cardCoverPath: '',
+  ideaVotes: 0,
+  ideaVotedBy: [],
+  ideaEffort: '',
+  onIdeaEffortChange: noop,
+  ideaImpact: '',
+  onIdeaImpactChange: noop,
+  ideaTags: [],
+  onIdeaTagsChange: noop,
+  currentUserId: null,
+  ideaVoteBusy: false,
+  onToggleIdeaVote: noop,
   onPickCardCover: noop,
   onRemoveCardCover: () => void Promise.resolve(),
   cardCoverPresetId: '',
@@ -143,6 +154,8 @@ const baseProps: TaskModalDetailsBodyProps = {
   onEventCapacityChange: noop,
   eventGoingPeople: [],
   onEventGoingPeopleChange: noop,
+  eventCost: '',
+  onEventCostChange: noop,
   experienceSeason: '',
   onExperienceSeasonChange: noop,
   scheduledOn: '',
@@ -167,6 +180,14 @@ const baseProps: TaskModalDetailsBodyProps = {
   onExperienceGroupMaxChange: noop,
   memoryCaption: '',
   onMemoryCaptionChange: noop,
+  memoryPeople: [],
+  onMemoryPeopleChange: noop,
+  memoryLinkedEvent: '',
+  onMemoryLinkedEventChange: noop,
+  memoryLocation: '',
+  onMemoryLocationChange: noop,
+  memoryReactions: [],
+  onMemoryReactionsChange: noop,
   aiWorkoutProgressIdx: null,
   onAiGenerateWorkout: noop,
   workoutTemplates: [],
@@ -177,6 +198,14 @@ const baseProps: TaskModalDetailsBodyProps = {
   onWorkoutTypeChange: noop,
   workoutDurationMin: '',
   onWorkoutDurationMinChange: noop,
+  workoutTargetRpe: '',
+  onWorkoutTargetRpeChange: noop,
+  workoutLogSessionRpe: '',
+  onWorkoutLogSessionRpeChange: noop,
+  workoutLogCompletion: '',
+  onWorkoutLogCompletionChange: noop,
+  workoutLogMood: '',
+  onWorkoutLogMoodChange: noop,
   workoutExercises: [],
   onWorkoutExercisesChange: noop,
   workoutUnitSystem: 'metric',
@@ -189,6 +218,10 @@ const baseProps: TaskModalDetailsBodyProps = {
   onProgramGoalChange: noop,
   programDurationWeeks: '',
   onProgramDurationWeeksChange: noop,
+  programDaysPerWeek: '',
+  onProgramDaysPerWeekChange: noop,
+  programLevel: '',
+  onProgramLevelChange: noop,
   programCurrentWeek: 1,
   programSchedule: [],
   dateLabels: { primary: 'Due by', short: 'Due', helper: 'h' },
@@ -383,5 +416,44 @@ describe('TaskModalDetailsBody', () => {
       />,
     );
     expect(screen.queryByTestId('task-modal-persona-strip')).toBeNull();
+  });
+
+  it('shows Coach chrome on fallback title/desc when provenance is agent-filled', () => {
+    render(
+      <TaskModalDetailsBody
+        {...baseProps}
+        titleFieldsOwnedByCover={false}
+        taskMetadata={
+          {
+            field_provenance: {
+              title: { by: 'agent', agent_slug: 'coach' },
+              description: { by: 'agent', agent_slug: 'coach' },
+            },
+          } as Json
+        }
+      />,
+    );
+    expect(screen.getByTestId('task-modal-fallback-title-agent')).toBeTruthy();
+    expect(screen.getByTestId('task-modal-fallback-desc-agent')).toBeTruthy();
+  });
+
+  it('hides fallback Coach chrome when title/description are demoted', () => {
+    render(
+      <TaskModalDetailsBody
+        {...baseProps}
+        titleFieldsOwnedByCover={false}
+        demotedProvenanceKeys={['title', 'description']}
+        taskMetadata={
+          {
+            field_provenance: {
+              title: { by: 'agent', agent_slug: 'coach' },
+              description: { by: 'agent', agent_slug: 'coach' },
+            },
+          } as Json
+        }
+      />,
+    );
+    expect(screen.queryByTestId('task-modal-fallback-title-agent')).toBeNull();
+    expect(screen.queryByTestId('task-modal-fallback-desc-agent')).toBeNull();
   });
 });

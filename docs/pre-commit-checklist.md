@@ -48,6 +48,20 @@ In Cursor agent shells: start `check:report` in the **background** and read the 
 
 **Note:** `pnpm run check` does **not** run **`astro build`**. The full Astro compile is intentionally **local** when you touch the storefront (see below). On **Vercel**, the storefront project uses an **ignored build step** so **`astro build` is skipped** when no files under `apps/storefront/` changed—CRM-only pushes do not rebuild the marketing site.
 
+### GitHub Actions CI (PR vs main)
+
+Workflow: [`.github/workflows/ci.yml`](../.github/workflows/ci.yml).
+
+| Surface                       | What runs                                                                                                                                                                                                                                                                                                                      |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Pull request** (every push) | Job **Format, types, ESLint, and unit tests** — format, `tsc`, ESLint, Vitest. Job **Deno integration** runs the Deno suite **only** when the PR touches Deno-relevant paths (`supabase/**`, `scripts/check-agent-*.ts`, this workflow, or `package.json` / `pnpm-lock.yaml`); otherwise that job short-circuits with success. |
+| **Push to `main`**            | Both jobs always run (unit + Deno).                                                                                                                                                                                                                                                                                            |
+| **Superseded PR pushes**      | `concurrency` cancels in-progress CI for the same PR so only the latest commit’s run matters.                                                                                                                                                                                                                                  |
+
+**Required checks:** if branch protection still names the old single job (`Format, types, ESLint, and tests`), update it to require both **Format, types, ESLint, and unit tests** and **Deno integration**.
+
+**Multi-phase PR workflow:** push UI-only phases freely (Deno usually skipped). Before merge after several phases, run `pnpm run check:report` locally when you want Deno/build belt-and-suspenders (especially if you touched Edge); `main` still runs full CI after merge.
+
 ### Before you push (if `apps/storefront/` changed)
 
 Run a full Astro verification (diagnostics + production build) from the repo root:

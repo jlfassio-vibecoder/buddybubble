@@ -30,6 +30,10 @@ describe('TaskModalProgramFields week cards', () => {
         onProgramGoalChange={() => undefined}
         programDurationWeeks="8"
         onProgramDurationWeeksChange={() => undefined}
+        programDaysPerWeek="3"
+        onProgramDaysPerWeekChange={() => undefined}
+        programLevel="intermediate"
+        onProgramLevelChange={() => undefined}
         programCurrentWeek={0}
         programSchedule={threeDaySchedule}
       />,
@@ -63,6 +67,10 @@ describe('TaskModalProgramFields week cards', () => {
         onProgramGoalChange={() => undefined}
         programDurationWeeks="4"
         onProgramDurationWeeksChange={() => undefined}
+        programDaysPerWeek=""
+        onProgramDaysPerWeekChange={() => undefined}
+        programLevel=""
+        onProgramLevelChange={() => undefined}
         programCurrentWeek={0}
         programSchedule={[]}
       />,

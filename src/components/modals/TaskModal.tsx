@@ -77,11 +77,13 @@ import {
   buildTaskMetadataPayload,
   metadataFieldsFromParsed,
   parseTaskMetadata,
+  type MemoryMomentReaction,
   type ProgramWeek,
   type WorkoutExercise,
 } from '@/lib/item-metadata';
-import { stampUserFields } from '@/lib/task-field-provenance';
+import { isAgentFilledForDisplay, stampUserFields } from '@/lib/task-field-provenance';
 import { detectUserDemotedProvenanceKeys } from '@/lib/task-field-provenance-demote';
+import { toggleIdeaVote } from '@/lib/idea-vote';
 import { useWorkoutTemplates } from '@/hooks/use-workout-templates';
 import { getExercisesFromWorkout } from '@/lib/workout-factory/program-schedule-utils';
 import { scheduledTimeToInputValue } from '@/lib/task-scheduled-time';
@@ -521,6 +523,7 @@ export function TaskModal({
   const [eventGoing, setEventGoing] = useState('');
   const [eventCapacity, setEventCapacity] = useState('');
   const [eventGoingPeople, setEventGoingPeople] = useState<string[]>([]);
+  const [eventCost, setEventCost] = useState('');
   const [experienceSeason, setExperienceSeason] = useState('');
   /** YYYY-MM-DD experience span end (`metadata.end_date`). */
   const [experienceEndDate, setExperienceEndDate] = useState('');
@@ -533,18 +536,37 @@ export function TaskModal({
   const [experienceGroupMin, setExperienceGroupMin] = useState('');
   const [experienceGroupMax, setExperienceGroupMax] = useState('');
   const [memoryCaption, setMemoryCaption] = useState('');
+  const [memoryPeople, setMemoryPeople] = useState<string[]>([]);
+  const [memoryLinkedEvent, setMemoryLinkedEvent] = useState('');
+  const [memoryLocation, setMemoryLocation] = useState('');
+  const [memoryReactions, setMemoryReactions] = useState<MemoryMomentReaction[]>([]);
   const [workoutType, setWorkoutType] = useState('');
   const [workoutDurationMin, setWorkoutDurationMin] = useState('');
+  const [workoutTargetRpe, setWorkoutTargetRpe] = useState('');
+  const [workoutLogSessionRpe, setWorkoutLogSessionRpe] = useState('');
+  const [workoutLogCompletion, setWorkoutLogCompletion] = useState('');
+  const [workoutLogMood, setWorkoutLogMood] = useState('');
   const [workoutExercises, setWorkoutExercises] = useState<WorkoutExercise[]>([]);
 
   /** Program-specific fields. */
   const [programGoal, setProgramGoal] = useState('');
   const [programDurationWeeks, setProgramDurationWeeks] = useState('');
+  const [programDaysPerWeek, setProgramDaysPerWeek] = useState('');
+  const [programLevel, setProgramLevel] = useState('');
   const [programCurrentWeek, setProgramCurrentWeek] = useState(0);
   const [programSchedule, setProgramSchedule] = useState<ProgramWeek[]>([]);
   const [programSourceTitle, setProgramSourceTitle] = useState('');
   /** Storage path for optional Kanban/chat card header image (`metadata.card_cover_path`). */
   const [cardCoverPath, setCardCoverPath] = useState('');
+  /** Idea: interest votes (`metadata.votes` / `metadata.voted_by`). */
+  const [ideaVotes, setIdeaVotes] = useState(0);
+  const [ideaVotedBy, setIdeaVotedBy] = useState<string[]>([]);
+  const [ideaEffort, setIdeaEffort] = useState('');
+  const [ideaImpact, setIdeaImpact] = useState('');
+  const [ideaTags, setIdeaTags] = useState<string[]>([]);
+  const [ideaVoteBusy, setIdeaVoteBusy] = useState(false);
+  /** Optimistic vote snapshot awaiting server/realtime catch-up; blocks silent clobber. */
+  const pendingIdeaVoteRef = useRef<{ votes: number; votedBy: string[] } | null>(null);
   const [cardCoverAiHint, setCardCoverAiHint] = useState('');
   /** Empty string = server default scene by `item_type`. */
   const [cardCoverPresetId, setCardCoverPresetId] = useState('');
@@ -721,6 +743,7 @@ export function TaskModal({
       eventGoing,
       eventCapacity,
       eventGoingPeople,
+      eventCost,
       experienceSeason,
       experienceEndDate,
       experienceHighlights,
@@ -732,15 +755,30 @@ export function TaskModal({
       experienceGroupMin,
       experienceGroupMax,
       memoryCaption,
+      memoryPeople,
+      memoryLinkedEvent,
+      memoryLocation,
+      memoryReactions,
       workoutType,
       workoutDurationMin,
+      workoutTargetRpe,
+      workoutLogSessionRpe,
+      workoutLogCompletion,
+      workoutLogMood,
       workoutExercises,
       programGoal,
       programDurationWeeks,
+      programDaysPerWeek,
+      programLevel,
       programCurrentWeek,
       programSchedule,
       programSourceTitle,
       cardCoverPath,
+      ideaVotes,
+      ideaVotedBy,
+      ideaEffort,
+      ideaImpact,
+      ideaTags,
     }),
     [
       eventLocation,
@@ -749,6 +787,7 @@ export function TaskModal({
       eventGoing,
       eventCapacity,
       eventGoingPeople,
+      eventCost,
       experienceSeason,
       experienceEndDate,
       experienceHighlights,
@@ -760,15 +799,30 @@ export function TaskModal({
       experienceGroupMin,
       experienceGroupMax,
       memoryCaption,
+      memoryPeople,
+      memoryLinkedEvent,
+      memoryLocation,
+      memoryReactions,
       workoutType,
       workoutDurationMin,
+      workoutTargetRpe,
+      workoutLogSessionRpe,
+      workoutLogCompletion,
+      workoutLogMood,
       workoutExercises,
       programGoal,
       programDurationWeeks,
+      programDaysPerWeek,
+      programLevel,
       programCurrentWeek,
       programSchedule,
       programSourceTitle,
       cardCoverPath,
+      ideaVotes,
+      ideaVotedBy,
+      ideaEffort,
+      ideaImpact,
+      ideaTags,
     ],
   );
 
@@ -781,6 +835,13 @@ export function TaskModal({
       original: originalSnapshot,
     });
   }, [itemType, formFieldsForProvenance, title, description, originalSnapshot]);
+
+  const titleAgent = isAgentFilledForDisplay(metadata, 'title', userDemotedProvenanceKeys);
+  const descriptionAgent = isAgentFilledForDisplay(
+    metadata,
+    'description',
+    userDemotedProvenanceKeys,
+  );
 
   const metadataForSave = useMemo(() => {
     const built = buildTaskMetadataPayload(itemType, formFieldsForProvenance, metadata);
@@ -910,6 +971,7 @@ export function TaskModal({
       setEventGoing(mf.eventGoing);
       setEventCapacity(mf.eventCapacity);
       setEventGoingPeople(mf.eventGoingPeople);
+      setEventCost(mf.eventCost);
       setExperienceSeason(mf.experienceSeason);
       setExperienceEndDate(mf.experienceEndDate);
       setExperienceHighlights(mf.experienceHighlights);
@@ -921,15 +983,43 @@ export function TaskModal({
       setExperienceGroupMin(mf.experienceGroupMin);
       setExperienceGroupMax(mf.experienceGroupMax);
       setMemoryCaption(mf.memoryCaption);
+      setMemoryPeople(mf.memoryPeople);
+      setMemoryLinkedEvent(mf.memoryLinkedEvent);
+      setMemoryLocation(mf.memoryLocation);
+      setMemoryReactions(mf.memoryReactions);
       setWorkoutType(mf.workoutType);
       setWorkoutDurationMin(mf.workoutDurationMin);
+      setWorkoutTargetRpe(mf.workoutTargetRpe);
+      setWorkoutLogSessionRpe(mf.workoutLogSessionRpe);
+      setWorkoutLogCompletion(mf.workoutLogCompletion);
+      setWorkoutLogMood(mf.workoutLogMood);
       setWorkoutExercises(mf.workoutExercises);
       setProgramGoal(mf.programGoal);
       setProgramDurationWeeks(mf.programDurationWeeks);
+      setProgramDaysPerWeek(mf.programDaysPerWeek);
+      setProgramLevel(mf.programLevel);
       setProgramCurrentWeek(mf.programCurrentWeek);
       setProgramSchedule(mf.programSchedule);
       setProgramSourceTitle(mf.programSourceTitle);
       setCardCoverPath(mf.cardCoverPath);
+      {
+        const pending = pendingIdeaVoteRef.current;
+        const pendingMatches =
+          pending != null &&
+          pending.votes === mf.ideaVotes &&
+          pending.votedBy.length === mf.ideaVotedBy.length &&
+          [...pending.votedBy].sort().join('\0') === [...mf.ideaVotedBy].sort().join('\0');
+        // Keep optimistic votes when silent refresh would clobber an in-flight/newer toggle.
+        const preservePendingVotes = Boolean(pending && !pendingMatches && silent);
+        if (!preservePendingVotes) {
+          if (pendingMatches || (pending && !silent)) pendingIdeaVoteRef.current = null;
+          setIdeaVotes(mf.ideaVotes);
+          setIdeaVotedBy(mf.ideaVotedBy);
+        }
+      }
+      setIdeaEffort(mf.ideaEffort);
+      setIdeaImpact(mf.ideaImpact);
+      setIdeaTags(mf.ideaTags);
       hydrateFromTaskRow(row);
       const vis = normalizeTaskVisibility((row as TaskRow).visibility);
       setVisibility(vis);
@@ -979,6 +1069,7 @@ export function TaskModal({
     setEventGoing('');
     setEventCapacity('');
     setEventGoingPeople([]);
+    setEventCost('');
     setExperienceSeason('');
     setExperienceEndDate('');
     setExperienceHighlights([]);
@@ -990,6 +1081,10 @@ export function TaskModal({
     setExperienceGroupMin('');
     setExperienceGroupMax('');
     setMemoryCaption('');
+    setMemoryPeople([]);
+    setMemoryLinkedEvent('');
+    setMemoryLocation('');
+    setMemoryReactions([]);
     setWorkoutType('');
     setWorkoutDurationMin(
       (nextItemType === 'workout' || nextItemType === 'workout_log') &&
@@ -999,14 +1094,27 @@ export function TaskModal({
         : '',
     );
     setWorkoutExercises([]);
+    setWorkoutTargetRpe('');
+    setWorkoutLogSessionRpe('');
+    setWorkoutLogCompletion('');
+    setWorkoutLogMood('');
     setWorkoutUnitSystem('metric');
     resetWorkoutAiUi();
     setProgramGoal('');
     setProgramDurationWeeks('');
+    setProgramDaysPerWeek('');
+    setProgramLevel('');
     setProgramCurrentWeek(0);
     setProgramSchedule([]);
     setProgramSourceTitle('');
     setCardCoverPath('');
+    setIdeaVotes(0);
+    setIdeaVotedBy([]);
+    setIdeaEffort('');
+    setIdeaImpact('');
+    setIdeaTags([]);
+    pendingIdeaVoteRef.current = null;
+    setIdeaVoteBusy(false);
     setCardCoverAiHint('');
     setCardCoverPresetId('');
     resetCardCoverAi();
@@ -1374,6 +1482,7 @@ export function TaskModal({
       setEventGoing(mf.eventGoing);
       setEventCapacity(mf.eventCapacity);
       setEventGoingPeople(mf.eventGoingPeople);
+      setEventCost(mf.eventCost);
       setExperienceSeason(mf.experienceSeason);
       setExperienceEndDate(mf.experienceEndDate);
       setExperienceHighlights(mf.experienceHighlights);
@@ -1385,15 +1494,30 @@ export function TaskModal({
       setExperienceGroupMin(mf.experienceGroupMin);
       setExperienceGroupMax(mf.experienceGroupMax);
       setMemoryCaption(mf.memoryCaption);
+      setMemoryPeople(mf.memoryPeople);
+      setMemoryLinkedEvent(mf.memoryLinkedEvent);
+      setMemoryLocation(mf.memoryLocation);
+      setMemoryReactions(mf.memoryReactions);
       setWorkoutType(mf.workoutType);
       setWorkoutDurationMin(mf.workoutDurationMin);
+      setWorkoutTargetRpe(mf.workoutTargetRpe);
+      setWorkoutLogSessionRpe(mf.workoutLogSessionRpe);
+      setWorkoutLogCompletion(mf.workoutLogCompletion);
+      setWorkoutLogMood(mf.workoutLogMood);
       setWorkoutExercises(mf.workoutExercises);
       setProgramGoal(mf.programGoal);
       setProgramDurationWeeks(mf.programDurationWeeks);
+      setProgramDaysPerWeek(mf.programDaysPerWeek);
+      setProgramLevel(mf.programLevel);
       setProgramCurrentWeek(mf.programCurrentWeek);
       setProgramSchedule(mf.programSchedule);
       setProgramSourceTitle(mf.programSourceTitle);
       setCardCoverPath(mf.cardCoverPath);
+      setIdeaVotes(mf.ideaVotes);
+      setIdeaVotedBy(mf.ideaVotedBy);
+      setIdeaEffort(mf.ideaEffort);
+      setIdeaImpact(mf.ideaImpact);
+      setIdeaTags(mf.ideaTags);
       setVisibility(orig.visibility);
       setAssignedTo(orig.assignedTo);
       setLiveStreamEnabled(Boolean(orig.liveStreamEnabled));
@@ -1410,6 +1534,8 @@ export function TaskModal({
     title,
     programGoal,
     programDurationWeeks,
+    programDaysPerWeek,
+    programLevel,
     programSchedule,
     programCurrentWeek,
     visibility,
@@ -1482,6 +1608,62 @@ export function TaskModal({
     },
     [saveCoreFields, isOptimisticDraftProp, onOptimisticDraftConsumed],
   );
+
+  const handleToggleIdeaVote = useCallback(async () => {
+    const uid = myProfile?.id;
+    if (!canWrite || !uid || ideaVoteBusy) return;
+    const prevVotes = ideaVotes;
+    const prevVotedBy = ideaVotedBy;
+    const prevMetadata = metadata;
+    const baseMeta = {
+      ...(parseTaskMetadata(metadata) as Record<string, unknown>),
+      votes: ideaVotes,
+      voted_by: ideaVotedBy,
+    };
+    const next = toggleIdeaVote(baseMeta, uid);
+    const built = buildTaskMetadataPayload(
+      'idea',
+      { ...formFieldsForProvenance, ideaVotes: next.votes, ideaVotedBy: next.votedBy },
+      metadata,
+    );
+    const demoted = stampUserFields(built, ['votes', 'voted_by']) as typeof built;
+    setIdeaVotes(next.votes);
+    setIdeaVotedBy(next.votedBy);
+    setMetadata(demoted);
+    if (!taskId) return;
+    // Copilot suggestion ignored: multi-user concurrent votes need an atomic merge RPC; metadata replace remains last-write-wins until a vote ledger ships.
+    pendingIdeaVoteRef.current = { votes: next.votes, votedBy: next.votedBy };
+    setIdeaVoteBusy(true);
+    try {
+      const supabase = createClient();
+      const { error: uErr } = await supabase
+        .from('tasks')
+        .update({ metadata: demoted as TaskRow['metadata'] })
+        .eq('id', taskId);
+      if (uErr) {
+        pendingIdeaVoteRef.current = null;
+        setIdeaVotes(prevVotes);
+        setIdeaVotedBy(prevVotedBy);
+        setMetadata(prevMetadata);
+        setError(formatUserFacingError(uErr));
+        return;
+      }
+      patchOriginalMetadataJson(JSON.stringify(demoted));
+    } finally {
+      setIdeaVoteBusy(false);
+    }
+  }, [
+    canWrite,
+    myProfile?.id,
+    ideaVoteBusy,
+    metadata,
+    ideaVotes,
+    ideaVotedBy,
+    taskId,
+    formFieldsForProvenance,
+    patchOriginalMetadataJson,
+    setMetadata,
+  ]);
 
   /** Apply canvas edits: persist first, then commit local state — keep edit/dirty if save fails. */
   const handleWorkoutViewerApplyAndSave = useCallback(
@@ -2061,34 +2243,7 @@ export function TaskModal({
     const metaPayload = stampUserFields(
       buildTaskMetadataPayload(
         itemType,
-        {
-          eventLocation,
-          eventUrl,
-          eventBring,
-          eventGoing,
-          eventCapacity,
-          eventGoingPeople,
-          experienceSeason,
-          experienceEndDate,
-          experienceHighlights,
-          experienceIncludes,
-          experienceGoodFor,
-          experienceLocation,
-          experienceDurationMin,
-          experiencePrice,
-          experienceGroupMin,
-          experienceGroupMax,
-          memoryCaption,
-          workoutType,
-          workoutDurationMin,
-          workoutExercises,
-          programGoal,
-          programDurationWeeks,
-          programCurrentWeek,
-          programSchedule,
-          programSourceTitle,
-          cardCoverPath: path,
-        },
+        { ...formFieldsForProvenance, cardCoverPath: path },
         metadata,
       ),
       ['card_cover_path'],
@@ -2120,34 +2275,7 @@ export function TaskModal({
     const metaPayload = stampUserFields(
       buildTaskMetadataPayload(
         itemType,
-        {
-          eventLocation,
-          eventUrl,
-          eventBring,
-          eventGoing,
-          eventCapacity,
-          eventGoingPeople,
-          experienceSeason,
-          experienceEndDate,
-          experienceHighlights,
-          experienceIncludes,
-          experienceGoodFor,
-          experienceLocation,
-          experienceDurationMin,
-          experiencePrice,
-          experienceGroupMin,
-          experienceGroupMax,
-          memoryCaption,
-          workoutType,
-          workoutDurationMin,
-          workoutExercises,
-          programGoal,
-          programDurationWeeks,
-          programCurrentWeek,
-          programSchedule,
-          programSourceTitle,
-          cardCoverPath: '',
-        },
+        { ...formFieldsForProvenance, cardCoverPath: '' },
         metadata,
       ),
       ['card_cover_path'],
@@ -2396,6 +2524,8 @@ export function TaskModal({
       onEventCapacityChange: setEventCapacity,
       eventGoingPeople,
       onEventGoingPeopleChange: setEventGoingPeople,
+      eventCost,
+      onEventCostChange: setEventCost,
       experienceSeason,
       onExperienceSeasonChange: setExperienceSeason,
       scheduledOn,
@@ -2423,6 +2553,14 @@ export function TaskModal({
       onExperienceGroupMaxChange: setExperienceGroupMax,
       memoryCaption,
       onMemoryCaptionChange: setMemoryCaption,
+      memoryPeople,
+      onMemoryPeopleChange: setMemoryPeople,
+      memoryLinkedEvent,
+      onMemoryLinkedEventChange: setMemoryLinkedEvent,
+      memoryLocation,
+      onMemoryLocationChange: setMemoryLocation,
+      memoryReactions,
+      onMemoryReactionsChange: setMemoryReactions,
       aiWorkoutProgressIdx,
       onAiGenerateWorkout: handleAiGenerateWorkout,
       workoutTemplates,
@@ -2433,6 +2571,14 @@ export function TaskModal({
       onWorkoutTypeChange: setWorkoutType,
       workoutDurationMin,
       onWorkoutDurationMinChange: setWorkoutDurationMin,
+      workoutTargetRpe,
+      onWorkoutTargetRpeChange: setWorkoutTargetRpe,
+      workoutLogSessionRpe,
+      onWorkoutLogSessionRpeChange: setWorkoutLogSessionRpe,
+      workoutLogCompletion,
+      onWorkoutLogCompletionChange: setWorkoutLogCompletion,
+      workoutLogMood,
+      onWorkoutLogMoodChange: setWorkoutLogMood,
       workoutExercises,
       onWorkoutExercisesChange: setWorkoutExercises,
       workoutUnitSystem,
@@ -2445,6 +2591,10 @@ export function TaskModal({
       onProgramGoalChange: setProgramGoal,
       programDurationWeeks,
       onProgramDurationWeeksChange: setProgramDurationWeeks,
+      programDaysPerWeek,
+      onProgramDaysPerWeekChange: setProgramDaysPerWeek,
+      programLevel,
+      onProgramLevelChange: setProgramLevel,
       programCurrentWeek,
       programSchedule,
       dateLabels,
@@ -2473,6 +2623,17 @@ export function TaskModal({
       onArchiveTask: archiveTask,
       onHardDeleteTask: handleModalHardDelete,
       taskMetadata: metadata,
+      ideaVotes,
+      ideaVotedBy,
+      ideaEffort,
+      onIdeaEffortChange: setIdeaEffort,
+      ideaImpact,
+      onIdeaImpactChange: setIdeaImpact,
+      ideaTags,
+      onIdeaTagsChange: setIdeaTags,
+      currentUserId: myProfile?.id ?? null,
+      ideaVoteBusy,
+      onToggleIdeaVote: () => void handleToggleIdeaVote(),
       onPromoteItemType: (next: 'event' | 'program' | 'class') => {
         if (next === 'class' && !canManageClasses) return;
         setItemType(next);
@@ -2507,6 +2668,7 @@ export function TaskModal({
       eventGoing,
       eventCapacity,
       eventGoingPeople,
+      eventCost,
       experienceSeason,
       scheduledOn,
       experienceEndDate,
@@ -2519,6 +2681,10 @@ export function TaskModal({
       experienceGroupMin,
       experienceGroupMax,
       memoryCaption,
+      memoryPeople,
+      memoryLinkedEvent,
+      memoryLocation,
+      memoryReactions,
       aiWorkoutProgressIdx,
       handleAiGenerateWorkout,
       workoutTemplates,
@@ -2526,6 +2692,10 @@ export function TaskModal({
       applyWorkoutTemplate,
       workoutType,
       workoutDurationMin,
+      workoutTargetRpe,
+      workoutLogSessionRpe,
+      workoutLogCompletion,
+      workoutLogMood,
       workoutExercises,
       workoutUnitSystem,
       initialAutoEdit,
@@ -2535,6 +2705,8 @@ export function TaskModal({
       handlePersonalizeProgram,
       programGoal,
       programDurationWeeks,
+      programDaysPerWeek,
+      programLevel,
       programCurrentWeek,
       programSchedule,
       dateLabels,
@@ -2562,6 +2734,14 @@ export function TaskModal({
       handleOpenWorkoutViewerFromDetails,
       hasWorkoutFactory,
       metadata,
+      ideaVotes,
+      ideaVotedBy,
+      ideaEffort,
+      ideaImpact,
+      ideaTags,
+      myProfile?.id,
+      ideaVoteBusy,
+      handleToggleIdeaVote,
       userDemotedProvenanceKeys,
       handleContinueInProgressWorkoutLog,
       continueSessionBusy,
@@ -2672,6 +2852,8 @@ export function TaskModal({
             description={description ?? ''}
             onTitleChange={setTitle}
             onDescriptionChange={setDescription}
+            titleAgent={titleAgent}
+            descriptionAgent={descriptionAgent}
             coverPath={cardCoverPath.trim() || null}
             onClose={() => handleOpenChange(false)}
             onArchiveTask={!isCreateMode && taskId ? archiveTask : undefined}

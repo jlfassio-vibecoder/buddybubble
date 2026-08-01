@@ -79,11 +79,7 @@ export function TaskModalTabBar({ tab, onSelectTab, bubblyProps, counts }: TaskM
   const colCount = bubblyProps ? 5 : 4;
 
   return (
-    <div
-      className="shrink-0 border-t border-border bg-card px-4 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] md:px-2 md:py-0"
-      role="tablist"
-      aria-label="Card sections"
-    >
+    <div className="shrink-0 border-t border-border bg-card px-4 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] md:px-2 md:py-0">
       <div
         className={cn(
           'grid w-full items-stretch gap-1',
@@ -91,19 +87,29 @@ export function TaskModalTabBar({ tab, onSelectTab, bubblyProps, counts }: TaskM
           colCount === 5 ? 'grid-cols-5' : 'grid-cols-4',
         )}
       >
-        {TAB_CONFIG.map(({ id, label, Icon }) => (
-          <TabButton
-            key={id}
-            id={id}
-            label={label}
-            Icon={Icon}
-            selected={tab === id}
-            count={counts?.[id]}
-            onSelect={onSelectTab}
-          />
-        ))}
+        <div
+          role="tablist"
+          aria-label="Card sections"
+          className={cn(
+            'grid min-w-0 items-stretch gap-1',
+            bubblyProps ? 'col-span-4 grid-cols-4' : 'col-span-full grid-cols-4',
+            'md:flex md:flex-1 md:items-stretch md:gap-0.5',
+          )}
+        >
+          {TAB_CONFIG.map(({ id, label, Icon }) => (
+            <TabButton
+              key={id}
+              id={id}
+              label={label}
+              Icon={Icon}
+              selected={tab === id}
+              count={counts?.[id]}
+              onSelect={onSelectTab}
+            />
+          ))}
+        </div>
         {bubblyProps ? (
-          // Copilot suggestion ignored: Bubbly is already visible on desktop (md:hidden was removed).
+          // Sibling of tablist — Bubbly is a toggle, not a section tab.
           <div className="flex min-h-11 w-full min-w-0 items-stretch justify-center md:min-h-0 md:w-auto md:shrink-0 md:items-center md:px-1">
             <BubblyButton {...bubblyProps} density="default" tabStrip tabBarIconsRow />
           </div>

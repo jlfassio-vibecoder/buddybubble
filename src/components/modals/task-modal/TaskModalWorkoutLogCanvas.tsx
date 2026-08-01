@@ -25,6 +25,12 @@ export type TaskModalWorkoutLogCanvasProps = {
   onWorkoutTypeChange: (value: string) => void;
   workoutDurationMin: string;
   onWorkoutDurationMinChange: (value: string) => void;
+  workoutLogSessionRpe: string;
+  onWorkoutLogSessionRpeChange: (value: string) => void;
+  workoutLogCompletion: string;
+  onWorkoutLogCompletionChange: (value: string) => void;
+  workoutLogMood: string;
+  onWorkoutLogMoodChange: (value: string) => void;
   workoutExercises: WorkoutExercise[];
   workoutUnitSystem: UnitSystem;
   taskMetadata?: Json | null;
@@ -49,6 +55,12 @@ export function TaskModalWorkoutLogCanvas({
   onWorkoutTypeChange,
   workoutDurationMin,
   onWorkoutDurationMinChange,
+  workoutLogSessionRpe,
+  onWorkoutLogSessionRpeChange,
+  workoutLogCompletion,
+  onWorkoutLogCompletionChange,
+  workoutLogMood,
+  onWorkoutLogMoodChange,
   workoutExercises,
   workoutUnitSystem,
   taskMetadata = null,
@@ -65,21 +77,37 @@ export function TaskModalWorkoutLogCanvas({
         ? taskMetadata
         : {};
     const durationMins = parseInt(workoutDurationMin, 10);
+    const sessionRpe = parseInt(workoutLogSessionRpe, 10);
+    const completionN = parseInt(workoutLogCompletion, 10);
     return {
       ...base,
       exercises: workoutExercises,
       ...(!Number.isNaN(durationMins) && durationMins > 0 ? { duration_min: durationMins } : {}),
+      ...(!Number.isNaN(sessionRpe) && sessionRpe >= 1 && sessionRpe <= 10
+        ? { session_rpe: sessionRpe }
+        : {}),
+      ...(!Number.isNaN(completionN) && completionN >= 0 && completionN <= 100
+        ? { completion: completionN }
+        : {}),
+      ...(workoutLogMood.trim() ? { mood: workoutLogMood.trim() } : {}),
     };
-  }, [taskMetadata, workoutExercises, workoutDurationMin]);
+  }, [
+    taskMetadata,
+    workoutExercises,
+    workoutDurationMin,
+    workoutLogSessionRpe,
+    workoutLogCompletion,
+    workoutLogMood,
+  ]);
 
   const showContinueSession =
     Boolean(onContinueSession) &&
     isWorkoutLogInProgress({ item_type: 'workout_log', status }) &&
     Boolean(readWorkoutLogSourceTaskId(taskMetadata));
 
-  const durationTile = readSessionDurationMin(workoutDurationMin, taskMetadata);
-  const rpe = readSessionRpe(taskMetadata);
-  const completion = readSessionCompletion(taskMetadata, workoutExercises);
+  const durationTile = readSessionDurationMin(workoutDurationMin, logReadMetadata);
+  const rpe = readSessionRpe(logReadMetadata);
+  const completion = readSessionCompletion(logReadMetadata, workoutExercises);
 
   const tiles = [
     { k: 'Duration', v: durationTile.value, u: durationTile.unit },
@@ -181,6 +209,54 @@ export function TaskModalWorkoutLogCanvas({
               onChange={(e) => onWorkoutDurationMinChange(e.target.value)}
               disabled={!canWrite}
               className="h-9"
+            />
+          </TaskModalField>
+        </div>
+
+        <div className="mb-3.5 flex flex-wrap gap-3">
+          <TaskModalField
+            label="Session RPE"
+            agent={agent('session_rpe')}
+            className="mb-0 w-28 shrink-0"
+          >
+            <Input
+              id="task-workout-log-session-rpe"
+              type="number"
+              min={1}
+              max={10}
+              value={workoutLogSessionRpe}
+              onChange={(e) => onWorkoutLogSessionRpeChange(e.target.value)}
+              disabled={!canWrite}
+              className="h-9"
+              data-testid="task-modal-workout-log-session-rpe"
+            />
+          </TaskModalField>
+          <TaskModalField
+            label="Completion %"
+            agent={agent('completion')}
+            className="mb-0 w-32 shrink-0"
+          >
+            <Input
+              id="task-workout-log-completion"
+              type="number"
+              min={0}
+              max={100}
+              value={workoutLogCompletion}
+              onChange={(e) => onWorkoutLogCompletionChange(e.target.value)}
+              disabled={!canWrite}
+              className="h-9"
+              data-testid="task-modal-workout-log-completion"
+            />
+          </TaskModalField>
+          <TaskModalField label="Mood" agent={agent('mood')} className="mb-0 min-w-0 flex-1">
+            <Input
+              id="task-workout-log-mood"
+              value={workoutLogMood}
+              onChange={(e) => onWorkoutLogMoodChange(e.target.value)}
+              disabled={!canWrite}
+              placeholder="e.g. 🔥"
+              className="h-9"
+              data-testid="task-modal-workout-log-mood"
             />
           </TaskModalField>
         </div>

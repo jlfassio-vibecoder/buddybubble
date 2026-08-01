@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { ITEM_TYPES_ORDER } from '@/lib/item-type-styles';
 import { TaskModalTypeChip } from '@/components/modals/task-modal/TaskModalTypeChip';
+import { TaskModalAgentTag } from '@/components/modals/task-modal/TaskModalSection';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,6 +34,10 @@ export type TaskModalCoverHeaderProps = {
   description: string;
   onTitleChange: (value: string) => void;
   onDescriptionChange: (value: string) => void;
+  /** Coach-filled title (`field_provenance.title`), respecting live demotion. */
+  titleAgent?: boolean;
+  /** Coach-filled description (`field_provenance.description`), respecting live demotion. */
+  descriptionAgent?: boolean;
   coverPath?: string | null;
   onClose: () => void;
   /** Opens the cover-image file picker (header icon; hidden until the card is saved). */
@@ -67,6 +72,8 @@ export function TaskModalCoverHeader({
   description,
   onTitleChange,
   onDescriptionChange,
+  titleAgent = false,
+  descriptionAgent = false,
   coverPath = null,
   onClose,
   onPickCardCover,
@@ -87,6 +94,9 @@ export function TaskModalCoverHeader({
   const editable = canWrite;
   const descText = description.trim();
   const titleText = title.trim() || 'Untitled';
+  const agentRing = hasImage
+    ? 'ring-1 ring-inset ring-white/50'
+    : 'ring-1 ring-inset ring-primary/40 bg-primary/[0.04]';
 
   return (
     <header
@@ -196,62 +206,78 @@ export function TaskModalCoverHeader({
           <div className="mb-1.5 flex flex-wrap items-center gap-1.5">{heroBadge}</div>
         ) : null}
 
-        {editable ? (
-          <input
-            id="task-title"
-            value={title}
-            onChange={(e) => onTitleChange(e.target.value)}
-            placeholder="Untitled card"
-            aria-label="Title"
-            className={cn(
-              // `.tm-title-input`
-              'w-full rounded-lg border-none bg-transparent px-1.5 py-0.5 -mx-1.5 text-2xl font-bold leading-[1.2] tracking-[-0.02em] text-foreground outline-none',
-              'placeholder:text-muted-foreground/70',
-              'hover:bg-foreground/[0.04] focus:bg-foreground/[0.06] focus:shadow-[inset_0_0_0_1px_var(--ring)]',
-              hasImage &&
-                'text-white placeholder:text-white/60 hover:bg-white/10 focus:bg-white/15',
-            )}
-          />
-        ) : (
-          <p
-            className={cn(
-              'text-2xl font-bold leading-[1.2] tracking-[-0.02em] text-foreground line-clamp-2',
-              hasImage && 'text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.45)]',
-            )}
-          >
-            {titleText}
-          </p>
-        )}
-
-        {editable ? (
-          <textarea
-            id="task-desc"
-            value={description}
-            onChange={(e) => onDescriptionChange(e.target.value)}
-            placeholder="Add a description… or let the Coach fill it from chat."
-            aria-label="Description"
-            rows={2}
-            className={cn(
-              // `.tm-desc-input`
-              'mt-1.5 w-full resize-none rounded-lg border-none bg-transparent px-1.5 py-1 -mx-1.5 text-[14.5px] font-normal leading-normal text-muted-foreground outline-none',
-              'placeholder:text-muted-foreground/70',
-              'hover:bg-foreground/[0.04] focus:bg-foreground/[0.06] focus:text-foreground focus:shadow-[inset_0_0_0_1px_var(--ring)]',
-              hasImage &&
-                'text-white/90 placeholder:text-white/50 hover:bg-white/10 focus:bg-white/15 focus:text-white',
-            )}
-          />
-        ) : descText ? (
-          <div className="mt-1.5">
+        <div className="min-w-0">
+          {titleAgent ? (
+            <div className="mb-1 flex" data-testid="task-modal-cover-title-agent">
+              <TaskModalAgentTag />
+            </div>
+          ) : null}
+          {editable ? (
+            <input
+              id="task-title"
+              value={title}
+              onChange={(e) => onTitleChange(e.target.value)}
+              placeholder="Untitled card"
+              aria-label="Title"
+              className={cn(
+                // `.tm-title-input`
+                'w-full rounded-lg border-none bg-transparent px-1.5 py-0.5 -mx-1.5 text-2xl font-bold leading-[1.2] tracking-[-0.02em] text-foreground outline-none',
+                'placeholder:text-muted-foreground/70',
+                'hover:bg-foreground/[0.04] focus:bg-foreground/[0.06] focus:shadow-[inset_0_0_0_1px_var(--ring)]',
+                hasImage &&
+                  'text-white placeholder:text-white/60 hover:bg-white/10 focus:bg-white/15',
+                titleAgent && agentRing,
+              )}
+            />
+          ) : (
             <p
               className={cn(
-                'text-[14.5px] leading-normal text-muted-foreground line-clamp-4',
+                'rounded-lg px-1.5 py-0.5 -mx-1.5 text-2xl font-bold leading-[1.2] tracking-[-0.02em] text-foreground line-clamp-2',
+                hasImage && 'text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.45)]',
+                titleAgent && agentRing,
+              )}
+            >
+              {titleText}
+            </p>
+          )}
+        </div>
+
+        <div className="mt-1.5 min-w-0">
+          {descriptionAgent ? (
+            <div className="mb-1 flex" data-testid="task-modal-cover-desc-agent">
+              <TaskModalAgentTag />
+            </div>
+          ) : null}
+          {editable ? (
+            <textarea
+              id="task-desc"
+              value={description}
+              onChange={(e) => onDescriptionChange(e.target.value)}
+              placeholder="Add a description… or let the Coach fill it from chat."
+              aria-label="Description"
+              rows={2}
+              className={cn(
+                // `.tm-desc-input`
+                'w-full resize-none rounded-lg border-none bg-transparent px-1.5 py-1 -mx-1.5 text-[14.5px] font-normal leading-normal text-muted-foreground outline-none',
+                'placeholder:text-muted-foreground/70',
+                'hover:bg-foreground/[0.04] focus:bg-foreground/[0.06] focus:text-foreground focus:shadow-[inset_0_0_0_1px_var(--ring)]',
+                hasImage &&
+                  'text-white/90 placeholder:text-white/50 hover:bg-white/10 focus:bg-white/15 focus:text-white',
+                descriptionAgent && agentRing,
+              )}
+            />
+          ) : descText ? (
+            <p
+              className={cn(
+                'rounded-lg px-1.5 py-1 -mx-1.5 text-[14.5px] leading-normal text-muted-foreground line-clamp-4',
                 hasImage && 'text-white/90 [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]',
+                descriptionAgent && agentRing,
               )}
             >
               {descText}
             </p>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </div>
     </header>
   );

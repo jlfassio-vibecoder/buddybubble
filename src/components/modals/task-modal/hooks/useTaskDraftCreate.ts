@@ -2,11 +2,7 @@
 
 import { createClient } from '@utils/supabase/client';
 import type { ItemType, TaskRow } from '@/types/database';
-import {
-  buildTaskMetadataPayload,
-  type ProgramWeek,
-  type WorkoutExercise,
-} from '@/lib/item-metadata';
+import { buildTaskMetadataPayload, emptyTaskMetadataFormFields } from '@/lib/item-metadata';
 import { mergeJsonWithLiveSessionToggle } from '@/lib/card-live-session-metadata';
 import { formatUserFacingError } from '@/lib/format-error';
 import {
@@ -41,32 +37,8 @@ export type CreateDraftTaskResult =
 
 function emptyMetadataFormFields(workoutDurationMin: string) {
   return {
-    eventLocation: '',
-    eventUrl: '',
-    eventBring: [] as string[],
-    eventGoing: '',
-    eventCapacity: '',
-    eventGoingPeople: [] as string[],
-    experienceSeason: '',
-    experienceEndDate: '',
-    experienceHighlights: [] as string[],
-    experienceIncludes: [] as string[],
-    experienceGoodFor: [] as string[],
-    experienceLocation: '',
-    experienceDurationMin: '',
-    experiencePrice: '',
-    experienceGroupMin: '',
-    experienceGroupMax: '',
-    memoryCaption: '',
-    workoutType: '',
+    ...emptyTaskMetadataFormFields(),
     workoutDurationMin,
-    workoutExercises: [] as WorkoutExercise[],
-    programGoal: '',
-    programDurationWeeks: '',
-    programCurrentWeek: 0,
-    programSchedule: [] as ProgramWeek[],
-    programSourceTitle: '',
-    cardCoverPath: '',
   };
 }
 

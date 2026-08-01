@@ -6,7 +6,7 @@ import type { TaskDateFieldLabels } from '@/lib/task-date-labels';
 import type { ItemType } from '@/lib/item-types';
 import type { TaskAttachment } from '@/types/task-modal';
 import type { TaskPriority } from '@/lib/task-priority';
-import type { ProgramWeek, WorkoutExercise } from '@/lib/item-metadata';
+import type { MemoryMomentReaction, ProgramWeek, WorkoutExercise } from '@/lib/item-metadata';
 import type { WorkoutIntakeWizardData } from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
 import type { WorkoutIntakePanelWizardProps } from '@/components/fitness/workout-intake/WorkoutGenerationIntakePanel';
 import type { WorkoutTemplate } from '@/hooks/use-workout-templates';
@@ -17,6 +17,7 @@ import { readCoachOutlineMetadata } from '@/lib/agents/coach/coach-outline-metad
 import type { WorkoutOutlineEditorState } from '@/components/modals/task-modal/hooks/useWorkoutOutlineEditor';
 import { TaskModalPropertiesSection } from '@/components/modals/task-modal/TaskModalPropertiesSection';
 import { TaskModalPersonaStrip } from '@/components/modals/task-modal/TaskModalPersonaStrip';
+import { TaskModalAgentTag } from '@/components/modals/task-modal/TaskModalSection';
 import { TaskModalWorkoutCanvas } from '@/components/modals/task-modal/TaskModalWorkoutCanvas';
 import { TaskModalIdeaCanvas } from '@/components/modals/task-modal/TaskModalIdeaCanvas';
 import type { PromoteTargetType } from '@/components/modals/task-modal/TaskModalIdeaCanvas';
@@ -34,6 +35,7 @@ import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
 import { LayoutPanelLeft } from 'lucide-react';
 import { isAgentFilledForDisplay, listAgentFilledKeys } from '@/lib/task-field-provenance';
+import { cn } from '@/lib/utils';
 
 export type TaskModalDetailsBodyProps = {
   title: string;
@@ -84,6 +86,8 @@ export type TaskModalDetailsBodyProps = {
   onEventCapacityChange: (value: string) => void;
   eventGoingPeople: string[];
   onEventGoingPeopleChange: (value: string[]) => void;
+  eventCost: string;
+  onEventCostChange: (value: string) => void;
   experienceSeason: string;
   onExperienceSeasonChange: (value: string) => void;
   scheduledOn: string;
@@ -108,6 +112,14 @@ export type TaskModalDetailsBodyProps = {
   onExperienceGroupMaxChange: (value: string) => void;
   memoryCaption: string;
   onMemoryCaptionChange: (value: string) => void;
+  memoryPeople: string[];
+  onMemoryPeopleChange: (value: string[]) => void;
+  memoryLinkedEvent: string;
+  onMemoryLinkedEventChange: (value: string) => void;
+  memoryLocation: string;
+  onMemoryLocationChange: (value: string) => void;
+  memoryReactions: MemoryMomentReaction[];
+  onMemoryReactionsChange: (value: MemoryMomentReaction[]) => void;
   aiWorkoutProgressIdx: number | null;
   onAiGenerateWorkout: () => void;
   workoutTemplates: WorkoutTemplate[];
@@ -118,6 +130,14 @@ export type TaskModalDetailsBodyProps = {
   onWorkoutTypeChange: (value: string) => void;
   workoutDurationMin: string;
   onWorkoutDurationMinChange: (value: string) => void;
+  workoutTargetRpe: string;
+  onWorkoutTargetRpeChange: (value: string) => void;
+  workoutLogSessionRpe: string;
+  onWorkoutLogSessionRpeChange: (value: string) => void;
+  workoutLogCompletion: string;
+  onWorkoutLogCompletionChange: (value: string) => void;
+  workoutLogMood: string;
+  onWorkoutLogMoodChange: (value: string) => void;
   workoutExercises: WorkoutExercise[];
   onWorkoutExercisesChange: (value: WorkoutExercise[]) => void;
   workoutUnitSystem: UnitSystem;
@@ -130,6 +150,10 @@ export type TaskModalDetailsBodyProps = {
   onProgramGoalChange: (value: string) => void;
   programDurationWeeks: string;
   onProgramDurationWeeksChange: (value: string) => void;
+  programDaysPerWeek: string;
+  onProgramDaysPerWeekChange: (value: string) => void;
+  programLevel: string;
+  onProgramLevelChange: (value: string) => void;
   programCurrentWeek: number;
   programSchedule: ProgramWeek[];
   dateLabels: TaskDateFieldLabels;
@@ -155,6 +179,19 @@ export type TaskModalDetailsBodyProps = {
   onArchiveTask: () => void;
   onHardDeleteTask?: () => void | Promise<void>;
   taskMetadata?: Json;
+  /** Idea: denormalized vote count (`metadata.votes`). */
+  ideaVotes?: number;
+  /** Idea: voter user ids (`metadata.voted_by`). */
+  ideaVotedBy?: string[];
+  ideaEffort: string;
+  onIdeaEffortChange: (value: string) => void;
+  ideaImpact: string;
+  onIdeaImpactChange: (value: string) => void;
+  ideaTags: string[];
+  onIdeaTagsChange: (value: string[]) => void;
+  currentUserId?: string | null;
+  ideaVoteBusy?: boolean;
+  onToggleIdeaVote?: () => void;
   /** Idea canvas: graduate to event / program / class via existing type change. */
   onPromoteItemType?: (next: PromoteTargetType) => void;
   /** When false, Idea “Promote to Class” is disabled (matches class item-type gate). */
@@ -212,6 +249,8 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     onEventCapacityChange,
     eventGoingPeople,
     onEventGoingPeopleChange,
+    eventCost,
+    onEventCostChange,
     experienceSeason,
     onExperienceSeasonChange,
     scheduledOn,
@@ -236,10 +275,26 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     onExperienceGroupMaxChange,
     memoryCaption,
     onMemoryCaptionChange,
+    memoryPeople,
+    onMemoryPeopleChange,
+    memoryLinkedEvent,
+    onMemoryLinkedEventChange,
+    memoryLocation,
+    onMemoryLocationChange,
+    memoryReactions,
+    onMemoryReactionsChange,
     workoutType,
     onWorkoutTypeChange,
     workoutDurationMin,
     onWorkoutDurationMinChange,
+    workoutTargetRpe,
+    onWorkoutTargetRpeChange,
+    workoutLogSessionRpe,
+    onWorkoutLogSessionRpeChange,
+    workoutLogCompletion,
+    onWorkoutLogCompletionChange,
+    workoutLogMood,
+    onWorkoutLogMoodChange,
     workoutExercises,
     workoutUnitSystem,
     workspaceId,
@@ -249,6 +304,10 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     onProgramGoalChange,
     programDurationWeeks,
     onProgramDurationWeeksChange,
+    programDaysPerWeek,
+    onProgramDaysPerWeekChange,
+    programLevel,
+    onProgramLevelChange,
     programCurrentWeek,
     programSchedule,
     dateLabels,
@@ -274,6 +333,17 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     onArchiveTask,
     onHardDeleteTask,
     taskMetadata,
+    ideaVotes = 0,
+    ideaVotedBy = [],
+    ideaEffort,
+    onIdeaEffortChange,
+    ideaImpact,
+    onIdeaImpactChange,
+    ideaTags,
+    onIdeaTagsChange,
+    currentUserId = null,
+    ideaVoteBusy = false,
+    onToggleIdeaVote,
     onPromoteItemType,
     canPromoteToClass = true,
     demotedProvenanceKeys = [],
@@ -296,14 +366,27 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
           <label htmlFor="task-title" className="sr-only">
             Title
           </label>
+          {isAgentField('title') ? (
+            <div className="mb-1 flex" data-testid="task-modal-fallback-title-agent">
+              <TaskModalAgentTag />
+            </div>
+          ) : null}
           <input
             id="task-title"
             value={title}
             onChange={(e) => onTitleChange(e.target.value)}
             disabled={!canWrite}
             placeholder="Untitled"
-            className="-mx-1.5 w-[calc(100%+0.75rem)] rounded-lg border-none bg-transparent px-1.5 py-0.5 text-2xl font-bold leading-tight tracking-tight text-foreground outline-none transition-colors hover:bg-foreground/[0.04] focus:bg-foreground/[0.06] focus:ring-1 focus:ring-inset focus:ring-ring disabled:opacity-60"
+            className={cn(
+              '-mx-1.5 w-[calc(100%+0.75rem)] rounded-lg border-none bg-transparent px-1.5 py-0.5 text-2xl font-bold leading-tight tracking-tight text-foreground outline-none transition-colors hover:bg-foreground/[0.04] focus:bg-foreground/[0.06] focus:ring-1 focus:ring-inset focus:ring-ring disabled:opacity-60',
+              isAgentField('title') && 'ring-1 ring-inset ring-primary/40 bg-primary/[0.04]',
+            )}
           />
+          {isAgentField('description') ? (
+            <div className="mb-1 mt-1.5 flex" data-testid="task-modal-fallback-desc-agent">
+              <TaskModalAgentTag />
+            </div>
+          ) : null}
           <textarea
             id="task-desc"
             aria-label="Description"
@@ -312,7 +395,10 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
             disabled={!canWrite}
             rows={2}
             placeholder="Add a description…"
-            className="-mx-1.5 mt-1.5 w-[calc(100%+0.75rem)] resize-none rounded-lg border-none bg-transparent px-1.5 py-1 text-[14.5px] leading-relaxed text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.04] focus:bg-foreground/[0.06] focus:text-foreground focus:ring-1 focus:ring-inset focus:ring-ring disabled:opacity-60"
+            className={cn(
+              '-mx-1.5 mt-1.5 w-[calc(100%+0.75rem)] resize-none rounded-lg border-none bg-transparent px-1.5 py-1 text-[14.5px] leading-relaxed text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.04] focus:bg-foreground/[0.06] focus:text-foreground focus:ring-1 focus:ring-inset focus:ring-ring disabled:opacity-60',
+              isAgentField('description') && 'ring-1 ring-inset ring-primary/40 bg-primary/[0.04]',
+            )}
           />
         </div>
       ) : null}
@@ -372,11 +458,30 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
         />
       ) : null}
 
-      {itemType === 'workout' ? <TaskModalWorkoutCanvas taskMetadata={taskMetadata} /> : null}
+      {itemType === 'workout' ? (
+        <TaskModalWorkoutCanvas
+          taskMetadata={taskMetadata}
+          workoutTargetRpe={workoutTargetRpe}
+          onWorkoutTargetRpeChange={onWorkoutTargetRpeChange}
+          canWrite={canWrite}
+          isAgentField={isAgentField}
+        />
+      ) : null}
 
       {itemType === 'idea' ? (
         <TaskModalIdeaCanvas
           taskMetadata={taskMetadata}
+          ideaVotes={ideaVotes}
+          ideaVotedBy={ideaVotedBy}
+          ideaEffort={ideaEffort}
+          onIdeaEffortChange={onIdeaEffortChange}
+          ideaImpact={ideaImpact}
+          onIdeaImpactChange={onIdeaImpactChange}
+          ideaTags={ideaTags}
+          onIdeaTagsChange={onIdeaTagsChange}
+          currentUserId={currentUserId}
+          voteBusy={ideaVoteBusy}
+          onToggleVote={onToggleIdeaVote}
           canWrite={canWrite}
           canPromoteToClass={canPromoteToClass}
           onPromoteItemType={onPromoteItemType}
@@ -394,6 +499,16 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
           onPickAttachmentFile={onPickAttachmentFile}
           onDownloadAttachment={onDownloadAttachment}
           onRemoveAttachment={onRemoveAttachment}
+          memoryLinkedEvent={memoryLinkedEvent}
+          onMemoryLinkedEventChange={onMemoryLinkedEventChange}
+          memoryLocation={memoryLocation}
+          onMemoryLocationChange={onMemoryLocationChange}
+          memoryPeople={memoryPeople}
+          onMemoryPeopleChange={onMemoryPeopleChange}
+          memoryReactions={memoryReactions}
+          onMemoryReactionsChange={onMemoryReactionsChange}
+          currentUserId={currentUserId}
+          isAgentField={isAgentField}
         />
       ) : null}
 
@@ -408,6 +523,8 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
           onEventGoingPeopleChange={onEventGoingPeopleChange}
           eventBring={eventBring}
           onEventBringChange={onEventBringChange}
+          eventCost={eventCost}
+          onEventCostChange={onEventCostChange}
           isAgentField={isAgentField}
         />
       ) : null}
@@ -446,6 +563,12 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
           onWorkoutTypeChange={onWorkoutTypeChange}
           workoutDurationMin={workoutDurationMin}
           onWorkoutDurationMinChange={onWorkoutDurationMinChange}
+          workoutLogSessionRpe={workoutLogSessionRpe}
+          onWorkoutLogSessionRpeChange={onWorkoutLogSessionRpeChange}
+          workoutLogCompletion={workoutLogCompletion}
+          onWorkoutLogCompletionChange={onWorkoutLogCompletionChange}
+          workoutLogMood={workoutLogMood}
+          onWorkoutLogMoodChange={onWorkoutLogMoodChange}
           workoutExercises={workoutExercises}
           workoutUnitSystem={workoutUnitSystem}
           taskMetadata={taskMetadata}
@@ -492,6 +615,10 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
           onProgramGoalChange={onProgramGoalChange}
           programDurationWeeks={programDurationWeeks}
           onProgramDurationWeeksChange={onProgramDurationWeeksChange}
+          programDaysPerWeek={programDaysPerWeek}
+          onProgramDaysPerWeekChange={onProgramDaysPerWeekChange}
+          programLevel={programLevel}
+          onProgramLevelChange={onProgramLevelChange}
           programCurrentWeek={programCurrentWeek}
           programSchedule={programSchedule}
           isAgentField={isAgentField}

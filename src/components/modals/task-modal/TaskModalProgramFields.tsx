@@ -17,6 +17,10 @@ export type TaskModalProgramFieldsProps = {
   onProgramGoalChange: (value: string) => void;
   programDurationWeeks: string;
   onProgramDurationWeeksChange: (value: string) => void;
+  programDaysPerWeek: string;
+  onProgramDaysPerWeekChange: (value: string) => void;
+  programLevel: string;
+  onProgramLevelChange: (value: string) => void;
   programCurrentWeek: number;
   programSchedule: ProgramWeek[];
   isAgentField?: (key: string) => boolean;
@@ -32,6 +36,10 @@ export function TaskModalProgramFields({
   onProgramGoalChange,
   programDurationWeeks,
   onProgramDurationWeeksChange,
+  programDaysPerWeek,
+  onProgramDaysPerWeekChange,
+  programLevel,
+  onProgramLevelChange,
   programCurrentWeek,
   programSchedule,
   isAgentField,
@@ -69,21 +77,51 @@ export function TaskModalProgramFields({
         />
       </TaskModalField>
 
-      <TaskModalField
-        label="Duration (weeks)"
-        agent={agent('duration_weeks')}
-        className="mb-0 w-36"
-      >
-        <Input
-          id="task-program-duration"
-          type="number"
-          min={1}
-          value={programDurationWeeks}
-          onChange={(e) => onProgramDurationWeeksChange(e.target.value)}
-          disabled={!canWrite}
-          className="h-9"
-        />
-      </TaskModalField>
+      <div className="flex flex-wrap gap-3">
+        <TaskModalField
+          label="Duration (weeks)"
+          agent={agent('duration_weeks')}
+          className="mb-0 w-36"
+        >
+          <Input
+            id="task-program-duration"
+            type="number"
+            min={1}
+            value={programDurationWeeks}
+            onChange={(e) => onProgramDurationWeeksChange(e.target.value)}
+            disabled={!canWrite}
+            className="h-9"
+          />
+        </TaskModalField>
+        <TaskModalField label="Days / week" agent={agent('days_per_week')} className="mb-0 w-28">
+          <Input
+            id="task-program-days-per-week"
+            type="number"
+            min={1}
+            max={7}
+            value={programDaysPerWeek}
+            onChange={(e) => onProgramDaysPerWeekChange(e.target.value)}
+            disabled={!canWrite}
+            className="h-9"
+            data-testid="task-modal-program-days-per-week"
+          />
+        </TaskModalField>
+        <TaskModalField label="Level" agent={agent('level')} className="mb-0 w-44">
+          <select
+            id="task-program-level"
+            value={programLevel}
+            onChange={(e) => onProgramLevelChange(e.target.value)}
+            disabled={!canWrite}
+            className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+            data-testid="task-modal-program-level"
+          >
+            <option value="">—</option>
+            <option value="beginner">Beginner</option>
+            <option value="intermediate">Intermediate</option>
+            <option value="advanced">Advanced</option>
+          </select>
+        </TaskModalField>
+      </div>
 
       {programCurrentWeek > 0 && programDurationWeeks && (
         <p className="text-xs text-muted-foreground">

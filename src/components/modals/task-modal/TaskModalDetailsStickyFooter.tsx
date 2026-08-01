@@ -46,11 +46,7 @@ export function TaskModalDetailsStickyFooter({
   } else {
     hint = (
       <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-        <Check
-          className="size-3.5 text-emerald-600 dark:text-emerald-500"
-          aria-hidden
-          strokeWidth={2.4}
-        />
+        <Check className="size-3.5 text-primary" aria-hidden strokeWidth={2.4} />
         All changes saved
       </span>
     );

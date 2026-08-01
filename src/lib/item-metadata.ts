@@ -8,8 +8,14 @@ import {
   hasRichWorkoutSetInMetadata,
   passThroughRichWorkoutLogMetadata,
 } from '@/lib/workout-factory/sync-workout-metadata';
+import {
+  parseMemoryMomentReactions,
+  serializeMemoryMomentReactions,
+  type MemoryMomentReaction,
+} from '@/lib/memory-moment-reactions';
 
 export { parseTaskMetadata } from '@/lib/parse-task-metadata';
+export type { MemoryMomentReaction } from '@/lib/memory-moment-reactions';
 
 /**
  * Program ↔ workout linkage uses top-level `tasks.program_id` and `tasks.program_session_key`,
@@ -125,6 +131,31 @@ const MANAGED_METADATA_KEYS = [
   'program_source_title',
   /** Supabase Storage path in `task-attachments` for Kanban/chat card header image. */
   'card_cover_path',
+  /** Idea: denormalized interest vote count (`metadata.votes`). */
+  'votes',
+  /** Idea: user ids who voted (`metadata.voted_by`). */
+  'voted_by',
+  /** Idea: effort / impact / tags (Phase K schemas gap). */
+  'effort',
+  'impact',
+  'tags',
+  /** Event: cost display string (`metadata.cost`). */
+  'cost',
+  /** Workout: target session RPE 1–10 (`metadata.target_rpe`). */
+  'target_rpe',
+  /** Workout log: session RPE / completion % / mood. */
+  'session_rpe',
+  'completion',
+  'mood',
+  /** Program: days per week + level. */
+  'days_per_week',
+  'level',
+  /** Memory: tagged people labels (`metadata.people`). */
+  'people',
+  /** Memory: linked event title/id (`metadata.linked_event`). */
+  'linked_event',
+  /** Memory: moment reaction pills (`metadata.reactions`). */
+  'reactions',
 ] as const;
 
 export type TaskMetadataFormFields = {
@@ -138,6 +169,8 @@ export type TaskMetadataFormFields = {
   eventCapacity: string;
   /** Event: people labels/initials for avatar stack (`metadata.going_people`). */
   eventGoingPeople: string[];
+  /** Event: cost display string (`metadata.cost`). */
+  eventCost: string;
   experienceSeason: string;
   /** YYYY-MM-DD; experience span end (start is `scheduled_on`). */
   experienceEndDate: string;
@@ -158,16 +191,36 @@ export type TaskMetadataFormFields = {
   /** Experience: group size max (`metadata.group_max`). */
   experienceGroupMax: string;
   memoryCaption: string;
+  /** Memory: tagged people labels (`metadata.people`). */
+  memoryPeople: string[];
+  /** Memory: linked event title or id (`metadata.linked_event`). */
+  memoryLinkedEvent: string;
+  /** Memory: optional place string (`metadata.location`). */
+  memoryLocation: string;
+  /** Memory: moment reactions (`metadata.reactions`). */
+  memoryReactions: MemoryMomentReaction[];
   /** Workout / workout_log: free-text type (e.g. "Strength", "Cardio"). */
   workoutType: string;
   /** Workout duration in whole minutes. */
   workoutDurationMin: string;
+  /** Workout: target RPE 1–10 (`metadata.target_rpe`). */
+  workoutTargetRpe: string;
+  /** Workout log: session RPE 1–10 (`metadata.session_rpe`). */
+  workoutLogSessionRpe: string;
+  /** Workout log: completion 0–100 (`metadata.completion`). */
+  workoutLogCompletion: string;
+  /** Workout log: mood emoji/string (`metadata.mood`). */
+  workoutLogMood: string;
   /** Ordered list of exercises with sets/reps/weight/duration. */
   workoutExercises: WorkoutExercise[];
   /** Program: stated goal (e.g. "Build lean muscle"). */
   programGoal: string;
   /** Program: total length as a string for number input. */
   programDurationWeeks: string;
+  /** Program: days per week (`metadata.days_per_week`). */
+  programDaysPerWeek: string;
+  /** Program: level beginner|intermediate|advanced (`metadata.level`). */
+  programLevel: string;
   /** Program: which week the user is currently on (0 = not started). */
   programCurrentWeek: number;
   /** Program: weekly workout schedule. */
@@ -176,6 +229,16 @@ export type TaskMetadataFormFields = {
   programSourceTitle: string;
   /** Storage path for optional card cover image (all item types). */
   cardCoverPath: string;
+  /** Idea: interest vote count (`metadata.votes`). */
+  ideaVotes: number;
+  /** Idea: user ids who voted (`metadata.voted_by`). */
+  ideaVotedBy: string[];
+  /** Idea: effort Low|Medium|High (`metadata.effort`). */
+  ideaEffort: string;
+  /** Idea: impact Low|Medium|High (`metadata.impact`). */
+  ideaImpact: string;
+  /** Idea: tags (`metadata.tags`). */
+  ideaTags: string[];
 };
 
 /** Normalize a string[] metadata field (trim, drop empties). */
@@ -221,11 +284,36 @@ export function asProgramSchedule(value: unknown): ProgramWeek[] {
   });
 }
 
+/** Normalize idea effort/impact to Low|Medium|High (empty if unknown). */
+export function normalizeIdeaLevel(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const t = value.trim().toLowerCase();
+  if (t === 'low') return 'Low';
+  if (t === 'medium') return 'Medium';
+  if (t === 'high') return 'High';
+  return '';
+}
+
+/** Normalize program level to beginner|intermediate|advanced. */
+export function normalizeProgramLevel(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const t = value.trim().toLowerCase();
+  if (t === 'beginner' || t === 'intermediate' || t === 'advanced') return t;
+  return '';
+}
+
+/** Empty form fields (all managed keys cleared). */
+export function emptyTaskMetadataFormFields(): TaskMetadataFormFields {
+  return metadataFieldsFromParsed({});
+}
+
 /** Read string inputs from saved metadata (for TaskModal local state). */
 export function metadataFieldsFromParsed(meta: unknown): TaskMetadataFormFields {
   const o = parseTaskMetadata(meta) as Record<string, unknown>;
   const str = (v: unknown) => (typeof v === 'string' ? v : '');
   const endRaw = str(o.end_date);
+  const numStr = (v: unknown) =>
+    v != null && Number.isFinite(Number(v)) ? String(Math.floor(Number(v))) : '';
   return {
     eventLocation: str(o.location),
     eventUrl: str(o.url),
@@ -234,6 +322,7 @@ export function metadataFieldsFromParsed(meta: unknown): TaskMetadataFormFields 
     eventCapacity:
       o.capacity != null && Number.isFinite(Number(o.capacity)) ? String(o.capacity) : '',
     eventGoingPeople: asStringList(o.going_people),
+    eventCost: str(o.cost),
     experienceSeason: str(o.season),
     experienceEndDate: endRaw.length >= 10 ? endRaw.slice(0, 10) : endRaw,
     experienceHighlights: asStringList(o.highlights),
@@ -247,21 +336,47 @@ export function metadataFieldsFromParsed(meta: unknown): TaskMetadataFormFields 
     experienceGroupMax:
       o.group_max != null && Number.isFinite(Number(o.group_max)) ? String(o.group_max) : '',
     memoryCaption: str(o.caption),
+    memoryPeople: asStringList(o.people),
+    memoryLinkedEvent: str(o.linked_event),
+    memoryLocation: str(o.location),
+    memoryReactions: parseMemoryMomentReactions(o.reactions),
     workoutType: str(o.workout_type),
     workoutDurationMin: o.duration_min != null ? String(o.duration_min) : '',
+    workoutTargetRpe: numStr(o.target_rpe),
+    workoutLogSessionRpe: numStr(o.session_rpe),
+    workoutLogCompletion: (() => {
+      const fromCompletion = numStr(o.completion);
+      if (fromCompletion) return fromCompletion;
+      return numStr(o.completion_pct);
+    })(),
+    workoutLogMood: str(o.mood),
     workoutExercises: parseWorkoutExercisesFromMetadata(meta),
     programGoal: str(o.goal),
     programDurationWeeks: o.duration_weeks != null ? String(o.duration_weeks) : '',
+    programDaysPerWeek: numStr(o.days_per_week),
+    programLevel: normalizeProgramLevel(o.level),
     programCurrentWeek: typeof o.current_week === 'number' ? o.current_week : 0,
     programSchedule: asProgramSchedule(o.schedule),
     programSourceTitle: str(o.program_source_title),
     cardCoverPath: str(o.card_cover_path),
+    ideaVotedBy: asStringList(o.voted_by),
+    ideaVotes: (() => {
+      const votedBy = asStringList(o.voted_by);
+      const raw =
+        o.votes != null && Number.isFinite(Number(o.votes)) && Number(o.votes) >= 0
+          ? Math.floor(Number(o.votes))
+          : 0;
+      return votedBy.length > 0 ? Math.max(raw, votedBy.length) : raw;
+    })(),
+    ideaEffort: normalizeIdeaLevel(o.effort),
+    ideaImpact: normalizeIdeaLevel(o.impact),
+    ideaTags: asStringList(o.tags),
   };
 }
 
 /**
  * Merge type-specific fields into metadata; strips managed keys first so switching `item_type`
- * does not leave stale keys. Preserves other keys (e.g. future `votes` on ideas).
+ * does not leave stale keys. Preserves unmanaged keys on the base object.
  */
 export function buildTaskMetadataPayload(
   itemType: ItemType,
@@ -274,6 +389,16 @@ export function buildTaskMetadataPayload(
   }
   const t = (s: string) => s.trim();
   switch (itemType) {
+    case 'idea': {
+      if (fields.ideaVotedBy.length > 0) o.voted_by = fields.ideaVotedBy;
+      if (fields.ideaVotes > 0) o.votes = fields.ideaVotes;
+      const effort = normalizeIdeaLevel(fields.ideaEffort);
+      if (effort) o.effort = effort;
+      const impact = normalizeIdeaLevel(fields.ideaImpact);
+      if (impact) o.impact = impact;
+      if (fields.ideaTags.length > 0) o.tags = fields.ideaTags;
+      break;
+    }
     case 'event': {
       if (t(fields.eventLocation)) o.location = t(fields.eventLocation);
       if (t(fields.eventUrl)) o.url = t(fields.eventUrl);
@@ -283,6 +408,7 @@ export function buildTaskMetadataPayload(
       const capN = parseInt(fields.eventCapacity, 10);
       if (!isNaN(capN) && capN > 0) o.capacity = capN;
       if (fields.eventGoingPeople.length > 0) o.going_people = fields.eventGoingPeople;
+      if (t(fields.eventCost)) o.cost = t(fields.eventCost);
       break;
     }
     case 'experience': {
@@ -301,9 +427,15 @@ export function buildTaskMetadataPayload(
       if (!isNaN(gMax) && gMax > 0) o.group_max = gMax;
       break;
     }
-    case 'memory':
+    case 'memory': {
       if (t(fields.memoryCaption)) o.caption = t(fields.memoryCaption);
+      if (fields.memoryPeople.length > 0) o.people = fields.memoryPeople;
+      if (t(fields.memoryLinkedEvent)) o.linked_event = t(fields.memoryLinkedEvent);
+      if (t(fields.memoryLocation)) o.location = t(fields.memoryLocation);
+      const reactions = serializeMemoryMomentReactions(fields.memoryReactions);
+      if (reactions.length > 0) o.reactions = reactions;
       break;
+    }
     case 'workout':
     case 'workout_log': {
       delete o.linked_program_task_id;
@@ -312,12 +444,32 @@ export function buildTaskMetadataPayload(
       const mins = parseInt(fields.workoutDurationMin, 10);
       if (!isNaN(mins) && mins > 0) o.duration_min = mins;
       if (fields.workoutExercises.length > 0) o.exercises = fields.workoutExercises;
+      if (itemType === 'workout') {
+        const rpe = parseInt(fields.workoutTargetRpe, 10);
+        if (!isNaN(rpe) && rpe >= 1 && rpe <= 10) o.target_rpe = rpe;
+      }
+      if (itemType === 'workout_log') {
+        delete o.completion_pct;
+        const sessionRpe = parseInt(fields.workoutLogSessionRpe, 10);
+        if (!isNaN(sessionRpe) && sessionRpe >= 1 && sessionRpe <= 10) {
+          o.session_rpe = sessionRpe;
+        }
+        const completion = parseInt(fields.workoutLogCompletion, 10);
+        if (!isNaN(completion) && completion >= 0 && completion <= 100) {
+          o.completion = completion;
+        }
+        if (t(fields.workoutLogMood)) o.mood = t(fields.workoutLogMood);
+      }
       break;
     }
     case 'program': {
       if (t(fields.programGoal)) o.goal = t(fields.programGoal);
       const dw = parseInt(fields.programDurationWeeks, 10);
       if (!isNaN(dw) && dw > 0) o.duration_weeks = dw;
+      const dpw = parseInt(fields.programDaysPerWeek, 10);
+      if (!isNaN(dpw) && dpw > 0) o.days_per_week = dpw;
+      const level = normalizeProgramLevel(fields.programLevel);
+      if (level) o.level = level;
       if (fields.programCurrentWeek > 0) o.current_week = fields.programCurrentWeek;
       if (fields.programSchedule.length > 0) o.schedule = fields.programSchedule;
       if (t(fields.programSourceTitle)) o.program_source_title = t(fields.programSourceTitle);

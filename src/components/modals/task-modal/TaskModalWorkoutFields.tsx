@@ -28,6 +28,8 @@ export type TaskModalWorkoutFieldsProps = {
   onWorkoutTypeChange: (value: string) => void;
   workoutDurationMin: string;
   onWorkoutDurationMinChange: (value: string) => void;
+  workoutTargetRpe?: string;
+  onWorkoutTargetRpeChange?: (value: string) => void;
   workoutExercises: WorkoutExercise[];
   onWorkoutExercisesChange: (next: WorkoutExercise[]) => void;
   workoutUnitSystem: UnitSystem;
@@ -54,6 +56,8 @@ export function TaskModalWorkoutFields({
   onWorkoutTypeChange,
   workoutDurationMin,
   onWorkoutDurationMinChange,
+  workoutTargetRpe = '',
+  onWorkoutTargetRpeChange,
   workoutExercises,
   onWorkoutExercisesChange,
   workoutUnitSystem,
@@ -162,6 +166,24 @@ export function TaskModalWorkoutFields({
             className="h-9"
           />
         </TaskModalField>
+        {onWorkoutTargetRpeChange ? (
+          <TaskModalField
+            label="Target RPE"
+            agent={agent('target_rpe')}
+            className="mb-0 w-28 shrink-0"
+          >
+            <Input
+              id="task-workout-target-rpe"
+              type="number"
+              min={1}
+              max={10}
+              value={workoutTargetRpe}
+              onChange={(e) => onWorkoutTargetRpeChange(e.target.value)}
+              disabled={!canWrite}
+              className="h-9"
+            />
+          </TaskModalField>
+        ) : null}
       </div>
       <WorkoutExercisesEditor
         key={taskId ?? 'new-task'}

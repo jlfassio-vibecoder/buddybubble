@@ -6,7 +6,12 @@ import { metadataFieldsFromParsed, parseTaskMetadata } from '@/lib/item-metadata
 import { useWorkoutSessionViewModel } from '@/hooks/use-workout-session-view-model';
 import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-session-view-model';
 import type { Exercise } from '@/lib/workout-factory/types/ai-program';
-import { TaskModalSection } from '@/components/modals/task-modal/TaskModalSection';
+import {
+  TaskModalAgentTag,
+  TaskModalField,
+  TaskModalSection,
+} from '@/components/modals/task-modal/TaskModalSection';
+import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
 const FMT_ACCENT = new Set([
@@ -25,7 +30,13 @@ const FMT_ACCENT = new Set([
 
 export type TaskModalWorkoutCanvasProps = {
   taskMetadata?: Json | null;
+  /** Form-driven target RPE (`metadata.target_rpe`). */
+  workoutTargetRpe?: string;
+  onWorkoutTargetRpeChange?: (value: string) => void;
+  canWrite?: boolean;
   className?: string;
+  /** Live Coach provenance display (respects demoted keys). */
+  isAgentField?: (key: string) => boolean;
 };
 
 function formatPillLabel(blockFormat: string | null): string {
@@ -101,15 +112,22 @@ function FactoryExerciseRow({ ex, index }: { ex: Exercise; index: number }) {
   );
 }
 
-function BlockCard({ block }: { block: WorkoutSessionBlockView }) {
+function BlockCard({ block, agent }: { block: WorkoutSessionBlockView; agent?: boolean }) {
   const fmtLabel = formatPillLabel(block.blockFormat);
   const accent = Boolean(block.blockFormat && FMT_ACCENT.has(block.blockFormat));
   const isInstr = !block.blockFormat && block.instructions.length > 0;
 
   return (
-    <div className="mb-2.5 overflow-hidden rounded-[var(--radius-xl)] border border-border bg-background last:mb-0">
+    <div
+      className={cn(
+        'mb-2.5 overflow-hidden rounded-[var(--radius-xl)] border bg-background last:mb-0',
+        agent ? 'border-primary/55' : 'border-border',
+      )}
+      data-testid={agent ? 'task-modal-workout-block-agent' : 'task-modal-workout-block'}
+    >
       <div className="flex flex-wrap items-center gap-2.5 border-b border-border px-3.5 py-2.5">
         <span className="text-[13.5px] font-bold tracking-tight text-foreground">{block.name}</span>
+        {agent ? <TaskModalAgentTag /> : null}
         <span
           className={cn(
             'inline-flex h-[22px] items-center rounded-full px-2.5 text-[10.5px] font-extrabold uppercase tracking-[0.05em]',
@@ -160,7 +178,11 @@ function EmptyBlocksPrompt() {
  */
 export function TaskModalWorkoutCanvas({
   taskMetadata = null,
+  workoutTargetRpe = '',
+  onWorkoutTargetRpeChange,
+  canWrite = false,
   className,
+  isAgentField,
 }: TaskModalWorkoutCanvasProps) {
   const vm = useWorkoutSessionViewModel(taskMetadata);
   const fields = metadataFieldsFromParsed(parseTaskMetadata(taskMetadata ?? {}));
@@ -169,14 +191,23 @@ export function TaskModalWorkoutCanvas({
   const durationRaw = fields.workoutDurationMin.trim();
   const durationNum = Number(durationRaw);
   const hasDuration = durationRaw !== '' && Number.isFinite(durationNum) && durationNum > 0;
+  const targetRaw = workoutTargetRpe.trim() || fields.workoutTargetRpe.trim();
+  const targetNum = Number(targetRaw);
+  const hasTarget =
+    targetRaw !== '' && Number.isFinite(targetNum) && targetNum >= 1 && targetNum <= 10;
 
   const tiles = [
     { k: 'Type', v: typeTile, u: '' },
     { k: 'Duration', v: hasDuration ? String(durationNum) : '—', u: hasDuration ? 'min' : '' },
-    { k: 'Target', v: '—', u: '' },
+    { k: 'Target', v: hasTarget ? String(targetNum) : '—', u: hasTarget ? 'RPE' : '' },
   ];
 
   const showEmpty = vm.blocks.length === 0;
+  const structureAgent = Boolean(
+    isAgentField?.('blocks') || isAgentField?.('coach_workout_outline'),
+  );
+  const flatExercisesAgent = vm.source === 'flat' && Boolean(isAgentField?.('exercises'));
+  const blocksAgent = structureAgent || flatExercisesAgent;
 
   return (
     <div className={className} data-testid="task-modal-workout-canvas">
@@ -204,12 +235,33 @@ export function TaskModalWorkoutCanvas({
           ))}
         </div>
 
+        {onWorkoutTargetRpeChange ? (
+          <TaskModalField
+            label="Target RPE"
+            optional
+            agent={Boolean(isAgentField?.('target_rpe'))}
+            className="mb-3.5 w-36"
+          >
+            <Input
+              type="number"
+              min={1}
+              max={10}
+              value={workoutTargetRpe}
+              onChange={(e) => onWorkoutTargetRpeChange(e.target.value)}
+              disabled={!canWrite}
+              aria-label="Target RPE"
+              className="h-9"
+              data-testid="task-modal-workout-target-rpe"
+            />
+          </TaskModalField>
+        ) : null}
+
         {showEmpty ? (
           <EmptyBlocksPrompt />
         ) : (
           <div data-testid="task-modal-workout-canvas-blocks">
             {vm.blocks.map((block) => (
-              <BlockCard key={block.id} block={block} />
+              <BlockCard key={block.id} block={block} agent={blocksAgent} />
             ))}
           </div>
         )}
