@@ -395,4 +395,43 @@ describe('TaskModalDetailsBody', () => {
     );
     expect(screen.queryByTestId('task-modal-persona-strip')).toBeNull();
   });
+
+  it('shows Coach chrome on fallback title/desc when provenance is agent-filled', () => {
+    render(
+      <TaskModalDetailsBody
+        {...baseProps}
+        titleFieldsOwnedByCover={false}
+        taskMetadata={
+          {
+            field_provenance: {
+              title: { by: 'agent', agent_slug: 'coach' },
+              description: { by: 'agent', agent_slug: 'coach' },
+            },
+          } as Json
+        }
+      />,
+    );
+    expect(screen.getByTestId('task-modal-fallback-title-agent')).toBeTruthy();
+    expect(screen.getByTestId('task-modal-fallback-desc-agent')).toBeTruthy();
+  });
+
+  it('hides fallback Coach chrome when title/description are demoted', () => {
+    render(
+      <TaskModalDetailsBody
+        {...baseProps}
+        titleFieldsOwnedByCover={false}
+        demotedProvenanceKeys={['title', 'description']}
+        taskMetadata={
+          {
+            field_provenance: {
+              title: { by: 'agent', agent_slug: 'coach' },
+              description: { by: 'agent', agent_slug: 'coach' },
+            },
+          } as Json
+        }
+      />,
+    );
+    expect(screen.queryByTestId('task-modal-fallback-title-agent')).toBeNull();
+    expect(screen.queryByTestId('task-modal-fallback-desc-agent')).toBeNull();
+  });
 });

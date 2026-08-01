@@ -28,6 +28,8 @@ Tracked against PR [#176](https://github.com/jlfassio-vibecoder/buddybubble/pull
 - **Idea vote toggle** — `.tm-vote` upvote on/off for current user; managed keys `votes` / `voted_by`; immediate `saveCoreFields` on existing tasks; primary-tinted on state; Coach provenance demote on overwrite. No vote ledger table / ranked boards.
 - **Memory people + linked event + moment reactions** — `TaskModalMemoryCanvas`: From (`linked_event` free text), Tagged people chips + avatar stack (`people`), moment reaction pills on task metadata (`reactions` with `emoji`/`count`/`reacted_by`). Reuses `ChatMessageReactionPills`; sticky Save. Caption stays in Moment; Comments `message_reactions` unchanged. No CRM picker / Event auto-link.
 - **Workout block Coach chrome** — `TaskModalWorkoutCanvas` block cards show Coach border/tag when `field_provenance` marks `blocks` / `coach_workout_outline` (or flat `exercises`) agent-filled; live demote clears chrome. Form `exercises` edits also demote `blocks`. No nested provenance writers / editable block chrome.
+- **Cover title/description Coach chrome** — `TaskModalCoverHeader` (and DetailsBody fallback when cover does not own title fields): Coach tag + soft inset ring when `title` / `description` are agent-filled; live demotion clears chrome. Autosave stays column-only (no JSONB provenance patch on keystroke).
+- **Theme spot-check (business × light)** — Shell + Details verified under `theme-business` light; sticky-footer saved check uses `text-primary` (see Phase I results below). No redesign / no new themes.
 - **Comments reaction pills** — `message_reactions` table + `useMessageReactions`; `.tm-react`-style pills on `ChatMessageRow` (StandardTaskChatRail + TaskModalCommentsPanel) with closed emoji set and SmilePlus popover.
 - **Coach / PCC display** — durable `tasks.metadata.field_provenance` sidecar (`by: 'agent' | 'user'`, optional `agent_slug` / `at`). Coach Edge strategy stamps keys it changes; TaskModal save + title/desc autosave demote to `by: 'user'`. UI: `TaskModalPersonaStrip` when any agent entries remain; `TaskModalField.agent` chrome on type/metadata fields via `isAgentFilledForDisplay` (Properties stay human board meta). Helpers: `src/lib/task-field-provenance.ts` (+ Edge twin). No historical backfill.
 - **Program week cards** — `TaskModalProgramWeekCards` in `TaskModalProgramFields`: `.tm-week` / `.tm-sess` Tailwind from `ProgramWeek[]` (Mon–Sun rows, muted Rest for missing days). Single-template + `duration_weeks > 1` shows “Repeats · N weeks” meta (no cloned cards). Goal / Duration / Personalize unchanged; `TaskModalField.agent` on `schedule`. Helpers: `buildProgramWeekCardModel` / `buildProgramWeekCards` in `src/lib/fitness/program-schedule.ts`. No Add-week / enrollment / child deep links.
@@ -35,25 +37,30 @@ Tracked against PR [#176](https://github.com/jlfassio-vibecoder/buddybubble/pull
 - **Experience highlights / includes / good_for** — `TaskModalExperienceCanvas`: icon-led lists + good_for chips + optional location / duration / price / group min–max. Managed keys `highlights`, `includes`, `good_for`, `price`, `group_min`, `group_max` (+ experience writes of `location` / `duration_min`). Shared `TaskModalChipListEditor` / `TaskModalStringListEditor`. Experience span (season / start / end) unchanged; Schedule still omitted. No booking / maps / enrollment.
 - **Workout log session canvas** — `TaskModalWorkoutLogCanvas`: performed on / start time echoes from `scheduledOn` / `scheduledTime`, 3-col stats (Duration / Session RPE / Completion), light-edit Type + Duration, embedded `WorkoutLogReadSummary`. Helpers in `workout-log-session-stats.ts`. Optional display-only PR chip when exercise `pr === true`. No player / PR detection / parallel `log[]` model; Schedule remains the date/time editor.
 
+### Phase I — Theme spot-check results
+
+**Matrix:** `theme-business` × light (required).
+
+| Surface                                              | Result | Notes                                                                                                                                                                                             |
+| ---------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shell                                                | Pass   | Card `bg-card`, overlay, radius readable on light; indigo primary from ThemeScope                                                                                                                 |
+| Cover (no image)                                     | Pass   | Title/desc contrast OK; primary wash on cover header                                                                                                                                              |
+| Cover (with image)                                   | Pass   | White title + near-white desc over dark gradient remain legible                                                                                                                                   |
+| Type chip + change-type popover                      | Pass   | Chip type tint OK; portaled menu readable (white surface / dark text). Menu inherits `:root` `--primary` (near-black), not business indigo — not a contrast fail; type selection uses type colors |
+| Tabs                                                 | Pass   | Active Details underline/icon on business indigo                                                                                                                                                  |
+| Editor chrome                                        | Pass   | Visibility Private selected = indigo border/tint; Live checkbox readable                                                                                                                          |
+| Persona strip + Coach tags / agent fields            | Pass   | No agent-stamped fields on sample cards; chrome is tokenized (`bg-primary` / `text-primary`) — indigo tint verified on related primary surfaces (tabs, Visibility, format pills)                  |
+| Properties / Schedule / Cover / Attachments / Danger | Pass   | Borders + muted labels readable                                                                                                                                                                   |
+| One type body                                        | Pass   | Workout blocks: circuit pills primary-tinted indigo; exercise rows readable                                                                                                                       |
+| Sticky footer                                        | Pass   | Cancel/Save contrast OK; saved check was hard-coded emerald (~3.8:1 on white) → `text-primary`                                                                                                    |
+
+**Fixes landed:** `TaskModalDetailsStickyFooter` saved `Check` icon: `text-emerald-600` → `text-primary`.
+
+**Other category × mode notes:** none found during this pass (did not expand into a full matrix).
+
 ### Remaining work (phased — one plan each)
 
 Each phase below is sized for a **single implementation plan**. Do not combine phases. Design refs: `taskmodal/forms.jsx`, `taskmodal/schemas.js`, `taskmodal/modal.css` (classes noted per phase). Keep Properties / Schedule / Cover / Attachments / Danger as they are unless a phase says otherwise. Showcase chrome stays out of scope.
-
-#### Phase H — Cover title & description Coach chrome
-
-- **Goal:** Subtle Coach treatment on cover title/description when `field_provenance` marks those keys agent-filled.
-- **In scope:** `TaskModalCoverHeader` (and fallback title fields in DetailsBody if shown): border/tag or equivalent low-risk chrome; respect live demotion keys; no change to autosave column writes.
-- **Out of scope:** Nested workout blocks (Phase G); changing autosave to patch JSONB provenance on every keystroke.
-- **Accept:** Agent-written title/description show Coach affordance; user edit clears it in UI; Save persists demotion as today.
-- **Primary refs:** Cover inputs in `TaskModalReference.jsx` / `.tm-cover`; existing `TaskModalAgentTag`.
-
-#### Phase I — Theme spot-check (shell + Details)
-
-- **Goal:** Verify TaskModal shell + Details under a non-fitness theme before calling visual port “done.”
-- **In scope:** Spot-check at least `theme-business` light (and note any other category × light/dark issues found). Fix only token/contrast bugs that break handoff fidelity (no redesign). Document results in this README.
-- **Out of scope:** New themes; redesign of type bodies; showcase chrome.
-- **Accept:** Short checklist in this README (pass/fail per surface) + any small token fixes landed.
-- **Primary refs:** Fidelity / Design Tokens sections below; app `theme-engine/registry.ts`.
 
 #### Phase J — Bubbly alias (product naming pass)
 

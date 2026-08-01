@@ -17,6 +17,7 @@ import { readCoachOutlineMetadata } from '@/lib/agents/coach/coach-outline-metad
 import type { WorkoutOutlineEditorState } from '@/components/modals/task-modal/hooks/useWorkoutOutlineEditor';
 import { TaskModalPropertiesSection } from '@/components/modals/task-modal/TaskModalPropertiesSection';
 import { TaskModalPersonaStrip } from '@/components/modals/task-modal/TaskModalPersonaStrip';
+import { TaskModalAgentTag } from '@/components/modals/task-modal/TaskModalSection';
 import { TaskModalWorkoutCanvas } from '@/components/modals/task-modal/TaskModalWorkoutCanvas';
 import { TaskModalIdeaCanvas } from '@/components/modals/task-modal/TaskModalIdeaCanvas';
 import type { PromoteTargetType } from '@/components/modals/task-modal/TaskModalIdeaCanvas';
@@ -34,6 +35,7 @@ import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
 import { LayoutPanelLeft } from 'lucide-react';
 import { isAgentFilledForDisplay, listAgentFilledKeys } from '@/lib/task-field-provenance';
+import { cn } from '@/lib/utils';
 
 export type TaskModalDetailsBodyProps = {
   title: string;
@@ -320,14 +322,27 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
           <label htmlFor="task-title" className="sr-only">
             Title
           </label>
+          {isAgentField('title') ? (
+            <div className="mb-1 flex" data-testid="task-modal-fallback-title-agent">
+              <TaskModalAgentTag />
+            </div>
+          ) : null}
           <input
             id="task-title"
             value={title}
             onChange={(e) => onTitleChange(e.target.value)}
             disabled={!canWrite}
             placeholder="Untitled"
-            className="-mx-1.5 w-[calc(100%+0.75rem)] rounded-lg border-none bg-transparent px-1.5 py-0.5 text-2xl font-bold leading-tight tracking-tight text-foreground outline-none transition-colors hover:bg-foreground/[0.04] focus:bg-foreground/[0.06] focus:ring-1 focus:ring-inset focus:ring-ring disabled:opacity-60"
+            className={cn(
+              '-mx-1.5 w-[calc(100%+0.75rem)] rounded-lg border-none bg-transparent px-1.5 py-0.5 text-2xl font-bold leading-tight tracking-tight text-foreground outline-none transition-colors hover:bg-foreground/[0.04] focus:bg-foreground/[0.06] focus:ring-1 focus:ring-inset focus:ring-ring disabled:opacity-60',
+              isAgentField('title') && 'ring-1 ring-inset ring-primary/40 bg-primary/[0.04]',
+            )}
           />
+          {isAgentField('description') ? (
+            <div className="mb-1 mt-1.5 flex" data-testid="task-modal-fallback-desc-agent">
+              <TaskModalAgentTag />
+            </div>
+          ) : null}
           <textarea
             id="task-desc"
             aria-label="Description"
@@ -336,7 +351,10 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
             disabled={!canWrite}
             rows={2}
             placeholder="Add a description…"
-            className="-mx-1.5 mt-1.5 w-[calc(100%+0.75rem)] resize-none rounded-lg border-none bg-transparent px-1.5 py-1 text-[14.5px] leading-relaxed text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.04] focus:bg-foreground/[0.06] focus:text-foreground focus:ring-1 focus:ring-inset focus:ring-ring disabled:opacity-60"
+            className={cn(
+              '-mx-1.5 mt-1.5 w-[calc(100%+0.75rem)] resize-none rounded-lg border-none bg-transparent px-1.5 py-1 text-[14.5px] leading-relaxed text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.04] focus:bg-foreground/[0.06] focus:text-foreground focus:ring-1 focus:ring-inset focus:ring-ring disabled:opacity-60',
+              isAgentField('description') && 'ring-1 ring-inset ring-primary/40 bg-primary/[0.04]',
+            )}
           />
         </div>
       ) : null}

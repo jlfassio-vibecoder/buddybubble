@@ -81,7 +81,7 @@ import {
   type ProgramWeek,
   type WorkoutExercise,
 } from '@/lib/item-metadata';
-import { stampUserFields } from '@/lib/task-field-provenance';
+import { isAgentFilledForDisplay, stampUserFields } from '@/lib/task-field-provenance';
 import { detectUserDemotedProvenanceKeys } from '@/lib/task-field-provenance-demote';
 import { toggleIdeaVote } from '@/lib/idea-vote';
 import { useWorkoutTemplates } from '@/hooks/use-workout-templates';
@@ -800,6 +800,13 @@ export function TaskModal({
       original: originalSnapshot,
     });
   }, [itemType, formFieldsForProvenance, title, description, originalSnapshot]);
+
+  const titleAgent = isAgentFilledForDisplay(metadata, 'title', userDemotedProvenanceKeys);
+  const descriptionAgent = isAgentFilledForDisplay(
+    metadata,
+    'description',
+    userDemotedProvenanceKeys,
+  );
 
   const metadataForSave = useMemo(() => {
     const built = buildTaskMetadataPayload(itemType, formFieldsForProvenance, metadata);
@@ -2781,6 +2788,8 @@ export function TaskModal({
             description={description ?? ''}
             onTitleChange={setTitle}
             onDescriptionChange={setDescription}
+            titleAgent={titleAgent}
+            descriptionAgent={descriptionAgent}
             coverPath={cardCoverPath.trim() || null}
             onClose={() => handleOpenChange(false)}
             onArchiveTask={!isCreateMode && taskId ? archiveTask : undefined}
