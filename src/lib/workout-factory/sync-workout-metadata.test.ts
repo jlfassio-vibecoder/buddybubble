@@ -387,6 +387,10 @@ describe('finalizeWorkoutMetadataForSave', () => {
   const emptyFields = (): TaskMetadataFormFields => ({
     eventLocation: '',
     eventUrl: '',
+    eventBring: [],
+    eventGoing: '',
+    eventCapacity: '',
+    eventGoingPeople: [],
     experienceSeason: '',
     experienceEndDate: '',
     memoryCaption: '',

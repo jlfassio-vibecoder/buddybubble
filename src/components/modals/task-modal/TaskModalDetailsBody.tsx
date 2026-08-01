@@ -20,6 +20,7 @@ import { TaskModalPersonaStrip } from '@/components/modals/task-modal/TaskModalP
 import { TaskModalWorkoutCanvas } from '@/components/modals/task-modal/TaskModalWorkoutCanvas';
 import { TaskModalIdeaCanvas } from '@/components/modals/task-modal/TaskModalIdeaCanvas';
 import type { PromoteTargetType } from '@/components/modals/task-modal/TaskModalIdeaCanvas';
+import { TaskModalEventCanvas } from '@/components/modals/task-modal/TaskModalEventCanvas';
 import { TaskModalMemoryCanvas } from '@/components/modals/task-modal/TaskModalMemoryCanvas';
 import { TaskModalCardCoverSection } from '@/components/modals/task-modal/TaskModalCardCoverSection';
 import { TaskModalItemMetadataSections } from '@/components/modals/task-modal/TaskModalItemMetadataSections';
@@ -74,6 +75,14 @@ export type TaskModalDetailsBodyProps = {
   onEventLocationChange: (value: string) => void;
   eventUrl: string;
   onEventUrlChange: (value: string) => void;
+  eventBring: string[];
+  onEventBringChange: (value: string[]) => void;
+  eventGoing: string;
+  onEventGoingChange: (value: string) => void;
+  eventCapacity: string;
+  onEventCapacityChange: (value: string) => void;
+  eventGoingPeople: string[];
+  onEventGoingPeopleChange: (value: string[]) => void;
   experienceSeason: string;
   onExperienceSeasonChange: (value: string) => void;
   scheduledOn: string;
@@ -175,6 +184,14 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     onEventLocationChange,
     eventUrl,
     onEventUrlChange,
+    eventBring,
+    onEventBringChange,
+    eventGoing,
+    onEventGoingChange,
+    eventCapacity,
+    onEventCapacityChange,
+    eventGoingPeople,
+    onEventGoingPeopleChange,
     experienceSeason,
     onExperienceSeasonChange,
     scheduledOn,
@@ -348,6 +365,21 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
           onPickAttachmentFile={onPickAttachmentFile}
           onDownloadAttachment={onDownloadAttachment}
           onRemoveAttachment={onRemoveAttachment}
+        />
+      ) : null}
+
+      {itemType === 'event' ? (
+        <TaskModalEventCanvas
+          canWrite={canWrite}
+          eventGoing={eventGoing}
+          onEventGoingChange={onEventGoingChange}
+          eventCapacity={eventCapacity}
+          onEventCapacityChange={onEventCapacityChange}
+          eventGoingPeople={eventGoingPeople}
+          onEventGoingPeopleChange={onEventGoingPeopleChange}
+          eventBring={eventBring}
+          onEventBringChange={onEventBringChange}
+          isAgentField={isAgentField}
         />
       ) : null}
 

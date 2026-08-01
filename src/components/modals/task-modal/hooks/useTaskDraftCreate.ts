@@ -43,6 +43,10 @@ function emptyMetadataFormFields(workoutDurationMin: string) {
   return {
     eventLocation: '',
     eventUrl: '',
+    eventBring: [] as string[],
+    eventGoing: '',
+    eventCapacity: '',
+    eventGoingPeople: [] as string[],
     experienceSeason: '',
     experienceEndDate: '',
     memoryCaption: '',

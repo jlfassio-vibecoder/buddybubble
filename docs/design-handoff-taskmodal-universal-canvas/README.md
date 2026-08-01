@@ -28,18 +28,11 @@ Tracked against PR [#176](https://github.com/jlfassio-vibecoder/buddybubble/pull
 - **Comments reaction pills** — `message_reactions` table + `useMessageReactions`; `.tm-react`-style pills on `ChatMessageRow` (StandardTaskChatRail + TaskModalCommentsPanel) with closed emoji set and SmilePlus popover.
 - **Coach / PCC display** — durable `tasks.metadata.field_provenance` sidecar (`by: 'agent' | 'user'`, optional `agent_slug` / `at`). Coach Edge strategy stamps keys it changes; TaskModal save + title/desc autosave demote to `by: 'user'`. UI: `TaskModalPersonaStrip` when any agent entries remain; `TaskModalField.agent` chrome on type/metadata fields via `isAgentFilledForDisplay` (Properties stay human board meta). Helpers: `src/lib/task-field-provenance.ts` (+ Edge twin). No historical backfill.
 - **Program week cards** — `TaskModalProgramWeekCards` in `TaskModalProgramFields`: `.tm-week` / `.tm-sess` Tailwind from `ProgramWeek[]` (Mon–Sun rows, muted Rest for missing days). Single-template + `duration_weeks > 1` shows “Repeats · N weeks” meta (no cloned cards). Goal / Duration / Personalize unchanged; `TaskModalField.agent` on `schedule`. Helpers: `buildProgramWeekCardModel` / `buildProgramWeekCards` in `src/lib/fitness/program-schedule.ts`. No Add-week / enrollment / child deep links.
+- **Event bring tags + RSVP (metadata-only)** — `TaskModalEventCanvas`: Who’s going card (going / capacity / progress / `going_people` initials stack) + What to bring chips. Persisted via managed metadata keys `bring`, `going`, `capacity`, `going_people` in `item-metadata`. Location / Meeting link unchanged. **No event enrollment table / “I’m going” CTA** this pass (Class RSVP remains the only real enrollment backend). Provenance demote + `TaskModalField.agent` on the new keys.
 
 ### Remaining work (phased — one plan each)
 
 Each phase below is sized for a **single implementation plan**. Do not combine phases. Design refs: `taskmodal/forms.jsx`, `taskmodal/schemas.js`, `taskmodal/modal.css` (classes noted per phase). Keep Properties / Schedule / Cover / Attachments / Danger as they are unless a phase says otherwise. Showcase chrome stays out of scope.
-
-#### Phase B — Event Details body (bring tags + RSVP)
-
-- **Goal:** Event type body beyond location / meeting link: bring/highlights tags and a Who’s going RSVP block.
-- **In scope:** Read + edit paths for metadata keys already in `schemas.js` / handoff (`bring` / tags, `going` / `capacity`, `going_people` or workspace-member mapping). Tailwind mirror of `.tm-list` / `.tm-tag` / `.tm-rsvp` (spots + progress + “I’m going” if a clear existing RSVP/enrollment pattern exists; otherwise read-only going count + avatar stack). Keep existing location / URL fields. Provenance chrome on wired fields.
-- **Out of scope:** New payment/cost checkout, calendar invites, full Event create wizard, inventing a new RSVP backend if none exists (document gap and ship read UI from metadata only).
-- **Accept:** Event Details shows tags + RSVP-style block from task metadata; save round-trips edited tag lists through existing metadata payload builders.
-- **Primary refs:** `forms.jsx` `EventBody`; event record in `schemas.js`; `.tm-tag`, `.tm-rsvp`, `.tm-av-stack`.
 
 #### Phase C — Experience Details body (highlights / includes / good_for)
 

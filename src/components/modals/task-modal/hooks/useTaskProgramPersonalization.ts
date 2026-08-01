@@ -163,6 +163,10 @@ export function useTaskProgramPersonalization({
         {
           eventLocation,
           eventUrl,
+          eventBring: [],
+          eventGoing: '',
+          eventCapacity: '',
+          eventGoingPeople: [],
           experienceSeason,
           experienceEndDate,
           memoryCaption,

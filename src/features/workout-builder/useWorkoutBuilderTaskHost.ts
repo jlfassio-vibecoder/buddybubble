@@ -145,6 +145,10 @@ export function useWorkoutBuilderTaskHost({
         {
           eventLocation: '',
           eventUrl: '',
+          eventBring: [],
+          eventGoing: '',
+          eventCapacity: '',
+          eventGoingPeople: [],
           experienceSeason: '',
           experienceEndDate: '',
           memoryCaption: '',

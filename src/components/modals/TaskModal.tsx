@@ -505,6 +505,10 @@ export function TaskModal({
 
   const [eventLocation, setEventLocation] = useState('');
   const [eventUrl, setEventUrl] = useState('');
+  const [eventBring, setEventBring] = useState<string[]>([]);
+  const [eventGoing, setEventGoing] = useState('');
+  const [eventCapacity, setEventCapacity] = useState('');
+  const [eventGoingPeople, setEventGoingPeople] = useState<string[]>([]);
   const [experienceSeason, setExperienceSeason] = useState('');
   /** YYYY-MM-DD experience span end (`metadata.end_date`). */
   const [experienceEndDate, setExperienceEndDate] = useState('');
@@ -693,6 +697,10 @@ export function TaskModal({
     () => ({
       eventLocation,
       eventUrl,
+      eventBring,
+      eventGoing,
+      eventCapacity,
+      eventGoingPeople,
       experienceSeason,
       experienceEndDate,
       memoryCaption,
@@ -709,6 +717,10 @@ export function TaskModal({
     [
       eventLocation,
       eventUrl,
+      eventBring,
+      eventGoing,
+      eventCapacity,
+      eventGoingPeople,
       experienceSeason,
       experienceEndDate,
       memoryCaption,
@@ -858,6 +870,10 @@ export function TaskModal({
       const mf = metadataFieldsFromParsed(metaToApply);
       setEventLocation(mf.eventLocation);
       setEventUrl(mf.eventUrl);
+      setEventBring(mf.eventBring);
+      setEventGoing(mf.eventGoing);
+      setEventCapacity(mf.eventCapacity);
+      setEventGoingPeople(mf.eventGoingPeople);
       setExperienceSeason(mf.experienceSeason);
       setExperienceEndDate(mf.experienceEndDate);
       setMemoryCaption(mf.memoryCaption);
@@ -915,6 +931,10 @@ export function TaskModal({
     setMetadata({});
     setEventLocation('');
     setEventUrl('');
+    setEventBring([]);
+    setEventGoing('');
+    setEventCapacity('');
+    setEventGoingPeople([]);
     setExperienceSeason('');
     setExperienceEndDate('');
     setMemoryCaption('');
@@ -1298,6 +1318,10 @@ export function TaskModal({
       const mf = metadataFieldsFromParsed(meta);
       setEventLocation(mf.eventLocation);
       setEventUrl(mf.eventUrl);
+      setEventBring(mf.eventBring);
+      setEventGoing(mf.eventGoing);
+      setEventCapacity(mf.eventCapacity);
+      setEventGoingPeople(mf.eventGoingPeople);
       setExperienceSeason(mf.experienceSeason);
       setExperienceEndDate(mf.experienceEndDate);
       setMemoryCaption(mf.memoryCaption);
@@ -1895,6 +1919,10 @@ export function TaskModal({
         {
           eventLocation,
           eventUrl,
+          eventBring,
+          eventGoing,
+          eventCapacity,
+          eventGoingPeople,
           experienceSeason,
           experienceEndDate,
           memoryCaption,
@@ -1942,6 +1970,10 @@ export function TaskModal({
         {
           eventLocation,
           eventUrl,
+          eventBring,
+          eventGoing,
+          eventCapacity,
+          eventGoingPeople,
           experienceSeason,
           experienceEndDate,
           memoryCaption,
@@ -2195,6 +2227,14 @@ export function TaskModal({
       onEventLocationChange: setEventLocation,
       eventUrl,
       onEventUrlChange: setEventUrl,
+      eventBring,
+      onEventBringChange: setEventBring,
+      eventGoing,
+      onEventGoingChange: setEventGoing,
+      eventCapacity,
+      onEventCapacityChange: setEventCapacity,
+      eventGoingPeople,
+      onEventGoingPeopleChange: setEventGoingPeople,
       experienceSeason,
       onExperienceSeasonChange: setExperienceSeason,
       scheduledOn,
@@ -2284,6 +2324,10 @@ export function TaskModal({
       generateCardCoverWithAi,
       eventLocation,
       eventUrl,
+      eventBring,
+      eventGoing,
+      eventCapacity,
+      eventGoingPeople,
       experienceSeason,
       scheduledOn,
       experienceEndDate,

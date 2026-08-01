@@ -99,6 +99,10 @@ export type ProgramWeek = {
 const MANAGED_METADATA_KEYS = [
   'location',
   'url',
+  'bring',
+  'going',
+  'capacity',
+  'going_people',
   'season',
   'end_date',
   'caption',
@@ -118,6 +122,14 @@ const MANAGED_METADATA_KEYS = [
 export type TaskMetadataFormFields = {
   eventLocation: string;
   eventUrl: string;
+  /** Event: what-to-bring tags (`metadata.bring`). */
+  eventBring: string[];
+  /** Event: going count as string for number input (`metadata.going`). */
+  eventGoing: string;
+  /** Event: optional capacity (`metadata.capacity`). */
+  eventCapacity: string;
+  /** Event: people labels/initials for avatar stack (`metadata.going_people`). */
+  eventGoingPeople: string[];
   experienceSeason: string;
   /** YYYY-MM-DD; experience span end (start is `scheduled_on`). */
   experienceEndDate: string;
@@ -141,6 +153,15 @@ export type TaskMetadataFormFields = {
   /** Storage path for optional card cover image (all item types). */
   cardCoverPath: string;
 };
+
+/** Normalize a string[] metadata field (trim, drop empties). */
+export function asStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((v): v is string => typeof v === 'string')
+    .map((v) => v.trim())
+    .filter((v) => v.length > 0);
+}
 
 /** Normalize stored `schedule` JSON into `ProgramWeek[]` (for API + forms). */
 export function asProgramSchedule(value: unknown): ProgramWeek[] {
@@ -184,6 +205,11 @@ export function metadataFieldsFromParsed(meta: unknown): TaskMetadataFormFields 
   return {
     eventLocation: str(o.location),
     eventUrl: str(o.url),
+    eventBring: asStringList(o.bring),
+    eventGoing: o.going != null && Number.isFinite(Number(o.going)) ? String(o.going) : '',
+    eventCapacity:
+      o.capacity != null && Number.isFinite(Number(o.capacity)) ? String(o.capacity) : '',
+    eventGoingPeople: asStringList(o.going_people),
     experienceSeason: str(o.season),
     experienceEndDate: endRaw.length >= 10 ? endRaw.slice(0, 10) : endRaw,
     memoryCaption: str(o.caption),
@@ -214,10 +240,17 @@ export function buildTaskMetadataPayload(
   }
   const t = (s: string) => s.trim();
   switch (itemType) {
-    case 'event':
+    case 'event': {
       if (t(fields.eventLocation)) o.location = t(fields.eventLocation);
       if (t(fields.eventUrl)) o.url = t(fields.eventUrl);
+      if (fields.eventBring.length > 0) o.bring = fields.eventBring;
+      const goingN = parseInt(fields.eventGoing, 10);
+      if (!isNaN(goingN) && goingN >= 0) o.going = goingN;
+      const capN = parseInt(fields.eventCapacity, 10);
+      if (!isNaN(capN) && capN > 0) o.capacity = capN;
+      if (fields.eventGoingPeople.length > 0) o.going_people = fields.eventGoingPeople;
       break;
+    }
     case 'experience':
       if (t(fields.experienceSeason)) o.season = t(fields.experienceSeason);
       if (t(fields.experienceEndDate)) o.end_date = t(fields.experienceEndDate).slice(0, 10);

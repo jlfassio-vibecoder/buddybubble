@@ -35,6 +35,14 @@ export function detectUserDemotedProvenanceKeys(args: {
     case 'event':
       if (changed(fields.eventLocation, origFields.eventLocation)) keys.push('location');
       if (changed(fields.eventUrl, origFields.eventUrl)) keys.push('url');
+      if (JSON.stringify(fields.eventBring) !== JSON.stringify(origFields.eventBring)) {
+        keys.push('bring');
+      }
+      if (changed(fields.eventGoing, origFields.eventGoing)) keys.push('going');
+      if (changed(fields.eventCapacity, origFields.eventCapacity)) keys.push('capacity');
+      if (JSON.stringify(fields.eventGoingPeople) !== JSON.stringify(origFields.eventGoingPeople)) {
+        keys.push('going_people');
+      }
       break;
     case 'experience':
       if (changed(fields.experienceSeason, origFields.experienceSeason)) keys.push('season');
