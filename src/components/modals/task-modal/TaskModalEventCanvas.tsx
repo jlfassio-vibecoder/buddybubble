@@ -1,16 +1,14 @@
 'use client';
 
-import { useState } from 'react';
-import { Package, Users, X } from 'lucide-react';
+import { Package, Users } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarGroup } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import {
   TaskModalField,
   TaskModalSection,
   taskModalInputClass,
 } from '@/components/modals/task-modal/TaskModalSection';
-import { cn } from '@/lib/utils';
+import { TaskModalChipListEditor } from '@/components/modals/task-modal/TaskModalChipListEditor';
 
 const AVATAR_PREVIEW = 5;
 
@@ -27,93 +25,6 @@ export type TaskModalEventCanvasProps = {
   isAgentField?: (key: string) => boolean;
   className?: string;
 };
-
-function ChipListEditor({
-  values,
-  onChange,
-  canWrite,
-  addPlaceholder,
-  testId,
-  chipIcon,
-}: {
-  values: string[];
-  onChange: (next: string[]) => void;
-  canWrite: boolean;
-  addPlaceholder: string;
-  testId: string;
-  chipIcon?: boolean;
-}) {
-  const [draft, setDraft] = useState('');
-
-  const commit = () => {
-    const t = draft.trim();
-    if (!t) return;
-    if (values.some((v) => v.toLowerCase() === t.toLowerCase())) {
-      setDraft('');
-      return;
-    }
-    onChange([...values, t]);
-    setDraft('');
-  };
-
-  return (
-    <div className="space-y-2" data-testid={testId}>
-      <div className="flex flex-wrap gap-1.5">
-        {values.map((v) => (
-          <span
-            key={v}
-            className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-secondary px-2.5 text-xs font-semibold text-foreground"
-          >
-            {chipIcon ? <Package className="size-3 text-muted-foreground" aria-hidden /> : null}
-            {v}
-            {canWrite ? (
-              <button
-                type="button"
-                className="rounded p-0.5 text-muted-foreground hover:text-foreground"
-                aria-label={`Remove ${v}`}
-                onClick={() => onChange(values.filter((x) => x !== v))}
-              >
-                <X className="size-3" aria-hidden />
-              </button>
-            ) : null}
-          </span>
-        ))}
-        {values.length === 0 && !canWrite ? (
-          <p className="text-xs text-muted-foreground" data-testid={`${testId}-empty`}>
-            None yet
-          </p>
-        ) : null}
-      </div>
-      {canWrite ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                commit();
-              }
-            }}
-            placeholder={addPlaceholder}
-            aria-label={addPlaceholder}
-            className={cn(taskModalInputClass, 'h-8 max-w-[200px]')}
-          />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-8"
-            onClick={commit}
-            data-testid={`${testId}-add`}
-          >
-            Add
-          </Button>
-        </div>
-      ) : null}
-    </div>
-  );
-}
 
 /**
  * Handoff-aligned Event Details canvas: metadata-only Who’s going + What to bring.
@@ -241,7 +152,7 @@ export function TaskModalEventCanvas({
           agent={agent('going_people')}
           className="mb-0 mt-3.5"
         >
-          <ChipListEditor
+          <TaskModalChipListEditor
             values={eventGoingPeople}
             onChange={onEventGoingPeopleChange}
             canWrite={canWrite}
@@ -251,7 +162,7 @@ export function TaskModalEventCanvas({
         </TaskModalField>
 
         <TaskModalField label="What to bring" agent={agent('bring')} className="mb-0 mt-3.5">
-          <ChipListEditor
+          <TaskModalChipListEditor
             values={eventBring}
             onChange={onEventBringChange}
             canWrite={canWrite}

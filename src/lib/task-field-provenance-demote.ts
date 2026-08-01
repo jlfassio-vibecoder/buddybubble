@@ -47,6 +47,29 @@ export function detectUserDemotedProvenanceKeys(args: {
     case 'experience':
       if (changed(fields.experienceSeason, origFields.experienceSeason)) keys.push('season');
       if (changed(fields.experienceEndDate, origFields.experienceEndDate)) keys.push('end_date');
+      if (
+        JSON.stringify(fields.experienceHighlights) !==
+        JSON.stringify(origFields.experienceHighlights)
+      ) {
+        keys.push('highlights');
+      }
+      if (
+        JSON.stringify(fields.experienceIncludes) !== JSON.stringify(origFields.experienceIncludes)
+      ) {
+        keys.push('includes');
+      }
+      if (
+        JSON.stringify(fields.experienceGoodFor) !== JSON.stringify(origFields.experienceGoodFor)
+      ) {
+        keys.push('good_for');
+      }
+      if (changed(fields.experienceLocation, origFields.experienceLocation)) keys.push('location');
+      if (changed(fields.experienceDurationMin, origFields.experienceDurationMin)) {
+        keys.push('duration_min');
+      }
+      if (changed(fields.experiencePrice, origFields.experiencePrice)) keys.push('price');
+      if (changed(fields.experienceGroupMin, origFields.experienceGroupMin)) keys.push('group_min');
+      if (changed(fields.experienceGroupMax, origFields.experienceGroupMax)) keys.push('group_max');
       break;
     case 'memory':
       if (changed(fields.memoryCaption, origFields.memoryCaption)) keys.push('caption');

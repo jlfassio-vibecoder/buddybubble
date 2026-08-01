@@ -29,18 +29,11 @@ Tracked against PR [#176](https://github.com/jlfassio-vibecoder/buddybubble/pull
 - **Coach / PCC display** — durable `tasks.metadata.field_provenance` sidecar (`by: 'agent' | 'user'`, optional `agent_slug` / `at`). Coach Edge strategy stamps keys it changes; TaskModal save + title/desc autosave demote to `by: 'user'`. UI: `TaskModalPersonaStrip` when any agent entries remain; `TaskModalField.agent` chrome on type/metadata fields via `isAgentFilledForDisplay` (Properties stay human board meta). Helpers: `src/lib/task-field-provenance.ts` (+ Edge twin). No historical backfill.
 - **Program week cards** — `TaskModalProgramWeekCards` in `TaskModalProgramFields`: `.tm-week` / `.tm-sess` Tailwind from `ProgramWeek[]` (Mon–Sun rows, muted Rest for missing days). Single-template + `duration_weeks > 1` shows “Repeats · N weeks” meta (no cloned cards). Goal / Duration / Personalize unchanged; `TaskModalField.agent` on `schedule`. Helpers: `buildProgramWeekCardModel` / `buildProgramWeekCards` in `src/lib/fitness/program-schedule.ts`. No Add-week / enrollment / child deep links.
 - **Event bring tags + RSVP (metadata-only)** — `TaskModalEventCanvas`: Who’s going card (going / capacity / progress / `going_people` initials stack) + What to bring chips. Persisted via managed metadata keys `bring`, `going`, `capacity`, `going_people` in `item-metadata`. Location / Meeting link unchanged. **No event enrollment table / “I’m going” CTA** this pass (Class RSVP remains the only real enrollment backend). Provenance demote + `TaskModalField.agent` on the new keys.
+- **Experience highlights / includes / good_for** — `TaskModalExperienceCanvas`: icon-led lists + good_for chips + optional location / duration / price / group min–max. Managed keys `highlights`, `includes`, `good_for`, `price`, `group_min`, `group_max` (+ experience writes of `location` / `duration_min`). Shared `TaskModalChipListEditor` / `TaskModalStringListEditor`. Experience span (season / start / end) unchanged; Schedule still omitted. No booking / maps / enrollment.
 
 ### Remaining work (phased — one plan each)
 
 Each phase below is sized for a **single implementation plan**. Do not combine phases. Design refs: `taskmodal/forms.jsx`, `taskmodal/schemas.js`, `taskmodal/modal.css` (classes noted per phase). Keep Properties / Schedule / Cover / Attachments / Danger as they are unless a phase says otherwise. Showcase chrome stays out of scope.
-
-#### Phase C — Experience Details body (highlights / includes / good_for)
-
-- **Goal:** Experience tag-driven body on top of existing season + start/end dates.
-- **In scope:** Display + edit for `highlights`, `includes`, `good_for` (and optional location / duration / price / group size if already stored or trivially added as metadata strings). `.tm-list` / `.tm-tag` Tailwind. Provenance on touched keys. Leave Schedule section omitted for experience as today.
-- **Out of scope:** Booking/checkout, capacity enrollment backend, map embeds.
-- **Accept:** Experience Details shows list + tag rows from metadata; empty state + add/remove for lists; save via `buildTaskMetadataPayload` / form fields.
-- **Primary refs:** `forms.jsx` `ExperienceBody`; experience record in `schemas.js`.
 
 #### Phase D — Workout log session canvas
 

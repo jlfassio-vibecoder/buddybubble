@@ -512,6 +512,14 @@ export function TaskModal({
   const [experienceSeason, setExperienceSeason] = useState('');
   /** YYYY-MM-DD experience span end (`metadata.end_date`). */
   const [experienceEndDate, setExperienceEndDate] = useState('');
+  const [experienceHighlights, setExperienceHighlights] = useState<string[]>([]);
+  const [experienceIncludes, setExperienceIncludes] = useState<string[]>([]);
+  const [experienceGoodFor, setExperienceGoodFor] = useState<string[]>([]);
+  const [experienceLocation, setExperienceLocation] = useState('');
+  const [experienceDurationMin, setExperienceDurationMin] = useState('');
+  const [experiencePrice, setExperiencePrice] = useState('');
+  const [experienceGroupMin, setExperienceGroupMin] = useState('');
+  const [experienceGroupMax, setExperienceGroupMax] = useState('');
   const [memoryCaption, setMemoryCaption] = useState('');
   const [workoutType, setWorkoutType] = useState('');
   const [workoutDurationMin, setWorkoutDurationMin] = useState('');
@@ -703,6 +711,14 @@ export function TaskModal({
       eventGoingPeople,
       experienceSeason,
       experienceEndDate,
+      experienceHighlights,
+      experienceIncludes,
+      experienceGoodFor,
+      experienceLocation,
+      experienceDurationMin,
+      experiencePrice,
+      experienceGroupMin,
+      experienceGroupMax,
       memoryCaption,
       workoutType,
       workoutDurationMin,
@@ -723,6 +739,14 @@ export function TaskModal({
       eventGoingPeople,
       experienceSeason,
       experienceEndDate,
+      experienceHighlights,
+      experienceIncludes,
+      experienceGoodFor,
+      experienceLocation,
+      experienceDurationMin,
+      experiencePrice,
+      experienceGroupMin,
+      experienceGroupMax,
       memoryCaption,
       workoutType,
       workoutDurationMin,
@@ -876,6 +900,14 @@ export function TaskModal({
       setEventGoingPeople(mf.eventGoingPeople);
       setExperienceSeason(mf.experienceSeason);
       setExperienceEndDate(mf.experienceEndDate);
+      setExperienceHighlights(mf.experienceHighlights);
+      setExperienceIncludes(mf.experienceIncludes);
+      setExperienceGoodFor(mf.experienceGoodFor);
+      setExperienceLocation(mf.experienceLocation);
+      setExperienceDurationMin(mf.experienceDurationMin);
+      setExperiencePrice(mf.experiencePrice);
+      setExperienceGroupMin(mf.experienceGroupMin);
+      setExperienceGroupMax(mf.experienceGroupMax);
       setMemoryCaption(mf.memoryCaption);
       setWorkoutType(mf.workoutType);
       setWorkoutDurationMin(mf.workoutDurationMin);
@@ -937,6 +969,14 @@ export function TaskModal({
     setEventGoingPeople([]);
     setExperienceSeason('');
     setExperienceEndDate('');
+    setExperienceHighlights([]);
+    setExperienceIncludes([]);
+    setExperienceGoodFor([]);
+    setExperienceLocation('');
+    setExperienceDurationMin('');
+    setExperiencePrice('');
+    setExperienceGroupMin('');
+    setExperienceGroupMax('');
     setMemoryCaption('');
     setWorkoutType('');
     setWorkoutDurationMin(
@@ -1324,6 +1364,14 @@ export function TaskModal({
       setEventGoingPeople(mf.eventGoingPeople);
       setExperienceSeason(mf.experienceSeason);
       setExperienceEndDate(mf.experienceEndDate);
+      setExperienceHighlights(mf.experienceHighlights);
+      setExperienceIncludes(mf.experienceIncludes);
+      setExperienceGoodFor(mf.experienceGoodFor);
+      setExperienceLocation(mf.experienceLocation);
+      setExperienceDurationMin(mf.experienceDurationMin);
+      setExperiencePrice(mf.experiencePrice);
+      setExperienceGroupMin(mf.experienceGroupMin);
+      setExperienceGroupMax(mf.experienceGroupMax);
       setMemoryCaption(mf.memoryCaption);
       setWorkoutType(mf.workoutType);
       setWorkoutDurationMin(mf.workoutDurationMin);
@@ -1925,6 +1973,14 @@ export function TaskModal({
           eventGoingPeople,
           experienceSeason,
           experienceEndDate,
+          experienceHighlights,
+          experienceIncludes,
+          experienceGoodFor,
+          experienceLocation,
+          experienceDurationMin,
+          experiencePrice,
+          experienceGroupMin,
+          experienceGroupMax,
           memoryCaption,
           workoutType,
           workoutDurationMin,
@@ -1976,6 +2032,14 @@ export function TaskModal({
           eventGoingPeople,
           experienceSeason,
           experienceEndDate,
+          experienceHighlights,
+          experienceIncludes,
+          experienceGoodFor,
+          experienceLocation,
+          experienceDurationMin,
+          experiencePrice,
+          experienceGroupMin,
+          experienceGroupMax,
           memoryCaption,
           workoutType,
           workoutDurationMin,
@@ -2244,6 +2308,22 @@ export function TaskModal({
       },
       experienceEndDate,
       onExperienceEndDateChange: setExperienceEndDate,
+      experienceHighlights,
+      onExperienceHighlightsChange: setExperienceHighlights,
+      experienceIncludes,
+      onExperienceIncludesChange: setExperienceIncludes,
+      experienceGoodFor,
+      onExperienceGoodForChange: setExperienceGoodFor,
+      experienceLocation,
+      onExperienceLocationChange: setExperienceLocation,
+      experienceDurationMin,
+      onExperienceDurationMinChange: setExperienceDurationMin,
+      experiencePrice,
+      onExperiencePriceChange: setExperiencePrice,
+      experienceGroupMin,
+      onExperienceGroupMinChange: setExperienceGroupMin,
+      experienceGroupMax,
+      onExperienceGroupMaxChange: setExperienceGroupMax,
       memoryCaption,
       onMemoryCaptionChange: setMemoryCaption,
       aiWorkoutProgressIdx,
@@ -2331,6 +2411,14 @@ export function TaskModal({
       experienceSeason,
       scheduledOn,
       experienceEndDate,
+      experienceHighlights,
+      experienceIncludes,
+      experienceGoodFor,
+      experienceLocation,
+      experienceDurationMin,
+      experiencePrice,
+      experienceGroupMin,
+      experienceGroupMax,
       memoryCaption,
       aiWorkoutProgressIdx,
       handleAiGenerateWorkout,

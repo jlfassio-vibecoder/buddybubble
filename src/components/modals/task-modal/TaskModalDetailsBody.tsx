@@ -21,6 +21,7 @@ import { TaskModalWorkoutCanvas } from '@/components/modals/task-modal/TaskModal
 import { TaskModalIdeaCanvas } from '@/components/modals/task-modal/TaskModalIdeaCanvas';
 import type { PromoteTargetType } from '@/components/modals/task-modal/TaskModalIdeaCanvas';
 import { TaskModalEventCanvas } from '@/components/modals/task-modal/TaskModalEventCanvas';
+import { TaskModalExperienceCanvas } from '@/components/modals/task-modal/TaskModalExperienceCanvas';
 import { TaskModalMemoryCanvas } from '@/components/modals/task-modal/TaskModalMemoryCanvas';
 import { TaskModalCardCoverSection } from '@/components/modals/task-modal/TaskModalCardCoverSection';
 import { TaskModalItemMetadataSections } from '@/components/modals/task-modal/TaskModalItemMetadataSections';
@@ -89,6 +90,22 @@ export type TaskModalDetailsBodyProps = {
   onExperienceStartDateChange: (value: string) => void;
   experienceEndDate: string;
   onExperienceEndDateChange: (value: string) => void;
+  experienceHighlights: string[];
+  onExperienceHighlightsChange: (value: string[]) => void;
+  experienceIncludes: string[];
+  onExperienceIncludesChange: (value: string[]) => void;
+  experienceGoodFor: string[];
+  onExperienceGoodForChange: (value: string[]) => void;
+  experienceLocation: string;
+  onExperienceLocationChange: (value: string) => void;
+  experienceDurationMin: string;
+  onExperienceDurationMinChange: (value: string) => void;
+  experiencePrice: string;
+  onExperiencePriceChange: (value: string) => void;
+  experienceGroupMin: string;
+  onExperienceGroupMinChange: (value: string) => void;
+  experienceGroupMax: string;
+  onExperienceGroupMaxChange: (value: string) => void;
   memoryCaption: string;
   onMemoryCaptionChange: (value: string) => void;
   aiWorkoutProgressIdx: number | null;
@@ -198,6 +215,22 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     onExperienceStartDateChange,
     experienceEndDate,
     onExperienceEndDateChange,
+    experienceHighlights,
+    onExperienceHighlightsChange,
+    experienceIncludes,
+    onExperienceIncludesChange,
+    experienceGoodFor,
+    onExperienceGoodForChange,
+    experienceLocation,
+    onExperienceLocationChange,
+    experienceDurationMin,
+    onExperienceDurationMinChange,
+    experiencePrice,
+    onExperiencePriceChange,
+    experienceGroupMin,
+    onExperienceGroupMinChange,
+    experienceGroupMax,
+    onExperienceGroupMaxChange,
     memoryCaption,
     onMemoryCaptionChange,
     aiWorkoutProgressIdx,
@@ -379,6 +412,29 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
           onEventGoingPeopleChange={onEventGoingPeopleChange}
           eventBring={eventBring}
           onEventBringChange={onEventBringChange}
+          isAgentField={isAgentField}
+        />
+      ) : null}
+
+      {itemType === 'experience' ? (
+        <TaskModalExperienceCanvas
+          canWrite={canWrite}
+          experienceHighlights={experienceHighlights}
+          onExperienceHighlightsChange={onExperienceHighlightsChange}
+          experienceIncludes={experienceIncludes}
+          onExperienceIncludesChange={onExperienceIncludesChange}
+          experienceGoodFor={experienceGoodFor}
+          onExperienceGoodForChange={onExperienceGoodForChange}
+          experienceLocation={experienceLocation}
+          onExperienceLocationChange={onExperienceLocationChange}
+          experienceDurationMin={experienceDurationMin}
+          onExperienceDurationMinChange={onExperienceDurationMinChange}
+          experiencePrice={experiencePrice}
+          onExperiencePriceChange={onExperiencePriceChange}
+          experienceGroupMin={experienceGroupMin}
+          onExperienceGroupMinChange={onExperienceGroupMinChange}
+          experienceGroupMax={experienceGroupMax}
+          onExperienceGroupMaxChange={onExperienceGroupMaxChange}
           isAgentField={isAgentField}
         />
       ) : null}
