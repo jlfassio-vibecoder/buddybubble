@@ -8,9 +8,13 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  quality:
-    name: Format, types, ESLint, and tests
+  lint_and_unit:
+    name: Format, types, ESLint, and unit tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -25,15 +29,6 @@ jobs:
           node-version: '22.x'
           cache: pnpm
 
-      - name: Setup Deno
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-          # Persist DENO_DIR (JSR/HTTP deps) across runs; keyed on the Deno lock + config
-          # so cache invalidates only when integration-test dependencies change.
-          cache: true
-          cache-hash: ${{ hashFiles('supabase/deno.lock', 'supabase/deno.json') }}
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -46,12 +41,51 @@ jobs:
       - name: Run ESLint
         run: pnpm run lint:eslint
 
-      - name: Tests
+      - name: Unit tests
         env:
           NODE_OPTIONS: --max-old-space-size=4096
           NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
           NEXT_PUBLIC_SUPABASE_ANON_KEY: dummy
         run: pnpm test
 
+  deno_integration:
+    name: Deno integration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect Deno-relevant changes
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            deno:
+              - 'supabase/**'
+              - 'scripts/check-agent-*.ts'
+              - '.github/workflows/ci.yml'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+
+      - name: Skip Deno (no Edge changes on PR)
+        if: github.event_name == 'pull_request' && steps.filter.outputs.deno != 'true'
+        run: echo "Skipping Deno integration — no supabase/Edge-related paths in this PR."
+
+      - name: Setup Deno
+        if: github.event_name == 'push' || steps.filter.outputs.deno == 'true'
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+          # Persist DENO_DIR (JSR/HTTP deps) across runs; keyed on the Deno lock + config
+          # so cache invalidates only when integration-test dependencies change.
+          cache: true
+          cache-hash: ${{ hashFiles('supabase/deno.lock', 'supabase/deno.json') }}
+
+      - name: Install pnpm
+        if: github.event_name == 'push' || steps.filter.outputs.deno == 'true'
+        uses: pnpm/action-setup@v4
+
       - name: Deno integration tests
+        if: github.event_name == 'push' || steps.filter.outputs.deno == 'true'
         run: pnpm run test:deno-integration
