@@ -79,6 +79,15 @@ export function detectUserDemotedProvenanceKeys(args: {
       break;
     case 'memory':
       if (changed(fields.memoryCaption, origFields.memoryCaption)) keys.push('caption');
+      if (JSON.stringify(fields.memoryPeople) !== JSON.stringify(origFields.memoryPeople)) {
+        keys.push('people');
+      }
+      if (changed(fields.memoryLinkedEvent, origFields.memoryLinkedEvent)) {
+        keys.push('linked_event');
+      }
+      if (JSON.stringify(fields.memoryReactions) !== JSON.stringify(origFields.memoryReactions)) {
+        keys.push('reactions');
+      }
       break;
     case 'workout':
     case 'workout_log':

@@ -8,8 +8,14 @@ import {
   hasRichWorkoutSetInMetadata,
   passThroughRichWorkoutLogMetadata,
 } from '@/lib/workout-factory/sync-workout-metadata';
+import {
+  parseMemoryMomentReactions,
+  serializeMemoryMomentReactions,
+  type MemoryMomentReaction,
+} from '@/lib/memory-moment-reactions';
 
 export { parseTaskMetadata } from '@/lib/parse-task-metadata';
+export type { MemoryMomentReaction } from '@/lib/memory-moment-reactions';
 
 /**
  * Program ↔ workout linkage uses top-level `tasks.program_id` and `tasks.program_session_key`,
@@ -129,6 +135,12 @@ const MANAGED_METADATA_KEYS = [
   'votes',
   /** Idea: user ids who voted (`metadata.voted_by`). */
   'voted_by',
+  /** Memory: tagged people labels (`metadata.people`). */
+  'people',
+  /** Memory: linked event title/id (`metadata.linked_event`). */
+  'linked_event',
+  /** Memory: moment reaction pills (`metadata.reactions`). */
+  'reactions',
 ] as const;
 
 export type TaskMetadataFormFields = {
@@ -162,6 +174,12 @@ export type TaskMetadataFormFields = {
   /** Experience: group size max (`metadata.group_max`). */
   experienceGroupMax: string;
   memoryCaption: string;
+  /** Memory: tagged people labels (`metadata.people`). */
+  memoryPeople: string[];
+  /** Memory: linked event title or id (`metadata.linked_event`). */
+  memoryLinkedEvent: string;
+  /** Memory: moment reactions (`metadata.reactions`). */
+  memoryReactions: MemoryMomentReaction[];
   /** Workout / workout_log: free-text type (e.g. "Strength", "Cardio"). */
   workoutType: string;
   /** Workout duration in whole minutes. */
@@ -255,6 +273,9 @@ export function metadataFieldsFromParsed(meta: unknown): TaskMetadataFormFields 
     experienceGroupMax:
       o.group_max != null && Number.isFinite(Number(o.group_max)) ? String(o.group_max) : '',
     memoryCaption: str(o.caption),
+    memoryPeople: asStringList(o.people),
+    memoryLinkedEvent: str(o.linked_event),
+    memoryReactions: parseMemoryMomentReactions(o.reactions),
     workoutType: str(o.workout_type),
     workoutDurationMin: o.duration_min != null ? String(o.duration_min) : '',
     workoutExercises: parseWorkoutExercisesFromMetadata(meta),
@@ -323,9 +344,14 @@ export function buildTaskMetadataPayload(
       if (!isNaN(gMax) && gMax > 0) o.group_max = gMax;
       break;
     }
-    case 'memory':
+    case 'memory': {
       if (t(fields.memoryCaption)) o.caption = t(fields.memoryCaption);
+      if (fields.memoryPeople.length > 0) o.people = fields.memoryPeople;
+      if (t(fields.memoryLinkedEvent)) o.linked_event = t(fields.memoryLinkedEvent);
+      const reactions = serializeMemoryMomentReactions(fields.memoryReactions);
+      if (reactions.length > 0) o.reactions = reactions;
       break;
+    }
     case 'workout':
     case 'workout_log': {
       delete o.linked_program_task_id;

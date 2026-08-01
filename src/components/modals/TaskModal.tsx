@@ -77,6 +77,7 @@ import {
   buildTaskMetadataPayload,
   metadataFieldsFromParsed,
   parseTaskMetadata,
+  type MemoryMomentReaction,
   type ProgramWeek,
   type WorkoutExercise,
 } from '@/lib/item-metadata';
@@ -534,6 +535,9 @@ export function TaskModal({
   const [experienceGroupMin, setExperienceGroupMin] = useState('');
   const [experienceGroupMax, setExperienceGroupMax] = useState('');
   const [memoryCaption, setMemoryCaption] = useState('');
+  const [memoryPeople, setMemoryPeople] = useState<string[]>([]);
+  const [memoryLinkedEvent, setMemoryLinkedEvent] = useState('');
+  const [memoryReactions, setMemoryReactions] = useState<MemoryMomentReaction[]>([]);
   const [workoutType, setWorkoutType] = useState('');
   const [workoutDurationMin, setWorkoutDurationMin] = useState('');
   const [workoutExercises, setWorkoutExercises] = useState<WorkoutExercise[]>([]);
@@ -737,6 +741,9 @@ export function TaskModal({
       experienceGroupMin,
       experienceGroupMax,
       memoryCaption,
+      memoryPeople,
+      memoryLinkedEvent,
+      memoryReactions,
       workoutType,
       workoutDurationMin,
       workoutExercises,
@@ -767,6 +774,9 @@ export function TaskModal({
       experienceGroupMin,
       experienceGroupMax,
       memoryCaption,
+      memoryPeople,
+      memoryLinkedEvent,
+      memoryReactions,
       workoutType,
       workoutDurationMin,
       workoutExercises,
@@ -930,6 +940,9 @@ export function TaskModal({
       setExperienceGroupMin(mf.experienceGroupMin);
       setExperienceGroupMax(mf.experienceGroupMax);
       setMemoryCaption(mf.memoryCaption);
+      setMemoryPeople(mf.memoryPeople);
+      setMemoryLinkedEvent(mf.memoryLinkedEvent);
+      setMemoryReactions(mf.memoryReactions);
       setWorkoutType(mf.workoutType);
       setWorkoutDurationMin(mf.workoutDurationMin);
       setWorkoutExercises(mf.workoutExercises);
@@ -1001,6 +1014,9 @@ export function TaskModal({
     setExperienceGroupMin('');
     setExperienceGroupMax('');
     setMemoryCaption('');
+    setMemoryPeople([]);
+    setMemoryLinkedEvent('');
+    setMemoryReactions([]);
     setWorkoutType('');
     setWorkoutDurationMin(
       (nextItemType === 'workout' || nextItemType === 'workout_log') &&
@@ -1399,6 +1415,9 @@ export function TaskModal({
       setExperienceGroupMin(mf.experienceGroupMin);
       setExperienceGroupMax(mf.experienceGroupMax);
       setMemoryCaption(mf.memoryCaption);
+      setMemoryPeople(mf.memoryPeople);
+      setMemoryLinkedEvent(mf.memoryLinkedEvent);
+      setMemoryReactions(mf.memoryReactions);
       setWorkoutType(mf.workoutType);
       setWorkoutDurationMin(mf.workoutDurationMin);
       setWorkoutExercises(mf.workoutExercises);
@@ -2140,6 +2159,9 @@ export function TaskModal({
           experienceGroupMin,
           experienceGroupMax,
           memoryCaption,
+          memoryPeople,
+          memoryLinkedEvent,
+          memoryReactions,
           workoutType,
           workoutDurationMin,
           workoutExercises,
@@ -2201,6 +2223,9 @@ export function TaskModal({
           experienceGroupMin,
           experienceGroupMax,
           memoryCaption,
+          memoryPeople,
+          memoryLinkedEvent,
+          memoryReactions,
           workoutType,
           workoutDurationMin,
           workoutExercises,
@@ -2488,6 +2513,12 @@ export function TaskModal({
       onExperienceGroupMaxChange: setExperienceGroupMax,
       memoryCaption,
       onMemoryCaptionChange: setMemoryCaption,
+      memoryPeople,
+      onMemoryPeopleChange: setMemoryPeople,
+      memoryLinkedEvent,
+      onMemoryLinkedEventChange: setMemoryLinkedEvent,
+      memoryReactions,
+      onMemoryReactionsChange: setMemoryReactions,
       aiWorkoutProgressIdx,
       onAiGenerateWorkout: handleAiGenerateWorkout,
       workoutTemplates,
@@ -2589,6 +2620,9 @@ export function TaskModal({
       experienceGroupMin,
       experienceGroupMax,
       memoryCaption,
+      memoryPeople,
+      memoryLinkedEvent,
+      memoryReactions,
       aiWorkoutProgressIdx,
       handleAiGenerateWorkout,
       workoutTemplates,

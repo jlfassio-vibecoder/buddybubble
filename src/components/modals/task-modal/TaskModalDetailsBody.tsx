@@ -6,7 +6,7 @@ import type { TaskDateFieldLabels } from '@/lib/task-date-labels';
 import type { ItemType } from '@/lib/item-types';
 import type { TaskAttachment } from '@/types/task-modal';
 import type { TaskPriority } from '@/lib/task-priority';
-import type { ProgramWeek, WorkoutExercise } from '@/lib/item-metadata';
+import type { MemoryMomentReaction, ProgramWeek, WorkoutExercise } from '@/lib/item-metadata';
 import type { WorkoutIntakeWizardData } from '@/components/modals/task-modal/hooks/useTaskWorkoutAi';
 import type { WorkoutIntakePanelWizardProps } from '@/components/fitness/workout-intake/WorkoutGenerationIntakePanel';
 import type { WorkoutTemplate } from '@/hooks/use-workout-templates';
@@ -108,6 +108,12 @@ export type TaskModalDetailsBodyProps = {
   onExperienceGroupMaxChange: (value: string) => void;
   memoryCaption: string;
   onMemoryCaptionChange: (value: string) => void;
+  memoryPeople: string[];
+  onMemoryPeopleChange: (value: string[]) => void;
+  memoryLinkedEvent: string;
+  onMemoryLinkedEventChange: (value: string) => void;
+  memoryReactions: MemoryMomentReaction[];
+  onMemoryReactionsChange: (value: MemoryMomentReaction[]) => void;
   aiWorkoutProgressIdx: number | null;
   onAiGenerateWorkout: () => void;
   workoutTemplates: WorkoutTemplate[];
@@ -243,6 +249,12 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     onExperienceGroupMaxChange,
     memoryCaption,
     onMemoryCaptionChange,
+    memoryPeople,
+    onMemoryPeopleChange,
+    memoryLinkedEvent,
+    onMemoryLinkedEventChange,
+    memoryReactions,
+    onMemoryReactionsChange,
     workoutType,
     onWorkoutTypeChange,
     workoutDurationMin,
@@ -411,6 +423,14 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
           onPickAttachmentFile={onPickAttachmentFile}
           onDownloadAttachment={onDownloadAttachment}
           onRemoveAttachment={onRemoveAttachment}
+          memoryLinkedEvent={memoryLinkedEvent}
+          onMemoryLinkedEventChange={onMemoryLinkedEventChange}
+          memoryPeople={memoryPeople}
+          onMemoryPeopleChange={onMemoryPeopleChange}
+          memoryReactions={memoryReactions}
+          onMemoryReactionsChange={onMemoryReactionsChange}
+          currentUserId={currentUserId}
+          isAgentField={isAgentField}
         />
       ) : null}
 
