@@ -35,10 +35,41 @@ export function detectUserDemotedProvenanceKeys(args: {
     case 'event':
       if (changed(fields.eventLocation, origFields.eventLocation)) keys.push('location');
       if (changed(fields.eventUrl, origFields.eventUrl)) keys.push('url');
+      if (JSON.stringify(fields.eventBring) !== JSON.stringify(origFields.eventBring)) {
+        keys.push('bring');
+      }
+      if (changed(fields.eventGoing, origFields.eventGoing)) keys.push('going');
+      if (changed(fields.eventCapacity, origFields.eventCapacity)) keys.push('capacity');
+      if (JSON.stringify(fields.eventGoingPeople) !== JSON.stringify(origFields.eventGoingPeople)) {
+        keys.push('going_people');
+      }
       break;
     case 'experience':
       if (changed(fields.experienceSeason, origFields.experienceSeason)) keys.push('season');
       if (changed(fields.experienceEndDate, origFields.experienceEndDate)) keys.push('end_date');
+      if (
+        JSON.stringify(fields.experienceHighlights) !==
+        JSON.stringify(origFields.experienceHighlights)
+      ) {
+        keys.push('highlights');
+      }
+      if (
+        JSON.stringify(fields.experienceIncludes) !== JSON.stringify(origFields.experienceIncludes)
+      ) {
+        keys.push('includes');
+      }
+      if (
+        JSON.stringify(fields.experienceGoodFor) !== JSON.stringify(origFields.experienceGoodFor)
+      ) {
+        keys.push('good_for');
+      }
+      if (changed(fields.experienceLocation, origFields.experienceLocation)) keys.push('location');
+      if (changed(fields.experienceDurationMin, origFields.experienceDurationMin)) {
+        keys.push('duration_min');
+      }
+      if (changed(fields.experiencePrice, origFields.experiencePrice)) keys.push('price');
+      if (changed(fields.experienceGroupMin, origFields.experienceGroupMin)) keys.push('group_min');
+      if (changed(fields.experienceGroupMax, origFields.experienceGroupMax)) keys.push('group_max');
       break;
     case 'memory':
       if (changed(fields.memoryCaption, origFields.memoryCaption)) keys.push('caption');

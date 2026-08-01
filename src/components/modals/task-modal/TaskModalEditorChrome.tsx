@@ -9,6 +9,7 @@ import {
 import type { ItemType, TaskVisibility } from '@/types/database';
 import { metadataFieldsFromParsed } from '@/lib/item-metadata';
 import type { Json } from '@/types/database';
+import { readWorkoutLogSourceTaskId } from '@/lib/workout-log-task-state';
 import { cn } from '@/lib/utils';
 
 export type TaskModalEditorChromeProps = {
@@ -31,6 +32,11 @@ export type TaskModalEditorChromeProps = {
   bubbleId: string | null;
   workspaceId: string;
   taskId: string | null;
+  /**
+   * V1 player `sourceTaskId`. Prefer source workout id for in-progress logs.
+   * When omitted, derived from `metadata.source_task_id` else `taskId`.
+   */
+  workoutPlayerSourceTaskId?: string | null;
   activeSessionLaunch?: Pick<
     ActiveSessionLaunchControlProps,
     'launchUi' | 'onLaunchClick' | 'busy'
@@ -85,6 +91,7 @@ export function TaskModalEditorChrome({
   bubbleId,
   workspaceId,
   taskId,
+  workoutPlayerSourceTaskId,
   activeSessionLaunch = null,
   onInteraction,
 }: TaskModalEditorChromeProps) {
@@ -101,6 +108,9 @@ export function TaskModalEditorChrome({
   const showWorkoutPlayer =
     (itemType === 'workout' || itemType === 'workout_log') &&
     metadataFieldsFromParsed(workoutMetadata ?? {}).workoutExercises.length > 0;
+
+  const resolvedPlayerSourceTaskId =
+    workoutPlayerSourceTaskId?.trim() || readWorkoutLogSourceTaskId(workoutMetadata) || taskId;
 
   return (
     <>
@@ -178,7 +188,7 @@ export function TaskModalEditorChrome({
             metadata={workoutMetadata}
             bubbleId={bubbleId ?? ''}
             workspaceId={workspaceId}
-            sourceTaskId={taskId}
+            sourceTaskId={resolvedPlayerSourceTaskId}
             activeSessionLaunch={activeSessionLaunch}
           />
         </ChromeField>

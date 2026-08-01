@@ -20,11 +20,13 @@ import { TaskModalPersonaStrip } from '@/components/modals/task-modal/TaskModalP
 import { TaskModalWorkoutCanvas } from '@/components/modals/task-modal/TaskModalWorkoutCanvas';
 import { TaskModalIdeaCanvas } from '@/components/modals/task-modal/TaskModalIdeaCanvas';
 import type { PromoteTargetType } from '@/components/modals/task-modal/TaskModalIdeaCanvas';
+import { TaskModalEventCanvas } from '@/components/modals/task-modal/TaskModalEventCanvas';
+import { TaskModalExperienceCanvas } from '@/components/modals/task-modal/TaskModalExperienceCanvas';
 import { TaskModalMemoryCanvas } from '@/components/modals/task-modal/TaskModalMemoryCanvas';
+import { TaskModalWorkoutLogCanvas } from '@/components/modals/task-modal/TaskModalWorkoutLogCanvas';
 import { TaskModalCardCoverSection } from '@/components/modals/task-modal/TaskModalCardCoverSection';
 import { TaskModalItemMetadataSections } from '@/components/modals/task-modal/TaskModalItemMetadataSections';
 import { TaskModalProgramFields } from '@/components/modals/task-modal/TaskModalProgramFields';
-import { TaskModalWorkoutFields } from '@/components/modals/task-modal/TaskModalWorkoutFields';
 import { TaskModalSchedulingSection } from '@/components/modals/task-modal/TaskModalSchedulingSection';
 import { TaskModalAttachmentsSection } from '@/components/modals/task-modal/TaskModalAttachmentsSection';
 import { TaskModalDetailsFooterActions } from '@/components/modals/task-modal/TaskModalDetailsFooterActions';
@@ -74,12 +76,36 @@ export type TaskModalDetailsBodyProps = {
   onEventLocationChange: (value: string) => void;
   eventUrl: string;
   onEventUrlChange: (value: string) => void;
+  eventBring: string[];
+  onEventBringChange: (value: string[]) => void;
+  eventGoing: string;
+  onEventGoingChange: (value: string) => void;
+  eventCapacity: string;
+  onEventCapacityChange: (value: string) => void;
+  eventGoingPeople: string[];
+  onEventGoingPeopleChange: (value: string[]) => void;
   experienceSeason: string;
   onExperienceSeasonChange: (value: string) => void;
   scheduledOn: string;
   onExperienceStartDateChange: (value: string) => void;
   experienceEndDate: string;
   onExperienceEndDateChange: (value: string) => void;
+  experienceHighlights: string[];
+  onExperienceHighlightsChange: (value: string[]) => void;
+  experienceIncludes: string[];
+  onExperienceIncludesChange: (value: string[]) => void;
+  experienceGoodFor: string[];
+  onExperienceGoodForChange: (value: string[]) => void;
+  experienceLocation: string;
+  onExperienceLocationChange: (value: string) => void;
+  experienceDurationMin: string;
+  onExperienceDurationMinChange: (value: string) => void;
+  experiencePrice: string;
+  onExperiencePriceChange: (value: string) => void;
+  experienceGroupMin: string;
+  onExperienceGroupMinChange: (value: string) => void;
+  experienceGroupMax: string;
+  onExperienceGroupMaxChange: (value: string) => void;
   memoryCaption: string;
   onMemoryCaptionChange: (value: string) => void;
   aiWorkoutProgressIdx: number | null;
@@ -138,6 +164,9 @@ export type TaskModalDetailsBodyProps = {
    * Persisted demotion happens on save / title-desc autosave.
    */
   demotedProvenanceKeys?: readonly string[];
+  /** Resume live session for an in-progress workout_log (via source_task_id). */
+  onContinueInProgressWorkoutLog?: () => void;
+  continueInProgressWorkoutLogBusy?: boolean;
 };
 
 function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
@@ -175,29 +204,44 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     onEventLocationChange,
     eventUrl,
     onEventUrlChange,
+    eventBring,
+    onEventBringChange,
+    eventGoing,
+    onEventGoingChange,
+    eventCapacity,
+    onEventCapacityChange,
+    eventGoingPeople,
+    onEventGoingPeopleChange,
     experienceSeason,
     onExperienceSeasonChange,
     scheduledOn,
     onExperienceStartDateChange,
     experienceEndDate,
     onExperienceEndDateChange,
+    experienceHighlights,
+    onExperienceHighlightsChange,
+    experienceIncludes,
+    onExperienceIncludesChange,
+    experienceGoodFor,
+    onExperienceGoodForChange,
+    experienceLocation,
+    onExperienceLocationChange,
+    experienceDurationMin,
+    onExperienceDurationMinChange,
+    experiencePrice,
+    onExperiencePriceChange,
+    experienceGroupMin,
+    onExperienceGroupMinChange,
+    experienceGroupMax,
+    onExperienceGroupMaxChange,
     memoryCaption,
     onMemoryCaptionChange,
-    aiWorkoutProgressIdx,
-    onAiGenerateWorkout,
-    workoutTemplates,
-    templatePickerOpen,
-    onTemplatePickerOpenChange,
-    onApplyWorkoutTemplate,
     workoutType,
     onWorkoutTypeChange,
     workoutDurationMin,
     onWorkoutDurationMinChange,
     workoutExercises,
-    onWorkoutExercisesChange,
     workoutUnitSystem,
-    initialAutoEdit,
-    isWorkoutItemType,
     workspaceId,
     aiProgramPersonalizing,
     onPersonalizeProgram,
@@ -233,6 +277,8 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     onPromoteItemType,
     canPromoteToClass = true,
     demotedProvenanceKeys = [],
+    onContinueInProgressWorkoutLog,
+    continueInProgressWorkoutLogBusy = false,
   } = props;
 
   const hasFactory = readCoachOutlineMetadata(taskMetadata).hasFactory;
@@ -351,6 +397,64 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
         />
       ) : null}
 
+      {itemType === 'event' ? (
+        <TaskModalEventCanvas
+          canWrite={canWrite}
+          eventGoing={eventGoing}
+          onEventGoingChange={onEventGoingChange}
+          eventCapacity={eventCapacity}
+          onEventCapacityChange={onEventCapacityChange}
+          eventGoingPeople={eventGoingPeople}
+          onEventGoingPeopleChange={onEventGoingPeopleChange}
+          eventBring={eventBring}
+          onEventBringChange={onEventBringChange}
+          isAgentField={isAgentField}
+        />
+      ) : null}
+
+      {itemType === 'experience' ? (
+        <TaskModalExperienceCanvas
+          canWrite={canWrite}
+          experienceHighlights={experienceHighlights}
+          onExperienceHighlightsChange={onExperienceHighlightsChange}
+          experienceIncludes={experienceIncludes}
+          onExperienceIncludesChange={onExperienceIncludesChange}
+          experienceGoodFor={experienceGoodFor}
+          onExperienceGoodForChange={onExperienceGoodForChange}
+          experienceLocation={experienceLocation}
+          onExperienceLocationChange={onExperienceLocationChange}
+          experienceDurationMin={experienceDurationMin}
+          onExperienceDurationMinChange={onExperienceDurationMinChange}
+          experiencePrice={experiencePrice}
+          onExperiencePriceChange={onExperiencePriceChange}
+          experienceGroupMin={experienceGroupMin}
+          onExperienceGroupMinChange={onExperienceGroupMinChange}
+          experienceGroupMax={experienceGroupMax}
+          onExperienceGroupMaxChange={onExperienceGroupMaxChange}
+          isAgentField={isAgentField}
+        />
+      ) : null}
+
+      {itemType === 'workout_log' ? (
+        <TaskModalWorkoutLogCanvas
+          canWrite={canWrite}
+          taskId={taskId}
+          status={status}
+          scheduledOn={scheduledOn}
+          scheduledTime={scheduledTime}
+          workoutType={workoutType}
+          onWorkoutTypeChange={onWorkoutTypeChange}
+          workoutDurationMin={workoutDurationMin}
+          onWorkoutDurationMinChange={onWorkoutDurationMinChange}
+          workoutExercises={workoutExercises}
+          workoutUnitSystem={workoutUnitSystem}
+          taskMetadata={taskMetadata}
+          onContinueSession={onContinueInProgressWorkoutLog}
+          continueSessionBusy={continueInProgressWorkoutLogBusy}
+          isAgentField={isAgentField}
+        />
+      ) : null}
+
       {hasFactory && itemType === 'workout' && onOpenWorkoutViewer ? (
         <div className="flex justify-end" data-testid="task-modal-generated-workout">
           <Button type="button" variant="outline" size="sm" onClick={onOpenWorkoutViewer}>
@@ -376,31 +480,6 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
         onMemoryCaptionChange={onMemoryCaptionChange}
         isAgentField={isAgentField}
       />
-
-      {itemType === 'workout_log' && (
-        <TaskModalWorkoutFields
-          itemType="workout_log"
-          canWrite={canWrite}
-          taskId={taskId}
-          aiWorkoutGenerating={aiWorkoutGenerating}
-          aiWorkoutProgressIdx={aiWorkoutProgressIdx ?? 0}
-          onAiGenerateWorkout={onAiGenerateWorkout}
-          workoutTemplates={workoutTemplates}
-          templatePickerOpen={templatePickerOpen}
-          onTemplatePickerOpenChange={onTemplatePickerOpenChange}
-          onApplyWorkoutTemplate={onApplyWorkoutTemplate}
-          workoutType={workoutType}
-          onWorkoutTypeChange={onWorkoutTypeChange}
-          workoutDurationMin={workoutDurationMin}
-          onWorkoutDurationMinChange={onWorkoutDurationMinChange}
-          workoutExercises={workoutExercises}
-          onWorkoutExercisesChange={onWorkoutExercisesChange}
-          workoutUnitSystem={workoutUnitSystem}
-          autoEditFirstRow={Boolean(initialAutoEdit && isWorkoutItemType && taskId && canWrite)}
-          taskMetadata={taskMetadata}
-          isAgentField={isAgentField}
-        />
-      )}
 
       {itemType === 'program' && (
         <TaskModalProgramFields

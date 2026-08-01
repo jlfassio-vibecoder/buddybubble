@@ -5,6 +5,7 @@ import {
   exerciseThumbnailSrcFromTask,
   formatExercisePrescriptionLineFromTask,
 } from '@/lib/workout-factory/format-exercise-prescription-line';
+import { exerciseHasPr } from '@/lib/fitness/workout-log-session-stats';
 import type { UnitSystem } from '@/types/database';
 import { cn } from '@/lib/utils';
 import { WorkoutReadExerciseRow } from '@/components/fitness/workout-block-renderer/WorkoutReadExerciseRow';
@@ -47,6 +48,7 @@ export function WorkoutFlatExerciseLogList({
               density={density}
               setLogs={ex.set_logs}
               unitSystem={unitSystem}
+              showPr={exerciseHasPr(ex)}
             />
           </li>
         );

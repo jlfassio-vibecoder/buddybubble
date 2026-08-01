@@ -77,6 +77,8 @@ export type WorkoutExercise = {
   id?: string;
   /** Per-set performance data recorded by the workout player (workout_log only). */
   set_logs?: SetLogEntry[];
+  /** Optional display-only PR flag on a logged exercise (no detection this pass). */
+  pr?: boolean;
 };
 
 /** Single day within a program week. */
@@ -99,8 +101,18 @@ export type ProgramWeek = {
 const MANAGED_METADATA_KEYS = [
   'location',
   'url',
+  'bring',
+  'going',
+  'capacity',
+  'going_people',
   'season',
   'end_date',
+  'highlights',
+  'includes',
+  'good_for',
+  'price',
+  'group_min',
+  'group_max',
   'caption',
   'workout_type',
   'duration_min',
@@ -118,9 +130,33 @@ const MANAGED_METADATA_KEYS = [
 export type TaskMetadataFormFields = {
   eventLocation: string;
   eventUrl: string;
+  /** Event: what-to-bring tags (`metadata.bring`). */
+  eventBring: string[];
+  /** Event: going count as string for number input (`metadata.going`). */
+  eventGoing: string;
+  /** Event: optional capacity (`metadata.capacity`). */
+  eventCapacity: string;
+  /** Event: people labels/initials for avatar stack (`metadata.going_people`). */
+  eventGoingPeople: string[];
   experienceSeason: string;
   /** YYYY-MM-DD; experience span end (start is `scheduled_on`). */
   experienceEndDate: string;
+  /** Experience: highlight bullets (`metadata.highlights`). */
+  experienceHighlights: string[];
+  /** Experience: includes list (`metadata.includes`). */
+  experienceIncludes: string[];
+  /** Experience: good-for tags (`metadata.good_for`). */
+  experienceGoodFor: string[];
+  /** Experience: location (`metadata.location`); separate from event form state. */
+  experienceLocation: string;
+  /** Experience: duration minutes (`metadata.duration_min`); separate from workout form state. */
+  experienceDurationMin: string;
+  /** Experience: price display string (`metadata.price`). */
+  experiencePrice: string;
+  /** Experience: group size min (`metadata.group_min`). */
+  experienceGroupMin: string;
+  /** Experience: group size max (`metadata.group_max`). */
+  experienceGroupMax: string;
   memoryCaption: string;
   /** Workout / workout_log: free-text type (e.g. "Strength", "Cardio"). */
   workoutType: string;
@@ -141,6 +177,15 @@ export type TaskMetadataFormFields = {
   /** Storage path for optional card cover image (all item types). */
   cardCoverPath: string;
 };
+
+/** Normalize a string[] metadata field (trim, drop empties). */
+export function asStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((v): v is string => typeof v === 'string')
+    .map((v) => v.trim())
+    .filter((v) => v.length > 0);
+}
 
 /** Normalize stored `schedule` JSON into `ProgramWeek[]` (for API + forms). */
 export function asProgramSchedule(value: unknown): ProgramWeek[] {
@@ -184,8 +229,23 @@ export function metadataFieldsFromParsed(meta: unknown): TaskMetadataFormFields 
   return {
     eventLocation: str(o.location),
     eventUrl: str(o.url),
+    eventBring: asStringList(o.bring),
+    eventGoing: o.going != null && Number.isFinite(Number(o.going)) ? String(o.going) : '',
+    eventCapacity:
+      o.capacity != null && Number.isFinite(Number(o.capacity)) ? String(o.capacity) : '',
+    eventGoingPeople: asStringList(o.going_people),
     experienceSeason: str(o.season),
     experienceEndDate: endRaw.length >= 10 ? endRaw.slice(0, 10) : endRaw,
+    experienceHighlights: asStringList(o.highlights),
+    experienceIncludes: asStringList(o.includes),
+    experienceGoodFor: asStringList(o.good_for),
+    experienceLocation: str(o.location),
+    experienceDurationMin: o.duration_min != null ? String(o.duration_min) : '',
+    experiencePrice: str(o.price),
+    experienceGroupMin:
+      o.group_min != null && Number.isFinite(Number(o.group_min)) ? String(o.group_min) : '',
+    experienceGroupMax:
+      o.group_max != null && Number.isFinite(Number(o.group_max)) ? String(o.group_max) : '',
     memoryCaption: str(o.caption),
     workoutType: str(o.workout_type),
     workoutDurationMin: o.duration_min != null ? String(o.duration_min) : '',
@@ -214,14 +274,33 @@ export function buildTaskMetadataPayload(
   }
   const t = (s: string) => s.trim();
   switch (itemType) {
-    case 'event':
+    case 'event': {
       if (t(fields.eventLocation)) o.location = t(fields.eventLocation);
       if (t(fields.eventUrl)) o.url = t(fields.eventUrl);
+      if (fields.eventBring.length > 0) o.bring = fields.eventBring;
+      const goingN = parseInt(fields.eventGoing, 10);
+      if (!isNaN(goingN) && goingN >= 0) o.going = goingN;
+      const capN = parseInt(fields.eventCapacity, 10);
+      if (!isNaN(capN) && capN > 0) o.capacity = capN;
+      if (fields.eventGoingPeople.length > 0) o.going_people = fields.eventGoingPeople;
       break;
-    case 'experience':
+    }
+    case 'experience': {
       if (t(fields.experienceSeason)) o.season = t(fields.experienceSeason);
       if (t(fields.experienceEndDate)) o.end_date = t(fields.experienceEndDate).slice(0, 10);
+      if (fields.experienceHighlights.length > 0) o.highlights = fields.experienceHighlights;
+      if (fields.experienceIncludes.length > 0) o.includes = fields.experienceIncludes;
+      if (fields.experienceGoodFor.length > 0) o.good_for = fields.experienceGoodFor;
+      if (t(fields.experienceLocation)) o.location = t(fields.experienceLocation);
+      const expMins = parseInt(fields.experienceDurationMin, 10);
+      if (!isNaN(expMins) && expMins > 0) o.duration_min = expMins;
+      if (t(fields.experiencePrice)) o.price = t(fields.experiencePrice);
+      const gMin = parseInt(fields.experienceGroupMin, 10);
+      if (!isNaN(gMin) && gMin > 0) o.group_min = gMin;
+      const gMax = parseInt(fields.experienceGroupMax, 10);
+      if (!isNaN(gMax) && gMax > 0) o.group_max = gMax;
       break;
+    }
     case 'memory':
       if (t(fields.memoryCaption)) o.caption = t(fields.memoryCaption);
       break;

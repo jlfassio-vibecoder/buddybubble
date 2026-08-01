@@ -33,8 +33,8 @@ vi.mock('@/components/modals/task-modal/TaskModalCardCoverSection', () => ({
 vi.mock('@/components/modals/task-modal/TaskModalItemMetadataSections', () => ({
   TaskModalItemMetadataSections: () => <div data-testid="mock-metadata-sections" />,
 }));
-vi.mock('@/components/modals/task-modal/TaskModalWorkoutFields', () => ({
-  TaskModalWorkoutFields: () => <div data-testid="mock-workout-fields" />,
+vi.mock('@/components/modals/task-modal/TaskModalWorkoutLogCanvas', () => ({
+  TaskModalWorkoutLogCanvas: () => <div data-testid="mock-workout-log-canvas" />,
 }));
 vi.mock('@/components/modals/task-modal/TaskModalProgramFields', () => ({
   TaskModalProgramFields: () => <div data-testid="mock-program-fields" />,
@@ -44,6 +44,12 @@ vi.mock('@/components/modals/task-modal/TaskModalPropertiesSection', () => ({
 }));
 vi.mock('@/components/modals/task-modal/TaskModalWorkoutCanvas', () => ({
   TaskModalWorkoutCanvas: () => <div data-testid="mock-workout-canvas" />,
+}));
+vi.mock('@/components/modals/task-modal/TaskModalEventCanvas', () => ({
+  TaskModalEventCanvas: () => <div data-testid="mock-event-canvas" />,
+}));
+vi.mock('@/components/modals/task-modal/TaskModalExperienceCanvas', () => ({
+  TaskModalExperienceCanvas: () => <div data-testid="mock-experience-canvas" />,
 }));
 vi.mock('@/components/modals/task-modal/TaskModalIdeaCanvas', () => ({
   TaskModalIdeaCanvas: () => <div data-testid="mock-idea-canvas" />,
@@ -129,12 +135,36 @@ const baseProps: TaskModalDetailsBodyProps = {
   onEventLocationChange: noop,
   eventUrl: '',
   onEventUrlChange: noop,
+  eventBring: [],
+  onEventBringChange: noop,
+  eventGoing: '',
+  onEventGoingChange: noop,
+  eventCapacity: '',
+  onEventCapacityChange: noop,
+  eventGoingPeople: [],
+  onEventGoingPeopleChange: noop,
   experienceSeason: '',
   onExperienceSeasonChange: noop,
   scheduledOn: '',
   onExperienceStartDateChange: noop,
   experienceEndDate: '',
   onExperienceEndDateChange: noop,
+  experienceHighlights: [],
+  onExperienceHighlightsChange: noop,
+  experienceIncludes: [],
+  onExperienceIncludesChange: noop,
+  experienceGoodFor: [],
+  onExperienceGoodForChange: noop,
+  experienceLocation: '',
+  onExperienceLocationChange: noop,
+  experienceDurationMin: '',
+  onExperienceDurationMinChange: noop,
+  experiencePrice: '',
+  onExperiencePriceChange: noop,
+  experienceGroupMin: '',
+  onExperienceGroupMinChange: noop,
+  experienceGroupMax: '',
+  onExperienceGroupMaxChange: noop,
   memoryCaption: '',
   onMemoryCaptionChange: noop,
   aiWorkoutProgressIdx: null,

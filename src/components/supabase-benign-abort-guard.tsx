@@ -13,9 +13,12 @@ export function SupabaseBenignAbortGuard() {
     const onRejection = (event: PromiseRejectionEvent) => {
       if (!isSupabaseBenignRequestAbort(event.reason)) return;
       event.preventDefault();
+      // Capture phase + stopImmediatePropagation so Next.js 16's overlay listener
+      // does not treat Web Lock steal / acquire-timeout as a runtime error.
+      event.stopImmediatePropagation();
     };
-    window.addEventListener('unhandledrejection', onRejection);
-    return () => window.removeEventListener('unhandledrejection', onRejection);
+    window.addEventListener('unhandledrejection', onRejection, true);
+    return () => window.removeEventListener('unhandledrejection', onRejection, true);
   }, []);
 
   return null;

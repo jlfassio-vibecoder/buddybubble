@@ -6,7 +6,7 @@ A parametric card/task editor for BuddyBubble's Bubbleboard. One universal modal
 
 ## Implementation status (app codebase)
 
-Tracked against PR [#175](https://github.com/jlfassio-vibecoder/buddybubble/pull/175) (`claude/design-implementation-components-wm8r93`). Showcase-only chrome (stage, top bar, ghost Kanban, JSON panel) remains **out of scope**.
+Tracked against PR [#176](https://github.com/jlfassio-vibecoder/buddybubble/pull/176) (`feat/taskmodal-canvas-pcc-reactions`); earlier shell work landed in [#175](https://github.com/jlfassio-vibecoder/buddybubble/pull/175). Showcase-only chrome (stage, top bar, ghost Kanban, JSON panel) remains **out of scope**.
 
 ### Completed
 
@@ -27,16 +27,77 @@ Tracked against PR [#175](https://github.com/jlfassio-vibecoder/buddybubble/pull
 - **Idea + Memory Details canvases** — `TaskModalIdeaCanvas` (read-only vote count from `metadata.votes`, effort/impact/tags display, Promote → Event/Program/Class via `setItemType`); `TaskModalMemoryCanvas` (image-attachment gallery + Add photo → existing uploader). Caption stays in Moment metadata; vote toggle / Bubbly alias deferred.
 - **Comments reaction pills** — `message_reactions` table + `useMessageReactions`; `.tm-react`-style pills on `ChatMessageRow` (StandardTaskChatRail + TaskModalCommentsPanel) with closed emoji set and SmilePlus popover.
 - **Coach / PCC display** — durable `tasks.metadata.field_provenance` sidecar (`by: 'agent' | 'user'`, optional `agent_slug` / `at`). Coach Edge strategy stamps keys it changes; TaskModal save + title/desc autosave demote to `by: 'user'`. UI: `TaskModalPersonaStrip` when any agent entries remain; `TaskModalField.agent` chrome on type/metadata fields via `isAgentFilledForDisplay` (Properties stay human board meta). Helpers: `src/lib/task-field-provenance.ts` (+ Edge twin). No historical backfill.
+- **Program week cards** — `TaskModalProgramWeekCards` in `TaskModalProgramFields`: `.tm-week` / `.tm-sess` Tailwind from `ProgramWeek[]` (Mon–Sun rows, muted Rest for missing days). Single-template + `duration_weeks > 1` shows “Repeats · N weeks” meta (no cloned cards). Goal / Duration / Personalize unchanged; `TaskModalField.agent` on `schedule`. Helpers: `buildProgramWeekCardModel` / `buildProgramWeekCards` in `src/lib/fitness/program-schedule.ts`. No Add-week / enrollment / child deep links.
+- **Event bring tags + RSVP (metadata-only)** — `TaskModalEventCanvas`: Who’s going card (going / capacity / progress / `going_people` initials stack) + What to bring chips. Persisted via managed metadata keys `bring`, `going`, `capacity`, `going_people` in `item-metadata`. Location / Meeting link unchanged. **No event enrollment table / “I’m going” CTA** this pass (Class RSVP remains the only real enrollment backend). Provenance demote + `TaskModalField.agent` on the new keys.
+- **Experience highlights / includes / good_for** — `TaskModalExperienceCanvas`: icon-led lists + good_for chips + optional location / duration / price / group min–max. Managed keys `highlights`, `includes`, `good_for`, `price`, `group_min`, `group_max` (+ experience writes of `location` / `duration_min`). Shared `TaskModalChipListEditor` / `TaskModalStringListEditor`. Experience span (season / start / end) unchanged; Schedule still omitted. No booking / maps / enrollment.
+- **Workout log session canvas** — `TaskModalWorkoutLogCanvas`: performed on / start time echoes from `scheduledOn` / `scheduledTime`, 3-col stats (Duration / Session RPE / Completion), light-edit Type + Duration, embedded `WorkoutLogReadSummary`. Helpers in `workout-log-session-stats.ts`. Optional display-only PR chip when exercise `pr === true`. No player / PR detection / parallel `log[]` model; Schedule remains the date/time editor.
 
-### Next updates (recommended order)
+### Remaining work (phased — one plan each)
 
-_(none queued from this handoff — see Still open)_
+Each phase below is sized for a **single implementation plan**. Do not combine phases. Design refs: `taskmodal/forms.jsx`, `taskmodal/schemas.js`, `taskmodal/modal.css` (classes noted per phase). Keep Properties / Schedule / Cover / Attachments / Danger as they are unless a phase says otherwise. Showcase chrome stays out of scope.
 
-### Still open (lower priority / later passes)
+#### Phase E — Idea vote toggle
 
-- Program week cards (`.tm-week` / `.tm-sess`), Event highlights/tags, Experience tag-driven body beyond current metadata fields.
-- Theme spot-check under a non-fitness theme (e.g. `theme-business` light) before calling shell/details done.
-- Any remaining Gaps vs `schemas.js` per-type field lists once Workout + Class land.
+- **Goal:** Interactive `.tm-vote` (upvote on/off + count) persisted on the task — replaces disabled vote control.
+- **In scope:** Toggle voted state for current user; persist `votes` / `voted` (or equivalent) on `tasks.metadata` with existing save/autosave patterns; primary-tinted “on” state; keep Promote row as-is.
+- **Out of scope:** Bubbly alias (Phase H); ranked idea boards; per-member vote ledger table unless metadata-only is insufficient (prefer metadata-only for this phase).
+- **Accept:** Member can toggle vote; count updates; reload restores state; Coach provenance demotes if user overwrites related fields.
+- **Primary refs:** `forms.jsx` `IdeaBody` vote widget; `.tm-vote*` in `modal.css`.
+
+#### Phase F — Memory people + linked event + moment reactions
+
+- **Goal:** Memory Details beyond gallery + caption: people tags, linked-event chip, moment reaction row from task metadata.
+- **In scope:** Read/edit `people`, `linked_event`, and memory-level `reactions` (handoff shape) using existing members/attachments patterns where possible; keep `TaskModalMemoryCanvas` gallery. Caption stays in Moment metadata section.
+- **Out of scope:** Replacing Comments-tab `message_reactions` (different surface); full people picker CRM; auto-linking Event tasks unless a trivial id/title field already exists.
+- **Accept:** Memory Details shows people / linked event / moment reactions when present; save round-trips edited metadata; gallery unchanged.
+- **Primary refs:** `forms.jsx` `MemoryBody`; memory record in `schemas.js`.
+
+#### Phase G — Nested block Coach chrome (Workout canvas)
+
+- **Goal:** Use existing `field_provenance` so Workout read canvas block rows show Coach border/tag when `blocks` (or finer paths) are agent-filled.
+- **In scope:** `TaskModalWorkoutCanvas` / block cards: `agent` treatment from `isAgentFilled` / `isAgentFilledForDisplay`; no new provenance writers beyond keys Coach already stamps.
+- **Out of scope:** Editable nested block editor chrome; cue-library personal vs library chips; cover title/description (Phase H).
+- **Accept:** After Coach structural/outline write, opening Details shows Coach chrome on affected block UI; user overwrite / demote clears it.
+- **Primary refs:** `TaskModalField` / `TaskModalAgentTag`; `.tm-block` agent treatment in handoff CSS if present.
+
+#### Phase H — Cover title & description Coach chrome
+
+- **Goal:** Subtle Coach treatment on cover title/description when `field_provenance` marks those keys agent-filled.
+- **In scope:** `TaskModalCoverHeader` (and fallback title fields in DetailsBody if shown): border/tag or equivalent low-risk chrome; respect live demotion keys; no change to autosave column writes.
+- **Out of scope:** Nested workout blocks (Phase G); changing autosave to patch JSONB provenance on every keystroke.
+- **Accept:** Agent-written title/description show Coach affordance; user edit clears it in UI; Save persists demotion as today.
+- **Primary refs:** Cover inputs in `TaskModalReference.jsx` / `.tm-cover`; existing `TaskModalAgentTag`.
+
+#### Phase I — Theme spot-check (shell + Details)
+
+- **Goal:** Verify TaskModal shell + Details under a non-fitness theme before calling visual port “done.”
+- **In scope:** Spot-check at least `theme-business` light (and note any other category × light/dark issues found). Fix only token/contrast bugs that break handoff fidelity (no redesign). Document results in this README.
+- **Out of scope:** New themes; redesign of type bodies; showcase chrome.
+- **Accept:** Short checklist in this README (pass/fail per surface) + any small token fixes landed.
+- **Primary refs:** Fidelity / Design Tokens sections below; app `theme-engine/registry.ts`.
+
+#### Phase J — Bubbly alias (product naming pass)
+
+- **Goal:** Align any remaining handoff “Bubbly” naming/control copy with the product’s real Bubbly entry point (tabs already mount a Bubbly control).
+- **In scope:** Copy/ARIA/label consistency on tab bar / overflow; link or open existing Bubbly UI if a single clear affordance exists.
+- **Out of scope:** New Bubbly product features; Idea vote (Phase E).
+- **Accept:** No leftover prototype-only “Bubbly” labels that disagree with the app; README marks Bubbly alias done.
+- **Primary refs:** Tabs / Bubbly notes in Completed; prototype tab bar.
+
+#### Phase K — Schemas gap closure (audit + tiny fixes)
+
+- **Goal:** Diff `schemas.js` per-type field lists vs app metadata/form fields; close only **small** missing keys that fit existing builders (strings/tags), or explicitly defer larger ones into a new phase.
+- **In scope:** Audit table in this README (type × field × status); implement trivial missing metadata keys + form wiring; file follow-up phases for anything larger than a single-plan leftover.
+- **Out of scope:** Re-opening Phases A–J; new backends; showcase JSON panel.
+- **Accept:** README audit table complete; trivial gaps fixed or ticketed as new phases; no silent schema drift.
+
+### Explicitly deferred / out of scope
+
+- Showcase chrome (stage, top bar, ghost Kanban, JSON panel) and prototype `Root` wrapper.
+- Historical `field_provenance` backfill.
+- Class price / admin Reserve CTA (Class RSVP canvas pass).
+- Cue `{ value, provenance }` trees and cue-library personal chips.
+- Full editable nested block editor inside Details (edits stay in structure builder / viewer).
 
 ## About the Design Files
 

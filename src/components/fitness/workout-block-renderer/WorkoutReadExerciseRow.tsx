@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Trophy } from 'lucide-react';
 import type { SetLogEntry } from '@/lib/item-metadata';
 import type { Exercise } from '@/lib/workout-factory/types/ai-program';
+import { exerciseHasPr } from '@/lib/fitness/workout-log-session-stats';
 import {
   cueBadgeState,
   WorkoutExerciseCuePanel,
@@ -38,6 +39,8 @@ export type WorkoutReadExerciseRowProps = {
   resolutionKey?: string;
   prescription?: import('@/lib/agents/coach/exercise-cue-request').ExerciseCueRequestV1['prescription'];
   workoutExerciseIndex?: number;
+  /** Display-only PR badge when metadata already marks the row. */
+  showPr?: boolean;
 } & WorkoutCueEditProps;
 
 function CuesToggleBadge({ state }: { state: 'empty' | 'partial' | 'full' }) {
@@ -78,6 +81,7 @@ export function WorkoutReadExerciseRow({
   injuriesOnFile = false,
   prescription,
   workoutExerciseIndex,
+  showPr = false,
 }: WorkoutReadExerciseRowProps) {
   const compact = density === 'compact';
   const showRequest = !thumbnailUrl && taskId != null;
@@ -109,6 +113,15 @@ export function WorkoutReadExerciseRow({
               >
                 {name}
               </h4>
+              {showPr ? (
+                <span
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-primary/35 bg-primary/10 px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.05em] text-primary"
+                  data-testid="workout-read-exercise-pr"
+                >
+                  <Trophy className="size-3" aria-hidden />
+                  PR
+                </span>
+              ) : null}
             </div>
           </div>
           {cuePanelEnabled ? (
@@ -237,6 +250,7 @@ export function WorkoutReadExerciseRowFromFactory({
       onSaveToMyNotes={onSaveToMyNotes}
       injuriesOnFile={injuriesOnFile}
       workoutExerciseIndex={workoutExerciseIndex}
+      showPr={exerciseHasPr(ex)}
       prescription={
         ex.sets != null || ex.reps != null
           ? {

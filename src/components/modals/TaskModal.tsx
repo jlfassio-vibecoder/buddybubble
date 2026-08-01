@@ -37,9 +37,12 @@ import { buildActiveSessionUrl } from '@/lib/active-session/build-active-session
 import { cn } from '@/lib/utils';
 import {
   isWorkoutLogInProgress,
+  readWorkoutLogSourceTaskId,
   WORKOUT_LOG_IN_PROGRESS_STATUS,
   workoutLogInProgressStatusSelectOption,
 } from '@/lib/workout-log-task-state';
+import { isActiveSessionRouteEnabled } from '@/lib/feature-flags/activeSessionRoute';
+import { WorkoutPlayer } from '@/components/fitness/WorkoutPlayer';
 import { WorkoutLogInProgressBadge } from '@/components/tasks/WorkoutLogInProgressBadge';
 import { useBoardColumnDefs } from '@/hooks/use-board-columns';
 import { useTaskBubbleUps } from '@/hooks/use-task-bubble-ups';
@@ -326,6 +329,15 @@ export function TaskModal({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [continueSessionPlayerOpen, setContinueSessionPlayerOpen] = useState(false);
+  const [continueSessionBusy, setContinueSessionBusy] = useState(false);
+  /** Source workout row for in-progress log → V1 player (matches dashboard-shell). */
+  const [sourceWorkoutLaunch, setSourceWorkoutLaunch] = useState<{
+    id: string;
+    title: string;
+    metadata: Json;
+    bubbleId: string;
+  } | null>(null);
   const isCreateMode = open && !taskId && !!bubbleId;
 
   const [title, setTitle] = useState('');
@@ -505,9 +517,21 @@ export function TaskModal({
 
   const [eventLocation, setEventLocation] = useState('');
   const [eventUrl, setEventUrl] = useState('');
+  const [eventBring, setEventBring] = useState<string[]>([]);
+  const [eventGoing, setEventGoing] = useState('');
+  const [eventCapacity, setEventCapacity] = useState('');
+  const [eventGoingPeople, setEventGoingPeople] = useState<string[]>([]);
   const [experienceSeason, setExperienceSeason] = useState('');
   /** YYYY-MM-DD experience span end (`metadata.end_date`). */
   const [experienceEndDate, setExperienceEndDate] = useState('');
+  const [experienceHighlights, setExperienceHighlights] = useState<string[]>([]);
+  const [experienceIncludes, setExperienceIncludes] = useState<string[]>([]);
+  const [experienceGoodFor, setExperienceGoodFor] = useState<string[]>([]);
+  const [experienceLocation, setExperienceLocation] = useState('');
+  const [experienceDurationMin, setExperienceDurationMin] = useState('');
+  const [experiencePrice, setExperiencePrice] = useState('');
+  const [experienceGroupMin, setExperienceGroupMin] = useState('');
+  const [experienceGroupMax, setExperienceGroupMax] = useState('');
   const [memoryCaption, setMemoryCaption] = useState('');
   const [workoutType, setWorkoutType] = useState('');
   const [workoutDurationMin, setWorkoutDurationMin] = useState('');
@@ -693,8 +717,20 @@ export function TaskModal({
     () => ({
       eventLocation,
       eventUrl,
+      eventBring,
+      eventGoing,
+      eventCapacity,
+      eventGoingPeople,
       experienceSeason,
       experienceEndDate,
+      experienceHighlights,
+      experienceIncludes,
+      experienceGoodFor,
+      experienceLocation,
+      experienceDurationMin,
+      experiencePrice,
+      experienceGroupMin,
+      experienceGroupMax,
       memoryCaption,
       workoutType,
       workoutDurationMin,
@@ -709,8 +745,20 @@ export function TaskModal({
     [
       eventLocation,
       eventUrl,
+      eventBring,
+      eventGoing,
+      eventCapacity,
+      eventGoingPeople,
       experienceSeason,
       experienceEndDate,
+      experienceHighlights,
+      experienceIncludes,
+      experienceGoodFor,
+      experienceLocation,
+      experienceDurationMin,
+      experiencePrice,
+      experienceGroupMin,
+      experienceGroupMax,
       memoryCaption,
       workoutType,
       workoutDurationMin,
@@ -858,8 +906,20 @@ export function TaskModal({
       const mf = metadataFieldsFromParsed(metaToApply);
       setEventLocation(mf.eventLocation);
       setEventUrl(mf.eventUrl);
+      setEventBring(mf.eventBring);
+      setEventGoing(mf.eventGoing);
+      setEventCapacity(mf.eventCapacity);
+      setEventGoingPeople(mf.eventGoingPeople);
       setExperienceSeason(mf.experienceSeason);
       setExperienceEndDate(mf.experienceEndDate);
+      setExperienceHighlights(mf.experienceHighlights);
+      setExperienceIncludes(mf.experienceIncludes);
+      setExperienceGoodFor(mf.experienceGoodFor);
+      setExperienceLocation(mf.experienceLocation);
+      setExperienceDurationMin(mf.experienceDurationMin);
+      setExperiencePrice(mf.experiencePrice);
+      setExperienceGroupMin(mf.experienceGroupMin);
+      setExperienceGroupMax(mf.experienceGroupMax);
       setMemoryCaption(mf.memoryCaption);
       setWorkoutType(mf.workoutType);
       setWorkoutDurationMin(mf.workoutDurationMin);
@@ -915,8 +975,20 @@ export function TaskModal({
     setMetadata({});
     setEventLocation('');
     setEventUrl('');
+    setEventBring([]);
+    setEventGoing('');
+    setEventCapacity('');
+    setEventGoingPeople([]);
     setExperienceSeason('');
     setExperienceEndDate('');
+    setExperienceHighlights([]);
+    setExperienceIncludes([]);
+    setExperienceGoodFor([]);
+    setExperienceLocation('');
+    setExperienceDurationMin('');
+    setExperiencePrice('');
+    setExperienceGroupMin('');
+    setExperienceGroupMax('');
     setMemoryCaption('');
     setWorkoutType('');
     setWorkoutDurationMin(
@@ -1298,8 +1370,20 @@ export function TaskModal({
       const mf = metadataFieldsFromParsed(meta);
       setEventLocation(mf.eventLocation);
       setEventUrl(mf.eventUrl);
+      setEventBring(mf.eventBring);
+      setEventGoing(mf.eventGoing);
+      setEventCapacity(mf.eventCapacity);
+      setEventGoingPeople(mf.eventGoingPeople);
       setExperienceSeason(mf.experienceSeason);
       setExperienceEndDate(mf.experienceEndDate);
+      setExperienceHighlights(mf.experienceHighlights);
+      setExperienceIncludes(mf.experienceIncludes);
+      setExperienceGoodFor(mf.experienceGoodFor);
+      setExperienceLocation(mf.experienceLocation);
+      setExperienceDurationMin(mf.experienceDurationMin);
+      setExperiencePrice(mf.experiencePrice);
+      setExperienceGroupMin(mf.experienceGroupMin);
+      setExperienceGroupMax(mf.experienceGroupMax);
       setMemoryCaption(mf.memoryCaption);
       setWorkoutType(mf.workoutType);
       setWorkoutDurationMin(mf.workoutDurationMin);
@@ -1478,6 +1562,48 @@ export function TaskModal({
 
   useEffect(() => {
     if (!open) {
+      setContinueSessionPlayerOpen(false);
+      setContinueSessionBusy(false);
+      setSourceWorkoutLaunch(null);
+    }
+  }, [open]);
+
+  /** Prefetch source workout so chrome Play and Continue share identical V1 player init. */
+  useEffect(() => {
+    const sourceId = readWorkoutLogSourceTaskId(metadata);
+    if (!open || !isWorkoutLogInProgress({ item_type: itemType, status }) || !sourceId) {
+      setSourceWorkoutLaunch(null);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('id, title, metadata, bubble_id')
+        .eq('id', sourceId)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error || !data?.id || !data.bubble_id) {
+        setSourceWorkoutLaunch(null);
+        return;
+      }
+      setSourceWorkoutLaunch({
+        id: data.id,
+        title: typeof data.title === 'string' ? data.title : '',
+        metadata: (data.metadata ?? {}) as Json,
+        bubbleId: data.bubble_id,
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, itemType, status, metadata]);
+
+  useEffect(() => {
+    if (!open) {
       setOutlineRevision(1);
       outlineDraftFingerprintRef.current = null;
       skipOutlineRevisionBumpRef.current = true;
@@ -1604,6 +1730,49 @@ export function TaskModal({
     }
     activeSessionLaunch.handleLaunchClick();
   }, [hasWorkoutFactory, preflightCompletedThisOpen, activeSessionLaunch.handleLaunchClick]);
+
+  const handleContinueInProgressWorkoutLog = useCallback(() => {
+    const sourceId = readWorkoutLogSourceTaskId(metadata);
+    if (!sourceId) {
+      toast.error('This log is missing a link to its workout session.');
+      return;
+    }
+    if (isActiveSessionRouteEnabled()) {
+      setContinueSessionBusy(true);
+      router.push(buildActiveSessionUrl(workspaceId, sourceId, { from: 'modal' }));
+      onOpenChange(false);
+      return;
+    }
+
+    void (async () => {
+      setContinueSessionBusy(true);
+      try {
+        if (sourceWorkoutLaunch?.id === sourceId) {
+          setContinueSessionPlayerOpen(true);
+          return;
+        }
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from('tasks')
+          .select('id, title, metadata, bubble_id')
+          .eq('id', sourceId)
+          .maybeSingle();
+        if (error || !data?.id || !data.bubble_id) {
+          toast.error('Could not find the source workout for this log.');
+          return;
+        }
+        setSourceWorkoutLaunch({
+          id: data.id,
+          title: typeof data.title === 'string' ? data.title : '',
+          metadata: (data.metadata ?? {}) as Json,
+          bubbleId: data.bubble_id,
+        });
+        setContinueSessionPlayerOpen(true);
+      } finally {
+        setContinueSessionBusy(false);
+      }
+    })();
+  }, [metadata, workspaceId, router, onOpenChange, sourceWorkoutLaunch]);
 
   const activeSessionLaunchControlProps = useMemo(() => {
     if (activeSessionLaunch.launchUi.mode === 'hidden') return null;
@@ -1895,8 +2064,20 @@ export function TaskModal({
         {
           eventLocation,
           eventUrl,
+          eventBring,
+          eventGoing,
+          eventCapacity,
+          eventGoingPeople,
           experienceSeason,
           experienceEndDate,
+          experienceHighlights,
+          experienceIncludes,
+          experienceGoodFor,
+          experienceLocation,
+          experienceDurationMin,
+          experiencePrice,
+          experienceGroupMin,
+          experienceGroupMax,
           memoryCaption,
           workoutType,
           workoutDurationMin,
@@ -1942,8 +2123,20 @@ export function TaskModal({
         {
           eventLocation,
           eventUrl,
+          eventBring,
+          eventGoing,
+          eventCapacity,
+          eventGoingPeople,
           experienceSeason,
           experienceEndDate,
+          experienceHighlights,
+          experienceIncludes,
+          experienceGoodFor,
+          experienceLocation,
+          experienceDurationMin,
+          experiencePrice,
+          experienceGroupMin,
+          experienceGroupMax,
           memoryCaption,
           workoutType,
           workoutDurationMin,
@@ -2195,6 +2388,14 @@ export function TaskModal({
       onEventLocationChange: setEventLocation,
       eventUrl,
       onEventUrlChange: setEventUrl,
+      eventBring,
+      onEventBringChange: setEventBring,
+      eventGoing,
+      onEventGoingChange: setEventGoing,
+      eventCapacity,
+      onEventCapacityChange: setEventCapacity,
+      eventGoingPeople,
+      onEventGoingPeopleChange: setEventGoingPeople,
       experienceSeason,
       onExperienceSeasonChange: setExperienceSeason,
       scheduledOn,
@@ -2204,6 +2405,22 @@ export function TaskModal({
       },
       experienceEndDate,
       onExperienceEndDateChange: setExperienceEndDate,
+      experienceHighlights,
+      onExperienceHighlightsChange: setExperienceHighlights,
+      experienceIncludes,
+      onExperienceIncludesChange: setExperienceIncludes,
+      experienceGoodFor,
+      onExperienceGoodForChange: setExperienceGoodFor,
+      experienceLocation,
+      onExperienceLocationChange: setExperienceLocation,
+      experienceDurationMin,
+      onExperienceDurationMinChange: setExperienceDurationMin,
+      experiencePrice,
+      onExperiencePriceChange: setExperiencePrice,
+      experienceGroupMin,
+      onExperienceGroupMinChange: setExperienceGroupMin,
+      experienceGroupMax,
+      onExperienceGroupMaxChange: setExperienceGroupMax,
       memoryCaption,
       onMemoryCaptionChange: setMemoryCaption,
       aiWorkoutProgressIdx,
@@ -2262,6 +2479,8 @@ export function TaskModal({
       },
       canPromoteToClass: canManageClasses,
       demotedProvenanceKeys: userDemotedProvenanceKeys,
+      onContinueInProgressWorkoutLog: handleContinueInProgressWorkoutLog,
+      continueInProgressWorkoutLogBusy: continueSessionBusy,
     }),
     [
       title,
@@ -2284,9 +2503,21 @@ export function TaskModal({
       generateCardCoverWithAi,
       eventLocation,
       eventUrl,
+      eventBring,
+      eventGoing,
+      eventCapacity,
+      eventGoingPeople,
       experienceSeason,
       scheduledOn,
       experienceEndDate,
+      experienceHighlights,
+      experienceIncludes,
+      experienceGoodFor,
+      experienceLocation,
+      experienceDurationMin,
+      experiencePrice,
+      experienceGroupMin,
+      experienceGroupMax,
       memoryCaption,
       aiWorkoutProgressIdx,
       handleAiGenerateWorkout,
@@ -2332,6 +2563,8 @@ export function TaskModal({
       hasWorkoutFactory,
       metadata,
       userDemotedProvenanceKeys,
+      handleContinueInProgressWorkoutLog,
+      continueSessionBusy,
     ],
   );
 
@@ -2379,6 +2612,13 @@ export function TaskModal({
             ? 'standard-comments'
             : null
       : null;
+
+  /** In-progress log: chrome + Continue V1 player use source workout row (dashboard-shell parity). */
+  const workoutPlayerTitle = sourceWorkoutLaunch?.title ?? title;
+  const workoutPlayerMetadata = sourceWorkoutLaunch?.metadata ?? metadata;
+  const workoutPlayerBubbleId = sourceWorkoutLaunch?.bubbleId ?? bubbleId;
+  const workoutPlayerSourceTaskId =
+    sourceWorkoutLaunch?.id ?? readWorkoutLogSourceTaskId(metadata) ?? taskId;
 
   /* Task modal must sit above MobileTabBar (z-90) and drawer sheets (z-110–120) or actions are obscured on phones. */
   return (
@@ -2643,11 +2883,12 @@ export function TaskModal({
                       onVisibilityChange={setVisibility}
                       liveStreamEnabled={liveStreamEnabled}
                       onLiveStreamEnabledChange={setLiveStreamEnabled}
-                      workoutTitle={title}
-                      workoutMetadata={metadata}
-                      bubbleId={bubbleId}
+                      workoutTitle={workoutPlayerTitle}
+                      workoutMetadata={workoutPlayerMetadata}
+                      bubbleId={workoutPlayerBubbleId}
                       workspaceId={workspaceId}
                       taskId={taskId}
+                      workoutPlayerSourceTaskId={workoutPlayerSourceTaskId}
                       activeSessionLaunch={activeSessionLaunchControlProps}
                       onInteraction={() => setHeroCinematicCollapsed(true)}
                     />
@@ -2902,11 +3143,12 @@ export function TaskModal({
                           onVisibilityChange={setVisibility}
                           liveStreamEnabled={liveStreamEnabled}
                           onLiveStreamEnabledChange={setLiveStreamEnabled}
-                          workoutTitle={title}
-                          workoutMetadata={metadata}
-                          bubbleId={bubbleId}
+                          workoutTitle={workoutPlayerTitle}
+                          workoutMetadata={workoutPlayerMetadata}
+                          bubbleId={workoutPlayerBubbleId}
                           workspaceId={workspaceId}
                           taskId={taskId}
+                          workoutPlayerSourceTaskId={workoutPlayerSourceTaskId}
                           activeSessionLaunch={activeSessionLaunchControlProps}
                           onInteraction={() => setHeroCinematicCollapsed(true)}
                         />
@@ -3189,6 +3431,24 @@ export function TaskModal({
           workspaceId={workspaceId}
           capacity={classRosterCapacity}
           currentUserId={myProfile?.id ?? null}
+        />
+      ) : null}
+      {continueSessionPlayerOpen && sourceWorkoutLaunch ? (
+        <WorkoutPlayer
+          open
+          onClose={() => setContinueSessionPlayerOpen(false)}
+          workspaceId={workspaceId}
+          workoutTitle={sourceWorkoutLaunch.title}
+          metadata={sourceWorkoutLaunch.metadata}
+          bubbleId={sourceWorkoutLaunch.bubbleId}
+          sourceTaskId={sourceWorkoutLaunch.id}
+          sessionId={null}
+          class_instance_id={null}
+          isMemberView
+          canPostMessages
+          onComplete={() => {
+            setContinueSessionPlayerOpen(false);
+          }}
         />
       ) : null}
     </div>

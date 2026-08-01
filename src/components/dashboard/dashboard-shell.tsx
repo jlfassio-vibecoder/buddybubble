@@ -66,6 +66,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { buildActiveSessionUrl } from '@/lib/active-session/build-active-session-url';
 import { isActiveSessionRouteEnabled } from '@/lib/feature-flags/activeSessionRoute';
+import { isWorkoutLogInProgress, readWorkoutLogSourceTaskId } from '@/lib/workout-log-task-state';
 import { isSystemAnalyticsRouteEnabled } from '@/lib/feature-flags/systemAnalyticsRoute';
 import { markLiveSessionInviteMessageEnded } from '@/lib/mark-live-session-invite-ended';
 import { provisionSoloStudioInstance } from '@/lib/live-video/provision-solo-studio-instance';
@@ -1288,21 +1289,52 @@ function DashboardShellInner({
         openTrialModal();
         return;
       }
-      if (isActiveSessionRouteEnabled() && task.id) {
-        router.push(buildActiveSessionUrl(workspaceId, task.id, { from: 'kanban' }));
+
+      const launchWithTask = (launchTask: TaskRow) => {
+        if (isActiveSessionRouteEnabled() && launchTask.id) {
+          router.push(buildActiveSessionUrl(workspaceId, launchTask.id, { from: 'kanban' }));
+          return;
+        }
+        const workoutData = buildWorkoutCoachRailContext(
+          launchTask.metadata ?? {},
+          launchTask.title ?? '',
+        ) as unknown as Json;
+        setWorkoutPlayerLaunch({
+          task: launchTask,
+          sessionId: null,
+          class_instance_id: null,
+          isMemberView: true,
+          workoutData,
+        });
+      };
+
+      if (isWorkoutLogInProgress(task)) {
+        const sourceId = readWorkoutLogSourceTaskId(task.metadata);
+        if (!sourceId) {
+          toast.error('This log is missing a link to its workout session.');
+          return;
+        }
+        if (isActiveSessionRouteEnabled()) {
+          router.push(buildActiveSessionUrl(workspaceId, sourceId, { from: 'kanban' }));
+          return;
+        }
+        void (async () => {
+          const supabase = createClient();
+          const { data, error } = await supabase
+            .from('tasks')
+            .select('*')
+            .eq('id', sourceId)
+            .maybeSingle();
+          if (error || !data) {
+            toast.error('Could not find the source workout for this log.');
+            return;
+          }
+          launchWithTask(data as TaskRow);
+        })();
         return;
       }
-      const workoutData = buildWorkoutCoachRailContext(
-        task.metadata ?? {},
-        task.title ?? '',
-      ) as unknown as Json;
-      setWorkoutPlayerLaunch({
-        task,
-        sessionId: null,
-        class_instance_id: null,
-        isMemberView: true,
-        workoutData,
-      });
+
+      launchWithTask(task);
     },
     [activeWorkspace, bubbles, openTrialModal, router, workspaceId],
   );
@@ -1490,11 +1522,16 @@ function DashboardShellInner({
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!cancelled) setAuthHasSessionEmail(Boolean(user?.email?.trim()));
+      try {
+        const supabase = createClient();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!cancelled) setAuthHasSessionEmail(Boolean(user?.email?.trim()));
+      } catch {
+        // Web Lock steal / other getUser races — leave null so the profile gate
+        // does not flash (isDashboardProfileComplete treats null as OK).
+      }
     })();
     return () => {
       cancelled = true;

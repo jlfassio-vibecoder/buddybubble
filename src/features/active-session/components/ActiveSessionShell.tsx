@@ -23,6 +23,7 @@ import {
   recoverWorkoutSessionLogs,
 } from '@/lib/workout-factory/recover-workout-session-logs';
 import { safeNextPath } from '@/lib/safe-next-path';
+import { WORKOUT_BUILDER_TASK_HANDOFF_QUERY } from '@/lib/workout-builder/build-workout-builder-url';
 import type { SetDraft } from '@/components/fitness/workout-block-renderer/WorkoutPlayerExercisePanel';
 import type { ActiveSessionContext } from '../machines/types';
 import { useActiveSession } from '../hooks/useActiveSession';
@@ -239,9 +240,16 @@ export function ActiveSessionShell({ workspaceId, task }: Props) {
 
   useEffect(() => {
     if (snapshot.status !== 'done' || exitIntentRef.current !== 'finish') return;
-    router.replace(`/app/${workspaceId}`);
+    const logTaskId = snapshot.context.logTaskId?.trim();
+    if (logTaskId) {
+      router.replace(
+        `/app/${workspaceId}?${WORKOUT_BUILDER_TASK_HANDOFF_QUERY}=${encodeURIComponent(logTaskId)}`,
+      );
+    } else {
+      router.replace(`/app/${workspaceId}`);
+    }
     exitIntentRef.current = 'none';
-  }, [snapshot.status, router, workspaceId]);
+  }, [snapshot.status, snapshot.context.logTaskId, router, workspaceId]);
 
   const exitAfterAbandon = useCallback(() => {
     const autosaveError = snapshot.context.autosaveError;
