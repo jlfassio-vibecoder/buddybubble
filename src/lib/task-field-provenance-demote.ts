@@ -43,6 +43,7 @@ export function detectUserDemotedProvenanceKeys(args: {
       if (JSON.stringify(fields.eventGoingPeople) !== JSON.stringify(origFields.eventGoingPeople)) {
         keys.push('going_people');
       }
+      if (changed(fields.eventCost, origFields.eventCost)) keys.push('cost');
       break;
     case 'experience':
       if (changed(fields.experienceSeason, origFields.experienceSeason)) keys.push('season');
@@ -76,6 +77,11 @@ export function detectUserDemotedProvenanceKeys(args: {
       if (JSON.stringify(fields.ideaVotedBy) !== JSON.stringify(origFields.ideaVotedBy)) {
         keys.push('voted_by');
       }
+      if (changed(fields.ideaEffort, origFields.ideaEffort)) keys.push('effort');
+      if (changed(fields.ideaImpact, origFields.ideaImpact)) keys.push('impact');
+      if (JSON.stringify(fields.ideaTags) !== JSON.stringify(origFields.ideaTags)) {
+        keys.push('tags');
+      }
       break;
     case 'memory':
       if (changed(fields.memoryCaption, origFields.memoryCaption)) keys.push('caption');
@@ -85,6 +91,7 @@ export function detectUserDemotedProvenanceKeys(args: {
       if (changed(fields.memoryLinkedEvent, origFields.memoryLinkedEvent)) {
         keys.push('linked_event');
       }
+      if (changed(fields.memoryLocation, origFields.memoryLocation)) keys.push('location');
       if (JSON.stringify(fields.memoryReactions) !== JSON.stringify(origFields.memoryReactions)) {
         keys.push('reactions');
       }
@@ -100,12 +107,28 @@ export function detectUserDemotedProvenanceKeys(args: {
         /** Flat form edits also clear structure chrome stamped on `blocks`. */
         keys.push('blocks');
       }
+      if (itemType === 'workout' && changed(fields.workoutTargetRpe, origFields.workoutTargetRpe)) {
+        keys.push('target_rpe');
+      }
+      if (itemType === 'workout_log') {
+        if (changed(fields.workoutLogSessionRpe, origFields.workoutLogSessionRpe)) {
+          keys.push('session_rpe');
+        }
+        if (changed(fields.workoutLogCompletion, origFields.workoutLogCompletion)) {
+          keys.push('completion');
+        }
+        if (changed(fields.workoutLogMood, origFields.workoutLogMood)) keys.push('mood');
+      }
       break;
     case 'program':
       if (changed(fields.programGoal, origFields.programGoal)) keys.push('goal');
       if (changed(fields.programDurationWeeks, origFields.programDurationWeeks)) {
         keys.push('duration_weeks');
       }
+      if (changed(fields.programDaysPerWeek, origFields.programDaysPerWeek)) {
+        keys.push('days_per_week');
+      }
+      if (changed(fields.programLevel, origFields.programLevel)) keys.push('level');
       if (fields.programCurrentWeek !== origFields.programCurrentWeek) keys.push('current_week');
       if (JSON.stringify(fields.programSchedule) !== JSON.stringify(origFields.programSchedule)) {
         keys.push('schedule');

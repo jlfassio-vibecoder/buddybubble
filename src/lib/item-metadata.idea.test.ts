@@ -10,11 +10,9 @@ describe('idea metadata round-trip', () => {
     });
     expect(fields.ideaVotes).toBe(5);
     expect(fields.ideaVotedBy).toEqual(['u1', 'u2']);
+    expect(fields.ideaEffort).toBe('Low');
 
-    const built = buildTaskMetadataPayload('idea', fields, { effort: 'Low' }) as Record<
-      string,
-      unknown
-    >;
+    const built = buildTaskMetadataPayload('idea', fields, {}) as Record<string, unknown>;
     expect(built.votes).toBe(5);
     expect(built.voted_by).toEqual(['u1', 'u2']);
     expect(built.effort).toBe('Low');

@@ -32,6 +32,8 @@ export type TaskModalMemoryCanvasProps = {
   onRemoveAttachment: (att: TaskAttachment) => void | Promise<void>;
   memoryLinkedEvent?: string;
   onMemoryLinkedEventChange?: (value: string) => void;
+  memoryLocation?: string;
+  onMemoryLocationChange?: (value: string) => void;
   memoryPeople?: string[];
   onMemoryPeopleChange?: (value: string[]) => void;
   memoryReactions?: MemoryMomentReaction[];
@@ -58,6 +60,8 @@ export function TaskModalMemoryCanvas({
   onRemoveAttachment,
   memoryLinkedEvent = '',
   onMemoryLinkedEventChange,
+  memoryLocation = '',
+  onMemoryLocationChange,
   memoryPeople = [],
   onMemoryPeopleChange,
   memoryReactions = [],
@@ -83,40 +87,66 @@ export function TaskModalMemoryCanvas({
 
   return (
     <div className={className} data-testid="task-modal-memory-canvas">
-      <TaskModalField label="From" optional agent={agent('linked_event')} className="mb-4">
-        {canWrite && onMemoryLinkedEventChange ? (
-          <div className="relative">
-            <CalendarDays
-              className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
-              aria-hidden
-            />
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <TaskModalField label="From" optional agent={agent('linked_event')} className="mb-0">
+          {canWrite && onMemoryLinkedEventChange ? (
+            <div className="relative">
+              <CalendarDays
+                className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
+              <input
+                type="text"
+                value={memoryLinkedEvent}
+                onChange={(e) => onMemoryLinkedEventChange(e.target.value)}
+                placeholder="Event title or id"
+                aria-label="Linked event"
+                className={`${taskModalInputClass} pl-9`}
+                data-testid="task-modal-memory-linked-event"
+              />
+            </div>
+          ) : linked ? (
+            <span
+              className="inline-flex h-7 items-center gap-1.5 rounded-full border border-primary/35 bg-primary/10 px-2.5 text-[12px] font-semibold text-primary"
+              data-testid="task-modal-memory-linked-event-chip"
+            >
+              <CalendarDays className="size-3.5 shrink-0" aria-hidden />
+              {linked}
+            </span>
+          ) : (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="task-modal-memory-linked-event-empty"
+            >
+              No linked event
+            </p>
+          )}
+        </TaskModalField>
+        <TaskModalField label="Location" optional agent={agent('location')} className="mb-0">
+          {canWrite && onMemoryLocationChange ? (
             <input
               type="text"
-              value={memoryLinkedEvent}
-              onChange={(e) => onMemoryLinkedEventChange(e.target.value)}
-              placeholder="Event title or id"
-              aria-label="Linked event"
-              className={`${taskModalInputClass} pl-9`}
-              data-testid="task-modal-memory-linked-event"
+              value={memoryLocation}
+              onChange={(e) => onMemoryLocationChange(e.target.value)}
+              placeholder="Where it happened"
+              aria-label="Location"
+              className={taskModalInputClass}
+              data-testid="task-modal-memory-location"
             />
-          </div>
-        ) : linked ? (
-          <span
-            className="inline-flex h-7 items-center gap-1.5 rounded-full border border-primary/35 bg-primary/10 px-2.5 text-[12px] font-semibold text-primary"
-            data-testid="task-modal-memory-linked-event-chip"
-          >
-            <CalendarDays className="size-3.5 shrink-0" aria-hidden />
-            {linked}
-          </span>
-        ) : (
-          <p
-            className="text-xs text-muted-foreground"
-            data-testid="task-modal-memory-linked-event-empty"
-          >
-            No linked event
-          </p>
-        )}
-      </TaskModalField>
+          ) : memoryLocation.trim() ? (
+            <p className="text-[14.5px] text-foreground" data-testid="task-modal-memory-location">
+              {memoryLocation.trim()}
+            </p>
+          ) : (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="task-modal-memory-location-empty"
+            >
+              No location
+            </p>
+          )}
+        </TaskModalField>
+      </div>
 
       <TaskModalSection
         icon={<Camera className="size-4" aria-hidden />}

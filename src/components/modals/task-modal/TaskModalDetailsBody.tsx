@@ -86,6 +86,8 @@ export type TaskModalDetailsBodyProps = {
   onEventCapacityChange: (value: string) => void;
   eventGoingPeople: string[];
   onEventGoingPeopleChange: (value: string[]) => void;
+  eventCost: string;
+  onEventCostChange: (value: string) => void;
   experienceSeason: string;
   onExperienceSeasonChange: (value: string) => void;
   scheduledOn: string;
@@ -114,6 +116,8 @@ export type TaskModalDetailsBodyProps = {
   onMemoryPeopleChange: (value: string[]) => void;
   memoryLinkedEvent: string;
   onMemoryLinkedEventChange: (value: string) => void;
+  memoryLocation: string;
+  onMemoryLocationChange: (value: string) => void;
   memoryReactions: MemoryMomentReaction[];
   onMemoryReactionsChange: (value: MemoryMomentReaction[]) => void;
   aiWorkoutProgressIdx: number | null;
@@ -126,6 +130,14 @@ export type TaskModalDetailsBodyProps = {
   onWorkoutTypeChange: (value: string) => void;
   workoutDurationMin: string;
   onWorkoutDurationMinChange: (value: string) => void;
+  workoutTargetRpe: string;
+  onWorkoutTargetRpeChange: (value: string) => void;
+  workoutLogSessionRpe: string;
+  onWorkoutLogSessionRpeChange: (value: string) => void;
+  workoutLogCompletion: string;
+  onWorkoutLogCompletionChange: (value: string) => void;
+  workoutLogMood: string;
+  onWorkoutLogMoodChange: (value: string) => void;
   workoutExercises: WorkoutExercise[];
   onWorkoutExercisesChange: (value: WorkoutExercise[]) => void;
   workoutUnitSystem: UnitSystem;
@@ -138,6 +150,10 @@ export type TaskModalDetailsBodyProps = {
   onProgramGoalChange: (value: string) => void;
   programDurationWeeks: string;
   onProgramDurationWeeksChange: (value: string) => void;
+  programDaysPerWeek: string;
+  onProgramDaysPerWeekChange: (value: string) => void;
+  programLevel: string;
+  onProgramLevelChange: (value: string) => void;
   programCurrentWeek: number;
   programSchedule: ProgramWeek[];
   dateLabels: TaskDateFieldLabels;
@@ -167,6 +183,12 @@ export type TaskModalDetailsBodyProps = {
   ideaVotes?: number;
   /** Idea: voter user ids (`metadata.voted_by`). */
   ideaVotedBy?: string[];
+  ideaEffort: string;
+  onIdeaEffortChange: (value: string) => void;
+  ideaImpact: string;
+  onIdeaImpactChange: (value: string) => void;
+  ideaTags: string[];
+  onIdeaTagsChange: (value: string[]) => void;
   currentUserId?: string | null;
   ideaVoteBusy?: boolean;
   onToggleIdeaVote?: () => void;
@@ -227,6 +249,8 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     onEventCapacityChange,
     eventGoingPeople,
     onEventGoingPeopleChange,
+    eventCost,
+    onEventCostChange,
     experienceSeason,
     onExperienceSeasonChange,
     scheduledOn,
@@ -255,12 +279,22 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     onMemoryPeopleChange,
     memoryLinkedEvent,
     onMemoryLinkedEventChange,
+    memoryLocation,
+    onMemoryLocationChange,
     memoryReactions,
     onMemoryReactionsChange,
     workoutType,
     onWorkoutTypeChange,
     workoutDurationMin,
     onWorkoutDurationMinChange,
+    workoutTargetRpe,
+    onWorkoutTargetRpeChange,
+    workoutLogSessionRpe,
+    onWorkoutLogSessionRpeChange,
+    workoutLogCompletion,
+    onWorkoutLogCompletionChange,
+    workoutLogMood,
+    onWorkoutLogMoodChange,
     workoutExercises,
     workoutUnitSystem,
     workspaceId,
@@ -270,6 +304,10 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     onProgramGoalChange,
     programDurationWeeks,
     onProgramDurationWeeksChange,
+    programDaysPerWeek,
+    onProgramDaysPerWeekChange,
+    programLevel,
+    onProgramLevelChange,
     programCurrentWeek,
     programSchedule,
     dateLabels,
@@ -297,6 +335,12 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     taskMetadata,
     ideaVotes = 0,
     ideaVotedBy = [],
+    ideaEffort,
+    onIdeaEffortChange,
+    ideaImpact,
+    onIdeaImpactChange,
+    ideaTags,
+    onIdeaTagsChange,
     currentUserId = null,
     ideaVoteBusy = false,
     onToggleIdeaVote,
@@ -415,7 +459,13 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
       ) : null}
 
       {itemType === 'workout' ? (
-        <TaskModalWorkoutCanvas taskMetadata={taskMetadata} isAgentField={isAgentField} />
+        <TaskModalWorkoutCanvas
+          taskMetadata={taskMetadata}
+          workoutTargetRpe={workoutTargetRpe}
+          onWorkoutTargetRpeChange={onWorkoutTargetRpeChange}
+          canWrite={canWrite}
+          isAgentField={isAgentField}
+        />
       ) : null}
 
       {itemType === 'idea' ? (
@@ -423,6 +473,12 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
           taskMetadata={taskMetadata}
           ideaVotes={ideaVotes}
           ideaVotedBy={ideaVotedBy}
+          ideaEffort={ideaEffort}
+          onIdeaEffortChange={onIdeaEffortChange}
+          ideaImpact={ideaImpact}
+          onIdeaImpactChange={onIdeaImpactChange}
+          ideaTags={ideaTags}
+          onIdeaTagsChange={onIdeaTagsChange}
           currentUserId={currentUserId}
           voteBusy={ideaVoteBusy}
           onToggleVote={onToggleIdeaVote}
@@ -445,6 +501,8 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
           onRemoveAttachment={onRemoveAttachment}
           memoryLinkedEvent={memoryLinkedEvent}
           onMemoryLinkedEventChange={onMemoryLinkedEventChange}
+          memoryLocation={memoryLocation}
+          onMemoryLocationChange={onMemoryLocationChange}
           memoryPeople={memoryPeople}
           onMemoryPeopleChange={onMemoryPeopleChange}
           memoryReactions={memoryReactions}
@@ -465,6 +523,8 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
           onEventGoingPeopleChange={onEventGoingPeopleChange}
           eventBring={eventBring}
           onEventBringChange={onEventBringChange}
+          eventCost={eventCost}
+          onEventCostChange={onEventCostChange}
           isAgentField={isAgentField}
         />
       ) : null}
@@ -503,6 +563,12 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
           onWorkoutTypeChange={onWorkoutTypeChange}
           workoutDurationMin={workoutDurationMin}
           onWorkoutDurationMinChange={onWorkoutDurationMinChange}
+          workoutLogSessionRpe={workoutLogSessionRpe}
+          onWorkoutLogSessionRpeChange={onWorkoutLogSessionRpeChange}
+          workoutLogCompletion={workoutLogCompletion}
+          onWorkoutLogCompletionChange={onWorkoutLogCompletionChange}
+          workoutLogMood={workoutLogMood}
+          onWorkoutLogMoodChange={onWorkoutLogMoodChange}
           workoutExercises={workoutExercises}
           workoutUnitSystem={workoutUnitSystem}
           taskMetadata={taskMetadata}
@@ -549,6 +615,10 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
           onProgramGoalChange={onProgramGoalChange}
           programDurationWeeks={programDurationWeeks}
           onProgramDurationWeeksChange={onProgramDurationWeeksChange}
+          programDaysPerWeek={programDaysPerWeek}
+          onProgramDaysPerWeekChange={onProgramDaysPerWeekChange}
+          programLevel={programLevel}
+          onProgramLevelChange={onProgramLevelChange}
           programCurrentWeek={programCurrentWeek}
           programSchedule={programSchedule}
           isAgentField={isAgentField}

@@ -7,6 +7,7 @@ import { parseTaskMetadata } from '@/lib/item-metadata';
 import { ideaVoteState, readIdeaVotes } from '@/lib/idea-vote';
 import { ITEM_TYPE_VISUAL } from '@/lib/item-type-styles';
 import { TaskModalField, TaskModalSection } from '@/components/modals/task-modal/TaskModalSection';
+import { TaskModalChipListEditor } from '@/components/modals/task-modal/TaskModalChipListEditor';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -18,6 +19,12 @@ export type TaskModalIdeaCanvasProps = {
   ideaVotes?: number;
   /** Form-driven voter ids (`metadata.voted_by`). */
   ideaVotedBy?: string[];
+  ideaEffort?: string;
+  onIdeaEffortChange?: (value: string) => void;
+  ideaImpact?: string;
+  onIdeaImpactChange?: (value: string) => void;
+  ideaTags?: string[];
+  onIdeaTagsChange?: (value: string[]) => void;
   currentUserId?: string | null;
   canWrite: boolean;
   voteBusy?: boolean;
@@ -30,23 +37,9 @@ export type TaskModalIdeaCanvasProps = {
 };
 
 const PROMOTE_TARGETS: PromoteTargetType[] = ['event', 'program', 'class'];
+const IDEA_LEVELS = ['Low', 'Medium', 'High'] as const;
 
 export { readIdeaVotes };
-
-function readOptionalString(meta: Record<string, unknown>, key: string): string | null {
-  const v = meta[key];
-  if (typeof v !== 'string') return null;
-  const t = v.trim();
-  return t || null;
-}
-
-function readTags(meta: Record<string, unknown>): string[] {
-  const raw = meta.tags;
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
-    .map((t) => t.trim());
-}
 
 /**
  * Handoff-aligned Idea Details canvas: interactive interest vote + promote row.
@@ -55,6 +48,12 @@ export function TaskModalIdeaCanvas({
   taskMetadata = null,
   ideaVotes,
   ideaVotedBy,
+  ideaEffort = '',
+  onIdeaEffortChange,
+  ideaImpact = '',
+  onIdeaImpactChange,
+  ideaTags = [],
+  onIdeaTagsChange,
   currentUserId = null,
   canWrite,
   voteBusy = false,
@@ -74,9 +73,6 @@ export function TaskModalIdeaCanvas({
         }
       : taskMetadata;
   const { votes, voted } = ideaVoteState(voteMeta, currentUserId);
-  const effort = readOptionalString(meta, 'effort');
-  const impact = readOptionalString(meta, 'impact');
-  const tags = readTags(meta);
   const agent = (key: string) => Boolean(isAgentField?.(key));
   const canVote = Boolean(canWrite && currentUserId && onToggleVote && !voteBusy);
 
@@ -134,28 +130,54 @@ export function TaskModalIdeaCanvas({
 
         <div className="mt-3.5 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <TaskModalField label="Effort" agent={agent('effort')}>
-            <div
-              className="rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-muted-foreground"
+            <select
+              value={ideaEffort}
+              onChange={(e) => onIdeaEffortChange?.(e.target.value)}
+              disabled={!canWrite || !onIdeaEffortChange}
+              aria-label="Effort"
+              className="h-9 w-full rounded-lg border border-border bg-background px-3 text-[13px] text-foreground"
               data-testid="task-modal-idea-effort"
             >
-              {effort ?? '—'}
-            </div>
+              <option value="">—</option>
+              {IDEA_LEVELS.map((level) => (
+                <option key={level} value={level}>
+                  {level}
+                </option>
+              ))}
+            </select>
           </TaskModalField>
           <TaskModalField label="Impact" agent={agent('impact')}>
-            <div
-              className="rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-muted-foreground"
+            <select
+              value={ideaImpact}
+              onChange={(e) => onIdeaImpactChange?.(e.target.value)}
+              disabled={!canWrite || !onIdeaImpactChange}
+              aria-label="Impact"
+              className="h-9 w-full rounded-lg border border-border bg-background px-3 text-[13px] text-foreground"
               data-testid="task-modal-idea-impact"
             >
-              {impact ?? '—'}
-            </div>
+              <option value="">—</option>
+              {IDEA_LEVELS.map((level) => (
+                <option key={level} value={level}>
+                  {level}
+                </option>
+              ))}
+            </select>
           </TaskModalField>
         </div>
 
         <div className="mt-3.5">
           <TaskModalField label="Tags" agent={agent('tags')}>
-            {tags.length > 0 ? (
+            {canWrite && onIdeaTagsChange ? (
+              <TaskModalChipListEditor
+                values={ideaTags}
+                onChange={onIdeaTagsChange}
+                canWrite={canWrite}
+                addPlaceholder="Add tag…"
+                testId="task-modal-idea-tags"
+              />
+            ) : ideaTags.length > 0 ? (
               <div className="flex flex-wrap gap-1.5" data-testid="task-modal-idea-tags">
-                {tags.map((t) => (
+                {ideaTags.map((t) => (
                   <span
                     key={t}
                     className="inline-flex h-6 items-center rounded-full bg-secondary px-2.5 text-[11px] font-semibold text-muted-foreground"

@@ -13,6 +13,12 @@ const baseProps = {
   onWorkoutTypeChange: () => undefined,
   workoutDurationMin: '45',
   onWorkoutDurationMinChange: () => undefined,
+  workoutLogSessionRpe: '7',
+  onWorkoutLogSessionRpeChange: () => undefined,
+  workoutLogCompletion: '90',
+  onWorkoutLogCompletionChange: () => undefined,
+  workoutLogMood: '',
+  onWorkoutLogMoodChange: () => undefined,
   workoutExercises: [] as [],
   workoutUnitSystem: 'metric' as const,
 };
@@ -88,6 +94,9 @@ describe('TaskModalWorkoutLogCanvas', () => {
         scheduledTime=""
         workoutType=""
         workoutDurationMin="30"
+        workoutLogSessionRpe=""
+        workoutLogCompletion=""
+        workoutLogMood=""
         taskMetadata={{}}
       />,
     );

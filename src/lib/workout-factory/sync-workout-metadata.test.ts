@@ -15,7 +15,7 @@ import {
 } from './__fixtures__/workout-session-view-model.fixtures';
 import { WORKOUT_LOG_SCHEMA_VERSION } from './build-workout-log-finish-metadata';
 import type { SetLogEntry, WorkoutExercise } from '@/lib/item-metadata';
-import type { TaskMetadataFormFields } from '@/lib/item-metadata';
+import { emptyTaskMetadataFormFields, type TaskMetadataFormFields } from '@/lib/item-metadata';
 import type { Json } from '@/types/database';
 import type { Exercise } from '@/lib/workout-factory/types/ai-program';
 import { buildTaskMetadataPayload, finalizeWorkoutMetadataForSave } from '@/lib/item-metadata';
@@ -385,37 +385,9 @@ describe('applyBlockEditsToMetadata', () => {
 
 describe('finalizeWorkoutMetadataForSave', () => {
   const emptyFields = (): TaskMetadataFormFields => ({
-    eventLocation: '',
-    eventUrl: '',
-    eventBring: [],
-    eventGoing: '',
-    eventCapacity: '',
-    eventGoingPeople: [],
-    experienceSeason: '',
-    experienceEndDate: '',
-    experienceHighlights: [],
-    experienceIncludes: [],
-    experienceGoodFor: [],
-    experienceLocation: '',
-    experienceDurationMin: '',
-    experiencePrice: '',
-    experienceGroupMin: '',
-    experienceGroupMax: '',
-    memoryCaption: '',
-    memoryPeople: [],
-    memoryLinkedEvent: '',
-    memoryReactions: [],
+    ...emptyTaskMetadataFormFields(),
     workoutType: 'Strength',
     workoutDurationMin: '45',
-    workoutExercises: [],
-    programGoal: '',
-    programDurationWeeks: '',
-    programCurrentWeek: 0,
-    programSchedule: [],
-    programSourceTitle: '',
-    cardCoverPath: '',
-    ideaVotes: 0,
-    ideaVotedBy: [],
   });
 
   it('refreshes exercises from factory when form matches derived', () => {

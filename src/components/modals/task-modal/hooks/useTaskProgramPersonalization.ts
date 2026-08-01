@@ -7,6 +7,7 @@ import { createClient } from '@utils/supabase/client';
 import type { ItemType, Json, TaskRow, TaskVisibility } from '@/types/database';
 import {
   buildTaskMetadataPayload,
+  emptyTaskMetadataFormFields,
   parseTaskMetadata,
   type ProgramWeek,
   type WorkoutExercise,
@@ -40,6 +41,8 @@ export type UseTaskProgramPersonalizationArgs = {
   title: string;
   programGoal: string;
   programDurationWeeks: string;
+  programDaysPerWeek: string;
+  programLevel: string;
   programSchedule: ProgramWeek[];
   programCurrentWeek: number;
   visibility: TaskVisibility;
@@ -72,6 +75,8 @@ export function useTaskProgramPersonalization({
   title,
   programGoal,
   programDurationWeeks,
+  programDaysPerWeek,
+  programLevel,
   programSchedule,
   programCurrentWeek,
   visibility,
@@ -161,37 +166,23 @@ export function useTaskProgramPersonalization({
       const metaPayload = buildTaskMetadataPayload(
         'program',
         {
+          ...emptyTaskMetadataFormFields(),
           eventLocation,
           eventUrl,
-          eventBring: [],
-          eventGoing: '',
-          eventCapacity: '',
-          eventGoingPeople: [],
           experienceSeason,
           experienceEndDate,
-          experienceHighlights: [],
-          experienceIncludes: [],
-          experienceGoodFor: [],
-          experienceLocation: '',
-          experienceDurationMin: '',
-          experiencePrice: '',
-          experienceGroupMin: '',
-          experienceGroupMax: '',
           memoryCaption,
-          memoryPeople: [],
-          memoryLinkedEvent: '',
-          memoryReactions: [],
           workoutType,
           workoutDurationMin,
           workoutExercises,
           programGoal,
           programDurationWeeks,
+          programDaysPerWeek,
+          programLevel,
           programCurrentWeek,
           programSchedule,
           programSourceTitle: baseTitle,
           cardCoverPath,
-          ideaVotes: 0,
-          ideaVotedBy: [],
         },
         {
           ...(parseTaskMetadata(metadata) as Record<string, unknown>),
@@ -301,6 +292,8 @@ export function useTaskProgramPersonalization({
     title,
     programGoal,
     programDurationWeeks,
+    programDaysPerWeek,
+    programLevel,
     programSchedule,
     defaultStatus,
     visibility,

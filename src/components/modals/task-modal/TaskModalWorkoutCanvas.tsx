@@ -8,8 +8,10 @@ import type { WorkoutSessionBlockView } from '@/lib/workout-factory/workout-sess
 import type { Exercise } from '@/lib/workout-factory/types/ai-program';
 import {
   TaskModalAgentTag,
+  TaskModalField,
   TaskModalSection,
 } from '@/components/modals/task-modal/TaskModalSection';
+import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
 const FMT_ACCENT = new Set([
@@ -28,6 +30,10 @@ const FMT_ACCENT = new Set([
 
 export type TaskModalWorkoutCanvasProps = {
   taskMetadata?: Json | null;
+  /** Form-driven target RPE (`metadata.target_rpe`). */
+  workoutTargetRpe?: string;
+  onWorkoutTargetRpeChange?: (value: string) => void;
+  canWrite?: boolean;
   className?: string;
   /** Live Coach provenance display (respects demoted keys). */
   isAgentField?: (key: string) => boolean;
@@ -172,6 +178,9 @@ function EmptyBlocksPrompt() {
  */
 export function TaskModalWorkoutCanvas({
   taskMetadata = null,
+  workoutTargetRpe = '',
+  onWorkoutTargetRpeChange,
+  canWrite = false,
   className,
   isAgentField,
 }: TaskModalWorkoutCanvasProps) {
@@ -182,11 +191,15 @@ export function TaskModalWorkoutCanvas({
   const durationRaw = fields.workoutDurationMin.trim();
   const durationNum = Number(durationRaw);
   const hasDuration = durationRaw !== '' && Number.isFinite(durationNum) && durationNum > 0;
+  const targetRaw = workoutTargetRpe.trim() || fields.workoutTargetRpe.trim();
+  const targetNum = Number(targetRaw);
+  const hasTarget =
+    targetRaw !== '' && Number.isFinite(targetNum) && targetNum >= 1 && targetNum <= 10;
 
   const tiles = [
     { k: 'Type', v: typeTile, u: '' },
     { k: 'Duration', v: hasDuration ? String(durationNum) : '—', u: hasDuration ? 'min' : '' },
-    { k: 'Target', v: '—', u: '' },
+    { k: 'Target', v: hasTarget ? String(targetNum) : '—', u: hasTarget ? 'RPE' : '' },
   ];
 
   const showEmpty = vm.blocks.length === 0;
@@ -221,6 +234,27 @@ export function TaskModalWorkoutCanvas({
             </div>
           ))}
         </div>
+
+        {onWorkoutTargetRpeChange ? (
+          <TaskModalField
+            label="Target RPE"
+            optional
+            agent={Boolean(isAgentField?.('target_rpe'))}
+            className="mb-3.5 w-36"
+          >
+            <Input
+              type="number"
+              min={1}
+              max={10}
+              value={workoutTargetRpe}
+              onChange={(e) => onWorkoutTargetRpeChange(e.target.value)}
+              disabled={!canWrite}
+              aria-label="Target RPE"
+              className="h-9"
+              data-testid="task-modal-workout-target-rpe"
+            />
+          </TaskModalField>
+        ) : null}
 
         {showEmpty ? (
           <EmptyBlocksPrompt />

@@ -22,6 +22,8 @@ export type TaskModalEventCanvasProps = {
   onEventGoingPeopleChange: (value: string[]) => void;
   eventBring: string[];
   onEventBringChange: (value: string[]) => void;
+  eventCost: string;
+  onEventCostChange: (value: string) => void;
   isAgentField?: (key: string) => boolean;
   className?: string;
 };
@@ -40,6 +42,8 @@ export function TaskModalEventCanvas({
   onEventGoingPeopleChange,
   eventBring,
   onEventBringChange,
+  eventCost,
+  onEventCostChange,
   isAgentField,
   className,
 }: TaskModalEventCanvasProps) {
@@ -169,6 +173,19 @@ export function TaskModalEventCanvas({
             addPlaceholder="Add item…"
             testId="task-modal-event-bring"
             chipIcon
+          />
+        </TaskModalField>
+
+        <TaskModalField label="Cost" optional agent={agent('cost')} className="mb-0 mt-3.5">
+          <input
+            type="text"
+            value={eventCost}
+            onChange={(e) => onEventCostChange(e.target.value)}
+            disabled={!canWrite}
+            placeholder="Free · $5 at door"
+            aria-label="Cost"
+            className={taskModalInputClass}
+            data-testid="task-modal-event-cost"
           />
         </TaskModalField>
       </TaskModalSection>

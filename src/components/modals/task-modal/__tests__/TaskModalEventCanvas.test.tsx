@@ -19,10 +19,13 @@ describe('TaskModalEventCanvas', () => {
         onEventGoingPeopleChange={() => undefined}
         eventBring={['Water', 'Trail shoes']}
         onEventBringChange={() => undefined}
+        eventCost="Free"
+        onEventCostChange={() => undefined}
       />,
     );
 
     expect(screen.getByTestId('task-modal-event-canvas')).toBeTruthy();
+    expect(screen.getByTestId('task-modal-event-cost')).toBeTruthy();
     expect(screen.getByTestId('task-modal-event-rsvp-going').textContent).toBe('12 going');
     expect(screen.getByTestId('task-modal-event-rsvp').textContent).toMatch(/18 spots left/);
     expect(screen.getByTestId('task-modal-event-rsvp-progress')).toBeTruthy();
@@ -43,6 +46,8 @@ describe('TaskModalEventCanvas', () => {
         onEventGoingPeopleChange={() => undefined}
         eventBring={[]}
         onEventBringChange={() => undefined}
+        eventCost=""
+        onEventCostChange={() => undefined}
       />,
     );
 
@@ -65,6 +70,8 @@ describe('TaskModalEventCanvas', () => {
         onEventGoingPeopleChange={() => undefined}
         eventBring={['Water']}
         onEventBringChange={onBring}
+        eventCost=""
+        onEventCostChange={() => undefined}
       />,
     );
 
