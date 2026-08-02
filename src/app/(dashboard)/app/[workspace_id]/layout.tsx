@@ -1,21 +1,21 @@
-import { Suspense, type CSSProperties } from 'react';
+import { Suspense } from 'react';
 import { redirect } from 'next/navigation';
 import { fetchPendingJoinRequestCountAndPreview } from '@/lib/workspace-join-requests';
 import { parseMemberRole } from '@/lib/permissions';
 import { createClient } from '@utils/supabase/server';
 import { WorkspaceShellGate } from '@/components/dashboard/workspace-shell-gate';
-import { getThemeVariables } from '@/lib/theme-engine/merge';
 import { coerceWorkspaceCategory } from '@/lib/theme-engine/resolve-workspace-category';
-import type { WorkspaceCategory } from '@/types/database';
 import { loadBubblesDataCached, type BubblesPageData } from './load-bubbles-data';
 
-/** Placeholder while `DashboardShell` (uses `useSearchParams`) resolves — avoids SSR/client tree skew and useId mismatches. */
-function DashboardRouteFallback({ category }: { category: WorkspaceCategory | null }) {
-  const style = getThemeVariables(category ?? 'business', false) as CSSProperties;
+/**
+ * Placeholder while `DashboardShell` (uses `useSearchParams`) resolves — avoids SSR/client tree skew
+ * and useId mismatches. Uses semantic `bg-background` / `bg-muted` so `html.dark` (next-themes)
+ * applies without hardcoding a light-mode category palette.
+ */
+function DashboardRouteFallback() {
   return (
     <div
       className="flex h-[100dvh] max-h-[100dvh] min-h-0 flex-col overflow-hidden bg-background md:flex-row"
-      style={style}
       aria-busy="true"
       aria-label="Loading workspace"
     >
@@ -89,7 +89,7 @@ export default async function WorkspaceLayout({
   }
 
   return (
-    <Suspense fallback={<DashboardRouteFallback category={initialCategoryType} />}>
+    <Suspense fallback={<DashboardRouteFallback />}>
       <WorkspaceShellGate
         workspaceId={workspace_id}
         initialRole={role}

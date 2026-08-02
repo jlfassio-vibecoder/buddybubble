@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef } from 'react';
+import { useLayoutEffect, useMemo, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import type { BubbleRow, MemberRole, WorkspaceCategory } from '@/types/database';
 import { isActiveSessionPathname } from '@/lib/active-session/build-active-session-url';
@@ -84,7 +84,10 @@ function ImmersiveWorkspaceTheme({
     [workspaceId, userWorkspaces, activeWorkspace, initialCategoryType],
   );
 
-  if (workspaceCategory) lastKnownRef.current = workspaceCategory;
+  useLayoutEffect(() => {
+    if (workspaceCategory) lastKnownRef.current = workspaceCategory;
+  }, [workspaceCategory]);
+
   const paintBase = workspaceCategory ?? lastKnownRef.current ?? 'business';
   const themeCategory = resolveEffectiveCategory(categoryOverride, paintBase);
 

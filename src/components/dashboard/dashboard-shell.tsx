@@ -452,9 +452,11 @@ function DashboardShellInner({
   const lastKnownWorkspaceCategoryRef = useRef<WorkspaceCategory | null>(
     initialCategoryType ?? null,
   );
-  if (workspaceCategoryForUi) {
-    lastKnownWorkspaceCategoryRef.current = workspaceCategoryForUi;
-  }
+  useLayoutEffect(() => {
+    if (workspaceCategoryForUi) {
+      lastKnownWorkspaceCategoryRef.current = workspaceCategoryForUi;
+    }
+  }, [workspaceCategoryForUi]);
   const themeCategoryBase =
     workspaceCategoryForUi ?? lastKnownWorkspaceCategoryRef.current ?? 'business';
   const effectiveThemeCategory = resolveEffectiveCategory(categoryOverride, themeCategoryBase);
@@ -2795,7 +2797,6 @@ function DashboardShellInner({
                             open={peopleInvitesOpen}
                             onOpenChange={setPeopleInvitesOpen}
                             workspaceId={workspaceId}
-                            themeCategory={effectiveThemeCategory}
                             workspaceCategory={workspaceCategoryForUi}
                             preferPendingTab={pendingJoinRequestCount > 0}
                             onRequestCreateOwnWorkspace={

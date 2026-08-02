@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { categoryThemeOverrideStorageKey } from '@/lib/layout-collapse-keys';
 import type { WorkspaceCategory } from '@/types/database';
 
-/** Retired global key — read once to migrate into the current workspace, then removed. */
+/** Retired global key — migrated into a per-workspace key on commit, then removed. */
 const LEGACY_GLOBAL_KEY = 'bb_category_theme_override';
 
 const BB_CATEGORY_THEME_OVERRIDE_EVENT = 'bb:category-theme-override';
@@ -34,8 +34,8 @@ function notifyOverrideChange(workspaceId: string) {
 }
 
 /**
- * Read paint override for one BuddyBubble. Migrates legacy global key into this
- * workspace once (other workspaces stay `auto`), then deletes the global key.
+ * Pure read of paint override for one BuddyBubble (safe for useSyncExternalStore getSnapshot).
+ * May observe the retired global key without writing; migration runs in the hook effect.
  */
 export function readCategoryThemeOverride(workspaceId: string): CategoryThemeOverride {
   if (!workspaceId.trim() || typeof window === 'undefined') return 'auto';
@@ -45,16 +45,33 @@ export function readCategoryThemeOverride(workspaceId: string): CategoryThemeOve
     if (raw && isCategoryThemeOverride(raw)) return raw;
 
     const legacy = localStorage.getItem(LEGACY_GLOBAL_KEY);
-    if (legacy && isCategoryThemeOverride(legacy)) {
-      localStorage.removeItem(LEGACY_GLOBAL_KEY);
-      if (legacy === 'auto') return 'auto';
-      localStorage.setItem(key, legacy);
-      return legacy;
-    }
+    if (legacy && isCategoryThemeOverride(legacy)) return legacy;
   } catch {
     /* ignore quota / private mode */
   }
   return 'auto';
+}
+
+/**
+ * Copy retired global override into this workspace once, then delete the global key.
+ * No-op when the per-workspace key already exists (still clears the global key).
+ */
+export function migrateLegacyCategoryThemeOverride(workspaceId: string): void {
+  if (!workspaceId.trim() || typeof window === 'undefined') return;
+  const key = categoryThemeOverrideStorageKey(workspaceId);
+  try {
+    const legacy = localStorage.getItem(LEGACY_GLOBAL_KEY);
+    if (!legacy || !isCategoryThemeOverride(legacy)) return;
+
+    const existing = localStorage.getItem(key);
+    if (!existing && legacy !== 'auto') {
+      localStorage.setItem(key, legacy);
+    }
+    localStorage.removeItem(LEGACY_GLOBAL_KEY);
+    notifyOverrideChange(workspaceId);
+  } catch {
+    /* ignore quota / private mode */
+  }
 }
 
 /** Persist paint override for one BuddyBubble. `auto` removes that workspace’s key only. */
@@ -134,6 +151,10 @@ export function useThemeOverride(workspaceId: string): {
     () => true,
     () => false,
   );
+
+  useEffect(() => {
+    migrateLegacyCategoryThemeOverride(id);
+  }, [id]);
 
   const setCategoryOverride = useCallback(
     (value: CategoryThemeOverride) => {

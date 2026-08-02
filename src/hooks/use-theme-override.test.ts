@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { categoryThemeOverrideStorageKey } from '@/lib/layout-collapse-keys';
 import {
+  migrateLegacyCategoryThemeOverride,
   readCategoryThemeOverride,
   resolveEffectiveCategory,
   writeCategoryThemeOverride,
@@ -49,22 +50,29 @@ describe('per-workspace category theme override storage', () => {
     expect(readCategoryThemeOverride('ws-b')).toBe('fitness');
   });
 
-  it('migrates legacy global into the first workspace that reads, then removes global', () => {
+  it('read is pure: observes legacy without mutating storage', () => {
     localStorage.setItem(LEGACY_GLOBAL_KEY, 'community');
     expect(readCategoryThemeOverride('ws-first')).toBe('community');
+    expect(localStorage.getItem(LEGACY_GLOBAL_KEY)).toBe('community');
+    expect(localStorage.getItem(categoryThemeOverrideStorageKey('ws-first'))).toBeNull();
+  });
+
+  it('migrateLegacy copies global into first workspace then removes global', () => {
+    localStorage.setItem(LEGACY_GLOBAL_KEY, 'community');
+    migrateLegacyCategoryThemeOverride('ws-first');
     expect(localStorage.getItem(LEGACY_GLOBAL_KEY)).toBeNull();
     expect(localStorage.getItem(categoryThemeOverrideStorageKey('ws-first'))).toBe('community');
     expect(readCategoryThemeOverride('ws-second')).toBe('auto');
     expect(localStorage.getItem(categoryThemeOverrideStorageKey('ws-second'))).toBeNull();
   });
 
-  it('does not rewrite an existing per-workspace key from legacy', () => {
+  it('migrateLegacy does not rewrite an existing per-workspace key', () => {
     writeCategoryThemeOverride('ws-a', 'kids');
     localStorage.setItem(LEGACY_GLOBAL_KEY, 'fitness');
     expect(readCategoryThemeOverride('ws-a')).toBe('kids');
-    // Legacy remains until a workspace without a key migrates it.
-    expect(localStorage.getItem(LEGACY_GLOBAL_KEY)).toBe('fitness');
-    expect(readCategoryThemeOverride('ws-b')).toBe('fitness');
+    migrateLegacyCategoryThemeOverride('ws-a');
+    expect(readCategoryThemeOverride('ws-a')).toBe('kids');
     expect(localStorage.getItem(LEGACY_GLOBAL_KEY)).toBeNull();
+    expect(readCategoryThemeOverride('ws-b')).toBe('auto');
   });
 });
