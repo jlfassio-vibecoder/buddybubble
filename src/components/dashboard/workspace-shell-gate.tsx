@@ -70,7 +70,7 @@ function ImmersiveWorkspaceTheme({
 }) {
   const userWorkspaces = useWorkspaceStore((s) => s.userWorkspaces);
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
-  const { categoryOverride } = useThemeOverride();
+  const { categoryOverride } = useThemeOverride(workspaceId);
   const lastKnownRef = useRef<WorkspaceCategory | null>(initialCategoryType);
 
   const workspaceCategory = useMemo(

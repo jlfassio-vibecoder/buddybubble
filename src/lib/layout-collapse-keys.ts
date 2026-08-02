@@ -14,6 +14,11 @@ export function kanbanCollapsedStorageKey(workspaceId: string) {
   return `buddybubble.kanbanCollapsed.${workspaceId}`;
 }
 
+/** Per–BuddyBubble category palette paint override (`auto` or a WorkspaceCategory). */
+export function categoryThemeOverrideStorageKey(workspaceId: string) {
+  return `buddybubble.categoryThemeOverride.${workspaceId}`;
+}
+
 /** Board columns collapsed to a left strip; calendar keeps the rest. */
 export function kanbanBoardStripStorageKey(workspaceId: string) {
   return `buddybubble.kanbanBoardStrip.${workspaceId}`;

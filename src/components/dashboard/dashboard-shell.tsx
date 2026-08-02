@@ -437,7 +437,7 @@ function DashboardShellInner({
     setCalendarCollapsedState(v);
   }, []);
 
-  const { categoryOverride } = useThemeOverride();
+  const { categoryOverride } = useThemeOverride(workspaceId);
 
   const workspaceCategoryForUi = useMemo(
     () =>
@@ -2778,6 +2778,7 @@ function DashboardShellInner({
                           <ProfileModal
                             open={profileModalOpen}
                             onOpenChange={setProfileModalOpen}
+                            workspaceId={workspaceId}
                             permissionsContext={profilePermissionsContext}
                             showFamilyNames={showFamilyNames}
                           />
