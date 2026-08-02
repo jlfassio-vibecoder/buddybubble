@@ -4,6 +4,8 @@ import * as React from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 
+import { ThemeScope } from '@/components/theme/ThemeScope';
+import { useWorkspaceTheme } from '@/components/theme/WorkspaceThemeProvider';
 import { cn } from '@/lib/utils';
 
 const SheetModalContext = React.createContext<boolean | null>(null);
@@ -48,34 +50,45 @@ const SheetContent = React.forwardRef<
 >(({ side = 'left', className, children, hideCloseButton, modal: modalProp, ...props }, ref) => {
   const modalFromContext = React.useContext(SheetModalContext);
   const modal = modalProp ?? modalFromContext ?? false;
+  const workspaceTheme = useWorkspaceTheme();
+
+  const content = (
+    <DialogPrimitive.Content
+      ref={ref}
+      className={cn(
+        'fixed z-[120] flex flex-col gap-0 border-border bg-background shadow-xl outline-none',
+        side === 'left' &&
+          'inset-y-0 left-0 h-full w-[min(100vw-1rem,22rem)] max-w-[24rem] border-r p-0',
+        side === 'right' && 'inset-y-0 right-0 h-full w-[min(100vw-1rem,22rem)] border-l p-0',
+        side === 'bottom' &&
+          'inset-x-0 bottom-0 max-h-[85vh] h-[85vh] w-full rounded-t-xl border-t p-0',
+        className,
+      )}
+      {...props}
+    >
+      {children}
+      {!hideCloseButton ? (
+        <DialogPrimitive.Close
+          type="button"
+          className="absolute right-3 top-3 z-10 rounded-md p-2 text-muted-foreground opacity-80 ring-offset-background transition-opacity hover:opacity-100 hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:pointer-events-none"
+        >
+          <X className="size-4" />
+          <span className="sr-only">Close</span>
+        </DialogPrimitive.Close>
+      ) : null}
+    </DialogPrimitive.Content>
+  );
 
   return (
     <SheetPortal>
       {modal ? <SheetOverlay /> : null}
-      <DialogPrimitive.Content
-        ref={ref}
-        className={cn(
-          'fixed z-[120] flex flex-col gap-0 border-border bg-background shadow-xl outline-none',
-          side === 'left' &&
-            'inset-y-0 left-0 h-full w-[min(100vw-1rem,22rem)] max-w-[24rem] border-r p-0',
-          side === 'right' && 'inset-y-0 right-0 h-full w-[min(100vw-1rem,22rem)] border-l p-0',
-          side === 'bottom' &&
-            'inset-x-0 bottom-0 max-h-[85vh] h-[85vh] w-full rounded-t-xl border-t p-0',
-          className,
-        )}
-        {...props}
-      >
-        {children}
-        {!hideCloseButton ? (
-          <DialogPrimitive.Close
-            type="button"
-            className="absolute right-3 top-3 z-10 rounded-md p-2 text-muted-foreground opacity-80 ring-offset-background transition-opacity hover:opacity-100 hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:pointer-events-none"
-          >
-            <X className="size-4" />
-            <span className="sr-only">Close</span>
-          </DialogPrimitive.Close>
-        ) : null}
-      </DialogPrimitive.Content>
+      {workspaceTheme ? (
+        <ThemeScope category={workspaceTheme.themeCategory} className="block">
+          {content}
+        </ThemeScope>
+      ) : (
+        content
+      )}
     </SheetPortal>
   );
 });

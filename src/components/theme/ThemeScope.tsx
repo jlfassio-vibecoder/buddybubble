@@ -2,12 +2,14 @@
 
 import { useMemo, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
 import { getThemeVariables } from '@/lib/theme-engine/merge';
+import { cn } from '@/lib/utils';
 import type { WorkspaceCategory } from '@/types/database';
 
 type Props = {
   children: ReactNode;
   /** Active BuddyBubble category; defaults to business if null/invalid. */
   category: WorkspaceCategory | string | null | undefined;
+  className?: string;
 };
 
 function subscribeToRootClass(callback: () => void) {
@@ -32,14 +34,11 @@ function serverSnapshotIsDark(): boolean {
 
 /**
  * Injects category + resolved light/dark CSS variables for descendants.
- * Uses `display: contents` so layout is unchanged.
  *
- * Light/dark follows the **`dark` class on `document.documentElement`**, same source
- * `next-themes` uses after its script runs, via `useSyncExternalStore` + `MutationObserver`.
- * The wrapper uses `suppressHydrationWarning` because the server snapshot is always light
- * while the client may already have `dark` before hydration.
+ * Uses a real layout box (not `display: contents`) so custom-property updates invalidate
+ * descendants reliably across browsers when switching BuddyBubble categories.
  */
-export function ThemeScope({ category, children }: Props) {
+export function ThemeScope({ category, children, className }: Props) {
   const isDark = useSyncExternalStore(
     subscribeToRootClass,
     snapshotHtmlIsDark,
@@ -52,7 +51,12 @@ export function ThemeScope({ category, children }: Props) {
   );
 
   return (
-    <div className="contents" style={style} suppressHydrationWarning>
+    <div
+      data-bb-theme={String(category ?? 'business').toLowerCase()}
+      className={cn(className ?? 'flex min-h-0 min-w-0 flex-1 flex-col')}
+      style={style}
+      suppressHydrationWarning
+    >
       {children}
     </div>
   );

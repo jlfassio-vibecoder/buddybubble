@@ -44,6 +44,10 @@ export function CategoryThemeSelect({ className, hideLabel = false }: Props) {
           </option>
         ))}
       </select>
+      <p className="text-[10px] text-muted-foreground">
+        Use <span className="font-medium text-foreground">Match Socialspace</span> so each
+        BuddyBubble keeps its own palette. Any other choice paints every BuddyBubble the same.
+      </p>
     </div>
   );
 }

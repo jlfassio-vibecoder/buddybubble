@@ -25,6 +25,8 @@ type Props = {
   workspaceId: string;
   /** Matches dashboard `ThemeScope` so portaled dialog content gets the same CSS variables. */
   themeCategory: WorkspaceCategory | string | null | undefined;
+  /** DB category for product UX (family names); not the paint override. */
+  workspaceCategory?: WorkspaceCategory | string | null;
   /** When true, open on Pending approvals if there are pending join requests. */
   preferPendingTab?: boolean;
   /** After closing this dialog, open Create BuddyBubble (members who cannot manage invites). */
@@ -36,6 +38,7 @@ export function PeopleInvitesModal({
   onOpenChange,
   workspaceId,
   themeCategory,
+  workspaceCategory = null,
   preferPendingTab = false,
   onRequestCreateOwnWorkspace,
 }: Props) {
@@ -154,7 +157,9 @@ export function PeopleInvitesModal({
                   initialWaitingRows={boot.initialWaitingRows}
                   currentUserId={boot.currentUserId}
                   callerRole={boot.callerRole}
-                  showFamilyNames={themeCategory === 'kids' || themeCategory === 'community'}
+                  showFamilyNames={
+                    workspaceCategory === 'kids' || workspaceCategory === 'community'
+                  }
                   embedded
                   initialSegment={initialSegment}
                   onRequestClose={() => onOpenChange(false)}

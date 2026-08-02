@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import type { WorkspaceCategory } from '@/types/database';
 
 export const BB_CATEGORY_THEME_OVERRIDE_KEY = 'bb_category_theme_override';
@@ -31,8 +31,25 @@ function readStoredOverride(): CategoryThemeOverride {
   return 'auto';
 }
 
+function subscribeOverride(onStoreChange: () => void) {
+  if (typeof window === 'undefined') return () => {};
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === BB_CATEGORY_THEME_OVERRIDE_KEY || e.key === null) onStoreChange();
+  };
+  const onCustom = () => {
+    onStoreChange();
+  };
+  window.addEventListener('storage', onStorage);
+  window.addEventListener(BB_CATEGORY_THEME_OVERRIDE_EVENT, onCustom);
+  return () => {
+    window.removeEventListener('storage', onStorage);
+    window.removeEventListener(BB_CATEGORY_THEME_OVERRIDE_EVENT, onCustom);
+  };
+}
+
 /**
- * Resolves workspace category for ThemeScope / Kanban labels when an optional user override is set.
+ * Resolves **paint** category for ThemeScope / portals when an optional user override is set.
+ * Product behavior (labels, fitness gates) must use DB `category_type`, not this result.
  */
 export function resolveEffectiveCategory(
   override: CategoryThemeOverride,
@@ -48,45 +65,28 @@ export function resolveEffectiveCategory(
 
 /**
  * Persists BuddyBubble **category palette** preference (not light/dark — that remains `next-themes`).
- * SSR-safe: always `'auto'` until after mount, then reads `localStorage`.
+ * Reads `localStorage` synchronously on the client via `useSyncExternalStore` so the first
+ * paint does not flash the workspace palette and then snap to a stored override.
  * Multiple hook instances stay in sync via a custom event + `storage` (other tabs).
  */
 export function useThemeOverride(): {
   categoryOverride: CategoryThemeOverride;
   setCategoryOverride: (value: CategoryThemeOverride) => void;
-  /** False until client has hydrated from `localStorage` */
+  /** False during SSR / before client snapshot; true once reading from the browser. */
   mounted: boolean;
 } {
-  const [mounted, setMounted] = useState(false);
-  const [categoryOverride, setCategoryOverrideState] = useState<CategoryThemeOverride>('auto');
-
-  const applyFromStorage = useCallback(() => {
-    setCategoryOverrideState(readStoredOverride());
-  }, []);
-
-  useEffect(() => {
-    setMounted(true);
-    applyFromStorage();
-  }, [applyFromStorage]);
-
-  useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key !== BB_CATEGORY_THEME_OVERRIDE_KEY) return;
-      applyFromStorage();
-    };
-    const onCustom = () => {
-      applyFromStorage();
-    };
-    window.addEventListener('storage', onStorage);
-    window.addEventListener(BB_CATEGORY_THEME_OVERRIDE_EVENT, onCustom);
-    return () => {
-      window.removeEventListener('storage', onStorage);
-      window.removeEventListener(BB_CATEGORY_THEME_OVERRIDE_EVENT, onCustom);
-    };
-  }, [applyFromStorage]);
+  const categoryOverride = useSyncExternalStore(
+    subscribeOverride,
+    readStoredOverride,
+    () => 'auto' as CategoryThemeOverride,
+  );
+  const mounted = useSyncExternalStore(
+    subscribeOverride,
+    () => true,
+    () => false,
+  );
 
   const setCategoryOverride = useCallback((value: CategoryThemeOverride) => {
-    setCategoryOverrideState(value);
     try {
       if (value === 'auto') {
         localStorage.removeItem(BB_CATEGORY_THEME_OVERRIDE_KEY);

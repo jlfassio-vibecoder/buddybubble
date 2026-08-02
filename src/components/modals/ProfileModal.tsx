@@ -654,8 +654,9 @@ export function ProfileModal({
                   </label>
                   <ThemeToggle />
                   <p className="mt-1.5 text-[10px] text-muted-foreground">
-                    Light, dark, or follow your device. Category theme controls BuddyBubble palettes
-                    and accents; choose a preset or match each socialspace.
+                    Light, dark, or follow your device. Category theme is paint-only: Match
+                    Socialspace uses each BuddyBubble&apos;s type; a fixed preset forces that
+                    palette on every BuddyBubble.
                   </p>
                   <div className="mt-4 space-y-2">
                     <CategoryThemeSelect />

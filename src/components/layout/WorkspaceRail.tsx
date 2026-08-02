@@ -5,8 +5,9 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Dumbbell, PanelLeftClose, Plus, UserPlus } from 'lucide-react';
 import { setLastWorkspaceCookieClient } from '@/lib/workspace-cookies';
+import { categoryRailRingClass } from '@/lib/theme-engine/category-rail-ring';
 import { cn } from '@/lib/utils';
-import { useWorkspaceStore, type WorkspaceRow } from '@/store/workspaceStore';
+import { useWorkspaceStore } from '@/store/workspaceStore';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   COLLAPSED_COLUMN_WIDTH_CLASS,
@@ -36,23 +37,6 @@ type Props = {
   /** Opens Fitness Profile sheet; only rendered when provided (fitness workspaces). */
   onOpenFitnessProfile?: () => void;
 };
-
-function categoryRing(category: WorkspaceRow['category_type']): string {
-  switch (category) {
-    case 'business':
-      return 'ring-[color:var(--sidebar-active)]/50';
-    case 'kids':
-      return 'ring-[color:var(--sidebar-active)]/55';
-    case 'class':
-      return 'ring-[color:var(--sidebar-active)]/50';
-    case 'community':
-      return 'ring-[color:var(--sidebar-active)]/50';
-    case 'fitness':
-      return 'ring-[color:var(--sidebar-active)]/50';
-    default:
-      return 'ring-white/30';
-  }
-}
 
 export function WorkspaceRail({
   collapsed,
@@ -142,7 +126,7 @@ export function WorkspaceRail({
                           className={cn(
                             'relative z-0 flex h-12 w-12 items-center justify-center overflow-hidden rounded-[14px] text-sm font-semibold transition-all',
                             'ring-2 ring-inset',
-                            categoryRing(w.category_type),
+                            categoryRailRingClass(w.category_type),
                             active
                               ? 'rounded-[14px] bg-[color:var(--sidebar-active)] text-[var(--primary-foreground)]'
                               : 'bg-white/15 text-[color:var(--sidebar-text)] hover:rounded-[14px] hover:bg-[color:var(--sidebar-hover)] hover:text-white',

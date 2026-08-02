@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Dumbbell, Plus, UserPlus, X } from 'lucide-react';
 import { setLastWorkspaceCookieClient } from '@/lib/workspace-cookies';
+import { categoryRailRingClass } from '@/lib/theme-engine/category-rail-ring';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 
@@ -181,10 +182,13 @@ export function MobileWorkspaceStrip({
               >
                 <span
                   className={cn(
-                    'relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-[14px] text-sm font-semibold transition-all',
+                    'relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-[14px] text-sm font-semibold transition-all ring-2 ring-inset',
                     active
-                      ? 'bg-[color:var(--sidebar-active)] text-[var(--primary-foreground)] ring-2 ring-inset ring-white'
-                      : 'bg-white/15 text-[color:var(--sidebar-text)] ring-1 ring-inset ring-white/10 hover:bg-[color:var(--sidebar-hover)] hover:text-white',
+                      ? 'bg-[color:var(--sidebar-active)] text-[var(--primary-foreground)] ring-white'
+                      : cn(
+                          'bg-white/15 text-[color:var(--sidebar-text)] hover:bg-[color:var(--sidebar-hover)] hover:text-white',
+                          categoryRailRingClass(w.category_type),
+                        ),
                   )}
                 >
                   {w.icon_url ? (
