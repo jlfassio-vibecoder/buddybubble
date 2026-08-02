@@ -93,6 +93,8 @@ import {
   CollapsedColumnStrip,
 } from '@/components/layout/collapsed-column-strip';
 import { ThemeScope } from '@/components/theme/ThemeScope';
+import { WorkspaceThemeProvider } from '@/components/theme/WorkspaceThemeProvider';
+import { resolveWorkspaceCategoryForRoute } from '@/lib/theme-engine/resolve-workspace-category';
 import { resolveEffectiveCategory, useThemeOverride } from '@/hooks/use-theme-override';
 import { useIsNarrowBelowMd } from '@/hooks/use-is-narrow-below-md';
 import { MobileShellProvider, useMobileShellState } from '@/hooks/use-mobile-shell-state';
@@ -252,6 +254,8 @@ type Props = {
   initialPendingJoinRequestCount?: number;
   initialJoinRequestPreview?: JoinRequestPreviewItem[];
   initialBubbles?: BubbleRow[];
+  /** SSR-seeded `workspaces.category_type` for first paint before the store syncs. */
+  initialCategoryType?: WorkspaceCategory | null;
   children: React.ReactNode;
 };
 
@@ -275,6 +279,7 @@ function DashboardShellInner({
   initialPendingJoinRequestCount = 0,
   initialJoinRequestPreview = [],
   initialBubbles = [],
+  initialCategoryType = null,
   children,
 }: Props) {
   const router = useRouter();
@@ -293,6 +298,7 @@ function DashboardShellInner({
   const loadUserWorkspaces = useWorkspaceStore((s) => s.loadUserWorkspaces);
   const syncActiveFromRoute = useWorkspaceStore((s) => s.syncActiveFromRoute);
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
+  const userWorkspaces = useWorkspaceStore((s) => s.userWorkspaces);
   const storeActiveBubble = useWorkspaceStore((s) => s.activeBubble);
   const setActiveBubble = useWorkspaceStore((s) => s.setActiveBubble);
   const loadProfile = useUserProfileStore((s) => s.loadProfile);
@@ -431,16 +437,31 @@ function DashboardShellInner({
     setCalendarCollapsedState(v);
   }, []);
 
-  const { categoryOverride } = useThemeOverride();
+  const { categoryOverride } = useThemeOverride(workspaceId);
 
-  const workspaceCategoryForUi =
-    activeWorkspace?.id === workspaceId ? (activeWorkspace.category_type ?? null) : null;
+  const workspaceCategoryForUi = useMemo(
+    () =>
+      resolveWorkspaceCategoryForRoute({
+        workspaceId,
+        userWorkspaces,
+        activeWorkspace,
+        initialCategoryType,
+      }),
+    [workspaceId, userWorkspaces, activeWorkspace, initialCategoryType],
+  );
+  const lastKnownWorkspaceCategoryRef = useRef<WorkspaceCategory | null>(
+    initialCategoryType ?? null,
+  );
+  useLayoutEffect(() => {
+    if (workspaceCategoryForUi) {
+      lastKnownWorkspaceCategoryRef.current = workspaceCategoryForUi;
+    }
+  }, [workspaceCategoryForUi]);
+  const themeCategoryBase =
+    workspaceCategoryForUi ?? lastKnownWorkspaceCategoryRef.current ?? 'business';
+  const effectiveThemeCategory = resolveEffectiveCategory(categoryOverride, themeCategoryBase);
   const showFamilyNames =
     workspaceCategoryForUi === 'kids' || workspaceCategoryForUi === 'community';
-  const effectiveKanbanCategory =
-    workspaceCategoryForUi != null
-      ? resolveEffectiveCategory(categoryOverride, workspaceCategoryForUi)
-      : null;
   const workspaceCalendarTz =
     activeWorkspace?.id === workspaceId ? (activeWorkspace.calendar_timezone ?? null) : null;
 
@@ -455,9 +476,9 @@ function DashboardShellInner({
   );
 
   const fitnessScopeForStorefrontAutoOpen = useMemo((): 'unknown' | 'yes' | 'no' => {
-    if (activeWorkspace?.id !== workspaceId) return 'unknown';
-    return activeWorkspace.category_type === 'fitness' ? 'yes' : 'no';
-  }, [activeWorkspace, workspaceId]);
+    if (workspaceCategoryForUi == null) return 'unknown';
+    return workspaceCategoryForUi === 'fitness' ? 'yes' : 'no';
+  }, [workspaceCategoryForUi]);
 
   // Copilot suggestion ignored: storing analytics bubble id in a ref does not fix rename; a stable channel key would need schema (e.g. bubble slug) — V1 matches seed name "Analytics".
   /** True when the selected bubble is the Analytics bubble in a fitness workspace. */
@@ -1390,7 +1411,7 @@ function DashboardShellInner({
       activeBubbleId: selectedBubbleId,
       canWrite: canWriteTasks,
       calendarTimezone: workspaceCalendarTz,
-      workspaceCategory: effectiveKanbanCategory,
+      workspaceCategory: workspaceCategoryForUi,
       onOpenTask: openTaskModal,
       workspaceMemberRole: effectiveWorkspaceRole,
       guestTaskUserId: profile?.id ?? null,
@@ -1401,7 +1422,7 @@ function DashboardShellInner({
       selectedBubbleId,
       canWriteTasks,
       workspaceCalendarTz,
-      effectiveKanbanCategory,
+      workspaceCategoryForUi,
       openTaskModal,
       effectiveWorkspaceRole,
       profile?.id,
@@ -1922,12 +1943,6 @@ function DashboardShellInner({
   const omitMobileNonChatStrip = layoutMobile && mobileTab !== 'chat';
   const hideCalendarForMobileBoard = layoutMobile && mobileTab === 'board';
 
-  const themeCategoryBase =
-    activeWorkspace?.id === workspaceId
-      ? (activeWorkspace.category_type ?? 'business')
-      : 'business';
-  const effectiveThemeCategory = resolveEffectiveCategory(categoryOverride, themeCategoryBase);
-
   const desktopFocusModeActive = useMemo((): DesktopFocusMode | null => {
     if (layoutMobile || embedMode) return null;
     if (!chatCollapsed && kanbanCollapsed) return 'chat';
@@ -2010,7 +2025,7 @@ function DashboardShellInner({
           onOpenTask={openTaskModal}
           onOpenCreateTask={openCreateTaskModal}
           onStartWorkout={handleStartWorkout}
-          workspaceCategory={effectiveKanbanCategory}
+          workspaceCategory={workspaceCategoryForUi}
           calendarTimezone={workspaceCalendarTz}
           boardStripExpandNonce={boardStripExpandNonce}
           calendarStripCollapsed={calendarRailIsCollapsed}
@@ -2057,7 +2072,7 @@ function DashboardShellInner({
           workspaceId={workspaceId}
           selectedBubbleId={selectedBubbleId!}
           bubbles={bubbles}
-          workspaceCategory={effectiveKanbanCategory}
+          workspaceCategory={workspaceCategoryForUi}
           calendarTimezone={workspaceCalendarTz}
           taskViewsNonce={taskViewsNonce}
           canWrite={canWriteTasks}
@@ -2077,7 +2092,7 @@ function DashboardShellInner({
           onOpenTask={openTaskModal}
           onOpenCreateTask={openCreateTaskModal}
           onStartWorkout={handleStartWorkout}
-          workspaceCategory={effectiveKanbanCategory}
+          workspaceCategory={workspaceCategoryForUi}
           calendarTimezone={workspaceCalendarTz}
           boardStripExpandNonce={boardStripExpandNonce}
           calendarStripCollapsed={calendarRailIsCollapsed}
@@ -2111,7 +2126,7 @@ function DashboardShellInner({
       selectedBubbleId,
       setSelectedBubbleId,
       bubbles,
-      effectiveKanbanCategory,
+      workspaceCategoryForUi,
       taskViewsNonce,
       canWriteTasks,
       canManageWorkspaceClasses,
@@ -2215,7 +2230,7 @@ function DashboardShellInner({
         onOpenTask={openTaskModal}
         onOpenCreateTask={openCreateTaskModal}
         onStartWorkout={handleStartWorkout}
-        workspaceCategory={effectiveKanbanCategory}
+        workspaceCategory={workspaceCategoryForUi}
         calendarTimezone={workspaceCalendarTz}
         boardStripExpandNonce={boardStripExpandNonce}
         calendarStripCollapsed={calendarRailIsCollapsed}
@@ -2237,7 +2252,7 @@ function DashboardShellInner({
     openTaskModal,
     openCreateTaskModal,
     handleStartWorkout,
-    effectiveKanbanCategory,
+    workspaceCategoryForUi,
     workspaceCalendarTz,
     boardStripExpandNonce,
     calendarRailIsCollapsed,
@@ -2301,315 +2316,273 @@ function DashboardShellInner({
                 layoutHydrated,
               }}
             >
-              <ThemeScope category={effectiveThemeCategory}>
-                <TheaterTopChromeAware>
-                  {(hideDashboardTopChrome) => {
-                    const showHeaderChrome = !embedMode && !hideDashboardTopChrome;
+              <WorkspaceThemeProvider
+                workspaceCategory={workspaceCategoryForUi}
+                themeCategory={effectiveThemeCategory}
+              >
+                <ThemeScope key={workspaceId} category={effectiveThemeCategory}>
+                  <TheaterTopChromeAware>
+                    {(hideDashboardTopChrome) => {
+                      const showHeaderChrome = !embedMode && !hideDashboardTopChrome;
 
-                    return (
-                      <div
-                        className="flex h-[100dvh] max-h-[100dvh] min-h-0 flex-col overflow-hidden bg-background md:flex-row"
-                        style={
-                          {
-                            '--mobile-tab-bar-h': 'calc(4rem + env(safe-area-inset-bottom, 0px))',
-                            '--mobile-header-h': 'calc(3.5rem + env(safe-area-inset-top, 0px))',
-                          } as CSSProperties
-                        }
-                      >
-                        {layoutMobile && showHeaderChrome ? (
-                          <MobileHeader
-                            title={buddyBubbleTitle}
-                            trailing={<ActiveUsersStack localUserId={profile?.id} />}
-                          />
-                        ) : null}
-                        {layoutMobile && !embedMode && !mobileNavOpen ? (
-                          <MobileEdgeSwipeOpener onOpen={() => mobileShell.setDrawerOpen(true)} />
-                        ) : null}
-                        {layoutMobile && !embedMode ? (
-                          <MobileSidebarSheet
-                            open={mobileNavOpen}
-                            onOpenChange={setMobileNavOpen}
-                            themeCategory={effectiveThemeCategory}
-                          >
-                            <MobileWorkspaceStrip {...drawerStripProps} />
-                            <BubbleSidebar
-                              {...drawerBubbleProps}
-                              hideWorkspaceTitle
-                              isMobileDrawerMode
-                            />
-                          </MobileSidebarSheet>
-                        ) : null}
-
+                      return (
                         <div
-                          className={cn(
-                            'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden',
-                            layoutMobile && !embedMode && 'max-md:pb-[var(--mobile-tab-bar-h)]',
-                            'md:pb-0',
-                          )}
+                          className="flex h-[100dvh] max-h-[100dvh] min-h-0 flex-col overflow-hidden bg-background md:flex-row"
+                          style={
+                            {
+                              '--mobile-tab-bar-h': 'calc(4rem + env(safe-area-inset-bottom, 0px))',
+                              '--mobile-header-h': 'calc(3.5rem + env(safe-area-inset-top, 0px))',
+                            } as CSSProperties
+                          }
                         >
-                          {showHeaderChrome ? (
-                            <div className="max-md:hidden flex h-11 shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-4">
-                              <span
-                                className="min-w-0 truncate text-sm font-semibold text-foreground"
-                                title={`${buddyBubbleTitle} - ${workspaceTitle}`}
-                              >
-                                {buddyBubbleTitle}
-                                <span className="font-normal text-muted-foreground"> - </span>
-                                {workspaceTitle}
-                              </span>
-                              <div className="flex min-w-0 shrink-0 items-center gap-2">
-                                {embedMode ? null : <ActiveUsersStack localUserId={profile?.id} />}
-                                <DesktopViewSwitcher
-                                  activeMode={desktopFocusModeActive}
-                                  onBeforeSelectChat={onDesktopSwitcherBeforeSelectChat}
-                                  onChange={applyDesktopFocusMode}
-                                  disabled={!layoutHydrated}
-                                />
-                                {workspaceCategoryForUi === 'fitness' ? (
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => setFitnessProfileOpen(true)}
-                                    title="Fitness Profile"
-                                    aria-label="Fitness Profile"
-                                    disabled={!layoutHydrated}
-                                    className="h-8 w-8"
-                                  >
-                                    <Dumbbell className="h-4 w-4" aria-hidden />
-                                  </Button>
-                                ) : null}
-                              </div>
-                            </div>
+                          {layoutMobile && showHeaderChrome ? (
+                            <MobileHeader
+                              title={buddyBubbleTitle}
+                              trailing={<ActiveUsersStack localUserId={profile?.id} />}
+                            />
                           ) : null}
-                          {!embedMode && <TrialBanner />}
-                          {!embedMode && <ExpiredGate />}
-                          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:min-h-0 md:flex-row">
-                            <div className="hidden h-full min-h-0 shrink-0 md:flex md:flex-row">
-                              {tripleStack ? (
-                                <div
-                                  className={cn(
-                                    'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-border',
-                                    COLLAPSED_COLUMN_WIDTH_CLASS,
-                                  )}
-                                >
-                                  {chatCollapsed ? (
-                                    <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-border bg-black">
-                                      <CollapsedColumnStrip
-                                        title="Messages"
-                                        expandTitle="Expand Messages"
-                                        expandAriaLabel="Expand Messages panel"
-                                        onExpand={() => setChatCollapsed(false)}
-                                        edge="left"
-                                        variant="black"
-                                      />
-                                    </div>
-                                  ) : (
-                                    <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-border bg-background">
-                                      <CollapsedColumnStrip
-                                        title="Kanban"
-                                        expandTitle="Expand Kanban"
-                                        expandAriaLabel="Expand Kanban panel"
-                                        onExpand={() => setKanbanCollapsed(false)}
-                                        edge="left"
-                                        variant="card"
-                                      />
-                                    </div>
-                                  )}
-                                  <BubbleSidebar
-                                    {...bubbleSidebarProps}
-                                    collapsedStackSlot="middle"
-                                  />
-                                  <WorkspaceRail
-                                    {...workspaceRailProps}
-                                    collapsedStackSlot="bottom"
-                                  />
-                                </div>
-                              ) : railsCollapsed ? (
-                                <div
-                                  className={cn(
-                                    'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-border',
-                                    COLLAPSED_COLUMN_WIDTH_CLASS,
-                                  )}
-                                >
-                                  <BubbleSidebar {...bubbleSidebarProps} collapsedStackSlot="top" />
-                                  <WorkspaceRail
-                                    {...workspaceRailProps}
-                                    collapsedStackSlot="bottom"
-                                  />
-                                </div>
-                              ) : (
-                                <>
-                                  <WorkspaceRail {...workspaceRailProps} />
-                                  <BubbleSidebar {...bubbleSidebarProps} />
-                                </>
-                              )}
-                            </div>
+                          {layoutMobile && !embedMode && !mobileNavOpen ? (
+                            <MobileEdgeSwipeOpener onOpen={() => mobileShell.setDrawerOpen(true)} />
+                          ) : null}
+                          {layoutMobile && !embedMode ? (
+                            <MobileSidebarSheet
+                              open={mobileNavOpen}
+                              onOpenChange={setMobileNavOpen}
+                              themeCategory={effectiveThemeCategory}
+                            >
+                              <MobileWorkspaceStrip {...drawerStripProps} />
+                              <BubbleSidebar
+                                {...drawerBubbleProps}
+                                hideWorkspaceTitle
+                                isMobileDrawerMode
+                              />
+                            </MobileSidebarSheet>
+                          ) : null}
 
-                            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-                              {showDashboardSecondaryNav && !hideDashboardTopChrome ? (
-                                <div className="flex shrink-0 justify-end gap-2 border-b border-border bg-muted/30 px-2 py-1">
-                                  {showLiveVideoStartButton ? (
-                                    <>
-                                      <Button
-                                        type="button"
-                                        size="xs"
-                                        variant="secondary"
-                                        onClick={handleJoinDevLiveVideo}
-                                      >
-                                        Start live video
-                                      </Button>
-                                      {canManageWorkspaceClasses ? (
+                          <div
+                            className={cn(
+                              'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden',
+                              layoutMobile && !embedMode && 'max-md:pb-[var(--mobile-tab-bar-h)]',
+                              'md:pb-0',
+                            )}
+                          >
+                            {showHeaderChrome ? (
+                              <div className="max-md:hidden flex h-11 shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-4">
+                                <span
+                                  className="min-w-0 truncate text-sm font-semibold text-foreground"
+                                  title={`${buddyBubbleTitle} - ${workspaceTitle}`}
+                                >
+                                  {buddyBubbleTitle}
+                                  <span className="font-normal text-muted-foreground"> - </span>
+                                  {workspaceTitle}
+                                </span>
+                                <div className="flex min-w-0 shrink-0 items-center gap-2">
+                                  {embedMode ? null : (
+                                    <ActiveUsersStack localUserId={profile?.id} />
+                                  )}
+                                  <DesktopViewSwitcher
+                                    activeMode={desktopFocusModeActive}
+                                    onBeforeSelectChat={onDesktopSwitcherBeforeSelectChat}
+                                    onChange={applyDesktopFocusMode}
+                                    disabled={!layoutHydrated}
+                                  />
+                                  {workspaceCategoryForUi === 'fitness' ? (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => setFitnessProfileOpen(true)}
+                                      title="Fitness Profile"
+                                      aria-label="Fitness Profile"
+                                      disabled={!layoutHydrated}
+                                      className="h-8 w-8"
+                                    >
+                                      <Dumbbell className="h-4 w-4" aria-hidden />
+                                    </Button>
+                                  ) : null}
+                                </div>
+                              </div>
+                            ) : null}
+                            {!embedMode && <TrialBanner />}
+                            {!embedMode && <ExpiredGate />}
+                            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:min-h-0 md:flex-row">
+                              <div className="hidden h-full min-h-0 shrink-0 md:flex md:flex-row">
+                                {tripleStack ? (
+                                  <div
+                                    className={cn(
+                                      'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-border',
+                                      COLLAPSED_COLUMN_WIDTH_CLASS,
+                                    )}
+                                  >
+                                    {chatCollapsed ? (
+                                      <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-border bg-black">
+                                        <CollapsedColumnStrip
+                                          title="Messages"
+                                          expandTitle="Expand Messages"
+                                          expandAriaLabel="Expand Messages panel"
+                                          onExpand={() => setChatCollapsed(false)}
+                                          edge="left"
+                                          variant="black"
+                                        />
+                                      </div>
+                                    ) : (
+                                      <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-border bg-background">
+                                        <CollapsedColumnStrip
+                                          title="Kanban"
+                                          expandTitle="Expand Kanban"
+                                          expandAriaLabel="Expand Kanban panel"
+                                          onExpand={() => setKanbanCollapsed(false)}
+                                          edge="left"
+                                          variant="card"
+                                        />
+                                      </div>
+                                    )}
+                                    <BubbleSidebar
+                                      {...bubbleSidebarProps}
+                                      collapsedStackSlot="middle"
+                                    />
+                                    <WorkspaceRail
+                                      {...workspaceRailProps}
+                                      collapsedStackSlot="bottom"
+                                    />
+                                  </div>
+                                ) : railsCollapsed ? (
+                                  <div
+                                    className={cn(
+                                      'flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-border',
+                                      COLLAPSED_COLUMN_WIDTH_CLASS,
+                                    )}
+                                  >
+                                    <BubbleSidebar
+                                      {...bubbleSidebarProps}
+                                      collapsedStackSlot="top"
+                                    />
+                                    <WorkspaceRail
+                                      {...workspaceRailProps}
+                                      collapsedStackSlot="bottom"
+                                    />
+                                  </div>
+                                ) : (
+                                  <>
+                                    <WorkspaceRail {...workspaceRailProps} />
+                                    <BubbleSidebar {...bubbleSidebarProps} />
+                                  </>
+                                )}
+                              </div>
+
+                              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                                {showDashboardSecondaryNav && !hideDashboardTopChrome ? (
+                                  <div className="flex shrink-0 justify-end gap-2 border-b border-border bg-muted/30 px-2 py-1">
+                                    {showLiveVideoStartButton ? (
+                                      <>
                                         <Button
                                           type="button"
                                           size="xs"
                                           variant="secondary"
-                                          onClick={() => {
-                                            void handleEnterSoloStudio();
-                                          }}
+                                          onClick={handleJoinDevLiveVideo}
                                         >
-                                          Enter Solo Studio
+                                          Start live video
                                         </Button>
-                                      ) : null}
-                                    </>
-                                  ) : null}
-                                  {showSystemHealthNav ? (
-                                    <Button size="xs" variant="secondary" asChild>
-                                      <Link href={`/app/${workspaceId}/analytics/system`}>
-                                        {/* Copilot suggestion ignored: nav label "Social Space Analytics" is intentional product copy; route remains /analytics/system. */}
-                                        Social Space Analytics
-                                      </Link>
-                                    </Button>
-                                  ) : null}
-                                </div>
-                              ) : null}
-                              {activeLiveVideoSession && profile?.id ? (
-                                /* Copilot suggestion ignored: Wrapping LiveTheaterPlanBranch keeps Agora mounted across shellKind transitions; narrowing the provider would reintroduce disconnect-on-layout churn without a portal/slot refactor. */
-                                <DashboardLiveVideoDockProvider session={activeLiveVideoSession}>
-                                  <LiveTheaterPlanBranch>
-                                    {(plan) => {
-                                      const shellKind =
-                                        workoutBoardSelecting &&
-                                        activeLiveVideoSession &&
-                                        plan.shell.kind !== 'inactive'
-                                          ? 'theater_focus'
-                                          : plan.shell.kind !== 'inactive'
-                                            ? plan.shell.kind
-                                            : layoutMobile || embedMode
-                                              ? 'vertical_compact_session'
-                                              : 'vertical_planning';
-
-                                      if (
-                                        shellKind === 'vertical_planning' ||
-                                        shellKind === 'vertical_compact_session'
-                                      ) {
-                                        return (
-                                          <ResizablePanelGroup
-                                            key={`${workspaceId}-lv-plan`}
-                                            direction="vertical"
-                                            groupRef={dockWorkspaceGroupRef}
-                                            id={`dock-workspace-split-${workspaceId}`}
-                                            defaultLayout={dockWorkspaceDefaultLayout}
-                                            onLayoutChanged={onPlanningVerticalLayoutChanged}
-                                            disabled={layoutMobile || embedMode}
-                                            className="flex min-h-0 min-w-0 flex-1 flex-col"
+                                        {canManageWorkspaceClasses ? (
+                                          <Button
+                                            type="button"
+                                            size="xs"
+                                            variant="secondary"
+                                            onClick={() => {
+                                              void handleEnterSoloStudio();
+                                            }}
                                           >
-                                            <ResizablePanel
-                                              id={DASH_DOCK_PANEL_ID}
-                                              minSize={200}
-                                              maxSize="75%"
-                                              className="flex min-h-0 min-w-0 flex-col overflow-hidden"
-                                            >
-                                              <DashboardLiveVideoDockBody
-                                                session={activeLiveVideoSession}
-                                                localUserId={profile.id}
-                                                displayName={
-                                                  profile.full_name ?? profile.email ?? undefined
-                                                }
-                                                onLeaveSession={onLiveVideoLeaveSession}
-                                                onHostEndLiveSessionForAll={
-                                                  onHostEndLiveSessionForAll
-                                                }
-                                                canWriteTasks={canWriteTasks}
-                                                onWorkoutDeckPersisted={bumpTaskViews}
-                                                onClassRecordingPipelineUpdated={bumpTaskViews}
-                                                workoutsBubbleId={
-                                                  workoutsBubbleForLiveDeck?.id ?? null
-                                                }
-                                                {...liveVideoDockBoardSlots}
-                                              />
-                                            </ResizablePanel>
-                                            <ResizableHandle
+                                            Enter Solo Studio
+                                          </Button>
+                                        ) : null}
+                                      </>
+                                    ) : null}
+                                    {showSystemHealthNav ? (
+                                      <Button size="xs" variant="secondary" asChild>
+                                        <Link href={`/app/${workspaceId}/analytics/system`}>
+                                          {/* Copilot suggestion ignored: nav label "Social Space Analytics" is intentional product copy; route remains /analytics/system. */}
+                                          Social Space Analytics
+                                        </Link>
+                                      </Button>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+                                {activeLiveVideoSession && profile?.id ? (
+                                  /* Copilot suggestion ignored: Wrapping LiveTheaterPlanBranch keeps Agora mounted across shellKind transitions; narrowing the provider would reintroduce disconnect-on-layout churn without a portal/slot refactor. */
+                                  <DashboardLiveVideoDockProvider session={activeLiveVideoSession}>
+                                    <LiveTheaterPlanBranch>
+                                      {(plan) => {
+                                        const shellKind =
+                                          workoutBoardSelecting &&
+                                          activeLiveVideoSession &&
+                                          plan.shell.kind !== 'inactive'
+                                            ? 'theater_focus'
+                                            : plan.shell.kind !== 'inactive'
+                                              ? plan.shell.kind
+                                              : layoutMobile || embedMode
+                                                ? 'vertical_compact_session'
+                                                : 'vertical_planning';
+
+                                        if (
+                                          shellKind === 'vertical_planning' ||
+                                          shellKind === 'vertical_compact_session'
+                                        ) {
+                                          return (
+                                            <ResizablePanelGroup
+                                              key={`${workspaceId}-lv-plan`}
                                               direction="vertical"
-                                              withHandle
-                                              className="z-20 shrink-0"
-                                            />
-                                            <ResizablePanel
-                                              id={DASH_WORKSPACE_PANEL_ID}
-                                              minSize={300}
-                                              className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+                                              groupRef={dockWorkspaceGroupRef}
+                                              id={`dock-workspace-split-${workspaceId}`}
+                                              defaultLayout={dockWorkspaceDefaultLayout}
+                                              onLayoutChanged={onPlanningVerticalLayoutChanged}
+                                              disabled={layoutMobile || embedMode}
+                                              className="flex min-h-0 min-w-0 flex-1 flex-col"
                                             >
-                                              {workspaceStage}
-                                            </ResizablePanel>
-                                          </ResizablePanelGroup>
-                                        );
-                                      }
+                                              <ResizablePanel
+                                                id={DASH_DOCK_PANEL_ID}
+                                                minSize={200}
+                                                maxSize="75%"
+                                                className="flex min-h-0 min-w-0 flex-col overflow-hidden"
+                                              >
+                                                <DashboardLiveVideoDockBody
+                                                  session={activeLiveVideoSession}
+                                                  localUserId={profile.id}
+                                                  displayName={
+                                                    profile.full_name ?? profile.email ?? undefined
+                                                  }
+                                                  onLeaveSession={onLiveVideoLeaveSession}
+                                                  onHostEndLiveSessionForAll={
+                                                    onHostEndLiveSessionForAll
+                                                  }
+                                                  canWriteTasks={canWriteTasks}
+                                                  onWorkoutDeckPersisted={bumpTaskViews}
+                                                  onClassRecordingPipelineUpdated={bumpTaskViews}
+                                                  workoutsBubbleId={
+                                                    workoutsBubbleForLiveDeck?.id ?? null
+                                                  }
+                                                  {...liveVideoDockBoardSlots}
+                                                />
+                                              </ResizablePanel>
+                                              <ResizableHandle
+                                                direction="vertical"
+                                                withHandle
+                                                className="z-20 shrink-0"
+                                              />
+                                              <ResizablePanel
+                                                id={DASH_WORKSPACE_PANEL_ID}
+                                                minSize={300}
+                                                className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+                                              >
+                                                {workspaceStage}
+                                              </ResizablePanel>
+                                            </ResizablePanelGroup>
+                                          );
+                                        }
 
-                                      if (shellKind === 'theater_focus') {
-                                        return (
-                                          <div
-                                            key={`${workspaceId}-lv-theater-focus`}
-                                            className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
-                                          >
-                                            <DashboardLiveVideoDockBody
-                                              session={activeLiveVideoSession}
-                                              localUserId={profile.id}
-                                              displayName={
-                                                profile.full_name ?? profile.email ?? undefined
-                                              }
-                                              onLeaveSession={onLiveVideoLeaveSession}
-                                              onHostEndLiveSessionForAll={
-                                                onHostEndLiveSessionForAll
-                                              }
-                                              canWriteTasks={canWriteTasks}
-                                              onWorkoutDeckPersisted={bumpTaskViews}
-                                              onClassRecordingPipelineUpdated={bumpTaskViews}
-                                              workoutsBubbleId={
-                                                workoutsBubbleForLiveDeck?.id ?? null
-                                              }
-                                              {...liveVideoDockBoardSlots}
-                                            />
-                                          </div>
-                                        );
-                                      }
-
-                                      if (shellKind === 'theater_board_split') {
-                                        return (
-                                          <ResizablePanelGroup
-                                            key={`${workspaceId}-lv-theater-board-dock`}
-                                            direction="horizontal"
-                                            groupRef={dockWorkspaceGroupRef}
-                                            id={`theater-board-dock-${workspaceId}`}
-                                            defaultLayout={theaterBoardDockDefaultLayout}
-                                            onLayoutChanged={onTheaterBoardDockLayoutChanged}
-                                            className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row"
-                                          >
-                                            <ResizablePanel
-                                              id={THEATER_BOARD_PANEL_ID}
-                                              minSize={280}
-                                              maxSize="70%"
-                                              className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
-                                            >
-                                              {workspaceBoardHorizontalStage}
-                                            </ResizablePanel>
-                                            <ResizableHandle
-                                              direction="horizontal"
-                                              withHandle
-                                              className="z-20 shrink-0"
-                                            />
-                                            <ResizablePanel
-                                              id={THEATER_DOCK_PANEL_ID}
-                                              minSize={200}
+                                        if (shellKind === 'theater_focus') {
+                                          return (
+                                            <div
+                                              key={`${workspaceId}-lv-theater-focus`}
                                               className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
                                             >
                                               <DashboardLiveVideoDockBody
@@ -2630,237 +2603,296 @@ function DashboardShellInner({
                                                 }
                                                 {...liveVideoDockBoardSlots}
                                               />
-                                            </ResizablePanel>
-                                          </ResizablePanelGroup>
-                                        );
-                                      }
+                                            </div>
+                                          );
+                                        }
 
-                                      return null;
-                                    }}
-                                  </LiveTheaterPlanBranch>
-                                </DashboardLiveVideoDockProvider>
-                              ) : (
-                                <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-                                  {workspaceStage}
-                                </div>
-                              )}
+                                        if (shellKind === 'theater_board_split') {
+                                          return (
+                                            <ResizablePanelGroup
+                                              key={`${workspaceId}-lv-theater-board-dock`}
+                                              direction="horizontal"
+                                              groupRef={dockWorkspaceGroupRef}
+                                              id={`theater-board-dock-${workspaceId}`}
+                                              defaultLayout={theaterBoardDockDefaultLayout}
+                                              onLayoutChanged={onTheaterBoardDockLayoutChanged}
+                                              className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row"
+                                            >
+                                              <ResizablePanel
+                                                id={THEATER_BOARD_PANEL_ID}
+                                                minSize={280}
+                                                maxSize="70%"
+                                                className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+                                              >
+                                                {workspaceBoardHorizontalStage}
+                                              </ResizablePanel>
+                                              <ResizableHandle
+                                                direction="horizontal"
+                                                withHandle
+                                                className="z-20 shrink-0"
+                                              />
+                                              <ResizablePanel
+                                                id={THEATER_DOCK_PANEL_ID}
+                                                minSize={200}
+                                                className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+                                              >
+                                                <DashboardLiveVideoDockBody
+                                                  session={activeLiveVideoSession}
+                                                  localUserId={profile.id}
+                                                  displayName={
+                                                    profile.full_name ?? profile.email ?? undefined
+                                                  }
+                                                  onLeaveSession={onLiveVideoLeaveSession}
+                                                  onHostEndLiveSessionForAll={
+                                                    onHostEndLiveSessionForAll
+                                                  }
+                                                  canWriteTasks={canWriteTasks}
+                                                  onWorkoutDeckPersisted={bumpTaskViews}
+                                                  onClassRecordingPipelineUpdated={bumpTaskViews}
+                                                  workoutsBubbleId={
+                                                    workoutsBubbleForLiveDeck?.id ?? null
+                                                  }
+                                                  {...liveVideoDockBoardSlots}
+                                                />
+                                              </ResizablePanel>
+                                            </ResizablePanelGroup>
+                                          );
+                                        }
+
+                                        return null;
+                                      }}
+                                    </LiveTheaterPlanBranch>
+                                  </DashboardLiveVideoDockProvider>
+                                ) : (
+                                  <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                                    {workspaceStage}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
-                        </div>
 
-                        {layoutMobile && !embedMode ? <MobileTabBar /> : null}
+                          {layoutMobile && !embedMode ? <MobileTabBar /> : null}
 
-                        <CardTypeSelectorModal
-                          open={cardTypeSelectorOpen}
-                          onOpenChange={(open) => {
-                            setCardTypeSelectorOpen(open);
-                            if (!open) {
-                              const confirmed = cardTypeSelectorConfirmedRef.current;
-                              cardTypeSelectorConfirmedRef.current = false;
-                              setPendingCreateOpts((prev) => {
-                                if (!confirmed && prev?.preserveChatCallback) {
-                                  chatCardOnCreatedRef.current = null;
-                                }
-                                return null;
-                              });
-                            }
-                          }}
-                          suggestedItemType={pendingCreateSuggestedType}
-                          canManageClasses={canManageWorkspaceClasses}
-                          onSelect={(type) => {
-                            cardTypeSelectorConfirmedRef.current = true;
-                            const opts = pendingCreateOpts ?? {};
-                            setCardTypeSelectorOpen(false);
-                            setPendingCreateOpts(null);
-                            void proceedCreateTaskDraft(type, opts);
-                          }}
-                        />
-                        <TaskModal
-                          open={taskModalOpen}
-                          onOpenChange={onTaskModalOpenChange}
-                          taskId={taskModalTaskId}
-                          bubbleId={resolvedTaskModalBubbleId}
-                          workspaceId={workspaceId}
-                          bubbles={bubbles}
-                          canWrite={canWriteTasks}
-                          canManageClasses={canManageWorkspaceClasses}
-                          classEditorInstanceId={taskModalClassEditorInstanceId}
-                          onClassCreated={(ids) => {
-                            setTaskModalTaskId(ids.taskId);
-                            setTaskModalClassEditorInstanceId(ids.instanceId);
-                            bumpTaskViews();
-                          }}
-                          onClassSaved={bumpTaskViews}
-                          onCreated={(id) => {
-                            setTaskModalTaskId(id);
-                            bumpTaskViews();
-                            const postToChat = chatCardOnCreatedRef.current;
-                            chatCardOnCreatedRef.current = null;
-                            if (postToChat) postToChat(id);
-                          }}
-                          isOptimisticDraft={taskModalOptimisticDraft}
-                          draftBaseline={taskModalDraftBaseline}
-                          onOptimisticDraftConsumed={() => {
-                            setTaskModalOptimisticDraft(false);
-                            setTaskModalDraftBaseline(null);
-                          }}
-                          onOptimisticDraftAutoDeleted={bumpTaskViews}
-                          initialCreateStatus={taskModalInitialStatus}
-                          initialCreateItemType={taskModalInitialCreateItemType}
-                          initialCreateTitle={taskModalInitialCreateTitle}
-                          initialCreateWorkoutDurationMin={taskModalInitialCreateWorkoutDurationMin}
-                          initialTab={taskModalInitialTab}
-                          initialViewMode={taskModalViewMode}
-                          initialAutoEdit={taskModalAutoEdit}
-                          initialOpenWorkoutViewer={taskModalOpenWorkoutViewer}
-                          initialCommentThreadMessageId={taskModalCommentThreadMessageId}
-                          workspaceCategory={effectiveKanbanCategory}
-                          calendarTimezone={workspaceCalendarTz}
-                          onTaskArchived={bumpTaskViews}
-                          onTaskCommentsMarkedRead={bumpTaskViews}
-                          onClearOpenTaskCommentDeepLink={clearTaskModalCommentDeepLink}
-                        />
-                        {workoutPlayerLaunch ? (
-                          <WorkoutPlayer
-                            open
-                            onClose={() => {
-                              setWorkoutPlayerLaunch(null);
-                            }}
-                            workspaceId={workspaceId}
-                            workoutTitle={workoutPlayerLaunch.task.title}
-                            metadata={workoutPlayerLaunch.task.metadata}
-                            bubbleId={workoutPlayerLaunch.task.bubble_id}
-                            sourceTaskId={workoutPlayerLaunch.task.id}
-                            sessionId={workoutPlayerLaunch.sessionId}
-                            class_instance_id={workoutPlayerLaunch.class_instance_id}
-                            isMemberView={workoutPlayerLaunch.isMemberView}
-                            canPostMessages={canPostMessages}
-                            workoutData={workoutPlayerLaunch.workoutData}
-                            onComplete={bumpTaskViews}
-                          />
-                        ) : null}
-                        <WorkspaceSettingsModal
-                          open={workspaceSettingsOpen}
-                          onOpenChange={setWorkspaceSettingsOpen}
-                          workspaceId={workspaceId}
-                          isAdmin={isAdmin}
-                          isOwner={isOwner}
-                          onSaved={() => {
-                            void loadUserWorkspaces().then(() => syncActiveFromRoute(workspaceId));
-                          }}
-                        />
-                        <ProfileModal
-                          open={profileModalOpen}
-                          onOpenChange={setProfileModalOpen}
-                          permissionsContext={profilePermissionsContext}
-                          showFamilyNames={showFamilyNames}
-                        />
-                        {/* Modal requires `profile`; `isDashboardProfileComplete` treats null profile as gate-off while store loads */}
-                        {!profileComplete && profile !== null ? (
-                          <ProfileCompletionModal
-                            profile={profile}
-                            showFamilyNames={showFamilyNames}
-                            workspaceId={workspaceId}
-                            onComplete={() => void loadProfile()}
-                          />
-                        ) : null}
-                        <PeopleInvitesModal
-                          open={peopleInvitesOpen}
-                          onOpenChange={setPeopleInvitesOpen}
-                          workspaceId={workspaceId}
-                          themeCategory={effectiveThemeCategory}
-                          preferPendingTab={pendingJoinRequestCount > 0}
-                          onRequestCreateOwnWorkspace={embedMode ? undefined : openCreateWorkspace}
-                        />
-                        {!embedMode ? (
-                          <CreateWorkspaceModal
-                            open={createWorkspaceOpen}
-                            onOpenChange={setCreateWorkspaceOpen}
-                          />
-                        ) : null}
-                        {workspaceCategoryForUi === 'fitness' ? (
-                          <FitnessProfileSheet
-                            open={fitnessProfileOpen}
-                            onOpenChange={setFitnessProfileOpen}
-                            workspaceId={workspaceId}
-                            targetUserId={fitnessProfileTargetUserId}
-                            bubbleIdForTasks={
-                              selectedBubbleId && selectedBubbleId !== ALL_BUBBLES_BUBBLE_ID
-                                ? selectedBubbleId
-                                : null
-                            }
-                            onQuickWorkoutCreated={bumpTaskViews}
-                          />
-                        ) : null}
-                        {workspaceCategoryForUi === 'fitness' ||
-                        workspaceCategoryForUi === 'business' ? (
-                          <StartTrialModal
-                            workspaceId={workspaceId}
-                            categoryType={workspaceCategoryForUi}
-                          />
-                        ) : null}
-                        <LiveClassReminderModal
-                          workspaceId={workspaceId}
-                          enabled={!embedMode && workspaceCategoryForUi === 'fitness'}
-                        />
-                        {commentAlert ? (
-                          <div
-                            className={cn(
-                              'pointer-events-auto fixed left-1/2 z-[100] flex max-w-md -translate-x-1/2 items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-lg md:bottom-6',
-                              layoutMobile
-                                ? 'bottom-[calc(var(--mobile-tab-bar-h)+0.5rem)]'
-                                : 'bottom-20 max-md:bottom-20',
-                            )}
-                            role="status"
-                          >
-                            <p className="min-w-0 flex-1 text-sm text-foreground">
-                              Someone commented on &ldquo;{commentAlert.title}&rdquo;
-                            </p>
-                            <Button
-                              size="sm"
-                              onClick={() => {
-                                openTaskModal(commentAlert.taskId, {
-                                  tab: 'comments',
-                                  viewMode: 'comments-only',
-                                  commentThreadMessageId: commentAlert.messageId || undefined,
-                                  focusMessagesOnClose: true,
+                          <CardTypeSelectorModal
+                            open={cardTypeSelectorOpen}
+                            onOpenChange={(open) => {
+                              setCardTypeSelectorOpen(open);
+                              if (!open) {
+                                const confirmed = cardTypeSelectorConfirmedRef.current;
+                                cardTypeSelectorConfirmedRef.current = false;
+                                setPendingCreateOpts((prev) => {
+                                  if (!confirmed && prev?.preserveChatCallback) {
+                                    chatCardOnCreatedRef.current = null;
+                                  }
+                                  return null;
                                 });
-                                setCommentAlert(null);
+                              }
+                            }}
+                            suggestedItemType={pendingCreateSuggestedType}
+                            canManageClasses={canManageWorkspaceClasses}
+                            onSelect={(type) => {
+                              cardTypeSelectorConfirmedRef.current = true;
+                              const opts = pendingCreateOpts ?? {};
+                              setCardTypeSelectorOpen(false);
+                              setPendingCreateOpts(null);
+                              void proceedCreateTaskDraft(type, opts);
+                            }}
+                          />
+                          <TaskModal
+                            open={taskModalOpen}
+                            onOpenChange={onTaskModalOpenChange}
+                            taskId={taskModalTaskId}
+                            bubbleId={resolvedTaskModalBubbleId}
+                            workspaceId={workspaceId}
+                            bubbles={bubbles}
+                            canWrite={canWriteTasks}
+                            canManageClasses={canManageWorkspaceClasses}
+                            classEditorInstanceId={taskModalClassEditorInstanceId}
+                            onClassCreated={(ids) => {
+                              setTaskModalTaskId(ids.taskId);
+                              setTaskModalClassEditorInstanceId(ids.instanceId);
+                              bumpTaskViews();
+                            }}
+                            onClassSaved={bumpTaskViews}
+                            onCreated={(id) => {
+                              setTaskModalTaskId(id);
+                              bumpTaskViews();
+                              const postToChat = chatCardOnCreatedRef.current;
+                              chatCardOnCreatedRef.current = null;
+                              if (postToChat) postToChat(id);
+                            }}
+                            isOptimisticDraft={taskModalOptimisticDraft}
+                            draftBaseline={taskModalDraftBaseline}
+                            onOptimisticDraftConsumed={() => {
+                              setTaskModalOptimisticDraft(false);
+                              setTaskModalDraftBaseline(null);
+                            }}
+                            onOptimisticDraftAutoDeleted={bumpTaskViews}
+                            initialCreateStatus={taskModalInitialStatus}
+                            initialCreateItemType={taskModalInitialCreateItemType}
+                            initialCreateTitle={taskModalInitialCreateTitle}
+                            initialCreateWorkoutDurationMin={
+                              taskModalInitialCreateWorkoutDurationMin
+                            }
+                            initialTab={taskModalInitialTab}
+                            initialViewMode={taskModalViewMode}
+                            initialAutoEdit={taskModalAutoEdit}
+                            initialOpenWorkoutViewer={taskModalOpenWorkoutViewer}
+                            initialCommentThreadMessageId={taskModalCommentThreadMessageId}
+                            workspaceCategory={workspaceCategoryForUi}
+                            calendarTimezone={workspaceCalendarTz}
+                            onTaskArchived={bumpTaskViews}
+                            onTaskCommentsMarkedRead={bumpTaskViews}
+                            onClearOpenTaskCommentDeepLink={clearTaskModalCommentDeepLink}
+                          />
+                          {workoutPlayerLaunch ? (
+                            <WorkoutPlayer
+                              open
+                              onClose={() => {
+                                setWorkoutPlayerLaunch(null);
                               }}
+                              workspaceId={workspaceId}
+                              workoutTitle={workoutPlayerLaunch.task.title}
+                              metadata={workoutPlayerLaunch.task.metadata}
+                              bubbleId={workoutPlayerLaunch.task.bubble_id}
+                              sourceTaskId={workoutPlayerLaunch.task.id}
+                              sessionId={workoutPlayerLaunch.sessionId}
+                              class_instance_id={workoutPlayerLaunch.class_instance_id}
+                              isMemberView={workoutPlayerLaunch.isMemberView}
+                              canPostMessages={canPostMessages}
+                              workoutData={workoutPlayerLaunch.workoutData}
+                              onComplete={bumpTaskViews}
+                            />
+                          ) : null}
+                          <WorkspaceSettingsModal
+                            open={workspaceSettingsOpen}
+                            onOpenChange={setWorkspaceSettingsOpen}
+                            workspaceId={workspaceId}
+                            isAdmin={isAdmin}
+                            isOwner={isOwner}
+                            onSaved={() => {
+                              void loadUserWorkspaces().then(() =>
+                                syncActiveFromRoute(workspaceId),
+                              );
+                            }}
+                          />
+                          <ProfileModal
+                            open={profileModalOpen}
+                            onOpenChange={setProfileModalOpen}
+                            workspaceId={workspaceId}
+                            permissionsContext={profilePermissionsContext}
+                            showFamilyNames={showFamilyNames}
+                          />
+                          {/* Modal requires `profile`; `isDashboardProfileComplete` treats null profile as gate-off while store loads */}
+                          {!profileComplete && profile !== null ? (
+                            <ProfileCompletionModal
+                              profile={profile}
+                              showFamilyNames={showFamilyNames}
+                              workspaceId={workspaceId}
+                              onComplete={() => void loadProfile()}
+                            />
+                          ) : null}
+                          <PeopleInvitesModal
+                            open={peopleInvitesOpen}
+                            onOpenChange={setPeopleInvitesOpen}
+                            workspaceId={workspaceId}
+                            workspaceCategory={workspaceCategoryForUi}
+                            preferPendingTab={pendingJoinRequestCount > 0}
+                            onRequestCreateOwnWorkspace={
+                              embedMode ? undefined : openCreateWorkspace
+                            }
+                          />
+                          {!embedMode ? (
+                            <CreateWorkspaceModal
+                              open={createWorkspaceOpen}
+                              onOpenChange={setCreateWorkspaceOpen}
+                            />
+                          ) : null}
+                          {workspaceCategoryForUi === 'fitness' ? (
+                            <FitnessProfileSheet
+                              open={fitnessProfileOpen}
+                              onOpenChange={setFitnessProfileOpen}
+                              workspaceId={workspaceId}
+                              targetUserId={fitnessProfileTargetUserId}
+                              bubbleIdForTasks={
+                                selectedBubbleId && selectedBubbleId !== ALL_BUBBLES_BUBBLE_ID
+                                  ? selectedBubbleId
+                                  : null
+                              }
+                              onQuickWorkoutCreated={bumpTaskViews}
+                            />
+                          ) : null}
+                          {workspaceCategoryForUi === 'fitness' ||
+                          workspaceCategoryForUi === 'business' ? (
+                            <StartTrialModal
+                              workspaceId={workspaceId}
+                              categoryType={workspaceCategoryForUi}
+                            />
+                          ) : null}
+                          <LiveClassReminderModal
+                            workspaceId={workspaceId}
+                            enabled={!embedMode && workspaceCategoryForUi === 'fitness'}
+                          />
+                          {commentAlert ? (
+                            <div
+                              className={cn(
+                                'pointer-events-auto fixed left-1/2 z-[100] flex max-w-md -translate-x-1/2 items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-lg md:bottom-6',
+                                layoutMobile
+                                  ? 'bottom-[calc(var(--mobile-tab-bar-h)+0.5rem)]'
+                                  : 'bottom-20 max-md:bottom-20',
+                              )}
+                              role="status"
                             >
-                              Open
-                            </Button>
-                            <button
+                              <p className="min-w-0 flex-1 text-sm text-foreground">
+                                Someone commented on &ldquo;{commentAlert.title}&rdquo;
+                              </p>
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  openTaskModal(commentAlert.taskId, {
+                                    tab: 'comments',
+                                    viewMode: 'comments-only',
+                                    commentThreadMessageId: commentAlert.messageId || undefined,
+                                    focusMessagesOnClose: true,
+                                  });
+                                  setCommentAlert(null);
+                                }}
+                              >
+                                Open
+                              </Button>
+                              <button
+                                type="button"
+                                className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                                aria-label="Dismiss"
+                                onClick={() => setCommentAlert(null)}
+                              >
+                                <X className="size-4" />
+                              </button>
+                            </div>
+                          ) : null}
+                          {workoutBoardSelecting && !activeLiveVideoSession ? (
+                            <Button
                               type="button"
-                              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                              aria-label="Dismiss"
-                              onClick={() => setCommentAlert(null)}
+                              variant="secondary"
+                              className={cn(
+                                'fixed left-4 z-[200] shadow-md md:bottom-6 md:left-6',
+                                layoutMobile
+                                  ? 'bottom-[calc(var(--mobile-tab-bar-h)+0.5rem)]'
+                                  : 'bottom-24 max-md:bottom-24',
+                              )}
+                              onClick={() => workoutDeckSelection.exitSelectionMode()}
                             >
-                              <X className="size-4" />
-                            </button>
-                          </div>
-                        ) : null}
-                        {workoutBoardSelecting && !activeLiveVideoSession ? (
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            className={cn(
-                              'fixed left-4 z-[200] shadow-md md:bottom-6 md:left-6',
-                              layoutMobile
-                                ? 'bottom-[calc(var(--mobile-tab-bar-h)+0.5rem)]'
-                                : 'bottom-24 max-md:bottom-24',
-                            )}
-                            onClick={() => workoutDeckSelection.exitSelectionMode()}
-                          >
-                            Exit selection mode
-                          </Button>
-                        ) : null}
-                        {children}
-                      </div>
-                    );
-                  }}
-                </TheaterTopChromeAware>
-              </ThemeScope>
+                              Exit selection mode
+                            </Button>
+                          ) : null}
+                          {children}
+                        </div>
+                      );
+                    }}
+                  </TheaterTopChromeAware>
+                </ThemeScope>
+              </WorkspaceThemeProvider>
             </LiveVideoSessionShell>
           </LiveSessionRuntimeProvider>
         </AnalyticsProvider>

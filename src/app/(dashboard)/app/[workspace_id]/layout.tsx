@@ -4,9 +4,14 @@ import { fetchPendingJoinRequestCountAndPreview } from '@/lib/workspace-join-req
 import { parseMemberRole } from '@/lib/permissions';
 import { createClient } from '@utils/supabase/server';
 import { WorkspaceShellGate } from '@/components/dashboard/workspace-shell-gate';
+import { coerceWorkspaceCategory } from '@/lib/theme-engine/resolve-workspace-category';
 import { loadBubblesDataCached, type BubblesPageData } from './load-bubbles-data';
 
-/** Placeholder while `DashboardShell` (uses `useSearchParams`) resolves — avoids SSR/client tree skew and useId mismatches. */
+/**
+ * Placeholder while `DashboardShell` (uses `useSearchParams`) resolves — avoids SSR/client tree skew
+ * and useId mismatches. Uses semantic `bg-background` / `bg-muted` so `html.dark` (next-themes)
+ * applies without hardcoding a light-mode category palette.
+ */
 function DashboardRouteFallback() {
   return (
     <div
@@ -66,6 +71,15 @@ export default async function WorkspaceLayout({
     redirect('/login');
   }
 
+  const { data: workspaceRow } = await supabase
+    .from('workspaces')
+    .select('category_type')
+    .eq('id', workspace_id)
+    .maybeSingle();
+  const initialCategoryType = coerceWorkspaceCategory(
+    (workspaceRow as { category_type?: string } | null)?.category_type,
+  );
+
   let initialBubbles: BubblesPageData['initialBubbles'] = [];
   try {
     ({ initialBubbles } = await loadBubblesDataCached(workspace_id, user.id, session.access_token));
@@ -82,6 +96,7 @@ export default async function WorkspaceLayout({
         initialPendingJoinRequestCount={initialPendingJoinRequestCount}
         initialJoinRequestPreview={initialJoinRequestPreview}
         initialBubbles={initialBubbles}
+        initialCategoryType={initialCategoryType}
       >
         {children}
       </WorkspaceShellGate>

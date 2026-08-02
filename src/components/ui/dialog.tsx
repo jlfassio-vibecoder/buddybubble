@@ -4,6 +4,8 @@ import * as React from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 
+import { ThemeScope } from '@/components/theme/ThemeScope';
+import { useWorkspaceTheme } from '@/components/theme/WorkspaceThemeProvider';
 import { cn } from '@/lib/utils';
 
 const Dialog = DialogPrimitive.Root;
@@ -31,9 +33,9 @@ type DialogContentProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   DialogContentProps
->(({ className, children, hideCloseButton, ...props }, ref) => (
-  <DialogPortal>
-    <DialogOverlay />
+>(({ className, children, hideCloseButton, ...props }, ref) => {
+  const workspaceTheme = useWorkspaceTheme();
+  const content = (
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
@@ -50,8 +52,21 @@ const DialogContent = React.forwardRef<
         </DialogPrimitive.Close>
       ) : null}
     </DialogPrimitive.Content>
-  </DialogPortal>
-));
+  );
+
+  return (
+    <DialogPortal>
+      <DialogOverlay />
+      {workspaceTheme ? (
+        <ThemeScope category={workspaceTheme.themeCategory} className="block">
+          {content}
+        </ThemeScope>
+      ) : (
+        content
+      )}
+    </DialogPortal>
+  );
+});
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
