@@ -53,7 +53,7 @@ export function ThemeScope({ category, children, className }: Props) {
   return (
     <div
       data-bb-theme={String(category ?? 'business').toLowerCase()}
-      className={cn(className ?? 'flex min-h-0 min-w-0 flex-1 flex-col')}
+      className={cn('flex min-h-0 min-w-0 flex-1 flex-col', className)}
       style={style}
       suppressHydrationWarning
     >

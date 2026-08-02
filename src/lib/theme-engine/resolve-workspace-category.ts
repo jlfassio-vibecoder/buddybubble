@@ -15,7 +15,7 @@ export function coerceWorkspaceCategory(
 ): WorkspaceCategory | null {
   if (category == null) return null;
   const c = String(category).trim().toLowerCase();
-  if (c in THEME_REGISTRY) return c as WorkspaceCategory;
+  if (Object.hasOwn(THEME_REGISTRY, c)) return c as WorkspaceCategory;
   return null;
 }
 

@@ -15,6 +15,11 @@ describe('coerceWorkspaceCategory', () => {
     expect(coerceWorkspaceCategory(undefined)).toBeNull();
     expect(coerceWorkspaceCategory('unknown')).toBeNull();
   });
+
+  it('rejects inherited Object.prototype keys', () => {
+    expect(coerceWorkspaceCategory('toString')).toBeNull();
+    expect(coerceWorkspaceCategory('constructor')).toBeNull();
+  });
 });
 
 describe('resolveWorkspaceCategoryForRoute', () => {
