@@ -44,6 +44,7 @@ export function detectUserDemotedProvenanceKeys(args: {
         keys.push('going_people');
       }
       if (changed(fields.eventCost, origFields.eventCost)) keys.push('cost');
+      if (changed(fields.eventEnds, origFields.eventEnds)) keys.push('ends');
       break;
     case 'experience':
       if (changed(fields.experienceSeason, origFields.experienceSeason)) keys.push('season');
@@ -133,6 +134,7 @@ export function detectUserDemotedProvenanceKeys(args: {
       if (JSON.stringify(fields.programSchedule) !== JSON.stringify(origFields.programSchedule)) {
         keys.push('schedule');
       }
+      if (changed(fields.programCapacity, origFields.programCapacity)) keys.push('capacity');
       if (changed(fields.programSourceTitle, origFields.programSourceTitle)) {
         keys.push('program_source_title');
       }

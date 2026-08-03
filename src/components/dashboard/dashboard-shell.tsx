@@ -2745,6 +2745,7 @@ function DashboardShellInner({
                             onTaskArchived={bumpTaskViews}
                             onTaskCommentsMarkedRead={bumpTaskViews}
                             onClearOpenTaskCommentDeepLink={clearTaskModalCommentDeepLink}
+                            onOpenRelatedTask={openTaskModal}
                           />
                           {workoutPlayerLaunch ? (
                             <WorkoutPlayer

@@ -23,6 +23,7 @@ export const TASK_MODAL_PROVENANCE_SCALAR_KEYS = [
   'going',
   'capacity',
   'going_people',
+  'ends',
   'season',
   'end_date',
   'highlights',

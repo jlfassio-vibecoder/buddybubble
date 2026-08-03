@@ -94,6 +94,8 @@ export type ProgramDay = {
   name: string;
   workout_type?: string;
   duration_min?: number;
+  /** Optional linked workout task id (handoff `card_ref`). */
+  card_ref?: string;
 };
 
 /** One week's schedule within a fitness program. A single-entry schedule array
@@ -101,6 +103,8 @@ export type ProgramDay = {
 export type ProgramWeek = {
   /** 1-indexed week number. */
   week: number;
+  /** Optional week focus label (handoff `focus`). */
+  focus?: string;
   days: ProgramDay[];
 };
 
@@ -111,6 +115,8 @@ const MANAGED_METADATA_KEYS = [
   'going',
   'capacity',
   'going_people',
+  /** Event: end wall time (`metadata.ends`, YYYY-MM-DDTHH:mm). */
+  'ends',
   'season',
   'end_date',
   'highlights',
@@ -171,6 +177,8 @@ export type TaskMetadataFormFields = {
   eventGoingPeople: string[];
   /** Event: cost display string (`metadata.cost`). */
   eventCost: string;
+  /** Event: end datetime wall time (`metadata.ends`, YYYY-MM-DDTHH:mm). */
+  eventEnds: string;
   experienceSeason: string;
   /** YYYY-MM-DD; experience span end (start is `scheduled_on`). */
   experienceEndDate: string;
@@ -225,6 +233,8 @@ export type TaskMetadataFormFields = {
   programCurrentWeek: number;
   /** Program: weekly workout schedule. */
   programSchedule: ProgramWeek[];
+  /** Program: host capacity (`metadata.capacity`). */
+  programCapacity: string;
   /** Program: original template title before AI suffix (metadata `program_source_title`). */
   programSourceTitle: string;
   /** Storage path for optional card cover image (all item types). */
@@ -258,6 +268,8 @@ export function asProgramSchedule(value: unknown): ProgramWeek[] {
     const week = (w as { week?: unknown }).week;
     const days = (w as { days?: unknown }).days;
     if (!Number.isFinite(week) || !Array.isArray(days)) return [];
+    const focusRaw = (w as { focus?: unknown }).focus;
+    const focus = typeof focusRaw === 'string' && focusRaw.trim() ? focusRaw.trim() : undefined;
     const cleanedDays = days.flatMap((d): ProgramDay[] => {
       if (typeof d !== 'object' || d === null) return [];
       const day = (d as { day?: unknown }).day;
@@ -271,17 +283,65 @@ export function asProgramSchedule(value: unknown): ProgramWeek[] {
         return [];
       const workoutType = (d as { workout_type?: unknown }).workout_type;
       const durationMin = (d as { duration_min?: unknown }).duration_min;
+      const cardRefRaw = (d as { card_ref?: unknown }).card_ref;
+      const cardRef =
+        typeof cardRefRaw === 'string' && cardRefRaw.trim() ? cardRefRaw.trim() : undefined;
       return [
         {
           day: day as number,
           name,
           ...(typeof workoutType === 'string' ? { workout_type: workoutType } : {}),
           ...(Number.isFinite(durationMin) ? { duration_min: durationMin as number } : {}),
+          ...(cardRef ? { card_ref: cardRef } : {}),
         },
       ];
     });
-    return [{ week: week as number, days: cleanedDays }];
+    return [
+      {
+        week: week as number,
+        days: cleanedDays,
+        ...(focus ? { focus } : {}),
+      },
+    ];
   });
+}
+
+/** Append the next week to a program schedule (copy previous days when present). */
+export function appendProgramWeek(schedule: ProgramWeek[]): ProgramWeek[] {
+  const sorted = [...schedule].sort((a, b) => a.week - b.week);
+  const maxWeek = sorted.reduce((m, w) => Math.max(m, w.week), 0);
+  const prev = sorted[sorted.length - 1];
+  const nextWeek = maxWeek + 1;
+  const days = (prev?.days ?? []).map((d) => {
+    const { card_ref: _c, ...rest } = d;
+    void _c;
+    return { ...rest };
+  });
+  return [...schedule, { week: nextWeek, days, ...(prev?.focus ? { focus: '' } : {}) }];
+}
+
+/**
+ * Stamp `card_ref` onto schedule days whose name matches a linked workout title
+ * (case-insensitive). Prefer existing card_ref when already set.
+ */
+export function stampProgramScheduleCardRefs(
+  schedule: ProgramWeek[],
+  linked: { id: string; title: string }[],
+): ProgramWeek[] {
+  if (!linked.length) return schedule;
+  const byTitle = new Map<string, string>();
+  for (const row of linked) {
+    const key = row.title.trim().toLowerCase();
+    if (key && !byTitle.has(key)) byTitle.set(key, row.id);
+  }
+  return schedule.map((w) => ({
+    ...w,
+    days: (w.days ?? []).map((d) => {
+      if (d.card_ref?.trim()) return d;
+      const id = byTitle.get(d.name.trim().toLowerCase());
+      return id ? { ...d, card_ref: id } : d;
+    }),
+  }));
 }
 
 /** Normalize idea effort/impact to Low|Medium|High (empty if unknown). */
@@ -300,6 +360,51 @@ export function normalizeProgramLevel(value: unknown): string {
   const t = value.trim().toLowerCase();
   if (t === 'beginner' || t === 'intermediate' || t === 'advanced') return t;
   return '';
+}
+
+/** Normalize event `ends` to `YYYY-MM-DDTHH:mm` (empty when unset/invalid). */
+export function normalizeEventEnds(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const s = value.trim();
+  if (!s) return '';
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s)) return s;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(s)) return s.slice(0, 16);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return `${s}T00:00`;
+  return '';
+}
+
+/** Split `metadata.ends` into date + time inputs. */
+export function splitEventEnds(ends: string): { date: string; time: string } {
+  const n = normalizeEventEnds(ends);
+  if (!n) return { date: '', time: '' };
+  const [date = '', time = ''] = n.split('T');
+  return { date, time: time.slice(0, 5) };
+}
+
+/** Combine Schedule Ends date/time into managed `ends` string. */
+export function combineEventEnds(date: string, time: string): string {
+  const d = date.trim().slice(0, 10);
+  if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return '';
+  const t = (time.trim() || '00:00').slice(0, 5);
+  if (!/^\d{2}:\d{2}$/.test(t)) return `${d}T00:00`;
+  return `${d}T${t}`;
+}
+
+/**
+ * Soft validation: true when both start (columns) and ends are set and ends ≤ start.
+ * Empty ends never fails.
+ */
+export function isEventEndsBeforeOrEqualStart(
+  scheduledOn: string,
+  scheduledTime: string,
+  eventEnds: string,
+): boolean {
+  const on = scheduledOn.trim().slice(0, 10);
+  const ends = normalizeEventEnds(eventEnds);
+  if (!on || !ends) return false;
+  const start = combineEventEnds(on, scheduledTime);
+  if (!start) return false;
+  return ends <= start;
 }
 
 /** Empty form fields (all managed keys cleared). */
@@ -323,6 +428,7 @@ export function metadataFieldsFromParsed(meta: unknown): TaskMetadataFormFields 
       o.capacity != null && Number.isFinite(Number(o.capacity)) ? String(o.capacity) : '',
     eventGoingPeople: asStringList(o.going_people),
     eventCost: str(o.cost),
+    eventEnds: normalizeEventEnds(o.ends),
     experienceSeason: str(o.season),
     experienceEndDate: endRaw.length >= 10 ? endRaw.slice(0, 10) : endRaw,
     experienceHighlights: asStringList(o.highlights),
@@ -357,6 +463,8 @@ export function metadataFieldsFromParsed(meta: unknown): TaskMetadataFormFields 
     programLevel: normalizeProgramLevel(o.level),
     programCurrentWeek: typeof o.current_week === 'number' ? o.current_week : 0,
     programSchedule: asProgramSchedule(o.schedule),
+    programCapacity:
+      o.capacity != null && Number.isFinite(Number(o.capacity)) ? String(o.capacity) : '',
     programSourceTitle: str(o.program_source_title),
     cardCoverPath: str(o.card_cover_path),
     ideaVotedBy: asStringList(o.voted_by),
@@ -409,6 +517,8 @@ export function buildTaskMetadataPayload(
       if (!isNaN(capN) && capN > 0) o.capacity = capN;
       if (fields.eventGoingPeople.length > 0) o.going_people = fields.eventGoingPeople;
       if (t(fields.eventCost)) o.cost = t(fields.eventCost);
+      const ends = normalizeEventEnds(fields.eventEnds);
+      if (ends) o.ends = ends;
       break;
     }
     case 'experience': {
@@ -471,7 +581,29 @@ export function buildTaskMetadataPayload(
       const level = normalizeProgramLevel(fields.programLevel);
       if (level) o.level = level;
       if (fields.programCurrentWeek > 0) o.current_week = fields.programCurrentWeek;
-      if (fields.programSchedule.length > 0) o.schedule = fields.programSchedule;
+      const capN = parseInt(fields.programCapacity, 10);
+      if (!isNaN(capN) && capN > 0) o.capacity = capN;
+      if (fields.programSchedule.length > 0) {
+        o.schedule = fields.programSchedule.map((w) => {
+          const focus = typeof w.focus === 'string' ? w.focus.trim() : '';
+          return {
+            week: w.week,
+            ...(focus ? { focus } : {}),
+            days: (w.days ?? []).map((d) => {
+              const cardRef = typeof d.card_ref === 'string' ? d.card_ref.trim() : '';
+              return {
+                day: d.day,
+                name: d.name,
+                ...(d.workout_type ? { workout_type: d.workout_type } : {}),
+                ...(typeof d.duration_min === 'number' && Number.isFinite(d.duration_min)
+                  ? { duration_min: d.duration_min }
+                  : {}),
+                ...(cardRef ? { card_ref: cardRef } : {}),
+              };
+            }),
+          };
+        });
+      }
       if (t(fields.programSourceTitle)) o.program_source_title = t(fields.programSourceTitle);
       break;
     }
