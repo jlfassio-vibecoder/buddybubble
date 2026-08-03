@@ -44,6 +44,7 @@ export function detectUserDemotedProvenanceKeys(args: {
         keys.push('going_people');
       }
       if (changed(fields.eventCost, origFields.eventCost)) keys.push('cost');
+      if (changed(fields.eventEnds, origFields.eventEnds)) keys.push('ends');
       break;
     case 'experience':
       if (changed(fields.experienceSeason, origFields.experienceSeason)) keys.push('season');

@@ -75,12 +75,14 @@ import { TaskModalTabBar } from '@/components/modals/task-modal/TaskModalTabBar'
 import { formatUserFacingError } from '@/lib/format-error';
 import {
   buildTaskMetadataPayload,
+  isEventEndsBeforeOrEqualStart,
   metadataFieldsFromParsed,
   parseTaskMetadata,
   type MemoryMomentReaction,
   type ProgramWeek,
   type WorkoutExercise,
 } from '@/lib/item-metadata';
+import { useEventRsvp } from '@/hooks/use-event-rsvp';
 import { isAgentFilledForDisplay, stampUserFields } from '@/lib/task-field-provenance';
 import { detectUserDemotedProvenanceKeys } from '@/lib/task-field-provenance-demote';
 import { toggleIdeaVote } from '@/lib/idea-vote';
@@ -524,6 +526,7 @@ export function TaskModal({
   const [eventCapacity, setEventCapacity] = useState('');
   const [eventGoingPeople, setEventGoingPeople] = useState<string[]>([]);
   const [eventCost, setEventCost] = useState('');
+  const [eventEnds, setEventEnds] = useState('');
   const [experienceSeason, setExperienceSeason] = useState('');
   /** YYYY-MM-DD experience span end (`metadata.end_date`). */
   const [experienceEndDate, setExperienceEndDate] = useState('');
@@ -744,6 +747,7 @@ export function TaskModal({
       eventCapacity,
       eventGoingPeople,
       eventCost,
+      eventEnds,
       experienceSeason,
       experienceEndDate,
       experienceHighlights,
@@ -788,6 +792,7 @@ export function TaskModal({
       eventCapacity,
       eventGoingPeople,
       eventCost,
+      eventEnds,
       experienceSeason,
       experienceEndDate,
       experienceHighlights,
@@ -972,6 +977,7 @@ export function TaskModal({
       setEventCapacity(mf.eventCapacity);
       setEventGoingPeople(mf.eventGoingPeople);
       setEventCost(mf.eventCost);
+      setEventEnds(mf.eventEnds);
       setExperienceSeason(mf.experienceSeason);
       setExperienceEndDate(mf.experienceEndDate);
       setExperienceHighlights(mf.experienceHighlights);
@@ -1070,6 +1076,7 @@ export function TaskModal({
     setEventCapacity('');
     setEventGoingPeople([]);
     setEventCost('');
+    setEventEnds('');
     setExperienceSeason('');
     setExperienceEndDate('');
     setExperienceHighlights([]);
@@ -1483,6 +1490,7 @@ export function TaskModal({
       setEventCapacity(mf.eventCapacity);
       setEventGoingPeople(mf.eventGoingPeople);
       setEventCost(mf.eventCost);
+      setEventEnds(mf.eventEnds);
       setExperienceSeason(mf.experienceSeason);
       setExperienceEndDate(mf.experienceEndDate);
       setExperienceHighlights(mf.experienceHighlights);
@@ -1598,16 +1606,57 @@ export function TaskModal({
 
   const { hardDeleteTask } = useTaskHardDelete();
 
+  const eventCapacityNumber = useMemo(() => {
+    const n = parseInt(eventCapacity, 10);
+    return !isNaN(n) && n > 0 ? n : null;
+  }, [eventCapacity]);
+
+  const {
+    rsvps: eventRsvpRows,
+    myEnrollment: eventMyEnrollment,
+    goingCount: eventGoingCount,
+    loading: eventRsvpLoading,
+    isMutating: eventGoingBusy,
+    toggleGoing: toggleEventGoing,
+  } = useEventRsvp({
+    taskId: itemType === 'event' ? taskId : null,
+    workspaceId,
+    currentUserId: myProfile?.id ?? null,
+    capacity: eventCapacityNumber,
+  });
+
+  const handleToggleEventGoing = useCallback(async () => {
+    const result = await toggleEventGoing();
+    if (!result.ok && result.error) {
+      toast.error(result.error);
+    }
+  }, [toggleEventGoing]);
+
+  const warnEventEndsSoftInvalid = useCallback(() => {
+    if (
+      itemType === 'event' &&
+      isEventEndsBeforeOrEqualStart(scheduledOn, scheduledTime, eventEnds)
+    ) {
+      toast.warning('End should be after the start time.');
+    }
+  }, [itemType, scheduledOn, scheduledTime, eventEnds]);
+
   const handleSaveCoreFields = useCallback(
     async (metadataOverride?: Json, options?: SaveCoreFieldsOptions) => {
+      warnEventEndsSoftInvalid();
       const ok = await saveCoreFields(metadataOverride, options);
       if (ok && isOptimisticDraftProp) {
         onOptimisticDraftConsumed?.();
       }
       return ok;
     },
-    [saveCoreFields, isOptimisticDraftProp, onOptimisticDraftConsumed],
+    [saveCoreFields, isOptimisticDraftProp, onOptimisticDraftConsumed, warnEventEndsSoftInvalid],
   );
+
+  const handleCreateTask = useCallback(async () => {
+    warnEventEndsSoftInvalid();
+    return createTask();
+  }, [createTask, warnEventEndsSoftInvalid]);
 
   const handleToggleIdeaVote = useCallback(async () => {
     const uid = myProfile?.id;
@@ -2518,14 +2567,23 @@ export function TaskModal({
       onEventUrlChange: setEventUrl,
       eventBring,
       onEventBringChange: setEventBring,
-      eventGoing,
-      onEventGoingChange: setEventGoing,
       eventCapacity,
       onEventCapacityChange: setEventCapacity,
-      eventGoingPeople,
-      onEventGoingPeopleChange: setEventGoingPeople,
       eventCost,
       onEventCostChange: setEventCost,
+      eventEnds,
+      onEventEndsChange: setEventEnds,
+      eventGoingCount,
+      eventRsvpPeople: eventRsvpRows.map((r) => ({
+        id: r.user_id,
+        displayName: r.displayName,
+        avatarUrl: r.avatarUrl,
+      })),
+      eventIsGoing: Boolean(eventMyEnrollment),
+      onToggleEventGoing: () => void handleToggleEventGoing(),
+      eventGoingBusy,
+      eventGoingDisabled: !taskId || isCreateMode,
+      eventRsvpLoading,
       experienceSeason,
       onExperienceSeasonChange: setExperienceSeason,
       scheduledOn,
@@ -2665,10 +2723,16 @@ export function TaskModal({
       eventLocation,
       eventUrl,
       eventBring,
-      eventGoing,
       eventCapacity,
-      eventGoingPeople,
       eventCost,
+      eventEnds,
+      eventGoingCount,
+      eventRsvpRows,
+      eventMyEnrollment,
+      eventGoingBusy,
+      eventRsvpLoading,
+      handleToggleEventGoing,
+      isCreateMode,
       experienceSeason,
       scheduledOn,
       experienceEndDate,
@@ -3515,7 +3579,7 @@ export function TaskModal({
                     typeNoun={typeNoun}
                     coreDirty={coreDirty}
                     onCancel={handleCancelDetails}
-                    onCreateTask={createTask}
+                    onCreateTask={handleCreateTask}
                     onSaveCoreFields={handleSaveCoreFields}
                   />
                 ) : null}
@@ -3585,7 +3649,7 @@ export function TaskModal({
                                 ? { metadataMerge: 'workout-cues' }
                                 : undefined,
                             )
-                          : createTask());
+                          : handleCreateTask());
                       },
                       saving,
                       saveDisabled: taskId ? !coreDirty : !title.trim(),

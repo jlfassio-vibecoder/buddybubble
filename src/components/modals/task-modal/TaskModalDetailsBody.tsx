@@ -80,14 +80,19 @@ export type TaskModalDetailsBodyProps = {
   onEventUrlChange: (value: string) => void;
   eventBring: string[];
   onEventBringChange: (value: string[]) => void;
-  eventGoing: string;
-  onEventGoingChange: (value: string) => void;
   eventCapacity: string;
   onEventCapacityChange: (value: string) => void;
-  eventGoingPeople: string[];
-  onEventGoingPeopleChange: (value: string[]) => void;
   eventCost: string;
   onEventCostChange: (value: string) => void;
+  eventEnds: string;
+  onEventEndsChange: (value: string) => void;
+  eventGoingCount: number;
+  eventRsvpPeople: { id: string; displayName: string; avatarUrl: string | null }[];
+  eventIsGoing: boolean;
+  onToggleEventGoing: () => void;
+  eventGoingBusy: boolean;
+  eventGoingDisabled: boolean;
+  eventRsvpLoading: boolean;
   experienceSeason: string;
   onExperienceSeasonChange: (value: string) => void;
   scheduledOn: string;
@@ -243,14 +248,19 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     onEventUrlChange,
     eventBring,
     onEventBringChange,
-    eventGoing,
-    onEventGoingChange,
     eventCapacity,
     onEventCapacityChange,
-    eventGoingPeople,
-    onEventGoingPeopleChange,
     eventCost,
     onEventCostChange,
+    eventEnds,
+    onEventEndsChange,
+    eventGoingCount,
+    eventRsvpPeople,
+    eventIsGoing,
+    onToggleEventGoing,
+    eventGoingBusy,
+    eventGoingDisabled,
+    eventRsvpLoading,
     experienceSeason,
     onExperienceSeasonChange,
     scheduledOn,
@@ -515,16 +525,19 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
       {itemType === 'event' ? (
         <TaskModalEventCanvas
           canWrite={canWrite}
-          eventGoing={eventGoing}
-          onEventGoingChange={onEventGoingChange}
           eventCapacity={eventCapacity}
           onEventCapacityChange={onEventCapacityChange}
-          eventGoingPeople={eventGoingPeople}
-          onEventGoingPeopleChange={onEventGoingPeopleChange}
           eventBring={eventBring}
           onEventBringChange={onEventBringChange}
           eventCost={eventCost}
           onEventCostChange={onEventCostChange}
+          goingCount={eventGoingCount}
+          rsvpPeople={eventRsvpPeople}
+          isGoing={eventIsGoing}
+          onToggleGoing={onToggleEventGoing}
+          goingBusy={eventGoingBusy}
+          goingDisabled={eventGoingDisabled}
+          rsvpLoading={eventRsvpLoading}
           isAgentField={isAgentField}
         />
       ) : null}
@@ -633,6 +646,9 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
         scheduledTime={scheduledTime}
         onScheduledTimeChange={onScheduledTimeChange}
         canWrite={canWrite}
+        eventEnds={eventEnds}
+        onEventEndsChange={onEventEndsChange}
+        isAgentField={isAgentField}
       />
 
       <TaskModalCardCoverSection

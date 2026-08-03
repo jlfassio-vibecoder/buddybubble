@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   asStringList,
   buildTaskMetadataPayload,
+  combineEventEnds,
+  isEventEndsBeforeOrEqualStart,
   metadataFieldsFromParsed,
+  normalizeEventEnds,
+  splitEventEnds,
 } from '@/lib/item-metadata';
 
 describe('asStringList', () => {
@@ -53,5 +57,29 @@ describe('event metadata round-trip', () => {
     expect(built.bring).toBeUndefined();
     expect(built.capacity).toBeUndefined();
     expect(built.going_people).toBeUndefined();
+  });
+
+  it('round-trips metadata.ends', () => {
+    const fields = metadataFieldsFromParsed({ ends: '2026-08-02T14:30:00Z' });
+    expect(fields.eventEnds).toBe('2026-08-02T14:30');
+    fields.eventEnds = '2026-08-03T09:15';
+    const built = buildTaskMetadataPayload('event', fields, {}) as Record<string, unknown>;
+    expect(built.ends).toBe('2026-08-03T09:15');
+    expect(normalizeEventEnds('2026-08-01')).toBe('2026-08-01T00:00');
+    expect(splitEventEnds('2026-08-01T10:30')).toEqual({ date: '2026-08-01', time: '10:30' });
+    expect(combineEventEnds('2026-08-01', '11:00')).toBe('2026-08-01T11:00');
+    expect(isEventEndsBeforeOrEqualStart('2026-08-01', '10:00', '2026-08-01T09:00')).toBe(true);
+    expect(isEventEndsBeforeOrEqualStart('2026-08-01', '10:00', '2026-08-01T11:00')).toBe(false);
+    expect(isEventEndsBeforeOrEqualStart('2026-08-01', '10:00', '')).toBe(false);
+  });
+
+  it('strips ends when switching away from event', () => {
+    const fields = metadataFieldsFromParsed({ ends: '2026-08-02T14:30', location: 'Park' });
+    const asTask = buildTaskMetadataPayload('task', fields, {
+      ends: '2026-08-02T14:30',
+      location: 'Park',
+    }) as Record<string, unknown>;
+    expect(asTask.ends).toBeUndefined();
+    expect(asTask.location).toBeUndefined();
   });
 });

@@ -17,7 +17,7 @@ Tracked against PR [#176](https://github.com/jlfassio-vibecoder/buddybubble/pull
 - **Shared wrappers** — `TaskModalSection` / `TaskModalField` / `TaskModalDisclosure`, shared input sizing token, Badge / Select / Checkbox / Progress primitives.
 - **Details section order** — Properties → type body → Schedule (date/time) → Cover → Attachments → Danger.
 - **Properties** — `TaskModalPropertiesSection`: Status / Priority / Assigned to (3-col board metadata only).
-- **Schedule** — date + time only (`TaskModalSchedulingSection`); experience dates stay in type metadata; section omitted for `experience`.
+- **Schedule** — date + time (`TaskModalSchedulingSection`); events also get Ends → `metadata.ends`; experience dates stay in type metadata; section omitted for `experience`.
 - **Subtasks / Activity** — Checkbox rows + progress; icon-dot timeline.
 - **Review / regression follow-ups** — Cover file input always mounted for header picker; unified-comments heroes keep Close; metadata `aria-label`s; `asChild` Choose-file without invalid `type="button"`; Visibility/Live restored to chrome after a Details-only regression.
 - **Handoff docs in repo** — this folder is checked in as the design source of truth. Prototype JSX/HTML is **ESLint-ignored** (`eslint.config.mjs`) so Babel globals do not fail CI; HTML entry is Prettier-formatted.
@@ -35,7 +35,8 @@ Tracked against PR [#176](https://github.com/jlfassio-vibecoder/buddybubble/pull
 - **Comments reaction pills** — `message_reactions` table + `useMessageReactions`; `.tm-react`-style pills on `ChatMessageRow` (StandardTaskChatRail + TaskModalCommentsPanel) with closed emoji set and SmilePlus popover.
 - **Coach / PCC display** — durable `tasks.metadata.field_provenance` sidecar (`by: 'agent' | 'user'`, optional `agent_slug` / `at`). Coach Edge strategy stamps keys it changes; TaskModal save + title/desc autosave demote to `by: 'user'`. UI: `TaskModalPersonaStrip` when any agent entries remain; `TaskModalField.agent` chrome on type/metadata fields via `isAgentFilledForDisplay` (Properties stay human board meta). Helpers: `src/lib/task-field-provenance.ts` (+ Edge twin). No historical backfill.
 - **Program week cards** — `TaskModalProgramWeekCards` in `TaskModalProgramFields`: `.tm-week` / `.tm-sess` Tailwind from `ProgramWeek[]` (Mon–Sun rows, muted Rest for missing days). Single-template + `duration_weeks > 1` shows “Repeats · N weeks” meta (no cloned cards). Goal / Duration / Personalize unchanged; `TaskModalField.agent` on `schedule`. Helpers: `buildProgramWeekCardModel` / `buildProgramWeekCards` in `src/lib/fitness/program-schedule.ts`. No Add-week / enrollment / child deep links.
-- **Event bring tags + RSVP (metadata-only)** — `TaskModalEventCanvas`: Who’s going card (going / capacity / progress / `going_people` initials stack) + What to bring chips. Persisted via managed metadata keys `bring`, `going`, `capacity`, `going_people` in `item-metadata`. Location / Meeting link unchanged. **No event enrollment table / “I’m going” CTA** this pass (Class RSVP remains the only real enrollment backend). Provenance demote + `TaskModalField.agent` on the new keys.
+- **Event bring tags + RSVP (metadata-only)** — Earlier pass: Who’s going from metadata `going` / `going_people`. Superseded by Phase L ledger RSVP below.
+- **Event end + real RSVP (Phase L)** — Schedule Ends date/time → managed `metadata.ends` (`YYYY-MM-DDTHH:mm`; starts stay on `scheduled_on` / `scheduled_time`). `event_rsvps` ledger + `useEventRsvp`; TaskModal Event canvas **I’m going** / **Not going**, ledger-derived count/avatars, host-editable `capacity` / bring / cost. Metadata `going` / `going_people` editors demoted (no longer SoT for display). Soft ends≤start warning; capacity-full blocks client enroll.
 - **Experience highlights / includes / good_for** — `TaskModalExperienceCanvas`: icon-led lists + good_for chips + optional location / duration / price / group min–max. Managed keys `highlights`, `includes`, `good_for`, `price`, `group_min`, `group_max` (+ experience writes of `location` / `duration_min`). Shared `TaskModalChipListEditor` / `TaskModalStringListEditor`. Experience span (season / start / end) unchanged; Schedule still omitted. No booking / maps / enrollment.
 - **Workout log session canvas** — `TaskModalWorkoutLogCanvas`: performed on / start time echoes from `scheduledOn` / `scheduledTime`, 3-col stats (Duration / Session RPE / Completion), light-edit Type + Duration, embedded `WorkoutLogReadSummary`. Helpers in `workout-log-session-stats.ts`. Optional display-only PR chip when exercise `pr === true`. No player / PR detection / parallel `log[]` model; Schedule remains the date/time editor.
 
@@ -78,10 +79,10 @@ Tracked against PR [#176](https://github.com/jlfassio-vibecoder/buddybubble/pull
 | ------------------------------------------- | ---------------------- | ------------------------------------ |
 | `location` / `bring` / `capacity` / `going` | present                | Canvas + managed keys                |
 | `starts`                                    | present-different-name | Schedule                             |
-| `ends`                                      | deferred               | Phase L                              |
+| `ends`                                      | present                | Schedule Ends → `metadata.ends`      |
 | `timezone`                                  | deferred               | Workspace TZ                         |
 | `cost`                                      | fixed-in-K             | Managed string                       |
-| `rsvp`                                      | present-different-name | `going_people` labels; no enrollment |
+| `rsvp`                                      | present                | `event_rsvps` ledger + I’m going CTA |
 
 #### experience
 
@@ -144,10 +145,6 @@ Tracked against PR [#176](https://github.com/jlfassio-vibecoder/buddybubble/pull
 ### Remaining work (phased — one plan each)
 
 Each phase below is sized for a **single implementation plan**. Do not combine phases. Design refs: `taskmodal/forms.jsx`, `taskmodal/schemas.js`, `taskmodal/modal.css` (classes noted per phase). Keep Properties / Schedule / Cover / Attachments / Danger as they are unless a phase says otherwise. Showcase chrome stays out of scope.
-
-#### Phase L — Event end + real RSVP
-
-- **Goal:** Event end datetime parity + enrollment “I’m going” (beyond metadata-only going counts).
 
 #### Phase M — Program enrollment + schedule parity
 

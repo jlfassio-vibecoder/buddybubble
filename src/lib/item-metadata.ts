@@ -111,6 +111,8 @@ const MANAGED_METADATA_KEYS = [
   'going',
   'capacity',
   'going_people',
+  /** Event: end wall time (`metadata.ends`, YYYY-MM-DDTHH:mm). */
+  'ends',
   'season',
   'end_date',
   'highlights',
@@ -171,6 +173,8 @@ export type TaskMetadataFormFields = {
   eventGoingPeople: string[];
   /** Event: cost display string (`metadata.cost`). */
   eventCost: string;
+  /** Event: end datetime wall time (`metadata.ends`, YYYY-MM-DDTHH:mm). */
+  eventEnds: string;
   experienceSeason: string;
   /** YYYY-MM-DD; experience span end (start is `scheduled_on`). */
   experienceEndDate: string;
@@ -302,6 +306,51 @@ export function normalizeProgramLevel(value: unknown): string {
   return '';
 }
 
+/** Normalize event `ends` to `YYYY-MM-DDTHH:mm` (empty when unset/invalid). */
+export function normalizeEventEnds(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const s = value.trim();
+  if (!s) return '';
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s)) return s;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(s)) return s.slice(0, 16);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return `${s}T00:00`;
+  return '';
+}
+
+/** Split `metadata.ends` into date + time inputs. */
+export function splitEventEnds(ends: string): { date: string; time: string } {
+  const n = normalizeEventEnds(ends);
+  if (!n) return { date: '', time: '' };
+  const [date = '', time = ''] = n.split('T');
+  return { date, time: time.slice(0, 5) };
+}
+
+/** Combine Schedule Ends date/time into managed `ends` string. */
+export function combineEventEnds(date: string, time: string): string {
+  const d = date.trim().slice(0, 10);
+  if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return '';
+  const t = (time.trim() || '00:00').slice(0, 5);
+  if (!/^\d{2}:\d{2}$/.test(t)) return `${d}T00:00`;
+  return `${d}T${t}`;
+}
+
+/**
+ * Soft validation: true when both start (columns) and ends are set and ends ≤ start.
+ * Empty ends never fails.
+ */
+export function isEventEndsBeforeOrEqualStart(
+  scheduledOn: string,
+  scheduledTime: string,
+  eventEnds: string,
+): boolean {
+  const on = scheduledOn.trim().slice(0, 10);
+  const ends = normalizeEventEnds(eventEnds);
+  if (!on || !ends) return false;
+  const start = combineEventEnds(on, scheduledTime);
+  if (!start) return false;
+  return ends <= start;
+}
+
 /** Empty form fields (all managed keys cleared). */
 export function emptyTaskMetadataFormFields(): TaskMetadataFormFields {
   return metadataFieldsFromParsed({});
@@ -323,6 +372,7 @@ export function metadataFieldsFromParsed(meta: unknown): TaskMetadataFormFields 
       o.capacity != null && Number.isFinite(Number(o.capacity)) ? String(o.capacity) : '',
     eventGoingPeople: asStringList(o.going_people),
     eventCost: str(o.cost),
+    eventEnds: normalizeEventEnds(o.ends),
     experienceSeason: str(o.season),
     experienceEndDate: endRaw.length >= 10 ? endRaw.slice(0, 10) : endRaw,
     experienceHighlights: asStringList(o.highlights),
@@ -409,6 +459,8 @@ export function buildTaskMetadataPayload(
       if (!isNaN(capN) && capN > 0) o.capacity = capN;
       if (fields.eventGoingPeople.length > 0) o.going_people = fields.eventGoingPeople;
       if (t(fields.eventCost)) o.cost = t(fields.eventCost);
+      const ends = normalizeEventEnds(fields.eventEnds);
+      if (ends) o.ends = ends;
       break;
     }
     case 'experience': {
