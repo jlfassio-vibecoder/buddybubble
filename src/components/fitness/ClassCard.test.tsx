@@ -53,6 +53,7 @@ function makeInstance(overrides: Partial<ClassInstance> = {}): ClassInstance {
       description: null,
       duration_min: 45,
       location: 'Online',
+      metadata: {},
     },
     enrollment_count: 0,
     deck_workout_count: 0,

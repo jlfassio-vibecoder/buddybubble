@@ -27,6 +27,8 @@ export type ClassOffering = {
   description: string | null;
   duration_min: number;
   location: string | null;
+  /** Offering-level JSON (fitness.*, Phase N format/price/reminders, etc.). */
+  metadata: Json;
 };
 
 export type ClassInstance = {
@@ -149,7 +151,11 @@ export class ManualClassProvider implements FitnessClassProvider {
     }
 
     return rawInstances.map((r) => {
-      const offering = r.offering as ClassOffering;
+      const rawOffering = r.offering as ClassOffering & { metadata?: Json | null };
+      const offering: ClassOffering = {
+        ...rawOffering,
+        metadata: (rawOffering.metadata as Json) ?? {},
+      };
       const mine = myEnrollmentByInstance.get(r.id as string) ?? null;
       const deckSessionId = classDeckBuilderSessionId(r.id as string);
       return {

@@ -18,6 +18,20 @@ import {
 } from '@/components/modals/class-modal/hooks/useClassSaveAndCreate';
 import { PrivacyToggle } from '@/components/ui/privacy-toggle';
 import { classDeckBuilderSessionId } from '@/lib/fitness/class-deck-builder-session-id';
+import {
+  applyClassOfferingPhaseN,
+  CLASS_OFFERING_FORMATS,
+  CLASS_OFFERING_RECURRING,
+  CLASS_OFFERING_REMINDERS,
+  CLASS_OFFERING_WEEKDAYS,
+  emptyClassOfferingPhaseN,
+  parseClassOfferingPhaseN,
+  showsJoinLinkForFormat,
+  showsLocationForFormat,
+  type ClassOfferingFormat,
+  type ClassOfferingPhaseNFields,
+  type ClassOfferingRecurring,
+} from '@/lib/fitness/class-offering-metadata';
 import { mergeClassInstanceDeckSessionMetadata } from '@/lib/card-live-session-metadata';
 import {
   parseAsyncSessionFromInstanceMetadata,
@@ -36,6 +50,19 @@ import { ClassEditorRecordingSection } from '@/components/modals/class-modal/Cla
 import { mergeClassRecordingIntoInstanceMetadata } from '@/lib/class-recording-metadata';
 import { useUserProfileStore } from '@/store/userProfileStore';
 import { useWorkspaceInstructors } from '@/hooks/useWorkspaceInstructors';
+
+const FORMAT_LABELS: Record<ClassOfferingFormat, string> = {
+  online: 'Online',
+  in_person: 'In person',
+  hybrid: 'Hybrid',
+};
+
+const RECURRING_LABELS: Record<ClassOfferingRecurring, string> = {
+  none: 'Does not repeat',
+  daily: 'Daily',
+  weekly: 'Weekly',
+  monthly: 'Monthly',
+};
 
 type ClassEditorLiveDeckInnerProps = {
   workspaceId: string;
@@ -216,6 +243,7 @@ export function ClassEditor({
   const [instructorNotes, setInstructorNotes] = useState('');
   const [intensity, setIntensity] = useState<string>('');
   const [targetedFocus, setTargetedFocus] = useState('');
+  const [phaseN, setPhaseN] = useState<ClassOfferingPhaseNFields>(emptyClassOfferingPhaseN);
   const [rawOfferingMetadata, setRawOfferingMetadata] = useState<Json>({});
   const [rawInstanceMetadata, setRawInstanceMetadata] = useState<Json>({});
   const [liveStreamEnabled, setLiveStreamEnabled] = useState(false);
@@ -295,6 +323,7 @@ export function ClassEditor({
       );
       setIntensity(intFromMeta);
       setTargetedFocus(tf);
+      setPhaseN(parseClassOfferingPhaseN(offering.metadata));
 
       setCapacity(data.capacity != null ? String(data.capacity) : '');
       setInstructorNotes((data.instructor_notes as string) ?? '');
@@ -381,11 +410,12 @@ export function ClassEditor({
       cap = n;
     }
 
-    const offeringMetadata = applyFitnessToOfferingMetadata(
+    const withFitness = applyFitnessToOfferingMetadata(
       rawOfferingMetadata,
       intensity,
       targetedFocus,
     );
+    const offeringMetadata = applyClassOfferingPhaseN(withFitness, phaseN);
 
     return {
       offering: {
@@ -418,6 +448,7 @@ export function ClassEditor({
     instructorNotes,
     intensity,
     targetedFocus,
+    phaseN,
     visibility,
     workspaceId,
     rawOfferingMetadata,
@@ -693,12 +724,64 @@ export function ClassEditor({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="class-location">Location</Label>
+                <p className="text-xs font-medium text-muted-foreground">Format</p>
+                <div className="flex flex-wrap gap-2">
+                  {CLASS_OFFERING_FORMATS.map((fmt) => (
+                    <button
+                      key={fmt}
+                      type="button"
+                      disabled={disabledForm}
+                      onClick={() => setPhaseN((prev) => ({ ...prev, format: fmt }))}
+                      className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                        phaseN.format === fmt
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
+                      }`}
+                    >
+                      {FORMAT_LABELS[fmt]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {showsLocationForFormat(phaseN.format) ? (
+                <div className="space-y-2">
+                  <Label htmlFor="class-location">Location</Label>
+                  <Input
+                    id="class-location"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    disabled={disabledForm}
+                    placeholder="Studio, room, or address"
+                  />
+                </div>
+              ) : null}
+
+              {showsJoinLinkForFormat(phaseN.format) ? (
+                <div className="space-y-2">
+                  <Label htmlFor="class-join-link">Join link</Label>
+                  <Input
+                    id="class-join-link"
+                    type="url"
+                    value={phaseN.join_link}
+                    onChange={(e) => setPhaseN((prev) => ({ ...prev, join_link: e.target.value }))}
+                    disabled={disabledForm}
+                    placeholder="https://…"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Optional external or display URL. Live Huddle stays separate below.
+                  </p>
+                </div>
+              ) : null}
+
+              <div className="space-y-2">
+                <Label htmlFor="class-price">Price</Label>
                 <Input
-                  id="class-location"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
+                  id="class-price"
+                  value={phaseN.price}
+                  onChange={(e) => setPhaseN((prev) => ({ ...prev, price: e.target.value }))}
                   disabled={disabledForm}
+                  placeholder="$0 · members"
                 />
               </div>
 
@@ -727,6 +810,95 @@ export function ClassEditor({
                     onChange={(e) => setScheduledTime(e.target.value)}
                     disabled={disabledForm}
                   />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="class-recurring">Repeats</Label>
+                <select
+                  id="class-recurring"
+                  className={selectClassName}
+                  value={phaseN.recurring}
+                  onChange={(e) =>
+                    setPhaseN((prev) => ({
+                      ...prev,
+                      recurring: e.target.value as ClassOfferingRecurring,
+                    }))
+                  }
+                  disabled={disabledForm}
+                >
+                  {CLASS_OFFERING_RECURRING.map((r) => (
+                    <option key={r} value={r}>
+                      {RECURRING_LABELS[r]}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  Template preference on this offering — does not create extra class instances.
+                </p>
+              </div>
+
+              {phaseN.recurring === 'weekly' ? (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">Days</p>
+                  <div className="flex flex-wrap gap-2">
+                    {CLASS_OFFERING_WEEKDAYS.map((day) => {
+                      const on = phaseN.days.includes(day);
+                      return (
+                        <button
+                          key={day}
+                          type="button"
+                          disabled={disabledForm}
+                          aria-pressed={on}
+                          onClick={() =>
+                            setPhaseN((prev) => ({
+                              ...prev,
+                              days: on ? prev.days.filter((d) => d !== day) : [...prev.days, day],
+                            }))
+                          }
+                          className={`inline-flex items-center rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                            on
+                              ? 'border-primary bg-primary/10 text-primary'
+                              : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
+                          }`}
+                        >
+                          {day}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">Reminders</p>
+                <div className="flex flex-wrap gap-2">
+                  {CLASS_OFFERING_REMINDERS.map((reminder) => {
+                    const on = phaseN.reminders.includes(reminder);
+                    return (
+                      <button
+                        key={reminder}
+                        type="button"
+                        disabled={disabledForm}
+                        aria-pressed={on}
+                        onClick={() =>
+                          setPhaseN((prev) => ({
+                            ...prev,
+                            reminders: on
+                              ? prev.reminders.filter((r) => r !== reminder)
+                              : [...prev.reminders, reminder],
+                          }))
+                        }
+                        className={`inline-flex items-center rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                          on
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
+                        }`}
+                      >
+                        {reminder}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 

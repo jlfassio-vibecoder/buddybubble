@@ -38,6 +38,7 @@ Tracked against PR [#176](https://github.com/jlfassio-vibecoder/buddybubble/pull
 - **Program enrollment + schedule parity (Phase M)** — Host-editable `metadata.capacity` + `program_enrollments` ledger (`useProgramEnrollment`); Enroll/Leave + avatars. **Add week** appends to `metadata.schedule`; optional week `focus`; session `card_ref` / title-matched linked workouts open via `onOpenRelatedTask`. Personalize upsert stamps `card_ref` by title when mappable.
 - **Event bring tags + RSVP (metadata-only)** — Earlier pass: Who’s going from metadata `going` / `going_people`. Superseded by Phase L ledger RSVP below.
 - **Event end + real RSVP (Phase L)** — Schedule Ends date/time → managed `metadata.ends` (`YYYY-MM-DDTHH:mm`; starts stay on `scheduled_on` / `scheduled_time`). `event_rsvps` ledger + `useEventRsvp`; TaskModal Event canvas **I’m going** / **Not going**, ledger-derived count/avatars, host-editable `capacity` / bring / cost. Metadata `going` / `going_people` editors demoted (no longer SoT for display). Soft ends≤start warning; capacity-full blocks client enroll.
+- **Class offering gaps (Phase N)** — ClassEditor persists `format`, `join_link`, `recurring`/`days`, `price`, `reminders` on `class_offerings.metadata` (merge helpers preserve `fitness.*`). Location stays column-backed (shown for in-person/hybrid); join link is display-only (not Huddle). Recurring is template-only (no series generation). ClassCard shows price when set. No RSVP Reserve CTA / timezone UI.
 - **Experience highlights / includes / good_for** — `TaskModalExperienceCanvas`: icon-led lists + good_for chips + optional location / duration / price / group min–max. Managed keys `highlights`, `includes`, `good_for`, `price`, `group_min`, `group_max` (+ experience writes of `location` / `duration_min`). Shared `TaskModalChipListEditor` / `TaskModalStringListEditor`. Experience span (season / start / end) unchanged; Schedule still omitted. No booking / maps / enrollment.
 - **Workout log session canvas** — `TaskModalWorkoutLogCanvas`: performed on / start time echoes from `scheduledOn` / `scheduledTime`, 3-col stats (Duration / Session RPE / Completion), light-edit Type + Duration, embedded `WorkoutLogReadSummary`. Helpers in `workout-log-session-stats.ts`. Optional display-only PR chip when exercise `pr === true`. No player / PR detection / parallel `log[]` model; Schedule remains the date/time editor.
 
@@ -136,20 +137,16 @@ Tracked against PR [#176](https://github.com/jlfassio-vibecoder/buddybubble/pull
 
 #### class
 
-| Schema key                                                            | Status                           | Notes                     |
-| --------------------------------------------------------------------- | -------------------------------- | ------------------------- |
-| `location` / `instructor` / `capacity` / `reserved` / `signup`        | present / present-different-name | ClassEditor + RSVP canvas |
-| `starts` / `ends`                                                     | present-different-name           | `scheduled_at` + duration |
-| `format` / `join_link` / `recurring` / `days` / `price` / `reminders` | deferred                         | Phase N                   |
-| `timezone`                                                            | deferred                         | Workspace TZ              |
+| Schema key                                                            | Status                           | Notes                                        |
+| --------------------------------------------------------------------- | -------------------------------- | -------------------------------------------- |
+| `location` / `instructor` / `capacity` / `reserved` / `signup`        | present / present-different-name | ClassEditor + RSVP canvas                    |
+| `starts` / `ends`                                                     | present-different-name           | `scheduled_at` + duration                    |
+| `format` / `join_link` / `recurring` / `days` / `price` / `reminders` | present                          | Offering `metadata`; recurring template-only |
+| `timezone`                                                            | deferred                         | Workspace TZ                                 |
 
 ### Remaining work (phased — one plan each)
 
 Each phase below is sized for a **single implementation plan**. Do not combine phases. Design refs: `taskmodal/forms.jsx`, `taskmodal/schemas.js`, `taskmodal/modal.css` (classes noted per phase). Keep Properties / Schedule / Cover / Attachments / Danger as they are unless a phase says otherwise. Showcase chrome stays out of scope.
-
-#### Phase N — Class offering gaps
-
-- **Goal:** Class `format`, `join_link`, recurring/`days`, `price`, reminders in ClassEditor / offerings.
 
 #### Phase O — Workout log `log[]` / PR model
 

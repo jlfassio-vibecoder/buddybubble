@@ -20,6 +20,7 @@ import { PremiumGate } from '@/components/subscription/premium-gate';
 import { Button } from '@/components/ui/button';
 import { useClassEnrollment } from '@/features/classes/hooks/useClassEnrollment';
 import type { ClassInstance } from '@/lib/fitness/class-providers';
+import { parseClassOfferingPhaseN } from '@/lib/fitness/class-offering-metadata';
 import { classRecordingMemberCta } from '@/lib/class-recording-metadata';
 import { useLiveVideoStore } from '@/store/liveVideoStore';
 import { useUserProfileStore } from '@/store/userProfileStore';
@@ -102,6 +103,10 @@ export function ClassCard({
   const searchParams = useSearchParams();
   const liveDockActive = useLiveVideoStore((s) => s.activeSession);
   const { offering } = instance;
+  const offeringPhaseN = useMemo(
+    () => parseClassOfferingPhaseN(offering.metadata),
+    [offering.metadata],
+  );
   const enrolled = instance.my_enrollment_status === 'enrolled';
   const waitlisted = instance.my_enrollment_status === 'waitlisted';
   const isFull = instance.capacity !== null && instance.enrollment_count >= instance.capacity;
@@ -202,6 +207,9 @@ export function ClassCard({
           {instance.enrollment_count}
           {instance.capacity !== null ? `/${instance.capacity}` : ''} enrolled
         </span>
+        {offeringPhaseN.price ? (
+          <span className="font-medium text-foreground/80">{offeringPhaseN.price}</span>
+        ) : null}
       </div>
 
       {offering.description && (
