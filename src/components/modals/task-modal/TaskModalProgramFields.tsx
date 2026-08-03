@@ -1,11 +1,26 @@
 'use client';
 
-import { Sparkles } from 'lucide-react';
+import { Plus, Sparkles, Users } from 'lucide-react';
+import { Avatar, AvatarFallback, AvatarGroup, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import type { ProgramWeek } from '@/lib/item-metadata';
-import { TaskModalField } from '@/components/modals/task-modal/TaskModalSection';
-import { TaskModalProgramWeekCards } from '@/components/modals/task-modal/TaskModalProgramWeekCards';
+import { appendProgramWeek, type ProgramWeek } from '@/lib/item-metadata';
+import {
+  TaskModalField,
+  taskModalInputClass,
+} from '@/components/modals/task-modal/TaskModalSection';
+import {
+  TaskModalProgramWeekCards,
+  type ProgramLinkedWorkout,
+} from '@/components/modals/task-modal/TaskModalProgramWeekCards';
+
+const AVATAR_PREVIEW = 4;
+
+export type ProgramEnrollPerson = {
+  id: string;
+  displayName: string;
+  avatarUrl: string | null;
+};
 
 export type TaskModalProgramFieldsProps = {
   canWrite: boolean;
@@ -23,6 +38,18 @@ export type TaskModalProgramFieldsProps = {
   onProgramLevelChange: (value: string) => void;
   programCurrentWeek: number;
   programSchedule: ProgramWeek[];
+  onProgramScheduleChange: (value: ProgramWeek[]) => void;
+  programCapacity: string;
+  onProgramCapacityChange: (value: string) => void;
+  enrolledCount: number;
+  enrollPeople: ProgramEnrollPerson[];
+  isEnrolled: boolean;
+  onToggleEnroll: () => void;
+  enrollBusy?: boolean;
+  enrollDisabled?: boolean;
+  enrollLoading?: boolean;
+  linkedWorkouts?: ProgramLinkedWorkout[];
+  onOpenLinkedTask?: (taskId: string) => void;
   isAgentField?: (key: string) => boolean;
 };
 
@@ -42,10 +69,48 @@ export function TaskModalProgramFields({
   onProgramLevelChange,
   programCurrentWeek,
   programSchedule,
+  onProgramScheduleChange,
+  programCapacity,
+  onProgramCapacityChange,
+  enrolledCount,
+  enrollPeople,
+  isEnrolled,
+  onToggleEnroll,
+  enrollBusy = false,
+  enrollDisabled = false,
+  enrollLoading = false,
+  linkedWorkouts,
+  onOpenLinkedTask,
   isAgentField,
 }: TaskModalProgramFieldsProps) {
   const agent = (key: string) => Boolean(isAgentField?.(key));
-  const hasSchedule = programSchedule.some((w) => (w.days?.length ?? 0) > 0);
+  const hasSchedule = programSchedule.length > 0;
+
+  const capacityN = (() => {
+    const n = parseInt(programCapacity, 10);
+    return !isNaN(n) && n > 0 ? n : null;
+  })();
+  const atCapacity = capacityN != null && enrolledCount >= capacityN && !isEnrolled;
+  const shown = enrollPeople.slice(0, AVATAR_PREVIEW);
+  const overflow = Math.max(0, enrollPeople.length - shown.length);
+  const enrollLabel =
+    capacityN == null ? `${enrolledCount}/∞ enrolled` : `${enrolledCount}/${capacityN} enrolled`;
+
+  const handleAddWeek = () => {
+    const next = appendProgramWeek(programSchedule);
+    onProgramScheduleChange(next);
+    const maxWeek = next.reduce((m, w) => Math.max(m, w.week), 0);
+    const dw = parseInt(programDurationWeeks, 10);
+    if (isNaN(dw) || dw < maxWeek) {
+      onProgramDurationWeeksChange(String(maxWeek));
+    }
+  };
+
+  const handleWeekFocusChange = (weekNumber: number, focus: string) => {
+    onProgramScheduleChange(
+      programSchedule.map((w) => (w.week === weekNumber ? { ...w, focus } : w)),
+    );
+  };
 
   return (
     <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
@@ -123,20 +188,103 @@ export function TaskModalProgramFields({
         </TaskModalField>
       </div>
 
+      <div
+        className="flex flex-wrap items-end justify-between gap-3 rounded-[var(--radius-xl)] border border-border bg-background px-3.5 py-3.5"
+        data-testid="task-modal-program-enroll"
+      >
+        <div className="min-w-0 flex-1 space-y-2.5">
+          <div className="flex items-center gap-1.5 text-[13px] font-semibold tracking-tight text-foreground">
+            <Users className="size-3.5 text-muted-foreground" aria-hidden />
+            {enrollLoading && enrollPeople.length === 0 ? (
+              <span className="text-muted-foreground">Loading enrollment…</span>
+            ) : (
+              <span data-testid="task-modal-program-enroll-count">{enrollLabel}</span>
+            )}
+          </div>
+          {shown.length > 0 ? (
+            <AvatarGroup
+              className="-space-x-1.5 *:data-[slot=avatar]:size-7 *:data-[slot=avatar]:ring-1 *:data-[slot=avatar]:ring-background"
+              data-testid="task-modal-program-enroll-avatars"
+            >
+              {shown.map((person) => {
+                const initial = person.displayName.slice(0, 1).toUpperCase() || '?';
+                return (
+                  <Avatar key={person.id} size="sm" title={person.displayName}>
+                    {person.avatarUrl ? <AvatarImage src={person.avatarUrl} alt="" /> : null}
+                    <AvatarFallback className="text-[10px] text-muted-foreground">
+                      {initial}
+                    </AvatarFallback>
+                  </Avatar>
+                );
+              })}
+              {overflow > 0 ? (
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-muted-foreground ring-1 ring-background">
+                  +{overflow}
+                </span>
+              ) : null}
+            </AvatarGroup>
+          ) : null}
+        </div>
+        <Button
+          type="button"
+          variant={isEnrolled ? 'outline' : 'default'}
+          size="sm"
+          disabled={enrollDisabled || enrollBusy || (!isEnrolled && atCapacity)}
+          onClick={onToggleEnroll}
+          data-testid="task-modal-program-enroll-toggle"
+        >
+          {enrollBusy ? 'Updating…' : isEnrolled ? 'Leave' : 'Enroll'}
+        </Button>
+      </div>
+
+      <TaskModalField label="Capacity" optional agent={agent('capacity')} className="mb-0">
+        <input
+          type="number"
+          min={1}
+          value={programCapacity}
+          onChange={(e) => onProgramCapacityChange(e.target.value)}
+          disabled={!canWrite}
+          placeholder="Unlimited"
+          aria-label="Program capacity"
+          className={taskModalInputClass}
+          data-testid="task-modal-program-capacity"
+        />
+      </TaskModalField>
+
       {programCurrentWeek > 0 && programDurationWeeks && (
         <p className="text-xs text-muted-foreground">
           Progress: Week {programCurrentWeek} of {programDurationWeeks}
         </p>
       )}
 
-      {hasSchedule ? (
-        <TaskModalField label="Weekly schedule" agent={agent('schedule')} className="mb-0">
+      <TaskModalField label="Weekly schedule" agent={agent('schedule')} className="mb-0">
+        {hasSchedule ? (
           <TaskModalProgramWeekCards
             programSchedule={programSchedule}
             programDurationWeeks={programDurationWeeks}
+            canWrite={canWrite}
+            onWeekFocusChange={canWrite ? handleWeekFocusChange : undefined}
+            linkedWorkouts={linkedWorkouts}
+            onOpenLinkedTask={onOpenLinkedTask}
           />
-        </TaskModalField>
-      ) : null}
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            No sessions yet — ask the Coach to lay out the weeks, or add a week below.
+          </p>
+        )}
+        {canWrite ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="mt-2 h-10 w-full border-dashed"
+            onClick={handleAddWeek}
+            data-testid="task-modal-program-add-week"
+          >
+            <Plus className="size-3.5" aria-hidden />
+            Add week
+          </Button>
+        ) : null}
+      </TaskModalField>
     </div>
   );
 }

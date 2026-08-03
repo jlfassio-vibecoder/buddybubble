@@ -161,6 +161,18 @@ export type TaskModalDetailsBodyProps = {
   onProgramLevelChange: (value: string) => void;
   programCurrentWeek: number;
   programSchedule: ProgramWeek[];
+  onProgramScheduleChange: (value: ProgramWeek[]) => void;
+  programCapacity: string;
+  onProgramCapacityChange: (value: string) => void;
+  programEnrolledCount: number;
+  programEnrollPeople: { id: string; displayName: string; avatarUrl: string | null }[];
+  programIsEnrolled: boolean;
+  onToggleProgramEnroll: () => void;
+  programEnrollBusy: boolean;
+  programEnrollDisabled: boolean;
+  programEnrollLoading: boolean;
+  programLinkedWorkouts: { id: string; title: string; program_session_key?: string | null }[];
+  onOpenLinkedTask?: (taskId: string) => void;
   dateLabels: TaskDateFieldLabels;
   status: string;
   onStatusChange: (value: string) => void;
@@ -320,6 +332,18 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
     onProgramLevelChange,
     programCurrentWeek,
     programSchedule,
+    onProgramScheduleChange,
+    programCapacity,
+    onProgramCapacityChange,
+    programEnrolledCount,
+    programEnrollPeople,
+    programIsEnrolled,
+    onToggleProgramEnroll,
+    programEnrollBusy,
+    programEnrollDisabled,
+    programEnrollLoading,
+    programLinkedWorkouts,
+    onOpenLinkedTask,
     dateLabels,
     status,
     onStatusChange,
@@ -634,6 +658,18 @@ function TaskModalDetailsBodyInner(props: TaskModalDetailsBodyProps) {
           onProgramLevelChange={onProgramLevelChange}
           programCurrentWeek={programCurrentWeek}
           programSchedule={programSchedule}
+          onProgramScheduleChange={onProgramScheduleChange}
+          programCapacity={programCapacity}
+          onProgramCapacityChange={onProgramCapacityChange}
+          enrolledCount={programEnrolledCount}
+          enrollPeople={programEnrollPeople}
+          isEnrolled={programIsEnrolled}
+          onToggleEnroll={onToggleProgramEnroll}
+          enrollBusy={programEnrollBusy}
+          enrollDisabled={programEnrollDisabled}
+          enrollLoading={programEnrollLoading}
+          linkedWorkouts={programLinkedWorkouts}
+          onOpenLinkedTask={onOpenLinkedTask}
           isAgentField={isAgentField}
         />
       )}

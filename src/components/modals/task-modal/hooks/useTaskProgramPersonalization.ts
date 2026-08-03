@@ -9,6 +9,7 @@ import {
   buildTaskMetadataPayload,
   emptyTaskMetadataFormFields,
   parseTaskMetadata,
+  stampProgramScheduleCardRefs,
   type ProgramWeek,
   type WorkoutExercise,
 } from '@/lib/item-metadata';
@@ -44,6 +45,7 @@ export type UseTaskProgramPersonalizationArgs = {
   programDaysPerWeek: string;
   programLevel: string;
   programSchedule: ProgramWeek[];
+  programCapacity: string;
   programCurrentWeek: number;
   visibility: TaskVisibility;
   metadata: Json;
@@ -78,6 +80,7 @@ export function useTaskProgramPersonalization({
   programDaysPerWeek,
   programLevel,
   programSchedule,
+  programCapacity,
   programCurrentWeek,
   visibility,
   metadata,
@@ -163,6 +166,11 @@ export function useTaskProgramPersonalization({
         return;
       }
 
+      const stampedSchedule = stampProgramScheduleCardRefs(
+        programSchedule,
+        (up.linked ?? []).map((l) => ({ id: l.id, title: l.title })),
+      );
+
       const metaPayload = buildTaskMetadataPayload(
         'program',
         {
@@ -180,7 +188,8 @@ export function useTaskProgramPersonalization({
           programDaysPerWeek,
           programLevel,
           programCurrentWeek,
-          programSchedule,
+          programSchedule: stampedSchedule,
+          programCapacity,
           programSourceTitle: baseTitle,
           cardCoverPath,
         },
@@ -295,6 +304,7 @@ export function useTaskProgramPersonalization({
     programDaysPerWeek,
     programLevel,
     programSchedule,
+    programCapacity,
     defaultStatus,
     visibility,
     eventLocation,

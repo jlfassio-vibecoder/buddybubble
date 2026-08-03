@@ -58,7 +58,10 @@ export async function upsertProgramWorkoutTasks(params: {
   /** Third column slug or fallback. */
   statusSlug: string;
   visibility: TaskVisibility;
-}): Promise<{ error?: string }> {
+}): Promise<{
+  error?: string;
+  linked?: { id: string; title: string; key: string }[];
+}> {
   const { supabase, workspaceId, programTaskId, sessions, statusSlug, visibility } = params;
 
   const workoutsBubbleId = await resolveWorkoutsBubbleId(supabase, workspaceId);
@@ -128,9 +131,12 @@ export async function upsertProgramWorkoutTasks(params: {
       ? -1
       : Math.max(-1, Number((maxPosRow as { position: unknown }).position) || 0);
 
+  const linkedOut: { id: string; title: string; key: string }[] = [];
+
   for (const session of sessions) {
     const exercises: WorkoutExercise[] = session.exercises ?? [];
     const workoutType = session.title.trim() || session.key;
+    const title = session.title.trim() || session.key;
 
     const row = linked(session.key);
     if (row) {
@@ -146,7 +152,7 @@ export async function upsertProgramWorkoutTasks(params: {
       const { error: uErr } = await supabase
         .from('tasks')
         .update({
-          title: session.title.trim() || session.key,
+          title,
           description: session.description.trim() || null,
           status: statusSlug,
           metadata: meta,
@@ -161,6 +167,7 @@ export async function upsertProgramWorkoutTasks(params: {
         programAssigneeUserIds,
       );
       if (syncErr) return { error: syncErr };
+      linkedOut.push({ id: row.id, title, key: session.key });
     } else {
       maxPos += 1;
       const meta: Json = {
@@ -171,7 +178,7 @@ export async function upsertProgramWorkoutTasks(params: {
         .from('tasks')
         .insert({
           bubble_id: workoutsBubbleId,
-          title: session.title.trim() || session.key,
+          title,
           description: session.description.trim() || null,
           status: statusSlug,
           position: maxPos,
@@ -193,9 +200,10 @@ export async function upsertProgramWorkoutTasks(params: {
           programAssigneeUserIds,
         );
         if (syncErr) return { error: syncErr };
+        linkedOut.push({ id: newRow.id, title, key: session.key });
       }
     }
   }
 
-  return {};
+  return { linked: linkedOut };
 }

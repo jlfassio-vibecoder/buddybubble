@@ -34,7 +34,8 @@ Tracked against PR [#176](https://github.com/jlfassio-vibecoder/buddybubble/pull
 - **Schemas gap closure** — Diffed handoff `schemas.js` vs app managed metadata; closed trivial keys (idea effort/impact/tags, event `cost`, workout `target_rpe`, memory `location`, program `days_per_week`/`level`, workout_log `session_rpe`/`completion`/`mood`). See Phase K audit below. Larger leftovers ticketed as L–O.
 - **Comments reaction pills** — `message_reactions` table + `useMessageReactions`; `.tm-react`-style pills on `ChatMessageRow` (StandardTaskChatRail + TaskModalCommentsPanel) with closed emoji set and SmilePlus popover.
 - **Coach / PCC display** — durable `tasks.metadata.field_provenance` sidecar (`by: 'agent' | 'user'`, optional `agent_slug` / `at`). Coach Edge strategy stamps keys it changes; TaskModal save + title/desc autosave demote to `by: 'user'`. UI: `TaskModalPersonaStrip` when any agent entries remain; `TaskModalField.agent` chrome on type/metadata fields via `isAgentFilledForDisplay` (Properties stay human board meta). Helpers: `src/lib/task-field-provenance.ts` (+ Edge twin). No historical backfill.
-- **Program week cards** — `TaskModalProgramWeekCards` in `TaskModalProgramFields`: `.tm-week` / `.tm-sess` Tailwind from `ProgramWeek[]` (Mon–Sun rows, muted Rest for missing days). Single-template + `duration_weeks > 1` shows “Repeats · N weeks” meta (no cloned cards). Goal / Duration / Personalize unchanged; `TaskModalField.agent` on `schedule`. Helpers: `buildProgramWeekCardModel` / `buildProgramWeekCards` in `src/lib/fitness/program-schedule.ts`. No Add-week / enrollment / child deep links.
+- **Program week cards** — `TaskModalProgramWeekCards` in `TaskModalProgramFields`: `.tm-week` / `.tm-sess` Tailwind from `ProgramWeek[]` (Mon–Sun rows, muted Rest for missing days). Single-template + `duration_weeks > 1` shows “Repeats · N weeks” meta (no cloned cards). Goal / Duration / Personalize unchanged; `TaskModalField.agent` on `schedule`. Helpers: `buildProgramWeekCardModel` / `buildProgramWeekCards` in `src/lib/fitness/program-schedule.ts`.
+- **Program enrollment + schedule parity (Phase M)** — Host-editable `metadata.capacity` + `program_enrollments` ledger (`useProgramEnrollment`); Enroll/Leave + avatars. **Add week** appends to `metadata.schedule`; optional week `focus`; session `card_ref` / title-matched linked workouts open via `onOpenRelatedTask`. Personalize upsert stamps `card_ref` by title when mappable.
 - **Event bring tags + RSVP (metadata-only)** — Earlier pass: Who’s going from metadata `going` / `going_people`. Superseded by Phase L ledger RSVP below.
 - **Event end + real RSVP (Phase L)** — Schedule Ends date/time → managed `metadata.ends` (`YYYY-MM-DDTHH:mm`; starts stay on `scheduled_on` / `scheduled_time`). `event_rsvps` ledger + `useEventRsvp`; TaskModal Event canvas **I’m going** / **Not going**, ledger-derived count/avatars, host-editable `capacity` / bring / cost. Metadata `going` / `going_people` editors demoted (no longer SoT for display). Soft ends≤start warning; capacity-full blocks client enroll.
 - **Experience highlights / includes / good_for** — `TaskModalExperienceCanvas`: icon-led lists + good_for chips + optional location / duration / price / group min–max. Managed keys `highlights`, `includes`, `good_for`, `price`, `group_min`, `group_max` (+ experience writes of `location` / `duration_min`). Shared `TaskModalChipListEditor` / `TaskModalStringListEditor`. Experience span (season / start / end) unchanged; Schedule still omitted. No booking / maps / enrollment.
@@ -131,7 +132,7 @@ Tracked against PR [#176](https://github.com/jlfassio-vibecoder/buddybubble/pull
 | ----------------------------------- | ---------------------- | --------------------------------------------------- |
 | `start_date` / `weeks` / `schedule` | present-different-name | `scheduled_on` / `duration_weeks` / `ProgramWeek[]` |
 | `days_per_week` / `level`           | fixed-in-K             | Program fields                                      |
-| `enrolled` / `capacity`             | deferred               | Phase M                                             |
+| `enrolled` / `capacity`             | present                | Ledger + `metadata.capacity`                        |
 
 #### class
 
@@ -145,10 +146,6 @@ Tracked against PR [#176](https://github.com/jlfassio-vibecoder/buddybubble/pull
 ### Remaining work (phased — one plan each)
 
 Each phase below is sized for a **single implementation plan**. Do not combine phases. Design refs: `taskmodal/forms.jsx`, `taskmodal/schemas.js`, `taskmodal/modal.css` (classes noted per phase). Keep Properties / Schedule / Cover / Attachments / Danger as they are unless a phase says otherwise. Showcase chrome stays out of scope.
-
-#### Phase M — Program enrollment + schedule parity
-
-- **Goal:** Program `enrolled`/`capacity` + richer week/session links (Add-week / card_ref parity).
 
 #### Phase N — Class offering gaps
 

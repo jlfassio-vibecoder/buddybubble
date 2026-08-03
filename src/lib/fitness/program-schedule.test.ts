@@ -21,11 +21,17 @@ describe('buildProgramWeekCardModel', () => {
     expect(model.rows).toHaveLength(7);
     expect(model.rows[0]).toEqual({
       dayLabel: 'Mon',
+      dayNumber: 1,
       title: 'Strength A — Squat',
       kind: 'workout',
       subtitle: 'Strength · 45 min',
     });
-    expect(model.rows[1]).toEqual({ dayLabel: 'Tue', title: 'Rest', kind: 'rest' });
+    expect(model.rows[1]).toEqual({
+      dayLabel: 'Tue',
+      dayNumber: 2,
+      title: 'Rest',
+      kind: 'rest',
+    });
     expect(model.rows[2]).toMatchObject({
       dayLabel: 'Wed',
       title: 'Conditioning — EMOM',
@@ -89,8 +95,11 @@ describe('buildProgramWeekCards', () => {
     });
   });
 
-  it('skips empty week entries', () => {
-    expect(buildProgramWeekCards([{ week: 1, days: [] }], 4)).toEqual([]);
+  it('renders empty-day weeks as Rest rows; empty schedule returns []', () => {
+    const emptyWeek = buildProgramWeekCards([{ week: 1, days: [] }], 4);
+    expect(emptyWeek).toHaveLength(1);
+    expect(emptyWeek[0]?.sessionCount).toBe(0);
+    expect(emptyWeek[0]?.rows.every((r) => r.kind === 'rest')).toBe(true);
     expect(buildProgramWeekCards([], 4)).toEqual([]);
   });
 });

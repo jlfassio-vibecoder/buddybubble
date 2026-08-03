@@ -134,6 +134,7 @@ export function detectUserDemotedProvenanceKeys(args: {
       if (JSON.stringify(fields.programSchedule) !== JSON.stringify(origFields.programSchedule)) {
         keys.push('schedule');
       }
+      if (changed(fields.programCapacity, origFields.programCapacity)) keys.push('capacity');
       if (changed(fields.programSourceTitle, origFields.programSourceTitle)) {
         keys.push('program_source_title');
       }

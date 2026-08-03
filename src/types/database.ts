@@ -63,6 +63,7 @@ export type ClassOfferingRow = Database['public']['Tables']['class_offerings']['
 export type ClassInstanceRow = Database['public']['Tables']['class_instances']['Row'];
 export type ClassEnrollmentRow = Database['public']['Tables']['class_enrollments']['Row'];
 export type EventRsvpRow = Database['public']['Tables']['event_rsvps']['Row'];
+export type ProgramEnrollmentRow = Database['public']['Tables']['program_enrollments']['Row'];
 export type BubbleRow = Database['public']['Tables']['bubbles']['Row'];
 export type BubbleMemberRow = Database['public']['Tables']['bubble_members']['Row'];
 export type MessageRow = Database['public']['Tables']['messages']['Row'];
