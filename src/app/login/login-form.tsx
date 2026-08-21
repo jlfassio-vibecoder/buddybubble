@@ -104,6 +104,30 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
     setSuppressServerAuthError(true);
   }, []);
 
+  /**
+   * Leftover anonymous sessions (demo iframe / QR guest) look like “already logged in”
+   * with no password. Clear them on the login page so email/password or OAuth can run.
+   * Skip when finishing a magic-link hash or PKCE code exchange.
+   */
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (pkceCode) return;
+    if (window.location.hash.includes('access_token')) return;
+    let cancelled = false;
+    void (async () => {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (cancelled || !user) return;
+      if ((user as { is_anonymous?: boolean }).is_anonymous !== true) return;
+      await supabase.auth.signOut();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pkceCode]);
+
   useEffect(() => {
     if (!inviteToken?.trim()) return;
     reportInviteJourneyClient(inviteToken, 'login_with_invite_token_opened', {

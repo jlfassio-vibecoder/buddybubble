@@ -289,9 +289,25 @@ export function ProfileCompletionModal({
         <div className="min-h-0 flex-1 overflow-y-auto p-6">
           <div className="space-y-6">
             {error ? (
-              <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                {error}
-              </p>
+              <div className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                <p>{error}</p>
+                {/already has an account|Error updating user/i.test(error) ? (
+                  <button
+                    type="button"
+                    disabled={pending}
+                    className="font-semibold underline underline-offset-2 hover:text-destructive/90 disabled:opacity-50"
+                    onClick={() => {
+                      startTransition(async () => {
+                        const supabase = createClient();
+                        await supabase.auth.signOut();
+                        window.location.assign('/login');
+                      });
+                    }}
+                  >
+                    Sign out and go to login
+                  </button>
+                ) : null}
+              </div>
             ) : null}
 
             {/* Avatar — optional */}

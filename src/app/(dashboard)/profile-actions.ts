@@ -152,6 +152,25 @@ export async function completeProfileGateAction(
   const isAnonymous = (user as { is_anonymous?: boolean }).is_anonymous === true;
   const canUseAdminOnboardingPath = isAnonymous && !hasAuthEmail;
 
+  /** GoTrue returns a vague "Error updating user" when an email is already taken on another row. */
+  const EMAIL_ALREADY_REGISTERED_MSG =
+    'That email already has an account. Sign out, then sign in with your email and password (or Google) — do not complete this guest profile with an existing address.';
+
+  let adminForOnboarding: ReturnType<typeof createServiceRoleClient> | undefined;
+  if (canUseAdminOnboardingPath) {
+    try {
+      adminForOnboarding = createServiceRoleClient();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[completeProfileGateAction] service role client:', msg);
+      return { error: 'Could not update account. Try again in a moment.' };
+    }
+    const emailTakenByOther = await authEmailOwnedByOtherUser(adminForOnboarding, email, user.id);
+    if (emailTakenByOther) {
+      return { error: EMAIL_ALREADY_REGISTERED_MSG };
+    }
+  }
+
   const update: Record<string, unknown> = {
     full_name: fullName,
     bio,
@@ -168,21 +187,20 @@ export async function completeProfileGateAction(
   let authError: { message: string } | null = null;
 
   if (canUseAdminOnboardingPath) {
-    let admin: ReturnType<typeof createServiceRoleClient> | undefined;
-    try {
-      admin = createServiceRoleClient();
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error('[completeProfileGateAction] service role client:', msg);
-      authError = { message: 'Could not update account. Try again in a moment.' };
-    }
-    if (admin && !authError) {
+    const admin = adminForOnboarding;
+    if (admin) {
       const { error } = await admin.auth.admin.updateUserById(user.id, {
         email,
         password,
         email_confirm: true,
       });
       authError = error ?? null;
+      if (
+        authError &&
+        /error updating user|already.*(registered|exists|been)/i.test(authError.message)
+      ) {
+        authError = { message: EMAIL_ALREADY_REGISTERED_MSG };
+      }
     }
   } else {
     const authUpdate: { email?: string; password: string } = { password };
@@ -212,4 +230,46 @@ export async function completeProfileGateAction(
   }
 
   return { ok: true };
+}
+
+/**
+ * True when another auth user (not `excludeUserId`) already owns `email`.
+ * Used before converting anonymous guests so we can return a clear message instead of
+ * GoTrue's opaque "Error updating user".
+ */
+async function authEmailOwnedByOtherUser(
+  admin: ReturnType<typeof createServiceRoleClient>,
+  email: string,
+  excludeUserId: string,
+): Promise<boolean> {
+  const normalized = email.trim().toLowerCase();
+  const listParams = {
+    page: 1,
+    perPage: 200,
+    search: normalized,
+  } as unknown as Parameters<typeof admin.auth.admin.listUsers>[0];
+  const { data: { users = [] } = {}, error } = await admin.auth.admin.listUsers(listParams);
+  if (error) {
+    console.error('[completeProfileGateAction] listUsers for email collision', error.message);
+  } else {
+    const hit = users.find(
+      (u) =>
+        u.id !== excludeUserId &&
+        typeof u.email === 'string' &&
+        u.email.trim().toLowerCase() === normalized,
+    );
+    if (hit) return true;
+  }
+
+  const { data: profile, error: profileErr } = await admin
+    .from('users')
+    .select('id')
+    .eq('email', normalized)
+    .neq('id', excludeUserId)
+    .maybeSingle();
+  if (profileErr) {
+    console.error('[completeProfileGateAction] users email collision lookup', profileErr.message);
+    return false;
+  }
+  return Boolean(profile?.id);
 }
