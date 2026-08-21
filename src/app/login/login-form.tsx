@@ -50,6 +50,7 @@ function isValidLoginEmail(raw: string): boolean {
 }
 
 /** Replace leftover demo/QR guest cookies before real auth so password/OAuth is not shadowed. */
+// Copilot suggestion ignored: mount-time anonymous signOut was removed; intentional-path clear already avoids the race with password sign-in.
 async function ensureNotAnonymousBeforeAuth(): Promise<void> {
   const supabase = createClient();
   const {

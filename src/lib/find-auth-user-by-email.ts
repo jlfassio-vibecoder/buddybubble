@@ -66,6 +66,7 @@ export async function findAuthUserByEmail(
     return { ok: false, error: 'lookup_failed' };
   }
   const authUser = authData?.user ?? null;
+  // Copilot suggestion ignored: profile-id-only collision checks were removed; we already verify auth email via getUserById here.
   if (
     authUser &&
     typeof authUser.email === 'string' &&

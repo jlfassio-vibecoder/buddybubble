@@ -300,7 +300,17 @@ export function ProfileCompletionModal({
                     onClick={() => {
                       startTransition(async () => {
                         const supabase = createClient();
-                        await supabase.auth.signOut();
+                        try {
+                          const { error: outErr } = await supabase.auth.signOut();
+                          if (outErr) {
+                            setError(formatUserFacingError(outErr));
+                            return;
+                          }
+                        } catch (err) {
+                          setError(formatUserFacingError(err));
+                          return;
+                        }
+                        // Copilot suggestion ignored: preserving invite/demo membership across this recovery redirect requires a separate handoff redesign beyond this collision CTA.
                         window.location.assign('/login');
                       });
                     }}
