@@ -1,10 +1,10 @@
 'use server';
 
 import { headers } from 'next/headers';
-import type { User } from '@supabase/supabase-js';
 import { authCallbackAbsoluteUrl } from '@/lib/auth-callback-url';
 import { getCanonicalOrigin } from '@/lib/app-url';
 import { getClientIpFromHeaders } from '@/lib/client-ip';
+import { findAuthUserByEmail } from '@/lib/find-auth-user-by-email';
 import { classifyAuthUserForLogin } from '@/lib/login-identity-classify';
 import { enforceLoginIdentityRateLimit } from '@/lib/login-identity-rate-limit';
 import { createServiceRoleClient } from '@/lib/supabase-service-role';
@@ -62,7 +62,11 @@ export async function requestPasswordResetAction(input: {
     return { ok: false, error: 'Could not send reset link. Try again shortly.' };
   }
 
-  const user = await findAuthUserByEmail(admin, emailRaw);
+  const lookup = await findAuthUserByEmail(admin, emailRaw);
+  if (!lookup.ok) {
+    return { ok: false, error: 'Could not send reset link. Try again shortly.' };
+  }
+  const user = lookup.user;
   if (!user) {
     return { ok: true };
   }
@@ -93,60 +97,6 @@ export async function requestPasswordResetAction(input: {
   }
 
   return { ok: true };
-}
-
-async function findAuthUserByEmail(
-  admin: ReturnType<typeof createServiceRoleClient>,
-  normalizedEmail: string,
-): Promise<User | null> {
-  const listParams = {
-    page: 1,
-    perPage: 200,
-    search: normalizedEmail,
-  } as unknown as Parameters<typeof admin.auth.admin.listUsers>[0];
-  const { data: { users = [] } = {}, error } = await admin.auth.admin.listUsers(listParams);
-
-  if (error) {
-    console.error('[checkUserIdentityAction] listUsers', error.message);
-  } else {
-    const found = users.find(
-      (u) => typeof u.email === 'string' && u.email.trim().toLowerCase() === normalizedEmail,
-    );
-    if (found) return found;
-  }
-
-  // Fallback for tenants where admin search does not return expected rows:
-  // resolve auth user id from `public.users` (service role) and then fetch auth user by id.
-  const { data: profile, error: profileErr } = await admin
-    .from('users')
-    .select('id, email')
-    .eq('email', normalizedEmail)
-    .maybeSingle();
-
-  if (profileErr) {
-    console.error('[checkUserIdentityAction] users lookup fallback', profileErr.message);
-    return null;
-  }
-  const authId =
-    profile && typeof (profile as { id?: string }).id === 'string'
-      ? (profile as { id: string }).id
-      : '';
-  if (!authId) return null;
-
-  const { data: authData, error: byIdErr } = await admin.auth.admin.getUserById(authId);
-  if (byIdErr) {
-    console.error('[checkUserIdentityAction] getUserById fallback', byIdErr.message);
-    return null;
-  }
-  const authUser = authData?.user ?? null;
-  if (
-    authUser &&
-    typeof authUser.email === 'string' &&
-    authUser.email.trim().toLowerCase() === normalizedEmail
-  ) {
-    return authUser;
-  }
-  return null;
 }
 
 /**
@@ -191,7 +141,11 @@ export async function checkUserIdentityAction(input: {
     return { ok: false, error: 'Could not verify email. Try again in a moment.' };
   }
 
-  const user = await findAuthUserByEmail(admin, emailRaw);
+  const lookup = await findAuthUserByEmail(admin, emailRaw);
+  if (!lookup.ok) {
+    return { ok: false, error: 'Could not verify email. Try again in a moment.' };
+  }
+  const user = lookup.user;
   if (user) {
     const providers = (user.app_metadata as { providers?: unknown } | null | undefined)?.providers;
     const hasProviderArray = Array.isArray(providers);

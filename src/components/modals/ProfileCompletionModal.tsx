@@ -12,6 +12,7 @@ import {
 } from '@/lib/avatar-storage';
 import { formatUserFacingError } from '@/lib/format-error';
 import { childrenNamesFromJson } from '@/lib/profile-helpers';
+import { GUEST_EMAIL_UNAVAILABLE_MSG } from '@/lib/guest-profile-email';
 import { completeProfileGateAction } from '@/app/(dashboard)/profile-actions';
 import { reportProfileCompletionJourneyStepAction } from '@/app/(dashboard)/profile-completion-analytics-actions';
 import { setWorkspaceMemberShowEmailAction } from '@/app/(dashboard)/workspace-member-email-actions';
@@ -291,7 +292,7 @@ export function ProfileCompletionModal({
             {error ? (
               <div className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                 <p>{error}</p>
-                {/already has an account|Error updating user/i.test(error) ? (
+                {error === GUEST_EMAIL_UNAVAILABLE_MSG ? (
                   <button
                     type="button"
                     disabled={pending}

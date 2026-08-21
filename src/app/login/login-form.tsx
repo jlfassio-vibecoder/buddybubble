@@ -49,6 +49,17 @@ function isValidLoginEmail(raw: string): boolean {
   return EMAIL_PATTERN.test(t);
 }
 
+/** Replace leftover demo/QR guest cookies before real auth so password/OAuth is not shadowed. */
+async function ensureNotAnonymousBeforeAuth(): Promise<void> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+  if ((user as { is_anonymous?: boolean }).is_anonymous !== true) return;
+  await supabase.auth.signOut();
+}
+
 type LoginStep = 'email' | 'password' | 'check_email' | 'oauth_google';
 
 type LoginFormProps = {
@@ -104,30 +115,6 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
     setSuppressServerAuthError(true);
   }, []);
 
-  /**
-   * Leftover anonymous sessions (demo iframe / QR guest) look like “already logged in”
-   * with no password. Clear them on the login page so email/password or OAuth can run.
-   * Skip when finishing a magic-link hash or PKCE code exchange.
-   */
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (pkceCode) return;
-    if (window.location.hash.includes('access_token')) return;
-    let cancelled = false;
-    void (async () => {
-      const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (cancelled || !user) return;
-      if ((user as { is_anonymous?: boolean }).is_anonymous !== true) return;
-      await supabase.auth.signOut();
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [pkceCode]);
-
   useEffect(() => {
     if (!inviteToken?.trim()) return;
     reportInviteJourneyClient(inviteToken, 'login_with_invite_token_opened', {
@@ -148,10 +135,13 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    void checkUserIdentityAction({
-      email: emailFromUrlNormalized,
-      inviteToken,
-    }).then((res) => {
+    void (async () => {
+      await ensureNotAnonymousBeforeAuth();
+      if (cancelled) return;
+      const res = await checkUserIdentityAction({
+        email: emailFromUrlNormalized,
+        inviteToken,
+      });
       if (cancelled) return;
       setLoading(false);
       if (!res.ok) {
@@ -169,7 +159,7 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
         return;
       }
       setStep('check_email');
-    });
+    })();
 
     return () => {
       cancelled = true;
@@ -300,6 +290,7 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
       return;
     }
     setLoading(true);
+    await ensureNotAnonymousBeforeAuth();
     const res = await checkUserIdentityAction({
       email: trimmed,
       inviteToken,
@@ -327,6 +318,7 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
     setError(null);
     setInfo(null);
     setLoading(true);
+    await ensureNotAnonymousBeforeAuth();
     const supabase = createClient();
     const { error: err } = await supabase.auth.signInWithPassword({
       email: email.trim().toLowerCase(),
@@ -362,6 +354,7 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
       return;
     }
     setForgotPasswordLoading(true);
+    await ensureNotAnonymousBeforeAuth();
     const res = await requestPasswordResetAction({
       email: trimmed,
       inviteToken,
@@ -379,6 +372,7 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
     setInfo(null);
     setIsGoogleLoading(true);
     try {
+      await ensureNotAnonymousBeforeAuth();
       const supabase = createClient();
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -405,6 +399,7 @@ export function LoginForm({ titleFontClassName }: LoginFormProps) {
     setError(null);
     setInfo(null);
     setLoading(true);
+    await ensureNotAnonymousBeforeAuth();
     const supabase = createClient();
     const { data, error: err } = await supabase.auth.signUp({
       email: email.trim().toLowerCase(),
