@@ -1,5 +1,10 @@
 'use server';
 
+import { authEmailCollisionAgainst, findAuthUserByEmail } from '@/lib/find-auth-user-by-email';
+import {
+  GUEST_EMAIL_UNAVAILABLE_MSG,
+  mapGuestEmailAuthUpdateError,
+} from '@/lib/guest-profile-email';
 import { createServiceRoleClient } from '@/lib/supabase-service-role';
 import { createClient } from '@utils/supabase/server';
 
@@ -152,6 +157,25 @@ export async function completeProfileGateAction(
   const isAnonymous = (user as { is_anonymous?: boolean }).is_anonymous === true;
   const canUseAdminOnboardingPath = isAnonymous && !hasAuthEmail;
 
+  let adminForOnboarding: ReturnType<typeof createServiceRoleClient> | undefined;
+  if (canUseAdminOnboardingPath) {
+    try {
+      adminForOnboarding = createServiceRoleClient();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[completeProfileGateAction] service role client:', msg);
+      return { error: 'Could not update account. Try again in a moment.' };
+    }
+    const lookup = await findAuthUserByEmail(adminForOnboarding, email.trim().toLowerCase());
+    const collision = authEmailCollisionAgainst(lookup, user.id);
+    if (collision.status === 'lookup_failed') {
+      return { error: 'Could not update account. Try again in a moment.' };
+    }
+    if (collision.status === 'collision') {
+      return { error: GUEST_EMAIL_UNAVAILABLE_MSG };
+    }
+  }
+
   const update: Record<string, unknown> = {
     full_name: fullName,
     bio,
@@ -168,21 +192,17 @@ export async function completeProfileGateAction(
   let authError: { message: string } | null = null;
 
   if (canUseAdminOnboardingPath) {
-    let admin: ReturnType<typeof createServiceRoleClient> | undefined;
-    try {
-      admin = createServiceRoleClient();
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error('[completeProfileGateAction] service role client:', msg);
-      authError = { message: 'Could not update account. Try again in a moment.' };
-    }
-    if (admin && !authError) {
+    const admin = adminForOnboarding;
+    if (admin) {
       const { error } = await admin.auth.admin.updateUserById(user.id, {
         email,
         password,
         email_confirm: true,
       });
       authError = error ?? null;
+      if (authError) {
+        authError = { message: mapGuestEmailAuthUpdateError(authError.message) };
+      }
     }
   } else {
     const authUpdate: { email?: string; password: string } = { password };
